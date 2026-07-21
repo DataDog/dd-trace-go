@@ -22,6 +22,9 @@ const (
 	MetricTypeCategorical MetricType = "categorical"
 	MetricTypeScore       MetricType = "score"
 	MetricTypeBoolean     MetricType = "boolean"
+	// MetricTypeJSON is a structured metric whose value is a json_value object
+	// (e.g. Trajectory's range/segment markers). It must be paired with JSONValue.
+	MetricTypeJSON MetricType = "json"
 )
 
 // EvaluationMetric is a caller-built LLM Obs evaluation metric to export.
@@ -39,8 +42,9 @@ type EvaluationMetric struct {
 
 	// Label is the metric name (required).
 	Label string
-	// MetricType is the metric type (MetricTypeCategorical/Score/Boolean). When
-	// empty it is derived from the value; it is required for JSONValue.
+	// MetricType is the metric type (MetricTypeCategorical/Score/Boolean/JSON).
+	// When empty it is derived from a scalar value; it is required for JSONValue
+	// (set MetricTypeJSON to reproduce Trajectory's range/segment markers).
 	MetricType MetricType
 
 	// Exactly one of the following must be set.
@@ -133,8 +137,12 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 			return nil, "json_value requires an explicit MetricType"
 		}
 		metricType = valueType
-	case metricType != MetricTypeCategorical && metricType != MetricTypeScore && metricType != MetricTypeBoolean:
-		return nil, fmt.Sprintf("invalid MetricType %q (want categorical, score, or boolean)", metricType)
+	case metricType != MetricTypeCategorical && metricType != MetricTypeScore && metricType != MetricTypeBoolean && metricType != MetricTypeJSON:
+		return nil, fmt.Sprintf("invalid MetricType %q (want categorical, score, boolean, or json)", metricType)
+	case metricType == MetricTypeJSON && m.JSONValue == nil:
+		// json metrics carry their value in json_value; a scalar-only json row has
+		// nothing to send under json_value.
+		return nil, "MetricType json requires a json value"
 	case valueType != "" && metricType != valueType:
 		return nil, fmt.Sprintf("MetricType %q does not match the %s value provided", metricType, valueType)
 	}
