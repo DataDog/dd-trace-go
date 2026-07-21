@@ -1955,69 +1955,99 @@ func TestWithStartSpanConfig(t *testing.T) {
 }
 
 func TestWithTags(t *testing.T) {
-	var assert = assert.New(t)
-	tracer, err := newTracer()
-	defer tracer.Stop()
-	assert.NoError(err)
+	t.Run("sets_tags", func(t *testing.T) {
+		var assert = assert.New(t)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
 
-	s := tracer.StartSpan("test", WithTags(map[string]any{
-		"key1": "value1",
-		"key2": "value2",
-	}))
-	defer s.Finish()
-	v, _ := s.meta.Get("key1")
-	assert.Equal("value1", v)
-	v, _ = s.meta.Get("key2")
-	assert.Equal("value2", v)
-}
-
-func TestWithTagsMergesWithExistingTags(t *testing.T) {
-	var assert = assert.New(t)
-	tracer, err := newTracer()
-	defer tracer.Stop()
-	assert.NoError(err)
-
-	s := tracer.StartSpan("test",
-		Tag("key1", "from_tag"),
-		WithTags(map[string]any{
-			"key1": "from_with_tags",
+		s := tracer.StartSpan("test", WithTags(map[string]any{
+			"key1": "value1",
 			"key2": "value2",
-		}),
-	)
-	defer s.Finish()
-	v, _ := s.meta.Get("key1")
-	assert.Equal("from_with_tags", v)
-	v, _ = s.meta.Get("key2")
-	assert.Equal("value2", v)
-}
+		}))
+		defer s.Finish()
+		v, _ := s.meta.Get("key1")
+		assert.Equal("value1", v)
+		v, _ = s.meta.Get("key2")
+		assert.Equal("value2", v)
+	})
 
-func TestWithTagsBeforeWithStartSpanConfigDoesNotMutateBase(t *testing.T) {
-	var assert = assert.New(t)
-	base := NewStartSpanConfig(
-		Tag("static1", "s1"),
-		Tag("static2", "s2"),
-	)
+	t.Run("merges_with_existing_tags", func(t *testing.T) {
+		var assert = assert.New(t)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
 
-	tracer, err := newTracer()
-	defer tracer.Stop()
-	assert.NoError(err)
+		s := tracer.StartSpan("test",
+			Tag("key1", "from_tag"),
+			WithTags(map[string]any{
+				"key1": "from_with_tags",
+				"key2": "value2",
+			}),
+		)
+		defer s.Finish()
+		v, _ := s.meta.Get("key1")
+		assert.Equal("from_with_tags", v)
+		v, _ = s.meta.Get("key2")
+		assert.Equal("value2", v)
+	})
 
-	s := tracer.StartSpan("test",
-		WithTags(map[string]any{"dynamic": "d1"}),
-		WithStartSpanConfig(base),
-	)
-	defer s.Finish()
-	v, _ := s.meta.Get("dynamic")
-	assert.Equal("d1", v)
-	v, _ = s.meta.Get("static1")
-	assert.Equal("s1", v)
-	v, _ = s.meta.Get("static2")
-	assert.Equal("s2", v)
+	t.Run("does_not_mutate_base_config", func(t *testing.T) {
+		var assert = assert.New(t)
+		base := NewStartSpanConfig(
+			Tag("static1", "s1"),
+			Tag("static2", "s2"),
+		)
 
-	// base.Tags must remain untouched by the per-call dynamic tag.
-	assert.Len(base.Tags, 2)
-	_, ok := base.Tags["dynamic"]
-	assert.False(ok)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		s := tracer.StartSpan("test",
+			WithTags(map[string]any{"dynamic": "d1"}),
+			WithStartSpanConfig(base),
+		)
+		defer s.Finish()
+		v, _ := s.meta.Get("dynamic")
+		assert.Equal("d1", v)
+		v, _ = s.meta.Get("static1")
+		assert.Equal("s1", v)
+		v, _ = s.meta.Get("static2")
+		assert.Equal("s2", v)
+
+		// base.Tags must remain untouched by the per-call dynamic tag.
+		assert.Len(base.Tags, 2)
+		_, ok := base.Tags["dynamic"]
+		assert.False(ok)
+	})
+
+	t.Run("does_not_mutate_input_map", func(t *testing.T) {
+		var assert = assert.New(t)
+		base := NewStartSpanConfig(
+			Tag("static1", "s1"),
+		)
+
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		dynamic := map[string]any{"dynamic": "d1"}
+		s := tracer.StartSpan("test",
+			WithTags(dynamic),
+			WithStartSpanConfig(base),
+			Tag("extra", "e1"),
+		)
+		defer s.Finish()
+
+		// The map passed to WithTags must remain untouched by later
+		// options (WithStartSpanConfig, Tag) in the same option list, so
+		// callers can safely reuse it across spans.
+		assert.Len(dynamic, 1)
+		_, ok := dynamic["static1"]
+		assert.False(ok)
+		_, ok = dynamic["extra"]
+		assert.False(ok)
+	})
 }
 
 func TestNewFinishConfig(t *testing.T) {
