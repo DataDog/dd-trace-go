@@ -1069,6 +1069,7 @@ func (c *Config) SetStatsWholeKeyCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d, using default %d", limit, defaultStatsWholeKeyCardinalityLimit)
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1088,6 +1089,7 @@ func (c *Config) SetStatsResourceCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d, using default %d", limit, defaultStatsResourceCardinalityLimit)
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1107,6 +1109,7 @@ func (c *Config) SetStatsHTTPEndpointCardinalityLimit(limit int, origin telemetr
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d, using default %d", limit, defaultStatsHTTPEndpointCardinalityLimit)
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1126,6 +1129,7 @@ func (c *Config) SetStatsPeerTagsCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d, using default %d", limit, defaultStatsPeerTagsCardinalityLimit)
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1145,6 +1149,7 @@ func (c *Config) SetStatsOriginCardinalityLimit(limit int, origin telemetry.Orig
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d, using default %d", limit, defaultStatsOriginCardinalityLimit)
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", origin, limit, product...) {
