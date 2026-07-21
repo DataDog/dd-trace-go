@@ -1,0 +1,90 @@
+name: dd-trace-go-agent
+version: "0.1"
+
+cases:
+  - id: dd-trace-go-contrib-structure-001
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm adding a new contrib integration for a library hosted at github.com/user/somelib.
+      What directory structure should I create, and what is the correct import URL that users
+      will use to import the integration?
+    expected_criteria:
+      - Creates the integration in a subdirectory at contrib/user/somelib/ (not a flat file at contrib/user/somelib.go)
+      - States the integration is its own Go submodule with its own go.mod file
+      - The correct import URL given ends with /contrib/user/somelib/v2 under the github.com/DataDog/dd-trace-go namespace
+      - The Go package name is unversioned (somelib, not somelib.v2 or somerlibv2)
+      - Mentions that the new module must be added to go.work with a use directive
+      - Requires the three files -- a central somelib.go, somelib_test.go, and example_test.go
+    bad_signals:
+      - States the integration is a single file inside the existing root module (no submodule / no go.mod)
+      - Gives an import URL that does not end in /v2 (e.g. github.com/DataDog/dd-trace-go/contrib/user/somelib)
+      - Uses a versioned package name such as package somelib.v2 or package somerlibv2
+      - Does not mention adding the module to go.work
+
+  - id: dd-trace-go-contrib-tags-002
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm writing a new contrib integration for an HTTP client library. What span tags are
+      required on the spans I create, and what values should they have?
+    expected_criteria:
+      - Mentions the span.kind tag and states it should be set to client for an HTTP client
+      - States that span.kind should be omitted (not set to internal) when the span kind is internal
+      - Mentions the component tag and states it should be set to the full integration package naming convention
+    bad_signals:
+      - Says span.kind should always be set including for internal spans (i.e. set to internal)
+      - Does not mention the component tag at all
+      - Gives incorrect span.kind values such as outbound or request
+
+  - id: dd-trace-go-tracer-api-break-003
+    only_warn: true
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I need to rename an exported function in the ddtrace/tracer package. CI is now failing
+      on the API diff check. What do I need to do to get the PR merged?
+    expected_criteria:
+      - Mentions adding the breaking-api-acknowledged label to the PR to acknowledge the intentional change
+      - Mentions that make apidiff/incompatible can be used to check breaking changes locally before pushing
+    bad_signals:
+      - Says to revert the change without mentioning the label option for intentional breaks
+      - Does not mention the CI label mechanism at all, giving only a vague answer about breaking changes
+      - Suggests force-merging or skipping the CI check
+
+  - id: dd-trace-go-control-general-go-004
+    only_warn: true
+    files:
+      - AGENTS.md
+    input: |
+      How do I write an HTTP middleware in Go that adds a custom request ID header to every
+      incoming request?
+    expected_criteria:
+      - Implements the middleware as a function that takes and returns http.Handler (or http.HandlerFunc)
+      - Correctly extracts or generates a request ID and sets it via r.Header.Set or w.Header().Set
+      - Calls the next handler via next.ServeHTTP to pass the request along the chain
+    bad_signals:
+      - Gives an implementation that only works with dd-trace-go-specific types and is not usable standalone
+      - Fails to demonstrate the standard Go middleware pattern (wrapping http.Handler)
+      - Confuses middleware with a tracer integration by importing dd-trace-go packages unnecessarily
+
+  - id: dd-trace-go-config-new-env-var-005
+    files:
+      - internal/AGENTS.md
+    input: |
+      I need to add a new environment variable, DD_TRACE_SOME_NEW_FEATURE_ENABLED, that turns on
+      a new tracer feature. Walk me through how I should read this configuration value end to end
+      -- which module owns it, how do I wire it up, and what else do I need to update?
+    expected_criteria:
+      - Directs the value to be added as a new private field on internal/config.Config, not read directly with os.Getenv/os.LookupEnv in the tracer package
+      - Says the field is initialized in loadConfig() via the config provider, which resolves it in descending priority order -- programmatic API, managed declarative config, DD_* env var, OTEL env var, then local declarative config -- falling back to a default
+      - Says to add a getter (ConfigName()-style accessor) on Config, and a setter if the value must be updatable at runtime
+      - States the setter must call c.checkProductConflict(...) as its first action after acquiring the lock, before applying the change
+      - States the setter (or the calculated/default path) must call configtelemetry.Report(...) with the correct origin
+      - Mentions registering the new key so it's tracked (e.g. via the configinverter tool / internal/env/supported_configurations.json), not just introducing an untracked ad-hoc lookup
+    bad_signals:
+      - Tells the developer to read the variable directly via os.Getenv/os.LookupEnv in tracer/option.go or another package outside internal/config
+      - Reads the value with a legacy helper such as internal.BoolEnv/internal.IntEnv or a local "env.Get" wrapper instead of adding it to internal/config
+      - Never mentions internal/config, loadConfig(), or the provider/precedence order at all
+      - Omits the cross-product gate (checkProductConflict) or telemetry reporting (configtelemetry.Report) from the setter
+      - Says the config value's origin/precedence doesn't matter, or that env vars are the only source consulted
