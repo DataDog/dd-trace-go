@@ -40,7 +40,9 @@ var (
 // Zero value = all fields absent.
 // Set(key, "") is distinct from never-Set: the bit is set, the string is "".
 //
-// Layout: 1-byte setMask + 1-byte readOnly + 6B padding + [3]string (48B) = 56 bytes.
+// Layout: setMask + readOnly are packed ahead of the [numAttrs]string array,
+// with no trailing padding. The exact size is architecture-dependent (string
+// width differs between 32- and 64-bit); the assertion below derives it.
 //
 // When readOnly is true, the instance is owned by the tracer and must not be
 // mutated. Callers must Clone before writing (copy-on-write).
@@ -50,10 +52,15 @@ type SpanAttributes struct {
 	vals     [numAttrs]string
 }
 
-// Compile-time layout check: SpanAttributes must be exactly 56 bytes.
-// 1B setMask + 1B readOnly + 6B padding + [3]string (48B) = 56B.
-var _ = [1]byte{}[56-unsafe.Sizeof(SpanAttributes{})]
-var _ = [1]byte{}[unsafe.Sizeof(SpanAttributes{})-56]
+// Compile-time layout check: SpanAttributes must carry no trailing padding —
+// its size equals the offset of vals plus the size of the vals array. Derived
+// from the types themselves, so it holds on both 32- and 64-bit platforms
+// (string width, and therefore the total size, differs by architecture).
+const spanAttributesExpectedSize = unsafe.Offsetof(SpanAttributes{}.vals) +
+	unsafe.Sizeof([numAttrs]string{})
+
+var _ = [1]byte{}[spanAttributesExpectedSize-unsafe.Sizeof(SpanAttributes{})]
+var _ = [1]byte{}[unsafe.Sizeof(SpanAttributes{})-spanAttributesExpectedSize]
 
 // All read methods are nil-safe so callers holding a *SpanAttributes don't
 // need nil guards.
