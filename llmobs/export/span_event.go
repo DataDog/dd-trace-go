@@ -57,9 +57,10 @@ type SpanEvent struct {
 	// Service overrides the client's default service for this span.
 	Service string
 
-	// Start is the span start time. A zero Start emits start_ns=0.
+	// Start is the span start time. A zero Start omits start_ns from the payload
+	// (start_ns is omitempty on the wire) rather than emitting a literal 0.
 	Start time.Time
-	// Duration is the span duration.
+	// Duration is the span duration. A zero Duration likewise omits duration.
 	Duration time.Duration
 
 	// Status is the span status; empty defaults to StatusOK.

@@ -28,6 +28,10 @@ type fakeTransport struct {
 	mu        sync.Mutex
 	requests  []capturedRequest
 	responder func(attempt int, req *http.Request) (int, string)
+	// respHeader, when set, adds headers to every response (e.g. Retry-After) on
+	// top of the default Content-Type. Used to drive the transport's retry-delay
+	// branches; nil leaves responses with just Content-Type.
+	respHeader http.Header
 }
 
 type capturedRequest struct {
@@ -58,11 +62,33 @@ func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if f.responder != nil {
 		code, respBody = f.responder(attempt, req)
 	}
+	header := http.Header{"Content-Type": []string{"application/json"}}
+	for k, vs := range f.respHeader {
+		for _, v := range vs {
+			header.Add(k, v)
+		}
+	}
 	return &http.Response{
 		StatusCode: code,
 		Body:       io.NopCloser(strings.NewReader(respBody)),
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Header:     header,
 	}, nil
+}
+
+// blockingTransport blocks each request until its context is done, then returns
+// that context's error — modeling a server that never responds, so a mid-flight
+// caller cancellation (as opposed to a pre-flight one) drives the transport's
+// "cancelled context is not retriable" path. entered is closed once the request
+// is in flight, so a test can cancel deterministically without sleeping.
+type blockingTransport struct {
+	once    sync.Once
+	entered chan struct{}
+}
+
+func (b *blockingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	b.once.Do(func() { close(b.entered) })
+	<-req.Context().Done()
+	return nil, req.Context().Err()
 }
 
 func (f *fakeTransport) captured() []capturedRequest {
@@ -745,4 +771,118 @@ func TestSubmitEvaluations_RejectsUnmarshalableJSON(t *testing.T) {
 
 	metrics := decode(t, fake.captured()[0].body)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)
 	require.Len(t, metrics, 1) // the valid metric still went out
+}
+
+// TestSubmitSpans_ZeroStartAndDurationOmitFields locks the doc↔wire contract on
+// SpanEvent.Start/Duration: both map to omitempty wire fields, so a zero value is
+// omitted from the payload, never emitted as a literal 0.
+func TestSubmitSpans_ZeroStartAndDurationOmitFields(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t", SpanID: "s", Kind: export.KindLLM}, // zero Start, zero Duration
+	})
+	require.NoError(t, err)
+
+	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	assert.NotContains(t, span, "start_ns")
+	assert.NotContains(t, span, "duration")
+}
+
+// TestSubmitSpans_ParentIDPreservedVerbatim guards the caller-assigned-ID
+// contract: a non-empty ParentID must reach the wire unchanged (only an empty
+// ParentID is normalized to "undefined").
+func TestSubmitSpans_ParentIDPreservedVerbatim(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t", SpanID: "s", ParentID: "p123", Kind: export.KindLLM},
+	})
+	require.NoError(t, err)
+
+	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	assert.Equal(t, "p123", span["parent_id"])
+}
+
+// TestSubmitSpans_RetryClassification drives the transport's retry classification
+// end-to-end through SubmitSpans: 429 (via the dedicated TooManyRequests clause),
+// 408 and 425 (via isRetriableStatus), and a 503 carrying Retry-After (the
+// server-advertised-delay branch) are all retried and reported Retriable; other
+// 4xx are permanent. Guards against folding the checks together and dropping the
+// 429 clause, which would turn a rate-limited backfill into a permanent failure.
+func TestSubmitSpans_RetryClassification(t *testing.T) {
+	cases := []struct {
+		name          string
+		code          int
+		retryAfter    string
+		wantRetriable bool
+	}{
+		{name: "429 too many requests", code: 429, wantRetriable: true},
+		{name: "408 request timeout", code: 408, wantRetriable: true},
+		{name: "425 too early", code: 425, wantRetriable: true},
+		{name: "503 with retry-after", code: 503, retryAfter: "1", wantRetriable: true},
+		{name: "400 bad request", code: 400, wantRetriable: false},
+		{name: "404 not found", code: 404, wantRetriable: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &fakeTransport{responder: func(int, *http.Request) (int, string) { return tc.code, "err" }}
+			if tc.retryAfter != "" {
+				fake.respHeader = http.Header{"Retry-After": []string{tc.retryAfter}}
+			}
+			c := newClient(t, fake, "test-app")
+
+			res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+			require.Error(t, err)
+			require.Len(t, res.Requests, 1)
+			assert.Equal(t, tc.code, res.Requests[0].StatusCode)
+			assert.Equal(t, tc.wantRetriable, res.Requests[0].Retriable)
+			if tc.wantRetriable {
+				assert.Greater(t, res.Requests[0].Attempts, 1, "retriable status should be retried")
+			} else {
+				assert.Equal(t, 1, res.Requests[0].Attempts, "permanent status must not be retried")
+			}
+		})
+	}
+}
+
+// TestSubmitSpans_MidFlightCancelNotRetriable guards the "cancelled context is not
+// retriable" contract in the transport: a caller cancellation that lands while a
+// request is in flight (past SubmitSpans' pre-loop ctx guard, so Post actually
+// runs) must report Retriable=false and surface context.Canceled, so an outbox
+// caller does not re-enqueue cancelled work.
+func TestSubmitSpans_MidFlightCancelNotRetriable(t *testing.T) {
+	bt := &blockingTransport{entered: make(chan struct{})}
+	c, err := export.NewClient("test-app",
+		export.WithHTTPClient(&http.Client{Transport: bt}),
+		export.WithDatadogIntake("datadoghq.com", "test-key"),
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	type outcome struct {
+		res *export.ExportResult
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+		done <- outcome{res, err}
+	}()
+
+	<-bt.entered // the POST is in flight; cancel mid-request, not pre-flight
+	cancel()
+
+	select {
+	case got := <-done:
+		require.Error(t, got.err)
+		require.Len(t, got.res.Requests, 1)
+		assert.False(t, got.res.Requests[0].Retriable)
+		assert.ErrorIs(t, got.res.Requests[0].Err, context.Canceled)
+	case <-time.After(10 * time.Second):
+		t.Fatal("SubmitSpans did not return after mid-flight cancellation")
+	}
 }
