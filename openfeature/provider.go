@@ -44,6 +44,14 @@ const (
 	defaultInitTimeout = 30 * time.Second
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
+	// initialConfigWait bounds InitWithContext's opportunistic wait for the
+	// first RC configuration. Long enough to catch a normal PollInterval-
+	// bounded delivery, short enough that a service whose RC feed is idle
+	// (no configs targeted at this service, or a slow-responding agent)
+	// still comes ready inside a typical startup-probe budget. Keep this
+	// well below defaultInitTimeout so callers passing a Background ctx
+	// don't collide with their outer probe deadline.
+	initialConfigWait = 5 * time.Second
 )
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
@@ -227,16 +235,42 @@ func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error 
 }
 
 // InitWithContext initializes the provider with context support.
-// This method respects context cancellation and timeouts, allowing users
-// to cancel the initialization process if needed.
+//
+// The provider is ready as soon as its Remote Config subscription is
+// established, which has already happened by the time this is called
+// (SubscribeProvider / AttachCallback run synchronously in
+// startWithRemoteConfig). This function opportunistically waits a short,
+// bounded time for the first configuration to arrive so that fresh
+// deployments start with real flag data, but returns successfully with no
+// error if the wait deadline expires or the caller's ctx is cancelled
+// first. Flag evaluations before the first config resolve to their
+// caller-supplied defaults with reason DEFAULT; when the first config
+// eventually arrives via the RC callback, in-flight and subsequent
+// evaluations pick it up.
+//
+// Historically this function blocked indefinitely (bounded only by ctx or
+// Init's own timeout) waiting for configuration != nil. That produced
+// startup hangs when the agent's initial RC response omitted the FFE
+// product (no configs targeted at this service, or a slow agent side
+// under container-restart timing) — the callback never fired and Init
+// consumed its full budget every restart. Not delivering a config is a
+// legitimate steady state, not a failure to become ready.
 func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for p.configuration == nil {
-		if err := p.waitForConfigurationUpdate(ctx); err != nil {
-			return err
-		}
+	// Bound the opportunistic wait so it can't outlive the caller-supplied
+	// deadline, but also so a caller passing context.Background() cannot
+	// pin startup indefinitely.
+	waitCtx, cancel := context.WithTimeout(ctx, initialConfigWait)
+	defer cancel()
+
+	if p.configuration == nil {
+		// Best-effort wait for one configuration update. Any error (deadline,
+		// cancellation) is intentionally swallowed — the provider is ready
+		// once the RC subscription is live, which is a precondition for
+		// reaching this point.
+		_ = p.waitForConfigurationUpdate(waitCtx)
 	}
 
 	// Start periodic flushing for exposure writer.
