@@ -6,8 +6,14 @@
 package tracer
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type raceTestTracer struct {
@@ -74,6 +80,38 @@ func TestGlobalTracer(t *testing.T) {
 		if !tracer.stopped {
 			t.Errorf("tracer %d is not stopped", i)
 		}
+	}
+}
+
+func TestMetaStructAvailable(t *testing.T) {
+	setGlobalTracer(&NoopTracer{})
+	require.False(t, MetaStructAvailable())
+
+	for _, supported := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unsupported", true: "supported"}[supported], func(t *testing.T) {
+			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if err := json.NewEncoder(w).Encode(map[string]any{
+					"endpoints":         []string{"/v0.4/traces"},
+					"span_meta_structs": supported,
+				}); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+			}))
+			defer agent.Close()
+
+			tracer, err := newTracer(
+				WithAgentAddr(strings.TrimPrefix(agent.URL, "http://")),
+				withNoopStats(),
+			)
+			require.NoError(t, err)
+			setGlobalTracer(tracer)
+			defer func() {
+				tracer.Stop()
+				setGlobalTracer(&NoopTracer{})
+			}()
+
+			require.Equal(t, supported, MetaStructAvailable())
+		})
 	}
 }
 
