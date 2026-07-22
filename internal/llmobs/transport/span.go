@@ -6,66 +6,43 @@
 package transport
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
-// SpanLinkID is a span-link trace/span identifier that marshals as a JSON number
-// when it carries a numeric ID and as a JSON string when it carries an opaque
-// string ID. This lets the shared SpanLink wire struct serve both the live
-// tracer path (numeric IDs, its historical wire shape) and the offline export
-// path (caller-owned opaque string IDs). Intake accepts either form.
-type SpanLinkID struct {
-	num   uint64
-	str   string
-	isStr bool
-}
+// SpanKind identifies the kind of an LLM Obs span.
+type SpanKind string
 
-// NumericSpanLinkID returns a span-link ID that marshals as a JSON number, for
-// the live tracer path.
-func NumericSpanLinkID(n uint64) SpanLinkID { return SpanLinkID{num: n} }
+const (
+	SpanKindExperiment SpanKind = "experiment"
+	SpanKindWorkflow   SpanKind = "workflow"
+	SpanKindLLM        SpanKind = "llm"
+	SpanKindEmbedding  SpanKind = "embedding"
+	SpanKindAgent      SpanKind = "agent"
+	SpanKindRetrieval  SpanKind = "retrieval"
+	SpanKindTask       SpanKind = "task"
+	SpanKindStep       SpanKind = "step"
+	SpanKindTool       SpanKind = "tool"
+)
 
-// StringSpanLinkID returns a span-link ID that marshals as a JSON string, for
-// the offline export path's opaque caller-owned IDs.
-func StringSpanLinkID(s string) SpanLinkID { return SpanLinkID{str: s, isStr: true} }
+// SpanStatus identifies an LLM Obs span status.
+type SpanStatus string
 
-// MarshalJSON implements json.Marshaler.
-func (id SpanLinkID) MarshalJSON() ([]byte, error) {
-	if id.isStr {
-		return json.Marshal(id.str)
-	}
-	return json.Marshal(id.num)
-}
+const (
+	SpanStatusOK    SpanStatus = "ok"
+	SpanStatusError SpanStatus = "error"
+)
 
-// UnmarshalJSON implements json.Unmarshaler, accepting either a JSON number
-// (numeric ID) or a JSON string (opaque ID). Without it, the shared SpanLink
-// wire struct could no longer be decoded on paths that read it back (e.g. the
-// in-process test collector), since a marshal-only type breaks json.Unmarshal.
-func (id *SpanLinkID) UnmarshalJSON(b []byte) error {
-	var n uint64
-	if err := json.Unmarshal(b, &n); err == nil {
-		*id = SpanLinkID{num: n}
-		return nil
-	}
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	*id = SpanLinkID{str: s, isStr: true}
-	return nil
-}
-
-// SpanLink links a span to another span. Its trace/span IDs use SpanLinkID so a
-// single wire struct supports both numeric IDs (the live tracer) and opaque
-// string IDs (the offline export path).
+// SpanLink links a span using decimal-string IDs.
 type SpanLink struct {
-	TraceID     SpanLinkID        `json:"trace_id"`
-	TraceIDHigh *SpanLinkID       `json:"trace_id_high,omitempty"`
-	SpanID      SpanLinkID        `json:"span_id"`
+	TraceID     string            `json:"trace_id"`
+	TraceIDHigh string            `json:"trace_id_high,omitempty"`
+	SpanID      string            `json:"span_id"`
 	Attributes  map[string]string `json:"attributes,omitempty"`
 	Tracestate  string            `json:"tracestate,omitempty"`
 	Flags       uint32            `json:"flags,omitempty"`
@@ -74,7 +51,7 @@ type SpanLink struct {
 type DDAttributes struct {
 	SpanID     string `json:"span_id"`
 	TraceID    string `json:"trace_id"`
-	APMTraceID string `json:"apm_trace_id,omitempty"`
+	APMTraceID string `json:"apm_trace_id"`
 	Scope      string `json:"scope,omitempty"`
 }
 
@@ -87,8 +64,8 @@ type LLMObsSpanEvent struct {
 	Name             string             `json:"name,omitempty"`
 	Service          string             `json:"service,omitempty"`
 	StartNS          int64              `json:"start_ns,omitempty"`
-	Duration         int64              `json:"duration,omitempty"`
-	Status           string             `json:"status,omitempty"`
+	Duration         time.Duration      `json:"duration,omitempty"`
+	Status           SpanStatus         `json:"status,omitempty"`
 	StatusMessage    string             `json:"status_message,omitempty"`
 	Meta             map[string]any     `json:"meta,omitempty"`
 	Metrics          map[string]float64 `json:"metrics,omitempty"`
@@ -105,15 +82,9 @@ type PushSpanEventsRequest struct {
 	Spans         []*LLMObsSpanEvent `json:"spans,omitempty"`
 }
 
-func (c *Transport) PushSpanEvents(
-	ctx context.Context,
-	events []*LLMObsSpanEvent,
-) error {
-	if len(events) == 0 {
-		return nil
-	}
-	path := endpointLLMSpan
-	method := http.MethodPost
+// NewPushSpanEventsRequests creates one envelope per span because scope belongs
+// to the envelope.
+func NewPushSpanEventsRequests(events []*LLMObsSpanEvent) []*PushSpanEventsRequest {
 	body := make([]*PushSpanEventsRequest, 0, len(events))
 	for _, ev := range events {
 		req := &PushSpanEventsRequest{
@@ -127,13 +98,51 @@ func (c *Transport) PushSpanEvents(
 		}
 		body = append(body, req)
 	}
+	return body
+}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultLimits)
+func (c *Transport) PushSpanEvents(
+	ctx context.Context,
+	events []*LLMObsSpanEvent,
+) error {
+	_, err := c.PushSpanEventsWithResult(ctx, events)
+	return err
+}
+
+// PushSpanEventsWithResult sends span events and returns request details.
+func (c *Transport) PushSpanEventsWithResult(
+	ctx context.Context,
+	events []*LLMObsSpanEvent,
+) (RequestResult, error) {
+	if len(events) == 0 {
+		return RequestResult{}, nil
+	}
+	body, err := encodeJSON(NewPushSpanEventsRequests(events))
 	if err != nil {
-		return err
+		return RequestResult{}, fmt.Errorf("failed to json encode body: %w", err)
+	}
+	return c.PushSpanEventsBodyWithResult(ctx, body.Bytes())
+}
+
+// PushSpanEventsBodyWithResult sends an encoded span-event request.
+func (c *Transport) PushSpanEventsBodyWithResult(ctx context.Context, body []byte) (RequestResult, error) {
+	if len(body) == 0 {
+		return RequestResult{}, nil
+	}
+	result, err := c.request(
+		ctx,
+		http.MethodPost,
+		endpointLLMSpan,
+		subdomainLLMSpan,
+		bytes.NewReader(body),
+		"application/json",
+		defaultLimits,
+	)
+	if err != nil {
+		return summarizeRequest(result), err
 	}
 	if result.statusCode != http.StatusOK && result.statusCode != http.StatusAccepted {
-		return fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+		return summarizeRequest(result), fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
-	return nil
+	return summarizeRequest(result), nil
 }
