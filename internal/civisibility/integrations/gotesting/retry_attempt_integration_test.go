@@ -351,31 +351,33 @@ func TestProcessRetryParityWrapperPreservesNativeFatalPanic(t *testing.T) {
 	require.NotContains(t, output.String(), "test timed out")
 }
 
-func TestProcessRetryParityNestedOrchestrionPanicRemainsNativeFatal(t *testing.T) {
+func TestProcessRetryParityNestedOrchestrionPanicIsRetryable(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "continued")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryParityNestedOrchestrionPanicFixture$", "-test.count=1", "-test.timeout=10s")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryParityNestedOrchestrionPanicRetryFixture$", "-test.count=1", "-test.timeout=10s")
 	cmd.Env = append(os.Environ(),
 		"Bypass=true",
-		"RETRY_PARITY_NESTED_ORCHESTRION_PANIC_FIXTURE=true",
+		"RETRY_PARITY_NESTED_ORCHESTRION_PANIC_RETRY_FIXTURE=true",
 		"RETRY_PARITY_NESTED_ORCHESTRION_PANIC_MARKER="+markerPath,
 	)
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	err := cmd.Run()
-	require.Error(t, err)
-	require.Contains(t, output.String(), "retry parity nested orchestrion panic")
+	require.NoError(t, err, output.String())
 	_, statErr := os.Stat(markerPath)
-	require.ErrorIs(t, statErr, os.ErrNotExist, "native subtest panic must not return to the parent body")
+	require.NoError(t, statErr, "the retry wrapper must retain control after the failed attempt")
 }
 
-func TestProcessRetryParityNestedOrchestrionPanicFixture(t *testing.T) {
-	if os.Getenv("RETRY_PARITY_NESTED_ORCHESTRION_PANIC_FIXTURE") != "true" {
+func TestProcessRetryParityNestedOrchestrionPanicRetryFixture(t *testing.T) {
+	if os.Getenv("RETRY_PARITY_NESTED_ORCHESTRION_PANIC_RETRY_FIXTURE") != "true" {
 		t.Skip("subprocess fixture")
 	}
 	setRetryParityRecordingRuntime(t)
+	var attempts atomic.Int32
 	nested := instrumentTestingTFunc(func(*testing.T) {
-		panic("retry parity nested orchestrion panic")
+		if attempts.Add(1) == 1 {
+			panic("retry parity nested orchestrion panic")
+		}
 	})
 	runTestWithRetry(&runTestWithRetryOptions{
 		t: t,
@@ -385,9 +387,15 @@ func TestProcessRetryParityNestedOrchestrionPanicFixture(t *testing.T) {
 				local.Fatal(err)
 			}
 		},
-		postAdjustRetryCount: func(*testExecutionMetadata, time.Duration) int64 { return 0 },
-		postShouldRetry:      func(*testing.T, *testExecutionMetadata, int, int64) bool { return false },
+		preIsLastRetry: func(_ *testExecutionMetadata, _ int, remaining int64) bool {
+			return remaining <= 0
+		},
+		postAdjustRetryCount: func(*testExecutionMetadata, time.Duration) int64 { return 1 },
+		postShouldRetry: func(current *testing.T, _ *testExecutionMetadata, _ int, _ int64) bool {
+			return current.Failed()
+		},
 	})
+	require.Equal(t, int32(2), attempts.Load())
 }
 
 func TestProcessRetryParityNestedOrchestrionCleanupPanicRemainsNativeFatal(t *testing.T) {

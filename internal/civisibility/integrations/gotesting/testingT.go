@@ -198,6 +198,5 @@ func (ddt *T) getTWithError(errType string, errMessage string) *testing.T {
 }
 
 func testingTFinished(t *testing.T) bool {
-	fields := getTestPrivateFields(t)
-	return fields != nil && fields.GetFinished()
+	return shouldCaptureTerminalMessage(getTestPrivateFields(t))
 }

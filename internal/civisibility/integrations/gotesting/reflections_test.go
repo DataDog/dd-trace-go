@@ -172,6 +172,20 @@ func TestGetBenchmarkPrivateFields(t *testing.T) {
 	}
 }
 
+func TestShouldCaptureTerminalMessageDegradesGracefully(t *testing.T) {
+	var (
+		mu       sync.RWMutex
+		finished bool
+	)
+
+	assert.True(t, shouldCaptureTerminalMessage(nil))
+	assert.True(t, shouldCaptureTerminalMessage(&commonPrivateFields{}))
+	assert.True(t, shouldCaptureTerminalMessage(&commonPrivateFields{mu: &mu}))
+	assert.False(t, shouldCaptureTerminalMessage(&commonPrivateFields{mu: &mu, finished: &finished}))
+	finished = true
+	assert.True(t, shouldCaptureTerminalMessage(&commonPrivateFields{mu: &mu, finished: &finished}))
+}
+
 func BenchmarkDummy(*testing.B) {}
 
 func exerciseTestingInternalsOffsetLayout(t *testing.T) {

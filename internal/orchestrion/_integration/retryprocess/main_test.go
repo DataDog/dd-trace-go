@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -482,7 +483,7 @@ func newOrchestrionRetryProcessParentHarnessWithConfig(
 	_ = os.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
 	_ = os.Setenv(constants.CIVisibilitySubtestFeaturesEnabled, "true")
 	if config.attemptToFixRetries > 0 {
-		_ = os.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, fmt.Sprint(config.attemptToFixRetries))
+		_ = os.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, strconv.Itoa(config.attemptToFixRetries))
 	}
 	harness.tracer = integrations.InitializeCIVisibilityMock()
 	return harness
