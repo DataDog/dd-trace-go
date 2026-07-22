@@ -28,6 +28,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
@@ -115,11 +116,11 @@ func (b *adminBase) adminTrace(method, resourcePath string) *trace.Trace {
 			"service":  "gcp_pubsub.v2.test",
 		},
 		Meta: map[string]string{
-			"span.kind":         "client",
-			"component":         "cloud.google.com/go/pubsub.v2",
-			"messaging.system":  "googlepubsub",
-			"pubsub.method":     method,
-			ext.GCPProjectID: testProject,
+			"span.kind":        "client",
+			"component":        "cloud.google.com/go/pubsub.v2",
+			"messaging.system": "googlepubsub",
+			"pubsub.method":    method,
+			ext.GCPProjectID:   testProject,
 		},
 	}
 }
