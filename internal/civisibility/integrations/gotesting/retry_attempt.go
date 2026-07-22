@@ -422,11 +422,15 @@ func copyRetryAttemptStableCommon(sourceBase, targetBase unsafe.Pointer, layout 
 const retryAttemptOutputMarker = byte(0x16)
 
 type retryAttemptIndenter struct {
+	mu     locking.Mutex
 	base   unsafe.Pointer
 	layout *testingInternalsLayout
 }
 
-func (w retryAttemptIndenter) Write(p []byte) (int, error) {
+func (w *retryAttemptIndenter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	written := len(p)
 	output := fieldPtr[[]byte](w.base, w.layout.common.output)
 	for len(p) > 0 {
@@ -449,7 +453,7 @@ func (w retryAttemptIndenter) Write(p []byte) (int, error) {
 }
 
 func initializeRetryAttemptWriter(sourceBase, targetBase unsafe.Pointer, layout *testingInternalsLayout, preserveChattyDestination bool) {
-	targetWriter := io.Writer(retryAttemptIndenter{base: targetBase, layout: layout})
+	targetWriter := io.Writer(&retryAttemptIndenter{base: targetBase, layout: layout})
 	sourceChatty := pointerWord(sourceBase, layout.common.chatty)
 	targetChatty := pointerWord(targetBase, layout.common.chatty)
 	if preserveChattyDestination && sourceChatty != nil && targetChatty != nil {

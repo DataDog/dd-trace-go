@@ -4055,8 +4055,8 @@ func TestRunProcessRetryAttemptStartLatencyConsumesParentDeadlineBeforeResume(t 
 		releaseTree: func(*exec.Cmd) error { return nil },
 		now:         func() time.Time { return now },
 		after:       time.After,
-		newTimer: func(d time.Duration) processRetryTimer {
-			return &processRetryRealTimer{timer: time.NewTimer(d)}
+		newTimer: func(time.Duration) processRetryTimer {
+			return &processRetryStaticTimer{ch: make(chan time.Time)}
 		},
 	})
 

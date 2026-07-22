@@ -6,8 +6,10 @@
 package gotesting
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -127,6 +129,33 @@ func TestProcessRetryParityFreshRunnerConcurrentReportingMethods(t *testing.T) {
 	require.False(t, result.failed)
 	require.Contains(t, string(result.output), "worker")
 	require.Contains(t, string(result.output), "output")
+}
+
+func TestProcessRetryParityFreshRunnerSerializesConcurrentIndentedWrites(t *testing.T) {
+	attempt, reason := newRetryAttemptRoot(t)
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	defer attempt.group.retire()
+
+	base := commonBaseForTest(attempt.parent, attempt.layout)
+	writer := *fieldPtr[io.Writer](base, attempt.layout.common.w)
+	const workers = 16
+	var writes sync.WaitGroup
+	writeErrors := make(chan error, workers)
+	for range workers {
+		writes.Go(func() {
+			_, err := writer.Write([]byte("concurrent output\n"))
+			writeErrors <- err
+		})
+	}
+	writes.Wait()
+	close(writeErrors)
+	for err := range writeErrors {
+		require.NoError(t, err)
+	}
+
+	output := *fieldPtr[[]byte](base, attempt.layout.common.output)
+	require.Equal(t, workers, strings.Count(string(output), "    concurrent output\n"))
 }
 
 func TestProcessRetryParityFreshRunnerRunDuringCleanupPanics(t *testing.T) {
