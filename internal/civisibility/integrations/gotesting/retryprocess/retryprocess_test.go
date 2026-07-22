@@ -411,7 +411,7 @@ func assertProcessRetryFixtureLogsForResource(resourceName, sentinel string) {
 	processRetryFixtureLogs.mu.Lock()
 	defer processRetryFixtureLogs.mu.Unlock()
 	if len(processRetryFixtureLogs.entries) == 0 {
-		panic(fmt.Sprintf("expected process retry fixture to send CI Visibility test logs for %s", resourceName))
+		panic("expected process retry fixture to send CI Visibility test logs for " + resourceName)
 	}
 	for _, entry := range processRetryFixtureLogs.entries {
 		assertProcessRetryFixtureNoForbiddenSentinel(entry.Message)
@@ -478,7 +478,7 @@ func assertProcessRetryFixtureRequests(requireLogs bool) {
 		switch path {
 		case "/api/v2/libraries/tests/services/setting", "/api/v2/ci/tests/skippable":
 			if count < 1 {
-				panic(fmt.Sprintf("expected at least one request to %s", path))
+				panic("expected at least one request to " + path)
 			}
 		case "/api/v2/ci/libraries/tests":
 			if count != wantKnownTestsRequests {
@@ -490,7 +490,7 @@ func assertProcessRetryFixtureRequests(requireLogs bool) {
 			}
 		case "/api/v2/logs":
 			if requireLogs && count < 1 {
-				panic(fmt.Sprintf("expected at least one request to %s", path))
+				panic("expected at least one request to " + path)
 			}
 		default:
 			panic(fmt.Sprintf("unexpected CI Visibility request path %s (%d requests)", path, count))
@@ -568,7 +568,7 @@ func assertProcessRetryFixtureSpans(tracer mocktracer.Tracer) {
 				panic(fmt.Sprintf("expected process retry span to have %s=true", constants.TestIsRetry))
 			}
 			if span.Tag(constants.TestRetryReason) != constants.AutoTestRetriesRetryReason {
-				panic(fmt.Sprintf("expected process retry span to have retry reason %s", constants.AutoTestRetriesRetryReason))
+				panic("expected process retry span to have retry reason " + constants.AutoTestRetriesRetryReason)
 			}
 		}
 	}
@@ -623,7 +623,7 @@ func assertProcessRetryParallelEFDSpans(tracer mocktracer.Tracer) {
 			panic(fmt.Sprintf("expected parallel EFD process retry span to have %s=true", constants.TestIsRetry))
 		}
 		if span.Tag(constants.TestRetryReason) != constants.EarlyFlakeDetectionRetryReason {
-			panic(fmt.Sprintf("expected parallel EFD process retry reason %s", constants.EarlyFlakeDetectionRetryReason))
+			panic("expected parallel EFD process retry reason " + constants.EarlyFlakeDetectionRetryReason)
 		}
 		if span.Tag(constants.TestFinalStatus) != nil {
 			panic("parallel EFD retry span unexpectedly has test.final_status")
@@ -662,7 +662,7 @@ func assertProcessRetryAttemptToFixSpans(tracer mocktracer.Tracer) {
 			panic(fmt.Sprintf("expected attempt-to-fix process retry span to have %s=true", constants.TestIsRetry))
 		}
 		if span.Tag(constants.TestRetryReason) != constants.AttemptToFixRetryReason {
-			panic(fmt.Sprintf("expected attempt-to-fix retry reason %s", constants.AttemptToFixRetryReason))
+			panic("expected attempt-to-fix retry reason " + constants.AttemptToFixRetryReason)
 		}
 	}
 	if processRetrySpans != 2 {

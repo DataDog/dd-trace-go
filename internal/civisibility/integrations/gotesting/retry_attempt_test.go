@@ -216,9 +216,7 @@ func TestProcessRetryParityFreshAttemptSnapshotsHelpersUnderNativeLock(t *testin
 	started := make(chan struct{})
 	stop := make(chan struct{})
 	var worker sync.WaitGroup
-	worker.Add(1)
-	go func() {
-		defer worker.Done()
+	worker.Go(func() {
 		close(started)
 		for {
 			select {
@@ -228,7 +226,7 @@ func TestProcessRetryParityFreshAttemptSnapshotsHelpersUnderNativeLock(t *testin
 				t.Helper()
 			}
 		}
-	}()
+	})
 	<-started
 
 	for range 100 {

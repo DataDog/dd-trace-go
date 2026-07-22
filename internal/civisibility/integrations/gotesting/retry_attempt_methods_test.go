@@ -111,15 +111,13 @@ func TestProcessRetryParityFreshRunnerConcurrentReportingMethods(t *testing.T) {
 		writer := local.Output()
 		var workers sync.WaitGroup
 		for i := range 16 {
-			workers.Add(1)
-			go func() {
-				defer workers.Done()
+			workers.Go(func() {
 				local.Helper()
 				local.Logf("worker %d", i)
 				if _, err := writer.Write([]byte("output\n")); err != nil {
 					local.Errorf("Output.Write: %v", err)
 				}
-			}()
+			})
 		}
 		workers.Wait()
 	})

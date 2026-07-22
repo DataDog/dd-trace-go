@@ -2501,10 +2501,7 @@ func runBoundedParallelProcessRetryIterations(execOpts *executionOptions, attemp
 		releaseSlot bool
 	}
 	prepared := make(chan preparedIteration, attempts)
-	parallelism := min(maxConcurrency, attempts)
-	if parallelism < 1 {
-		parallelism = 1
-	}
+	parallelism := max(min(maxConcurrency, attempts), 1)
 	sem := make(chan struct{}, int(parallelism))
 	var wg sync.WaitGroup
 	execOpts.mutex.Lock()
@@ -2514,9 +2511,7 @@ func runBoundedParallelProcessRetryIterations(execOpts *executionOptions, attemp
 		policyContext = context.Background()
 	}
 	for range attempts {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			select {
 			case sem <- struct{}{}:
 			case <-policyContext.Done():
@@ -2531,7 +2526,7 @@ func runBoundedParallelProcessRetryIterations(execOpts *executionOptions, attemp
 			}
 			pending, outcome := prepareProcessRetryIteration(execOpts)
 			prepared <- preparedIteration{pending: pending, outcome: outcome, releaseSlot: true}
-		}()
+		})
 	}
 	go func() {
 		wg.Wait()

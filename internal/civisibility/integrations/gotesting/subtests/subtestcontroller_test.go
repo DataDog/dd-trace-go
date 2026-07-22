@@ -324,16 +324,16 @@ func subAttemptFixParallelScenario() *matrixScenario {
 				// Focus validations on a single subtest resource at a time.
 				resource := fmt.Sprintf("%s/%s", parentResource, child)
 				childSpans := spansByResource(testSpans, resource)
-				requireSpanCount(childSpans, 1, fmt.Sprintf("%s attempt-to-fix parallel span count", child))
+				requireSpanCount(childSpans, 1, child+" attempt-to-fix parallel span count")
 				for idx, span := range childSpans {
 					// Confirm each execution is correctly tagged as part of the attempt-to-fix flow.
 					assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("%s attempt-to-fix parallel tag span %d", child, idx))
 				}
 				final := childSpans[len(childSpans)-1]
-				assertTagNotTrue(final, constants.TestAttemptToFixPassed, fmt.Sprintf("%s attempt-to-fix parallel success ownership", child))
-				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, fmt.Sprintf("%s attempt-to-fix parallel status", child))
-				assertTagCount(childSpans, constants.TestIsRetry, "true", 0, fmt.Sprintf("%s attempt-to-fix parallel retry tag count", child))
-				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, fmt.Sprintf("%s attempt-to-fix parallel retry reason count", child))
+				assertTagNotTrue(final, constants.TestAttemptToFixPassed, child+" attempt-to-fix parallel success ownership")
+				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, child+" attempt-to-fix parallel status")
+				assertTagCount(childSpans, constants.TestIsRetry, "true", 0, child+" attempt-to-fix parallel retry tag count")
+				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, child+" attempt-to-fix parallel retry reason count")
 			}
 
 			checkParallelChild("SubAttemptFix")

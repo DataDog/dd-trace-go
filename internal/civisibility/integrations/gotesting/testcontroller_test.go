@@ -126,7 +126,7 @@ func TestMain(m *testing.M) {
 		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
 		if layoutAvailable {
 			for _, v := range scenarios {
-				runTestControllerSubprocess(v, legacyScenarioRunFilter, fmt.Sprintf("%s=true", v))
+				runTestControllerSubprocess(v, legacyScenarioRunFilter, v+"=true")
 			}
 		}
 	}
