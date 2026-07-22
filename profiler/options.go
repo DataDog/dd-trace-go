@@ -489,10 +489,12 @@ type executionTraceConfig struct {
 	// Traces may be slightly larger than this limit due to flushing pending
 	// buffers at the end of tracing.
 	//
-	// We attempt to record for a full profiling period. The size limit of
-	// the trace is a better proxy for overhead (it scales with the number
-	// of events recorded) than duration, so we use that to decide when to
-	// stop tracing.
+	// We attempt to record for a full profiling period (or, when the trace
+	// is delayed to overlap the CPU profiling window, for the CPU profile
+	// duration -- see executionTraceSchedule). The size limit of the trace
+	// is a better proxy for overhead (it scales with the number of events
+	// recorded) than duration, so we use that to decide when to stop
+	// tracing.
 	Limit int
 
 	// warned is checked to prevent spamming a log every minute if the trace
