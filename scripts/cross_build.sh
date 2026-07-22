@@ -13,6 +13,10 @@
 # skipped (nothing to build, and they error when passed explicitly to go build).
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "${SCRIPT_DIR}/../.github/workflows/apps/go-retry.sh"
+
 # First-class ports: https://go.dev/wiki/PortingPolicy
 platforms=(
   linux/386 linux/amd64 linux/arm linux/arm64
@@ -32,7 +36,7 @@ echo "Cross-compiling ${#pkgs[@]} package(s) across ${#platforms[@]} port(s)"
 
 rc=0
 for p in "${platforms[@]}"; do
-  if GOOS="${p%/*}" GOARCH="${p#*/}" CGO_ENABLED=0 go build "${pkgs[@]}"; then
+  if GOOS="${p%/*}" GOARCH="${p#*/}" CGO_ENABLED=0 retry_on_corruption go build "${pkgs[@]}"; then
     echo "ok   $p"
   else
     echo "FAIL $p"

@@ -336,7 +336,7 @@ func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string
 			host = h
 		}
 	}
-	return fmt.Sprintf("http://%s:%s%s", host, otlpDefaultPort, otlpTracesPath)
+	return fmt.Sprintf("http://%s%s", net.JoinHostPort(host, otlpDefaultPort), otlpTracesPath)
 }
 
 // buildOTLPHeaders builds the OTLP headers map from the provided map.

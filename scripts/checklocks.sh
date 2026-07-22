@@ -2,6 +2,10 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "${SCRIPT_DIR}/../.github/workflows/apps/go-retry.sh"
+
 CHECKLOCKS_PACKAGE="${CHECKLOCKS_PACKAGE:-gvisor.dev/gvisor/tools/checklocks/cmd/checklocks@go}"
 CHECKLOCKS_BIN="${CHECKLOCKS_BIN:-}"
 IGNORE_ERRORS=false
@@ -74,7 +78,7 @@ else # Check if checklocks tool exists in standard location, install if not
   if [ ! -f "$CHECKLOCKS_PATH" ]; then
     echo "Installing checklocks tool from $CHECKLOCKS_PACKAGE..."
     pushd /tmp
-    go install "$CHECKLOCKS_PACKAGE"
+    retry_on_corruption go install "$CHECKLOCKS_PACKAGE"
     popd
     echo "checklocks installed at $CHECKLOCKS_PATH"
   fi
