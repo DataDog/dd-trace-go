@@ -315,6 +315,31 @@ func TestTraceFilterPartialFlushTagVisibility(t *testing.T) {
 		"the triggering first-in-chunk span must recompute stats after trace tags are applied")
 }
 
+// TestTraceFilterPartialFlushTagVisibilityNonTriggeringFirstSpan verifies tag
+// visibility when the chunk's first-finished span (fSpan) is not the span that
+// triggers the partial flush. finishedOneLocked applies trace-level tags to
+// fSpan, so fSpan's statSpan must be recomputed even though a later span (childB)
+// triggers the flush.
+func TestTraceFilterPartialFlushTagVisibilityNonTriggeringFirstSpan(t *testing.T) {
+	tracer, transport, _, stop, err := startTestTracer(t, WithStatsComputation(true), WithPartialFlushing(2))
+	require.NoError(t, err)
+	agentFeatures := tracer.config.agent.load()
+	agentFeatures.peerTags = []string{"custom.peer"}
+	tracer.config.agent.store(agentFeatures)
+
+	root := tracer.StartSpan("root")
+	root.context.trace.setTag("custom.peer", "peer-value")
+	childA := tracer.StartSpan("childA", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	childB := tracer.StartSpan("childB", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	childA.Finish() // finished=1 < 2: no flush; childA.statSpan computed without the trace tag
+	childB.Finish() // finished=2 >= 2: partial flush with fSpan=childA, s=childB (s != fSpan)
+	root.Finish()
+	stop()
+
+	assert.True(t, statsContainPeerTag(transport.Stats(), "custom.peer:peer-value"),
+		"fSpan (childA) must be recomputed after trace tags are applied, even when it is not the triggering span")
+}
+
 func TestTraceFilterPooledSpanClearsStat(t *testing.T) {
 	span := &Span{statSpan: &tracerStatSpan{}}
 	span.clear()

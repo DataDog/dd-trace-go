@@ -1036,15 +1036,14 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RLock()
 		t.setTraceTagsLocked(fSpan)
 		t.mu.RUnlock()
+		// recompute stats after trace tags propagation
+		if realTracer, ok := tr.(*tracer); ok && fSpan.statSpan != nil {
+			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpan(fSpan, realTracer.obfuscator)
+		}
 	}
 	if !finishingSpanIsFirstInChunk {
 		fSpan.mu.Unlock()
 		s.mu.Lock()
-	}
-	if finishingSpanIsFirstInChunk && s.statSpan != nil {
-		if realTracer, ok := tr.(*tracer); ok {
-			s.statSpan, _ = realTracer.stats.newTracerStatSpan(s, realTracer.obfuscator)
-		}
 	}
 
 	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
