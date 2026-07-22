@@ -421,11 +421,11 @@ func Inject(ctx *SpanContext, carrier any) error {
 // MetaStructAvailable reports whether the `meta_struct` tag is supported by the
 // current tracer and the backing agent or not.
 func MetaStructAvailable() bool {
-	tracer, ok := getGlobalTracer().(*tracer)
+	tr, ok := getGlobalTracer().(*tracer)
 	if !ok {
 		return false
 	}
-	return tracer.config.agent.load().metaStructAvailable
+	return tr.config.agent.load().metaStructAvailable
 }
 
 // StartSpanFromPropagatedContext starts a new span with the given operation name and set of options.
