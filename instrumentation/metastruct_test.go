@@ -56,7 +56,10 @@ func TestSetMetaStructTag(t *testing.T) {
 				case "/v0.4/traces":
 					span, ok, err := decodeMetaStructSpan(r)
 					if ok || err != nil {
-						captured <- capturedMetaStructResult{span: span, err: err}
+						select {
+						case captured <- capturedMetaStructResult{span: span, err: err}:
+						default:
+						}
 					}
 					_ = json.NewEncoder(w).Encode(map[string]any{"rate_by_service": map[string]float64{}})
 				default:
