@@ -1349,9 +1349,10 @@ func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, origin
 
 // isAnEfdExecution checks if the current test execution is an Early Flake Detection execution.
 func isAnEfdExecution(execMeta *testExecutionMetadata) bool {
-	isANewTest := execMeta.isANewTest
-	isAModifiedTest := execMeta.isAModifiedTest && !execMeta.isAttemptToFix
-	return execMeta.isEarlyFlakeDetectionEnabled && (isANewTest || isAModifiedTest)
+	return execMeta != nil &&
+		execMeta.isEarlyFlakeDetectionEnabled &&
+		!execMeta.isAttemptToFix &&
+		(execMeta.isANewTest || execMeta.isAModifiedTest)
 }
 
 func usesEfdRetrySemantics(execMeta *testExecutionMetadata) bool {

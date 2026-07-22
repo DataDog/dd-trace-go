@@ -71,6 +71,7 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseAdditionalFeaturePathSelection(t)
 	exerciseParallelEFDSelection(t)
 	exerciseMetadataOnlyPropagationSuppression(t)
+	exerciseSlowEFDAbortTagging(t)
 	exerciseITRCoverageBackfillState(t)
 	exerciseNarrowingFlagParsing(t)
 }

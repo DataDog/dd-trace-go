@@ -8,6 +8,9 @@ package gotesting
 import (
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 )
 
 func exerciseAdditionalFeaturePathSelection(t *testing.T) {
@@ -265,5 +268,57 @@ func exerciseMetadataOnlyPropagationSuppression(t *testing.T) {
 	}
 	if !childMeta.isQuarantined || !childMeta.isDisabled {
 		t.Fatal("expected current disabled and quarantine inheritance semantics to be preserved")
+	}
+}
+
+func exerciseSlowEFDAbortTagging(t *testing.T) {
+	tests := []struct {
+		name     string
+		meta     testExecutionMetadata
+		duration time.Duration
+		wantTag  bool
+	}{
+		{
+			name:     "new EFD test at threshold",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true},
+			duration: 5 * time.Minute,
+			wantTag:  true,
+		},
+		{
+			name:     "modified EFD test above threshold",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isAModifiedTest: true},
+			duration: 6 * time.Minute,
+			wantTag:  true,
+		},
+		{
+			name:     "EFD fallback to flaky retries remains an aborted EFD execution",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true, efdFellBackToFlakyRetries: true},
+			duration: 5 * time.Minute,
+			wantTag:  true,
+		},
+		{
+			name:     "new test with EFD disabled",
+			meta:     testExecutionMetadata{isANewTest: true},
+			duration: 5 * time.Minute,
+		},
+		{
+			name:     "attempt to fix takes precedence over EFD",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true, isAttemptToFix: true},
+			duration: 5 * time.Minute,
+		},
+		{
+			name:     "EFD test below threshold",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true},
+			duration: 5*time.Minute - time.Nanosecond,
+		},
+	}
+
+	for _, tt := range tests {
+		test := &processRetryRecordingTest{}
+		finalizeInstrumentedTestExecution(t, &tt.meta, test, nil, nil, tt.duration, nil, nil, "", false)
+		_, gotTag := test.GetTag(constants.TestEarlyFlakeDetectionRetryAborted)
+		if gotTag != tt.wantTag {
+			t.Fatalf("%s: expected slow EFD abort tag=%t, got %t", tt.name, tt.wantTag, gotTag)
+		}
 	}
 }

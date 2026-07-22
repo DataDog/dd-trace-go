@@ -27,7 +27,7 @@ func finalizeInstrumentedTestExecution(
 	terminalStack string,
 	markContainersOnTerminal bool,
 ) {
-	if execMeta.isANewTest && duration.Minutes() >= 5 {
+	if isAnEfdExecution(execMeta) && duration >= 5*time.Minute {
 		test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
 	}
 
