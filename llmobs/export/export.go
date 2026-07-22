@@ -14,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/exportutil"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/exportutil"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
@@ -162,7 +162,7 @@ func (c *Client) sendEvalBatch(ctx context.Context, batch []evalRow, res *Export
 		return
 	}
 	rr := RequestResult{Index: len(res.Requests), Count: len(batch)}
-	r, perr := c.transport.Post(ctx, transport.PathEvalMetrics, transport.SubdomainEval, "application/json", body)
+	r, perr := c.transport.ExportPost(ctx, transport.EndpointEvalMetric, transport.SubdomainEvalMetric, "application/json", body)
 	applyResult(&rr, r, perr)
 	res.Requests = append(res.Requests, rr)
 }
@@ -235,7 +235,7 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Export
 			return
 		}
 	}
-	r, perr := c.transport.Post(ctx, transport.PathLLMSpans, transport.SubdomainLLMSpans, "application/json", body)
+	r, perr := c.transport.ExportPost(ctx, transport.EndpointLLMSpan, transport.SubdomainLLMSpan, "application/json", body)
 	applyResult(&rr, r, perr)
 	res.Requests = append(res.Requests, rr)
 }
@@ -370,7 +370,7 @@ func appendUnique(s []string, v string) []string {
 	return append(s, v)
 }
 
-func applyResult(rr *RequestResult, r transport.Result, err error) {
+func applyResult(rr *RequestResult, r transport.ExportResult, err error) {
 	rr.StatusCode = r.StatusCode
 	rr.Attempts = r.Attempts
 	rr.Retriable = r.Retriable
