@@ -6,9 +6,10 @@
 package instrumentation
 
 import (
+	"github.com/tinylib/msgp/msgp"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/tinylib/msgp/msgp"
 )
 
 // SetMetaStructTag sets a tag under `meta_struct` if that field is supported by
