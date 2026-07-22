@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"reflect"
@@ -55,7 +56,8 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 			ctx = listener.HandlerStarted(ctx, msg)
 		}
 		CurrentContext = ctx
-		result, err := callHandler(ctx, msg, handler)
+		stripMsg := internal.StripEventBridgeContext(msg) // Strip _datadog context from the message
+		result, err := callHandler(ctx, stripMsg, handler)
 		for _, listener := range listeners {
 			ctx = context.WithValue(ctx, extension.DdLambdaResponse, result)
 			listener.HandlerFinished(ctx, err)
@@ -80,7 +82,8 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 	}
 
 	CurrentContext = ctx
-	result, err := h.handler.Invoke(ctx, payload)
+	stripPayload := internal.StripEventBridgeContext(msg) // Strip _datadog context from the message
+	result, err := h.handler.Invoke(ctx, []byte(stripPayload))
 	for _, listener := range h.listeners {
 		listener.HandlerFinished(ctx, err)
 	}
