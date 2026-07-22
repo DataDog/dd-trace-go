@@ -2761,6 +2761,48 @@ func BenchmarkExtractW3CUppercase(b *testing.B) {
 	}
 }
 
+// BenchmarkExtractDatadogNoHeaders exercises the common edge-request case of
+// no upstream Datadog trace headers at all, where extraction fails with
+// ErrSpanContextNotFound. See CACHE/alloc backlog item #3: propagator.extractTextMap
+// used to unconditionally heap-allocate a *SpanContext here even though the
+// result is immediately discarded.
+func BenchmarkExtractDatadogNoHeaders(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "datadog")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{})
+	b.ResetTimer()
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
+// BenchmarkExtractW3CNoHeaders is the W3C tracecontext analogue of
+// BenchmarkExtractDatadogNoHeaders above.
+func BenchmarkExtractW3CNoHeaders(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{})
+	b.ResetTimer()
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
+// BenchmarkExtractBaggageNoHeaders documents that, unlike the datadog and W3C
+// extractors above, propagatorBaggage.extractTextMap has no allocation to
+// save on the no-headers path: its contract already returns a non-nil,
+// non-error *SpanContext even when no "baggage" header is present (an empty
+// baggage-only context), so a SpanContext must be allocated regardless.
+func BenchmarkExtractBaggageNoHeaders(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "baggage")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{})
+	b.ResetTimer()
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
 func FuzzMarshalPropagatingTags(f *testing.F) {
 	f.Add("testA", "testB", "testC", "testD", "testG", "testF")
 	f.Fuzz(func(t *testing.T, key1 string, val1 string,

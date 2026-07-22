@@ -36,6 +36,7 @@ permissions:
 jobs:
   setup-env:
     runs-on: ubuntu-latest
+    timeout-minutes: 20 # normal runtime is ~5m; bounds a toolchain-corruption retry loop
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     env:
@@ -69,10 +70,10 @@ jobs:
           run: |-
             mkdir -p "$TEST_RESULTS"
             compile() {
-              # `!` and pipelines suspend -e for the commands they wrap, including
-              # inside this function's body (see `if ! compile | tee`, below) — a
-              # failed step here would otherwise go unnoticed as long as the final
-              # `go build` happens to still succeed. Propagate each failure explicitly.
+              # `until` conditions (see retry_on_corruption in go-retry.sh) suspend `-e` for
+              # the commands they wrap, including inside this function's body — a failed step
+              # here would otherwise go unnoticed as long as the final `go build` happens to
+              # still succeed. Propagate each failure explicitly.
               # shellcheck disable=SC2086
               go get -u -t $PACKAGES || return
               go mod tidy || return
@@ -84,20 +85,11 @@ jobs:
               # shellcheck disable=SC2086
               go build $PACKAGES
             }
-            log="$(mktemp)"
-            if ! compile 2>&1 | tee "$log"; then
-              # The restored GOCACHE/GOMODCACHE (actions/setup-go cache: true) can get
-              # transiently corrupted in transit to a given runner, surfacing as compiler
-              # ICEs or archive/zip checksum errors unrelated to any real code change.
-              # Clear both caches and retry once before failing the job for real.
-              if grep -qE 'internal compiler error|zip: checksum error|not the start of an archive file' "$log"; then
-                echo "::warning::Detected a Go build-cache corruption signature; clearing GOCACHE/GOMODCACHE and retrying once"
-                go clean -cache -modcache
-                compile
-              else
-                exit 1
-              fi
-            fi
+            # See go-retry.sh for why toolchain/cache corruption is retried instead of failing
+            # the job outright, and why a failure with none of the known signatures is treated
+            # as a genuine break and fails immediately, without retry.
+            source ./.github/workflows/apps/go-retry.sh
+            retry_on_corruption compile
 
       - name: Compute Matrix
         id: matrix
@@ -111,6 +103,7 @@ jobs:
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
     name: 'go get -u smoke test'
     needs: setup-env
+    timeout-minutes: 45 # normal chunk runtime is ~10-25m; bounds a toolchain-corruption retry loop
     strategy:
       fail-fast: false
       matrix:
@@ -154,23 +147,13 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
-            run_smoke() {
-              ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
-            }
-            log="$(mktemp)"
-            if ! run_smoke 2>&1 | tee "$log"; then
-              # See "Compile dd-trace-go with updated dependencies (sandboxed)" above:
-              # transient GOCACHE/GOMODCACHE corruption in the restored cache can
-              # surface as a compiler ICE or archive/zip checksum error. Retry once
-              # after a full cache clear before failing the job for real.
-              if grep -qE 'internal compiler error|zip: checksum error|not the start of an archive file' "$log"; then
-                echo "::warning::Detected a Go build-cache corruption signature; clearing GOCACHE/GOMODCACHE and retrying once"
-                go clean -cache -modcache
-                run_smoke
-              else
-                exit 1
-              fi
-            fi
+            # ci_test_contrib.sh already retries each individual `go get`/`go mod tidy` call via
+            # go-retry.sh (see that file for why toolchain/cache corruption is retried while
+            # genuine breaks fail immediately). Don't wrap this whole multi-contrib loop in a
+            # second, outer retry_on_corruption: that would re-run every contrib in the chunk,
+            # including ones that already succeeded, on top of the inner retries — multiplying
+            # both work and cache-wipe churn instead of just retrying the one command that failed.
+            ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
       - name: Stage sandbox artifacts outside workspace
         # Move the test results and coverage files to RUNNER_TEMP so the
         # next checkout (which wipes the workspace) does not delete them.
