@@ -112,10 +112,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          # Pinned off `stable` (=1.26.5), which intermittently corrupts its own
-          # heap mid-build (golang/go#77168). Restore `stable` once a fixed
-          # 1.26.x ships.
-          go-version: "1.26.4"
+          go-version: stable
           cache-dependency-path: '**/go.sum'
       - name: Run govulncheck on contrib modules (SARIF, sandboxed)
         # geomys/sandboxed-step uses gVisor to confine execution, preventing
@@ -158,9 +155,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          # Pinned to 1.26.4: 1.26.5 intermittently corrupts its own heap
-          # mid-build (golang/go#77168). Bump once a fixed 1.26.x ships.
-          go-version: "1.26.4"
+          go-version: stable
           cache-dependency-path: '**/go.sum'
       - name: Run govulncheck (sandboxed)
         # geomys/sandboxed-step uses gVisor to confine execution, preventing
