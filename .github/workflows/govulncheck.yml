@@ -62,7 +62,10 @@ jobs:
         with:
           output-format: sarif
           output-file: govulncheck.sarif
-          go-version-input: stable
+          # Pinned off `stable` (=1.26.5), which intermittently corrupts its own
+          # heap mid-build (golang/go#77168). Restore `stable` once a fixed
+          # 1.26.x ships.
+          go-version-input: "1.26.4"
           # Disable the action's implicit checkout — we already checked out the
           # correct ref above with persist-credentials: false. Without this, the
           # action re-runs actions/checkout with default credentials and the
@@ -112,7 +115,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: stable
+          # Pinned off `stable` (=1.26.5), which intermittently corrupts its own
+          # heap mid-build (golang/go#77168). Restore `stable` once a fixed
+          # 1.26.x ships.
+          go-version: "1.26.4"
           cache-dependency-path: '**/go.sum'
       - name: Run govulncheck on contrib modules (SARIF, sandboxed)
         # geomys/sandboxed-step uses gVisor to confine execution, preventing
@@ -155,7 +161,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: 1.26.5
+          # Pinned to 1.26.4: 1.26.5 intermittently corrupts its own heap
+          # mid-build (golang/go#77168). Bump once a fixed 1.26.x ships.
+          go-version: "1.26.4"
           cache-dependency-path: '**/go.sum'
       - name: Run govulncheck (sandboxed)
         # geomys/sandboxed-step uses gVisor to confine execution, preventing
