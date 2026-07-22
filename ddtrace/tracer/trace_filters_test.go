@@ -76,6 +76,13 @@ func TestTraceFiltersReject(t *testing.T) {
 			reject:    true,
 		},
 		{
+			name:     "ignore resources only, non-matching resource is kept",
+			filters:  newTraceFilters(nil, nil, nil, nil, []string{"users"}),
+			resource: "GET /orders/123",
+			tags:     map[string]string{"env": "prod", "peer.service": "db"},
+			reject:   false,
+		},
+		{
 			name:    "exact reject key present with empty value",
 			filters: newTraceFilters(nil, []string{"blocked"}, nil, nil, nil),
 			tags:    map[string]string{"blocked": ""},

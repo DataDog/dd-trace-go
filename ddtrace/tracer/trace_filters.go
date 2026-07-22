@@ -103,8 +103,15 @@ func compileRegexes(filters []string) []*regexp.Regexp {
 }
 
 func (f *traceFilters) hasFilters() bool {
-	return f != nil && (len(f.ignoreResources) > 0 || len(f.rejectKeys) > 0 || len(f.requireKeys) > 0 ||
-		len(f.rejectKV) > 0 || len(f.requireKV) > 0 || len(f.rejectRegex) > 0 || len(f.requireRegex) > 0)
+	return f != nil && (len(f.ignoreResources) > 0 || f.hasTagFilters())
+}
+
+// hasTagFilters reports whether any tag-based filter is configured, i.e. any
+// filter that requires inspecting the root span's tags.
+func (f *traceFilters) hasTagFilters() bool {
+	return len(f.rejectKeys) > 0 || len(f.requireKeys) > 0 ||
+		len(f.rejectKV) > 0 || len(f.requireKV) > 0 ||
+		len(f.rejectRegex) > 0 || len(f.requireRegex) > 0
 }
 
 // reject reports whether the root span matches the advertised filters and the
@@ -119,6 +126,10 @@ func (f *traceFilters) reject(root *Span) bool {
 		if re.MatchString(resource) {
 			return true
 		}
+	}
+	if !f.hasTagFilters() {
+		// No tag-based filters: skip copying and normalizing the root's tags.
+		return false
 	}
 
 	tags := maps.Collect(root.meta.All())
