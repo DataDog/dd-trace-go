@@ -247,7 +247,7 @@ func TestTraceAdminMissingResource(t *testing.T) {
 	assert.Equal(t, "gcp.pubsub.request", spans[0].OperationName())
 	assert.Equal(t, "CreateTopic", spans[0].Tag(ext.ResourceName))
 	assert.Equal(t, "CreateTopic", spans[0].Tag("pubsub.method"))
-	assert.Nil(t, spans[0].Tag("gcloud.project_id"))
+	assert.Nil(t, spans[0].Tag(ext.GCPProjectID))
 	if createErr != nil {
 		assert.Equal(t, createErr.Error(), spans[0].Tag(ext.ErrorMsg))
 	}
@@ -255,7 +255,7 @@ func TestTraceAdminMissingResource(t *testing.T) {
 	assert.Equal(t, "gcp.pubsub.request", spans[1].OperationName())
 	assert.Equal(t, "GetTopic", spans[1].Tag(ext.ResourceName))
 	assert.Equal(t, "GetTopic", spans[1].Tag("pubsub.method"))
-	assert.Nil(t, spans[1].Tag("gcloud.project_id"))
+	assert.Nil(t, spans[1].Tag(ext.GCPProjectID))
 	if getErr != nil {
 		assert.Equal(t, getErr.Error(), spans[1].Tag(ext.ErrorMsg))
 	}
@@ -298,6 +298,6 @@ func assertAdminSpan(t *testing.T, span *mocktracer.Span, method, resource strin
 	assert.Equal(t, "cloud.google.com/go/pubsub.v2", span.Tag(ext.Component))
 	assert.Equal(t, ext.MessagingSystemGCPPubsub, span.Tag(ext.MessagingSystem))
 	assert.Equal(t, method, span.Tag("pubsub.method"))
-	assert.Equal(t, adminProjectID, span.Tag("gcloud.project_id"))
+	assert.Equal(t, adminProjectID, span.Tag(ext.GCPProjectID))
 	assert.Equal(t, "cloud.google.com/go/pubsub.v2", span.Integration())
 }

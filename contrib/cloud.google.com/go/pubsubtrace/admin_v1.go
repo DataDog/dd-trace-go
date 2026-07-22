@@ -4,7 +4,7 @@
 // Copyright 2025 Datadog, Inc.
 
 // v1 admin request→resource mapping. Uses cloud.google.com/go/pubsub/apiv1/pubsubpb,
-// which distinct from v2's pubsubpb (see admin.go).
+// which is distinct from v2's pubsubpb (see admin.go).
 
 package pubsubtrace
 

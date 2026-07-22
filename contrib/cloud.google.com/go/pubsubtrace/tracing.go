@@ -200,7 +200,7 @@ func (tr *Tracer) TraceAdmin(ctx context.Context, method string, resourcePath st
 		tracer.Measured(),
 	}
 	if projectID := projectIDFromResourceName(resourcePath); projectID != "" {
-		spanOpts = append(spanOpts, tracer.Tag("gcloud.project_id", projectID))
+		spanOpts = append(spanOpts, tracer.Tag(ext.GCPProjectID, projectID))
 	}
 	if cfg.serviceName != "" {
 		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
@@ -217,8 +217,8 @@ func (tr *Tracer) TraceAdmin(ctx context.Context, method string, resourcePath st
 	return ctx, finish
 }
 
-// extracts the GCP project ID from a Pubsub resource name of the form
-// "projects/{project}/topics/{topic}" or "projects/{project}/subscriptions/{subscription}"
+// extracts the GCP project ID from a Pubsub resource name starting with
+// "projects/{project}. e.g. schemas, snapshots, topics and subscriptions
 func projectIDFromResourceName(name string) string {
 	const prefix = "projects/"
 	if !strings.HasPrefix(name, prefix) {

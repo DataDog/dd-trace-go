@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-// v2 admin request→resource mapping. Is implemented as a grpc unary client interceptor
+ // v2 admin request→resource mapping, implemented as a grpc unary client interceptor.
 // Uses cloud.google.com/go/pubsub/v2/apiv1/pubsubpb, which is distinct from v1's pubsubpb
 // (see admin_v1.go).
 

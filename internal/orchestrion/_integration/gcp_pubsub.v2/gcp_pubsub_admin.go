@@ -119,7 +119,7 @@ func (b *adminBase) adminTrace(method, resourcePath string) *trace.Trace {
 			"component":         "cloud.google.com/go/pubsub.v2",
 			"messaging.system":  "googlepubsub",
 			"pubsub.method":     method,
-			"gcloud.project_id": testProject,
+			ext.GCPProjectID: testProject,
 		},
 	}
 }
