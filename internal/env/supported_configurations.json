@@ -138,6 +138,13 @@
         "default": "true"
       }
     ],
+    "DD_APPSEC_AGENTIC_ONBOARDING": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": ""
+      }
+    ],
     "DD_APPSEC_BODY_PARSING_SIZE_LIMIT": [
       {
         "implementation": "B",
