@@ -299,8 +299,7 @@ func (l *LLMObs) Run() {
 				mSize := jsonSize(evalMetric)
 				if l.bufEvalMetricsSize+mSize > sizeLimitEVPEvent {
 					log.Debug("llmobs: eval metrics buffer size limit reached, flushing before adding new metric")
-					params := l.clearBuffersNonLocked()
-					l.sendWg.Go(func() { l.batchSend(params) })
+					l.sendAsync(l.clearBuffersNonLocked())
 				}
 				l.bufEvalMetrics = append(l.bufEvalMetrics, evalMetric)
 				l.bufEvalMetricsSize += mSize

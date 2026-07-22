@@ -2591,36 +2591,7 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 // appending a new metric to the buffer, if the cumulative size would exceed sizeLimitEVPEvent
 // (5MB), the current buffer is flushed first.
 func TestEvalMetricsSizeBasedFlushing(t *testing.T) {
-	var mu sync.Mutex
-	var batchSizes []int
-
-	tt := testtracer.Start(t,
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp(mlApp),
-			tracer.WithLogStartup(false),
-			tracer.WithLLMObsAgentlessEnabled(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-		testtracer.WithMockResponses(func(r *http.Request) *http.Response {
-			if r.URL.Path == "/evp_proxy/v2/api/intake/llm-obs/v2/eval-metric" {
-				// Read, record size, and restore the body so the default handler can also process it.
-				body, err := io.ReadAll(r.Body)
-				if err == nil {
-					r.Body = io.NopCloser(bytes.NewReader(body))
-					mu.Lock()
-					batchSizes = append(batchSizes, len(body))
-					mu.Unlock()
-				}
-			}
-			return nil // fall through to default handling
-		}),
-	)
-
-	ll, err := llmobs.ActiveLLMObs()
-	require.NoError(t, err)
+	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
 
 	// Each metric carries ~1.7MB in CategoricalValue. Four metrics total ~6.8MB, which exceeds the
 	// 5MB limit. Without size-based flushing, all four are buffered and sent in a single HTTP
@@ -2639,12 +2610,10 @@ func TestEvalMetricsSizeBasedFlushing(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	tt.WaitForLLMObsMetrics(t, numMetrics)
+	tracer.Flush()
+	require.Equal(t, numMetrics, coll.MetricCount())
 
-	mu.Lock()
-	sizes := append([]int(nil), batchSizes...)
-	mu.Unlock()
-
+	sizes := coll.MetricBatchSizes()
 	require.NotEmpty(t, sizes, "expected at least one HTTP request to the LLMObs eval-metric endpoint")
 	for _, size := range sizes {
 		assert.LessOrEqual(t, size, 5_000_000,
