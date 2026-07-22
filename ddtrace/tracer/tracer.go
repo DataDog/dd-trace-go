@@ -1256,9 +1256,11 @@ func (t *tracer) computeOversizedSpanStats(span *Span) {
 	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
 		return
 	}
-	span.statSpan, _ = t.stats.newTracerStatSpan(span, t.obfuscator)
-	if span.statSpan != nil {
-		t.stats.trySendSpan(span.statSpan)
+	// The oversized-trace path sends the stat span immediately and never
+	// assembles a chunk, so there is no need to retain it on the span.
+	statSpan, _ := t.stats.newTracerStatSpan(span, t.obfuscator)
+	if statSpan != nil {
+		t.stats.trySendSpan(statSpan)
 	}
 }
 
