@@ -73,7 +73,7 @@ func (c *Transport) PushEvalMetrics(
 	if len(metrics) == 0 {
 		return nil
 	}
-	path := endpointEvalMetric
+	path := EndpointEvalMetric
 	method := http.MethodPost
 	body := &PushMetricsRequest{
 		Data: PushMetricsRequestData{
@@ -84,7 +84,7 @@ func (c *Transport) PushEvalMetrics(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, SubdomainEvalMetric, body, defaultTimeout)
 	if err != nil {
 		return err
 	}

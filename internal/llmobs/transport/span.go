@@ -14,11 +14,26 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
-// SpanLinkID is a span-link trace/span identifier that marshals as a JSON number
-// when it carries a numeric ID and as a JSON string when it carries an opaque
-// string ID. This lets the shared SpanLink wire struct serve both the live
-// tracer path (numeric IDs, its historical wire shape) and the offline export
-// path (caller-owned opaque string IDs). Intake accepts either form.
+// SpanLinkID models a span-link trace/span identifier, which is a genuinely
+// polymorphic wire field: it marshals as a JSON number for a numeric ID and as a
+// JSON string for an opaque one, and unmarshals from either. A single Go type
+// carries both because the two producers of this shared SpanLink wire struct
+// require different representations that cannot be reconciled without regressing
+// one of them:
+//
+//   - the live tracer emits its native uint64 IDs as JSON numbers — its historical
+//     wire shape, which the LLM Obs intake has always received and which a prior
+//     review round declined to change; and
+//   - the offline export path (llmobs/export) is built on caller-assigned IDs, so
+//     a link must reference another span by the same opaque, caller-owned string
+//     ID that span was given, which is not necessarily numeric.
+//
+// Both share this struct (reused rather than duplicated, per reviewer request)
+// and the intake accepts either form on this field. Modeling a number-or-string
+// wire field with a custom Marshaler/Unmarshaler is the idiomatic Go approach;
+// the NumericSpanLinkID / StringSpanLinkID constructors make each producer's
+// choice explicit at the call site, so the polymorphism is confined to the wire,
+// not smuggled through an untyped API.
 type SpanLinkID struct {
 	num   uint64
 	str   string
@@ -112,7 +127,7 @@ func (c *Transport) PushSpanEvents(
 	if len(events) == 0 {
 		return nil
 	}
-	path := endpointLLMSpan
+	path := EndpointLLMSpan
 	method := http.MethodPost
 	body := make([]*PushSpanEventsRequest, 0, len(events))
 	for _, ev := range events {
@@ -128,7 +143,7 @@ func (c *Transport) PushSpanEvents(
 		body = append(body, req)
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, SubdomainLLMSpan, body, defaultTimeout)
 	if err != nil {
 		return err
 	}

@@ -30,10 +30,6 @@ It also holds `supported_configurations*`, which maintains which environment var
 
 `go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY`
 
-### Export Utilities
-
-Contains small helpers used by the offline LLM Obs export client ([llmobs/export](../llmobs/export/)): bounded, UTF-8-safe response-body snippets (`Snippet`) and per-request failure aggregation (`Aggregate`). See [exportutil](./exportutil/).
-
 ### Locking
 
 Locking functionality that serves as a replacement for `sync.mutex` and similar locking mechanisms. It enables checking for deadlocks and should be used instead of `sync`. For more information, read the [README](./locking/README.md).
