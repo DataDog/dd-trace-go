@@ -619,16 +619,11 @@ func TestWithErrorCheck(t *testing.T) {
 			"Invalid_with_no_error": {
 				message: "invalid",
 				errCheck: func(method string, err error) bool {
-					if err == nil {
-						return true
+					// Treat InvalidArgument on this method as a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/grpc.Fixture/Ping" {
+						return false
 					}
-
-					errCode := status.Code(err)
-					if errCode == codes.InvalidArgument && method == "/grpc.Fixture/Ping" {
-						return true
-					}
-
-					return false
+					return true
 				},
 				withError:   false,
 				wantCode:    codes.InvalidArgument.String(),
@@ -637,16 +632,11 @@ func TestWithErrorCheck(t *testing.T) {
 			"Invalid_with_error": {
 				message: "invalid",
 				errCheck: func(method string, err error) bool {
-					if err == nil {
-						return true
+					// Only InvalidArgument on this (non-matching) method would be a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/some/endpoint" {
+						return false
 					}
-
-					errCode := status.Code(err)
-					if errCode == codes.InvalidArgument && method == "/some/endpoint" {
-						return true
-					}
-
-					return false
+					return true
 				},
 				withError:   true,
 				wantCode:    codes.InvalidArgument.String(),
@@ -719,16 +709,11 @@ func TestWithErrorCheck(t *testing.T) {
 			"Invalid_with_no_error": {
 				message: "invalid",
 				errCheck: func(method string, err error) bool {
-					if err == nil {
-						return true
+					// Treat InvalidArgument on this method as a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/grpc.Fixture/StreamPing" {
+						return false
 					}
-
-					errCode := status.Code(err)
-					if errCode == codes.InvalidArgument && method == "/grpc.Fixture/StreamPing" {
-						return true
-					}
-
-					return false
+					return true
 				},
 				withError:   false,
 				wantCode:    codes.InvalidArgument.String(),
@@ -737,16 +722,11 @@ func TestWithErrorCheck(t *testing.T) {
 			"Invalid_with_error": {
 				message: "invalid",
 				errCheck: func(method string, err error) bool {
-					if err == nil {
-						return true
+					// Only InvalidArgument on this (non-matching) method would be a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/some/endpoint" {
+						return false
 					}
-
-					errCode := status.Code(err)
-					if errCode == codes.InvalidArgument && method == "/some/endpoint" {
-						return true
-					}
-
-					return false
+					return true
 				},
 				withError:   true,
 				wantCode:    codes.InvalidArgument.String(),

@@ -78,7 +78,6 @@ func startSpanFromContext(
 		}
 		opts = append(opts, tracer.ChildOf(sctx))
 	}
-	ctx = context.WithValue(ctx, fullMethodNameKey{}, method)
 	return tracer.StartSpanFromContext(ctx, operation, opts...)
 }
 
@@ -88,7 +87,10 @@ func finishWithError(span *tracer.Span, err error, method string, cfg *config) {
 		err = nil
 	}
 	errcode := status.Code(err)
-	if errcode == codes.OK || cfg.nonErrorCodes[errcode] || (cfg.errCheck != nil && cfg.errCheck(method, err)) {
+	if errcode == codes.OK || cfg.nonErrorCodes[errcode] {
+		err = nil
+	} else if cfg.errCheck != nil && !cfg.errCheck(method, err) {
+		// errCheck reports this is not an error, so it's not recorded on the span.
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())
