@@ -87,6 +87,10 @@ func TestMain(m *testing.M) {
 			conn, err := listener.Accept()
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					if err := os.WriteFile(processRetryDescendantExpirationPath(livenessPath), []byte("expired"), 0o600); err != nil {
+						_ = listener.Close()
+						panic(fmt.Sprintf("publish process retry descendant expiration: %v", err))
+					}
 					if err := listener.Close(); err != nil {
 						panic(fmt.Sprintf("close process retry descendant listener: %v", err))
 					}
