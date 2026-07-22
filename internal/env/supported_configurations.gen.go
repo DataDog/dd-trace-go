@@ -28,6 +28,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_API_SECURITY_REQUEST_SAMPLE_RATE":                             {},
 	"DD_API_SECURITY_SAMPLE_DELAY":                                    {},
 	"DD_APM_TRACING_ENABLED":                                          {},
+	"DD_APPSEC_AGENTIC_ONBOARDING":                                    {},
 	"DD_APPSEC_BODY_PARSING_SIZE_LIMIT":                               {},
 	"DD_APPSEC_ENABLED":                                               {},
 	"DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML":                            {},
