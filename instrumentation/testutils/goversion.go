@@ -3,9 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-// Package goversion provides test helpers that key off the running Go
-// toolchain version.
-package goversion
+package testutils
 
 import (
 	"runtime"

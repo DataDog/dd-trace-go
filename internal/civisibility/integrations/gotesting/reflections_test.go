@@ -13,7 +13,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/goversion"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -183,7 +183,7 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 		t.Fatalf("expected embedded testing.common offsets to be zero, got T=%d B=%d", layout.tCommon.offset, layout.bCommon.offset)
 	}
 	if !layout.testFieldsOK || !layout.parentFieldsOK || !layout.copyTestOK || !layout.createTestOK || !layout.benchmarkFieldsOK {
-		goversion.SkipIfGoTip(t, "some fast-path sections unavailable (expected forward-compat drift): %+v", layout)
+		testutils.SkipIfGoTip(t, "some fast-path sections unavailable (expected forward-compat drift): %+v", layout)
 		t.Fatalf("expected core layout sections to be enabled: %+v", layout)
 	}
 
@@ -244,7 +244,7 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 func exerciseTestingInternalsCopyEquivalence(t *testing.T) {
 	layout := getTestingInternalsLayout()
 	if layout == nil || layout.disabled || !layout.copyTestOK {
-		goversion.SkipIfGoTip(t, "copy fast path unavailable")
+		testutils.SkipIfGoTip(t, "copy fast path unavailable")
 		t.Fatal("expected copy fast path to be available")
 	}
 
