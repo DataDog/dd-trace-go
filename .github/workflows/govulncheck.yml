@@ -65,7 +65,7 @@ jobs:
           # Pinned off `stable` (=1.26.5), which intermittently corrupts its own
           # heap mid-build (golang/go#77168). Restore `stable` once a fixed
           # 1.26.x ships.
-          go-version-input: "1.26.4"
+          go-version-input: stable
           # Disable the action's implicit checkout — we already checked out the
           # correct ref above with persist-credentials: false. Without this, the
           # action re-runs actions/checkout with default credentials and the
