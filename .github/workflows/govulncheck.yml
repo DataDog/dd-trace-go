@@ -58,7 +58,7 @@ jobs:
         # It handles Go setup internally and always uses the latest govulncheck.
         # -format sarif exits 0 even when vulnerabilities are found, so the
         # upload step always runs. The blocking check is in govulncheck-tests.
-        uses: golang/govulncheck-action@3fa7bd9cee2cfdf3499a8803b226e43de7b7cdb4 # master @ 2026-02-26
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # master @ 2026-02-26
         with:
           output-format: sarif
           output-file: govulncheck.sarif
@@ -70,7 +70,7 @@ jobs:
           repo-checkout: false
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
@@ -110,7 +110,7 @@ jobs:
           ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
           cache-dependency-path: '**/go.sum'
@@ -137,7 +137,7 @@ jobs:
           git clean -fdx -e govulncheck-contribs.sarif
       - name: Upload contrib SARIF to GitHub Code Scanning
         if: always() && steps.restore.outcome == 'success' && hashFiles('govulncheck-contribs.sarif') != ''
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
         with:
           sarif_file: govulncheck-contribs.sarif
           category: govulncheck-contribs
@@ -153,7 +153,7 @@ jobs:
           ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 1.26.5
           cache-dependency-path: '**/go.sum'
