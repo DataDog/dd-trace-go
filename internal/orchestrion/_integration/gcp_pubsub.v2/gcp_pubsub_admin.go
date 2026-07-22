@@ -76,7 +76,7 @@ func (b *adminBase) setup(ctx context.Context, t *testing.T) {
 }
 
 func (b *adminBase) projectPath() string {
-	return fmt.Sprintf("projects/%s", b.projectID)
+	return "projects/" + b.projectID
 }
 
 func (b *adminBase) topicPath(id string) string {
