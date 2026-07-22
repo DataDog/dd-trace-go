@@ -346,6 +346,10 @@ func (c *Transport) ExportPost(ctx context.Context, path, subdomain, contentType
 
 		code := resp.StatusCode
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		// The read above is capped at 1MiB; drain any remainder (also bounded) so
+		// the deferred Close can return the keep-alive connection to the pool for
+		// the next chunk instead of discarding it on an unread body.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 		if code >= 200 && code <= 299 {
 			last = ExportResult{StatusCode: code, Body: respBody}
 			return last, nil
