@@ -1,0 +1,5 @@
+{
+    "detail-type": "Scheduled Event",
+    "source": "aws.events",
+    "detail": {"_datadog": {"x-datadog-trace-id": "1"}}
+}
