@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"maps"
 	"reflect"
 	"runtime"
 	"slices"
@@ -163,9 +164,7 @@ func (tx *retryAttemptMatcherTransaction) restore() {
 			delete(*tx.matcher.subNames, name)
 		}
 	}
-	for name, count := range tx.baseline {
-		(*tx.matcher.subNames)[name] = count
-	}
+	maps.Copy((*tx.matcher.subNames), tx.baseline)
 }
 
 func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, string) {

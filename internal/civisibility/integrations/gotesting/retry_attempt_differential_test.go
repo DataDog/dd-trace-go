@@ -10,8 +10,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
 type retryParityTrace struct {
