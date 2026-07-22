@@ -32,6 +32,8 @@ type envUpdate struct {
 	unset bool
 }
 
+const mockServerReadCacheRootEnv = "CIVISIBILITY_TEST_READ_CACHE_ROOT"
+
 type mockServerConfig struct {
 	settings       civisibilitynet.SettingsResponseData
 	knownTests     *civisibilitynet.KnownTestsResponseData
@@ -175,7 +177,10 @@ func StartMockServerWithOptions(opts ...MockServerOption) (*httptest.Server, *Pa
 		}
 	}))
 
-	restore := applyEnvUpdates(append([]envUpdate{
+	// httptest ports can be reused between scenario subprocesses, so keep mock
+	// CI Visibility responses out of the shared short-lived read cache.
+	cacheRoot, cleanupReadCache := isolateReadCacheForMockServer("")
+	envUpdates := []envUpdate{
 		{key: "DD_CIVISIBILITY_ENABLED", value: "true"},
 		{key: "DD_CIVISIBILITY_AGENTLESS_ENABLED", value: "true"},
 		{key: "DD_CIVISIBILITY_AGENTLESS_URL", value: server.URL},
@@ -183,11 +188,50 @@ func StartMockServerWithOptions(opts ...MockServerOption) (*httptest.Server, *Pa
 		{key: "DD_GIT_REPOSITORY_URL", value: "https://github.com/DataDog/dd-trace-go.git"},
 		{key: "DD_GIT_COMMIT_SHA", value: "1234567890abcdef1234567890abcdef12345678"},
 		{key: "DD_GIT_BRANCH", value: "main"},
-	}, cfg.env...))
+	}
+	if cacheRoot != "" {
+		envUpdates = append(envUpdates, envUpdate{key: mockServerReadCacheRootEnv, value: cacheRoot})
+	}
+
+	restore := applyEnvUpdates(append(envUpdates, cfg.env...))
 
 	return server, payloads, func() {
 		restore()
 		server.Close()
+		cleanupReadCache()
+	}
+}
+
+// ConfigureMockServerReadCacheFromEnv installs the mock server read cache root
+// propagated to subprocesses. This is needed when the mock server runs in a
+// parent process but CI Visibility initializes in a child process.
+func ConfigureMockServerReadCacheFromEnv() func() {
+	cacheRoot := ddenv.Get(mockServerReadCacheRootEnv)
+	if cacheRoot == "" {
+		return func() {}
+	}
+	_, cleanupReadCache := isolateReadCacheForMockServer(cacheRoot)
+	return cleanupReadCache
+}
+
+func isolateReadCacheForMockServer(cacheRoot string) (string, func()) {
+	removeOnCleanup := false
+	if cacheRoot == "" {
+		var err error
+		cacheRoot, err = os.MkdirTemp("", "dd-trace-go-civisibility-read-cache-*")
+		if err != nil {
+			log.Printf("unable to isolate CI Visibility read cache for mock server: %s", err)
+			return "", func() {}
+		}
+		removeOnCleanup = true
+	}
+
+	civisibilitynet.SetReadCacheHooksForTesting(cacheRoot, nil, nil, nil, nil)
+	return cacheRoot, func() {
+		civisibilitynet.ResetReadCacheHooksForTesting()
+		if removeOnCleanup {
+			_ = os.RemoveAll(cacheRoot)
+		}
 	}
 }
 
@@ -293,7 +337,11 @@ func drainRequestBody(r *http.Request) error {
 func (p *Payloads) Events() Events {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	var events Events
+	total := 0
+	for _, payload := range p.payloads {
+		total += len(payload.Events)
+	}
+	events := make(Events, 0, total)
 	for _, payload := range p.payloads {
 		events = append(events, payload.Events...)
 	}

@@ -66,6 +66,8 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseAdditionalFeaturePathSelection(t)
 	exerciseParallelEFDSelection(t)
 	exerciseMetadataOnlyPropagationSuppression(t)
+	exerciseITRCoverageBackfillState(t)
+	exerciseNarrowingFlagParsing(t)
 }
 
 // TestGetInternalTestArray tests the getInternalTestArray function.
@@ -77,7 +79,7 @@ func TestGetInternalTestArray(t *testing.T) {
 	assert.NotNil(tests)
 
 	// Check that the test array contains the expected test
-	var testNames []string
+	testNames := make([]string, 0, len(*tests))
 	for _, v := range *tests {
 		testNames = append(testNames, v.Name)
 		assert.NotNil(v.F)
@@ -99,7 +101,7 @@ func TestGetInternalBenchmarkArray(t *testing.T) {
 	assert.NotNil(benchmarks)
 
 	// Check that the benchmark array contains the expected benchmark
-	var testNames []string
+	testNames := make([]string, 0, len(*benchmarks))
 	for _, v := range *benchmarks {
 		testNames = append(testNames, v.Name)
 		assert.NotNil(v.F)

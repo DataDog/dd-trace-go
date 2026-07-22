@@ -19,9 +19,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -79,7 +78,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 	testCycleURL := ""
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		APIKeyValue := env.Get(constants.APIKeyEnvironmentVariable)
+		APIKeyValue := config.internalConfig.APIKey()
 		if APIKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 		}
@@ -88,16 +87,13 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
-		if v := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
+		if v := config.internalConfig.CIVisibilityAgentlessURL(); v != "" {
 			agentlessURL = v
 		}
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
-			site := "datadoghq.com"
-			if v := env.Get("DD_SITE"); v != "" {
-				site = v
-			}
+			site := internalconfig.Get().Site()
 
 			testCycleURL = fmt.Sprintf("https://%s.%s/%s", TestCycleSubdomain, site, TestCyclePath)
 		} else {

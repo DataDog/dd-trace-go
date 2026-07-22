@@ -535,7 +535,7 @@ func TestStatsFlushRetries(t *testing.T) {
 			p := &failingStatsTransport{failCount: test.failCount}
 			cfg, err := newTestConfig(func(c *config) {
 				c.ddTransport = p
-				c.sendRetries = test.configRetries
+				c.internalConfig.SetSendRetries(test.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 				c.internalConfig.SetEnv("someEnv", internalconfig.OriginCode)
 			})

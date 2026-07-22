@@ -136,13 +136,12 @@ func (a *testAgent) handleTracesV04(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	// Copy the body directly into the payload buffer rather than buffering the
+	// whole request with io.ReadAll first: payloadV1.Write appends to p.buf,
+	// which decodeBuffer consumes in place, so a separate full-body slice would
+	// just be an extra copy.
 	p := newPayloadV1()
-	if _, err := p.Write(body); err != nil {
+	if _, err := io.Copy(p, r.Body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -179,14 +178,14 @@ var testTraceProtocols = []testTraceProtocol{
 	{name: "v1.0", version: "1.0", path: tracesAPIPathV1},
 }
 
-// newTracerTest creates a tracer with an httpTransport pointed at the mock agent.
+// newTracerTest creates a tracer that goes through WithAgentAddr negotiation with the mock agent.
 // It sets the global tracer (required for span.Finish to push chunks through the pipeline).
 func newTracerTest(tb testing.TB, agent *testAgent, opts ...StartOption) *tracer {
 	tb.Helper()
-	transport := newHTTPTransport(agent.URL()+tracesAPIPath, agent.URL()+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 	baseOpts := []StartOption{
-		withTransport(transport),
+		WithAgentAddr(agent.Addr()),
 		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+		withNoopStats(),
 	}
 	tr, err := newTracer(append(baseOpts, opts...)...)
 	require.NoError(tb, err)
@@ -218,6 +217,12 @@ func flushAgentTracerTest(tb testing.TB, tr *tracer, agent *testAgent, wantSpans
 	tb.Helper()
 	deadline := time.Now().Add(time.Second * timeMultiplicator)
 	for {
+		for len(tr.out) > 0 {
+			if time.Now().After(deadline) {
+				require.Zero(tb, len(tr.out), "timed out waiting for tracer worker to queue finished spans")
+			}
+			time.Sleep(time.Millisecond)
+		}
 		tr.Flush()
 		if w, ok := tr.traceWriter.(*agentTraceWriter); ok {
 			w.wg.Wait()

@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -133,7 +134,7 @@ func TestPayloadV04Decode(t *testing.T) {
 			var got spanLists
 			err := msgp.Decode(p, &got)
 			assert.NoError(err)
-			assertProcessTags(t, got)
+			assert.Len(got, n)
 		})
 	}
 }
@@ -575,17 +576,21 @@ func TestPayloadV1IncrementalChunkEncoding(t *testing.T) {
 	}
 }
 
+// assertProcessTags verifies that the first span of every decoded chunk carries
+// _dd.tags.process (including the entrypoint.name tag), and that no other span
+// within any chunk does.
 func assertProcessTags(t *testing.T, payload spanLists) {
-	assert := assert.New(t)
+	t.Helper()
 	for i, spanList := range payload {
 		for j, span := range spanList {
 			processTags, ok := span.meta.Get(keyProcessTags)
-			if i+j == 0 {
-				assert.True(ok, "process tags should be present on the first span of each chunk only")
-				assert.Contains(processTags, "entrypoint.name", "process tags should have entrypoint.name")
-				break
+			if j == 0 {
+				assert.True(t, ok, "chunk %d: first span must carry _dd.tags.process", i)
+				assert.Contains(t, processTags, "entrypoint.name",
+					"chunk %d: process tags must include entrypoint.name", i)
+			} else {
+				require.False(t, ok, "chunk %d span %d must not carry _dd.tags.process", i, j)
 			}
-			require.False(t, ok, "process tags should be present on the first span of each chunk only (chunk: %d span: %d)", i, j)
 		}
 	}
 }
@@ -661,6 +666,98 @@ func TestPayloadV1SerializationFailure(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, []byte(serializationFailed), v)
 	})
+}
+
+func TestPayloadV1PromotedFields(t *testing.T) {
+	t.Run("missing span_kind and component", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		assert.False(t, sp.meta.Has(ext.Component))
+		assert.False(t, sp.meta.Has(ext.SpanKind))
+	})
+
+	t.Run("with span_kind", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+		s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		v, ok := sp.meta.Get(ext.SpanKind)
+		assert.True(t, ok)
+		assert.Equal(t, ext.SpanKindInternal, v)
+		// Verify it is not double-encoded: the flat map must contain it exactly once.
+		count := 0
+		for k := range sp.meta.Map(false) {
+			if k == ext.SpanKind {
+				count++
+			}
+		}
+		assert.Equal(t, 1, count)
+	})
+
+	t.Run("with component", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+		s.meta.Set(ext.Component, "test-component")
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		v, ok := sp.meta.Get(ext.Component)
+		assert.True(t, ok)
+		assert.Equal(t, "test-component", v)
+		// Verify it is not double-encoded: the flat map must contain it exactly once.
+		count := 0
+		for k := range sp.meta.Map(false) {
+			if k == ext.Component {
+				count++
+			}
+		}
+		assert.Equal(t, 1, count)
+	})
+
 }
 
 func BenchmarkPayloadThroughput(b *testing.B) {
@@ -1055,6 +1152,35 @@ func BenchmarkPayloadVersions(b *testing.B) {
 			for b.Loop() {
 				p := newPayloadV1()
 				_, _ = p.push(metaStructSpans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("spankind_%dspans/v0.4", n), func(b *testing.B) {
+			newSpans := newSpanList(n)
+			for _, s := range newSpans {
+				s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(newSpans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("spankind_%dspans/v1.0", n), func(b *testing.B) {
+			newSpans := newSpanList(n)
+			for _, s := range newSpans {
+				s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := getPayloadV1()
+				_, _ = p.push(newSpans)
+				putPayloadV1(p)
 			}
 		})
 	}

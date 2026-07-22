@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -377,7 +378,7 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datase
 
 	q := url.Values{}
 	if version != nil {
-		q.Set("filter[version]", fmt.Sprintf("%d", *version))
+		q.Set("filter[version]", strconv.Itoa(*version))
 	}
 	if cursor != "" {
 		q.Set("page[cursor]", cursor)
@@ -648,7 +649,7 @@ func (c *Transport) BulkUploadDataset(ctx context.Context, datasetID string, rec
 	body.WriteString("--" + boundary + "--" + crlf)
 
 	path := fmt.Sprintf("%s/datasets/%s/records/upload", endpointPrefixDNE, url.PathEscape(datasetID))
-	contentType := fmt.Sprintf("multipart/form-data; boundary=%s", boundary)
+	contentType := "multipart/form-data; boundary=" + boundary
 
 	result, err := c.request(ctx, http.MethodPost, path, subdomainDNE, bytes.NewReader(body.Bytes()), contentType, bulkUploadTimeout)
 	if err != nil {

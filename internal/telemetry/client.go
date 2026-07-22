@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
@@ -55,11 +55,11 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			DependencyLoader: config.DependencyLoader,
 		},
 		metrics: metrics{
-			store:         xsync.NewMapOf[metricKey, metricHandle](xsync.WithPresize(knownmetrics.SizeWithFilter(func(decl knownmetrics.Declaration) bool { return decl.Type != transport.DistMetric }))),
+			store:         xsync.NewMap[metricKey, metricHandle](xsync.WithPresize(knownmetrics.SizeWithFilter(func(decl knownmetrics.Declaration) bool { return decl.Type != transport.DistMetric }))),
 			skipAllowlist: config.Debug,
 		},
 		distributions: distributions{
-			store:         xsync.NewMapOf[metricKey, *distribution](xsync.WithPresize(knownmetrics.SizeWithFilter(func(decl knownmetrics.Declaration) bool { return decl.Type == transport.DistMetric }))),
+			store:         xsync.NewMap[metricKey, *distribution](xsync.WithPresize(knownmetrics.SizeWithFilter(func(decl knownmetrics.Declaration) bool { return decl.Type == transport.DistMetric }))),
 			pool:          internal.NewSyncPool(func() []float64 { return make([]float64, config.DistributionsSize.Min) }),
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,

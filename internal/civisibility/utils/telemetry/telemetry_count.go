@@ -93,14 +93,16 @@ func TestSession(providerName string) {
 
 // EventCreated the number of events created by CI Visibility
 func EventCreated(testingFramework string, eventType TestingEventType) {
-	tags := []string{string(getTestingFramework(testingFramework))}
+	tags := make([]string, 0, 1+len(eventType))
+	tags = append(tags, string(getTestingFramework(testingFramework)))
 	tags = append(tags, eventType...)
 	telemetry.Count(telemetry.NamespaceCIVisibility, "event_created", removeEmptyStrings(tags)).Submit(1.0)
 }
 
 // EventFinished the number of events finished by CI Visibility
 func EventFinished(testingFramework string, eventType TestingEventType) {
-	tags := []string{string(getTestingFramework(testingFramework))}
+	tags := make([]string, 0, 1+len(eventType))
+	tags = append(tags, string(getTestingFramework(testingFramework)))
 	tags = append(tags, eventType...)
 	telemetry.Count(telemetry.NamespaceCIVisibility, "event_finished", removeEmptyStrings(tags)).Submit(1.0)
 }
@@ -136,9 +138,22 @@ func EndpointPayloadRequests(endpointType EndpointType, requestCompressedType Re
 
 // EndpointPayloadRequestsErrors the number of requests sent to the endpoint that errored, tagget by the error type and endpoint type and status code
 func EndpointPayloadRequestsErrors(endpointType EndpointType, errorType ErrorType) {
-	tags := []string{string(endpointType)}
+	tags := make([]string, 0, 1+len(errorType))
+	tags = append(tags, string(endpointType))
 	tags = append(tags, errorType...)
 	telemetry.Count(telemetry.NamespaceCIVisibility, "endpoint_payload.requests_errors", removeEmptyStrings(tags)).Submit(1.0)
+}
+
+// CoverageUploadRequest records the number of code coverage report upload requests.
+func CoverageUploadRequest(requestCompressed RequestCompressedType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "coverage_upload.request", removeEmptyStrings([]string{
+		string(requestCompressed),
+	})).Submit(1.0)
+}
+
+// CoverageUploadRequestErrors records the number of code coverage report upload requests that errored.
+func CoverageUploadRequestErrors(errorType ErrorType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "coverage_upload.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
 }
 
 // EndpointPayloadDropped the number of payloads dropped after all retries by CI Visibility

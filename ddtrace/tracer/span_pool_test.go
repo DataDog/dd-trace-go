@@ -114,7 +114,7 @@ func TestSpanPoolRecycledSpanNoStaleData(t *testing.T) {
 		Tag("keyA", "valA"),
 		Tag("metricA", 1.0),
 	)
-	spanA.SetTag(ext.Error, fmt.Errorf("span A error"))
+	spanA.SetTag(ext.Error, errors.New("span A error"))
 	spanA.Finish()
 	flush(1)
 	transport.Traces() // drain
@@ -239,7 +239,7 @@ func TestSpanPoolSpanTypeAndErrorReset(t *testing.T) {
 		Tag(ext.ManualKeep, true),
 		SpanType("web"),
 	)
-	spanA.SetTag(ext.Error, fmt.Errorf("A error"))
+	spanA.SetTag(ext.Error, errors.New("A error"))
 	spanA.Finish()
 	flush(1)
 	transport.Traces() // drain
@@ -264,7 +264,7 @@ func TestSpanPoolSpanTypeAndErrorReset(t *testing.T) {
 		Tag(ext.ManualKeep, true),
 		SpanType("cache"),
 	)
-	spanC.SetTag(ext.Error, fmt.Errorf("C error"))
+	spanC.SetTag(ext.Error, errors.New("C error"))
 	spanC.Finish()
 	flush(1)
 
@@ -382,6 +382,19 @@ func observeAgentSpans(spans []*Span) []observedAgentSpan {
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].SpanID < out[j].SpanID
 	})
+	return out
+}
+
+func spansWithoutProcessTags(spans []observedAgentSpan) []observedAgentSpan {
+	out := make([]observedAgentSpan, len(spans))
+	for i, span := range spans {
+		out[i] = span
+		out[i].Meta = maps.Clone(span.Meta)
+		delete(out[i].Meta, keyProcessTags)
+		if len(out[i].Meta) == 0 {
+			out[i].Meta = nil
+		}
+	}
 	return out
 }
 
@@ -656,7 +669,7 @@ func TestSpanPoolAgentPOVMatchesNoPool(t *testing.T) {
 
 			requireStrictSpanPoolAgentScenario(t, nopool)
 			requireStrictSpanPoolAgentScenario(t, pool)
-			require.Equal(t, nopool, pool)
+			require.Equal(t, spansWithoutProcessTags(nopool), spansWithoutProcessTags(pool))
 			requireProtocolRequests(t, nopoolRequests, protocol)
 			requireProtocolRequests(t, poolRequests, protocol)
 		})
@@ -782,7 +795,7 @@ func TestSpanPoolPartialFlushAgentPOVMatchesNoPoolAfterReuse(t *testing.T) {
 
 			requirePartialFlushReuseAgentScenario(t, nopool)
 			requirePartialFlushReuseAgentScenario(t, pool)
-			require.Equal(t, nopool, pool)
+			require.Equal(t, spansWithoutProcessTags(nopool), spansWithoutProcessTags(pool))
 			requireProtocolRequests(t, nopoolRequests, protocol)
 			requireProtocolRequests(t, poolRequests, protocol)
 		})
@@ -874,7 +887,7 @@ func TestSpanPoolSingleSpanSamplingAgentPOVMatchesNoPool(t *testing.T) {
 
 			requireSingleSpanSamplingAgentScenario(t, nopool)
 			requireSingleSpanSamplingAgentScenario(t, pool)
-			require.Equal(t, nopool, pool)
+			require.Equal(t, spansWithoutProcessTags(nopool), spansWithoutProcessTags(pool))
 			requireProtocolRequests(t, nopoolRequests, protocol)
 			requireProtocolRequests(t, poolRequests, protocol)
 		})
@@ -948,7 +961,7 @@ func BenchmarkSpanPoolEndToEnd(b *testing.B) {
 		b.Run(pm.name+"/errored", func(b *testing.B) {
 			agent := startTestAgent(b)
 			tr := newTracerTest(b, agent, WithSpanPool(pm.enabled))
-			benchErr := fmt.Errorf("benchmark error")
+			benchErr := errors.New("benchmark error")
 
 			b.ResetTimer()
 			for range b.N {

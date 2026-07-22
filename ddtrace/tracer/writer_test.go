@@ -159,6 +159,10 @@ func TestLogWriter(t *testing.T) {
 	})
 
 	t.Run("fullspan", func(t *testing.T) {
+		// Disable process tags so the expected meta map stays deterministic.
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+		t.Cleanup(processtags.Reload)
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		cfg, err := newTestConfig()
@@ -263,6 +267,42 @@ func TestLogWriter(t *testing.T) {
 	})
 }
 
+// TestLogWriterProcessTags verifies that _dd.tags.process does not appear in
+// log-writer output when the feature is disabled. End-to-end coverage for the
+// enabled path (via setTraceTagsLocked → span.meta → serialization) lives in
+// TestOTLPExportModeProcessTags.
+func TestLogWriterProcessTags(t *testing.T) {
+	type jsonSpan struct {
+		Meta map[string]string `json:"meta"`
+	}
+	type jsonPayload struct {
+		Traces [][]jsonSpan `json:"traces"`
+	}
+
+	t.Cleanup(processtags.Reload)
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
+
+	var buf bytes.Buffer
+	cfg, err := newTestConfig()
+	require.NoError(t, err)
+	statsd, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	defer statsd.Close()
+	h := newLogTraceWriter(cfg, statsd)
+	h.w = &buf
+
+	h.add([]*Span{makeSpan(0), makeSpan(0)})
+	h.flush()
+
+	var v jsonPayload
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &v))
+	require.Len(t, v.Traces, 1)
+	for i, s := range v.Traces[0] {
+		assert.NotContains(t, s.Meta, keyProcessTags, "span %d must not carry process tags when disabled", i)
+	}
+}
+
 func TestLogWriterOverflow(t *testing.T) {
 	log.UseLogger(new(log.RecordLogger))
 	t.Run("single-too-big", func(t *testing.T) {
@@ -298,7 +338,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10)
-		var trace []*Span
+		trace := make([]*Span, 0, 500)
 		for range 500 {
 			trace = append(trace, s)
 		}
@@ -419,10 +459,10 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
-			u := mockAgentEndpoint(t, "/v0.4/traces")
+			u := mockAgentEndpoint(t, "/v1.0/traces")
 			c, err := newTestConfig(func(c *config) {
 				c.ddTransport = p
-				c.sendRetries = test.configRetries
+				c.internalConfig.SetSendRetries(test.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 				c.internalConfig.SetAgentURL(u, internalconfig.OriginCode)
 			})
@@ -469,7 +509,7 @@ func mockAgentEndpoint(t testing.TB, path string) *url.URL {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"endpoints": ["` + path + `"], "config": {"statsd_port": 8125}}`))
+		w.Write([]byte(`{"endpoints": ["` + path + `", "/v0.6/stats"], "config": {"statsd_port": 8125}, "client_drop_p0s": true}`))
 	}))
 	t.Cleanup(srv.Close)
 	u, _ := url.Parse(srv.URL)
@@ -536,7 +576,7 @@ func TestTraceProtocol(t *testing.T) {
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol())
+		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 
 	t.Run("invalid, no endpoint", func(t *testing.T) {
@@ -552,6 +592,7 @@ func TestTraceProtocol(t *testing.T) {
 	})
 
 	t.Run("invalid, with endpoint", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "random")
 		url := mockAgentEndpoint(t, "/v1.0/traces")
 
 		cfg, err := newTestConfig(
@@ -559,7 +600,7 @@ func TestTraceProtocol(t *testing.T) {
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol())
+		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 }
 func BenchmarkJsonEncodeSpan(b *testing.B) {
@@ -787,7 +828,7 @@ func (t *simpleTransport) sendStats(s *pb.ClientStatsPayload, obfVersion int) er
 }
 
 func (t *simpleTransport) endpoint() string {
-	return "http://localhost:9/v0.4/traces"
+	return "http://localhost:9/v1.0/traces"
 }
 
 // TestAgentWriterFlushSizeMetrics validates that flush_bytes metrics are accurate
@@ -803,7 +844,7 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			name:        "v0.4-protocol",
 			newPayload:  func() payload { return newPayload(traceProtocolV04) },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
-			size:        1934,
+			size:        1811,
 		},
 		{
 			name:        "v1-protocol",
@@ -899,7 +940,7 @@ func TestPayloadSizeConsistency(t *testing.T) {
 			name:        "v0.4",
 			newPayload:  func() payload { return newPayloadV04() },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
-			size:        1332,
+			size:        1209,
 		},
 		{
 			name:        "v1",

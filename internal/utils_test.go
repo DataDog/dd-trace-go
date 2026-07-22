@@ -6,7 +6,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -191,7 +190,7 @@ func TestToFloat64(t *testing.T) {
 		18: {intLowerLimit + 1, float64(intLowerLimit + 1), true},
 		19: {-1024, -1024.0, true},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			f, ok := ToFloat64(tt.value)
 			if ok != tt.ok {
 				t.Fatalf("expected ok: %t", tt.ok)

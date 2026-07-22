@@ -16,7 +16,6 @@ import (
 	"io"
 	llog "log"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -28,6 +27,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/goleak"
 	"google.golang.org/protobuf/proto"
@@ -36,11 +36,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
+	tracertest "github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
@@ -49,11 +51,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func (t *tracer) newEnvSpan(service, env string) *Span {
+func newEnvSpan(t Tracer, service, env string) *Span {
 	return t.StartSpan("test.op", SpanType("test"), ServiceName(service), ResourceName("/"), Tag(ext.Environment, env))
 }
 
 func (t *tracer) newRootSpan(name, service, resource string) *Span {
+	return newRootSpan(t, name, service, resource)
+}
+
+func newRootSpan(t Tracer, name, service, resource string) *Span {
 	return t.StartSpan(name, SpanType("test"), ServiceName(service), ResourceName(resource))
 }
 
@@ -104,22 +110,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "goleak: Errors on successful test run: %v\n\n", err)
 		fmt.Fprintf(os.Stderr, "See Goroutine Leak section in CONTRIBUTING.md for more information on how to fix this.\n")
 		os.Exit(1)
-	}
-}
-
-func (t *tracer) awaitPayload(tst *testing.T, n int) {
-	timeout := time.After(time.Second * timeMultiplicator)
-loop:
-	for {
-		select {
-		case <-timeout:
-			tst.Fatalf("timed out waiting for payload to contain %d", n)
-		default:
-			if t.traceWriter.(*agentTraceWriter).payload.stats().itemCount == n {
-				break loop
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
 	}
 }
 
@@ -612,7 +602,7 @@ func TestSamplingDecision(t *testing.T) {
 			nowTime = func() time.Time { return time.Now() }
 		}()
 		defer stop()
-		var spans []*Span
+		spans := make([]*Span, 0, 1000)
 		for i := range 100 {
 			s := tracer.StartSpan(fmt.Sprintf("name_%d", i))
 			for j := range 9 {
@@ -650,7 +640,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		defer stop()
-		spans := []*Span{}
+		spans := make([]*Span, 0, 1000)
 		for range 100 {
 			s := tracer.StartSpan("name_1")
 			for range 9 {
@@ -684,7 +674,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		defer stop()
-		spans := []*Span{}
+		spans := make([]*Span, 0, 1000)
 		for range 100 {
 			s := tracer.StartSpan("name_1")
 			for range 9 {
@@ -735,7 +725,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.NoError(t, err)
 		found := false
 		for _, log := range tp.Logs() {
-			if strings.Contains(log, "DEBUG: Runtime metrics enabled") {
+			if strings.Contains(log, "Runtime metrics") {
 				found = true
 				break
 			}
@@ -752,7 +742,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.NoError(t, err)
 		found := false
 		for _, log := range tp.Logs() {
-			if strings.Contains(log, "DEBUG: Runtime metrics enabled") {
+			if strings.Contains(log, "Runtime metrics") {
 				found = true
 				break
 			}
@@ -904,8 +894,8 @@ func TestTracerBaggagePropagation(t *testing.T) {
 }
 
 func TestStartSpanOrigin(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()
@@ -938,8 +928,8 @@ func TestStartSpanOrigin(t *testing.T) {
 }
 
 func TestPropagationDefaults(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()
@@ -970,7 +960,7 @@ func TestPropagationDefaults(t *testing.T) {
 	pctx := propagated
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, pctx.traceID)
+	assert.Equal(ctx.traceID.HexEncoded(), pctx.traceID.HexEncoded())
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
@@ -1015,7 +1005,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	assert.Nil(err)
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, propagated.traceID)
+	assert.Equal(ctx.traceID.HexEncoded(), propagated.traceID.HexEncoded())
 	assert.Equal(ctx.spanID, propagated.spanID)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
 	assert.Equal(ctx.baggage, propagated.baggage)
@@ -1031,7 +1021,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 }
 
 func TestPropagationStyleOnlyBaggage(t *testing.T) {
-	t.Setenv(headerPropagationStyle, "baggage")
+	t.Setenv(envPropagationStyle, "baggage")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()
@@ -1133,7 +1123,7 @@ func TestTracerInjectConcurrency(t *testing.T) {
 		i := i
 		go func(val int) {
 			defer wg.Done()
-			span.SetBaggageItem("val", fmt.Sprintf("%d", val))
+			span.SetBaggageItem("val", strconv.Itoa(val))
 
 			traceContext := map[string]string{}
 			_ = tracer.Inject(span.Context(), TextMapCarrier(traceContext))
@@ -1351,28 +1341,16 @@ func TestTracerSampler(t *testing.T) {
 
 func TestTracerPrioritySampler(t *testing.T) {
 	assert := assert.New(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
-			"rate_by_service":{
-				"service:,env:":0.1,
-				"service:my-service,env:":0.2,
-				"service:my-service,env:default":0.2,
-				"service:my-service,env:other":0.3
-			}
-		}`))
-	}))
-	defer srv.Close()
-	url := "http://" + srv.Listener.Addr().String()
+	tr, agent, err := bootstrapInspectableTracer(t)
+	require.NoError(t, err)
 
-	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url+tracesAPIPath, url+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())),
-	)
-	assert.Nil(err)
-	defer stop()
+	agent.Info().RateByService("", "", 0.1)
+	agent.Info().RateByService("my-service", "", 0.2)
+	agent.Info().RateByService("my-service", "default", 0.2)
+	agent.Info().RateByService("my-service", "other", 0.3)
 
 	// default rates (1.0)
-	s := tr.newEnvSpan("pylons", "")
+	s := newEnvSpan(tr, "pylons", "")
 	assert.Equal(1., s.metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.metrics[keySamplingPriority])
 	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
@@ -1380,26 +1358,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.True(ok)
 	assert.EqualValues(p, s.metrics[keySamplingPriority])
 	s.Finish()
-
-	tr.awaitPayload(t, 1)
-	flush(-1)
-	// Wait for the priority sampler to update its rates from the agent response.
-	// flush() sends the payload in a goroutine that reads the rate_by_service
-	// response asynchronously, so we must poll rather than use a fixed sleep.
-	timeout := time.After(time.Second * timeMultiplicator)
-	for {
-		rate := testPrioritySampler(tr).getDefaultRate()
-		// Expected default rate to be 0.1 after reading the agent response.
-		if rate == 0.1 {
-			break
-		}
-		select {
-		case <-timeout:
-			t.Fatal("timed out waiting for priority sampler rates to update")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	tr.Flush()
 
 	for i, tt := range []struct {
 		service, env string
@@ -1424,7 +1383,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 			rate:    0.3,
 		},
 	} {
-		s := tr.newEnvSpan(tt.service, tt.env)
+		s := newEnvSpan(tr, tt.service, tt.env)
 		assert.Equal(tt.rate, s.metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.metrics[keySamplingPriority]
 		if prio > 0 {
@@ -1447,21 +1406,25 @@ func TestTracerPrioritySampler(t *testing.T) {
 
 func TestTracerEdgeSampler(t *testing.T) {
 	assert := assert.New(t)
+	agent, err := startAgentTest(t)
+	assert.Nil(err)
 
 	// a sample rate of 0 should sample nothing
-	tracer0, _, _, stop, err := startTestTracer(t,
-		withTransport(newDefaultTransport()),
+	tracer0, err := startInspectableTracer(t,
+		agent,
 		WithSamplerRate(0),
 	)
 	assert.Nil(err)
-	defer stop()
 	// a sample rate of 1 should sample everything
-	tracer1, _, _, stop, err := startTestTracer(t,
-		withTransport(newDefaultTransport()),
+	tracer1, err := startInspectableTracer(t,
+		agent,
 		WithSamplerRate(1),
 	)
 	assert.Nil(err)
-	defer stop()
+
+	// Set tracer1 as global. span.Finish() submits chunks through the global
+	// tracer, so all spans from both tracers end up on tracer1's worker.
+	setGlobalTracer(tracer1)
 
 	count := payloadQueueSize / 3
 
@@ -1472,8 +1435,10 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.stats().itemCount, 0)
-	tracer1.awaitPayload(t, count)
+	tracer0.Flush()
+	tracer1.Flush()
+
+	assert.Equal(333, agent.CountSpans())
 }
 
 func TestOTLPExportMode(t *testing.T) {
@@ -1566,6 +1531,209 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 		}
 	}
 	assert.Equal(t, spanCount, totalSpans, "all spans should be retained in OTLP mode, not dropped by nil concentrator")
+}
+
+// TestOTLPExportModeProcessTags verifies that _dd.tags.process appears on the
+// first span of an OTLP-exported trace when process tag propagation is enabled,
+// and is absent on all spans when it is disabled. This is an end-to-end test
+// that exercises the full span lifecycle (Start → Finish → flush → OTLP encode).
+func TestOTLPExportModeProcessTags(t *testing.T) {
+	findAttr := func(attrs []*otlpcommon.KeyValue, key string) bool {
+		for _, kv := range attrs {
+			if kv.Key == key {
+				return true
+			}
+		}
+		return false
+	}
+
+	newOTLPTracer := func(t *testing.T, srv *testOTLPServer) *tracer {
+		t.Helper()
+		trc, err := newTracer(func(c *config) {
+			c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+			c.ddTransport = newDummyTransport()
+		})
+		require.NoError(t, err)
+		w := trc.traceWriter.(*otlpTraceWriter)
+		w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+		setGlobalTracer(trc)
+		t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+		return trc
+	}
+
+	decodeSpans := func(t *testing.T, payloads [][]byte) []*otlptrace.Span {
+		t.Helper()
+		var spans []*otlptrace.Span
+		for _, p := range payloads {
+			var td otlptrace.TracesData
+			require.NoError(t, proto.Unmarshal(p, &td))
+			for _, rs := range td.ResourceSpans {
+				for _, ss := range rs.ScopeSpans {
+					spans = append(spans, ss.Spans...)
+				}
+			}
+		}
+		return spans
+	}
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Cleanup(processtags.Reload)
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+
+		srv := newTestOTLPServer()
+		defer srv.Close()
+		trc := newOTLPTracer(t, srv)
+
+		// Root span + child in the same trace; only the root (t.spans[0]) gets
+		// the process-tag stamp from otlpTraceWriter.add.
+		root := trc.newRootSpan("root.op", "test-svc", "/")
+		child := trc.newChildSpan("child.op", root)
+		child.Finish()
+		root.Finish()
+		trc.Stop()
+
+		spans := decodeSpans(t, srv.getPayloads())
+		require.Len(t, spans, 2)
+
+		// The root has no parent span ID; the child does.
+		var rootSpan, childSpan *otlptrace.Span
+		for _, s := range spans {
+			if len(s.ParentSpanId) == 0 {
+				rootSpan = s
+			} else {
+				childSpan = s
+			}
+		}
+		require.NotNil(t, rootSpan, "root span not found in OTLP output")
+		require.NotNil(t, childSpan, "child span not found in OTLP output")
+
+		assert.True(t, findAttr(rootSpan.Attributes, keyProcessTags),
+			"root span must carry %s when process tags are enabled", keyProcessTags)
+		assert.False(t, findAttr(childSpan.Attributes, keyProcessTags),
+			"child span must not carry %s", keyProcessTags)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Cleanup(processtags.Reload)
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+
+		srv := newTestOTLPServer()
+		defer srv.Close()
+		trc := newOTLPTracer(t, srv)
+
+		trc.newRootSpan("root.op", "test-svc", "/").Finish()
+		trc.Stop()
+
+		for _, s := range decodeSpans(t, srv.getPayloads()) {
+			assert.False(t, findAttr(s.Attributes, keyProcessTags),
+				"span must not carry %s when process tags are disabled", keyProcessTags)
+		}
+	})
+}
+
+func TestOTLPExportModeSpanEvents(t *testing.T) {
+	// OTLP mode must mark spans supportsEvents so serializeSpanEvents doesn't
+	// string-tag events into a "events" meta tag (which convertEvents can't read).
+	assert := assert.New(t)
+	tr, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+	assert.NoError(err)
+	defer tr.Stop()
+
+	s := tr.StartSpan("op")
+	assert.True(s.supportsEvents, "spans must support native events in OTLP export mode")
+	s.AddEvent("exception", WithSpanEventAttributes(map[string]any{
+		"exception.type":    "*errors.errorString",
+		"exception.message": "boom",
+	}))
+	s.Finish()
+
+	// Events are preserved on the span (not string-tagged away).
+	assert.NotEmpty(s.spanEvents, "span events should be preserved for native OTLP export")
+	_, hasEventsTag := s.meta.Get("events")
+	assert.False(hasEventsTag, "span events must not be string-tagged in OTLP export mode")
+
+	// convertSpan emits a native OTLP event carrying its attributes.
+	otlp := convertSpan(s, "svc", false)
+	assert.Len(otlp.Events, 1)
+	assert.Equal("exception", otlp.Events[0].Name)
+	assert.NotEmpty(otlp.Events[0].Attributes)
+}
+
+// TestOTLPExportModeSpanEventsWriterGating verifies supportsEvents follows the actual
+// selected writer, not OTEL_TRACES_EXPORTER. LogToStdout is selected before the OTLP
+// writer, and the log writer doesn't serialize spanEvents, so events must stay
+// string-tagged (supportsEvents=false) there to avoid being silently dropped.
+func TestOTLPExportModeSpanEventsWriterGating(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		configure  func(*config)
+		wantNative bool
+	}{
+		{
+			name:       "otlp writer enables native events",
+			configure:  func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) },
+			wantNative: true,
+		},
+		{
+			name: "log-to-stdout keeps events string-tagged",
+			configure: func(c *config) {
+				c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+				c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode)
+			},
+			wantNative: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr, err := newUnstartedTracer(tc.configure)
+			require.NoError(t, err)
+			defer tr.Stop()
+			assert.Equal(t, tc.wantNative, tr.StartSpan("op").supportsEvents)
+		})
+	}
+}
+
+// TestOTLPExportModeSpanEventsRoundTrip verifies a span event survives the full OTLP
+// encode → send → unmarshal cycle as a native event, not a string "events" meta tag.
+func TestOTLPExportModeSpanEventsRoundTrip(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+
+	trc, err := newTracer(func(c *config) {
+		c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+		c.ddTransport = newDummyTransport()
+	})
+	require.NoError(t, err)
+	w := trc.traceWriter.(*otlpTraceWriter)
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+	setGlobalTracer(trc)
+	t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+
+	s := trc.newRootSpan("op", "test-svc", "/")
+	s.AddEvent("exception", WithSpanEventAttributes(map[string]any{
+		"exception.type":    "*errors.errorString",
+		"exception.message": "boom",
+	}))
+	s.Finish()
+	trc.Stop()
+
+	var spans []*otlptrace.Span
+	for _, p := range srv.getPayloads() {
+		var td otlptrace.TracesData
+		require.NoError(t, proto.Unmarshal(p, &td))
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				spans = append(spans, ss.Spans...)
+			}
+		}
+	}
+	require.Len(t, spans, 1)
+	require.Len(t, spans[0].Events, 1, "exception event must survive as a native OTLP event")
+	assert.Equal(t, "exception", spans[0].Events[0].Name)
+	for _, kv := range spans[0].Attributes {
+		assert.NotEqual(t, "events", kv.Key, "events must not be string-tagged into a meta attribute")
+	}
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -1863,19 +2031,28 @@ func TestWorker(t *testing.T) {
 }
 
 func TestPushPayload(t *testing.T) {
-	tracer, _, flush, stop, err := startTestTracer(t)
+	tr, agent, err := bootstrapInspectableTracer(t)
 	assert.Nil(t, err)
-	defer stop()
 
 	s := newBasicSpan("3MB")
 	s.meta.Set("key", strings.Repeat("X", payloadSizeLimit/2+10))
+	s.meta.Set("_dd.test_id", "1")
+
+	tracer := tr.(*tracer)
 	// half payload size reached
 	tracer.pushChunk(&chunk{spans: []*Span{s}, willSend: true})
-	tracer.awaitPayload(t, 1)
+	tracer.Flush()
 
 	// payload size exceeded
+	s.meta.Set("_dd.test_id", "2")
 	tracer.pushChunk(&chunk{spans: []*Span{s}, willSend: true})
-	flush(2)
+	tracer.Flush()
+
+	as := agent.FindSpan(tracertest.With().Tag("_dd.test_id", "1"))
+	assert.NotNil(t, as)
+
+	as = agent.FindSpan(tracertest.With().Tag("_dd.test_id", "2"))
+	assert.NotNil(t, as)
 }
 
 func TestPushTrace(t *testing.T) {
@@ -1965,7 +2142,7 @@ func TestTracerReportsHostname(t *testing.T) {
 	testReportHostnameEnabled := func(t *testing.T, name string, withComputeStats bool) {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
-			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			t.Setenv("DD_TRACE_COMPUTE_STATS", strconv.FormatBool(withComputeStats))
 
 			tracer, _, _, stop, err := startTestTracer(t)
 			assert.Nil(t, err)
@@ -1992,7 +2169,7 @@ func TestTracerReportsHostname(t *testing.T) {
 
 	testReportHostnameDisabled := func(t *testing.T, name string, withComputeStats bool) {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			t.Setenv("DD_TRACE_COMPUTE_STATS", strconv.FormatBool(withComputeStats))
 			tracer, _, _, stop, err := startTestTracer(t)
 			assert.Nil(t, err)
 			defer stop()
@@ -2109,6 +2286,19 @@ func TestVersion(t *testing.T) {
 		v, _ := sp.meta.Get(ext.Version)
 		assert.Equal("4.5.6", v)
 	})
+	t.Run("env-universal", func(t *testing.T) {
+		t.Setenv("DD_SERVICE", "servenv")
+		t.Setenv("DD_VERSION", "4.5.6")
+		t.Setenv("DD_TRACE_UNIVERSAL_VERSION_ENABLED", "true")
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
+		v, _ := sp.meta.Get(ext.Version)
+		assert.Equal("4.5.6", v)
+	})
 	t.Run("service/universal", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithServiceVersion("4.5.6"),
 			WithService("servenv"), WithUniversalVersion("1.2.3"))
@@ -2161,16 +2351,16 @@ func TestEnvironment(t *testing.T) {
 
 func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
+		assert := assert.New(t)
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
 		internal.RefreshGitMetadataTags()
 
-		tracer, _, _, stop, err := startTestTracer(t)
-		assert.Nil(t, err)
-		defer stop()
+		tracer, _, err := bootstrapInspectableTracer(t)
+		assert.NoError(err)
 
-		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
+		tracer.Flush()
 
 		sp.mu.RLock()
 		defer sp.mu.RUnlock()
@@ -2328,24 +2518,26 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
 // while partial flushing is enabled.
 func BenchmarkPartialFlushing(b *testing.B) {
+	addr := mockAgentEndpoint(b, "/v1.0/traces")
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b)
+		genBigTraces(b, WithAgentAddr(addr.Host))
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b)
+		genBigTraces(b, WithAgentAddr(addr.Host))
 	})
 }
 
 func BenchmarkPartialFlushingSpanPool(b *testing.B) {
+	addr := mockAgentEndpoint(b, "/v1.0/traces")
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b, WithSpanPool(true))
+		genBigTraces(b, WithAgentAddr(addr.Host), WithSpanPool(true))
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b, WithSpanPool(true))
+		genBigTraces(b, WithAgentAddr(addr.Host), WithSpanPool(true))
 	})
 }
 
@@ -2357,7 +2549,8 @@ func BenchmarkBigTraces(b *testing.B) {
 }
 
 func genBigTraces(b *testing.B, opts ...StartOption) {
-	tracer, transport, flush, stop, err := startTestTracer(b, append(opts, WithLogger(log.DiscardLogger{}))...)
+	opts = append(opts, withTransport(discardTransport{}))
+	tracer, _, flush, stop, err := startTestTracer(b, append(opts, WithLogger(log.DiscardLogger{}))...)
 	assert.Nil(b, err)
 	defer stop()
 
@@ -2394,20 +2587,14 @@ func genBigTraces(b *testing.B, opts ...StartOption) {
 				sp.Finish()
 			}
 			parent.Finish()
-			// TODO(fg): This test has historically not waited for the two
-			// goroutines below to finish. This was causing test failures when
+			// TODO(fg): This test has historically not waited for the flush
+			// goroutine below to finish. This was causing test failures when
 			// goroutine leak checks were added to TestMain. However, looking at
 			// the code, perhaps these goroutines should be required to finish
 			// before b.StopTimer() is called?
-			wg.Add(2)
-			go func() {
+			wg.Go(func() {
 				flush(-1) // act like a ticker
-				wg.Done()
-			}()
-			go func() {
-				transport.Reset() // pretend we sent any payloads
-				wg.Done()
-			}()
+			})
 		}
 	}
 	b.StopTimer()

@@ -12,22 +12,24 @@ jobs:
   govulncheck-fix:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
         with:
           go-version: stable
           cache-dependency-path: '**/go.sum'
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: |
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Scan and fix vulnerabilities
         id: fix
         run: ./.github/workflows/apps/govulncheck-fix.sh
       - name: Notify Slack
         if: steps.fix.outputs.has_fixes == 'true'
-        uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           webhook-type: incoming-webhook
           payload: |
