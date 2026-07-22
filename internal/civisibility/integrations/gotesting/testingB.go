@@ -226,7 +226,10 @@ func (ddb *B) getBWithError(errType string, errMessage string) *testing.B {
 
 func testingBFinished(b *testing.B) bool {
 	fields := getBenchmarkPrivateFields(b)
-	return fields != nil && fields.GetFinished()
+	if fields == nil {
+		return true
+	}
+	return shouldCaptureTerminalMessage(&fields.commonPrivateFields)
 }
 
 // hasCiVisibilityBenchmarkFunc gets if a *runtime.Func is being instrumented.

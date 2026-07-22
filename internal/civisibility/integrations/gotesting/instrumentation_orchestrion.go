@@ -284,7 +284,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				if nativeTerminal == nil && execMeta.cleanupResult != nil {
 					nativeTerminal = execMeta.cleanupResult.panicData
 				}
-				if nativeTerminal != nil && (!execMeta.hasAdditionalFeatureWrapper || execMeta.isFreshRetryAttemptDescendant) {
+				if nativeTerminal != nil && !execMeta.hasAdditionalFeatureWrapper {
 					checkModuleAndSuite(module, suite)
 					integrations.ExitCiVisibility()
 					panic(nativeTerminal)
