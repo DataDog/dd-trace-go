@@ -96,38 +96,13 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportH
 			attrs = append(attrs, otlpKeyValue("datadog.runtime_id", otlpStringValue(payload.RuntimeID)))
 		}
 		if payload.ProcessTags != "" {
-			// Reserved DD_TAGS keys whose semantic meaning is captured in dedicated
-			// resource attributes (service.name, deployment.environment.name, etc.)
-			// and must therefore be excluded from the generic tracer_dd_tags array.
-			reservedDDTagKeys := map[string]bool{
-				"service":    true,
-				"env":        true,
-				"version":    true,
-				"runtime_id": true,
-				"runtime-id": true,
-			}
-			var tracerDDTagEntries []*otlpcommon.AnyValue
 			for tag := range strings.SplitSeq(payload.ProcessTags, ",") {
 				parts := strings.SplitN(tag, ":", 2)
-				if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-					continue
-				}
-				// datadog.<key> resource attributes for all non-runtime_id process tags.
-				if parts[0] != "runtime_id" {
+				// Skip keys emitted explicitly above (runtime_id) to avoid duplicate
+				// resource attributes, and skip tags with empty values.
+				if len(parts) == 2 && parts[0] != "" && parts[1] != "" && parts[0] != "runtime_id" {
 					attrs = append(attrs, otlpKeyValue("datadog."+parts[0], otlpStringValue(parts[1])))
 				}
-				// tracer_dd_tags array: non-reserved key:value pairs from DD_TAGS /
-				// OTEL_RESOURCE_ATTRIBUTES that are not already captured elsewhere.
-				if !reservedDDTagKeys[parts[0]] {
-					tracerDDTagEntries = append(tracerDDTagEntries, otlpStringValue(tag))
-				}
-			}
-			if len(tracerDDTagEntries) > 0 {
-				attrs = append(attrs, otlpKeyValue("tracer_dd_tags", &otlpcommon.AnyValue{
-					Value: &otlpcommon.AnyValue_ArrayValue{
-						ArrayValue: &otlpcommon.ArrayValue{Values: tracerDDTagEntries},
-					},
-				}))
 			}
 		}
 	}
@@ -241,19 +216,6 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 		// at the stats aggregation layer and require a proto change upstream to support.
 		if gs.Synthetics {
 			attrs = append(attrs, otlpKeyValue("datadog.origin", otlpStringValue("synthetics")))
-		}
-		// additional_metric_tags holds the per-span tag values for keys listed in
-		// DD_TRACE_STATS_ADDITIONAL_TAGS (already populated in ClientGroupedStats by the concentrator).
-		if len(gs.AdditionalMetricTags) > 0 {
-			tagEntries := make([]*otlpcommon.AnyValue, 0, len(gs.AdditionalMetricTags))
-			for _, t := range gs.AdditionalMetricTags {
-				tagEntries = append(tagEntries, otlpStringValue(t))
-			}
-			attrs = append(attrs, otlpKeyValue("additional_metric_tags", &otlpcommon.AnyValue{
-				Value: &otlpcommon.AnyValue_ArrayValue{
-					ArrayValue: &otlpcommon.ArrayValue{Values: tagEntries},
-				},
-			}))
 		}
 	}
 
