@@ -596,7 +596,11 @@ func (c *processRetryOutputCapture) FinishAfterWait(timeout time.Duration) error
 	}
 }
 
-func finishProcessRetryOutputCapturesAfterWait(timeout time.Duration, captures ...*processRetryOutputCapture) error {
+type processRetryOutputWaiter interface {
+	FinishAfterWait(time.Duration) error
+}
+
+func finishProcessRetryOutputCapturesAfterWait(timeout time.Duration, captures ...processRetryOutputWaiter) error {
 	errCh := make(chan error, len(captures))
 	for _, capture := range captures {
 		go func() {

@@ -523,14 +523,26 @@ func TestProcessRetryDescendantCleanupController(t *testing.T) {
 		processRetryDescendantLivenessPathEnv + "=" + livenessPath,
 		processRetryDescendantIndependentPathEnv + "=" + independentLivenessPath,
 	}
-	started := time.Now()
 	runProcessRetryFixtureSubprocess(t, "descendant-cleanup", args, env...)
-	if elapsed := time.Since(started); elapsed >= processRetryDescendantHelperLifetime {
-		t.Fatalf("process retry waited for descendant helpers to exit: %s", elapsed)
-	}
 	for _, path := range []string{livenessPath, independentLivenessPath} {
 		address := processRetryDescendantAddress(t, path)
 		waitForProcessRetryDescendantListenerClosed(t, address)
+		assertProcessRetryDescendantDidNotExpireNaturally(t, path)
+	}
+}
+
+func processRetryDescendantExpirationPath(livenessPath string) string {
+	return livenessPath + ".expired"
+}
+
+func assertProcessRetryDescendantDidNotExpireNaturally(t *testing.T, livenessPath string) {
+	t.Helper()
+	_, err := os.Stat(processRetryDescendantExpirationPath(livenessPath))
+	if err == nil {
+		t.Fatal("process retry waited for a descendant helper to expire naturally")
+	}
+	if !os.IsNotExist(err) {
+		t.Fatalf("inspect process retry descendant expiration marker: %v", err)
 	}
 }
 

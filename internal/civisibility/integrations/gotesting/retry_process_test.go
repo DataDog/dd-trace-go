@@ -3459,7 +3459,49 @@ func TestProcessRetryOutputCaptureAbortIsIdempotent(t *testing.T) {
 	require.NoError(t, secondErr)
 }
 
-func TestFinalizeProcessRetryOutputCapturesKillsTreeWithinSingleDrainBudget(t *testing.T) {
+type processRetryOutputWaiterFunc func(time.Duration) error
+
+func (f processRetryOutputWaiterFunc) FinishAfterWait(timeout time.Duration) error {
+	return f(timeout)
+}
+
+func TestProcessRetryOutputCapturesAfterWaitRunConcurrently(t *testing.T) {
+	const timeout = 37 * time.Second
+	entered := make(chan time.Duration, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWaiters := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+	t.Cleanup(releaseWaiters)
+	waiter := processRetryOutputWaiterFunc(func(receivedTimeout time.Duration) error {
+		entered <- receivedTimeout
+		<-release
+		return nil
+	})
+	done := make(chan error, 1)
+	go func() {
+		done <- finishProcessRetryOutputCapturesAfterWait(timeout, waiter, waiter)
+	}()
+
+	for range 2 {
+		select {
+		case receivedTimeout := <-entered:
+			require.Equal(t, timeout, receivedTimeout)
+		case <-time.After(5 * time.Second):
+			t.Fatal("output captures did not begin waiting concurrently")
+		}
+	}
+	releaseWaiters()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent output capture wait did not finish")
+	}
+}
+
+func TestFinalizeProcessRetryOutputCapturesMarksContainmentLossOnDrainTimeout(t *testing.T) {
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
 	stdoutCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
@@ -3471,6 +3513,7 @@ func TestFinalizeProcessRetryOutputCapturesKillsTreeWithinSingleDrainBudget(t *t
 
 	killCalls := atomic.Int32{}
 	hooks := processRetryRunnerHooks{
+		outputDrainWait: 0,
 		killTree: func(*exec.Cmd) error {
 			killCalls.Add(1)
 			return nil
@@ -3480,11 +3523,8 @@ func TestFinalizeProcessRetryOutputCapturesKillsTreeWithinSingleDrainBudget(t *t
 		Result:   processRetryResult{Status: processRetryStatusPass},
 		ExitCode: 0,
 	}
-	started := time.Now()
 	finalizeProcessRetryOutputCaptures(hooks, &exec.Cmd{}, &attempt, stdoutCapture, stderrCapture)
-	elapsed := time.Since(started)
 
-	require.Less(t, elapsed, 2*processRetryOutputDrainWait)
 	require.Equal(t, int32(1), killCalls.Load())
 	require.ErrorIs(t, attempt.CaptureErr, errProcessRetryOutputDrainTimedOut)
 	require.ErrorIs(t, attempt.Err, errProcessRetryContainmentLost)
