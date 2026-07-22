@@ -70,7 +70,10 @@ func setProcessGroupForCommand(cmd *exec.Cmd) error {
 	}
 	// Process groups contain ordinary descendants. A descendant that creates a
 	// new session is deliberately outside that containment contract.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
 	return nil
 }
 
