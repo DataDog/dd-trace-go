@@ -203,6 +203,7 @@ type StartOption func(*config)
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
+	internalconfig.RecordProductStart(internalconfig.ProductTracer)
 	c.internalConfig = internalconfig.CreateNew()
 
 	c.sampler = NewAllSampler()

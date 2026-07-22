@@ -23,6 +23,7 @@ import (
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -210,6 +211,8 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 // Start starts the global LLMObs instance with the given configuration and tracer.
 // Returns an error if LLMObs is already running or if configuration is invalid.
 func Start(cfg config.Config, tracer Tracer) (err error) {
+	internalconfig.RecordProductStart(internalconfig.ProductLLMObs)
+
 	startTime := time.Now()
 	defer func() {
 		trackLLMObsStart(startTime, err, cfg)

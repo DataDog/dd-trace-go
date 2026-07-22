@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -68,6 +69,8 @@ func init() {
 // If DD_PROFILING_ENABLED=false is set in the process environment, it will
 // prevent the profiler from starting.
 func Start(opts ...Option) error {
+	internalconfig.RecordProductStart(internalconfig.ProductProfiler)
+
 	mu.Lock()
 	defer mu.Unlock()
 
