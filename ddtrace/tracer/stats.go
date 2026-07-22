@@ -77,7 +77,7 @@ type tracerStatSpan struct {
 func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdClient) *concentrator {
 	sCfg := &stats.SpanConcentratorConfig{
 		ComputeStatsBySpanKind:       true,
-		BucketInterval:               defaultStatsBucketSize,
+		BucketInterval:               bucketSize,
 		WholeKeyCardinalityLimit:     c.internalConfig.StatsWholeKeyCardinalityLimit(),
 		ResourceCardinalityLimit:     c.internalConfig.StatsResourceCardinalityLimit(),
 		HTTPEndpointCardinalityLimit: c.internalConfig.StatsHTTPEndpointCardinalityLimit(),
