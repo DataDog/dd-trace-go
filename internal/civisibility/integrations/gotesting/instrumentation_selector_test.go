@@ -313,7 +313,8 @@ func exerciseSlowEFDAbortTagging(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for i := range tests {
+		tt := &tests[i]
 		test := &processRetryRecordingTest{}
 		finalizeInstrumentedTestExecution(t, &tt.meta, test, nil, nil, tt.duration, nil, nil, "", false)
 		_, gotTag := test.GetTag(constants.TestEarlyFlakeDetectionRetryAborted)
