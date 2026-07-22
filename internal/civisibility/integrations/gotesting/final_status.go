@@ -91,6 +91,14 @@ func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, du
 	return 0, false
 }
 
+func efdHasPossibleRetry(settings *civisibilitynet.SettingsResponseData) bool {
+	if settings == nil {
+		return false
+	}
+	retries := settings.EarlyFlakeDetection.SlowTestRetries
+	return retries.FiveS > 0 || retries.TenS > 0 || retries.ThirtyS > 0 || retries.FiveM > 0
+}
+
 // willRetryAfterExecution mirrors postShouldRetry logic to determine if another retry
 // will happen after the current execution. The skipped state is needed because
 // clean skipped EFD executions are terminal even when retry budget remains.

@@ -17,6 +17,8 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 		impactedTestsEnabled  bool
 		flakyRetryCount       int64
 		remainingFlakyRetries int64
+		attemptToFixRetries   int
+		efdRetryPossible      bool
 		needsMetadataOnly     bool
 		wantPath              additionalFeaturePath
 		wantReasons           []string
@@ -49,10 +51,11 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			wantReasons: []string{"test_management_quarantined"},
 		},
 		{
-			name:        "attempt to fix owns retry wrapper",
-			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
-			wantPath:    additionalFeaturePathRetryWrapper,
-			wantReasons: []string{"attempt_to_fix"},
+			name:                "attempt to fix owns retry wrapper",
+			meta:                additionalFeatureMetadata{isTestManagementEnabled: true, isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
+			attemptToFixRetries: 3,
+			wantPath:            additionalFeaturePathRetryWrapper,
+			wantReasons:         []string{"attempt_to_fix"},
 		},
 		{
 			name: "attempt to fix owns retry wrapper over EFD and flaky retry",
@@ -65,8 +68,21 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			},
 			flakyRetryCount:       2,
 			remainingFlakyRetries: 1,
+			attemptToFixRetries:   3,
 			wantPath:              additionalFeaturePathRetryWrapper,
 			wantReasons:           []string{"attempt_to_fix"},
+		},
+		{
+			name:        "attempt to fix with zero retries keeps metadata without retry group",
+			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
+			wantPath:    additionalFeaturePathMetadataOnly,
+			wantReasons: []string{"attempt_to_fix_zero_retries"},
+		},
+		{
+			name:        "masked attempt to fix with zero retries keeps isolated wrapper",
+			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isQuarantined: true, isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
+			wantPath:    additionalFeaturePathRetryWrapper,
+			wantReasons: []string{"attempt_to_fix"},
 		},
 		{
 			name:        "disabled attempt to fix still needs retry wrapper metadata",
@@ -82,10 +98,17 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			wantReasons:       []string{"inherited_subtest_state"},
 		},
 		{
-			name:        "EFD new test uses retry wrapper",
+			name:             "EFD new test uses retry wrapper",
+			meta:             additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isNew: true},
+			efdRetryPossible: true,
+			wantPath:         additionalFeaturePathRetryWrapper,
+			wantReasons:      []string{"efd_new_test"},
+		},
+		{
+			name:        "EFD new test with zero retries keeps metadata without retry group",
 			meta:        additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isNew: true},
-			wantPath:    additionalFeaturePathRetryWrapper,
-			wantReasons: []string{"efd_new_test"},
+			wantPath:    additionalFeaturePathMetadataOnly,
+			wantReasons: []string{"efd_zero_retries"},
 		},
 		{
 			name:     "EFD known test without impacted tests does not wrap",
@@ -96,6 +119,7 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			name:                 "impacted tests keep conservative EFD wrapper",
 			meta:                 additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true},
 			impactedTestsEnabled: true,
+			efdRetryPossible:     true,
 			wantPath:             additionalFeaturePathRetryWrapper,
 			wantReasons:          []string{"efd_modified_candidate"},
 		},
@@ -124,7 +148,15 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := selectAdditionalFeaturePath(&tt.meta, tt.impactedTestsEnabled, tt.flakyRetryCount, tt.remainingFlakyRetries, tt.needsMetadataOnly)
+		got := selectAdditionalFeaturePath(
+			&tt.meta,
+			tt.impactedTestsEnabled,
+			tt.flakyRetryCount,
+			tt.remainingFlakyRetries,
+			tt.attemptToFixRetries,
+			tt.efdRetryPossible,
+			tt.needsMetadataOnly,
+		)
 		if got.path != tt.wantPath {
 			t.Fatalf("%s: expected path %s, got %s", tt.name, tt.wantPath, got.path)
 		}

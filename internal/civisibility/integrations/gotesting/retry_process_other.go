@@ -8,6 +8,7 @@
 package gotesting
 
 import (
+	"os"
 	"os/exec"
 )
 
@@ -16,6 +17,14 @@ import (
 func ProcessRetryContainmentSupported() bool { return false }
 
 func processRetryChildStartsSuspended() bool { return false }
+
+func prepareProcessRetryControlTransport(*exec.Cmd) (*processRetryControlTransport, error) {
+	return nil, errProcessRetryTreeUnsupported
+}
+
+func openProcessRetryChildControlTransport(processRetryControlConfig) (*os.File, *os.File, error) {
+	return nil, nil, errProcessRetryTreeUnsupported
+}
 
 func setProcessGroupForCommand(cmd *exec.Cmd) error {
 	if cmd == nil {

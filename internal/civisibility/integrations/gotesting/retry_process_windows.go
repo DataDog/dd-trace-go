@@ -9,6 +9,7 @@ package gotesting
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -28,6 +29,79 @@ var processRetryWindowsJobs = struct {
 }{jobs: make(map[*exec.Cmd]windows.Handle)}
 
 func processRetryChildStartsSuspended() bool { return true }
+
+func prepareProcessRetryControlTransport(cmd *exec.Cmd) (*processRetryControlTransport, error) {
+	if cmd == nil {
+		return nil, errProcessRetryProcessNotStarted
+	}
+	parentToChildRead, parentToChildWrite, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	childToParentRead, childToParentWrite, err := os.Pipe()
+	if err != nil {
+		_ = parentToChildRead.Close()
+		_ = parentToChildWrite.Close()
+		return nil, err
+	}
+	readHandle := syscall.Handle(parentToChildRead.Fd())
+	writeHandle := syscall.Handle(childToParentWrite.Fd())
+	if err := syscall.SetHandleInformation(readHandle, syscall.HANDLE_FLAG_INHERIT, syscall.HANDLE_FLAG_INHERIT); err != nil {
+		_ = parentToChildRead.Close()
+		_ = parentToChildWrite.Close()
+		_ = childToParentRead.Close()
+		_ = childToParentWrite.Close()
+		return nil, err
+	}
+	if err := syscall.SetHandleInformation(writeHandle, syscall.HANDLE_FLAG_INHERIT, syscall.HANDLE_FLAG_INHERIT); err != nil {
+		_ = parentToChildRead.Close()
+		_ = parentToChildWrite.Close()
+		_ = childToParentRead.Close()
+		_ = childToParentWrite.Close()
+		return nil, err
+	}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.AdditionalInheritedHandles = append(
+		cmd.SysProcAttr.AdditionalInheritedHandles,
+		readHandle,
+		writeHandle,
+	)
+	return &processRetryControlTransport{
+		read:       childToParentRead,
+		write:      parentToChildWrite,
+		childRead:  parentToChildRead,
+		childWrite: childToParentWrite,
+		config: processRetryControlConfig{
+			Transport:     processRetryControlTransportWinHandles,
+			ReadEndpoint:  uint64(readHandle),
+			WriteEndpoint: uint64(writeHandle),
+		},
+	}, nil
+}
+
+func openProcessRetryChildControlTransport(cfg processRetryControlConfig) (*os.File, *os.File, error) {
+	if cfg.Transport != processRetryControlTransportWinHandles {
+		return nil, nil, errProcessRetryControlInvalid
+	}
+	readHandle := syscall.Handle(cfg.ReadEndpoint)
+	writeHandle := syscall.Handle(cfg.WriteEndpoint)
+	if err := syscall.SetHandleInformation(readHandle, syscall.HANDLE_FLAG_INHERIT, 0); err != nil {
+		return nil, nil, err
+	}
+	if err := syscall.SetHandleInformation(writeHandle, syscall.HANDLE_FLAG_INHERIT, 0); err != nil {
+		return nil, nil, err
+	}
+	read := os.NewFile(uintptr(readHandle), "dd-process-retry-control-read")
+	write := os.NewFile(uintptr(writeHandle), "dd-process-retry-control-write")
+	if read == nil || write == nil {
+		_ = closeProcessRetryControlFile(read)
+		_ = closeProcessRetryControlFile(write)
+		return nil, nil, errProcessRetryControlInvalid
+	}
+	return read, write, nil
+}
 
 func setProcessGroupForCommand(cmd *exec.Cmd) error {
 	if cmd == nil {
