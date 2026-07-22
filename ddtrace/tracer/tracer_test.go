@@ -30,7 +30,7 @@ import (
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/goleak"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -1493,7 +1493,7 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 	require.NoError(t, err)
 
 	w := trc.traceWriter.(*otlpTraceWriter)
-	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, nil)
 
 	// Enable canDropP0s so submit() reaches the noopConcentrator
 	// rather than short-circuiting.
@@ -1523,7 +1523,7 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 	totalSpans := 0
 	for _, p := range payloads {
 		var td otlptrace.TracesData
-		require.NoError(t, proto.Unmarshal(p, &td))
+		require.NoError(t, protojson.Unmarshal(p, &td))
 		for _, rs := range td.ResourceSpans {
 			for _, ss := range rs.ScopeSpans {
 				totalSpans += len(ss.Spans)
@@ -1555,7 +1555,7 @@ func TestOTLPExportModeProcessTags(t *testing.T) {
 		})
 		require.NoError(t, err)
 		w := trc.traceWriter.(*otlpTraceWriter)
-		w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+		w.transport = newOTLPTransport(srv.Client(), srv.URL, nil)
 		setGlobalTracer(trc)
 		t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
 		return trc
@@ -1566,7 +1566,7 @@ func TestOTLPExportModeProcessTags(t *testing.T) {
 		var spans []*otlptrace.Span
 		for _, p := range payloads {
 			var td otlptrace.TracesData
-			require.NoError(t, proto.Unmarshal(p, &td))
+			require.NoError(t, protojson.Unmarshal(p, &td))
 			for _, rs := range td.ResourceSpans {
 				for _, ss := range rs.ScopeSpans {
 					spans = append(spans, ss.Spans...)
@@ -1706,7 +1706,7 @@ func TestOTLPExportModeSpanEventsRoundTrip(t *testing.T) {
 	})
 	require.NoError(t, err)
 	w := trc.traceWriter.(*otlpTraceWriter)
-	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, nil)
 	setGlobalTracer(trc)
 	t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
 
@@ -1721,7 +1721,7 @@ func TestOTLPExportModeSpanEventsRoundTrip(t *testing.T) {
 	var spans []*otlptrace.Span
 	for _, p := range srv.getPayloads() {
 		var td otlptrace.TracesData
-		require.NoError(t, proto.Unmarshal(p, &td))
+		require.NoError(t, protojson.Unmarshal(p, &td))
 		for _, rs := range td.ResourceSpans {
 			for _, ss := range rs.ScopeSpans {
 				spans = append(spans, ss.Spans...)

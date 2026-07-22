@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -153,7 +154,7 @@ func TestOTLPWriterFlush(t *testing.T) {
 	require.Equal(t, 1, len(payloads))
 
 	var tracesData otlptrace.TracesData
-	err := proto.Unmarshal(payloads[0], &tracesData)
+	err := protojson.Unmarshal(payloads[0], &tracesData)
 	require.NoError(t, err)
 
 	rs := tracesData.ResourceSpans
@@ -334,11 +335,11 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 
 	assert.Equal(t, int32(numAdders*spansPerAdder), spansAdded.Load())
 
-	// Verify all sent payloads are valid protobuf
+	// Verify all sent payloads are valid JSON
 	totalSpans := 0
 	for _, data := range srv.getPayloads() {
 		var td otlptrace.TracesData
-		err := proto.Unmarshal(data, &td)
+		err := protojson.Unmarshal(data, &td)
 		require.NoError(t, err)
 		for _, rs := range td.ResourceSpans {
 			for _, ss := range rs.ScopeSpans {
@@ -458,7 +459,7 @@ func TestOTLPWriterProcessTagsDisabled(t *testing.T) {
 
 	for _, data := range srv.getPayloads() {
 		var td otlptrace.TracesData
-		require.NoError(t, proto.Unmarshal(data, &td))
+		require.NoError(t, protojson.Unmarshal(data, &td))
 		for _, rs := range td.ResourceSpans {
 			for _, ss := range rs.ScopeSpans {
 				for i, s := range ss.Spans {
