@@ -9,6 +9,7 @@ package gotesting
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -18,6 +19,50 @@ import (
 func ProcessRetryContainmentSupported() bool { return true }
 
 func processRetryChildStartsSuspended() bool { return false }
+
+func prepareProcessRetryControlTransport(cmd *exec.Cmd) (*processRetryControlTransport, error) {
+	if cmd == nil {
+		return nil, errProcessRetryProcessNotStarted
+	}
+	parentToChildRead, parentToChildWrite, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	childToParentRead, childToParentWrite, err := os.Pipe()
+	if err != nil {
+		_ = parentToChildRead.Close()
+		_ = parentToChildWrite.Close()
+		return nil, err
+	}
+	readFD := 3 + len(cmd.ExtraFiles)
+	writeFD := readFD + 1
+	cmd.ExtraFiles = append(cmd.ExtraFiles, parentToChildRead, childToParentWrite)
+	return &processRetryControlTransport{
+		read:       childToParentRead,
+		write:      parentToChildWrite,
+		childRead:  parentToChildRead,
+		childWrite: childToParentWrite,
+		config: processRetryControlConfig{
+			Transport:     processRetryControlTransportUnixPipes,
+			ReadEndpoint:  uint64(readFD),
+			WriteEndpoint: uint64(writeFD),
+		},
+	}, nil
+}
+
+func openProcessRetryChildControlTransport(cfg processRetryControlConfig) (*os.File, *os.File, error) {
+	if cfg.Transport != processRetryControlTransportUnixPipes || cfg.ReadEndpoint < 3 || cfg.WriteEndpoint < 3 {
+		return nil, nil, errProcessRetryControlInvalid
+	}
+	read := os.NewFile(uintptr(cfg.ReadEndpoint), "dd-process-retry-control-read")
+	write := os.NewFile(uintptr(cfg.WriteEndpoint), "dd-process-retry-control-write")
+	if read == nil || write == nil {
+		_ = closeProcessRetryControlFile(read)
+		_ = closeProcessRetryControlFile(write)
+		return nil, nil, errProcessRetryControlInvalid
+	}
+	return read, write, nil
+}
 
 func setProcessGroupForCommand(cmd *exec.Cmd) error {
 	if cmd == nil {

@@ -316,21 +316,22 @@ func getTestPrivateFieldsReflect(t *testing.T) *commonPrivateFields {
 	return testFields
 }
 
-// getCommonParentPrivateFields returns the synchronization, completion, and
-// parent fields needed to classify runtime.Goexit consistently with testing.tRunner.
+// getCommonParentPrivateFields returns the synchronization, result, completion,
+// and parent fields needed by retry-owned testing.common traversal.
 func getCommonParentPrivateFields(fields *commonPrivateFields) *commonPrivateFields {
 	if fields == nil || fields.parent == nil || *fields.parent == nil {
 		return nil
 	}
 	layout := getTestingInternalsLayout()
 	if layout == nil || layout.disabled || !allAvailable(
-		layout.common.mu, layout.common.finished, layout.common.parent.unsafeField,
+		layout.common.mu, layout.common.failed, layout.common.finished, layout.common.parent.unsafeField,
 	) {
 		return nil
 	}
 	parentBase := *fields.parent
 	return &commonPrivateFields{
 		mu:       fieldPtr[sync.RWMutex](parentBase, layout.common.mu),
+		failed:   fieldPtr[bool](parentBase, layout.common.failed),
 		finished: fieldPtr[bool](parentBase, layout.common.finished),
 		parent:   (*unsafe.Pointer)(fieldRawPtr(parentBase, layout.common.parent.unsafeField)),
 	}
@@ -1118,12 +1119,13 @@ func getBenchmarkPrivateFieldsFast(b *testing.B, layout *testingInternalsLayout)
 	benchFields := &benchmarkPrivateFields{
 		B: b,
 		commonPrivateFields: commonPrivateFields{
-			mu:      fieldPtr[sync.RWMutex](commonBase, layout.common.mu),
-			level:   fieldPtr[int](commonBase, layout.common.level),
-			name:    fieldPtr[string](commonBase, layout.common.name),
-			failed:  fieldPtr[bool](commonBase, layout.common.failed),
-			skipped: fieldPtr[bool](commonBase, layout.common.skipped),
-			parent:  (*unsafe.Pointer)(fieldRawPtr(commonBase, layout.common.parent.unsafeField)),
+			mu:       fieldPtr[sync.RWMutex](commonBase, layout.common.mu),
+			level:    fieldPtr[int](commonBase, layout.common.level),
+			name:     fieldPtr[string](commonBase, layout.common.name),
+			failed:   fieldPtr[bool](commonBase, layout.common.failed),
+			skipped:  fieldPtr[bool](commonBase, layout.common.skipped),
+			finished: fieldPtr[bool](commonBase, layout.common.finished),
+			parent:   (*unsafe.Pointer)(fieldRawPtr(commonBase, layout.common.parent.unsafeField)),
 		},
 		benchFunc: fieldPtr[func(*testing.B)](unsafe.Pointer(b), layout.benchmark.benchFunc),
 		result:    fieldPtr[testing.BenchmarkResult](unsafe.Pointer(b), layout.benchmark.result),
@@ -1153,6 +1155,9 @@ func getBenchmarkPrivateFieldsReflect(b *testing.B) *benchmarkPrivateFields {
 	}
 	if ptr, err := getFieldPointerFrom(b, "skipped"); err == nil && ptr != nil {
 		benchFields.skipped = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "finished"); err == nil && ptr != nil {
+		benchFields.finished = (*bool)(ptr)
 	}
 	if ptr, err := getFieldPointerFrom(b, "parent"); err == nil && ptr != nil {
 		benchFields.parent = (*unsafe.Pointer)(ptr)

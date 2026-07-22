@@ -56,6 +56,16 @@ var processRetryUnitTestPrefixes = []string{
 	"TestRecordProcessRetry",
 }
 
+const retryParityUnitTestPrefix = "TestProcessRetryParity"
+
+var retryParityFallbackUnitTests = map[string]struct{}{
+	"TestProcessRetryParityRuntimeLayoutRejectsMissingCapabilities":                 {},
+	"TestProcessRetryParityMaskedFallbackRunsInstrumentedShellWithoutUserBody":      {},
+	"TestProcessRetryParitySelectedSubtestUsesOneNativeExecutionWithoutFreshLayout": {},
+	"TestProcessRetryParityUnsupportedFreshLayoutUsesOneNativeParentExecution":      {},
+	"TestProcessRetryParityUnsupportedMaskedLayoutSkipsWithoutExecutingBody":        {},
+}
+
 var mTracer mocktracer.Tracer
 var logsEntries []*mockedLogEntry
 var parallelEfd bool
@@ -99,6 +109,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv("TestIntelligentTestRunnerWithCoverageBackfill", false) {
 		fmt.Printf(scenarioStarted, "TestIntelligentTestRunnerWithCoverageBackfill")
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
+	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
+		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
+		os.Exit(runProcessRetryChild(m))
 	} else if internal.BoolEnv("Bypass", false) {
 		os.Exit(m.Run())
 	} else {
@@ -107,17 +120,22 @@ func TestMain(m *testing.M) {
 		if tests == nil {
 			panic("unable to enumerate process retry unit tests")
 		}
-		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests), "Bypass=true")
-		for _, v := range scenarios {
-			runTestControllerSubprocess(v, legacyScenarioRunFilter, fmt.Sprintf("%s=true", v))
+		_, layoutReason := getRetryAttemptLayout()
+		layoutAvailable := layoutReason == ""
+		runTestControllerSubprocess("RetryParityUnitTests", buildRetryParityUnitRunFilter(*tests, layoutAvailable), "Bypass=true", "-test.parallel=1")
+		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
+		if layoutAvailable {
+			for _, v := range scenarios {
+				runTestControllerSubprocess(v, legacyScenarioRunFilter, fmt.Sprintf("%s=true", v))
+			}
 		}
 	}
 
 	os.Exit(0)
 }
 
-func runTestControllerSubprocess(name, runFilter, environment string) {
-	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], runFilter)...)
+func runTestControllerSubprocess(name, runFilter, environment string, extraArgs ...string) {
+	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], runFilter, extraArgs...)...)
 	var output bytes.Buffer
 	if log.DebugEnabled() {
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
@@ -144,9 +162,15 @@ func runTestControllerSubprocess(name, runFilter, environment string) {
 	os.Exit(1)
 }
 
-func buildProcessRetryUnitRunFilter(tests []testing.InternalTest) string {
+func buildProcessRetryUnitRunFilter(tests []testing.InternalTest, layoutAvailable bool) string {
 	names := make([]string, 0, len(tests))
 	for _, test := range tests {
+		if strings.HasPrefix(test.Name, retryParityUnitTestPrefix) {
+			continue
+		}
+		if !layoutAvailable && strings.HasPrefix(test.Name, "TestRunTestWithRetry") {
+			continue
+		}
 		for _, prefix := range processRetryUnitTestPrefixes {
 			if strings.HasPrefix(test.Name, prefix) {
 				names = append(names, regexp.QuoteMeta(test.Name))
@@ -154,6 +178,26 @@ func buildProcessRetryUnitRunFilter(tests []testing.InternalTest) string {
 			}
 		}
 	}
+	return buildExactTestRunFilter(names)
+}
+
+func buildRetryParityUnitRunFilter(tests []testing.InternalTest, layoutAvailable bool) string {
+	names := make([]string, 0, len(tests))
+	for _, test := range tests {
+		if !strings.HasPrefix(test.Name, retryParityUnitTestPrefix) {
+			continue
+		}
+		if !layoutAvailable {
+			if _, ok := retryParityFallbackUnitTests[test.Name]; !ok {
+				continue
+			}
+		}
+		names = append(names, regexp.QuoteMeta(test.Name))
+	}
+	return buildExactTestRunFilter(names)
+}
+
+func buildExactTestRunFilter(names []string) string {
 	sort.Strings(names)
 	if len(names) == 0 {
 		return "^$"
@@ -422,8 +466,8 @@ func runFlakyTestRetriesWithTransientSettingsFailureTests(m *testing.M) {
 	os.Exit(0)
 }
 
-func buildTestControllerSubprocessArgs(originalArgs []string, runFilter string) []string {
-	preserved := make([]string, 0, len(originalArgs)+1)
+func buildTestControllerSubprocessArgs(originalArgs []string, runFilter string, extraArgs ...string) []string {
+	preserved := make([]string, 0, len(originalArgs)+len(extraArgs)+1)
 	boundary := []string(nil)
 	for i := 0; i < len(originalArgs); i++ {
 		arg := originalArgs[i]
@@ -456,8 +500,9 @@ func buildTestControllerSubprocessArgs(originalArgs []string, runFilter string) 
 			preserved = append(preserved, originalArgs[i])
 		}
 	}
-	args := make([]string, 0, len(preserved)+1+len(boundary))
+	args := make([]string, 0, len(preserved)+len(extraArgs)+1+len(boundary))
 	args = append(args, preserved...)
+	args = append(args, extraArgs...)
 	args = append(args, "-test.run="+runFilter)
 	args = append(args, boundary...)
 	return args

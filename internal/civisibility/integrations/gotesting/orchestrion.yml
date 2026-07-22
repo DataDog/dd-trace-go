@@ -22,12 +22,22 @@ aspects:
           links:
             - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
           template: |-
+            //go:linkname __dd_civisibility_instrumentTestingBuiltWithOrchestrion github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingBuiltWithOrchestrion
+            func __dd_civisibility_instrumentTestingBuiltWithOrchestrion()
+
             //go:linkname __dd_civisibility_instrumentTestingM github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingM
-            func __dd_civisibility_instrumentTestingM(*M) func(int)
+            func __dd_civisibility_instrumentTestingM(*M) (bool, func(int) int)
+
+            func init() {
+              __dd_civisibility_instrumentTestingBuiltWithOrchestrion()
+            }
       - prepend-statements:
           template: |-
-            exitFunc := __dd_civisibility_instrumentTestingM({{ .Function.Receiver }})
-            defer func() { exitFunc({{ .Function.Receiver }}.exitCode) }()
+            proceed, exitFunc := __dd_civisibility_instrumentTestingM({{ .Function.Receiver }})
+            if !proceed {
+              return exitFunc(1)
+            }
+            defer func() { {{ .Function.Result 0 }} = exitFunc({{ .Function.Result 0 }}) }()
 
   - id: T.Run
     join-point:
@@ -47,6 +57,12 @@ aspects:
 
             //go:linkname __dd_civisibility_instrumentSetErrorInfo github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentSetErrorInfo
             func __dd_civisibility_instrumentSetErrorInfo(tb TB, errType string, errMessage string, skip int)
+
+            //go:linkname __dd_civisibility_instrumentCaptureFormattedError github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentCaptureFormattedError
+            func __dd_civisibility_instrumentCaptureFormattedError(tb TB, errType string, errMessage string, skip int) string
+
+            //go:linkname __dd_civisibility_instrumentCaptureFormattedSkip github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentCaptureFormattedSkip
+            func __dd_civisibility_instrumentCaptureFormattedSkip(tb TB, skipType string, skipReason string) string
 
             //go:linkname __dd_civisibility_instrumentCloseAndSkip github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentCloseAndSkip
             func __dd_civisibility_instrumentCloseAndSkip(tb TB, skipReason string)
@@ -106,95 +122,39 @@ aspects:
           template: |-
             __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "FailNow", "failed test", 0)
 
-  - id: common.Error
+  - id: common.formatted-sprintln
     join-point:
       all-of:
         - import-path: testing
-        - function-body:
-            function:
-              - name: Error
-              - receiver: '*testing.common'
+        - function-call: fmt.Sprintln
     advice:
-      - prepend-statements:
-          imports:
-            fmt: fmt
+      - wrap-expression:
           template: |-
-            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Error", fmt.Sprint({{ .Function.Argument 0 }}...), 0)
+            {{- $name := .Function.Name -}}
+            {{- if or (eq $name "Error") (eq $name "Fatal") -}}
+              __dd_civisibility_instrumentCaptureFormattedError({{ .Function.Receiver }}, {{ printf "%q" $name }}, {{ . }}, 0)
+            {{- else if eq $name "Skip" -}}
+              __dd_civisibility_instrumentCaptureFormattedSkip({{ .Function.Receiver }}, {{ printf "%q" $name }}, {{ . }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
 
-  - id: common.Errorf
+  - id: common.formatted-sprintf
     join-point:
       all-of:
         - import-path: testing
-        - function-body:
-            function:
-              - name: Errorf
-              - receiver: '*testing.common'
+        - function-call: fmt.Sprintf
     advice:
-      - prepend-statements:
-          imports:
-            fmt: fmt
+      - wrap-expression:
           template: |-
-            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Errorf", fmt.Sprintf({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }}...), 0)
-
-  - id: common.Fatal
-    join-point:
-      all-of:
-        - import-path: testing
-        - function-body:
-            function:
-              - name: Fatal
-              - receiver: '*testing.common'
-    advice:
-      - prepend-statements:
-          imports:
-            fmt: fmt
-          template: |-
-            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Fatal", fmt.Sprint({{ .Function.Argument 0 }}...), 0)
-
-  - id: common.Fatalf
-    join-point:
-      all-of:
-        - import-path: testing
-        - function-body:
-            function:
-              - name: Fatalf
-              - receiver: '*testing.common'
-    advice:
-      - prepend-statements:
-          imports:
-            fmt: fmt
-          template: |-
-            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Fatalf", fmt.Sprintf({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }}...), 0)
-
-  - id: common.Skip
-    join-point:
-      all-of:
-        - import-path: testing
-        - function-body:
-            function:
-              - name: Skip
-              - receiver: '*testing.common'
-    advice:
-      - prepend-statements:
-          imports:
-            fmt: fmt
-          template: |-
-            __dd_civisibility_instrumentCloseAndSkip({{ .Function.Receiver }}, fmt.Sprint({{ .Function.Argument 0 }}...))
-
-  - id: common.Skipf
-    join-point:
-      all-of:
-        - import-path: testing
-        - function-body:
-            function:
-              - name: Skipf
-              - receiver: '*testing.common'
-    advice:
-      - prepend-statements:
-          imports:
-            fmt: fmt
-          template: |-
-            __dd_civisibility_instrumentCloseAndSkip({{ .Function.Receiver }}, fmt.Sprintf({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }}...))
+            {{- $name := .Function.Name -}}
+            {{- if or (eq $name "Errorf") (eq $name "Fatalf") -}}
+              __dd_civisibility_instrumentCaptureFormattedError({{ .Function.Receiver }}, {{ printf "%q" $name }}, {{ . }}, 0)
+            {{- else if eq $name "Skipf" -}}
+              __dd_civisibility_instrumentCaptureFormattedSkip({{ .Function.Receiver }}, {{ printf "%q" $name }}, {{ . }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
 
   - id: common.SkipNow
     join-point:

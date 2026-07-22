@@ -7,7 +7,6 @@ package gotesting
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"runtime"
 	"sync"
@@ -75,27 +74,77 @@ func (ddb *B) FailNow() {
 }
 
 // Error is equivalent to Log followed by Fail.
-func (ddb *B) Error(args ...any) { ddb.getBWithError("Error", fmt.Sprint(args...)).Error(args...) }
+func (ddb *B) Error(args ...any) {
+	b := (*testing.B)(ddb)
+	b.Helper()
+	message := &singleEvaluationMessage{args: args, println: true}
+	b.Error(message)
+	if value, ok := message.captured(); ok {
+		instrumentSetErrorInfo(b, "Error", value, 1)
+	}
+}
 
 // Errorf is equivalent to Logf followed by Fail.
 func (ddb *B) Errorf(format string, args ...any) {
-	ddb.getBWithError("Errorf", fmt.Sprintf(format, args...)).Errorf(format, args...)
+	b := (*testing.B)(ddb)
+	b.Helper()
+	message := &singleEvaluationMessage{format: format, args: args}
+	b.Errorf("%s", message)
+	if value, ok := message.captured(); ok {
+		instrumentSetErrorInfo(b, "Errorf", value, 1)
+	}
 }
 
 // Fatal is equivalent to Log followed by FailNow.
-func (ddb *B) Fatal(args ...any) { ddb.getBWithError("Fatal", fmt.Sprint(args...)).Fatal(args...) }
+func (ddb *B) Fatal(args ...any) {
+	b := (*testing.B)(ddb)
+	b.Helper()
+	message := &singleEvaluationMessage{args: args, println: true}
+	defer func() {
+		if value, ok := message.captured(); ok && b.Failed() && testingBFinished(b) {
+			instrumentSetErrorInfo(b, "Fatal", value, 1)
+		}
+	}()
+	b.Fatal(message)
+}
 
 // Fatalf is equivalent to Logf followed by FailNow.
 func (ddb *B) Fatalf(format string, args ...any) {
-	ddb.getBWithError("Fatalf", fmt.Sprintf(format, args...)).Fatalf(format, args...)
+	b := (*testing.B)(ddb)
+	b.Helper()
+	message := &singleEvaluationMessage{format: format, args: args}
+	defer func() {
+		if value, ok := message.captured(); ok && b.Failed() && testingBFinished(b) {
+			instrumentSetErrorInfo(b, "Fatalf", value, 1)
+		}
+	}()
+	b.Fatalf("%s", message)
 }
 
 // Skip is equivalent to Log followed by SkipNow.
-func (ddb *B) Skip(args ...any) { ddb.getBWithSkip(fmt.Sprint(args...)).Skip(args...) }
+func (ddb *B) Skip(args ...any) {
+	b := (*testing.B)(ddb)
+	b.Helper()
+	message := &singleEvaluationMessage{args: args, println: true}
+	defer func() {
+		if value, ok := message.captured(); ok && b.Skipped() && testingBFinished(b) {
+			instrumentCloseAndSkip(b, value)
+		}
+	}()
+	b.Skip(message)
+}
 
 // Skipf is equivalent to Logf followed by SkipNow.
 func (ddb *B) Skipf(format string, args ...any) {
-	ddb.getBWithSkip(fmt.Sprintf(format, args...)).Skipf(format, args...)
+	b := (*testing.B)(ddb)
+	b.Helper()
+	message := &singleEvaluationMessage{format: format, args: args}
+	defer func() {
+		if value, ok := message.captured(); ok && b.Skipped() && testingBFinished(b) {
+			instrumentCloseAndSkip(b, value)
+		}
+	}()
+	b.Skipf("%s", message)
 }
 
 // SkipNow marks the test as having been skipped and stops its execution
@@ -175,10 +224,9 @@ func (ddb *B) getBWithError(errType string, errMessage string) *testing.B {
 	return b
 }
 
-func (ddb *B) getBWithSkip(skipReason string) *testing.B {
-	b := (*testing.B)(ddb)
-	instrumentCloseAndSkip(b, skipReason)
-	return b
+func testingBFinished(b *testing.B) bool {
+	fields := getBenchmarkPrivateFields(b)
+	return fields != nil && fields.GetFinished()
 }
 
 // hasCiVisibilityBenchmarkFunc gets if a *runtime.Func is being instrumented.

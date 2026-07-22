@@ -6,13 +6,19 @@
 package retryprocess
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -31,15 +37,36 @@ const orchestrionRetryProcessInvalidConfigEnv = "ORCHESTRION_RETRY_PROCESS_INVAL
 const orchestrionRetryProcessHybridEnv = "ORCHESTRION_RETRY_PROCESS_HYBRID"
 const orchestrionRetryProcessHybridParentEnv = "ORCHESTRION_RETRY_PROCESS_HYBRID_PARENT"
 const orchestrionRetryProcessPureParentEnv = "ORCHESTRION_RETRY_PROCESS_PURE_PARENT"
+const orchestrionRetryProcessSelectedSubtestA2FEnv = "ORCHESTRION_RETRY_PROCESS_SELECTED_SUBTEST_A2F"
+const orchestrionRetryProcessSequentialMRunEnv = "ORCHESTRION_RETRY_PROCESS_SEQUENTIAL_M_RUN"
+const orchestrionRetryProcessDuplicateChildMRunEnv = "ORCHESTRION_RETRY_PROCESS_DUPLICATE_CHILD_M_RUN"
 const orchestrionRetryProcessCleanupPathEnv = "ORCHESTRION_RETRY_PROCESS_CLEANUP_PATH"
 const orchestrionRetryProcessSubtestPanicContinuedPathEnv = "ORCHESTRION_RETRY_PROCESS_SUBTEST_PANIC_CONTINUED_PATH"
 const orchestrionRetryProcessChildAPIKey = "orchestrion-process-retry-child-api-key"
 const orchestrionRetryProcessChildRunFilter = "^TestOrchestrionRetryProcess(Selected|Unselected)Child$"
-const orchestrionRetryProcessMetadataRunFilter = "^TestOrchestrionRetryProcess(Error|Skip|SubtestError|SubtestPanic|ParallelSubtestPanic|SubtestThenTopLevelSkip|Unselected)Child$"
+const orchestrionRetryProcessMetadataRunFilter = "^TestOrchestrionRetryProcess(Error|Errorf|Fatal|Fatalf|Skip|Skipf|SubtestError|SubtestPanic|ParallelSubtestPanic|SubtestThenTopLevelSkip|Unselected)Child$"
 const orchestrionRetryProcessHybridRunFilter = "^TestOrchestrionRetryProcessHybrid(Panic|Unselected)Child$"
+
+const (
+	orchestrionRetryProcessControlVersion        = 1
+	orchestrionRetryProcessControlAttemptReady   = "attempt_ready"
+	orchestrionRetryProcessControlAdmission      = "body_admission_request"
+	orchestrionRetryProcessControlBodyAdmitted   = "body_admitted"
+	orchestrionRetryProcessControlRunBody        = "run_body"
+	orchestrionRetryProcessControlParallel       = "parallel_request"
+	orchestrionRetryProcessControlParallelReady  = "parallel_resume"
+	orchestrionRetryProcessControlTerminalReady  = "controlled_terminal_ready"
+	orchestrionRetryProcessControlTerminalCommit = "controlled_terminal_commit"
+	orchestrionRetryProcessControlTerminalDone   = "controlled_terminal_committed"
+	orchestrionRetryProcessControlAbort          = "abort"
+)
 
 var orchestrionRetryProcessHybridParentRuns atomic.Int32
 var orchestrionRetryProcessPureParentRuns atomic.Int32
+var orchestrionRetryProcessSelectedSubtestA2FParentRuns atomic.Int32
+var orchestrionRetryProcessSelectedSubtestA2FRuns atomic.Int32
+var orchestrionRetryProcessSequentialMRunRuns atomic.Int32
+var orchestrionRetryProcessSequentialMRunNestedRuns atomic.Int32
 
 func requireOrchestrionProcessRetryContainmentForTesting(t testing.TB) {
 	t.Helper()
@@ -64,12 +91,91 @@ type retryProcessChildResult struct {
 	ResultError  string `json:"result_error"`
 }
 
+type orchestrionCountingStringer struct {
+	value string
+	calls atomic.Int32
+}
+
+func (s *orchestrionCountingStringer) String() string {
+	s.calls.Add(1)
+	return s.value
+}
+
+func requireSingleOrchestrionFormatting(t *testing.T, value string) *orchestrionCountingStringer {
+	t.Helper()
+	stringer := &orchestrionCountingStringer{value: value}
+	t.Cleanup(func() {
+		if got := stringer.calls.Load(); got != 1 {
+			panic(fmt.Sprintf("formatted %d times, want exactly once", got))
+		}
+	})
+	return stringer
+}
+
+type orchestrionRetryProcessControlConfig struct {
+	Version                int    `json:"version"`
+	Transport              string `json:"transport"`
+	TestName               string `json:"test_name"`
+	Attempt                int    `json:"attempt"`
+	RetryReason            string `json:"retry_reason"`
+	ReadEndpoint           uint64 `json:"read_endpoint"`
+	WriteEndpoint          uint64 `json:"write_endpoint"`
+	ParentDeadlineUnixNano int64  `json:"parent_deadline_unix_nano"`
+	ParentDeadlineOK       bool   `json:"parent_deadline_ok"`
+	ObservedGOMAXPROCS     int    `json:"observed_gomaxprocs"`
+}
+
+type orchestrionRetryProcessControlFrame struct {
+	Version     int    `json:"version"`
+	TestName    string `json:"test_name"`
+	Attempt     int    `json:"attempt"`
+	RetryReason string `json:"retry_reason"`
+	Sequence    uint64 `json:"sequence"`
+	Kind        string `json:"kind"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+type orchestrionRetryProcessControlTransport struct {
+	read       *os.File
+	write      *os.File
+	childRead  *os.File
+	childWrite *os.File
+	config     orchestrionRetryProcessControlConfig
+}
+
+func (c *orchestrionRetryProcessControlTransport) closeChildEndpoints() {
+	if c == nil {
+		return
+	}
+	if c.childRead != nil {
+		_ = c.childRead.Close()
+	}
+	if c.childWrite != nil {
+		_ = c.childWrite.Close()
+	}
+	c.childRead = nil
+	c.childWrite = nil
+}
+
+func (c *orchestrionRetryProcessControlTransport) close() {
+	if c == nil {
+		return
+	}
+	for _, file := range []*os.File{c.read, c.write, c.childRead, c.childWrite} {
+		if file != nil {
+			_ = file.Close()
+		}
+	}
+}
+
 type orchestrionRetryProcessParentHarness struct {
-	server           *httptest.Server
-	tracer           mocktracer.Tracer
-	settingsRequests atomic.Int32
-	childRequests    atomic.Int32
-	unknownRequests  atomic.Int32
+	server                     *httptest.Server
+	tracer                     mocktracer.Tracer
+	settingsRequests           atomic.Int32
+	managementRequests         atomic.Int32
+	childRequests              atomic.Int32
+	unknownRequests            atomic.Int32
+	expectedManagementRequests bool
 }
 
 func TestMain(m *testing.M) {
@@ -78,6 +184,14 @@ func TestMain(m *testing.M) {
 	}
 	if orchestrionRetryProcessChild() {
 		_ = os.Setenv(constants.APIKeyEnvironmentVariable, orchestrionRetryProcessChildAPIKey)
+	}
+	if orchestrionRetryProcessChild() && orchestrionRetryProcessEnv(orchestrionRetryProcessDuplicateChildMRunEnv) == "true" {
+		firstExitCode := m.Run()
+		secondExitCode := m.Run()
+		if firstExitCode != 0 {
+			os.Exit(firstExitCode)
+		}
+		os.Exit(secondExitCode)
 	}
 	if orchestrionRetryProcessEnv(orchestrionRetryProcessHybridParentEnv) == "true" {
 		if orchestrionRetryProcessChild() {
@@ -91,10 +205,78 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(runOrchestrionRetryProcessPureParent(m))
 	}
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessSelectedSubtestA2FEnv) == "true" {
+		os.Exit(runOrchestrionRetryProcessSelectedSubtestA2F(m))
+	}
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessSequentialMRunEnv) == "true" {
+		os.Exit(runOrchestrionRetryProcessSequentialMRun(m))
+	}
 	if orchestrionRetryProcessEnv(orchestrionRetryProcessHybridEnv) == "true" {
 		os.Exit(gotesting.RunM(m))
 	}
 	os.Exit(m.Run())
+}
+
+func TestOrchestrionRetryProcessSequentialMRunRestoresNativeWorkloadsController(t *testing.T) {
+	if orchestrionRetryProcessChild() {
+		t.Skip("controller runs only in the parent process")
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestOrchestrionRetryProcessSequentialMRunFixture$", "-test.v")
+	cmd.Env = append(os.Environ(), orchestrionRetryProcessSequentialMRunEnv+"=true")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("sequential M.Run subprocess failed: %v\n%s", err, output)
+	}
+}
+
+func runOrchestrionRetryProcessSequentialMRun(m *testing.M) int {
+	harness := newOrchestrionRetryProcessParentHarness("orchestrion-sequential-m-run", "orchestrion-sequential-m-run-api-key")
+	defer harness.close()
+
+	firstExitCode := m.Run()
+	secondExitCode := m.Run()
+	if firstExitCode != 0 {
+		return firstExitCode
+	}
+	if secondExitCode != 0 {
+		return secondExitCode
+	}
+	if got := orchestrionRetryProcessSequentialMRunRuns.Load(); got != 2 {
+		panic(fmt.Sprintf("unexpected sequential M.Run body count: got=%d want=2", got))
+	}
+
+	const (
+		resourceName = "main_test.go.TestOrchestrionRetryProcessSequentialMRunFixture"
+		nestedName   = resourceName + "/nested"
+	)
+	if got := orchestrionRetryProcessSequentialMRunNestedRuns.Load(); got != 2 {
+		panic(fmt.Sprintf("unexpected sequential M.Run nested body count: got=%d want=2", got))
+	}
+	testSpans := 0
+	nestedSpans := 0
+	for _, span := range harness.tracer.FinishedSpans() {
+		switch span.Tag(ext.ResourceName) {
+		case resourceName:
+			testSpans++
+		case nestedName:
+			nestedSpans++
+		}
+	}
+	if testSpans != 1 || nestedSpans != 1 {
+		panic(fmt.Sprintf("unexpected sequential M.Run span counts: top=%d nested=%d want=1/1", testSpans, nestedSpans))
+	}
+	return 0
+}
+
+func TestOrchestrionRetryProcessSequentialMRunFixture(t *testing.T) {
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessSequentialMRunEnv) != "true" {
+		t.Skip("fixture runs only in the sequential M.Run subprocess")
+	}
+	orchestrionRetryProcessSequentialMRunRuns.Add(1)
+	t.Run("nested", func(*testing.T) {
+		orchestrionRetryProcessSequentialMRunNestedRuns.Add(1)
+	})
 }
 
 func TestOrchestrionRetryProcessPureParentUsesProcessRetryController(t *testing.T) {
@@ -165,8 +347,84 @@ func runOrchestrionRetryProcessHybridParent(m *testing.M) int {
 	return exitCode
 }
 
+func TestOrchestrionRetryProcessSelectedSubtestAttemptToFixController(t *testing.T) {
+	if orchestrionRetryProcessChild() {
+		t.Skip("controller runs only in the parent process")
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestOrchestrionRetryProcessSelectedSubtestAttemptToFixFixture$", "-test.v")
+	cmd.Env = append(os.Environ(), orchestrionRetryProcessSelectedSubtestA2FEnv+"=true")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Orchestrion selected-subtest attempt-to-fix subprocess failed: %v\n%s", err, output)
+	}
+}
+
+func runOrchestrionRetryProcessSelectedSubtestA2F(m *testing.M) int {
+	const (
+		moduleName = "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/retryprocess"
+		suiteName  = "main_test.go"
+		testName   = "TestOrchestrionRetryProcessSelectedSubtestAttemptToFixFixture/selected"
+	)
+	managementData := &civisibilitynet.TestManagementTestsResponseDataModules{
+		Modules: map[string]civisibilitynet.TestManagementTestsResponseDataSuites{
+			moduleName: {
+				Suites: map[string]civisibilitynet.TestManagementTestsResponseDataTests{
+					suiteName: {
+						Tests: map[string]civisibilitynet.TestManagementTestsResponseDataTestProperties{
+							testName: {
+								Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{
+									AttemptToFix: true,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	harness := newOrchestrionRetryProcessParentHarnessWithConfig(
+		"orchestrion-selected-subtest-a2f",
+		"orchestrion-selected-subtest-a2f-api-key",
+		orchestrionRetryProcessHarnessConfig{
+			attemptToFixRetries: 2,
+			managementData:      managementData,
+		},
+	)
+	defer harness.close()
+	exitCode := m.Run()
+	if exitCode == 0 {
+		if got := orchestrionRetryProcessSelectedSubtestA2FParentRuns.Load(); got != 1 {
+			panic(fmt.Sprintf("unexpected selected-subtest parent run count: got=%d want=1", got))
+		}
+		if got := orchestrionRetryProcessSelectedSubtestA2FRuns.Load(); got != 1 {
+			panic(fmt.Sprintf("unexpected selected-subtest attempt count: got=%d want=1", got))
+		}
+		assertOrchestrionRetryProcessSelectedSubtestA2FSpans(harness.tracer)
+		harness.assertRequests("selected-subtest attempt-to-fix")
+	}
+	return exitCode
+}
+
+type orchestrionRetryProcessHarnessConfig struct {
+	flakyRetries        bool
+	attemptToFixRetries int
+	managementData      *civisibilitynet.TestManagementTestsResponseDataModules
+}
+
 func newOrchestrionRetryProcessParentHarness(settingsID, apiKey string) *orchestrionRetryProcessParentHarness {
-	harness := &orchestrionRetryProcessParentHarness{}
+	return newOrchestrionRetryProcessParentHarnessWithConfig(settingsID, apiKey, orchestrionRetryProcessHarnessConfig{
+		flakyRetries: true,
+	})
+}
+
+func newOrchestrionRetryProcessParentHarnessWithConfig(
+	settingsID, apiKey string,
+	config orchestrionRetryProcessHarnessConfig,
+) *orchestrionRetryProcessParentHarness {
+	harness := &orchestrionRetryProcessParentHarness{
+		expectedManagementRequests: config.managementData != nil,
+	}
 	harness.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("dd-api-key") == orchestrionRetryProcessChildAPIKey {
 			harness.childRequests.Add(1)
@@ -184,7 +442,28 @@ func newOrchestrionRetryProcessParentHarness(settingsID, apiKey string) *orchest
 			}{}
 			response.Data.ID = settingsID
 			response.Data.Type = "ci_app_libraries_settings"
-			response.Data.Attributes.FlakyTestRetriesEnabled = true
+			response.Data.Attributes.FlakyTestRetriesEnabled = config.flakyRetries
+			response.Data.Attributes.TestManagement.Enabled = config.managementData != nil
+			response.Data.Attributes.TestManagement.AttemptToFixRetries = config.attemptToFixRetries
+			_ = json.NewEncoder(w).Encode(&response)
+		case "/api/v2/test/libraries/test-management/tests":
+			if config.managementData == nil {
+				harness.unknownRequests.Add(1)
+				http.NotFound(w, r)
+				return
+			}
+			harness.managementRequests.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			response := struct {
+				Data struct {
+					ID         string                                                 `json:"id"`
+					Type       string                                                 `json:"type"`
+					Attributes civisibilitynet.TestManagementTestsResponseDataModules `json:"attributes"`
+				} `json:"data"`
+			}{}
+			response.Data.ID = "test-management"
+			response.Data.Type = "ci_app_libraries_tests"
+			response.Data.Attributes = *config.managementData
 			_ = json.NewEncoder(w).Encode(&response)
 		case "/api/v2/git/repository/search_commits":
 			w.Header().Set("Content-Type", "application/json")
@@ -201,6 +480,10 @@ func newOrchestrionRetryProcessParentHarness(settingsID, apiKey string) *orchest
 	_ = os.Setenv(constants.APIKeyEnvironmentVariable, apiKey)
 	_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "1")
 	_ = os.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+	_ = os.Setenv(constants.CIVisibilitySubtestFeaturesEnabled, "true")
+	if config.attemptToFixRetries > 0 {
+		_ = os.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, fmt.Sprint(config.attemptToFixRetries))
+	}
 	harness.tracer = integrations.InitializeCIVisibilityMock()
 	return harness
 }
@@ -218,6 +501,48 @@ func (h *orchestrionRetryProcessParentHarness) assertRequests(name string) {
 	}
 	if got := h.unknownRequests.Load(); got != 0 {
 		panic(fmt.Sprintf("unexpected %s request count: %d", name, got))
+	}
+	wantManagementRequests := int32(0)
+	if h.expectedManagementRequests {
+		wantManagementRequests = 1
+	}
+	if got := h.managementRequests.Load(); got != wantManagementRequests {
+		panic(fmt.Sprintf("unexpected %s test-management request count: got=%d want=%d", name, got, wantManagementRequests))
+	}
+}
+
+func assertOrchestrionRetryProcessSelectedSubtestA2FSpans(tracer mocktracer.Tracer) {
+	const (
+		parentResource  = "main_test.go.TestOrchestrionRetryProcessSelectedSubtestAttemptToFixFixture"
+		subtestResource = parentResource + "/selected"
+	)
+	parentSpans := 0
+	subtestSpans := 0
+	processRetrySpans := 0
+	retrySpans := 0
+	for _, span := range tracer.FinishedSpans() {
+		resource, _ := span.Tag(ext.ResourceName).(string)
+		switch resource {
+		case parentResource:
+			parentSpans++
+		case subtestResource:
+			subtestSpans++
+			if span.Tag(constants.TestRetryExecutionMode) == "process" {
+				processRetrySpans++
+			}
+			if span.Tag(constants.TestIsRetry) == "true" {
+				retrySpans++
+			}
+		}
+	}
+	if parentSpans != 1 || subtestSpans != 1 || processRetrySpans != 0 || retrySpans != 0 {
+		panic(fmt.Sprintf(
+			"unexpected selected-subtest attempt-to-fix spans: parent=%d subtest=%d process=%d retries=%d",
+			parentSpans,
+			subtestSpans,
+			processRetrySpans,
+			retrySpans,
+		))
 	}
 }
 
@@ -270,13 +595,19 @@ func TestOrchestrionRetryProcessHybridOwnershipController(t *testing.T) {
 		constants.CIVisibilityInternalRetryProcessAttempt+"=1",
 		constants.CIVisibilityInternalRetryProcessReason+"="+constants.AutoTestRetriesRetryReason,
 	)
-	output, err := cmd.CombinedOutput()
+	output, err := runOrchestrionRetryProcessChildCommand(
+		t,
+		cmd,
+		resultPath,
+		"TestOrchestrionRetryProcessHybridPanicChild",
+		true,
+	)
 	if err == nil {
 		t.Fatalf("orchestrion hybrid panic child unexpectedly passed\n%s", output)
 	}
 
 	result := decodeOrchestrionRetryProcessResult(t, resultPath, output)
-	if result.Status != "fail" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
+	if result.Status != "controlled_panic_ready" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
 		result.ErrorMessage != "orchestrion hybrid panic sentinel" || result.ErrorStack == "" {
 		t.Fatalf("unexpected hybrid panic result: %+v\n%s", result, output)
 	}
@@ -340,6 +671,33 @@ func TestOrchestrionRetryProcessChildModeController(t *testing.T) {
 	}
 }
 
+func TestOrchestrionRetryProcessDuplicateChildMRunIsTerminalController(t *testing.T) {
+	if orchestrionRetryProcessChild() {
+		t.Skip("controller runs only in the parent process")
+	}
+
+	result, output, err, _ := runOrchestrionRetryProcessChild(
+		t,
+		orchestrionRetryProcessChildRunFilter,
+		"TestOrchestrionRetryProcessSelectedChild",
+		true,
+		func(string) []string { return []string{orchestrionRetryProcessDuplicateChildMRunEnv + "=true"} },
+	)
+	if err == nil {
+		t.Fatalf("duplicate child M.Run unexpectedly succeeded\n%s", output)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("duplicate child M.Run returned unexpected error: %v\n%s", err, output)
+	}
+	if !strings.Contains(err.Error(), "testmain_multiple_m_run") {
+		t.Fatalf("duplicate child M.Run did not report its terminal reason: %v\n%s", err, output)
+	}
+	if result.Status != "pass" {
+		t.Fatalf("first owned body result was not preserved: %+v\n%s", result, output)
+	}
+}
+
 func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 	if orchestrionRetryProcessChild() {
 		t.Skip("controller runs only in the parent process")
@@ -363,11 +721,53 @@ func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 			},
 		},
 		{
+			name:        "errorf",
+			testName:    "TestOrchestrionRetryProcessErrorfChild",
+			wantExitErr: true,
+			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
+				if result.Status != "fail" || !result.Failed || result.Panic || result.ErrorType != "Errorf" ||
+					result.ErrorMessage != "orchestrion errorf sentinel" || result.ErrorStack == "" {
+					t.Fatalf("unexpected orchestrion errorf result: %+v\n%s", result, output)
+				}
+			},
+		},
+		{
+			name:        "fatal",
+			testName:    "TestOrchestrionRetryProcessFatalChild",
+			wantExitErr: true,
+			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
+				if result.Status != "fail" || !result.Failed || result.Panic || result.ErrorType != "Fatal" ||
+					result.ErrorMessage != "orchestrion fatal sentinel" || result.ErrorStack == "" {
+					t.Fatalf("unexpected orchestrion fatal result: %+v\n%s", result, output)
+				}
+			},
+		},
+		{
+			name:        "fatalf",
+			testName:    "TestOrchestrionRetryProcessFatalfChild",
+			wantExitErr: true,
+			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
+				if result.Status != "fail" || !result.Failed || result.Panic || result.ErrorType != "Fatalf" ||
+					result.ErrorMessage != "orchestrion fatalf sentinel" || result.ErrorStack == "" {
+					t.Fatalf("unexpected orchestrion fatalf result: %+v\n%s", result, output)
+				}
+			},
+		},
+		{
 			name:     "skip",
 			testName: "TestOrchestrionRetryProcessSkipChild",
 			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
 				if result.Status != "skip" || result.Failed || !result.Skipped || result.SkipReason != "orchestrion skip sentinel" {
 					t.Fatalf("unexpected orchestrion skip result: %+v\n%s", result, output)
+				}
+			},
+		},
+		{
+			name:     "skipf",
+			testName: "TestOrchestrionRetryProcessSkipfChild",
+			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
+				if result.Status != "skip" || result.Failed || !result.Skipped || result.SkipReason != "orchestrion skipf sentinel" {
+					t.Fatalf("unexpected orchestrion skipf result: %+v\n%s", result, output)
 				}
 			},
 		},
@@ -396,7 +796,7 @@ func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 			testName:    "TestOrchestrionRetryProcessSubtestPanicChild",
 			wantExitErr: true,
 			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "fail" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
+				if result.Status != "controlled_panic_ready" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
 					result.ErrorMessage != "orchestrion subtest panic sentinel" || result.ErrorStack == "" {
 					t.Fatalf("unexpected orchestrion subtest panic result: %+v\n%s", result, output)
 				}
@@ -407,7 +807,7 @@ func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 			testName:    "TestOrchestrionRetryProcessParallelSubtestPanicChild",
 			wantExitErr: true,
 			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "fail" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
+				if result.Status != "controlled_panic_ready" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
 					result.ErrorMessage != "orchestrion parallel subtest panic sentinel" || result.ErrorStack == "" {
 					t.Fatalf("unexpected orchestrion parallel subtest panic result: %+v\n%s", result, output)
 				}
@@ -480,8 +880,9 @@ func TestOrchestrionRetryProcessInvalidConfigController(t *testing.T) {
 		false,
 		func(string) []string { return []string{orchestrionRetryProcessInvalidConfigEnv + "=true"} },
 	)
-	if err != nil {
-		t.Fatalf("orchestrion invalid-config child process failed: %v\n%s", err, output)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("orchestrion invalid-config child process returned %v, want exit code 1\n%s", err, output)
 	}
 
 	if result.Version != 1 ||
@@ -520,12 +921,147 @@ func runOrchestrionRetryProcessChild(
 		cmd.Env = append(cmd.Env, extraEnv(tempDir)...)
 	}
 	cmd.Env = append(cmd.Env, orchestrionRetryProcessChildActivityEnv(server.URL)...)
-	output, err := cmd.CombinedOutput()
+	output, err := runOrchestrionRetryProcessChildCommand(t, cmd, resultPath, testName, completeConfig)
 	result := decodeOrchestrionRetryProcessResult(t, resultPath, output)
 	if got := requests.Load(); got != 0 {
 		t.Fatalf("expected zero Orchestrion child CI Visibility requests, got %d", got)
 	}
 	return result, output, err, tempDir
+}
+
+func runOrchestrionRetryProcessChildCommand(
+	t *testing.T,
+	cmd *exec.Cmd,
+	resultPath string,
+	testName string,
+	withControl bool,
+) ([]byte, error) {
+	t.Helper()
+	if !withControl {
+		return cmd.CombinedOutput()
+	}
+
+	control, err := prepareOrchestrionRetryProcessControlTransport(cmd)
+	if err != nil {
+		t.Fatalf("preparing process retry control transport: %v", err)
+	}
+	defer control.close()
+	control.config.Version = orchestrionRetryProcessControlVersion
+	control.config.TestName = testName
+	control.config.Attempt = 1
+	control.config.RetryReason = constants.AutoTestRetriesRetryReason
+	control.config.ObservedGOMAXPROCS = runtime.GOMAXPROCS(0)
+	configPath := filepath.Clean(resultPath) + ".control.json"
+	payload, err := json.Marshal(control.config)
+	if err != nil {
+		t.Fatalf("encoding process retry control config: %v", err)
+	}
+	if err := os.WriteFile(configPath, payload, 0o600); err != nil {
+		t.Fatalf("writing process retry control config: %v", err)
+	}
+
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		return output.Bytes(), err
+	}
+	control.closeChildEndpoints()
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- serveOrchestrionRetryProcessControl(control, testName)
+	}()
+	waitErr := cmd.Wait()
+	return output.Bytes(), errors.Join(waitErr, <-serveErr)
+}
+
+func serveOrchestrionRetryProcessControl(control *orchestrionRetryProcessControlTransport, testName string) error {
+	reader := bufio.NewReader(control.read)
+	var recvSequence uint64
+	var sendSequence uint64
+	receive := func() (orchestrionRetryProcessControlFrame, error) {
+		payload, err := reader.ReadBytes('\n')
+		if err != nil {
+			return orchestrionRetryProcessControlFrame{}, err
+		}
+		var frame orchestrionRetryProcessControlFrame
+		if err := json.Unmarshal(bytes.TrimSuffix(payload, []byte{'\n'}), &frame); err != nil {
+			return orchestrionRetryProcessControlFrame{}, err
+		}
+		recvSequence++
+		if frame.Version != orchestrionRetryProcessControlVersion ||
+			frame.TestName != testName ||
+			frame.Attempt != 1 ||
+			frame.RetryReason != constants.AutoTestRetriesRetryReason ||
+			frame.Sequence != recvSequence {
+			return orchestrionRetryProcessControlFrame{}, fmt.Errorf("invalid process retry control frame: %+v", frame)
+		}
+		return frame, nil
+	}
+	send := func(kind, reason string) error {
+		sendSequence++
+		return json.NewEncoder(control.write).Encode(orchestrionRetryProcessControlFrame{
+			Version:     orchestrionRetryProcessControlVersion,
+			TestName:    testName,
+			Attempt:     1,
+			RetryReason: constants.AutoTestRetriesRetryReason,
+			Sequence:    sendSequence,
+			Kind:        kind,
+			Reason:      reason,
+		})
+	}
+
+	frame, err := receive()
+	if err != nil {
+		return err
+	}
+	if frame.Kind != orchestrionRetryProcessControlAttemptReady {
+		return fmt.Errorf("expected process retry attempt readiness, got %s", frame.Kind)
+	}
+	if err := send(orchestrionRetryProcessControlAdmission, ""); err != nil {
+		return err
+	}
+	frame, err = receive()
+	if err != nil {
+		return err
+	}
+	if frame.Kind != orchestrionRetryProcessControlBodyAdmitted {
+		return fmt.Errorf("expected process retry body admission, got %s", frame.Kind)
+	}
+	if err := send(orchestrionRetryProcessControlRunBody, ""); err != nil {
+		return err
+	}
+
+	for {
+		frame, err = receive()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		switch frame.Kind {
+		case orchestrionRetryProcessControlParallel:
+			if err := send(orchestrionRetryProcessControlParallelReady, ""); err != nil {
+				return err
+			}
+		case orchestrionRetryProcessControlTerminalReady:
+			if err := send(orchestrionRetryProcessControlTerminalCommit, frame.Reason); err != nil {
+				return err
+			}
+			committed, err := receive()
+			if err != nil {
+				return err
+			}
+			if committed.Kind != orchestrionRetryProcessControlTerminalDone || committed.Reason != frame.Reason {
+				return fmt.Errorf("invalid process retry terminal commit: %+v", committed)
+			}
+		case orchestrionRetryProcessControlAbort:
+			return fmt.Errorf("process retry child aborted: %s", frame.Reason)
+		default:
+			return fmt.Errorf("unexpected process retry control frame: %+v", frame)
+		}
+	}
 }
 
 func newOrchestrionRetryProcessChildActivityServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
@@ -591,14 +1127,44 @@ func TestOrchestrionRetryProcessErrorChild(t *testing.T) {
 	if !orchestrionRetryProcessChild() {
 		t.Skip("error child fixture runs only in process retry child mode")
 	}
-	t.Error("orchestrion error sentinel")
+	stringer := requireSingleOrchestrionFormatting(t, "orchestrion error sentinel")
+	t.Error(stringer)
+}
+
+func TestOrchestrionRetryProcessErrorfChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("errorf child fixture runs only in process retry child mode")
+	}
+	stringer := requireSingleOrchestrionFormatting(t, "sentinel")
+	t.Errorf("orchestrion errorf %s", stringer)
+}
+
+func TestOrchestrionRetryProcessFatalChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("fatal child fixture runs only in process retry child mode")
+	}
+	t.Fatal(requireSingleOrchestrionFormatting(t, "orchestrion fatal sentinel"))
+}
+
+func TestOrchestrionRetryProcessFatalfChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("fatalf child fixture runs only in process retry child mode")
+	}
+	t.Fatalf("orchestrion fatalf %s", requireSingleOrchestrionFormatting(t, "sentinel"))
 }
 
 func TestOrchestrionRetryProcessSkipChild(t *testing.T) {
 	if !orchestrionRetryProcessChild() {
 		t.Skip("skip child fixture runs only in process retry child mode")
 	}
-	t.Skip("orchestrion skip sentinel")
+	t.Skip(requireSingleOrchestrionFormatting(t, "orchestrion skip sentinel"))
+}
+
+func TestOrchestrionRetryProcessSkipfChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("skipf child fixture runs only in process retry child mode")
+	}
+	t.Skipf("orchestrion skipf %s", requireSingleOrchestrionFormatting(t, "sentinel"))
 }
 
 func TestOrchestrionRetryProcessSubtestThenTopLevelSkipChild(t *testing.T) {
@@ -676,4 +1242,22 @@ func TestOrchestrionRetryProcessPureParentFixture(t *testing.T) {
 		t.Fatal("first pure Orchestrion parent execution must fail to trigger process retry")
 	}
 	t.Fatal("pure Orchestrion retry ran in the parent process")
+}
+
+func TestOrchestrionRetryProcessSelectedSubtestAttemptToFixFixture(t *testing.T) {
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessSelectedSubtestA2FEnv) != "true" {
+		t.Skip("selected-subtest attempt-to-fix fixture runs only from its controller subprocess")
+	}
+	if orchestrionRetryProcessSelectedSubtestA2FParentRuns.Add(1) != 1 {
+		t.Fatal("selected-subtest attempt-to-fix retried the top-level test")
+	}
+	t.Run("selected", func(t *testing.T) {
+		t.Parallel()
+		if orchestrionRetryProcessChild() {
+			t.Fatal("selected-subtest attempt-to-fix retry ran in a process child")
+		}
+		if attempt := orchestrionRetryProcessSelectedSubtestA2FRuns.Add(1); attempt > 1 {
+			t.Fatalf("unexpected selected-subtest attempt %d", attempt)
+		}
+	})
 }
