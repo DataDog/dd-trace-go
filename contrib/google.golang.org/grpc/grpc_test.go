@@ -674,7 +674,7 @@ func TestWithErrorCheck(t *testing.T) {
 				}
 
 				client := rig.client
-				_, err = client.Ping(context.Background(), &FixtureRequest{Name: tt.message})
+				_, err = client.Ping(context.Background(), &fixturepb.FixtureRequest{Name: tt.message})
 				assert.Error(t, err)
 				assert.Equal(t, tt.wantCode, status.Code(err).String())
 				assert.Equal(t, tt.wantMessage, status.Convert(err).Message())
@@ -682,7 +682,7 @@ func TestWithErrorCheck(t *testing.T) {
 				spans := mt.FinishedSpans()
 				assert.Len(t, spans, 2)
 
-				var serverSpan, clientSpan mocktracer.Span
+				var serverSpan, clientSpan *mocktracer.Span
 
 				for _, s := range spans {
 					// order of traces in buffer is not garanteed
@@ -695,11 +695,11 @@ func TestWithErrorCheck(t *testing.T) {
 				}
 
 				if tt.withError {
-					assert.NotNil(t, clientSpan.Tag(ext.Error))
-					assert.NotNil(t, serverSpan.Tag(ext.Error))
+					assert.NotNil(t, clientSpan.Tag(ext.ErrorMsg))
+					assert.NotNil(t, serverSpan.Tag(ext.ErrorMsg))
 				} else {
-					assert.Nil(t, clientSpan.Tag(ext.Error))
-					assert.Nil(t, serverSpan.Tag(ext.Error))
+					assert.Nil(t, clientSpan.Tag(ext.ErrorMsg))
+					assert.Nil(t, serverSpan.Tag(ext.ErrorMsg))
 				}
 
 				rig.Close()
@@ -777,7 +777,7 @@ func TestWithErrorCheck(t *testing.T) {
 				stream, err := client.StreamPing(ctx)
 				assert.NoError(t, err)
 
-				err = stream.Send(&FixtureRequest{Name: tt.message})
+				err = stream.Send(&fixturepb.FixtureRequest{Name: tt.message})
 				assert.NoError(t, err)
 
 				_, err = stream.Recv()
@@ -795,7 +795,7 @@ func TestWithErrorCheck(t *testing.T) {
 				assert.Len(t, spans, 5)
 
 				for _, s := range spans {
-					if s.Tag(ext.Error) != nil && !tt.withError {
+					if s.Tag(ext.ErrorMsg) != nil && !tt.withError {
 						assert.FailNow(t, "expected no error tag on the span")
 					}
 				}
