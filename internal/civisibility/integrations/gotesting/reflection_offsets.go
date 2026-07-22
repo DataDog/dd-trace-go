@@ -230,7 +230,7 @@ func buildTestingInternalsLayout(tType, bType reflect.Type) (layout *testingInte
 	l.common.cancelCtx, _ = optionalExactField(commonType, "cancelCtx", reflect.TypeFor[context.CancelFunc]())
 	l.common.o, _ = optionalPointerToStructField(commonType, "o")
 
-	l.denyParallel, _ = exactField(tType, "denyParallel", reflect.TypeFor[bool](), false)
+	l.denyParallel, _ = optionalExactField(tType, "denyParallel", reflect.TypeFor[bool]())
 	l.tstate, _ = optionalWordField(tType, "tstate")
 	l.benchmark.benchFunc, _ = exactField(bType, "benchFunc", reflect.TypeFor[func(*testing.B)](), false)
 	l.benchmark.result, _ = exactField(bType, "result", reflect.TypeFor[testing.BenchmarkResult](), false)
@@ -332,7 +332,7 @@ func (l *testingInternalsLayout) computeSectionFlags() {
 		l.common.cleanupStarted, l.common.runner, l.common.isParallel, l.common.level,
 		l.common.creator, l.common.name, l.common.start.unsafeField, l.common.duration,
 		l.common.sub, l.common.lastRaceErrors, l.common.raceErrorLogged, l.common.tempDir,
-		l.common.tempDirErr, l.common.tempDirSeq, l.denyParallel,
+		l.common.tempDirErr, l.common.tempDirSeq,
 	)
 	l.benchmarkFieldsOK = allAvailable(
 		l.common.mu, l.common.level, l.common.name, l.common.failed,
