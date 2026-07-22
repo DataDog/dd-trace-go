@@ -685,7 +685,7 @@ func TestWithErrorCheck(t *testing.T) {
 				var serverSpan, clientSpan *mocktracer.Span
 
 				for _, s := range spans {
-					// order of traces in buffer is not garanteed
+					// order of traces in buffer is not guaranteed
 					switch s.OperationName() {
 					case "grpc.server":
 						serverSpan = s
@@ -794,11 +794,14 @@ func TestWithErrorCheck(t *testing.T) {
 				spans := mt.FinishedSpans()
 				assert.Len(t, spans, 5)
 
+				var hasErrorTag bool
 				for _, s := range spans {
-					if s.Tag(ext.ErrorMsg) != nil && !tt.withError {
-						assert.FailNow(t, "expected no error tag on the span")
+					if s.Tag(ext.ErrorMsg) != nil {
+						hasErrorTag = true
+						break
 					}
 				}
+				assert.Equal(t, tt.withError, hasErrorTag)
 
 				mt.Reset()
 			})

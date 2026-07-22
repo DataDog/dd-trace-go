@@ -45,7 +45,6 @@ func (h *serverStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 		h.cfg.serviceSource,
 		spanOpts...,
 	)
-	ctx = context.WithValue(ctx, fullMethodNameKey{}, rti.FullMethodName)
 	return ctx
 }
 
