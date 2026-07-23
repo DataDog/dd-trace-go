@@ -418,6 +418,16 @@ func Inject(ctx *SpanContext, carrier any) error {
 	return getGlobalTracer().Inject(ctx, carrier)
 }
 
+// MetaStructAvailable reports whether the `meta_struct` tag is supported by the
+// current tracer and the backing agent or not.
+func MetaStructAvailable() bool {
+	tr, ok := getGlobalTracer().(*tracer)
+	if !ok {
+		return false
+	}
+	return tr.config.agent.load().metaStructAvailable
+}
+
 // StartSpanFromPropagatedContext starts a new span with the given operation name and set of options.
 // The carrier is the propagated context carrier — typically the headers of an incoming HTTP request
 // (e.g. tracer.HTTPHeadersCarrier(r.Header)) or a map of metadata from an incoming RPC. It must
