@@ -16,6 +16,8 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 )
 
 type (
@@ -294,4 +296,79 @@ func TestWrapHandlerInterfaceWithListeners(t *testing.T) {
 	assert.True(t, called)
 	assert.NoError(t, err)
 	assert.Equal(t, uint8('5'), response[0])
+}
+
+func TestWrapHandlerWithListeners_stripsEventBridgeContextForHandlerOnly(t *testing.T) {
+	internal.ResetStripEventBridgeContextCacheForTest()
+	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
+
+	raw := loadRawJSON(t, "../testdata/eventbridge-with-datadog-object.json")
+	var handlerMsg json.RawMessage
+
+	handler := func(_ context.Context, event json.RawMessage) (string, error) {
+		handlerMsg = event
+		return "ok", nil
+	}
+
+	mhl := &mockHandlerListener{}
+	wrapped := WrapHandlerWithListeners(handler, mhl).(func(context.Context, json.RawMessage) (interface{}, error))
+
+	_, err := wrapped(context.Background(), *raw)
+	assert.NoError(t, err)
+
+	// listener: raw payload (APM path)
+	assert.Contains(t, string(mhl.inputMSG), `"_datadog"`)
+
+	// handler: stripped payload
+	var envelope map[string]json.RawMessage
+	var detail map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(handlerMsg, &envelope))
+	require.NoError(t, json.Unmarshal(envelope["detail"], &detail))
+	assert.NotContains(t, detail, "_datadog")
+	assert.Contains(t, detail, "foo")
+}
+
+func TestDatadogHandler_Invoke_stripsEventBridgeContextForHandlerOnly(t *testing.T) {
+	internal.ResetStripEventBridgeContextCacheForTest()
+	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
+
+	payload, err := os.ReadFile("../testdata/eventbridge-with-datadog-object.json")
+	require.NoError(t, err)
+
+	var handlerMsg []byte
+	handler := lambda.NewHandler(func(_ context.Context, event json.RawMessage) (string, error) {
+		handlerMsg = event
+		return "ok", nil
+	})
+
+	mhl := &mockHandlerListener{}
+	wrapped := WrapHandlerInterfaceWithListeners(handler, mhl)
+
+	_, err = wrapped.Invoke(context.Background(), payload)
+	assert.NoError(t, err)
+
+	assert.Contains(t, string(mhl.inputMSG), `"_datadog"`)
+	assert.NotContains(t, string(handlerMsg), `"_datadog"`)
+}
+
+type rawPayloadHandler struct {
+	payload []byte
+}
+
+func (h *rawPayloadHandler) Invoke(_ context.Context, payload []byte) ([]byte, error) {
+	h.payload = payload
+	return []byte(`"ok"`), nil
+}
+
+func TestDatadogHandler_Invoke_passthroughInvalidJSON(t *testing.T) {
+	internal.ResetStripEventBridgeContextCacheForTest()
+	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
+
+	invalid := []byte(`{not json`)
+	h := &rawPayloadHandler{}
+
+	wrapped := WrapHandlerInterfaceWithListeners(h)
+	_, err := wrapped.Invoke(context.Background(), invalid)
+	require.NoError(t, err)
+	assert.Equal(t, invalid, h.payload)
 }

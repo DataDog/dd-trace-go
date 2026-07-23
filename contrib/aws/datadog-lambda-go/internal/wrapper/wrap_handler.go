@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -55,7 +56,8 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 			ctx = listener.HandlerStarted(ctx, msg)
 		}
 		CurrentContext = ctx
-		result, err := callHandler(ctx, msg, handler)
+		stripMsg := internal.StripEventBridgeContext(msg) // Strip _datadog context from the message
+		result, err := callHandler(ctx, stripMsg, handler)
 		for _, listener := range listeners {
 			ctx = context.WithValue(ctx, extension.DdLambdaResponse, result)
 			listener.HandlerFinished(ctx, err)
@@ -70,9 +72,9 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 	//nolint
 	ctx = context.WithValue(ctx, "cold_start", h.coldStart)
 	msg := json.RawMessage{}
-	err := msg.UnmarshalJSON(payload)
-	if err != nil {
-		logger.Error(fmt.Errorf("couldn't load handler payload: %v", err))
+	unmarshalErr := msg.UnmarshalJSON(payload)
+	if unmarshalErr != nil {
+		logger.Error(fmt.Errorf("couldn't load handler payload: %v", unmarshalErr))
 	}
 
 	for _, listener := range h.listeners {
@@ -80,7 +82,13 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 	}
 
 	CurrentContext = ctx
-	result, err := h.handler.Invoke(ctx, payload)
+
+	handlerPayload := payload
+	if unmarshalErr == nil {
+		handlerPayload = []byte(internal.StripEventBridgeContext(msg))
+	}
+
+	result, err := h.handler.Invoke(ctx, handlerPayload)
 	for _, listener := range h.listeners {
 		listener.HandlerFinished(ctx, err)
 	}

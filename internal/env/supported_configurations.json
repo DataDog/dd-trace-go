@@ -611,6 +611,13 @@
         "default": null
       }
     ],
+    "DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "false"
+      }
+    ],
     "DD_LLMOBS_AGENTLESS_ENABLED": [
       {
         "implementation": "C",
