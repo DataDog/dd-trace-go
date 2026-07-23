@@ -305,19 +305,35 @@ func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.Sampler
 	s.setMetricLocked(keyRulesSamplerAppliedRate, rate)
 	delete(s.metrics, keySamplingPriorityRate)
 	s.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	trace := s.context.trace
 	if !sampledByRate(s.traceID, rate) {
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	if limiter == nil {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	sampled, limiterRate := limiter.AllowOne(now)
 	if sampled {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 	} else {
+		// The Knuth rate would have kept this trace; the limiter is what dropped
+		// it. That is a non-probability outcome, so erase any threshold rather
+		// than encode the configured rate.
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.clearOtelProbability()
+		}
 	}
 	s.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
 	return true

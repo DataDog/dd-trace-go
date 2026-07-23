@@ -1350,12 +1350,21 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		b.WriteString(value)
 		return true
 	})
+	// Emit the OpenTelemetry `ot=` member as the second list-member (right
+	// after `dd=`), keeping both DD-managed members at the front so a crowded
+	// tracestate can't truncate them. th is only ever emitted alongside rv.
+	if rv, th, rvSet, thSet := ctx.trace.otelTracestate(); rvSet {
+		b.WriteString(",ot=")
+		appendOtelValue(&b, rv, th, thSet)
+		listLength++
+	}
 	// the old state is split by vendors, must be concatenated with a `,`
 	if len(oldState) == 0 {
 		return b.String()
 	}
 	for s := range strings.SplitSeq(strings.Trim(oldState, " \t"), ",") {
-		if strings.HasPrefix(s, "dd=") {
+		// dd= and ot= are DD-managed and re-emitted above; drop any inbound copy.
+		if strings.HasPrefix(s, "dd=") || strings.HasPrefix(s, "ot=") {
 			continue
 		}
 		listLength++
@@ -1549,6 +1558,19 @@ func parseTracestate(ctx *SpanContext, header string) {
 	hasOversizedDD := false
 	for group := range strings.SplitSeq(header, ",") {
 		group = strings.Trim(group, "\t ")
+		if after, ok := strings.CutPrefix(group, "ot="); ok {
+			// OpenTelemetry consistent probability sampling: read rv/th so DD
+			// can honor an upstream decision. Malformed values are treated as
+			// absent (never reject the trace).
+			rv, rvOK, th, thOK := parseOtelTracestate(after)
+			if rvOK || thOK {
+				if ctx.trace == nil {
+					ctx.trace = newTrace()
+				}
+				ctx.trace.setOtelInherited(rv, rvOK, th, thOK)
+			}
+			continue
+		}
 		if !strings.HasPrefix(group, "dd=") {
 			continue
 		}
