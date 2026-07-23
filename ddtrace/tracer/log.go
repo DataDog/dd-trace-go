@@ -88,7 +88,7 @@ type startupInfo struct {
 // checkEndpoint tries to connect to the URL specified by endpoint.
 // If the endpoint is not reachable, checkEndpoint returns an error
 // explaining why.
-func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
+func checkEndpoint(c *http.Client, endpoint string, protocol float64, extraHeaders map[string]string) error {
 	b := []byte{0x90} // empty array
 	if protocol == traceProtocolV1 {
 		b = []byte{0x80} // empty map
@@ -99,6 +99,9 @@ func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
 	res, err := c.Do(req)
 	if err != nil {
 		return err
@@ -192,7 +195,11 @@ func logStartup(t *tracer) {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.internalConfig.LogToStdout() {
-		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
+		var startupHeaders map[string]string
+		if ht, ok := t.config.ddTransport.(*httpTransport); ok {
+			startupHeaders = ht.headers
+		}
+		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol(), startupHeaders); err != nil {
 			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}

@@ -1629,6 +1629,17 @@ func (c *Config) OTLPSpanMetricsEnabled() bool {
 	return c.otlpExportMode && c.runtimeMetricsOtel
 }
 
+func (c *Config) SetOTLPSpanMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("OTEL_TRACES_SPAN_METRICS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	v := enabled
+	c.otlpSpanMetricsEnabled = &v
+	configtelemetry.Report("OTEL_TRACES_SPAN_METRICS_ENABLED", enabled, origin)
+}
+
 func (c *Config) OTLPMetricsURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

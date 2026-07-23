@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,6 +65,12 @@ type concentrator struct {
 	stop         chan struct{}         // closing this channel triggers shutdown
 	cfg          *config               // tracer startup configuration
 	statsdClient internal.StatsdClient // statsd client for sending metrics.
+
+	// otlpExporter, when non-nil, routes flushed stats to the OTLP metrics endpoint.
+	otlpExporter *otlpMetricsExporter
+
+	// otlpPeerTags, when non-nil, overrides agent-advertised peer tags for OTLP span metrics.
+	otlpPeerTags []string
 }
 
 type tracerStatSpan struct {
@@ -192,7 +199,33 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
+	if httpEndpoint == "" {
+		// OTel spans set http.route; DD spans use http.endpoint — both map to HTTPEndpoint.
+		httpEndpoint, _ = s.meta.Get(ext.HTTPRoute)
+	}
 
+	peerTags := c.cfg.agent.load().peerTags
+	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
+	if c.otlpPeerTags != nil {
+		peerTags = c.otlpPeerTags
+		// matchingPeerTags requires span.kind "client/producer/consumer"; DD spans lack it.
+		// Inject span.kind=client only when a peer-tag value is present to avoid unwanted stats eligibility.
+		if _, hasKind := spanMeta[ext.SpanKind]; !hasKind {
+			hasPeerTag := false
+			for _, k := range c.otlpPeerTags {
+				if _, ok := spanMeta[k]; ok {
+					hasPeerTag = true
+					break
+				}
+			}
+			if hasPeerTag {
+				orig := spanMeta
+				spanMeta = make(map[string]string, len(orig)+1)
+				maps.Copy(spanMeta, orig)
+				spanMeta[ext.SpanKind] = ext.SpanKindClient
+			}
+		}
+	}
 	statSpan, ok := c.spanConcentrator.NewStatSpanWithConfig(stats.StatSpanConfig{
 		Service:                 s.service,
 		Resource:                resource,
@@ -202,9 +235,9 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		Start:                   s.start,
 		Duration:                s.duration,
 		Error:                   s.error,
-		Meta:                    s.meta.Map(false), // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
+		Meta:                    spanMeta,
 		Metrics:                 s.metrics,
-		PeerTags:                agentInfo.peerTags,
+		PeerTags:                peerTags,
 		AdditionalMetricTagKeys: c.cfg.internalConfig.StatsAdditionalTags(),
 		HTTPMethod:              httpMethod,
 		HTTPEndpoint:            httpEndpoint,
@@ -261,20 +294,40 @@ const (
 	withoutCurrentBucket = false
 )
 
-// flushAndSend flushes all the stats buckets with the given timestamp and sends them using the transport specified in
-// the concentrator config. The current bucket is only included if includeCurrent is true, such as during shutdown.
+func sendWithRetry(retries int, interval time.Duration, fn func() error) error {
+	var err error
+	for attempt := 0; attempt <= retries; attempt++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		if attempt < retries {
+			time.Sleep(interval)
+		}
+	}
+	return err
+}
+
+// flushAndSend flushes all stats buckets and sends them; the current bucket is included only when includeCurrent is true.
+// Stats go to the OTLP metrics endpoint when an OTLP exporter is configured; otherwise to the agent's /v0.6/stats path.
 func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
+	// When flushing the current bucket (e.g. tracer.Flush()), drain any spans
+	// that have been sent to c.In but not yet processed by runIngester so they
+	// are included in the flush rather than silently dropped.
+	if includeCurrent {
+	drain:
+		for {
+			select {
+			case s := <-c.In:
+				c.statsd().Incr("datadog.tracer.stats.spans_in", nil, 1)
+				c.add(s)
+			default:
+				break drain
+			}
+		}
+	}
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
 	bc := c.spanConcentrator.DrainBlockCounts()
 	c.emitCollapseMetrics(bc)
-
-	obfVersion := 0
-	if c.shouldObfuscate() {
-		obfVersion = tracerObfuscationVersion
-	} else {
-		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.load().obfuscationVersion)
-	}
-
 	if len(csps) == 0 {
 		// nothing to flush
 		return
@@ -291,14 +344,20 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
 		var err error
-		for attempt := 0; attempt <= sendRetries; attempt++ {
-			err = c.cfg.ddTransport.sendStats(csp, obfVersion)
-			if err == nil {
-				break
+		if c.otlpExporter != nil {
+			err = sendWithRetry(sendRetries, retryInterval, func() error {
+				return c.otlpExporter.export(csp)
+			})
+		} else {
+			obfVersion := 0
+			if c.shouldObfuscate() {
+				obfVersion = tracerObfuscationVersion
+			} else {
+				log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.load().obfuscationVersion)
 			}
-			if attempt < sendRetries {
-				time.Sleep(retryInterval)
-			}
+			err = sendWithRetry(sendRetries, retryInterval, func() error {
+				return c.cfg.ddTransport.sendStats(csp, obfVersion)
+			})
 		}
 		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
@@ -306,6 +365,17 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		}
 	}
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))
+}
+
+// newOTLPMetricsConcentrator creates a concentrator that exports to the OTLP metrics endpoint.
+func newOTLPMetricsConcentrator(c *config, statsdClient internal.StatsdClient) *concentrator {
+	bucketSize := c.internalConfig.OTLPMetricsFlushInterval().Nanoseconds()
+	conc := newConcentrator(c, bucketSize, statsdClient)
+	conc.otlpExporter = newOTLPMetricsExporter(c.internalConfig)
+	// Peer tags are out of scope for OTLP span metrics (spec: "Out of scope for SDK implementation").
+	// Set to empty (non-nil) to suppress agent-advertised peer tags on this concentrator.
+	conc.otlpPeerTags = []string{}
+	return conc
 }
 
 // emitCollapseMetrics sends health and instrumentation telemetry for cardinality collapse events.

@@ -341,9 +341,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 	agentURL := c.internalConfig.AgentURL()
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
-	// If the agent doesn't support the v1 protocol, downgrade to v0.4
-	// Also downgrade if CSS is disabled, as v1 is not compatible without CSS.
-	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
+	// If the agent doesn't support the v1 protocol, downgrade to v0.4.
+	// Also downgrade if CSS is disabled (v1 requires CSS) or if OTLP span metrics are
+	// enabled: OTLP span metrics use their own concentrator and are not native CSS, so
+	// the trace transport should stay on v0.4 where the test agent and Datadog Agent
+	// can observe the Datadog-Client-Computed-Stats header set by resolveTraceTransport.
+	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats() || c.internalConfig.OTLPSpanMetricsEnabled()) {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
 			t.traceURL = agentURL.String() + tracesAPIPath
@@ -442,7 +445,13 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 	if cfg.TraceProtocol() == traceProtocolV1 {
 		traceURL = agentURL + tracesAPIPathV1
 	}
-	return traceURL, datadogHeaders()
+	headers = datadogHeaders()
+	if cfg.OTLPSpanMetricsEnabled() {
+		// Set statically so the header is present on every trace request from startup,
+		// before agent /info polling has completed and CanComputeStats becomes true.
+		headers["Datadog-Client-Computed-Stats"] = "yes"
+	}
+	return traceURL, headers
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {

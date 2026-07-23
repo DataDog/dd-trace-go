@@ -98,9 +98,11 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportH
 		if payload.ProcessTags != "" {
 			for tag := range strings.SplitSeq(payload.ProcessTags, ",") {
 				parts := strings.SplitN(tag, ":", 2)
-				// Skip keys emitted explicitly above (runtime_id) to avoid duplicate
-				// resource attributes, and skip tags with empty values.
-				if len(parts) == 2 && parts[0] != "" && parts[1] != "" && parts[0] != "runtime_id" {
+				if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+					continue
+				}
+				// datadog.<key> resource attributes for all non-runtime_id process tags.
+				if parts[0] != "runtime_id" {
 					attrs = append(attrs, otlpKeyValue("datadog."+parts[0], otlpStringValue(parts[1])))
 				}
 			}

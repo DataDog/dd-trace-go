@@ -97,13 +97,13 @@ func TestOTLPTransportSendConnectionError(t *testing.T) {
 }
 
 func TestOTLPTransportConnectionReuse(t *testing.T) {
-	var connCount int64
+	var connCount atomic.Int64
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("response body that must be drained"))
 	}))
 	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
 		if state == http.StateNew {
-			atomic.AddInt64(&connCount, 1)
+			connCount.Add(1)
 		}
 	}
 	srv.Start()
@@ -113,6 +113,6 @@ func TestOTLPTransportConnectionReuse(t *testing.T) {
 	for range 5 {
 		require.NoError(t, tr.send([]byte("data"), "application/x-protobuf"))
 	}
-	assert.Equal(t, int64(1), atomic.LoadInt64(&connCount),
+	assert.Equal(t, int64(1), connCount.Load(),
 		"expected a single connection to be reused across sends")
 }

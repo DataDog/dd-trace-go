@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"slices"
-	"sync"
 	"time"
 
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
@@ -32,12 +31,17 @@ type otlpTraceWriter struct {
 	spans     []*otlptrace.Span // +checklocks:mu
 	buffSize  int               // +checklocks:mu
 	baseSize  int
-	climit    chan struct{}
-	wg        sync.WaitGroup
 }
 
 func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 	resource := buildResource(c.internalConfig)
+	// FR15: signal to the backend that the SDK has computed stats so it does
+	// not recompute them from the trace spans.
+	if c.internalConfig.OTLPSpanMetricsEnabled() {
+		resource.Attributes = append(resource.Attributes,
+			otlpKeyValue("_dd.stats_computed", otlpStringValue("true")),
+		)
+	}
 	scope := &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag}
 	baseSize := proto.Size(&otlptrace.TracesData{
 		ResourceSpans: []*otlptrace.ResourceSpans{{
@@ -55,7 +59,6 @@ func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 		spans:     make([]*otlptrace.Span, 0),
 		buffSize:  baseSize,
 		baseSize:  baseSize,
-		climit:    make(chan struct{}, concurrentConnectionLimit),
 	}
 }
 
@@ -96,56 +99,46 @@ func (w *otlpTraceWriter) flush() {
 	readySpans := w.reset()
 	w.mu.Unlock()
 
-	w.climit <- struct{}{}
-	w.wg.Add(1)
-	go func() {
-		defer func() {
-			<-w.climit
-			w.wg.Done()
-		}()
-
-		spanCount := len(readySpans)
-		tracesData := &otlptrace.TracesData{
-			ResourceSpans: []*otlptrace.ResourceSpans{
-				{
-					Resource: w.resource,
-					ScopeSpans: []*otlptrace.ScopeSpans{
-						{
-							Scope: w.scope,
-							Spans: readySpans,
-						},
+	spanCount := len(readySpans)
+	tracesData := &otlptrace.TracesData{
+		ResourceSpans: []*otlptrace.ResourceSpans{
+			{
+				Resource: w.resource,
+				ScopeSpans: []*otlptrace.ScopeSpans{
+					{
+						Scope: w.scope,
+						Spans: readySpans,
 					},
 				},
 			},
-		}
-		b, err := proto.Marshal(tracesData)
-		readySpans = nil
-		tracesData = nil
-		if err != nil {
-			log.Error("Error marshalling OTLP traces data: %s", err.Error())
+		},
+	}
+	b, err := proto.Marshal(tracesData)
+	readySpans = nil
+	tracesData = nil
+	if err != nil {
+		log.Error("Error marshalling OTLP traces data: %s", err.Error())
+		return
+	}
+
+	var sendErr error
+	sendRetries := w.config.internalConfig.SendRetries()
+	retryInterval := w.config.internalConfig.RetryInterval()
+	for attempt := 0; attempt <= sendRetries; attempt++ {
+		log.Debug("OTLP: attempt %d to send payload: %d bytes, %d spans", attempt+1, len(b), spanCount)
+		sendErr = w.transport.send(b, otlpContentTypeProto)
+		if sendErr == nil {
+			log.Debug("OTLP: sent traces after %d attempts", attempt+1)
 			return
 		}
-
-		var sendErr error
-		sendRetries := w.config.internalConfig.SendRetries()
-		retryInterval := w.config.internalConfig.RetryInterval()
-		for attempt := 0; attempt <= sendRetries; attempt++ {
-			log.Debug("OTLP: attempt %d to send payload: %d bytes, %d spans", attempt+1, len(b), spanCount)
-			sendErr = w.transport.send(b, otlpContentTypeProto)
-			if sendErr == nil {
-				log.Debug("OTLP: sent traces after %d attempts", attempt+1)
-				return
-			}
-			log.Error("OTLP: failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, sendErr.Error())
-			time.Sleep(retryInterval)
-		}
-		log.Error("OTLP: lost %d spans: %v", spanCount, sendErr.Error())
-	}()
+		log.Error("OTLP: failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, sendErr.Error())
+		time.Sleep(retryInterval)
+	}
+	log.Error("OTLP: lost %d spans: %v", spanCount, sendErr.Error())
 }
 
 func (w *otlpTraceWriter) stop() {
 	w.flush()
-	w.wg.Wait()
 }
 
-func (w *otlpTraceWriter) wait() { w.wg.Wait() }
+func (w *otlpTraceWriter) wait() { w.flush() }
