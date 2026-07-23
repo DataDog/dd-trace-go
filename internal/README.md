@@ -54,3 +54,11 @@ The API, struct types, and other values necessary for:
 * Dependencies: Sending all the dependencies of the application to the backend (for SCA purposes for example)
 
 For more information, read the [README](./telemetry/README.md).
+
+The `telemetry/log` subpackage also provides:
+
+* **Auto-forward sink**: `log.Error` calls are automatically mirrored to telemetry once `internal/telemetry/log` is imported. The format string is used as the constant dedup key; dynamic values are never interpolated into the telemetry message.
+* **`ReportError(msg, err, opts...)`**: for explicit SDK error reporting at sites that don't use `log.Error`.
+* **`ReportPanic(recovered, msg)`**: for `recover()` sites.
+* **Policy table** (`telemetry/log/policy.go`): single place to classify format templates as `report`, `downgrade` (warn), or `exclude`. Seed it to suppress environmental/user-cause noise.
+* **`constantlogmsg` analyzer** (`telemetry/log/analyzer/`): `go vet`-compatible pass that rejects non-constant message arguments on all protected log functions, enforcing the dedup-key and PII guarantees.

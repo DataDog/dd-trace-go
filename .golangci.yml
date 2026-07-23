@@ -86,11 +86,12 @@ linters:
       disable-all: true
       enabled-checks:
         - dynamicFmtString
-        - ruleguard
-      settings:
-        ruleguard:
-          failOn: dsl,import
-          rules: "rules/*_rules.go"
+      # The ruleguard check (rules/telemetry_rules.go, rules/logging_rules.go)
+      # was retired in favor of internal/telemetry/log/analyzer's constantlogmsg,
+      # telemetrysafety, and logformatverbs passes, run via `make lint/errlog`
+      # (wired into CI in .github/workflows/static-checks.yml's lint job). Those
+      # cover the same constant-message, SafeError/LogValuer, and %v-format-verb
+      # rules without a golangci-lint-specific DSL dependency.
     # TODO: Enable this when we migrated to structed logging.
     loggercheck:
       require-string-key: true

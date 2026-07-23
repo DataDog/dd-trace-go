@@ -258,6 +258,28 @@ func BenchmarkError(b *testing.B) {
 	}
 }
 
+// BenchmarkErrorWithTelemetrySink measures the added cost of forwarding to a
+// telemetry sink on the Error hot path (mirrors what internal/telemetry/log's
+// init() installs). Compare against BenchmarkError to size the sink overhead.
+func BenchmarkErrorWithTelemetrySink(b *testing.B) {
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		} else {
+			errTelemetrySink.Store(nil)
+		}
+	}()
+
+	SetErrorTelemetrySink(func(_ string, _ []any) {})
+
+	Error("k %s", "a") // warm up cache
+	b.ReportAllocs()
+	for b.Loop() {
+		Error("k %s", "a")
+	}
+}
+
 func hasMsg(lvl, m string, lines []string) bool {
 	for _, line := range lines {
 		if strings.HasPrefix(line, msg(lvl, m)) {
@@ -286,4 +308,187 @@ func BenchmarkLog(b *testing.B) {
 	for b.Loop() {
 		Warn("test")
 	}
+}
+
+func TestSetErrorTelemetrySink(t *testing.T) {
+	// Remove any sink registered by init() in telemetry/log (not imported here).
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		}
+	}()
+
+	var sinkCalls []struct {
+		format string
+		args   []any
+	}
+
+	SetErrorTelemetrySink(func(format string, args []any) {
+		sinkCalls = append(sinkCalls, struct {
+			format string
+			args   []any
+		}{format, args})
+	})
+	defer func() { errTelemetrySink.Store(nil) }()
+
+	// Reset aggregator state so previous test runs don't interfere.
+	errmu.Lock()
+	for k := range erragg {
+		delete(erragg, k)
+	}
+	errmu.Unlock()
+
+	Error("template one: %s", "hello")
+	Error("template one: %s", "world") // same template: still forwarded (telemetry deduplicates)
+	Error("template two: %d", 42)
+
+	assert.Len(t, sinkCalls, 3)
+	assert.Equal(t, "template one: %s", sinkCalls[0].format)
+	assert.Equal(t, "template two: %d", sinkCalls[2].format)
+}
+
+func TestErrorSinkNotCalledAfterRateLimit(t *testing.T) {
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		}
+	}()
+
+	var count int
+	SetErrorTelemetrySink(func(_ string, _ []any) { count++ })
+	defer func() { errTelemetrySink.Store(nil) }()
+
+	// Reset aggregator.
+	errmu.Lock()
+	for k := range erragg {
+		delete(erragg, k)
+	}
+	errmu.Unlock()
+
+	// Exceed the defaultErrorLimit.
+	const key = "rate-limit-test: %d"
+	errmu.Lock()
+	erragg[key] = &errorReport{count: defaultErrorLimit + 1}
+	errmu.Unlock()
+
+	Error(key, 1)
+	assert.Equal(t, 0, count, "sink must not be called when the key is over the rate limit")
+}
+
+func TestErrorSinkReceivesErrorArg(t *testing.T) {
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		}
+	}()
+
+	var gotArgs []any
+	SetErrorTelemetrySink(func(_ string, args []any) { gotArgs = args })
+	defer func() { errTelemetrySink.Store(nil) }()
+
+	errmu.Lock()
+	for k := range erragg {
+		delete(erragg, k)
+	}
+	errmu.Unlock()
+
+	sentinel := fmt.Errorf("sentinel error")
+	Error("some failure: %s", sentinel)
+
+	assert.Len(t, gotArgs, 1)
+	assert.Equal(t, sentinel, gotArgs[0])
+}
+
+func TestSetWarnTelemetrySink(t *testing.T) {
+	orig := warnTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			warnTelemetrySink.Store(orig)
+		} else {
+			warnTelemetrySink.Store(nil)
+		}
+	}()
+
+	var sinkCalls []string
+	SetWarnTelemetrySink(func(format string, _ []any) { sinkCalls = append(sinkCalls, format) })
+	defer func() { warnTelemetrySink.Store(nil) }()
+
+	Warn("template one: %s", "hello")
+	Warn("template two: %d", 42)
+
+	assert.Equal(t, []string{"template one: %s", "template two: %d"}, sinkCalls,
+		"every Warn call reaches the sink; the sink itself decides what to forward")
+}
+
+func TestWarnLocalOutputUnchangedWithSink(t *testing.T) {
+	defer func(old Logger) { UseLogger(old) }(logger)
+	tp := &testLogger{}
+	UseLogger(tp)
+
+	orig := warnTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			warnTelemetrySink.Store(orig)
+		} else {
+			warnTelemetrySink.Store(nil)
+		}
+	}()
+	SetWarnTelemetrySink(func(_ string, _ []any) {})
+	defer func() { warnTelemetrySink.Store(nil) }()
+
+	Warn("local warn output must still appear: %d", 7)
+
+	found := false
+	for _, l := range tp.Lines() {
+		if strings.Contains(l, "local warn output must still appear") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "installing a warn sink must not affect local log output")
+}
+
+func TestErrorLocalOutputUnchanged(t *testing.T) {
+	// Ensure installing a sink does not affect local log output.
+	defer func(old Logger) { UseLogger(old) }(logger)
+	tp := &testLogger{}
+	UseLogger(tp)
+
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		}
+	}()
+
+	SetErrorTelemetrySink(func(_ string, _ []any) {})
+	defer func() { errTelemetrySink.Store(nil) }()
+
+	// Reset aggregator.
+	errmu.Lock()
+	for k := range erragg {
+		delete(erragg, k)
+	}
+	erron = false
+	errmu.Unlock()
+
+	defer func(old time.Duration) { errrate = old }(errrate)
+	errrate = 0
+
+	Error("local output must still appear: %d", 7)
+	Flush()
+
+	lines := tp.Lines()
+	assert.True(t, len(lines) > 0, "local log must still receive error output")
+	found := false
+	for _, l := range lines {
+		if strings.Contains(l, "local output must still appear") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
 }

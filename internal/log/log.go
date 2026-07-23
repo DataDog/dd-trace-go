@@ -4,6 +4,24 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package log provides logging utilities for the tracer.
+//
+// # Error logging and telemetry forwarding
+//
+// [Error] aggregates messages by their format string (used as a constant dedup
+// key) and flushes them periodically. When [SetErrorTelemetrySink] is called
+// (done automatically by importing internal/telemetry/log), each non-rate-limited
+// [Error] call is also forwarded to the telemetry sink.
+//
+// [Warn] is the noisier tier (propagation/parse warnings live here) and is not
+// forwarded by default. When [SetWarnTelemetrySink] is called, the sink
+// decides per format-string template whether to forward — unlike Error,
+// absence from the sink's allowlist means "stay local-only", not "report".
+//
+// Rules for callers:
+//   - The first argument to [Error] and [Warn] MUST be a compile-time constant string.
+//     Non-constant messages break deduplication and risk leaking PII to telemetry.
+//   - Dynamic detail belongs in the variadic args, not in the format string itself.
+//   - The `constantlogmsg` analyzer (internal/telemetry/log/analyzer) enforces this.
 package log
 
 import (
@@ -167,6 +185,13 @@ func Debug(fmt string, a ...any) {
 
 // Warn prints a warning message.
 func Warn(fmt string, a ...any) {
+	// Forward before printing, mirroring Error. Unlike Error, forwarding here
+	// is opt-in per template — the sink decides whether a given format string
+	// is noisy enough to stay local-only; the default (no sink, or sink
+	// declining) is "do not forward".
+	if sink := warnTelemetrySink.Load(); sink != nil {
+		(*sink)(fmt, a)
+	}
 	printMsg(LevelWarn, fmt, a...)
 }
 
@@ -180,6 +205,17 @@ var (
 	erragg  = map[string]*errorReport{} // aggregated errors
 	errrate = time.Minute               // the rate at which errors are reported
 	erron   bool                        // true if errors are being aggregated
+
+	// errTelemetrySink, when set, receives every non-rate-limited log.Error call.
+	// The format string is the constant dedup key; args are the raw variadic arguments.
+	// The sink must never call log.Error itself.
+	errTelemetrySink atomic.Pointer[func(format string, args []any)]
+
+	// warnTelemetrySink, when set, receives every log.Warn call. The sink is
+	// expected to forward only templates explicitly opted in (Warn is the
+	// noisy tier and defaults to local-only); it must never call log.Warn
+	// or log.Error itself.
+	warnTelemetrySink atomic.Pointer[func(format string, args []any)]
 )
 
 func init() {
@@ -213,6 +249,24 @@ type errorReport struct {
 	count uint64
 }
 
+// SetErrorTelemetrySink installs f as the telemetry forwarding sink for Error.
+// f is called for each log.Error call that is not yet over the local rate limit,
+// receiving the raw format string (constant dedup key) and original arguments.
+// The sink must not call log.Error itself.
+func SetErrorTelemetrySink(f func(format string, args []any)) {
+	errTelemetrySink.Store(&f)
+}
+
+// SetWarnTelemetrySink installs f as the telemetry forwarding sink for Warn.
+// f is called for every log.Warn call, receiving the raw format string
+// (constant dedup key) and original arguments. Unlike the Error sink, f is
+// expected to forward only templates it has explicitly opted in — Warn is
+// the noisy tier and defaults to local-only. The sink must not call log.Warn
+// or log.Error itself.
+func SetWarnTelemetrySink(f func(format string, args []any)) {
+	warnTelemetrySink.Store(&f)
+}
+
 // Error reports an error. Errors get aggregated and logged periodically. The
 // default is once per minute or once every DD_LOGGING_RATE number of seconds.
 func Error(format string, a ...any) {
@@ -220,6 +274,10 @@ func Error(format string, a ...any) {
 	if reachedLimit(key) {
 		// avoid too much lock contention on spammy errors
 		return
+	}
+	// Forward to telemetry before acquiring the local aggregation lock.
+	if sink := errTelemetrySink.Load(); sink != nil {
+		(*sink)(format, a)
 	}
 	errmu.Lock()
 	defer errmu.Unlock()

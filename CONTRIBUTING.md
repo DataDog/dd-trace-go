@@ -57,6 +57,7 @@ Our CI pipeline includes several automated checks:
 - **Generate Check**: Ensures generated code is up-to-date
 - **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
+- **Error-logging Lint**: Runs `make lint/errlog`, the `constantlogmsg` analyzer, which rejects non-constant message arguments on `log.Error`, `log.Warn`, and the `telemetrylog.ReportError`/`ReportPanic` helpers. Non-constant messages break telemetry deduplication and risk leaking PII to Error Tracking. Run locally with `make lint/errlog`.
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
 - **Cross-Compile Check**: Runs `scripts/cross_build.sh` to cross-compile the library for every [first class Go port](https://go.dev/wiki/PortingPolicy) (including 32-bit `linux/386`, `windows/386`, `linux/arm`), catching architecture-specific compile regressions. Run locally with `./scripts/cross_build.sh`. Packages that import `go-libddwaf` are skipped until it builds on 32-bit (see DataDog/go-libddwaf#227); they stay covered on 64-bit by the test matrix.
 
