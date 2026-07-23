@@ -1,15 +1,15 @@
-**BEFORE writing or editing ANY code**, you MUST read [README.md](./README.md) for information about:
+**BEFORE writing or editing ANY contrib code**, you MUST read [INTEGRATIONS.md](./INTEGRATIONS.md) in
+full, the guide to authoring an integration. For auto-instrumentation, you MUST also read
+[ORCHESTRION.md](./ORCHESTRION.md). [README.md](./README.md) is the short reference for naming and the
+list of existing integrations.
 
-* Naming conventions
-* Testing
-* Steps for creating new contribs
+New integrations MUST support Orchestrion auto-instrumentation and MUST include
+`internal/orchestrion/_integration` tests. See [ORCHESTRION.md](./ORCHESTRION.md).
 
 ## Updating Documentation
 
-The developer should update [README.md](./README.md) with any details that must be applied to most/all contribs, for example:
-
-1. Tags and attributes that must be applied to all spans
-2. Files and/or functions that every contrib must support
-3. Semantic versioning and naming
+Keep this file short. Put authoring rules in [INTEGRATIONS.md](./INTEGRATIONS.md), or
+[ORCHESTRION.md](./ORCHESTRION.md) for auto-instrumentation, and update those when a convention
+changes. [README.md](./README.md) stays the short reference for naming and existing integrations.
 
 If these updates are not made, tell the developer to make changes or provide suggestions if requested.
