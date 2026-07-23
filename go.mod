@@ -5,6 +5,8 @@ go 1.25.0
 godebug x509negativeserial=1
 
 require (
+	cloud.google.com/go/pubsub v1.50.1
+	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.0-rc.2
 	github.com/DataDog/datadog-agent/pkg/proto v0.82.0-rc.2
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.82.0-rc.2
@@ -53,6 +55,7 @@ require (
 	golang.org/x/time v0.15.0
 	golang.org/x/tools v0.45.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
+	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca
 )
 
@@ -103,7 +106,6 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
-	google.golang.org/grpc v1.82.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

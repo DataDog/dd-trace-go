@@ -24,7 +24,7 @@ aspects:
               __dd_instr *instrumentation.Instrumentation
               __dd_pstrace *pubsubtrace.Tracer
             )
-            
+
             func init() {
               component := instrumentation.PackageGCPPubsubV2
               __dd_instr = instrumentation.Load(component)
@@ -94,7 +94,34 @@ aspects:
             defer func() {
               {{ $publishResult }}.DDCloseSpan = __dd_closeSpan
             }()
-  
+
+
+  ## Admin / management operations ##
+  # Pub/Sub admin (topic, subscription, snapshot and schema management) RPCs are
+  # issued by the GAPIC clients in cloud.google.com/go/pubsub/v2/apiv1 over their gRPC
+  # connection. Rather than wrapping every method, we append a unary client interceptor
+  # to each admin client constructor. The interceptor emits a gcp.pubsub.request span
+  # for admin RPCs and forwards the data-plane RPCs (Publish, Pull, Acknowledge, ...)
+  # that share the same connection untouched.
+  #
+  # Limitation: option.WithGRPCDialOption is ignored when option.WithGRPCConn is set,
+  # so admin spans are not created for clients that reuse a pre-built grpc.ClientConn.
+  # WithGRPCConn users should add pubsubtrace.UnaryAdminInterceptorV2 on their dial 
+  - id: Admin client interceptor
+    join-point:
+      one-of:
+        - function-call: cloud.google.com/go/pubsub/v2/apiv1.NewTopicAdminClient
+        - function-call: cloud.google.com/go/pubsub/v2/apiv1.NewSubscriptionAdminClient
+        - function-call: cloud.google.com/go/pubsub/v2/apiv1.NewSchemaClient
+    advice:
+      - append-args:
+          type: google.golang.org/api/option.ClientOption
+          values:
+            - imports:
+                option: google.golang.org/api/option
+                grpc: google.golang.org/grpc
+                pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+              template: option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(pubsubtrace.UnaryAdminInterceptorV2()))
 
   # Note: These aspects are also necessary for v1, they should be present in only one of the orchestrion.yml files,
   # otherwise they will be applied twice and will cause the build to fail.
