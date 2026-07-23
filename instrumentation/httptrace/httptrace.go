@@ -59,7 +59,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
-	// we cannot track the configuration in newConfig because it's called during init() and the the telemetry client
+	// we cannot track the configuration in newConfig because it's called during init() and the telemetry client
 	// is not initialized yet
 	reportTelemetryConfigOnce.Do(func() {
 		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
@@ -223,7 +223,7 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 		scheme = "https"
 	}
 	if r.Host != "" {
-		url = strings.Join([]string{scheme, "://", r.Host, path}, "")
+		url = scheme + "://" + r.Host + path
 	} else {
 		url = path
 	}
@@ -241,11 +241,11 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}
 		if query != "" {
-			url = strings.Join([]string{url, query}, "?")
+			url = url + "?" + query
 		}
 	}
 	if frag := r.URL.EscapedFragment(); frag != "" {
-		url = strings.Join([]string{url, frag}, "#")
+		url = url + "#" + frag
 	}
 	return url
 }

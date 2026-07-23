@@ -171,7 +171,7 @@ type profilerInfo struct {
 // encode encodes the profile as a multipart mime request.
 func encode(bat batch, cfg *config) (contentType string, body io.Reader, err error) {
 	tags := append(cfg.tags.Slice(),
-		fmt.Sprintf("service:%s", cfg.service),
+		"service:"+cfg.service,
 		// The profile_seq tag can be used to identify the first profile
 		// uploaded by a given runtime-id, identify missing profiles, etc.. See
 		// PROF-5612 (internal) for more details.
@@ -183,10 +183,10 @@ func encode(bat batch, cfg *config) (contentType string, body io.Reader, err err
 	// the tag so that the agent has a chance to supply a default tag.
 	// Otherwise, the tag supplied by the client will have priority.
 	if cfg.env != "" {
-		tags = append(tags, fmt.Sprintf("env:%s", cfg.env))
+		tags = append(tags, "env:"+cfg.env)
 	}
 	if bat.host != "" {
-		tags = append(tags, fmt.Sprintf("host:%s", bat.host))
+		tags = append(tags, "host:"+bat.host)
 	}
 
 	var buf bytes.Buffer

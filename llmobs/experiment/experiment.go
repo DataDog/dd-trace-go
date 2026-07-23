@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
 	"strings"
 	"time"
 
@@ -438,11 +439,11 @@ func (e *Experiment) buildRunTags(run RunInfo, includeExperimentID bool) []strin
 	tags := make([]string, 0, len(e.tagsSlice)+3)
 	tags = append(tags, e.tagsSlice...)
 	tags = append(tags,
-		fmt.Sprintf("run_id:%s", run.ID),
+		"run_id:"+run.ID,
 		fmt.Sprintf("run_iteration:%d", run.Iteration),
 	)
 	if includeExperimentID {
-		tags = append(tags, fmt.Sprintf("experiment_id:%s", e.id))
+		tags = append(tags, "experiment_id:"+e.id)
 	}
 	return tags
 }
@@ -510,7 +511,7 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 	tags["dataset_record_id"] = rec.ID()
 	tags["experiment_id"] = e.id
 	tags["run_id"] = run.ID
-	tags["run_iteration"] = fmt.Sprintf("%d", run.Iteration)
+	tags["run_iteration"] = strconv.Itoa(run.Iteration)
 	if e.projectID != "" {
 		tags["project_id"] = e.projectID
 	}

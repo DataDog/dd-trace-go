@@ -303,7 +303,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		var children []*Span
+		children := make([]*Span, 0, 3)
 		for i := range 3 { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			children = append(children, child)
@@ -350,7 +350,7 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		var children []*Span
+		children := make([]*Span, 0, 4)
 		for i := range 4 {
 			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
 		}
@@ -396,7 +396,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		var children []*Span
+		children := make([]*Span, 0, 4)
 		for i := range 4 {
 			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
 		}
