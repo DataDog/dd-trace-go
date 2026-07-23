@@ -72,9 +72,9 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 	//nolint
 	ctx = context.WithValue(ctx, "cold_start", h.coldStart)
 	msg := json.RawMessage{}
-	err := msg.UnmarshalJSON(payload)
-	if err != nil {
-		logger.Error(fmt.Errorf("couldn't load handler payload: %v", err))
+	unmarshalErr := msg.UnmarshalJSON(payload)
+	if unmarshalErr != nil {
+		logger.Error(fmt.Errorf("couldn't load handler payload: %v", unmarshalErr))
 	}
 
 	for _, listener := range h.listeners {
@@ -82,8 +82,13 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 	}
 
 	CurrentContext = ctx
-	stripPayload := internal.StripEventBridgeContext(msg) // Strip _datadog context from the message
-	result, err := h.handler.Invoke(ctx, []byte(stripPayload))
+
+	handlerPayload := payload
+	if unmarshalErr == nil {
+		handlerPayload = []byte(internal.StripEventBridgeContext(msg))
+	}
+
+	result, err := h.handler.Invoke(ctx, handlerPayload)
 	for _, listener := range h.listeners {
 		listener.HandlerFinished(ctx, err)
 	}
