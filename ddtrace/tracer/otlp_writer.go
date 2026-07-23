@@ -12,7 +12,6 @@ import (
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -114,7 +113,7 @@ func (w *otlpTraceWriter) flush() {
 			},
 		},
 	}
-	b, err := protojson.Marshal(tracesData)
+	b, err := proto.Marshal(tracesData)
 	readySpans = nil
 	tracesData = nil
 	if err != nil {
@@ -127,7 +126,7 @@ func (w *otlpTraceWriter) flush() {
 	retryInterval := w.config.internalConfig.RetryInterval()
 	for attempt := 0; attempt <= sendRetries; attempt++ {
 		log.Debug("OTLP: attempt %d to send payload: %d bytes, %d spans", attempt+1, len(b), spanCount)
-		sendErr = w.transport.send(b, otlpContentTypeJSON)
+		sendErr = w.transport.send(b, otlpContentTypeProto)
 		if sendErr == nil {
 			log.Debug("OTLP: sent traces after %d attempts", attempt+1)
 			return
