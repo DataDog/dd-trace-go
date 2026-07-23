@@ -1,0 +1,5 @@
+panic: close of closed channel
+
+goroutine 1 [running]:
+main.main()
+	/tmp/crashtracker-fixtures/close_closed_channel.go:6 +0x38

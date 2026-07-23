@@ -345,11 +345,11 @@
         "default": "false"
       }
     ],
-    "DD_CODE_COVERAGE_FLAGS": [
+    "DD_CRASHTRACKING_ENABLED": [
       {
         "implementation": "A",
-        "type": "string",
-        "default": null
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_CUSTOM_PARENT_ID": [
