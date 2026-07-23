@@ -160,6 +160,8 @@ type Span struct {
 	spanLinks []SpanLink `msg:"span_links,omitempty"` // links to other spans
 	// +checklocks:mu
 	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
+	// +checklocks:mu
+	statSpan *tracerStatSpan `msg:"-"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -209,6 +211,7 @@ func (s *Span) clear() {
 	s.error = 0
 	s.spanLinks = nil
 	s.spanEvents = nil
+	s.statSpan = nil
 	s.goExecTraced = false
 	s.noDebugStack = false
 	s.finished = false
@@ -1137,11 +1140,6 @@ func (s *Span) finish(finishTime int64) {
 	// this span (to set trace-level tags).
 	// Lock ordering is span.mu -> trace.mu.
 	s.context.finish(s)
-
-	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
-	if hasTracer {
-		tracer.submit(s)
-	}
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this

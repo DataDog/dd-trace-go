@@ -90,6 +90,28 @@ func TestConcentrator(t *testing.T) {
 		c.Stop()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
+	t.Run("batch", func(t *testing.T) {
+		transport := newDummyTransport()
+		c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), bucketSize, &statsd.NoOpClientDirect{})
+		// Use two spans sharing a bucket: this subtest verifies batch delivery
+		// (a single send carrying multiple spans), not bucket alignment.
+		start := time.Now().UnixNano() + 3*bucketSize
+		b1 := Span{name: "http.request", start: start, duration: 1, metrics: map[string]float64{keyMeasured: 1}}
+		b2 := Span{name: "sql.query", start: start, duration: 1, metrics: map[string]float64{keyMeasured: 1}}
+		ss1, ok := c.newTracerStatSpan(&b1, nil)
+		require.True(t, ok)
+		ss2, ok := c.newTracerStatSpan(&b2, nil)
+		require.True(t, ok)
+
+		c.Start()
+		c.trySendSpans([]*tracerStatSpan{ss1, ss2})
+		c.Stop()
+
+		payloads := transport.Stats()
+		require.Len(t, payloads, 1)
+		require.Len(t, payloads[0].Stats, 1)
+		assert.Len(t, payloads[0].Stats[0].Stats, 2)
+	})
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -99,7 +121,7 @@ func TestConcentrator(t *testing.T) {
 				ss1, ok := c.newTracerStatSpan(&s1, nil)
 				assert.True(t, ok)
 				c.Start()
-				c.In <- ss1
+				c.In <- []*tracerStatSpan{ss1}
 				time.Sleep(2 * time.Millisecond) // instant: fake clock advances 2ms past flush interval
 				synctest.Wait()                  // wait for concentrator goroutine to flush
 				c.Stop()
@@ -121,8 +143,8 @@ func TestConcentrator(t *testing.T) {
 			ss2, ok := c.newTracerStatSpan(&s2, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
-			c.In <- ss2
+			c.In <- []*tracerStatSpan{ss1}
+			c.In <- []*tracerStatSpan{ss2}
 			c.Stop()
 			actualStats := transport.Stats()
 			assert.Len(t, actualStats, 1)
@@ -148,7 +170,7 @@ func TestConcentrator(t *testing.T) {
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
+			c.In <- []*tracerStatSpan{ss1}
 			c.Stop()
 			actualStats := transport.Stats()
 			assert.Equal(t, "DEADBEEF", actualStats[0].GitCommitSha)
@@ -162,7 +184,7 @@ func TestConcentrator(t *testing.T) {
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
+			c.In <- []*tracerStatSpan{ss1}
 			c.Stop()
 			assert.NotEmpty(t, transport.Stats())
 		})
@@ -176,7 +198,7 @@ func TestConcentrator(t *testing.T) {
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
+			c.In <- []*tracerStatSpan{ss1}
 			c.Stop()
 
 			gotStats := transport.Stats()
@@ -193,7 +215,7 @@ func TestConcentrator(t *testing.T) {
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
+			c.In <- []*tracerStatSpan{ss1}
 			c.Stop()
 
 			gotStats := transport.Stats()
@@ -201,6 +223,59 @@ func TestConcentrator(t *testing.T) {
 			assert.Empty(t, gotStats[0].ProcessTags)
 		})
 	})
+}
+
+// recordingConcentrator wraps a concentrator and records the batches delivered
+// via trySendSpans, so tests can assert how a chunk's spans are grouped.
+type recordingConcentrator struct {
+	statsConcentrator
+	batches [][]*tracerStatSpan
+}
+
+func (r *recordingConcentrator) trySendSpans(spans []*tracerStatSpan) {
+	r.batches = append(r.batches, spans)
+}
+
+// TestStatsChunkDeliveredAsSingleBatch verifies that a finished trace's spans
+// reach the concentrator as a single batch per chunk (not one send per span),
+// and that every eligible span in the chunk is included. trySendSpans is only
+// called from the finishing goroutine, so recording without a lock is safe.
+func TestStatsChunkDeliveredAsSingleBatch(t *testing.T) {
+	tr, _, _, stop, err := startTestTracer(t, WithStatsComputation(true))
+	require.NoError(t, err)
+	rec := &recordingConcentrator{statsConcentrator: tr.stats}
+	tr.stats = rec
+
+	root := tr.StartSpan("root", Tag(keyMeasured, 1))
+	child1 := tr.StartSpan("child1", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	child2 := tr.StartSpan("child2", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	child1.Finish()
+	child2.Finish()
+	root.Finish() // full flush: root, child1 and child2 form a single chunk
+	stop()
+
+	require.Len(t, rec.batches, 1, "a full-flush chunk must be delivered as exactly one batch")
+	assert.Len(t, rec.batches[0], 3, "the batch must contain every eligible span in the chunk")
+}
+
+// TestStatsMultipleSpansPerChunkAggregated verifies end-to-end that every
+// eligible span in a single chunk is aggregated by the real concentrator.
+func TestStatsMultipleSpansPerChunkAggregated(t *testing.T) {
+	tr, transport, _, stop, err := startTestTracer(t, WithStatsComputation(true))
+	require.NoError(t, err)
+
+	root := tr.StartSpan("root", Tag(keyMeasured, 1))
+	child1 := tr.StartSpan("child1", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	child2 := tr.StartSpan("child2", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	child1.Finish()
+	child2.Finish()
+	root.Finish()
+	stop()
+
+	stats := transport.Stats()
+	assert.True(t, statsContainName(stats, "root"))
+	assert.True(t, statsContainName(stats, "child1"))
+	assert.True(t, statsContainName(stats, "child2"))
 }
 
 func TestNewConcentratorAdditionalMetricTagsCardinalityLimit(t *testing.T) {
@@ -501,7 +576,7 @@ func TestObfuscation(t *testing.T) {
 	ss1, ok := c.newTracerStatSpan(&s1, obfuscate.NewObfuscator(obfuscate.Config{}))
 	assert.True(t, ok)
 	c.Start()
-	c.In <- ss1
+	c.In <- []*tracerStatSpan{ss1}
 	c.Stop()
 	actualStats := tsp.Stats()
 	assert.Len(t, actualStats, 1)
@@ -591,7 +666,7 @@ func TestPerSpanVersionInStats(t *testing.T) {
 		ss, ok := c.newTracerStatSpan(s, nil)
 		require.True(t, ok)
 		c.Start()
-		c.In <- ss
+		c.In <- []*tracerStatSpan{ss}
 		c.Stop()
 
 		got := transport.Stats()
@@ -613,7 +688,7 @@ func TestPerSpanVersionInStats(t *testing.T) {
 		ss, ok := c.newTracerStatSpan(s, nil)
 		require.True(t, ok)
 		c.Start()
-		c.In <- ss
+		c.In <- []*tracerStatSpan{ss}
 		c.Stop()
 
 		got := transport.Stats()
@@ -632,8 +707,8 @@ func TestPerSpanVersionInStats(t *testing.T) {
 		ss2, ok := c.newTracerStatSpan(s2, nil)
 		require.True(t, ok)
 		c.Start()
-		c.In <- ss1
-		c.In <- ss2
+		c.In <- []*tracerStatSpan{ss1}
+		c.In <- []*tracerStatSpan{ss2}
 		c.Stop()
 
 		got := transport.Stats()
@@ -664,7 +739,7 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	ss, ok := c.newTracerStatSpan(&s, nil)
 	require.True(t, ok)
 	c.Start()
-	c.In <- ss
+	c.In <- []*tracerStatSpan{ss}
 	c.Stop()
 
 	actualStats := transport.Stats()
@@ -696,7 +771,7 @@ func TestStatsIncludeServiceSource(t *testing.T) {
 	ss, ok := c.newTracerStatSpan(&s, nil)
 	require.True(t, ok)
 	c.Start()
-	c.In <- ss
+	c.In <- []*tracerStatSpan{ss}
 	c.Stop()
 
 	actualStats := transport.Stats()
@@ -721,7 +796,7 @@ func TestStatsServiceSourceNotSetWhenEmpty(t *testing.T) {
 	ss, ok := c.newTracerStatSpan(&s, nil)
 	require.True(t, ok)
 	c.Start()
-	c.In <- ss
+	c.In <- []*tracerStatSpan{ss}
 	c.Stop()
 
 	actualStats := transport.Stats()
@@ -796,7 +871,7 @@ func TestStatsFlushRetries(t *testing.T) {
 			ss, ok := c.newTracerStatSpan(&s, nil)
 			require.True(t, ok)
 			c.Start()
-			c.In <- ss
+			c.In <- []*tracerStatSpan{ss}
 			c.Stop()
 
 			assert.Equal(t, test.expAttempts, p.sendAttempts)
