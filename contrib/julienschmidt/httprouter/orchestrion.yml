@@ -16,8 +16,13 @@ aspects:
       - inject-declarations:
           imports:
             tracing: "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
+            instrhttptrace: "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
           lang: go1.18
           template: |-
+            func init() {
+              instrhttptrace.RegisterRoutingHandlerType[*Router]()
+            }
+
             type __dd_wRouter struct {
               *Router
             }

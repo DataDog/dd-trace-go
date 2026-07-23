@@ -26,6 +26,7 @@ var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageGin)
+	httptrace.RegisterRoutingHandlerType[*gin.Engine]()
 }
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the

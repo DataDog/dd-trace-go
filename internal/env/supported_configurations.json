@@ -1360,6 +1360,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_HTTP_ROUTER_ROOT_SPAN": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_HTTP_SERVER_ERROR_STATUSES": [
       {
         "implementation": "B",
