@@ -799,7 +799,7 @@ func WithDebugMode(enabled bool) StartOption {
 }
 
 // WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
-// This option is only required if the the Datadog Lambda Extension is not
+// This option is only required if the Datadog Lambda Extension is not
 // running.
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {
@@ -1160,6 +1160,61 @@ func WithPartialFlushing(numSpans int) StartOption {
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)
+	}
+}
+
+// WithStatsAdditionalTags configures additional tag keys to extract from spans
+// and use as extra aggregation dimensions for client-side stats. For example,
+// setting tags to []string{"region", "tenant_id"} will cause stats to be
+// grouped by those tag values in addition to the standard dimensions.
+// This can also be configured by setting DD_TRACE_STATS_ADDITIONAL_TAGS
+// (comma-separated list of tag keys).
+func WithStatsAdditionalTags(tags []string) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsAdditionalTags(tags, internalconfig.OriginCode)
+	}
+}
+
+// WithStatsCardinalityLimit sets the whole-key cardinality limit for client-side stats.
+// When the number of distinct aggregation keys in a flush bucket exceeds this limit,
+// excess spans are collapsed to a single overflow bucket keyed by "tracer_blocked_value".
+// This is the backstop that guarantees a hard memory bound regardless of which field causes explosion.
+// Can also be configured via DD_TRACE_STATS_CARDINALITY_LIMIT. Default: 2048.
+func WithStatsCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsWholeKeyCardinalityLimit(limit, internalconfig.OriginCode)
+	}
+}
+
+// WithStatsResourceCardinalityLimit sets the per-field cardinality limit for the resource field.
+// Can also be configured via DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT. Default: 1024.
+func WithStatsResourceCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsResourceCardinalityLimit(limit, internalconfig.OriginCode)
+	}
+}
+
+// WithStatsHTTPEndpointCardinalityLimit sets the per-field cardinality limit for http_endpoint.
+// Can also be configured via DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT. Default: 512.
+func WithStatsHTTPEndpointCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsHTTPEndpointCardinalityLimit(limit, internalconfig.OriginCode)
+	}
+}
+
+// WithStatsPeerTagsCardinalityLimit sets the per-field cardinality limit for peer_tags.
+// Can also be configured via DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT. Default: 512.
+func WithStatsPeerTagsCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsPeerTagsCardinalityLimit(limit, internalconfig.OriginCode)
+	}
+}
+
+// WithStatsOriginCardinalityLimit sets the per-field cardinality limit for origin.
+// Can also be configured via DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT. Default: 20.
+func WithStatsOriginCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsOriginCardinalityLimit(limit, internalconfig.OriginCode)
 	}
 }
 

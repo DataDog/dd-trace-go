@@ -7,6 +7,7 @@ package net
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -80,7 +81,7 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 	}
 
 	if c.repositoryURL == "" || c.commitSha == "" {
-		return nil, fmt.Errorf("civisibility.GetKnownTests: repository URL and commit SHA are required")
+		return nil, errors.New("civisibility.GetKnownTests: repository URL and commit SHA are required")
 	}
 
 	body := knownTestsRequest{

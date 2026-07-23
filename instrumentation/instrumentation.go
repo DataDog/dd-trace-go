@@ -159,6 +159,29 @@ func (i *Instrumentation) TelemetryMetrics() TelemetryMetricsClient {
 	return &i.telemetryMetrics
 }
 
+type TelemetryNamespace = telemetry.Namespace
+
+const (
+	// TelemetryNamespaceIAST is the namespace for IAST telemetry
+	TelemetryNamespaceIAST = telemetry.NamespaceIAST
+)
+
+// TelemetryProductStarted declares a telemetry product as having started.
+func (i *Instrumentation) TelemetryProductStarted(ns TelemetryNamespace) {
+	telemetry.ProductStarted(ns)
+}
+
+// TelemetryProductStartError declares a telemetry product as having failed to
+// start because of the specified error.
+func (i *Instrumentation) TelemetryProductStartError(ns TelemetryNamespace, err error) {
+	telemetry.ProductStartError(ns, err)
+}
+
+// TelemetryProductStopped declares a telemetry product as having stopped.
+func (i *Instrumentation) TelemetryProductStopped(ns TelemetryNamespace) {
+	telemetry.ProductStopped(ns)
+}
+
 type TelemetryOrigin = telemetry.Origin
 
 const (

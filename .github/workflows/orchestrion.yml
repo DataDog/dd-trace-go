@@ -169,27 +169,39 @@ jobs:
         # release without requiring coordination with the other. It also adds
         # the local checkout of orchestrion to the `go.work` so that its own
         # `go` directive is correctly managed.
+        shell: bash
         run: |-
+          # Relative to working-directory (.../dd-trace-go/internal/orchestrion/_integration): a
+          # path built from ${{ github.workspace }} would be backslash-separated on Windows and
+          # get mangled by bash's unquoted escape processing, so use a portable relative path.
+          source ../../../.github/workflows/apps/go-retry.sh
           go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
-          go mod tidy
+          retry_on_corruption go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
           VERSION: ${{ inputs.orchestrion-version }}
       # We install the binary to the GOBIN, so it's easy to use
       - name: Install orchestrion binary
         if: '!inputs.collect-coverage'
-        run: go install "github.com/DataDog/orchestrion"
+        shell: bash
+        run: |-
+          source ../../../.github/workflows/apps/go-retry.sh
+          retry_on_corruption go install "github.com/DataDog/orchestrion"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
       - name: Build orchestrion binary
         if: inputs.collect-coverage
         shell: bash
         run: |-
+          source ../../../.github/workflows/apps/go-retry.sh
           bin=$(go env GOPATH)/bin/orchestrion
           if [[ '${{ matrix.runs-on }}' == 'windows' ]]; then
             bin="${bin}.exe"
           fi
           mkdir -p "$(dirname "${bin}")"
-          go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
+          build_orchestrion() {
+            go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
+          }
+          retry_on_corruption build_orchestrion
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
@@ -197,7 +209,10 @@ jobs:
       # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
       # integration test suite may no longer be up-to-date.
       - name: Run 'go mod tidy'
-        run: go mod tidy
+        shell: bash
+        run: |-
+          source ../../../.github/workflows/apps/go-retry.sh
+          retry_on_corruption go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Pull docker images ahead of time so the pulls of large images don't have to fit within the
