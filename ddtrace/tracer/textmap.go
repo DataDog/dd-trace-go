@@ -633,8 +633,11 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 		writer.Set(originHeader, ctx.origin) // +checklocksignore - Read-only after init.
 	}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
-		// Propagate OpenTracing baggage.
-		writer.Set(p.cfg.BaggagePrefix+k, v)
+		// Propagate OpenTracing baggage. Percent-encode as
+		// propagatorBaggage.injectTextMap does for the "baggage" header, so a
+		// decoded control byte (e.g. a CRLF from percent-decoded baggage)
+		// can't reach the header name/value verbatim and poison the request.
+		writer.Set(p.cfg.BaggagePrefix+encodeKey(k), encodeValue(v))
 		return true
 	})
 	if p.cfg.MaxTagsHeaderLen <= 0 {
