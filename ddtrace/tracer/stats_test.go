@@ -93,9 +93,14 @@ func TestConcentrator(t *testing.T) {
 	t.Run("batch", func(t *testing.T) {
 		transport := newDummyTransport()
 		c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), bucketSize, &statsd.NoOpClientDirect{})
-		ss1, ok := c.newTracerStatSpan(&s1, nil)
+		// Use two spans sharing a bucket: this subtest verifies batch delivery
+		// (a single send carrying multiple spans), not bucket alignment.
+		start := time.Now().UnixNano() + 3*bucketSize
+		b1 := Span{name: "http.request", start: start, duration: 1, metrics: map[string]float64{keyMeasured: 1}}
+		b2 := Span{name: "sql.query", start: start, duration: 1, metrics: map[string]float64{keyMeasured: 1}}
+		ss1, ok := c.newTracerStatSpan(&b1, nil)
 		require.True(t, ok)
-		ss2, ok := c.newTracerStatSpan(&s2, nil)
+		ss2, ok := c.newTracerStatSpan(&b2, nil)
 		require.True(t, ok)
 
 		c.Start()
