@@ -325,7 +325,7 @@ Carriers for common transports:
 New integrations must support compile-time auto-instrumentation, so users get tracing without editing
 their code. Today this is done with Orchestrion. Design your integration with it in mind: favor
 patterns 3.1 through 3.4 over 3.5. Writing the `orchestrion.yml` file and the mandatory integration
-tests is covered in [AUTO_INSTRUMENTATION.md](./AUTO_INSTRUMENTATION.md).
+tests is covered in [ORCHESTRION.md](./ORCHESTRION.md).
 
 ## 10. Testing
 

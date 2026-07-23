@@ -1,27 +1,34 @@
-# Auto-instrumentation
+# Orchestrion
 
-New integrations must support compile-time auto-instrumentation, so a user gets tracing without
-editing their code. Today this is delivered with Orchestrion, described below. This guide covers how
-to add auto-instrumentation to an integration. For building the integration itself, see
-[INTEGRATIONS.md](./INTEGRATIONS.md).
+Orchestrion is how dd-trace-go supports compile-time auto-instrumentation: a user gets tracing
+without editing their code. It is a separate project
+([github.com/DataDog/orchestrion](https://github.com/DataDog/orchestrion)) that uses Aspect-Oriented
+Programming and the Go `toolexec` mechanism to rewrite Go source at build time, inserting
+instrumentation driven by each integration's `orchestrion.yml`. New integrations must support it.
+This guide covers how to add Orchestrion support to an integration; for building the integration
+itself, see [INTEGRATIONS.md](./INTEGRATIONS.md).
 
-## Orchestrion
+Within dd-trace-go, Orchestrion lives in a few places:
 
-Orchestrion rewrites the Go AST at build time using an `orchestrion.yml` file in the integration.
+- [`orchestrion/`](../orchestrion/): the generated list of all supported integrations.
+- [`internal/orchestrion/`](../internal/orchestrion/): internal support and the integration test
+  suite ([README](../internal/orchestrion/_integration/README.md)).
+- [`contrib/`](.): each integration's own `orchestrion.yml`.
 
-For references and guides, check the following:
+References:
 
-- **JSON schema**: the machine-readable list of every join point and advice, and what editors
-  validate `orchestrion.yml` against. Published at
-  [datadoghq.dev/orchestrion/schema.json](https://datadoghq.dev/orchestrion/schema.json), with the
-  source in the Orchestrion repo at `internal/injector/config/schema.json`. Prefer this when you need
-  the exact, current set of options.
-- **Contributor guide**: human-readable explanations of each join point and advice, and when to use
-  them, at
+- **User guide** (using Orchestrion in a project):
+  [datadoghq.dev/orchestrion/docs/getting-started](https://datadoghq.dev/orchestrion/docs/getting-started/).
+- **Contributor guide** (each join point and advice, and when to use them):
   [datadoghq.dev/orchestrion/contributing/aspects](https://datadoghq.dev/orchestrion/contributing/aspects/).
+- **JSON schema** (machine-readable list of every join point and advice; what editors validate
+  `orchestrion.yml` against):
+  [datadoghq.dev/orchestrion/schema.json](https://datadoghq.dev/orchestrion/schema.json), source at
+  `internal/injector/config/schema.json` in the Orchestrion repo. Prefer this for the exact, current
+  set of options.
 - **Existing examples**: the `contrib/*/orchestrion.yml` files in this repo.
 
-### orchestrion.yml
+## orchestrion.yml
 
 An `orchestrion.yml` contains aspects. Each aspect is a join point (where to act) and advice (what to
 inject).
@@ -46,7 +53,7 @@ its surroundings:
 For the full set of join points and advice and when to use each, see the schema and contributor guide
 above. For patterns to copy, read the existing `contrib/*/orchestrion.yml` files.
 
-### Common patterns
+## Common patterns
 
 Read the referenced `orchestrion.yml` files for the full aspect code.
 
@@ -87,7 +94,7 @@ Read the referenced `orchestrion.yml` files for the full aspect code.
   Rule of thumb: if the helper can be written without importing the library, use a shared package and
   a normal import. Use `go:linkname` only when the helper must import the library.
 
-### Avoiding circular imports
+## Avoiding circular imports
 
 Orchestrion weaves aspects into every package it compiles. Its only automatic exclusions
 ([internal/toolexec/aspect/specialcase.go](https://github.com/DataDog/orchestrion/blob/main/internal/toolexec/aspect/specialcase.go))
