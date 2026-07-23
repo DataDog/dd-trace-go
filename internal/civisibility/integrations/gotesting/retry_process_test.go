@@ -6812,7 +6812,35 @@ func TestProcessRetryReservesFlakyRetryBudgetBeforeAdmission(t *testing.T) {
 	require.Zero(t, atomic.LoadInt64(&settings.RemainingTotalRetryCount))
 }
 
-func TestProcessRetryFlakyRetryBudgetReservationIsAtomic(t *testing.T) {
+func TestProcessRetryFinalStatusDoesNotReserveFlakyRetryBudget(t *testing.T) {
+	settings := integrations.GetFlakyRetriesSettings()
+	oldRetryCount := settings.RetryCount
+	settings.RetryCount = 1
+	restoreBudget := setProcessRetryBudgetForTesting(1, 1)
+	defer func() {
+		restoreBudget()
+		settings.RetryCount = oldRetryCount
+	}()
+
+	reservation := &flakyRetryBudgetReservation{}
+	meta := &testExecutionMetadata{
+		hasAdditionalFeatureWrapper: true,
+		isFlakyTestRetriesEnabled:   true,
+		flakyRetryBudgetReservation: reservation,
+	}
+
+	require.False(t, isFinalExecution(true, false, meta, 0))
+	require.False(t, reservation.reserved())
+	require.Equal(t, int64(1), atomic.LoadInt64(&settings.RemainingTotalRetryCount))
+
+	meta.retryContinuationDecided = true
+	meta.retryContinuationAdmitted = false
+	require.True(t, isFinalExecution(true, false, meta, 0))
+	require.False(t, reservation.reserved())
+	require.Equal(t, int64(1), atomic.LoadInt64(&settings.RemainingTotalRetryCount))
+}
+
+func TestProcessRetryFlakyRetryBudgetAdmissionIsAtomic(t *testing.T) {
 	settings := integrations.GetFlakyRetriesSettings()
 	oldRetryCount := settings.RetryCount
 	settings.RetryCount = 1
@@ -6824,32 +6852,39 @@ func TestProcessRetryFlakyRetryBudgetReservationIsAtomic(t *testing.T) {
 
 	start := make(chan struct{})
 	results := make(chan bool, 2)
-	metadata := []*testExecutionMetadata{
-		{hasAdditionalFeatureWrapper: true, isFlakyTestRetriesEnabled: true, flakyRetryBudgetReservation: &flakyRetryBudgetReservation{}},
-		{hasAdditionalFeatureWrapper: true, isFlakyTestRetriesEnabled: true, flakyRetryBudgetReservation: &flakyRetryBudgetReservation{}},
-	}
-	for _, execMeta := range metadata {
-		go func(meta *testExecutionMetadata) {
+	execOpts := make([]*executionOptions, 2)
+	for i := range execOpts {
+		localT := createNewTest()
+		localT.Fail()
+		meta := &testExecutionMetadata{isFlakyTestRetriesEnabled: true}
+		execOpts[i] = &executionOptions{
+			options: &runTestWithRetryOptions{
+				postShouldRetry: func(*testing.T, *testExecutionMetadata, int, int64) bool { return true },
+			},
+			retryCount:                  1,
+			flakyRetryBudgetReservation: &flakyRetryBudgetReservation{},
+		}
+		go func(options *executionOptions, test *testing.T, metadata *testExecutionMetadata) {
 			<-start
-			results <- isFinalExecution(true, false, meta, 0)
-		}(execMeta)
+			results <- reserveRetryBudgetIfNeeded(options, test, metadata, 0)
+		}(execOpts[i], localT, meta)
 	}
 	close(start)
 
-	finalCount := 0
-	for range metadata {
+	admittedCount := 0
+	for range execOpts {
 		if <-results {
-			finalCount++
+			admittedCount++
 		}
 	}
 	reservedCount := 0
-	for _, execMeta := range metadata {
-		if execMeta.flakyRetryBudgetReservation != nil && execMeta.flakyRetryBudgetReservation.reserved() {
+	for _, options := range execOpts {
+		if options.flakyRetryBudgetReservation.reserved() {
 			reservedCount++
 		}
 	}
 
-	require.Equal(t, 1, finalCount)
+	require.Equal(t, 1, admittedCount)
 	require.Equal(t, 1, reservedCount)
 	require.Zero(t, atomic.LoadInt64(&settings.RemainingTotalRetryCount))
 }
@@ -6874,7 +6909,7 @@ func TestProcessRetryFlakyRetryBudgetRefundIsIdempotent(t *testing.T) {
 	require.Zero(t, atomic.LoadInt64(&settings.RemainingTotalRetryCount))
 }
 
-func TestProcessRetryFlakyRetryBudgetReservationIsSharedWithSubtestMetadata(t *testing.T) {
+func TestProcessRetryFlakyRetryBudgetFinalStatusIsReadOnlyWithSubtestMetadata(t *testing.T) {
 	settings := integrations.GetFlakyRetriesSettings()
 	restoreBudget := setProcessRetryBudgetForTesting(1, 1)
 	defer restoreBudget()
@@ -6895,25 +6930,23 @@ func TestProcessRetryFlakyRetryBudgetReservationIsSharedWithSubtestMetadata(t *t
 
 	require.Same(t, reservation, child.flakyRetryBudgetReservation)
 	require.False(t, isFinalExecution(true, false, child, 0))
-	require.Zero(t, atomic.LoadInt64(&settings.RemainingTotalRetryCount))
+	require.Equal(t, int64(1), atomic.LoadInt64(&settings.RemainingTotalRetryCount))
 
 	localT := createNewTest()
 	localT.Fail()
 	execOpts := &executionOptions{
 		flakyRetryBudgetReservation: reservation,
 		options: &runTestWithRetryOptions{
-			postShouldRetry: func(*testing.T, *testExecutionMetadata, int, int64) bool {
-				t.Fatal("the shared reservation must admit the retry without a second budget check")
-				return false
-			},
+			postShouldRetry: func(*testing.T, *testExecutionMetadata, int, int64) bool { return true },
 		},
 	}
 	require.True(t, reserveRetryBudgetIfNeeded(execOpts, localT, child, 0))
+	require.Zero(t, atomic.LoadInt64(&settings.RemainingTotalRetryCount))
 	consumeFlakyRetryBudgetReservation(execOpts)
 	require.Zero(t, atomic.LoadInt64(&settings.RemainingTotalRetryCount))
 }
 
-func TestProcessRetryFlakyRetryBudgetReservationIsSharedAcrossParallelSubtests(t *testing.T) {
+func TestProcessRetryFlakyRetryBudgetFinalStatusIsReadOnlyAcrossParallelSubtests(t *testing.T) {
 	settings := integrations.GetFlakyRetriesSettings()
 	restoreBudget := setProcessRetryBudgetForTesting(1, 1)
 	defer restoreBudget()
@@ -6938,8 +6971,8 @@ func TestProcessRetryFlakyRetryBudgetReservationIsSharedAcrossParallelSubtests(t
 
 	require.False(t, <-results)
 	require.False(t, <-results)
-	require.True(t, reservation.reserved())
-	require.Zero(t, atomic.LoadInt64(&settings.RemainingTotalRetryCount))
+	require.False(t, reservation.reserved())
+	require.Equal(t, int64(1), atomic.LoadInt64(&settings.RemainingTotalRetryCount))
 }
 
 func TestRunTestWithRetryProcessAllRetriesFailedTagsFinalAttempt(t *testing.T) {

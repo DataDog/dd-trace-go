@@ -69,6 +69,8 @@ type (
 		anyExecutionPassed            bool               // tracks if any prior execution passed (for final status calculation)
 		anyExecutionFailed            bool               // tracks if any prior execution failed (for final status calculation)
 		remainingRetries              int64              // remaining retries at the start of this execution
+		retryContinuationDecided      bool               // whether retry admission has been evaluated for this execution
+		retryContinuationAdmitted     bool               // whether another retry was admitted after this execution
 		initialRetryCount             int64              // retry count selected from the initial execution duration
 		initialRetryCountSet          bool               // whether initialRetryCount has already been selected
 		efdFellBackToFlakyRetries     bool               // whether a slow EFD test fell through to FTR retry semantics
@@ -1052,6 +1054,8 @@ func runRetryAttemptCapabilityFallback(options *runTestWithRetryOptions, reason 
 	previousBodySuppression := execMeta.suppressUserTestBody
 	execMeta.suppressCoverageCollection = true
 	execMeta.suppressUserTestBody = options.retryAttemptMaskingFallback
+	execMeta.retryContinuationDecided = true
+	execMeta.retryContinuationAdmitted = false
 	if options.preExecMetaAdjust != nil {
 		options.preExecMetaAdjust(execMeta, 0)
 	}

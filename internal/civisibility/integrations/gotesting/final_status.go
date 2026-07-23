@@ -152,18 +152,16 @@ func isFinalExecution(failed, skipped bool, execMeta *testExecutionMetadata, dur
 	if execMeta.isEfdInParallel && !isAtfExecution {
 		return false
 	}
-	if usesFlakyRetryBudget(execMeta) {
-		if !failed || remainingRetries < 0 {
-			return true
-		}
-		if execMeta.flakyRetryBudgetReservation == nil || !execMeta.flakyRetryBudgetReservation.reserve() {
-			return true
-		}
-		return false
+	if execMeta.retryContinuationDecided {
+		return !execMeta.retryContinuationAdmitted
 	}
 
-	// Check if another retry would happen.
-	willRetry := willRetryAfterExecution(failed, skipped, execMeta, remainingRetries, 0)
+	remainingBudget := int64(0)
+	if usesFlakyRetryBudget(execMeta) {
+		remainingBudget = atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount)
+	}
+	// Legacy callers that do not own retry admission use a read-only projection.
+	willRetry := willRetryAfterExecution(failed, skipped, execMeta, remainingRetries, remainingBudget)
 	return !willRetry
 }
 

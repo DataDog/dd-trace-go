@@ -119,7 +119,7 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 		localT := attempt.test
 		if finalize := execMeta.retryAttemptFinalizer; finalize != nil {
 			execMeta.retryAttemptFinalizer = nil
-			finalize(result)
+			defer finalize(result)
 		}
 		if execOpts.originalExecutionMetadata != nil {
 			execOpts.originalExecutionMetadata.test = execMeta.test
@@ -167,13 +167,19 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 			}
 			execOpts.retryCount = 0
 			shouldRetry = false
+			execMeta.retryContinuationDecided = true
+			execMeta.retryContinuationAdmitted = false
 			return
 		}
 		if stopRetryGroupAfterRaceLocked(execOpts, result.raceDetected) {
 			shouldRetry = false
+			execMeta.retryContinuationDecided = true
+			execMeta.retryContinuationAdmitted = false
 			return
 		}
 		shouldRetry = reserveRetryBudgetIfNeeded(execOpts, localT, execMeta, currentIndex)
+		execMeta.retryContinuationDecided = true
+		execMeta.retryContinuationAdmitted = shouldRetry
 	}
 
 	_, _, reason := runFreshRetryAttemptInGroupWithCallbacks(
