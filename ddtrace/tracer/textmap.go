@@ -632,12 +632,25 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	if ctx.origin != "" { // +checklocksignore - Read-only after init.
 		writer.Set(originHeader, ctx.origin) // +checklocksignore - Read-only after init.
 	}
+	baggageItems, baggageBytes := 0, 0
 	ctx.ForeachBaggageItem(func(k, v string) bool {
-		// Propagate OpenTracing baggage. Percent-encode as
-		// propagatorBaggage.injectTextMap does for the "baggage" header, so a
-		// decoded control byte (e.g. a CRLF from percent-decoded baggage)
-		// can't reach the header name/value verbatim and poison the request.
-		writer.Set(p.cfg.BaggagePrefix+encodeKey(k), encodeValue(v))
+		// Cap at baggageMaxItems/baggageMaxBytes the same way
+		// propagatorBaggage.injectTextMap already does for the "baggage"
+		// header -- this prefix path had no such limit.
+		if baggageItems >= baggageMaxItems {
+			return false
+		}
+		// Percent-encode as propagatorBaggage.injectTextMap does for the
+		// "baggage" header, so a decoded control byte (e.g. a CRLF from
+		// percent-decoded baggage) can't reach the header name/value
+		// verbatim and poison the request.
+		ek, ev := encodeKey(k), encodeValue(v)
+		if baggageBytes+len(ek)+len(ev) > baggageMaxBytes {
+			return false
+		}
+		writer.Set(p.cfg.BaggagePrefix+ek, ev)
+		baggageBytes += len(ek) + len(ev)
+		baggageItems++
 		return true
 	})
 	if p.cfg.MaxTagsHeaderLen <= 0 {
@@ -695,6 +708,28 @@ func (p *propagator) Extract(carrier any) (*SpanContext, error) {
 	}
 }
 
+// addOTBaggageItem stores a baggage item received under the legacy
+// ot-baggage-<key> header prefix, enforcing the same baggageMaxItems/
+// baggageMaxBytes limits that propagatorBaggage already enforces for the
+// W3C "baggage" header. baggageBytes is the running total of accepted
+// key+value bytes; it and the (possibly newly allocated) map are returned
+// for the caller to store back into its scratch value.
+func addOTBaggageItem(baggage map[string]string, baggageBytes int, key, val string) (map[string]string, int) {
+	if len(baggage) >= baggageMaxItems {
+		log.Warn("baggage item count exceeded limit (%d), dropping remaining ot-baggage-* items", baggageMaxItems)
+		return baggage, baggageBytes
+	}
+	if baggageBytes+len(key)+len(val) > baggageMaxBytes {
+		log.Warn("baggage byte limit exceeded (%d), dropping remaining ot-baggage-* items", baggageMaxBytes)
+		return baggage, baggageBytes
+	}
+	if baggage == nil {
+		baggage = make(map[string]string, 1)
+	}
+	baggage[key] = val
+	return baggage, baggageBytes + len(key) + len(val)
+}
+
 // datadogExtractScratch holds the fields extracted from incoming Datadog
 // headers before a *SpanContext is allocated. It exists so the ForeachKey
 // closure below captures a single value instead of six separate local
@@ -703,12 +738,13 @@ func (p *propagator) Extract(carrier any) (*SpanContext, error) {
 // allocation count even though no single one of them is as large as a full
 // SpanContext. A single consolidated scratch value only needs one escape.
 type datadogExtractScratch struct {
-	traceID traceID
-	spanID  uint64
-	origin  string
-	tr      *trace
-	updated bool
-	baggage map[string]string
+	traceID      traceID
+	spanID       uint64
+	origin       string
+	tr           *trace
+	updated      bool
+	baggage      map[string]string
+	baggageBytes int
 }
 
 // extractTextMap parses the incoming Datadog headers into a scratch value
@@ -754,10 +790,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			s.tr = unmarshalPropagatingTagsIntoTrace(s.tr, v, p.cfg.MaxTagsHeaderLen)
 		default:
 			if after, ok := cutPrefixFold(k, p.cfg.BaggagePrefix); ok {
-				if s.baggage == nil {
-					s.baggage = make(map[string]string, 1)
-				}
-				s.baggage[strings.ToLower(after)] = v
+				s.baggage, s.baggageBytes = addOTBaggageItem(s.baggage, s.baggageBytes, strings.ToLower(after), v)
 			}
 		}
 		return nil
@@ -1448,6 +1481,7 @@ type w3cExtractScratch struct {
 	parentHeader string
 	stateHeader  string
 	baggage      map[string]string
+	baggageBytes int
 }
 
 // extractTextMap parses the W3C headers into a scratch value during the
@@ -1478,10 +1512,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 			s.stateHeader = v
 		default:
 			if after, ok := cutPrefixFold(k, DefaultBaggageHeaderPrefix); ok {
-				if s.baggage == nil {
-					s.baggage = make(map[string]string, 1)
-				}
-				s.baggage[strings.ToLower(after)] = v
+				s.baggage, s.baggageBytes = addOTBaggageItem(s.baggage, s.baggageBytes, strings.ToLower(after), v)
 			}
 		}
 		return nil
