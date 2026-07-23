@@ -638,6 +638,80 @@ type trace struct {
 	// still refer to it through trace.root.
 	// +checklocks:mu
 	rootFlushed bool
+
+	// OpenTelemetry consistent probability sampling state (OTEP 235), carried in
+	// the `ot=` tracestate list-member. otRV/otTH are the 56-bit randomness and
+	// rejection threshold; the *Set flags mark which are present (th is only ever
+	// emitted alongside rv). otInherited records that the values came from an
+	// inbound `ot=`, so they are forwarded verbatim and never regenerated.
+	// +checklocks:mu
+	otRV uint64
+	// +checklocks:mu
+	otTH uint64
+	// +checklocks:mu
+	otRVSet bool
+	// +checklocks:mu
+	otTHSet bool
+	// +checklocks:mu
+	otInherited bool
+}
+
+// setOtelInherited records rv/th parsed from an inbound `ot=` member. The values
+// are forwarded unchanged on inject and never re-derived locally.
+func (t *trace) setOtelInherited(rv uint64, rvOK bool, th uint64, thOK bool) {
+	if !rvOK && !thOK {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if rvOK {
+		t.otRV = rv
+		t.otRVSet = true
+	}
+	if thOK {
+		t.otTH = th
+		t.otTHSet = true
+	}
+	t.otInherited = true
+}
+
+// setOtelProbability records the (rv, th) pair for a genuine DD probability
+// decision at the given rate. It is a no-op when the values were inherited from
+// upstream (DD honors the upstream decision) or when rate is 0 (a rejection with
+// no representable threshold, so nothing is emitted).
+func (t *trace) setOtelProbability(traceIDLower uint64, rate float64) {
+	if rate <= 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otInherited {
+		return
+	}
+	t.otRV = deriveOtelRV(traceIDLower)
+	t.otTH = deriveOtelTH(rate)
+	t.otRVSet = true
+	t.otTHSet = true
+}
+
+// clearOtelProbability erases a locally-derived (rv, th) pair for a
+// non-probability decision (force-keep or a rate-limiter-caused drop). Inherited
+// values are left untouched so an upstream rv is still forwarded.
+func (t *trace) clearOtelProbability() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otInherited {
+		return
+	}
+	t.otRVSet = false
+	t.otTHSet = false
+}
+
+// otelTracestate returns the resolved OTel sampling state for injection.
+func (t *trace) otelTracestate() (rv uint64, th uint64, rvSet bool, thSet bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.otRV, t.otTH, t.otRVSet, t.otTHSet
 }
 
 var (
@@ -744,6 +818,14 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	assert.RWMutexLocked(&t.mu)
 	if t.locked && !force {
 		return false
+	}
+
+	// A manual or AppSec force-keep is not a probability decision, so erase any
+	// locally-derived OTel threshold rather than encode a fabricated rate. An
+	// inherited rv/th (from upstream) is left untouched and still forwarded.
+	if !t.otInherited && (sampler == samplernames.Manual || sampler == samplernames.AppSec) {
+		t.otRVSet = false
+		t.otTHSet = false
 	}
 
 	old := t.priority.Load() // +checklocksignore
