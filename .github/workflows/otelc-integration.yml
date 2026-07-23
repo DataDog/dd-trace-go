@@ -1,0 +1,319 @@
+name: OTelc
+on:
+  workflow_call:
+    inputs:
+      otelc-version:
+        description: OTelc version to use for integration testing
+        type: string
+        required: true
+      collect-coverage:
+        description: Whether to collect otelc coverage data or not
+        type: boolean
+        default: false
+        required: false
+  pull_request:
+  push:
+    branches:
+      - release-v*
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
+  schedule: # nightly
+    - cron: "0 0 * * *"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ inputs.otelc-version && format('-{0}', inputs.otelc-version) }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: Verify generated files are up-to-date
+    # Don't run in workflow_call or workflow_dispatch
+    if: github.event_name == 'workflow_dispatch' || inputs.otelc-version == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+      - name: Run generator
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/generate.sh
+      - name: Check for changes
+        run: git diff --exit-code
+
+  go-versions-matrix:
+    name: Go Versions Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.matrix.outputs.json }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          repository: ${{ inputs.otelc-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.otelc-version != '' && 'main' || github.sha }}
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: stable
+          cache: true
+          cache-dependency-path: '**/go.mod'
+      - name: Compute Matrix
+        id: matrix
+        run: |-
+          echo -n "json="                      >> "${GITHUB_OUTPUT}"
+          go run ./internal/orchestrion/matrix >> "${GITHUB_OUTPUT}"
+
+  service-containers:
+    name: Service containers
+    runs-on: ubuntu-latest
+    outputs:
+      services_json: ${{ steps.set-services.outputs.services_json }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          repository: ${{ inputs.otelc-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.otelc-version != '' && 'main' || github.sha }}
+      - name: Define Services JSON
+        id: set-services
+        run: |
+          echo "SERVICES_JSON=$(jq -c . ./internal/orchestrion/_integration/ci-services.json)" >> "${GITHUB_OUTPUT}"
+
+  integration-test:
+    services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
+    env:
+      # Path to where test results will be saved
+      REPORT: gotestsum-report-otelc.xml
+      # Disable go workspace as they complicate everything when otelc
+      # updates its `go` directive in `go.mod` before `dd-trace-go` does;
+      # ESPECIALLY on Windows.
+      GOWORK: 'off'
+    needs:
+      - go-versions-matrix
+      - service-containers
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          - ubuntu
+          - macos
+          - windows
+        go-version: ${{ fromJSON(needs.go-versions-matrix.outputs.json) }}
+    name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }}
+    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          path: ${{ github.workspace }}/dd-trace-go
+          repository: ${{ inputs.otelc-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.otelc-version != '' && 'main' || github.sha }}
+      - name: Check out otelc
+        id: checkout-otelc
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          path: ${{ github.workspace }}/otelc
+          repository: open-telemetry/opentelemetry-go-compile-instrumentation
+          ref: ${{ inputs.otelc-version || 'main' }} # TODO: replace with actual version once v1 is released
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+          cache-dependency-path: |-
+            ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
+            ${{ github.workspace }}/otelc/go.mod
+
+      - name: Install development tools
+        run: make -C ${{ github.workspace }}/dd-trace-go tools-install
+
+      - name: Install otelc binary
+        if: '!inputs.collect-coverage'
+        run: make install
+        working-directory: ${{ github.workspace }}/otelc
+      - name: Build otelc binary
+        if: inputs.collect-coverage
+        shell: bash
+        run: |-
+          make package
+          bin=$(go env GOPATH)/bin/otelc
+          if [[ '${{ matrix.runs-on }}' == 'windows' ]]; then
+            bin="${bin}.exe"
+          fi
+          mkdir -p "$(dirname "${bin}")"
+          go build -cover -covermode=atomic -coverpkg="go.opentelemetry.io/otelc/..." "-o=${bin}" ./tool/cmd/otelc
+          echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
+        working-directory: ${{ github.workspace }}/otelc
+
+      - name: Get local OTelc dependency
+        shell: bash
+        run: |-
+          set -euo pipefail
+          MODULE="go.opentelemetry.io/otelc/pkg"
+          OTELC_PKG_DIR="${{ github.workspace }}/otelc/pkg"
+          while IFS= read -r gomod; do
+            dir=$(dirname "$gomod")
+            (cd "$dir" && go mod edit -replace="${MODULE}=${OTELC_PKG_DIR}" && go mod tidy)
+          done < <(grep -lrE --include=go.mod "^[[:space:]]+${MODULE}[[:space:]]" .)
+        working-directory: ${{ github.workspace }}/dd-trace-go
+
+      - name: Run 'go mod tidy'
+        run: go mod tidy
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+
+      # Pull docker images ahead of time so the pulls of large images don't have to fit within the
+      # test timeout.
+      - name: Pull container images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
+        run: |-
+          # AWS DynamoDB Local is used to have a pretend AWS API endpoint
+          docker pull amazon/dynamodb-local:latest
+
+          # PostgreSQL service
+          docker pull docker.io/postgres:16-alpine
+
+          # Vault service
+          docker pull vault:1.7.3
+
+      - name: Enable memory overcommit
+        if: runner.os == 'Linux'
+        run: sudo sysctl vm.overcommit_memory=1
+
+      - name: Run Tests
+        shell: bash
+        run: |-
+          export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
+          echo "PATH: ${PATH}"
+          echo "Working directory: ${PWD}"
+          otelc version
+
+          # Only run OTelc tests for integrations that have an otelc.yaml file.
+          # TODO: remove this once all integrations are supported.
+          CONTRIB_DIR="${{ github.workspace }}/dd-trace-go/contrib"
+          export PACKAGE_NAMES="github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/otelc"
+          while IFS=$'\t' read -r pkg dir; do
+            [[ "$dir" == "$PWD" ]] && continue
+            rel="${dir#"$PWD"/}"
+            integration="${rel%%/*}"
+            contrib_path="${integration//_//}"
+            if [[ -d "${CONTRIB_DIR}/${contrib_path}" ]] && [[ -n "$(find "${CONTRIB_DIR}/${contrib_path}" -type f -name otelc.yaml -print -quit)" ]]; then
+              PACKAGE_NAMES="${PACKAGE_NAMES} ${pkg}"
+            fi
+          done < <(go list -f '{{.ImportPath}}'$'\t''{{.Dir}}' ./... | grep -v /civisibility)
+
+          if [[ -z "${PACKAGE_NAMES// /}" ]]; then
+            echo "No integrations with an otelc.yaml file found; skipping otelc test run."
+            exit 0
+          fi
+
+          echo "Running otelc tests for:${PACKAGE_NAMES}"
+
+          RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
+          cat > "${RUN_SCRIPT}" <<'EOF'
+          #!/usr/bin/env bash
+          set -o pipefail
+          rc=0
+          for pkg in $PACKAGE_NAMES; do
+            otelc -rules="${{ github.workspace }}/dd-trace-go" go test -v -shuffle=on "$pkg" 2>&1 | go tool test2json -t -p "$pkg" || rc=1
+          done
+          exit "$rc"
+          EOF
+
+          gotestsum --junitfile "${XML_PATH}" --raw-command -- bash "${RUN_SCRIPT}"
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+        env:
+          # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
+          XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
+
+        # Check for changes in the supported_configurations.json file
+      - name: Run Config Inverter Check
+        if: always()
+        run: |
+          git diff internal/env/supported_configurations.json
+          cd scripts/configinverter && go run main.go -input ../../internal/env/supported_configurations.json check
+        working-directory: ${{ github.workspace }}/dd-trace-go
+
+      # If in workflow_call, we collected coverage data we need to upload
+      - name: Consolidate coverage report
+        if: inputs.collect-coverage
+        shell: bash
+        run: |-
+          mkdir -p "${{ github.workspace }}/otelc/coverage"
+          go tool covdata textfmt -i "${GOCOVERDIR}" -o "${WORKSPACE}/otelc/coverage/integration.out"
+        env:
+          WORKSPACE: ${{ github.workspace }}
+      - name: Determine go minor version
+        if: inputs.collect-coverage
+        id: go
+        shell: bash
+        run: |-
+          set -euo pipefail
+          echo "version=$(echo '${{ steps.setup-go.outputs.go-version }}' | cut -d'.' -f1,2)" >> "${GITHUB_OUTPUT}"
+      - name: Upload coverage report
+        if: inputs.collect-coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-integration+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
+          path: ${{ github.workspace }}/otelc/coverage/integration.out
+
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: always()
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.otelc-version != '' && 'main' || github.sha }}
+          clean: false
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        with:
+          policy: dd-trace-go
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
+          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+  # This is a simple join point to make it easy to set up branch protection rules in GitHub.
+  integration-test-done:
+    name: OTelc Integration Tests
+    needs:
+      - generate
+      - integration-test
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.integration-test.result == 'success' && needs.generate.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.integration-test.result != 'success' || needs.generate.result != 'success'
+        run: echo "Failure!" && exit 1
+

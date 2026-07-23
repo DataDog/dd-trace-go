@@ -11,7 +11,7 @@ set -euo pipefail
 #
 # Options:
 #   --sample NAME         Sample to build (default: net_http)
-#   --mode MODE           Build mode: standard or orchestrion (required)
+#   --mode MODE           Build mode: standard, orchestrion, or otelc (required)
 #   --output PATH         Output JSON file path (default: stdout)
 #   --repeats N           Number of build repeats (default: 3)
 #   -h, --help            Show this help message
@@ -32,7 +32,7 @@ Builds are performed with a cold build cache to measure full compilation cost.
 
 Options:
   --sample NAME         Sample to build (default: net_http)
-  --mode MODE           Build mode: standard or orchestrion (required)
+  --mode MODE           Build mode: standard, orchestrion, or otelc (required)
   --output PATH         Output JSON file path (default: stdout)
   --repeats N           Number of build repeats (default: 3)
   -h, --help            Show this help message
@@ -89,11 +89,11 @@ done
 
 # Validate required arguments
 if [[ -z "$MODE" ]]; then
-  die "--mode is required (standard or orchestrion)"
+  die "--mode is required (standard, orchestrion, otelc)"
 fi
 
-if [[ "$MODE" != "standard" && "$MODE" != "orchestrion" ]]; then
-  die "--mode must be 'standard' or 'orchestrion', got: $MODE"
+if [[ "$MODE" != "standard" && "$MODE" != "orchestrion" && "$MODE" != "otelc" ]]; then
+  die "--mode must be 'standard', 'orchestrion', or 'otelc', got: $MODE"
 fi
 
 # Find repo root
@@ -130,6 +130,20 @@ if [[ "$MODE" == "orchestrion" ]]; then
   message "  Orchestrion version: $ORCHESTRION_VERSION"
 fi
 
+if [[ "$MODE" == "otelc" ]]; then
+  message "Cloning and installing otelc binary..."
+  OTELC_SRC_DIR="$OUT_DIR/otelc-src"
+  OTELC_REF="3b9beed7a1200cf16e59bafa431dd4c4a0601f41" # v1.0.1
+  mkdir -p "$OTELC_SRC_DIR"
+  git -C "$OTELC_SRC_DIR" init -q
+  git -C "$OTELC_SRC_DIR" remote add origin https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation.git
+  git -C "$OTELC_SRC_DIR" fetch --depth 1 origin "$OTELC_REF" || die "Failed to fetch otelc commit $OTELC_REF"
+  git -C "$OTELC_SRC_DIR" checkout -q FETCH_HEAD || die "Failed to checkout otelc commit $OTELC_REF"
+  (cd "$OTELC_SRC_DIR" && make install) || die "Failed to install otelc"
+  OTELC_VERSION="$OTELC_REF"
+  message "  Otelc version: $OTELC_VERSION"
+fi
+
 # Get Go version
 GO_VERSION="$(go version | awk '{print $3}' | sed 's/go//')"
 message "  Go version: $GO_VERSION"
@@ -149,8 +163,10 @@ do_build() {
 
   if [[ "$MODE" == "standard" ]]; then
     go test -c -o "$bin_path" "./$SAMPLE" || die "Build failed (standard)"
-  else
+  elif [[ "$MODE" == "orchestrion" ]]; then
     go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || die "Build failed (orchestrion)"
+  elif [[ "$MODE" == "otelc" ]]; then
+    otelc -rules="$REPO_ROOT" go test -c -o "$bin_path" "./$SAMPLE" || die "Build failed (otelc)"
   fi
 
   local end_time
@@ -194,6 +210,11 @@ JSON=$(jq -n \
 # Add orchestrion version if in orchestrion mode
 if [[ "$MODE" == "orchestrion" ]]; then
   JSON=$(echo "$JSON" | jq --arg orch_version "$ORCHESTRION_VERSION" '. + {orchestrion_version: $orch_version}')
+fi
+
+# Add otelc version if in otelc mode
+if [[ "$MODE" == "otelc" ]]; then
+  JSON=$(echo "$JSON" | jq --arg otelc_version "$OTELC_VERSION" '. + {otelc_version: $otelc_version}')
 fi
 
 # Output

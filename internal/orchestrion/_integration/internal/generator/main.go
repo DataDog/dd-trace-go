@@ -44,6 +44,10 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(file.Name(), ".") || strings.HasPrefix(file.Name(), "_") {
+			continue
+		}
+
 		testDir := filepath.Join(rootDir, file.Name())
 		testData := parseCode(testDir)
 		if len(testData.Cases) == 0 {
