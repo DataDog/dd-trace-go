@@ -6,6 +6,10 @@ set +e
 # It is run by the GitHub Actions CI workflow defined in
 # .github/workflows/unit-integration-tests.yml.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "${SCRIPT_DIR}/../.github/workflows/apps/go-retry.sh"
+
 [[ -d ./contrib ]] || exit 0
 
 BUILD_TAGS="${BUILD_TAGS:-}"
@@ -38,21 +42,24 @@ for contrib in $CONTRIBS; do
   contrib_id=$(echo "$contrib" | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd "$contrib" || exit 1
   if [[ "$1" = "smoke" ]]; then
-    go get -u -t ./...
+    # set +e is in effect, so capture dependency-upgrade/tidy failures explicitly — otherwise a
+    # failed `go get -u` (the whole point of smoke mode) would be silently ignored as long as the
+    # tests still happen to pass.
+    retry_on_corruption go get -u -t ./... || report_error=1
   fi
   if [[ "$1" = "smoke" && "$contrib" = "./contrib/k8s.io/client-go/" ]]; then
     # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
     # When the issue is resolved, this line can be removed.
-    go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
+    retry_on_corruption go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59 || report_error=1
     # Another temporary workaround caused by the upgrade introduced by this commit: https://github.com/kubernetes/client-go/commit/f4d210639bbc61f2f2a8596662d7ad50abaa6544
-    go get k8s.io/client-go@v0.35.0
+    retry_on_corruption go get k8s.io/client-go@v0.35.0 || report_error=1
   fi
   if [[ "$1" = "smoke" && "$contrib" = "./contrib/gin-gonic/gin/" ]]; then
     # Temporary workaround, see: https://github.com/gin-gonic/gin/issues/4441
-    go get github.com/quic-go/qpack@v0.5.1
+    retry_on_corruption go get github.com/quic-go/qpack@v0.5.1 || report_error=1
   fi
-  go mod tidy
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
+  retry_on_corruption go mod tidy || report_error=1
+  retry_on_corruption gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1
@@ -62,13 +69,10 @@ for mod in $INSTRUMENTATION_SUBMODULES; do
   echo "Testing instrumentation submodule: $mod"
   mod_id=$(echo "$mod" | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd "$mod" || exit 1
-  [[ "$1" = "smoke" ]] && go get -u -t ./...
-  if [[ "$1" = "smoke" && "$contrib" = "./contrib/k8s.io/client-go/" ]]; then
-    # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
-    # When the issue is resolved, this line can be removed.
-    go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
+  if [[ "$1" = "smoke" ]]; then
+    retry_on_corruption go get -u -t ./... || report_error=1
   fi
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$mod_id.txt" -covermode=atomic
+  retry_on_corruption gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$mod_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1

@@ -220,7 +220,7 @@ func protobufToText(pprofData []byte) string {
 // without adding it to enabledProfileTypes as well.
 func TestProfileTypeSoundness(t *testing.T) {
 	t.Run("enabledProfileTypes", func(t *testing.T) {
-		var allProfileTypes []ProfileType
+		allProfileTypes := make([]ProfileType, 0, len(profileTypes))
 		for pt := range profileTypes {
 			allProfileTypes = append(allProfileTypes, pt)
 		}

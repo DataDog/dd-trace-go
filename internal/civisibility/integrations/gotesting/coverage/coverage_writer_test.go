@@ -6,7 +6,7 @@
 package coverage
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -61,7 +61,7 @@ func TestCoverageWriterConcurrentFlush(t *testing.T) {
 func TestCoverageWriterFlushError(t *testing.T) {
 	writer := newCoverageWriter()
 	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
-		return fmt.Errorf("mock error")
+		return errors.New("mock error")
 	},
 	}
 	coverage := &testCoverage{}

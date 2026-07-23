@@ -8,6 +8,7 @@ package net
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -106,7 +107,7 @@ func (c *client) GetSkippableTests() (*SkippableTestsResponse, error) {
 	}
 
 	if c.repositoryURL == "" || c.commitSha == "" {
-		return nil, fmt.Errorf("civisibility.GetSkippableTests: repository URL and commit SHA are required")
+		return nil, errors.New("civisibility.GetSkippableTests: repository URL and commit SHA are required")
 	}
 
 	body := skippableRequest{
@@ -250,14 +251,14 @@ func normalizeSkippableCoveragePath(rawPath string) (string, error) {
 		normalized = trimmed
 	}
 	if normalized == "" {
-		return "", fmt.Errorf("coverage path cannot be empty")
+		return "", errors.New("coverage path cannot be empty")
 	}
 	if path.IsAbs(normalized) || isWindowsDrivePath(normalized) {
-		return "", fmt.Errorf("coverage path must be repository relative")
+		return "", errors.New("coverage path must be repository relative")
 	}
 	normalized = path.Clean(normalized)
 	if normalized == "." || normalized == "/" || normalized == ".." || strings.HasPrefix(normalized, "../") || isWindowsDrivePath(normalized) {
-		return "", fmt.Errorf("coverage path cannot point outside the repository")
+		return "", errors.New("coverage path cannot point outside the repository")
 	}
 	return normalized, nil
 }

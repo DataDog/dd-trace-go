@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -618,7 +619,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		{ext.ManualKeep, true, 0},
 		{ext.ManualDrop, false, 1},
 	} {
-		t.Run(fmt.Sprintf("%s/local", scenario.tag), func(t *testing.T) {
+		t.Run(scenario.tag+"/local", func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -630,7 +631,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			assert.Equal(t, scenario.keep, result)
 		})
 
-		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
+		t.Run(scenario.tag+"/non-local", func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -643,7 +644,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			span.mu.RUnlock()
 			assert.Equal(t, scenario.keep, result)
 		})
-		t.Run(fmt.Sprintf("%s/upstream-drop-locked", scenario.tag), func(t *testing.T) {
+		t.Run(scenario.tag+"/upstream-drop-locked", func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -669,7 +670,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			span.mu.RUnlock()
 			assert.Equal(t, scenario.keep, result)
 		})
-		t.Run(fmt.Sprintf("%s/upstream-keep-locked", scenario.tag), func(t *testing.T) {
+		t.Run(scenario.tag+"/upstream-keep-locked", func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -865,13 +866,13 @@ func TestSpanSetMetric(t *testing.T) {
 			span.SetTag("bytes", intUpperLimit)
 			assert.Equal(0.0, span.metrics["bytes"])
 			v, _ := span.meta.Get("bytes")
-			assert.Equal(fmt.Sprint(intUpperLimit), v)
+			assert.Equal(strconv.FormatInt(intUpperLimit, 10), v)
 		},
 		"toosmall": func(assert *assert.Assertions, span *Span) {
 			span.SetTag("bytes", intLowerLimit)
 			assert.Equal(0.0, span.metrics["bytes"])
 			v, _ := span.meta.Get("bytes")
-			assert.Equal(fmt.Sprint(intLowerLimit), v)
+			assert.Equal(strconv.FormatInt(intLowerLimit, 10), v)
 		},
 		"finished": func(assert *assert.Assertions, span *Span) {
 			span.Finish()
@@ -1873,6 +1874,111 @@ func TestStatsAfterFinish(t *testing.T) {
 		assert.Equal(t, 1, len(stats))
 		peerTags := stats[0].Stats[0].Stats[0].PeerTags
 		assert.Empty(t, peerTags)
+	})
+}
+
+func TestStatsAdditionalMetricTags(t *testing.T) {
+	t.Run("tags-present", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+			WithStatsAdditionalTags([]string{"region", "tenant_id"}),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		sp.SetTag("region", "us-east-1")
+		sp.SetTag("tenant_id", "acme-corp")
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Contains(t, additionalTags, "region:us-east-1")
+		assert.Contains(t, additionalTags, "tenant_id:acme-corp")
+	})
+	t.Run("tags-missing", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+			WithStatsAdditionalTags([]string{"region"}),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		// no "region" tag set on the span
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Empty(t, additionalTags)
+	})
+	t.Run("no-config", func(t *testing.T) {
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		sp.SetTag("region", "us-east-1")
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Empty(t, additionalTags)
 	})
 }
 
