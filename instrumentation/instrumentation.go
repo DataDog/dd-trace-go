@@ -91,6 +91,9 @@ type Instrumentation struct {
 }
 
 // ServiceName returns the default service name to be set for the given instrumentation component.
+// When the package has no naming entry, which is the recommended setup for new integrations, this
+// returns the global DD_SERVICE. The per-component naming logic backs the legacy
+// DD_TRACE_SPAN_ATTRIBUTE_SCHEMA feature.
 func (i *Instrumentation) ServiceName(component Component, opCtx OperationContext) string {
 	cfg := namingschema.GetConfig()
 
@@ -127,7 +130,9 @@ func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
 	}
 }
 
-// OperationName returns the operation name to be set for the given instrumentation component.
+// OperationName returns the operation name to be set for the given instrumentation component. It
+// backs the legacy DD_TRACE_SPAN_ATTRIBUTE_SCHEMA naming-schema feature; new integrations should not
+// call it and should hardcode operation names as string literals instead. See contrib/INTEGRATIONS.md.
 func (i *Instrumentation) OperationName(component Component, opCtx OperationContext) string {
 	op, ok := i.info.naming[component]
 	if !ok {

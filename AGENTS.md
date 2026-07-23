@@ -6,12 +6,12 @@
 
 Furthermore, be sure to follow [Effective Go guidelines](https://go.dev/doc/effective_go) when writing Go code.
 
-Use the following AGENTS.md files when making specific changes:
+Use the following files when making specific changes:
 
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
+* [contrib/ORCHESTRION.md](./contrib/ORCHESTRION.md) -- for adding auto-instrumentation (Orchestrion) support to an integration
 * [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
-* [orchestrion/AGENTS.md](./orchestrion/AGENTS.md) -- for updating or creating new Orchestrion (auto-instrumentation) files
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
 
 ## Updating Documentation
