@@ -2622,6 +2622,47 @@ func TestEvalMetricsSizeBasedFlushing(t *testing.T) {
 	}
 }
 
+// TestEvalMetricsSizeFlushAccountsForEnvelope verifies that size-based flushing counts the JSON
+// request envelope (transport.PushMetricsRequest) and the per-metric array separators, not just the
+// bare marshaled metrics. With many small metrics, a full 5MB buffer holds thousands of them, so the
+// accumulated "," separators plus the wrapper add several KB — more than the headroom left by the
+// summed metric sizes. Accounting only for the bare metrics would let the serialized HTTP body
+// exceed the 5MB limit even though the summed metric sizes stay just under it.
+func TestEvalMetricsSizeFlushAccountsForEnvelope(t *testing.T) {
+	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
+
+	// ~1.6KB per metric: a full 5MB buffer holds ~2.8k of them, so the array separators alone add
+	// ~2.8KB, exceeding the sub-metric headroom. Only envelope-aware accounting keeps each batch
+	// under 5MB.
+	const (
+		numMetrics = 3300
+		valueLen   = 1600
+	)
+	value := strings.Repeat("x", valueLen)
+
+	for i := range numMetrics {
+		err := ll.SubmitEvaluation(llmobs.EvaluationConfig{
+			SpanID:           fmt.Sprintf("span-%d", i),
+			TraceID:          fmt.Sprintf("trace-%d", i),
+			Label:            "accuracy",
+			CategoricalValue: ptrFromVal(value),
+			MLApp:            mlApp,
+		})
+		require.NoError(t, err)
+	}
+
+	tracer.Flush()
+	require.Equal(t, numMetrics, coll.MetricCount())
+
+	sizes := coll.MetricBatchSizes()
+	require.GreaterOrEqual(t, len(sizes), 2, "expected the buffer to flush at least once before the final flush")
+	for _, size := range sizes {
+		assert.LessOrEqual(t, size, 5_000_000,
+			"HTTP batch payload (%d bytes) exceeds the 5MB limit; the request envelope and per-metric "+
+				"array separators must be included in size-based flushing accounting", size)
+	}
+}
+
 func TestFlushSync(t *testing.T) {
 	t.Run("does-not-hang-with-empty-buffer", func(t *testing.T) {
 		// FlushSync must return promptly even when there is nothing to flush.
