@@ -25,15 +25,15 @@ aspects:
             //go:linkname __dd_civisibility_instrumentTestingBuiltWithOrchestrion github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingBuiltWithOrchestrion
             func __dd_civisibility_instrumentTestingBuiltWithOrchestrion()
 
-            //go:linkname __dd_civisibility_instrumentTestingM github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingM
-            func __dd_civisibility_instrumentTestingM(*M) (bool, func(int) int)
+            //go:linkname __dd_civisibility_instrumentTestingMWithControl github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingMWithControl
+            func __dd_civisibility_instrumentTestingMWithControl(*M) (bool, func(int) int)
 
             func init() {
               __dd_civisibility_instrumentTestingBuiltWithOrchestrion()
             }
       - prepend-statements:
           template: |-
-            proceed, exitFunc := __dd_civisibility_instrumentTestingM({{ .Function.Receiver }})
+            proceed, exitFunc := __dd_civisibility_instrumentTestingMWithControl({{ .Function.Receiver }})
             if !proceed {
               return exitFunc(1)
             }

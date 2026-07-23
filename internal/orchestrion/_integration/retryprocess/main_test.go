@@ -218,6 +218,26 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestOrchestrionTestingMControlContract(t *testing.T) {
+	const childEnv = "ORCHESTRION_TESTING_M_CONTROL_CONTRACT_CHILD"
+	if os.Getenv(childEnv) == "true" {
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestOrchestrionTestingMControlContract$", "-test.v", "-test.count=1")
+	cmd.Env = append(os.Environ(),
+		childEnv+"=true",
+		constants.CIVisibilityEnabledEnvironmentVariable+"=false",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("testing.M control contract subprocess failed: %v\n%s", err, output)
+	}
+	if !bytes.Contains(output, []byte("--- PASS: TestOrchestrionTestingMControlContract")) {
+		t.Fatalf("testing.M control contract subprocess did not pass:\n%s", output)
+	}
+}
+
 func TestOrchestrionRetryProcessSequentialMRunRestoresNativeWorkloadsController(t *testing.T) {
 	if orchestrionRetryProcessChild() {
 		t.Skip("controller runs only in the parent process")
