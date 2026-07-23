@@ -9,296 +9,103 @@ meta:
   description: Aerospike client for Go.
 
 aspects:
-  # Injects span helpers and a goroutine-local context store into the aerospike
-  # Client package.  Three concerns are handled here:
+  # Instrument call sites of the aerospike Client methods. Aerospike's methods
+  # take no context.Context, so instead of injecting anything into the aerospike
+  # library we rewrite the call expression to go through the contrib wrapper:
   #
-  # 1. Span creation helper (tracing.StartDefaultSpan, called directly from
-  #    the function-body templates below) and __dd_finishAerospikeSpan.
+  #     client.Put(policy, key, bins)
   #
-  # 2. Cross-goroutine context propagation via WithContext/__dd_aerospike_get_ctx.
-  #    Because aerospike Client methods take no context.Context parameter, there
-  #    is no argument for the function-body template to resolve.  Instead users
-  #    (or generated code) call client.WithContext(ctx) immediately before the
-  #    method call inside the goroutine:
+  # becomes, when a context.Context is in scope on the enclosing function:
   #
-  #      go func() { client.WithContext(ctx).Put(nil, key, bins) }()
+  #     __dd_aerospike.WrapClient(client).WithContext(ctx).Put(policy, key, bins)
   #
-  #    WithContext stores ctx in a sync.Map keyed by goroutine ID.
-  #    __dd_aerospike_get_ctx retrieves and removes it so the next method call on
-  #    this goroutine picks up the right parent.  For same-goroutine calls where
-  #    WithContext was not used, __dd_aerospike_get_ctx falls back to
-  #    context.Background() and the tracer's GLS provides parenting automatically.
+  # or, when no context is available:
   #
-  # 3. Re-entrancy guard via __dd_aerospike_active_key embedded in the context.
-  #    Some public methods are thin wrappers that immediately delegate to another
-  #    public method also in this advice list (e.g. Query→QueryPartitions,
-  #    ScanAll→ScanPartitions).  Without a guard, one user call would produce two
-  #    spans.  The guard marks the context before delegating; the inner call sees
-  #    the marker, skips span creation, and stores the marked context back so any
-  #    further nesting is also suppressed.  No new sync.Map is needed — the marker
-  #    travels through the existing __dd_aerospike_ctxs mechanism.
+  #     __dd_aerospike.WrapClient(client).Put(policy, key, bins)
+  #
+  # The wrapper starts/finishes the span using only its public API. When a ctx
+  # is threaded in (the common HTTP/gRPC handler pattern, including calls that
+  # run in a spawned goroutine that received ctx as an argument), the span is a
+  # child of the span carried by that ctx. When no ctx is in scope, the span is
+  # still created and the tracer's goroutine-local storage parents it to any
+  # active span on the same goroutine.
+  #
+  # The join point is guarded so the rewrite is NEVER applied in two places:
+  #
+  #   1. The contrib module itself. The wrapper's methods call the raw client
+  #      (c.Client.Put(...)); rewriting those would wrap the wrapper again and
+  #      recurse forever.
+  #
+  #   2. The aerospike library itself. Injecting a reference to the contrib into
+  #      the aerospike package would create an import cycle
+  #      (aerospike -> contrib -> aerospike) and would also rewrite the library's
+  #      internal method delegations (e.g. Query -> QueryPartitions), producing
+  #      duplicate spans. Because the wrapper delegates to the raw client, that
+  #      internal delegation is never instrumented and each user call yields
+  #      exactly one span.
   - id: Client
     join-point:
-      struct-definition: github.com/aerospike/aerospike-client-go/v7.Client
+      all-of:
+        - not:
+            import-path: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2
+        - not:
+            import-path: github.com/aerospike/aerospike-client-go/v7
+        - one-of:
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Put, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PutBins, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Append, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: AppendBins, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Prepend, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PrependBins, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Add, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: AddBins, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Delete, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Touch, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Exists, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchExists, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Get, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: GetHeader, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGet, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetHeader, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetOperate, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Operate, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanAll, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanPartitions, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetComplex, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchDelete, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchOperate, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchExecute, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Execute, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ExecuteUDF, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ExecuteUDFNode, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryExecute, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryPartitions, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Query, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryNode, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanNode, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Truncate, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryAggregate, match: pointer-only}
+            # Reflection-based Object API (aerospike-client-go's client_reflect.go,
+            # //go:build !as_performance). Under -tags as_performance these methods
+            # do not exist, so there are no call sites to match and these entries
+            # are silent no-ops.
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PutObject, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: GetObject, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetObjects, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanAllObjects, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanNodeObjects, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanPartitionObjects, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryObjects, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryNodeObjects, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryPartitionObjects, match: pointer-only}
     advice:
-      - inject-declarations:
+      - wrap-expression:
           imports:
-            context: context
-            sync: sync
-            goid: github.com/petermattis/goid
-            tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
+            __dd_aerospike: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2
           template: |-
-            // __dd_aerospike_ctxs maps goroutine ID → context.Context.
-            // Keys are short-lived: WithContext stores a context and the very next
-            // instrumented method call on that goroutine retrieves and deletes it via
-            // LoadAndDelete in __dd_aerospike_get_ctx.
-            //
-            // Goroutine-exit hazard: if the goroutine exits after WithContext but
-            // before any instrumented method fires, the entry is never consumed and
-            // persists until the Go runtime recycles that goroutine ID.  The next
-            // Aerospike call on the new goroutine with the same ID will then pick up
-            // a stale context.  There is no Go API to hook goroutine exit, so this
-            // is an inherent limitation of the goroutine-ID approach.  Mitigation:
-            // always chain WithContext with the very next instrumented call in the
-            // same goroutine — do not store the returned *Client and use it later.
-            var __dd_aerospike_ctxs sync.Map // map[int64]context.Context
-
-            // __dd_aerospike_active_key is an unexported context key injected by
-            // Orchestrion into the aerospike-client-go package.  It is embedded in
-            // the goroutine's context to signal that an instrumented Aerospike call
-            // is already in progress on this goroutine, preventing double-spans when
-            // a public method delegates internally to another public method that is
-            // also in the advice list (e.g. Query → QueryPartitions).
-            // Because the type is unexported and lives in the aerospike-client-go
-            // package, no external code can produce a context with this key set.
-            type __dd_aerospike_active_key struct{}
-
-            // WithContext stores ctx so that the immediately following method call
-            // on this client creates its span as a child of the span in ctx.
-            // It MUST be chained directly with the method call in the same goroutine:
-            //
-            //   go func() { client.WithContext(ctx).Put(nil, key, bins) }()
-            //
-            // Storing the returned *Client and calling the method from a different
-            // goroutine will not propagate the context; call WithContext inside the
-            // goroutine that executes the method.
-            func (c *Client) WithContext(ctx context.Context) *Client {
-              __dd_aerospike_ctxs.Store(goid.Get(), ctx)
-              return c
-            }
-
-            // __dd_aerospike_get_ctx retrieves and removes the context stored by
-            // the most recent WithContext call on this goroutine.  Returns
-            // context.Background() when none was stored, which lets the tracer's
-            // GLS provide same-goroutine parenting automatically.
-            func __dd_aerospike_get_ctx() context.Context {
-              if v, ok := __dd_aerospike_ctxs.LoadAndDelete(goid.Get()); ok {
-                return v.(context.Context)
-              }
-              return context.Background()
-            }
-
-            func __dd_finishAerospikeSpan(span *tracing.Span, err error) {
-              tracing.FinishSpan(span, err)
-            }
-
-  # Instruments every write/batch-write method on *as.Client.
-  # These methods return a single error value (result index 0).
-  # The re-entrancy guard (see __dd_aerospike_active_key above) is applied so
-  # that if any of these methods is ever called from inside another instrumented
-  # Aerospike method on the same goroutine, only the outermost call creates a span.
-  - id: Client.Operation.Error
-    join-point:
-      function-body:
-        one-of:
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Add
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: AddBins
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Append
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: AppendBins
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchGetComplex
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchOperate
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Prepend
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: PrependBins
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Put
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: PutBins
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Touch
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Truncate
-          # PutObject and GetObject are part of the reflection-based Object API
-          # defined in aerospike-client-go's client_reflect.go under
-          # //go:build !as_performance.  When the library is compiled with
-          # -tags as_performance these methods do not exist, so the join points
-          # below match nothing and are silent no-ops — they do NOT cause a
-          # build error.
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: PutObject
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: GetObject
-    advice:
-      - prepend-statements:
-          imports:
-            context: context
-            goid: github.com/petermattis/goid
-            tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
-          template: |-
-            {{- $name := .Function.Name -}}
-            {{- $err := .Function.Result 0 -}}
-            __dd_ctx := __dd_aerospike_get_ctx()
-            var __dd_span *tracing.Span
-            if __dd_ctx.Value(__dd_aerospike_active_key{}) == nil {
-              __dd_aerospike_ctxs.Store(goid.Get(), context.WithValue(__dd_ctx, __dd_aerospike_active_key{}, struct{}{}))
-              __dd_span = tracing.StartDefaultSpan(__dd_ctx, {{ printf "%q" $name }})
-              defer func() {
-                __dd_aerospike_ctxs.Delete(goid.Get())
-                __dd_finishAerospikeSpan(__dd_span, {{ $err }})
-              }()
-            } else {
-              __dd_aerospike_ctxs.Store(goid.Get(), __dd_ctx)
-            }
-
-  # Instruments read/query/scan methods on *as.Client.
-  # These methods return (value, error) — the error is result index 1.
-  # The same re-entrancy guard prevents double-spans for the pairs that
-  # delegate internally: Query→QueryPartitions, ScanAll→ScanPartitions,
-  # QueryObjects→QueryPartitionObjects, ScanAllObjects→ScanPartitionObjects.
-  - id: Client.Operation.ValueError
-    join-point:
-      function-body:
-        one-of:
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchDelete
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchExecute
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchExists
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchGet
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchGetHeader
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchGetOperate
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Delete
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Execute
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: ExecuteUDF
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: ExecuteUDFNode
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Exists
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Get
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: GetHeader
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Operate
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: Query
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: QueryExecute
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: QueryNode
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: QueryPartitions
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: ScanAll
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: ScanNode
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: ScanPartitions
-          # The following methods are part of the reflection-based Object API
-          # (aerospike-client-go's client_reflect.go, //go:build !as_performance).
-          # Under -tags as_performance they do not exist; these join points match
-          # nothing and are silent no-ops.
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: BatchGetObjects
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: ScanAllObjects
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: ScanNodeObjects
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: ScanPartitionObjects
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: QueryObjects
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: QueryNodeObjects
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: QueryPartitionObjects
-          - function:
-              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
-              - name: QueryAggregate
-    advice:
-      - prepend-statements:
-          imports:
-            context: context
-            goid: github.com/petermattis/goid
-            tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
-          template: |-
-            {{- $name := .Function.Name -}}
-            {{- $err := .Function.Result 1 -}}
-            __dd_ctx := __dd_aerospike_get_ctx()
-            var __dd_span *tracing.Span
-            if __dd_ctx.Value(__dd_aerospike_active_key{}) == nil {
-              __dd_aerospike_ctxs.Store(goid.Get(), context.WithValue(__dd_ctx, __dd_aerospike_active_key{}, struct{}{}))
-              __dd_span = tracing.StartDefaultSpan(__dd_ctx, {{ printf "%q" $name }})
-              defer func() {
-                __dd_aerospike_ctxs.Delete(goid.Get())
-                __dd_finishAerospikeSpan(__dd_span, {{ $err }})
-              }()
-            } else {
-              __dd_aerospike_ctxs.Store(goid.Get(), __dd_ctx)
-            }
+            {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
+            {{- if $ctx -}}
+            __dd_aerospike.WrapClient({{ .AST.Fun.X }}).WithContext({{ $ctx }}).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if .AST.Ellipsis }}...{{ end }})
+            {{- else -}}
+            __dd_aerospike.WrapClient({{ .AST.Fun.X }}).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if .AST.Ellipsis }}...{{ end }})
+            {{- end -}}

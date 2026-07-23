@@ -19,8 +19,8 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
-func TestConcurrent(t *testing.T) {
-	harness.Run(t, new(TestCaseConcurrent))
+func TestGoroutine(t *testing.T) {
+	harness.Run(t, new(TestCaseGoroutine))
 }
 
 func TestQuery(t *testing.T) {
