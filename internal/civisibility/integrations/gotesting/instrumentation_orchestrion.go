@@ -89,11 +89,24 @@ func instrumentCaptureFormattedSkip(tb testing.TB, skipType, reason string) stri
 //  instrumentation integration.
 // ******************************************************************************************************************
 
-// instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
+// instrumentTestingM preserves the finalizer-only ABI used by published v1
+// Orchestrion advice.
 //
 //go:linkname instrumentTestingM
-func instrumentTestingM(m *testing.M) (bool, testingMFinalizer) {
-	return instrumentTestingMWithOptions(m, processRetryWrapperOptions())
+func instrumentTestingM(m *testing.M) func(exitCode int) {
+	_, finalize := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
+	return func(exitCode int) {
+		_ = finalize(exitCode)
+	}
+}
+
+// instrumentTestingMWithControl instruments testing.M and tells current
+// Orchestrion advice whether the native M.Run body should execute.
+//
+//go:linkname instrumentTestingMWithControl
+func instrumentTestingMWithControl(m *testing.M) (bool, func(int) int) {
+	proceed, finalize := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
+	return proceed, finalize
 }
 
 // instrumentTestingBuiltWithOrchestrion records that testing.M.Run has woven ownership.
