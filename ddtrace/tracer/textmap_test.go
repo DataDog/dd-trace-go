@@ -344,10 +344,8 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	assert.Nil(t, err)
 	child := tracer.StartSpan("test", ChildOf(ctx))
 	childSpanID := child.Context().spanID
-	assert.Equal(t, map[string]string{
-		"hello":    "world=",
-		"_dd.p.dm": "934086a6-4",
-	}, ctx.trace.propagatingTags)
+	assert.Equal(t, "world=", ctx.trace.propagatingTag("hello"))
+	assert.Equal(t, "934086a6-4", ctx.trace.propagatingTag("_dd.p.dm"))
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
@@ -373,10 +371,8 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.Nil(t, err)
 	child := tracer.StartSpan("test", ChildOf(ctx))
 	childSpanID := child.Context().spanID
-	assert.Equal(t, map[string]string{
-		"hello":    "world",
-		"_dd.p.dm": "-1",
-	}, ctx.trace.propagatingTags)
+	assert.Equal(t, "world", ctx.trace.propagatingTag("hello"))
+	assert.Equal(t, "-1", ctx.trace.propagatingTag("_dd.p.dm"))
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
@@ -419,9 +415,9 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	ctx.origin = "rum"
 	ctx.traceID = traceIDFrom64Bits(1)
 	ctx.spanID = 2
-	ctx.trace.propagatingTags = map[string]string{
+	ctx.trace.replacePropagatingTags(map[string]string{
 		"tracestate": "valid_vendor=a:1",
-	}
+	})
 	// need to create a tracestate where the dd portion will be 257 chars long
 	// we currently have:
 	// 3 chars ->  dd=
@@ -437,8 +433,8 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	longKey := strings.Repeat("a", 234) // 234 is correct num for 257
 	shortKey := "a"
 
-	ctx.trace.propagatingTags["_dd.p."+shortKey] = "0"
-	ctx.trace.propagatingTags["_dd.p."+longKey] = "0"
+	ctx.trace.setPropagatingTag("_dd.p."+shortKey, "0")
+	ctx.trace.setPropagatingTag("_dd.p."+longKey, "0")
 
 	headers := TextMapCarrier(map[string]string{})
 	err = tracer.Inject(ctx, headers)
@@ -716,7 +712,7 @@ func TestExtractTraceTagsHeaderDisabled(t *testing.T) {
 	// Disabled extract: no propagating tags, no error tag.
 	_, hasErr := ctx.trace.tags["_dd.propagation_error"]
 	assert.False(t, hasErr)
-	assert.Empty(t, ctx.trace.propagatingTags)
+	assert.Zero(t, ctx.trace.propagatingTagsLen())
 }
 
 func TestEnvVars(t *testing.T) {
@@ -1389,7 +1385,13 @@ func TestEnvVars(t *testing.T) {
 					assert.True(ok)
 					assert.Equal(int(tc.out[1]), p)
 
-					assert.Equal(tc.propagatingTags, ctx.trace.propagatingTags)
+					if tc.propagatingTags != nil {
+						var got map[string]string
+						if snap := ctx.trace.propagatingTags.Load(); snap != nil {
+							got = snap.(map[string]string)
+						}
+						assert.Equal(tc.propagatingTags, got)
+					}
 				})
 			}
 		}
@@ -1690,7 +1692,7 @@ func TestEnvVars(t *testing.T) {
 					ctx.origin = tc.origin
 					ctx.traceID = tc.tid
 					ctx.spanID = tc.sid
-					ctx.trace.propagatingTags = tc.propagatingTags
+					ctx.trace.replacePropagatingTags(tc.propagatingTags)
 					ctx.reparentID = "0123456789abcdef"
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -1720,12 +1722,12 @@ func TestEnvVars(t *testing.T) {
 					ctx.origin = "old_tracestate"
 					ctx.traceID = traceIDFrom64Bits(1229782938247303442)
 					ctx.spanID = 2459565876494606882
-					ctx.trace.propagatingTags = map[string]string{
+					ctx.trace.replacePropagatingTags(map[string]string{
 						"tracestate": "valid_vendor=a:1",
-					}
+					})
 					// dd part of the tracestate must not exceed 256 characters
 					for i := range 32 {
-						ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.a%v", i)] = "i"
+						ctx.trace.setPropagatingTag(fmt.Sprintf("_dd.p.a%v", i), "i")
 					}
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -2824,9 +2826,14 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 			t.Skipf("Skipping invalid tags")
 		}
 		unmarshalPropagatingTags(recvCtx, marshal, pConfig.MaxTagsHeaderLen)
-		marshaled := sendCtx.trace.propagatingTags
-		unmarshaled := recvCtx.trace.propagatingTags
-		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+		var marshaled, unmarshaled map[string]string
+		if snap := sendCtx.trace.propagatingTags.Load(); snap != nil {
+			marshaled = snap.(map[string]string)
+		}
+		if snap := recvCtx.trace.propagatingTags.Load(); snap != nil {
+			unmarshaled = snap.(map[string]string)
+		}
+		if !reflect.DeepEqual(marshaled, unmarshaled) {
 			t.Fatalf("Inconsistent marshaling/unmarshaling: (%q) is different from (%q)", marshaled, unmarshaled)
 		}
 	})
@@ -2877,14 +2884,19 @@ func FuzzComposeTracestate(f *testing.F) {
 		traceState := composeTracestate(sendCtx, priority, oldState)
 		parseTracestate(recvCtx, traceState)
 		setPropagatingTag(sendCtx, tracestateHeader, traceState)
-		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+		var sendPTags, recvPTags map[string]string
+		if snap := sendCtx.trace.propagatingTags.Load(); snap != nil {
+			sendPTags = snap.(map[string]string)
+		}
+		if snap := recvCtx.trace.propagatingTags.Load(); snap != nil {
+			recvPTags = snap.(map[string]string)
+		}
+		if !reflect.DeepEqual(sendPTags, recvPTags) {
 			t.Fatalf(`Inconsistent composing/parsing:
 			pre compose: (%q)
 			is different from
 			parsed: (%q)
-			for tracestate of: (%s)`, sendCtx.trace.propagatingTags,
-				recvCtx.trace.propagatingTags,
-				traceState)
+			for tracestate of: (%s)`, sendPTags, recvPTags, traceState)
 		}
 	})
 }
