@@ -350,3 +350,25 @@ func TestDatadogHandler_Invoke_stripsEventBridgeContextForHandlerOnly(t *testing
 	assert.Contains(t, string(mhl.inputMSG), `"_datadog"`)
 	assert.NotContains(t, string(handlerMsg), `"_datadog"`)
 }
+
+type rawPayloadHandler struct {
+	payload []byte
+}
+
+func (h *rawPayloadHandler) Invoke(_ context.Context, payload []byte) ([]byte, error) {
+	h.payload = payload
+	return []byte(`"ok"`), nil
+}
+
+func TestDatadogHandler_Invoke_passthroughInvalidJSON(t *testing.T) {
+	internal.ResetStripEventBridgeContextCacheForTest()
+	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
+
+	invalid := []byte(`{not json`)
+	h := &rawPayloadHandler{}
+
+	wrapped := WrapHandlerInterfaceWithListeners(h)
+	_, err := wrapped.Invoke(context.Background(), invalid)
+	require.NoError(t, err)
+	assert.Equal(t, invalid, h.payload)
+}
