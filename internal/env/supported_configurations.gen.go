@@ -95,6 +95,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_INSTRUMENTATION_INSTALL_TYPE":                                 {},
 	"DD_INSTRUMENTATION_TELEMETRY_ENABLED":                            {},
 	"DD_KEY":                                                          {},
+	"DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT":                             {},
 	"DD_LLMOBS_AGENTLESS_ENABLED":                                     {},
 	"DD_LLMOBS_ENABLED":                                               {},
 	"DD_LLMOBS_ML_APP":                                                {},

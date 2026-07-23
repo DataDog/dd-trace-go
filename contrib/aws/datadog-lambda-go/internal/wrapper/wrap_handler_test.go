@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 )
 
 type (
@@ -298,6 +299,7 @@ func TestWrapHandlerInterfaceWithListeners(t *testing.T) {
 }
 
 func TestWrapHandlerWithListeners_stripsEventBridgeContextForHandlerOnly(t *testing.T) {
+	internal.ResetStripEventBridgeContextCacheForTest()
 	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
 
 	raw := loadRawJSON(t, "../testdata/eventbridge-with-datadog-object.json")
@@ -327,6 +329,7 @@ func TestWrapHandlerWithListeners_stripsEventBridgeContextForHandlerOnly(t *test
 }
 
 func TestDatadogHandler_Invoke_stripsEventBridgeContextForHandlerOnly(t *testing.T) {
+	internal.ResetStripEventBridgeContextCacheForTest()
 	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
 
 	payload, err := os.ReadFile("../testdata/eventbridge-with-datadog-object.json")

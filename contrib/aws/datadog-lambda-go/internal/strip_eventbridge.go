@@ -7,13 +7,20 @@ package internal
 
 import (
 	"encoding/json"
-	"os"
 	"strconv"
+	"sync"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 const (
 	stripEventBridgeContextEnvVar = "DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT"
 	datadogCarrierKey             = "_datadog"
+)
+
+var (
+	stripEventBridgeContextEnabledOnce sync.Once
+	stripEventBridgeContextEnabledVal  bool
 )
 
 // StripEventBridgeContext removes detail._datadog from EventBridge Lambda events
@@ -57,9 +64,21 @@ func StripEventBridgeContext(msg json.RawMessage) json.RawMessage {
 }
 
 func stripEventBridgeContextEnabled() bool {
-	enabled, err := strconv.ParseBool(os.Getenv(stripEventBridgeContextEnvVar))
-	// unset, invalid, or false -> do not strip (opt-in)
-	return err == nil && enabled
+	stripEventBridgeContextEnabledOnce.Do(func() {
+		v, ok := env.Lookup(stripEventBridgeContextEnvVar)
+		if !ok {
+			return // unset -> opt-in off
+		}
+		enabled, err := strconv.ParseBool(v)
+		stripEventBridgeContextEnabledVal = err == nil && enabled
+	})
+	return stripEventBridgeContextEnabledVal
+}
+
+// ResetStripEventBridgeContextCacheForTest resets env caching between tests.
+func ResetStripEventBridgeContextCacheForTest() {
+	stripEventBridgeContextEnabledOnce = sync.Once{}
+	stripEventBridgeContextEnabledVal = false
 }
 
 func isEventBridgeEnvelope(envelope map[string]json.RawMessage) bool {
