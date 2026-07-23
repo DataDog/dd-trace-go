@@ -48,17 +48,35 @@ func (c *evpClient) post(endpoint, eventName string, payload any) error {
 		return errors.New("EVP client is not configured")
 	}
 
-	var bytesBuffer bytes.Buffer
-	encoder := c.jsonConfig.NewEncoder(&bytesBuffer)
-	if err := encoder.Encode(payload); err != nil {
-		return fmt.Errorf("failed to encode %s payload: %w", eventName, err)
+	payloadBytes, err := c.marshalPayload(eventName, payload)
+	if err != nil {
+		return err
+	}
+	return c.postBytes(endpoint, eventName, payloadBytes)
+}
+
+func (c *evpClient) marshalPayload(eventName string, payload any) ([]byte, error) {
+	if c == nil {
+		return nil, fmt.Errorf("EVP client is not configured")
+	}
+
+	payloadBytes, err := c.jsonConfig.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode %s payload: %w", eventName, err)
+	}
+	return payloadBytes, nil
+}
+
+func (c *evpClient) postBytes(endpoint, eventName string, payloadBytes []byte) error {
+	if c == nil {
+		return fmt.Errorf("EVP client is not configured")
 	}
 
 	u := *c.agentURL
 	u.Path = endpoint
 	requestURL := u.String()
 
-	req, err := http.NewRequestWithContext(context.Background(), "POST", requestURL, &bytesBuffer)
+	req, err := http.NewRequestWithContext(context.Background(), "POST", requestURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
