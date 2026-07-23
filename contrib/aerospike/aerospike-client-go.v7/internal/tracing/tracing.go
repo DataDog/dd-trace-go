@@ -14,8 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-// Span is a type alias so Orchestrion templates only need to import this
-// package — no separate tracer import required in the advice.
+// Span is a type alias used as the return type of StartSpan.
 type Span = tracer.Span
 
 const ComponentName = "aerospike/aerospike-client-go.v7"
@@ -38,25 +37,4 @@ func StartSpan(ctx context.Context, serviceName, serviceSource, operationName, r
 		tracer.Tag(ext.DBSystem, ext.DBSystemAerospike),
 	)
 	return span
-}
-
-// StartDefaultSpan starts a span from ctx using service and operation names
-// resolved from the instrumentation registry. Used by the Orchestrion
-// function-body advice template where no client config is in scope.
-// ctx is supplied by __dd_aerospike_get_ctx(): a WithContext-stored context
-// for cross-goroutine parenting, or context.Background() (tracer GLS) for
-// same-goroutine calls where WithContext was not used.
-func StartDefaultSpan(ctx context.Context, resourceName string) *Span {
-	return StartSpan(
-		ctx,
-		Instr.ServiceName(instrumentation.ComponentDefault, nil),
-		string(instrumentation.PackageAerospikeClientGoV7),
-		Instr.OperationName(instrumentation.ComponentDefault, nil),
-		resourceName,
-	)
-}
-
-// FinishSpan finishes span, tagging it with err if non-nil.
-func FinishSpan(span *Span, err error) {
-	span.Finish(tracer.WithError(err))
 }

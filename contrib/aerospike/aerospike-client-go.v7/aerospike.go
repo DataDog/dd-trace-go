@@ -5,25 +5,22 @@
 
 // Package aerospike provides functions to trace the aerospike/aerospike-client-go package (https://github.com/aerospike/aerospike-client-go).
 //
-// `WrapClient` will wrap an aerospike `Client` and return a new struct with all
-// the same methods, so should be seamless for existing applications. It also
-// has an additional `WithContext` method which can be used to connect a span
-// to an existing trace.
+// `WrapClient` wraps an aerospike `Client` and returns a new struct with all the
+// same methods, so it is seamless for existing applications. It also has a
+// `WithContext` method which connects the spans it creates to an existing trace:
 //
-// When using Orchestrion for automatic instrumentation, two aspects cooperate:
+//	ac := aerospike.WrapClient(client)
+//	ac.WithContext(ctx).Put(nil, key, bins)
 //
-//  1. A struct-definition aspect injects `WithContext(ctx) *as.Client` and
-//     helper functions into the aerospike library's `Client` type.
-//     `WithContext` stores ctx in a per-goroutine map so that the immediately
-//     following method call creates its span as a child of the span in ctx:
-//
-//     go func() { client.WithContext(ctx).Put(nil, key, bins) }()
-//
-//  2. Function-body aspects prepend span start/finish to each instrumented
-//     method on `*as.Client`. The context is resolved from the goroutine-local
-//     map (set by `WithContext`) when available, otherwise from
-//     `context.Background()` — the tracer's GLS then provides same-goroutine
-//     parenting automatically.
+// When using Orchestrion for automatic instrumentation, a method-call aspect
+// rewrites calls to the aerospike `Client` methods so they go through this
+// wrapper. For example `client.Put(policy, key, bins)` becomes
+// `aerospike.WrapClient(client).WithContext(ctx).Put(policy, key, bins)` when a
+// context.Context is in scope on the enclosing function, or
+// `aerospike.WrapClient(client).Put(...)` when it is not. In the latter case
+// the span is still created and the tracer's goroutine-local storage parents it
+// to any active span on the same goroutine. See orchestrion.yml for the exact
+// join points and rewrite templates.
 package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"
 
 import (
