@@ -34,15 +34,18 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	// ddtrace/tracer/orchestrion.yml extend the span's GLS lifecycle:
 	//   - "Span GLS fields": adds two woven fields to Span — __dd_glsPop
 	//     (GLSPopperCell, an atomic pointer to the goroutine-scoped popper) and
-	//     __dd_glsReclaimable (atomic.Bool, set on finish so cross-goroutine GLS
-	//     entries can be lazily reclaimed on the next push).
+	//     __dd_glsDone (GLSDoneCell, an atomic pointer to a per-activation
+	//     liveness cell that is set on finish so cross-goroutine GLS entries can
+	//     be lazily reclaimed on the next push, independent of span pool reuse).
 	//   - "Span ContextWithSpan GLS push": prepends before this line:
-	//       orchestrion.GLSActivate(nil, ActiveSpanKey, s, &s.__dd_glsPop)
-	//     which pushes s onto the goroutine-local stack and records a goroutine-
-	//     scoped popper in __dd_glsPop (first push wins; no-op when disabled).
+	//       orchestrion.GLSActivate(nil, ActiveSpanKey, s, &s.__dd_glsPop, &s.__dd_glsDone)
+	//     which pushes s onto the goroutine-local stack, records a goroutine-
+	//     scoped popper in __dd_glsPop (first push wins), and allocates the
+	//     liveness cell in __dd_glsDone (no-op when disabled).
 	//   - "Span Finish GLS deactivate": prepends at the top of Span.Finish:
-	//       orchestrion.GLSDeactivate(&s.__dd_glsReclaimable, &s.__dd_glsPop)
-	//     which pops the GLS entry exactly once, only on the goroutine that pushed.
+	//       orchestrion.GLSDeactivate(&s.__dd_glsDone, &s.__dd_glsPop)
+	//     which marks the liveness cell done and pops the GLS entry exactly once,
+	//     only on the goroutine that pushed.
 	// SpanFromContext is extended analogously ("Span SpanFromContext GLS read").
 	// Without orchestrion there is no GLS; this is a plain context.WithValue.
 	newCtx := context.WithValue(ctx, internal.ActiveSpanKey, s)

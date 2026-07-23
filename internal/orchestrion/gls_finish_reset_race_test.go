@@ -15,13 +15,14 @@ import (
 // GLS concurrency review (orchestrion#782). A span can be finished on one
 // goroutine (GLSDeactivate, woven into Span.Finish) while the tracer's
 // sync.Pool recycles and resets it on another (GLSReset, woven into
-// Span.clear), both touching the same popper field. The popper now lives in an
-// atomic [GLSPopperCell], so the Swap (finish) and Store (reset) are
-// synchronized and this must stay clean under `go test -race`; before that, the
-// bare func field was unsynchronized memory and the race detector flagged it.
+// Span.clear). All accesses to the shared fields go through atomic operations
+// (GLSPopperCell.ptr, GLSDoneCell.ptr), so this must stay clean under
+// `go test -race`.
 func TestGLSFinishResetConcurrentRaces(t *testing.T) {
 	for range 1000 {
-		var reclaimable atomic.Bool
+		var done GLSDoneCell
+		cell := new(atomic.Bool)
+		done.ptr.Store(cell)
 		var pop GLSPopperCell
 		fn := GLSPopper(func() {})
 		pop.ptr.Store(&fn)
@@ -33,13 +34,13 @@ func TestGLSFinishResetConcurrentRaces(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			GLSDeactivate(&reclaimable, &pop)
+			GLSDeactivate(&done, &pop)
 		}()
 
 		go func() {
 			defer wg.Done()
 			<-start
-			GLSReset(&reclaimable, &pop)
+			GLSReset(&done, &pop)
 		}()
 
 		close(start)

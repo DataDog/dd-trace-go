@@ -5,24 +5,23 @@
 
 package orchestrion
 
-import "slices"
+import (
+	"slices"
+	"sync/atomic"
+)
 
 // contextStack is stored in the GLS slot of runtime.g inserted by orchestrion.
 // It holds context values shared within a single goroutine.
 // TODO: handle cross-goroutine context values
-type contextStack map[any][]any
+type contextStack map[any][]stackEntry
 
-// reclaimable is implemented by GLS values that can signal they no longer
-// represent a live scope and may be dropped from the stack. It is used to
-// bound GLS growth when a value is pushed on one goroutine but its lifecycle
-// ends on another, so the matching pop never runs on the pushing goroutine
-// (e.g. a *tracer.Span pushed via ContextWithSpan and finished elsewhere).
-// The orchestrion package intentionally does not import the tracer; values
-// opt in by implementing this single method.
-type reclaimable interface {
-	// GLSReclaimable reports whether this value is safe to drop from a GLS
-	// stack. Implementations must be safe to call from any goroutine.
-	GLSReclaimable() bool
+// stackEntry is one element in a contextStack slice. done is non-nil for
+// values that participate in the GLS reclaim lifecycle (spans, dyngo operations
+// etc.). A nil done means the entry is never drained by Push (e.g. the bool
+// stored under executionTracedKey).
+type stackEntry struct {
+	value any
+	done  *atomic.Bool
 }
 
 // getDDContextStack is a main way to access the GLS slot of runtime.g inserted by orchestrion. This function should not be
@@ -48,36 +47,38 @@ func (s *contextStack) Peek(key any) any {
 		return nil
 	}
 
-	return (*s)[key][len(stack)-1]
+	return stack[len(stack)-1].value
 }
 
-// Push adds a context to the stack.
+// Push appends val to the stack under key and records done as the liveness
+// cell for this activation.
 //
-// Before appending, Push drops any trailing entries that report themselves
-// reclaimable (see [reclaimable]). This bounds GLS growth when values are
-// pushed on one goroutine but their lifecycle ends on another, so the pop
-// never runs on this goroutine. Only the top of the stack is ever read (via
-// Peek), and buried entries exist solely to be restored after a Pop; a
-// reclaimable (e.g. finished) entry can never be a meaningful restore target,
-// so dropping it preserves stack semantics. Entries whose type does not
-// implement [reclaimable] (e.g. the bool stored under executionTracedKey) are
-// never dropped.
-func (s *contextStack) Push(key, val any) {
+// Before appending, Push drops any trailing entries whose done cell reports
+// true — meaning the corresponding span or operation finished, possibly on a
+// different goroutine whose goroutine-scoped popper was therefore a no-op. This
+// bounds GLS growth in the cross-goroutine-finish pattern without reading any
+// mutable flag off the (potentially recycled) value itself: the cell pointer in
+// the stack entry is independent of the span, so pool reuse cannot flip it back.
+//
+// done may be nil for values that are never reclaimable (e.g. the bool stored
+// under executionTracedKey); those entries are never drained.
+func (s *contextStack) Push(key, val any, done *atomic.Bool) {
 	if s == nil || *s == nil {
 		return
 	}
 
 	stack := (*s)[key]
 	for len(stack) > 0 {
-		r, ok := stack[len(stack)-1].(reclaimable)
-		if !ok || !r.GLSReclaimable() {
+		top := &stack[len(stack)-1]
+		if top.done == nil || !top.done.Load() {
 			break
 		}
-		stack[len(stack)-1] = nil // drop reference so GC can collect the value
+		top.value = nil // drop references so GC can collect both the value and the cell
+		top.done = nil
 		stack = stack[:len(stack)-1]
 	}
 
-	(*s)[key] = append(stack, val)
+	(*s)[key] = append(stack, stackEntry{value: val, done: done})
 }
 
 // Pop removes the top context from the stack and returns it.
@@ -92,7 +93,7 @@ func (s *contextStack) Pop(key any) any {
 	}
 
 	lastIdx := len(stack) - 1
-	val := stack[lastIdx]
+	val := stack[lastIdx].value
 	// slices.Delete zeroes removed elements in the backing array,
 	// allowing GC to collect popped values.
 	stack = slices.Delete(stack, lastIdx, lastIdx+1)
