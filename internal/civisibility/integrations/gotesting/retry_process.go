@@ -2443,29 +2443,42 @@ func finalizeProcessRetryIteration(execOpts *executionOptions, pending *processR
 	terminalLaunchDisabled := errors.Is(attempt.Err, errProcessRetryLaunchDisabled)
 	terminalShutdown := processRetryShutdownRequested(execOpts.processRetryShutdown) || errors.Is(attempt.Err, errProcessRetryShutdown)
 	terminalRace := attempt.Result.RaceDetected
-	previewStatus := effectiveProcessRetryStatus(attempt, false)
-	terminalAttempt := terminalCancellation || terminalUnreaped || terminalContainmentLost || terminalLaunchDisabled || terminalShutdown || terminalRace ||
-		processRetryFailureStopsContinuation(previewStatus.FailureKind)
-	stopRetryGroupAfterRaceLocked(execOpts, terminalRace)
-	if terminalAttempt {
-		execMeta.isLastRetry = true
-		execMeta.remainingRetries = 0
-		execOpts.retryCount = 0
-	}
 	execOpts.processRetryConsumedAttempt = true
-	effective := closeProcessRetryTestEvent(execOpts.options.testInfo, execMeta, attempt)
+	terminalAttempt := false
+	shouldRetry := false
+	effective := closeProcessRetryTestEventWithAdmission(execOpts.options.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {
+		terminalAttempt = terminalCancellation || terminalUnreaped || terminalContainmentLost || terminalLaunchDisabled || terminalShutdown || terminalRace ||
+			processRetryFailureStopsContinuation(effective.FailureKind)
+		stopRetryGroupAfterRaceLocked(execOpts, terminalRace)
+		if terminalAttempt {
+			execMeta.isLastRetry = true
+			execMeta.remainingRetries = 0
+			execOpts.retryCount = 0
+		}
+		switch {
+		case effective.Failed:
+			ptrToLocalT.Fail()
+		case effective.Skipped:
+			if fields := getTestPrivateFields(ptrToLocalT); fields != nil {
+				fields.SetSkipped(true)
+			}
+		}
+		execOpts.retryCount--
+		if execOpts.options.postPerExecution != nil {
+			execOpts.options.postPerExecution(ptrToLocalT, execMeta, currentIndex, attempt.FinishTime.Sub(attempt.StartTime))
+		}
+		execOpts.ptrToLocalT = ptrToLocalT
+		execOpts.executionMetadata = execMeta
+		if !terminalAttempt {
+			shouldRetry = reserveRetryBudgetIfNeeded(execOpts, ptrToLocalT, execMeta, currentIndex)
+		}
+		execMeta.retryContinuationDecided = true
+		execMeta.retryContinuationAdmitted = shouldRetry
+	})
 	if attempt.Result.RootParallel && execOpts.retryAttemptGroup != nil {
 		execOpts.retryAttemptGroup.observeProcessRootParallel()
 	}
 	recordProcessRetryPanic(execOpts, execMeta, attempt, effective)
-	switch {
-	case effective.Failed:
-		ptrToLocalT.Fail()
-	case effective.Skipped:
-		if fields := getTestPrivateFields(ptrToLocalT); fields != nil {
-			fields.SetSkipped(true)
-		}
-	}
 	if execOpts.originalExecutionMetadata != nil {
 		execOpts.originalExecutionMetadata.test = execMeta.test
 	}
@@ -2479,16 +2492,10 @@ func finalizeProcessRetryIteration(execOpts *executionOptions, pending *processR
 	if pending.localAttempt != nil {
 		pending.localAttempt.metadata = nil
 	}
-	execOpts.retryCount--
-	if execOpts.options.postPerExecution != nil {
-		execOpts.options.postPerExecution(ptrToLocalT, execMeta, currentIndex, attempt.FinishTime.Sub(attempt.StartTime))
-	}
-	execOpts.ptrToLocalT = ptrToLocalT
-	execOpts.executionMetadata = execMeta
 	if terminalAttempt {
 		return processRetryIterationStop
 	}
-	if reserveRetryBudgetIfNeeded(execOpts, ptrToLocalT, execMeta, currentIndex) {
+	if shouldRetry {
 		return processRetryIterationContinue
 	}
 	return processRetryIterationStop
@@ -2621,8 +2628,21 @@ func recordProcessRetryPanic(execOpts *executionOptions, execMeta *testExecution
 }
 
 func closeProcessRetryTestEvent(testInfo *commonInfo, execMeta *testExecutionMetadata, attempt processRetryAttemptResult) processRetryEffectiveStatus {
+	return closeProcessRetryTestEventWithAdmission(testInfo, execMeta, attempt, nil)
+}
+
+func closeProcessRetryTestEventWithAdmission(
+	testInfo *commonInfo,
+	execMeta *testExecutionMetadata,
+	attempt processRetryAttemptResult,
+	admitContinuation func(processRetryEffectiveStatus),
+) processRetryEffectiveStatus {
 	if testInfo == nil {
-		return processRetryEffectiveStatus{Status: processRetryStatusFail, Failed: true, FailureKind: "missing_test_info"}
+		effective := processRetryEffectiveStatus{Status: processRetryStatusFail, Failed: true, FailureKind: "missing_test_info"}
+		if admitContinuation != nil {
+			admitContinuation(effective)
+		}
+		return effective
 	}
 	module := session.GetOrCreateModule(testInfo.moduleName)
 	suite := module.GetOrCreateSuite(testInfo.suiteName)
@@ -2638,6 +2658,9 @@ func closeProcessRetryTestEvent(testInfo *commonInfo, execMeta *testExecutionMet
 		telemetry.ITRForcedRun(telemetry.TestEventType)
 	}
 	effective := effectiveProcessRetryStatus(attempt, cancelExecution)
+	if admitContinuation != nil {
+		admitContinuation(effective)
+	}
 	duration := max(attempt.FinishTime.Sub(attempt.StartTime), 0)
 	finalExec := isFinalExecution(effective.Failed, effective.Skipped, execMeta, duration)
 	if finalExec {
