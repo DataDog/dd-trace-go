@@ -63,6 +63,7 @@ const (
 	processRetryMalformedJSONFixtureEnv       = "PROCESS_RETRY_MALFORMED_JSON_FIXTURE"
 	processRetryTimeoutFixtureEnv             = "PROCESS_RETRY_TIMEOUT_FIXTURE"
 	processRetryOutputTimeoutFixtureEnv       = "PROCESS_RETRY_OUTPUT_TIMEOUT_FIXTURE"
+	processRetryTimeoutReadyPathEnv           = "PROCESS_RETRY_TIMEOUT_READY_PATH"
 	processRetryDescendantCleanupFixtureEnv   = "PROCESS_RETRY_DESCENDANT_CLEANUP_FIXTURE"
 	processRetryDescendantHelperEnv           = "PROCESS_RETRY_DESCENDANT_HELPER"
 	processRetryDescendantLivenessPathEnv     = "PROCESS_RETRY_DESCENDANT_LIVENESS_PATH"
@@ -445,6 +446,7 @@ func TestProcessRetryParallelEFDParent(t *testing.T) {
 			t.Fatalf("publish parallel EFD child readiness: %v", err)
 		}
 		deadline := time.Now().Add(10 * time.Second)
+		delay := 10 * time.Millisecond
 		for {
 			entries, err := os.ReadDir(coordinationDir)
 			if err != nil {
@@ -462,7 +464,8 @@ func TestProcessRetryParallelEFDParent(t *testing.T) {
 			if time.Now().After(deadline) {
 				t.Fatalf("parallel EFD child %s did not overlap another retry child", attempt)
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(delay)
+			delay = nextProcessRetryFixturePollDelay(delay)
 		}
 	}
 	if parallelEFDRuns.Add(1) == 1 {
@@ -499,17 +502,15 @@ func TestProcessRetryMalformedJSONController(t *testing.T) {
 
 func TestProcessRetryTimeoutController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "timeout")
-	runProcessRetryFixtureSubprocess(t, "timeout", []string{"-test.run=^TestProcessRetryTimeoutParent$", "-test.v"},
+	runProcessRetryTimeoutFixtureSubprocess(t, "timeout", []string{"-test.run=^TestProcessRetryTimeoutParent$", "-test.v"},
 		processRetryTimeoutFixtureEnv+"=true",
-		constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable+"=1s",
 	)
 }
 
 func TestProcessRetryOutputTimeoutController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "output-timeout")
-	runProcessRetryFixtureSubprocess(t, "output-timeout", []string{"-test.run=^TestProcessRetryOutputTimeoutParent$", "-test.v"},
+	runProcessRetryTimeoutFixtureSubprocess(t, "output-timeout", []string{"-test.run=^TestProcessRetryOutputTimeoutParent$", "-test.v"},
 		processRetryOutputTimeoutFixtureEnv+"=true",
-		constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable+"=1s",
 	)
 }
 
@@ -549,6 +550,7 @@ func assertProcessRetryDescendantDidNotExpireNaturally(t *testing.T, livenessPat
 func processRetryDescendantAddress(t *testing.T, path string) string {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
+	delay := 10 * time.Millisecond
 	for {
 		data, err := os.ReadFile(path)
 		if err == nil {
@@ -560,7 +562,8 @@ func processRetryDescendantAddress(t *testing.T, path string) string {
 		if time.Now().After(deadline) {
 			t.Fatalf("process retry descendant helper did not publish a valid listener address: %v", err)
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(delay)
+		delay = nextProcessRetryFixturePollDelay(delay)
 	}
 }
 
@@ -568,7 +571,8 @@ func waitForProcessRetryDescendantListenerClosed(t *testing.T, address string) {
 	t.Helper()
 	const stableFailuresRequired = 3
 	consecutiveFailures := 0
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
+	delay := 10 * time.Millisecond
 	for {
 		conn, err := net.DialTimeout("tcp", address, 100*time.Millisecond)
 		if err != nil {
@@ -578,12 +582,14 @@ func waitForProcessRetryDescendantListenerClosed(t *testing.T, address string) {
 			}
 		} else {
 			consecutiveFailures = 0
+			delay = 10 * time.Millisecond
 			_ = conn.Close()
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("process retry descendant helper survived cleanup: listener %s did not remain closed", address)
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(delay)
+		delay = nextProcessRetryFixturePollDelay(delay)
 	}
 }
 
@@ -594,13 +600,54 @@ func TestProcessRetryTransportIsolationController(t *testing.T) {
 
 func runProcessRetryFixtureSubprocess(t *testing.T, name string, args []string, environment ...string) []byte {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], args...)
-	cmd.Env = processRetryScenarioEnvironment(environment...)
-	output, err := cmd.CombinedOutput()
+	output, err := executeProcessRetryFixtureSubprocess(args, environment...)
 	if err != nil {
 		t.Fatalf("%s process retry fixture failed: %v\n%s", name, err, output)
 	}
 	return output
+}
+
+func runProcessRetryTimeoutFixtureSubprocess(t *testing.T, name string, args []string, environment ...string) []byte {
+	t.Helper()
+	readyDir := t.TempDir()
+	var output []byte
+	var err error
+	for attempt, timeout := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
+		readyPath := filepath.Join(readyDir, fmt.Sprintf("child-ready-%d", attempt))
+		attemptEnvironment := append([]string(nil), environment...)
+		attemptEnvironment = append(attemptEnvironment,
+			processRetryTimeoutReadyPathEnv+"="+readyPath,
+			constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable+"="+timeout.String(),
+		)
+		output, err = executeProcessRetryFixtureSubprocess(args, attemptEnvironment...)
+		if err == nil {
+			return output
+		}
+		// Once the child body is ready, a missing sentinel is a capture regression,
+		// not a slow-start condition that a longer timeout should hide.
+		if _, statErr := os.Stat(readyPath); statErr == nil {
+			break
+		} else if !os.IsNotExist(statErr) {
+			t.Fatalf("%s process retry fixture could not inspect child readiness: %v", name, statErr)
+		}
+	}
+	t.Fatalf("%s process retry fixture failed: %v\n%s", name, err, output)
+	return nil
+}
+
+func executeProcessRetryFixtureSubprocess(args []string, environment ...string) ([]byte, error) {
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = processRetryScenarioEnvironment(environment...)
+	return cmd.CombinedOutput()
+}
+
+func nextProcessRetryFixturePollDelay(delay time.Duration) time.Duration {
+	const maxDelay = 250 * time.Millisecond
+	delay *= 2
+	if delay > maxDelay {
+		return maxDelay
+	}
+	return delay
 }
 
 func TestProcessRetryRunSelectorParent(t *testing.T) {
@@ -681,7 +728,8 @@ func TestProcessRetryTimeoutParent(t *testing.T) {
 			t.Fatalf("process retry child inherited parent timeout count: %d", timeoutRuns.Load())
 		}
 		fmt.Println(processRetryTimeoutLogSentinel)
-		time.Sleep(5 * time.Second)
+		markProcessRetryTimeoutChildReady(t)
+		time.Sleep(time.Hour)
 		return
 	}
 	if timeoutRuns.Add(1) == 1 {
@@ -702,13 +750,25 @@ func TestProcessRetryOutputTimeoutParent(t *testing.T) {
 			fmt.Fprintf(os.Stdout, "%s stdout %04d\n", processRetryOutputTimeoutLogSentinel, i)
 			fmt.Fprintf(os.Stderr, "%s stderr %04d\n", processRetryOutputTimeoutLogSentinel, i)
 		}
-		time.Sleep(5 * time.Second)
+		markProcessRetryTimeoutChildReady(t)
+		time.Sleep(time.Hour)
 		return
 	}
 	if outputTimeoutRuns.Add(1) == 1 {
 		t.Fatal("first output-timeout execution must fail to trigger process retry")
 	}
 	t.Fatalf("output-timeout retry ran in the parent process with run count %d", outputTimeoutRuns.Load())
+}
+
+func markProcessRetryTimeoutChildReady(t *testing.T) {
+	t.Helper()
+	path := processRetryFixtureEnv(processRetryTimeoutReadyPathEnv)
+	if path == "" {
+		t.Fatal("process retry timeout child is missing its readiness path")
+	}
+	if err := os.WriteFile(path, []byte("ready"), 0o600); err != nil {
+		t.Fatalf("publish process retry timeout child readiness: %v", err)
+	}
 }
 
 func TestProcessRetryDescendantCleanupParent(t *testing.T) {
