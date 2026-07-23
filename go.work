@@ -4,13 +4,13 @@ use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
-	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
-	./contrib/azure/apim-callout
+	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/aws/datadog-lambda-go
+	./contrib/azure/apim-callout
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v2
@@ -52,6 +52,7 @@ use (
 	./contrib/labstack/echo.v4
 	./contrib/labstack/echo.v5
 	./contrib/log/slog
+	./contrib/lovoo/goka
 	./contrib/mark3labs/mcp-go
 	./contrib/miekg/dns
 	./contrib/modelcontextprotocol/go-sdk
@@ -64,8 +65,8 @@ use (
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
-	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
+	./contrib/twmb/franz-go
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go

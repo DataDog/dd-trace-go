@@ -60,6 +60,7 @@ const (
 	PackageShopifySarama             Package = "Shopify/sarama"
 	PackageSegmentioKafkaGo          Package = "segmentio/kafka-go"
 	PackageTwmbFranzGo               Package = "twmb/franz-go"
+	PackageLovooGoka                 Package = "lovoo/goka"
 	PackageRedisGoRedisV9            Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5          Package = "olivere/elastic.v5"
 	PackageMiekgDNS                  Package = "miekg/dns"
@@ -668,6 +669,24 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageTwmbFranzGo: {
 		TracedPackage: "github.com/twmb/franz-go",
+		EnvVarPrefix:  "KAFKA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageLovooGoka: {
+		TracedPackage: "github.com/lovoo/goka",
 		EnvVarPrefix:  "KAFKA",
 		naming: map[Component]componentNames{
 			ComponentConsumer: {
