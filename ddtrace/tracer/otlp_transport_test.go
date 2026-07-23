@@ -26,7 +26,7 @@ func TestOTLPTransportSendSuccess(t *testing.T) {
 	defer srv.Close()
 
 	tr := newOTLPTransport(srv.Client(), srv.URL, nil)
-	err := tr.send([]byte("hello"))
+	err := tr.send([]byte("hello"), "application/x-protobuf")
 	require.NoError(t, err)
 	assert.Equal(t, []byte("hello"), received)
 }
@@ -43,10 +43,10 @@ func TestOTLPTransportSendHeaders(t *testing.T) {
 		"Api-Key":  "secret",
 		"X-Custom": "value",
 	})
-	err := tr.send([]byte("data"))
+	err := tr.send([]byte("data"), "application/x-protobuf")
 	require.NoError(t, err)
 
-	assert.Equal(t, "application/x-protobuf", gotHeaders.Get("Content-Type"), "default Content-Type must be set")
+	assert.Equal(t, "application/x-protobuf", gotHeaders.Get("Content-Type"), "Content-Type is forwarded from caller")
 	assert.Equal(t, "secret", gotHeaders.Get("Api-Key"))
 	assert.Equal(t, "value", gotHeaders.Get("X-Custom"))
 }
@@ -60,7 +60,7 @@ func TestOTLPTransportSendHTTPMethod(t *testing.T) {
 	defer srv.Close()
 
 	tr := newOTLPTransport(srv.Client(), srv.URL, nil)
-	err := tr.send([]byte("data"))
+	err := tr.send([]byte("data"), "application/x-protobuf")
 	require.NoError(t, err)
 	assert.Equal(t, "POST", gotMethod)
 }
@@ -83,7 +83,7 @@ func TestOTLPTransportSendErrorStatus(t *testing.T) {
 			defer srv.Close()
 
 			tr := newOTLPTransport(srv.Client(), srv.URL, nil)
-			err := tr.send([]byte("data"))
+			err := tr.send([]byte("data"), "application/x-protobuf")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.text)
 		})
@@ -92,7 +92,7 @@ func TestOTLPTransportSendErrorStatus(t *testing.T) {
 
 func TestOTLPTransportSendConnectionError(t *testing.T) {
 	tr := newOTLPTransport(http.DefaultClient, "http://127.0.0.1:0/nonexistent", nil)
-	err := tr.send([]byte("data"))
+	err := tr.send([]byte("data"), "application/x-protobuf")
 	require.Error(t, err)
 }
 
@@ -111,7 +111,7 @@ func TestOTLPTransportConnectionReuse(t *testing.T) {
 
 	tr := newOTLPTransport(srv.Client(), srv.URL, nil)
 	for range 5 {
-		require.NoError(t, tr.send([]byte("data")))
+		require.NoError(t, tr.send([]byte("data"), "application/x-protobuf"))
 	}
 	assert.Equal(t, int64(1), atomic.LoadInt64(&connCount),
 		"expected a single connection to be reused across sends")

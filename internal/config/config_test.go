@@ -1026,11 +1026,11 @@ func TestOTLPMetricsFlushInterval(t *testing.T) {
 		assert.Equal(t, OTLPMetricsFlushInterval, cfg.OTLPMetricsFlushInterval())
 	})
 
-	t.Run("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL overrides in milliseconds", func(t *testing.T) {
+	t.Run("_DD_TRACE_STATS_INTERVAL overrides in milliseconds", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL", "1000")
+		t.Setenv("_DD_TRACE_STATS_INTERVAL", "1000")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
@@ -1042,12 +1042,79 @@ func TestOTLPMetricsFlushInterval(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL", "not-a-number")
+		t.Setenv("_DD_TRACE_STATS_INTERVAL", "not-a-number")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
 
 		assert.Equal(t, OTLPMetricsFlushInterval, cfg.OTLPMetricsFlushInterval())
+	})
+}
+
+func TestOTLPMetricsProtocol(t *testing.T) {
+	t.Run("defaults to http/protobuf", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("http/json via OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/json")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("falls back to OTEL_EXPORTER_OTLP_PROTOCOL when signal-specific not set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("signal-specific takes precedence over generic", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("unknown value in signal-specific falls back to http/protobuf", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("unknown value in generic falls back to http/protobuf", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
 	})
 }
 
