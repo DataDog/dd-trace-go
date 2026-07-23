@@ -1115,6 +1115,13 @@ const (
 	tracestateHeader  = "tracestate"
 	// tracestateDDMaxSize bounds the length of a `dd=` list-entry in tracestate.
 	tracestateDDMaxSize = 256
+	// tracestateMaxSize bounds the total length of an incoming tracestate
+	// header. Headers larger than this are dropped entirely rather than
+	// stored and re-propagated.
+	tracestateMaxSize = 4096
+	// tracestateMemberMaxSize bounds the length of a single non-dd list-member
+	// kept from an incoming tracestate, per the W3C recommendation.
+	tracestateMemberMaxSize = 512
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
@@ -1449,6 +1456,19 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		if strings.HasPrefix(s, "dd=") || strings.HasPrefix(s, "ot=") {
 			continue
 		}
+		if len(s) > tracestateMemberMaxSize {
+			// Per the W3C recommendation, drop oversized non-dd members
+			// instead of letting one attacker-sized vendor entry consume
+			// the whole re-composed header.
+			continue
+		}
+		// +1 accounts for the "," separator written below. dd= and ot= are
+		// already written above and stay under tracestateMaxSize on their
+		// own, so stop adding further vendors here instead of silently
+		// re-emitting a header that exceeds the cap.
+		if b.Len()+1+len(s) > tracestateMaxSize {
+			break
+		}
 		listLength++
 		// if the resulting tracestateHeader exceeds 32 list-members,
 		// remove the rightmost list-member(s)
@@ -1633,6 +1653,14 @@ func parseTracestate(ctx *SpanContext, header string) {
 	if header == "" {
 		// The W3C spec says tracestate can be empty but should avoid sending it.
 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
+		return
+	}
+	if len(header) > tracestateMaxSize {
+		// Only the dd= member is size-checked below; an oversized header is
+		// otherwise stored and re-propagated verbatim regardless of how many
+		// (or how large) non-dd vendors it carries. Treat it like an absent
+		// header rather than trying to selectively trim it.
+		log.Warn("tracestate header exceeds the maximum size (%d), dropping it", tracestateMaxSize)
 		return
 	}
 	hasOversizedDD := false
