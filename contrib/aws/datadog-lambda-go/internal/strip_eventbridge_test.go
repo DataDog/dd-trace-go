@@ -101,7 +101,9 @@ func TestStripEventBridgeContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ResetStripEventBridgeContextCacheForTest()
 			t.Setenv(stripEventBridgeContextEnvVar, tt.envValue)
+
 			var in json.RawMessage
 			if tt.fixture == "invalid.json" {
 				in = json.RawMessage(loadTestFileBytes(t, tt.fixture))
@@ -123,6 +125,7 @@ func TestStripEventBridgeContext(t *testing.T) {
 }
 
 func TestStripEventBridgeContext_preservesOtherEnvelopeFields(t *testing.T) {
+	ResetStripEventBridgeContextCacheForTest()
 	t.Setenv(stripEventBridgeContextEnvVar, "true")
 
 	in := loadTestJSON(t, "eventbridge-with-datadog-object.json")
@@ -176,6 +179,7 @@ func assertDetailContains(t *testing.T, out json.RawMessage, key, want string) {
 }
 
 func BenchmarkStripEventBridgeContext_disabled(b *testing.B) {
+	ResetStripEventBridgeContextCacheForTest()
 	b.Setenv(stripEventBridgeContextEnvVar, "false")
 	msg := mustLoadTestJSON(b, "eventbridge-with-datadog-object.json")
 
@@ -185,6 +189,7 @@ func BenchmarkStripEventBridgeContext_disabled(b *testing.B) {
 }
 
 func BenchmarkStripEventBridgeContext_enabled_strip(b *testing.B) {
+	ResetStripEventBridgeContextCacheForTest()
 	b.Setenv(stripEventBridgeContextEnvVar, "true")
 	msg := mustLoadTestJSON(b, "eventbridge-with-datadog-object.json")
 
@@ -194,6 +199,7 @@ func BenchmarkStripEventBridgeContext_enabled_strip(b *testing.B) {
 }
 
 func BenchmarkStripEventBridgeContext_enabled_noop_sqs(b *testing.B) {
+	ResetStripEventBridgeContextCacheForTest()
 	b.Setenv(stripEventBridgeContextEnvVar, "true")
 	msg := mustLoadTestJSON(b, "sqs-event.json")
 
