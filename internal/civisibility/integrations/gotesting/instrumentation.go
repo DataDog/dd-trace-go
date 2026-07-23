@@ -798,8 +798,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				return false
 			},
 			postOnRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
-				// if the test is disabled or quarantined, skip the test result to the testing framework
-				if ptrMeta.isDisabled || ptrMeta.isQuarantined {
+				// Non-ATF disabled or quarantined tests should not fail the testing framework.
+				if (ptrMeta.isDisabled || ptrMeta.isQuarantined) && !ptrMeta.isAttemptToFix {
 					log.Debug("applyAdditionalFeaturesToTestFunc: Skipping test result for disabled or quarantined test")
 					t.SkipNow()
 					return
@@ -814,10 +814,24 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				// Attempt-to-fix owns result propagation when it is active, even if EFD or FTR
 				// metadata is also present for tag compatibility.
 				attemptToFixActive := ptrMeta.isAttemptToFix
+				if attemptToFixActive {
+					failed := anyExecutionFailed.Load() == 1
+					skipped := !failed && anyExecutionPassed.Load() == 0 && lastPtrToLocalT.Skipped()
+					tCommonPrivates.SetFailed(failed)
+					tCommonPrivates.SetSkipped(skipped)
+					if failed {
+						tParentCommonPrivates := getTestParentPrivateFields(t)
+						if tParentCommonPrivates == nil {
+							panic("getting test parent private fields failed")
+						}
+						tParentCommonPrivates.SetFailed(true)
+					}
+					return
+				}
 
 				// if early flake detection is enabled, we need to set the test status
-				efdOnNewTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew && !attemptToFixActive
-				efdOnModifiedTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isModified && !attemptToFixActive
+				efdOnNewTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew
+				efdOnModifiedTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isModified
 				if efdOnNewTest || efdOnModifiedTest {
 					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Early Flake Detection")
 					status := "passed"
@@ -843,7 +857,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				}
 
 				// if the test is a flaky test retries test, we need to set the test status
-				if ptrMeta.isFlakyTestRetriesEnabled && !attemptToFixActive {
+				if ptrMeta.isFlakyTestRetriesEnabled {
 					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Flaky Test Retries")
 					tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
 					tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())

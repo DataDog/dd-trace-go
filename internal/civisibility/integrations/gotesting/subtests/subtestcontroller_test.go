@@ -31,10 +31,11 @@ import (
 )
 
 const (
-	moduleUnderTest   = "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/subtests"
-	suiteUnderTest    = "fixtures_test.go"
-	parentTestName    = "TestSubtestManagement"
-	parallelToggleEnv = "SUBTEST_MATRIX_PARALLEL"
+	moduleUnderTest        = "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/subtests"
+	suiteUnderTest         = "fixtures_test.go"
+	parentTestName         = "TestSubtestManagement"
+	parallelToggleEnv      = "SUBTEST_MATRIX_PARALLEL"
+	failSubAttemptToFixEnv = "SUBTEST_MATRIX_FAIL_ATTEMPT_TO_FIX"
 
 	// scenarioInitFailureExitCode is returned by runMatrixScenario when CI Visibility features
 	// were not initialised (e.g. a transient settings fetch failure).  main_test.go uses this
@@ -49,6 +50,8 @@ var (
 		subQuarantinedScenario(),
 		parentQuarantinedScenario(),
 		parentQuarantinedAttemptFixScenario(),
+		parentQuarantinedAttemptFixFailureScenario(),
+		parentDisabledAttemptFixFailureScenario(),
 		parentAttemptFixScenario(),
 		parentAttemptFixSubExplicitFalseScenario(),
 		parentQuarantinedAttemptFixSubExplicitFalseScenario(),
@@ -74,9 +77,10 @@ type directive struct {
 }
 
 type matrixScenario struct {
-	name      string
-	configure func(*scenarioContext)
-	validate  func([]*mocktracer.Span)
+	name             string
+	configure        func(*scenarioContext)
+	validate         func([]*mocktracer.Span)
+	expectedExitCode int
 }
 
 type scenarioContext struct {
@@ -463,6 +467,7 @@ func parentQuarantinedAttemptFixScenario() *matrixScenario {
 			parentFinal := parentSpans[len(parentSpans)-1]
 			assertTagEquals(parentFinal, constants.TestAttemptToFixPassed, "true", "parent quarantine attempt-to-fix success")
 			assertTagEquals(parentFinal, constants.TestStatus, constants.TestStatusPass, "parent quarantine attempt-to-fix status")
+			assertTagEquals(parentFinal, constants.TestFinalStatus, constants.TestStatusPass, "parent quarantine attempt-to-fix final_status")
 			assertTagCount(parentSpans, constants.TestIsRetry, "true", 2, "parent quarantine attempt-to-fix retry tag count")
 			assertTagCount(parentSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "parent quarantine attempt-to-fix retry reason count")
 
@@ -477,10 +482,79 @@ func parentQuarantinedAttemptFixScenario() *matrixScenario {
 			childFinal := subSpans[len(subSpans)-1]
 			assertTagNotTrue(childFinal, constants.TestAttemptToFixPassed, "child quarantine attempt-to-fix success tag ownership")
 			assertTagEquals(childFinal, constants.TestStatus, constants.TestStatusPass, "child quarantine attempt-to-fix status")
+			assertTagEquals(childFinal, constants.TestFinalStatus, constants.TestStatusPass, "child quarantine attempt-to-fix final_status")
 			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "child quarantine attempt-to-fix retry tag count")
 			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "child quarantine attempt-to-fix retry reason count")
 		},
 	}
+}
+
+// parentQuarantinedAttemptFixFailureScenario verifies that attempt-to-fix failures
+// remain visible even when quarantine is also active.
+func parentQuarantinedAttemptFixFailureScenario() *matrixScenario {
+	return &matrixScenario{
+		name:             "parent_quarantined_attempt_to_fix_failure",
+		expectedExitCode: 1,
+		configure: func(ctx *scenarioContext) {
+			ctx.ensureSuite()
+			ctx.attemptToFixRetries = 3
+			ctx.setEnv(failSubAttemptToFixEnv, "1")
+			ctx.setParentDirective(directive{quarantined: true, attemptToFix: true})
+			ctx.setSubDirective("SubAttemptFix", directive{quarantined: true, attemptToFix: true})
+		},
+		validate: func(spans []*mocktracer.Span) {
+			validateManagementAttemptToFixFailure(spans, constants.TestIsQuarantined, "quarantined")
+		},
+	}
+}
+
+// parentDisabledAttemptFixFailureScenario mirrors the quarantine case for disabled tests.
+func parentDisabledAttemptFixFailureScenario() *matrixScenario {
+	return &matrixScenario{
+		name:             "parent_disabled_attempt_to_fix_failure",
+		expectedExitCode: 1,
+		configure: func(ctx *scenarioContext) {
+			ctx.ensureSuite()
+			ctx.attemptToFixRetries = 3
+			ctx.setEnv(failSubAttemptToFixEnv, "1")
+			ctx.setParentDirective(directive{disabled: true, attemptToFix: true})
+			ctx.setSubDirective("SubAttemptFix", directive{disabled: true, attemptToFix: true})
+		},
+		validate: func(spans []*mocktracer.Span) {
+			validateManagementAttemptToFixFailure(spans, constants.TestIsDisabled, "disabled")
+		},
+	}
+}
+
+func validateManagementAttemptToFixFailure(spans []*mocktracer.Span, managementTag string, label string) {
+	testSpans := filterTestSpans(spans)
+
+	parentResource := fmt.Sprintf("%s.%s", suiteUnderTest, parentTestName)
+	parentSpans := spansByResource(testSpans, parentResource)
+	requireSpanCount(parentSpans, 3, "parent "+label+" attempt-to-fix failure span count")
+	for idx, span := range parentSpans {
+		assertTagEquals(span, managementTag, "true", fmt.Sprintf("parent %s attempt-to-fix failure management tag span %d", label, idx))
+		assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("parent %s attempt-to-fix failure attempt tag span %d", label, idx))
+		assertTagEquals(span, constants.TestStatus, constants.TestStatusFail, fmt.Sprintf("parent %s attempt-to-fix failure status span %d", label, idx))
+	}
+	parentFinal := parentSpans[len(parentSpans)-1]
+	assertTagEquals(parentFinal, constants.TestAttemptToFixPassed, "false", "parent "+label+" attempt-to-fix failure success tag")
+	assertTagEquals(parentFinal, constants.TestFinalStatus, constants.TestStatusFail, "parent "+label+" attempt-to-fix failure final_status")
+	assertTagCount(parentSpans, constants.TestIsRetry, "true", 2, "parent "+label+" attempt-to-fix failure retry tag count")
+	assertTagCount(parentSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "parent "+label+" attempt-to-fix failure retry reason count")
+
+	subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
+	subSpans := spansByResource(testSpans, subResource)
+	requireSpanCount(subSpans, 3, "child "+label+" attempt-to-fix failure span count")
+	for idx, span := range subSpans {
+		assertTagEquals(span, managementTag, "true", fmt.Sprintf("child %s attempt-to-fix failure management tag span %d", label, idx))
+		assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("child %s attempt-to-fix failure attempt tag span %d", label, idx))
+		assertTagEquals(span, constants.TestStatus, constants.TestStatusFail, fmt.Sprintf("child %s attempt-to-fix failure status span %d", label, idx))
+	}
+	childFinal := subSpans[len(subSpans)-1]
+	assertTagEquals(childFinal, constants.TestFinalStatus, constants.TestStatusFail, "child "+label+" attempt-to-fix failure final_status")
+	assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "child "+label+" attempt-to-fix failure retry tag count")
+	assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "child "+label+" attempt-to-fix failure retry reason count")
 }
 
 // parentAttemptFixScenario checks that a parent-level attempt-to-fix directive wraps both
@@ -820,11 +894,13 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 	}
 
 	exitCode := gotesting.RunM(m)
-	// When the run fails, dump span resources for easier diagnosis.
-	if exitCode != 0 {
+	if exitCode != sc.expectedExitCode {
 		finished := tracer.FinishedSpans()
-		dumpScenarioSpans(scenario, fmt.Sprintf("exit code %d", exitCode), finished)
-		return exitCode
+		dumpScenarioSpans(scenario, fmt.Sprintf("exit code %d, expected %d", exitCode, sc.expectedExitCode), finished)
+		if exitCode != 0 {
+			return exitCode
+		}
+		return 1
 	}
 
 	if validateErr := validateScenarioSpans(sc, tracer.FinishedSpans()); validateErr != nil {
