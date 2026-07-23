@@ -177,7 +177,7 @@ func TestOTLPMetricsExporterCustomHeaders(t *testing.T) {
 
 // ---- config integration ----
 
-func TestOTLPMetricsProtocolDefaultIsJSON(t *testing.T) {
+func TestOTLPMetricsProtocolDefaultIsProtobuf(t *testing.T) {
 	cfg := internalconfig.CreateNew()
-	assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
+	assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
 }
