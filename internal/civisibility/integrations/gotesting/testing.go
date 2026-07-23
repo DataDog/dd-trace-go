@@ -656,6 +656,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 						terminal = result.cleanupPanicData
 						terminalStack = string(result.cleanupPanicStack)
 					}
+					logFreshRetryAttemptState("finalize_runm", t, result)
 					finalizeInstrumentedTestExecution(t, execMeta, test, suite, module, result.duration, result.output, terminal, terminalStack, true)
 				}
 				if r != nil {

@@ -75,6 +75,31 @@ func stopRetryGroupAfterRaceLocked(execOpts *executionOptions, raceDetected bool
 	return true
 }
 
+func logFreshRetryAttemptState(stage string, t *testing.T, result retryAttemptResult) {
+	if !log.DebugEnabled() {
+		return
+	}
+	name := "<nil>"
+	failed := false
+	skipped := false
+	if t != nil {
+		name = t.Name()
+		failed = t.Failed()
+		skipped = t.Skipped()
+	}
+	log.Debug(
+		"gotesting: fresh retry attempt state stage=%s test=%q result_failed=%t result_skipped=%t test_failed=%t test_skipped=%t cleanup_observation=%d completion_phase=%d",
+		stage,
+		name,
+		result.failed,
+		result.skipped,
+		failed,
+		skipped,
+		result.cleanupObservation,
+		result.completionPhase,
+	)
+}
+
 // executeFreshRetryAttemptIteration adapts the fresh testing.T runtime to the
 // existing retry callbacks for supported top-level test layouts.
 func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
@@ -117,6 +142,7 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 		defer execOpts.mutex.Unlock()
 
 		localT := attempt.test
+		logFreshRetryAttemptState("complete", localT, result)
 		if finalize := execMeta.retryAttemptFinalizer; finalize != nil {
 			execMeta.retryAttemptFinalizer = nil
 			defer finalize(result)
