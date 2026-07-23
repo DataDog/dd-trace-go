@@ -38,6 +38,10 @@ type tslvTestSession struct {
 
 // CreateTestSession initializes a new test session with the given command and working directory.
 func CreateTestSession(options ...TestSessionStartOption) TestSession {
+	if IsProcessRetryChild() {
+		return newProcessRetryNoopSession(options...)
+	}
+
 	defaults := &tslvTestSessionStartOptions{}
 	for _, f := range options {
 		f(defaults)

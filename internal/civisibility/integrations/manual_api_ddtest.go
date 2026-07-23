@@ -369,6 +369,9 @@ func SetGlobalEventFinishHook(hook func([]any)) {
 }
 
 func init() {
+	if IsProcessRetryChild() {
+		return
+	}
 	PushCiVisibilityCloseAction(func() {
 		finishedTestsMutex.Lock()
 		defer finishedTestsMutex.Unlock()

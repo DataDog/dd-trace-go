@@ -7,7 +7,9 @@ package gotesting
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"os"
 	"reflect"
 	"runtime"
 	"slices"
@@ -19,6 +21,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
@@ -26,6 +29,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -64,9 +68,36 @@ var (
 
 	// chatty is the global chatty printer used for debugging and verbose output.
 	chatty *chattyPrinter
+
+	testingMInstrumentationClaims = struct {
+		mu      locking.Mutex
+		claimed map[*testing.M]*testingMInstrumentationClaim
+	}{claimed: make(map[*testing.M]*testingMInstrumentationClaim)}
+
+	testingBuiltWithOrchestrion atomic.Bool
+	testingMRunEpochCounter     atomic.Uint64
+	testingMActiveHookEpoch     atomic.Pointer[testingMHookEpoch]
 )
 
 type (
+	testingMFinalizer func(exitCode int) int
+
+	testingMHookEpoch struct {
+		id      uint64
+		active  atomic.Int64
+		closing atomic.Bool
+		drained chan struct{}
+		once    sync.Once
+	}
+
+	testingMInstrumentationClaim struct {
+		tests                map[string]func(*testing.T)
+		benchmarks           map[string]func(*testing.B)
+		testDescriptors      *[]testing.InternalTest
+		benchmarkDescriptors *[]testing.InternalBenchmark
+		retired              bool
+	}
+
 	// testIdentity represents the fully-qualified identity of a Go test or subtest.
 	// It captures the module and suite where the test belongs, the base test name
 	// (top-level test), the full hierarchical name reported by Go (including subtests),
@@ -86,6 +117,7 @@ type (
 		suiteName  string
 		testName   string
 		identity   *testIdentity
+		sourceFunc *runtime.Func
 	}
 
 	// testingTInfo holds information specific to tests.
@@ -131,25 +163,298 @@ const (
 	testManagementMatchAncestor
 )
 
-// Run initializes CI Visibility, instruments tests and benchmarks, and runs them.
-func (ddm *M) Run() int {
-	m := (*testing.M)(ddm)
+type testingMClaimDisposition uint8
 
-	// Instrument testing.M
-	exitFn := instrumentTestingM(m)
+const (
+	testingMClaimOwner testingMClaimDisposition = iota
+	testingMClaimActiveConflict
+	testingMClaimRetiredNative
+)
 
-	// Run the tests and benchmarks.
-	var exitCode = m.Run()
+func claimTestingMInstrumentation(m *testing.M) (*testingMInstrumentationClaim, testingMClaimDisposition) {
+	if m == nil {
+		return &testingMInstrumentationClaim{}, testingMClaimOwner
+	}
+	testingMInstrumentationClaims.mu.Lock()
+	defer testingMInstrumentationClaims.mu.Unlock()
+	if claim := testingMInstrumentationClaims.claimed[m]; claim != nil {
+		if claim.retired {
+			return claim, testingMClaimRetiredNative
+		}
+		return claim, testingMClaimActiveConflict
+	}
+	claim := &testingMInstrumentationClaim{}
+	testingMInstrumentationClaims.claimed[m] = claim
+	return claim, testingMClaimOwner
+}
 
-	// Finalize instrumentation
-	exitFn(exitCode)
+func markTestingBuiltWithOrchestrion() {
+	testingBuiltWithOrchestrion.Store(true)
+}
+
+func isTestingBuiltWithOrchestrion() bool {
+	return testingBuiltWithOrchestrion.Load()
+}
+
+func activateTestingMHookEpoch(epoch uint64) func() {
+	if epoch == 0 {
+		epoch = testingMRunEpochCounter.Add(1)
+	}
+	state := &testingMHookEpoch{id: epoch, drained: make(chan struct{})}
+	testingMActiveHookEpoch.Store(state)
+	return func() {
+		state.closing.Store(true)
+		testingMActiveHookEpoch.CompareAndSwap(state, nil)
+		state.signalDrained()
+		<-state.drained
+	}
+}
+
+func acquireOrchestrionTestingHook() (func(), bool) {
+	if !isTestingBuiltWithOrchestrion() {
+		return func() {}, true
+	}
+	state := testingMActiveHookEpoch.Load()
+	if state == nil {
+		return nil, false
+	}
+	release, ok := state.acquire()
+	if !ok {
+		return nil, false
+	}
+	if testingMActiveHookEpoch.Load() != state {
+		release()
+		return nil, false
+	}
+	return release, true
+}
+
+func (e *testingMHookEpoch) acquire() (func(), bool) {
+	if e.closing.Load() {
+		return nil, false
+	}
+	e.active.Add(1)
+	if e.closing.Load() {
+		e.release()
+		return nil, false
+	}
+	return e.release, true
+}
+
+func (e *testingMHookEpoch) release() {
+	if e.active.Add(-1) < 0 {
+		panic("negative Orchestrion testing hook lease count")
+	}
+	e.signalDrained()
+}
+
+func (e *testingMHookEpoch) signalDrained() {
+	if e.closing.Load() && e.active.Load() == 0 {
+		e.once.Do(func() { close(e.drained) })
+	}
+}
+
+func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWrapperOptions) (bool, testingMFinalizer) {
+	if isProcessRetryChild() {
+		cfg, err := bootstrapProcessRetryChild()
+		if err != nil {
+			reason := processRetryChildConfigErrorReason(err)
+			log.Debug("civisibility: process retry child config error: %s", reason)
+			writeInvalidProcessRetryChildConfigResult(cfg, reason)
+			if !disableProcessRetryChildExecution(m) {
+				hardStopInvalidProcessRetryChild("testing_m_reflection_drift")
+			}
+			return false, failureTestingMFinalizer
+		}
+		return instrumentProcessRetryChild(m, cfg)
+	}
+	claim, disposition := claimTestingMInstrumentation(m)
+	switch disposition {
+	case testingMClaimActiveConflict:
+		return false, failureTestingMFinalizer
+	case testingMClaimRetiredNative:
+		return true, identityTestingMFinalizer
+	}
+
+	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
+	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
+	if !isCiVisibilityEnabled() || !testing.Testing() {
+		retireTestingMInstrumentation(m, claim)
+		return true, identityTestingMFinalizer
+	}
+	if wrapperOpts.mRunEpoch == 0 {
+		wrapperOpts.mRunEpoch = testingMRunEpochCounter.Add(1)
+	}
+	if wrapperOpts.mRunInvocations == nil {
+		wrapperOpts.mRunInvocations = &atomic.Uint64{}
+	}
+	releaseHookEpoch := activateTestingMHookEpoch(wrapperOpts.mRunEpoch)
+
+	log.Debug("instrumentTestingM: initializing CI Visibility for testing.M")
+
+	// Initialize CI Visibility
+	integrations.EnsureCiVisibilityInitialization()
+
+	// Create a new test session for CI visibility.
+	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+	if wrapperOpts.processRetryAllowed && !registerProcessRetryShutdownAction() {
+		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
+		wrapperOpts.processRetryAllowed = false
+	}
+
+	coverageInitialized := false
+	settings := integrations.GetSettings()
+	if settings != nil {
+		if settings.CodeCoverage {
+			// Initialize the runtime coverage if enabled.
+			coverage.InitializeCoverage(m, true)
+			coverageInitialized = true
+		}
+		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+			// Set the test management tag if enabled.
+			session.SetTag(constants.TestManagementEnabled, "true")
+		}
+	}
+
+	// Check if the coverage was enabled by not initialized
+	if !coverageInitialized && testing.CoverMode() != "" {
+		coverage.InitializeCoverage(m, false)
+	}
+
+	ddm := (*M)(m)
+
+	// Instrument the internal tests for CI visibility.
+	ddm.instrumentInternalTests(getInternalTestArray(m), wrapperOpts, claim)
+
+	// Instrument the internal benchmarks for CI visibility.
+	for _, v := range os.Args {
+		// check if benchmarking is enabled to instrument
+		if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
+			ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m), claim)
+			break
+		}
+	}
+
+	return true, func(exitCode int) int {
+		retireTestingMInstrumentation(m, claim)
+		releaseHookEpoch()
+		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
+
+		// Check for code coverage if enabled.
+		if testing.CoverMode() != "" {
+			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
+			uploadFinalCoverageReport(settings)
+			if !publishCoverage {
+				session.Close(exitCode)
+				coverage.CleanupRuntimeCoverageSnapshot()
+				integrations.ExitCiVisibility()
+				return exitCode
+			}
+			if !corrected {
+				// let's try first with our coverage package
+				cov = coverage.GetCoverage()
+			}
+			if cov == 0 {
+				// if not we try we the default testing package
+				cov = testing.Coverage()
+			}
+
+			coveragePercentage := cov * 100
+			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
+		}
+
+		// Close the session and return the exit code.
+		session.Close(exitCode)
+		coverage.CleanupRuntimeCoverageSnapshot()
+
+		// Finalize CI Visibility
+		integrations.ExitCiVisibility()
+		return exitCode
+	}
+}
+
+func identityTestingMFinalizer(exitCode int) int {
 	return exitCode
 }
 
+func failureTestingMFinalizer(int) int {
+	return processRetryFailureExitCode
+}
+
+func uploadFinalCoverageReport(settings *net.SettingsResponseData) {
+	if settings == nil {
+		log.Debug("instrumentTestingM: coverage report upload skipped because settings are unavailable")
+		return
+	}
+	if !settings.CoverageReportUploadEnabled {
+		log.Debug("instrumentTestingM: coverage report upload disabled by settings")
+		return
+	}
+
+	var report bytes.Buffer
+	if err := coverage.WriteLCOVReport(&report); err != nil {
+		log.Debug("instrumentTestingM: failed to create LCOV coverage report: %s", err.Error())
+		return
+	}
+	if report.Len() == 0 {
+		log.Debug("instrumentTestingM: LCOV coverage report is empty; skipping upload")
+		return
+	}
+	log.Debug("instrumentTestingM: uploading LCOV coverage report [report_bytes:%d]", report.Len())
+
+	client := net.NewClientForCoverageReportUpload()
+	if client == nil {
+		log.Debug("instrumentTestingM: coverage report upload client is unavailable")
+		return
+	}
+	if closer, ok := client.(interface{ CloseIdleConnections() }); ok {
+		defer closer.CloseIdleConnections()
+	}
+	if err := client.SendCoverageReport(&report, net.FormatLCOV); err != nil {
+		log.Debug("instrumentTestingM: failed to upload coverage report: %s", err.Error())
+	}
+}
+
+// Run initializes CI Visibility, instruments tests and benchmarks, and runs them.
+func (ddm *M) Run() (exitCode int) {
+	m := (*testing.M)(ddm)
+	if isTestingBuiltWithOrchestrion() {
+		// The woven testing.M.Run entry owns both parent instrumentation and the
+		// process-child admission gate. Claiming here as well would give one
+		// native invocation two competing owners.
+		return m.Run()
+	}
+	if isProcessRetryChild() {
+		return runProcessRetryChild(m)
+	}
+
+	// Instrument testing.M
+	proceed, exitFn := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
+	if !proceed {
+		return exitFn(processRetryFailureExitCode)
+	}
+
+	// Finalization also restores the native workload descriptors if M.Run
+	// unwinds through a panic instead of returning normally.
+	defer func() { exitCode = exitFn(exitCode) }()
+	exitCode = m.Run()
+	return
+}
+
+func processRetryWrapperOptions() additionalFeatureWrapperOptions {
+	return additionalFeatureWrapperOptions{
+		processRetryAllowed: true,
+		fuzzActive:          processRetryFuzzActive,
+	}
+}
+
 // instrumentInternalTests instruments the internal tests for CI visibility.
-func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
+func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest, wrapperOpts additionalFeatureWrapperOptions, claim *testingMInstrumentationClaim) {
 	if internalTests == nil {
 		return
+	}
+	if claim != nil {
+		claim.testDescriptors = internalTests
 	}
 
 	// Get the settings response for this session
@@ -202,17 +507,25 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 	// Create new instrumented internal tests
 	newTestArray := make([]testing.InternalTest, len(*internalTests))
 	for idx, testInfo := range testInfos {
+		instrumented := ddm.executeInternalTest(testInfo, wrapperOpts)
 		newTestArray[idx] = testing.InternalTest{
 			Name: testInfo.testName,
-			F:    ddm.executeInternalTest(testInfo),
+			F:    instrumented,
+		}
+		if claim != nil {
+			if claim.tests == nil {
+				claim.tests = make(map[string]func(*testing.T), len(testInfos))
+			}
+			claim.tests[testInfo.testName] = testInfo.originalFunc
 		}
 	}
 	*internalTests = newTestArray
 }
 
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
-func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
+func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additionalFeatureWrapperOptions) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
+	testInfo.commonInfo.sourceFunc = originalFunc
 
 	// Get the settings response for this session
 	settings := integrations.GetSettings()
@@ -280,6 +593,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			return
 		}
 		if itrDecision.forcedRun {
+			execMeta.isItrForcedRun = true
 			test.SetTag(constants.TestForcedToRun, "true")
 			telemetry.ITRForcedRun(telemetry.TestEventType)
 		}
@@ -287,7 +601,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Check if the coverage is enabled
 		var tCoverage coverage.TestCoverage
 		var tParentOldBarrier chan bool
-		if coverageEnabled && coverage.CanCollect() {
+		if shouldCollectExecutionCoverage(coverageEnabled, execMeta) && coverage.CanCollect() {
 			// set the test coverage collector
 			testFile, _ := originalFunc.FileLine(originalFunc.Entry())
 			tCoverage = coverage.NewTestCoverage(
@@ -309,8 +623,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		instrumentChattyPrinter(t)
 
 		startTime := time.Now()
+		bodyReturned := false
 		defer func() {
-			duration := time.Since(startTime)
+			r := recover()
+			bodyDuration := time.Since(startTime)
 
 			if tCoverage != nil {
 				// Collect coverage after test execution so we can calculate the diff comparing to the baseline.
@@ -322,128 +638,50 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					*tParent.barrier = tParentOldBarrier
 				}
 			}
-			runAndApplyTestCleanup(t, execMeta)
 
-			// check if is a new EFD test and the duration >= 5 min
-			if execMeta.isANewTest && duration.Minutes() >= 5 {
-				// Set the EFD retry abort reason
-				test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
-			}
-
-			// Collect and write logs
-			collectAndWriteLogs(t, test)
-
-			if r := recover(); r != nil {
-				// Handle panic and set error information.
-				execMeta.panicData = r
-				execMeta.panicStacktrace = utils.GetStacktrace(1)
-
-				// Compute whether this is the final execution.
-				finalExec := isFinalExecution(true, false, execMeta, duration)
-
-				// Compute and set test.final_status before closing the span.
-				if finalExec {
-					anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
-					anyFailed := true                        // current execution failed
-					finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
-					test.SetTag(constants.TestFinalStatus, finalStatus)
+			if execMeta.usesFreshRetryAttemptRuntime {
+				bodyTerminal := r
+				bodyStack := ""
+				if bodyTerminal != nil {
+					bodyStack = utils.GetStacktrace(1)
 				}
-				// Set retry-related tags only when this is an actual retry's final execution.
-				if execMeta.isARetry && finalExec {
-					if execMeta.allRetriesFailed {
-						test.SetTag(constants.TestHasFailedAllRetries, "true")
+				execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
+					terminal := bodyTerminal
+					terminalStack := bodyStack
+					if result.panicData != nil {
+						terminal = result.panicData
+						terminalStack = string(result.panicStack)
 					}
-					if execMeta.isAttemptToFix {
-						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					if result.cleanupPanicData != nil {
+						terminal = result.cleanupPanicData
+						terminalStack = string(result.cleanupPanicStack)
 					}
+					logFreshRetryAttemptState("finalize_runm", t, result)
+					finalizeInstrumentedTestExecution(t, execMeta, test, suite, module, result.duration, result.output, terminal, terminalStack, true)
 				}
-				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
-				suite.SetTag(ext.Error, true)
-				module.SetTag(ext.Error, true)
-				test.Close(integrations.ResultStatusFail)
-				if !execMeta.hasAdditionalFeatureWrapper {
-					// we are going to let the additional feature wrapper to handle
-					// the panic, and module and suite closing (we don't want to close the suite earlier in case of a retry)
-					checkModuleAndSuite(module, suite)
-					integrations.ExitCiVisibility()
+				if r != nil {
 					panic(r)
 				}
-			} else {
-				// Normal finalization: determine the test result based on its state.
-				failed := t.Failed()
-				skipped := t.Skipped()
-				passed := !failed && !skipped
+				return
+			}
 
-				// Compute whether this is the final execution.
-				finalExec := isFinalExecution(failed, skipped, execMeta, duration)
-
-				if failed {
-					// Compute and set test.final_status before closing the span.
-					if finalExec {
-						anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
-						anyFailed := true                        // current execution failed
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
-						test.SetTag(constants.TestFinalStatus, finalStatus)
-					}
-					// Set retry-related tags only when this is an actual retry's final execution.
-					if execMeta.isARetry && finalExec {
-						if execMeta.allRetriesFailed {
-							test.SetTag(constants.TestHasFailedAllRetries, "true")
-						}
-						if execMeta.isAttemptToFix {
-							test.SetTag(constants.TestAttemptToFixPassed, "false")
-						}
-					}
-					if execMeta.panicData != nil {
-						test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(execMeta.panicData), execMeta.panicStacktrace))
-					} else {
-						test.SetTag(ext.Error, true)
-					}
-					suite.SetTag(ext.Error, true)
-					module.SetTag(ext.Error, true)
-					test.Close(integrations.ResultStatusFail)
-				} else if skipped {
-					// Compute and set test.final_status before closing the span.
-					if finalExec {
-						anyPassed := execMeta.anyExecutionPassed // current is skip, so no change
-						anyFailed := execMeta.anyExecutionFailed // current is skip, so no change
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, true, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
-						test.SetTag(constants.TestFinalStatus, finalStatus)
-					}
-					// Set retry-related tags only when this is an actual retry's final execution.
-					if execMeta.isAttemptToFix && execMeta.isARetry && finalExec {
-						test.SetTag(constants.TestAttemptToFixPassed, "false")
-					}
-					// Use the stored skip reason if available (captured from instrumentCloseAndSkip).
-					if execMeta.skipReason != "" {
-						test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(execMeta.skipReason))
-					} else {
-						test.Close(integrations.ResultStatusSkip)
-					}
-				} else if passed {
-					// Compute and set test.final_status before closing the span.
-					if finalExec {
-						anyPassed := true // current execution passed
-						anyFailed := execMeta.anyExecutionFailed
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
-						test.SetTag(constants.TestFinalStatus, finalStatus)
-					}
-					// Set retry-related tags only when this is an actual retry's final execution.
-					if execMeta.isAttemptToFix && execMeta.isARetry && finalExec {
-						if execMeta.allAttemptsPassed {
-							test.SetTag(constants.TestAttemptToFixPassed, "true")
-						} else {
-							test.SetTag(constants.TestAttemptToFixPassed, "false")
-						}
-					}
-					test.Close(integrations.ResultStatusPass)
-				}
-
-				if !execMeta.hasAdditionalFeatureWrapper {
-					// we are going to let the additional feature wrapper to handle
-					// the module and suite closing (we don't want to close the suite earlier in case of a retry)
-					checkModuleAndSuite(module, suite)
-				}
+			unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(t, bodyReturned)
+			duration := runAndApplyTestCleanupWithDuration(t, execMeta, bodyDuration)
+			if unexpectedTermination {
+				r = unexpectedTestTerminationMessage
+			}
+			terminalStack := ""
+			if r != nil {
+				terminalStack = utils.GetStacktrace(1)
+			}
+			finalizeInstrumentedTestExecution(t, execMeta, test, suite, module, duration, nil, r, terminalStack, true)
+			if r != nil && !execMeta.hasAdditionalFeatureWrapper {
+				checkModuleAndSuite(module, suite)
+				integrations.ExitCiVisibility()
+				panic(r)
+			}
+			if r == nil && !execMeta.hasAdditionalFeatureWrapper {
+				checkModuleAndSuite(module, suite)
 			}
 		}()
 
@@ -452,21 +690,32 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			tCoverage.CollectCoverageBeforeTestExecution()
 		}
 
-		// Execute the original test function.
-		testInfo.originalFunc(t)
+		// A masking capability fallback still runs the instrumentation shell so
+		// the event is emitted, but it must not admit the irreversible user body.
+		if !execMeta.suppressUserTestBody {
+			testInfo.originalFunc(t)
+		}
+		bodyReturned = true
 	}
 
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
 
 	// Get the additional feature wrapper
-	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo, nil)
+	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo, nil, wrapperOpts)
+}
+
+func shouldCollectExecutionCoverage(coverageEnabled bool, execMeta *testExecutionMetadata) bool {
+	return coverageEnabled && (execMeta == nil || !execMeta.isARetry && !execMeta.suppressCoverageCollection)
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.
-func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.InternalBenchmark) {
+func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.InternalBenchmark, claim *testingMInstrumentationClaim) {
 	if internalBenchmarks == nil {
 		return
+	}
+	if claim != nil {
+		claim.benchmarkDescriptors = internalBenchmarks
 	}
 
 	// Extract info from internal benchmarks
@@ -496,13 +745,66 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 	// Create a new instrumented internal benchmarks
 	newBenchmarkArray := make([]testing.InternalBenchmark, len(*internalBenchmarks))
 	for idx, benchmarkInfo := range benchmarkInfos {
+		instrumented := ddm.executeInternalBenchmark(benchmarkInfo)
 		newBenchmarkArray[idx] = testing.InternalBenchmark{
 			Name: benchmarkInfo.testName,
-			F:    ddm.executeInternalBenchmark(benchmarkInfo),
+			F:    instrumented,
+		}
+		if claim != nil {
+			if claim.benchmarks == nil {
+				claim.benchmarks = make(map[string]func(*testing.B), len(benchmarkInfos))
+			}
+			claim.benchmarks[benchmarkInfo.testName] = benchmarkInfo.originalFunc
 		}
 	}
 
 	*internalBenchmarks = newBenchmarkArray
+}
+
+func restoreTestingMWorkloads(m *testing.M, claim *testingMInstrumentationClaim) {
+	if m == nil || claim == nil {
+		return
+	}
+	restoreTestingMTests(claim.testDescriptors, claim.tests)
+	restoreTestingMBenchmarks(claim.benchmarkDescriptors, claim.benchmarks)
+}
+
+func retireTestingMInstrumentation(m *testing.M, claim *testingMInstrumentationClaim) {
+	if claim == nil {
+		return
+	}
+	testingMInstrumentationClaims.mu.Lock()
+	defer testingMInstrumentationClaims.mu.Unlock()
+	if m != nil && testingMInstrumentationClaims.claimed[m] != claim {
+		return
+	}
+	if claim.retired {
+		return
+	}
+	restoreTestingMWorkloads(m, claim)
+	claim.retired = true
+}
+
+func restoreTestingMTests(tests *[]testing.InternalTest, originals map[string]func(*testing.T)) {
+	if tests == nil || len(originals) == 0 {
+		return
+	}
+	for idx := range *tests {
+		if original, ok := originals[(*tests)[idx].Name]; ok {
+			(*tests)[idx].F = original
+		}
+	}
+}
+
+func restoreTestingMBenchmarks(benchmarks *[]testing.InternalBenchmark, originals map[string]func(*testing.B)) {
+	if benchmarks == nil || len(originals) == 0 {
+		return
+	}
+	for idx := range *benchmarks {
+		if original, ok := originals[(*benchmarks)[idx].Name]; ok {
+			(*benchmarks)[idx].F = original
+		}
+	}
 }
 
 // executeInternalBenchmark wraps the original benchmark function to include CI visibility instrumentation.
@@ -750,6 +1052,14 @@ func matchTestManagementData(identity *testIdentity, modules *net.TestManagement
 
 // setTestTagsFromExecutionMetadata sets the test tags from the execution metadata.
 func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExecutionMetadata) (cancelExecution bool) {
+	cancelExecution = setTestTagsFromExecutionMetadataNoClose(test, execMeta)
+	if cancelExecution {
+		test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.TestDisabledSkipReason))
+	}
+	return cancelExecution
+}
+
+func setTestTagsFromExecutionMetadataNoClose(test integrations.Test, execMeta *testExecutionMetadata) (cancelExecution bool) {
 	settings := integrations.GetSettings()
 
 	// Set the Test Optimization test to the execution metadata
@@ -776,7 +1086,7 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 		if execMeta.isAttemptToFix {
 			// Set attempt_to_fix as the retry reason
 			test.SetTag(constants.TestRetryReason, constants.AttemptToFixRetryReason)
-		} else if execMeta.isEarlyFlakeDetectionEnabled && (execMeta.isANewTest || execMeta.isAModifiedTest) {
+		} else if usesEfdRetrySemantics(execMeta) {
 			// Set early_flake_detection as the retry reason
 			test.SetTag(constants.TestRetryReason, constants.EarlyFlakeDetectionRetryReason)
 		} else if execMeta.isFlakyTestRetriesEnabled {
@@ -804,7 +1114,6 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 		if !execMeta.isAttemptToFix {
 			// Disabled test without ATF is always a final execution, set the final status
 			test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
-			test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.TestDisabledSkipReason))
 			return true
 		}
 	}
@@ -830,7 +1139,7 @@ func instrumentChattyPrinter(t *testing.T) {
 }
 
 // collectAndWriteLogs collects logs from the chatty printer and the test output, and writes them to the test.
-func collectAndWriteLogs(t *testing.T, test integrations.Test) {
+func collectAndWriteLogs(t *testing.T, test integrations.Test, attemptOutput []byte) {
 	// Ensure any buffered partial line (Go 1.25+) is flushed before extracting the test output.
 	// This is a no-op on Go versions that don't have the output writer partial buffer.
 	flushOutputWriterPartial(t)
@@ -855,13 +1164,15 @@ func collectAndWriteLogs(t *testing.T, test integrations.Test) {
 		}
 	}
 
-	if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
-		strOutput := string(tCommon.GetOutput())
-		if len(strOutput) > 0 {
-			sc := bufio.NewScanner(strings.NewReader(strOutput))
-			for sc.Scan() {
-				test.Log(sc.Text(), "")
-			}
+	if attemptOutput == nil {
+		if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
+			attemptOutput = tCommon.GetOutput()
+		}
+	}
+	if len(attemptOutput) > 0 {
+		sc := bufio.NewScanner(strings.NewReader(string(attemptOutput)))
+		for sc.Scan() {
+			test.Log(sc.Text(), "")
 		}
 	}
 }

@@ -6,27 +6,81 @@
 package gotesting
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 	_ "unsafe" // required blank import to run orchestrion
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
-	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+// instrumentCaptureFormattedError records the value already formatted by the
+// native testing method and returns it unchanged for testing.common.log.
+//
+//go:linkname instrumentCaptureFormattedError
+func instrumentCaptureFormattedError(tb testing.TB, errType, message string, skip int) string {
+	formatted := message
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return formatted
+	}
+	defer release()
+	if errType == "Error" || errType == "Fatal" {
+		message = strings.TrimSuffix(message, "\n")
+	}
+	if isProcessRetryChild() {
+		recordProcessRetryChildErrorInfo(tb, errType, message, 2+skip)
+		return formatted
+	}
+	if !isCiVisibilityEnabled() {
+		return formatted
+	}
+	if execMeta := getTestMetadata(tb); execMeta != nil {
+		execMeta.processRetryError.CompareAndSwap(nil, &processRetryErrorInfo{
+			Type:    errType,
+			Message: message,
+			Stack:   utils.GetStacktrace(2 + skip),
+		})
+	}
+	return formatted
+}
+
+// instrumentCaptureFormattedSkip records the value already formatted by the
+// native testing method and returns it unchanged for testing.common.log.
+//
+//go:linkname instrumentCaptureFormattedSkip
+func instrumentCaptureFormattedSkip(tb testing.TB, skipType, reason string) string {
+	formatted := reason
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return formatted
+	}
+	defer release()
+	if skipType == "Skip" {
+		reason = strings.TrimSuffix(reason, "\n")
+	}
+	if isProcessRetryChild() {
+		if execMeta := getTestMetadata(tb); execMeta != nil && processRetryChildOwnerMetadata(execMeta) == execMeta {
+			execMeta.processRetrySkipReason.CompareAndSwap(nil, &reason)
+		}
+		return formatted
+	}
+	if !isCiVisibilityEnabled() {
+		return formatted
+	}
+	if execMeta := getTestMetadata(tb); execMeta != nil {
+		execMeta.processRetrySkipReason.CompareAndSwap(nil, &reason)
+	}
+	return formatted
+}
 
 // ******************************************************************************************************************
 // WARNING: DO NOT CHANGE THE SIGNATURE OF THESE FUNCTIONS!
@@ -35,130 +89,46 @@ import (
 //  instrumentation integration.
 // ******************************************************************************************************************
 
-// instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
+// instrumentTestingM preserves the finalizer-only ABI used by published v1
+// Orchestrion advice.
 //
 //go:linkname instrumentTestingM
 func instrumentTestingM(m *testing.M) func(exitCode int) {
-	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
-	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
-	if !isCiVisibilityEnabled() || !testing.Testing() {
-		return func(_ int) {}
-	}
-
-	log.Debug("instrumentTestingM: initializing CI Visibility for testing.M")
-
-	// Initialize CI Visibility
-	integrations.EnsureCiVisibilityInitialization()
-
-	// Create a new test session for CI visibility.
-	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
-
-	coverageInitialized := false
-	settings := integrations.GetSettings()
-	if settings != nil {
-		if settings.CodeCoverage {
-			// Initialize the runtime coverage if enabled.
-			coverage.InitializeCoverage(m, true)
-			coverageInitialized = true
-		}
-		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
-			// Set the test management tag if enabled.
-			session.SetTag(constants.TestManagementEnabled, "true")
-		}
-	}
-
-	// Check if the coverage was enabled by not initialized
-	if !coverageInitialized && testing.CoverMode() != "" {
-		coverage.InitializeCoverage(m, false)
-	}
-
-	ddm := (*M)(m)
-
-	// Instrument the internal tests for CI visibility.
-	ddm.instrumentInternalTests(getInternalTestArray(m))
-
-	// Instrument the internal benchmarks for CI visibility.
-	for _, v := range os.Args {
-		// check if benchmarking is enabled to instrument
-		if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
-			ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m))
-			break
-		}
-	}
-
+	_, finalize := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
 	return func(exitCode int) {
-		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
-
-		// Check for code coverage if enabled.
-		if testing.CoverMode() != "" {
-			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
-			uploadFinalCoverageReport(settings)
-			if !publishCoverage {
-				session.Close(exitCode)
-				coverage.CleanupRuntimeCoverageSnapshot()
-				integrations.ExitCiVisibility()
-				return
-			}
-			if !corrected {
-				// let's try first with our coverage package
-				cov = coverage.GetCoverage()
-			}
-			if cov == 0 {
-				// if not we try we the default testing package
-				cov = testing.Coverage()
-			}
-
-			coveragePercentage := cov * 100
-			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
-		}
-
-		// Close the session and return the exit code.
-		session.Close(exitCode)
-		coverage.CleanupRuntimeCoverageSnapshot()
-
-		// Finalize CI Visibility
-		integrations.ExitCiVisibility()
+		_ = finalize(exitCode)
 	}
 }
 
-func uploadFinalCoverageReport(settings *civisibilitynet.SettingsResponseData) {
-	if settings == nil {
-		log.Debug("instrumentTestingM: coverage report upload skipped because settings are unavailable")
-		return
-	}
-	if !settings.CoverageReportUploadEnabled {
-		log.Debug("instrumentTestingM: coverage report upload disabled by settings")
-		return
-	}
+// instrumentTestingMWithControl instruments testing.M and tells current
+// Orchestrion advice whether the native M.Run body should execute.
+//
+//go:linkname instrumentTestingMWithControl
+func instrumentTestingMWithControl(m *testing.M) (bool, func(int) int) {
+	proceed, finalize := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
+	return proceed, finalize
+}
 
-	var report bytes.Buffer
-	if err := coverage.WriteLCOVReport(&report); err != nil {
-		log.Debug("instrumentTestingM: failed to create LCOV coverage report: %s", err.Error())
-		return
-	}
-	if report.Len() == 0 {
-		log.Debug("instrumentTestingM: LCOV coverage report is empty; skipping upload")
-		return
-	}
-	log.Debug("instrumentTestingM: uploading LCOV coverage report [report_bytes:%d]", report.Len())
-
-	client := civisibilitynet.NewClientForCoverageReportUpload()
-	if client == nil {
-		log.Debug("instrumentTestingM: coverage report upload client is unavailable")
-		return
-	}
-	if closer, ok := client.(interface{ CloseIdleConnections() }); ok {
-		defer closer.CloseIdleConnections()
-	}
-	if err := client.SendCoverageReport(&report, civisibilitynet.FormatLCOV); err != nil {
-		log.Debug("instrumentTestingM: failed to upload coverage report: %s", err.Error())
-	}
+// instrumentTestingBuiltWithOrchestrion records that testing.M.Run has woven ownership.
+//
+//go:linkname instrumentTestingBuiltWithOrchestrion
+func instrumentTestingBuiltWithOrchestrion() {
+	markTestingBuiltWithOrchestrion()
 }
 
 // instrumentTestingTFunc helper function to instrument a testing function func(*testing.T)
 //
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return f
+	}
+	defer release()
+	if isProcessRetryChild() {
+		return instrumentProcessRetryChildSubtest(f)
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
 	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return f
@@ -270,6 +240,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			if currentPrivates != nil && currentPrivates.parent != nil {
 				parentFromCurrent := getTestMetadataFromPointer(*currentPrivates.parent)
 				propagateTestExecutionMetadataFlags(execMeta, parentFromCurrent)
+				execMeta.isFreshRetryAttemptDescendant = parentFromCurrent != nil &&
+					(parentFromCurrent.usesFreshRetryAttemptRuntime || parentFromCurrent.isFreshRetryAttemptDescendant)
 			}
 
 			cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
@@ -281,119 +253,55 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				return
 			}
 
+			bodyReturned := false
 			defer func() {
-				duration := time.Since(startTime)
-				runAndApplyTestCleanup(currentT, execMeta)
-				collectAndWriteLogs(currentT, test)
+				r := recover()
+				bodyDuration := time.Since(startTime)
 
-				if r := recover(); r != nil {
-					stacktrace := utils.GetStacktrace(1)
-					// Compute whether this is the final execution.
-					finalExec := isFinalExecution(true, false, execMeta, duration)
-
-					// Compute and set test.final_status before closing the span.
-					if finalExec {
-						anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
-						anyFailed := true                        // current execution failed
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
-						test.SetTag(constants.TestFinalStatus, finalStatus)
+				if execMeta.usesFreshRetryAttemptRuntime {
+					bodyTerminal := r
+					bodyStack := ""
+					if bodyTerminal != nil {
+						bodyStack = utils.GetStacktrace(1)
 					}
-					// Set retry-related tags only when this is an actual retry's final execution.
-					if execMeta.isARetry && finalExec {
-						if execMeta.allRetriesFailed {
-							test.SetTag(constants.TestHasFailedAllRetries, "true")
+					execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
+						terminal := bodyTerminal
+						terminalStack := bodyStack
+						if result.panicData != nil {
+							terminal = result.panicData
+							terminalStack = string(result.panicStack)
 						}
-						if execMeta.isAttemptToFix {
-							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						if result.cleanupPanicData != nil {
+							terminal = result.cleanupPanicData
+							terminalStack = string(result.cleanupPanicStack)
 						}
+						logFreshRetryAttemptState("finalize_orchestrion", currentT, result)
+						finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, result.duration, result.output, terminal, terminalStack, false)
 					}
-					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), stacktrace))
-					test.Close(integrations.ResultStatusFail)
-					if execMeta.hasAdditionalFeatureWrapper {
-						// Retry wrappers own panic propagation. Record the panic as this
-						// attempt's failure and let runTestWithRetry decide whether to
-						// retry or re-panic after the final execution.
-						currentT.Fail()
-						execMeta.panicData = r
-						execMeta.panicStacktrace = stacktrace
-						return
+					if r != nil {
+						panic(r)
 					}
-					// This branch re-panics immediately, so retry wrappers cannot run their normal
-					// end-of-attempt cleanup. Close suite/module counters and flush CI Visibility
-					// before handing the panic back to the Go test runner.
-					checkModuleAndSuite(module, suite)
-					integrations.ExitCiVisibility()
-					panic(r)
+					return
 				}
 
-				// Normal finalization: determine the test result based on its state.
-				failed := currentT.Failed()
-				skipped := currentT.Skipped()
-				passed := !failed && !skipped
-
-				// Compute whether this is the final execution.
-				finalExec := isFinalExecution(failed, skipped, execMeta, duration)
-
-				if failed {
-					// Compute and set test.final_status before closing the span.
-					if finalExec {
-						anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
-						anyFailed := true                        // current execution failed
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
-						test.SetTag(constants.TestFinalStatus, finalStatus)
-					}
-					// Set retry-related tags only when this is an actual retry's final execution.
-					if execMeta.isARetry && finalExec {
-						if execMeta.allRetriesFailed {
-							test.SetTag(constants.TestHasFailedAllRetries, "true")
-						}
-						if execMeta.isAttemptToFix {
-							test.SetTag(constants.TestAttemptToFixPassed, "false")
-						}
-					}
-					if execMeta.panicData != nil {
-						test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(execMeta.panicData), execMeta.panicStacktrace))
-					} else {
-						test.SetTag(ext.Error, true)
-					}
-					suite.SetTag(ext.Error, true)
-					module.SetTag(ext.Error, true)
-					test.Close(integrations.ResultStatusFail)
-				} else if skipped {
-					// Compute and set test.final_status before closing the span.
-					if finalExec {
-						anyPassed := execMeta.anyExecutionPassed // current is skip, so no change
-						anyFailed := execMeta.anyExecutionFailed // current is skip, so no change
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, true, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
-						test.SetTag(constants.TestFinalStatus, finalStatus)
-					}
-					// Set retry-related tags only when this is an actual retry's final execution.
-					if execMeta.isAttemptToFix && execMeta.isARetry && finalExec {
-						test.SetTag(constants.TestAttemptToFixPassed, "false")
-					}
-					// Use the stored skip reason if available (captured from instrumentCloseAndSkip).
-					if execMeta.skipReason != "" {
-						test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(execMeta.skipReason))
-					} else {
-						test.Close(integrations.ResultStatusSkip)
-					}
-				} else if passed {
-					// Compute and set test.final_status before closing the span.
-					if finalExec {
-						anyPassed := true // current execution passed
-						anyFailed := execMeta.anyExecutionFailed
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
-						test.SetTag(constants.TestFinalStatus, finalStatus)
-					}
-					// Set retry-related tags only when this is an actual retry's final execution.
-					if execMeta.isAttemptToFix && execMeta.isARetry && finalExec {
-						if execMeta.allAttemptsPassed {
-							test.SetTag(constants.TestAttemptToFixPassed, "true")
-						} else {
-							test.SetTag(constants.TestAttemptToFixPassed, "false")
-						}
-					}
-					test.Close(integrations.ResultStatusPass)
+				unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(currentT, bodyReturned)
+				duration := runAndApplyTestCleanupWithDuration(currentT, execMeta, bodyDuration)
+				if unexpectedTermination {
+					r = unexpectedTestTerminationMessage
+				}
+				terminalStack := ""
+				if r != nil {
+					terminalStack = utils.GetStacktrace(1)
+				}
+				finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, duration, nil, r, terminalStack, false)
+				nativeTerminal := r
+				if nativeTerminal == nil && execMeta.cleanupResult != nil {
+					nativeTerminal = execMeta.cleanupResult.panicData
+				}
+				if nativeTerminal != nil && !execMeta.hasAdditionalFeatureWrapper {
+					checkModuleAndSuite(module, suite)
+					integrations.ExitCiVisibility()
+					panic(nativeTerminal)
 				}
 				if !execMeta.hasAdditionalFeatureWrapper {
 					// Additional-feature wrappers own module and suite closure after all retry attempts finish.
@@ -401,10 +309,13 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				}
 			}()
 
-			f(currentT)
+			if !execMeta.suppressUserTestBody {
+				f(currentT)
+			}
+			bodyReturned = true
 		}
 
-		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta)
+		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{})
 		wrappedFunc(t)
 	}
 
@@ -416,6 +327,17 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 //
 //go:linkname instrumentSetErrorInfo
 func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return
+	}
+	defer release()
+	if isProcessRetryChild() {
+		recordProcessRetryChildErrorInfo(tb, errType, errMessage, 2+skip)
+		markProcessRetryChildFailed(tb)
+		return
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
 		return
@@ -424,8 +346,14 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
+		stack := utils.GetStacktrace(2 + skip)
+		if formatted := ciTestItem.processRetryError.Load(); formatted != nil {
+			errType = formatted.Type
+			errMessage = formatted.Message
+			stack = formatted.Stack
+		}
 		log.Debug("instrumentSetErrorInfo: setting error info [name: %q, type: %q, message: %q]", ciTestItem.test.Name(), errType, errMessage)
-		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
+		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, stack))
 
 		// Ensure to close the test with error before CI visibility exits. In CI visibility mode, we try to never lose data.
 		// If the test gets closed sooner (perhaps with another status), then this will be a noop call
@@ -439,6 +367,19 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 //
 //go:linkname instrumentCloseAndSkip
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return
+	}
+	defer release()
+	if isProcessRetryChild() {
+		if execMeta := getTestMetadata(tb); execMeta != nil && processRetryChildOwnerMetadata(execMeta) == execMeta {
+			reason := truncateProcessRetrySkipReason(skipReason)
+			execMeta.processRetrySkipReason.CompareAndSwap(nil, &reason)
+		}
+		return
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
 		return
@@ -465,6 +406,15 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 //
 //go:linkname instrumentSkipNow
 func instrumentSkipNow(tb testing.TB) {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return
+	}
+	defer release()
+	if isProcessRetryChild() {
+		return
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
 		return
@@ -473,7 +423,10 @@ func instrumentSkipNow(tb testing.TB) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
-		log.Debug("instrumentSkipNow: skipping test [name: %q]", ciTestItem.test.Name())
+		if formatted := ciTestItem.processRetrySkipReason.Load(); formatted != nil {
+			ciTestItem.skipReason = *formatted
+		}
+		log.Debug("instrumentSkipNow: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), ciTestItem.skipReason)
 		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
 		// so that test.final_status can be set properly.
 		if ciTestItem.hasAdditionalFeatureWrapper {
@@ -482,7 +435,11 @@ func instrumentSkipNow(tb testing.TB) {
 		// For single-execution tests (no wrapper), this is the final execution.
 		// Set test.final_status before closing.
 		ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
-		ciTestItem.test.Close(integrations.ResultStatusSkip)
+		if ciTestItem.skipReason != "" {
+			ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(ciTestItem.skipReason))
+		} else {
+			ciTestItem.test.Close(integrations.ResultStatusSkip)
+		}
 	}
 }
 
@@ -490,6 +447,15 @@ func instrumentSkipNow(tb testing.TB) {
 //
 //go:linkname instrumentTestingBFunc
 func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (string, func(*testing.B)) {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return name, f
+	}
+	defer release()
+	if isProcessRetryChild() {
+		return name, f
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
 	if !isCiVisibilityEnabled() {
 		return name, f
@@ -655,6 +621,15 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 //
 //go:linkname instrumentTestifySuiteRun
 func instrumentTestifySuiteRun(t *testing.T, suite any) {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return
+	}
+	defer release()
+	if isProcessRetryChild() {
+		return
+	}
+
 	log.Debug("instrumentTestifySuiteRun: instrumenting testify suite run")
 	registerTestifySuite(t, suite)
 }
@@ -663,6 +638,15 @@ func instrumentTestifySuiteRun(t *testing.T, suite any) {
 //
 //go:linkname getTestOptimizationContext
 func getTestOptimizationContext(tb testing.TB) context.Context {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return context.Background()
+	}
+	defer release()
+	if isProcessRetryChild() {
+		return context.Background()
+	}
+
 	if iTest := getTestOptimizationTest(tb); iTest != nil {
 		log.Debug("getTestOptimizationContext: returning context from test")
 		return iTest.Context()
@@ -675,6 +659,11 @@ func getTestOptimizationContext(tb testing.TB) context.Context {
 //
 //go:linkname getTestOptimizationTest
 func getTestOptimizationTest(tb testing.TB) integrations.Test {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return nil
+	}
+	defer release()
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil {
 		log.Debug("getTestOptimizationTest: returning test from metadata")
@@ -684,37 +673,12 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 	return nil
 }
 
-// instrumentTestingParallel forwards Parallel to the original wrapped test when
-// the current *testing.T is a Datadog-managed clone. It returns true when the
-// caller must skip the local stdlib Parallel implementation.
+// instrumentTestingParallel reports whether CI Visibility has replaced the
+// native Parallel implementation. Retry attempts now use a fresh testing.T and
+// bridge the real scheduler directly, so Parallel always remains native here.
 //
 //go:linkname instrumentTestingParallel
 func instrumentTestingParallel(t *testing.T) bool {
-	// Check if CI Visibility was disabled using the kill switch before
-	if !isCiVisibilityEnabled() {
-		return false
-	}
-
-	meta := getTestMetadata(t)
-	if meta != nil && meta.originalTest != nil {
-		if meta.parallelForwarded.Swap(true) {
-			log.Debug("instrumentTestingParallel: calling duplicate Parallel on original test")
-			if state := meta.parallelForwardState; state != nil {
-				state.callDuplicate(meta.originalTest)
-			} else {
-				meta.originalTest.Parallel()
-			}
-			return true
-		}
-
-		log.Debug("instrumentTestingParallel: forwarding Parallel to original test")
-		if state := meta.parallelForwardState; state != nil {
-			state.forward(meta.originalTest)
-		} else {
-			meta.originalTest.Parallel()
-		}
-		return true
-	}
-
+	_ = t
 	return false
 }

@@ -10,6 +10,7 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -34,6 +37,35 @@ import (
 )
 
 var currentM *testing.M
+
+var processRetryUnitTestPrefixes = []string{
+	"TestRetryExecutionModeFromEnv",
+	"TestDisableProcessRetryChildExecution",
+	"TestProcessRetry",
+	"TestRunProcessRetry",
+	"TestBuildProcessRetry",
+	"TestReadProcessRetry",
+	"TestEffectiveProcessRetry",
+	"TestCloseProcessRetry",
+	"TestAttemptFromWaitError",
+	"TestExecuteProcessRetry",
+	"TestRunTestWithRetry",
+	"TestWriteProcessRetry",
+	"TestFinalizeProcessRetry",
+	"TestCombineProcessRetry",
+	"TestRecordProcessRetry",
+}
+
+const retryParityUnitTestPrefix = "TestProcessRetryParity"
+
+var retryParityFallbackUnitTests = map[string]struct{}{
+	"TestProcessRetryParityRuntimeLayoutRejectsMissingCapabilities":                 {},
+	"TestProcessRetryParityMaskedFallbackRunsInstrumentedShellWithoutUserBody":      {},
+	"TestProcessRetryParitySelectedSubtestUsesOneNativeExecutionWithoutFreshLayout": {},
+	"TestProcessRetryParityUnsupportedFreshLayoutUsesOneNativeParentExecution":      {},
+	"TestProcessRetryParityUnsupportedMaskedLayoutSkipsWithoutExecutingBody":        {},
+}
+
 var mTracer mocktracer.Tracer
 var logsEntries []*mockedLogEntry
 var parallelEfd bool
@@ -74,41 +106,103 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[7], false) {
 		fmt.Printf(scenarioStarted, scenarios[7])
 		runFlakyTestRetriesWithTransientSettingsFailureTests(m)
-	} else if len(scenarios) > 8 && internal.BoolEnv(scenarios[8], false) {
-		fmt.Printf(scenarioStarted, scenarios[8])
+	} else if internal.BoolEnv("TestIntelligentTestRunnerWithCoverageBackfill", false) {
+		fmt.Printf(scenarioStarted, "TestIntelligentTestRunnerWithCoverageBackfill")
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
+	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
+		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
+		os.Exit(runProcessRetryChild(m))
 	} else if internal.BoolEnv("Bypass", false) {
 		os.Exit(m.Run())
 	} else {
-		for _, v := range scenarios {
-			cmd := exec.Command(os.Args[0], os.Args[1:]...)
-			var b bytes.Buffer
-			if log.DebugEnabled() {
-				cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-			} else {
-				cmd.Stdout = &b
-				cmd.Stderr = &b
-			}
-			cmd.Env = append(cmd.Env, os.Environ()...)
-			cmd.Env = append(cmd.Env, v+"=true")
-			fmt.Printf("\n**** [RUNNING SCENARIO: %s]\n", v)
-			err := cmd.Run()
-			fmt.Printf("\n**** [SCENARIO %s IS DONE]\n\n", v)
-			if err != nil {
-				if exiterr, ok := err.(*exec.ExitError); ok {
-					fmt.Printf("\n===========================================\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", v, exiterr.ExitCode())
-					if !log.DebugEnabled() {
-						fmt.Printf("**** [SCENARIO %s OUTPUT]\n===========================================\n\n%s\n", v, b.String())
-					}
-					os.Exit(exiterr.ExitCode())
-				}
-				fmt.Printf("cmd.Run: %v\n", err)
-				os.Exit(1)
+		legacyScenarioRunFilter := "^(TestGetFieldPointerFrom|TestGetInternalTestArray|TestGetInternalBenchmarkArray|TestCommonPrivateFields_AddLevel|TestGetBenchmarkPrivateFields|TestTestifyLikeTest|TestMyTest01|TestMyTest02|Test_Foo|TestSkip|TestParallelSubTests|TestRetryWithPanic|TestRetryWithFail|TestNormalPassingAfterRetryAlwaysFail|TestEarlyFlakeDetection)$"
+		tests := getInternalTestArray(m)
+		if tests == nil {
+			panic("unable to enumerate process retry unit tests")
+		}
+		_, layoutReason := getRetryAttemptLayout()
+		layoutAvailable := layoutReason == ""
+		runTestControllerSubprocess("RetryParityUnitTests", buildRetryParityUnitRunFilter(*tests, layoutAvailable), "Bypass=true", "-test.parallel=1")
+		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
+		if layoutAvailable {
+			for _, v := range scenarios {
+				runTestControllerSubprocess(v, legacyScenarioRunFilter, v+"=true")
 			}
 		}
 	}
 
 	os.Exit(0)
+}
+
+func runTestControllerSubprocess(name, runFilter, environment string, extraArgs ...string) {
+	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], runFilter, extraArgs...)...)
+	var output bytes.Buffer
+	if log.DebugEnabled() {
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	} else {
+		cmd.Stdout = &output
+		cmd.Stderr = &output
+	}
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	cmd.Env = append(cmd.Env, environment)
+	fmt.Printf("\n**** [RUNNING SCENARIO: %s]\n", name)
+	err := cmd.Run()
+	fmt.Printf("\n**** [SCENARIO %s IS DONE]\n\n", name)
+	if err == nil {
+		return
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		fmt.Printf("\n===========================================\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", name, exitErr.ExitCode())
+		if !log.DebugEnabled() {
+			fmt.Printf("**** [SCENARIO %s OUTPUT]\n===========================================\n\n%s\n", name, output.String())
+		}
+		os.Exit(exitErr.ExitCode())
+	}
+	fmt.Printf("cmd.Run: %v\n", err)
+	os.Exit(1)
+}
+
+func buildProcessRetryUnitRunFilter(tests []testing.InternalTest, layoutAvailable bool) string {
+	names := make([]string, 0, len(tests))
+	for _, test := range tests {
+		if strings.HasPrefix(test.Name, retryParityUnitTestPrefix) {
+			continue
+		}
+		if !layoutAvailable && strings.HasPrefix(test.Name, "TestRunTestWithRetry") {
+			continue
+		}
+		for _, prefix := range processRetryUnitTestPrefixes {
+			if strings.HasPrefix(test.Name, prefix) {
+				names = append(names, regexp.QuoteMeta(test.Name))
+				break
+			}
+		}
+	}
+	return buildExactTestRunFilter(names)
+}
+
+func buildRetryParityUnitRunFilter(tests []testing.InternalTest, layoutAvailable bool) string {
+	names := make([]string, 0, len(tests))
+	for _, test := range tests {
+		if !strings.HasPrefix(test.Name, retryParityUnitTestPrefix) {
+			continue
+		}
+		if !layoutAvailable {
+			if _, ok := retryParityFallbackUnitTests[test.Name]; !ok {
+				continue
+			}
+		}
+		names = append(names, regexp.QuoteMeta(test.Name))
+	}
+	return buildExactTestRunFilter(names)
+}
+
+func buildExactTestRunFilter(names []string) string {
+	sort.Strings(names)
+	if len(names) == 0 {
+		return "^$"
+	}
+	return "^(" + strings.Join(names, "|") + ")($|/)"
 }
 
 func coverageModeSupportsITRBackfill() bool {
@@ -236,7 +330,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// - Fail case: would require a test that always fails without being disabled/quarantined.
 	//   The fail logic is covered by calculateFinalStatus() unit tests (anyFailed=true, anyPassed=false => fail).
 	// - Slow EFD (>=5m) + flaky fallthrough: impractical to test due to 5-minute test duration requirement.
-	//   The logic is covered by computeAdjustedRetryCount() which returns 0 for tests >= 5 minutes.
+	//   The logic is covered directly by TestProcessRetryAdjustedRetryCount.
 	//
 	// TestRetryWithPanic has 4 executions (1 original + 3 retries), passes on 4th -> final_status=pass on last execution only
 	testRetryWithPanicSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
@@ -370,6 +464,48 @@ func runFlakyTestRetriesWithTransientSettingsFailureTests(m *testing.M) {
 	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 6)
 
 	os.Exit(0)
+}
+
+func buildTestControllerSubprocessArgs(originalArgs []string, runFilter string, extraArgs ...string) []string {
+	preserved := make([]string, 0, len(originalArgs)+len(extraArgs)+1)
+	boundary := []string(nil)
+	for i := 0; i < len(originalArgs); i++ {
+		arg := originalArgs[i]
+		if arg == "--" || !processRetryIsFlagToken(arg) {
+			boundary = append(boundary, originalArgs[i:]...)
+			break
+		}
+		name, _, hasValue := processRetrySplitFlag(arg)
+		if name == "-test.run" || name == "-run" {
+			if !hasValue && i+1 < len(originalArgs) {
+				i++
+			}
+			continue
+		}
+		preserved = append(preserved, arg)
+		if hasValue {
+			continue
+		}
+		registered := flag.CommandLine.Lookup(strings.TrimPrefix(name, "-"))
+		if registered == nil {
+			preserved = preserved[:len(preserved)-1]
+			boundary = append(boundary, originalArgs[i:]...)
+			break
+		}
+		if boolFlag, ok := registered.Value.(processRetryBoolFlag); ok && boolFlag.IsBoolFlag() {
+			continue
+		}
+		if i+1 < len(originalArgs) {
+			i++
+			preserved = append(preserved, originalArgs[i])
+		}
+	}
+	args := make([]string, 0, len(preserved)+len(extraArgs)+1+len(boundary))
+	args = append(args, preserved...)
+	args = append(args, extraArgs...)
+	args = append(args, "-test.run="+runFilter)
+	args = append(args, boundary...)
+	return args
 }
 
 func runEarlyFlakyTestDetectionTests(m *testing.M) {

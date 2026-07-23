@@ -216,13 +216,14 @@ func baselineScenario() *matrixScenario {
 	}
 }
 
-// subAttemptFixOnlyScenario verifies that only the child subtest orchestrates attempt-to-fix retries
-// while the parent remains neutral.
+// subAttemptFixOnlyScenario verifies the direct-single capability fallback for
+// an independently selected manual subtest while the parent remains neutral.
 func subAttemptFixOnlyScenario() *matrixScenario {
 	return &matrixScenario{
 		name: "sub_attempt_to_fix_only",
 		configure: func(ctx *scenarioContext) {
-			// Initialise the suite and make the retry budget available to the subtest.
+			// A configured retry budget must not make the selected manual closure use
+			// an approximate synthetic ancestry.
 			ctx.ensureSuite()
 			ctx.attemptToFixRetries = 3
 			ctx.setSubDirective("SubAttemptFix", directive{attemptToFix: true})
@@ -250,25 +251,21 @@ func subAttemptFixOnlyScenario() *matrixScenario {
 
 			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
 			subSpans := spansByResource(testSpans, subResource)
-			requireSpanCount(subSpans, 3, "sub attempt-to-fix-only span count")
-			sort.Slice(subSpans, func(i, j int) bool {
-				// Order spans chronologically so comments and assertions match the retry lifecycle.
-				return subSpans[i].StartTime().Before(subSpans[j].StartTime())
-			})
+			requireSpanCount(subSpans, 1, "sub attempt-to-fix-only span count")
 			for idx, span := range subSpans {
 				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("sub attempt-to-fix-only tag span %d", idx))
 			}
 			lastSpan := subSpans[len(subSpans)-1]
-			assertTagEquals(lastSpan, constants.TestAttemptToFixPassed, "true", "sub attempt-to-fix-only success")
+			assertTagNotTrue(lastSpan, constants.TestAttemptToFixPassed, "sub attempt-to-fix-only success ownership")
 			assertTagEquals(lastSpan, constants.TestStatus, constants.TestStatusPass, "sub attempt-to-fix-only final status")
-			assertTagCount(subSpans, constants.TestIsRetry, "true", 2, "sub attempt-to-fix-only retry tag count")
-			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "sub attempt-to-fix-only retry reason count")
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "sub attempt-to-fix-only retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "sub attempt-to-fix-only retry reason count")
 		},
 	}
 }
 
-// subAttemptFixCustomRetriesScenario demonstrates that a child can request a larger retry
-// budget without involving the parent, ensuring the additional attempts are tagged correctly.
+// subAttemptFixCustomRetriesScenario proves that a larger configured budget does
+// not bypass the direct-single selected-subtest capability boundary.
 func subAttemptFixCustomRetriesScenario() *matrixScenario {
 	return &matrixScenario{
 		name: "sub_attempt_to_fix_custom_retries",
@@ -288,26 +285,22 @@ func subAttemptFixCustomRetriesScenario() *matrixScenario {
 
 			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
 			subSpans := spansByResource(testSpans, subResource)
-			requireSpanCount(subSpans, 5, "sub attempt-to-fix custom child span count")
-			sort.Slice(subSpans, func(i, j int) bool {
-				// Sort to make reasoning about retries deterministic.
-				return subSpans[i].StartTime().Before(subSpans[j].StartTime())
-			})
+			requireSpanCount(subSpans, 1, "sub attempt-to-fix custom child span count")
 			for idx, span := range subSpans {
 				// Each retry should still carry the attempt-to-fix tag for visibility.
 				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("sub attempt-to-fix custom tag span %d", idx))
 			}
 			subFinal := subSpans[len(subSpans)-1]
-			assertTagEquals(subFinal, constants.TestAttemptToFixPassed, "true", "sub attempt-to-fix custom success")
+			assertTagNotTrue(subFinal, constants.TestAttemptToFixPassed, "sub attempt-to-fix custom success ownership")
 			assertTagEquals(subFinal, constants.TestStatus, constants.TestStatusPass, "sub attempt-to-fix custom final status")
-			assertTagCount(subSpans, constants.TestIsRetry, "true", 4, "sub attempt-to-fix custom retry tag count")
-			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 4, "sub attempt-to-fix custom retry reason count")
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "sub attempt-to-fix custom retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "sub attempt-to-fix custom retry reason count")
 		},
 	}
 }
 
-// subAttemptFixParallelScenario asserts that parallel subtests inherit attempt-to-fix behaviour
-// without conflicting with the sequential sibling.
+// subAttemptFixParallelScenario asserts that selected manual subtests preserve
+// native Parallel behavior while using the direct-single capability fallback.
 func subAttemptFixParallelScenario() *matrixScenario {
 	return &matrixScenario{
 		name: "sub_attempt_to_fix_parallel",
@@ -331,20 +324,16 @@ func subAttemptFixParallelScenario() *matrixScenario {
 				// Focus validations on a single subtest resource at a time.
 				resource := fmt.Sprintf("%s/%s", parentResource, child)
 				childSpans := spansByResource(testSpans, resource)
-				requireSpanCount(childSpans, 3, child+" attempt-to-fix parallel span count")
-				sort.Slice(childSpans, func(i, j int) bool {
-					// Sort to match retry order regardless of goroutine scheduling.
-					return childSpans[i].StartTime().Before(childSpans[j].StartTime())
-				})
+				requireSpanCount(childSpans, 1, child+" attempt-to-fix parallel span count")
 				for idx, span := range childSpans {
 					// Confirm each execution is correctly tagged as part of the attempt-to-fix flow.
 					assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("%s attempt-to-fix parallel tag span %d", child, idx))
 				}
 				final := childSpans[len(childSpans)-1]
-				assertTagEquals(final, constants.TestAttemptToFixPassed, "true", child+" attempt-to-fix parallel success")
+				assertTagNotTrue(final, constants.TestAttemptToFixPassed, child+" attempt-to-fix parallel success ownership")
 				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, child+" attempt-to-fix parallel status")
-				assertTagCount(childSpans, constants.TestIsRetry, "true", 2, child+" attempt-to-fix parallel retry tag count")
-				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, child+" attempt-to-fix parallel retry reason count")
+				assertTagCount(childSpans, constants.TestIsRetry, "true", 0, child+" attempt-to-fix parallel retry tag count")
+				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, child+" attempt-to-fix parallel retry reason count")
 			}
 
 			checkParallelChild("SubAttemptFix")

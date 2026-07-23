@@ -275,6 +275,20 @@
         "default": "true"
       }
     ],
+    "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "-1"
+      }
+    ],
     "DD_CIVISIBILITY_ENABLED": [
       {
         "implementation": "A",
@@ -317,11 +331,67 @@
         "default": "false"
       }
     ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_ATTEMPT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "0"
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_CHILD": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_REASON": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_RESULT_PATH": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_TEST_NAME": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_CIVISIBILITY_LOGS_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_EXECUTION_MODE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "in_process"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_PROCESS_MAX_CONCURRENCY": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "1"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_PROCESS_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED": [

@@ -201,6 +201,18 @@ func ensureSettingsInitialization(serviceName string) {
 			ciSettings.EarlyFlakeDetection.Enabled = false
 		}
 
+		// check if early flake detection is disabled by env-vars
+		if ciSettings.EarlyFlakeDetection.Enabled && !internal.BoolEnv(constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable, true) {
+			log.Warn("civisibility: early flake detection was disabled by the %s environment variable", constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable)
+			ciSettings.EarlyFlakeDetection.Enabled = false
+		}
+		earlyFlakeDetectionMaxRetries := internal.IntEnv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, -1)
+		slowTestRetries := &ciSettings.EarlyFlakeDetection.SlowTestRetries
+		slowTestRetries.FiveS = capEarlyFlakeDetectionRetries(slowTestRetries.FiveS, earlyFlakeDetectionMaxRetries)
+		slowTestRetries.TenS = capEarlyFlakeDetectionRetries(slowTestRetries.TenS, earlyFlakeDetectionMaxRetries)
+		slowTestRetries.ThirtyS = capEarlyFlakeDetectionRetries(slowTestRetries.ThirtyS, earlyFlakeDetectionMaxRetries)
+		slowTestRetries.FiveM = capEarlyFlakeDetectionRetries(slowTestRetries.FiveM, earlyFlakeDetectionMaxRetries)
+
 		// check if flaky test retries is disabled by env-vars
 		if ciSettings.FlakyTestRetriesEnabled && !internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true) {
 			log.Warn("civisibility: flaky test retries was disabled by the environment variable")
@@ -268,6 +280,13 @@ func ensureSettingsInitialization(serviceName string) {
 		// set the ciVisibilitySettings with the settings from the backend
 		ciVisibilitySettings = *ciSettings
 	})
+}
+
+func capEarlyFlakeDetectionRetries(retries, maxRetries int) int {
+	if maxRetries >= 0 && retries > maxRetries {
+		return maxRetries
+	}
+	return retries
 }
 
 // logSettingsFetchError reports a failed or empty CI Visibility settings response.
@@ -400,6 +419,9 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 
 // GetSettings gets the settings from the backend settings endpoint
 func GetSettings() *net.SettingsResponseData {
+	if IsProcessRetryChild() {
+		return &net.SettingsResponseData{}
+	}
 	// call to ensure the settings features initialization is completed (service name can be null here)
 	ensureSettingsInitialization("")
 	return &ciVisibilitySettings
@@ -407,6 +429,9 @@ func GetSettings() *net.SettingsResponseData {
 
 // GetKnownTests gets the known tests data
 func GetKnownTests() *net.KnownTestsResponseData {
+	if IsProcessRetryChild() {
+		return &net.KnownTestsResponseData{}
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityKnownTests
@@ -414,6 +439,9 @@ func GetKnownTests() *net.KnownTestsResponseData {
 
 // GetTestManagementTestsData gets the test management tests data
 func GetTestManagementTestsData() *net.TestManagementTestsResponseDataModules {
+	if IsProcessRetryChild() {
+		return &net.TestManagementTestsResponseDataModules{}
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityTestManagementTests
@@ -421,6 +449,9 @@ func GetTestManagementTestsData() *net.TestManagementTestsResponseDataModules {
 
 // GetFlakyRetriesSettings gets the flaky retries settings
 func GetFlakyRetriesSettings() *FlakyRetriesSetting {
+	if IsProcessRetryChild() {
+		return &FlakyRetriesSetting{}
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityFlakyRetriesSettings
@@ -428,6 +459,9 @@ func GetFlakyRetriesSettings() *FlakyRetriesSetting {
 
 // GetSkippableTests gets the skippable tests from the backend
 func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttributes {
+	if IsProcessRetryChild() {
+		return nil
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilitySkippables
@@ -435,6 +469,9 @@ func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttrib
 
 // GetSkippableTestsResponse gets the full skippable-tests response from the backend.
 func GetSkippableTestsResponse() *net.SkippableTestsResponse {
+	if IsProcessRetryChild() {
+		return nil
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilitySkippablesResponse
@@ -442,6 +479,9 @@ func GetSkippableTestsResponse() *net.SkippableTestsResponse {
 
 // GetImpactedTestsAnalyzer gets the impacted tests analyzer
 func GetImpactedTestsAnalyzer() *impactedtests.ImpactedTestAnalyzer {
+	if IsProcessRetryChild() {
+		return nil
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilityImpactedTestsAnalyzer

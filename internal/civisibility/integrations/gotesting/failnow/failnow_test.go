@@ -256,6 +256,9 @@ func runSubprocess(t *testing.T, scenario string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Env = append(os.Environ(), scenarioEnv+"="+scenario)
+	if scenario == "test-cleanup-skip-does-not-retry" {
+		cmd.Env = append(cmd.Env, "DD_TRACE_DEBUG=true")
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("scenario %s failed: %v\n%s", scenario, err, output)

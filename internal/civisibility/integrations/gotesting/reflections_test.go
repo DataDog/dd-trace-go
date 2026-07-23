@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -38,6 +37,13 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	if ptr == nil {
 		t.Fatal("Expected a valid pointer, got nil")
 	}
+	if _, err := getFieldPointerFromWithType(&mockStruct, "privateField", reflect.TypeFor[int]()); err == nil {
+		t.Fatal("Expected an error for a field with an unexpected type")
+	}
+	typedPtr, err := getFieldPointerFromWithType(&mockStruct, "privateField", reflect.TypeFor[string]())
+	if err != nil || typedPtr == nil {
+		t.Fatalf("Expected a typed field pointer, got pointer=%v error=%v", typedPtr, err)
+	}
 
 	// Dereference the pointer to get the actual value
 	actualValue := (*string)(ptr)
@@ -59,15 +65,15 @@ func TestGetFieldPointerFrom(t *testing.T) {
 
 	exerciseTestingInternalsOffsetLayout(t)
 	exerciseTestingInternalsCopyEquivalence(t)
+	exerciseTestingInternalsHelperMapIsolation(t)
 	exerciseTestingInternalsPrivatePointerAssignment(t)
-	exerciseParallelForwardMetadataIsolation(t)
-	exerciseParallelForwardedDuplicateGate(t)
 	exerciseBenchmarkFuncInstrumentationConcurrentWrites(t)
 	// These pure instrumentation assertions run under this existing top-level test
 	// so the subprocess span-count scenarios do not gain extra test spans.
 	exerciseAdditionalFeaturePathSelection(t)
 	exerciseParallelEFDSelection(t)
 	exerciseMetadataOnlyPropagationSuppression(t)
+	exerciseSlowEFDAbortTagging(t)
 	exerciseITRCoverageBackfillState(t)
 	exerciseNarrowingFlagParsing(t)
 }
@@ -169,6 +175,20 @@ func TestGetBenchmarkPrivateFields(t *testing.T) {
 	}
 }
 
+func TestShouldCaptureTerminalMessageDegradesGracefully(t *testing.T) {
+	var (
+		mu       sync.RWMutex
+		finished bool
+	)
+
+	assert.True(t, shouldCaptureTerminalMessage(nil))
+	assert.True(t, shouldCaptureTerminalMessage(&commonPrivateFields{}))
+	assert.True(t, shouldCaptureTerminalMessage(&commonPrivateFields{mu: &mu}))
+	assert.False(t, shouldCaptureTerminalMessage(&commonPrivateFields{mu: &mu, finished: &finished}))
+	finished = true
+	assert.True(t, shouldCaptureTerminalMessage(&commonPrivateFields{mu: &mu, finished: &finished}))
+}
+
 func BenchmarkDummy(*testing.B) {}
 
 func exerciseTestingInternalsOffsetLayout(t *testing.T) {
@@ -185,6 +205,34 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 	if !layout.testFieldsOK || !layout.parentFieldsOK || !layout.copyTestOK || !layout.createTestOK || !layout.benchmarkFieldsOK {
 		testutils.SkipIfGoTip(t, "some fast-path sections unavailable (expected forward-compat drift): %+v", layout)
 		t.Fatalf("expected core layout sections to be enabled: %+v", layout)
+	}
+	if !layout.common.finished.available || !processRetryChildCleanupLayoutSupported(layout) {
+		t.Fatal("expected process retry child cleanup layout to include testing.common.finished")
+	}
+	finishedDrift := buildTestingInternalsLayout(reflect.TypeFor[testing.T](), reflect.TypeFor[testing.B]())
+	finishedDrift.common.finished.available = false
+	finishedDrift.computeSectionFlags()
+	if !finishedDrift.testFieldsOK || !finishedDrift.copyTestOK {
+		t.Fatal("testing.common.finished drift must not disable normal in-process fast paths")
+	}
+	if processRetryChildCleanupLayoutSupported(finishedDrift) {
+		t.Fatal("testing.common.finished drift must disable process retry child cleanup")
+	}
+	if fields := getTestPrivateFieldsFast(t, finishedDrift); fields == nil || fields.finished != nil {
+		t.Fatal("expected finished drift to keep ordinary fields available and omit finished")
+	}
+	muDrift := buildTestingInternalsLayout(reflect.TypeFor[testing.T](), reflect.TypeFor[testing.B]())
+	muDrift.common.mu.available = false
+	muDrift.computeSectionFlags()
+	if processRetryChildCleanupLayoutSupported(muDrift) {
+		t.Fatal("testing.common.mu drift must disable process retry child cleanup")
+	}
+	driftSource := createNewTestReflect()
+	driftTarget := &testing.T{}
+	*getTestPrivateFieldsReflect(driftSource).name = "finished-drift"
+	copyTestWithoutParentFast(driftSource, driftTarget, finishedDrift)
+	if got := getTestPrivateFieldsReflect(driftTarget); got == nil || got.name == nil || *got.name != "finished-drift" {
+		t.Fatal("expected copy fast path to remain valid when finished is unavailable")
 	}
 
 	invalid := buildTestingInternalsLayout(reflect.TypeFor[struct{}](), reflect.TypeFor[struct{}]())
@@ -272,6 +320,61 @@ func exerciseTestingInternalsCopyEquivalence(t *testing.T) {
 	}
 }
 
+func exerciseTestingInternalsHelperMapIsolation(t *testing.T) {
+	layout := getTestingInternalsLayout()
+	if layout == nil || layout.disabled || !layout.copyTestOK {
+		t.Fatal("expected copy fast path to be available")
+	}
+
+	copyImplementations := []struct {
+		name string
+		copy func(source, target *testing.T)
+	}{
+		{
+			name: "fast",
+			copy: func(source, target *testing.T) {
+				copyTestWithoutParentFast(source, target, layout)
+			},
+		},
+		{name: "reflection", copy: copyTestWithoutParentReflect},
+	}
+
+	for _, implementation := range copyImplementations {
+		source := createNewTestReflect()
+		sourceHelperPCs, sourceHelperNames := getTestingHelperMaps(t, source)
+		*sourceHelperPCs = map[uintptr]struct{}{1: {}}
+		*sourceHelperNames = map[string]struct{}{"source-helper": {}}
+
+		target := &testing.T{}
+		implementation.copy(source, target)
+		targetHelperPCs, targetHelperNames := getTestingHelperMaps(t, target)
+
+		assert.Contains(t, *targetHelperPCs, uintptr(1), "%s copy did not preserve helper PCs", implementation.name)
+		assert.Contains(t, *targetHelperNames, "source-helper", "%s copy did not preserve helper names", implementation.name)
+
+		pcSentinel := uintptr(2)
+		nameSentinel := implementation.name + "-helper"
+		(*targetHelperPCs)[pcSentinel] = struct{}{}
+		(*targetHelperNames)[nameSentinel] = struct{}{}
+
+		assert.NotContains(t, *sourceHelperPCs, pcSentinel, "%s copy shares helper PCs with its source", implementation.name)
+		assert.NotContains(t, *sourceHelperNames, nameSentinel, "%s copy shares helper names with its source", implementation.name)
+	}
+}
+
+func getTestingHelperMaps(t *testing.T, test *testing.T) (*map[uintptr]struct{}, *map[string]struct{}) {
+	t.Helper()
+	helperPCsPointer, err := getFieldPointerFrom(test, "helperPCs")
+	if err != nil {
+		t.Fatalf("getting testing.common.helperPCs: %v", err)
+	}
+	helperNamesPointer, err := getFieldPointerFrom(test, "helperNames")
+	if err != nil {
+		t.Fatalf("getting testing.common.helperNames: %v", err)
+	}
+	return (*map[uintptr]struct{})(helperPCsPointer), (*map[string]struct{})(helperNamesPointer)
+}
+
 func exerciseTestingInternalsPrivatePointerAssignment(t *testing.T) {
 	type localPrivatePointer struct {
 		ptr *int
@@ -302,57 +405,6 @@ func exerciseTestingInternalsPrivatePointerAssignment(t *testing.T) {
 	copyWordField(unsafe.Pointer(&sourceWord), unsafe.Pointer(&targetWord), word)
 	if targetWord.ptr != sourceWord.ptr {
 		t.Fatal("expected pointer-word copy to preserve the pointer value")
-	}
-}
-
-// exerciseParallelForwardMetadataIsolation verifies retry-local Parallel state never leaks
-// through generic execution metadata propagation.
-func exerciseParallelForwardMetadataIsolation(t *testing.T) {
-	parentState := newParallelForwardState()
-	childState := newParallelForwardState()
-
-	parentMeta := &testExecutionMetadata{
-		parallelForwardState: parentState,
-	}
-	parentMeta.parallelForwarded.Store(true)
-
-	childMeta := &testExecutionMetadata{
-		parallelForwardState: childState,
-	}
-	propagateTestExecutionMetadataFlags(childMeta, parentMeta)
-
-	if childMeta.parallelForwardState != childState {
-		t.Fatal("expected child metadata to keep its own parallel forwarding state")
-	}
-	if childMeta.parallelForwarded.Load() {
-		t.Fatal("expected child metadata not to inherit the parent's forwarded Parallel flag")
-	}
-
-	subtestMeta := &testExecutionMetadata{}
-	propagateTestExecutionMetadataFlags(subtestMeta, parentMeta)
-	if subtestMeta.parallelForwardState != nil {
-		t.Fatal("expected subtest metadata not to inherit parent parallel forwarding state")
-	}
-}
-
-// exerciseParallelForwardedDuplicateGate verifies concurrent duplicate checks still leave
-// exactly one execution responsible for the real Parallel forward.
-func exerciseParallelForwardedDuplicateGate(t *testing.T) {
-	meta := &testExecutionMetadata{}
-	var firstForwarders atomic.Int32
-
-	var wg sync.WaitGroup
-	for range 32 {
-		wg.Go(func() {
-			if !meta.parallelForwarded.Swap(true) {
-				firstForwarders.Add(1)
-			}
-		})
-	}
-	wg.Wait()
-
-	if firstForwarders.Load() != 1 {
-		t.Fatalf("expected exactly one first Parallel forwarder, got %d", firstForwarders.Load())
 	}
 }
 
