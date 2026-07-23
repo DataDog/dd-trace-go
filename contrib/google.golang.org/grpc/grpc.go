@@ -37,6 +37,8 @@ func init() {
 // cache a constant option: saves one allocation per call
 var spanTypeRPC = tracer.SpanType(ext.AppTypeRPC)
 
+type fullMethodNameKey struct{}
+
 func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.StartSpanOption {
 	if len(cfg.tags) == 0 && len(cfg.spanOpts) == 0 {
 		return opts
@@ -80,12 +82,15 @@ func startSpanFromContext(
 }
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
-func finishWithError(span *tracer.Span, err error, cfg *config) {
+func finishWithError(span *tracer.Span, err error, method string, cfg *config) {
 	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		err = nil
 	}
 	errcode := status.Code(err)
 	if errcode == codes.OK || cfg.nonErrorCodes[errcode] {
+		err = nil
+	} else if cfg.errCheck != nil && !cfg.errCheck(method, err) {
+		// errCheck reports this is not an error, so it's not recorded on the span.
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())

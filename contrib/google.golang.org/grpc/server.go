@@ -52,7 +52,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 		defer func() {
 			withMetadataTags(ss.ctx, ss.cfg, span)
 			withRequestTags(ss.cfg, m, span)
-			finishWithError(span, err, ss.cfg)
+			finishWithError(span, err, ss.method, ss.cfg)
 		}()
 	}
 	err = ss.ServerStream.RecvMsg(m)
@@ -71,7 +71,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, componentName)
-		defer func() { finishWithError(span, err, ss.cfg) }()
+		defer func() { finishWithError(span, err, ss.method, ss.cfg) }()
 	}
 	err = ss.ServerStream.SendMsg(m)
 	return err
@@ -109,7 +109,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 			case info.IsClientStream:
 				span.SetTag(tagMethodKind, methodKindClientStream)
 			}
-			defer func() { finishWithError(span, err, cfg) }()
+			defer func() { finishWithError(span, err, info.FullMethod, cfg) }()
 			if instr.AppSecEnabled() {
 				handler = appsecStreamHandlerMiddleware(info.FullMethod, span, handler)
 			}
@@ -156,7 +156,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			handler = appsecUnaryHandlerMiddleware(info.FullMethod, span, handler)
 		}
 		resp, err := handler(ctx, req)
-		finishWithError(span, err, cfg)
+		finishWithError(span, err, info.FullMethod, cfg)
 		return resp, err
 	}
 }
