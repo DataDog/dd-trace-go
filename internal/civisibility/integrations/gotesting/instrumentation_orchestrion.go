@@ -275,6 +275,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 							terminal = result.cleanupPanicData
 							terminalStack = string(result.cleanupPanicStack)
 						}
+						logFreshRetryAttemptState("finalize_orchestrion", currentT, result)
 						finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, result.duration, result.output, terminal, terminalStack, false)
 					}
 					if r != nil {
