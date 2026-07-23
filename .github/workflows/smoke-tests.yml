@@ -36,6 +36,7 @@ permissions:
 jobs:
   setup-env:
     runs-on: ubuntu-latest
+    timeout-minutes: 20 # normal runtime is ~5m; bounds a toolchain-corruption retry loop
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     env:
@@ -51,7 +52,10 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: stable
+          # Pinned off `stable` (currently 1.26.5), which intermittently corrupts
+          # its own heap mid-build (golang/go#77168) and fails these sandboxed
+          # smoke jobs. Restore `stable` once a fixed 1.26.x ships.
+          go-version: "1.26.4"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
@@ -102,6 +106,7 @@ jobs:
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
     name: 'go get -u smoke test'
     needs: setup-env
+    timeout-minutes: 45 # normal chunk runtime is ~10-25m; bounds a toolchain-corruption retry loop
     strategy:
       fail-fast: false
       matrix:
@@ -123,7 +128,10 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: stable
+          # Pinned off `stable` (currently 1.26.5), which intermittently corrupts
+          # its own heap mid-build (golang/go#77168) and fails this sandboxed
+          # go-get-u smoke job. Restore `stable` once a fixed 1.26.x ships.
+          go-version: "1.26.4"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Capture trusted commit SHA
@@ -145,14 +153,13 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
-            run_smoke() {
-              ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
-            }
-            # See "Compile dd-trace-go with updated dependencies (sandboxed)" above and
-            # go-retry.sh for why toolchain/cache corruption is retried while genuine breaks
-            # fail immediately.
-            source ./.github/workflows/apps/go-retry.sh
-            retry_on_corruption run_smoke
+            # ci_test_contrib.sh already retries each individual `go get`/`go mod tidy` call via
+            # go-retry.sh (see that file for why toolchain/cache corruption is retried while
+            # genuine breaks fail immediately). Don't wrap this whole multi-contrib loop in a
+            # second, outer retry_on_corruption: that would re-run every contrib in the chunk,
+            # including ones that already succeeded, on top of the inner retries — multiplying
+            # both work and cache-wipe churn instead of just retrying the one command that failed.
+            ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
       - name: Stage sandbox artifacts outside workspace
         # Move the test results and coverage files to RUNNER_TEMP so the
         # next checkout (which wipes the workspace) does not delete them.

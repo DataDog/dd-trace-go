@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -82,8 +83,16 @@ type tracerStatSpan struct {
 // configuration c. It creates buckets of bucketSize nanoseconds duration.
 func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdClient) *concentrator {
 	sCfg := &stats.SpanConcentratorConfig{
-		ComputeStatsBySpanKind: true,
-		BucketInterval:         bucketSize,
+		ComputeStatsBySpanKind:       true,
+		BucketInterval:               bucketSize,
+		WholeKeyCardinalityLimit:     c.internalConfig.StatsWholeKeyCardinalityLimit(),
+		ResourceCardinalityLimit:     c.internalConfig.StatsResourceCardinalityLimit(),
+		HTTPEndpointCardinalityLimit: c.internalConfig.StatsHTTPEndpointCardinalityLimit(),
+		PeerTagsCardinalityLimit:     c.internalConfig.StatsPeerTagsCardinalityLimit(),
+		OriginCardinalityLimit:       c.internalConfig.StatsOriginCardinalityLimit(),
+	}
+	if len(c.internalConfig.StatsAdditionalTags()) > 0 {
+		sCfg.AdditionalMetricTagsCardinalityLimit = c.internalConfig.StatsAdditionalTagsCardinalityLimit()
 	}
 	env := c.agent.load().defaultEnv
 	if c.internalConfig.Env() != "" {
@@ -180,9 +189,13 @@ func (c *concentrator) runIngester() {
 
 // +checklocksignore — Post-finish: reads finished span fields during stats computation.
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	agentInfo := c.cfg.agent.load()
 	resource := s.resource
-	if c.shouldObfuscate() {
+	if obfuscatingVersion := agentInfo.obfuscationVersion; obfuscatingVersion > 0 && obfuscatingVersion <= tracerObfuscationVersion {
 		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
+		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
+	} else {
+		c.spanConcentrator.SetObfuscationEnabled(false, false)
 	}
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
@@ -214,19 +227,20 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		}
 	}
 	statSpan, ok := c.spanConcentrator.NewStatSpanWithConfig(stats.StatSpanConfig{
-		Service:      s.service,
-		Resource:     resource,
-		Name:         s.name,
-		Type:         s.spanType,
-		ParentID:     s.parentID,
-		Start:        s.start,
-		Duration:     s.duration,
-		Error:        s.error,
-		Meta:         spanMeta,
-		Metrics:      s.metrics,
-		PeerTags:     peerTags,
-		HTTPMethod:   httpMethod,
-		HTTPEndpoint: httpEndpoint,
+		Service:                 s.service,
+		Resource:                resource,
+		Name:                    s.name,
+		Type:                    s.spanType,
+		ParentID:                s.parentID,
+		Start:                   s.start,
+		Duration:                s.duration,
+		Error:                   s.error,
+		Meta:                    spanMeta,
+		Metrics:                 s.metrics,
+		PeerTags:                peerTags,
+		AdditionalMetricTagKeys: c.cfg.internalConfig.StatsAdditionalTags(),
+		HTTPMethod:              httpMethod,
+		HTTPEndpoint:            httpEndpoint,
 	})
 	if !ok {
 		return nil, false
@@ -312,6 +326,8 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		}
 	}
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
+	bc := c.spanConcentrator.DrainBlockCounts()
+	c.emitCollapseMetrics(bc)
 	if len(csps) == 0 {
 		// nothing to flush
 		return
@@ -360,6 +376,44 @@ func newOTLPMetricsConcentrator(c *config, statsdClient internal.StatsdClient) *
 	// Set to empty (non-nil) to suppress agent-advertised peer tags on this concentrator.
 	conc.otlpPeerTags = []string{}
 	return conc
+}
+
+// emitCollapseMetrics sends health and instrumentation telemetry for cardinality collapse events.
+// Per the Cardinality Limits RFC:
+//   - Health metric:  datadog.tracer.stats.collapsed_spans  (statsd, public)
+//   - Telemetry metric: tracers.stats_collapsed_spans       (instrumentation telemetry, internal)
+//
+// Tags follow the RFC: collapsed:<field>, collapsed:whole_key, oversized:additional_metric_tags.
+func (c *concentrator) emitCollapseMetrics(bc stats.BlockCounts) {
+	type collapseEntry struct {
+		count int64
+		tag   string
+	}
+	entries := []collapseEntry{
+		{bc.LengthBlocks, "oversized:additional_metric_tags"},
+		{bc.CapBlocks, "collapsed:additional_metric_tags"},
+		{bc.ResourceCollapses, "collapsed:resource"},
+		{bc.HTTPEndpointCollapses, "collapsed:http_endpoint"},
+		{bc.PeerTagsCollapses, "collapsed:peer_tags"},
+		{bc.OriginCollapses, "collapsed:origin"},
+		{bc.WholeKeyCollapses, "collapsed:whole_key"},
+	}
+	anyCollapse := false
+	for _, e := range entries {
+		if e.count <= 0 {
+			continue
+		}
+		anyCollapse = true
+		tags := []string{e.tag}
+		// Health metric (statsd, may be off by default in some deployments)
+		c.statsd().Count("datadog.tracer.stats.collapsed_spans", e.count, tags, 1)
+		// Instrumentation telemetry (on by default, internal-facing)
+		telemetry.Count(telemetry.NamespaceTracers, "stats_collapsed_spans", tags).Submit(float64(e.count))
+	}
+	if anyCollapse {
+		log.Debug("Client-side stats values are being collapsed to 'tracer_blocked_value' in the current flush window. " +
+			"This is caused by a tag value exceeding 200 characters, or by exceeding one of the DD_TRACE_STATS_*_CARDINALITY_LIMIT caps.")
+	}
 }
 
 // trySendSpan attempts a non-blocking send of the stat span to the
