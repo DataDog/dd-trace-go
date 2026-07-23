@@ -52,7 +52,10 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: stable
+          # Pinned off `stable` (currently 1.26.5), which intermittently corrupts
+          # its own heap mid-build (golang/go#77168) and fails these sandboxed
+          # smoke jobs. Restore `stable` once a fixed 1.26.x ships.
+          go-version: "1.26.4"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
@@ -125,7 +128,10 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: stable
+          # Pinned off `stable` (currently 1.26.5), which intermittently corrupts
+          # its own heap mid-build (golang/go#77168) and fails this sandboxed
+          # go-get-u smoke job. Restore `stable` once a fixed 1.26.x ships.
+          go-version: "1.26.4"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Capture trusted commit SHA
