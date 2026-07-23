@@ -7,10 +7,12 @@ package zap
 
 import (
 	"context"
+	"io"
 	"strconv"
 	"testing"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,7 +48,10 @@ func TestTraceFields128BitDisabled(t *testing.T) {
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
 
 	// Re-initialize to account for the race between setting the env var in the
-	// test and reading it in the contrib.
+	// test and reading it in the contrib. Restore the original config afterwards
+	// so this override doesn't leak into other tests or benchmarks.
+	orig := cfg
+	t.Cleanup(func() { cfg = orig })
 	cfg = newConfig()
 
 	tracer.Start()
@@ -64,4 +69,77 @@ func TestTraceFields128BitDisabled(t *testing.T) {
 
 func TestTraceFieldsNoSpan(t *testing.T) {
 	assert.Nil(t, TraceFields(context.Background()))
+}
+
+// newBenchLogger returns a zap.Logger that discards its output, so benchmarks
+// measure only the trace-field injection overhead, not encoding or I/O.
+func newBenchLogger() *zap.Logger {
+	return zap.New(zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		zapcore.AddSync(io.Discard),
+		zapcore.DebugLevel,
+	))
+}
+
+// BenchmarkTraceFields measures the cost of extracting the trace and span IDs
+// from a context into zap.Field values.
+func BenchmarkTraceFields(b *testing.B) {
+	tracer.Start()
+	defer tracer.Stop()
+	sp, ctx := tracer.StartSpanFromContext(context.Background(), "bench")
+	defer sp.Finish()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = TraceFields(ctx)
+	}
+}
+
+// BenchmarkLogger compares a plain log call against the form Orchestrion
+// injects, logger.With(TraceFields(ctx)...).Info(...), so the delta between the
+// two sub-benchmarks is the per-call instrumentation overhead.
+func BenchmarkLogger(b *testing.B) {
+	tracer.Start()
+	defer tracer.Stop()
+	sp, ctx := tracer.StartSpanFromContext(context.Background(), "bench")
+	defer sp.Finish()
+
+	logger := newBenchLogger()
+
+	b.Run("baseline", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			logger.Info("bench message")
+		}
+	})
+	b.Run("instrumented", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			logger.With(TraceFields(ctx)...).Info("bench message")
+		}
+	})
+}
+
+// BenchmarkSugaredLogger mirrors BenchmarkLogger for the SugaredLogger path,
+// which Orchestrion instruments via Desugar().With(...).Sugar().
+func BenchmarkSugaredLogger(b *testing.B) {
+	tracer.Start()
+	defer tracer.Stop()
+	sp, ctx := tracer.StartSpanFromContext(context.Background(), "bench")
+	defer sp.Finish()
+
+	sugar := newBenchLogger().Sugar()
+
+	b.Run("baseline", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sugar.Infow("bench message")
+		}
+	})
+	b.Run("instrumented", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sugar.Desugar().With(TraceFields(ctx)...).Sugar().Infow("bench message")
+		}
+	})
 }
