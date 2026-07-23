@@ -7,6 +7,7 @@ package llmobs_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -2667,4 +2668,48 @@ func TestFlushSync(t *testing.T) {
 			t.Fatal("FlushSync hung after Stop")
 		}
 	})
+}
+
+// TestSpanLinkJSONTags guards the public wire shape of llmobs.SpanLink: callers
+// that persist/replay links via encoding/json must keep getting snake_case
+// trace_id/span_id (with a zero trace_id_high omitted), not the Go field names.
+func TestSpanLinkJSONTags(t *testing.T) {
+	b, err := json.Marshal(llmobs.SpanLink{TraceID: 111, SpanID: 222})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"span_id":222}`, string(b))
+
+	b, err = json.Marshal(llmobs.SpanLink{
+		TraceID: 111, TraceIDHigh: 333, SpanID: 222,
+		Attributes: map[string]string{"a": "b"}, Tracestate: "ts", Flags: 1,
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"trace_id_high":333,"span_id":222,"attributes":{"a":"b"},"tracestate":"ts","flags":1}`, string(b))
+}
+
+// TestSpanLinkWire locks the live-tracer span-link wire end to end: links added to
+// an LLM span are emitted with numeric trace/span IDs (the tracer's historical
+// wire shape), and a zero high word is omitted rather than serialized as 0. It
+// drives the toTransportSpanLinks conversion through the real emit path, so a
+// refactor that wrapped the IDs as strings or dropped the TraceIDHigh guard cannot
+// flip the wire (from `"trace_id":123` to `"trace_id":"123"`, or emit
+// `trace_id_high:0`) with every test still green.
+func TestSpanLinkWire(t *testing.T) {
+	_, coll, ll := testTracer(t)
+
+	span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "llm-links", llmobs.StartSpanConfig{})
+	span.AddLink(llmobs.SpanLink{TraceID: 111, SpanID: 222})
+	span.AddLink(llmobs.SpanLink{TraceID: 333, TraceIDHigh: 444, SpanID: 555, Attributes: map[string]string{"a": "b"}})
+	span.Finish(llmobs.FinishSpanConfig{})
+	tracer.Flush()
+
+	l := coll.RequireSpan(t, "llm-links")
+	require.Len(t, l.SpanLinks, 2)
+
+	b, err := json.Marshal(l.SpanLinks[0])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"span_id":222}`, string(b))
+
+	b, err = json.Marshal(l.SpanLinks[1])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":333,"trace_id_high":444,"span_id":555,"attributes":{"a":"b"}}`, string(b))
 }

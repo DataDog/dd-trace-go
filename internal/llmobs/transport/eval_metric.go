@@ -44,9 +44,13 @@ type LLMObsMetric struct {
 	CategoricalValue *string          `json:"categorical_value,omitempty"`
 	ScoreValue       *float64         `json:"score_value,omitempty"`
 	BooleanValue     *bool            `json:"boolean_value,omitempty"`
+	JSONValue        map[string]any   `json:"json_value,omitempty"`
 	MLApp            string           `json:"ml_app,omitempty"`
 	TimestampMS      int64            `json:"timestamp_ms,omitempty"`
 	Tags             []string         `json:"tags,omitempty"`
+	Assessment       string           `json:"assessment,omitempty"`
+	Reasoning        string           `json:"reasoning,omitempty"`
+	Metadata         map[string]any   `json:"metadata,omitempty"`
 }
 
 type PushMetricsRequest struct {
@@ -69,7 +73,7 @@ func (c *Transport) PushEvalMetrics(
 	if len(metrics) == 0 {
 		return nil
 	}
-	path := endpointEvalMetric
+	path := EndpointEvalMetric
 	method := http.MethodPost
 	body := &PushMetricsRequest{
 		Data: PushMetricsRequestData{
@@ -80,7 +84,7 @@ func (c *Transport) PushEvalMetrics(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, SubdomainEvalMetric, body, defaultTimeout)
 	if err != nil {
 		return err
 	}
