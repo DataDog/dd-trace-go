@@ -41,34 +41,34 @@ type monitor struct {
 	sync.Mutex
 	spans map[spanKey]*tracer.Span
 	cfg   *config
+	// spanCfg holds the tags that are constant for every command issued
+	// through this monitor (span type, service, component, span kind,
+	// db system/type, analytics rate). It is built once in NewMonitor and
+	// merged into each request via WithStartSpanConfig, instead of
+	// rebuilding a Tag() closure per tag on every command.
+	spanCfg *tracer.StartSpanConfig
 }
 
 func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	hostname, port := peerInfo(evt)
-	opts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeMongoDB),
-		instrumentation.ServiceNameWithSource(m.cfg.serviceName, m.cfg.serviceSource),
-		tracer.ResourceName("mongo." + evt.CommandName),
-		tracer.Tag(ext.DBInstance, evt.DatabaseName),
-		tracer.Tag(ext.DBType, "mongo"),
-		tracer.Tag(ext.PeerHostname, hostname),
-		tracer.Tag(ext.NetworkDestinationName, hostname),
-		tracer.Tag(ext.PeerPort, port),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
-	}
-	if !math.IsNaN(m.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
+	tags := map[string]any{
+		ext.ResourceName:           "mongo." + evt.CommandName,
+		ext.DBInstance:             evt.DatabaseName,
+		ext.PeerHostname:           hostname,
+		ext.NetworkDestinationName: hostname,
+		ext.PeerPort:               port,
 	}
 	if m.cfg.maxQuerySize != 0 {
 		b, _ := bson.MarshalExtJSON(evt.Command, false, false)
 		if m.cfg.maxQuerySize > 0 && len(b) > m.cfg.maxQuerySize {
 			b = b[:m.cfg.maxQuerySize]
 		}
-		opts = append(opts, tracer.Tag(m.cfg.spanName, string(b)))
+		tags[m.cfg.spanName] = string(b)
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, m.cfg.spanName, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, m.cfg.spanName,
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(m.spanCfg),
+	)
 	key := spanKey{
 		ConnectionID: evt.ConnectionID,
 		RequestID:    evt.RequestID,
@@ -112,14 +112,33 @@ func NewMonitor(opts ...Option) *event.CommandMonitor {
 	}
 	instr.Logger().Debug("contrib/go.mongodb.org/mongo-driver/mongo: Creating Monitor: %#v", cfg)
 	m := &monitor{
-		spans: make(map[spanKey]*tracer.Span),
-		cfg:   cfg,
+		spans:   make(map[spanKey]*tracer.Span),
+		cfg:     cfg,
+		spanCfg: newSpanConfig(cfg),
 	}
 	return &event.CommandMonitor{
 		Started:   m.Started,
 		Succeeded: m.Succeeded,
 		Failed:    m.Failed,
 	}
+}
+
+// newSpanConfig builds the base StartSpanConfig holding the tags that stay
+// constant for every command issued through a monitor with the given config,
+// so per-command calls don't need to rebuild them.
+func newSpanConfig(cfg *config) *tracer.StartSpanConfig {
+	opts := []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeMongoDB),
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+		tracer.Tag(ext.DBType, "mongo"),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
 }
 
 func peerInfo(evt *event.CommandStartedEvent) (hostname, port string) {
