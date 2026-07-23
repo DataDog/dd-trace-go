@@ -118,6 +118,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
 	"github.com/valkey-io/valkey-go":                {"Valkey", false},
+	"go.uber.org/zap":                               {"Zap", false},
 }
 
 // Supported trace protocols.
