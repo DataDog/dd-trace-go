@@ -88,6 +88,13 @@ const (
 	sizeLimitEVPEvent        = 5_000_000 // 5MB
 	collectionErrorDroppedIO = "dropped_io"
 	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
+
+	// evalMetricsEnvelopeSize is a conservative estimate of the fixed JSON overhead added by the
+	// transport.PushMetricsRequest wrapper that encloses buffered eval metrics when sent, i.e.
+	// {"data":{"type":"evaluation_metric","attributes":{"metrics":[...]}}}. The actual wrapper is
+	// ~65 bytes; we reserve more to keep the serialized body safely under sizeLimitEVPEvent even if
+	// the envelope grows. The per-metric array separator (",") is accounted for separately.
+	evalMetricsEnvelopeSize = 256
 )
 
 // See: https://docs.datadoghq.com/getting_started/site/#access-the-datadog-site
@@ -143,9 +150,10 @@ type LLMObs struct {
 	evalMetricsCh chan *transport.LLMObsMetric
 
 	// runtime buffers, payloads are accumulated here and flushed periodically
-	bufSpanEvents     []*transport.LLMObsSpanEvent
-	bufSpanEventsSize int // cumulative JSON size of buffered span events
-	bufEvalMetrics    []*transport.LLMObsMetric
+	bufSpanEvents      []*transport.LLMObsSpanEvent
+	bufSpanEventsSize  int // cumulative JSON size of buffered span events
+	bufEvalMetrics     []*transport.LLMObsMetric
+	bufEvalMetricsSize int // cumulative JSON size of buffered eval metrics
 
 	// lifecycle
 	mu            sync.Mutex
@@ -295,7 +303,16 @@ func (l *LLMObs) Run() {
 				l.bufSpanEventsSize += evSize
 
 			case evalMetric := <-l.evalMetricsCh:
+				// +1 accounts for the "," array separator that joins this metric to the others in
+				// the request body; combined with evalMetricsEnvelopeSize it makes the buffered size
+				// reflect the actual serialized PushMetricsRequest body rather than the bare metric.
+				mSize := jsonSize(evalMetric) + 1
+				if l.bufEvalMetricsSize+mSize+evalMetricsEnvelopeSize > sizeLimitEVPEvent {
+					log.Debug("llmobs: eval metrics buffer size limit reached, flushing before adding new metric")
+					l.sendAsync(l.clearBuffersNonLocked())
+				}
 				l.bufEvalMetrics = append(l.bufEvalMetrics, evalMetric)
+				l.bufEvalMetricsSize += mSize
 
 			case <-ticker.C:
 				l.sendAsync(l.clearBuffersNonLocked())
@@ -343,6 +360,7 @@ func (l *LLMObs) clearBuffersNonLocked() batchSendParams {
 	l.bufSpanEvents = nil
 	l.bufSpanEventsSize = 0
 	l.bufEvalMetrics = nil
+	l.bufEvalMetricsSize = 0
 	return params
 }
 
