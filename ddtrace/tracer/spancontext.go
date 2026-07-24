@@ -123,6 +123,20 @@ func (t *traceID) cacheHex() {
 	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
+// hexEncodedCached returns HexEncoded and memoizes the result on the traceID so
+// subsequent reads (and child spans, via newSpanContext) reuse it instead of
+// re-encoding. Because it writes t.hexEncoded, it MUST only be called while the
+// enclosing SpanContext is not yet shared with other goroutines (e.g. from
+// tracer.StartSpan, before the span is returned). This lets a whole trace pay a
+// single hex allocation for the profiler's "trace id" label instead of one per
+// span.
+func (t *traceID) hexEncodedCached() string {
+	if t.hexEncoded == "" {
+		t.cacheHex()
+	}
+	return t.hexEncoded
+}
+
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
 // spawn a direct descendant of the span that it belongs to. It can be used
@@ -302,6 +316,13 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		// (We only want 32 bits of time, then the rest is zero)
 		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
 		context.traceID.SetUpper(tUp)
+	}
+	// A child span shares its parent's trace ID, so reuse the parent's cached hex
+	// string (lazily populated on the pprof "trace id" label path) rather than
+	// re-encoding it. This keeps the whole trace at a single hex allocation. The
+	// value equality check guards against ever copying a mismatched hex.
+	if parent != nil && parent.traceID.hexEncoded != "" && context.traceID.value == parent.traceID.value {
+		context.traceID.hexEncoded = parent.traceID.hexEncoded
 	}
 	if context.trace == nil {
 		context.trace = newTrace()

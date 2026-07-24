@@ -3640,8 +3640,11 @@ func TestSpanContextDebugLoggingSecurity(t *testing.T) {
 // It covers both hex-cache states a shared SpanContext can be in when injected
 // concurrently:
 //
-//   - cold cache: a locally started span. newSpanContext does not populate
-//     hexEncoded, so every UpperHex() takes the non-caching fallback.
+//   - cold cache: a locally started span with the pprof label path disabled.
+//     newSpanContext does not populate hexEncoded, so every UpperHex() takes the
+//     non-caching fallback. Code hotspots must be off here: when it (or AppSec)
+//     is enabled, applyPPROFLabels warms the hex cache at StartSpan (safely,
+//     before the span is shared) via hexEncodedCached.
 //   - hot cache: an extracted context. extractTextMap finalizes the traceID via
 //     cacheHex, so UpperHex() returns the cached string.
 //
@@ -3653,7 +3656,11 @@ func TestConcurrentInjectTraceIDHex(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog")
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 
-	tracer, _, _, stop, err := startTestTracer(t)
+	// Disable code hotspots so locally started spans keep a cold hex cache; with
+	// it (or AppSec) enabled, applyPPROFLabels warms the cache at StartSpan and
+	// the "cold cache" subtest below could no longer exercise the non-caching
+	// HexEncoded read path.
+	tracer, _, _, stop, err := startTestTracer(t, WithProfilerCodeHotspots(false))
 	require.NoError(t, err)
 	defer stop()
 
