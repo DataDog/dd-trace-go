@@ -429,6 +429,27 @@ func (s *Span) SetTag(key string, value any) {
 	s.setTagLocked(key, value)
 }
 
+// SetMetaStruct adds a tag with the given key and value to the `meta_struct`
+// field of the span if the agent supports it and returns true. If the
+// `meta_struct` feature is not supported by the agent or the receiver is nil,
+// nothing is stored in the span and false is returned.
+func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
+	if s == nil {
+		return false
+	}
+
+	tracer, hasTracer := getGlobalTracer().(*tracer)
+	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
+		return false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.setMetaStructLocked(key, value)
+	return true
+}
+
 // setTags sets multiple tags on the span during initialization. It acquires
 // the span lock internally and returns early without locking if tags is empty.
 func (s *Span) setTags(tags map[string]any) {
