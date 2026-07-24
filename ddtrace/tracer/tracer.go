@@ -1087,7 +1087,9 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 		}
 	}
 	if correlate {
-		labels = append(labels, traceprof.TraceID, span.context.TraceID())
+		// hexEncodedCached memoizes the hex on the (not-yet-shared) context so
+		// child spans reuse it: one hex allocation per trace, not per span.
+		labels = append(labels, traceprof.TraceID, span.context.traceID.hexEncodedCached())
 	}
 	if len(labels) > 0 {
 		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
