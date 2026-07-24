@@ -23,6 +23,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.11.0-dev
+	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.11.0-dev
@@ -334,6 +335,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 => ../../contrib/go-redis/redis
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../contrib/go.mongodb.org/mongo-driver.v2
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 => ../../contrib/go.mongodb.org/mongo-driver
+	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 => ../../contrib/go.uber.org/zap
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 => ../../contrib/gocql/gocql
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../contrib/gofiber/fiber.v2
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 => ../../contrib/gomodule/redigo
