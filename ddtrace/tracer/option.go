@@ -129,8 +129,18 @@ const (
 
 // config holds the tracer configuration.
 type config struct {
-	// internalConfig holds a reference to the global configuration singleton.
+	// internalConfig is pinned to this tracer generation.
 	internalConfig *internalconfig.Config
+	preparedClaims internalconfig.PreparedClaims
+
+	// Process-global compatibility state is resolved during construction but
+	// published only after the generation handoff succeeds.
+	analyticsRateSet   bool
+	analyticsRate      float64
+	namingConfig       namingschema.Config
+	serviceUserDefined bool
+	globalStatsTags    []string
+	globalStatsTagsSet bool
 
 	// appsecStartOptions controls the options used when starting appsec features.
 	appsecStartOptions []appsecconfig.StartOption
@@ -204,19 +214,20 @@ type StartOption func(*config)
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
-	c.internalConfig = internalconfig.CreateNew()
+	c.internalConfig = internalconfig.NewTracerGeneration()
 
 	c.sampler = NewAllSampler()
 
 	if c.internalConfig.TraceAnalyticsEnabled() {
-		globalconfig.SetAnalyticsRate(1.0)
+		c.analyticsRateSet = true
+		c.analyticsRate = 1.0
 	}
 	if c.internalConfig.ReportHostname() {
 		if err := c.internalConfig.HostnameLookupError(); err != nil {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	namingschema.LoadFromEnv()
+	c.namingConfig = namingschema.ConfigFromEnv()
 
 	// LLM Observability config
 	c.llmobs = llmobsconfig.Config{
@@ -243,6 +254,63 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.internalConfig.SetSpanPoolEnabled(false, telemetry.OriginCode, internalconfig.ProductTracer)
 		log.Warn("the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED / WithSpanPool) is incompatible with Orchestrion and has been disabled")
 	}
+	// TODO: env/version/service fall back to global tags when unset. This runs
+	// here (after options) rather than in loadConfig because programmatic
+	// WithGlobalTag tags — which outrank DD_TAGS — are only applied once the
+	// StartOptions have run. Once env/version/service carry origin information
+	// through internal/config, this fallback can move into loadConfig and resolve
+	// precedence without the tracer's involvement.
+	globalTags := c.internalConfig.GlobalTags()
+	_, globalTagsOrigin := c.internalConfig.GlobalTagsConfig().Baseline()
+	globalTagsClaimed := c.internalConfig.HasStagedTracerClaim("DD_TAGS")
+	if globalTagsClaimed {
+		globalTagsOrigin = internalconfig.OriginCode
+	}
+	if c.internalConfig.Env() == "" {
+		if v, ok := globalTags["env"]; ok {
+			if e, ok := v.(string); ok {
+				c.internalConfig.SetEnv(e, globalTagsOrigin, internalconfig.ProductTracer)
+				if globalTagsClaimed {
+					c.internalConfig.DependTracerClaim("DD_ENV", "DD_TAGS")
+				}
+			}
+		}
+	}
+	if c.internalConfig.Version() == "" {
+		if v, ok := globalTags["version"]; ok {
+			if ver, ok := v.(string); ok {
+				c.internalConfig.SetVersion(ver, globalTagsOrigin, internalconfig.ProductTracer)
+				if globalTagsClaimed {
+					c.internalConfig.DependTracerClaim("DD_VERSION", "DD_TAGS")
+				}
+			}
+		}
+	}
+	svcIsUserDefined := true
+	if c.internalConfig.ServiceName() == "" {
+		if v, ok := globalTags["service"]; ok {
+			if s, ok := v.(string); ok {
+				c.internalConfig.SetServiceName(s, globalTagsOrigin, internalconfig.ProductTracer)
+				if globalTagsClaimed {
+					c.internalConfig.DependTracerClaim("DD_SERVICE", "DD_TAGS")
+				}
+			}
+		}
+	}
+
+	// Claims must be prepared after every claim-bearing option and fallback,
+	// but before any dependent component or process-global consumer reads them.
+	c.preparedClaims = c.internalConfig.PrepareClaims()
+	c.internalConfig.SetGlobalTag(ext.RuntimeID, globalconfig.RuntimeID(), internalconfig.OriginCalculated)
+
+	if c.internalConfig.ServiceName() == "" {
+		// There is not an explicit service set, default to binary name.
+		// In this case, don't set a global service name so the contribs continue using their defaults.
+		c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault)
+		svcIsUserDefined = false
+	}
+	c.serviceUserDefined = svcIsUserDefined
+
 	rawAgentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
@@ -267,46 +335,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.agentTransport != nil {
 		c.httpClient = &http.Client{Transport: c.agentTransport}
 	}
-	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
-	// TODO: env/version/service fall back to global tags when unset. This runs
-	// here (after options) rather than in loadConfig because programmatic
-	// WithGlobalTag tags — which outrank DD_TAGS — are only applied once the
-	// StartOptions have run. Once env/version/service carry origin information
-	// through internal/config, this fallback can move into loadConfig and resolve
-	// precedence without the tracer's involvement.
-	globalTags := c.internalConfig.GlobalTags()
-	_, globalTagsOrigin := c.internalConfig.GlobalTagsConfig().Baseline()
-	if c.internalConfig.Env() == "" {
-		if v, ok := globalTags["env"]; ok {
-			if e, ok := v.(string); ok {
-				c.internalConfig.SetEnv(e, globalTagsOrigin, internalconfig.ProductTracer)
-			}
-		}
-	}
-	if c.internalConfig.Version() == "" {
-		if v, ok := globalTags["version"]; ok {
-			if ver, ok := v.(string); ok {
-				c.internalConfig.SetVersion(ver, globalTagsOrigin, internalconfig.ProductTracer)
-			}
-		}
-	}
-	svcIsUserDefined := true
-	if c.internalConfig.ServiceName() == "" {
-		if v, ok := globalTags["service"]; ok {
-			if s, ok := v.(string); ok {
-				c.internalConfig.SetServiceName(s, globalTagsOrigin, internalconfig.ProductTracer)
-				globalconfig.SetServiceName(s)
-			}
-		} else {
-			// There is not an explicit service set, default to binary name.
-			// In this case, don't set a global service name so the contribs continue using their defaults.
-			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault, internalconfig.ProductTracer)
-			svcIsUserDefined = false
-		}
-	} else {
-		globalconfig.SetServiceName(c.internalConfig.ServiceName())
-	}
-	processtags.SetServiceNameTag(c.internalConfig.ServiceName(), svcIsUserDefined)
 	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
 		traceURL, headers := resolveTraceTransport(c.internalConfig)
@@ -321,12 +349,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			BehaviorExtract:  c.internalConfig.PropagationBehaviorExtract(),
 			ExtractFirst:     &extractFirst,
 		})
-	}
-	if c.logger != nil {
-		log.UseLogger(c.logger)
-	}
-	if c.internalConfig.Debug() {
-		log.SetLevel(log.LevelDebug)
 	}
 	// Check if CI Visibility mode is enabled
 	if c.internalConfig.CIVisibilityEnabled() {
@@ -362,7 +384,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// fill in the resolved port if no other source provided one. Then
 		// mirror the resolved value into globalconfig for contrib readers.
 		c.internalConfig.ApplyAgentReportedStatsdPort(af.StatsdPort)
-		globalconfig.SetDogstatsdAddr(c.internalConfig.DogstatsdAddr())
 	}
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
@@ -385,9 +406,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.llmobsHTTPClient != nil {
 		c.llmobs.TracerConfig.HTTPClient = c.llmobsHTTPClient
 	}
-	// Set global 128-bits trace ID generation variable
-	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
-
 	c.otelRuntimeMetricsShouldBeEnabled = computeOtelRuntimeMetricsShouldBeEnabled(c)
 
 	return c, nil
@@ -426,7 +444,7 @@ func apmTracingDisabled(c *config) {
 	c.internalConfig.SetGlobalSampleRate(1.0, internalconfig.OriginCalculated)
 	c.internalConfig.SetTraceRateLimitPerSecond(1.0/60, internalconfig.OriginCalculated)
 	c.tracingAsTransport = true
-	WithGlobalTag("_dd.apm.enabled", 0)(c)
+	c.internalConfig.SetGlobalTag("_dd.apm.enabled", 0, internalconfig.OriginCalculated)
 	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
 	// tell the agent we computed them, so it doesn't do it either.
 	c.internalConfig.SetRuntimeMetricsEnabled(false, internalconfig.OriginCalculated)
@@ -477,6 +495,10 @@ type agentFeatures struct {
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
+
+	// containerTagsHash is staged from the /info response and published only
+	// when this tracer generation becomes active.
+	containerTagsHash string
 
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
@@ -591,7 +613,6 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	if resp.StatusCode != http.StatusOK {
 		return agentFeatures{}, fmt.Errorf("unexpected /info status: %d", resp.StatusCode)
 	}
-	updateContainerTagsHash(resp.Header)
 	type infoResponse struct {
 		Endpoints          []string `json:"endpoints"`
 		ClientDropP0s      bool     `json:"client_drop_p0s"`
@@ -610,6 +631,7 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 		return agentFeatures{}, fmt.Errorf("decoding features: %w", err)
 	}
 	var features agentFeatures
+	features.containerTagsHash = resp.Header.Get(containerTagsHashHeader)
 	features.DropP0s = info.ClientDropP0s
 	features.StatsdPort = info.Config.StatsdPort
 	features.defaultEnv = info.Config.DefaultEnv
@@ -725,10 +747,11 @@ func statsTags(c *config) []string {
 			tags = append(tags, k+":"+vstr)
 		}
 	}
-	tags = append(tags, processtags.GlobalTags().Slice()...)
+	tags = append(tags, processtags.TagsWithServiceName(c.internalConfig.ServiceName(), c.serviceUserDefined)...)
 	// globalconfig.StatsTags is shared with contrib statsd clients. Process
 	// tags are shared too; keep only tracer_version and service tracer-only.
-	globalconfig.SetStatsTags(tags)
+	c.globalStatsTags = append(c.globalStatsTags[:0], tags...)
+	c.globalStatsTagsSet = true
 	tags = append(tags, "tracer_version:"+version.Tag)
 	if v := c.internalConfig.ServiceName(); v != "" {
 		tags = append(tags, "service:"+v)
@@ -834,15 +857,14 @@ func WithPropagator(p Propagator) StartOption {
 func WithService(name string) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetServiceName(name, internalconfig.OriginCode, internalconfig.ProductTracer)
-		globalconfig.SetServiceName(name)
 	}
 }
 
 // WithGlobalServiceName causes contrib libraries to use the global service name and not any locally defined service name.
 // This is synonymous with `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED`.
 func WithGlobalServiceName(enabled bool) StartOption {
-	return func(_ *config) {
-		namingschema.SetRemoveIntegrationServiceNames(enabled)
+	return func(c *config) {
+		c.namingConfig.RemoveIntegrationServiceNames = enabled
 	}
 }
 
@@ -853,7 +875,7 @@ func WithAgentAddr(addr string) StartOption {
 		c.internalConfig.SetAgentURL(&url.URL{
 			Scheme: "http",
 			Host:   addr,
-		}, telemetry.OriginCode)
+		}, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -881,12 +903,12 @@ func WithAgentURL(agentURL string) StartOption {
 			c.internalConfig.SetAgentURL(&url.URL{
 				Scheme: u.Scheme,
 				Host:   u.Host,
-			}, telemetry.OriginCode)
+			}, telemetry.OriginCode, internalconfig.ProductTracer)
 		case "unix":
 			c.internalConfig.SetAgentURL(&url.URL{
 				Scheme: "unix",
 				Path:   u.Path,
-			}, telemetry.OriginCode)
+			}, telemetry.OriginCode, internalconfig.ProductTracer)
 		default:
 			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
 		}
@@ -969,29 +991,31 @@ func WithUDS(socketPath string) StartOption {
 		c.internalConfig.SetAgentURL(&url.URL{
 			Scheme: "unix",
 			Path:   socketPath,
-		}, telemetry.OriginCode)
+		}, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
 // for integrations.
 func WithAnalytics(on bool) StartOption {
-	return func(_ *config) {
+	return func(c *config) {
+		c.analyticsRateSet = true
 		if on {
-			globalconfig.SetAnalyticsRate(1.0)
+			c.analyticsRate = 1.0
 		} else {
-			globalconfig.SetAnalyticsRate(math.NaN())
+			c.analyticsRate = math.NaN()
 		}
 	}
 }
 
 // WithAnalyticsRate sets the global sampling rate for sampling APM events.
 func WithAnalyticsRate(rate float64) StartOption {
-	return func(_ *config) {
+	return func(c *config) {
+		c.analyticsRateSet = true
 		if rate >= 0.0 && rate <= 1.0 {
-			globalconfig.SetAnalyticsRate(rate)
+			c.analyticsRate = rate
 		} else {
-			globalconfig.SetAnalyticsRate(math.NaN())
+			c.analyticsRate = math.NaN()
 		}
 	}
 }
@@ -999,7 +1023,6 @@ func WithAnalyticsRate(rate float64) StartOption {
 // WithRuntimeMetrics enables automatic collection of runtime metrics every 10 seconds.
 func WithRuntimeMetrics() StartOption {
 	return func(cfg *config) {
-		telemetry.RegisterAppConfig("runtime_metrics_enabled", true, telemetry.OriginCode)
 		cfg.internalConfig.SetRuntimeMetricsEnabled(true, internalconfig.OriginCode)
 	}
 }

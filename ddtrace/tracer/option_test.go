@@ -172,8 +172,6 @@ func TestAutoDetectStatsd(t *testing.T) {
 		require.NoError(t, err)
 		defer statsd.Close()
 		require.Equal(t, cfg.internalConfig.DogstatsdAddr(), "unix://"+addr)
-		// Ensure globalconfig also gets the auto-detected UDS address
-		require.Equal(t, "unix://"+addr, globalconfig.DogstatsdAddr())
 		statsd.Count("name", 1, []string{"tag"}, 1)
 		statsd.Flush()
 
@@ -505,16 +503,16 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 		t.Run("env/on", func(t *testing.T) {
 			t.Setenv("DD_TRACE_ANALYTICS_ENABLED", "true")
-			defer globalconfig.SetAnalyticsRate(math.NaN())
-			newTestConfig()
-			assert.Equal(t, 1.0, globalconfig.AnalyticsRate())
+			c, err := newTestConfig()
+			require.NoError(t, err)
+			assert.Equal(t, 1.0, c.analyticsRate)
 		})
 
 		t.Run("env/off", func(t *testing.T) {
 			t.Setenv("DD_TRACE_ANALYTICS_ENABLED", "kj12")
-			defer globalconfig.SetAnalyticsRate(math.NaN())
-			newTestConfig()
-			assert.True(t, math.IsNaN(globalconfig.AnalyticsRate()))
+			c, err := newTestConfig()
+			require.NoError(t, err)
+			assert.False(t, c.analyticsRateSet)
 		})
 	})
 
@@ -1102,123 +1100,90 @@ func TestDefaultHTTPClient(t *testing.T) {
 
 func TestServiceName(t *testing.T) {
 	t.Run("WithService", func(t *testing.T) {
-		defer globalconfig.SetServiceName("")
 		assert := assert.New(t)
 		c, err := newTestConfig(
 			WithService("api-intake"),
 		)
 		assert.NoError(err)
 		assert.Equal("api-intake", c.internalConfig.ServiceName())
-		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
 	t.Run("env", func(t *testing.T) {
-		defer globalconfig.SetServiceName("")
 		t.Setenv("DD_SERVICE", "api-intake")
 		assert := assert.New(t)
 		c, err := newTestConfig()
 
 		assert.NoError(err)
 		assert.Equal("api-intake", c.internalConfig.ServiceName())
-		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
 	t.Run("otel-env", func(t *testing.T) {
-		defer func() {
-			globalconfig.SetServiceName("")
-		}()
 		t.Setenv("OTEL_SERVICE_NAME", "api-intake")
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
 
 		assert.Equal("api-intake", c.internalConfig.ServiceName())
-		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
 	t.Run("WithGlobalTag", func(t *testing.T) {
-		defer globalconfig.SetServiceName("")
 		assert := assert.New(t)
 		c, err := newTestConfig(WithGlobalTag("service", "api-intake"))
 		assert.NoError(err)
 		assert.Equal("api-intake", c.internalConfig.ServiceName())
-		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
-		defer func() {
-			globalconfig.SetServiceName("")
-		}()
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=api-intake")
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
 
 		assert.Equal("api-intake", c.internalConfig.ServiceName())
-		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
-		defer globalconfig.SetServiceName("")
 		t.Setenv("DD_TAGS", "service:api-intake")
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
 
 		assert.Equal("api-intake", c.internalConfig.ServiceName())
-		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
-		defer func() {
-			globalconfig.SetServiceName("")
-		}()
 		assert := assert.New(t)
-		globalconfig.SetServiceName("")
 		c, err := newTestConfig()
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.ServiceName(), filepath.Base(os.Args[0]))
-		assert.Equal("", globalconfig.ServiceName())
 
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=testService6")
-		globalconfig.SetServiceName("")
 		c, err = newTestConfig()
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.ServiceName(), "testService6")
-		assert.Equal("testService6", globalconfig.ServiceName())
 
 		t.Setenv("DD_TAGS", "service:testService")
-		globalconfig.SetServiceName("")
 		c, err = newTestConfig()
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.ServiceName(), "testService")
-		assert.Equal("testService", globalconfig.ServiceName())
 
-		globalconfig.SetServiceName("")
 		c, err = newTestConfig(WithGlobalTag("service", "testService2"))
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.ServiceName(), "testService2")
-		assert.Equal("testService2", globalconfig.ServiceName())
 
 		t.Setenv("OTEL_SERVICE_NAME", "testService3")
-		globalconfig.SetServiceName("")
 		c, err = newTestConfig(WithGlobalTag("service", "testService2"))
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.ServiceName(), "testService3")
-		assert.Equal("testService3", globalconfig.ServiceName())
 
 		t.Setenv("DD_SERVICE", "testService4")
-		globalconfig.SetServiceName("")
 		c, err = newTestConfig(WithGlobalTag("service", "testService2"), WithService("testService4"))
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.ServiceName(), "testService4")
-		assert.Equal("testService4", globalconfig.ServiceName())
 
-		globalconfig.SetServiceName("")
 		c, err = newTestConfig(WithGlobalTag("service", "testService2"), WithService("testService5"))
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.ServiceName(), "testService5")
-		assert.Equal("testService5", globalconfig.ServiceName())
 	})
 }
 
@@ -1236,7 +1201,7 @@ func TestServiceNameProcessTag(t *testing.T) {
 	t.Run("no DD_SERVICE defaults to binary name and sets svc.auto", func(t *testing.T) {
 		setup(t)
 		defer globalconfig.SetServiceName("")
-		_, err := newTestConfig()
+		_, err := newPublishedTestConfig(t)
 		require.NoError(t, err)
 		tags := processtags.GlobalTags()
 		assert.Contains(t, tags.String(), "svc.auto:"+filepath.Base(os.Args[0]))
@@ -1247,7 +1212,7 @@ func TestServiceNameProcessTag(t *testing.T) {
 		setup(t)
 		t.Setenv("DD_SERVICE", "my-service")
 		defer globalconfig.SetServiceName("")
-		_, err := newTestConfig()
+		_, err := newPublishedTestConfig(t)
 		require.NoError(t, err)
 		tags := processtags.GlobalTags()
 		assert.Contains(t, tags.String(), "svc.user:true")
@@ -1257,7 +1222,7 @@ func TestServiceNameProcessTag(t *testing.T) {
 	t.Run("WithService produces svc.user:true", func(t *testing.T) {
 		setup(t)
 		defer globalconfig.SetServiceName("")
-		_, err := newTestConfig(WithService("my-service"))
+		_, err := newPublishedTestConfig(t, WithService("my-service"))
 		require.NoError(t, err)
 		tags := processtags.GlobalTags()
 		assert.Contains(t, tags.String(), "svc.user:true")
@@ -1267,7 +1232,7 @@ func TestServiceNameProcessTag(t *testing.T) {
 	t.Run("WithGlobalTag service produces svc.user:true", func(t *testing.T) {
 		setup(t)
 		defer globalconfig.SetServiceName("")
-		_, err := newTestConfig(WithGlobalTag("service", "my-service"))
+		_, err := newPublishedTestConfig(t, WithGlobalTag("service", "my-service"))
 		require.NoError(t, err)
 		tags := processtags.GlobalTags()
 		assert.Contains(t, tags.String(), "svc.user:true")
@@ -1278,7 +1243,7 @@ func TestServiceNameProcessTag(t *testing.T) {
 		setup(t)
 		t.Setenv("OTEL_SERVICE_NAME", "my-service")
 		defer globalconfig.SetServiceName("")
-		_, err := newTestConfig()
+		_, err := newPublishedTestConfig(t)
 		require.NoError(t, err)
 		tags := processtags.GlobalTags()
 		assert.Contains(t, tags.String(), "svc.user:true")
@@ -1289,7 +1254,7 @@ func TestServiceNameProcessTag(t *testing.T) {
 		setup(t)
 		t.Setenv("DD_TAGS", "service:my-service")
 		defer globalconfig.SetServiceName("")
-		_, err := newTestConfig()
+		_, err := newPublishedTestConfig(t)
 		require.NoError(t, err)
 		tags := processtags.GlobalTags()
 		assert.Contains(t, tags.String(), "svc.user:true")
@@ -1583,11 +1548,12 @@ func TestStatsTags(t *testing.T) {
 	t.Run("process tags are shared with contrib stats tags", func(t *testing.T) {
 		assert := assert.New(t)
 		setupProcessTags(t, "true")
+		previousStatsTags := globalconfig.StatsTags()
 		t.Cleanup(func() {
 			globalconfig.SetServiceName("")
 			globalconfig.SetStatsTags(nil)
 		})
-		c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
+		c, err := newConfig(WithService("serviceName"), WithEnv("envName"))
 		assert.NoError(err)
 		c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
 		tags := statsTags(c)
@@ -1596,14 +1562,15 @@ func TestStatsTags(t *testing.T) {
 		assert.Contains(tags, "env:envName")
 		assert.Contains(tags, "host:hostName")
 		assert.Contains(tags, ext.RuntimeID+":"+globalconfig.RuntimeID())
-		processTags := processtags.GlobalTags().Slice()
+		processTags := processtags.TagsWithServiceName("serviceName", true)
 		require.NotEmpty(t, processTags)
 		for _, tag := range processTags {
 			assert.Contains(tags, tag)
 		}
 		assert.Contains(tags, "tracer_version:"+version.Tag)
 
-		st := globalconfig.StatsTags()
+		assert.Equal(previousStatsTags, globalconfig.StatsTags(), "staged stats tags must not mutate process globals")
+		st := c.globalStatsTags
 		assert.Len(st, len(tags)-2)
 		assert.Contains(st, "env:envName")
 		assert.Contains(st, "host:hostName")
@@ -1620,11 +1587,12 @@ func TestStatsTags(t *testing.T) {
 	t.Run("process tags collection disabled", func(t *testing.T) {
 		assert := assert.New(t)
 		setupProcessTags(t, "false")
+		previousStatsTags := globalconfig.StatsTags()
 		t.Cleanup(func() {
 			globalconfig.SetServiceName("")
 			globalconfig.SetStatsTags(nil)
 		})
-		c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
+		c, err := newConfig(WithService("serviceName"), WithEnv("envName"))
 		assert.NoError(err)
 		c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
 		tags := statsTags(c)
@@ -1632,7 +1600,8 @@ func TestStatsTags(t *testing.T) {
 		assert.Nil(processtags.GlobalTags())
 		assert.Contains(tags, "service:serviceName")
 		assert.Contains(tags, "tracer_version:"+version.Tag)
-		st := globalconfig.StatsTags()
+		assert.Equal(previousStatsTags, globalconfig.StatsTags(), "staged stats tags must not mutate process globals")
+		st := c.globalStatsTags
 		assert.Len(st, len(tags)-2)
 		for _, tag := range append(tags, st...) {
 			assert.Falsef(strings.HasPrefix(tag, "entrypoint."), "unexpected process tag %q", tag)
@@ -1715,7 +1684,8 @@ func TestWithHeaderTags(t *testing.T) {
 	t.Run("default-off", func(t *testing.T) {
 		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
-		newTestConfig()
+		_, err := newPublishedTestConfig(t)
+		require.NoError(t, err)
 		assert.Equal(0, globalconfig.HeaderTagsLen())
 	})
 
@@ -1723,7 +1693,8 @@ func TestWithHeaderTags(t *testing.T) {
 		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		header := "Header"
-		newTestConfig(WithHeaderTags([]string{header}))
+		_, err := newPublishedTestConfig(t, WithHeaderTags([]string{header}))
+		require.NoError(t, err)
 		assert.Equal("http.request.headers.header", globalconfig.HeaderTag(header))
 	})
 
@@ -1732,14 +1703,16 @@ func TestWithHeaderTags(t *testing.T) {
 		assert := assert.New(t)
 		header := "Header"
 		tag := "tag"
-		newTestConfig(WithHeaderTags([]string{header + ":" + tag}))
+		_, err := newPublishedTestConfig(t, WithHeaderTags([]string{header + ":" + tag}))
+		require.NoError(t, err)
 		assert.Equal("tag", globalconfig.HeaderTag(header))
 	})
 
 	t.Run("multi-header", func(t *testing.T) {
 		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
-		newTestConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
+		_, err := newPublishedTestConfig(t, WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
+		require.NoError(t, err)
 		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
 		assert.Equal("http.request.headers.2header", globalconfig.HeaderTag("2header"))
 		assert.Equal("3tag", globalconfig.HeaderTag("3header"))
@@ -1748,7 +1721,8 @@ func TestWithHeaderTags(t *testing.T) {
 	t.Run("normalization", func(t *testing.T) {
 		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
-		newTestConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
+		_, err := newPublishedTestConfig(t, WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
+		require.NoError(t, err)
 		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.HeaderTag("h!e@a-d.e*r"))
 		assert.Equal("t!a@g.", globalconfig.HeaderTag("2header"))
 	})
@@ -1758,7 +1732,8 @@ func TestWithHeaderTags(t *testing.T) {
 		t.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
 
 		assert := assert.New(t)
-		newTestConfig()
+		_, err := newPublishedTestConfig(t)
+		require.NoError(t, err)
 
 		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
 		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.HeaderTag("2.h.e.a.d.e.r"))
@@ -1769,7 +1744,8 @@ func TestWithHeaderTags(t *testing.T) {
 		t.Setenv("DD_TRACE_HEADER_TAGS", "header1:")
 
 		assert := assert.New(t)
-		newTestConfig()
+		_, err := newPublishedTestConfig(t)
+		require.NoError(t, err)
 
 		assert.Equal(0, globalconfig.HeaderTagsLen())
 	})
@@ -1779,7 +1755,8 @@ func TestWithHeaderTags(t *testing.T) {
 		t.Setenv("DD_TRACE_HEADER_TAGS", "header1,header2:")
 
 		assert := assert.New(t)
-		newTestConfig()
+		_, err := newPublishedTestConfig(t)
+		require.NoError(t, err)
 
 		assert.Equal(1, globalconfig.HeaderTagsLen())
 		assert.Equal(ext.HTTPRequestHeaders+".header1", globalconfig.HeaderTag("Header1"))
@@ -1789,7 +1766,8 @@ func TestWithHeaderTags(t *testing.T) {
 		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_HEADER_TAGS", "unexpected")
-		newTestConfig(WithHeaderTags([]string{"expected"}))
+		_, err := newPublishedTestConfig(t, WithHeaderTags([]string{"expected"}))
+		require.NoError(t, err)
 		assert.Equal(ext.HTTPRequestHeaders+".expected", globalconfig.HeaderTag("Expected"))
 		assert.Equal(1, globalconfig.HeaderTagsLen())
 	})
@@ -2304,4 +2282,66 @@ func TestAgentEnabledWithAgentlessEnvOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, c.agentEnabled(), "agent must remain enabled when CI Visibility is off")
 	assert.False(t, c.internalConfig.CIVisibilityAgentlessActive(), "agentless mode must not be active without CI Visibility")
+}
+
+func TestNewConfigPreparesClaimsBeforeDependentServiceConsumers(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_SERVICE", "source-service")
+
+	previousGlobalService := globalconfig.ServiceName()
+	previousProcessTags := processtags.GlobalTags().String()
+	t.Cleanup(func() {
+		globalconfig.SetServiceName(previousGlobalService)
+		processtags.Reload()
+	})
+
+	current := internalconfig.CreateNew()
+	release, accepted := internalconfig.AcquireProductClaims(
+		internalconfig.ProductProfiler,
+		[]internalconfig.Claim{{Name: "DD_SERVICE", Value: "profiler-service"}},
+	)
+	t.Cleanup(release)
+	require.True(t, accepted["DD_SERVICE"])
+
+	cfg, err := newConfig(WithService("tracer-service"), WithLambdaMode(true), WithTestDefaults(nil))
+	require.NoError(t, err)
+	assert.Same(t, current, internalconfig.Get(), "constructing config must not publish its generation")
+	assert.Equal(t, "source-service", cfg.internalConfig.ServiceName())
+	assert.Equal(t, previousGlobalService, globalconfig.ServiceName(),
+		"constructing a staged generation must not mutate the active global service")
+	assert.Equal(t, previousProcessTags, processtags.GlobalTags().String())
+}
+
+func TestNewConfigRevertsServiceDerivedFromConflictingGlobalTags(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_SERVICE", "source-service")
+
+	previousGlobalService := globalconfig.ServiceName()
+	previousProcessTags := processtags.GlobalTags().String()
+	t.Cleanup(func() {
+		globalconfig.SetServiceName(previousGlobalService)
+		processtags.Reload()
+	})
+	internalconfig.CreateNew()
+
+	release, accepted := internalconfig.AcquireProductClaims(
+		internalconfig.ProductProfiler,
+		[]internalconfig.Claim{{
+			Name:  "DD_TAGS",
+			Value: map[string]any{"service": "profiler-service"},
+		}},
+	)
+	t.Cleanup(release)
+	require.True(t, accepted["DD_TAGS"])
+
+	cfg, err := newConfig(WithGlobalTag("service", "tracer-service"), WithLambdaMode(true), WithTestDefaults(nil))
+	require.NoError(t, err)
+	assert.Equal(t, "source-service", cfg.internalConfig.ServiceName())
+	assert.Equal(t, previousGlobalService, globalconfig.ServiceName())
+	assert.Equal(t, previousProcessTags, processtags.GlobalTags().String())
+	assert.NotEqual(t, "tracer-service", cfg.internalConfig.GlobalTags()["service"])
+	assert.Equal(t, globalconfig.RuntimeID(), cfg.internalConfig.GlobalTags()[ext.RuntimeID],
+		"calculated runtime ID must be applied after conflicting programmatic tags are reverted")
 }

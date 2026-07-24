@@ -9,11 +9,24 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
+
+type preparedHeaderTag struct {
+	header string
+	tag    string
+}
+
+type preparedHeaderTags struct {
+	tags     []preparedHeaderTag
+	rejected []string
+}
+
+// prepareHeaderAsTagsForRegistry is a test seam for ordering an initial
+// publication snapshot against a same-generation remote-config update.
+var prepareHeaderAsTagsForRegistry = prepareHeaderAsTags
 
 // parseHeaderAsTagsFromEnv reads DD_TRACE_HEADER_TAGS, splits it on commas, and
 // returns the resulting list with the origin reported by the provider.
@@ -25,17 +38,35 @@ func parseHeaderAsTagsFromEnv(p *provider.Provider) ([]string, telemetry.Origin)
 	return strings.Split(v, ","), origin
 }
 
-// propagateHeaderAsTagsToGlobalConfig is the apply callback for headerAsTags.
-// Transitional: removed when integrations read header tags from this package directly.
-func propagateHeaderAsTagsToGlobalConfig(headerAsTags []string) bool {
-	globalconfig.ClearHeaderTags()
+// prepareHeaderAsTags performs all parsing before the legacy registry is
+// mutated. In particular, it does not log: logger callbacks may reenter config
+// publication, so warnings are emitted only after the generation-fenced
+// registry write completes.
+func prepareHeaderAsTags(headerAsTags []string) preparedHeaderTags {
+	prepared := preparedHeaderTags{
+		tags: make([]preparedHeaderTag, 0, len(headerAsTags)),
+	}
 	for _, h := range headerAsTags {
 		header, tag := normalizer.HeaderTag(h)
 		if len(header) == 0 || len(tag) == 0 {
-			log.Debug("Header-tag input is in unsupported format; dropping input value %q", h)
+			prepared.rejected = append(prepared.rejected, h)
 			continue
 		}
-		globalconfig.SetHeaderTag(header, tag)
+		prepared.tags = append(prepared.tags, preparedHeaderTag{header: header, tag: tag})
 	}
-	return true
+	return prepared
+}
+
+func preparedHeaderTagMap(prepared preparedHeaderTags) map[string]string {
+	tags := make(map[string]string, len(prepared.tags))
+	for _, tag := range prepared.tags {
+		tags[tag.header] = tag.tag
+	}
+	return tags
+}
+
+func logRejectedHeaderTags(prepared preparedHeaderTags) {
+	for _, rejected := range prepared.rejected {
+		log.Debug("Header-tag input is in unsupported format; dropping input value %q", rejected)
+	}
 }

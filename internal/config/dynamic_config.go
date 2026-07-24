@@ -71,6 +71,9 @@ type DynamicConfig[T any] struct {
 	equal         func(T, T) bool  // compares values to avoid unnecessary updates
 	// executes any config-specific operations to propagate the update properly, returns whether the update was applied
 	apply func(T) bool
+	// report, when set, routes telemetry through the owning generation's
+	// publication boundary. Standalone DynamicConfig values report directly.
+	report func(string, any, telemetry.Origin)
 }
 
 // newDynamicConfig creates a DynamicConfig with the given telemetry name, initial value,
@@ -138,19 +141,22 @@ func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 	}
 	newVal := dc.current
 	apply := dc.apply
+	report := dc.report
 	cfgName := dc.cfgName
 	var (
 		prepared    configtelemetry.Prepared
 		reportedVal any
 		reportErr   error
 	)
-	if changed {
+	if changed && report == nil {
 		prepared = configtelemetry.Prepare(cfgName, origin)
 		reportedVal, reportErr = prepareConfigTelemetryValue(newVal)
 	}
 	dc.mu.Unlock()
 	if changed {
-		if reportErr != nil {
+		if report != nil {
+			report(cfgName, newVal, origin)
+		} else if reportErr != nil {
 			log.Warn("config: unable to prepare %s telemetry: %v", cfgName, reportErr)
 		} else {
 			reportedVal = telemetry.SanitizeConfigValue(reportedVal)

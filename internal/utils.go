@@ -40,8 +40,12 @@ func (l *LockMap) Iter(f func(key string, val string)) {
 		return
 	}
 	l.RLock()
-	defer l.RUnlock()
+	snapshot := make(map[string]string, len(l.m))
 	for k, v := range l.m {
+		snapshot[k] = v
+	}
+	l.RUnlock()
+	for k, v := range snapshot {
 		f(k, v)
 	}
 }
@@ -57,6 +61,18 @@ func (l *LockMap) Clear() {
 	defer l.Unlock()
 	l.m = map[string]string{}
 	atomic.StoreUint32(&l.c, 0)
+}
+
+// Replace atomically replaces all entries with a copy of m.
+func (l *LockMap) Replace(m map[string]string) {
+	replacement := make(map[string]string, len(m))
+	for key, value := range m {
+		replacement[key] = value
+	}
+	l.Lock()
+	l.m = replacement
+	atomic.StoreUint32(&l.c, uint32(len(replacement)))
+	l.Unlock()
 }
 
 func (l *LockMap) Set(k, v string) {

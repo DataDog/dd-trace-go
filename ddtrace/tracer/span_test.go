@@ -884,7 +884,6 @@ func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
@@ -1033,7 +1032,6 @@ func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -1083,7 +1081,6 @@ func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -1864,7 +1861,6 @@ func TestStatsAfterFinish(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		defer tracer.Stop()
-		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
 		tracer.config.ddTransport = transport
@@ -1904,7 +1900,6 @@ func TestStatsAfterFinish(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		defer tracer.Stop()
-		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
 		tracer.config.ddTransport = transport
@@ -1947,7 +1942,6 @@ func TestStatsAdditionalMetricTags(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		defer tracer.Stop()
-		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
 		tracer.config.ddTransport = transport
@@ -1983,7 +1977,6 @@ func TestStatsAdditionalMetricTags(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		defer tracer.Stop()
-		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
 		tracer.config.ddTransport = transport
@@ -2015,7 +2008,6 @@ func TestStatsAdditionalMetricTags(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		defer tracer.Stop()
-		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
 		tracer.config.ddTransport = transport

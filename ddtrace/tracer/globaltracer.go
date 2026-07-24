@@ -17,6 +17,12 @@ func setGlobalTracer(t Tracer) {
 	internal.SetGlobalTracer(t)
 }
 
+// swapGlobalTracer installs t and returns the displaced tracer without
+// synchronously stopping it.
+func swapGlobalTracer(t Tracer) Tracer {
+	return internal.SwapGlobalTracer(t)
+}
+
 // getGlobalTracer returns the currently active tracer.
 func getGlobalTracer() Tracer {
 	return internal.GetGlobalTracer[Tracer]()

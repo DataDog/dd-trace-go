@@ -397,9 +397,20 @@ func parseGlobalTags(v string) map[string]any {
 	return tags
 }
 
-// reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
-func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
-	prepareConfigReport("global_tag_"+key, value, origin).submit()
+// reportDefaultOrSourceGlobalTagTelemetry reports the per-key
+// "global_tag_<key>" telemetry while preserving the generation's publication
+// boundary.
+func (c *Config) reportDefaultOrSourceGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.deferTelemetry {
+		c.pendingTelemetry = append(c.pendingTelemetry, preparePendingConfigReport("global_tag_"+key, value, origin, origin == telemetry.OriginDefault))
+		return
+	}
+	report := prepareConfigReport("global_tag_"+key, value, origin)
+	c.mu.Unlock()
+	defer c.mu.Lock()
+	report.submit()
 }
 
 // resolveOTLPEndpoint returns the OTEL_EXPORTER_OTLP_ENDPOINT base URL, defaulting to http://<agent-host>:4318.

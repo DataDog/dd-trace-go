@@ -36,10 +36,38 @@ const (
 )
 
 var (
-	enabled           bool
-	pTags             *ProcessTags
-	containerTagsHash atomic.Value
+	enabled                   bool
+	pTags                     *ProcessTags
+	containerTagsHashRegistry = newContainerTagsHashRegistry()
 )
+
+type containerHashRegistry struct {
+	mu sync.Mutex
+
+	publicationID uint64
+	generation    uint64
+	revision      uint64
+	value         atomic.Value
+}
+
+func newContainerTagsHashRegistry() *containerHashRegistry {
+	return new(containerHashRegistry)
+}
+
+func (r *containerHashRegistry) apply(publicationID, generation, revision uint64, hash string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if publicationID < r.publicationID ||
+		(publicationID == r.publicationID && generation < r.generation) ||
+		(publicationID == r.publicationID && generation == r.generation && revision <= r.revision) {
+		return false
+	}
+	r.publicationID = publicationID
+	r.generation = generation
+	r.revision = revision
+	r.value.Store(hash)
+	return true
+}
 
 func init() {
 	Reload()
@@ -174,15 +202,52 @@ func GlobalTags() *ProcessTags {
 	return pTags
 }
 
+// TagsWithServiceName returns a process-tag snapshot with the supplied service
+// marker applied, without mutating the active process tags.
+func TagsWithServiceName(name string, isUserDefined bool) []string {
+	if !enabled || pTags == nil {
+		return nil
+	}
+	pTags.mu.RLock()
+	tags := maps.Clone(pTags.tags)
+	pTags.mu.RUnlock()
+	if tags == nil {
+		tags = make(map[string]string)
+	}
+	delete(tags, tagSvcAuto)
+	delete(tags, tagSvcUser)
+	if isUserDefined {
+		tags[tagSvcUser] = "true"
+	} else {
+		tags[tagSvcAuto] = name
+	}
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, normalize.NormalizeTag(key+":"+tags[key]))
+	}
+	return result
+}
+
 // SetContainerTagsHash stores the container tags hash returned by the agent.
 func SetContainerTagsHash(hash string) {
-	containerTagsHash.Store(hash)
+	containerTagsHashRegistry.value.Store(hash)
 }
 
 // ContainerTagsHash returns the latest container tags hash returned by the agent.
 func ContainerTagsHash() string {
-	hash, _ := containerTagsHash.Load().(string)
+	hash, _ := containerTagsHashRegistry.value.Load().(string)
 	return hash
+}
+
+// ApplyContainerTagsHashForPublication stores hash when the supplied
+// publication tuple is newer than the last applied tuple.
+func ApplyContainerTagsHashForPublication(publicationID, generation, revision uint64, hash string) bool {
+	return containerTagsHashRegistry.apply(publicationID, generation, revision, hash)
 }
 
 func add(tags map[string]string) {

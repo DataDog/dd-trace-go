@@ -62,28 +62,29 @@ func (t *civisibilitymocktracer) realTracer() tracer.Tracer {
 // SetCIVisibilityTracer installs the tracer used for CI Visibility spans while
 // keeping this mock tracer as the process global tracer.
 func (t *civisibilitymocktracer) SetCIVisibilityTracer(real tracer.Tracer) bool {
+	old, accepted := t.SwapCIVisibilityTracer(real)
+	if old != nil && old != real {
+		stopRealTracerDelegate(old)
+	}
+	return accepted
+}
+
+// SwapCIVisibilityTracer installs the tracer used for CI Visibility spans and
+// returns the displaced delegate without stopping it.
+func (t *civisibilitymocktracer) SwapCIVisibilityTracer(real tracer.Tracer) (tracer.Tracer, bool) {
 	if real == nil {
-		return false
+		return nil, false
 	}
 
 	t.realMu.Lock()
 	if t.isnoop.Load() {
-		old := t.real
-		t.real = &tracer.NoopTracer{}
 		t.realMu.Unlock()
-		if old != nil && old != real {
-			stopRealTracerDelegate(old)
-		}
-		return false
+		return nil, false
 	}
 	old := t.real
 	t.real = real
 	t.realMu.Unlock()
-
-	if old != nil && old != real {
-		stopRealTracerDelegate(old)
-	}
-	return true
+	return old, true
 }
 
 // stopRealTracerDelegate stops a tracer owned by civisibilitymocktracer without

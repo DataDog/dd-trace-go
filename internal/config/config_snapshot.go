@@ -23,6 +23,40 @@ type preparedConfigReport struct {
 	err      error
 }
 
+type pendingConfigReport struct {
+	name      string
+	value     any
+	origin    telemetry.Origin
+	isDefault bool
+	err       error
+}
+
+func preparePendingConfigReport(name string, value any, origin telemetry.Origin, isDefault bool) pendingConfigReport {
+	detached, err := prepareConfigTelemetryValue(value)
+	return pendingConfigReport{
+		name:      name,
+		value:     detached,
+		origin:    origin,
+		isDefault: isDefault,
+		err:       err,
+	}
+}
+
+func (r pendingConfigReport) submit() {
+	var prepared configtelemetry.Prepared
+	if r.isDefault {
+		prepared = configtelemetry.PrepareDefault(r.name)
+	} else {
+		prepared = configtelemetry.Prepare(r.name, r.origin)
+	}
+	preparedConfigReport{
+		name:     r.name,
+		prepared: prepared,
+		value:    r.value,
+		err:      r.err,
+	}.submit()
+}
+
 func prepareConfigReport(name string, value any, origin telemetry.Origin) preparedConfigReport {
 	detached, err := prepareConfigTelemetryValue(value)
 	return preparedConfigReport{
@@ -54,6 +88,30 @@ func (r preparedConfigReport) submit() {
 // prepareConfigTelemetryValue eagerly detaches the supported telemetry value
 // shapes. It never invokes user-provided formatting or marshaling callbacks.
 func prepareConfigTelemetryValue(value any) (any, error) {
+	budget := configTelemetrySnapshotBudget{
+		remaining: 1024,
+		active:    make(map[configTelemetrySnapshotVisit]struct{}),
+	}
+	return prepareConfigTelemetryValueBounded(value, 0, &budget)
+}
+
+const maxConfigTelemetrySnapshotDepth = 32
+
+type configTelemetrySnapshotVisit struct {
+	kind reflect.Kind
+	ptr  uintptr
+}
+
+type configTelemetrySnapshotBudget struct {
+	remaining int
+	active    map[configTelemetrySnapshotVisit]struct{}
+}
+
+func prepareConfigTelemetryValueBounded(value any, depth int, budget *configTelemetrySnapshotBudget) (any, error) {
+	if depth > maxConfigTelemetrySnapshotDepth || budget.remaining == 0 {
+		return nil, fmt.Errorf("configuration telemetry value exceeds snapshot limits")
+	}
+	budget.remaining--
 	switch value := value.(type) {
 	case nil:
 		return nil, nil
@@ -79,9 +137,15 @@ func prepareConfigTelemetryValue(value any) (any, error) {
 		}
 		return snapshot, nil
 	case map[string]any:
+		visit := configTelemetrySnapshotVisit{kind: reflect.Map, ptr: reflect.ValueOf(value).Pointer()}
+		if _, cyclic := budget.active[visit]; cyclic {
+			return nil, fmt.Errorf("cyclic configuration telemetry value")
+		}
+		budget.active[visit] = struct{}{}
+		defer delete(budget.active, visit)
 		snapshot := make(map[string]any, len(value))
 		for key, item := range value {
-			detached, err := prepareConfigTelemetryValue(item)
+			detached, err := prepareConfigTelemetryValueBounded(item, depth+1, budget)
 			if err != nil {
 				return nil, err
 			}
@@ -89,9 +153,15 @@ func prepareConfigTelemetryValue(value any) (any, error) {
 		}
 		return snapshot, nil
 	case []any:
+		visit := configTelemetrySnapshotVisit{kind: reflect.Slice, ptr: reflect.ValueOf(value).Pointer()}
+		if _, cyclic := budget.active[visit]; cyclic {
+			return nil, fmt.Errorf("cyclic configuration telemetry value")
+		}
+		budget.active[visit] = struct{}{}
+		defer delete(budget.active, visit)
 		snapshot := make([]any, len(value))
 		for i, item := range value {
-			detached, err := prepareConfigTelemetryValue(item)
+			detached, err := prepareConfigTelemetryValueBounded(item, depth+1, budget)
 			if err != nil {
 				return nil, err
 			}

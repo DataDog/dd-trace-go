@@ -122,7 +122,9 @@ func bootstrapInspectableTracer(tb testing.TB, opts ...StartOption) (Tracer, age
 	if err != nil {
 		return nil, nil, err
 	}
-	setGlobalTracer(tracer)
+	if err := activateInspectableTracer(tb, tracer); err != nil {
+		return nil, nil, err
+	}
 	globalinternal.SetTracerInitialized(true)
 	tb.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
@@ -131,7 +133,7 @@ func bootstrapInspectableTracer(tb testing.TB, opts ...StartOption) (Tracer, age
 	return tracer, agent, nil
 }
 
-func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartOption) (Tracer, error) {
+func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartOption) (*tracer, error) {
 	tb.Helper()
 	// withAgentTransport injects the in-process round-tripper before newTracer
 	// runs so that bootstrap (e.g. /info discovery) never touches the real
@@ -144,7 +146,7 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 		withForceAgentWriter(),
 		withNoopStats(),
 	}, opts...)
-	tracer, err := newTracer(o...)
+	tracer, err := newUnpublishedTracer(o...)
 	if err != nil {
 		return nil, err
 	}
@@ -175,18 +177,23 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 		llmobs.FlushSync()
 		done <- struct{}{}
 	}
-	// Start AppSec and LLMObs using the same helpers as the production Start path
-	// so that options like WithAppSecEnabled activate identically. Telemetry,
-	// runtime metrics, and storeConfig are intentionally omitted: they spawn
-	// background goroutines and process-global side effects that break the
-	// inspectable tracer's synctest/no-network guarantees.
+	tb.Cleanup(tracer.Stop)
+	return tracer, nil
+}
+
+func activateInspectableTracer(tb testing.TB, tracer *tracer) error {
+	tb.Helper()
+	if err := tracer.publishAndActivate(tracer, false); err != nil {
+		return err
+	}
+	// AppSec and LLMObs use the same helpers as production Start. Instrumentation
+	// telemetry and storeConfig remain omitted for this in-process test harness.
 	tracer.startAppSec()
 	if tracer.config.llmobs.Enabled {
 		if err := llmobs.Start(tracer.config.llmobs, &llmobsTracerAdapter{}); err != nil {
-			return nil, fmt.Errorf("failed to start llmobs: %w", err)
+			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
 		tb.Cleanup(llmobs.Stop)
 	}
-	tb.Cleanup(tracer.Stop)
-	return tracer, nil
+	return nil
 }

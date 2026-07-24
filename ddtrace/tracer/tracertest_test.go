@@ -189,7 +189,6 @@ func newTracerTest(tb testing.TB, agent *testAgent, opts ...StartOption) *tracer
 	}
 	tr, err := newTracer(append(baseOpts, opts...)...)
 	require.NoError(tb, err)
-	setGlobalTracer(tr)
 	return tr
 }
 
@@ -206,7 +205,6 @@ func newAgentTracerTest(tb testing.TB, agent *testAgent, protocol testTraceProto
 	}
 	tr, err := newTracer(append(baseOpts, opts...)...)
 	require.NoError(tb, err)
-	setGlobalTracer(tr)
 	return tr
 }
 

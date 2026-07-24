@@ -95,9 +95,38 @@ func (m *ManagedFile) Name() string {
 
 var (
 	levelThreshold atomic.Int32 // stores Level as int32; accessed atomically to avoid lock contention in hot paths
-	mu             sync.RWMutex // guards logger instance
+	mu             sync.Mutex   // guards the logger slot and its callback leases
 	logger         Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
+	activeSlot                  = newLoggerSlot(logger, logger, false)
 )
+
+type loggerSlot struct {
+	logger   Logger
+	fallback Logger
+	leased   bool
+
+	refs            uint64
+	retired         bool
+	retireRequested bool
+	finished        bool
+	finalizers      []func()
+}
+
+func newLoggerSlot(logger, fallback Logger, leased bool) *loggerSlot {
+	return &loggerSlot{
+		logger:   logger,
+		fallback: fallback,
+		leased:   leased,
+	}
+}
+
+// LoggerLease owns an installed logger slot. Retire prevents new callbacks
+// from acquiring the slot and runs its finalizer after callbacks which already
+// acquired it return.
+type LoggerLease struct {
+	slot *loggerSlot
+	once sync.Once
+}
 
 func init() {
 	levelThreshold.Store(int32(LevelWarn))
@@ -107,14 +136,131 @@ func init() {
 // previous logger. The return value is mostly useful when testing.
 func UseLogger(l Logger) (undo func()) {
 	Flush()
-	mu.Lock()
-	defer mu.Unlock()
-	old := logger
-	logger = l
+	return InstallLogger(l)
+}
+
+// InstallLogger sets l as the active logger without flushing pending errors.
+// Callers that need the legacy flush behavior should use UseLogger.
+func InstallLogger(l Logger) (undo func()) {
+	old := installLogger(l, l, false)
+	var once sync.Once
 	return func() {
+		once.Do(func() {
+			restoreLogger(old)
+		})
+	}
+}
+
+// InstallLoggerWithLease installs a process-generation logger. A nil logger
+// inherits the logger which preceded the current process generation, so a
+// replacement cannot leave a retired file logger in the global slot.
+//
+// Installing a logger only retires the previous slot; it never waits for an
+// in-flight callback. Call Retire when the installed logger's backing resource
+// is ready to be released.
+func InstallLoggerWithLease(l Logger) *LoggerLease {
+	mu.Lock()
+	fallback := activeSlot.logger
+	if activeSlot.leased {
+		fallback = activeSlot.fallback
+	}
+	if l == nil {
+		l = fallback
+	}
+	slot := newLoggerSlot(l, fallback, true)
+	finished := swapLoggerSlotLocked(slot)
+	mu.Unlock()
+	runLoggerFinalizers(finished)
+	return &LoggerLease{slot: slot}
+}
+
+// Retire removes the leased logger from the active slot if necessary. The
+// optional finalizer runs after every callback which acquired the logger has
+// returned. Retire itself does not wait for those callbacks.
+func (l *LoggerLease) Retire(finalizer func()) {
+	if l == nil {
+		if finalizer != nil {
+			finalizer()
+		}
+		return
+	}
+	l.once.Do(func() {
 		mu.Lock()
-		defer mu.Unlock()
-		logger = old
+		var finished []*loggerSlot
+		if activeSlot == l.slot {
+			fallback := l.slot.fallback
+			replacement := newLoggerSlot(fallback, fallback, false)
+			finished = append(finished, swapLoggerSlotLocked(replacement)...)
+		}
+		if finalizer != nil {
+			l.slot.finalizers = append(l.slot.finalizers, finalizer)
+		}
+		l.slot.retireRequested = true
+		if completed := finishLoggerSlotLocked(l.slot); completed != nil {
+			finished = append(finished, completed)
+		}
+		mu.Unlock()
+		runLoggerFinalizers(finished)
+	})
+}
+
+func installLogger(l, fallback Logger, leased bool) *loggerSlot {
+	mu.Lock()
+	old := activeSlot
+	finished := swapLoggerSlotLocked(newLoggerSlot(l, fallback, leased))
+	mu.Unlock()
+	runLoggerFinalizers(finished)
+	return old
+}
+
+func restoreLogger(old *loggerSlot) {
+	mu.Lock()
+	var next *loggerSlot
+	if old.leased && !old.retireRequested && !old.finished {
+		old.retired = false
+		next = old
+	} else {
+		restored := old.logger
+		if old.leased {
+			restored = old.fallback
+		}
+		next = newLoggerSlot(restored, restored, false)
+	}
+	var finished []*loggerSlot
+	if activeSlot != next {
+		finished = swapLoggerSlotLocked(next)
+	}
+	mu.Unlock()
+	runLoggerFinalizers(finished)
+}
+
+func swapLoggerSlotLocked(next *loggerSlot) []*loggerSlot {
+	old := activeSlot
+	activeSlot = next
+	logger = next.logger
+	old.retired = true
+	if !old.leased {
+		old.retireRequested = true
+	}
+	if completed := finishLoggerSlotLocked(old); completed != nil {
+		return []*loggerSlot{completed}
+	}
+	return nil
+}
+
+func finishLoggerSlotLocked(slot *loggerSlot) *loggerSlot {
+	if slot.finished || !slot.retired || !slot.retireRequested || slot.refs != 0 {
+		return nil
+	}
+	slot.finished = true
+	return slot
+}
+
+func runLoggerFinalizers(slots []*loggerSlot) {
+	for _, slot := range slots {
+		for _, finalizer := range slot.finalizers {
+			finalizer()
+		}
 	}
 }
 
@@ -122,19 +268,32 @@ func UseLogger(l Logger) (undo func()) {
 // It returns the file that was created, or nil and an error if the file creation was unsuccessful.
 // The caller of OpenFileAtPath is responsible for calling Close() on the ManagedFile
 func OpenFileAtPath(dirPath string) (*ManagedFile, error) {
+	managed, fileLogger, err := PrepareFileAtPath(dirPath)
+	if err != nil {
+		return nil, err
+	}
+	UseLogger(fileLogger)
+	return managed, nil
+}
+
+// PrepareFileAtPath opens the configured tracer log file without installing
+// it as the process logger. Callers can perform the filesystem I/O before a
+// generation bridge and install the returned Logger only after validating the
+// publication.
+func PrepareFileAtPath(dirPath string) (*ManagedFile, Logger, error) {
 	path, err := os.Stat(dirPath)
 	if err != nil || !path.IsDir() {
-		return nil, fmt.Errorf("file path %v invalid or does not exist on the underlying os; using default logger to stderr", dirPath)
+		return nil, nil, fmt.Errorf("file path %v invalid or does not exist on the underlying os; using default logger to stderr", dirPath)
 	}
 	filepath := dirPath + "/" + LoggerFile
 	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		return nil, fmt.Errorf("using default logger to stderr due to error creating or opening log file: %s", err.Error())
+		return nil, nil, fmt.Errorf("using default logger to stderr due to error creating or opening log file: %s", err.Error())
 	}
-	UseLogger(&defaultLogger{l: log.New(f, "", log.LstdFlags)})
-	return &ManagedFile{
+	managed := &ManagedFile{
 		file: f,
-	}, nil
+	}
+	return managed, &defaultLogger{l: log.New(f, "", log.LstdFlags)}, nil
 }
 
 // SetLevel sets the given lvl as log threshold for logging.
@@ -288,15 +447,34 @@ func printMsg(lvl Level, format string, a ...any) {
 	b.WriteString(lvl.String())
 	b.WriteString(": ")
 	b.WriteString(fmt.Sprintf(format, a...))
-	mu.RLock()
-	if ll, ok := logger.(interface {
+	slot, current := acquireLogger()
+	defer releaseLogger(slot)
+	if ll, ok := current.(interface {
 		LogL(lvl Level, msg string)
 	}); !ok {
-		logger.Log(b.String())
+		current.Log(b.String())
 	} else {
 		ll.LogL(lvl, b.String())
 	}
-	mu.RUnlock()
+}
+
+func acquireLogger() (*loggerSlot, Logger) {
+	mu.Lock()
+	slot := activeSlot
+	slot.refs++
+	current := slot.logger
+	mu.Unlock()
+	return slot, current
+}
+
+func releaseLogger(slot *loggerSlot) {
+	mu.Lock()
+	slot.refs--
+	finished := finishLoggerSlotLocked(slot)
+	mu.Unlock()
+	if finished != nil {
+		runLoggerFinalizers([]*loggerSlot{finished})
+	}
 }
 
 type defaultLogger struct{ l *log.Logger }

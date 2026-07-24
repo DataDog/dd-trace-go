@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -201,6 +202,158 @@ func TestLog(t *testing.T) {
 			assert.Len(t, tp.Lines(), 1)
 		})
 	})
+}
+
+func TestInstallLoggerDoesNotFlushPendingErrors(t *testing.T) {
+	oldRate := errrate
+	errrate = 10 * time.Hour
+	t.Cleanup(func() { errrate = oldRate })
+
+	oldLogger := new(testLogger)
+	restoreOriginal := UseLogger(oldLogger)
+	t.Cleanup(restoreOriginal)
+
+	Error("pending-before-install")
+	newLogger := new(testLogger)
+	restoreOld := InstallLogger(newLogger)
+	t.Cleanup(restoreOld)
+
+	assert.Empty(t, oldLogger.Lines())
+	assert.Empty(t, newLogger.Lines())
+
+	Flush()
+	assert.True(t, hasMsg("ERROR", "pending-before-install", newLogger.Lines()), newLogger.Lines())
+}
+
+func TestInstallLoggerUndoRestoresPreviousLogger(t *testing.T) {
+	previous := new(testLogger)
+	restorePrevious := UseLogger(previous)
+	t.Cleanup(restorePrevious)
+
+	replacement := new(testLogger)
+	undo := InstallLogger(replacement)
+	undo()
+	undo()
+
+	Warn("restored-after-undo")
+	assert.True(t, hasMsg("WARN", "restored-after-undo", previous.Lines()))
+	assert.Empty(t, replacement.Lines())
+}
+
+type closeAwareTestLogger struct {
+	closed     atomic.Bool
+	closedUses atomic.Uint32
+}
+
+func (l *closeAwareTestLogger) Log(string) {
+	if l.closed.Load() {
+		l.closedUses.Add(1)
+	}
+}
+
+func TestInstallLoggerUndoKeepsLeasedLoggerLifetime(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		retireBefore bool
+		concurrent   bool
+	}{
+		{name: "undo before retirement"},
+		{name: "undo after retirement", retireBefore: true},
+		{name: "concurrent undo after retirement", retireBefore: true, concurrent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			baseline := new(testLogger)
+			restoreBaseline := UseLogger(baseline)
+			t.Cleanup(restoreBaseline)
+
+			managed := new(closeAwareTestLogger)
+			lease := InstallLoggerWithLease(managed)
+			undo := InstallLogger(new(testLogger))
+
+			retire := func() {
+				lease.Retire(func() { managed.closed.Store(true) })
+				assert.True(t, managed.closed.Load())
+			}
+			if tc.retireBefore {
+				retire()
+			}
+			if tc.concurrent {
+				var wg sync.WaitGroup
+				for range 16 {
+					wg.Go(undo)
+				}
+				wg.Wait()
+			} else {
+				undo()
+				undo()
+			}
+			if !tc.retireBefore {
+				retire()
+			}
+
+			Warn("after-leased-logger-retirement")
+			assert.Zero(t, managed.closedUses.Load(),
+				"undo restored a logger whose lease had retired its resource")
+			assert.True(t, hasMsg("WARN", "after-leased-logger-retirement", baseline.Lines()),
+				"a retired lease must move a restored slot to its safe fallback")
+		})
+	}
+}
+
+type blockingTestLogger struct {
+	entered chan struct{}
+	release chan struct{}
+	calls   atomic.Uint32
+}
+
+func (l *blockingTestLogger) Log(string) {
+	if l.calls.Add(1) == 1 {
+		close(l.entered)
+		<-l.release
+	}
+}
+
+func TestInstallLoggerWithLeaseRetiresAfterAcquiredCallback(t *testing.T) {
+	baseline := new(testLogger)
+	restoreBaseline := UseLogger(baseline)
+	t.Cleanup(restoreBaseline)
+
+	oldLogger := &blockingTestLogger{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	oldLease := InstallLoggerWithLease(oldLogger)
+
+	callbackDone := make(chan struct{})
+	go func() {
+		Warn("blocked-old-callback")
+		close(callbackDone)
+	}()
+	<-oldLogger.entered
+
+	replacement := new(testLogger)
+	newLease := InstallLoggerWithLease(replacement)
+	Warn("replacement-callback")
+	assert.EqualValues(t, 1, oldLogger.calls.Load(),
+		"no callback may acquire the old logger after replacement")
+	assert.True(t, hasMsg("WARN", "replacement-callback", replacement.Lines()))
+
+	retired := make(chan struct{})
+	oldLease.Retire(func() { close(retired) })
+	select {
+	case <-retired:
+		t.Fatal("old logger retired before its acquired callback returned")
+	default:
+	}
+
+	close(oldLogger.release)
+	<-callbackDone
+	select {
+	case <-retired:
+	case <-time.After(time.Second):
+		t.Fatal("old logger did not retire after its acquired callback returned")
+	}
+	newLease.Retire(nil)
 }
 
 func TestRecordLoggerIgnore(t *testing.T) {

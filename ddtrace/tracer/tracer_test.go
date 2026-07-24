@@ -15,14 +15,18 @@ import (
 	"fmt"
 	"io"
 	llog "log"
+	"math"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	rt "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -42,9 +46,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -122,6 +130,19 @@ func (noopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 	return &http.Response{
 		StatusCode: http.StatusNotFound,
 		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil
+}
+
+type infoCountingRoundTripper struct {
+	calls atomic.Int32
+}
+
+func (rt *infoCountingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	rt.calls.Add(1)
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"endpoints":[],"config":{}}`)),
+		Header:     make(http.Header),
 	}, nil
 }
 
@@ -798,7 +819,6 @@ func TestTracerStartSpanOptions(t *testing.T) {
 func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer, err := newTracer()
 	assert.NoError(t, err)
-	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	defer setGlobalTracer(&NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
@@ -1259,7 +1279,7 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 
 		// the tracer must create child spans
 		tracer, err := newTracer(withTransport(newDefaultTransport()))
-		setGlobalTracer(tracer)
+		require.NoError(t, err)
 		defer tracer.Stop()
 		if !is128 {
 			old := traceID128BitEnabled.Swap(false)
@@ -1422,9 +1442,10 @@ func TestTracerEdgeSampler(t *testing.T) {
 	)
 	assert.Nil(err)
 
-	// Set tracer1 as global. span.Finish() submits chunks through the global
-	// tracer, so all spans from both tracers end up on tracer1's worker.
-	setGlobalTracer(tracer1)
+	// Publish and activate only tracer1. tracer0 is used for sampling decisions,
+	// while span.Finish submits both tracers' chunks through the active global
+	// tracer1 worker.
+	require.NoError(t, activateInspectableTracer(t, tracer1))
 
 	count := payloadQueueSize / 3
 
@@ -1435,7 +1456,6 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	tracer0.Flush()
 	tracer1.Flush()
 
 	assert.Equal(333, agent.CountSpans())
@@ -1503,8 +1523,6 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 	trc.config.agent.store(af)
 	trc.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 
-	setGlobalTracer(trc)
-
 	assert.IsType(t, &noopConcentrator{}, trc.stats, "concentrator must be noop in OTLP mode")
 	assert.True(t, trc.config.canDropP0s(), "canDropP0s must be true for this test to exercise submit()")
 
@@ -1556,7 +1574,6 @@ func TestOTLPExportModeProcessTags(t *testing.T) {
 		require.NoError(t, err)
 		w := trc.traceWriter.(*otlpTraceWriter)
 		w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
-		setGlobalTracer(trc)
 		t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
 		return trc
 	}
@@ -1707,7 +1724,6 @@ func TestOTLPExportModeSpanEventsRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	w := trc.traceWriter.(*otlpTraceWriter)
 	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
-	setGlobalTracer(trc)
 	t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
 
 	s := trc.newRootSpan("op", "test-svc", "/")
@@ -2695,7 +2711,6 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	af.Stats = true
 	af.DropP0s = true
 	tracer.config.agent.store(af)
-	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		tracer.reportHealthMetrics()
 		if n < 0 {
@@ -2738,6 +2753,20 @@ func testPrioritySampler(t *tracer) *prioritySampler {
 func newTestConfig(opts ...StartOption) (*config, error) {
 	opts = append([]StartOption{WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true))}, opts...)
 	return newConfig(opts...)
+}
+
+// newPublishedTestConfig constructs and publishes a test tracer through the
+// production handoff. Use it only when a test intentionally exercises
+// process-global compatibility state.
+func newPublishedTestConfig(tb testing.TB, opts ...StartOption) (*config, error) {
+	tb.Helper()
+	opts = append([]StartOption{WithTestDefaults(nil)}, opts...)
+	tracer, err := newTracer(opts...)
+	if err != nil {
+		return nil, err
+	}
+	tb.Cleanup(tracer.Stop)
+	return tracer.config, nil
 }
 
 // comparePayloadSpans allows comparing two spans which might have been
@@ -2927,7 +2956,6 @@ func TestUserMonitoring(t *testing.T) {
 	tr, err := newTracer()
 	defer tr.Stop()
 	assert.NoError(t, err)
-	setGlobalTracer(tr)
 	defer setGlobalTracer(&NoopTracer{})
 
 	t.Run("root", func(t *testing.T) {
@@ -3621,6 +3649,1112 @@ func TestStartSpanFromPropagatedContext(t *testing.T) {
 		assert.Equal(t, root.traceID, span.traceID)
 		assert.Equal(t, root.spanID, span.parentID)
 	})
+}
+
+func TestStartGenerationHandoffPublishesPinnedConfig(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+
+	before := internalconfig.CreateNew()
+	require.NoError(t, Start(WithService("published-service"), WithLambdaMode(true), WithTestDefaults(nil)))
+	t.Cleanup(Stop)
+
+	active, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	assert.NotSame(t, before, active.config.internalConfig)
+	assert.Same(t, active.config.internalConfig, internalconfig.Get())
+	assert.Equal(t, "published-service", active.config.internalConfig.ServiceName())
+}
+
+func TestStartWithoutContainerHashPublishesInitialRevision(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	require.NoError(t, Start(WithLambdaMode(true), WithTestDefaults(nil)))
+	t.Cleanup(Stop)
+
+	active, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	assert.EqualValues(t, 1, active.containerTagsHashRevision.Load(),
+		"the initial empty hash must consume the first target revision")
+}
+
+type callbackLogger struct {
+	once sync.Once
+	log  func()
+}
+
+func (l *callbackLogger) Log(string) {
+	l.once.Do(l.log)
+}
+
+type panicLogger struct {
+	value any
+}
+
+func (l *panicLogger) Log(string) {
+	panic(l.value)
+}
+
+type recordingManagedLogFile struct {
+	closed atomic.Bool
+}
+
+func (f *recordingManagedLogFile) Close() error {
+	f.closed.Store(true)
+	return nil
+}
+
+func (f *recordingManagedLogFile) Name() string {
+	return "prepared.log"
+}
+
+type lifetimeManagedLogFile struct {
+	closed atomic.Bool
+}
+
+func (f *lifetimeManagedLogFile) Close() error {
+	f.closed.Store(true)
+	return nil
+}
+
+func (f *lifetimeManagedLogFile) Name() string {
+	return "lifetime.log"
+}
+
+type blockingManagedLogger struct {
+	file        *lifetimeManagedLogFile
+	entered     chan struct{}
+	release     chan struct{}
+	callbacks   atomic.Uint32
+	closedAfter atomic.Bool
+}
+
+func (l *blockingManagedLogger) Log(message string) {
+	if !strings.Contains(message, "blocked-managed-callback") {
+		return
+	}
+	if l.callbacks.Add(1) != 1 {
+		return
+	}
+	close(l.entered)
+	<-l.release
+	l.closedAfter.Store(l.file.closed.Load())
+}
+
+type observingConfigTelemetryClient struct {
+	*telemetrytest.RecordClient
+	once    sync.Once
+	name    string
+	value   any
+	observe func()
+}
+
+func (c *observingConfigTelemetryClient) RegisterAppConfigs(configs ...telemetry.Configuration) {
+	for _, config := range configs {
+		if config.Name == c.name && config.Value == c.value {
+			c.once.Do(c.observe)
+			break
+		}
+	}
+	c.RecordClient.RegisterAppConfigs(configs...)
+}
+
+type stopOrderTracer struct {
+	*preservingTestTracer
+	onStop func()
+}
+
+func (t *stopOrderTracer) Stop() {
+	t.onStop()
+	t.preservingTestTracer.Stop()
+}
+
+type panicStopTracer struct {
+	*preservingTestTracer
+	value any
+}
+
+func (t *panicStopTracer) Stop() {
+	panic(t.value)
+}
+
+func TestStartProcessLoggerCanReenterGetAndHeaderSetter(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	callbackDone := make(chan struct{})
+	oldLogger := &callbackLogger{log: func() {
+		cfg := internalconfig.Get()
+		latest := []string{"X-Reentrant:reentrant.tag"}
+		cfg.HeaderAsTagsConfig().HandleRC(&latest)
+		close(callbackDone)
+	}}
+	restoreLogger := log.UseLogger(oldLogger)
+	t.Cleanup(func() {
+		Stop()
+		restoreLogger()
+	})
+	log.Error("force-process-logger-flush-during-generation-bridge")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Start(
+			WithHeaderTags([]string{"X-Initial:initial.tag"}),
+			WithLogger(new(log.RecordLogger)),
+			WithLambdaMode(true),
+			WithTestDefaults(nil),
+		)
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("Start deadlocked when logger reentered config Get/header setter")
+	}
+	select {
+	case <-callbackDone:
+	case <-time.After(time.Second):
+		t.Fatal("process logger callback did not run")
+	}
+	assert.Empty(t, globalconfig.HeaderTag("X-Reentrant"),
+		"the old logger callback runs before the replacement generation is published")
+	assert.Equal(t, "initial.tag", globalconfig.HeaderTag("X-Initial"))
+}
+
+func TestReplacementWaitsForAcquiredOldLoggerBeforeClosingFile(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	t.Setenv("DD_TRACE_LOG_DIRECTORY", t.TempDir())
+	setGlobalTracer(&NoopTracer{})
+
+	baseline := new(log.RecordLogger)
+	restoreBaseline := log.UseLogger(baseline)
+	t.Cleanup(restoreBaseline)
+
+	oldFile := new(lifetimeManagedLogFile)
+	oldLogger := &blockingManagedLogger{
+		file:    oldFile,
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(oldLogger.release) }) }
+	t.Cleanup(release)
+
+	originalPrepare := prepareLogFileAtPath
+	prepareLogFileAtPath = func(string) (managedLogFile, log.Logger, error) {
+		return oldFile, oldLogger, nil
+	}
+	t.Cleanup(func() { prepareLogFileAtPath = originalPrepare })
+
+	require.NoError(t, Start(
+		WithService("old-logger-generation"),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	t.Cleanup(Stop)
+
+	callbackDone := make(chan struct{})
+	go func() {
+		log.Warn("blocked-managed-callback")
+		close(callbackDone)
+	}()
+	<-oldLogger.entered
+
+	t.Setenv("DD_TRACE_LOG_DIRECTORY", "")
+	startDone := make(chan error, 1)
+	go func() {
+		startDone <- Start(
+			WithService("replacement-with-default-logger"),
+			WithLambdaMode(true),
+			WithTestDefaults(nil),
+		)
+	}()
+
+	require.Eventually(t, func() bool {
+		log.Warn("replacement-logger-probe")
+		for _, message := range baseline.Logs() {
+			if strings.Contains(message, "replacement-logger-probe") {
+				return true
+			}
+		}
+		return false
+	}, time.Second, time.Millisecond,
+		"a replacement without a configured logger must retire the old file logger")
+	assert.False(t, oldFile.closed.Load(),
+		"the old file must remain open while an acquired callback is running")
+
+	select {
+	case err := <-startDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("Start waited for the acquired old logger callback")
+	}
+
+	release()
+	<-callbackDone
+	assert.False(t, oldLogger.closedAfter.Load(),
+		"the old file was closed before its acquired callback returned")
+	require.Eventually(t, oldFile.closed.Load, time.Second, time.Millisecond,
+		"the retired file was not closed after its acquired callback returned")
+	log.Warn("post-retirement-logger-probe")
+	assert.Contains(t, baseline.Logs()[len(baseline.Logs())-1], "post-retirement-logger-probe",
+		"the retired file logger must not remain installed")
+}
+
+func TestStartBlockingLogPreparationLeavesActiveStateUntouched(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	globalconfig.ClearHeaderTags()
+
+	require.NoError(t, Start(
+		WithService("active-service"),
+		WithHeaderTags([]string{"X-Active:active.tag"}),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	t.Cleanup(Stop)
+	activeConfig := internalconfig.Get()
+	activeTracer := getGlobalTracer()
+
+	logDir := t.TempDir()
+	t.Setenv("DD_TRACE_LOG_DIRECTORY", logDir)
+	originalPrepare := prepareLogFileAtPath
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releasePreparation := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+	t.Cleanup(releasePreparation)
+	prepareLogFileAtPath = func(path string) (managedLogFile, log.Logger, error) {
+		close(entered)
+		<-release
+		return originalPrepare(path)
+	}
+	t.Cleanup(func() { prepareLogFileAtPath = originalPrepare })
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Start(
+			WithService("replacement-service"),
+			WithHeaderTags([]string{"X-Replacement:replacement.tag"}),
+			WithLambdaMode(true),
+			WithTestDefaults(nil),
+		)
+	}()
+	select {
+	case <-entered:
+	case err := <-done:
+		t.Fatalf("Start returned before preparing the configured log file: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("Start did not begin configured log-file preparation")
+	}
+
+	assert.Same(t, activeConfig, internalconfig.Get())
+	assert.Same(t, activeTracer, getGlobalTracer())
+	assert.Equal(t, "active.tag", globalconfig.HeaderTag("X-Active"))
+	assert.Empty(t, globalconfig.HeaderTag("X-Replacement"))
+	_, statErr := os.Stat(filepath.Join(logDir, log.LoggerFile))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+
+	releasePreparation()
+	require.NoError(t, <-done)
+}
+
+func TestStartLoggerPanicBeforeCommitPreservesActiveGeneration(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	globalconfig.ClearHeaderTags()
+
+	activeLogger := new(log.RecordLogger)
+	require.NoError(t, Start(
+		WithService("active-service"),
+		WithHeaderTags([]string{"X-Active:active.tag"}),
+		WithLogger(activeLogger),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	t.Cleanup(Stop)
+	activeConfig := internalconfig.Get()
+	activeTracer := getGlobalTracer()
+
+	panicValue := errors.New("logger panic")
+	log.Flush()
+	restoreLogger := log.UseLogger(&panicLogger{value: panicValue})
+	log.Error("force-precommit-flush-panic")
+
+	var statsdClient statsdtest.TestStatsdClient
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_ = Start(
+			WithService("replacement-service"),
+			WithHeaderTags([]string{"X-Replacement:replacement.tag"}),
+			WithLogger(new(log.RecordLogger)),
+			WithLambdaMode(true),
+			WithTestDefaults(&statsdClient),
+		)
+	}()
+	restoreLogger()
+	log.Flush()
+
+	assert.Equal(t, panicValue, recovered)
+	assert.Same(t, activeConfig, internalconfig.Get())
+	assert.Same(t, activeTracer, getGlobalTracer())
+	assert.Equal(t, "active.tag", globalconfig.HeaderTag("X-Active"))
+	assert.Empty(t, globalconfig.HeaderTag("X-Replacement"))
+	assert.True(t, statsdClient.Closed(), "pre-commit panic must release candidate resources")
+
+	require.NoError(t, Start(
+		WithService("recovered-service"),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+}
+
+func TestStartFailedPublicationClosesPreparedLogFile(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	t.Setenv("DD_TRACE_LOG_DIRECTORY", t.TempDir())
+	setGlobalTracer(&NoopTracer{})
+
+	preparedFile := new(recordingManagedLogFile)
+	originalPrepare := prepareLogFileAtPath
+	prepareLogFileAtPath = func(string) (managedLogFile, log.Logger, error) {
+		return preparedFile, new(log.RecordLogger), nil
+	}
+	t.Cleanup(func() { prepareLogFileAtPath = originalPrepare })
+
+	wantErr := errors.New("injected publication failure")
+	originalPublish := publishTracerGeneration
+	publishTracerGeneration = func(*internalconfig.Config, internalconfig.PreparedClaims, func(internalconfig.Publication)) error {
+		return wantErr
+	}
+	t.Cleanup(func() { publishTracerGeneration = originalPublish })
+
+	err := Start(WithLambdaMode(true), WithTestDefaults(nil))
+	require.ErrorIs(t, err, wantErr)
+	assert.True(t, preparedFile.closed.Load(), "failed publication must close the prepared log file")
+	assert.Zero(t, baseHashHandoffEpoch.Load()%2,
+		"a publication error left BaseHash readers fenced")
+}
+
+func TestStartOldStopPanicCompletesNewGenerationHandoff(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	globalconfig.ClearHeaderTags()
+	internalconfig.CreateNew()
+
+	panicValue := errors.New("old tracer stop panic")
+	setGlobalTracer(&panicStopTracer{
+		preservingTestTracer: new(preservingTestTracer),
+		value:                panicValue,
+	})
+	t.Cleanup(Stop)
+
+	var statsdClient statsdtest.TestStatsdClient
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_ = Start(
+			WithService("panic-replacement"),
+			WithHeaderTags([]string{"X-Replacement:replacement.tag"}),
+			WithLambdaMode(true),
+			WithTestDefaults(&statsdClient),
+		)
+	}()
+
+	assert.Equal(t, panicValue, recovered)
+	assert.Zero(t, baseHashHandoffEpoch.Load()%2,
+		"a handoff panic left BaseHash readers fenced")
+	active, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	assert.Same(t, active.config.internalConfig, internalconfig.Get())
+	assert.Equal(t, "panic-replacement", internalconfig.Get().ServiceName())
+	assert.Equal(t, "replacement.tag", globalconfig.HeaderTag("X-Replacement"))
+	active.lifecycleMu.Lock()
+	assert.True(t, active.activated)
+	active.lifecycleMu.Unlock()
+	assert.Contains(t, statsdClient.CallNames(), "datadog.tracer.started")
+
+	release, accepted := internalconfig.AcquireProductClaims(
+		internalconfig.ProductProfiler,
+		[]internalconfig.Claim{{Name: "DD_SERVICE", Value: "conflicting-service"}},
+	)
+	assert.False(t, accepted["DD_SERVICE"], "the committed tracer claim must remain active")
+	release()
+
+	require.NoError(t, Start(
+		WithService("post-panic-replacement"),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	assert.Equal(t, "post-panic-replacement", internalconfig.Get().ServiceName())
+}
+
+type oneShotPanicStatsdClient struct {
+	*statsdtest.TestStatsdClient
+	panicValue any
+	panicked   atomic.Bool
+}
+
+func (c *oneShotPanicStatsdClient) Incr(name string, tags []string, rate float64) error {
+	if name == "datadog.tracer.started" && c.panicked.CompareAndSwap(false, true) {
+		panic(c.panicValue)
+	}
+	return c.TestStatsdClient.Incr(name, tags, rate)
+}
+
+type panicStopStatsdClient struct {
+	*statsdtest.TestStatsdClient
+	stopPanic  any
+	closePanic any
+	stopped    atomic.Bool
+	closed     atomic.Bool
+}
+
+func (c *panicStopStatsdClient) Incr(name string, tags []string, rate float64) error {
+	if name == "datadog.tracer.stopped" && c.stopped.CompareAndSwap(false, true) {
+		panic(c.stopPanic)
+	}
+	return c.TestStatsdClient.Incr(name, tags, rate)
+}
+
+func (c *panicStopStatsdClient) Close() error {
+	err := c.TestStatsdClient.Close()
+	if c.closed.CompareAndSwap(false, true) {
+		panic(c.closePanic)
+	}
+	return err
+}
+
+func TestReplacementStopPanicCompletesRealTracerTeardown(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	t.Setenv("DD_TRACE_LOG_DIRECTORY", t.TempDir())
+	setGlobalTracer(&NoopTracer{})
+
+	baseline := new(log.RecordLogger)
+	restoreBaseline := log.UseLogger(baseline)
+	t.Cleanup(restoreBaseline)
+
+	oldFile := new(lifetimeManagedLogFile)
+	originalPrepare := prepareLogFileAtPath
+	prepareLogFileAtPath = func(string) (managedLogFile, log.Logger, error) {
+		return oldFile, new(log.RecordLogger), nil
+	}
+	t.Cleanup(func() { prepareLogFileAtPath = originalPrepare })
+
+	stopPanic := errors.New("stopped metric panic")
+	closePanic := errors.New("statsd close panic")
+	oldStatsd := &panicStopStatsdClient{
+		TestStatsdClient: new(statsdtest.TestStatsdClient),
+		stopPanic:        stopPanic,
+		closePanic:       closePanic,
+	}
+	require.NoError(t, Start(
+		WithService("real-old-tracer"),
+		WithLambdaMode(true),
+		WithTestDefaults(oldStatsd),
+	))
+	oldTracer, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	oldStats, ok := oldTracer.stats.(*concentrator)
+	require.True(t, ok)
+	assert.Zero(t, atomic.LoadUint32(&oldStats.stopped))
+
+	t.Setenv("DD_TRACE_LOG_DIRECTORY", "")
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_ = Start(
+			WithService("replacement-after-stop-panic"),
+			WithLambdaMode(true),
+			WithTestDefaults(nil),
+		)
+	}()
+	assert.Equal(t, stopPanic, recovered,
+		"the first cleanup panic must take precedence over later cleanup panics")
+	assert.True(t, oldStatsd.closed.Load(), "StatsD Close was not attempted")
+	assert.True(t, oldStatsd.Closed(), "the StatsD client did not close")
+	assert.EqualValues(t, 1, atomic.LoadUint32(&oldStats.stopped),
+		"the old stats concentrator was not stopped")
+	assert.Contains(t, oldStatsd.CallNames(), "datadog.tracer.flush_triggered",
+		"the old trace writer did not run its shutdown flush")
+	assert.True(t, oldFile.closed.Load(), "the old logger lease did not close its file")
+	assert.NotPanics(t, oldTracer.Stop,
+		"a terminal cleanup panic must still consume the tracer's Stop once")
+
+	workersDone := make(chan struct{})
+	go func() {
+		oldTracer.wg.Wait()
+		close(workersDone)
+	}()
+	select {
+	case <-workersDone:
+	case <-time.After(time.Second):
+		t.Fatal("old tracer workers did not stop after cleanup panic")
+	}
+
+	active, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	require.NotSame(t, oldTracer, active)
+	active.lifecycleMu.Lock()
+	assert.True(t, active.activated)
+	assert.False(t, active.stopped)
+	active.lifecycleMu.Unlock()
+
+	Stop()
+	require.NoError(t, Start(WithLambdaMode(true), WithTestDefaults(nil)))
+	t.Cleanup(Stop)
+}
+
+func TestStartStatsdActivationPanicCompletesTerminalActivation(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	panicValue := errors.New("statsd activation panic")
+	statsdClient := &oneShotPanicStatsdClient{
+		TestStatsdClient: new(statsdtest.TestStatsdClient),
+		panicValue:       panicValue,
+	}
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_ = Start(WithLambdaMode(true), WithTestDefaults(statsdClient))
+	}()
+	assert.Equal(t, panicValue, recovered)
+
+	active, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	active.lifecycleMu.Lock()
+	assert.True(t, active.activated)
+	assert.False(t, active.stopped)
+	active.lifecycleMu.Unlock()
+	statsConcentrator, ok := active.stats.(*concentrator)
+	require.True(t, ok)
+	assert.Zero(t, atomic.LoadUint32(&statsConcentrator.stopped),
+		"activation stages after the failing StatsD callback must still run")
+
+	stopped := make(chan struct{})
+	go func() {
+		Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop blocked after the activation panic")
+	}
+	assert.True(t, statsdClient.Closed())
+
+	require.NoError(t, Start(WithLambdaMode(true), WithTestDefaults(nil)))
+	t.Cleanup(Stop)
+}
+
+func TestStartOTelActivationPanicMarksActivatedOnlyAtTerminal(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	originalStartHook := otelmetricsinstall.StartHook
+	originalShutdownHook := otelmetricsinstall.ShutdownHook
+	var startCalls, shutdownCalls atomic.Uint32
+	var activatedInsideHook atomic.Bool
+	panicValue := errors.New("OTel activation panic")
+	otelmetricsinstall.StartHook = func(context.Context) error {
+		startCalls.Add(1)
+		active, ok := getGlobalTracer().(*tracer)
+		require.True(t, ok)
+		activatedInsideHook.Store(active.activated)
+		if startCalls.Load() == 1 {
+			panic(panicValue)
+		}
+		return nil
+	}
+	otelmetricsinstall.ShutdownHook = func(context.Context) error {
+		shutdownCalls.Add(1)
+		return nil
+	}
+	t.Cleanup(func() {
+		otelmetricsinstall.StartHook = originalStartHook
+		otelmetricsinstall.ShutdownHook = originalShutdownHook
+	})
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_ = Start(WithLambdaMode(true), WithTestDefaults(nil))
+	}()
+	assert.Equal(t, panicValue, recovered)
+	assert.False(t, activatedInsideHook.Load(),
+		"activation must not be marked complete while an activation hook is running")
+
+	active, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	active.lifecycleMu.Lock()
+	assert.True(t, active.activated)
+	active.lifecycleMu.Unlock()
+
+	Stop()
+	assert.EqualValues(t, 1, shutdownCalls.Load())
+	require.NoError(t, Start(WithLambdaMode(true), WithTestDefaults(nil)))
+	t.Cleanup(Stop)
+	assert.EqualValues(t, 2, startCalls.Load())
+}
+
+func TestStartOldStopPanicPrecedesActivationPanic(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+
+	oldStopPanic := errors.New("old stop panic")
+	activationPanic := errors.New("activation panic")
+	setGlobalTracer(&panicStopTracer{
+		preservingTestTracer: new(preservingTestTracer),
+		value:                oldStopPanic,
+	})
+	statsdClient := &oneShotPanicStatsdClient{
+		TestStatsdClient: new(statsdtest.TestStatsdClient),
+		panicValue:       activationPanic,
+	}
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_ = Start(WithLambdaMode(true), WithTestDefaults(statsdClient))
+	}()
+	assert.Equal(t, oldStopPanic, recovered)
+
+	active, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	statsConcentrator, ok := active.stats.(*concentrator)
+	require.True(t, ok)
+	assert.Zero(t, atomic.LoadUint32(&statsConcentrator.stopped))
+	t.Cleanup(Stop)
+}
+
+func TestPublicationTelemetryObservesCoherentGenerationHandoff(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	observed := make(chan struct{})
+	client := &observingConfigTelemetryClient{
+		RecordClient: new(telemetrytest.RecordClient),
+		name:         "DD_SERVICE",
+		value:        "coherent-service",
+	}
+	client.observe = func() {
+		defer close(observed)
+		cfg := internalconfig.Get()
+		assert.Equal(t, "coherent-service", cfg.ServiceName())
+		active, ok := getGlobalTracer().(*tracer)
+		require.True(t, ok)
+		assert.Same(t, cfg, active.config.internalConfig)
+		active.lifecycleMu.Lock()
+		assert.True(t, active.activated)
+		active.lifecycleMu.Unlock()
+		assert.Equal(t, "coherent.tag", globalconfig.HeaderTag("X-Coherent"))
+	}
+	t.Cleanup(telemetry.MockClient(client))
+	t.Cleanup(Stop)
+
+	require.NoError(t, Start(
+		WithService("coherent-service"),
+		WithHeaderTags([]string{"X-Coherent:coherent.tag"}),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	select {
+	case <-observed:
+	case <-time.After(time.Second):
+		t.Fatal("published service configuration telemetry was not drained")
+	}
+}
+
+func TestReplacementStopsOldGenerationBeforeActivatingNewProducts(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+
+	stopped := make(chan struct{})
+	old := &stopOrderTracer{
+		preservingTestTracer: new(preservingTestTracer),
+		onStop: func() {
+			defer close(stopped)
+			active, ok := getGlobalTracer().(*tracer)
+			require.True(t, ok, "new tracer must own the global slot before old shutdown")
+			assert.Equal(t, "replacement.tag", globalconfig.HeaderTag("X-Replacement"))
+			active.lifecycleMu.Lock()
+			assert.False(t, active.activated,
+				"old global-product shutdown must finish before new product activation")
+			active.lifecycleMu.Unlock()
+		},
+	}
+	setGlobalTracer(old)
+	t.Cleanup(Stop)
+
+	require.NoError(t, Start(
+		WithHeaderTags([]string{"X-Replacement:replacement.tag"}),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("displaced tracer was not stopped")
+	}
+}
+
+func TestStartFailedInitialPublicationPreservesBaseline(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	before := internalconfig.CreateNew()
+	wantErr := errors.New("injected publication failure")
+	originalPublish := publishTracerGeneration
+	publishTracerGeneration = func(*internalconfig.Config, internalconfig.PreparedClaims, func(internalconfig.Publication)) error {
+		return wantErr
+	}
+	t.Cleanup(func() { publishTracerGeneration = originalPublish })
+
+	err := Start(WithService("must-not-publish"), WithLambdaMode(true), WithTestDefaults(nil))
+	require.ErrorIs(t, err, wantErr)
+	assert.Same(t, before, internalconfig.Get())
+	_, active := getGlobalTracer().(*tracer)
+	assert.False(t, active)
+}
+
+func TestStartFailedPublicationCandidateEmitsNoStatsdLifecycleCalls(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	var statsdClient statsdtest.TestStatsdClient
+	wantErr := errors.New("injected publication failure")
+	originalPublish := publishTracerGeneration
+	publishTracerGeneration = func(*internalconfig.Config, internalconfig.PreparedClaims, func(internalconfig.Publication)) error {
+		return wantErr
+	}
+	t.Cleanup(func() { publishTracerGeneration = originalPublish })
+
+	err := Start(
+		WithRuntimeMetrics(),
+		WithLambdaMode(true),
+		WithTestDefaults(&statsdClient),
+	)
+	require.ErrorIs(t, err, wantErr)
+	assert.Empty(t, statsdClient.CallNames(),
+		"a candidate that never publishes must not start, stop, flush, or report runtime/health metrics")
+	assert.True(t, statsdClient.Closed(), "failed construction must still release the candidate's StatsD client")
+}
+
+func TestStartBlockedPublicationCandidateRemainsInert(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	oldStatsInterval := statsInterval
+	statsInterval = time.Millisecond
+	t.Cleanup(func() { statsInterval = oldStatsInterval })
+
+	var statsdClient statsdtest.TestStatsdClient
+	infoTransport := new(infoCountingRoundTripper)
+	tick := make(chan time.Time)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	wantErr := errors.New("injected publication failure")
+	originalPublish := publishTracerGeneration
+	publishTracerGeneration = func(*internalconfig.Config, internalconfig.PreparedClaims, func(internalconfig.Publication)) error {
+		close(entered)
+		<-release
+		return wantErr
+	}
+	t.Cleanup(func() { publishTracerGeneration = originalPublish })
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Start(
+			WithRuntimeMetrics(),
+			withTickChan(tick),
+			WithAgentURL("http://agent.test"),
+			WithHTTPClient(&http.Client{Transport: infoTransport}),
+			withAgentInfoPollInterval(time.Millisecond),
+			WithTestDefaults(&statsdClient),
+		)
+	}()
+	<-entered
+	require.EqualValues(t, 1, infoTransport.calls.Load(), "construction performs the initial /info fetch")
+
+	select {
+	case tick <- time.Now():
+		t.Fatal("candidate worker started before configuration publication completed")
+	default:
+	}
+	time.Sleep(25 * time.Millisecond)
+	assert.Empty(t, statsdClient.CallNames(),
+		"blocked publication must not start runtime, health, stats, worker, or lifecycle reporting")
+	assert.EqualValues(t, 1, infoTransport.calls.Load(), "blocked publication must not start agent polling")
+
+	close(release)
+	require.ErrorIs(t, <-done, wantErr)
+	assert.Empty(t, statsdClient.CallNames())
+}
+
+func TestStartFailedReplacementPreservesActiveGeneration(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+
+	internalconfig.CreateNew()
+	require.NoError(t, Start(WithService("active-service"), WithLambdaMode(true), WithTestDefaults(nil)))
+	t.Cleanup(Stop)
+	active := getGlobalTracer()
+	activeConfig := internalconfig.Get()
+
+	wantErr := errors.New("injected replacement publication failure")
+	originalPublish := publishTracerGeneration
+	publishTracerGeneration = func(*internalconfig.Config, internalconfig.PreparedClaims, func(internalconfig.Publication)) error {
+		return wantErr
+	}
+	t.Cleanup(func() { publishTracerGeneration = originalPublish })
+
+	err := Start(WithService("replacement-service"), WithLambdaMode(true), WithTestDefaults(nil))
+	require.ErrorIs(t, err, wantErr)
+	assert.Same(t, active, getGlobalTracer())
+	assert.Same(t, activeConfig, internalconfig.Get())
+	assert.Equal(t, "active-service", activeConfig.ServiceName())
+}
+
+func TestStartPublicationRacePreservesActiveProcessGlobals(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	oldNaming := namingschema.GetConfig()
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+
+	oldAnalytics := globalconfig.AnalyticsRate()
+	oldService := globalconfig.ServiceName()
+	oldDogstatsd := globalconfig.DogstatsdAddr()
+	oldStatsTags := globalconfig.StatsTags()
+	oldContainerTagsHash := processtags.ContainerTagsHash()
+	oldTraceID128 := traceID128BitEnabled.Load()
+	oldLogLevel := log.GetLevel()
+	oldLogger := new(log.RecordLogger)
+	restoreLogger := log.UseLogger(oldLogger)
+	t.Cleanup(func() {
+		Stop()
+		restoreLogger()
+		log.SetLevel(oldLogLevel)
+		globalconfig.SetAnalyticsRate(oldAnalytics)
+		globalconfig.SetServiceName(oldService)
+		globalconfig.SetDogstatsdAddr(oldDogstatsd)
+		globalconfig.SetStatsTags(oldStatsTags)
+		namingschema.ApplyConfig(oldNaming)
+		globalconfig.ClearHeaderTags()
+		processtags.Reload()
+		processtags.SetContainerTagsHash(oldContainerTagsHash)
+		traceID128BitEnabled.Store(oldTraceID128)
+	})
+
+	globalconfig.SetServiceName("active-global-service")
+	internalconfig.CreateNew()
+	require.NoError(t, Start(
+		WithHeaderTags([]string{"X-Active:active.tag"}),
+		WithDogstatsdAddr("localhost:18125"),
+		WithAnalyticsRate(0.25),
+		WithGlobalServiceName(false),
+		WithLogger(oldLogger),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+
+	activeService := globalconfig.ServiceName()
+	activeProcessTags := processtags.GlobalTags().String()
+	activeHeader := globalconfig.HeaderTag("X-Active")
+	activeHeaderCount := globalconfig.HeaderTagsLen()
+	activeDogstatsd := globalconfig.DogstatsdAddr()
+	activeAnalytics := globalconfig.AnalyticsRate()
+	activeNaming := namingschema.GetConfig()
+	activeStatsTags := globalconfig.StatsTags()
+	activeTraceID128 := traceID128BitEnabled.Load()
+	activeLogLevel := log.GetLevel()
+	processtags.SetContainerTagsHash("active-container-hash")
+	activeContainerTagsHash := processtags.ContainerTagsHash()
+
+	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+	replacementLogDir := t.TempDir()
+	t.Setenv("DD_TRACE_LOG_DIRECTORY", replacementLogDir)
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(containerTagsHashHeader, "replacement-container-hash")
+		_, _ = w.Write([]byte(`{"endpoints":[],"config":{}}`))
+	}))
+	t.Cleanup(agent.Close)
+	replacementLogger := new(log.RecordLogger)
+	originalPublish := publishTracerGeneration
+	var release func()
+	publishTracerGeneration = func(cfg *internalconfig.Config, prepared internalconfig.PreparedClaims, handoff func(internalconfig.Publication)) error {
+		var accepted map[string]bool
+		release, accepted = internalconfig.AcquireProductClaims(
+			internalconfig.ProductProfiler,
+			[]internalconfig.Claim{{Name: "DD_ENV", Value: "profiler-env"}},
+		)
+		require.True(t, accepted["DD_ENV"])
+		return originalPublish(cfg, prepared, handoff)
+	}
+	t.Cleanup(func() {
+		publishTracerGeneration = originalPublish
+		if release != nil {
+			release()
+		}
+	})
+
+	err := Start(
+		WithService("replacement-service"),
+		WithEnv("replacement-env"),
+		WithHeaderTags([]string{"X-Replacement:replacement.tag"}),
+		WithDogstatsdAddr("localhost:28125"),
+		WithAnalyticsRate(0.75),
+		WithGlobalServiceName(true),
+		WithLogger(replacementLogger),
+		WithDebugMode(true),
+		WithAgentURL(agent.URL),
+		WithHTTPClient(agent.Client()),
+		withNoopStats(),
+		WithTestDefaults(nil),
+	)
+	require.Error(t, err)
+
+	assert.Equal(t, activeService, globalconfig.ServiceName())
+	assert.Equal(t, activeProcessTags, processtags.GlobalTags().String())
+	assert.Equal(t, activeHeader, globalconfig.HeaderTag("X-Active"))
+	assert.Empty(t, globalconfig.HeaderTag("X-Replacement"))
+	assert.Equal(t, activeHeaderCount, globalconfig.HeaderTagsLen())
+	assert.Equal(t, activeDogstatsd, globalconfig.DogstatsdAddr())
+	assert.Equal(t, activeAnalytics, globalconfig.AnalyticsRate())
+	assert.Equal(t, activeNaming, namingschema.GetConfig())
+	assert.Equal(t, activeStatsTags, globalconfig.StatsTags())
+	assert.Equal(t, activeTraceID128, traceID128BitEnabled.Load())
+	assert.Equal(t, activeLogLevel, log.GetLevel())
+	assert.Equal(t, activeContainerTagsHash, processtags.ContainerTagsHash())
+	_, statErr := os.Stat(filepath.Join(replacementLogDir, log.LoggerFile))
+	assert.NoError(t, statErr, "log-file I/O must complete before publication begins")
+
+	oldLogger.Reset()
+	replacementLogger.Reset()
+	log.Warn("publication-race-logger-marker")
+	assert.Contains(t, strings.Join(oldLogger.Logs(), "\n"), "publication-race-logger-marker")
+	assert.NotContains(t, strings.Join(replacementLogger.Logs(), "\n"), "publication-race-logger-marker")
+	assert.False(t, math.IsNaN(activeAnalytics))
+}
+
+func TestStartGenerationRaceDoesNotPublish(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	before := internalconfig.CreateNew()
+	originalPublish := publishTracerGeneration
+	var release func()
+	publishTracerGeneration = func(cfg *internalconfig.Config, prepared internalconfig.PreparedClaims, handoff func(internalconfig.Publication)) error {
+		var accepted map[string]bool
+		release, accepted = internalconfig.AcquireProductClaims(
+			internalconfig.ProductProfiler,
+			[]internalconfig.Claim{{Name: "DD_SERVICE", Value: "racing-profiler"}},
+		)
+		require.True(t, accepted["DD_SERVICE"])
+		return originalPublish(cfg, prepared, handoff)
+	}
+	t.Cleanup(func() {
+		publishTracerGeneration = originalPublish
+		if release != nil {
+			release()
+		}
+	})
+
+	err := Start(WithService("racing-tracer"), WithLambdaMode(true), WithTestDefaults(nil))
+	require.Error(t, err)
+	assert.Same(t, before, internalconfig.Get())
+	_, active := getGlobalTracer().(*tracer)
+	assert.False(t, active)
+}
+
+func TestStartGenerationGlobalTagRaceDoesNotPublishDerivedService(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	before := internalconfig.CreateNew()
+	originalPublish := publishTracerGeneration
+	var release func()
+	publishTracerGeneration = func(cfg *internalconfig.Config, prepared internalconfig.PreparedClaims, handoff func(internalconfig.Publication)) error {
+		var accepted map[string]bool
+		release, accepted = internalconfig.AcquireProductClaims(
+			internalconfig.ProductProfiler,
+			[]internalconfig.Claim{{
+				Name:  "DD_TAGS",
+				Value: map[string]any{"service": "racing-profiler"},
+			}},
+		)
+		require.True(t, accepted["DD_TAGS"])
+		return originalPublish(cfg, prepared, handoff)
+	}
+	t.Cleanup(func() {
+		publishTracerGeneration = originalPublish
+		if release != nil {
+			release()
+		}
+	})
+
+	err := Start(WithGlobalTag("service", "racing-tracer"), WithLambdaMode(true), WithTestDefaults(nil))
+	require.Error(t, err)
+	assert.Same(t, before, internalconfig.Get())
+	_, active := getGlobalTracer().(*tracer)
+	assert.False(t, active)
+}
+
+func TestStartDisabledGenerationIsNotPublished(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	setGlobalTracer(&NoopTracer{})
+
+	before := internalconfig.CreateNew()
+	require.NoError(t, Start(WithService("disabled-service"), WithTraceEnabled(false), WithLambdaMode(true), WithTestDefaults(nil)))
+
+	assert.Same(t, before, internalconfig.Get())
+	_, active := getGlobalTracer().(*tracer)
+	assert.False(t, active)
 }
 
 func BenchmarkStartSpanFromPropagatedContext(b *testing.B) {

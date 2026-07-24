@@ -5,16 +5,33 @@
 
 package tracer
 
-// setGlobalTracerPreservingCIVisibilityMockTracer installs globalTracer unless
-// the current global tracer can keep ownership and route CI Visibility spans to it.
-func setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer Tracer, ciVisibilityEnabled bool) {
+// swapGlobalTracerPreservingCIVisibilityMockTracer installs globalTracer
+// without stopping the displaced tracer. A CI Visibility mock may preserve
+// process-global ownership and return only its displaced real delegate.
+func swapGlobalTracerPreservingCIVisibilityMockTracer(globalTracer Tracer, ciVisibilityEnabled bool) Tracer {
 	if ciVisibilityEnabled {
-		if current, ok := getGlobalTracer().(interface{ SetCIVisibilityTracer(Tracer) bool }); ok && current.SetCIVisibilityTracer(globalTracer) {
-			return
+		current := getGlobalTracer()
+		if swapper, ok := current.(interface {
+			SwapCIVisibilityTracer(Tracer) (Tracer, bool)
+		}); ok {
+			if old, accepted := swapper.SwapCIVisibilityTracer(globalTracer); accepted {
+				return old
+			}
+		} else if setter, ok := current.(interface{ SetCIVisibilityTracer(Tracer) bool }); ok && setter.SetCIVisibilityTracer(globalTracer) {
+			// Backwards-compatible fallback for third-party wrappers. Such a
+			// wrapper owns any displaced delegate's lifecycle.
+			return nil
 		}
 	}
+	return swapGlobalTracer(globalTracer)
+}
 
-	setGlobalTracer(globalTracer)
+// setGlobalTracerPreservingCIVisibilityMockTracer preserves the historical
+// synchronous replacement behavior for callers outside the startup handoff.
+func setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer Tracer, ciVisibilityEnabled bool) {
+	if old := swapGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled); old != nil {
+		old.Stop()
+	}
 }
 
 // submitTracerForFinishedChunk returns the concrete tracer that should receive

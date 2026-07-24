@@ -9,9 +9,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -415,7 +419,177 @@ func TestSQLCommentUsesConvertedInheritedTags(t *testing.T) {
 	assert.Contains(t, carrier.Query, "ddprs='true'")
 }
 
+func TestComputeBaseHashDoesNotUseContainerHashFencedByConfigPublication(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
+	globalconfig.SetServiceName("my-svc")
+	t.Cleanup(func() { globalconfig.SetServiceName("") })
+	processtags.SetContainerTagsHash("stale-container-hash")
+	t.Cleanup(func() { processtags.SetContainerTagsHash("") })
+	resetBaseHashCache()
+
+	assert.Empty(t, computeBaseHash())
+	assert.Empty(t, processtags.ContainerTagsHash())
+}
+
+func TestComputeBaseHashRestartOverlapDoesNotCacheMixedGeneration(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	t.Setenv("DD_TRACE_STARTUP_LOGS", "false")
+	setGlobalTracer(&NoopTracer{})
+	oldService := globalconfig.ServiceName()
+	oldContainerHash := processtags.ContainerTagsHash()
+	t.Cleanup(func() {
+		Stop()
+		internalconfig.SetUseFreshConfig(true)
+		globalconfig.SetServiceName(oldService)
+		processtags.Reload()
+		processtags.SetContainerTagsHash(oldContainerHash)
+		resetBaseHashCache()
+	})
+
+	const containerHash = "unchanged-container-hash"
+	globalconfig.SetServiceName("old-service")
+	require.NoError(t, Start(
+		WithEnv("old-env"),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	processtags.SetContainerTagsHash(containerHash)
+	oldProcessTags := append([]string(nil), processtags.GlobalTags().Slice()...)
+	oldHash := strconv.FormatInt(
+		int64(datastreams.BaseHash("old-service", "old-env", oldProcessTags, containerHash)),
+		10,
+	)
+	resetBaseHashCache()
+
+	inputsCollected := make(chan struct{})
+	resumeComputation := make(chan struct{})
+	var pause atomic.Bool
+	pause.Store(true)
+	originalInputsCollected := baseHashInputsCollected
+	baseHashInputsCollected = func() {
+		if pause.CompareAndSwap(true, false) {
+			close(inputsCollected)
+			<-resumeComputation
+		}
+	}
+	t.Cleanup(func() { baseHashInputsCollected = originalInputsCollected })
+
+	inFlight := make(chan string, 1)
+	go func() { inFlight <- computeBaseHash() }()
+	select {
+	case <-inputsCollected:
+	case <-time.After(time.Second):
+		t.Fatal("base-hash computation did not collect the old inputs")
+	}
+
+	require.NoError(t, Start(
+		WithService("new-service"),
+		WithEnv("new-env"),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	processtags.SetContainerTagsHash(containerHash)
+	newProcessTags := append([]string(nil), processtags.GlobalTags().Slice()...)
+	newHash := strconv.FormatInt(
+		int64(datastreams.BaseHash("new-service", "new-env", newProcessTags, containerHash)),
+		10,
+	)
+	close(resumeComputation)
+
+	var overlappedHash string
+	select {
+	case overlappedHash = <-inFlight:
+	case <-time.After(time.Second):
+		t.Fatal("base-hash computation did not finish after the handoff")
+	}
+	assert.Contains(t, []string{"", oldHash, newHash}, overlappedHash,
+		"a computation spanning Start returned mixed-generation inputs")
+	assert.Equal(t, newHash, computeBaseHash(),
+		"the cache did not converge on the new generation")
+}
+
+func TestComputeBaseHashLateStoreAfterRestartCannotPoisonCache(t *testing.T) {
+	internalconfig.SetUseFreshConfig(false)
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	t.Setenv("DD_TRACE_STARTUP_LOGS", "false")
+	setGlobalTracer(&NoopTracer{})
+	oldService := globalconfig.ServiceName()
+	oldContainerHash := processtags.ContainerTagsHash()
+	t.Cleanup(func() {
+		Stop()
+		internalconfig.SetUseFreshConfig(true)
+		globalconfig.SetServiceName(oldService)
+		processtags.Reload()
+		processtags.SetContainerTagsHash(oldContainerHash)
+		resetBaseHashCache()
+	})
+
+	const containerHash = "unchanged-container-hash"
+	globalconfig.SetServiceName("old-service")
+	require.NoError(t, Start(
+		WithEnv("old-env"),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	processtags.SetContainerTagsHash(containerHash)
+	oldProcessTags := append([]string(nil), processtags.GlobalTags().Slice()...)
+	oldHash := strconv.FormatInt(
+		int64(datastreams.BaseHash("old-service", "old-env", oldProcessTags, containerHash)),
+		10,
+	)
+	resetBaseHashCache()
+
+	beforeStore := make(chan struct{})
+	resumeStore := make(chan struct{})
+	var pause atomic.Bool
+	pause.Store(true)
+	originalBeforeStore := baseHashBeforeCacheStore
+	baseHashBeforeCacheStore = func() {
+		if pause.CompareAndSwap(true, false) {
+			close(beforeStore)
+			<-resumeStore
+		}
+	}
+	t.Cleanup(func() { baseHashBeforeCacheStore = originalBeforeStore })
+
+	inFlight := make(chan string, 1)
+	go func() { inFlight <- computeBaseHash() }()
+	select {
+	case <-beforeStore:
+	case <-time.After(time.Second):
+		t.Fatal("base-hash computation did not reach the cache store")
+	}
+
+	require.NoError(t, Start(
+		WithService("new-service"),
+		WithEnv("new-env"),
+		WithLambdaMode(true),
+		WithTestDefaults(nil),
+	))
+	processtags.SetContainerTagsHash(containerHash)
+	newProcessTags := append([]string(nil), processtags.GlobalTags().Slice()...)
+	newHash := strconv.FormatInt(
+		int64(datastreams.BaseHash("new-service", "new-env", newProcessTags, containerHash)),
+		10,
+	)
+	close(resumeStore)
+
+	select {
+	case got := <-inFlight:
+		assert.Equal(t, oldHash, got)
+	case <-time.After(time.Second):
+		t.Fatal("base-hash computation did not finish its late store")
+	}
+	assert.Equal(t, newHash, computeBaseHash(),
+		"a late old-generation store poisoned the new generation cache")
+}
+
 func TestSQLCommentCarrierDynamicService(t *testing.T) {
+	internalconfig.Get()
+	internalconfig.SetUseFreshConfig(false)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(true) })
 	globalconfig.SetServiceName("my-svc")
 	defer globalconfig.SetServiceName("")
 	processtags.SetContainerTagsHash("abc123")
@@ -512,16 +686,22 @@ func BenchmarkSQLCommentInjectionService(b *testing.B) {
 }
 
 func BenchmarkSQLCommentInjectionDynamicService(b *testing.B) {
+	internalconfig.SetUseFreshConfig(false)
+	defer internalconfig.SetUseFreshConfig(true)
+
 	tracer, spanCtx, carrier := setupBenchmark()
 	defer tracer.Stop()
 	carrier.Mode = DBMPropagationModeDynamicService
 
-	// dynamic_service derives ddsh from the container tags hash; populate it so the
-	// hot path computes once and then hits the cache on every subsequent Inject.
 	processtags.SetContainerTagsHash("benchmark-container-hash")
 	defer processtags.SetContainerTagsHash("")
+	resetBaseHashCache()
+	if hash := computeBaseHash(); hash == "" {
+		b.Fatal("failed to prime the dynamic-service BaseHash cache")
+	}
 
 	b.ReportAllocs()
+	b.ResetTimer()
 	for b.Loop() {
 		carrier.Inject(spanCtx)
 	}

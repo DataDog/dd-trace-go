@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -137,14 +138,42 @@ func (c *SQLCommentCarrier) injectServiceTags(ctx *SpanContext, tags map[string]
 }
 
 type baseHashEntry struct {
+	epoch         uint64
+	service       string
+	env           string
+	processTags   []string
 	containerHash string
 	result        string
 }
 
-var cachedBaseHash atomic.Pointer[baseHashEntry]
+var (
+	baseHashHandoffEpoch atomic.Uint64
+	cachedBaseHash       atomic.Pointer[baseHashEntry]
+)
+
+// Base-hash seams let tests pause a computation on either side of a tracer
+// handoff. Tests replacing them must not run in parallel.
+var (
+	baseHashInputsCollected  = func() {}
+	baseHashBeforeCacheStore = func() {}
+)
+
+func beginBaseHashHandoff() func() {
+	baseHashHandoffEpoch.Add(1)
+	var finished atomic.Bool
+	return func() {
+		if finished.CompareAndSwap(false, true) {
+			baseHashHandoffEpoch.Add(1)
+		}
+	}
+}
 
 // computeBaseHash returns the DBM base hash as a signed decimal string.
 func computeBaseHash() string {
+	epoch := baseHashHandoffEpoch.Load()
+	if epoch%2 != 0 {
+		return ""
+	}
 	svc := globalconfig.ServiceName()
 	if svc == "" {
 		return ""
@@ -153,20 +182,40 @@ func computeBaseHash() string {
 	if pTags == nil {
 		return ""
 	}
+	processTags := pTags.Slice()
+	baseHashInputsCollected()
+	env := internalconfig.Get().Env()
 	containerTagsHash := processtags.ContainerTagsHash()
 	if containerTagsHash == "" {
 		return ""
 	}
-	// The cache is keyed only on containerTagsHash, yet the result also depends on svc, env
-	// and process tags. This is safe because those are assumed immutable for the cache's
-	// lifetime: svc/env are installed during newTracer and process tags are stable, while
-	// resetBaseHashCache() runs on every Start to drop stale values across tracer restarts.
-	if entry := cachedBaseHash.Load(); entry != nil && entry.containerHash == containerTagsHash {
+	if baseHashHandoffEpoch.Load() != epoch {
+		return ""
+	}
+	if entry := cachedBaseHash.Load(); entry != nil &&
+		entry.epoch == epoch &&
+		entry.service == svc &&
+		entry.env == env &&
+		slices.Equal(entry.processTags, processTags) &&
+		entry.containerHash == containerTagsHash {
+		if baseHashHandoffEpoch.Load() != epoch {
+			return ""
+		}
 		return entry.result
 	}
-	env := internalconfig.Get().Env()
-	result := strconv.FormatInt(int64(datastreams.BaseHash(svc, env, pTags.Slice(), containerTagsHash)), 10)
-	cachedBaseHash.Store(&baseHashEntry{containerHash: containerTagsHash, result: result})
+	result := strconv.FormatInt(int64(datastreams.BaseHash(svc, env, processTags, containerTagsHash)), 10)
+	if baseHashHandoffEpoch.Load() != epoch {
+		return ""
+	}
+	baseHashBeforeCacheStore()
+	cachedBaseHash.Store(&baseHashEntry{
+		epoch:         epoch,
+		service:       svc,
+		env:           env,
+		processTags:   slices.Clone(processTags),
+		containerHash: containerTagsHash,
+		result:        result,
+	})
 	return result
 }
 

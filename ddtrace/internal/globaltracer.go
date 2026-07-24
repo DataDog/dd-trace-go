@@ -25,15 +25,26 @@ type tracerLike interface {
 // SetGlobalTracer sets the global tracer to t.
 // It is the responsibility of the caller to ensure that the value is `tracer.Tracer`.
 func SetGlobalTracer[T tracerLike](t T) {
+	oldTracer := SwapGlobalTracer(t)
+	if (tracerLike)(oldTracer) != nil {
+		oldTracer.Stop()
+	}
+}
+
+// SwapGlobalTracer atomically installs t and returns the displaced tracer
+// without stopping it. This lets startup finish process-global handoff work at
+// a caller-selected safe point instead of running arbitrary shutdown logic in
+// the middle of the atomic swap.
+func SwapGlobalTracer[T tracerLike](t T) T {
 	if (tracerLike)(t) == nil {
-		panic("ddtrace/internal: SetGlobalTracer called with nil")
+		panic("ddtrace/internal: SwapGlobalTracer called with nil")
 	}
 	old := globalTracer.Swap(&t)
 	if old == nil {
-		return
+		var zero T
+		return zero
 	}
-	oldTracer := *old.(*T)
-	oldTracer.Stop()
+	return *old.(*T)
 }
 
 // GetGlobalTracer returns the current global tracer.

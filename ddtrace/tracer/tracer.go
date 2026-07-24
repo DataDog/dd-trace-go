@@ -35,6 +35,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -105,6 +106,13 @@ var _ Tracer = (*tracer)(nil)
 type tracer struct {
 	config *config
 
+	publication               internalconfig.Publication
+	containerTagsHashRevision atomic.Uint64
+
+	lifecycleMu sync.Mutex
+	activated   bool // lifecycleMu
+	stopped     bool // lifecycleMu
+
 	// otlpExportMode caches whether traces export via OTLP (vs the agent), resolved
 	// once at startup; OTLP carries span events natively (see serializeSpanEvents).
 	otlpExportMode bool
@@ -141,7 +149,7 @@ type tracer struct {
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32 // +checkatomic
 
-	logDroppedTraces *time.Ticker
+	logDroppedTraces atomic.Pointer[time.Ticker]
 
 	// defaultSampler is the fallback sampler.
 	defaultSampler defaultSampler
@@ -172,7 +180,8 @@ type tracer struct {
 	// logFile contains a pointer to the file for writing tracer logs along with helper functionality for closing the file
 	// logFile is closed when tracer stops
 	// by default, tracer logs to stderr and this setting is unused
-	logFile *log.ManagedFile
+	logFile     managedLogFile
+	loggerLease *log.LoggerLease
 
 	// runtimeMetrics is submitting runtime metrics to the agent using statsd.
 	runtimeMetrics *runtimemetrics.Emitter
@@ -236,6 +245,22 @@ var statsInterval = 10 * time.Second
 // TODO: The entire Start/Stop code should be refactored, it's pretty gnarly.
 var startStopMu locking.Mutex
 
+// publishTracerGeneration is a seam for exercising the publication race while
+// Start holds startStopMu. Tests that replace it must not run in parallel.
+var publishTracerGeneration = internalconfig.PublishTracerGeneration
+
+type managedLogFile interface {
+	Close() error
+	Name() string
+}
+
+// prepareLogFileAtPath is a seam for verifying that filesystem work and its
+// cleanup happen before publication. Tests that replace it must not run in
+// parallel.
+var prepareLogFileAtPath = func(path string) (managedLogFile, log.Logger, error) {
+	return log.PrepareFileAtPath(path)
+}
+
 // reportInitTime reports the tracer initialization duration as a telemetry metric.
 func reportInitTime(start time.Time) {
 	telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(start).Milliseconds()))
@@ -250,17 +275,16 @@ func Start(opts ...StartOption) error {
 
 	defer reportInitTime(time.Now())
 
-	t, err := newTracer(opts...)
+	t, err := newUnpublishedTracer(opts...)
 	if err != nil {
 		return err
 	}
-	resetBaseHashCache()
 	if !t.config.internalConfig.TracingEnabled() {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
 		// share control of the global telemetry client.
-		t.Stop()
+		t.stopUnpublished()
 		return nil
 	}
 	ciVisibilityEnabled := t.config.internalConfig.CIVisibilityEnabled()
@@ -268,9 +292,8 @@ func Start(opts ...StartOption) error {
 	if ciVisibilityEnabled && t.config.internalConfig.CIVisibilityNoopTracer() {
 		globalTracer = wrapWithCiVisibilityNoopTracer(t)
 	}
-	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
-	if t.dataStreams != nil {
-		t.dataStreams.Start()
+	if err := t.publishAndActivate(globalTracer, ciVisibilityEnabled); err != nil {
+		return err
 	}
 	if t.config.internalConfig.CIVisibilityAgentlessActive() {
 		// CI Visibility agentless mode doesn't require remote configuration.
@@ -281,23 +304,6 @@ func Start(opts ...StartOption) error {
 
 		globalinternal.SetTracerInitialized(true)
 		return nil
-	}
-
-	if t.config.otelRuntimeMetricsShouldBeEnabled {
-		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
-			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
-		} else {
-			log.Debug("OTel runtime metrics enabled.")
-		}
-	} else if t.config.internalConfig.RuntimeMetricsV2Enabled() {
-		// DD statsd path — only when OTel runtime metrics are not active.
-		l := slog.New(slogHandler{})
-		opts := &runtimemetrics.Options{Logger: l}
-		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
-			l.Debug("Runtime metrics v2 enabled.")
-		} else {
-			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
-		}
 	}
 
 	// appsec.Start() may use the telemetry client to report activation, so it is
@@ -325,6 +331,83 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+func (t *tracer) publishAndActivate(globalTracer Tracer, ciVisibilityEnabled bool) error {
+	committed := false
+	defer func() {
+		if !committed {
+			t.stopUnpublished()
+		}
+	}()
+
+	processLogger, logDirErr := t.prepareProcessLogger()
+	if logDirErr != nil {
+		t.config.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
+		log.Warn("%s", logDirErr.Error())
+	}
+	if processLogger != nil {
+		// Flush through the old logger before Store publication. Logger callbacks
+		// may re-enter configuration APIs or panic.
+		log.Flush()
+	}
+
+	finishBaseHashHandoff := beginBaseHashHandoff()
+	defer finishBaseHashHandoff()
+	err := publishTracerGeneration(t.config.internalConfig, t.config.preparedClaims, func(publication internalconfig.Publication) {
+		committed = true
+		t.publication = publication
+		t.completeGenerationHandoff(
+			publication,
+			globalTracer,
+			ciVisibilityEnabled,
+			processLogger,
+			finishBaseHashHandoff,
+		)
+	})
+	if err != nil {
+		return fmt.Errorf("publish tracer configuration: %w", err)
+	}
+	return nil
+}
+
+func (t *tracer) completeGenerationHandoff(
+	publication internalconfig.Publication,
+	globalTracer Tracer,
+	ciVisibilityEnabled bool,
+	processLogger log.Logger,
+	finishBaseHashHandoff func(),
+) {
+	oldTracer := swapGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
+	stopOld := oldTracer != nil && oldTracer != globalTracer
+	var firstPanic any
+	runCapturingPanic(&firstPanic, func() {
+		t.applyProcessGlobals(publication, processLogger)
+	})
+	runCapturingPanic(&firstPanic, func() {
+		publication.ApplyHeaderAsTags()
+	})
+	runCapturingPanic(&firstPanic, resetBaseHashCache)
+	finishBaseHashHandoff()
+	if stopOld {
+		runCapturingPanic(&firstPanic, oldTracer.Stop)
+	}
+	runCapturingPanic(&firstPanic, t.activate)
+	runCapturingPanic(&firstPanic, t.config.internalConfig.DrainPublicationTelemetry)
+	if firstPanic != nil {
+		panic(firstPanic)
+	}
+}
+
+// runCapturingPanic completes a handoff or activation stage while retaining the
+// first panic for the caller to re-raise after every remaining stage has run.
+func runCapturingPanic(first *any, stage func()) {
+	defer func() {
+		if recovered := recover(); recovered != nil && *first == nil {
+			*first = recovered
+		}
+	}()
+	stage()
 }
 
 // startAppSec builds the remote-config client config and AppSec start options,
@@ -506,32 +589,23 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
 	}
-	var logFile *log.ManagedFile
-	if v := c.internalConfig.LogDirectory(); v != "" {
-		logFile, err = log.OpenFileAtPath(v)
-		if err != nil {
-			log.Warn("%s", err.Error())
-			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
-		}
-	}
 	var sc statsConcentrator = newConcentrator(c, defaultStatsBucketSize, statsd)
 	if c.internalConfig.OTLPExportMode() {
 		sc = &noopConcentrator{}
 	}
 	t = &tracer{
-		config:           c,
-		otlpExportMode:   otlpExportMode,
-		traceWriter:      writer,
-		out:              make(chan *chunk, payloadQueueSize),
-		stop:             make(chan struct{}),
-		flush:            make(chan chan<- struct{}),
-		rulesSampling:    rulesSampler,
-		defaultSampler:   dfltSampler,
-		pid:              os.Getpid(),
-		logDroppedTraces: time.NewTicker(1 * time.Second),
-		stats:            sc,
-		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
-		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
+		config:         c,
+		otlpExportMode: otlpExportMode,
+		traceWriter:    writer,
+		out:            make(chan *chunk, payloadQueueSize),
+		stop:           make(chan struct{}),
+		flush:          make(chan chan<- struct{}),
+		rulesSampling:  rulesSampler,
+		defaultSampler: dfltSampler,
+		pid:            os.Getpid(),
+		stats:          sc,
+		spansStarted:   *globalinternal.NewXSyncMapCounterMap(),
+		spansFinished:  *globalinternal.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(func() obfuscate.Config {
 			af := c.agent.load()
 			return obfuscate.Config{
@@ -545,11 +619,63 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		}()),
 		statsd:      statsd,
 		dataStreams: dataStreamsProcessor,
-		logFile:     logFile,
 	}
 	t.flushHandler = t.defaultFlushHandler
 	buildSharedAttrs(c, &t.sharedAttrs, &t.sharedAttrsForMainSvc)
 	return t, nil
+}
+
+// prepareLogFile performs filesystem I/O before Store publication. The
+// returned logger is installed only during the committed generation handoff.
+func (t *tracer) prepareLogFile() (log.Logger, error) {
+	dir := t.config.internalConfig.LogDirectory()
+	if dir == "" {
+		return nil, nil
+	}
+	logFile, fileLogger, err := prepareLogFileAtPath(dir)
+	if err != nil {
+		return nil, err
+	}
+	t.logFile = logFile
+	return fileLogger, nil
+}
+
+func (t *tracer) prepareProcessLogger() (log.Logger, error) {
+	processLogger := t.config.logger
+	fileLogger, err := t.prepareLogFile()
+	if fileLogger != nil {
+		processLogger = fileLogger
+	}
+	return processLogger, err
+}
+
+// applyProcessGlobals publishes compatibility state consumed by contribs and
+// hot paths outside internal/config.
+func (t *tracer) applyProcessGlobals(publication internalconfig.Publication, processLogger log.Logger) {
+	c := t.config
+	if c.analyticsRateSet {
+		globalconfig.SetAnalyticsRate(c.analyticsRate)
+	}
+	namingschema.ApplyConfig(c.namingConfig)
+	if c.serviceUserDefined {
+		globalconfig.SetServiceName(c.internalConfig.ServiceName())
+	}
+	processtags.SetServiceNameTag(c.internalConfig.ServiceName(), c.serviceUserDefined)
+	if c.statsdClient == nil {
+		globalconfig.SetDogstatsdAddr(c.internalConfig.DogstatsdAddr())
+	}
+	if c.globalStatsTagsSet {
+		globalconfig.SetStatsTags(c.globalStatsTags)
+	}
+	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
+	t.loggerLease = log.InstallLoggerWithLease(processLogger)
+	if c.internalConfig.Debug() {
+		log.SetLevel(log.LevelDebug)
+	}
+	publication.ApplyContainerTagsHash(
+		t.containerTagsHashRevision.Add(1),
+		c.agent.load().containerTagsHash,
+	)
 }
 
 // buildSharedAttrs populates the tracer's two shared SpanAttributes instances
@@ -582,43 +708,63 @@ func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
 // polls the agent's /info endpoint for capability updates.
 const defaultAgentInfoPollInterval = 5 * time.Second
 
-// newTracer creates a new tracer and starts it.
-// NOTE: This function does NOT set the global tracer, which is required for
-// most finish span/flushing operations to work as expected. If you are calling
-// span.Finish and/or expecting flushing to work, you must call
-// setGlobalTracer(...) with the tracer provided by this function.
-func newTracer(opts ...StartOption) (*tracer, error) {
-	t, err := newUnstartedTracer(opts...)
-	if err != nil {
-		return nil, err
+// newUnpublishedTracer constructs a tracer without starting lifecycle work or
+// publishing its configuration generation.
+func newUnpublishedTracer(opts ...StartOption) (*tracer, error) {
+	return newUnstartedTracer(opts...)
+}
+
+func (t *tracer) activate() {
+	t.lifecycleMu.Lock()
+	if t.activated || t.stopped {
+		t.lifecycleMu.Unlock()
+		return
 	}
+
 	c := t.config
-	t.statsd.Incr("datadog.tracer.started", nil, 1)
+	var firstPanic any
+	runCapturingPanic(&firstPanic, func() {
+		t.logDroppedTraces.Store(time.NewTicker(time.Second))
+	})
+	runCapturingPanic(&firstPanic, func() {
+		t.statsd.Incr("datadog.tracer.started", nil, 1)
+	})
 	if c.internalConfig.RuntimeMetricsEnabled() && !c.otelRuntimeMetricsShouldBeEnabled {
-		log.Debug("Runtime metrics enabled.")
-		t.wg.Go(func() {
-			t.reportRuntimeMetrics(defaultMetricsReportInterval)
+		runCapturingPanic(&firstPanic, func() {
+			t.wg.Go(func() {
+				t.reportRuntimeMetrics(defaultMetricsReportInterval)
+			})
 		})
 	}
 
 	if c.internalConfig.DebugAbandonedSpans() {
-		log.Info("Abandoned spans logs enabled.")
-		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
-		t.abandonedSpansDebugger.Start(t.config.internalConfig.SpanTimeout())
+		runCapturingPanic(&firstPanic, func() {
+			log.Info("Abandoned spans logs enabled.")
+		})
+		runCapturingPanic(&firstPanic, func() {
+			t.abandonedSpansDebugger = newAbandonedSpansDebugger()
+			t.abandonedSpansDebugger.Start(t.config.internalConfig.SpanTimeout())
+		})
 	}
-	t.wg.Go(func() {
-		tick := t.config.tickChan
-		if tick == nil {
-			ticker := time.NewTicker(flushInterval)
-			defer ticker.Stop()
-			tick = ticker.C
-		}
-		t.worker(tick)
+	runCapturingPanic(&firstPanic, func() {
+		t.wg.Go(func() {
+			tick := t.config.tickChan
+			if tick == nil {
+				ticker := time.NewTicker(flushInterval)
+				defer ticker.Stop()
+				tick = ticker.C
+			}
+			t.worker(tick)
+		})
 	})
-	t.wg.Go(func() {
-		t.reportHealthMetricsAtInterval(statsInterval)
+	runCapturingPanic(&firstPanic, func() {
+		t.wg.Go(func() {
+			t.reportHealthMetricsAtInterval(statsInterval)
+		})
 	})
-	t.stats.Start()
+	runCapturingPanic(&firstPanic, func() {
+		t.stats.Start()
+	})
 
 	// Periodically refresh agent capabilities from /info so that config changes
 	// (e.g. peer tags, span events support) take effect without a tracer restart.
@@ -628,10 +774,44 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		if interval <= 0 {
 			interval = defaultAgentInfoPollInterval
 		}
-		t.wg.Go(func() { t.pollAgentInfo(interval) })
+		runCapturingPanic(&firstPanic, func() {
+			t.wg.Go(func() { t.pollAgentInfo(interval) })
+		})
 	}
-
-	return t, nil
+	if t.dataStreams != nil {
+		runCapturingPanic(&firstPanic, t.dataStreams.Start)
+	}
+	if c.internalConfig.RuntimeMetricsEnabled() && !c.otelRuntimeMetricsShouldBeEnabled {
+		runCapturingPanic(&firstPanic, func() {
+			log.Debug("Runtime metrics enabled.")
+		})
+	}
+	if c.otelRuntimeMetricsShouldBeEnabled {
+		runCapturingPanic(&firstPanic, func() {
+			if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
+				log.Error("Failed to start OTel runtime metrics: %v", err.Error())
+			} else {
+				log.Debug("OTel runtime metrics enabled.")
+			}
+		})
+	} else if c.internalConfig.RuntimeMetricsV2Enabled() {
+		// DD statsd path — only when OTel runtime metrics are not active.
+		runCapturingPanic(&firstPanic, func() {
+			l := slog.New(slogHandler{})
+			opts := &runtimemetrics.Options{Logger: l}
+			if emitter, err := runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
+				t.runtimeMetrics = emitter
+				l.Debug("Runtime metrics v2 enabled.")
+			} else {
+				l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+			}
+		})
+	}
+	t.activated = true
+	t.lifecycleMu.Unlock()
+	if firstPanic != nil {
+		panic(firstPanic)
+	}
 }
 
 // refreshAgentFeatures fetches a fresh snapshot from /info and atomically
@@ -655,6 +835,12 @@ func (t *tracer) refreshAgentFeatures() {
 			log.Debug("agent info poll failed: %s", err.Error())
 		}
 		return // keep last-known-good
+	}
+	if newFeatures.containerTagsHash != "" {
+		t.publication.ApplyContainerTagsHash(
+			t.containerTagsHashRevision.Add(1),
+			newFeatures.containerTagsHash,
+		)
 	}
 	// Atomically graft the startup-frozen static fields from the current
 	// snapshot onto the fresh dynamic snapshot. update() handles the CAS
@@ -841,8 +1027,12 @@ func (t *tracer) pushChunk(trace *chunk) {
 		// after finish(), so calling it here deadlocks the same goroutine.
 		// Dropped spans are GC'd instead.
 	}
+	ticker := t.logDroppedTraces.Load()
+	if ticker == nil {
+		return
+	}
 	select {
-	case <-t.logDroppedTraces.C:
+	case <-ticker.C:
 		if t := atomic.SwapUint32(&t.totalTracesDropped, 0); t > 0 {
 			log.Error("%d traces dropped through payload queue", t)
 		}
@@ -1106,38 +1296,84 @@ func (s *Span) getResourceWithPIISafe() (resource string, safe bool) {
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
+	t.stopTracer(true)
+}
+
+func (t *tracer) stopUnpublished() {
+	t.stopTracer(false)
+}
+
+func (t *tracer) stopTracer(stopGlobalProducts bool) {
 	t.stopOnce.Do(func() {
-		close(t.stop)
-		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
-	})
-	t.abandonedSpansDebugger.Stop()
-	t.stats.Stop()
-	t.wg.Wait()
-	t.traceWriter.stop()
-	if t.runtimeMetrics != nil {
-		t.runtimeMetrics.Stop()
-	}
-	if otelmetricsinstall.ShutdownHook != nil {
-		ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
-		defer cancel()
-		if err := otelmetricsinstall.ShutdownHook(ctx); err != nil {
-			log.Error("Failed to shut down OTel meter provider: %v", err.Error())
+		t.lifecycleMu.Lock()
+		t.stopped = true
+		activated := t.activated
+		t.lifecycleMu.Unlock()
+
+		var firstPanic any
+		runCapturingPanic(&firstPanic, func() {
+			close(t.stop)
+		})
+		runCapturingPanic(&firstPanic, func() {
+			if ticker := t.logDroppedTraces.Load(); ticker != nil {
+				ticker.Stop()
+			}
+		})
+		if activated {
+			runCapturingPanic(&firstPanic, func() {
+				t.statsd.Incr("datadog.tracer.stopped", nil, 1)
+			})
+			runCapturingPanic(&firstPanic, t.abandonedSpansDebugger.Stop)
+			runCapturingPanic(&firstPanic, t.stats.Stop)
+			runCapturingPanic(&firstPanic, t.wg.Wait)
+			runCapturingPanic(&firstPanic, t.traceWriter.stop)
 		}
-	}
-	t.statsd.Close()
-	if t.dataStreams != nil {
-		t.dataStreams.Stop()
-	}
-	appsec.Stop()
-	remoteconfig.Stop()
-	// Close log file last to account for any logs from the above calls
-	if t.logFile != nil {
-		t.logFile.Close()
-	}
-	if t.telemetry != nil {
-		t.telemetry.Close()
-	}
-	t.config.httpClient.CloseIdleConnections()
+		if stopGlobalProducts && t.runtimeMetrics != nil {
+			runCapturingPanic(&firstPanic, t.runtimeMetrics.Stop)
+		}
+		if stopGlobalProducts && otelmetricsinstall.ShutdownHook != nil {
+			runCapturingPanic(&firstPanic, func() {
+				ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
+				defer cancel()
+				if err := otelmetricsinstall.ShutdownHook(ctx); err != nil {
+					log.Error("Failed to shut down OTel meter provider: %v", err.Error())
+				}
+			})
+		}
+		runCapturingPanic(&firstPanic, func() {
+			t.statsd.Close()
+		})
+		if stopGlobalProducts && activated && t.dataStreams != nil {
+			runCapturingPanic(&firstPanic, t.dataStreams.Stop)
+		}
+		if stopGlobalProducts && activated {
+			runCapturingPanic(&firstPanic, appsec.Stop)
+			runCapturingPanic(&firstPanic, remoteconfig.Stop)
+		}
+		if t.telemetry != nil {
+			runCapturingPanic(&firstPanic, func() {
+				t.telemetry.Close()
+			})
+		}
+		runCapturingPanic(&firstPanic, t.config.httpClient.CloseIdleConnections)
+		// Retire the logger last so no new callback can acquire this
+		// generation's file. An in-flight callback closes it on release.
+		logFile := t.logFile
+		runCapturingPanic(&firstPanic, func() {
+			if t.loggerLease != nil {
+				t.loggerLease.Retire(func() {
+					if logFile != nil {
+						_ = logFile.Close()
+					}
+				})
+			} else if logFile != nil {
+				_ = logFile.Close()
+			}
+		})
+		if firstPanic != nil {
+			panic(firstPanic)
+		}
+	})
 }
 
 // Inject uses the configured or default TextMap Propagator.

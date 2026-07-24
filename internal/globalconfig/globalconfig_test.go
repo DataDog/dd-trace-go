@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,43 @@ func TestHeaderTag(t *testing.T) {
 
 	assert.Equal(t, "tag1", cfg.headersAsTags.Get("header1"))
 	assert.Equal(t, "tag2", cfg.headersAsTags.Get("header2"))
+}
+
+func TestApplyHeaderTagsForPublicationRejectsStaleTuple(t *testing.T) {
+	old := cfg
+	cfg = newConfig()
+	t.Cleanup(func() { cfg = old })
+
+	assert.True(t, ApplyHeaderTagsForPublication(20, 1, 1, map[string]string{"X-Current": "current.tag"}))
+	assert.False(t, ApplyHeaderTagsForPublication(19, 99, 99, map[string]string{"X-Old": "old.tag"}))
+	assert.False(t, ApplyHeaderTagsForPublication(20, 1, 1, map[string]string{"X-Duplicate": "duplicate.tag"}))
+	assert.True(t, ApplyHeaderTagsForPublication(20, 1, 2, map[string]string{"X-Latest": "latest.tag"}))
+
+	assert.Equal(t, "latest.tag", HeaderTag("X-Latest"))
+	assert.Empty(t, HeaderTag("X-Current"))
+	assert.Empty(t, HeaderTag("X-Old"))
+	assert.Empty(t, HeaderTag("X-Duplicate"))
+}
+
+func TestHeaderTagMapIterCallbackDoesNotHoldMapLock(t *testing.T) {
+	old := cfg
+	cfg = newConfig()
+	t.Cleanup(func() { cfg = old })
+	SetHeaderTag("X-Initial", "initial.tag")
+
+	done := make(chan struct{})
+	go func() {
+		HeaderTagMap().Iter(func(string, string) {
+			SetHeaderTag("X-Reentrant", "reentrant.tag")
+		})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("HeaderTagMap.Iter held the map lock across its callback")
+	}
+	assert.Equal(t, "reentrant.tag", HeaderTag("X-Reentrant"))
 }
 
 func TestRootSessionID_DefaultsToRuntimeID(t *testing.T) {

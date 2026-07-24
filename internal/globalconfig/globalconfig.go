@@ -28,7 +28,7 @@ func newConfig() *config {
 		analyticsRate: math.NaN(),
 		runtimeID:     runtimeID,
 		rootSessionID: getRootSessionID(runtimeID),
-		headersAsTags: internal.NewLockMap(map[string]string{}),
+		headersAsTags: newHeaderTagRegistry(),
 	}
 }
 
@@ -47,9 +47,53 @@ type config struct {
 	serviceName   string
 	runtimeID     string
 	rootSessionID string
-	headersAsTags *internal.LockMap
+	headersAsTags *headerTagRegistry
 	dogstatsdAddr string
 	statsTags     []string
+}
+
+type headerTagRegistry struct {
+	mu sync.Mutex
+
+	publicationID uint64
+	generation    uint64
+	revision      uint64
+	tags          *internal.LockMap
+}
+
+func newHeaderTagRegistry() *headerTagRegistry {
+	return &headerTagRegistry{tags: internal.NewLockMap(map[string]string{})}
+}
+
+func (r *headerTagRegistry) apply(publicationID, generation, revision uint64, tags map[string]string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if publicationID < r.publicationID ||
+		(publicationID == r.publicationID && generation < r.generation) ||
+		(publicationID == r.publicationID && generation == r.generation && revision <= r.revision) {
+		return false
+	}
+	r.publicationID = publicationID
+	r.generation = generation
+	r.revision = revision
+	r.tags.Replace(tags)
+	return true
+}
+
+func (r *headerTagRegistry) Get(header string) string {
+	return r.tags.Get(header)
+}
+
+func (r *headerTagRegistry) Set(header, tag string) {
+	r.tags.Set(header, tag)
+}
+
+func (r *headerTagRegistry) Len() int {
+	return r.tags.Len()
+}
+
+func (r *headerTagRegistry) Clear() {
+	r.tags.Clear()
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -133,7 +177,7 @@ func RootSessionID() string {
 
 // HeaderTagMap returns the mappings of headers to their tag values
 func HeaderTagMap() *internal.LockMap {
-	return cfg.headersAsTags
+	return cfg.headersAsTags.tags
 }
 
 // HeaderTag returns the configured tag for a given header.
@@ -156,6 +200,12 @@ func HeaderTagsLen() int {
 // It is invoked when WithHeaderTags is called, in order to overwrite the config
 func ClearHeaderTags() {
 	cfg.headersAsTags.Clear()
+}
+
+// ApplyHeaderTagsForPublication atomically replaces the header mapping when the
+// supplied publication tuple is newer than the last applied tuple.
+func ApplyHeaderTagsForPublication(publicationID, generation, revision uint64, tags map[string]string) bool {
+	return cfg.headersAsTags.apply(publicationID, generation, revision, tags)
 }
 
 // InstrumentationInstallID returns the install ID as described in DD_INSTRUMENTATION_INSTALL_ID

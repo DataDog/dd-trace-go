@@ -203,7 +203,8 @@ func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, features.Stats)
-	assert.Equal(t, "info-container-hash", processtags.ContainerTagsHash())
+	assert.Equal(t, "info-container-hash", features.containerTagsHash)
+	assert.Empty(t, processtags.ContainerTagsHash())
 }
 
 func TestTraceCountHeader(t *testing.T) {
@@ -311,7 +312,6 @@ func TestApiErrorsMetric(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
 		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
 		assert.NoError(err)
-		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -334,7 +334,6 @@ func TestApiErrorsMetric(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
 		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
 		assert.NoError(err)
-		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -356,7 +355,6 @@ func TestApiErrorsMetric(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
 		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
 		assert.NoError(err)
-		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		// We're expecting an error
@@ -375,7 +373,6 @@ func TestApiErrorsMetric(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
 		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
 		assert.NoError(err)
-		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		err = trc.config.ddTransport.sendStats(&pb.ClientStatsPayload{}, 1)
@@ -394,7 +391,6 @@ func TestApiErrorsMetric(t *testing.T) {
 		}
 		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
 		assert.NoError(err)
-		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -744,7 +740,6 @@ func TestClientComputedStatsHeader(t *testing.T) {
 		assert.NoError(err)
 		trc, err := newTracer(WithAgentAddr(u.Host), WithStatsComputation(true))
 		assert.NoError(err)
-		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -772,7 +767,6 @@ func TestClientComputedStatsHeader(t *testing.T) {
 		assert.NoError(err)
 		trc, err := newTracer(WithAgentAddr(u.Host), WithStatsComputation(true))
 		assert.NoError(err)
-		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -800,7 +794,6 @@ func TestClientComputedStatsHeader(t *testing.T) {
 		assert.NoError(err)
 		trc, err := newTracer(WithAgentAddr(u.Host), WithStatsComputation(true))
 		assert.NoError(err)
-		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))

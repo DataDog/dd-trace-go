@@ -148,7 +148,7 @@ func TestLogSamplingRules(t *testing.T) {
 	tp.Ignore(commonLogIgnore...)
 	log.UseLogger(tp)
 	t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
-	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithEnv("test"))
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithEnv("test"), withNoopInfoHTTPClient())
 	require.NoError(t, err)
 	defer stop()
 
@@ -162,7 +162,7 @@ func TestLogDefaultSampleRate(t *testing.T) {
 	tp.Ignore(commonLogIgnore...)
 	log.UseLogger(tp)
 	t.Setenv("DD_TRACE_SAMPLE_RATE", ``)
-	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithEnv("test"))
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithEnv("test"), withNoopInfoHTTPClient())
 	require.NoError(t, err)
 	defer stop()
 

@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -26,13 +27,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
-)
-
-var (
-	useFreshConfig bool
-	instance       *Config
-	// mu protects instance and useFreshConfig
-	mu sync.Mutex
 )
 
 // Origin represents where a configuration value came from.
@@ -71,6 +65,24 @@ type Config struct {
 	// overrides tracks which product claimed each field via programmatic API (OriginCode).
 	// Used by checkOverrideConflict to enforce the cross-product gate.
 	overrides map[string]programmaticOverride
+	// claimBaselines keeps source-resolved values separate from staged tracer
+	// programmatic claims so a conflicting claim can be reverted before use.
+	claimBaselines   map[string]claimBaseline
+	stagedClaims     map[string]any
+	programmaticTags map[string]any
+	// claimDependencies records staged values derived from another claim
+	// (for example DD_SERVICE derived from a programmatic DD_TAGS entry).
+	claimDependencies  map[string]string
+	claimRevision      uint64
+	generation         atomic.Uint64
+	publicationID      atomic.Uint64
+	publicationStarted atomic.Bool
+	published          atomic.Bool
+	retired            atomic.Bool
+	deferTelemetry     bool
+	telemetryDraining  bool
+	telemetryProvider  *provider.Provider
+	pendingTelemetry   []pendingConfigReport
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
@@ -162,6 +174,10 @@ type Config struct {
 	globalTags *DynamicConfig[map[string]any]
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
+	// headerSnapshotMu keeps the header value and its target revision atomic.
+	headerSnapshotMu    sync.RWMutex
+	headerSnapshotValue []string
+	headerRevision      uint64
 	// tracingEnabled controls whether tracing is active. RC can only disable it,
 	// never re-enable it once disabled by a local source.
 	tracingEnabled *DynamicConfig[bool]
@@ -260,22 +276,25 @@ func (c *Config) checkProductConflict(field string, origin telemetry.Origin, val
 		return nil
 	}
 	p := product[0]
+	if p == ProductTracer && c.publicationStarted.Load() {
+		return func() {
+			log.Warn("config: ignoring tracer update to %s after generation publication started", field)
+		}
+	}
 	if prev, exists := c.overrides[field]; exists && prev.product != p {
-		if reflect.DeepEqual(prev.value, value) {
+		if claimValuesEqual(prev.value, value) {
+			if p == ProductTracer {
+				c.recordStagedClaimLocked(field, value)
+			}
 			return nil
 		}
 		firstProduct := prev.product
-		return func() {
-			telemetry.Count(telemetry.NamespaceGeneral, "config.product_conflict", []string{
-				"name:" + field,
-				"first_product:" + string(firstProduct),
-				"second_product:" + string(p),
-			}).Submit(1)
-			log.Warn("config: %s already set %s via programmatic API; ignoring %s's attempt to override it",
-				firstProduct, field, p)
-		}
+		return func() { reportProductConflict(field, firstProduct, p) }
 	}
-	c.overrides[field] = programmaticOverride{product: p, value: value}
+	c.overrides[field] = programmaticOverride{product: p, value: snapshotClaimValue(value)}
+	if p == ProductTracer {
+		c.recordStagedClaimLocked(field, value)
+	}
 	return nil
 }
 
@@ -294,10 +313,69 @@ func (c *Config) reportConflictUnlocked(report func()) bool {
 // reportConfigTelemetryUnlocked captures a detached telemetry representation,
 // releases c.mu for the synchronous sink call, then restores the caller's lock.
 func (c *Config) reportConfigTelemetryUnlocked(name string, value any, origin telemetry.Origin) {
+	if c.deferTelemetry {
+		c.pendingTelemetry = append(c.pendingTelemetry, preparePendingConfigReport(name, value, origin, false))
+		return
+	}
 	report := prepareConfigReport(name, value, origin)
 	c.mu.Unlock()
 	defer c.mu.Lock()
 	report.submit()
+}
+
+func (c *Config) reportDynamicConfigTelemetry(name string, value any, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reportConfigTelemetryUnlocked(name, value, origin)
+}
+
+func (c *Config) reportDefaultConfigTelemetry(name string, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.deferTelemetry {
+		c.pendingTelemetry = append(c.pendingTelemetry, preparePendingConfigReport(name, value, telemetry.OriginDefault, true))
+		return
+	}
+	report := prepareDefaultConfigReport(name, value)
+	c.mu.Unlock()
+	defer c.mu.Lock()
+	report.submit()
+}
+
+// DrainPublicationTelemetry reports all telemetry accumulated by a staged
+// generation. The pending state is detached under the config lock and sinks are
+// invoked afterward, so callbacks may safely re-enter configuration getters.
+func (c *Config) DrainPublicationTelemetry() {
+	c.mu.Lock()
+	if !c.deferTelemetry || c.telemetryDraining {
+		c.mu.Unlock()
+		return
+	}
+	c.telemetryDraining = true
+	p := c.telemetryProvider
+	c.telemetryProvider = nil
+	pending := c.pendingTelemetry
+	c.pendingTelemetry = nil
+	c.mu.Unlock()
+
+	if p != nil {
+		p.FlushTelemetry()
+	}
+	for {
+		for _, report := range pending {
+			report.submit()
+		}
+		c.mu.Lock()
+		if len(c.pendingTelemetry) == 0 {
+			c.deferTelemetry = false
+			c.telemetryDraining = false
+			c.mu.Unlock()
+			return
+		}
+		pending = c.pendingTelemetry
+		c.pendingTelemetry = nil
+		c.mu.Unlock()
+	}
 }
 
 func (c *Config) logWarnUnlocked(format string, args ...any) {
@@ -311,9 +389,11 @@ func (c *Config) logWarnUnlocked(format string, args ...any) {
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
 func loadConfig() *Config {
 	cfg := &Config{
-		overrides: make(map[string]programmaticOverride),
+		overrides:      make(map[string]programmaticOverride),
+		deferTelemetry: true,
 	}
-	p := provider.New()
+	p := provider.NewDeferred()
+	cfg.telemetryProvider = p
 
 	// Resolve agent URL from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT.
 	// All three are read through the provider so telemetry is reported for each.
@@ -452,20 +532,26 @@ func loadConfig() *Config {
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
+	cfg.globalSampleRate.report = cfg.reportDynamicConfigTelemetry
 
 	tracingEnabled, tracingEnabledOrigin := p.GetBoolWithOrigin("DD_TRACE_ENABLED", true)
 	cfg.tracingEnabled = newDynamicConfig("tracing_enabled", tracingEnabled, tracingEnabledOrigin, equal[bool], nil)
+	cfg.tracingEnabled.report = cfg.reportDynamicConfigTelemetry
 
 	enabled, origin := p.GetBoolWithOrigin("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool], nil)
+	cfg.dynamicInstrumentationEnabled.report = cfg.reportDynamicConfigTelemetry
 
 	headerTags, headerTagsOrigin := parseHeaderAsTagsFromEnv(p)
-	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
+	cfg.initializeHeaderSnapshot(headerTags)
+	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], cfg.propagateHeaderAsTagsIfCurrent)
+	cfg.headerAsTags.report = cfg.reportDynamicConfigTelemetry
 
 	rawTags, globalTagsOrigin := p.GetStringWithOrigin("DD_TAGS", "")
 	cfg.globalTags = newDynamicConfig("trace_tags", parseGlobalTags(rawTags), globalTagsOrigin, equalMap[string], nil)
+	cfg.globalTags.report = cfg.reportDynamicConfigTelemetry
 	for k, v := range cfg.globalTags.Get() {
-		reportGlobalTagTelemetry(k, v, globalTagsOrigin)
+		cfg.reportDefaultOrSourceGlobalTagTelemetry(k, v, globalTagsOrigin)
 	}
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
@@ -527,55 +613,16 @@ func loadConfig() *Config {
 
 	traceRules, traceOrigin := samplingRulesFromSource(p, "DD_TRACE_SAMPLING_RULES", samplingrules.SamplingRuleTrace)
 	cfg.traceSamplingRules = newDynamicConfig("trace_sample_rules", traceRules, traceOrigin, samplingrules.EqualsFalseNegative, nil)
-	prepareDefaultConfigReport("trace_sample_rules", traceRules).submit()
+	cfg.traceSamplingRules.report = cfg.reportDynamicConfigTelemetry
+	cfg.reportDefaultConfigTelemetry("trace_sample_rules", traceRules)
 
 	spanRules, spanOrigin := samplingRulesFromSource(p, "DD_SPAN_SAMPLING_RULES", samplingrules.SamplingRuleSpan)
 	cfg.spanSamplingRules = spanRules
 	cfg.spanSamplingRulesOrigin = spanOrigin
-	prepareDefaultConfigReport("span_sample_rules", spanRules).submit()
+	cfg.reportDefaultConfigTelemetry("span_sample_rules", spanRules)
 
+	cfg.captureClaimBaselines()
 	return cfg
-}
-
-// Get returns the global configuration singleton.
-// This function is thread-safe and can be called from multiple goroutines concurrently.
-// The configuration is lazily initialized on first access using sync.Once, ensuring
-// loadConfig() is called exactly once even under concurrent access.
-func Get() *Config {
-	mu.Lock()
-	defer mu.Unlock()
-	if useFreshConfig || instance == nil {
-		instance = loadConfig()
-	}
-
-	return instance
-}
-
-// CreateNew returns a new global configuration instance.
-// This function should be used when we need to create a new configuration instance.
-// It build a new configuration instance and override the existing one
-// loosing any programmatic configuration that would have been applied to the existing instance.
-//
-// It shouldn't be used to get the global configuration instance to manipulate it but
-// should be used when there is a need to reset the global configuration instance.
-//
-// This is useful when we need to create a new configuration instance when a new product is initialized.
-// Each product should have its own configuration instance and apply its own programmatic configuration to it.
-//
-// If a customer starts multiple tracer with different programmatic configuration only the latest one will be used
-// and available globally.
-func CreateNew() *Config {
-	mu.Lock()
-	defer mu.Unlock()
-	instance = loadConfig()
-
-	return instance
-}
-
-func SetUseFreshConfig(use bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	useFreshConfig = use
 }
 
 // RawAgentURL returns a copy of the configured trace agent URL before any
@@ -594,12 +641,13 @@ func (c *Config) RawAgentURL() *url.URL {
 func (c *Config) SetAgentURL(u *url.URL, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.reportConflictUnlocked(c.checkProductConflict("DD_TRACE_AGENT_URL", origin, u, product...)) {
+	cloned := cloneURL(u)
+	if c.reportConflictUnlocked(c.checkProductConflict("DD_TRACE_AGENT_URL", origin, cloned, product...)) {
 		return
 	}
-	c.agentURL = u
-	if u != nil {
-		c.reportConfigTelemetryUnlocked("DD_TRACE_AGENT_URL", u.String(), origin)
+	c.agentURL = cloned
+	if cloned != nil {
+		c.reportConfigTelemetryUnlocked("DD_TRACE_AGENT_URL", cloned.String(), origin)
 	}
 }
 
@@ -862,12 +910,46 @@ func (c *Config) GlobalTagsConfig() *DynamicConfig[map[string]any] {
 func (c *Config) SetGlobalTag(key string, value any, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if origin == telemetry.OriginCode && len(product) > 0 && product[0] == ProductTracer && c.publicationStarted.Load() {
+		c.logWarnUnlocked("config: ignoring tracer update to DD_TAGS after generation publication started")
+		return
+	}
+	value = snapshotTagValue(value)
 	cur, curOrigin := c.globalTags.Baseline()
 	nm := make(map[string]any, len(cur)+1)
-	maps.Copy(nm, cur)
-	nm[key] = value
+	for key, value := range cur {
+		nm[key] = snapshotClaimValue(value)
+	}
+	nm[key] = snapshotClaimValue(value)
 	c.globalTags.setBaseline(nm, curOrigin)
+	if origin == telemetry.OriginCode && len(product) > 0 && product[0] == ProductTracer {
+		if c.programmaticTags == nil {
+			c.programmaticTags = make(map[string]any)
+		}
+		c.programmaticTags[key] = snapshotClaimValue(value)
+		c.recordStagedClaimLocked("DD_TAGS", c.programmaticTags)
+	}
 	c.reportConfigTelemetryUnlocked("global_tag_"+key, value, origin)
+}
+
+func snapshotTagValue(value any) any {
+	snapshot := snapshotClaimValue(value)
+	if _, unsupported := snapshot.(unsupportedClaimValue); unsupported {
+		return snapshot
+	}
+	if value == nil {
+		return nil
+	}
+	switch value.(type) {
+	case []byte, []string, map[string]string, map[string]any, []any:
+		return snapshot
+	}
+	switch reflect.TypeOf(value).Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func, reflect.UnsafePointer:
+		return unsupportedClaimValue{}
+	default:
+		return snapshot
+	}
 }
 
 func (c *Config) DynamicInstrumentationEnabled() bool {

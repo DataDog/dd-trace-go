@@ -22,7 +22,9 @@ import (
 // Provider resolves configuration values from an ordered list of sources.
 // Sources are listed in descending priority order: the first source wins.
 type Provider struct {
-	sources []LookupSource
+	sources          []LookupSource
+	deferTelemetry   bool
+	pendingTelemetry []ConfigEvent
 }
 
 // New returns a Provider configured with the following source list, in descending order of priority.
@@ -35,6 +37,23 @@ func New() *Provider {
 			newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig),
 		},
 	}
+}
+
+// NewDeferred returns a Provider that buffers compatibility telemetry until
+// FlushTelemetry is called. Configuration generations use it so candidates
+// that lose publication or fail construction never emit telemetry.
+func NewDeferred() *Provider {
+	p := New()
+	p.deferTelemetry = true
+	return p
+}
+
+// FlushTelemetry reports buffered compatibility events exactly once.
+func (p *Provider) FlushTelemetry() {
+	events := p.pendingTelemetry
+	p.pendingTelemetry = nil
+	p.deferTelemetry = false
+	reportCompatibilityEvents(events)
 }
 
 // Resolve resolves def without synchronously reporting configuration telemetry.
@@ -265,6 +284,10 @@ func compatibilityDefinition(key string) schema.RawDefinition {
 
 func resolveCompatibility[T any](p *Provider, key string, def T, parse schema.Parser[T]) schema.Resolved[T] {
 	result, events := ResolveWithBinding(p, compatibilityDefinition(key), compatibilityBinding(key), def, parse)
+	if p.deferTelemetry {
+		p.pendingTelemetry = append(p.pendingTelemetry, cloneEvents(events)...)
+		return result
+	}
 	reportCompatibilityEvents(events)
 	return result
 }

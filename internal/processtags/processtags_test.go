@@ -181,3 +181,16 @@ func TestContainerTagsHash(t *testing.T) {
 	SetContainerTagsHash("")
 	assert.Empty(t, ContainerTagsHash())
 }
+
+func TestApplyContainerTagsHashForPublicationRejectsStaleTuple(t *testing.T) {
+	oldRegistry := containerTagsHashRegistry
+	containerTagsHashRegistry = newContainerTagsHashRegistry()
+	t.Cleanup(func() { containerTagsHashRegistry = oldRegistry })
+
+	assert.True(t, ApplyContainerTagsHashForPublication(20, 1, 1, "current"))
+	assert.False(t, ApplyContainerTagsHashForPublication(19, 99, 99, "old-publication"))
+	assert.False(t, ApplyContainerTagsHashForPublication(20, 1, 1, "duplicate"))
+	assert.True(t, ApplyContainerTagsHashForPublication(20, 1, 2, "latest"))
+
+	assert.Equal(t, "latest", ContainerTagsHash())
+}

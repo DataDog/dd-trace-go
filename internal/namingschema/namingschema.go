@@ -39,16 +39,32 @@ var (
 )
 
 func LoadFromEnv() {
+	ApplyConfig(ConfigFromEnv())
+}
+
+// ConfigFromEnv resolves the process naming configuration without publishing
+// it. Tracer construction uses this to keep a replacement generation isolated
+// until its configuration is successfully published.
+func ConfigFromEnv() Config {
 	schemaVersionStr := env.Get("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
+	var schemaVersion Version
 	if v, ok := parseVersionStr(schemaVersionStr); ok {
-		setVersion(v)
+		schemaVersion = v
 	} else {
-		setVersion(SchemaV0)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}
 	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
 	// These default service names are always disabled for v1 onwards.
-	SetRemoveIntegrationServiceNames(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
+	return Config{
+		NamingSchemaVersion:           schemaVersion,
+		RemoveIntegrationServiceNames: internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false),
+	}
+}
+
+// ApplyConfig publishes a previously resolved naming configuration.
+func ApplyConfig(cfg Config) {
+	setVersion(cfg.NamingSchemaVersion)
+	SetRemoveIntegrationServiceNames(cfg.RemoveIntegrationServiceNames)
 }
 
 // ReloadConfig is used to reload the configuration in tests.

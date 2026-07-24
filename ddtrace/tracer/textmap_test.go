@@ -582,7 +582,6 @@ func TestTextMapPropagator(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
-			setGlobalTracer(tracer)
 			child := tracer.StartSpan("test")
 			for k, v := range tc.tags {
 				child.Context().trace.setPropagatingTag(k, v)
@@ -2998,7 +2997,6 @@ func TestMalformedTID(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer()
 	assert.Nil(err)
-	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	defer setGlobalTracer(&NoopTracer{})
 
