@@ -30,19 +30,14 @@ make config-audit
 (cd scripts/configaudit && GOWORK=off go run . -root ../.. -format json) > /tmp/audit.json
 ```
 
-## Suppressing intentional reads
+## Suppressions
 
-If a direct env-var read is intentional and not a migration candidate, annotate
-the line with `//nolint:configaudit`:
-
-```go
-} else if v := env.Get("DD_ENV"); v != "" { //nolint:configaudit — intentional: ...
-```
-
-The scanner skips any call site whose source line carries this annotation.
+`configaudit` rejects every `//nolint:configaudit` annotation. Each annotation
+is reported in the `suppressions` result bucket and makes the audit fail.
+Remove the direct read; configaudit suppressions are not supported.
 
 ## CI
 
-The `.github/workflows/config-audit.yml` workflow runs the audit on every PR and
-uploads `audit.json` as an artifact. It does **not** fail the build — its job is
-to give reviewers visibility into migration progress.
+The `.github/workflows/config-audit.yml` workflow runs the audit on every PR,
+uploads `audit.json` as an artifact, and fails when it finds any unmigrated,
+untracked, unresolved, suppressed, or uncovered read.

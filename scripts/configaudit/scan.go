@@ -9,10 +9,24 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"os"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
+
+type buildVariant struct {
+	Name       string
+	Env        []string
+	BuildFlags []string
+}
+
+var buildVariants = []buildVariant{
+	{Name: "host"},
+	{Name: "linux-amd64", Env: []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0"}},
+	{Name: "windows-amd64", Env: []string{"GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=0"}},
+	{Name: "linux-amd64-appsec", Env: []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0"}, BuildFlags: []string{"-tags=appsec"}},
+}
 
 // CallSite records where a DD_* env var was read.
 type CallSite struct {
@@ -89,6 +103,9 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 	if err != nil {
 		return nil, fmt.Errorf("packages.Load: %w", err)
 	}
+	if errs := packageErrors(pkgs); len(errs) > 0 {
+		return nil, fmt.Errorf("package errors: %v", errs)
+	}
 	out := make(map[string][]CallSite)
 	for _, pkg := range pkgs {
 		for i, file := range pkg.Syntax {
@@ -136,6 +153,36 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 		}
 	}
 	return out, nil
+}
+
+// scanCoverage loads the root module under every supported build variant and
+// returns any package errors. The syntax pass provides read coverage for files
+// that do not type-load in the host variant.
+func scanCoverage(root string) []string {
+	var coverageErrors []string
+	for _, variant := range buildVariants {
+		cfg := &packages.Config{
+			Mode:       packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+			Dir:        root,
+			BuildFlags: variant.BuildFlags,
+		}
+		if len(variant.Env) != 0 {
+			cfg.Env = append(os.Environ(), variant.Env...)
+		}
+		pkgs, err := packages.Load(cfg, "./...")
+		if err != nil {
+			coverageErrors = append(coverageErrors, fmt.Sprintf("%s: packages.Load: %v", variant.Name, err))
+			continue
+		}
+		if len(pkgs) == 0 {
+			coverageErrors = append(coverageErrors, fmt.Sprintf("%s: no root-module packages loaded", variant.Name))
+			continue
+		}
+		for _, pkgErr := range packageErrors(pkgs) {
+			coverageErrors = append(coverageErrors, fmt.Sprintf("%s: %v", variant.Name, pkgErr))
+		}
+	}
+	return coverageErrors
 }
 
 // hasNolintConfigaudit reports whether text is a nolint comment that names

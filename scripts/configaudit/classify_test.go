@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 	"testing"
@@ -39,6 +40,23 @@ func TestClassify(t *testing.T) {
 	wantEq(t, "unmigrated", unmigratedKeys, []string{"DD_SITE"})
 	wantEq(t, "untracked", untrackedKeys, []string{"DD_UNKNOWN"})
 	wantEq(t, "stillReadOutside", stillReadKeys, []string{"DD_AGENT_HOST"})
+}
+
+func TestRunReturnsNoncleanErrorAfterRendering(t *testing.T) {
+	var output bytes.Buffer
+	err := runWithAudit("deterministic-fixture", "json", "fixture", &output, func(root, pkgPrefix string) (AuditResult, error) {
+		if root != "deterministic-fixture" || pkgPrefix != "fixture" {
+			t.Fatalf("audit arguments = (%q, %q)", root, pkgPrefix)
+		}
+		return AuditResult{Unresolved: []Finding{{Key: "DD_DYNAMIC", Unresolved: true}}}, nil
+	})
+	var nonclean *noncleanError
+	if !errors.As(err, &nonclean) {
+		t.Fatalf("run error = %v, want noncleanError", err)
+	}
+	if !strings.Contains(output.String(), "DD_DYNAMIC") {
+		t.Fatalf("run did not render the fixed nonclean input before failing: %s", output.String())
+	}
 }
 
 func TestRenderTable(t *testing.T) {
@@ -73,6 +91,49 @@ func TestRenderTable(t *testing.T) {
 	}
 	if strings.Contains(got, "SUMMARY") {
 		t.Errorf("table should no longer include a SUMMARY line, got:\n%s", got)
+	}
+}
+
+func TestRenderTableFailureBuckets(t *testing.T) {
+	tests := map[string]struct {
+		result AuditResult
+		want   []string
+	}{
+		"unresolved": {
+			result: AuditResult{Unresolved: []Finding{{
+				CallSite:   CallSite{File: "dynamic.go", Line: 12, Func: "os.Getenv"},
+				Unresolved: true,
+			}}},
+			want: []string{"UNRESOLVED", "dynamic.go:12", "os.Getenv"},
+		},
+		"suppression": {
+			result: AuditResult{Suppressions: []Finding{{
+				Key:        "DD_SUPPRESSED",
+				CallSite:   CallSite{File: "suppressed.go", Line: 23, Func: "env.Get"},
+				Suppressed: true,
+			}}},
+			want: []string{"SUPPRESSION", "DD_SUPPRESSED", "suppressed.go:23"},
+		},
+		"coverage error": {
+			result: AuditResult{CoverageErrors: []string{"windows-amd64: broken package"}},
+			want:   []string{"COVERAGE_ERROR", "windows-amd64: broken package"},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := renderTable(&buf, test.result); err != nil {
+				t.Fatal(err)
+			}
+			if buf.Len() == 0 {
+				t.Fatal("table output is empty")
+			}
+			for _, want := range test.want {
+				if !strings.Contains(buf.String(), want) {
+					t.Errorf("expected %q in table output, got:\n%s", want, buf.String())
+				}
+			}
+		})
 	}
 }
 
@@ -115,6 +176,24 @@ func TestRenderJSON(t *testing.T) {
 	}
 	if len(got.Unmigrated) != 1 || got.Unmigrated[0].Name != "DD_SITE" {
 		t.Fatalf("round-trip failed: %+v", got)
+	}
+}
+
+func TestAuditResultClean(t *testing.T) {
+	if !(AuditResult{}).Clean() {
+		t.Fatal("empty result should be clean")
+	}
+	for name, result := range map[string]AuditResult{
+		"unmigrated":  {Unmigrated: []ConfigEntry{{Name: "DD_SITE"}}},
+		"still read":  {MigratedButStillReadOutside: []ConfigEntry{{Name: "DD_SERVICE"}}},
+		"untracked":   {Untracked: []ConfigEntry{{Name: "DD_UNKNOWN"}}},
+		"unresolved":  {Unresolved: []Finding{{Unresolved: true}}},
+		"suppression": {Suppressions: []Finding{{Key: "DD_SITE", Suppressed: true}}},
+		"coverage":    {CoverageErrors: []string{"linux-amd64: broken package"}},
+	} {
+		if result.Clean() {
+			t.Errorf("%s result should not be clean", name)
+		}
 	}
 }
 

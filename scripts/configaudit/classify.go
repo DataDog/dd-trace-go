@@ -26,6 +26,20 @@ type AuditResult struct {
 	Unmigrated                  []ConfigEntry `json:"unmigrated"`
 	Untracked                   []ConfigEntry `json:"untracked"`
 	MigratedButStillReadOutside []ConfigEntry `json:"migrated_but_still_read_outside"`
+	Unresolved                  []Finding     `json:"unresolved"`
+	Suppressions                []Finding     `json:"suppressions"`
+	CoverageErrors              []string      `json:"coverage_errors"`
+}
+
+// Clean reports whether the audit proved that every configuration read is
+// tracked and migrated for every supported build variant.
+func (res AuditResult) Clean() bool {
+	return len(res.Unmigrated) == 0 &&
+		len(res.MigratedButStillReadOutside) == 0 &&
+		len(res.Untracked) == 0 &&
+		len(res.Unresolved) == 0 &&
+		len(res.Suppressions) == 0 &&
+		len(res.CoverageErrors) == 0
 }
 
 func classify(known, migrated map[string]struct{}, reads map[string][]CallSite) AuditResult {
@@ -111,6 +125,7 @@ func renderTable(w io.Writer, res AuditResult) error {
 	sort.Strings(pkgs)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	wroteSection := false
 	for i, pkg := range pkgs {
 		if i > 0 {
 			fmt.Fprintln(tw)
@@ -127,8 +142,52 @@ func renderTable(w io.Writer, res AuditResult) error {
 		for _, r := range rows {
 			fmt.Fprintf(tw, "  %s\t%s\t%d\n", r.Status, r.Name, r.Count)
 		}
+		wroteSection = true
+	}
+	if len(res.Unresolved) > 0 || len(res.Suppressions) > 0 {
+		if wroteSection {
+			fmt.Fprintln(tw)
+		}
+		fmt.Fprintln(tw, "SYNTAX FINDINGS")
+		fmt.Fprintln(tw, "  STATUS\tCONFIG\tLOCATION\tREADER")
+		renderFindingRows(tw, "UNRESOLVED", res.Unresolved)
+		renderFindingRows(tw, "SUPPRESSION", res.Suppressions)
+		wroteSection = true
+	}
+	if len(res.CoverageErrors) > 0 {
+		if wroteSection {
+			fmt.Fprintln(tw)
+		}
+		fmt.Fprintln(tw, "COVERAGE ERRORS")
+		errors := append([]string(nil), res.CoverageErrors...)
+		sort.Strings(errors)
+		for _, coverageErr := range errors {
+			fmt.Fprintf(tw, "  COVERAGE_ERROR\t%s\n", coverageErr)
+		}
 	}
 	return tw.Flush()
+}
+
+func renderFindingRows(w io.Writer, status string, findings []Finding) {
+	rows := append([]Finding(nil), findings...)
+	sort.Slice(rows, func(i, j int) bool {
+		left, right := rows[i].CallSite, rows[j].CallSite
+		if left.File != right.File {
+			return left.File < right.File
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		return rows[i].Key < rows[j].Key
+	})
+	for _, finding := range rows {
+		key := finding.Key
+		if key == "" {
+			key = "<dynamic>"
+		}
+		location := fmt.Sprintf("%s:%d", finding.CallSite.File, finding.CallSite.Line)
+		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", status, key, location, finding.CallSite.Func)
+	}
 }
 
 // filterByPackage restricts the call-site map to call sites whose package

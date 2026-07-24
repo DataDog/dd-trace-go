@@ -73,7 +73,7 @@ Our CI pipeline includes several automated checks:
 
 #### Config Audit Workflow
 
-- **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
+- **Config Audit**: Runs `make config-audit` to verify that each `DD_*` environment-variable configuration relative to `internal/config` is tracked and migrated. The check fails when it finds migration, suppression, dynamic-read, or coverage issues. Run locally with `make config-audit`.
 
 ### CI Troubleshooting
 
