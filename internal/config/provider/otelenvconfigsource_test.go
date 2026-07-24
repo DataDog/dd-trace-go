@@ -6,10 +6,14 @@
 package provider
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config/schema"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -63,10 +67,10 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		defer telemetry.MockClient(telemetryClient)()
 
 		t.Setenv("OTEL_LOG_LEVEL", "invalid")
-		source := &otelEnvConfigSource{}
-		v := source.get("DD_TRACE_DEBUG")
+		p := newTestProvider(&otelEnvConfigSource{})
+		v := p.GetBool("DD_TRACE_DEBUG", false)
 
-		assert.Equal(t, "", v)
+		assert.False(t, v)
 		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_trace_debug", "config_opentelemetry:otel_log_level"}).Get())
 	})
 
@@ -82,11 +86,57 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		defer telemetry.MockClient(telemetryClient)()
 
 		t.Setenv("OTEL_TRACES_EXPORTER", "jaeger")
-		source := &otelEnvConfigSource{}
-		v := source.get("DD_TRACE_ENABLED")
+		p := newTestProvider(&otelEnvConfigSource{})
+		v := p.GetBool("DD_TRACE_ENABLED", true)
 
-		assert.Equal(t, "", v)
+		assert.True(t, v)
 		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_trace_enabled", "config_opentelemetry:otel_traces_exporter"}).Get())
+	})
+
+	t.Run("compatibility getter preserves hiding metric", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+		t.Setenv("DD_SERVICE", "dd-service")
+		p := newTestProvider(new(envConfigSource), new(otelEnvConfigSource))
+
+		assert.Equal(t, "dd-service", p.GetString("DD_SERVICE", "default"))
+		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", []string{"config_datadog:dd_service", "config_opentelemetry:otel_service_name"}).Get())
+	})
+
+	t.Run("explicit empty DD is a generic hiding diagnostic only", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+		t.Setenv("DD_SERVICE", "")
+		p := newTestProvider(new(envConfigSource), new(otelEnvConfigSource))
+
+		got := Resolve(p, testDefinition("DD_SERVICE", schema.SourceStable), "default", parseTestString)
+		require.Equal(t, "", got.Winner.Value)
+		require.Equal(t, telemetry.OriginEnvVar, got.Winner.Origin)
+		require.Equal(t, EventOTelEnvHiding, findEvent(t, got.Events, EventOTelEnvHiding).Kind)
+		require.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", []string{"config_datadog:dd_service", "config_opentelemetry:otel_service_name"}).Get())
+
+		require.Equal(t, "otel-service", p.GetString("DD_SERVICE", "default"))
+		require.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", []string{"config_datadog:dd_service", "config_opentelemetry:otel_service_name"}).Get())
+	})
+
+	t.Run("explicit empty OTel is also a generic hiding diagnostic only", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_SERVICE_NAME", "")
+		t.Setenv("DD_SERVICE", "dd-service")
+		p := newTestProvider(new(envConfigSource), new(otelEnvConfigSource))
+
+		got := Resolve(p, testDefinition("DD_SERVICE", schema.SourceStable), "default", parseTestString)
+		require.Equal(t, "dd-service", got.Winner.Value)
+		require.Equal(t, EventOTelEnvHiding, findEvent(t, got.Events, EventOTelEnvHiding).Kind)
+
+		require.Equal(t, "dd-service", p.GetString("DD_SERVICE", "default"))
+		require.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", []string{"config_datadog:dd_service", "config_opentelemetry:otel_service_name"}).Get())
 	})
 
 	t.Run("maps OTEL_METRICS_EXPORTER=none to DD_RUNTIME_METRICS_ENABLED=false", func(t *testing.T) {
@@ -123,6 +173,79 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		source := &otelEnvConfigSource{}
 		v := source.get("DD_METRICS_OTEL_ENABLED")
 		assert.Equal(t, "", v)
+	})
+
+	t.Run("successful empty remaps remain non-applicable attempts", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			key     string
+			otelKey string
+			otel    string
+			local   string
+			def     any
+		}{
+			{
+				name: "unsupported propagators", key: "DD_TRACE_PROPAGATION_STYLE",
+				otelKey: "OTEL_PROPAGATORS", otel: "unsupported", local: "datadog", def: "default",
+			},
+			{
+				name: "runtime metrics exporter", key: "DD_RUNTIME_METRICS_ENABLED",
+				otelKey: "OTEL_METRICS_EXPORTER", otel: "otlp", local: "true", def: false,
+			},
+			{
+				name: "otel metrics exporter", key: "DD_METRICS_OTEL_ENABLED",
+				otelKey: "OTEL_METRICS_EXPORTER", otel: "otlp", local: "true", def: false,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				telemetryClient := new(telemetrytest.RecordClient)
+				defer telemetry.MockClient(telemetryClient)()
+				t.Setenv(tt.otelKey, tt.otel)
+				local := &resolveTestSource{
+					raw: tt.local, present: true, originValue: telemetry.OriginLocalStableConfig,
+				}
+				p := newTestProvider(new(otelEnvConfigSource), local)
+
+				switch def := tt.def.(type) {
+				case string:
+					got := Resolve(p, testDefinition(tt.key, schema.SourceStable), def, parseTestString)
+					require.Equal(t, tt.local, got.Winner.Value)
+					require.Equal(t, tt.local, p.GetString(tt.key, def))
+					require.Len(t, got.Attempts, 2)
+					require.True(t, got.Attempts[1].Present)
+					require.False(t, got.Attempts[1].Valid)
+					require.NoError(t, got.Attempts[1].Err)
+				case bool:
+					got := Resolve(p, testDefinition(tt.key, schema.SourceStable), def, strconv.ParseBool)
+					require.True(t, got.Winner.Value)
+					require.True(t, p.GetBool(tt.key, def))
+					require.Len(t, got.Attempts, 2)
+					require.True(t, got.Attempts[1].Present)
+					require.False(t, got.Attempts[1].Valid)
+					require.NoError(t, got.Attempts[1].Err)
+				}
+				require.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{
+					ddPrefix + strings.ToLower(tt.key),
+					otelPrefix + strings.ToLower(tt.otelKey),
+				}).Get())
+			})
+		}
+	})
+
+	t.Run("pass-through explicit empty remains applicable", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "")
+		p := newTestProvider(new(otelEnvConfigSource))
+
+		got := Resolve(p, testDefinition("DD_SERVICE", schema.SourceStable), "default", parseTestString)
+
+		require.Equal(t, "", got.Winner.Value)
+		require.Equal(t, telemetry.OriginEnvVar, got.Winner.Origin)
+		require.Len(t, got.Attempts, 1)
+		require.True(t, got.Attempts[0].Present)
+		require.True(t, got.Attempts[0].Valid)
+		require.NoError(t, got.Attempts[0].Err)
 	})
 
 	t.Run("maps OTEL_PROPAGATORS to DD_TRACE_PROPAGATION_STYLE", func(t *testing.T) {

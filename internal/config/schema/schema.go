@@ -7,6 +7,11 @@
 // registration and resolution.
 package schema
 
+// Parser converts one present raw source value into a consumer-specific value.
+// It must return an error for every invalid value, including an invalid explicit
+// empty value.
+type Parser[T any] func(raw string) (T, error)
+
 // SourcePolicy selects the sources used to resolve a raw configuration key.
 type SourcePolicy uint8
 

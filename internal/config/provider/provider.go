@@ -8,32 +8,21 @@
 package provider
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/config/schema"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
-
-// configSource is a single origin of configuration key-value pairs.
-type configSource interface {
-	get(key string) string
-	origin() telemetry.Origin
-}
-
-// idAwareConfigSource is a configSource that also carries a config_id, used by
-// declarative config sources to associate values with a specific config set.
-type idAwareConfigSource interface {
-	configSource
-	getID() string
-}
 
 // Provider resolves configuration values from an ordered list of sources.
 // Sources are listed in descending priority order: the first source wins.
 type Provider struct {
-	sources []configSource
+	sources []LookupSource
 }
 
 // New returns a Provider configured with the following source list, in descending order of priority.
@@ -48,39 +37,282 @@ func New() *Provider {
 	}
 }
 
-// get is the core resolution helper shared by all typed getters.
-// It iterates sources in reverse priority order so that higher-priority sources
-// overwrite lower-priority ones, reports telemetry for every source that has a value,
-// and returns the highest-priority successfully-parsed value, or def if none parse.
-func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T {
-	v, _ := getWithOrigin(p, key, def, parse)
-	return v
+// Resolve resolves def without synchronously reporting configuration telemetry.
+// Attempts are returned from lowest to highest priority, including absent,
+// non-applicable, and invalid sources. Provider diagnostics are retained in
+// Resolved.Events.
+func Resolve[T any](p *Provider, def schema.RawDefinition, defValue T, parse schema.Parser[T]) schema.Resolved[T] {
+	resolved, _ := resolve(p, def, nil, defValue, parse)
+	return resolved
 }
 
-// getWithOrigin is like get but also returns the origin of the winning source.
-func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T, bool)) (T, telemetry.Origin) {
-	var final *T
-	var winningOrigin telemetry.Origin
+// ResolveWithBinding resolves def and returns local events decorated with the
+// explicit consumer binding. Callers decide when and how to report the events.
+func ResolveWithBinding[T any](
+	p *Provider,
+	def schema.RawDefinition,
+	binding schema.ConsumerBinding,
+	defValue T,
+	parse schema.Parser[T],
+) (schema.Resolved[T], []ConfigEvent) {
+	return resolve(p, def, &binding, defValue, parse)
+}
+
+func resolve[T any](
+	p *Provider,
+	def schema.RawDefinition,
+	binding *schema.ConsumerBinding,
+	defValue T,
+	parse schema.Parser[T],
+) (schema.Resolved[T], []ConfigEvent) {
+	result := schema.Resolved[T]{
+		Winner: schema.Winner[T]{
+			Value:       snapshotValue(defValue),
+			Origin:      telemetry.OriginDefault,
+			DefaultUsed: true,
+		},
+		Attempts: make([]schema.SourceAttempt, 0, len(p.sources)),
+	}
+	providerEvents := make([]ConfigEvent, 0, len(p.sources))
+	events := make([]ConfigEvent, 0, len(p.sources)+1)
+
 	for i := len(p.sources) - 1; i >= 0; i-- {
 		source := p.sources[i]
-		v := source.get(key)
-		if v != "" {
-			var id string
-			if s, ok := source.(idAwareConfigSource); ok {
-				id = s.getID()
+		if def.Sources == schema.SourceEnvironment && !isEnvironmentSource(source) {
+			continue
+		}
+
+		raw, present, applicable, sourceErr, sourceEvents := lookup(source, def.Key)
+		providerEvents = append(providerEvents, cloneEvents(sourceEvents)...)
+		events = append(events, decorateProviderEvents(sourceEvents, binding, def)...)
+		attempt := schema.SourceAttempt{
+			Raw:      raw,
+			Present:  present,
+			Origin:   source.origin(),
+			ConfigID: sourceConfigID(source),
+		}
+		reportValue := present && applicable && sourceErr == nil
+		if present && applicable {
+			if sourceErr != nil {
+				attempt.Err = sourceErr
+			} else {
+				value, err := parse(raw)
+				attempt.Valid = err == nil
+				attempt.Err = err
+				if err == nil {
+					result.Winner = schema.Winner[T]{
+						Value:    snapshotValue(value),
+						Origin:   attempt.Origin,
+						ConfigID: attempt.ConfigID,
+					}
+				}
 			}
-			configtelemetry.ReportWithID(key, v, source.origin(), id)
-			if parsed, ok := parse(v); ok {
-				final = &parsed
-				winningOrigin = source.origin()
+		}
+		result.Attempts = append(result.Attempts, attempt)
+		if binding != nil {
+			events = append(events, configEvent(*binding, def, attempt, raw, reportValue))
+		}
+	}
+
+	if binding != nil {
+		events = append(events, ConfigEvent{
+			Kind:        EventConfiguration,
+			BindingID:   binding.ID,
+			Name:        def.Key,
+			Value:       snapshotValue(defValue),
+			Present:     true,
+			Valid:       true,
+			Origin:      telemetry.OriginDefault,
+			Policy:      def.Telemetry,
+			Cadence:     cadenceFor(*binding),
+			ReportValue: true,
+		})
+	}
+	result.Events = cloneEvents(providerEvents)
+	return result, cloneEvents(events)
+}
+
+func lookup(source LookupSource, key string) (raw string, present bool, applicable bool, err error, events []ConfigEvent) {
+	if source, ok := source.(eventLookupSource); ok {
+		return source.lookupWithEvents(key)
+	}
+	raw, present = source.lookup(key)
+	return raw, present, present, nil, nil
+}
+
+func isEnvironmentSource(source LookupSource) bool {
+	environment, ok := source.(environmentConfigSource)
+	return ok && environment.environmentSource()
+}
+
+func sourceConfigID(source LookupSource) string {
+	if source, ok := source.(idAwareConfigSource); ok {
+		return source.getID()
+	}
+	return telemetry.EmptyID
+}
+
+func decorateProviderEvents(events []ConfigEvent, binding *schema.ConsumerBinding, def schema.RawDefinition) []ConfigEvent {
+	decorated := cloneEvents(events)
+	if binding == nil {
+		return decorated
+	}
+	for i := range decorated {
+		decorated[i].BindingID = binding.ID
+		decorated[i].Policy = def.Telemetry
+		decorated[i].Cadence = cadenceFor(*binding)
+	}
+	return decorated
+}
+
+// snapshotValue copies the mutable value shapes currently produced by provider
+// getters and binding parsers. It deliberately avoids reflection-based copying
+// of arbitrary caller types.
+func snapshotValue[T any](value T) T {
+	original := value
+	switch value := any(value).(type) {
+	case map[string]string:
+		if value == nil {
+			return any((map[string]string)(nil)).(T)
+		}
+		copy := make(map[string]string, len(value))
+		for key, item := range value {
+			copy[key] = item
+		}
+		return any(copy).(T)
+	case []string:
+		if value == nil {
+			return any(([]string)(nil)).(T)
+		}
+		cloned := make([]string, len(value))
+		copy(cloned, value)
+		return any(cloned).(T)
+	case []byte:
+		if value == nil {
+			return any(([]byte)(nil)).(T)
+		}
+		cloned := make([]byte, len(value))
+		copy(cloned, value)
+		return any(cloned).(T)
+	default:
+		return original
+	}
+}
+
+func cloneEvents(events []ConfigEvent) []ConfigEvent {
+	if events == nil {
+		return nil
+	}
+	cloned := make([]ConfigEvent, len(events))
+	for i, event := range events {
+		cloned[i] = event
+		switch value := event.Value.(type) {
+		case map[string]string:
+			cloned[i].Value = snapshotValue(value)
+		case []string:
+			cloned[i].Value = snapshotValue(value)
+		case []byte:
+			cloned[i].Value = snapshotValue(value)
+		}
+	}
+	return cloned
+}
+
+func configEvent(
+	binding schema.ConsumerBinding,
+	def schema.RawDefinition,
+	attempt schema.SourceAttempt,
+	value any,
+	reportValue bool,
+) ConfigEvent {
+	return ConfigEvent{
+		Kind:        EventConfiguration,
+		BindingID:   binding.ID,
+		Name:        def.Key,
+		Value:       value,
+		Present:     attempt.Present,
+		Valid:       attempt.Valid,
+		Err:         attempt.Err,
+		Origin:      attempt.Origin,
+		ConfigID:    attempt.ConfigID,
+		Policy:      def.Telemetry,
+		Cadence:     cadenceFor(binding),
+		ReportValue: reportValue,
+	}
+}
+
+func compatibilityBinding(key string) schema.ConsumerBinding {
+	return schema.ConsumerBinding{
+		ID:       "provider.compatibility." + normalizeKey(key),
+		Consumer: "provider",
+		Keys:     []string{key},
+		Sampling: schema.SampleConstructor,
+	}
+}
+
+func compatibilityDefinition(key string) schema.RawDefinition {
+	return schema.RawDefinition{
+		Key:       key,
+		Sources:   schema.SourceStable,
+		Telemetry: schema.TelemetryReport,
+	}
+}
+
+func resolveCompatibility[T any](p *Provider, key string, def T, parse schema.Parser[T]) schema.Resolved[T] {
+	result, events := ResolveWithBinding(p, compatibilityDefinition(key), compatibilityBinding(key), def, parse)
+	reportCompatibilityEvents(events)
+	return result
+}
+
+func reportCompatibilityEvents(events []ConfigEvent) {
+	for _, event := range events {
+		switch event.Kind {
+		case EventConfiguration:
+			if !event.ReportValue {
+				continue
+			}
+			if event.Origin == telemetry.OriginDefault {
+				configtelemetry.ReportDefault(event.Name, event.Value)
+				continue
+			}
+			raw, _ := event.Value.(string)
+			if raw == "" {
+				continue
+			}
+			configtelemetry.ReportWithID(event.Name, raw, event.Origin, event.ConfigID)
+		case EventOTelEnvHiding:
+			if event.CompatibilityReport {
+				reportOTelMetric("otel.env.hiding", event.Name, event.OTelName)
+			}
+		case EventOTelEnvInvalid:
+			if event.CompatibilityReport {
+				reportOTelMetric("otel.env.invalid", event.Name, event.OTelName)
 			}
 		}
 	}
-	configtelemetry.ReportDefault(key, def)
-	if final != nil {
-		return *final, winningOrigin
+}
+
+var errInvalidValue = errors.New("invalid configuration value")
+
+func validatorParser[T any](parse schema.Parser[T], validate func(T) bool) schema.Parser[T] {
+	return func(raw string) (T, error) {
+		value, err := parse(raw)
+		if err != nil {
+			return value, err
+		}
+		if validate != nil && !validate(value) {
+			return value, errInvalidValue
+		}
+		return value, nil
 	}
-	return def, telemetry.OriginDefault
+}
+
+func compatibilityStringParser(validate func(string) bool) schema.Parser[string] {
+	return validatorParser(func(raw string) (string, error) {
+		return raw, nil
+	}, func(value string) bool {
+		return value != "" && (validate == nil || validate(value))
+	})
 }
 
 func (p *Provider) GetString(key string, def string) string {
@@ -92,18 +324,13 @@ func (p *Provider) GetString(key string, def string) string {
 // configuration source. Use this when the caller needs to know where the value
 // came from (e.g. to pass to DynamicConfig).
 func (p *Provider) GetStringWithOrigin(key string, def string) (string, telemetry.Origin) {
-	return getWithOrigin(p, key, def, func(v string) (string, bool) {
-		return v, true
-	})
+	result := resolveCompatibility(p, key, def, compatibilityStringParser(nil))
+	return result.Winner.Value, result.Winner.Origin
 }
 
 func (p *Provider) GetStringWithValidator(key string, def string, validate func(string) bool) string {
-	return get(p, key, def, func(v string) (string, bool) {
-		if validate != nil && !validate(v) {
-			return "", false
-		}
-		return v, true
-	})
+	result := resolveCompatibility(p, key, def, compatibilityStringParser(validate))
+	return result.Winner.Value
 }
 
 func (p *Provider) GetBool(key string, def bool) bool {
@@ -115,54 +342,36 @@ func (p *Provider) GetBool(key string, def bool) bool {
 // configuration source. Use this when the caller needs to know where the value
 // came from (e.g. to pass to DynamicConfig).
 func (p *Provider) GetBoolWithOrigin(key string, def bool) (bool, telemetry.Origin) {
-	return getWithOrigin(p, key, def, func(v string) (bool, bool) {
-		boolVal, err := strconv.ParseBool(v)
-		if err == nil {
-			return boolVal, true
-		}
-		return false, false
-	})
+	result := resolveCompatibility(p, key, def, strconv.ParseBool)
+	return result.Winner.Value, result.Winner.Origin
 }
 
 func (p *Provider) GetInt(key string, def int) int {
-	return get(p, key, def, func(v string) (int, bool) {
-		intVal, err := strconv.Atoi(v)
-		return intVal, err == nil
-	})
+	return resolveCompatibility(p, key, def, strconv.Atoi).Winner.Value
 }
 
 func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) bool) int {
-	return get(p, key, def, func(v string) (int, bool) {
-		intVal, err := strconv.Atoi(v)
-		if err == nil {
-			if validate != nil && !validate(intVal) {
-				return 0, false
-			}
-			return intVal, true
-		}
-		return 0, false
-	})
+	return resolveCompatibility(p, key, def, validatorParser(strconv.Atoi, validate)).Winner.Value
 }
 
 func (p *Provider) GetMap(key string, def map[string]string, delimiter string) map[string]string {
-	return get(p, key, def, func(v string) (map[string]string, bool) {
+	return resolveCompatibility(p, key, def, func(v string) (map[string]string, error) {
 		m := parseMapString(v, delimiter)
-		return m, len(m) > 0
-	})
+		if len(m) == 0 {
+			return m, errInvalidValue
+		}
+		return m, nil
+	}).Winner.Value
 }
 
 func (p *Provider) GetDuration(key string, def time.Duration) time.Duration {
-	return get(p, key, def, func(v string) (time.Duration, bool) {
-		d, err := time.ParseDuration(v)
-		return d, err == nil
-	})
+	return resolveCompatibility(p, key, def, time.ParseDuration).Winner.Value
 }
 
 func (p *Provider) GetFloat(key string, def float64) float64 {
-	return get(p, key, def, func(v string) (float64, bool) {
-		floatVal, err := strconv.ParseFloat(v, 64)
-		return floatVal, err == nil
-	})
+	return resolveCompatibility(p, key, def, func(v string) (float64, error) {
+		return strconv.ParseFloat(v, 64)
+	}).Winner.Value
 }
 
 func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(float64) bool) float64 {
@@ -174,16 +383,10 @@ func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(
 // origin of the winning configuration source. Use this when the caller needs to
 // know where the value came from (e.g. to pass to DynamicConfig).
 func (p *Provider) GetFloatWithValidatorOrigin(key string, def float64, validate func(float64) bool) (float64, telemetry.Origin) {
-	return getWithOrigin(p, key, def, func(v string) (float64, bool) {
-		floatVal, err := strconv.ParseFloat(v, 64)
-		if err == nil {
-			if validate != nil && !validate(floatVal) {
-				return 0, false
-			}
-			return floatVal, true
-		}
-		return 0, false
-	})
+	result := resolveCompatibility(p, key, def, validatorParser(func(v string) (float64, error) {
+		return strconv.ParseFloat(v, 64)
+	}, validate))
+	return result.Winner.Value, result.Winner.Origin
 }
 
 // IsSet returns true if any configuration source provides a non-empty value for the key.
@@ -192,7 +395,7 @@ func (p *Provider) GetFloatWithValidatorOrigin(key string, def float64, validate
 // sources instead of re-querying them here.
 func (p *Provider) IsSet(key string) bool {
 	for _, source := range p.sources {
-		if source.get(key) != "" {
+		if raw, _ := source.lookup(key); raw != "" {
 			return true
 		}
 	}

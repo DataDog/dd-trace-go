@@ -6,8 +6,10 @@
 package provider
 
 import (
+	"errors"
 	"os"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/config/schema"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -44,8 +47,421 @@ func (s *testConfigSource) get(key string) string {
 	return s.entries[key]
 }
 
+func (s *testConfigSource) lookup(key string) (string, bool) {
+	raw, present := s.entries[key]
+	return raw, present
+}
+
 func (s *testConfigSource) origin() telemetry.Origin {
 	return s.originValue
+}
+
+type resolveTestSource struct {
+	raw         string
+	present     bool
+	originValue telemetry.Origin
+	configID    string
+	environment bool
+}
+
+func (s *resolveTestSource) get(string) string {
+	return s.raw
+}
+
+func (s *resolveTestSource) lookup(string) (string, bool) {
+	return s.raw, s.present
+}
+
+func (s *resolveTestSource) origin() telemetry.Origin {
+	return s.originValue
+}
+
+func (s *resolveTestSource) getID() string {
+	return s.configID
+}
+
+func (s *resolveTestSource) environmentSource() bool {
+	return s.environment
+}
+
+func testDefinition(key string, policy schema.SourcePolicy) schema.RawDefinition {
+	return schema.RawDefinition{Key: key, Sources: policy, Telemetry: schema.TelemetryReport}
+}
+
+func parseTestInt(raw string) (int, error) {
+	return strconv.Atoi(raw)
+}
+
+func parseTestString(raw string) (string, error) {
+	return raw, nil
+}
+
+func TestResolveKeepsAllSourceAttempts(t *testing.T) {
+	p := newTestProvider(
+		&resolveTestSource{raw: "invalid", present: true, originValue: telemetry.OriginManagedStableConfig, configID: "managed-id"},
+		&resolveTestSource{raw: "7", present: true, originValue: telemetry.OriginEnvVar, environment: true},
+		&resolveTestSource{present: false, originValue: telemetry.OriginEnvVar},
+		&resolveTestSource{raw: "12", present: true, originValue: telemetry.OriginLocalStableConfig, configID: "local-id"},
+	)
+
+	got := Resolve(p, testDefinition("DD_VALUE", schema.SourceStable), 3, parseTestInt)
+
+	require.Equal(t, 7, got.Winner.Value)
+	require.Equal(t, telemetry.OriginEnvVar, got.Winner.Origin)
+	require.Empty(t, got.Winner.ConfigID)
+	require.False(t, got.Winner.DefaultUsed)
+	require.Equal(t, []schema.SourceAttempt{
+		{Raw: "12", Present: true, Valid: true, Origin: telemetry.OriginLocalStableConfig, ConfigID: "local-id"},
+		{Present: false, Valid: false, Origin: telemetry.OriginEnvVar},
+		{Raw: "7", Present: true, Valid: true, Origin: telemetry.OriginEnvVar},
+		{Raw: "invalid", Present: true, Valid: false, Origin: telemetry.OriginManagedStableConfig, ConfigID: "managed-id", Err: strconv.ErrSyntax},
+	}, normalizeAttemptErrors(got.Attempts))
+	require.Error(t, got.Attempts[3].Err)
+}
+
+func TestResolveSourcePolicies(t *testing.T) {
+	p := newTestProvider(
+		&resolveTestSource{raw: "managed", present: true, originValue: telemetry.OriginManagedStableConfig},
+		&resolveTestSource{raw: "environment", present: true, originValue: telemetry.OriginEnvVar, environment: true},
+		&resolveTestSource{raw: "otel", present: true, originValue: telemetry.OriginEnvVar},
+		&resolveTestSource{raw: "local", present: true, originValue: telemetry.OriginLocalStableConfig},
+	)
+
+	stable := Resolve(p, testDefinition("DD_VALUE", schema.SourceStable), "default", parseTestString)
+	require.Equal(t, "managed", stable.Winner.Value)
+	require.Equal(t, []string{"local", "otel", "environment", "managed"}, attemptRawValues(stable.Attempts))
+
+	environment := Resolve(p, testDefinition("DD_VALUE", schema.SourceEnvironment), "default", parseTestString)
+	require.Equal(t, "environment", environment.Winner.Value)
+	require.Len(t, environment.Attempts, 1)
+	require.Equal(t, "environment", environment.Attempts[0].Raw)
+}
+
+func TestResolveExplicitEmpty(t *testing.T) {
+	p := newTestProvider(&resolveTestSource{
+		raw: "", present: true, originValue: telemetry.OriginManagedStableConfig, configID: "managed-id",
+	})
+
+	stringResult := Resolve(p, testDefinition("DD_VALUE", schema.SourceStable), "default", parseTestString)
+	require.Equal(t, "", stringResult.Winner.Value)
+	require.Equal(t, telemetry.OriginManagedStableConfig, stringResult.Winner.Origin)
+	require.Equal(t, "managed-id", stringResult.Winner.ConfigID)
+	require.Equal(t, schema.SourceAttempt{
+		Raw: "", Present: true, Valid: true, Origin: telemetry.OriginManagedStableConfig, ConfigID: "managed-id",
+	}, stringResult.Attempts[0])
+
+	intResult := Resolve(p, testDefinition("DD_VALUE", schema.SourceStable), 42, parseTestInt)
+	require.Equal(t, 42, intResult.Winner.Value)
+	require.Equal(t, telemetry.OriginDefault, intResult.Winner.Origin)
+	require.True(t, intResult.Winner.DefaultUsed)
+	require.True(t, intResult.Attempts[0].Present)
+	require.False(t, intResult.Attempts[0].Valid)
+	require.Error(t, intResult.Attempts[0].Err)
+}
+
+func TestCompatibilityStringGettersSkipExplicitEmptySources(t *testing.T) {
+	tests := []struct {
+		name     string
+		sources  []configSource
+		want     string
+		origin   telemetry.Origin
+		validate func(string) bool
+	}{
+		{
+			name: "managed empty falls through to environment",
+			sources: []configSource{
+				&resolveTestSource{raw: "", present: true, originValue: telemetry.OriginManagedStableConfig},
+				&resolveTestSource{raw: "environment", present: true, originValue: telemetry.OriginEnvVar},
+				&resolveTestSource{raw: "local", present: true, originValue: telemetry.OriginLocalStableConfig},
+			},
+			want: "environment", origin: telemetry.OriginEnvVar,
+		},
+		{
+			name: "environment empty falls through to local",
+			sources: []configSource{
+				&resolveTestSource{raw: "", present: true, originValue: telemetry.OriginEnvVar},
+				&resolveTestSource{raw: "local", present: true, originValue: telemetry.OriginLocalStableConfig},
+			},
+			want: "local", origin: telemetry.OriginLocalStableConfig,
+		},
+		{
+			name: "local empty falls through to default",
+			sources: []configSource{
+				&resolveTestSource{raw: "", present: true, originValue: telemetry.OriginLocalStableConfig},
+			},
+			want: "default", origin: telemetry.OriginDefault,
+		},
+		{
+			name: "validator still applies after empty fallthrough",
+			sources: []configSource{
+				&resolveTestSource{raw: "", present: true, originValue: telemetry.OriginManagedStableConfig},
+				&resolveTestSource{raw: "valid", present: true, originValue: telemetry.OriginLocalStableConfig},
+			},
+			want: "valid", origin: telemetry.OriginLocalStableConfig,
+			validate: func(value string) bool {
+				return value == "valid"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := newTestProvider(tt.sources...)
+			got, origin := p.GetStringWithOrigin("DD_VALUE", "default")
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.origin, origin)
+			require.Equal(t, tt.want, p.GetStringWithValidator("DD_VALUE", "default", tt.validate))
+		})
+	}
+}
+
+func TestResolveAllInvalidUsesDefault(t *testing.T) {
+	p := newTestProvider(
+		&resolveTestSource{raw: "managed-invalid", present: true, originValue: telemetry.OriginManagedStableConfig},
+		&resolveTestSource{raw: "env-invalid", present: true, originValue: telemetry.OriginEnvVar, environment: true},
+	)
+
+	got := Resolve(p, testDefinition("DD_VALUE", schema.SourceStable), 42, parseTestInt)
+
+	require.Equal(t, 42, got.Winner.Value)
+	require.Equal(t, telemetry.OriginDefault, got.Winner.Origin)
+	require.True(t, got.Winner.DefaultUsed)
+	require.Len(t, got.Attempts, 2)
+	require.Error(t, got.Attempts[0].Err)
+	require.Error(t, got.Attempts[1].Err)
+}
+
+func TestResolveReturnsDefensiveAttemptCopies(t *testing.T) {
+	p := newTestProvider(&resolveTestSource{raw: "value", present: true, originValue: telemetry.OriginEnvVar, environment: true})
+	def := testDefinition("DD_VALUE", schema.SourceStable)
+
+	first := Resolve(p, def, "default", parseTestString)
+	first.Attempts[0].Raw = "mutated"
+	second := Resolve(p, def, "default", parseTestString)
+
+	require.Equal(t, "value", second.Attempts[0].Raw)
+}
+
+func TestResolveRetainsProviderDiagnosticsDefensively(t *testing.T) {
+	t.Setenv("OTEL_LOG_LEVEL", "invalid")
+	p := newTestProvider(new(otelEnvConfigSource))
+	def := testDefinition("DD_TRACE_DEBUG", schema.SourceStable)
+	binding := schema.ConsumerBinding{
+		ID: "test.debug", Consumer: "test", Keys: []string{"DD_TRACE_DEBUG"}, Sampling: schema.SampleConstructor,
+	}
+
+	plain := Resolve(p, def, false, strconv.ParseBool)
+	require.Len(t, plain.Events, 1)
+	require.Equal(t, EventOTelEnvInvalid, plain.Events[0].Kind)
+	require.Error(t, plain.Events[0].Err)
+
+	resolved, events := ResolveWithBinding(p, def, binding, false, strconv.ParseBool)
+	require.Len(t, resolved.Events, 1)
+	require.NotEmpty(t, events)
+	require.Equal(t, EventOTelEnvInvalid, resolved.Events[0].Kind)
+	resolvedDiagnostic := eventIndex(t, resolved.Events, EventOTelEnvInvalid)
+	returnedDiagnostic := eventIndex(t, events, EventOTelEnvInvalid)
+	require.Equal(t, "test.debug", events[returnedDiagnostic].BindingID)
+
+	resolved.Events[resolvedDiagnostic].Name = "mutated-result"
+	require.Equal(t, "DD_TRACE_DEBUG", events[returnedDiagnostic].Name)
+	events[returnedDiagnostic].Name = "mutated-return"
+	require.Equal(t, "mutated-result", resolved.Events[resolvedDiagnostic].Name)
+	next := Resolve(p, def, false, strconv.ParseBool)
+	require.Equal(t, "DD_TRACE_DEBUG", next.Events[0].Name)
+}
+
+func TestResolveSnapshotsMutableDefaults(t *testing.T) {
+	p := newTestProvider(&resolveTestSource{present: false, originValue: telemetry.OriginEnvVar})
+	binding := schema.ConsumerBinding{
+		ID: "test.mutable", Consumer: "test", Keys: []string{"DD_VALUE"}, Sampling: schema.SampleConstructor,
+	}
+
+	t.Run("map", func(t *testing.T) {
+		def := map[string]string{"key": "original"}
+		got, events := ResolveWithBinding(p, testDefinition("DD_VALUE", schema.SourceStable), binding, def,
+			func(raw string) (map[string]string, error) {
+				return parseMapString(raw, internal.DDTagsDelimiter), nil
+			})
+		defaultEvent := events[len(events)-1]
+		eventMap := defaultEvent.Value.(map[string]string)
+
+		def["key"] = "input-mutated"
+		require.Equal(t, "original", got.Winner.Value["key"])
+		require.Equal(t, "original", eventMap["key"])
+
+		got.Winner.Value["key"] = "winner-mutated"
+		require.Equal(t, "original", eventMap["key"])
+		eventMap["key"] = "event-mutated"
+		require.Equal(t, "winner-mutated", got.Winner.Value["key"])
+	})
+
+	t.Run("slice", func(t *testing.T) {
+		def := []string{"original"}
+		got, events := ResolveWithBinding(p, testDefinition("DD_VALUE", schema.SourceStable), binding, def,
+			func(raw string) ([]string, error) {
+				return []string{raw}, nil
+			})
+		defaultEvent := events[len(events)-1]
+		eventSlice := defaultEvent.Value.([]string)
+
+		def[0] = "input-mutated"
+		require.Equal(t, "original", got.Winner.Value[0])
+		require.Equal(t, "original", eventSlice[0])
+
+		got.Winner.Value[0] = "winner-mutated"
+		require.Equal(t, "original", eventSlice[0])
+	})
+}
+
+func TestResolveSnapshotsNilAnyDefault(t *testing.T) {
+	p := newTestProvider(&resolveTestSource{present: false, originValue: telemetry.OriginEnvVar})
+	binding := schema.ConsumerBinding{
+		ID: "test.any", Consumer: "test", Keys: []string{"DD_VALUE"}, Sampling: schema.SampleConstructor,
+	}
+
+	got, events := ResolveWithBinding[any](p, testDefinition("DD_VALUE", schema.SourceStable), binding, nil,
+		func(raw string) (any, error) {
+			return raw, nil
+		})
+
+	require.Nil(t, got.Winner.Value)
+	require.NotEmpty(t, events)
+	require.Nil(t, events[len(events)-1].Value)
+}
+
+func TestResolveSnapshotsSliceNilness(t *testing.T) {
+	p := newTestProvider(&resolveTestSource{present: false, originValue: telemetry.OriginEnvVar})
+	binding := schema.ConsumerBinding{
+		ID: "test.slice", Consumer: "test", Keys: []string{"DD_VALUE"}, Sampling: schema.SampleConstructor,
+	}
+
+	t.Run("nil string slice", func(t *testing.T) {
+		var def []string
+		got, events := ResolveWithBinding(p, testDefinition("DD_VALUE", schema.SourceStable), binding, def,
+			func(raw string) ([]string, error) {
+				return []string{raw}, nil
+			})
+
+		require.Nil(t, got.Winner.Value)
+		require.Nil(t, events[len(events)-1].Value.([]string))
+	})
+
+	t.Run("non-nil empty string slice", func(t *testing.T) {
+		def := make([]string, 0)
+		got, events := ResolveWithBinding(p, testDefinition("DD_VALUE", schema.SourceStable), binding, def,
+			func(raw string) ([]string, error) {
+				return []string{raw}, nil
+			})
+
+		require.NotNil(t, got.Winner.Value)
+		require.Empty(t, got.Winner.Value)
+		require.NotNil(t, events[len(events)-1].Value.([]string))
+		require.Empty(t, events[len(events)-1].Value.([]string))
+	})
+
+	t.Run("nil byte slice", func(t *testing.T) {
+		var def []byte
+		got, events := ResolveWithBinding(p, testDefinition("DD_VALUE", schema.SourceStable), binding, def,
+			func(raw string) ([]byte, error) {
+				return []byte(raw), nil
+			})
+
+		require.Nil(t, got.Winner.Value)
+		require.Nil(t, events[len(events)-1].Value.([]byte))
+	})
+
+	t.Run("non-nil empty byte slice", func(t *testing.T) {
+		def := make([]byte, 0)
+		got, events := ResolveWithBinding(p, testDefinition("DD_VALUE", schema.SourceStable), binding, def,
+			func(raw string) ([]byte, error) {
+				return []byte(raw), nil
+			})
+
+		require.NotNil(t, got.Winner.Value)
+		require.Empty(t, got.Winner.Value)
+		require.NotNil(t, events[len(events)-1].Value.([]byte))
+		require.Empty(t, events[len(events)-1].Value.([]byte))
+	})
+
+	t.Run("byte slice copies are independent", func(t *testing.T) {
+		def := []byte("original")
+		got, events := ResolveWithBinding(p, testDefinition("DD_VALUE", schema.SourceStable), binding, def,
+			func(raw string) ([]byte, error) {
+				return []byte(raw), nil
+			})
+		eventValue := events[len(events)-1].Value.([]byte)
+
+		def[0] = 'i'
+		require.Equal(t, []byte("original"), got.Winner.Value)
+		require.Equal(t, []byte("original"), eventValue)
+		got.Winner.Value[0] = 'w'
+		require.Equal(t, []byte("original"), eventValue)
+	})
+}
+
+func TestResolveWithBindingDecoratesLocalEvents(t *testing.T) {
+	telemetryClient := new(telemetrytest.MockClient)
+	telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+	defer telemetry.MockClient(telemetryClient)()
+
+	p := newTestProvider(&resolveTestSource{
+		raw: "7", present: true, originValue: telemetry.OriginManagedStableConfig, configID: "config-id",
+	})
+	def := testDefinition("DD_VALUE", schema.SourceStable)
+	binding := schema.ConsumerBinding{
+		ID: "test.value", Consumer: "test", Keys: []string{"DD_VALUE"}, Sampling: schema.SampleConstructor,
+	}
+
+	got, events := ResolveWithBinding(p, def, binding, 3, parseTestInt)
+
+	require.Equal(t, 7, got.Winner.Value)
+	require.Len(t, events, 2)
+	require.Equal(t, ConfigEvent{
+		Kind: EventConfiguration, BindingID: "test.value", Name: "DD_VALUE", Value: "7",
+		Present: true, Valid: true, Origin: telemetry.OriginManagedStableConfig, ConfigID: "config-id",
+		Policy: schema.TelemetryReport, Cadence: ReportOncePerGeneration, ReportValue: true,
+	}, events[0])
+	require.Equal(t, ConfigEvent{
+		Kind: EventConfiguration, BindingID: "test.value", Name: "DD_VALUE", Value: 3,
+		Present: true, Valid: true, Origin: telemetry.OriginDefault,
+		Policy: schema.TelemetryReport, Cadence: ReportOncePerGeneration, ReportValue: true,
+	}, events[1])
+	telemetryClient.AssertNotCalled(t, "RegisterAppConfigs", mock.Anything)
+}
+
+func findEvent(t *testing.T, events []ConfigEvent, kind EventKind) ConfigEvent {
+	t.Helper()
+	return events[eventIndex(t, events, kind)]
+}
+
+func eventIndex(t *testing.T, events []ConfigEvent, kind EventKind) int {
+	t.Helper()
+	for i, event := range events {
+		if event.Kind == kind {
+			return i
+		}
+	}
+	require.FailNow(t, "event not found", "kind: %v", kind)
+	return -1
+}
+
+func normalizeAttemptErrors(attempts []schema.SourceAttempt) []schema.SourceAttempt {
+	got := append([]schema.SourceAttempt(nil), attempts...)
+	for i := range got {
+		if got[i].Err != nil && errors.Is(got[i].Err, strconv.ErrSyntax) {
+			got[i].Err = strconv.ErrSyntax
+		}
+	}
+	return got
+}
+
+func attemptRawValues(attempts []schema.SourceAttempt) []string {
+	values := make([]string, len(attempts))
+	for i := range attempts {
+		values[i] = attempts[i].Raw
+	}
+	return values
 }
 
 // matchConfig is a helper to create a matcher for telemetry configurations that ignores exact SeqID.

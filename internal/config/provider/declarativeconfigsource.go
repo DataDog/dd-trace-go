@@ -29,8 +29,14 @@ type declarativeConfigSource struct {
 	config      *declarativeConfig
 }
 
+func (d *declarativeConfigSource) lookup(key string) (string, bool) {
+	raw, present := d.config.Config[normalizeKey(key)]
+	return raw, present
+}
+
 func (d *declarativeConfigSource) get(key string) string {
-	return d.config.get(normalizeKey(key))
+	raw, _ := d.lookup(key)
+	return raw
 }
 
 func (d *declarativeConfigSource) getID() string {

@@ -12,10 +12,19 @@ import (
 
 type envConfigSource struct{}
 
+func (e *envConfigSource) lookup(key string) (string, bool) {
+	return env.Lookup(normalizeKey(key))
+}
+
 func (e *envConfigSource) get(key string) string {
-	return env.Get(normalizeKey(key))
+	raw, _ := e.lookup(key)
+	return raw
 }
 
 func (e *envConfigSource) origin() telemetry.Origin {
 	return telemetry.OriginEnvVar
+}
+
+func (e *envConfigSource) environmentSource() bool {
+	return true
 }

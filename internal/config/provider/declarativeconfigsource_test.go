@@ -352,6 +352,26 @@ func TestDeclarativeConfigSource(t *testing.T) {
 		assert.Equal(t, "", source.get("DD_NONEXISTENT_KEY"))
 	})
 
+	t.Run("Lookup distinguishes explicit empty from missing", func(t *testing.T) {
+		data := `
+config_id: empty-id
+apm_configuration_default:
+    DD_EMPTY: ""
+`
+		err := os.WriteFile("test_source_empty.yml", []byte(data), 0644)
+		assert.NoError(t, err)
+		defer os.Remove("test_source_empty.yml")
+
+		source := newDeclarativeConfigSource("test_source_empty.yml", telemetry.OriginManagedStableConfig)
+		raw, present := source.lookup("DD_EMPTY")
+		assert.Equal(t, "", raw)
+		assert.True(t, present)
+
+		raw, present = source.lookup("DD_MISSING")
+		assert.Equal(t, "", raw)
+		assert.False(t, present)
+	})
+
 	t.Run("GetID returns config ID", func(t *testing.T) {
 		err := os.WriteFile("test_source_id.yml", []byte(validYaml), 0644)
 		assert.NoError(t, err)

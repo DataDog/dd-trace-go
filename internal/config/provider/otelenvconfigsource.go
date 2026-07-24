@@ -22,44 +22,67 @@ const (
 
 type otelEnvConfigSource struct{}
 
+func (o *otelEnvConfigSource) lookup(key string) (string, bool) {
+	raw, present, _, _, _ := o.lookupWithEvents(key)
+	return raw, present
+}
+
 func (o *otelEnvConfigSource) get(key string) string {
+	raw, _ := o.lookup(key)
+	return raw
+}
+
+func (o *otelEnvConfigSource) lookupWithEvents(key string) (string, bool, bool, error, []ConfigEvent) {
 	ddKey := normalizeKey(key)
 	entry := otelConfigs[ddKey]
 	if entry == nil {
-		return ""
+		return "", false, false, nil, nil
 	}
-	otVal := env.Get(entry.ot)
-	if otVal == "" {
-		return ""
+	otVal, present := env.Lookup(entry.ot)
+	if !present {
+		return "", false, false, nil, nil
 	}
-	if ddVal := env.Get(ddKey); ddVal != "" {
+	var events []ConfigEvent
+	if ddVal, ddPresent := env.Lookup(ddKey); ddPresent {
 		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, entry.ot, ddVal)
-		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
-		telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
+		events = append(events, ConfigEvent{
+			Kind: EventOTelEnvHiding, Name: ddKey, OTelName: entry.ot,
+			CompatibilityReport: otVal != "" && ddVal != "",
+		})
 	}
 	val, err := entry.remapper(otVal)
 	if err != nil {
 		log.Warn("%s", err.Error())
-		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
-		telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
-		return ""
+		events = append(events, ConfigEvent{
+			Kind: EventOTelEnvInvalid, Name: ddKey, OTelName: entry.ot, Err: err,
+			CompatibilityReport: otVal != "",
+		})
+		return otVal, true, true, err, events
 	}
-	return val
+	applicable := val != "" || entry.emptyResultApplicable
+	return val, true, applicable, nil, events
 }
 
 func (o *otelEnvConfigSource) origin() telemetry.Origin {
 	return telemetry.OriginEnvVar
 }
 
+func reportOTelMetric(metric, ddKey, otelKey string) {
+	telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(otelKey)}
+	telemetry.Count(telemetry.NamespaceTracers, metric, telemetryTags).Submit(1)
+}
+
 type otelDDEnv struct {
-	ot       string
-	remapper func(string) (string, error)
+	ot                    string
+	remapper              func(string) (string, error)
+	emptyResultApplicable bool
 }
 
 var otelConfigs = map[string]*otelDDEnv{
 	"DD_SERVICE": {
-		ot:       "OTEL_SERVICE_NAME",
-		remapper: mapService,
+		ot:                    "OTEL_SERVICE_NAME",
+		remapper:              mapService,
+		emptyResultApplicable: true,
 	},
 	"DD_RUNTIME_METRICS_ENABLED": {
 		ot:       "OTEL_METRICS_EXPORTER",

@@ -25,3 +25,16 @@ func TestNormalizedEnvConfigSource(t *testing.T) {
 	t.Setenv("DD_SERVICE", "value")
 	assert.Equal(t, "value", src.get("service"))
 }
+
+func TestEnvConfigSourceLookupPreservesExplicitEmpty(t *testing.T) {
+	src := &envConfigSource{}
+	t.Setenv("DD_SERVICE", "")
+
+	raw, present := src.lookup("DD_SERVICE")
+	assert.Equal(t, "", raw)
+	assert.True(t, present)
+
+	raw, present = src.lookup("DD_ENV")
+	assert.Equal(t, "", raw)
+	assert.False(t, present)
+}
