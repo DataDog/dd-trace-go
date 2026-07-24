@@ -1662,6 +1662,17 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 // `origin` = `o`
 // `last parent` = `p`
 // `_dd.p.` prefix = `t.`
+// tracestateEntryOversized reports whether a tracestate list-member exceeds
+// its applicable size cap: tracestateDDMaxSize for the dd= member (Datadog's
+// own), or tracestateMemberMaxSize for any other vendor, per the W3C
+// recommendation. entry must already be trimmed of surrounding whitespace.
+func tracestateEntryOversized(entry string) bool {
+	if strings.HasPrefix(entry, "dd=") {
+		return len(entry) > tracestateDDMaxSize
+	}
+	return len(entry) > tracestateMemberMaxSize
+}
+
 func parseTracestate(ctx *SpanContext, header string) {
 	if header == "" {
 		// The W3C spec says tracestate can be empty but should avoid sending it.
@@ -1693,12 +1704,12 @@ func parseTracestate(ctx *SpanContext, header string) {
 			continue
 		}
 		if !strings.HasPrefix(group, "dd=") {
-			if len(group) > tracestateMemberMaxSize {
+			if tracestateEntryOversized(group) {
 				needsCleaning = true
 			}
 			continue
 		}
-		if len(group) > tracestateDDMaxSize {
+		if tracestateEntryOversized(group) {
 			needsCleaning = true
 			break
 		}
@@ -1767,11 +1778,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 	first := true
 	for entry := range strings.SplitSeq(header, ",") {
 		trimmed := strings.Trim(entry, "\t ")
-		if strings.HasPrefix(trimmed, "dd=") {
-			if len(trimmed) > tracestateDDMaxSize {
-				continue
-			}
-		} else if len(trimmed) > tracestateMemberMaxSize {
+		if tracestateEntryOversized(trimmed) {
 			continue
 		}
 		if !first {
@@ -1874,7 +1881,7 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 	ctr := 0
 	var baggageBuilder strings.Builder
 	ctx.ForeachBaggageItem(func(k, v string) bool {
-		if ctr >= baggageMaxItems {
+		if baggageItemCapped(ctr) {
 			return false
 		}
 
@@ -1886,7 +1893,7 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		itemBuilder.WriteString(encodeKey(k))
 		itemBuilder.WriteRune('=')
 		itemBuilder.WriteString(encodeValue(v))
-		if itemBuilder.Len()+baggageBuilder.Len() > baggageMaxBytes {
+		if baggageByteCapped(baggageBuilder.Len(), itemBuilder.Len()) {
 			return false
 		}
 		baggageBuilder.WriteString(itemBuilder.String())
@@ -1992,11 +1999,11 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		if ctr > 0 {
 			itemBytes++ // comma separator
 		}
-		if ctr >= baggageMaxItems {
+		if baggageItemCapped(ctr) {
 			log.Warn("baggage item count exceeded limit (%d), dropping remaining items", baggageMaxItems)
 			break
 		}
-		if byteCount+itemBytes > baggageMaxBytes {
+		if baggageByteCapped(byteCount, itemBytes) {
 			log.Warn("baggage byte limit exceeded (%d), dropping remaining items", baggageMaxBytes)
 			break
 		}
