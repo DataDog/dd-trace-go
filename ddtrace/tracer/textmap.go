@@ -1676,7 +1676,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 		log.Warn("tracestate header exceeds the maximum size (%d), dropping it", tracestateMaxSize)
 		return
 	}
-	hasOversizedDD := false
+	needsCleaning := false
 	for group := range strings.SplitSeq(header, ",") {
 		group = strings.Trim(group, "\t ")
 		if after, ok := strings.CutPrefix(group, "ot="); ok {
@@ -1693,10 +1693,13 @@ func parseTracestate(ctx *SpanContext, header string) {
 			continue
 		}
 		if !strings.HasPrefix(group, "dd=") {
+			if len(group) > tracestateMemberMaxSize {
+				needsCleaning = true
+			}
 			continue
 		}
 		if len(group) > tracestateDDMaxSize {
-			hasOversizedDD = true
+			needsCleaning = true
 			break
 		}
 		ddMembers := strings.Split(group[len("dd="):], ";")
@@ -1750,8 +1753,12 @@ func parseTracestate(ctx *SpanContext, header string) {
 		}
 	}
 	// Store the propagating tag, rebuilding the header to exclude oversized
-	// dd= entries when present.
-	if !hasOversizedDD {
+	// dd= and non-dd entries when present. Filtering here -- not just in
+	// composeTracestate -- matters because other readers (e.g. the SpanLink
+	// built from this tag on a restart/terminated-context extraction, or an
+	// inject that reuses the cached tracestate tag verbatim) consume this
+	// stored value directly, without ever going through composeTracestate.
+	if !needsCleaning {
 		setPropagatingTagUnsafe(ctx, tracestateHeader, header)
 		return
 	}
@@ -1760,7 +1767,11 @@ func parseTracestate(ctx *SpanContext, header string) {
 	first := true
 	for entry := range strings.SplitSeq(header, ",") {
 		trimmed := strings.Trim(entry, "\t ")
-		if strings.HasPrefix(trimmed, "dd=") && len(trimmed) > tracestateDDMaxSize {
+		if strings.HasPrefix(trimmed, "dd=") {
+			if len(trimmed) > tracestateDDMaxSize {
+				continue
+			}
+		} else if len(trimmed) > tracestateMemberMaxSize {
 			continue
 		}
 		if !first {
