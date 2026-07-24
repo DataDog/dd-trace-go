@@ -637,7 +637,7 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 		// Cap at baggageMaxItems/baggageMaxBytes the same way
 		// propagatorBaggage.injectTextMap already does for the "baggage"
 		// header -- this prefix path had no such limit.
-		if baggageItems >= baggageMaxItems {
+		if baggageItemCapped(baggageItems) {
 			return false
 		}
 		// Percent-encode as propagatorBaggage.injectTextMap does for the
@@ -645,7 +645,7 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 		// percent-decoded baggage) can't reach the header name/value
 		// verbatim and poison the request.
 		ek, ev := encodeKey(k), encodeValue(v)
-		if baggageBytes+len(ek)+len(ev) > baggageMaxBytes {
+		if baggageByteCapped(baggageBytes, len(ek)+len(ev)) {
 			return false
 		}
 		writer.Set(p.cfg.BaggagePrefix+ek, ev)
@@ -708,6 +708,19 @@ func (p *propagator) Extract(carrier any) (*SpanContext, error) {
 	}
 }
 
+// baggageItemCapped reports whether items already accepted has reached
+// baggageMaxItems. Shared by the ot-baggage-<key> extractors and injector so
+// the cap isn't hand-rolled at each call site.
+func baggageItemCapped(items int) bool {
+	return items >= baggageMaxItems
+}
+
+// baggageByteCapped reports whether accepting addBytes more bytes on top of
+// bytes already accepted would exceed baggageMaxBytes.
+func baggageByteCapped(bytes, addBytes int) bool {
+	return bytes+addBytes > baggageMaxBytes
+}
+
 // addOTBaggageItem stores a baggage item received under the legacy
 // ot-baggage-<key> header prefix, enforcing the same baggageMaxItems/
 // baggageMaxBytes limits that propagatorBaggage already enforces for the
@@ -715,11 +728,11 @@ func (p *propagator) Extract(carrier any) (*SpanContext, error) {
 // key+value bytes; it and the (possibly newly allocated) map are returned
 // for the caller to store back into its scratch value.
 func addOTBaggageItem(baggage map[string]string, baggageBytes int, key, val string) (map[string]string, int) {
-	if len(baggage) >= baggageMaxItems {
+	if baggageItemCapped(len(baggage)) {
 		log.Warn("baggage item count exceeded limit (%d), dropping remaining ot-baggage-* items", baggageMaxItems)
 		return baggage, baggageBytes
 	}
-	if baggageBytes+len(key)+len(val) > baggageMaxBytes {
+	if baggageByteCapped(baggageBytes, len(key)+len(val)) {
 		log.Warn("baggage byte limit exceeded (%d), dropping remaining ot-baggage-* items", baggageMaxBytes)
 		return baggage, baggageBytes
 	}
