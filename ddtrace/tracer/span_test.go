@@ -593,6 +593,67 @@ func (t *testMsgpStruct) MarshalMsg(_ []byte) ([]byte, error) {
 	return nil, nil
 }
 
+func TestSpanSetMetaStruct(t *testing.T) {
+	t.Run("nil span", func(t *testing.T) {
+		var span *Span
+		assert.False(t, span.SetMetaStruct("key", &testMsgpStruct{}))
+	})
+
+	t.Run("no tracer", func(t *testing.T) {
+		previousTracer := getGlobalTracer()
+		setGlobalTracer(&NoopTracer{})
+		defer setGlobalTracer(previousTracer)
+
+		span := newBasicSpan("web.request")
+		assert.False(t, span.SetMetaStruct("key", &testMsgpStruct{}))
+		assert.NotContains(t, span.metaStruct, "key")
+	})
+
+	for _, supported := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unsupported", true: "supported"}[supported], func(t *testing.T) {
+			tracer, _, _, stop, err := startTestTracer(t)
+			require.NoError(t, err)
+			defer stop()
+
+			agentFeatures := tracer.config.agent.load()
+			agentFeatures.metaStructAvailable = supported
+			tracer.config.agent.store(agentFeatures)
+
+			span := newBasicSpan("web.request")
+			value := &testMsgpStruct{A: "test"}
+			assert.Equal(t, supported, span.SetMetaStruct("key", value))
+			if supported {
+				assert.Equal(t, value, span.metaStruct["key"])
+			} else {
+				assert.NotContains(t, span.metaStruct, "key")
+			}
+		})
+	}
+
+	t.Run("concurrent", func(t *testing.T) {
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.NoError(t, err)
+		defer stop()
+
+		agentFeatures := tracer.config.agent.load()
+		agentFeatures.metaStructAvailable = true
+		tracer.config.agent.store(agentFeatures)
+
+		span := newBasicSpan("web.request")
+		const count = 100
+		var wg sync.WaitGroup
+		wg.Add(count)
+		for i := range count {
+			go func() {
+				defer wg.Done()
+				span.SetMetaStruct(strconv.Itoa(i), &testMsgpStruct{A: "test"})
+			}()
+		}
+		wg.Wait()
+		assert.Len(t, span.metaStruct, count)
+	})
+}
+
 func TestSpanSetTagError(t *testing.T) {
 
 	t.Run("off", func(t *testing.T) {
