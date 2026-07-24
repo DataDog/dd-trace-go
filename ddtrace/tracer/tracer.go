@@ -1028,11 +1028,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, &span.meta, span.metrics)
 	}
-	if cSnap.ProfilerHotspotsEnabled || cSnap.ProfilerEndpoints {
-		t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
-	} else {
-		span.pprofCtxRestore = nil
-	}
+	t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
 	if cSnap.DebugAbandonedSpans {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
@@ -1062,11 +1058,19 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // many times each endpoint is called.
 // +checklocksignore — Initialization time, called from StartSpan before span is shared.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
+	// "trace id" is emitted for code hotspots and when AppSec is enabled, so it
+	// can correlate security events with traces/profiles.
+	correlate := snap.ProfilerHotspotsEnabled || appsec.Enabled()
+	if !correlate && !snap.ProfilerEndpoints {
+		// No feature needs pprof labels; nothing to restore when the span finishes.
+		span.pprofCtxRestore = nil
+		return
+	}
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
-	labels := make([]string, 0, 2*2 /* 2 key value pairs */)
+	labels := make([]string, 0, 3*2 /* up to 3 key value pairs */)
 	if snap.ProfilerHotspotsEnabled {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
@@ -1081,6 +1085,9 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 				traceprof.GlobalEndpointCounter().Inc(resource)
 			}
 		}
+	}
+	if correlate {
+		labels = append(labels, traceprof.TraceID, span.context.TraceID())
 	}
 	if len(labels) > 0 {
 		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))

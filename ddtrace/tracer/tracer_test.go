@@ -38,6 +38,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	tracertest "github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -45,6 +46,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -3219,6 +3221,91 @@ func TestPprofLabels(t *testing.T) {
 		span.Finish()
 		wasteC(time.Second)
 	})
+}
+
+// TestApplyPPROFLabelsTraceID verifies the pprof label gating matrix: the whole
+// 128-bit "trace id" (32-char lowercase hex) and "local root span id" are
+// emitted for code hotspots; "span id" stays hotspots-only; "trace endpoint"
+// stays endpoints-only; and nothing is emitted when no feature is enabled.
+func TestApplyPPROFLabelsTraceID(t *testing.T) {
+	// WithAppSecEnabled(false) disables AppSec so the code-hotspots and endpoints
+	// gates can be tested deterministically; assert the global state to be safe.
+	tr, err := newTracer(WithAppSecEnabled(false))
+	require.NoError(t, err)
+	defer tr.Stop()
+	require.False(t, appsec.Enabled(), "appsec must be off for the deterministic gating cases")
+
+	span := tr.StartSpan("web.request", ResourceName("/things"), SpanType(ext.SpanTypeWeb))
+	defer span.Finish()
+
+	traceID := span.context.TraceID()
+	require.Regexp(t, "^[0-9a-f]{32}$", traceID, "trace id must be the whole 128-bit id as lowercase hex")
+	localRoot := strconv.FormatUint(span.Root().getSpanID(), 10)
+	spanID := strconv.FormatUint(span.spanID, 10)
+
+	// apply resets the label context and (re)applies the labels for snap.
+	apply := func(snap internalconfig.SpanStartSnapshot) context.Context {
+		span.pprofCtxActive = nil
+		tr.applyPPROFLabels(context.Background(), span, snap)
+		return span.pprofCtxActive
+	}
+	present := func(t *testing.T, ctx context.Context, key, want string) {
+		t.Helper()
+		got, ok := pprof.Label(ctx, key)
+		require.Truef(t, ok, "label %q should be present", key)
+		require.Equalf(t, want, got, "value of label %q", key)
+	}
+	absent := func(t *testing.T, ctx context.Context, keys ...string) {
+		t.Helper()
+		for _, key := range keys {
+			_, ok := pprof.Label(ctx, key)
+			require.Falsef(t, ok, "label %q should be absent", key)
+		}
+	}
+
+	t.Run("hotspots", func(t *testing.T) {
+		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerHotspotsEnabled: true})
+		require.NotNil(t, ctx)
+		present(t, ctx, traceprof.TraceID, traceID)
+		present(t, ctx, traceprof.LocalRootSpanID, localRoot)
+		present(t, ctx, traceprof.SpanID, spanID)
+		absent(t, ctx, traceprof.TraceEndpoint)
+	})
+	t.Run("endpoints-only", func(t *testing.T) {
+		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerEndpoints: true})
+		require.NotNil(t, ctx)
+		present(t, ctx, traceprof.TraceEndpoint, "/things")
+		absent(t, ctx, traceprof.TraceID, traceprof.LocalRootSpanID, traceprof.SpanID)
+	})
+	t.Run("none", func(t *testing.T) {
+		require.Nil(t, apply(internalconfig.SpanStartSnapshot{}))
+	})
+}
+
+// TestApplyPPROFLabelsTraceIDAppSec verifies that enabling AppSec (with the
+// profiler features off) still emits "trace id" and "local root span id" for
+// trace/security correlation, but not the hotspots-only "span id".
+func TestApplyPPROFLabelsTraceIDAppSec(t *testing.T) {
+	if err := Start(WithAppSecEnabled(true), WithProfilerCodeHotspots(false), WithProfilerEndpoints(false)); err != nil {
+		t.Fatal(err)
+	}
+	defer Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec is not enabled on this platform; skipping appsec-only pprof label test")
+	}
+
+	span := StartSpan("web.request")
+	defer span.Finish()
+
+	ctx := span.pprofCtxActive
+	require.NotNil(t, ctx)
+	got, ok := pprof.Label(ctx, traceprof.TraceID)
+	require.True(t, ok, "trace id label should be present under appsec")
+	require.Equal(t, span.context.TraceID(), got)
+	_, ok = pprof.Label(ctx, traceprof.LocalRootSpanID)
+	require.True(t, ok, "local root span id label should be present under appsec")
+	_, ok = pprof.Label(ctx, traceprof.SpanID)
+	require.False(t, ok, "span id is hotspots-only and must be absent under appsec-only")
 }
 
 func TestNoopTracerStartSpan(t *testing.T) {
