@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -153,19 +154,42 @@ func TestStartupLog(t *testing.T) {
 	t.Run("otlp_metrics_export", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		// The OTel metrics signal is enabled and the exporter is otlp, so
-		// metrics are actually exported over OTLP. Pin OTEL_METRICS_EXPORTER
-		// explicitly so the assertion holds even under a polluted shell.
+		// otlp_metrics_export_enabled tracks otelRuntimeMetricsShouldBeEnabled, whose
+		// gate includes StartHook != nil (normally set when opentelemetry/metric is
+		// imported). withTestHooks stands in for that import so the pipeline is active.
+		withTestHooks(t)
 		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 		t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
 		require.NoError(t, err)
 		defer stop()
+		require.True(t, tracer.config.otelRuntimeMetricsShouldBeEnabled,
+			"OTLP metrics pipeline should be active for this assertion to be meaningful")
 		tp.Reset()
 		tp.Ignore(commonLogIgnore...)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
 		assert.Contains(tp.Logs()[1], `"otlp_metrics_export_enabled":true`)
+	})
+
+	t.Run("otlp_metrics_export_config_without_pipeline", func(t *testing.T) {
+		assert := assert.New(t)
+		tp := new(log.RecordLogger)
+		// Config intent is present but opentelemetry/metric is not imported, so
+		// StartHook is nil and the pipeline never starts: the field must report false
+		// rather than over-reporting from config alone.
+		require.Nil(t, otelmetricsinstall.StartHook, "test binary must not have the metric package imported")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+		t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
+		defer stop()
+		require.False(t, tracer.config.otelRuntimeMetricsShouldBeEnabled)
+		tp.Reset()
+		tp.Ignore(commonLogIgnore...)
+		logStartup(tracer)
+		require.Len(t, tp.Logs(), 2)
+		assert.Contains(tp.Logs()[1], `"otlp_metrics_export_enabled":false`)
 	})
 }
 

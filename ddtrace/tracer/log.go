@@ -191,8 +191,13 @@ func logStartup(t *tracer) {
 		DogstatsdAddr:               t.config.internalConfig.DogstatsdAddr(),
 		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
 		OTLPTracesExportEnabled:     t.otlpExportMode,
-		OTLPMetricsExportEnabled:    t.config.internalConfig.RuntimeMetricsOtelEnabled() && t.config.internalConfig.OTLPExportMetricsMode(),
-		OTLPLogsExportEnabled:       t.config.internalConfig.LogsOTelEnabled(),
+		// Reports the tracer's resolved decision to start OTel runtime metrics over
+		// OTLP: the same gate the tracer uses (config enabled and opentelemetry/metric
+		// imported, so StartHook != nil), not a config-only guess.
+		OTLPMetricsExportEnabled: t.config.otelRuntimeMetricsShouldBeEnabled,
+		// The user starts the OTel logs integration (opentelemetry/log.Start) after
+		// this log is emitted, so no started-state is knowable here; report config intent.
+		OTLPLogsExportEnabled: t.config.internalConfig.LogsOTelEnabled(),
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
