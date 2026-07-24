@@ -128,7 +128,9 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -241,7 +243,9 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -323,7 +327,9 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
       # Docker is not present on early-access ARM runners
       - name: Prepare ARM Runner
