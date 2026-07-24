@@ -216,19 +216,14 @@ jobs:
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Pull docker images ahead of time so the pulls of large images don't have to fit within the
-      # test timeout.
+      # test timeout. Images (and their pinned digests) come from the shared Testcontainers catalog,
+      # which Dependabot keeps up to date; dynamodb/postgres/vault are the largest images used by the
+      # suite, hence worth pre-warming.
       - name: Pull container images
         # Docker is only supported on Linux runners at the moment
         if: runner.os == 'Linux'
         run: |-
-          # AWS DynamoDB Local is used to have a pretend AWS API endpoint
-          docker pull amazon/dynamodb-local:latest
-
-          # PostgreSQL service
-          docker pull docker.io/postgres:16-alpine
-
-          # Vault service
-          docker pull vault:1.7.3
+          docker compose -f "${{ github.workspace }}/dd-trace-go/instrumentation/testutils/containers/images/docker-compose.yaml" pull dynamodb postgres vault
 
       # Enable VM overcommit memory, which is essential to ensure smooth operations of the Redis
       # servers. This VM setting is not namespaced, so changing it on the host also affects all

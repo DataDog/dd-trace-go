@@ -61,165 +61,12 @@ jobs:
       group: "APM Larger Runners"
     env:
       INTEGRATION: true
+      COMPOSE_FILE: .github/testservices/docker-compose.yaml
+      COMPOSE_PROJECT_NAME: dd-trace-go-ci
     strategy:
       fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
-    services:
-      datadog-agent:
-        image: registry.datadoghq.com/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-          DD_TEST_AGENT_HOST: "localhost"
-          DD_TEST_AGENT_PORT: 9126
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-      testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.61.1@sha256:0b428281c1ba33f4af9f81efe79330a7577c8810609a7bcd1cecf8c7de82abec
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/9126'"
-        ports:
-          - 9126:9126
-        env:
-          LOG_LEVEL: DEBUG
-          TRACE_LANGUAGE: golang
-          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
-          PORT: 9126
-          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-          DD_POOL_TRACE_CHECK_FAILURES: true
-          DD_DISABLE_ERROR_RESPONSES: true
-      cassandra:
-        image: cassandra:3.11@sha256:9a14b18eb658851e8939cfdeca8fcbca389f5f0d00fca4a995d80b6accfcbd96
-        env:
-          JVM_OPTS: "-Xms750m -Xmx750m"
-          CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
-          CASSANDRA_DC: "dd-trace-go-test-datacenter"
-          CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
-        ports:
-          - 9042:9042
-      mysql:
-        image: cimg/mysql:8.0@sha256:3f14424dee82da7c784350ac9b7d292edcc2eac921d24fd0099dd4c45edd1fcd
-        env:
-          MYSQL_ROOT_PASSWORD: admin
-          MYSQL_PASSWORD: test
-          MYSQL_USER: test
-          MYSQL_DATABASE: test
-        ports:
-          - 3306:3306
-      postgres:
-        image: cimg/postgres:16.4@sha256:2e4f1a965bdd9ba77aa6a0a7b93968c07576ba2a8a7cf86d5eb7b31483db1378
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-      mssql:
-        image: mcr.microsoft.com/mssql/server:2019-latest@sha256:fdee98d3f631673cd8fb9be6d29d7883d7111be9fc0246103dc0cfbbffdabd5a
-        env:
-          SA_PASSWORD: myPassw0rd
-          ACCEPT_EULA: Y
-        ports:
-          - 1433:1433
-      consul:
-        image: consul:1.6.0@sha256:63e1a07260418ba05be08b6dc53f4a3bb95aa231cd53922f7b5b5ee5fd77ef3f
-        ports:
-          - 8500:8500
-      redis:
-        image: redis:3.2@sha256:7b0a40301bc1567205e6461c5bf94c38e1e1ad0169709e49132cafc47f6b51f3
-        ports:
-          - 6379:6379
-      valkey:
-        image: valkey/valkey:8@sha256:1f84517eca8e0dd9585ed57c572796f32839e1b0e7ce07ad28e6bce098468371
-        env:
-          VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
-        ports:
-          - 6380:6380
-      elasticsearch2:
-        image: elasticsearch:2@sha256:41ed3a1a16b63de740767944d5405843db00e55058626c22838f23b413aa4a39
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9200:9200
-      elasticsearch5:
-        image: elasticsearch:5@sha256:d0e119779df7ddf9d476102691d9d0b8783c13434e00d77f01327019c1297839
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9201:9200
-      elasticsearch6:
-        image: elasticsearch:6.8.13@sha256:8d4e29332dc159e7c256efa131453bd62a35b6e90f32aa9ab3f76632e29372c3
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9202:9200
-      elasticsearch7:
-        image: elasticsearch:7.14.1@sha256:80bc3fe9d3ab2da410abadc2245eb5833c7ef7bb58ce2d89b24dabfb8c3d5233
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-          discovery.type: single-node
-        ports:
-          - 9203:9200
-      elasticsearch8:
-        image: elasticsearch:8.6.2@sha256:93bc71907ca0e6e3b4f181e0dc850b90bb6cb2686c2778def0b8542398983c28
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-          discovery.type: single-node
-          xpack.security.enabled: false
-        ports:
-          - 9204:9200
-      mongo3:
-        image: mongo:3@sha256:146c1fd999a660e697aac40bc6da842b005c7868232eb0b7d8996c8f3545b05d
-        ports:
-          - 27018:27017
-      mongo:
-        image: mongo:8@sha256:7abfba0d07c9330373f8173981ea4d09cd8a82cdf0e86ccaf7008848d1d24f62
-        ports:
-          - 27017:27017
-      memcached:
-        image: memcached:1.5.9@sha256:dc68a9ffa03b81dde70ce536bc96655e3d23503916b0d931078391d752bb4e27
-        ports:
-          - 11211:11211
-      kafka:
-        image: confluentinc/confluent-local:7.5.0@sha256:8e391de42cfcd3498e7317dcf159790f1f1cc3f3ffce900b30d7da23888687fd
-        env:
-          KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
-          KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
-          KAFKA_REST_BOOTSTRAP_SERVERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092"
-          KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9094"
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
-          KAFKA_INTER_BROKER_LISTENER_NAME: "BROKER"
-          KAFKA_BROKER_ID: "1"
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-          KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
-          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
-          KAFKA_NODE_ID: "1"
-          KAFKA_PROCESS_ROLES: "broker,controller"
-          KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-        ports:
-          - 9092:9092
-          - 9093:9093
-        options: >-
-          --name "kafka"
-      localstack:
-        image: localstack/localstack:4.14.0@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a
-        ports:
-          - 4566:4566
-      aerospike:
-        image: aerospike:ce-7.2.0.6@sha256:79c30951edab8878b14b650f32db416106a21d458be994344e488756fe8b651f
-        ports:
-          - 3000:3000
     steps:
       - name: Restore repo cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -233,12 +80,21 @@ jobs:
           ref: ${{ github.sha }}
           clean: false
 
+      - name: Start CI service containers
+        run: docker compose up -d
+
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
+
+      # Containers were started (non-blocking) before Go setup above, so most of
+      # the wait time already overlapped with it; this just waits out whatever's left.
+      - name: Wait for CI service containers
+        run: docker compose up -d --wait --wait-timeout 120
+
       - name: Test Contrib
         if: always()
         env:
@@ -289,7 +145,7 @@ jobs:
       - name: Get Datadog APM Test Agent Logs
         if: always()
         shell: bash
-        run: docker logs ${{ job.services.testagent.id }}
+        run: docker compose logs testagent
 
       - name: Get Datadog APM Test Agent Trace Check Summary Results
         if: always()
@@ -319,6 +175,10 @@ jobs:
           path: /tmp/trace-check-results/
           retention-days: 1
           if-no-files-found: ignore
+
+      - name: Stop CI service containers
+        if: always()
+        run: docker compose down
 
   test-contrib:
     needs:
@@ -384,23 +244,9 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-       INTEGRATION: true
-    services:
-      datadog-agent:
-        image: registry.datadoghq.com/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
+      INTEGRATION: true
+      COMPOSE_FILE: .github/testservices/docker-compose.yaml
+      COMPOSE_PROJECT_NAME: dd-trace-go-ci
     steps:
       - name: Restore repo cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -414,12 +260,22 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+
+      - name: Start CI service containers
+        run: docker compose up -d datadog-agent
+
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
+
+      # Containers were started (non-blocking) before Go setup above, so most of
+      # the wait time already overlapped with it; this just waits out whatever's left.
+      - name: Wait for CI service containers
+        run: docker compose up -d --wait --wait-timeout 120 datadog-agent
+
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
@@ -459,3 +315,7 @@ jobs:
       - name: Supported Configurations Diff Check
         if: always()
         uses: ./.github/actions/supported_configurations_validation
+
+      - name: Stop CI service containers
+        if: always()
+        run: docker compose down

@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.26.4-alpine AS builder
+FROM golang:1.26.4-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS builder
 ENV CGO_ENABLED=1
 
 WORKDIR /app
@@ -11,7 +11,7 @@ RUN apk add --no-cache --update git build-base openssl
 RUN go build -tags=appsec -o ./contrib/haproxy/stream-processing-offload/cmd/spoa/spoa ./contrib/haproxy/stream-processing-offload/cmd/spoa
 
 # Runtime stage
-FROM alpine:3.24.1
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # Set opencontainers labels for Github container registry
 LABEL org.opencontainers.image.source=https://github.com/DataDog/dd-trace-go/tree/main/contrib/haproxy/stream-processing-offload/cmd/spoa
