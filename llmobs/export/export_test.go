@@ -293,6 +293,33 @@ func TestSubmitSpans_Chunking(t *testing.T) {
 	assert.Len(t, fake.captured(), 3)
 }
 
+// TestSubmitEvaluations_Chunking is the eval analogue of TestSubmitSpans_Chunking:
+// it exercises the SubmitEvaluations chunk loop and the public WithEvalBatchSize
+// option (which is otherwise only ever run as a single default-sized batch). 120
+// evals at a batch size of 50 must produce three requests (50/50/20) with correct
+// per-chunk Count and monotonic Index, and Sent must total the whole input.
+func TestSubmitEvaluations_Chunking(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app", export.WithEvalBatchSize(50))
+
+	evals := make([]export.EvaluationMetric, 120)
+	for i := range evals {
+		evals[i] = export.EvaluationMetric{SpanID: "s", TraceID: "t", Label: "ok", ScoreValue: ptr(0.5)}
+	}
+	res, err := c.SubmitEvaluations(context.Background(), evals)
+	require.NoError(t, err)
+	require.Len(t, res.Requests, 3)
+	assert.Equal(t, 50, res.Requests[0].Count)
+	assert.Equal(t, 50, res.Requests[1].Count)
+	assert.Equal(t, 20, res.Requests[2].Count)
+	// Index is monotonic and zero-based across the chunks of one call.
+	assert.Equal(t, 0, res.Requests[0].Index)
+	assert.Equal(t, 1, res.Requests[1].Index)
+	assert.Equal(t, 2, res.Requests[2].Index)
+	assert.Equal(t, 120, res.Sent)
+	assert.Len(t, fake.captured(), 3)
+}
+
 func TestSubmitSpans_ValidationDropsInvalidRows(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -757,20 +784,69 @@ func TestSubmitSpans_MetricsPreservesExtraAndStandardKeys(t *testing.T) {
 	assert.Equal(t, float64(7), m["custom_metric"]) // arbitrary reconstructed key not dropped
 }
 
+// TestSubmitEvaluations_RejectsUnmarshalableJSON drives the sendEvalBatch encode
+// fallback: a metric_type:"json" row whose json_value is not JSON-encodable
+// (math.Inf) passes lower() (json value ⟺ json type) and only fails at marshal,
+// so it is dropped via dropUnencodableEvals while the batch's other, valid row is
+// re-encoded and POSTed. This is the path a type-mismatch row can never reach
+// (lower() rejects that earlier — see TestSubmitEvaluations_RejectsTypeValueMismatch).
 func TestSubmitEvaluations_RejectsUnmarshalableJSON(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
-		{SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{"x": math.Inf(1)}},
+		{SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: export.MetricTypeJSON, JSONValue: map[string]any{"x": math.Inf(1)}},
 		{SpanID: "s2", TraceID: "t2", Label: "ok", ScoreValue: ptr(0.5)},
 	})
 	require.NoError(t, err)
-	require.Len(t, res.ValidationErrors, 1) // unmarshalable json_value dropped as a row
+	require.Len(t, res.ValidationErrors, 1) // unencodable json_value dropped as a row
 	assert.Equal(t, 0, res.ValidationErrors[0].Index)
+	assert.Contains(t, res.ValidationErrors[0].Reason, "not JSON-encodable")
+	assert.Equal(t, 1, res.Dropped)
+	assert.Equal(t, 1, res.Sent)
+	assert.Zero(t, res.Failed)
 
+	require.Len(t, fake.captured(), 1) // only the valid row was re-sent
 	metrics := decode(t, fake.captured()[0].body)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)
 	require.Len(t, metrics, 1) // the valid metric still went out
+}
+
+// TestSubmitEvaluations_DropsAllUnencodableJSON covers the branch where every row
+// in a batch fails to encode: all are dropped via dropUnencodableEvals and no
+// request is issued at all (the batch collapses to zero good rows).
+func TestSubmitEvaluations_DropsAllUnencodableJSON(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
+		{SpanID: "s1", TraceID: "t1", Label: "bad1", MetricType: export.MetricTypeJSON, JSONValue: map[string]any{"x": math.Inf(1)}},
+		{SpanID: "s2", TraceID: "t2", Label: "bad2", MetricType: export.MetricTypeJSON, JSONValue: map[string]any{"y": math.Inf(-1)}},
+	})
+	require.NoError(t, err) // dropped rows are not request failures
+	assert.Len(t, res.ValidationErrors, 2)
+	assert.Equal(t, 2, res.Dropped)
+	assert.Zero(t, res.Sent)
+	assert.Zero(t, res.Failed)
+	assert.Empty(t, res.Requests) // no good rows left → nothing POSTed
+	assert.Empty(t, fake.captured())
+}
+
+// TestSubmitEvaluations_RejectsTypeValueMismatch keeps coverage of the lower()
+// type-vs-value mismatch guard: a scalar MetricType paired with a JSONValue is
+// rejected before any marshal (never reaching dropUnencodableEvals), so it is a
+// row-level validation error and nothing is sent.
+func TestSubmitEvaluations_RejectsTypeValueMismatch(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
+		{SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{"x": 1}},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.ValidationErrors, 1)
+	assert.Equal(t, 0, res.ValidationErrors[0].Index)
+	assert.Contains(t, res.ValidationErrors[0].Reason, "does not match")
+	assert.Empty(t, fake.captured()) // rejected in lower(), never POSTed
 }
 
 // TestSubmitSpans_ZeroStartAndDurationOmitFields locks the doc↔wire contract on
@@ -980,10 +1056,13 @@ func TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue(t *testing.T) {
 	assert.Empty(t, fake.captured())
 }
 
-// TestSubmitSpans_SplitStopsOnCancelBetweenHalves guards that the oversized-batch
-// bisection honors cancellation: if the caller cancels while the left half is
-// posting, the right half is not sent, so no spurious failed request is recorded
-// for work the caller asked to stop.
+// TestSubmitSpans_SplitStopsOnCancelBetweenHalves guards that a cancellation
+// during the oversized-batch bisection is never reported as a silent success: if
+// the caller cancels while the left half is posting, the right half is not POSTed,
+// but its spans are still accounted (as a not-sent request) and SubmitSpans
+// returns a context.Canceled error. Returning err==nil here — the pre-fix
+// behavior, when this is the final window — would let an outbox caller treat the
+// abandoned right-half span as delivered and drop it, i.e. permanent silent loss.
 func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var once sync.Once
@@ -992,17 +1071,25 @@ func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 		return 202, "{}"
 	}}
 	// Two spans that each fit but together exceed the limit → the batch bisects
-	// into one request per span.
+	// into one request per span; the cancel lands between the two halves.
 	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(3000))
 
 	res, err := c.SubmitSpans(ctx, []export.SpanEvent{
 		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: strings.Repeat("x", 1500)},
 		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: strings.Repeat("y", 1500)},
 	})
-	require.NoError(t, err)
-	// Without the between-halves ctx check the right half would run and append a
-	// second, failed request; the fix skips it entirely.
-	require.Len(t, res.Requests, 1)
+	// A canceled export is an error, not a success.
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	// Only the left half reached the transport; the right half was abandoned.
 	assert.Len(t, fake.captured(), 1)
+	// The abandoned right-half span is still accounted, so the result covers both
+	// inputs and never silently loses s2: the left half sent, the right failed.
+	require.Len(t, res.Requests, 2)
 	assert.Equal(t, 202, res.Requests[0].StatusCode)
+	assert.NoError(t, res.Requests[0].Err)
+	assert.ErrorIs(t, res.Requests[1].Err, context.Canceled)
+	assert.Equal(t, 2, res.Sent+res.Failed+res.Dropped)
+	assert.Equal(t, 1, res.Sent)
+	assert.Equal(t, 1, res.Failed)
 }

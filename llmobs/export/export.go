@@ -70,6 +70,14 @@ func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...Su
 		c.sendSpanBatch(ctx, batch, res)
 	}
 	failed := res.finalize()
+	// A cancellation during the final window's size-guard bisection stops
+	// sendSpanBatch between halves after the top-of-loop guard has run for the last
+	// time, so surface it here too: a canceled export must return an error, never a
+	// silent success — even though sendSpanBatch already accounted the abandoned
+	// spans so Sent+Failed+Dropped still covers the whole input.
+	if err := ctx.Err(); err != nil {
+		return res, fmt.Errorf("llmobs/export: export canceled: %w", err)
+	}
 	return res, exportutil.Aggregate(failed, len(res.Requests), "llmobs/export")
 }
 
@@ -123,6 +131,12 @@ func (c *Client) SubmitEvaluations(ctx context.Context, evals []EvaluationMetric
 		c.sendEvalBatch(ctx, batch, res)
 	}
 	failed := res.finalize()
+	// Mirror SubmitSpans: a canceled context surfaces as an error rather than a
+	// silent success return, keeping the cancellation contract uniform across both
+	// APIs (evaluations don't bisect, so there is no abandoned-half to account).
+	if err := ctx.Err(); err != nil {
+		return res, fmt.Errorf("llmobs/export: export canceled: %w", err)
+	}
 	return res, exportutil.Aggregate(failed, len(res.Requests), "llmobs/export")
 }
 
@@ -217,11 +231,20 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Export
 	if len(body) > c.maxSpanBytes && len(batch) > 1 {
 		mid := len(batch) / 2
 		c.sendSpanBatch(ctx, batch[:mid], res)
-		// Honor cancellation between halves: if the caller stopped while the left
-		// half was posting, don't start the right half (Post would just fail on the
-		// canceled context and record another failed request for abandoned work),
-		// matching the pre-batch ctx.Err() guard in SubmitSpans.
-		if ctx.Err() != nil {
+		// If the caller canceled while the left half was posting, don't start the
+		// right half — but record its spans as a not-sent request so the result
+		// still accounts for every input span. Without this, when this is the final
+		// window the loop in SubmitSpans ends without its top-of-loop ctx guard
+		// re-running, and the abandoned spans would silently vanish while the call
+		// reported full success (Sent+Failed+Dropped < input). SubmitSpans'
+		// post-loop ctx guard then turns the canceled export into a non-nil error.
+		if err := ctx.Err(); err != nil {
+			right := batch[mid:]
+			res.Requests = append(res.Requests, RequestResult{
+				Index: len(res.Requests),
+				Count: len(right),
+				Err:   fmt.Errorf("llmobs/export: batch not sent, export canceled: %w", err),
+			})
 			return
 		}
 		c.sendSpanBatch(ctx, batch[mid:], res)
