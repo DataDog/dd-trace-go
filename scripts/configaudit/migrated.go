@@ -10,34 +10,12 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
 
-// providerGetterPrefixes are the method names on *provider.Provider that read
-// a DD_* config value. Keep in sync with internal/config/provider/provider.go.
-var providerGetterPrefixes = []string{
-	"GetString", "GetStringWithValidator", "GetStringWithOrigin",
-	"GetBool", "GetBoolWithOrigin",
-	"GetInt", "GetIntWithValidator",
-	"GetFloat", "GetFloatWithValidator", "GetFloatWithValidatorOrigin",
-	"GetDuration",
-	"GetMap",
-}
-
-func isProviderGetter(name string) bool {
-	for _, p := range providerGetterPrefixes {
-		if name == p {
-			return true
-		}
-	}
-	return false
-}
-
-// loadMigrated walks the loadConfig function inside the package at pkgDir and
-// returns the set of DD_* keys passed as the first argument to any provider
-// getter call.
+// loadMigrated validates the raw definitions and consumer bindings declared in
+// pkgDir and returns the set of raw keys with at least one valid binding.
 func loadMigrated(pkgDir string) (map[string]struct{}, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
@@ -55,47 +33,15 @@ func loadMigrated(pkgDir string) (map[string]struct{}, error) {
 	if errs := packageErrors(pkgs); len(errs) > 0 {
 		return nil, fmt.Errorf("type errors in %s: %v", pkgDir, errs)
 	}
-
-	out := make(map[string]struct{})
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			ast.Inspect(file, func(n ast.Node) bool {
-				fn, ok := n.(*ast.FuncDecl)
-				if !ok || fn.Name.Name != "loadConfig" {
-					return true
-				}
-				ast.Inspect(fn.Body, func(inner ast.Node) bool {
-					call, ok := inner.(*ast.CallExpr)
-					if !ok {
-						return true
-					}
-					if len(call.Args) == 0 {
-						return true
-					}
-					// Match provider getters (p.GetString, p.GetBool, ...) by
-					// selector name, and additionally pick up any call whose
-					// first argument resolves to a DD_*-prefixed string
-					// constant (e.g. env.Get("DD_API_KEY"),
-					// env.Lookup("DD_TRACE_SOURCE_HOSTNAME")). A config is
-					// considered migrated if it is read inside loadConfig.
-					providerCall := false
-					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && isProviderGetter(sel.Sel.Name) {
-						providerCall = true
-					}
-					key, resolved := resolveStringArg(pkg.TypesInfo, call.Args[0])
-					if !resolved {
-						return true
-					}
-					if providerCall || strings.HasPrefix(key, "DD_") {
-						out[key] = struct{}{}
-					}
-					return true
-				})
-				return false
-			})
-		}
+	registry, err := loadRegistry(pkgs)
+	if err != nil {
+		return nil, fmt.Errorf("invalid configuration registry in %s: %w", pkgDir, err)
 	}
-	return out, nil
+	migrated := make(map[string]struct{}, len(registry.rawKeys))
+	for key := range registry.rawKeys {
+		migrated[key] = struct{}{}
+	}
+	return migrated, nil
 }
 
 // resolveStringArg returns the string value of expr if it is a constant string
@@ -109,6 +55,16 @@ func resolveStringArg(info *types.Info, expr ast.Expr) (string, bool) {
 		return "", false
 	}
 	return constant.StringVal(tv.Value), true
+}
+
+// resolveUintArg returns the unsigned integer value of expr if it is a
+// constant integer (literal, named constant, or constant conversion).
+func resolveUintArg(info *types.Info, expr ast.Expr) (uint64, bool) {
+	tv, ok := info.Types[expr]
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.Int {
+		return 0, false
+	}
+	return constant.Uint64Val(tv.Value)
 }
 
 func packageErrors(pkgs []*packages.Package) []error {

@@ -523,7 +523,34 @@ func TestDiscoverModules(t *testing.T) {
 
 func TestCollectAuditReportsNonallowlistedSyntaxReadInExcludedDirectory(t *testing.T) {
 	dir := writeSyntaxFixture(t, map[string]string{
-		"internal/config/config.go": "package config\n",
+		"internal/config/config.go": `package config
+
+type SourcePolicy uint8
+const SourceStable SourcePolicy = 1
+type TelemetryPolicy uint8
+const TelemetryReport TelemetryPolicy = 0
+type SamplingBoundary uint8
+const SampleTracerConstruction SamplingBoundary = 1
+type RawDefinition struct {
+	Key string
+	Sources SourcePolicy
+	Telemetry TelemetryPolicy
+}
+type ConsumerBinding struct {
+	ID string
+	Consumer string
+	Keys []string
+	Sampling SamplingBoundary
+}
+
+func registerRaw(RawDefinition) {}
+func registerBinding(ConsumerBinding) {}
+
+func init() {
+	registerRaw(RawDefinition{Key: "DD_REGISTERED", Sources: SourceStable, Telemetry: TelemetryReport})
+	registerBinding(ConsumerBinding{ID: "test.registered", Consumer: "test", Keys: []string{"DD_REGISTERED"}, Sampling: SampleTracerConstruction})
+}
+`,
 		"internal/env/rogue.go": `package env
 
 import "os"
