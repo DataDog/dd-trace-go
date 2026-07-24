@@ -13,11 +13,13 @@ linters:
     - gocritic
     - forbidigo
     - govet
+    - makezero
     - modernize
+    - perfsprint
+    - prealloc
     - revive
     # - errorlint # TODO: Enable this once we've fixed all the errorlint issues.
     # - loggercheck # TODO: Enable this once we've migrated to structured logging.
-    # - perfsprint # TODO: Enable this once we've fixed all the perfsprint issues.
     # - unused # TODO: Enable this once we've fixed all the unused issues.
   exclusions:
     generated: lax

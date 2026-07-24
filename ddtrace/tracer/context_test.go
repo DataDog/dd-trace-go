@@ -135,7 +135,7 @@ func TestStartSpanFromContextRace(t *testing.T) {
 	const numContexts = 100
 	options := make([]StartSpanOption, 0, 3)
 	outputValues := make(chan string, numContexts)
-	var expectedTraceIDs []string
+	expectedTraceIDs := make([]string, 0, numContexts)
 	for range numContexts {
 		parent, childCtx := StartSpanFromContext(context.Background(), "parent")
 		expectedTraceIDs = append(expectedTraceIDs, parent.Context().TraceID())
@@ -148,7 +148,7 @@ func TestStartSpanFromContextRace(t *testing.T) {
 	}
 
 	// collect the outputs
-	var outputs []string
+	outputs := make([]string, 0, numContexts)
 	for range numContexts {
 		outputs = append(outputs, <-outputValues)
 	}

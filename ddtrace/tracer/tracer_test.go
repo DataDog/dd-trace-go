@@ -602,7 +602,7 @@ func TestSamplingDecision(t *testing.T) {
 			nowTime = func() time.Time { return time.Now() }
 		}()
 		defer stop()
-		var spans []*Span
+		spans := make([]*Span, 0, 1000)
 		for i := range 100 {
 			s := tracer.StartSpan(fmt.Sprintf("name_%d", i))
 			for j := range 9 {
@@ -640,7 +640,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		defer stop()
-		spans := []*Span{}
+		spans := make([]*Span, 0, 1000)
 		for range 100 {
 			s := tracer.StartSpan("name_1")
 			for range 9 {
@@ -674,7 +674,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		defer stop()
-		spans := []*Span{}
+		spans := make([]*Span, 0, 1000)
 		for range 100 {
 			s := tracer.StartSpan("name_1")
 			for range 9 {
@@ -1123,7 +1123,7 @@ func TestTracerInjectConcurrency(t *testing.T) {
 		i := i
 		go func(val int) {
 			defer wg.Done()
-			span.SetBaggageItem("val", fmt.Sprintf("%d", val))
+			span.SetBaggageItem("val", strconv.Itoa(val))
 
 			traceContext := map[string]string{}
 			_ = tracer.Inject(span.Context(), TextMapCarrier(traceContext))
@@ -2142,7 +2142,7 @@ func TestTracerReportsHostname(t *testing.T) {
 	testReportHostnameEnabled := func(t *testing.T, name string, withComputeStats bool) {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
-			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			t.Setenv("DD_TRACE_COMPUTE_STATS", strconv.FormatBool(withComputeStats))
 
 			tracer, _, _, stop, err := startTestTracer(t)
 			assert.Nil(t, err)
@@ -2169,7 +2169,7 @@ func TestTracerReportsHostname(t *testing.T) {
 
 	testReportHostnameDisabled := func(t *testing.T, name string, withComputeStats bool) {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			t.Setenv("DD_TRACE_COMPUTE_STATS", strconv.FormatBool(withComputeStats))
 			tracer, _, _, stop, err := startTestTracer(t)
 			assert.Nil(t, err)
 			defer stop()

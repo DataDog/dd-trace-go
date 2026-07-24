@@ -77,9 +77,9 @@ jobs:
       - name: Run govulncheck (OpenVEX)
         if: always()
         run: |-
-          govulncheck -format openvex \
-            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
-            > govulncheck-raw.vex || true
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption_to_file govulncheck-raw.vex govulncheck -format openvex \
+            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... || true
       - name: Patch OpenVEX author and product
         if: always() && hashFiles('govulncheck-raw.vex') != ''
         run: |-
@@ -125,7 +125,8 @@ jobs:
           persist-workspace-changes: 'true'
           run: |-
             mkdir -p "${GITHUB_WORKSPACE}/bin"
-            GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
+            source ./.github/workflows/apps/go-retry.sh
+            retry_on_corruption env GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
             ./.github/workflows/apps/govulncheck-contribs-sarif.sh govulncheck-contribs.sarif
       - name: Restore workspace after sandbox
@@ -154,7 +155,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: 1.26.5
+          go-version: stable
           cache-dependency-path: '**/go.sum'
       - name: Run govulncheck (sandboxed)
         # geomys/sandboxed-step uses gVisor to confine execution, preventing
@@ -163,7 +164,8 @@ jobs:
         with:
           run: |
             mkdir -p "${GITHUB_WORKSPACE}/bin"
-            GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
+            source ./.github/workflows/apps/go-retry.sh
+            retry_on_corruption env GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
-            govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
+            retry_on_corruption govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
             ./.github/workflows/apps/govulncheck-contribs-v2.sh

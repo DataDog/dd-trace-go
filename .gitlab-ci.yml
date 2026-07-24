@@ -49,3 +49,11 @@ include:
   - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
     file: '.gitlab/ci-go-go-prof-app-parallel.yml'
     ref: 'main'
+
+# Pin the benchmarking-platform image for the go-go-prof-app-parallel jobs
+# included from DataDog/apm-reliability/apm-sdks-benchmarks above.
+linux-go-go-prof-app-parallel:
+  image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
+
+go-go-prof-app-parallel-check-slo-breaches:
+  image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7

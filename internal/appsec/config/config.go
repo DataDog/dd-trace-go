@@ -19,6 +19,7 @@ import (
 
 func init() {
 	registerSCAAppConfigTelemetry()
+	registerAgenticOnboardingTelemetry()
 }
 
 // Register the global app telemetry configuration related to the Software Composition Analysis (SCA) product.
@@ -32,12 +33,21 @@ func registerSCAAppConfigTelemetry() {
 	}
 }
 
+// registerAgenticOnboardingTelemetry reports [EnvAgenticOnboarding] verbatim in configuration
+// telemetry (RFC-1113), always emitted: unset reports an empty value with origin=default.
+func registerAgenticOnboardingTelemetry() {
+	stableconfig.String(EnvAgenticOnboarding, "")
+}
+
 // The following environment variables dictate the enablement of different the ASM products.
 const (
 	// EnvEnabled controls ASM Threats Protection's enablement.
 	EnvEnabled = "DD_APPSEC_ENABLED"
 	// EnvSCAEnabled controls ASM Software Composition Analysis (SCA)'s enablement.
 	EnvSCAEnabled = "DD_APPSEC_SCA_ENABLED"
+	// EnvAgenticOnboarding is set by Datadog's agentic onboarding solution when it configures App &
+	// API Protection. It carries no behavior; its value is reported in configuration telemetry only.
+	EnvAgenticOnboarding = "DD_APPSEC_AGENTIC_ONBOARDING"
 )
 
 // StartOption is used to customize the AppSec configuration when invoked with appsec.Start()

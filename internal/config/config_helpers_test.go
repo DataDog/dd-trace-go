@@ -52,6 +52,12 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 		got := resolveOTLPTraceURL(unixAgent, "")
 		assert.Equal(t, defaultLocalhost, got)
 	})
+
+	t.Run("IPv6 agent host is bracketed in default URL", func(t *testing.T) {
+		ipv6Agent := &url.URL{Scheme: "http", Host: "[::1]:8126"}
+		got := resolveOTLPTraceURL(ipv6Agent, "")
+		assert.Equal(t, "http://[::1]:4318/v1/traces", got)
+	})
 }
 
 func TestResolveOTLPEndpoint(t *testing.T) {
