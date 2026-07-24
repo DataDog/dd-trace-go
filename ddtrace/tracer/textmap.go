@@ -1372,10 +1372,11 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	})
 	// Emit the OpenTelemetry `ot=` member as the second list-member (right
 	// after `dd=`), keeping both DD-managed members at the front so a crowded
-	// tracestate can't truncate them. th is only ever emitted alongside rv.
-	if rv, th, rvSet, thSet := ctx.trace.otelTracestate(); rvSet {
+	// tracestate can't truncate them. An inherited value may be rv-only or
+	// th-only; a DD-generated one is always the rv+th pair.
+	if rv, th, rvSet, thSet := ctx.trace.otelTracestate(); rvSet || thSet {
 		b.WriteString(",ot=")
-		appendOtelValue(&b, rv, th, thSet)
+		appendOtelValue(&b, rv, th, rvSet, thSet)
 		listLength++
 	}
 	// the old state is split by vendors, must be concatenated with a `,`

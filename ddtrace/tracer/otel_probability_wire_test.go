@@ -102,6 +102,48 @@ func TestOtelInheritedForwardedUnchanged(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(ts, "ot=rv:"))
 }
 
+// An inbound th-only ot= (a valid OTel default-sampling decision) is forwarded
+// unchanged; DD must not fabricate a matching rv.
+func TestOtelThOnlyForwarded(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tr, err := newTracer()
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-2222222222222222-01",
+		tracestateHeader:  "ot=th:e6666666666668",
+	})
+	sctx, err := tr.Extract(headers)
+	assert.NoError(t, err)
+
+	ts := injectTracestate(t, sctx)
+	assert.Contains(t, ts, "ot=th:e6666666666668")
+	assert.NotContains(t, ts, "rv:")
+}
+
+// A force-keep erases th but forwards an inherited rv.
+func TestOtelForceKeepErasesThKeepsInheritedRv(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tr, err := newTracer()
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-2222222222222222-00",
+		tracestateHeader:  "ot=rv:1234567890abcd;th:e6666666666668",
+	})
+	sctx, err := tr.Extract(headers)
+	assert.NoError(t, err)
+
+	// Simulate a force-keep (e.g. AppSec / manual) on the inherited trace.
+	sctx.trace.forceSetSamplingPriority(ext.PriorityUserKeep, samplernames.AppSec)
+
+	ts := injectTracestate(t, sctx)
+	assert.Contains(t, ts, "ot=rv:1234567890abcd")
+	assert.NotContains(t, ts, "th:")
+}
+
 // A malformed ot= is treated as absent: no inherited values, trace not rejected,
 // dd= and other vendors preserved.
 func TestOtelMalformedTreatedAsAbsent(t *testing.T) {

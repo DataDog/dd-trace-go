@@ -16,7 +16,7 @@ import (
 //   - rv: explicit randomness, 14 hex digits.
 //   - th: rejection threshold, hex with trailing zero nibbles trimmed.
 //
-// A hop keeps the trace when rv >= th. DD's existing Knuth-hash decision
+// OTel keeps the trace when rv >= th opposed to DD's decision
 // (h = traceIDLower * knuthFactor mod 2^64; keep if h <= rate*MaxUint64) is
 // losslessly re-expressed as an (rv, th) pair, so a DD probability decision can
 // be emitted in an OTel-compliant form without changing the decision.
@@ -73,25 +73,31 @@ func parseOtelTracestate(value string) (rv uint64, rvOK bool, th uint64, thOK bo
 }
 
 // appendOtelValue writes the value of the `ot=` list-member (without the "ot="
-// prefix) to b. It emits rv as 14 hex digits and, when thSet, th with trailing
-// zero nibbles trimmed. Callers must only invoke this when rv is present, since
-// emitting th without rv is forbidden by the pairing invariant.
-func appendOtelValue(b *strings.Builder, rv uint64, th uint64, thSet bool) {
-	b.WriteString("rv:")
+// prefix) to b: rv as 14 hex digits and/or th with trailing zero nibbles
+// trimmed. Whichever of rv/th is set is emitted (rv first when both are
+// present). The pairing invariant (never emit th without rv) is enforced by
+// callers on the generation path; an inherited value is forwarded exactly as it
+// arrived, which may legitimately be th-only or rv-only.
+func appendOtelValue(b *strings.Builder, rv uint64, th uint64, rvSet bool, thSet bool) {
 	var buf [otelRVHexLen]byte
-	hexEncode14(&buf, rv)
-	b.Write(buf[:])
-	if !thSet {
-		return
+	if rvSet {
+		b.WriteString("rv:")
+		hexEncode14(&buf, rv)
+		b.Write(buf[:])
 	}
-	b.WriteString(";th:")
-	hexEncode14(&buf, th)
-	// Trim trailing zero nibbles; a th of 0 is written as a single "0".
-	end := otelRVHexLen
-	for end > 1 && buf[end-1] == '0' {
-		end--
+	if thSet {
+		if rvSet {
+			b.WriteByte(';')
+		}
+		b.WriteString("th:")
+		hexEncode14(&buf, th)
+		// Trim trailing zero nibbles; a th of 0 is written as a single "0".
+		end := otelRVHexLen
+		for end > 1 && buf[end-1] == '0' {
+			end--
+		}
+		b.Write(buf[:end])
 	}
-	b.Write(buf[:end])
 }
 
 // hexEncode14 writes n as exactly 14 lowercase hex digits (56 bits, big-endian)

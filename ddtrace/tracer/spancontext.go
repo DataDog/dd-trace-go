@@ -831,12 +831,15 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		return false
 	}
 
-	// A manual or AppSec force-keep is not a probability decision, so erase any
-	// locally-derived OTel threshold rather than encode a fabricated rate. An
-	// inherited rv/th (from upstream) is left untouched and still forwarded.
-	if !t.otInherited && (sampler == samplernames.Manual || sampler == samplernames.AppSec) {
-		t.otRVSet = false
+	// A manual or AppSec force-keep is not a probability decision, so erase the
+	// OTel threshold rather than encode a fabricated rate. An inherited rv is
+	// still forwarded (it describes upstream's randomness); a locally-derived rv
+	// has no meaning without its threshold, so it is dropped too.
+	if sampler == samplernames.Manual || sampler == samplernames.AppSec {
 		t.otTHSet = false
+		if !t.otInherited {
+			t.otRVSet = false
+		}
 	}
 
 	old := t.priority.Load() // +checklocksignore

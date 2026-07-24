@@ -48,17 +48,19 @@ func TestDeriveOtelMatchesSampledByRate(t *testing.T) {
 }
 
 func TestFormatOtelValue(t *testing.T) {
-	format := func(rv, th uint64, thSet bool) string {
+	format := func(rv, th uint64, rvSet, thSet bool) string {
 		var b strings.Builder
-		appendOtelValue(&b, rv, th, thSet)
+		appendOtelValue(&b, rv, th, rvSet, thSet)
 		return b.String()
 	}
 	// rv fixed at 14 digits; th trailing zeros trimmed.
-	assert.Equal(t, "rv:ef284ace7a91e1;th:e6666666666668", format(0xef284ace7a91e1, 0xe6666666666668, true))
+	assert.Equal(t, "rv:ef284ace7a91e1;th:e6666666666668", format(0xef284ace7a91e1, 0xe6666666666668, true, true))
 	// th of 0 renders as a single "0".
-	assert.Equal(t, "rv:00000000000001;th:0", format(1, 0, true))
+	assert.Equal(t, "rv:00000000000001;th:0", format(1, 0, true, true))
 	// rv-only (inherited rv, erased th).
-	assert.Equal(t, "rv:0000000000000a", format(0xa, 0, false))
+	assert.Equal(t, "rv:0000000000000a", format(0xa, 0, true, false))
+	// th-only (inherited OTel default-sampling decision).
+	assert.Equal(t, "th:e6666666666668", format(0, 0xe6666666666668, false, true))
 }
 
 func TestParseOtelTracestate(t *testing.T) {
