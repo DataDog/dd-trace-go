@@ -155,6 +155,22 @@ func allowedRead(key string) string {
 	}
 }
 
+func TestDefaultRawReadAllowlistIncludesOnlyTelemetryBootstrapBoundary(t *testing.T) {
+	allow := defaultRawReadAllowlist()
+	location := rawReadLocation{
+		File: "internal/config/bootstrap/telemetry.go",
+		Func: "TelemetryEnabled",
+	}
+	if _, ok := allow[location]; !ok {
+		t.Fatalf("telemetry bootstrap boundary is not allowlisted: %#v", allow)
+	}
+	for candidate := range allow {
+		if strings.HasPrefix(candidate.File, "internal/config/bootstrap/") && candidate != location {
+			t.Fatalf("unexpected broader bootstrap allowlist entry: %#v", candidate)
+		}
+	}
+}
+
 func TestScan_StringLiteralsAreUnquoted(t *testing.T) {
 	dir := writeSyntaxFixture(t, map[string]string{
 		"literal.go": "package fixture\n\nimport \"os\"\n\nfunc readConfig() {\n\t_ = os.Getenv(`DD_RAW_LITERAL`)\n\t_ = os.Getenv(\"DD_\\x45SCAPED_LITERAL\")\n}\n",

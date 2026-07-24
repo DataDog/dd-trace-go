@@ -21,6 +21,9 @@ type (
 	SourcePolicy     = schema.SourcePolicy
 	TelemetryPolicy  = schema.TelemetryPolicy
 	SamplingBoundary = schema.SamplingBoundary
+	ConfigEvent      = schema.ConfigEvent
+	EventKind        = schema.EventKind
+	ReportCadence    = schema.ReportCadence
 )
 
 const (
@@ -38,6 +41,14 @@ const (
 	SampleConstructor        = schema.SampleConstructor
 	SampleFirstUse           = schema.SampleFirstUse
 	SamplePerCall            = schema.SamplePerCall
+
+	EventConfiguration  = schema.EventConfiguration
+	EventOTelEnvHiding  = schema.EventOTelEnvHiding
+	EventOTelEnvInvalid = schema.EventOTelEnvInvalid
+
+	ReportNever             = schema.ReportNever
+	ReportOncePerGeneration = schema.ReportOncePerGeneration
+	ReportOnChange          = schema.ReportOnChange
 )
 
 type registry struct {

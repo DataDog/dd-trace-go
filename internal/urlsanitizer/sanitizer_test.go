@@ -16,12 +16,12 @@ func TestSanitizeURL(t *testing.T) {
 		input    string
 		expected string
 	}{
-		// URLs with credentials - use Go's built-in redaction (preserves username, redacts password)
-		{"https://user:password@example.com/path", "https://user:xxxxx@example.com/path"},
-		{"http://admin:secret@db.example.com:5432/mydb", "http://admin:xxxxx@db.example.com:5432/mydb"},
+		// URLs with credentials - remove all userinfo.
+		{"https://user:password@example.com/path", "https://example.com/path"},
+		{"http://admin:secret@db.example.com:5432/mydb", "http://db.example.com:5432/mydb"},
 
-		// URL with just username (no password) - preserved as-is
-		{"http://token@example.com", "http://token@example.com"},
+		// URL with just username (no password) is also sensitive.
+		{"http://token@example.com", "http://example.com"},
 
 		// URLs without credentials - returned as-is
 		{"https://example.com/path", "https://example.com/path"},
@@ -38,6 +38,24 @@ func TestSanitizeURL(t *testing.T) {
 	for _, test := range tests {
 		result := SanitizeURL(test.input)
 		assert.Equal(t, test.expected, result, "Failed for input: %s", test.input)
+	}
+}
+
+func TestSanitizeURLRemovesSCPStyleCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "token", raw: "token@github.com:org/repo.git", want: "github.com:org/repo.git"},
+		{name: "username and password", raw: "username:password@github.com:org/repo.git", want: "github.com:org/repo.git"},
+		{name: "ordinary host path", raw: "github.com:org/repo.git", want: "github.com:org/repo.git"},
+		{name: "local relative path", raw: "org/repo.git", want: "org/repo.git"},
+		{name: "local colon path", raw: "./local:path/repo.git", want: "./local:path/repo.git"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, SanitizeURL(tc.raw))
+		})
 	}
 }
 

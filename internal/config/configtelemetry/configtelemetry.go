@@ -30,36 +30,74 @@ func init() {
 }
 
 // nextSeqID returns a new sequence ID, strictly greater than defaultSeqID.
-// It must only be called through Report or ReportWithID.
+// It must only be called through Prepare or PrepareWithID.
 func nextSeqID() uint64 {
 	return seqID.Add(1)
 }
 
-func report(name string, value any, origin telemetry.Origin, id string, seqID uint64) {
-	if env.IsSensitive(name) {
+// Prepared is a configuration report whose sequence ID was reserved when the
+// corresponding state transition was accepted. Submit may safely run later,
+// after the caller releases its state lock.
+type Prepared struct {
+	name   string
+	origin telemetry.Origin
+	id     string
+	seqID  uint64
+	send   bool
+}
+
+// Submit sends the prepared report with value.
+func (p Prepared) Submit(value any) {
+	if !p.send {
 		return
 	}
 	telemetry.RegisterAppConfigs(telemetry.Configuration{
-		Name:   name,
+		Name:   p.name,
 		Value:  value,
-		Origin: origin,
-		ID:     id,
-		SeqID:  seqID,
+		Origin: p.origin,
+		ID:     p.id,
+		SeqID:  p.seqID,
 	})
+}
+
+func prepare(name string, origin telemetry.Origin, id string, sequence uint64) Prepared {
+	return Prepared{
+		name:   name,
+		origin: origin,
+		id:     id,
+		seqID:  sequence,
+		send:   !env.IsSensitive(name),
+	}
+}
+
+// Prepare reserves a report for a non-default configuration source.
+func Prepare(name string, origin telemetry.Origin) Prepared {
+	return prepare(name, origin, telemetry.EmptyID, nextSeqID())
+}
+
+// PrepareWithID reserves a non-default report carrying a source config ID.
+func PrepareWithID(name string, origin telemetry.Origin, id string) Prepared {
+	return prepare(name, origin, id, nextSeqID())
+}
+
+// PrepareDefault prepares a hard-coded default report without advancing the
+// shared non-default sequence counter.
+func PrepareDefault(name string) Prepared {
+	return prepare(name, telemetry.OriginDefault, telemetry.EmptyID, defaultSeqID)
 }
 
 // Report reports a configuration value from a non-default configuration source.
 func Report(name string, value any, origin telemetry.Origin) {
-	report(name, value, origin, telemetry.EmptyID, nextSeqID())
+	Prepare(name, origin).Submit(value)
 }
 
 // ReportWithID reports a non-default configuration value, including the config source's ID.
 // Use this for sources that carry a config_id (e.g. declarative config).
 func ReportWithID(name string, value any, origin telemetry.Origin, id string) {
-	report(name, value, origin, id, nextSeqID())
+	PrepareWithID(name, origin, id).Submit(value)
 }
 
 // ReportDefault reports the value for a configuration key from the 'default' configuration source.
 func ReportDefault(name string, value any) {
-	report(name, value, telemetry.OriginDefault, telemetry.EmptyID, defaultSeqID)
+	PrepareDefault(name).Submit(value)
 }

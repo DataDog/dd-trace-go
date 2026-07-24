@@ -28,6 +28,19 @@ func newTestProvider(sources ...configSource) *Provider {
 	return &Provider{sources: sources}
 }
 
+func TestNewSourceOrderMatchesSchemaOrdinals(t *testing.T) {
+	p := New()
+
+	require.Len(t, p.sources, int(schema.SourceOrdinalDefault))
+	assert.Equal(t, telemetry.OriginManagedStableConfig, p.sources[schema.SourceOrdinalManagedStable].origin())
+	_, ok := p.sources[schema.SourceOrdinalEnvironment].(*envConfigSource)
+	require.True(t, ok)
+	_, ok = p.sources[schema.SourceOrdinalOTelEnvironment].(*otelEnvConfigSource)
+	require.True(t, ok)
+	assert.Equal(t, telemetry.OriginLocalStableConfig, p.sources[schema.SourceOrdinalLocalStable].origin())
+	assert.Equal(t, schema.SourceOrdinalDefault, schema.SourceOrdinalMax)
+}
+
 type testConfigSource struct {
 	entries     map[string]string
 	originValue telemetry.Origin
@@ -420,14 +433,31 @@ func TestResolveWithBindingDecoratesLocalEvents(t *testing.T) {
 	require.Equal(t, ConfigEvent{
 		Kind: EventConfiguration, BindingID: "test.value", Name: "DD_VALUE", Value: "7",
 		Present: true, Valid: true, Origin: telemetry.OriginManagedStableConfig, ConfigID: "config-id",
-		Policy: schema.TelemetryReport, Cadence: ReportOncePerGeneration, ReportValue: true,
+		SourceOrdinal: 0, Policy: schema.TelemetryReport, Cadence: ReportOncePerGeneration, ReportValue: true,
 	}, events[0])
 	require.Equal(t, ConfigEvent{
 		Kind: EventConfiguration, BindingID: "test.value", Name: "DD_VALUE", Value: 3,
 		Present: true, Valid: true, Origin: telemetry.OriginDefault,
-		Policy: schema.TelemetryReport, Cadence: ReportOncePerGeneration, ReportValue: true,
+		SourceOrdinal: 1, Policy: schema.TelemetryReport, Cadence: ReportOncePerGeneration, ReportValue: true,
 	}, events[1])
 	telemetryClient.AssertNotCalled(t, "RegisterAppConfigs", mock.Anything)
+}
+
+func TestResolveWithBindingAssignsDistinctSourceOrdinals(t *testing.T) {
+	p := &Provider{sources: []LookupSource{
+		&resolveTestSource{raw: "dd", present: true, originValue: telemetry.OriginEnvVar},
+		&resolveTestSource{raw: "otel", present: true, originValue: telemetry.OriginEnvVar},
+	}}
+	binding := schema.ConsumerBinding{
+		ID: "tracer.DD_SERVICE", Consumer: "tracer",
+		Keys: []string{"DD_SERVICE"}, Sampling: schema.SampleTracerConstruction,
+	}
+
+	_, events := ResolveWithBinding(p, testDefinition("DD_SERVICE", schema.SourceStable), binding, "default", parseTestString)
+
+	require.Len(t, events, 3)
+	require.NotEqual(t, events[0].SourceOrdinal, events[1].SourceOrdinal)
+	require.NotEqual(t, events[1].SourceOrdinal, events[2].SourceOrdinal)
 }
 
 func findEvent(t *testing.T, events []ConfigEvent, kind EventKind) ConfigEvent {

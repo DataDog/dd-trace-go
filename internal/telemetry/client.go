@@ -13,6 +13,7 @@ import (
 
 	"github.com/puzpuzpuz/xsync/v4"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config/bootstrap"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
@@ -230,7 +231,7 @@ func (c *client) Flush() {
 		} else {
 			log.Warn("panic while flushing telemetry data, stopping telemetry!")
 		}
-		telemetryClientEnabled = false
+		bootstrap.Disable()
 		if gc, ok := GlobalClient().(*client); ok && gc == c {
 			SwapClient(nil)
 		}

@@ -84,7 +84,8 @@ func resolve[T any](
 
 		raw, present, applicable, sourceErr, sourceEvents := lookup(source, def.Key)
 		providerEvents = append(providerEvents, cloneEvents(sourceEvents)...)
-		events = append(events, decorateProviderEvents(sourceEvents, binding, def)...)
+		sourceOrdinal := uint16(i)
+		events = append(events, decorateProviderEvents(sourceEvents, binding, def, sourceOrdinal)...)
 		attempt := schema.SourceAttempt{
 			Raw:      raw,
 			Present:  present,
@@ -110,22 +111,23 @@ func resolve[T any](
 		}
 		result.Attempts = append(result.Attempts, attempt)
 		if binding != nil {
-			events = append(events, configEvent(*binding, def, attempt, raw, reportValue))
+			events = append(events, configEvent(*binding, def, attempt, raw, reportValue, sourceOrdinal))
 		}
 	}
 
 	if binding != nil {
 		events = append(events, ConfigEvent{
-			Kind:        EventConfiguration,
-			BindingID:   binding.ID,
-			Name:        def.Key,
-			Value:       snapshotValue(defValue),
-			Present:     true,
-			Valid:       true,
-			Origin:      telemetry.OriginDefault,
-			Policy:      def.Telemetry,
-			Cadence:     cadenceFor(*binding),
-			ReportValue: true,
+			Kind:          EventConfiguration,
+			BindingID:     binding.ID,
+			Name:          def.Key,
+			Value:         snapshotValue(defValue),
+			Present:       true,
+			Valid:         true,
+			Origin:        telemetry.OriginDefault,
+			SourceOrdinal: uint16(len(p.sources)),
+			Policy:        def.Telemetry,
+			Cadence:       cadenceFor(*binding),
+			ReportValue:   true,
 		})
 	}
 	result.Events = cloneEvents(providerEvents)
@@ -152,13 +154,14 @@ func sourceConfigID(source LookupSource) string {
 	return telemetry.EmptyID
 }
 
-func decorateProviderEvents(events []ConfigEvent, binding *schema.ConsumerBinding, def schema.RawDefinition) []ConfigEvent {
+func decorateProviderEvents(events []ConfigEvent, binding *schema.ConsumerBinding, def schema.RawDefinition, sourceOrdinal uint16) []ConfigEvent {
 	decorated := cloneEvents(events)
 	if binding == nil {
 		return decorated
 	}
 	for i := range decorated {
 		decorated[i].BindingID = binding.ID
+		decorated[i].SourceOrdinal = sourceOrdinal
 		decorated[i].Policy = def.Telemetry
 		decorated[i].Cadence = cadenceFor(*binding)
 	}
@@ -224,20 +227,22 @@ func configEvent(
 	attempt schema.SourceAttempt,
 	value any,
 	reportValue bool,
+	sourceOrdinal uint16,
 ) ConfigEvent {
 	return ConfigEvent{
-		Kind:        EventConfiguration,
-		BindingID:   binding.ID,
-		Name:        def.Key,
-		Value:       value,
-		Present:     attempt.Present,
-		Valid:       attempt.Valid,
-		Err:         attempt.Err,
-		Origin:      attempt.Origin,
-		ConfigID:    attempt.ConfigID,
-		Policy:      def.Telemetry,
-		Cadence:     cadenceFor(binding),
-		ReportValue: reportValue,
+		Kind:          EventConfiguration,
+		BindingID:     binding.ID,
+		Name:          def.Key,
+		Value:         value,
+		Present:       attempt.Present,
+		Valid:         attempt.Valid,
+		Err:           attempt.Err,
+		Origin:        attempt.Origin,
+		ConfigID:      attempt.ConfigID,
+		SourceOrdinal: sourceOrdinal,
+		Policy:        def.Telemetry,
+		Cadence:       cadenceFor(binding),
+		ReportValue:   reportValue,
 	}
 }
 

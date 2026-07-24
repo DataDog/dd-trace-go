@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -137,10 +138,25 @@ func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 	}
 	newVal := dc.current
 	apply := dc.apply
+	cfgName := dc.cfgName
+	var (
+		prepared    configtelemetry.Prepared
+		reportedVal any
+		reportErr   error
+	)
 	if changed {
-		configtelemetry.Report(dc.cfgName, newVal, origin)
+		prepared = configtelemetry.Prepare(cfgName, origin)
+		reportedVal, reportErr = prepareConfigTelemetryValue(newVal)
 	}
 	dc.mu.Unlock()
+	if changed {
+		if reportErr != nil {
+			log.Warn("config: unable to prepare %s telemetry: %v", cfgName, reportErr)
+		} else {
+			reportedVal = telemetry.SanitizeConfigValue(reportedVal)
+			prepared.Submit(reportedVal)
+		}
+	}
 	if changed && apply != nil {
 		apply(newVal)
 	}

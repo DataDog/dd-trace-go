@@ -28,11 +28,12 @@ const unresolvedAliasIdentity = "unresolved raw-read alias"
 
 func defaultRawReadAllowlist() rawReadAllowlist {
 	return rawReadAllowlist{
-		{File: "internal/env/env.go", Func: "Get"}:                       {},
-		{File: "internal/env/env.go", Func: "Lookup"}:                    {},
-		{File: "instrumentation/env/env.go", Func: "Get"}:                {},
-		{File: "instrumentation/env/env.go", Func: "Lookup"}:             {},
-		{File: "instrumentation/options/options.go", Func: "GetBoolEnv"}: {},
+		{File: "internal/env/env.go", Func: "Get"}:                                 {},
+		{File: "internal/env/env.go", Func: "Lookup"}:                              {},
+		{File: "internal/config/bootstrap/telemetry.go", Func: "TelemetryEnabled"}: {},
+		{File: "instrumentation/env/env.go", Func: "Get"}:                          {},
+		{File: "instrumentation/env/env.go", Func: "Lookup"}:                       {},
+		{File: "instrumentation/options/options.go", Func: "GetBoolEnv"}:           {},
 	}
 }
 

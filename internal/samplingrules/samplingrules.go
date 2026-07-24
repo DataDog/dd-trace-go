@@ -489,6 +489,27 @@ func (sr SamplingRule) String() string {
 	return string(s)
 }
 
+// TelemetryString returns the exact bracket-and-space representation produced
+// when configuration telemetry formats a []SamplingRule. It eagerly marshals
+// every rule into an immutable string and returns errors instead of logging, so
+// callers can invoke it under a state lock and report failures after unlock.
+func TelemetryString(rules []SamplingRule) (string, error) {
+	var out strings.Builder
+	out.WriteByte('[')
+	for i, rule := range rules {
+		if i > 0 {
+			out.WriteByte(' ')
+		}
+		encoded, err := rule.MarshalJSON()
+		if err != nil {
+			return "", err
+		}
+		out.Write(encoded)
+	}
+	out.WriteByte(']')
+	return out.String(), nil
+}
+
 // RateLimiter is a token-bucket rate limiter that also tracks the effective
 // allowance rate over the previous and current second.
 type RateLimiter struct {

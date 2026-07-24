@@ -45,6 +45,10 @@ type configuration struct {
 	// pending tracks which keys in config have been added or updated since the last
 	// Payload() call. Cleared after each flush so only deltas are reported.
 	pending map[configKey]struct{}
+	// explicitSeq tracks ordering only for entries that arrived with an explicit
+	// non-zero sequence. Legacy fallback IDs assigned by normalize never enter
+	// this ordering domain.
+	explicitSeq map[configKey]uint64
 	// fallbackSeqID is used only for legacy configs that don't already have a seqID.
 	// New code should report configs with seqIDs via config/configProvider.
 	fallbackSeqID uint64
@@ -76,11 +80,20 @@ func (c *configuration) Add(kv Configuration) {
 	if c.config == nil {
 		c.config = make(map[configKey]transport.ConfKeyValue)
 		c.pending = make(map[configKey]struct{})
+		c.explicitSeq = make(map[configKey]uint64)
 	}
 
 	ID := idOrEmpty(kv.ID)
 
 	key := configKey{name: kv.Name, origin: string(kv.Origin)}
+	if kv.SeqID == 0 {
+		delete(c.explicitSeq, key)
+	} else {
+		if latest, ok := c.explicitSeq[key]; ok && kv.SeqID < latest {
+			return
+		}
+		c.explicitSeq[key] = kv.SeqID
+	}
 	c.config[key] = transport.ConfKeyValue{
 		Name:   kv.Name,
 		Value:  kv.Value,

@@ -12,6 +12,10 @@ Handles application security code. This is commonly refer to as "ASM", "Appsec",
 
 Handles and controls global configuration values. The values on the config are determined by programmatic APIs, managed declarative configs, Datadog environment variables, Otel environment variables, and local declarative configs, in descending priority order. The functionality for those config providers are in the [provider](./config/provider/) directory. Defaults are defined as a fallback when no source has been configured for the field. 
 
+The [bootstrap](./config/bootstrap/) package owns configuration reads that must
+happen before the provider and telemetry reporter are available. These reads
+are cached and intentionally do not report configuration telemetry.
+
 This package is currently under development to migrate to a config with global access (see [/config/config.go](./config/config.go))
 
 Each configuration value comes with a `ConfigName()` and a sometimes a `SetConfigName()` function when an external package needs to write to a config. It also defines potential sources for config changes. 

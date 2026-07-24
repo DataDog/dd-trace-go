@@ -35,21 +35,36 @@ const (
 	ReportOnChange
 )
 
+// Stable source ordinals identify the fixed Provider source order. Keep these
+// constants in the dependency-leaf schema package so resolution and reporting
+// share one bound.
+const (
+	SourceOrdinalManagedStable uint16 = iota
+	SourceOrdinalEnvironment
+	SourceOrdinalOTelEnvironment
+	SourceOrdinalLocalStable
+	SourceOrdinalDefault
+	SourceOrdinalMax = SourceOrdinalDefault
+)
+
 // ConfigEvent is a local description of configuration state or a provider
 // diagnostic. Resolution never submits it to configuration telemetry.
 type ConfigEvent struct {
-	Kind        EventKind
-	BindingID   string
-	Name        string
-	Value       any
-	Present     bool
-	Valid       bool
-	Err         error
-	Origin      Origin
-	ConfigID    string
-	Policy      TelemetryPolicy
-	Cadence     ReportCadence
-	ReportValue bool
+	Kind      EventKind
+	BindingID string
+	Name      string
+	Value     any
+	Present   bool
+	Valid     bool
+	Err       error
+	Origin    Origin
+	ConfigID  string
+	// SourceOrdinal identifies one stable source attempt within a binding
+	// resolution. It distinguishes sources that share an origin and config ID.
+	SourceOrdinal uint16
+	Policy        TelemetryPolicy
+	Cadence       ReportCadence
+	ReportValue   bool
 	// CompatibilityReport preserves whether transitional getters emitted a
 	// provider diagnostic before the bounded reporter existed.
 	CompatibilityReport bool

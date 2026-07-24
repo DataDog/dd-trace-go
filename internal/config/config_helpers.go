@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
@@ -375,12 +374,8 @@ func samplingRulesFromSource(p *provider.Provider, key string, spanType sampling
 // samplingRulesBlockedByPrecedence reports whether a WithSamplingRules call (origin
 // OriginCode) should be dropped because current already came from a non-default,
 // non-code source — env/declarative config takes precedence per ddtrace/tracer/doc.go.
-func samplingRulesBlockedByPrecedence(field string, current, incoming telemetry.Origin) bool {
-	if incoming != telemetry.OriginCode || current == telemetry.OriginDefault || current == telemetry.OriginCode {
-		return false
-	}
-	log.Warn("config: %s is already set via %s; ignoring WithSamplingRules", field, current)
-	return true
+func samplingRulesBlockedByPrecedence(current, incoming telemetry.Origin) bool {
+	return incoming == telemetry.OriginCode && current != telemetry.OriginDefault && current != telemetry.OriginCode
 }
 
 // parseGlobalTags parses a DD_TAGS-style string into a tag map, dropping
@@ -404,7 +399,7 @@ func parseGlobalTags(v string) map[string]any {
 
 // reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
 func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
-	configtelemetry.Report("global_tag_"+key, value, origin)
+	prepareConfigReport("global_tag_"+key, value, origin).submit()
 }
 
 // resolveOTLPEndpoint returns the OTEL_EXPORTER_OTLP_ENDPOINT base URL, defaulting to http://<agent-host>:4318.

@@ -72,6 +72,16 @@ func reportOTelMetric(metric, ddKey, otelKey string) {
 	telemetry.Count(telemetry.NamespaceTracers, metric, telemetryTags).Submit(1)
 }
 
+// IsKnownOTelMapping reports whether otelKey is the registered OTel
+// compatibility source for ddKey.
+func IsKnownOTelMapping(ddKey, otelKey string) bool {
+	if !strings.HasPrefix(otelKey, "OTEL_") {
+		return false
+	}
+	entry := otelConfigs[normalizeKey(ddKey)]
+	return entry != nil && entry.ot == otelKey
+}
+
 type otelDDEnv struct {
 	ot                    string
 	remapper              func(string) (string, error)

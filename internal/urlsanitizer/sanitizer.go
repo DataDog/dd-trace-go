@@ -12,11 +12,22 @@ import (
 )
 
 // SanitizeURL removes user credentials from URLs for safe logging.
-// It uses Go's built-in url.Redacted() when possible, which preserves usernames but redacts passwords.
 // If the URL can't be parsed but appears to contain credentials, it's fully redacted for security.
 func SanitizeURL(rawURL string) string {
 	if rawURL == "" {
 		return rawURL
+	}
+
+	// url.Parse treats SCP-style Git locations as scheme-like strings. Strip
+	// their entire userinfo prefix before parsing, while preserving ordinary
+	// host:path and local path forms.
+	if at := strings.LastIndexByte(rawURL, '@'); at > 0 {
+		userinfo, location := rawURL[:at], rawURL[at+1:]
+		if colon := strings.IndexByte(location, ':'); colon > 0 &&
+			!strings.ContainsAny(userinfo, `/\`) &&
+			!strings.ContainsAny(location[:colon], `/\`) {
+			return location
+		}
 	}
 
 	parsedURL, err := url.Parse(rawURL)
@@ -31,10 +42,10 @@ func SanitizeURL(rawURL string) string {
 		return rawURL
 	}
 
-	// If URL has user info,
-	// use Go's built-in redaction (preserves username, redacts password).
+	// Remove the entire userinfo component. Usernames may also contain secrets.
 	if parsedURL.User != nil {
-		return parsedURL.Redacted()
+		parsedURL.User = nil
+		return parsedURL.String()
 	}
 
 	// No credentials detected, return as-is

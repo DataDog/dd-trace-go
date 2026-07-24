@@ -96,3 +96,30 @@ func TestSensitiveKeysAreNotReported(t *testing.T) {
 	assert.Empty(t, rec.Configuration,
 		"Report and ReportWithID must not emit telemetry for sensitive keys")
 }
+
+func TestPreparedReportsReserveSequenceBeforeSubmission(t *testing.T) {
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	first := Prepare("DD_SERVICE", telemetry.OriginCode)
+	second := Prepare("DD_SERVICE", telemetry.OriginCode)
+	second.Submit("second")
+	first.Submit("first")
+
+	require.Len(t, rec.Configuration, 2)
+	assert.Equal(t, "second", rec.Configuration[0].Value, "submission order is intentionally inverted")
+	assert.Equal(t, "first", rec.Configuration[1].Value)
+	assert.Less(t, rec.Configuration[1].SeqID, rec.Configuration[0].SeqID,
+		"sequence IDs follow accepted transition order, not sink arrival order")
+}
+
+func TestPreparedDefaultPreservesFixedSequence(t *testing.T) {
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	PrepareDefault("DD_SERVICE").Submit("default")
+
+	require.Len(t, rec.Configuration, 1)
+	assert.Equal(t, defaultSeqID, rec.Configuration[0].SeqID)
+	assert.Equal(t, telemetry.OriginDefault, rec.Configuration[0].Origin)
+}
