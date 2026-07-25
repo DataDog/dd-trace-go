@@ -120,8 +120,8 @@ func TestRegistryDefinitionsAreSortedDefensiveCopies(t *testing.T) {
 
 func TestRegistryRegisteredDefinitionsValidate(t *testing.T) {
 	raw, bindings := RegisteredDefinitions()
-	require.Len(t, raw, 250)
-	require.Len(t, bindings, 177)
+	require.Len(t, raw, 252)
+	require.Len(t, bindings, 178)
 }
 
 func TestRegistryRejectsInvalidDefinitions(t *testing.T) {

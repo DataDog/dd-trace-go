@@ -1177,14 +1177,13 @@ func countSuppressions(findings []Finding) int {
 	return count
 }
 
-func TestScan_RealRepoFindsUnmigratedReads(t *testing.T) {
-	// Smoke test against a configuration key owned by the later OTel migration.
+func TestScan_RealRepoIsClean(t *testing.T) {
 	root := filepath.Join("..", "..")
-	got, err := scan(root, defaultRecognizers(), defaultExcludes())
+	result, err := collectAudit(root, "")
 	if err != nil {
-		t.Fatalf("scan: %v", err)
+		t.Fatalf("collectAudit: %v", err)
 	}
-	if len(got["DD_SERVICE"]) == 0 {
-		t.Fatal("expected DD_SERVICE call sites in real repo, got none")
+	if !result.Clean() {
+		t.Fatalf("expected clean root-module configuration audit, got %#v", result)
 	}
 }

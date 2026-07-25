@@ -9,12 +9,10 @@ import (
 	"cmp"
 	"container/list"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
@@ -176,12 +174,26 @@ type exposureWriter struct {
 
 // newExposureWriter creates a new exposure writer with the given configuration
 func newExposureWriter(config ProviderConfig) *exposureWriter {
-	return newExposureWriterWithEVP(config, newEVPClient())
+	return newExposureWriterWithSnapshot(
+		config,
+		newEVPClient(),
+		internalconfig.ResolveOpenFeatureContextSnapshot(),
+	)
 }
 
 func newExposureWriterWithEVP(config ProviderConfig, evp *evpClient) *exposureWriter {
-	executable, _ := os.Executable()
+	return newExposureWriterWithSnapshot(
+		config,
+		evp,
+		internalconfig.ResolveOpenFeatureContextSnapshot(),
+	)
+}
 
+func newExposureWriterWithSnapshot(
+	config ProviderConfig,
+	evp *evpClient,
+	snapshot internalconfig.OpenFeatureSnapshot,
+) *exposureWriter {
 	return &exposureWriter{
 		buffer:        make([]exposureEvent, 0, 1<<8), // Initial capacity of 256
 		cache:         newExposureLRUCache(defaultExposureCacheCapacity),
@@ -189,9 +201,9 @@ func newExposureWriterWithEVP(config ProviderConfig, evp *evpClient) *exposureWr
 		evp:           evp,
 		stopChan:      make(chan struct{}),
 		context: exposureContext{
-			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
-			Version: env.Get("DD_VERSION"),
-			Env:     env.Get("DD_ENV"),
+			Service: snapshot.Service,
+			Version: snapshot.Version,
+			Env:     snapshot.Environment,
 		},
 	}
 }

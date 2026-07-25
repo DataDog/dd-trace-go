@@ -25,7 +25,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
@@ -50,34 +49,34 @@ func TestMain(m *testing.M) {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
 	}
 
-	if internal.BoolEnv(scenarios[0], false) {
+	if testBoolEnv(scenarios[0]) {
 		fmt.Printf(scenarioStarted, scenarios[0])
 		runFlakyTestRetriesTests(m)
-	} else if internal.BoolEnv(scenarios[1], false) {
+	} else if testBoolEnv(scenarios[1]) {
 		fmt.Printf(scenarioStarted, scenarios[1])
 		runEarlyFlakyTestDetectionTests(m)
-	} else if internal.BoolEnv(scenarios[2], false) {
+	} else if testBoolEnv(scenarios[2]) {
 		fmt.Printf(scenarioStarted, scenarios[2])
 		runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m, false)
-	} else if internal.BoolEnv(scenarios[3], false) {
+	} else if testBoolEnv(scenarios[3]) {
 		fmt.Printf(scenarioStarted, scenarios[3])
 		runIntelligentTestRunnerTests(m)
-	} else if internal.BoolEnv(scenarios[4], false) {
+	} else if testBoolEnv(scenarios[4]) {
 		fmt.Printf(scenarioStarted, scenarios[4])
 		runTestManagementTests(m)
-	} else if internal.BoolEnv(scenarios[5], false) {
+	} else if testBoolEnv(scenarios[5]) {
 		fmt.Printf(scenarioStarted, scenarios[5])
 		runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m, true)
-	} else if internal.BoolEnv(scenarios[6], false) {
+	} else if testBoolEnv(scenarios[6]) {
 		fmt.Printf(scenarioStarted, scenarios[6])
 		runParallelEarlyFlakyTestDetectionTests(m)
-	} else if internal.BoolEnv(scenarios[7], false) {
+	} else if testBoolEnv(scenarios[7]) {
 		fmt.Printf(scenarioStarted, scenarios[7])
 		runFlakyTestRetriesWithTransientSettingsFailureTests(m)
-	} else if len(scenarios) > 8 && internal.BoolEnv(scenarios[8], false) {
+	} else if len(scenarios) > 8 && testBoolEnv(scenarios[8]) {
 		fmt.Printf(scenarioStarted, scenarios[8])
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
-	} else if internal.BoolEnv("Bypass", false) {
+	} else if testBoolEnv("Bypass") {
 		os.Exit(m.Run())
 	} else {
 		for _, v := range scenarios {
@@ -109,6 +108,19 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(0)
+}
+
+func testBoolEnv(key string) bool {
+	raw, ok := os.LookupEnv(key)
+	if !ok {
+		return false
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Warn("Non-boolean value for env var %s. Parse failed with error: %v", key, err.Error())
+		return false
+	}
+	return value
 }
 
 func coverageModeSupportsITRBackfill() bool {

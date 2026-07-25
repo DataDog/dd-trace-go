@@ -14,7 +14,7 @@ import (
 
 	"github.com/open-feature/go-sdk/openfeature"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -38,7 +38,6 @@ const (
 	// flagEvalCountsEnabledEnvVar is the operator killswitch for the EVP flagevaluation emission path.
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
-	// Mirrors the internal.BoolEnv convention used by ffeProductEnvVar.
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
 	// Default timeout for provider initialization
 	defaultInitTimeout = 30 * time.Second
@@ -91,19 +90,24 @@ type DatadogProvider struct {
 // Returns an error if the default configuration of the Remote Config client is NOT working
 // In this case, please call tracer.Start before creating the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
-	if !internal.BoolEnv(ffeProductEnvVar, false) {
+	snapshot := internalconfig.ResolveOpenFeatureSnapshot()
+	if !snapshot.ProviderEnabled {
 		log.Error("openfeature: experimental flagging provider is not enabled, please set %s=true to enable it", ffeProductEnvVar)
 		return &openfeature.NoopProvider{}, nil
 	}
 
-	return startWithRemoteConfig(config)
+	return startWithRemoteConfig(config, snapshot)
 }
 
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {
+	return newDatadogProviderWithSnapshot(config, internalconfig.ResolveOpenFeatureProviderSnapshot())
+}
+
+func newDatadogProviderWithSnapshot(config ProviderConfig, snapshot internalconfig.OpenFeatureSnapshot) *DatadogProvider {
 	evp := newEVPClient()
 
 	// Create exposure writer
-	writer := newExposureWriterWithEVP(config, evp)
+	writer := newExposureWriterWithSnapshot(config, evp, snapshot)
 
 	// Create exposure hook
 	exposureLoggingHook := newExposureHook(writer)
@@ -121,13 +125,13 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// The OTel hook (flagEvalHook above) is registered unconditionally.
 	var evalWriter *flagEvalLoggingWriter
 	var evalLoggingHook *flagEvalLoggingHook
-	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
-		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
+	if snapshot.FlagEvaluationCountsEnabled {
+		evalWriter = newFlagEvalLoggingWriterWithSnapshot(config, evp, snapshot)
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	}
 
 	var spanEnrichmentHook *spanEnrichmentHook
-	if internal.BoolEnv(spanEnrichmentEnvVar, false) {
+	if snapshot.SpanEnrichmentEnabled {
 		spanEnrichmentHook = newSpanEnrichmentHook()
 		log.Debug("openfeature: span enrichment is enabled")
 	} else {

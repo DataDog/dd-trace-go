@@ -96,7 +96,7 @@ var (
 
 func TestMain(m *testing.M) {
 	internalconfig.SetUseFreshConfig(true)
-	if internal.BoolEnv("DD_APPSEC_ENABLED", false) {
+	if testBoolEnv("DD_APPSEC_ENABLED") {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
 	}
@@ -119,6 +119,19 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "See Goroutine Leak section in CONTRIBUTING.md for more information on how to fix this.\n")
 		os.Exit(1)
 	}
+}
+
+func testBoolEnv(key string) bool {
+	raw, ok := os.LookupEnv(key)
+	if !ok {
+		return false
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Warn("Non-boolean value for env var %s. Parse failed with error: %v", key, err.Error())
+		return false
+	}
+	return value
 }
 
 // noopRoundTripper is an http.RoundTripper that immediately returns 404 for all

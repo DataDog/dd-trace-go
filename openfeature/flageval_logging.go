@@ -9,15 +9,13 @@ import (
 	"cmp"
 	"fmt"
 	"log/slog"
-	"os"
 	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
@@ -267,12 +265,26 @@ type evalDetails struct {
 
 // newFlagEvalLoggingWriter creates a new flag evaluation writer.
 func newFlagEvalLoggingWriter(config ProviderConfig) *flagEvalLoggingWriter {
-	return newFlagEvalLoggingWriterWithEVP(config, newEVPClient())
+	return newFlagEvalLoggingWriterWithSnapshot(
+		config,
+		newEVPClient(),
+		internalconfig.ResolveOpenFeatureContextSnapshot(),
+	)
 }
 
 func newFlagEvalLoggingWriterWithEVP(config ProviderConfig, evp *evpClient) *flagEvalLoggingWriter {
-	executable, _ := os.Executable()
+	return newFlagEvalLoggingWriterWithSnapshot(
+		config,
+		evp,
+		internalconfig.ResolveOpenFeatureContextSnapshot(),
+	)
+}
 
+func newFlagEvalLoggingWriterWithSnapshot(
+	config ProviderConfig,
+	evp *evpClient,
+	snapshot internalconfig.OpenFeatureSnapshot,
+) *flagEvalLoggingWriter {
 	flushInterval := cmp.Or(config.FlagEvaluationFlushInterval, defaultFlagEvalFlushInterval)
 
 	return &flagEvalLoggingWriter{
@@ -282,9 +294,9 @@ func newFlagEvalLoggingWriterWithEVP(config ProviderConfig, evp *evpClient) *fla
 		workerDone:    make(chan struct{}),
 		events:        make(chan evalEvent, defaultEvalEventBufferSize),
 		ddContext: flagEvalDDContext{
-			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
-			Version: env.Get("DD_VERSION"),
-			Env:     env.Get("DD_ENV"),
+			Service: snapshot.Service,
+			Version: snapshot.Version,
+			Env:     snapshot.Environment,
 		},
 		aggregator: flagEvalLoggingAggregator{
 			full:        make(map[evaluationAggregationKey]*evaluationEntry),
