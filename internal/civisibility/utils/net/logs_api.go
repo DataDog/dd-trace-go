@@ -19,7 +19,15 @@ const (
 
 // NewClientForLogs creates a new client for sending logs payloads.
 func NewClientForLogs() Client {
-	return NewClientWithServiceNameAndSubdomain("", logsSubDomain)
+	client, report := PrepareClientForLogs()
+	report()
+	return client
+}
+
+// PrepareClientForLogs constructs a logs client without publishing
+// configuration or telemetry callbacks.
+func PrepareClientForLogs() (Client, func()) {
+	return PrepareClientWithServiceNameAndSubdomain("", logsSubDomain)
 }
 
 // SendLogs sends a logs payload to the backend.

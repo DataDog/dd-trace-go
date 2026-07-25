@@ -22,7 +22,9 @@ import (
 
 	"github.com/tinylib/msgp/msgp"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config/bootstrap"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -64,25 +66,77 @@ type Mode struct {
 
 var (
 	// modeMu protects the lazy resolution state so tests can safely reset it.
-	modeMu sync.Mutex
+	modeMu locking.Mutex
 	// modeOnce resolves the process-wide Bazel mode exactly once per environment configuration.
 	modeOnce sync.Once
 	// currentMode caches the resolved Bazel mode for the current process.
-	currentMode Mode
+	currentMode        Mode
+	modeConfigReporter func()
+	modeConfigReported bool
 	// payloadFileCount keeps payload filenames unique within a process and orders telemetry files deterministically.
 	payloadFileCount uint64
 )
 
 // CurrentMode returns the resolved process-wide Bazel mode.
 func CurrentMode() Mode {
+	mode, report := PrepareCurrentMode()
+	report()
+	return mode
+}
+
+// PrepareCurrentMode resolves and returns the cached mode with an idempotent
+// reporter that callers can invoke after publishing their own state.
+func PrepareCurrentMode() (Mode, func()) {
+	snapshot := bootstrap.TestOptimization()
+	return prepareCurrentMode(
+		testOptimizationConfig{
+			ManifestFile:    snapshot.ManifestFile,
+			PayloadsInFiles: snapshot.PayloadsInFiles,
+			PayloadsRaw:     snapshot.PayloadsRaw,
+			PayloadsPresent: snapshot.PayloadsPresent,
+		},
+		nil,
+	)
+}
+
+// PrepareCurrentModeWithConfig resolves the mode from a registry-backed
+// snapshot and adopts its deferred reporter.
+func PrepareCurrentModeWithConfig(manifestFile string, payloadsInFiles bool, payloadsRaw string, payloadsPresent bool, report func()) (Mode, func()) {
+	return prepareCurrentMode(
+		testOptimizationConfig{
+			ManifestFile:    manifestFile,
+			PayloadsInFiles: payloadsInFiles,
+			PayloadsRaw:     payloadsRaw,
+			PayloadsPresent: payloadsPresent,
+		},
+		report,
+	)
+}
+
+func prepareCurrentMode(config testOptimizationConfig, configReporter func()) (Mode, func()) {
 	modeMu.Lock()
-	defer modeMu.Unlock()
-
 	modeOnce.Do(func() {
-		currentMode = resolveMode()
+		currentMode = resolveMode(config)
+		modeConfigReporter = configReporter
 	})
-
-	return currentMode
+	if modeConfigReporter == nil && configReporter != nil {
+		modeConfigReporter = configReporter
+	}
+	mode := currentMode
+	reportConfig := modeConfigReporter
+	modeMu.Unlock()
+	report := func() {
+		modeMu.Lock()
+		shouldReport := reportConfig != nil && !modeConfigReported
+		if shouldReport {
+			modeConfigReported = true
+		}
+		modeMu.Unlock()
+		if shouldReport && reportConfig != nil {
+			reportConfig()
+		}
+	}
+	return mode, report
 }
 
 // IsManifestModeEnabled returns true when a compatible manifest has been resolved.
@@ -174,11 +228,21 @@ func payloadFileName(kind PayloadKind, seq uint64) string {
 }
 
 // resolveMode inspects the Bazel-related environment variables and builds the process-wide compatibility mode.
-func resolveMode() Mode {
+type testOptimizationConfig struct {
+	ManifestFile    string
+	PayloadsInFiles bool
+	PayloadsRaw     string
+	PayloadsPresent bool
+}
+
+func resolveMode(config testOptimizationConfig) Mode {
 	mode := Mode{}
 
-	manifestRloc := strings.TrimSpace(env.Get(ManifestFilePathEnv))
-	payloadFilesEnv := strings.TrimSpace(env.Get(PayloadsInFilesEnv))
+	manifestRloc := config.ManifestFile
+	payloadFilesEnv := ""
+	if config.PayloadsPresent {
+		payloadFilesEnv = strings.TrimSpace(config.PayloadsRaw)
+	}
 	undeclaredOutputsDir := strings.TrimSpace(env.Get(UndeclaredOutputsDirEnv))
 	logger.Debug("civisibility: resolving test optimization mode [manifest_env:%q payload_files_env:%q undeclared_outputs_dir:%q]",
 		manifestRloc, payloadFilesEnv, undeclaredOutputsDir)
@@ -195,7 +259,7 @@ func resolveMode() Mode {
 		}
 	}
 
-	mode.PayloadFilesEnabled = parseBoolEnv(payloadFilesEnv)
+	mode.PayloadFilesEnabled = config.PayloadsInFiles
 	if mode.PayloadFilesEnabled {
 		if undeclaredOutputsDir != "" {
 			mode.PayloadsRoot = filepath.Join(undeclaredOutputsDir, "payloads")
@@ -388,5 +452,8 @@ func ResetForTesting() {
 	defer modeMu.Unlock()
 	modeOnce = sync.Once{}
 	currentMode = Mode{}
+	modeConfigReporter = nil
+	modeConfigReported = false
+	bootstrap.ResetTestOptimizationForTesting()
 	atomic.StoreUint64(&payloadFileCount, 0)
 }

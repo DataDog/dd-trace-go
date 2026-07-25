@@ -39,12 +39,19 @@ type logsWriter struct {
 
 // newLogsWriter creates a new instance of logsWriter.
 func newLogsWriter() *logsWriter {
+	writer, report := prepareLogsWriter()
+	report()
+	return writer
+}
+
+func prepareLogsWriter() (*logsWriter, func()) {
 	log.Debug("logsWriter: creating logs writer instance")
+	client, report := net.PrepareClientForLogs()
 	return &logsWriter{
-		client:  net.NewClientForLogs(),
+		client:  client,
 		payload: newLogsPayload(),
 		climit:  make(chan struct{}, concurrentConnectionLimit),
-	}
+	}, report
 }
 
 func (w *logsWriter) add(entry *logEntry) bool {

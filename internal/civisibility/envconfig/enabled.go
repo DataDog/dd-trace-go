@@ -6,26 +6,20 @@
 // Package envconfig contains CI Visibility-specific environment parsing helpers.
 package envconfig
 
-import (
-	"strconv"
-	"strings"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
-)
+import internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 // EnabledMode is the parsed mode for DD_CIVISIBILITY_ENABLED.
-type EnabledMode int
+type EnabledMode = internalconfig.CIVisibilityEnabledMode
 
 const (
 	// EnabledModeDisabled means CI Visibility is disabled for this process.
-	EnabledModeDisabled EnabledMode = iota
+	EnabledModeDisabled = internalconfig.CIVisibilityEnabledModeDisabled
 
 	// EnabledModeEnabled means CI Visibility is enabled and may propagate to children.
-	EnabledModeEnabled
+	EnabledModeEnabled = internalconfig.CIVisibilityEnabledModeEnabled
 
 	// EnabledModeParent means CI Visibility is enabled for this process only.
-	EnabledModeParent
+	EnabledModeParent = internalconfig.CIVisibilityEnabledModeParent
 )
 
 const (
@@ -35,19 +29,11 @@ const (
 
 // ParseEnabledMode parses DD_CIVISIBILITY_ENABLED. It accepts normal Go boolean values plus "parent".
 func ParseEnabledMode(value string) (EnabledMode, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	if normalized == EnabledModeParentValue {
-		return EnabledModeParent, true
-	}
-
-	parsed, err := strconv.ParseBool(normalized)
+	parsed, err := internalconfig.ParseCIVisibilityEnabledMode(value)
 	if err != nil {
 		return EnabledModeDisabled, false
 	}
-	if parsed {
-		return EnabledModeEnabled, true
-	}
-	return EnabledModeDisabled, true
+	return parsed, true
 }
 
 // Enabled reports whether the parsed mode enables CI Visibility in this process.
@@ -57,9 +43,5 @@ func Enabled(mode EnabledMode) bool {
 
 // FromEnv reads and parses DD_CIVISIBILITY_ENABLED from the process environment.
 func FromEnv() (EnabledMode, bool) {
-	value, ok := internalenv.Lookup(constants.CIVisibilityEnabledEnvironmentVariable)
-	if !ok {
-		return EnabledModeDisabled, false
-	}
-	return ParseEnabledMode(value)
+	return internalconfig.ResolveCIVisibilityEnabledMode()
 }

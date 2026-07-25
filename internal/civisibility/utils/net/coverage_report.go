@@ -17,7 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -37,7 +37,7 @@ const (
 func NewClientForCoverageReportUpload() Client {
 	client := NewClientWithServiceNameAndSubdomain("", coverageReportSubDomain)
 	if coverageClient, ok := client.(coverageClient); ok {
-		coverageClient.SetCoverageFlags(parseCoverageReportFlags(env.Get(constants.CodeCoverageFlagsEnvironmentVariable)))
+		coverageClient.SetCoverageFlags(internalconfig.ResolveCIVisibilityCoverageReportFlags())
 	}
 	return client
 }
@@ -159,25 +159,5 @@ func coverageReportEvent(format string, flags []string) map[string]any {
 }
 
 func parseCoverageReportFlags(raw string) []string {
-	parts := strings.Split(raw, ",")
-	flags := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if flag := strings.TrimSpace(part); flag != "" {
-			flags = append(flags, flag)
-		}
-	}
-
-	if len(flags) == 0 {
-		return nil
-	}
-	if len(flags) > maxCoverageReportFlags {
-		log.Warn(
-			"civisibility.coverage_report: %s contains %d flags, exceeding the maximum of %d; report flags will be omitted",
-			constants.CodeCoverageFlagsEnvironmentVariable,
-			len(flags),
-			maxCoverageReportFlags,
-		)
-		return nil
-	}
-	return flags
+	return internalconfig.ParseCIVisibilityCoverageReportFlags(raw)
 }

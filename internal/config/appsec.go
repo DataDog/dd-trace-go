@@ -702,10 +702,10 @@ func resolveAppSecStable[T any](
 		defaultValue,
 		parse,
 	)
-	return filterAppSecStableEmpty(resolved, events, key, defaultValue, parse)
+	return filterEmptyDeclarativeStableAttempts(resolved, events, key, defaultValue, parse)
 }
 
-func filterAppSecStableEmpty[T any](
+func filterEmptyDeclarativeStableAttempts[T any](
 	resolved schema.Resolved[T],
 	events []ConfigEvent,
 	key string,
@@ -720,7 +720,7 @@ func filterAppSecStableEmpty[T any](
 		DefaultUsed: true,
 	}
 	for _, attempt := range resolved.Attempts {
-		if appSecEmptyStableAttempt(attempt) {
+		if emptyDeclarativeStableAttempt(attempt) {
 			skippedOrigins[attempt.Origin] = struct{}{}
 			continue
 		}
@@ -751,7 +751,7 @@ func filterAppSecStableEmpty[T any](
 	return resolved, filteredEvents
 }
 
-func appSecEmptyStableAttempt(attempt schema.SourceAttempt) bool {
+func emptyDeclarativeStableAttempt(attempt schema.SourceAttempt) bool {
 	if !attempt.Present || attempt.Raw != "" {
 		return false
 	}

@@ -8,13 +8,174 @@ package utils
 import (
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/config/bootstrap"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type reentrantCITagsTelemetryClient struct {
+	*telemetrytest.RecordClient
+	once sync.Once
+}
+
+func (c *reentrantCITagsTelemetryClient) RegisterAppConfigs(configs ...telemetry.Configuration) {
+	c.once.Do(func() {
+		_ = GetCITags()
+	})
+	c.RecordClient.RegisterAppConfigs(configs...)
+}
+
+func TestGetCITagsReportsAfterPublishingCache(t *testing.T) {
+	ResetCITags()
+	bootstrap.ResetForTesting()
+	internalconfig.ResetCIVisibilityForTesting()
+	t.Cleanup(ResetCITags)
+	t.Cleanup(bootstrap.ResetForTesting)
+	t.Cleanup(internalconfig.ResetCIVisibilityForTesting)
+	originalProvider := getProviderTagsFunc
+	originalGit := getLocalGitDataFunc
+	originalEnvironmental := applyEnvironmentalDataIfRequiredFunc
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalProvider
+		getLocalGitDataFunc = originalGit
+		applyEnvironmentalDataIfRequiredFunc = originalEnvironmental
+	})
+	getProviderTagsFunc = func() map[string]string { return map[string]string{} }
+	getLocalGitDataFunc = func() (localGitData, error) { return localGitData{}, nil }
+	applyEnvironmentalDataIfRequiredFunc = func(map[string]string, string) {}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	t.Setenv("DD_SERVICE", "reentrant-tags")
+	client := &reentrantCITagsTelemetryClient{RecordClient: new(telemetrytest.RecordClient)}
+	t.Cleanup(telemetry.MockClient(client))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = GetCITags()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("CI tag telemetry reporting deadlocked when the sink reentered GetCITags")
+	}
+	require.NotEmpty(t, client.Configuration)
+}
+
+func TestPrepareCITagsCacheHitCanReportPendingConfig(t *testing.T) {
+	ResetCITags()
+	bazel.ResetForTesting()
+	bootstrap.ResetForTesting()
+	internalconfig.ResetCIVisibilityForTesting()
+	t.Cleanup(ResetCITags)
+	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(bootstrap.ResetForTesting)
+	t.Cleanup(internalconfig.ResetCIVisibilityForTesting)
+	originalProvider := getProviderTagsFunc
+	originalGit := getLocalGitDataFunc
+	originalEnvironmental := applyEnvironmentalDataIfRequiredFunc
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalProvider
+		getLocalGitDataFunc = originalGit
+		applyEnvironmentalDataIfRequiredFunc = originalEnvironmental
+	})
+	getProviderTagsFunc = func() map[string]string { return map[string]string{} }
+	getLocalGitDataFunc = func() (localGitData, error) { return localGitData{}, nil }
+	applyEnvironmentalDataIfRequiredFunc = func(map[string]string, string) {}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	t.Setenv("DD_SERVICE", "cached-tags")
+	client := new(telemetrytest.RecordClient)
+	t.Cleanup(telemetry.MockClient(client))
+
+	firstTags, firstReport := PrepareCITags()
+	secondTags, secondReport := PrepareCITags()
+	require.Equal(t, firstTags, secondTags)
+	require.Empty(t, client.Configuration)
+
+	secondReport()
+	require.NotEmpty(t, client.Configuration)
+	reported := len(client.Configuration)
+
+	firstReport()
+	require.Len(t, client.Configuration, reported)
+}
+
+func TestGetCITagsConcurrentInitializationRunsProviderAndGitOnce(t *testing.T) {
+	ResetCITags()
+	bazel.ResetForTesting()
+	internalconfig.ResetCIVisibilityForTesting()
+	t.Cleanup(ResetCITags)
+	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(internalconfig.ResetCIVisibilityForTesting)
+	originalProvider := getProviderTagsFunc
+	originalGit := getLocalGitDataFunc
+	originalEnvironmental := applyEnvironmentalDataIfRequiredFunc
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalProvider
+		getLocalGitDataFunc = originalGit
+		applyEnvironmentalDataIfRequiredFunc = originalEnvironmental
+	})
+	var providerCalls, gitCalls atomic.Int64
+	getProviderTagsFunc = func() map[string]string {
+		providerCalls.Add(1)
+		return map[string]string{}
+	}
+	getLocalGitDataFunc = func() (localGitData, error) {
+		gitCalls.Add(1)
+		return localGitData{}, nil
+	}
+	applyEnvironmentalDataIfRequiredFunc = func(map[string]string, string) {}
+
+	var wait sync.WaitGroup
+	for range 32 {
+		wait.Go(func() {
+			_ = GetCITags()
+		})
+	}
+	wait.Wait()
+
+	require.EqualValues(t, 1, providerCalls.Load())
+	require.EqualValues(t, 1, gitCalls.Load())
+}
+
+func TestGetCITagsAppliesBranchOverrideBeforeNormalization(t *testing.T) {
+	ResetCITags()
+	bazel.ResetForTesting()
+	internalconfig.ResetCIVisibilityForTesting()
+	t.Cleanup(ResetCITags)
+	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(internalconfig.ResetCIVisibilityForTesting)
+	originalProvider := getProviderTagsFunc
+	originalGit := getLocalGitDataFunc
+	originalEnvironmental := applyEnvironmentalDataIfRequiredFunc
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalProvider
+		getLocalGitDataFunc = originalGit
+		applyEnvironmentalDataIfRequiredFunc = originalEnvironmental
+	})
+	getProviderTagsFunc = func() map[string]string {
+		return map[string]string{constants.GitBranch: "refs/tags/v1"}
+	}
+	getLocalGitDataFunc = func() (localGitData, error) { return localGitData{}, nil }
+	applyEnvironmentalDataIfRequiredFunc = func(map[string]string, string) {}
+	t.Setenv("DD_GIT_BRANCH", "refs/heads/feature")
+
+	tags := GetCITags()
+
+	require.Equal(t, "feature", tags[constants.GitBranch])
+	require.NotContains(t, tags, constants.GitTag)
+}
 
 func TestGetCITagsCache(t *testing.T) {
 	ResetCITags()
@@ -181,7 +342,7 @@ func TestGetCITagsUsesGitEnrichmentOutsidePayloadFilesMode(t *testing.T) {
 			CommitMessage: "head-message",
 		}, nil
 	}
-	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string, _ string) {
 		applyEnvironmentalDataCalls++
 		tags["env.applied"] = "true"
 	}
@@ -248,7 +409,7 @@ func TestGetCITagsSkipsGitEnrichmentInPayloadFilesMode(t *testing.T) {
 			CommitMessage: "head-message",
 		}, nil
 	}
-	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string, _ string) {
 		applyEnvironmentalDataCalls++
 		tags[constants.CIWorkspacePath] = "/tmp/workspace-from-env"
 		tags[constants.GitRepositoryURL] = "https://example.com/repo-from-env.git"
@@ -294,7 +455,7 @@ func TestGetCITagsAddsBazelProviderInPayloadFilesModeWithoutProvider(t *testing.
 	getProviderTagsFunc = func() map[string]string {
 		return map[string]string{}
 	}
-	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {}
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string, _ string) {}
 
 	tags := GetCITags()
 	assert.Equal(t, "bazel", tags[constants.CIProviderName])
@@ -320,7 +481,7 @@ func TestGetCITagsPreservesDetectedProviderInPayloadFilesMode(t *testing.T) {
 	getProviderTagsFunc = func() map[string]string {
 		return map[string]string{constants.CIProviderName: "github"}
 	}
-	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {}
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string, _ string) {}
 
 	tags := GetCITags()
 	assert.Equal(t, "github", tags[constants.CIProviderName])
@@ -346,7 +507,7 @@ func TestGetCITagsPreservesEnvironmentalDataProviderInPayloadFilesMode(t *testin
 	getProviderTagsFunc = func() map[string]string {
 		return map[string]string{}
 	}
-	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string, _ string) {
 		tags[constants.CIProviderName] = "github"
 	}
 
@@ -385,7 +546,7 @@ func TestGetCITagsAddsBazelProviderInManifestModeWithoutProvider(t *testing.T) {
 	fetchCommitDataFunc = func(commitSha string) (localCommitData, error) {
 		return localCommitData{}, nil
 	}
-	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {}
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string, _ string) {}
 
 	tags := GetCITags()
 	assert.Equal(t, "bazel", tags[constants.CIProviderName])
@@ -417,7 +578,7 @@ func TestGetCITagsDoesNotAddBazelProviderOutsideBazelMode(t *testing.T) {
 	fetchCommitDataFunc = func(commitSha string) (localCommitData, error) {
 		return localCommitData{}, nil
 	}
-	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {}
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string, _ string) {}
 
 	tags := GetCITags()
 	assert.NotContains(t, tags, constants.CIProviderName)

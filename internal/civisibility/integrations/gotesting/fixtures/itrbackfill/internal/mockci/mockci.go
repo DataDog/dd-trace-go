@@ -22,7 +22,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 // SkippableTest describes one backend ITR candidate returned by the mock.
@@ -562,9 +561,15 @@ func writeSettings(w http.ResponseWriter, settings net.SettingsResponseData) {
 }
 
 func applyEnv(updates map[string]string) func() {
+	snapshot := make(map[string]string)
+	for _, entry := range os.Environ() {
+		if key, value, ok := strings.Cut(entry, "="); ok {
+			snapshot[key] = value
+		}
+	}
 	previous := map[string]*string{}
 	for key, value := range updates {
-		if current, ok := env.Lookup(key); ok {
+		if current, ok := snapshot[key]; ok {
 			copy := current
 			previous[key] = &copy
 		} else {

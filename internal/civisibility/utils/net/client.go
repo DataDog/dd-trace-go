@@ -21,7 +21,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -93,22 +92,51 @@ var (
 	_ coverageClient = &client{}
 
 	// telemetryInit is used to initialize the telemetry client.
-	telemetryInit sync.Once
+	telemetryInit           sync.Once
+	telemetryPreparedClient telemetry.Client
+	telemetryPreparedEvents []internalconfig.ConfigEvent
+	telemetryPreparedConfig []telemetry.Configuration
+	telemetryGlobalClient   = telemetry.GlobalClient
 )
+
+func resetCIVisibilityTelemetryForTesting() {
+	telemetryInit = sync.Once{}
+	telemetryPreparedClient = nil
+	telemetryPreparedEvents = nil
+	telemetryPreparedConfig = nil
+}
 
 // NewClientWithServiceNameAndSubdomain creates a new client with the given service name and subdomain.
 func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client {
-	ciTags := utils.GetCITags()
+	client, report := PrepareClientWithServiceNameAndSubdomain(serviceName, subdomain)
+	report()
+	return client
+}
 
-	// get the environment
-	environment := env.Get("DD_ENV")
-	if environment == "" {
-		environment = "none"
+// PrepareClientWithServiceNameAndSubdomain constructs a client and defers all
+// configuration and telemetry publication until the returned reporter runs.
+func PrepareClientWithServiceNameAndSubdomain(serviceName, subdomain string) (Client, func()) {
+	config, clientConfigEvents := internalconfig.PrepareCIVisibilityClientConfig()
+	ciTags, reportCITags := utils.PrepareCITags()
+	var agentConfigEvents []internalconfig.ConfigEvent
+	var reportTelemetry func()
+	var reportOnce sync.Once
+	report := func() {
+		reportOnce.Do(func() {
+			internalconfig.ReportCIVisibilityConfigEvents(clientConfigEvents)
+			reportCITags()
+			internalconfig.ReportCIVisibilityConfigEvents(agentConfigEvents)
+			if reportTelemetry != nil {
+				reportTelemetry()
+			}
+		})
 	}
+
+	environment := config.Environment
 
 	// get the service name
 	if serviceName == "" {
-		serviceName = env.Get("DD_SERVICE")
+		serviceName = config.Service
 		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
@@ -123,19 +151,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	}
 
 	// get all custom configuration (test.configuration.*)
-	var customConfiguration map[string]string
-	if v := env.Get("DD_TAGS"); v != "" {
-		prefix := "test.configuration."
-		for k, v := range internal.ParseTagString(v) {
-			if strings.HasPrefix(k, prefix) {
-				if customConfiguration == nil {
-					customConfiguration = map[string]string{}
-				}
-
-				customConfiguration[strings.TrimPrefix(k, prefix)] = v
-			}
-		}
-	}
+	customConfiguration := config.CustomTestConfigurations
 
 	// create default http headers and get base url
 	defaultHeaders := map[string]string{}
@@ -144,27 +160,23 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	var agentURL *url.URL
 	var apiKeyValue string
 
-	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	agentlessEnabled := config.AgentlessEnabled
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		apiKeyValue = env.Get(constants.APIKeyEnvironmentVariable)
+		apiKeyValue = config.APIKey
 		if apiKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
-			return nil
+			return nil, report
 		}
 
 		defaultHeaders["dd-api-key"] = apiKeyValue
 
 		// Check for a custom agentless URL.
-		agentlessURL := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable)
+		agentlessURL := config.AgentlessURL
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
-			site := "datadoghq.com"
-			if v := env.Get("DD_SITE"); v != "" {
-				site = v
-			}
-			baseURL = fmt.Sprintf("https://%s.%s", subdomain, site)
+			baseURL = fmt.Sprintf("https://%s.%s", subdomain, config.Site)
 		} else {
 			// Use the custom agentless URL.
 			baseURL = agentlessURL
@@ -175,7 +187,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		// Use agent mode with the EVP proxy.
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = subdomain
 
-		agentURL = internalconfig.AgentURL()
+		agentURL, agentConfigEvents = internalconfig.PrepareAgentURL()
 		if agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
@@ -197,15 +209,16 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		id, agentlessEnabled, baseURL, environment, serviceName, subdomain)
 
 	if !telemetry.Disabled() {
+		publishTelemetry := false
 		telemetryInit.Do(func() {
-			telemetry.ProductStarted(telemetry.NamespaceCIVisibility)
-			telemetry.RegisterAppConfigs(
-				telemetry.Configuration{Name: "service", Value: serviceName},
-				telemetry.Configuration{Name: "env", Value: environment},
-				telemetry.Configuration{Name: "agentless", Value: agentlessEnabled},
-				telemetry.Configuration{Name: "test_session_name", Value: ciTags[constants.TestSessionName]},
-			)
-			if telemetry.GlobalClient() != nil {
+			publishTelemetry = true
+			telemetryPreparedConfig = []telemetry.Configuration{
+				{Name: "service", Value: serviceName},
+				{Name: "env", Value: environment},
+				{Name: "agentless", Value: agentlessEnabled},
+				{Name: "test_session_name", Value: ciTags[constants.TestSessionName]},
+			}
+			if telemetryGlobalClient() != nil {
 				return
 			}
 			cfg := telemetry.ClientConfig{
@@ -215,14 +228,26 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			if agentURL != nil {
 				cfg.AgentURL = agentURL.String()
 			}
-			internalconfig.ConfigureTelemetryClient(&cfg)
-			client, err := telemetry.NewClient(serviceName, environment, env.Get("DD_VERSION"), cfg)
+			telemetryPreparedEvents = append(telemetryPreparedEvents, internalconfig.PrepareTelemetryClient(&cfg)...)
+			version, versionEvents := internalconfig.PrepareCIVisibilityTelemetryVersion()
+			telemetryPreparedEvents = append(telemetryPreparedEvents, versionEvents...)
+			client, err := telemetry.NewClient(serviceName, environment, version, cfg)
 			if err != nil {
 				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())
 				return
 			}
-			telemetry.StartApp(client)
+			telemetryPreparedClient = client
 		})
+		if publishTelemetry {
+			reportTelemetry = func() {
+				telemetry.ProductStarted(telemetry.NamespaceCIVisibility)
+				telemetry.RegisterAppConfigs(telemetryPreparedConfig...)
+				if telemetryPreparedClient != nil {
+					telemetry.StartApp(telemetryPreparedClient)
+				}
+				internalconfig.ReportCIVisibilityConfigEvents(telemetryPreparedEvents)
+			}
+		}
 	}
 
 	// we try to get the branch name
@@ -260,12 +285,18 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		readCacheScopeIdentity: newReadCacheScopeIdentity(ciTags),
 		headers:                defaultHeaders,
 		handler:                requestHandler,
-	}
+	}, report
 }
 
 // NewClientWithServiceName creates a new client with the given service name.
 func NewClientWithServiceName(serviceName string) Client {
 	return NewClientWithServiceNameAndSubdomain(serviceName, "api")
+}
+
+// PrepareClientWithServiceName constructs a CI Visibility API client without
+// publishing configuration callbacks.
+func PrepareClientWithServiceName(serviceName string) (Client, func()) {
+	return PrepareClientWithServiceNameAndSubdomain(serviceName, "api")
 }
 
 // NewClient creates a new client with the default service name.

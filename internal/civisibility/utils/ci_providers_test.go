@@ -47,6 +47,27 @@ func sortJSONKeys(jsonStr string) string {
 	return string(jsonBytes)
 }
 
+func TestGetProviderTagsAppliesBranchOverrideBeforeNormalization(t *testing.T) {
+	originalProviders := providers
+	providers = map[ciProviderEnvKey]providerType{
+		"TEST_PROVIDER": func() map[string]string {
+			return map[string]string{constants.GitBranch: "refs/tags/v1"}
+		},
+	}
+	t.Cleanup(func() { providers = originalProviders })
+	t.Setenv("TEST_PROVIDER", "true")
+	t.Setenv("DD_GIT_BRANCH", "refs/heads/feature")
+
+	tags := getProviderTags()
+
+	if got := tags[constants.GitBranch]; got != "feature" {
+		t.Fatalf("expected overridden branch to normalize to feature, got %q", got)
+	}
+	if tag, ok := tags[constants.GitTag]; ok {
+		t.Fatalf("branch override retained provider-derived tag %q", tag)
+	}
+}
+
 // TestTags asserts that all tags are extracted from environment variables.
 func TestTags(t *testing.T) {
 	// Disable diagnostics scanning to prevent tests from reading real _diag directories
@@ -60,9 +81,9 @@ func TestTags(t *testing.T) {
 	// Reset provider env key when running in CI
 	resetProviders := map[string]string{}
 	for key := range providers {
-		if value, ok := os.LookupEnv(key); ok {
-			resetProviders[key] = value
-			_ = os.Unsetenv(key)
+		if value, ok := os.LookupEnv(string(key)); ok {
+			resetProviders[string(key)] = value
+			_ = os.Unsetenv(string(key))
 		}
 	}
 	defer func() {

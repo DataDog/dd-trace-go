@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	internaltelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -26,6 +27,7 @@ func resetCIVisibilityStateForTesting() {
 
 	settingsInitializationOnce = sync.Once{}
 	additionalFeaturesInitializationOnce = sync.Once{}
+	internalconfig.ResetCIVisibilityForTesting()
 
 	closeActions = nil
 
@@ -52,7 +54,7 @@ func resetCIVisibilityStateForTesting() {
 	sendObjectsPackFileFunc = sendObjectsPackFile
 	repositoryUploadHooksMu.Unlock()
 
-	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
+	prepareCIVisibilityClientWithServiceNameFunc = net.PrepareClientWithServiceName
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()

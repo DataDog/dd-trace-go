@@ -42,11 +42,15 @@ Raw environment reads are permitted only in these low-level boundaries:
 - `internal/config/provider` source lookup functions
 - `internal/config/bootstrap.TelemetryEnabled`
 - `internal/config/bootstrap.resolveAppSecStackTrace`
+- `internal/config/bootstrap.resolveTestOptimization`
+- `internal/civisibility/utils.lookupCIProviderEnvironment`
 - the exported adapter implementations in `instrumentation/env`
 - `instrumentation/options.GetBoolEnv`
 
 The audit rejects raw reads everywhere else, including ad hoc reads elsewhere
-inside `internal/config`. The AppSec bootstrap boundary is an exact,
+inside `internal/config`. The CI-provider lookup exception is limited to
+non-Datadog, non-OTel CI metadata and rejects the `DD_`, `DD-`, and `OTEL_`
+namespaces. The AppSec bootstrap boundary is an exact,
 function-scoped exception rather than a suppression: standalone import graphs
 reach `internal/stacktrace` through `instrumentation/errortrace` and
 `internal/telemetry` without importing `internal/config`, while
@@ -55,6 +59,14 @@ normal provider would therefore either miss those imports or introduce a
 cycle. The bootstrap function is the migrated owner for its two registered,
 environment-only package-init keys; it caches one raw snapshot, preserves the
 legacy diagnostics, and retains metadata for one later telemetry projection.
+The test-optimization bootstrap boundary follows the same exact-function
+pattern for `DD_TEST_OPTIMIZATION_MANIFEST_FILE` and
+`DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES`. Standalone telemetry can reach Bazel
+payload-file mode without linking the full registry, so importing
+`internal/config` there would break that supported import graph. The leaf
+snapshot preserves raw values, presence, and parse errors; once the registry is
+available, one claimant projects those cached values through the registered
+binding exactly once.
 
 ## Configuration definitions and consumer bindings
 
@@ -309,6 +321,14 @@ boundary. The bridge consumes their cached snapshot even when
 initializes, it atomically claims and projects that snapshot once through the
 registered binding. The raw reads, parse diagnostics, and telemetry projection
 therefore each occur at most once.
+
+The two test-optimization keys use a separate exact bootstrap boundary for the
+standalone telemetry import graph. Bazel consumes the cached effective values
+without importing `internal/config`. Registry-aware CI Visibility callers
+later claim the same snapshot and attach a non-nil deferred reporter only when
+they own its events. The reporter can therefore be adopted after standalone or
+concurrent mode initialization, while the registered telemetry projection is
+still emitted exactly once and outside the mode cache lock.
 
 Sensitive values use an explicit policy:
 

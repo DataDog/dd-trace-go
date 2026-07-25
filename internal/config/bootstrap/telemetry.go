@@ -14,33 +14,46 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
-var (
-	telemetryEnabled     bool
-	telemetryEnabledOnce sync.Once
-	telemetryDisabled    atomic.Bool
-)
+var telemetryStatePointer atomic.Pointer[telemetryState]
+
+type telemetryState struct {
+	once     sync.Once
+	enabled  bool
+	disabled atomic.Bool
+}
 
 // TelemetryEnabled reports whether instrumentation telemetry is enabled.
 // The environment is read at most once because telemetry may be initialized
 // before the full configuration provider.
 func TelemetryEnabled() bool {
-	if telemetryDisabled.Load() {
+	state := loadTelemetryState()
+	if state.disabled.Load() {
 		return false
 	}
-	telemetryEnabledOnce.Do(func() {
-		telemetryEnabled = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	state.once.Do(func() {
+		state.enabled = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 	})
-	return telemetryEnabled && !telemetryDisabled.Load()
+	return state.enabled && !state.disabled.Load()
 }
 
 // Disable permanently disables telemetry after a fatal telemetry failure.
 func Disable() {
-	telemetryDisabled.Store(true)
+	loadTelemetryState().disabled.Store(true)
+}
+
+func loadTelemetryState() *telemetryState {
+	state := telemetryStatePointer.Load()
+	if state != nil {
+		return state
+	}
+	state = new(telemetryState)
+	if telemetryStatePointer.CompareAndSwap(nil, state) {
+		return state
+	}
+	return telemetryStatePointer.Load()
 }
 
 // ResetForTesting clears the cached bootstrap configuration.
 func ResetForTesting() {
-	telemetryEnabled = false
-	telemetryEnabledOnce = sync.Once{}
-	telemetryDisabled.Store(false)
+	telemetryStatePointer.Store(new(telemetryState))
 }

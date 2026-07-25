@@ -13,11 +13,11 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 )
@@ -27,19 +27,22 @@ var (
 	currentCiTags  map[string]string // currentCiTags holds the CI/CD tags after originalCiTags + addedTags
 	originalCiTags map[string]string // originalCiTags holds the original CI/CD tags after all the CMDs
 	addedTags      map[string]string // addedTags holds the tags added by the user
-	ciTagsMutex    sync.Mutex
+	ciTagsMutex    locking.Mutex
+	ciTagsInitMu   locking.Mutex
+	ciTagsReporter func()
+	ciTagsReported bool
 
 	// ciMetrics holds the CI/CD environment numeric variable information
 	currentCiMetrics  map[string]float64 // currentCiMetrics holds the CI/CD metrics after originalCiMetrics + addedMetrics
 	originalCiMetrics map[string]float64 // originalCiMetrics holds the original CI/CD metrics after all the CMDs
 	addedMetrics      map[string]float64 // addedMetrics holds the metrics added by the user
-	ciMetricsMutex    sync.Mutex
+	ciMetricsMutex    locking.Mutex
 
-	getProviderTagsFunc = getProviderTags
+	getProviderTagsFunc = getProviderTagsFromEnvironment
 	getLocalGitDataFunc = getLocalGitData
 	fetchCommitDataFunc = fetchCommitData
 	// applyEnvironmentalDataIfRequiredFunc is a must-not-call test seam used to prove payload-file mode skips git enrichment.
-	applyEnvironmentalDataIfRequiredFunc = applyEnvironmentalDataIfRequired
+	applyEnvironmentalDataIfRequiredFunc = applyEnvironmentalDataFromFileIfRequired
 )
 
 // GetCITags retrieves and caches the CI/CD tags from environment variables.
@@ -50,26 +53,70 @@ var (
 //
 //	A map[string]string containing the CI/CD tags.
 func GetCITags() map[string]string {
+	tags, report := PrepareCITags()
+	report()
+	return tags
+}
+
+// PrepareCITags returns the cached CI tags and an idempotent reporter. Callers
+// initializing under their own lock can defer reporting until after publish.
+func PrepareCITags() (map[string]string, func()) {
 	ciTagsMutex.Lock()
-	defer ciTagsMutex.Unlock()
-
-	// Return the current tags if they are already initialized
 	if currentCiTags != nil {
-		return currentCiTags
+		tags := currentCiTags
+		ciTagsMutex.Unlock()
+		return tags, reportCITagsConfiguration
+	}
+	needsOriginal := originalCiTags == nil
+	ciTagsMutex.Unlock()
+
+	if needsOriginal {
+		ciTagsInitMu.Lock()
+		ciTagsMutex.Lock()
+		needsOriginal = originalCiTags == nil
+		ciTagsMutex.Unlock()
+		if needsOriginal {
+			tagConfig, tagEvents := internalconfig.PrepareCIVisibilityTagConfig()
+			envDataFile, envDataEvents := internalconfig.PrepareCIVisibilityEnvironmentDataFile()
+			modeConfig, modeEvents := internalconfig.PrepareCIVisibilityTestOptimizationConfig()
+			mode, reportMode := bazel.PrepareCurrentModeWithConfig(
+				modeConfig.ManifestFile,
+				modeConfig.PayloadsInFiles,
+				modeConfig.PayloadsRaw,
+				modeConfig.PayloadsPresent,
+				internalconfig.CIVisibilityConfigEventsReporter(modeEvents),
+			)
+			candidate := createCITagsMapWithConfig(tagConfig, mode, envDataFile)
+			ciTagsMutex.Lock()
+			originalCiTags = candidate
+			ciTagsReporter = func() {
+				reportMode()
+				internalconfig.ReportCIVisibilityConfigEvents(tagEvents)
+				internalconfig.ReportCIVisibilityConfigEvents(envDataEvents)
+			}
+			ciTagsMutex.Unlock()
+		}
+		ciTagsInitMu.Unlock()
 	}
 
-	if originalCiTags == nil {
-		// If the original tags are not initialized, create them
-		originalCiTags = createCITagsMap()
-	}
-
-	// Create a new map with the added tags
+	ciTagsMutex.Lock()
 	newTags := maps.Clone(originalCiTags)
 	maps.Copy(newTags, addedTags)
-
-	// Update the current tags
 	currentCiTags = newTags
-	return currentCiTags
+	tags := currentCiTags
+	ciTagsMutex.Unlock()
+	return tags, reportCITagsConfiguration
+}
+
+func reportCITagsConfiguration() {
+	ciTagsMutex.Lock()
+	report := !ciTagsReported
+	ciTagsReported = true
+	reporter := ciTagsReporter
+	ciTagsMutex.Unlock()
+	if report && reporter != nil {
+		reporter()
+	}
 }
 
 // AddCITags adds a new tag to the CI/CD tags map.
@@ -108,12 +155,16 @@ func AddCITagsMap(tags map[string]string) {
 
 // ResetCITags resets the CI/CD tags to their original values.
 func ResetCITags() {
+	ciTagsInitMu.Lock()
+	defer ciTagsInitMu.Unlock()
 	ciTagsMutex.Lock()
 	defer ciTagsMutex.Unlock()
 
 	originalCiTags = nil
 	currentCiTags = nil
 	addedTags = nil
+	ciTagsReporter = nil
+	ciTagsReported = false
 }
 
 // GetCIMetrics retrieves and caches the CI/CD metrics from environment variables.
@@ -219,7 +270,27 @@ func GetRelativePathFromCITagsSourceRoot(path string) string {
 //
 //	A map[string]string containing the extracted CI/CD tags.
 func createCITagsMap() map[string]string {
+	config := internalconfig.ResolveCIVisibilityTagConfig()
+	modeConfig, modeEvents := internalconfig.PrepareCIVisibilityTestOptimizationConfig()
+	mode, reportMode := bazel.PrepareCurrentModeWithConfig(
+		modeConfig.ManifestFile,
+		modeConfig.PayloadsInFiles,
+		modeConfig.PayloadsRaw,
+		modeConfig.PayloadsPresent,
+		internalconfig.CIVisibilityConfigEventsReporter(modeEvents),
+	)
+	envDataFile, envDataEvents := internalconfig.PrepareCIVisibilityEnvironmentDataFile()
+	tags := createCITagsMapWithConfig(config, mode, envDataFile)
+	reportMode()
+	internalconfig.ReportCIVisibilityConfigEvents(envDataEvents)
+	return tags
+}
+
+func createCITagsMapWithConfig(config internalconfig.CIVisibilityTagConfig, mode bazel.Mode, envDataFile string) map[string]string {
 	localTags := getProviderTagsFunc()
+	replaceWithUserSpecificTags(localTags, config.Overrides)
+	applyDatadogProviderOverrides(localTags, config.Overrides)
+	finalizeProviderTags(localTags)
 
 	// Populate runtime values
 	localTags[constants.OSPlatform] = runtime.GOOS
@@ -248,8 +319,8 @@ func createCITagsMap() map[string]string {
 	log.Debug("civisibility: test command: %s", cmd)
 
 	// Populate the test session name
-	if testSessionName, ok := env.Lookup(constants.CIVisibilityTestSessionNameEnvironmentVariable); ok {
-		localTags[constants.TestSessionName] = testSessionName
+	if config.TestSessionNamePresent {
+		localTags[constants.TestSessionName] = config.TestSessionName
 	} else if jobName, ok := localTags[constants.CIJobName]; ok {
 		localTags[constants.TestSessionName] = fmt.Sprintf("%s-%s", jobName, cmd)
 	} else {
@@ -258,15 +329,15 @@ func createCITagsMap() map[string]string {
 	log.Debug("civisibility: test session name: %s", localTags[constants.TestSessionName])
 
 	// Check if the user provided the test service
-	if ddService := env.Get("DD_SERVICE"); ddService != "" {
+	if config.Service != "" {
 		localTags[constants.UserProvidedTestServiceTag] = "true"
 	} else {
 		localTags[constants.UserProvidedTestServiceTag] = "false"
 	}
 
-	if bazel.IsPayloadFilesModeEnabled() {
+	if mode.PayloadFilesEnabled {
 		// Payload-file mode relies on the environmental data file instead of invoking the Git CLI.
-		applyEnvironmentalDataIfRequiredFunc(localTags)
+		applyEnvironmentalDataIfRequiredFunc(localTags, envDataFile)
 		log.Debug("civisibility: skipping local git enrichment in payload-file mode")
 	} else {
 		// Populate missing git data
@@ -329,11 +400,10 @@ func createCITagsMap() map[string]string {
 		}
 
 		// Apply environmental data if is available
-		applyEnvironmentalDataIfRequiredFunc(localTags)
+		applyEnvironmentalDataIfRequiredFunc(localTags, envDataFile)
 	}
 
 	// Apply the Bazel provider fallback only after all other CI provider sources had a chance to populate the tag.
-	mode := bazel.CurrentMode()
 	if (mode.ManifestEnabled || mode.PayloadFilesEnabled) && localTags[constants.CIProviderName] == "" {
 		localTags[constants.CIProviderName] = "bazel"
 	}

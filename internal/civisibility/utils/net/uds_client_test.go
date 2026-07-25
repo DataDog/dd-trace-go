@@ -297,12 +297,12 @@ func runUDSAgentClientEndpointTest(
 		require.NotNil(t, c)
 		handler(t, c, w, r)
 	}))
-	telemetryInit = sync.Once{}
+	resetCIVisibilityTelemetryForTesting()
 	restoreTelemetry := telemetry.MockClient(&telemetrytest.RecordClient{})
 	t.Cleanup(func() {
 		telemetry.StopApp()
 		restoreTelemetry()
-		telemetryInit = sync.Once{}
+		resetCIVisibilityTelemetryForTesting()
 	})
 
 	origEnv := saveEnv()

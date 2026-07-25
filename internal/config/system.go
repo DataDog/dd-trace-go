@@ -106,8 +106,6 @@ func init() {
 	registerRaw(RawDefinition{Key: "DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT", Sources: SourceEnvironment, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", Sources: SourceEnvironment, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_EXTERNAL_ENV", Sources: SourceEnvironment, Telemetry: TelemetryReport})
-	registerRaw(RawDefinition{Key: "DD_GIT_COMMIT_SHA", Sources: SourceEnvironment, Telemetry: TelemetryReport})
-	registerRaw(RawDefinition{Key: "DD_GIT_REPOSITORY_URL", Sources: SourceEnvironment, Telemetry: TelemetrySanitizeURL})
 	registerRaw(RawDefinition{Key: "DD_HOSTNAME", Sources: SourceEnvironment, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_INSTRUMENTATION_INSTALL_ID", Sources: SourceEnvironment, Telemetry: TelemetryOmit})
 	registerRaw(RawDefinition{Key: "DD_INSTRUMENTATION_INSTALL_TIME", Sources: SourceEnvironment, Telemetry: TelemetryOmit})
@@ -194,9 +192,15 @@ func resolveAgentURLWithProvider(p *provider.Provider) (*url.URL, []ConfigEvent)
 
 // AgentURL samples the environment-only shared agent address.
 func AgentURL() *url.URL {
-	value, events := resolveAgentURLWithProvider(newEnvironmentProvider())
+	value, events := PrepareAgentURL()
 	reportInstrumentationEvents(events)
 	return value
+}
+
+// PrepareAgentURL samples the environment-only shared agent address without
+// reporting so constructors can publish their state first.
+func PrepareAgentURL() (*url.URL, []ConfigEvent) {
+	return resolveAgentURLWithProvider(newEnvironmentProvider())
 }
 
 // TransportExternalEnvironment samples the external-environment transport header.
@@ -523,6 +527,14 @@ func resolveFloatWithProvider(
 // ConfigureTelemetryClient applies one environment snapshot and installs the
 // install-info provider used at writer and app-started boundaries.
 func ConfigureTelemetryClient(clientConfig *telemetry.ClientConfig) {
+	events := PrepareTelemetryClient(clientConfig)
+	reportInstrumentationEvents(events)
+}
+
+// PrepareTelemetryClient applies one environment snapshot without reporting.
+// Callers that initialize under a lock must publish state before reporting the
+// returned events.
+func PrepareTelemetryClient(clientConfig *telemetry.ClientConfig) []ConfigEvent {
 	snapshot, events := resolveTelemetrySnapshotForClient(*clientConfig)
 	telemetry.SetEnvironmentConfig(clientConfig, telemetry.EnvironmentConfig{
 		APIKey:                           snapshot.APIKey,
@@ -540,7 +552,7 @@ func ConfigureTelemetryClient(clientConfig *telemetry.ClientConfig) {
 		info := ResolveInstallInfoSnapshot()
 		return telemetry.InstallInfo{ID: info.ID, Type: info.Type, Time: info.Time}
 	})
-	reportInstrumentationEvents(events)
+	return events
 }
 
 // RemoteConfigSnapshot is sampled by each remote-config client constructor.

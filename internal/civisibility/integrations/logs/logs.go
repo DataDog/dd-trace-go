@@ -8,17 +8,20 @@ package logs
 import (
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
-
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
 var (
 	// logsMu protects process-wide log configuration and writer lifecycle state.
-	logsMu sync.Mutex
+	logsMu locking.Mutex
+
+	// logsInitMu serializes first-use configuration resolution without holding
+	// logsMu across provider work.
+	logsInitMu locking.Mutex
 
 	// logsWriterInstance is the singleton instance of logsWriter.
 	logsWriterInstance *logsWriter
@@ -31,46 +34,105 @@ var (
 
 	// enabled indicates whether the logs writer is enabled.
 	enabled *bool
+
+	enabledReporter func()
+	enabledReported bool
+
+	prepareLogsEnabledConfig = internalconfig.PrepareCIVisibilityLogsEnabled
+	reportLogsConfigEvents   = internalconfig.ReportCIVisibilityConfigEvents
+	prepareLogsWriterFunc    = prepareLogsWriter
 )
 
 func IsEnabled() bool {
-	logsMu.Lock()
-	defer logsMu.Unlock()
-	return isEnabledLocked()
+	value, report := PrepareEnabled()
+	report()
+	return value
 }
 
-// isEnabledLocked reports whether CI Visibility logs are enabled.
-// logsMu must be held by the caller.
-func isEnabledLocked() bool {
-	if enabled == nil {
-		v, _, _ := stableconfig.Bool("DD_CIVISIBILITY_LOGS_ENABLED", false)
-		enabled = &v
+// PrepareEnabled resolves and publishes log enablement, returning an
+// idempotent reporter that never runs while an initialization lock is held.
+func PrepareEnabled() (bool, func()) {
+	logsMu.Lock()
+	if enabled != nil {
+		value := *enabled
+		logsMu.Unlock()
+		return value, reportEnabledConfig
 	}
+	logsMu.Unlock()
 
-	return *enabled
+	logsInitMu.Lock()
+	logsMu.Lock()
+	if enabled != nil {
+		value := *enabled
+		logsMu.Unlock()
+		logsInitMu.Unlock()
+		return value, reportEnabledConfig
+	}
+	logsMu.Unlock()
+
+	value, events := prepareLogsEnabledConfig()
+	logsMu.Lock()
+	enabled = &value
+	enabledReporter = func() { reportLogsConfigEvents(events) }
+	logsMu.Unlock()
+	logsInitMu.Unlock()
+	return value, reportEnabledConfig
+}
+
+func reportEnabledConfig() {
+	logsMu.Lock()
+	shouldReport := !enabledReported
+	if shouldReport {
+		enabledReported = true
+	}
+	report := enabledReporter
+	logsMu.Unlock()
+	if shouldReport && report != nil {
+		report()
+	}
 }
 
 // Initialize initializes the logs writer for CI visibility.
 func Initialize(serviceName string) {
-	logsMu.Lock()
-	defer logsMu.Unlock()
+	report := PrepareInitialize(serviceName)
+	report()
+}
 
-	if !isEnabledLocked() || logsWriterInstance != nil {
-		return
+// PrepareInitialize publishes the logs writer before returning its deferred
+// configuration reporter.
+func PrepareInitialize(serviceName string) func() {
+	isEnabled, report := PrepareEnabled()
+	if !isEnabled {
+		return report
 	}
+	logsMu.Lock()
+	if logsWriterInstance != nil {
+		logsMu.Unlock()
+		return report
+	}
+	resolvedHost := hostname.Get()
+	if resolvedHost == "" {
+		resolvedHost, _ = os.Hostname()
+	}
+	writer, reportWriter := prepareLogsWriterFunc()
 
 	servName = serviceName
-	host = hostname.Get()
-	if host == "" {
-		host, _ = os.Hostname()
+	host = resolvedHost
+	logsWriterInstance = writer
+	logsMu.Unlock()
+	return func() {
+		report()
+		reportWriter()
 	}
-	logsWriterInstance = newLogsWriter()
 }
 
 // Stop stops the logs writer and cleans up resources.
 func Stop() {
+	if !IsEnabled() {
+		return
+	}
 	logsMu.Lock()
-	if !isEnabledLocked() || logsWriterInstance == nil {
+	if logsWriterInstance == nil {
 		logsMu.Unlock()
 		return
 	}
@@ -84,10 +146,12 @@ func Stop() {
 
 // WriteLog writes a log entry with the given message and tags.
 func WriteLog(testID uint64, moduleName string, suiteName string, testName string, message string, tags string) {
+	if !IsEnabled() {
+		return
+	}
 	logsMu.Lock()
-	defer logsMu.Unlock()
-
-	if !isEnabledLocked() || logsWriterInstance == nil {
+	if logsWriterInstance == nil {
+		logsMu.Unlock()
 		return
 	}
 
@@ -105,4 +169,5 @@ func WriteLog(testID uint64, moduleName string, suiteName string, testName strin
 		Service:    servName,
 		DdTags:     tags,
 	})
+	logsMu.Unlock()
 }

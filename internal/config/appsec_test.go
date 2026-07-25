@@ -191,7 +191,7 @@ func TestAppSecStableBoolErrorsUseHighToLowPriorityAndDiscardOnWinner(t *testing
 			},
 			Attempts: attempts,
 		}
-		filtered, filteredEvents := filterAppSecStableEmpty(
+		filtered, filteredEvents := filterEmptyDeclarativeStableAttempts(
 			resolved,
 			appSecStableTestEvents(key, attempts),
 			key,
@@ -224,7 +224,7 @@ func TestAppSecStableBoolEmptyFileValuesAreAbsent(t *testing.T) {
 			}
 			events := appSecStableTestEvents(key, resolved.Attempts)
 
-			got, gotEvents := filterAppSecStableEmpty(resolved, events, key, false, strconv.ParseBool)
+			got, gotEvents := filterEmptyDeclarativeStableAttempts(resolved, events, key, false, strconv.ParseBool)
 
 			require.Equal(t, schema.Winner[bool]{Value: true, Origin: telemetry.OriginEnvVar}, got.Winner)
 			require.NoError(t, appSecStableBoolError(key, got.Winner.DefaultUsed, got.Attempts))
@@ -245,7 +245,7 @@ func TestAppSecStableBoolEmptyFileValuesAreAbsent(t *testing.T) {
 			}
 			events := appSecStableTestEvents(key, resolved.Attempts)
 
-			got, gotEvents := filterAppSecStableEmpty(resolved, events, key, false, strconv.ParseBool)
+			got, gotEvents := filterEmptyDeclarativeStableAttempts(resolved, events, key, false, strconv.ParseBool)
 
 			require.Equal(t, schema.Winner[bool]{
 				Value: false, Origin: telemetry.OriginDefault, DefaultUsed: true,
@@ -270,7 +270,7 @@ func TestAppSecStableEmptyEnvironmentValuesRemainPresent(t *testing.T) {
 	}
 	events := appSecStableTestEvents(key, resolved.Attempts)
 
-	got, gotEvents := filterAppSecStableEmpty(resolved, events, key, false, strconv.ParseBool)
+	got, gotEvents := filterEmptyDeclarativeStableAttempts(resolved, events, key, false, strconv.ParseBool)
 
 	require.Equal(t, resolved, got)
 	require.Equal(t, events, gotEvents)
@@ -291,7 +291,7 @@ func TestAppSecAgenticEmptyFileValuesAreAbsent(t *testing.T) {
 		}
 		events := appSecStableTestEvents(key, resolved.Attempts)
 
-		got, gotEvents := filterAppSecStableEmpty(resolved, events, key, "", func(raw string) (string, error) {
+		got, gotEvents := filterEmptyDeclarativeStableAttempts(resolved, events, key, "", func(raw string) (string, error) {
 			return raw, nil
 		})
 
@@ -311,7 +311,7 @@ func TestAppSecAgenticEmptyFileValuesAreAbsent(t *testing.T) {
 		}
 		events := appSecStableTestEvents(key, resolved.Attempts)
 
-		got, gotEvents := filterAppSecStableEmpty(resolved, events, key, "", func(raw string) (string, error) {
+		got, gotEvents := filterEmptyDeclarativeStableAttempts(resolved, events, key, "", func(raw string) (string, error) {
 			return raw, nil
 		})
 
@@ -334,7 +334,7 @@ func TestAppSecAgenticEmptyFileValuesAreAbsent(t *testing.T) {
 		}
 		events := appSecStableTestEvents(key, resolved.Attempts)
 
-		got, gotEvents := filterAppSecStableEmpty(resolved, events, key, "", func(raw string) (string, error) {
+		got, gotEvents := filterEmptyDeclarativeStableAttempts(resolved, events, key, "", func(raw string) (string, error) {
 			return raw, nil
 		})
 

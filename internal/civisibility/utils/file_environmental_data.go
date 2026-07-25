@@ -13,7 +13,7 @@ import (
 	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -78,7 +78,10 @@ type (
 //
 //go:linkname getEnvironmentalData
 func getEnvironmentalData() *fileEnvironmentalData {
-	envDataFileName := getEnvDataFileName()
+	return getEnvironmentalDataFromFile(getEnvDataFileName())
+}
+
+func getEnvironmentalDataFromFile(envDataFileName string) *fileEnvironmentalData {
 	if _, err := os.Stat(envDataFileName); os.IsNotExist(err) {
 		logger.Debug("civisibility: reading environmental data from %s not found.", envDataFileName)
 		return nil
@@ -102,7 +105,7 @@ func getEnvironmentalData() *fileEnvironmentalData {
 //
 //go:linkname getEnvDataFileName
 func getEnvDataFileName() string {
-	envDataFileName := strings.TrimSpace(env.Get(constants.CIVisibilityEnvironmentDataFilePath))
+	envDataFileName := internalconfig.CIVisibilityEnvironmentDataFile()
 	if envDataFileName != "" {
 		return envDataFileName
 	}
@@ -116,10 +119,14 @@ func getEnvDataFileName() string {
 //
 //go:linkname applyEnvironmentalDataIfRequired
 func applyEnvironmentalDataIfRequired(tags map[string]string) {
+	applyEnvironmentalDataFromFileIfRequired(tags, getEnvDataFileName())
+}
+
+func applyEnvironmentalDataFromFileIfRequired(tags map[string]string, envDataFileName string) {
 	if tags == nil {
 		return
 	}
-	envData := getEnvironmentalData()
+	envData := getEnvironmentalDataFromFile(envDataFileName)
 	if envData == nil {
 		logger.Debug("civisibility: no environmental data found")
 		return

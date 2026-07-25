@@ -367,6 +367,49 @@ func TestCurrentMode_LogsManifestVersionAssignmentParsing(t *testing.T) {
 	}
 }
 
+func TestResolveModePreservesAbsentAndInvalidPayloadDiagnostics(t *testing.T) {
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	mode := resolveMode(testOptimizationConfig{})
+	if mode.PayloadFilesEnabled {
+		t.Fatal("expected absent payload-file setting to remain disabled")
+	}
+	if containsTestOptimizationLogLine(recordLogger.Logs(), "disabled after parsing") {
+		t.Fatalf("absent payload-file setting must not be logged as an explicit false value: %v", recordLogger.Logs())
+	}
+
+	recordLogger = new(log.RecordLogger)
+	log.UseLogger(recordLogger)
+	mode = resolveMode(testOptimizationConfig{
+		PayloadsRaw:     " invalid ",
+		PayloadsPresent: true,
+	})
+	if mode.PayloadFilesEnabled {
+		t.Fatal("expected invalid payload-file setting to remain disabled")
+	}
+	if !containsTestOptimizationLogLine(recordLogger.Logs(), `disabled after parsing value "invalid"`) {
+		t.Fatalf("expected the original invalid payload-file value in diagnostics: %v", recordLogger.Logs())
+	}
+
+	recordLogger = new(log.RecordLogger)
+	log.UseLogger(recordLogger)
+	mode = resolveMode(testOptimizationConfig{
+		PayloadsInFiles: true,
+		PayloadsRaw:     " true ",
+		PayloadsPresent: true,
+	})
+	if !mode.PayloadFilesEnabled {
+		t.Fatal("expected a whitespace-padded valid payload setting to use its parsed effective value")
+	}
+	if containsTestOptimizationLogLine(recordLogger.Logs(), "disabled after parsing") {
+		t.Fatalf("valid whitespace-padded payload setting must not be logged as disabled: %v", recordLogger.Logs())
+	}
+}
+
 func TestWritePayloadFileDisabledMode(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)

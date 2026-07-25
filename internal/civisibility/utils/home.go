@@ -84,7 +84,13 @@ func getHomeDir() (homeDir string) {
 		homeEnv = "home"
 	}
 
-	if home := env.Get(homeEnv); home != "" {
+	var home string
+	if homeEnv == "home" {
+		home = env.Get("home")
+	} else {
+		home = env.Get("HOME")
+	}
+	if home != "" {
 		// Prefer the HOME environment variable
 		return home
 	}

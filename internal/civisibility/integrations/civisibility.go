@@ -23,9 +23,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -36,6 +35,12 @@ type ciVisibilityCloseAction func()
 // Visibility client implementation.
 type ciVisibilityIdleConnectionCloser interface {
 	CloseIdleConnections()
+}
+
+type ciVisibilityInitializationRun struct {
+	inProgress atomic.Bool
+	complete   atomic.Bool
+	done       chan struct{}
 }
 
 // ciVisibilitySignalHandler owns the SIGINT/SIGTERM goroutine registered by CI
@@ -51,6 +56,9 @@ type ciVisibilitySignalHandler struct {
 var (
 	// ciVisibilityInitializationOnce ensures we initialize the CI visibility tracer only once.
 	ciVisibilityInitializationOnce sync.Once
+	// ciVisibilityInitializationState coordinates ordinary public callers while
+	// allowing internal configuration callbacks to avoid reentering the Once.
+	ciVisibilityInitializationState atomic.Pointer[ciVisibilityInitializationRun]
 
 	// ciVisibilitySignalHandlerMu synchronizes access to activeCIVisibilitySignalHandler.
 	ciVisibilitySignalHandlerMu sync.Mutex
@@ -69,11 +77,13 @@ var (
 
 	// mTracer contains the mock tracer instance for testing purposes
 	mTracer mocktracer.Tracer
+
+	startCIVisibilityMockTracer = mocktracer.Start
 )
 
 // EnsureCiVisibilityInitialization initializes the CI visibility tracer if it hasn't been initialized already.
 func EnsureCiVisibilityInitialization() {
-	internalCiVisibilityInitialization(func(opts []tracer.StartOption) {
+	runCIVisibilityInitializationAndWait(func(opts []tracer.StartOption) {
 		// Initialize the tracer.
 		tracer.Start(opts...)
 	})
@@ -81,30 +91,66 @@ func EnsureCiVisibilityInitialization() {
 
 // InitializeCIVisibilityMock initialize the mocktracer for CI Visibility usage
 func InitializeCIVisibilityMock() mocktracer.Tracer {
-	internalCiVisibilityInitialization(func([]tracer.StartOption) {
+	runCIVisibilityInitializationAndWait(func([]tracer.StartOption) {
 		// Set the library to test mode
 		civisibility.SetTestMode()
 		// Initialize the mocktracer
-		mTracer = mocktracer.Start()
+		mTracer = startCIVisibilityMockTracer()
 	})
 	return mTracer
 }
 
+func currentCIVisibilityInitializationRun() *ciVisibilityInitializationRun {
+	if state := ciVisibilityInitializationState.Load(); state != nil {
+		return state
+	}
+	state := &ciVisibilityInitializationRun{done: make(chan struct{})}
+	if ciVisibilityInitializationState.CompareAndSwap(nil, state) {
+		return state
+	}
+	return ciVisibilityInitializationState.Load()
+}
+
+func runCIVisibilityInitializationAndWait(tracerInitializer func([]tracer.StartOption)) {
+	state := currentCIVisibilityInitializationRun()
+	internalCiVisibilityInitializationWithState(state, tracerInitializer)
+	<-state.done
+}
+
 // internalCiVisibilityInitialization runs the one-time CI Visibility bootstrap and wires the selected tracer initializer into it.
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
+	internalCiVisibilityInitializationWithState(currentCIVisibilityInitializationRun(), tracerInitializer)
+}
+
+func internalCiVisibilityInitializationWithState(state *ciVisibilityInitializationRun, tracerInitializer func([]tracer.StartOption)) {
+	if state.complete.Load() || !state.inProgress.CompareAndSwap(false, true) {
+		return
+	}
+	defer func() {
+		state.complete.Store(true)
+		close(state.done)
+		state.inProgress.Store(false)
+	}()
+
+	var configEvents []internalconfig.ConfigEvent
+	var ciTags map[string]string
+	var reportCITags func()
+	var reportLogs func()
 	ciVisibilityInitializationOnce.Do(func() {
+		bootstrapConfig, bootstrapEvents := internalconfig.PrepareCIVisibilityBootstrapConfig()
+		enabledMode, _, enabledEvents := internalconfig.PrepareCIVisibilityEnabledMode()
+		configEvents = append(bootstrapEvents, enabledEvents...)
 		civisibility.SetState(civisibility.StateInitializing)
 		defer civisibility.SetState(civisibility.StateInitialized)
 
 		// check the debug flag to enable debug logs. The tracer initialization happens
 		// after the CI Visibility initialization so we need to handle this flag ourselves
-		if enabled, _, _ := stableconfig.Bool("DD_TRACE_DEBUG", false); enabled {
+		if bootstrapConfig.DebugEnabled {
 			log.SetLevel(log.LevelDebug)
 		}
 
 		log.Debug("civisibility: initializing")
 
-		enabledMode, _ := envconfig.FromEnv()
 		parentOnly := enabledMode == envconfig.EnabledModeParent
 
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
@@ -117,12 +163,12 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		_ = utils.GetCodeOwners()
 
 		// Preload all CI, Git, and CodeOwners tags.
-		ciTags := utils.GetCITags()
+		ciTags, reportCITags = utils.PrepareCITags()
 		_ = utils.GetCIMetrics()
 
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
-		serviceName := env.Get("DD_SERVICE")
+		serviceName := bootstrapConfig.Service
 		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
@@ -147,10 +193,17 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 			_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
 		}
 
-		initializeCiVisibilityLogs(serviceName)
+		reportLogs = prepareCiVisibilityLogs(serviceName)
 
 		startCIVisibilitySignalHandler()
 	})
+	if reportCITags != nil {
+		reportCITags()
+	}
+	internalconfig.ReportCIVisibilityConfigEvents(configEvents)
+	if reportLogs != nil {
+		reportLogs()
+	}
 }
 
 // run waits for either a process signal or a normal shutdown request.
@@ -230,25 +283,41 @@ func stopCIVisibilitySignalHandler() {
 
 // initializeCiVisibilityLogs starts CI Visibility log shipping only when logs are enabled and Bazel offline/file modes do not suppress it.
 func initializeCiVisibilityLogs(serviceName string) {
-	if !shouldInitializeCiVisibilityLogs(logs.IsEnabled()) {
-		if bazel.IsManifestModeEnabled() || bazel.IsPayloadFilesModeEnabled() {
+	report := prepareCiVisibilityLogs(serviceName)
+	report()
+}
+
+func prepareCiVisibilityLogs(serviceName string) func() {
+	logsEnabled, reportLogs := logs.PrepareEnabled()
+	mode, reportMode := bazel.PrepareCurrentMode()
+	report := func() {
+		reportMode()
+		reportLogs()
+	}
+	if !shouldInitializeCiVisibilityLogsForMode(logsEnabled, mode) {
+		if mode.ManifestEnabled || mode.PayloadFilesEnabled {
 			log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
-			return
+			return report
 		}
 		log.Debug("civisibility: logs are disabled")
-		return
+		return report
 	}
 
 	log.Debug("civisibility: initializing logs for service: %s", serviceName)
-	logs.Initialize(serviceName)
+	reportInitialize := logs.PrepareInitialize(serviceName)
+	return func() {
+		report()
+		reportInitialize()
+	}
 }
 
 // shouldInitializeCiVisibilityLogs reports whether CI Visibility log collection should start for the current process mode.
 func shouldInitializeCiVisibilityLogs(logsEnabled bool) bool {
-	if bazel.IsManifestModeEnabled() || bazel.IsPayloadFilesModeEnabled() {
-		return false
-	}
-	return logsEnabled
+	return shouldInitializeCiVisibilityLogsForMode(logsEnabled, bazel.CurrentMode())
+}
+
+func shouldInitializeCiVisibilityLogsForMode(logsEnabled bool, mode bazel.Mode) bool {
+	return logsEnabled && !mode.ManifestEnabled && !mode.PayloadFilesEnabled
 }
 
 // PushCiVisibilityCloseAction adds a close action to be executed when CI visibility exits.

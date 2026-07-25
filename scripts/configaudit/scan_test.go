@@ -166,6 +166,10 @@ func TestDefaultRawReadAllowlistIncludesOnlyExactBootstrapBoundaries(t *testing.
 			File: "internal/config/bootstrap/appsec.go",
 			Func: "resolveAppSecStackTrace",
 		}: {},
+		{
+			File: "internal/config/bootstrap/testoptimization.go",
+			Func: "resolveTestOptimization",
+		}: {},
 	}
 	for location := range locations {
 		if _, ok := allow[location]; !ok {
@@ -175,6 +179,22 @@ func TestDefaultRawReadAllowlistIncludesOnlyExactBootstrapBoundaries(t *testing.
 	for candidate := range allow {
 		if _, ok := locations[candidate]; strings.HasPrefix(candidate.File, "internal/config/bootstrap/") && !ok {
 			t.Fatalf("unexpected broader bootstrap allowlist entry: %#v", candidate)
+		}
+	}
+}
+
+func TestDefaultRawReadAllowlistIncludesOnlyExactCIProviderBoundary(t *testing.T) {
+	allow := defaultRawReadAllowlist()
+	location := rawReadLocation{
+		File: "internal/civisibility/utils/ci_environment.go",
+		Func: "lookupCIProviderEnvironment",
+	}
+	if _, ok := allow[location]; !ok {
+		t.Fatalf("CI provider environment boundary is not allowlisted: %#v", location)
+	}
+	for candidate := range allow {
+		if strings.HasPrefix(candidate.File, "internal/civisibility/") && candidate != location {
+			t.Fatalf("unexpected broader CI Visibility allowlist entry: %#v", candidate)
 		}
 	}
 }

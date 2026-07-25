@@ -28,13 +28,15 @@ const unresolvedAliasIdentity = "unresolved raw-read alias"
 
 func defaultRawReadAllowlist() rawReadAllowlist {
 	return rawReadAllowlist{
-		{File: "internal/env/env.go", Func: "Get"}:                                     {},
-		{File: "internal/env/env.go", Func: "Lookup"}:                                  {},
-		{File: "internal/config/bootstrap/appsec.go", Func: "resolveAppSecStackTrace"}: {},
-		{File: "internal/config/bootstrap/telemetry.go", Func: "TelemetryEnabled"}:     {},
-		{File: "instrumentation/env/env.go", Func: "Get"}:                              {},
-		{File: "instrumentation/env/env.go", Func: "Lookup"}:                           {},
-		{File: "instrumentation/options/options.go", Func: "GetBoolEnv"}:               {},
+		{File: "internal/env/env.go", Func: "Get"}:                                                   {},
+		{File: "internal/env/env.go", Func: "Lookup"}:                                                {},
+		{File: "internal/config/bootstrap/appsec.go", Func: "resolveAppSecStackTrace"}:               {},
+		{File: "internal/config/bootstrap/telemetry.go", Func: "TelemetryEnabled"}:                   {},
+		{File: "internal/config/bootstrap/testoptimization.go", Func: "resolveTestOptimization"}:     {},
+		{File: "internal/civisibility/utils/ci_environment.go", Func: "lookupCIProviderEnvironment"}: {},
+		{File: "instrumentation/env/env.go", Func: "Get"}:                                            {},
+		{File: "instrumentation/env/env.go", Func: "Lookup"}:                                         {},
+		{File: "instrumentation/options/options.go", Func: "GetBoolEnv"}:                             {},
 	}
 }
 

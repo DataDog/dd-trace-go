@@ -65,6 +65,7 @@ func resetCIVisibilityBootstrapStateForTesting() {
 		civisibility.SetTestMode()
 	}
 	ciVisibilityInitializationOnce = sync.Once{}
+	ciVisibilityInitializationState.Store(&ciVisibilityInitializationRun{done: make(chan struct{})})
 	mTracer = nil
 }
 

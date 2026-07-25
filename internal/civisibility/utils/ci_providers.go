@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -265,7 +266,7 @@ func isNumericJobID(id string) bool {
 type providerType = func() map[string]string
 
 // providers maps environment variable names to their corresponding CI provider extraction functions.
-var providers = map[string]providerType{
+var providers = map[ciProviderEnvKey]providerType{
 	"APPVEYOR":            extractAppveyor,
 	"TF_BUILD":            extractAzurePipelines,
 	"BITBUCKET_COMMIT":    extractBitbucket,
@@ -284,31 +285,44 @@ var providers = map[string]providerType{
 }
 
 // getEnvVarsJSON returns a JSON representation of the specified environment variables.
-func getEnvVarsJSON(envVars ...string) ([]byte, error) {
+func getEnvVarsJSON(envVars ...ciProviderEnvKey) ([]byte, error) {
 	envVarsMap := make(map[string]string)
 	for _, envVar := range envVars {
-		value := env.Get(envVar)
+		value := getCIProviderEnvironment(envVar)
 		if value != "" {
-			envVarsMap[envVar] = value
+			envVarsMap[string(envVar)] = value
 		}
 	}
 	return json.Marshal(envVarsMap)
 }
 
-// getProviderTags extracts CI information from environment variables.
+// getProviderTags extracts CI information and applies Datadog overrides. Keep
+// this wrapper for callers and tests that use the historical helper directly;
+// cache initialization uses getProviderTagsFromEnvironment so its registry
+// snapshot can be prepared before taking the cache lock.
 func getProviderTags() map[string]string {
+	config := internalconfig.ResolveCIVisibilityTagConfig()
+	tags := getProviderTagsFromEnvironment()
+	replaceWithUserSpecificTags(tags, config.Overrides)
+	applyDatadogProviderOverrides(tags, config.Overrides)
+	finalizeProviderTags(tags)
+	return tags
+}
+
+func getProviderTagsFromEnvironment() map[string]string {
 	tags := map[string]string{}
 	for key, provider := range providers {
-		if _, ok := env.Lookup(key); !ok {
+		if _, ok := lookupCIProviderEnvironment(key); !ok {
 			continue
 		}
 		tags = provider()
 	}
+	return tags
+}
 
-	// replace with user specific tags
-	replaceWithUserSpecificTags(tags)
-
-	// Normalize tags
+// finalizeProviderTags performs transformations that must run only after
+// Datadog overrides have replaced the raw provider values.
+func finalizeProviderTags(tags map[string]string) {
 	normalizeTags(tags)
 
 	// Expand ~
@@ -330,8 +344,6 @@ func getProviderTags() map[string]string {
 			log.Debug("civisibility: no ci provider was detected.")
 		}
 	}
-
-	return tags
 }
 
 // normalizeTags normalizes specific tags to remove prefixes and sensitive information.
@@ -363,9 +375,11 @@ func normalizeTags(tags map[string]string) {
 }
 
 // replaceWithUserSpecificTags replaces certain tags with user-specific environment variable values.
-func replaceWithUserSpecificTags(tags map[string]string) {
+func replaceWithUserSpecificTags(tags map[string]string, overrides map[string]string) {
 	replace := func(tagName, envName string) {
-		tags[tagName] = getEnvironmentVariableIfIsNotEmpty(envName, tags[tagName])
+		if value := overrides[envName]; value != "" {
+			tags[tagName] = value
+		}
 	}
 
 	replace(constants.GitBranch, "DD_GIT_BRANCH")
@@ -383,14 +397,38 @@ func replaceWithUserSpecificTags(tags map[string]string) {
 	replace(constants.GitPrBaseCommit, "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA")
 }
 
-// getEnvironmentVariableIfIsNotEmpty returns the environment variable value if it is not empty, otherwise returns the default value.
-func getEnvironmentVariableIfIsNotEmpty(key string, defaultValue string) string {
-	if value, ok := env.Lookup(key); ok && value != "" {
-		return value
+func applyDatadogProviderOverrides(tags map[string]string, overrides map[string]string) {
+	var envKeys []string
+	switch tags[constants.CIProviderName] {
+	case "jenkins":
+		envKeys = []string{"DD_CUSTOM_TRACE_ID", "DD_CUSTOM_PARENT_ID"}
+	case "awscodepipeline":
+		if value := overrides["DD_PIPELINE_EXECUTION_ID"]; value != "" {
+			tags[constants.CIPipelineID] = value
+		}
+		if value := overrides["DD_ACTION_EXECUTION_ID"]; value != "" {
+			tags[constants.CIJobID] = value
+		}
+		envKeys = []string{"DD_ACTION_EXECUTION_ID", "DD_PIPELINE_EXECUTION_ID"}
 	}
-	return defaultValue
+	if len(envKeys) == 0 {
+		return
+	}
+	values := make(map[string]string)
+	if existing := tags[constants.CIEnvVars]; existing != "" {
+		_ = json.Unmarshal([]byte(existing), &values)
+	}
+	for _, key := range envKeys {
+		if value := overrides[key]; value != "" {
+			values[key] = value
+		}
+	}
+	if encoded, err := json.Marshal(values); err == nil {
+		tags[constants.CIEnvVars] = string(encoded)
+	}
 }
 
+// getEnvironmentVariableIfIsNotEmpty returns the environment variable value if it is not empty, otherwise returns the default value.
 // normalizeRef normalizes a Git reference name by removing common prefixes.
 func normalizeRef(name string) string {
 	// Define the prefixes to remove
@@ -406,9 +444,9 @@ func normalizeRef(name string) string {
 }
 
 // firstEnv returns the value of the first non-empty environment variable from the provided list.
-func firstEnv(keys ...string) string {
+func firstEnv(keys ...ciProviderEnvKey) string {
 	for _, key := range keys {
-		if value, ok := env.Lookup(key); ok {
+		if value, ok := lookupCIProviderEnvironment(key); ok {
 			if value != "" {
 				return value
 			}
@@ -818,11 +856,6 @@ func extractJenkins() map[string]string {
 	tags[constants.PrNumber] = env.Get("CHANGE_ID")
 	tags[constants.GitPrBaseBranch] = env.Get("CHANGE_TARGET")
 
-	jsonString, err := getEnvVarsJSON("DD_CUSTOM_TRACE_ID", "DD_CUSTOM_PARENT_ID")
-	if err == nil {
-		tags[constants.CIEnvVars] = string(jsonString)
-	}
-
 	nodeLabels := env.Get("NODE_LABELS")
 	if len(nodeLabels) > 0 {
 		labelsArray := strings.Split(nodeLabels, " ")
@@ -915,10 +948,7 @@ func extractAwsCodePipeline() map[string]string {
 	}
 
 	tags[constants.CIProviderName] = "awscodepipeline"
-	tags[constants.CIPipelineID] = env.Get("DD_PIPELINE_EXECUTION_ID")
-	tags[constants.CIJobID] = env.Get("DD_ACTION_EXECUTION_ID")
-
-	jsonString, err := getEnvVarsJSON("CODEBUILD_BUILD_ARN", "DD_ACTION_EXECUTION_ID", "DD_PIPELINE_EXECUTION_ID")
+	jsonString, err := getEnvVarsJSON("CODEBUILD_BUILD_ARN")
 	if err == nil {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}
