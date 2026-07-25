@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -113,6 +114,7 @@ func startTelemetry(c *config) telemetry.Client {
 	if c.internalConfig.LogToStdout() || c.internalConfig.CIVisibilityAgentlessActive() {
 		cfg.APIKey = c.internalConfig.APIKey()
 	}
+	internalconfig.ConfigureTelemetryClient(&cfg)
 	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg)
 	if err != nil {
 		log.Debug("tracer: failed to create telemetry client: %s", err.Error())

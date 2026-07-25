@@ -398,7 +398,12 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, r
 func (c *client) AppStart() {
 	c.flushMapperMu.Lock()
 	defer c.flushMapperMu.Unlock()
-	c.flushMapper = mapper.NewAppStartedMapper(c.flushMapper)
+	c.flushMapper = mapper.NewAppStartedMapper(c.flushMapper, func() transport.InstallSignature {
+		info := c.clientConfig.resolveInstallInfo()
+		return transport.InstallSignature{
+			InstallID: info.ID, InstallType: info.Type, InstallTime: info.Time,
+		}
+	})
 }
 
 func (c *client) AppStop() {

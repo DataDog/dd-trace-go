@@ -158,8 +158,3 @@ func BoolVal(val string, def bool) bool {
 	}
 	return v
 }
-
-// ExternalEnvironment returns the value of the DD_EXTERNAL_ENV environment variable.
-func ExternalEnvironment() string {
-	return env.Get("DD_EXTERNAL_ENV")
-}

@@ -176,7 +176,7 @@ func tracerOTelDiagnostic(
 	otelKey string,
 	err error,
 ) ConfigEvent {
-	return ConfigEvent{
+	return scrubEvent(def.Telemetry, ConfigEvent{
 		Kind:                kind,
 		BindingID:           binding.ID,
 		Name:                def.Key,
@@ -186,5 +186,5 @@ func tracerOTelDiagnostic(
 		Cadence:             cadenceFor(binding),
 		CompatibilityReport: true,
 		OTelName:            otelKey,
-	}
+	})
 }

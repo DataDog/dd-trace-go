@@ -270,7 +270,7 @@ func TestConfig(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Setenv(envPollIntervalSec, tc.env)
-				duration := pollIntervalFromEnv()
+				duration := DefaultClientConfig().PollInterval
 				require.Equal(t, tc.expected, duration)
 
 			})

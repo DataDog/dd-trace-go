@@ -342,15 +342,15 @@ var (
 )
 
 func init() {
-	// This cannot use env.Get because it would cause a cyclic import
-	if v := os.Getenv("DD_LOGGING_RATE"); v != "" {
-		setLoggingRate(v)
-	}
-
 	// This is required because we really want to be able to log errors from dyngo
 	// but the log package depend on too much packages that we want to instrument.
 	// So we need to do this to avoid dependency cycles.
 	dyngo.LogError = Error
+}
+
+// SetLoggingRate applies an already-resolved DD_LOGGING_RATE value.
+func SetLoggingRate(v string) {
+	setLoggingRate(v)
 }
 
 func setLoggingRate(v string) {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 
@@ -228,7 +229,7 @@ func newClient(config ClientConfig) (*Client, error) {
 // Start starts the client's update poll loop in a fresh goroutine.
 // Noop if the client has already started.
 func Start(config ClientConfig) error {
-	if !internal.BoolEnv("DD_REMOTE_CONFIGURATION_ENABLED", true) {
+	if !internalconfig.RemoteConfigEnabled() {
 		// Don't start polling if the feature is disabled explicitly
 		return nil
 	}
@@ -836,7 +837,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 
 	capa := c.allCapabilities()
 	var tags []string
-	for k, v := range internal.GetGitMetadataTags() {
+	for k, v := range internalconfig.GitMetadataSnapshotValue().Tags {
 		tags = append(tags, k+":"+v)
 	}
 	req := clientGetConfigsRequest{

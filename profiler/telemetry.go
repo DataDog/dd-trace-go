@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -24,11 +25,13 @@ func startTelemetry(c *config) {
 	telemetry.ProductStarted(telemetry.NamespaceProfilers)
 	telemetry.RegisterAppConfigs(telemetryConfiguration(c)...)
 	if telemetry.GlobalClient() == nil {
-		client, err := telemetry.NewClient(c.service, c.env, c.version, telemetry.ClientConfig{
+		clientConfig := telemetry.ClientConfig{
 			HTTPClient: c.httpClient,
 			APIKey:     c.apiKey,
 			AgentURL:   c.agentURL,
-		})
+		}
+		internalconfig.ConfigureTelemetryClient(&clientConfig)
+		client, err := telemetry.NewClient(c.service, c.env, c.version, clientConfig)
 		if err != nil {
 			log.Debug("profiler: failed to create telemetry client: %s", err.Error())
 			return

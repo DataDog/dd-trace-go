@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,6 +62,75 @@ func TestProcessTagsConcurrentReadWrite(t *testing.T) {
 	wg.Wait()
 }
 
+func TestReloadWithEnabledClearsPreviouslyCollectedTags(t *testing.T) {
+	ReloadWithEnabled(true)
+	assert.NotNil(t, GlobalTags())
+
+	ReloadWithEnabled(false)
+	assert.Nil(t, GlobalTags())
+
+	t.Cleanup(func() { ReloadWithEnabled(true) })
+}
+
+func TestDisabledInitializationNeverInvokesCollector(t *testing.T) {
+	var calls atomic.Int64
+	restoreCollector := setCollectorForTesting(func() map[string]string {
+		calls.Add(1)
+		return map[string]string{"unexpected": "tag"}
+	})
+	resetInitializationForTesting()
+	t.Cleanup(func() {
+		restoreCollector()
+		Reload()
+	})
+
+	ReloadWithEnabled(false)
+
+	assert.Nil(t, GlobalTags())
+	assert.Zero(t, calls.Load())
+}
+
+func TestLazyInitializationUsesEnabledProvider(t *testing.T) {
+	var calls atomic.Int64
+	restoreCollector := setCollectorForTesting(func() map[string]string {
+		calls.Add(1)
+		return map[string]string{"unexpected": "tag"}
+	})
+	SetEnabledProvider(func() bool { return false })
+	resetInitializationForTesting()
+	t.Cleanup(func() {
+		SetEnabledProvider(nil)
+		restoreCollector()
+		Reload()
+	})
+
+	assert.Nil(t, GlobalTags())
+	assert.Zero(t, calls.Load())
+}
+
+func TestEnabledProviderConcurrentSetAndReload(t *testing.T) {
+	restoreCollector := setCollectorForTesting(func() map[string]string { return nil })
+	t.Cleanup(func() {
+		SetEnabledProvider(nil)
+		restoreCollector()
+		Reload()
+	})
+
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			for j := range 1_000 {
+				if i%2 == 0 {
+					SetEnabledProvider(func() bool { return j%2 == 0 })
+				} else {
+					Reload()
+				}
+			}
+		})
+	}
+	wg.Wait()
+}
+
 func TestSetServiceNameTag(t *testing.T) {
 	t.Run("auto-assigned sets svc.auto", func(t *testing.T) {
 		t.Cleanup(Reload)
@@ -104,24 +174,24 @@ func TestSetServiceNameTag(t *testing.T) {
 
 	t.Run("works when tags map not yet initialised", func(t *testing.T) {
 		t.Cleanup(Reload)
-		// Simulate collect() returning empty (e.g. os.Executable fails):
-		// Reload creates pTags but add is never called, leaving pTags.tags nil.
-		pTags = &ProcessTags{}
+		// Simulate collection returning no tags, leaving the tags map nil.
+		setProcessTagsForTesting(&ProcessTags{})
 		SetServiceNameTag("myapp", false)
 		tags := GlobalTags()
 		assert.Contains(t, tags.String(), "svc.auto:myapp")
 	})
 
 	t.Run("no-op when disabled", func(t *testing.T) {
-		t.Cleanup(Reload) // register before t.Setenv so it runs after env is restored
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		Reload()
+		t.Cleanup(Reload)
+		ReloadWithEnabled(false)
 		SetServiceNameTag("myapp", false)
 		assert.Nil(t, GlobalTags())
 	})
 }
 
 func TestProcessTags(t *testing.T) {
+	ReloadWithEnabled(true)
+	t.Cleanup(Reload)
 	t.Run("enabled", func(t *testing.T) {
 		wantTagsRe := regexp.MustCompile(`^entrypoint\.basedir:[a-zA-Z0-9._-]+,entrypoint\.name:[a-zA-Z0-9._-]+,entrypoint.type:executable,entrypoint\.workdir:[a-zA-Z0-9._-]+$`)
 		p := GlobalTags()
@@ -134,8 +204,7 @@ func TestProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		Reload()
+		ReloadWithEnabled(false)
 
 		p := GlobalTags()
 		assert.Nil(t, p)

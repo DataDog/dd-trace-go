@@ -24,9 +24,7 @@ import (
 )
 
 // For testing purposes
-var (
-	fargatePf = fargate
-)
+var fargatePf = fargate
 
 var (
 	cachedHostname  string
@@ -35,12 +33,16 @@ var (
 	cacheExpiration = 5 * time.Minute
 	m               sync.RWMutex
 	isRefreshing    atomic.Value
+	configProvider  atomic.Value
 )
 
 const fargateName = "fargate"
 
+type configProviderFunc func() string
+
 func init() {
 	isRefreshing.Store(false)
+	configProvider.Store(configProviderFunc(func() string { return "" }))
 }
 
 // getCached returns the cached hostname, cached provider and a bool indicating if the hostname has expired
@@ -173,12 +175,25 @@ func updateHostname(now time.Time) {
 }
 
 func fromConfig(_ context.Context, _ string) (string, error) {
-	hn := env.Get("DD_HOSTNAME")
+	provider := configProvider.Load().(configProviderFunc)
+	hn := provider()
 	err := validate.ValidHostname(hn)
 	if err != nil {
 		return "", err
 	}
 	return hn, nil
+}
+
+// SetConfigProvider installs the configuration resolver used by the next
+// hostname cache refresh. The config package sets the process-wide resolver
+// during package initialization. Concurrent updates are safe; a refresh invokes
+// the provider snapshot it loaded before the callback.
+func SetConfigProvider(provider func() string) {
+	if provider == nil {
+		configProvider.Store(configProviderFunc(func() string { return "" }))
+		return
+	}
+	configProvider.Store(configProviderFunc(provider))
 }
 
 func fromFargate(ctx context.Context, _ string) (string, error) {

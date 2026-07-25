@@ -6,28 +6,32 @@
 package mapper
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 type appStartedReducer struct {
-	next Mapper
+	next                Mapper
+	installInfoProvider func() transport.InstallSignature
 }
 
 // NewAppStartedMapper returns a new Mapper that adds an AppStarted payload to the beginning of all payloads
 // and pass it down to irs underlying mapper.
 // The AppStarted payload ingest the [transport.AppClientConfigurationChange] and [transport.AppProductChange] payloads
-func NewAppStartedMapper(next Mapper) Mapper {
-	return &appStartedReducer{next: next}
+func NewAppStartedMapper(next Mapper, providers ...func() transport.InstallSignature) Mapper {
+	var provider func() transport.InstallSignature
+	if len(providers) != 0 {
+		provider = providers[0]
+	}
+	return &appStartedReducer{next: next, installInfoProvider: provider}
 }
 
 func (t *appStartedReducer) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
+	var installInfo transport.InstallSignature
+	if t.installInfoProvider != nil {
+		installInfo = t.installInfoProvider()
+	}
 	appStarted := transport.AppStarted{
-		InstallSignature: transport.InstallSignature{
-			InstallID:   globalconfig.InstrumentationInstallID(),
-			InstallType: globalconfig.InstrumentationInstallType(),
-			InstallTime: globalconfig.InstrumentationInstallTime(),
-		},
+		InstallSignature: installInfo,
 	}
 
 	payloadLefts := make([]transport.Payload, 0, len(payloads))

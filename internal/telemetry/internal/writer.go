@@ -106,6 +106,11 @@ type WriterConfig struct {
 	HTTPClient *http.Client
 	// Debug is a flag that indicates whether the telemetry client is in debug mode (defaults to false)
 	Debug bool
+	// InstallID, InstallType, and InstallTime are the immutable install
+	// signature captured for this writer.
+	InstallID   string
+	InstallType string
+	InstallTime string
 }
 
 func NewWriter(config WriterConfig) (Writer, error) {
@@ -128,7 +133,7 @@ func NewWriter(config WriterConfig) (Writer, error) {
 	body := newBody(config.TracerConfig, config.Debug)
 	endpoints := make([]*http.Request, len(config.Endpoints))
 	for i, endpoint := range config.Endpoints {
-		endpoints[i] = preBakeRequest(body, endpoint)
+		endpoints[i] = preBakeRequest(body, endpoint, config)
 	}
 
 	return &writer{
@@ -142,7 +147,7 @@ func NewWriter(config WriterConfig) (Writer, error) {
 // This is useful to avoid querying too many things at the time of the request.
 // Headers necessary are described here:
 // https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/cf17b41a30fbf31d54e2cfbfc983875d58b02fe1/GeneratedDocumentation/ApiDocs/v2/overview.md#required-http-headers
-func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request {
+func preBakeRequest(body *transport.Body, endpoint *http.Request, config WriterConfig) *http.Request {
 	clonedEndpoint := endpoint.Clone(context.Background())
 	if clonedEndpoint.Header == nil {
 		clonedEndpoint.Header = make(http.Header, 11)
@@ -158,9 +163,9 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 		"DD-Client-Library-Version":  body.Application.TracerVersion,
 		"DD-Agent-Env":               body.Application.Env,
 		"DD-Agent-Hostname":          body.Host.Hostname,
-		"DD-Agent-Install-Id":        globalconfig.InstrumentationInstallID(),
-		"DD-Agent-Install-Type":      globalconfig.InstrumentationInstallType(),
-		"DD-Agent-Install-Time":      globalconfig.InstrumentationInstallTime(),
+		"DD-Agent-Install-Id":        config.InstallID,
+		"DD-Agent-Install-Type":      config.InstallType,
+		"DD-Agent-Install-Time":      config.InstallTime,
 		"Datadog-Container-ID":       internal.ContainerID(),
 		"Datadog-Entity-ID":          internal.EntityID(),
 		"DD-Session-ID":              sessionID,

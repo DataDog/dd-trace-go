@@ -50,6 +50,9 @@ type config struct {
 	headersAsTags *headerTagRegistry
 	dogstatsdAddr string
 	statsTags     []string
+	installID     string
+	installType   string
+	installTime   string
 }
 
 type headerTagRegistry struct {
@@ -210,15 +213,31 @@ func ApplyHeaderTagsForPublication(publicationID, generation, revision uint64, t
 
 // InstrumentationInstallID returns the install ID as described in DD_INSTRUMENTATION_INSTALL_ID
 func InstrumentationInstallID() string {
-	return env.Get("DD_INSTRUMENTATION_INSTALL_ID")
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.installID
 }
 
 // InstrumentationInstallType returns the install type as described in DD_INSTRUMENTATION_INSTALL_TYPE
 func InstrumentationInstallType() string {
-	return env.Get("DD_INSTRUMENTATION_INSTALL_TYPE")
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.installType
 }
 
 // InstrumentationInstallTime returns the install time as described in DD_INSTRUMENTATION_INSTALL_TIME
 func InstrumentationInstallTime() string {
-	return env.Get("DD_INSTRUMENTATION_INSTALL_TIME")
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.installTime
+}
+
+// SetInstrumentationInstallInfo replaces the install signature used by
+// telemetry payloads and headers.
+func SetInstrumentationInstallInfo(id, installType, installTime string) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	cfg.installID = id
+	cfg.installType = installType
+	cfg.installTime = installTime
 }

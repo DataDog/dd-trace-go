@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -32,6 +33,138 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
+
+func TestInstallInfoProviderResamplesAtWriterAndAppStartedBoundaries(t *testing.T) {
+	globalconfig.SetInstrumentationInstallInfo("", "", "")
+	t.Cleanup(func() { globalconfig.SetInstrumentationInstallInfo("", "", "") })
+
+	var requestHeader http.Header
+	var requestBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestHeader = r.Header.Clone()
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		require.NoError(t, err)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	current := InstallInfo{ID: "writer", Type: "tracer", Time: "first"}
+	cfg := ClientConfig{
+		AgentURL:   server.URL,
+		HTTPClient: server.Client(),
+	}
+	SetInstallInfoProvider(&cfg, func() InstallInfo {
+		return current
+	})
+	client, err := NewClient("service", "env", "version", cfg)
+	require.NoError(t, err)
+	defer client.Close()
+	require.Equal(t, "writer", globalconfig.InstrumentationInstallID())
+	require.Equal(t, "tracer", globalconfig.InstrumentationInstallType())
+	require.Equal(t, "first", globalconfig.InstrumentationInstallTime())
+
+	current = InstallInfo{ID: "before-app-start", Type: "tracer", Time: "not-sampled"}
+	client.AppStart()
+	require.Equal(t, "writer", globalconfig.InstrumentationInstallID())
+
+	current = InstallInfo{ID: "app-started", Type: "tracer", Time: "second"}
+	client.Flush()
+
+	require.Equal(t, "app-started", globalconfig.InstrumentationInstallID())
+	require.Equal(t, "tracer", globalconfig.InstrumentationInstallType())
+	require.Equal(t, "second", globalconfig.InstrumentationInstallTime())
+	require.Equal(t, "writer", requestHeader.Get("DD-Agent-Install-Id"))
+	require.Contains(t, string(requestBody), `"install_id":"app-started"`)
+	require.NotContains(t, string(requestBody), `"install_id":"writer"`)
+}
+
+func TestInstallInfoProvidersStayIsolatedPerClient(t *testing.T) {
+	globalconfig.SetInstrumentationInstallInfo("", "", "")
+	t.Cleanup(func() { globalconfig.SetInstrumentationInstallInfo("", "", "") })
+
+	type capture struct {
+		header http.Header
+		body   []byte
+	}
+	newClientWithInstallInfo := func(t *testing.T, info InstallInfo) (Client, *capture) {
+		t.Helper()
+		result := new(capture)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			result.header = r.Header.Clone()
+			var err error
+			result.body, err = io.ReadAll(r.Body)
+			require.NoError(t, err)
+			w.WriteHeader(http.StatusAccepted)
+		}))
+		t.Cleanup(server.Close)
+		cfg := ClientConfig{AgentURL: server.URL, HTTPClient: server.Client()}
+		SetInstallInfoProvider(&cfg, func() InstallInfo { return info })
+		client, err := NewClient("service", "env", "version", cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { client.Close() })
+		return client, result
+	}
+
+	first, firstCapture := newClientWithInstallInfo(t, InstallInfo{ID: "first"})
+	second, secondCapture := newClientWithInstallInfo(t, InstallInfo{ID: "second"})
+	first.AppStart()
+	second.AppStart()
+	first.Flush()
+	second.Flush()
+
+	require.Equal(t, "first", firstCapture.header.Get("DD-Agent-Install-Id"))
+	require.Contains(t, string(firstCapture.body), `"install_id":"first"`)
+	require.NotContains(t, string(firstCapture.body), `"install_id":"second"`)
+	require.Equal(t, "second", secondCapture.header.Get("DD-Agent-Install-Id"))
+	require.Contains(t, string(secondCapture.body), `"install_id":"second"`)
+	require.NotContains(t, string(secondCapture.body), `"install_id":"first"`)
+}
+
+func TestEnvironmentIntervalPresencePreservesProgrammaticFallback(t *testing.T) {
+	for name, environment := range map[string]EnvironmentConfig{
+		"unset": {
+			HeartbeatIntervalSeconds:         60,
+			ExtendedHeartbeatIntervalSeconds: (24 * time.Hour).Seconds(),
+		},
+		"invalid": {
+			HeartbeatIntervalSeconds:         60,
+			ExtendedHeartbeatIntervalSeconds: (24 * time.Hour).Seconds(),
+		},
+		"valid": {
+			HeartbeatIntervalSeconds:         30,
+			HeartbeatIntervalSet:             true,
+			ExtendedHeartbeatIntervalSeconds: (3 * time.Hour).Seconds(),
+			ExtendedHeartbeatIntervalSet:     true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			environment.Site = "datadoghq.com"
+			environment.DependencyCollectionEnabled = true
+			environment.MetricsEnabled = true
+			environment.LogsEnabled = true
+			cfg := ClientConfig{
+				HeartbeatInterval:         20 * time.Second,
+				ExtendedHeartbeatInterval: 2 * time.Hour,
+				FlushInterval: internal.Range[time.Duration]{
+					Min: 5 * time.Second,
+					Max: 10 * time.Second,
+				},
+			}
+			SetEnvironmentConfig(&cfg, environment)
+
+			resolved := defaultConfig(cfg)
+
+			if name == "valid" {
+				require.Equal(t, 30*time.Second-10*time.Millisecond, resolved.HeartbeatInterval)
+				require.Equal(t, 3*time.Hour, resolved.ExtendedHeartbeatInterval)
+			} else {
+				require.Equal(t, 20*time.Second-10*time.Millisecond, resolved.HeartbeatInterval)
+				require.Equal(t, 2*time.Hour, resolved.ExtendedHeartbeatInterval)
+			}
+		})
+	}
+}
 
 func TestNewClient(t *testing.T) {
 	for _, test := range []struct {
@@ -127,9 +260,12 @@ func TestDefaultConfigAgentlessURL(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if test.site != "" {
-				t.Setenv("DD_SITE", test.site)
-			}
+			SetEnvironmentConfig(&test.config, EnvironmentConfig{
+				Site:                        test.site,
+				DependencyCollectionEnabled: true,
+				MetricsEnabled:              true,
+				LogsEnabled:                 true,
+			})
 			config := defaultConfig(test.config)
 			assert.Equal(t, test.expected, config.AgentlessURL)
 		})
@@ -514,9 +650,9 @@ func TestClientFlush(t *testing.T) {
 				payload := payloads[0]
 				require.IsType(t, transport.AppStarted{}, payload)
 				appStart := payload.(transport.AppStarted)
-				assert.Equal(t, appStart.InstallSignature.InstallID, globalconfig.InstrumentationInstallID())
-				assert.Equal(t, appStart.InstallSignature.InstallType, globalconfig.InstrumentationInstallType())
-				assert.Equal(t, appStart.InstallSignature.InstallTime, globalconfig.InstrumentationInstallTime())
+				assert.Empty(t, appStart.InstallSignature.InstallID)
+				assert.Empty(t, appStart.InstallSignature.InstallType)
+				assert.Empty(t, appStart.InstallSignature.InstallTime)
 			},
 		},
 		{
@@ -557,9 +693,9 @@ func TestClientFlush(t *testing.T) {
 				payload := payloads[0]
 				require.IsType(t, transport.AppStarted{}, payload)
 				appStart := payload.(transport.AppStarted)
-				assert.Equal(t, globalconfig.InstrumentationInstallID(), appStart.InstallSignature.InstallID)
-				assert.Equal(t, globalconfig.InstrumentationInstallType(), appStart.InstallSignature.InstallType)
-				assert.Equal(t, globalconfig.InstrumentationInstallTime(), appStart.InstallSignature.InstallTime)
+				assert.Empty(t, appStart.InstallSignature.InstallID)
+				assert.Empty(t, appStart.InstallSignature.InstallType)
+				assert.Empty(t, appStart.InstallSignature.InstallTime)
 
 				payload = payloads[1]
 				require.IsType(t, transport.AppIntegrationChange{}, payload)
@@ -584,9 +720,9 @@ func TestClientFlush(t *testing.T) {
 				payload := payloads[0]
 				require.IsType(t, transport.AppStarted{}, payload)
 				appStart := payload.(transport.AppStarted)
-				assert.Equal(t, globalconfig.InstrumentationInstallID(), appStart.InstallSignature.InstallID)
-				assert.Equal(t, globalconfig.InstrumentationInstallType(), appStart.InstallSignature.InstallType)
-				assert.Equal(t, globalconfig.InstrumentationInstallTime(), appStart.InstallSignature.InstallTime)
+				assert.Empty(t, appStart.InstallSignature.InstallID)
+				assert.Empty(t, appStart.InstallSignature.InstallType)
+				assert.Empty(t, appStart.InstallSignature.InstallTime)
 
 				payload = payloads[1]
 				require.IsType(t, transport.AppHeartbeat{}, payload)
@@ -1195,10 +1331,14 @@ func TestClientFlush(t *testing.T) {
 }
 
 func TestMetricsDisabled(t *testing.T) {
-	t.Setenv("DD_TELEMETRY_METRICS_ENABLED", "false")
-	t.Setenv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", "false")
-
-	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"})
+	clientConfig := ClientConfig{AgentURL: "http://localhost:8126"}
+	SetEnvironmentConfig(&clientConfig, EnvironmentConfig{
+		Site:                        "datadoghq.com",
+		DependencyCollectionEnabled: false,
+		MetricsEnabled:              false,
+		LogsEnabled:                 true,
+	})
+	c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 	require.NoError(t, err)
 
 	recordWriter := &internal.RecordWriter{}
@@ -1240,9 +1380,9 @@ func parseRequest(t *testing.T, headers http.Header, raw []byte) transport.Body 
 	assert.Equal(t, "go", headers.Get("DD-Client-Library-Language"))
 	assert.Equal(t, "test-env", headers.Get("DD-Agent-Env"))
 	assert.Equal(t, version.Tag, headers.Get("DD-Client-Library-Version"))
-	assert.Equal(t, globalconfig.InstrumentationInstallID(), headers.Get("DD-Agent-Install-Id"))
-	assert.Equal(t, globalconfig.InstrumentationInstallType(), headers.Get("DD-Agent-Install-Type"))
-	assert.Equal(t, globalconfig.InstrumentationInstallTime(), headers.Get("DD-Agent-Install-Time"))
+	assert.Empty(t, headers.Get("DD-Agent-Install-Id"))
+	assert.Empty(t, headers.Get("DD-Agent-Install-Type"))
+	assert.Empty(t, headers.Get("DD-Agent-Install-Time"))
 
 	assert.NotEmpty(t, headers.Get("DD-Agent-Hostname"))
 

@@ -8,9 +8,7 @@ package internal
 import (
 	"net/url"
 	"runtime/debug"
-	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -39,42 +37,6 @@ const (
 	TraceTagGoPath = "_dd.go_path"
 )
 
-var (
-	initOnce        sync.Once
-	gitMetadataTags map[string]string
-)
-
-func updateTags(tags map[string]string, key string, value string) {
-	if _, ok := tags[key]; !ok && value != "" {
-		tags[key] = value
-	}
-}
-
-func updateAllTags(tags map[string]string, newtags map[string]string) {
-	for k, v := range newtags {
-		updateTags(tags, k, v)
-	}
-}
-
-// Get git metadata from environment variables
-func getTagsFromEnv() map[string]string {
-	return map[string]string{
-		TagRepositoryURL: removeCredentials(env.Get(EnvGitRepositoryURL)),
-		TagCommitSha:     env.Get(EnvGitCommitSha),
-	}
-}
-
-// Get git metadata from DD_TAGS
-func getTagsFromDDTags() map[string]string {
-	etags := ParseTagString(env.Get(EnvDDTags))
-
-	return map[string]string{
-		TagRepositoryURL: removeCredentials(etags[TagRepositoryURL]),
-		TagCommitSha:     etags[TagCommitSha],
-		TagGoPath:        etags[TagGoPath],
-	}
-}
-
 // getTagsFromBinary extracts git metadata from binary metadata.
 func getTagsFromBinary(readBuildInfo func() (*debug.BuildInfo, bool)) map[string]string {
 	res := make(map[string]string)
@@ -99,27 +61,6 @@ func getTagsFromBinary(readBuildInfo func() (*debug.BuildInfo, bool)) map[string
 	res[TagCommitSha] = commitSha
 	res[TagGoPath] = goPath
 	return res
-}
-
-// GetGitMetadataTags returns git metadata tags. Returned map is read-only
-func GetGitMetadataTags() map[string]string {
-	initOnce.Do(initGitMetadataTags)
-	return gitMetadataTags
-}
-
-func initGitMetadataTags() {
-	gitMetadataTags = make(map[string]string)
-
-	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
-		updateAllTags(gitMetadataTags, getTagsFromEnv())
-		updateAllTags(gitMetadataTags, getTagsFromDDTags())
-		updateAllTags(gitMetadataTags, getTagsFromBinary(debug.ReadBuildInfo))
-	}
-}
-
-// RefreshGitMetadataTags reset cached metadata tags. NOT thread-safe, use for testing only
-func RefreshGitMetadataTags() {
-	initGitMetadataTags()
 }
 
 // CleanGitMetadataTags cleans up tags from git metadata

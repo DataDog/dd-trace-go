@@ -1462,7 +1462,7 @@ func FuzzSpanIDHexEncoded(f *testing.F) {
 func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 	b.Run("old GetTracerGitMetadataTags", func(b *testing.B) {
 		b.Setenv(internal.EnvGitMetadataEnabledFlag, "true")
-		internal.RefreshGitMetadataTags()
+		internalconfig.RefreshGitMetadataForTesting()
 		updateTags := func(tags map[string]string, key, value string) {
 			if _, ok := tags[key]; !ok && value != "" {
 				tags[key] = value
@@ -1471,7 +1471,7 @@ func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 		// Emulates old implementation of GetTracerGitMetadataTags
 		old := func() map[string]string {
 			results := make(map[string]string)
-			tags := internal.GetGitMetadataTags()
+			tags := internalconfig.GitMetadataSnapshotValue().Tags
 			updateTags(results, internal.TraceTagRepositoryURL, tags[internal.TagRepositoryURL])
 			updateTags(results, internal.TraceTagCommitSha, tags[internal.TagCommitSha])
 			updateTags(results, internal.TraceTagGoPath, tags[internal.TagGoPath])
@@ -1487,7 +1487,7 @@ func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 	})
 	b.Run("new UpdateTracerGitMetadataTags", func(b *testing.B) {
 		b.Setenv(internal.EnvGitMetadataEnabledFlag, "true")
-		internal.RefreshGitMetadataTags()
+		internalconfig.RefreshGitMetadataForTesting()
 		span := newBasicSpan("span")
 		b.ResetTimer()
 		for b.Loop() {

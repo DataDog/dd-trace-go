@@ -107,10 +107,3 @@ func TestGetTagsFromBinary(t *testing.T) {
 		})
 	}
 }
-
-func BenchmarkGetGitMetadataTags(b *testing.B) {
-	b.Setenv(EnvGitMetadataEnabledFlag, "true")
-	for b.Loop() {
-		GetGitMetadataTags()
-	}
-}

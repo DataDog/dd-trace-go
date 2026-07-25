@@ -72,6 +72,7 @@ func TestNewWriter_ProcessTags(t *testing.T) {
 	}
 
 	t.Run("enabled", func(t *testing.T) {
+		processtags.ReloadWithEnabled(true)
 		w, err := NewWriter(cfg)
 		require.NoError(t, err)
 
@@ -80,7 +81,7 @@ func TestNewWriter_ProcessTags(t *testing.T) {
 	})
 	t.Run("disabled", func(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
+		processtags.ReloadWithEnabled(false)
 
 		w, err := NewWriter(cfg)
 		require.NoError(t, err)

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_pollIntervalFromEnv(t *testing.T) {
+func TestDefaultClientConfigPollInterval(t *testing.T) {
 	defaultInterval := time.Second * time.Duration(5.0)
 	tests := []struct {
 		name  string
@@ -48,7 +48,7 @@ func Test_pollIntervalFromEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setup(t)
-			assert.Equal(t, tt.want, pollIntervalFromEnv())
+			assert.Equal(t, tt.want, DefaultClientConfig().PollInterval)
 		})
 	}
 }

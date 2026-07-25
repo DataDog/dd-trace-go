@@ -205,16 +205,8 @@ func resolveTraceProtocol(v string) float64 {
 //  4. http://localhost:8126
 func resolveAgentURL(agentURLStr, host, port string) *url.URL {
 	if agentURLStr != "" {
-		u, err := url.Parse(agentURLStr)
-		if err == nil {
-			switch u.Scheme {
-			case URLSchemeUnix, URLSchemeHTTP, URLSchemeHTTPS:
-				return u
-			default:
-				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: %s, %s, %s.", u.Scheme, agentURLStr, URLSchemeHTTP, URLSchemeHTTPS, URLSchemeUnix)
-			}
-		} else {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
+		if u, valid := parseAgentURL(agentURLStr); valid {
+			return u
 		}
 	}
 
@@ -227,6 +219,28 @@ func resolveAgentURL(agentURLStr, host, port string) *url.URL {
 		return u
 	}
 	return httpURL
+}
+
+func parseAgentURL(agentURL string) (*url.URL, bool) {
+	u, err := url.Parse(agentURL)
+	if err != nil {
+		log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
+		return nil, false
+	}
+	switch u.Scheme {
+	case URLSchemeUnix, URLSchemeHTTP, URLSchemeHTTPS:
+		return u, true
+	default:
+		log.Warn(
+			"Unsupported protocol %q in Agent URL %q. Must be one of: %s, %s, %s.",
+			u.Scheme,
+			agentURL,
+			URLSchemeHTTP,
+			URLSchemeHTTPS,
+			URLSchemeUnix,
+		)
+		return nil, false
+	}
 }
 
 func buildHTTPURL(host, port string) *url.URL {

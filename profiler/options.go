@@ -22,6 +22,7 @@ import (
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -198,7 +199,7 @@ func defaultConfig() (*config, error) {
 		c.addProfileType(t)
 	}
 
-	url := internal.AgentURLFromEnv()
+	url := internalconfig.AgentURL()
 	if url.Scheme == "unix" {
 		WithUDS(url.Path)(&c)
 	} else {
@@ -241,7 +242,7 @@ func defaultConfig() (*config, error) {
 		tags = internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 	}
-	maps.Copy(tags, internal.GetGitMetadataTags())
+	maps.Copy(tags, internalconfig.GitMetadataSnapshotValue().Tags)
 	for key, val := range tags {
 		if val != "" {
 			WithTags(key + ":" + val)(&c)

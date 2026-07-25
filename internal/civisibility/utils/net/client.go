@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -174,7 +175,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		// Use agent mode with the EVP proxy.
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = subdomain
 
-		agentURL = internal.AgentURLFromEnv()
+		agentURL = internalconfig.AgentURL()
 		if agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
@@ -214,6 +215,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			if agentURL != nil {
 				cfg.AgentURL = agentURL.String()
 			}
+			internalconfig.ConfigureTelemetryClient(&cfg)
 			client, err := telemetry.NewClient(serviceName, environment, env.Get("DD_VERSION"), cfg)
 			if err != nil {
 				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())

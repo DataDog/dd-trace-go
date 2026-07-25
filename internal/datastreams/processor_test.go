@@ -419,7 +419,7 @@ func TestSetCheckpointContainerTagsHashRequiresProcessTags(t *testing.T) {
 		processtags.Reload()
 	})
 	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-	processtags.Reload()
+	processtags.ReloadWithEnabled(false)
 	processtags.SetContainerTagsHash("container-tags-hash")
 
 	processor := Processor{

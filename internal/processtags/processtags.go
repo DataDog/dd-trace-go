@@ -16,11 +16,8 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
-
-const envProcessTagsEnabled = "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED"
 
 const (
 	tagEntrypointName    = "entrypoint.name"
@@ -36,7 +33,12 @@ const (
 )
 
 var (
+	processStateMu            sync.RWMutex
+	reloadMu                  sync.Mutex
 	enabled                   bool
+	enabledProvider           = func() bool { return true }
+	collector                 = collect
+	initialized               bool
 	pTags                     *ProcessTags
 	containerTagsHashRegistry = newContainerTagsHashRegistry()
 )
@@ -67,10 +69,6 @@ func (r *containerHashRegistry) apply(publicationID, generation, revision uint64
 	r.revision = revision
 	r.value.Store(hash)
 	return true
-}
-
-func init() {
-	Reload()
 }
 
 type ProcessTags struct {
@@ -108,8 +106,8 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 	if len(newTags) == 0 {
 		return
 	}
-	pTags.mu.Lock()
-	defer pTags.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if p.tags == nil {
 		p.tags = make(map[string]string)
@@ -149,14 +147,75 @@ func (p *ProcessTags) rebuild() {
 
 // Reload initializes the configuration and process tags collection. This is useful for tests.
 func Reload() {
-	enabled = internal.BoolEnv(envProcessTagsEnabled, true)
-	if !enabled {
+	processStateMu.RLock()
+	provider := enabledProvider
+	processStateMu.RUnlock()
+	ReloadWithEnabled(provider())
+}
+
+// SetEnabledProvider sets the resolver sampled by the next Reload. The config
+// package installs the process-wide resolver during package initialization.
+// Concurrent updates are safe; an in-progress Reload uses the resolver snapshot
+// it loaded before invoking the callback.
+func SetEnabledProvider(provider func() bool) {
+	processStateMu.Lock()
+	defer processStateMu.Unlock()
+	if provider == nil {
+		enabledProvider = func() bool { return true }
 		return
 	}
-	pTags = &ProcessTags{}
-	tags := collect()
+	enabledProvider = provider
+}
+
+// ReloadWithEnabled initializes process tags from an already-resolved gate.
+func ReloadWithEnabled(isEnabled bool) {
+	reloadMu.Lock()
+	defer reloadMu.Unlock()
+	reloadWithEnabledLocked(isEnabled)
+}
+
+func reloadWithEnabledLocked(isEnabled bool) {
+	if !isEnabled {
+		processStateMu.Lock()
+		enabled = false
+		pTags = nil
+		initialized = true
+		processStateMu.Unlock()
+		return
+	}
+
+	processStateMu.RLock()
+	collectTags := collector
+	processStateMu.RUnlock()
+	tags := collectTags()
+	next := new(ProcessTags)
 	if len(tags) > 0 {
-		add(tags)
+		next.merge(tags)
+	}
+	processStateMu.Lock()
+	pTags = next
+	enabled = true
+	initialized = true
+	processStateMu.Unlock()
+}
+
+func ensureInitialized() {
+	processStateMu.RLock()
+	isInitialized := initialized
+	provider := enabledProvider
+	processStateMu.RUnlock()
+	if isInitialized {
+		return
+	}
+	isEnabled := provider()
+
+	reloadMu.Lock()
+	defer reloadMu.Unlock()
+	processStateMu.RLock()
+	isInitialized = initialized
+	processStateMu.RUnlock()
+	if !isInitialized {
+		reloadWithEnabledLocked(isEnabled)
 	}
 }
 
@@ -196,6 +255,9 @@ func directoryTagValue(dir string) (string, bool) {
 
 // GlobalTags returns the global process tags.
 func GlobalTags() *ProcessTags {
+	ensureInitialized()
+	processStateMu.RLock()
+	defer processStateMu.RUnlock()
 	if !enabled {
 		return nil
 	}
@@ -205,12 +267,13 @@ func GlobalTags() *ProcessTags {
 // TagsWithServiceName returns a process-tag snapshot with the supplied service
 // marker applied, without mutating the active process tags.
 func TagsWithServiceName(name string, isUserDefined bool) []string {
-	if !enabled || pTags == nil {
+	tagsSnapshot := GlobalTags()
+	if tagsSnapshot == nil {
 		return nil
 	}
-	pTags.mu.RLock()
-	tags := maps.Clone(pTags.tags)
-	pTags.mu.RUnlock()
+	tagsSnapshot.mu.RLock()
+	tags := maps.Clone(tagsSnapshot.tags)
+	tagsSnapshot.mu.RUnlock()
 	if tags == nil {
 		tags = make(map[string]string)
 	}
@@ -250,32 +313,58 @@ func ApplyContainerTagsHashForPublication(publicationID, generation, revision ui
 	return containerTagsHashRegistry.apply(publicationID, generation, revision, hash)
 }
 
-func add(tags map[string]string) {
-	if !enabled {
-		return
-	}
-	pTags.merge(tags)
-}
-
 // SetServiceNameTag sets the appropriate process tag for the global service name.
 // svc.user and svc.auto are mutually exclusive: calling this function removes the
 // previously set tag before adding the new one.
 // If isUserDefined is true, sets svc.user:true; otherwise sets svc.auto:<name>.
 func SetServiceNameTag(name string, isUserDefined bool) {
-	if !enabled {
+	tags := GlobalTags()
+	if tags == nil {
 		return
 	}
-	pTags.mu.Lock()
-	defer pTags.mu.Unlock()
-	if pTags.tags == nil {
-		pTags.tags = make(map[string]string)
+	tags.mu.Lock()
+	defer tags.mu.Unlock()
+	if tags.tags == nil {
+		tags.tags = make(map[string]string)
 	}
-	delete(pTags.tags, tagSvcAuto)
-	delete(pTags.tags, tagSvcUser)
+	delete(tags.tags, tagSvcAuto)
+	delete(tags.tags, tagSvcUser)
 	if isUserDefined {
-		pTags.tags[tagSvcUser] = "true"
+		tags.tags[tagSvcUser] = "true"
 	} else {
-		pTags.tags[tagSvcAuto] = name
+		tags.tags[tagSvcAuto] = name
 	}
-	pTags.rebuild()
+	tags.rebuild()
+}
+
+func setCollectorForTesting(provider func() map[string]string) func() {
+	processStateMu.Lock()
+	previous := collector
+	collector = provider
+	processStateMu.Unlock()
+	return func() {
+		processStateMu.Lock()
+		collector = previous
+		processStateMu.Unlock()
+	}
+}
+
+func resetInitializationForTesting() {
+	reloadMu.Lock()
+	defer reloadMu.Unlock()
+	processStateMu.Lock()
+	enabled = false
+	initialized = false
+	pTags = nil
+	processStateMu.Unlock()
+}
+
+func setProcessTagsForTesting(tags *ProcessTags) {
+	reloadMu.Lock()
+	defer reloadMu.Unlock()
+	processStateMu.Lock()
+	pTags = tags
+	enabled = tags != nil
+	initialized = true
+	processStateMu.Unlock()
 }

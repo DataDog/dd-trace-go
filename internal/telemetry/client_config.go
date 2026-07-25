@@ -13,9 +13,8 @@ import (
 	"runtime/debug"
 	"time"
 
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 )
@@ -85,6 +84,52 @@ type ClientConfig struct {
 
 	// internalMetricsEnabled determines whether client stats metrics are sent via telemetry. Default to true.
 	internalMetricsEnabled bool
+
+	environmentConfig   *EnvironmentConfig
+	installInfoProvider func() InstallInfo
+}
+
+// EnvironmentConfig contains the environment defaults sampled for one client
+// construction.
+type EnvironmentConfig struct {
+	APIKey                           string
+	Site                             string
+	Debug                            bool
+	DependencyCollectionEnabled      bool
+	MetricsEnabled                   bool
+	LogsEnabled                      bool
+	HeartbeatIntervalSeconds         float64
+	HeartbeatIntervalSet             bool
+	ExtendedHeartbeatIntervalSeconds float64
+	ExtendedHeartbeatIntervalSet     bool
+}
+
+// InstallInfo is one instrumentation install-signature sample.
+type InstallInfo struct {
+	ID   string
+	Type string
+	Time string
+}
+
+// SetEnvironmentConfig attaches environment defaults to config.
+func SetEnvironmentConfig(config *ClientConfig, environment EnvironmentConfig) {
+	copy := environment
+	config.environmentConfig = &copy
+}
+
+// SetInstallInfoProvider attaches the resolver used at each install-signature
+// use boundary.
+func SetInstallInfoProvider(config *ClientConfig, provider func() InstallInfo) {
+	config.installInfoProvider = provider
+}
+
+func (config ClientConfig) resolveInstallInfo() InstallInfo {
+	if config.installInfoProvider == nil {
+		return InstallInfo{}
+	}
+	info := config.installInfoProvider()
+	globalconfig.SetInstrumentationInstallInfo(info.ID, info.Type, info.Time)
+	return info
 }
 
 var (
@@ -165,18 +210,27 @@ func (config ClientConfig) validateConfig() error {
 
 // defaultConfig returns a ClientConfig with default values set.
 func defaultConfig(config ClientConfig) ClientConfig {
-	config.Debug = config.Debug || globalinternal.BoolEnv("DD_TELEMETRY_DEBUG", false)
+	environment := EnvironmentConfig{
+		Site:                        "datadoghq.com",
+		DependencyCollectionEnabled: true,
+		MetricsEnabled:              true,
+		LogsEnabled:                 true,
+	}
+	if config.environmentConfig != nil {
+		environment = *config.environmentConfig
+	}
+	config.Debug = config.Debug || environment.Debug
 
 	if config.AgentlessURL == "" {
-		site := "datadoghq.com"
-		if v := env.Get("DD_SITE"); v != "" {
-			site = v
+		site := environment.Site
+		if site == "" {
+			site = "datadoghq.com"
 		}
 		config.AgentlessURL = fmt.Sprintf(agentlessURLTemplate, site)
 	}
 
 	if config.APIKey == "" {
-		config.APIKey = env.Get("DD_API_KEY")
+		config.APIKey = environment.APIKey
 	}
 
 	if config.FlushInterval.Min == 0 {
@@ -196,8 +250,10 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		heartBeatInterval = config.HeartbeatInterval
 	}
 
-	envVal := globalinternal.FloatEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", heartBeatInterval.Seconds())
-	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(time.Duration(envVal * float64(time.Second)))
+	if environment.HeartbeatIntervalSet {
+		heartBeatInterval = time.Duration(environment.HeartbeatIntervalSeconds * float64(time.Second))
+	}
+	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(heartBeatInterval)
 	if config.HeartbeatInterval != defaultHeartbeatInterval {
 		log.Debug("telemetry: using custom heartbeat interval %s", config.HeartbeatInterval)
 	}
@@ -208,16 +264,16 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		config.HeartbeatInterval = config.HeartbeatInterval - 10*time.Millisecond
 	}
 
-	if config.DependencyLoader == nil && globalinternal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
+	if config.DependencyLoader == nil && environment.DependencyCollectionEnabled {
 		config.DependencyLoader = debug.ReadBuildInfo
 	}
 
 	if !config.MetricsEnabled {
-		config.MetricsEnabled = globalinternal.BoolEnv("DD_TELEMETRY_METRICS_ENABLED", true)
+		config.MetricsEnabled = environment.MetricsEnabled
 	}
 
 	if !config.LogsEnabled {
-		config.LogsEnabled = globalinternal.BoolEnv("DD_TELEMETRY_LOG_COLLECTION_ENABLED", true)
+		config.LogsEnabled = environment.LogsEnabled
 	}
 
 	if !config.internalMetricsEnabled {
@@ -232,8 +288,10 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	if config.ExtendedHeartbeatInterval != 0 {
 		extendedHeartbeatInterval = config.ExtendedHeartbeatInterval
 	}
-	envExtVal := globalinternal.FloatEnv("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL", extendedHeartbeatInterval.Seconds())
-	config.ExtendedHeartbeatInterval = time.Duration(envExtVal * float64(time.Second))
+	if environment.ExtendedHeartbeatIntervalSet {
+		extendedHeartbeatInterval = time.Duration(environment.ExtendedHeartbeatIntervalSeconds * float64(time.Second))
+	}
+	config.ExtendedHeartbeatInterval = extendedHeartbeatInterval
 
 	if config.PayloadQueueSize.Min == 0 {
 		config.PayloadQueueSize.Min = defaultPayloadQueueSize.Min
@@ -259,6 +317,7 @@ func defaultConfig(config ClientConfig) ClientConfig {
 }
 
 func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (internal.WriterConfig, error) {
+	installInfo := config.resolveInstallInfo()
 	endpoints := make([]*http.Request, 0, 2)
 	if config.AgentURL != "" {
 		baseURL, err := url.Parse(config.AgentURL)
@@ -294,5 +353,8 @@ func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (i
 		Endpoints:    endpoints,
 		HTTPClient:   config.HTTPClient,
 		Debug:        config.Debug,
+		InstallID:    installInfo.ID,
+		InstallType:  installInfo.Type,
+		InstallTime:  installInfo.Time,
 	}, nil
 }

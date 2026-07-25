@@ -17,6 +17,7 @@ import (
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/schema"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
 )
 
 // Provider resolves configuration values from an ordered list of sources.
@@ -132,6 +133,7 @@ func resolve[T any](
 		}
 
 		raw, present, applicable, sourceErr, sourceEvents := lookup(source, def.Key)
+		sourceEvents = scrubEvents(def.Telemetry, sourceEvents)
 		providerEvents = append(providerEvents, cloneEvents(sourceEvents)...)
 		sourceOrdinal := uint16(i)
 		events = append(events, decorateProviderEvents(sourceEvents, binding, def, sourceOrdinal)...)
@@ -165,11 +167,11 @@ func resolve[T any](
 	}
 
 	if binding != nil {
-		events = append(events, ConfigEvent{
+		events = append(events, scrubEvent(def.Telemetry, ConfigEvent{
 			Kind:          EventConfiguration,
 			BindingID:     binding.ID,
 			Name:          def.Key,
-			Value:         snapshotValue(defValue),
+			Value:         defValue,
 			Present:       true,
 			Valid:         true,
 			Origin:        telemetry.OriginDefault,
@@ -177,7 +179,7 @@ func resolve[T any](
 			Policy:        def.Telemetry,
 			Cadence:       cadenceFor(*binding),
 			ReportValue:   true,
-		})
+		}))
 	}
 	result.Events = cloneEvents(providerEvents)
 	return result, cloneEvents(events)
@@ -205,7 +207,7 @@ func sourceConfigID(source LookupSource) string {
 
 func decorateProviderEvents(events []ConfigEvent, binding *schema.ConsumerBinding, def schema.RawDefinition, sourceOrdinal uint16) []ConfigEvent {
 	if binding == nil {
-		return cloneEvents(events)
+		return scrubEvents(def.Telemetry, events)
 	}
 	decorated := make([]ConfigEvent, 0, len(events))
 	for _, event := range events {
@@ -216,7 +218,7 @@ func decorateProviderEvents(events []ConfigEvent, binding *schema.ConsumerBindin
 		event.SourceOrdinal = sourceOrdinal
 		event.Policy = def.Telemetry
 		event.Cadence = cadenceFor(*binding)
-		decorated = append(decorated, event)
+		decorated = append(decorated, scrubEvent(def.Telemetry, event))
 	}
 	return decorated
 }
@@ -282,7 +284,7 @@ func configEvent(
 	reportValue bool,
 	sourceOrdinal uint16,
 ) ConfigEvent {
-	return ConfigEvent{
+	return scrubEvent(def.Telemetry, ConfigEvent{
 		Kind:          EventConfiguration,
 		BindingID:     binding.ID,
 		Name:          def.Key,
@@ -296,6 +298,45 @@ func configEvent(
 		Policy:        def.Telemetry,
 		Cadence:       cadenceFor(binding),
 		ReportValue:   reportValue,
+	})
+}
+
+var errSensitiveConfigEvent = errors.New("sensitive configuration error")
+
+func scrubEvents(policy schema.TelemetryPolicy, events []ConfigEvent) []ConfigEvent {
+	if events == nil {
+		return nil
+	}
+	scrubbed := cloneEvents(events)
+	for i := range scrubbed {
+		scrubbed[i] = scrubEvent(policy, scrubbed[i])
+	}
+	return scrubbed
+}
+
+func scrubEvent(policy schema.TelemetryPolicy, event ConfigEvent) ConfigEvent {
+	event.Value = safeEventValue(policy, event.Value)
+	switch policy {
+	case schema.TelemetryOmit, schema.TelemetrySanitizeURL:
+		if event.Err != nil {
+			event.Err = errSensitiveConfigEvent
+		}
+	}
+	return event
+}
+
+func safeEventValue(policy schema.TelemetryPolicy, value any) any {
+	switch policy {
+	case schema.TelemetryOmit:
+		return nil
+	case schema.TelemetrySanitizeURL:
+		raw, ok := value.(string)
+		if !ok {
+			return nil
+		}
+		return urlsanitizer.SanitizeURL(raw)
+	default:
+		return value
 	}
 }
 

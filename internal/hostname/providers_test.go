@@ -7,6 +7,7 @@ package hostname
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -48,6 +49,7 @@ func TestGetCached(t *testing.T) {
 
 func resetVars() {
 	fargatePf = fargate
+	SetConfigProvider(nil)
 }
 
 func TestGet(t *testing.T) {
@@ -66,7 +68,7 @@ func TestGet(t *testing.T) {
 	})
 
 	t.Run("ConfigOK", func(t *testing.T) {
-		t.Setenv("DD_HOSTNAME", "myConfigHost")
+		SetConfigProvider(func() string { return "myConfigHost" })
 		updateHostname(time.Time{})
 		result := Get()
 		for isRefreshing.Load() == true {
@@ -74,4 +76,21 @@ func TestGet(t *testing.T) {
 		} // Wait for extra go routine to finish
 		assert.Equal(t, "myConfigHost", result)
 	})
+}
+
+func TestConfigProviderConcurrentSetAndRead(t *testing.T) {
+	t.Cleanup(func() { SetConfigProvider(nil) })
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			for range 1_000 {
+				if i%2 == 0 {
+					SetConfigProvider(func() string { return "host.example" })
+				} else {
+					_, _ = fromConfig(context.Background(), "")
+				}
+			}
+		})
+	}
+	wg.Wait()
 }

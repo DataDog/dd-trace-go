@@ -7,6 +7,7 @@ package provider
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strconv"
@@ -91,6 +92,15 @@ type resolveTestSource struct {
 	originValue telemetry.Origin
 	configID    string
 	environment bool
+}
+
+type diagnosticTestSource struct {
+	*resolveTestSource
+	events []ConfigEvent
+}
+
+func (s *diagnosticTestSource) lookupWithEvents(string) (string, bool, bool, error, []ConfigEvent) {
+	return s.raw, s.present, s.present, nil, s.events
 }
 
 func (s *resolveTestSource) get(string) string {
@@ -423,6 +433,112 @@ func TestResolveTracerOTelCompatibilityPreservesOmitPolicy(t *testing.T) {
 	require.Len(t, events, 1)
 	require.Equal(t, schema.TelemetryOmit, events[0].Policy)
 	require.True(t, events[0].ReportValue)
+}
+
+func TestResolveWithBindingScrubsSensitiveEventValuesAtCreation(t *testing.T) {
+	binding := schema.ConsumerBinding{
+		ID: "sensitive", Consumer: "test",
+		Keys:     []string{"DD_API_KEY", "DD_GIT_REPOSITORY_URL"},
+		Sampling: schema.SampleConstructor,
+	}
+
+	apiKey, apiEvents := ResolveWithBinding(
+		newTestProvider(&resolveTestSource{
+			raw: "secret-api-key", present: true, originValue: telemetry.OriginEnvVar,
+		}),
+		schema.RawDefinition{
+			Key: "DD_API_KEY", Sources: schema.SourceStable, Telemetry: schema.TelemetryOmit,
+		},
+		binding,
+		"",
+		parseTestString,
+	)
+	require.Equal(t, "secret-api-key", apiKey.Winner.Value)
+	require.NotContains(t, fmt.Sprint(apiEvents), "secret-api-key")
+
+	repository, repositoryEvents := ResolveWithBinding(
+		newTestProvider(&resolveTestSource{
+			raw: "https://user:password@example.com/repo.git", present: true, originValue: telemetry.OriginEnvVar,
+		}),
+		schema.RawDefinition{
+			Key: "DD_GIT_REPOSITORY_URL", Sources: schema.SourceStable, Telemetry: schema.TelemetrySanitizeURL,
+		},
+		binding,
+		"",
+		parseTestString,
+	)
+	require.Equal(t, "https://user:password@example.com/repo.git", repository.Winner.Value)
+	require.NotContains(t, fmt.Sprint(repositoryEvents), "password")
+	require.Contains(t, fmt.Sprint(repositoryEvents), "https://example.com/repo.git")
+}
+
+func TestResolveWithBindingScrubsSensitiveParserErrors(t *testing.T) {
+	const secret = "sensitive-parser-sentinel"
+	binding := schema.ConsumerBinding{
+		ID: "sensitive-errors", Consumer: "test",
+		Keys: []string{"DD_API_KEY", "DD_GIT_REPOSITORY_URL"}, Sampling: schema.SampleConstructor,
+	}
+
+	for name, test := range map[string]struct {
+		def schema.RawDefinition
+		raw string
+	}{
+		"omit": {
+			def: schema.RawDefinition{Key: "DD_API_KEY", Sources: schema.SourceStable, Telemetry: schema.TelemetryOmit},
+			raw: secret,
+		},
+		"sanitize URL": {
+			def: schema.RawDefinition{Key: "DD_GIT_REPOSITORY_URL", Sources: schema.SourceStable, Telemetry: schema.TelemetrySanitizeURL},
+			raw: "https://user:" + secret + "@example.com/repo.git",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, events := ResolveWithBinding(
+				newTestProvider(&resolveTestSource{
+					raw: test.raw, present: true, originValue: telemetry.OriginEnvVar,
+				}),
+				test.def,
+				binding,
+				"",
+				func(raw string) (string, error) {
+					return "", fmt.Errorf("rejected %s", raw)
+				},
+			)
+
+			require.NotContains(t, fmt.Sprint(events), secret)
+			require.Error(t, events[0].Err)
+		})
+	}
+}
+
+func TestResolveWithBindingScrubsSensitiveSourceDiagnostics(t *testing.T) {
+	const secret = "sensitive-diagnostic-sentinel"
+	def := schema.RawDefinition{
+		Key: "DD_GIT_REPOSITORY_URL", Sources: schema.SourceStable, Telemetry: schema.TelemetrySanitizeURL,
+	}
+	binding := schema.ConsumerBinding{
+		ID: "sensitive-diagnostic", Consumer: "test",
+		Keys: []string{def.Key}, Sampling: schema.SampleConstructor,
+	}
+	source := &diagnosticTestSource{
+		resolveTestSource: &resolveTestSource{
+			raw:     "https://user:" + secret + "@example.com/repo.git",
+			present: true, originValue: telemetry.OriginEnvVar,
+		},
+		events: []ConfigEvent{{
+			Kind: EventOTelEnvInvalid, Name: def.Key, OTelName: "OTEL_RESOURCE_ATTRIBUTES",
+			Value:               "https://user:" + secret + "@example.com/repo.git",
+			Err:                 fmt.Errorf("diagnostic rejected %s", secret),
+			CompatibilityReport: true,
+		}},
+	}
+
+	resolved, events := ResolveWithBinding(newTestProvider(source), def, binding, "", parseTestString)
+
+	require.NotContains(t, fmt.Sprint(events), secret)
+	require.NotContains(t, fmt.Sprint(resolved.Events), secret)
+	require.Error(t, events[0].Err)
+	require.Error(t, resolved.Events[0].Err)
 }
 
 func TestResolveExplicitEmpty(t *testing.T) {
