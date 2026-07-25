@@ -334,6 +334,14 @@ func Start(opts ...StartOption) error {
 }
 
 func (t *tracer) publishAndActivate(globalTracer Tracer, ciVisibilityEnabled bool) error {
+	return t.publishAndActivateGeneration(globalTracer, ciVisibilityEnabled, true)
+}
+
+func (t *tracer) publishAndActivateWithoutReplacingGlobal() error {
+	return t.publishAndActivateGeneration(nil, false, false)
+}
+
+func (t *tracer) publishAndActivateGeneration(globalTracer Tracer, ciVisibilityEnabled, replaceGlobalTracer bool) error {
 	committed := false
 	defer func() {
 		if !committed {
@@ -363,6 +371,7 @@ func (t *tracer) publishAndActivate(globalTracer Tracer, ciVisibilityEnabled boo
 			ciVisibilityEnabled,
 			processLogger,
 			finishBaseHashHandoff,
+			replaceGlobalTracer,
 		)
 	})
 	if err != nil {
@@ -377,8 +386,12 @@ func (t *tracer) completeGenerationHandoff(
 	ciVisibilityEnabled bool,
 	processLogger log.Logger,
 	finishBaseHashHandoff func(),
+	replaceGlobalTracer bool,
 ) {
-	oldTracer := swapGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
+	var oldTracer Tracer
+	if replaceGlobalTracer {
+		oldTracer = swapGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
+	}
 	stopOld := oldTracer != nil && oldTracer != globalTracer
 	var firstPanic any
 	runCapturingPanic(&firstPanic, func() {

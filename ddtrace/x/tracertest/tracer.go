@@ -30,9 +30,10 @@ import (
 )
 
 // Start creates an inspectable tracer using the provided agent and options. The
-// tracer is stopped automatically when the test ends. Unlike [Bootstrap], this
-// function does not set the global tracer, so it is safe to use in parallel
-// tests that pass the tracer explicitly.
+// tracer is stopped automatically when the test ends. Start does not set the
+// global tracer, but it publishes the process configuration and may start
+// process-global AppSec, remote configuration, or LLMObs state. Do not call it
+// concurrently with [Bootstrap], tracer.Start, tracer.Stop, or another Start.
 //
 //go:linkname Start github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.startInspectableTracer
 func Start(testing.TB, agenttest.Agent, ...tracer.StartOption) (tracer.Tracer, error)

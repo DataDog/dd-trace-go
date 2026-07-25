@@ -44,6 +44,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
@@ -1443,13 +1444,13 @@ func TestTracerEdgeSampler(t *testing.T) {
 	assert.Nil(err)
 
 	// a sample rate of 0 should sample nothing
-	tracer0, err := startInspectableTracer(t,
+	tracer0, err := newUnpublishedInspectableTracer(t,
 		agent,
 		WithSamplerRate(0),
 	)
 	assert.Nil(err)
 	// a sample rate of 1 should sample everything
-	tracer1, err := startInspectableTracer(t,
+	tracer1, err := newUnpublishedInspectableTracer(t,
 		agent,
 		WithSamplerRate(1),
 	)
@@ -1472,6 +1473,178 @@ func TestTracerEdgeSampler(t *testing.T) {
 	tracer1.Flush()
 
 	assert.Equal(333, agent.CountSpans())
+}
+
+func TestStartInspectableTracerActivatesWithoutReplacingGlobalTracer(t *testing.T) {
+	agent, err := startAgentTest(t)
+	require.NoError(t, err)
+
+	global := &NoopTracer{}
+	setGlobalTracer(global)
+	internal.SetTracerInitialized(false)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+		internal.SetTracerInitialized(false)
+	})
+
+	started, err := startInspectableTracer(t, agent)
+	require.NoError(t, err)
+	inspectable, ok := started.(*tracer)
+	require.True(t, ok)
+
+	inspectable.lifecycleMu.Lock()
+	activated := inspectable.activated
+	inspectable.lifecycleMu.Unlock()
+	assert.True(t, activated)
+	assert.Same(t, global, getGlobalTracer())
+	assert.False(t, internal.TracerInitialized())
+}
+
+func TestInspectableActivationSerializesWithProductionLifecycle(t *testing.T) {
+	previousProcs := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previousProcs) })
+
+	setGlobalTracer(&NoopTracer{})
+	internal.SetTracerInitialized(false)
+	t.Cleanup(Stop)
+
+	agent, err := startAgentTest(t)
+	require.NoError(t, err)
+	first, err := newUnpublishedInspectableTracer(t, agent)
+	require.NoError(t, err)
+
+	originalPublish := publishTracerGeneration
+	firstInHandoff := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseFirst) }) }
+	t.Cleanup(release)
+	var calls atomic.Uint32
+	secondEntryEpoch := make(chan uint64, 1)
+	publishTracerGeneration = func(
+		cfg *internalconfig.Config,
+		prepared internalconfig.PreparedClaims,
+		handoff func(internalconfig.Publication),
+	) error {
+		call := calls.Add(1)
+		if call == 2 {
+			secondEntryEpoch <- baseHashHandoffEpoch.Load()
+		}
+		if call != 1 {
+			return originalPublish(cfg, prepared, handoff)
+		}
+		return originalPublish(cfg, prepared, func(publication internalconfig.Publication) {
+			close(firstInHandoff)
+			<-releaseFirst
+			handoff(publication)
+		})
+	}
+	t.Cleanup(func() { publishTracerGeneration = originalPublish })
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- activateInspectableTracerWithoutReplacingGlobal(t, first)
+	}()
+	<-firstInHandoff
+
+	secondStarted := make(chan struct{})
+	secondDone := make(chan error, 1)
+	go func() {
+		close(secondStarted)
+		secondDone <- Start(
+			WithLambdaMode(true),
+			WithLogStartup(false),
+			WithTestDefaults(nil),
+		)
+	}()
+	<-secondStarted
+	runtime.Gosched()
+
+	var (
+		secondCompletedBeforeRelease bool
+		secondErr                    error
+	)
+	select {
+	case secondErr = <-secondDone:
+		secondCompletedBeforeRelease = true
+	default:
+	}
+
+	release()
+	require.NoError(t, <-firstDone)
+	if !secondCompletedBeforeRelease {
+		secondErr = <-secondDone
+	}
+	require.NoError(t, secondErr)
+	assert.False(t, secondCompletedBeforeRelease,
+		"production Start completed while the inspectable handoff was paused")
+	assert.EqualValues(t, 1, (<-secondEntryEpoch)%2,
+		"the second publication entered during another base-hash handoff")
+	assert.Zero(t, baseHashHandoffEpoch.Load()%2)
+	assert.True(t, internal.TracerInitialized())
+}
+
+func TestBootstrapInspectableTracerRollsBackGlobalOnLLMObsFailure(t *testing.T) {
+	setGlobalTracer(&NoopTracer{})
+	internal.SetTracerInitialized(false)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+		internal.SetTracerInitialized(false)
+	})
+
+	var statsd statsdtest.TestStatsdClient
+	_, _, err := bootstrapInspectableTracer(t,
+		WithLLMObsEnabled(true),
+		WithLLMObsMLApp("test-app"),
+		WithLLMObsAgentlessEnabled(false),
+		WithLogStartup(false),
+		withStatsdClient(&statsd),
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "the agent is not available or does not support LLMObs")
+	assert.IsType(t, &NoopTracer{}, getGlobalTracer())
+	assert.False(t, internal.TracerInitialized())
+	assert.Len(t, statsd.GetCallsByName("datadog.tracer.stopped"), 1)
+	assert.True(t, statsd.Closed())
+}
+
+func TestBootstrapInspectableTracerCleanupPreservesNewerLLMObsOwner(t *testing.T) {
+	llmobs.Stop()
+	setGlobalTracer(&NoopTracer{})
+	internal.SetTracerInitialized(false)
+	t.Cleanup(func() {
+		startStopMu.Lock()
+		defer startStopMu.Unlock()
+		llmobs.Stop()
+		setGlobalTracer(&NoopTracer{})
+		internal.SetTracerInitialized(false)
+	})
+
+	t.Run("older owner", func(olderT *testing.T) {
+		_, _, err := bootstrapInspectableTracer(olderT,
+			WithLLMObsEnabled(true),
+			WithLLMObsMLApp("older-app"),
+			WithLogStartup(false),
+			withLLMObsInProcessTransport("http://llmobstest.invalid", noopRoundTripper{}),
+		)
+		require.NoError(olderT, err)
+
+		_, _, err = bootstrapInspectableTracer(t,
+			WithLLMObsEnabled(true),
+			WithLLMObsMLApp("newer-app"),
+			WithLogStartup(false),
+			withLLMObsInProcessTransport("http://llmobstest.invalid", noopRoundTripper{}),
+		)
+		require.NoError(olderT, err)
+
+		active, err := llmobs.ActiveLLMObs()
+		require.NoError(olderT, err)
+		assert.Equal(olderT, "newer-app", active.Config.MLApp)
+	})
+
+	active, err := llmobs.ActiveLLMObs()
+	require.NoError(t, err)
+	assert.Equal(t, "newer-app", active.Config.MLApp)
 }
 
 func TestOTLPExportMode(t *testing.T) {

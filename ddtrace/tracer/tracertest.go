@@ -118,26 +118,50 @@ func bootstrapInspectableTracer(tb testing.TB, opts ...StartOption) (Tracer, age
 	if err != nil {
 		return nil, nil, err
 	}
-	tracer, err := startInspectableTracer(tb, agent, opts...)
+	tracer, err := newUnpublishedInspectableTracer(tb, agent, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := activateInspectableTracer(tb, tracer); err != nil {
+
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+	success := false
+	defer func() {
+		if !success {
+			resetInspectableGlobalTracerLocked(tracer)
+		}
+	}()
+	if err := activateInspectableTracerGenerationLocked(tb, tracer, true); err != nil {
 		return nil, nil, err
 	}
 	globalinternal.SetTracerInitialized(true)
 	tb.Cleanup(func() {
-		setGlobalTracer(&NoopTracer{})
-		globalinternal.SetTracerInitialized(false)
+		startStopMu.Lock()
+		defer startStopMu.Unlock()
+		resetInspectableGlobalTracerLocked(tracer)
 	})
+	success = true
 	return tracer, agent, nil
 }
 
-func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartOption) (*tracer, error) {
+func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartOption) (Tracer, error) {
 	tb.Helper()
-	// withAgentTransport injects the in-process round-tripper before newTracer
-	// runs so that bootstrap (e.g. /info discovery) never touches the real
-	// network. withNoopStats prevents a real DogStatsD dial during startup.
+	tracer, err := newUnpublishedInspectableTracer(tb, agent, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if err := activateInspectableTracerWithoutReplacingGlobal(tb, tracer); err != nil {
+		return nil, err
+	}
+	return tracer, nil
+}
+
+func newUnpublishedInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartOption) (*tracer, error) {
+	tb.Helper()
+	// withAgentTransport injects the in-process round-tripper before
+	// newUnpublishedTracer runs so that bootstrap (e.g. /info discovery) never
+	// touches the real network. withNoopStats prevents a real DogStatsD dial
+	// during startup.
 	// Both options survive the orchestrion httpClient override because they are
 	// applied after it in finishConfig.
 	o := append([]StartOption{
@@ -183,7 +207,41 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 
 func activateInspectableTracer(tb testing.TB, tracer *tracer) error {
 	tb.Helper()
-	if err := tracer.publishAndActivate(tracer, false); err != nil {
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+	if err := activateInspectableTracerGenerationLocked(tb, tracer, true); err != nil {
+		return err
+	}
+	tb.Cleanup(func() {
+		startStopMu.Lock()
+		defer startStopMu.Unlock()
+		resetInspectableGlobalTracerLocked(tracer)
+	})
+	return nil
+}
+
+func activateInspectableTracerWithoutReplacingGlobal(tb testing.TB, tracer *tracer) error {
+	tb.Helper()
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+	if err := activateInspectableTracerGenerationLocked(tb, tracer, false); err != nil {
+		return err
+	}
+	registerInspectableLLMObsCleanup(tb, tracer)
+	return nil
+}
+
+// activateInspectableTracerGenerationLocked publishes and starts an inspectable
+// tracer while its caller holds startStopMu.
+func activateInspectableTracerGenerationLocked(tb testing.TB, tracer *tracer, replaceGlobalTracer bool) error {
+	tb.Helper()
+	var err error
+	if replaceGlobalTracer {
+		err = tracer.publishAndActivate(tracer, false)
+	} else {
+		err = tracer.publishAndActivateWithoutReplacingGlobal()
+	}
+	if err != nil {
 		return err
 	}
 	// AppSec and LLMObs use the same helpers as production Start. Instrumentation
@@ -193,7 +251,31 @@ func activateInspectableTracer(tb testing.TB, tracer *tracer) error {
 		if err := llmobs.Start(tracer.config.llmobs, &llmobsTracerAdapter{}); err != nil {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
-		tb.Cleanup(llmobs.Stop)
 	}
 	return nil
+}
+
+func registerInspectableLLMObsCleanup(tb testing.TB, tracer *tracer) {
+	if !tracer.config.llmobs.Enabled {
+		return
+	}
+	tb.Cleanup(func() {
+		startStopMu.Lock()
+		defer startStopMu.Unlock()
+		llmobs.Stop()
+	})
+}
+
+// resetInspectableGlobalTracerLocked removes tracer only while it still owns
+// the global slot. Its caller must hold startStopMu.
+func resetInspectableGlobalTracerLocked(tracer *tracer) {
+	if getGlobalTracer() != tracer {
+		return
+	}
+	if tracer.config.llmobs.Enabled {
+		llmobs.Stop()
+	}
+	old := swapGlobalTracer(&NoopTracer{})
+	globalinternal.SetTracerInitialized(false)
+	old.Stop()
 }
