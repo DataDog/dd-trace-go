@@ -59,7 +59,8 @@ The registry therefore has two layers.
 
 ### Raw definitions
 
-A raw definition records properties shared by reads of one source key:
+A raw definition records the default and maximum source set plus the telemetry
+policy for one source key:
 
 ```go
 type SourcePolicy uint8
@@ -114,10 +115,11 @@ const (
 )
 
 type ConsumerBinding struct {
-	ID       string
-	Consumer string
-	Keys     []string
-	Sampling SamplingBoundary
+	ID              string
+	Consumer        string
+	Keys            []string
+	Sampling        SamplingBoundary
+	EnvironmentOnly bool
 }
 ```
 

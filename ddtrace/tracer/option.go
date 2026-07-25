@@ -33,7 +33,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -42,18 +41,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
-)
-
-const (
-	envLLMObsEnabled          = "DD_LLMOBS_ENABLED"
-	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
-	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
-	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
 )
 
 var contribIntegrations = map[string]struct {
@@ -227,14 +218,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	c.namingConfig = namingschema.ConfigFromEnv()
+	c.namingConfig = namingschema.ConfigFromEnv(c.internalConfig)
 
 	// LLM Observability config
+	llmobsSnapshot := internalconfig.TracerLLMObsSnapshot(c.internalConfig)
 	c.llmobs = llmobsconfig.Config{
-		Enabled:          internal.BoolEnv(envLLMObsEnabled, false),
-		MLApp:            env.Get(envLLMObsMlApp),
-		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
-		ProjectName:      env.Get(envLLMObsProjectName),
+		Enabled:          llmobsSnapshot.Enabled,
+		MLApp:            llmobsSnapshot.MLApp,
+		AgentlessEnabled: llmobsSnapshot.AgentlessEnabled,
+		ProjectName:      llmobsSnapshot.ProjectName,
 	}
 	for _, fn := range opts {
 		if fn == nil {
@@ -385,7 +377,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// mirror the resolved value into globalconfig for contrib readers.
 		c.internalConfig.ApplyAgentReportedStatsdPort(af.StatsdPort)
 	}
-	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
+	if !internalconfig.APMTracingEnabled(c.internalConfig) {
 		apmTracingDisabled(c)
 	}
 	// Update the llmobs config with stuff needed from the tracer.
@@ -426,14 +418,6 @@ func computeOtelRuntimeMetricsShouldBeEnabled(c *config) bool {
 // Orchestrion build (orchestrion.Enabled() is a build-time constant).
 func shouldDisableSpanPool(spanPoolEnabled, orchestrionEnabled bool) bool {
 	return spanPoolEnabled && orchestrionEnabled
-}
-
-func llmobsAgentlessEnabledFromEnv() *bool {
-	v, ok := internal.BoolEnvNoDefault(envLLMObsAgentlessEnabled)
-	if !ok {
-		return nil
-	}
-	return &v
 }
 
 func apmTracingDisabled(c *config) {

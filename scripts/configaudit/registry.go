@@ -15,10 +15,11 @@ import (
 )
 
 type registryBinding struct {
-	id       string
-	consumer string
-	keys     []string
-	sampling uint64
+	id              string
+	consumer        string
+	keys            []string
+	sampling        uint64
+	environmentOnly bool
 }
 
 type registryRaw struct {
@@ -301,11 +302,19 @@ func parseBindingDeclaration(registry *declarationRegistry, info *types.Info, ca
 	if !ok {
 		return fmt.Errorf("consumer binding sampling boundary must be constant")
 	}
+	environmentOnly := false
+	if environmentOnlyExpr, present := literalField(literal, "EnvironmentOnly"); present {
+		environmentOnly, ok = resolveBoolArg(info, environmentOnlyExpr)
+		if !ok {
+			return fmt.Errorf("consumer binding environment-only narrowing must be constant")
+		}
+	}
 	return registry.addBinding(registryBinding{
-		id:       id,
-		consumer: consumer,
-		keys:     keys,
-		sampling: sampling,
+		id:              id,
+		consumer:        consumer,
+		keys:            keys,
+		sampling:        sampling,
+		environmentOnly: environmentOnly,
 	})
 }
 

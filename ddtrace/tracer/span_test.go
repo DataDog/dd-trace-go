@@ -1517,6 +1517,17 @@ func TestSpanLog(t *testing.T) {
 		expect := `dd.service=tracer.test dd.env=testenv dd.trace_id="12345678" dd.span_id="87654321" dd.parent_id="0"`
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
+
+	t.Run("128-bit-logging-resampled-per-call", func(t *testing.T) {
+		span := newSpan("test.request", "", "", 2, 3, 0)
+		span.context.traceID.SetUpper(1)
+		formatSpan := func(span *Span) string { return fmt.Sprintf("%v", span) }
+
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+		require.NotContains(t, formatSpan(span), "0000000000000001")
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
+		require.Contains(t, formatSpan(span), "0000000000000001")
+	})
 }
 
 func TestRootSpanAccessor(t *testing.T) {

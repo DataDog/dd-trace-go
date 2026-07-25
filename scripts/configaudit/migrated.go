@@ -67,6 +67,15 @@ func resolveUintArg(info *types.Info, expr ast.Expr) (uint64, bool) {
 	return constant.Uint64Val(tv.Value)
 }
 
+// resolveBoolArg returns the boolean value of expr if it is a constant boolean.
+func resolveBoolArg(info *types.Info, expr ast.Expr) (bool, bool) {
+	tv, ok := info.Types[expr]
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.Bool {
+		return false, false
+	}
+	return constant.BoolVal(tv.Value), true
+}
+
 func packageErrors(pkgs []*packages.Package) []error {
 	var errs []error
 	for _, pkg := range pkgs {

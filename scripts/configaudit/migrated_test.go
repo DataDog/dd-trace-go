@@ -11,11 +11,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 var migratedInventory = []string{
 	"DD_AGENT_HOST",
 	"DD_API_KEY",
+	"DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED",
+	"DD_APM_TRACING_ENABLED",
 	"DD_APP_KEY",
 	"DD_CIVISIBILITY_AGENTLESS_ENABLED",
 	"DD_CIVISIBILITY_AGENTLESS_URL",
@@ -28,6 +32,11 @@ var migratedInventory = []string{
 	"DD_DYNAMIC_INSTRUMENTATION_ENABLED",
 	"DD_ENV",
 	"DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED",
+	"DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS",
+	"DD_LLMOBS_AGENTLESS_ENABLED",
+	"DD_LLMOBS_ENABLED",
+	"DD_LLMOBS_ML_APP",
+	"DD_LLMOBS_PROJECT_NAME",
 	"DD_LOGS_OTEL_ENABLED",
 	"DD_METRICS_OTEL_ENABLED",
 	"DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED",
@@ -40,20 +49,63 @@ var migratedInventory = []string{
 	"DD_TAGS",
 	"DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED",
 	"DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED",
+	"DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED",
 	"DD_TRACE_ABANDONED_SPAN_TIMEOUT",
 	"DD_TRACE_AGENT_PORT",
 	"DD_TRACE_AGENT_PROTOCOL_VERSION",
 	"DD_TRACE_AGENT_TIMEOUT",
 	"DD_TRACE_AGENT_URL",
+	"DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED",
 	"DD_TRACE_ANALYTICS_ENABLED",
+	"DD_TRACE_AWS_ANALYTICS_ENABLED",
+	"DD_TRACE_BAGGAGE_TAG_KEYS",
+	"DD_TRACE_BUNTDB_ANALYTICS_ENABLED",
+	"DD_TRACE_CHI_ANALYTICS_ENABLED",
+	"DD_TRACE_CLIENT_IP_ENABLED",
+	"DD_TRACE_CONSUL_ANALYTICS_ENABLED",
 	"DD_TRACE_DEBUG",
 	"DD_TRACE_DEBUG_ABANDONED_SPANS",
+	"DD_TRACE_DEBUG_SEELOG_WORKAROUND",
 	"DD_TRACE_DEBUG_STACK",
+	"DD_TRACE_ECHO_ANALYTICS_ENABLED",
+	"DD_TRACE_ELASTIC_ANALYTICS_ENABLED",
 	"DD_TRACE_ENABLED",
 	"DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED",
+	"DD_TRACE_FASTHTTP_ANALYTICS_ENABLED",
 	"DD_TRACE_FEATURES",
+	"DD_TRACE_FIBER_ANALYTICS_ENABLED",
+	"DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED",
+	"DD_TRACE_GIN_ANALYTICS_ENABLED",
+	"DD_TRACE_GOCQL_ANALYTICS_ENABLED",
+	"DD_TRACE_GOJI_ANALYTICS_ENABLED",
+	"DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED",
+	"DD_TRACE_GOPG_ANALYTICS_ENABLED",
+	"DD_TRACE_GQLGEN_ANALYTICS_ENABLED",
+	"DD_TRACE_GRAPHQL_ANALYTICS_ENABLED",
+	"DD_TRACE_GRAPHQL_ERROR_EXTENSIONS",
+	"DD_TRACE_GRPC_ANALYTICS_ENABLED",
+	"DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED",
+	"DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED",
+	"DD_TRACE_HTTP_ANALYTICS_ENABLED",
+	"DD_TRACE_HTTP_SERVER_ERROR_STATUSES",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED",
+	"DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED",
 	"DD_TRACE_INTERNAL_METRICS_ENABLED",
+	"DD_TRACE_KAFKA_ANALYTICS_ENABLED",
+	"DD_TRACE_LAMBDA_ANALYTICS_ENABLED",
+	"DD_TRACE_LEVELDB_ANALYTICS_ENABLED",
 	"DD_TRACE_LOG_DIRECTORY",
+	"DD_TRACE_LOGRUS_ANALYTICS_ENABLED",
+	"DD_TRACE_MCP_ANALYTICS_ENABLED",
+	"DD_TRACE_MEMCACHE_ANALYTICS_ENABLED",
+	"DD_TRACE_MGO_ANALYTICS_ENABLED",
+	"DD_TRACE_MONGO_ANALYTICS_ENABLED",
+	"DD_TRACE_MUX_ANALYTICS_ENABLED",
+	"DD_TRACE_NEGRONI_ANALYTICS_ENABLED",
+	"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP",
 	"DD_TRACE_OTEL_SEMANTICS_ENABLED",
 	"DD_TRACE_PARTIAL_FLUSH_ENABLED",
 	"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS",
@@ -61,15 +113,24 @@ var migratedInventory = []string{
 	"DD_TRACE_PEER_SERVICE_MAPPING",
 	"DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT",
 	"DD_TRACE_PROPAGATION_EXTRACT_FIRST",
+	"DD_TRACE_PROPAGATION_STYLE",
 	"DD_TRACE_PROPAGATION_STYLE_EXTRACT",
 	"DD_TRACE_PROPAGATION_STYLE_INJECT",
 	"DD_TRACE_RATE_LIMIT",
+	"DD_TRACE_REDIGO_ANALYTICS_ENABLED",
+	"DD_TRACE_REDIS_ANALYTICS_ENABLED",
+	"DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED",
 	"DD_TRACE_REPORT_HOSTNAME",
+	"DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT",
+	"DD_TRACE_RESOURCE_RENAMING_ENABLED",
+	"DD_TRACE_RESTFUL_ANALYTICS_ENABLED",
 	"DD_TRACE_RETRY_INTERVAL",
 	"DD_TRACE_SAMPLE_RATE",
+	"DD_TRACE_SARAMA_ANALYTICS_ENABLED",
 	"DD_TRACE_SEND_RETRIES",
 	"DD_TRACE_SOURCE_HOSTNAME",
 	"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA",
+	"DD_TRACE_SQL_ANALYTICS_ENABLED",
 	"DD_TRACE_STARTUP_LOGS",
 	"DD_TRACE_STATS_ADDITIONAL_TAGS",
 	"DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT",
@@ -79,8 +140,13 @@ var migratedInventory = []string{
 	"DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT",
 	"DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT",
 	"DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT",
+	"DD_TRACE_TWIRP_ANALYTICS_ENABLED",
 	"DD_TRACE_UNIVERSAL_VERSION_ENABLED",
+	"DD_TRACE_VALKEY_ANALYTICS_ENABLED",
+	"DD_TRACE_VAULT_ANALYTICS_ENABLED",
 	"DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH",
+	"DD_TRACE_ZAP_ANALYTICS_ENABLED",
+	"DD_TRACE_ZEROLOG_ANALYTICS_ENABLED",
 	"DD_VERSION",
 	"OTEL_EXPORTER_OTLP_ENDPOINT",
 	"OTEL_EXPORTER_OTLP_HEADERS",
@@ -89,8 +155,14 @@ var migratedInventory = []string{
 	"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
 	"OTEL_EXPORTER_OTLP_TRACES_HEADERS",
 	"OTEL_LOGS_EXPORTER",
+	"OTEL_LOG_LEVEL",
 	"OTEL_METRICS_EXPORTER",
+	"OTEL_PROPAGATORS",
+	"OTEL_RESOURCE_ATTRIBUTES",
+	"OTEL_SERVICE_NAME",
 	"OTEL_TRACES_EXPORTER",
+	"OTEL_TRACES_SAMPLER",
+	"OTEL_TRACES_SAMPLER_ARG",
 	"OTEL_TRACES_SPAN_METRICS_ENABLED",
 }
 
@@ -201,6 +273,45 @@ func TestLoadMigrated_RejectsNonconstantBindingKey(t *testing.T) {
 	_, err := loadMigrated(pkgDir)
 	if err == nil || !strings.Contains(err.Error(), "consumer binding key must be constant") {
 		t.Fatalf("got error %v, want nonconstant binding key", err)
+	}
+}
+
+func TestLoadRegistry_EnvironmentOnly(t *testing.T) {
+	tests := []struct {
+		name       string
+		field      string
+		wantNarrow bool
+	}{
+		{name: "defaults false"},
+		{name: "constant true", field: ", EnvironmentOnly: true", wantNarrow: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pkgDir := writeRegistryFixture(t, fmt.Sprintf(`
+	registerRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport})
+	registerBinding(ConsumerBinding{ID: "tracer.service", Consumer: "tracer", Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction%s})
+`, test.field))
+			cfg := &packages.Config{
+				Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+					packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports |
+					packages.NeedDeps,
+				Dir: pkgDir,
+			}
+			pkgs, err := packages.Load(cfg, ".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if errs := packageErrors(pkgs); len(errs) > 0 {
+				t.Fatalf("type errors: %v", errs)
+			}
+			registry, err := loadRegistry(pkgs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := registry.bindings["tracer.service"].environmentOnly; got != test.wantNarrow {
+				t.Fatalf("environmentOnly = %t, want %t", got, test.wantNarrow)
+			}
+		})
 	}
 }
 
@@ -364,6 +475,14 @@ func TestLoadMigrated_RejectsInvalidMetadata(t *testing.T) {
 	registerBinding(ConsumerBinding{ID: "tracer.service", Consumer: "tracer", Keys: []string{"DD_SERVICE"}, Sampling: SamplingBoundary(6)})
 `,
 			wantErr: `binding "tracer.service" has invalid sampling boundary 6`,
+		},
+		{
+			name: "nonconstant environment-only narrowing",
+			declarations: `
+	registerRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport})
+	registerBinding(ConsumerBinding{ID: "tracer.service", Consumer: "tracer", Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction, EnvironmentOnly: nonconstantBool()})
+`,
+			wantErr: "consumer binding environment-only narrowing must be constant",
 		},
 	}
 
@@ -538,10 +657,11 @@ type RawDefinition struct {
 	Telemetry TelemetryPolicy
 }
 type ConsumerBinding struct {
-	ID string
-	Consumer string
-	Keys []string
-	Sampling SamplingBoundary
+	ID              string
+	Consumer        string
+	Keys            []string
+	Sampling        SamplingBoundary
+	EnvironmentOnly bool
 }
 
 func registerRaw(RawDefinition) {}
@@ -550,6 +670,7 @@ func nonconstantString() string { return "dynamic" }
 func nonconstantSource() SourcePolicy { return SourceStable }
 func nonconstantTelemetry() TelemetryPolicy { return TelemetryReport }
 func nonconstantSampling() SamplingBoundary { return SampleTracerConstruction }
+func nonconstantBool() bool { return true }
 
 %s
 `, functions)

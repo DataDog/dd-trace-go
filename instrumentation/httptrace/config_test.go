@@ -8,6 +8,7 @@ package httptrace
 import (
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,4 +62,14 @@ func TestConfig(t *testing.T) {
 			require.Equal(t, tc.cfg.queryString, c.queryString)
 		})
 	}
+}
+
+func TestQueryStringRegexpDoesNotReadUnrelatedHTTPConfig(t *testing.T) {
+	logger := new(log.RecordLogger)
+	defer log.UseLogger(logger)()
+	t.Setenv(EnvQueryStringRegexp, "secret")
+	t.Setenv(envQueryStringDisabled, "not-a-bool")
+
+	require.Equal(t, "secret", QueryStringRegexp().String())
+	require.Empty(t, logger.Logs())
 }

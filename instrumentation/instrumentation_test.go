@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func TestInstrumentation_AnalyticsRate(t *testing.T) {
@@ -34,4 +36,16 @@ func TestInstrumentation_AnalyticsRate(t *testing.T) {
 			require.Equal(t, 1.0, rate)
 		})
 	}
+}
+
+func TestBuiltInAnalyticsPrefixesHaveFixedBindings(t *testing.T) {
+	seen := make(map[string]struct{})
+	for _, info := range GetPackages() {
+		if info.EnvVarPrefix == "" {
+			continue
+		}
+		seen[info.EnvVarPrefix] = struct{}{}
+		require.True(t, internalconfig.IntegrationAnalyticsRegistered(info.EnvVarPrefix), info.EnvVarPrefix)
+	}
+	require.Len(t, seen, 41)
 }

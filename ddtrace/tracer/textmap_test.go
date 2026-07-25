@@ -21,6 +21,8 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -2425,6 +2427,136 @@ func TestPropagationBehaviorExtractDefault(t *testing.T) {
 	cfg, err := newTestConfig()
 	require.NoError(t, err)
 	assert.Equal(t, propagationBehaviorExtractContinue, cfg.internalConfig.PropagationBehaviorExtract())
+}
+
+func TestNewPropagatorResamplesEnvironmentBetweenConstructions(t *testing.T) {
+	t.Setenv(envPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationBehaviorExtract, propagationBehaviorExtractContinue)
+	t.Setenv(envPropagationExtractFirst, "false")
+	first := NewPropagator(nil).(*chainedPropagator)
+	assert.Equal(t, "datadog", first.injectorNames)
+	assert.Equal(t, "datadog", first.extractorsNames)
+	assert.Equal(t, propagationBehaviorExtractContinue, first.propagationBehaviorExtract)
+	assert.False(t, first.onlyExtractFirst)
+
+	t.Setenv(envPropagationStyleInject, "tracecontext")
+	t.Setenv(envPropagationStyleExtract, "baggage")
+	t.Setenv(envPropagationBehaviorExtract, propagationBehaviorExtractIgnore)
+	t.Setenv(envPropagationExtractFirst, "true")
+	second := NewPropagator(nil).(*chainedPropagator)
+	assert.Equal(t, "tracecontext", second.injectorNames)
+	assert.Equal(t, "baggage", second.extractorsNames)
+	assert.Equal(t, propagationBehaviorExtractIgnore, second.propagationBehaviorExtract)
+	assert.True(t, second.onlyExtractFirst)
+}
+
+func TestNewPropagatorProgrammaticOverridesSkipEnvironmentReads(t *testing.T) {
+	logger := new(log.RecordLogger)
+	defer log.UseLogger(logger)()
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
+
+	t.Setenv(envPropagationExtractFirst, "not-a-bool")
+	t.Setenv(envPropagationBehaviorExtract, "from-environment")
+	t.Setenv(envPropagationStyleInject, "b3")
+	t.Setenv(envPropagationStyleExtract, "b3")
+	t.Setenv(envPropagationStyle, "")
+	t.Setenv(otelHeaderPropagationStyle, "not-a-propagator")
+	extractFirst := true
+	propagator := NewPropagator(&PropagatorConfig{
+		ExtractFirst:    &extractFirst,
+		BehaviorExtract: propagationBehaviorExtractContinue,
+		InjectStyle:     "datadog",
+		ExtractStyle:    "tracecontext",
+	}).(*chainedPropagator)
+
+	assert.True(t, propagator.onlyExtractFirst)
+	assert.Equal(t, propagationBehaviorExtractContinue, propagator.propagationBehaviorExtract)
+	assert.Equal(t, "datadog", propagator.injectorNames)
+	assert.Equal(t, "tracecontext", propagator.extractorsNames)
+	assert.Empty(t, logger.Logs())
+	assert.Empty(t, telemetryClient.Configuration)
+	assert.Zero(t, telemetryClient.Count(
+		telemetry.NamespaceTracers,
+		"otel.env.invalid",
+		[]string{"config_datadog:dd_trace_propagation_style", "config_opentelemetry:otel_propagators"},
+	).Get())
+}
+
+func TestNewPropagatorDatadogGenericStyleShortCircuitsOTelMapping(t *testing.T) {
+	tests := []struct {
+		name           string
+		otel           string
+		wantWarning    string
+		wantHiding     float64
+		wantLogEntries int
+	}{
+		{name: "explicit empty OTel"},
+		{
+			name:           "bogus OTel",
+			otel:           "not-a-propagator",
+			wantWarning:    `Both "OTEL_PROPAGATORS" and "DD_TRACE_PROPAGATION_STYLE" are set, using DD_TRACE_PROPAGATION_STYLE=datadog`,
+			wantHiding:     1,
+			wantLogEntries: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := new(log.RecordLogger)
+			defer log.UseLogger(logger)()
+			telemetryClient := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(telemetryClient)()
+
+			t.Setenv(envPropagationStyleInject, "")
+			t.Setenv(envPropagationStyleExtract, "")
+			t.Setenv(envPropagationStyle, "datadog")
+			t.Setenv(otelHeaderPropagationStyle, tt.otel)
+			extractFirst := false
+			propagator := NewPropagator(&PropagatorConfig{
+				ExtractFirst:    &extractFirst,
+				BehaviorExtract: propagationBehaviorExtractContinue,
+			}).(*chainedPropagator)
+
+			require.Equal(t, "datadog", propagator.injectorNames)
+			require.Equal(t, "datadog", propagator.extractorsNames)
+			require.Len(t, logger.Logs(), tt.wantLogEntries)
+			if tt.wantWarning != "" {
+				require.Contains(t, logger.Logs()[0], tt.wantWarning)
+			}
+			require.Equal(t, tt.wantHiding, telemetryClient.Count(
+				telemetry.NamespaceTracers,
+				"otel.env.hiding",
+				[]string{"config_datadog:dd_trace_propagation_style", "config_opentelemetry:otel_propagators"},
+			).Get())
+			require.Zero(t, telemetryClient.Count(
+				telemetry.NamespaceTracers,
+				"otel.env.invalid",
+				[]string{"config_datadog:dd_trace_propagation_style", "config_opentelemetry:otel_propagators"},
+			).Get())
+		})
+	}
+}
+
+func TestNewPropagatorBehaviorStillResolvesStyles(t *testing.T) {
+	tests := []struct {
+		behavior string
+		want     string
+	}{
+		{behavior: propagationBehaviorExtractIgnore, want: propagationBehaviorExtractIgnore},
+		{behavior: "invalid", want: propagationBehaviorExtractContinue},
+	}
+	for _, tt := range tests {
+		t.Run(tt.behavior, func(t *testing.T) {
+			t.Setenv(envPropagationBehaviorExtract, tt.behavior)
+			t.Setenv(envPropagationStyleInject, "datadog")
+			t.Setenv(envPropagationStyleExtract, "tracecontext")
+			propagator := NewPropagator(nil).(*chainedPropagator)
+			assert.Equal(t, tt.want, propagator.propagationBehaviorExtract)
+			assert.Equal(t, "datadog", propagator.injectorNames)
+			assert.Equal(t, "tracecontext", propagator.extractorsNames)
+		})
+	}
 }
 
 func TestW3CExtractsBaggage(t *testing.T) {

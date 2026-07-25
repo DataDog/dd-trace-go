@@ -19,6 +19,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/schema"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -39,6 +40,21 @@ func TestNewSourceOrderMatchesSchemaOrdinals(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, telemetry.OriginLocalStableConfig, p.sources[schema.SourceOrdinalLocalStable].origin())
 	assert.Equal(t, schema.SourceOrdinalDefault, schema.SourceOrdinalMax)
+}
+
+func TestNewEnvironmentPreservesOrdinalsWithoutDeclarativeSources(t *testing.T) {
+	p := NewEnvironment()
+
+	require.Len(t, p.sources, int(schema.SourceOrdinalDefault))
+	assert.IsType(t, omittedConfigSource{}, p.sources[schema.SourceOrdinalManagedStable])
+	assert.IsType(t, new(envConfigSource), p.sources[schema.SourceOrdinalEnvironment])
+	assert.IsType(t, new(otelEnvConfigSource), p.sources[schema.SourceOrdinalOTelEnvironment])
+	assert.IsType(t, omittedConfigSource{}, p.sources[schema.SourceOrdinalLocalStable])
+	for _, source := range p.sources {
+		_, declarative := source.(*declarativeConfigSource)
+		assert.False(t, declarative,
+			"environment-only construction must not stat or parse stable configuration files")
+	}
 }
 
 type testConfigSource struct {
@@ -97,6 +113,39 @@ func (s *resolveTestSource) environmentSource() bool {
 	return s.environment
 }
 
+type countingLookupSource struct {
+	raw         string
+	present     bool
+	originValue telemetry.Origin
+	configID    string
+	lookups     int
+}
+
+func (s *countingLookupSource) lookup(string) (string, bool) {
+	s.lookups++
+	return s.raw, s.present
+}
+
+func (s *countingLookupSource) origin() telemetry.Origin {
+	return s.originValue
+}
+
+func (s *countingLookupSource) getID() string {
+	return s.configID
+}
+
+func (s *countingLookupSource) environmentSource() bool {
+	return s.originValue == telemetry.OriginEnvVar
+}
+
+func eventKinds(events []ConfigEvent) []EventKind {
+	kinds := make([]EventKind, len(events))
+	for i, event := range events {
+		kinds[i] = event.Kind
+	}
+	return kinds
+}
+
 func testDefinition(key string, policy schema.SourcePolicy) schema.RawDefinition {
 	return schema.RawDefinition{Key: key, Sources: policy, Telemetry: schema.TelemetryReport}
 }
@@ -148,6 +197,232 @@ func TestResolveSourcePolicies(t *testing.T) {
 	require.Equal(t, "environment", environment.Winner.Value)
 	require.Len(t, environment.Attempts, 1)
 	require.Equal(t, "environment", environment.Attempts[0].Raw)
+}
+
+func TestResolveWithBindingNarrowsStableDefinitionToEnvironment(t *testing.T) {
+	p := newTestProvider(
+		&resolveTestSource{raw: "managed", present: true, originValue: telemetry.OriginManagedStableConfig, configID: "managed-id"},
+		&resolveTestSource{raw: "environment", present: true, originValue: telemetry.OriginEnvVar, environment: true},
+		&resolveTestSource{raw: "local", present: true, originValue: telemetry.OriginLocalStableConfig, configID: "local-id"},
+	)
+	def := testDefinition("DD_SERVICE", schema.SourceStable)
+	stableBinding := schema.ConsumerBinding{
+		ID: "tracer.service", Consumer: "tracer",
+		Keys: []string{"DD_SERVICE"}, Sampling: schema.SampleTracerConstruction,
+	}
+	environmentBinding := schema.ConsumerBinding{
+		ID: "naming.service", Consumer: "naming",
+		Keys: []string{"DD_SERVICE"}, Sampling: schema.SamplePackageInit,
+		EnvironmentOnly: true,
+	}
+
+	stable, stableEvents := ResolveWithBinding(p, def, stableBinding, "default", parseTestString)
+	require.Equal(t, "managed", stable.Winner.Value)
+	require.Equal(t, []string{"local", "environment", "managed"}, attemptRawValues(stable.Attempts))
+	require.Len(t, stableEvents, 4)
+
+	environment, environmentEvents := ResolveWithBinding(p, def, environmentBinding, "default", parseTestString)
+	require.Equal(t, "environment", environment.Winner.Value)
+	require.Equal(t, telemetry.OriginEnvVar, environment.Winner.Origin)
+	require.Equal(t, []string{"environment"}, attemptRawValues(environment.Attempts))
+	require.Len(t, environmentEvents, 2)
+	require.Equal(t, "environment", environmentEvents[0].Value)
+	require.Equal(t, telemetry.OriginEnvVar, environmentEvents[0].Origin)
+	require.Empty(t, environmentEvents[0].ConfigID)
+	require.Equal(t, schema.SourceOrdinalEnvironment, environmentEvents[0].SourceOrdinal)
+}
+
+func TestResolveWithBindingEnvironmentOnlyIncludesOTelEnvironment(t *testing.T) {
+	oldService, servicePresent := os.LookupEnv("DD_SERVICE")
+	require.NoError(t, os.Unsetenv("DD_SERVICE"))
+	t.Cleanup(func() {
+		if servicePresent {
+			require.NoError(t, os.Setenv("DD_SERVICE", oldService))
+		} else {
+			require.NoError(t, os.Unsetenv("DD_SERVICE"))
+		}
+	})
+	t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+	p := newTestProvider(
+		&resolveTestSource{raw: "managed", present: true, originValue: telemetry.OriginManagedStableConfig, configID: "managed-id"},
+		&envConfigSource{},
+		&otelEnvConfigSource{},
+		&resolveTestSource{raw: "local", present: true, originValue: telemetry.OriginLocalStableConfig, configID: "local-id"},
+	)
+	binding := schema.ConsumerBinding{
+		ID: "tracer.service", Consumer: "tracer",
+		Keys: []string{"DD_SERVICE"}, Sampling: schema.SampleTracerConstruction,
+		EnvironmentOnly: true,
+	}
+
+	resolved, _ := ResolveWithBinding(
+		p,
+		testDefinition("DD_SERVICE", schema.SourceStable),
+		binding,
+		"default",
+		parseTestString,
+	)
+	require.Equal(t, "otel-service", resolved.Winner.Value)
+	require.Equal(t, telemetry.OriginEnvVar, resolved.Winner.Origin)
+	require.Len(t, resolved.Attempts, 2)
+	require.Equal(t, "otel-service", resolved.Attempts[0].Raw)
+	require.False(t, resolved.Attempts[1].Present)
+}
+
+func TestResolveTracerOTelCompatibilityPreservesLegacyDebugPrecedence(t *testing.T) {
+	def := schema.RawDefinition{
+		Key:       "DD_TRACE_DEBUG",
+		Sources:   schema.SourceStable,
+		Telemetry: schema.TelemetryReport,
+	}
+	binding := schema.ConsumerBinding{
+		ID:       "tracer.otel.debug",
+		Consumer: "tracer",
+		Keys:     []string{"DD_TRACE_DEBUG", "OTEL_LOG_LEVEL"},
+		Sampling: schema.SampleConstructor,
+	}
+
+	t.Run("managed stable short-circuits every lower source", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("OTEL_LOG_LEVEL", "invalid")
+		managed := &countingLookupSource{
+			raw: "true", present: true,
+			originValue: telemetry.OriginManagedStableConfig, configID: "managed-id",
+		}
+		environment := &countingLookupSource{
+			raw: "false", present: true, originValue: telemetry.OriginEnvVar,
+		}
+		local := &countingLookupSource{
+			raw: "false", present: true,
+			originValue: telemetry.OriginLocalStableConfig, configID: "local-id",
+		}
+		p := newTestProvider(managed, environment, new(otelEnvConfigSource), local)
+
+		resolved, events := ResolveTracerOTelCompatibility(p, def, binding)
+
+		require.Equal(t, "true", resolved.Winner.Value)
+		require.Equal(t, telemetry.OriginManagedStableConfig, resolved.Winner.Origin)
+		require.Equal(t, "managed-id", resolved.Winner.ConfigID)
+		require.Equal(t, 1, managed.lookups)
+		require.Zero(t, environment.lookups)
+		require.Zero(t, local.lookups)
+		require.Empty(t, logger.Logs())
+		require.Len(t, resolved.Attempts, 1)
+		require.Len(t, events, 1)
+		require.Equal(t, EventConfiguration, events[0].Kind)
+		require.Equal(t, schema.SourceOrdinalManagedStable, events[0].SourceOrdinal)
+	})
+
+	t.Run("Datadog environment short-circuits remapping and local stable", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("OTEL_LOG_LEVEL", "invalid")
+		managed := &countingLookupSource{originValue: telemetry.OriginManagedStableConfig}
+		environment := &countingLookupSource{
+			raw: "false", present: true, originValue: telemetry.OriginEnvVar,
+		}
+		local := &countingLookupSource{
+			raw: "true", present: true,
+			originValue: telemetry.OriginLocalStableConfig, configID: "local-id",
+		}
+		p := newTestProvider(managed, environment, new(otelEnvConfigSource), local)
+
+		resolved, events := ResolveTracerOTelCompatibility(p, def, binding)
+
+		require.Equal(t, "false", resolved.Winner.Value)
+		require.Equal(t, telemetry.OriginEnvVar, resolved.Winner.Origin)
+		require.Zero(t, local.lookups)
+		require.Len(t, logger.Logs(), 1)
+		require.Contains(t, logger.Logs()[0], "using DD_TRACE_DEBUG=false")
+		require.Len(t, resolved.Events, 1)
+		require.Equal(t, EventOTelEnvHiding, resolved.Events[0].Kind)
+		require.Equal(t, []EventKind{EventConfiguration, EventOTelEnvHiding}, eventKinds(events))
+		require.Zero(t, rec.Count(
+			telemetry.NamespaceTracers,
+			"otel.env.hiding",
+			[]string{"config_datadog:dd_trace_debug", "config_opentelemetry:otel_log_level"},
+		).Get(), "provider resolution must stage diagnostics for the Reporter")
+	})
+
+	t.Run("invalid OTel falls through to local stable", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("OTEL_LOG_LEVEL", "info")
+		managed := &countingLookupSource{originValue: telemetry.OriginManagedStableConfig}
+		environment := &countingLookupSource{originValue: telemetry.OriginEnvVar}
+		local := &countingLookupSource{
+			raw: "true", present: true,
+			originValue: telemetry.OriginLocalStableConfig, configID: "local-id",
+		}
+		p := newTestProvider(managed, environment, new(otelEnvConfigSource), local)
+
+		resolved, events := ResolveTracerOTelCompatibility(p, def, binding)
+
+		require.Equal(t, "true", resolved.Winner.Value)
+		require.Equal(t, telemetry.OriginLocalStableConfig, resolved.Winner.Origin)
+		require.Equal(t, "local-id", resolved.Winner.ConfigID)
+		require.Equal(t, 1, local.lookups)
+		require.Len(t, logger.Logs(), 1)
+		require.Contains(t, logger.Logs()[0], "OTEL_LOG_LEVEL=info")
+		require.Equal(t, []EventKind{EventOTelEnvInvalid, EventConfiguration}, eventKinds(events))
+		require.Equal(t, schema.SourceOrdinalOTelEnvironment, events[0].SourceOrdinal)
+		require.Equal(t, schema.SourceOrdinalLocalStable, events[1].SourceOrdinal)
+	})
+
+	t.Run("explicit empty OTel silently falls through to local stable", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("OTEL_LOG_LEVEL", "")
+		p := newTestProvider(
+			&countingLookupSource{originValue: telemetry.OriginManagedStableConfig},
+			&countingLookupSource{originValue: telemetry.OriginEnvVar},
+			new(otelEnvConfigSource),
+			&countingLookupSource{
+				raw: "true", present: true,
+				originValue: telemetry.OriginLocalStableConfig, configID: "local-id",
+			},
+		)
+
+		resolved, events := ResolveTracerOTelCompatibility(p, def, binding)
+
+		require.Equal(t, "true", resolved.Winner.Value)
+		require.Equal(t, telemetry.OriginLocalStableConfig, resolved.Winner.Origin)
+		require.Empty(t, logger.Logs())
+		require.Equal(t, []EventKind{EventConfiguration}, eventKinds(events))
+		require.Empty(t, resolved.Events)
+	})
+}
+
+func TestResolveTracerOTelCompatibilityPreservesOmitPolicy(t *testing.T) {
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=checkout")
+	def := schema.RawDefinition{
+		Key:       "DD_TAGS",
+		Sources:   schema.SourceStable,
+		Telemetry: schema.TelemetryOmit,
+	}
+	binding := schema.ConsumerBinding{
+		ID:              "tracer.otel.resource-attributes",
+		Consumer:        "tracer",
+		Keys:            []string{"DD_TAGS", "OTEL_RESOURCE_ATTRIBUTES"},
+		Sampling:        schema.SampleConstructor,
+		EnvironmentOnly: true,
+	}
+	p := newTestProvider(
+		&countingLookupSource{originValue: telemetry.OriginManagedStableConfig},
+		&countingLookupSource{originValue: telemetry.OriginEnvVar},
+		new(otelEnvConfigSource),
+		&countingLookupSource{originValue: telemetry.OriginLocalStableConfig},
+	)
+
+	resolved, events := ResolveTracerOTelCompatibility(p, def, binding)
+
+	require.Equal(t, "service:checkout", resolved.Winner.Value)
+	require.Len(t, events, 1)
+	require.Equal(t, schema.TelemetryOmit, events[0].Policy)
+	require.True(t, events[0].ReportValue)
 }
 
 func TestResolveExplicitEmpty(t *testing.T) {

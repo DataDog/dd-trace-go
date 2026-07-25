@@ -39,6 +39,32 @@ func New() *Provider {
 	}
 }
 
+// NewEnvironment returns a Provider that resolves environment and OTel
+// compatibility sources without reading declarative configuration files. The
+// omitted source slots preserve the canonical source ordinals.
+func NewEnvironment() *Provider {
+	return &Provider{
+		sources: []configSource{
+			omittedConfigSource{originValue: telemetry.OriginManagedStableConfig},
+			new(envConfigSource),
+			new(otelEnvConfigSource),
+			omittedConfigSource{originValue: telemetry.OriginLocalStableConfig},
+		},
+	}
+}
+
+type omittedConfigSource struct {
+	originValue telemetry.Origin
+}
+
+func (s omittedConfigSource) lookup(string) (string, bool) {
+	return "", false
+}
+
+func (s omittedConfigSource) origin() telemetry.Origin {
+	return s.originValue
+}
+
 // NewDeferred returns a Provider that buffers compatibility telemetry until
 // FlushTelemetry is called. Configuration generations use it so candidates
 // that lose publication or fail construction never emit telemetry.
@@ -94,10 +120,14 @@ func resolve[T any](
 	}
 	providerEvents := make([]ConfigEvent, 0, len(p.sources))
 	events := make([]ConfigEvent, 0, len(p.sources)+1)
+	sourcePolicy := def.Sources
+	if binding != nil && binding.EnvironmentOnly {
+		sourcePolicy = schema.SourceEnvironment
+	}
 
 	for i := len(p.sources) - 1; i >= 0; i-- {
 		source := p.sources[i]
-		if def.Sources == schema.SourceEnvironment && !isEnvironmentSource(source) {
+		if sourcePolicy == schema.SourceEnvironment && !isEnvironmentSource(source) {
 			continue
 		}
 
@@ -174,15 +204,19 @@ func sourceConfigID(source LookupSource) string {
 }
 
 func decorateProviderEvents(events []ConfigEvent, binding *schema.ConsumerBinding, def schema.RawDefinition, sourceOrdinal uint16) []ConfigEvent {
-	decorated := cloneEvents(events)
 	if binding == nil {
-		return decorated
+		return cloneEvents(events)
 	}
-	for i := range decorated {
-		decorated[i].BindingID = binding.ID
-		decorated[i].SourceOrdinal = sourceOrdinal
-		decorated[i].Policy = def.Telemetry
-		decorated[i].Cadence = cadenceFor(*binding)
+	decorated := make([]ConfigEvent, 0, len(events))
+	for _, event := range events {
+		if !event.CompatibilityReport {
+			continue
+		}
+		event.BindingID = binding.ID
+		event.SourceOrdinal = sourceOrdinal
+		event.Policy = def.Telemetry
+		event.Cadence = cadenceFor(*binding)
+		decorated = append(decorated, event)
 	}
 	return decorated
 }

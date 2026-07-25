@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config/schema"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -281,5 +282,87 @@ func TestOtelEnvConfigSource(t *testing.T) {
 	t.Run("origin returns OriginEnvVar", func(t *testing.T) {
 		source := &otelEnvConfigSource{}
 		assert.Equal(t, telemetry.OriginEnvVar, source.origin())
+	})
+}
+
+func TestOtelEnvConfigSourceNonemptyDDShortCircuitsLoserRemapping(t *testing.T) {
+	tests := []struct {
+		name       string
+		otel       string
+		wantEvents int
+		wantLog    string
+	}{
+		{name: "explicit empty OTel", wantEvents: 1},
+		{
+			name:       "bogus OTel",
+			otel:       "not-a-propagator",
+			wantEvents: 1,
+			wantLog:    `Both "OTEL_PROPAGATORS" and "DD_TRACE_PROPAGATION_STYLE" are set, using DD_TRACE_PROPAGATION_STYLE=datadog`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := new(log.RecordLogger)
+			defer log.UseLogger(logger)()
+			t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog")
+			t.Setenv("OTEL_PROPAGATORS", tt.otel)
+
+			raw, present, applicable, err, events := new(otelEnvConfigSource).lookupWithEvents("DD_TRACE_PROPAGATION_STYLE")
+
+			require.Equal(t, tt.otel, raw)
+			require.True(t, present)
+			require.False(t, applicable)
+			require.NoError(t, err)
+			require.Len(t, events, tt.wantEvents)
+			if tt.wantLog == "" {
+				require.Empty(t, logger.Logs())
+				require.Equal(t, EventOTelEnvHiding, events[0].Kind)
+				require.False(t, events[0].CompatibilityReport)
+			} else {
+				require.Len(t, logger.Logs(), 1)
+				require.Contains(t, logger.Logs()[0], tt.wantLog)
+				require.Equal(t, EventOTelEnvHiding, events[0].Kind)
+			}
+		})
+	}
+}
+
+func TestOtelEnvConfigSourceExplicitEmptySkipsRemapping(t *testing.T) {
+	tests := []struct {
+		ddKey   string
+		otelKey string
+	}{
+		{ddKey: "DD_RUNTIME_METRICS_ENABLED", otelKey: "OTEL_METRICS_EXPORTER"},
+		{ddKey: "DD_TRACE_DEBUG", otelKey: "OTEL_LOG_LEVEL"},
+		{ddKey: "DD_TRACE_ENABLED", otelKey: "OTEL_TRACES_EXPORTER"},
+		{ddKey: "DD_TRACE_SAMPLE_RATE", otelKey: "OTEL_TRACES_SAMPLER"},
+		{ddKey: "DD_TRACE_PROPAGATION_STYLE", otelKey: "OTEL_PROPAGATORS"},
+		{ddKey: "DD_TAGS", otelKey: "OTEL_RESOURCE_ATTRIBUTES"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.otelKey, func(t *testing.T) {
+			logger := new(log.RecordLogger)
+			defer log.UseLogger(logger)()
+			t.Setenv(tt.otelKey, "")
+
+			raw, present, applicable, err, events := new(otelEnvConfigSource).lookupWithEvents(tt.ddKey)
+
+			require.Empty(t, raw)
+			require.True(t, present)
+			require.False(t, applicable)
+			require.NoError(t, err)
+			require.Empty(t, events)
+			require.Empty(t, logger.Logs())
+		})
+	}
+
+	t.Run("OTEL_SERVICE_NAME remains applicable", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "")
+		raw, present, applicable, err, events := new(otelEnvConfigSource).lookupWithEvents("DD_SERVICE")
+		require.Empty(t, raw)
+		require.True(t, present)
+		require.True(t, applicable)
+		require.NoError(t, err)
+		require.Empty(t, events)
 	})
 }

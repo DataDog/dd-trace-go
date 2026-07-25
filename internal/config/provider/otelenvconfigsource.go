@@ -32,23 +32,43 @@ func (o *otelEnvConfigSource) get(key string) string {
 	return raw
 }
 
+func (o *otelEnvConfigSource) lookupRaw(key string) (string, bool) {
+	entry := otelConfigs[normalizeKey(key)]
+	if entry == nil {
+		return "", false
+	}
+	return env.Lookup(entry.ot)
+}
+
 func (o *otelEnvConfigSource) lookupWithEvents(key string) (string, bool, bool, error, []ConfigEvent) {
 	ddKey := normalizeKey(key)
 	entry := otelConfigs[ddKey]
 	if entry == nil {
 		return "", false, false, nil, nil
 	}
-	otVal, present := env.Lookup(entry.ot)
+	otVal, present := o.lookupRaw(ddKey)
 	if !present {
 		return "", false, false, nil, nil
 	}
 	var events []ConfigEvent
 	if ddVal, ddPresent := env.Lookup(ddKey); ddPresent {
-		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, entry.ot, ddVal)
+		if ddVal != "" {
+			if otVal != "" {
+				log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, ddKey, ddVal)
+			}
+			events = append(events, ConfigEvent{
+				Kind: EventOTelEnvHiding, Name: ddKey, OTelName: entry.ot,
+				CompatibilityReport: otVal != "",
+			})
+			return otVal, true, false, nil, events
+		}
 		events = append(events, ConfigEvent{
 			Kind: EventOTelEnvHiding, Name: ddKey, OTelName: entry.ot,
-			CompatibilityReport: otVal != "" && ddVal != "",
+			CompatibilityReport: false,
 		})
+	}
+	if otVal == "" && !entry.emptyResultApplicable {
+		return otVal, true, false, nil, events
 	}
 	val, err := entry.remapper(otVal)
 	if err != nil {
@@ -65,6 +85,10 @@ func (o *otelEnvConfigSource) lookupWithEvents(key string) (string, bool, bool, 
 
 func (o *otelEnvConfigSource) origin() telemetry.Origin {
 	return telemetry.OriginEnvVar
+}
+
+func (o *otelEnvConfigSource) environmentSource() bool {
+	return true
 }
 
 func reportOTelMetric(metric, ddKey, otelKey string) {

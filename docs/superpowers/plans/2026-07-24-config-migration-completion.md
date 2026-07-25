@@ -613,6 +613,11 @@ presence fields for all three allowlists, baggage keys, and query regexp.
 `TraceIDLoggingEnabled` is an environment-only per-call binding with on-change
 reporting.
 
+Where an already-registered stable key also has a legacy environment-only
+consumer, mark that consumer binding `EnvironmentOnly`. Raw definitions retain
+the default and maximum source set; bindings may narrow stable resolution to
+the environment but may never widen an environment-only raw definition.
+
 - [ ] **Step 4: Replace consumers and remove suppressions**
 
 Replace every listed direct read with the matching snapshot field or accessor.

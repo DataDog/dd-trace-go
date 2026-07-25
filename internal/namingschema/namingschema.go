@@ -11,8 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -45,8 +44,14 @@ func LoadFromEnv() {
 // ConfigFromEnv resolves the process naming configuration without publishing
 // it. Tracer construction uses this to keep a replacement generation isolated
 // until its configuration is successfully published.
-func ConfigFromEnv() Config {
-	schemaVersionStr := env.Get("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
+func ConfigFromEnv(candidate ...*internalconfig.Config) Config {
+	var snapshot internalconfig.NamingSchemaConfig
+	if len(candidate) != 0 {
+		snapshot = internalconfig.TracerNamingSchemaSnapshot(candidate[0])
+	} else {
+		snapshot = internalconfig.ProcessNamingSchemaSnapshot()
+	}
+	schemaVersionStr := snapshot.Schema
 	var schemaVersion Version
 	if v, ok := parseVersionStr(schemaVersionStr); ok {
 		schemaVersion = v
@@ -57,7 +62,7 @@ func ConfigFromEnv() Config {
 	// These default service names are always disabled for v1 onwards.
 	return Config{
 		NamingSchemaVersion:           schemaVersion,
-		RemoveIntegrationServiceNames: internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false),
+		RemoveIntegrationServiceNames: snapshot.RemoveIntegrationServiceNames,
 	}
 }
 
@@ -70,7 +75,7 @@ func ApplyConfig(cfg Config) {
 // ReloadConfig is used to reload the configuration in tests.
 func ReloadConfig() {
 	LoadFromEnv()
-	globalconfig.SetServiceName(env.Get("DD_SERVICE"))
+	globalconfig.SetServiceName(internalconfig.NamingServiceName())
 }
 
 // GetConfig returns the naming schema config.

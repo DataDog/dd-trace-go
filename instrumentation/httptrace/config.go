@@ -13,10 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -75,24 +74,25 @@ func ResetCfg() {
 }
 
 func newConfig() config {
+	snapshot := internalconfig.HTTPTraceSnapshot()
 	c := config{
-		queryString:                              !internal.BoolEnv(envQueryStringDisabled, false),
-		traceClientIP:                            internal.BoolEnv(envTraceClientIPEnabled, false),
+		queryString:                              !snapshot.QueryStringDisabled,
+		traceClientIP:                            snapshot.TraceClientIPEnabled,
 		isStatusError:                            isServerError,
-		inferredProxyServicesEnabled:             internal.BoolEnv(envInferredProxyServicesEnabled, false),
-		pubsubPropagationAsSpanLinks:             internal.BoolEnv(envPubsubPropagationAsSpanLinks, false),
+		inferredProxyServicesEnabled:             snapshot.InferredProxyServicesEnabled,
+		pubsubPropagationAsSpanLinks:             snapshot.PubsubPropagationAsSpanLinks,
 		baggageTagKeys:                           make(map[string]struct{}),
-		resourceRenamingAlwaysSimplifiedEndpoint: internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false),
+		resourceRenamingAlwaysSimplifiedEndpoint: snapshot.ResourceRenamingAlwaysSimplifiedEndpoint,
 		appsecEnabledMode:                        sync.OnceValue(appsecEnabledAtStartup),
 	}
-	if _, ok := env.Lookup(EnvQueryStringRegexp); ok {
-		c.queryStringRegexp = QueryStringRegexp()
+	if snapshot.QueryStringRegexpPresent {
+		c.queryStringRegexp = queryStringRegexp(snapshot.QueryStringRegexp, true)
 	} else {
 		// Use an in-code state-machine obfuscator by default instead of `defaultQueryStringRegexp`
 		// for performance reasons.
 		c.useDefaultObfuscator = true
 	}
-	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
+	if v, ok := snapshot.BaggageTagKeys, snapshot.BaggageTagKeysPresent; ok {
 		if v == "*" {
 			c.allowAllBaggage = true
 		} else {
@@ -107,23 +107,22 @@ func newConfig() config {
 	} else {
 		c.baggageTagKeys = defaultBaggageTagKeys()
 	}
-	v := env.Get(envServerErrorStatuses)
-	if fn := GetErrorCodesFromInput(v); fn != nil {
+	if fn := GetErrorCodesFromInput(snapshot.ServerErrorStatuses); fn != nil {
 		c.isStatusError = fn
 	}
-	if vv, ok := internal.BoolEnvNoDefault("DD_TRACE_RESOURCE_RENAMING_ENABLED"); ok {
+	if vv, ok := snapshot.ResourceRenamingEnabled, snapshot.ResourceRenamingEnabledPresent; ok {
 		c.resourceRenamingEnabled = &vv
 	}
 	// Global allowlist applies to both client and server; specific env vars override it.
-	if v, ok := env.Lookup(envQueryStringAllowlist); ok && v != "" {
+	if v, ok := snapshot.QueryStringAllowlist, snapshot.QueryStringAllowlistPresent; ok && v != "" {
 		globalAllowlist := parseAllowlist(v)
 		c.clientQueryStringAllowlist = globalAllowlist
 		c.serverQueryStringAllowlist = globalAllowlist
 	}
-	if v, ok := env.Lookup(envClientQueryStringAllowlist); ok && v != "" {
+	if v, ok := snapshot.ClientQueryStringAllowlist, snapshot.ClientQueryStringAllowlistPresent; ok && v != "" {
 		c.clientQueryStringAllowlist = parseAllowlist(v)
 	}
-	if v, ok := env.Lookup(envServerQueryStringAllowlist); ok && v != "" {
+	if v, ok := snapshot.ServerQueryStringAllowlist, snapshot.ServerQueryStringAllowlistPresent; ok && v != "" {
 		c.serverQueryStringAllowlist = parseAllowlist(v)
 	}
 	return c
@@ -142,7 +141,12 @@ func isServerError(statusCode int) bool {
 }
 
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := env.Lookup(EnvQueryStringRegexp); ok {
+	value, present := internalconfig.QueryStringRegexp()
+	return queryStringRegexp(value, present)
+}
+
+func queryStringRegexp(s string, present bool) *regexp.Regexp {
+	if present {
 		if s == "" {
 			return nil
 		}

@@ -28,7 +28,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -1278,17 +1278,17 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := env.Get("DD_ENV"); env != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
-				fmt.Fprintf(f, "dd.env=%s ", env)
+			} else if environment := internalconfig.StoppedTracerTagValue(internalconfig.StoppedTracerEnvironment); environment != "" {
+				fmt.Fprintf(f, "dd.env=%s ", environment)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := env.Get("DD_VERSION"); v != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
-				fmt.Fprintf(f, "dd.version=%s ", v)
+			} else if version := internalconfig.StoppedTracerTagValue(internalconfig.StoppedTracerVersion); version != "" {
+				fmt.Fprintf(f, "dd.version=%s ", version)
 			}
 		}
 		var traceID string
-		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true) && s.context.traceID.HasUpper() {
+		if internalconfig.TraceIDLoggingEnabled() && s.context.traceID.HasUpper() {
 			traceID = s.context.TraceID()
 		} else {
 			traceID = strconv.FormatUint(s.traceID, 10)

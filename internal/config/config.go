@@ -72,17 +72,18 @@ type Config struct {
 	programmaticTags map[string]any
 	// claimDependencies records staged values derived from another claim
 	// (for example DD_SERVICE derived from a programmatic DD_TAGS entry).
-	claimDependencies  map[string]string
-	claimRevision      uint64
-	generation         atomic.Uint64
-	publicationID      atomic.Uint64
-	publicationStarted atomic.Bool
-	published          atomic.Bool
-	retired            atomic.Bool
-	deferTelemetry     bool
-	telemetryDraining  bool
-	telemetryProvider  *provider.Provider
-	pendingTelemetry   []pendingConfigReport
+	claimDependencies   map[string]string
+	claimRevision       uint64
+	generation          atomic.Uint64
+	publicationID       atomic.Uint64
+	publicationStarted  atomic.Bool
+	published           atomic.Bool
+	retired             atomic.Bool
+	deferTelemetry      bool
+	telemetryDraining   bool
+	telemetryProvider   *provider.Provider
+	pendingTelemetry    []pendingConfigReport
+	pendingConfigEvents []ConfigEvent
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
@@ -342,6 +343,49 @@ func (c *Config) reportDefaultConfigTelemetry(name string, value any) {
 	report.submit()
 }
 
+// StagePublicationConfigEvents associates typed configuration events with this
+// candidate generation. Unpublished and losing candidates are never drained.
+func (c *Config) StagePublicationConfigEvents(events []ConfigEvent) {
+	if len(events) == 0 {
+		return
+	}
+	events = cloneConfigEvents(events)
+	for i := range events {
+		if events[i].Policy == TelemetryOmit {
+			events[i].Value = nil
+			events[i].Err = nil
+		}
+	}
+	c.mu.Lock()
+	if c.deferTelemetry {
+		c.pendingConfigEvents = append(c.pendingConfigEvents, events...)
+		c.mu.Unlock()
+		return
+	}
+	generation := c.generation.Load()
+	c.mu.Unlock()
+	instrumentationReporter.Report(events, generation)
+}
+
+func cloneConfigEvents(events []ConfigEvent) []ConfigEvent {
+	cloned := append([]ConfigEvent(nil), events...)
+	for i := range cloned {
+		switch value := cloned[i].Value.(type) {
+		case map[string]string:
+			copy := make(map[string]string, len(value))
+			for key, item := range value {
+				copy[key] = item
+			}
+			cloned[i].Value = copy
+		case []string:
+			cloned[i].Value = append([]string(nil), value...)
+		case []byte:
+			cloned[i].Value = append([]byte(nil), value...)
+		}
+	}
+	return cloned
+}
+
 // DrainPublicationTelemetry reports all telemetry accumulated by a staged
 // generation. The pending state is detached under the config lock and sinks are
 // invoked afterward, so callbacks may safely re-enter configuration getters.
@@ -356,6 +400,9 @@ func (c *Config) DrainPublicationTelemetry() {
 	c.telemetryProvider = nil
 	pending := c.pendingTelemetry
 	c.pendingTelemetry = nil
+	configEvents := c.pendingConfigEvents
+	c.pendingConfigEvents = nil
+	generation := c.generation.Load()
 	c.mu.Unlock()
 
 	if p != nil {
@@ -365,8 +412,9 @@ func (c *Config) DrainPublicationTelemetry() {
 		for _, report := range pending {
 			report.submit()
 		}
+		instrumentationReporter.Report(configEvents, generation)
 		c.mu.Lock()
-		if len(c.pendingTelemetry) == 0 {
+		if len(c.pendingTelemetry) == 0 && len(c.pendingConfigEvents) == 0 {
 			c.deferTelemetry = false
 			c.telemetryDraining = false
 			c.mu.Unlock()
@@ -374,6 +422,8 @@ func (c *Config) DrainPublicationTelemetry() {
 		}
 		pending = c.pendingTelemetry
 		c.pendingTelemetry = nil
+		configEvents = c.pendingConfigEvents
+		c.pendingConfigEvents = nil
 		c.mu.Unlock()
 	}
 }

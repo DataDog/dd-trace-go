@@ -17,8 +17,7 @@ import (
 	"maps"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -196,14 +195,15 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	// When NewPropagator is called directly (not via tracer.Start), these fields
 	// are typically zero and the environment variable is used. When called by the
 	// tracer, they are pre-populated from the tracer's configuration.
-	if cfg.ExtractFirst != nil {
-		cp.onlyExtractFirst = *cfg.ExtractFirst
-	} else {
-		cp.onlyExtractFirst = internal.BoolEnv(envPropagationExtractFirst, false)
-	}
-	if cfg.BehaviorExtract == "" {
-		cfg.BehaviorExtract = env.Get(envPropagationBehaviorExtract)
-	}
+	snapshot := internalconfig.NewPropagationSnapshotFor(internalconfig.PropagationRequest{
+		ExtractFirst:    cfg.ExtractFirst,
+		BehaviorExtract: cfg.BehaviorExtract,
+		InjectStyle:     cfg.InjectStyle,
+		ExtractStyle:    cfg.ExtractStyle,
+		ResolveStyles:   len(propagators) == 0,
+	})
+	cp.onlyExtractFirst = snapshot.ExtractFirst
+	cfg.BehaviorExtract = snapshot.BehaviorExtract
 	switch cfg.BehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
 		// valid
@@ -219,14 +219,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cp.extractors = propagators
 		return cp
 	}
-	if cfg.InjectStyle == "" {
-		cfg.InjectStyle = env.Get(envPropagationStyleInject)
-	}
-	if cfg.ExtractStyle == "" {
-		cfg.ExtractStyle = env.Get(envPropagationStyleExtract)
-	}
-	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle)
-	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle)
+	cfg.InjectStyle = snapshot.InjectStyle
+	cfg.ExtractStyle = snapshot.ExtractStyle
+	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle, snapshot.Style)
+	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle, snapshot.Style)
 	return cp
 }
 
@@ -246,7 +242,7 @@ type chainedPropagator struct {
 // list of propagators. If the list doesn't contain any valid values, the
 // default propagator will be returned. Any invalid values in the list will log
 // a warning and be ignored.
-func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
+func getPropagators(cfg *PropagatorConfig, ps, fallbackStyle string) ([]Propagator, string) {
 	dd := &propagator{cfg}
 	defaultPs := []Propagator{dd, &propagatorW3c{}, &propagatorBaggage{}}
 	defaultPsName := "datadog,tracecontext,baggage"
@@ -255,8 +251,8 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		defaultPsName += ",b3"
 	}
 	if ps == "" {
-		if prop := getDDorOtelConfig("propagationStyle"); prop != "" {
-			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
+		if fallbackStyle != "" {
+			ps = fallbackStyle // use the generic DD_TRACE_PROPAGATION_STYLE if set
 		} else {
 			return defaultPs, defaultPsName // no env set, so use default from configuration
 		}

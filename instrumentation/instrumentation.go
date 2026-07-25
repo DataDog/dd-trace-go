@@ -13,10 +13,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -200,7 +200,7 @@ func (i *Instrumentation) TelemetryRegisterAppEndpoint(opName string, resName st
 }
 
 func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
-	if internal.BoolEnv("DD_TRACE_"+i.info.EnvVarPrefix+"_ANALYTICS_ENABLED", false) {
+	if internalconfig.IntegrationAnalyticsEnabled(i.info.EnvVarPrefix) {
 		return 1.0
 	}
 	if defaultGlobal {
@@ -218,7 +218,7 @@ func (i *Instrumentation) AppSecEnabled() bool {
 }
 
 func (i *Instrumentation) APISecurityEndpointCollectionEnabled() bool {
-	return internal.BoolEnv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", true)
+	return internalconfig.APISecurityEndpointCollectionEnabled()
 }
 
 func (i *Instrumentation) AppSecRASPEnabled() bool {
@@ -226,8 +226,7 @@ func (i *Instrumentation) AppSecRASPEnabled() bool {
 }
 
 func (i *Instrumentation) DataStreamsEnabled() bool {
-	v, _, _ := stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
-	return v
+	return internalconfig.InstrumentationDataStreamsEnabled()
 }
 
 // TracerInitialized returns whether the global tracer has been initialized or not.

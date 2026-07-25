@@ -25,6 +25,34 @@ func TestRegistryAllowsConsumerSpecificBindings(t *testing.T) {
 	require.NoError(t, r.validate())
 }
 
+func TestRegistryAllowsConsumerSourceNarrowing(t *testing.T) {
+	t.Run("stable raw can be narrowed to environment", func(t *testing.T) {
+		r := newRegistry()
+		r.addRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable})
+		r.addBinding(ConsumerBinding{
+			ID: "tracer.service", Consumer: "tracer",
+			Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction,
+		})
+		r.addBinding(ConsumerBinding{
+			ID: "naming.service", Consumer: "naming",
+			Keys: []string{"DD_SERVICE"}, Sampling: SamplePackageInit,
+			EnvironmentOnly: true,
+		})
+		require.NoError(t, r.validate())
+	})
+
+	t.Run("environment raw tolerates redundant narrowing", func(t *testing.T) {
+		r := newRegistry()
+		r.addRaw(RawDefinition{Key: "DD_VALUE", Sources: SourceEnvironment})
+		r.addBinding(ConsumerBinding{
+			ID: "consumer.value", Consumer: "consumer",
+			Keys: []string{"DD_VALUE"}, Sampling: SampleConstructor,
+			EnvironmentOnly: true,
+		})
+		require.NoError(t, r.validate())
+	})
+}
+
 func TestRegistryRejectsDuplicateRawKeys(t *testing.T) {
 	r := newRegistry()
 	r.addRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable})
@@ -92,8 +120,8 @@ func TestRegistryDefinitionsAreSortedDefensiveCopies(t *testing.T) {
 
 func TestRegistryRegisteredDefinitionsValidate(t *testing.T) {
 	raw, bindings := RegisteredDefinitions()
-	require.Len(t, raw, 78)
-	require.Len(t, bindings, 78)
+	require.Len(t, raw, 148)
+	require.Len(t, bindings, 140)
 }
 
 func TestRegistryRejectsInvalidDefinitions(t *testing.T) {

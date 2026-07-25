@@ -17,7 +17,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 const dsmEdgeTagCacheMax = 1000
@@ -121,10 +120,6 @@ func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVers
 		ckgoVersion:       ckgoVersion,
 		librdKafkaVersion: librdKafkaVersion,
 	}
-	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
-		tr.analyticsRate = 1.0
-	}
-
 	tr.dsmEnabled = instr.DataStreamsEnabled()
 
 	tr.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)

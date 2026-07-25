@@ -12,7 +12,7 @@ package schema
 // empty value.
 type Parser[T any] func(raw string) (T, error)
 
-// SourcePolicy selects the sources used to resolve a raw configuration key.
+// SourcePolicy selects the sources used to resolve a configuration key.
 type SourcePolicy uint8
 
 const (
@@ -54,7 +54,9 @@ const (
 	SamplePerCall
 )
 
-// RawDefinition records the properties shared by every read of one source key.
+// RawDefinition records the default and maximum source set plus telemetry
+// policy for one source key. A consumer binding may narrow SourceStable to the
+// environment, but may never widen a SourceEnvironment definition.
 type RawDefinition struct {
 	Key       string
 	Sources   SourcePolicy
@@ -63,8 +65,9 @@ type RawDefinition struct {
 
 // ConsumerBinding records how and when a consumer interprets raw definitions.
 type ConsumerBinding struct {
-	ID       string
-	Consumer string
-	Keys     []string
-	Sampling SamplingBoundary
+	ID              string
+	Consumer        string
+	Keys            []string
+	Sampling        SamplingBoundary
+	EnvironmentOnly bool
 }
