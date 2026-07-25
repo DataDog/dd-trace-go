@@ -4,18 +4,23 @@ This package is the **single source of truth** for initializing, reading, and up
 
 ## Migration guidelines
 
-When migrating a configuration value from another package (e.g. `ddtrace/tracer`):
+The registry has two layers:
 
-- **Define the field on `Config`**: add a private field on `internal/config.Config`.
-- **Initialize it in `loadConfig()`**: read from the config provider, which iterates over the following sources, in order, returning the default if no valid value found: local declarative config file, OTEL env vars, env vars, managed declarative config file
-- **Expose an accessor**: add a getter (and a setter if the value is updated at runtime).
-- **Report telemetry in setters**: setters should call `configtelemetry.Report(...)` with the correct origin.
-- **Add the cross-product gate**: every product-bound setter must call `c.checkProductConflict(...)` as its first action after acquiring the lock (see below).
-- **Update callers**: replace reads/writes on local "config" structs with calls to the generation owned by that product. Use `internal/config.Get()` only when the caller intentionally follows the currently published generation.
-- **Delete old state**: remove the migrated field from any legacy config structs once no longer referenced.
-- **Update tests**: tests should call the singleton setter/getter (or set env vars) rather than mutating legacy fields.
+- `RawDefinition` records one raw key's maximum source policy and telemetry
+  policy.
+- `ConsumerBinding` records consumer identity, raw keys, a sampling boundary,
+  and optional environment-only narrowing.
 
-Sample migration PR: https://github.com/DataDog/dd-trace-go/pull/4214
+Every raw definition has at least one binding, and bindings cannot name
+unregistered keys. A key may have more than one binding. A binding may narrow a
+stable-capable definition to environment only, but it cannot widen an
+environment-only definition.
+
+Choose the boundary that preserves existing consumer behavior: package
+initialization, tracer construction, product start, constructor, first use, or
+per call. One key may intentionally have different boundaries for different
+consumers. Tracer-owned configuration uses a generation; other products and
+constructor-scoped users use lifecycle snapshots.
 
 ## Product claims and tracer generations
 
@@ -29,12 +34,14 @@ cfg.SetServiceName(name, internalconfig.OriginCode, internalconfig.ProductTracer
 prepared := cfg.PrepareClaims()
 ```
 
-`PrepareClaims` snapshots the staged claims and restores source-resolved values
-for claims that already conflict. Construct components that consume
-configuration only after preparation. At the tracer handoff,
-`PublishTracerGeneration` atomically rechecks for claim races, publishes the
-generation, and replaces the previous tracer's claims. A failed construction or
-publication does not change the current generation or its claims.
+`NewTracerGeneration` creates an unpublished candidate. Call `PrepareClaims`
+before constructing dependent components. `PublishTracerGeneration` rechecks
+claims, atomically publishes, runs the synchronous handoff outside the store
+lock, and retires the predecessor. If construction is abandoned, the
+unpublished candidate does not affect the current generation. A publication
+call that returns an error also leaves it unchanged. Once the candidate commits,
+a panic during the synchronous handoff does not roll back the publication, and
+predecessor retirement still occurs.
 
 Other products acquire their claims with `AcquireProductClaims`. Matching claim
 values may coexist; a different value is rejected. Each successful acquisition
@@ -52,8 +59,11 @@ Rules:
 - **Env vars, defaults, and RC always pass through** — claims apply only to programmatic `OriginCode` values.
 - **Tracer customer options are product-bound** — shared setters must receive `ProductTracer`; omitting the product is reserved for internal initialization, tests, and integrations that intentionally bypass product ownership.
 - **Prepare before use, publish at handoff** — never expose a staged generation or let dependent components consume it before conflicts are restored.
-- **`Get` follows the current generation** — code that should track tracer restarts calls `Get`. A running tracer keeps its own pinned `*Config`, so retiring a generation does not invalidate its reads or late RC updates.
-- **Same-value claims may be shared** — conflicting values remain first-in-wins and emit only claim name and product identities in telemetry and logs.
+- **`Get` follows the current published non-nil generation** — code that should track tracer restarts calls `Get`. Running tracers and late Remote Config callbacks stay pinned to their generation.
+- **Same-value claims may be shared** — conflicting values are first-in-wins. Conflict reporting occurs outside locks and includes only the claim name and product identities in telemetry and logs.
+
+Current cross-product acquisition supports profiler claims; unsupported product
+claims are rejected.
 
 ## Hot paths & performance guidelines
 

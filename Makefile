@@ -157,5 +157,5 @@ upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
 	$(BIN_PATH) ORCHESTRION_VERSION=$(ORCHESTRION_VERSION) ORCHESTRION_DIRS="$(ORCHESTRION_DIRS)" ./scripts/upgrade_orchestrion.sh
 
 .PHONY: config-audit
-config-audit: ## Report which DD_* configs are migrated to internal/config
+config-audit: ## Run blocking root-module clean configuration audit
 	@cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table

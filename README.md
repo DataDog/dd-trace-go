@@ -93,8 +93,13 @@ Targets:
   apidiff/incompatible Show only breaking (incompatible) API changes for ddtrace/tracer
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
-  config-audit         Report which DD_* configs are migrated to internal/config
+  config-audit         Run blocking root-module clean configuration audit
 ```
+
+Run `make config-audit` to validate root-module `DD_*` and `OTEL_*` reads.
+Nested modules are out of scope and are listed in JSON scope metadata. Any
+migration, unresolved-read, suppression, or package-coverage finding fails the
+command. A clean table has no output.
 
 **Direct Script Usage**:
 For more control, you can use the [scripts/test.sh](./scripts/test.sh) script directly. You'll need Docker and docker-compose installed for integration tests. Run `./scripts/test.sh --help` for all available options.
