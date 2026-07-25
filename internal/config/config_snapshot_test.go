@@ -6,6 +6,7 @@
 package config
 
 import (
+	"math"
 	"sync"
 	"testing"
 
@@ -97,4 +98,15 @@ func TestPreparedDefaultSamplingRulesDetachBeforeSubmit(t *testing.T) {
 	require.Equal(t, want, rec.Configuration[0].Value)
 	require.NotContains(t, rec.Configuration[0].Value, "MUTATED-SECRET")
 	require.Equal(t, uint64(1), rec.Configuration[0].SeqID)
+}
+
+func TestPreparedConfigReportSanitizesNaNOnce(t *testing.T) {
+	rec := new(telemetrytest.RecordClient)
+	enableTelemetryForLockTest(t, rec)
+
+	report := prepareConfigReport("trace_sample_rate", math.NaN(), telemetry.OriginDefault)
+	report.submit()
+
+	require.Len(t, rec.Configuration, 1)
+	require.Nil(t, rec.Configuration[0].Value)
 }

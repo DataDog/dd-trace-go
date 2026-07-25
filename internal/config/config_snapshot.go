@@ -82,7 +82,7 @@ func (r preparedConfigReport) submit() {
 		log.Warn("config: unable to prepare %s telemetry: %v", r.name, r.err)
 		return
 	}
-	r.prepared.Submit(telemetry.SanitizeConfigValue(r.value))
+	r.prepared.Submit(r.value)
 }
 
 // prepareConfigTelemetryValue eagerly detaches the supported telemetry value

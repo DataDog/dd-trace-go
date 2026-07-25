@@ -147,9 +147,9 @@ func TestCIVisibilityTransportSecureLogging(t *testing.T) {
 			input    string
 			expected string
 		}{
-			{"https://user:password@example.com/path", "https://user:xxxxx@example.com/path"},
-			{"http://token@example.com", "http://token@example.com"}, // no password, so username preserved
-			{"https://user:pass@example.com:8080/path", "https://user:xxxxx@example.com:8080/path"},
+			{"https://user:password@example.com/path", "https://example.com/path"},
+			{"http://token@example.com", "http://example.com"},
+			{"https://user:pass@example.com:8080/path", "https://example.com:8080/path"},
 			{"https://example.com/path", "https://example.com/path"},
 			{"", ""},
 			{"://invalid", "://invalid"}, // unparseable but no credentials, returned as-is

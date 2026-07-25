@@ -71,13 +71,13 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("global", func(t *testing.T) {
-		htArgs := []string{"3header"}
-		testutils.SetGlobalHeaderTags(t, htArgs...)
-		headerTags := instrumentation.NewHeaderTags(htArgs)
-
 		assert := assert.New(t)
 		tr, agent, err := tracertest.Bootstrap(t)
 		require.NoError(t, err)
+
+		htArgs := []string{"3header"}
+		testutils.SetGlobalHeaderTags(t, htArgs...)
+		headerTags := instrumentation.NewHeaderTags(htArgs)
 
 		r := setupReq()
 		tr.Flush()
@@ -91,13 +91,13 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("override", func(t *testing.T) {
-		htArgsGlobal := []string{"3header"}
-		testutils.SetGlobalHeaderTags(t, htArgsGlobal...)
-		headerTagsGlobal := instrumentation.NewHeaderTags(htArgsGlobal)
-
 		assert := assert.New(t)
 		tr, agent, err := tracertest.Bootstrap(t)
 		require.NoError(t, err)
+
+		htArgsGlobal := []string{"3header"}
+		testutils.SetGlobalHeaderTags(t, htArgsGlobal...)
+		headerTagsGlobal := instrumentation.NewHeaderTags(htArgsGlobal)
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
 		headerTags := instrumentation.NewHeaderTags(htArgs)

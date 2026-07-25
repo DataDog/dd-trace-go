@@ -159,7 +159,6 @@ func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 		} else if reportErr != nil {
 			log.Warn("config: unable to prepare %s telemetry: %v", cfgName, reportErr)
 		} else {
-			reportedVal = telemetry.SanitizeConfigValue(reportedVal)
 			prepared.Submit(reportedVal)
 		}
 	}
