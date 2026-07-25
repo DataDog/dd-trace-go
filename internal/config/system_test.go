@@ -144,7 +144,8 @@ type reentrantGitMetadataClient struct {
 
 func (c *reentrantGitMetadataClient) RegisterAppConfigs(configs ...telemetry.Configuration) {
 	c.once.Do(func() {
-		_ = GitMetadataSnapshotValue()
+		_, report := PrepareGitMetadataSnapshot()
+		report()
 	})
 	c.RecordClient.RegisterAppConfigs(configs...)
 }
@@ -181,6 +182,37 @@ func TestGitMetadataFirstUseReportsAfterPublishingCache(t *testing.T) {
 	require.NotEmpty(t, client.Configuration)
 }
 
+func TestPrepareGitMetadataCacheHitAdoptsPendingReport(t *testing.T) {
+	client := new(telemetrytest.RecordClient)
+	prepareGitMetadataReportingTest(t, client)
+	t.Setenv("DD_GIT_COMMIT_SHA", "adopted-sha")
+
+	first, reportFirst := PrepareGitMetadataSnapshot()
+	second, reportSecond := PrepareGitMetadataSnapshot()
+	require.Equal(t, first.Tags, second.Tags)
+
+	reportSecond()
+	reportFirst()
+	require.Equal(t, 1, countGitMetadataConfiguration(client.Configuration, "adopted-sha"))
+}
+
+func TestPrepareGitMetadataStaleGenerationReporterIsIgnored(t *testing.T) {
+	client := new(telemetrytest.RecordClient)
+	prepareGitMetadataReportingTest(t, client)
+	t.Setenv("DD_GIT_COMMIT_SHA", "stale-sha")
+	_, reportStale := PrepareGitMetadataSnapshot()
+
+	resetGitMetadataCacheForTesting()
+	t.Setenv("DD_GIT_COMMIT_SHA", "current-sha")
+	current, reportCurrent := PrepareGitMetadataSnapshot()
+	require.Equal(t, "current-sha", current.Tags[internal.TagCommitSha])
+
+	reportStale()
+	reportCurrent()
+	require.Zero(t, countGitMetadataConfiguration(client.Configuration, "stale-sha"))
+	require.Equal(t, 1, countGitMetadataConfiguration(client.Configuration, "current-sha"))
+}
+
 func TestGitMetadataConcurrentFirstUseReportsEnvironmentEventOnce(t *testing.T) {
 	client := new(telemetrytest.RecordClient)
 	prepareGitMetadataReportingTest(t, client)
@@ -208,6 +240,18 @@ func TestGitMetadataConcurrentFirstUseReportsEnvironmentEventOnce(t *testing.T) 
 		}
 	}
 	require.Equal(t, 1, matches)
+}
+
+func countGitMetadataConfiguration(configurations []telemetry.Configuration, value string) int {
+	var matches int
+	for _, configuration := range configurations {
+		if configuration.Name == "DD_GIT_COMMIT_SHA" &&
+			configuration.Origin == telemetry.OriginEnvVar &&
+			configuration.Value == value {
+			matches++
+		}
+	}
+	return matches
 }
 
 func TestInstallInfoSnapshotResamplesAtEachUseBoundary(t *testing.T) {

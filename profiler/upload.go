@@ -19,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -204,16 +203,7 @@ func encode(bat batch, cfg *config) (contentType string, body io.Reader, err err
 		ProcessTags:      processtags.GlobalTags().String(),
 	}
 
-	// DD_PROFILING_ENABLED is only used to enable profiling when added with
-	// Orchestrion. The "auto" value comes from the Datadog Kubernetes
-	// admission controller. Otherwise, the client library doesn't care
-	// about the value and assumes it was something "truthy", or this code
-	// wouldn't run. We just track it to be consistent with other languages
-	if env.Get("DD_PROFILING_ENABLED") == "auto" {
-		event.Info.Profiler.Activation = "auto"
-	} else {
-		event.Info.Profiler.Activation = "manual"
-	}
+	event.Info.Profiler.Activation = cfg.activation
 	if orchestrion.Enabled() {
 		event.Info.Profiler.SSI.Mechanism = "orchestrion"
 	} else {

@@ -6,29 +6,25 @@
 package profiler
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
 
@@ -117,6 +113,42 @@ type config struct {
 	enabled              bool
 	flushOnExit          bool
 	compressionConfig    string
+	activation           string
+	site                 string
+	agentBaseURL         string
+	claims               *profilerClaimJournal
+}
+
+type profilerClaimJournal struct {
+	requested map[string]internalconfig.Claim
+
+	baselineService     string
+	baselineEnv         string
+	baselineVersion     string
+	baselineSite        string
+	baselineAgentBase   string
+	baselineTagCount    int
+	programmaticTags    map[string]string
+	siteClaimActive     bool
+	siteFallbackAPIURL  string
+	agentFallbackURL    string
+	agentFallbackClient *http.Client
+}
+
+type profilerStartReports struct {
+	configEvents    []internalconfig.ConfigEvent
+	reportGit       func()
+	reportConflicts func()
+}
+
+func (r profilerStartReports) reportResolved() {
+	internalconfig.ReportProfilerConfigEvents(r.configEvents)
+	if r.reportGit != nil {
+		r.reportGit()
+	}
+	if r.reportConflicts != nil {
+		r.reportConflicts()
+	}
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -174,100 +206,180 @@ func (c *config) addProfileType(t ProfileType) {
 }
 
 func defaultConfig() (*config, error) {
+	cfg, reports, err := prepareDefaultConfig()
+	reports.reportResolved()
+	return cfg, err
+}
+
+func prepareDefaultConfig() (*config, profilerStartReports, error) {
+	snapshot, events, reportGit := internalconfig.PrepareProfilerSnapshot()
+	reports := profilerStartReports{
+		configEvents: events,
+		reportGit:    reportGit,
+	}
 	c := config{
 		apiURL:               defaultAPIURL,
-		service:              filepath.Base(os.Args[0]),
 		statsd:               &statsd.NoOpClient{},
 		httpClient:           defaultClient,
 		period:               DefaultPeriod,
 		cpuDuration:          DefaultDuration,
 		blockRate:            DefaultBlockRate,
 		mutexFraction:        DefaultMutexFraction,
-		uploadTimeout:        DefaultUploadTimeout,
-		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
-		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
-		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
-		compressionConfig:    cmp.Or(env.Get("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"), "zstd"),
+		uploadTimeout:        snapshot.UploadTimeout,
+		deltaProfiles:        snapshot.DeltaProfiles,
+		logStartup:           snapshot.StartupLogs,
+		endpointCountEnabled: snapshot.EndpointCount,
+		compressionConfig:    snapshot.CompressionSettings,
 		traceConfig: executionTraceConfig{
-			Enabled: internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault),
-			Period:  internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute),
-			Limit:   internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit),
+			Enabled: snapshot.ExecutionTrace.Enabled,
+			Period:  snapshot.ExecutionTrace.Period,
+			Limit:   snapshot.ExecutionTrace.Limit,
 		},
+		apiKey:      snapshot.APIKey,
+		agentless:   snapshot.Agentless,
+		env:         snapshot.Environment,
+		service:     snapshot.Service,
+		version:     snapshot.Version,
+		site:        snapshot.Site,
+		enabled:     snapshot.Enabled,
+		activation:  snapshot.Activation,
+		flushOnExit: snapshot.FlushOnExit,
+		outputDir:   snapshot.OutputDir,
+	}
+	if c.service == "" {
+		c.service = filepath.Base(os.Args[0])
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
 	}
 
-	url := internalconfig.AgentURL()
-	if url.Scheme == "unix" {
-		WithUDS(url.Path)(&c)
+	agentURL := snapshot.AgentURL
+	c.agentBaseURL = agentURL.String()
+	if agentURL.Scheme == "unix" {
+		applyUDS(&c, agentURL.Path)
 	} else {
-		c.agentURL = url.String() + "/profiling/v1/input"
+		c.agentURL = c.agentBaseURL + "/profiling/v1/input"
 	}
-	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
-	// the Datadog admission controller, so we set it to true.
-	if v, _ := stableconfig.String("DD_PROFILING_ENABLED", ""); v == "auto" {
-		c.enabled = true
-	} else {
-		c.enabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
+	if snapshot.UploadTimeoutError != nil {
+		return nil, reports, snapshot.UploadTimeoutError
 	}
-	if v := env.Get("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
-		d, err := time.ParseDuration(v)
+	if snapshot.Site != "" {
+		u, err := urlForSite(snapshot.Site)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
-		}
-		WithUploadTimeout(d)(&c)
-	}
-	if v := env.Get("DD_API_KEY"); v != "" {
-		c.apiKey = v
-	}
-	c.agentless = internal.BoolEnv("DD_PROFILING_AGENTLESS", false)
-	if v := env.Get("DD_SITE"); v != "" {
-		WithSite(v)(&c)
-	}
-	if v := env.Get("DD_ENV"); v != "" {
-		WithEnv(v)(&c)
-	}
-	if v := env.Get("DD_SERVICE"); v != "" {
-		WithService(v)(&c)
-	}
-	if v := env.Get("DD_VERSION"); v != "" {
-		WithVersion(v)(&c)
-	}
-	c.flushOnExit = internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false)
-
-	tags := make(map[string]string)
-	if v := env.Get("DD_TAGS"); v != "" {
-		tags = internal.ParseTagString(v)
-		internal.CleanGitMetadataTags(tags)
-	}
-	maps.Copy(tags, internalconfig.GitMetadataSnapshotValue().Tags)
-	for key, val := range tags {
-		if val != "" {
-			WithTags(key + ":" + val)(&c)
+			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err)
 		} else {
-			WithTags(key)(&c)
+			c.apiURL = u
 		}
 	}
 
-	WithTags(
+	for key, val := range snapshot.Tags {
+		if val != "" {
+			c.tags = c.tags.Append(key + ":" + val)
+		} else {
+			c.tags = c.tags.Append(key)
+		}
+	}
+
+	c.tags = c.tags.Append(
 		"profiler_version:"+version.Tag,
 		"runtime_version:"+strings.TrimPrefix(runtime.Version(), "go"),
 		"runtime_compiler:"+runtime.Compiler,
 		"runtime_arch:"+runtime.GOARCH,
 		"runtime_os:"+runtime.GOOS,
 		"runtime-id:"+globalconfig.RuntimeID(),
-	)(&c)
-	// not for public use
-	if v := env.Get("DD_PROFILING_URL"); v != "" {
-		WithURL(v)(&c)
+	)
+	if snapshot.ProfilingURL != "" {
+		c.apiURL = snapshot.ProfilingURL
 	}
-	// not for public use
-	if v := env.Get("DD_PROFILING_OUTPUT_DIR"); v != "" {
-		withOutputDir(v)(&c)
+
+	c.claims = &profilerClaimJournal{
+		requested:           make(map[string]internalconfig.Claim),
+		baselineService:     c.service,
+		baselineEnv:         c.env,
+		baselineVersion:     c.version,
+		baselineSite:        c.site,
+		baselineAgentBase:   c.agentBaseURL,
+		baselineTagCount:    len(c.tags.Slice()),
+		programmaticTags:    make(map[string]string),
+		siteFallbackAPIURL:  c.apiURL,
+		agentFallbackURL:    c.agentURL,
+		agentFallbackClient: c.httpClient,
 	}
-	return &c, nil
+	return &c, reports, nil
+}
+
+func (c *config) recordClaim(name string, value any) {
+	if c.claims == nil {
+		return
+	}
+	c.claims.requested[name] = internalconfig.Claim{Name: name, Value: value}
+}
+
+func (c *config) recordAgentClaim(baseURL string) {
+	if c.claims == nil {
+		return
+	}
+	c.recordClaim("DD_TRACE_AGENT_URL", baseURL)
+}
+
+func (c *config) requestedClaims() []internalconfig.Claim {
+	if c.claims == nil {
+		return nil
+	}
+	names := make([]string, 0, len(c.claims.requested))
+	for name := range c.claims.requested {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	claims := make([]internalconfig.Claim, 0, len(names))
+	for _, name := range names {
+		claims = append(claims, c.claims.requested[name])
+	}
+	return claims
+}
+
+func (c *config) restoreRejectedClaims(accepted map[string]bool) {
+	if c.claims == nil {
+		return
+	}
+	if _, requested := c.claims.requested["DD_SERVICE"]; requested && !accepted["DD_SERVICE"] {
+		c.service = c.claims.baselineService
+	}
+	if _, requested := c.claims.requested["DD_ENV"]; requested && !accepted["DD_ENV"] {
+		c.env = c.claims.baselineEnv
+	}
+	if _, requested := c.claims.requested["DD_VERSION"]; requested && !accepted["DD_VERSION"] {
+		c.version = c.claims.baselineVersion
+	}
+	if _, requested := c.claims.requested["DD_SITE"]; requested && !accepted["DD_SITE"] {
+		c.site = c.claims.baselineSite
+		c.apiURL = c.claims.siteFallbackAPIURL
+	}
+	if _, requested := c.claims.requested["DD_TRACE_AGENT_URL"]; requested && !accepted["DD_TRACE_AGENT_URL"] {
+		c.agentBaseURL = c.claims.baselineAgentBase
+		c.agentURL = c.claims.agentFallbackURL
+		c.httpClient = c.claims.agentFallbackClient
+	}
+	if _, requested := c.claims.requested["DD_TAGS"]; requested && !accepted["DD_TAGS"] {
+		tags := c.tags.Slice()
+		c.tags = immutable.NewStringSlice(tags[:c.claims.baselineTagCount])
+	}
+}
+
+func applyUDS(c *config, socketPath string) {
+	// The HTTP client needs a conventional host while its transport dials the
+	// Unix socket directly.
+	u := internal.UnixDataSocketURL(socketPath)
+	u.Path = "/profiling/v1/input"
+	c.agentURL = u.String()
+	c.httpClient = &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		},
+	}
 }
 
 // An Option is used to configure the profiler's behaviour.
@@ -276,7 +388,10 @@ type Option func(*config)
 // WithAgentAddr specifies the address to use when reaching the Datadog Agent.
 func WithAgentAddr(hostport string) Option {
 	return func(cfg *config) {
-		cfg.agentURL = "http://" + hostport + "/profiling/v1/input"
+		baseURL := "http://" + hostport
+		cfg.agentBaseURL = baseURL
+		cfg.agentURL = baseURL + "/profiling/v1/input"
+		cfg.recordAgentClaim(baseURL)
 	}
 }
 
@@ -294,6 +409,13 @@ func WithDeltaProfiles(enabled bool) Option {
 func WithURL(url string) Option {
 	return func(cfg *config) {
 		cfg.apiURL = url
+		if cfg.claims == nil {
+			return
+		}
+		cfg.claims.siteClaimActive = false
+		cfg.claims.siteFallbackAPIURL = url
+		cfg.site = cfg.claims.baselineSite
+		delete(cfg.claims.requested, "DD_SITE")
 	}
 }
 
@@ -367,6 +489,7 @@ func WithProfileTypes(types ...ProfileType) Option {
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.service = name
+		cfg.recordClaim("DD_SERVICE", name)
 	}
 }
 
@@ -374,6 +497,7 @@ func WithService(name string) Option {
 func WithEnv(env string) Option {
 	return func(cfg *config) {
 		cfg.env = env
+		cfg.recordClaim("DD_ENV", env)
 	}
 }
 
@@ -381,6 +505,7 @@ func WithEnv(env string) Option {
 func WithVersion(version string) Option {
 	return func(cfg *config) {
 		cfg.version = version
+		cfg.recordClaim("DD_VERSION", version)
 	}
 }
 
@@ -389,6 +514,17 @@ func WithVersion(version string) Option {
 func WithTags(tags ...string) Option {
 	return func(cfg *config) {
 		cfg.tags = cfg.tags.Append(tags...)
+		if cfg.claims == nil || len(tags) == 0 {
+			return
+		}
+		for _, tag := range tags {
+			key, value, found := strings.Cut(tag, ":")
+			if !found {
+				value = ""
+			}
+			cfg.claims.programmaticTags[key] = value
+		}
+		cfg.recordClaim("DD_TAGS", cfg.claims.programmaticTags)
 	}
 }
 
@@ -419,6 +555,14 @@ func WithSite(site string) Option {
 			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err)
 			return
 		}
+		if cfg.claims != nil {
+			if !cfg.claims.siteClaimActive {
+				cfg.claims.siteFallbackAPIURL = cfg.apiURL
+			}
+			cfg.claims.siteClaimActive = true
+			cfg.recordClaim("DD_SITE", site)
+		}
+		cfg.site = site
 		cfg.apiURL = u
 	}
 }
@@ -429,26 +573,19 @@ func WithSite(site string) Option {
 func WithHTTPClient(client *http.Client) Option {
 	return func(cfg *config) {
 		cfg.httpClient = client
+		if cfg.claims != nil {
+			cfg.claims.agentFallbackClient = client
+		}
 	}
 }
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) Option {
 	return func(c *config) {
-		// The HTTP client needs a valid URL. The host portion of the
-		// url in particular can't just be the socket path, or else that
-		// will be interpreted as part of the request path and the
-		// request will fail.
-		u := internal.UnixDataSocketURL(socketPath)
-		u.Path = "/profiling/v1/input"
-		c.agentURL = u.String()
-		WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", socketPath)
-				},
-			},
-		})(c)
+		baseURL := (&url.URL{Scheme: "unix", Path: socketPath}).String()
+		c.agentBaseURL = baseURL
+		applyUDS(c, socketPath)
+		c.recordAgentClaim(baseURL)
 	}
 }
 

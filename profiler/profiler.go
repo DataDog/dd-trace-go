@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -37,10 +38,13 @@ const outChannelSize = 5
 const customProfileLabelLimit = 10
 
 var (
-	mu             sync.Mutex
-	activeProfiler *profiler
-	containerID    atomic.Pointer[string]
-	entityID       atomic.Pointer[string]
+	mu              sync.Mutex
+	activeProfiler  *profiler
+	startRevision   uint64
+	stopTransition  chan struct{}
+	claimTransition chan struct{}
+	containerID     atomic.Pointer[string]
+	entityID        atomic.Pointer[string]
 
 	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
@@ -68,35 +72,155 @@ func init() {
 // If DD_PROFILING_ENABLED=false is set in the process environment, it will
 // prevent the profiler from starting.
 func Start(opts ...Option) error {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if activeProfiler != nil {
-		activeProfiler.stop()
+	revision, old, priorStop, priorClaims, stopDone := beginProfilerTransition()
+	waitForProfilerTransition(priorStop)
+	waitForProfilerTransition(priorClaims)
+	if old != nil {
+		old.stopRuntime()
 	}
-	p, err := newProfiler(opts...)
+	close(stopDone)
+	if old != nil {
+		old.logStopped()
+	}
+
+	p, reports, err := prepareProfiler(opts...)
 	if err != nil {
+		reportUnpublishedProfilerAttempt(revision, reports)
 		return err
 	}
 	if !p.cfg.enabled {
+		reportUnpublishedProfilerAttempt(revision, reports)
 		return nil
 	}
-	activeProfiler = p
-	activeProfiler.run()
-	traceprof.SetProfilerEnabled(true)
+	if !publishProfilerCandidate(revision, p, &reports) {
+		return nil
+	}
+	reportStartedProfiler(p, reports)
 	return nil
+}
+
+func beginProfilerTransition() (revision uint64, old *profiler, priorStop, priorClaims, done chan struct{}) {
+	mu.Lock()
+	startRevision++
+	revision = startRevision
+	old = activeProfiler
+	activeProfiler = nil
+	traceprof.SetProfilerEnabled(false)
+	priorStop = stopTransition
+	priorClaims = claimTransition
+	done = make(chan struct{})
+	stopTransition = done
+	mu.Unlock()
+	return revision, old, priorStop, priorClaims, done
+}
+
+func waitForProfilerTransition(done chan struct{}) {
+	if done != nil {
+		<-done
+	}
+}
+
+func publishProfilerCandidate(revision uint64, p *profiler, reports *profilerStartReports) bool {
+	mu.Lock()
+	if startRevision != revision {
+		mu.Unlock()
+		return false
+	}
+	claimDone := make(chan struct{})
+	claimTransition = claimDone
+	mu.Unlock()
+
+	releaseClaims, accepted, reportConflicts := internalconfig.PrepareProductClaims(
+		internalconfig.ProductProfiler,
+		p.cfg.requestedClaims(),
+	)
+	reports.reportConflicts = reportConflicts
+	p.cfg.restoreRejectedClaims(accepted)
+	finalizeProfilerConfig(p.cfg)
+
+	mu.Lock()
+	if startRevision != revision {
+		mu.Unlock()
+		releaseClaims()
+		close(claimDone)
+		return false
+	}
+	p.releaseClaims = releaseClaims
+	activeProfiler = p
+	activeProfiler.runRuntime()
+	traceprof.SetProfilerEnabled(true)
+	close(claimDone)
+	mu.Unlock()
+	return true
+}
+
+func reportStartedProfiler(p *profiler, reports profilerStartReports) {
+	if !isActiveProfiler(p) {
+		return
+	}
+	if p.cfg.logStartup {
+		logStartup(p.cfg)
+	}
+	if !isActiveProfiler(p) {
+		return
+	}
+	internalconfig.ReportProfilerConfigEvents(reports.configEvents)
+	if !isActiveProfiler(p) {
+		return
+	}
+	if reports.reportGit != nil {
+		reports.reportGit()
+	}
+	if !isActiveProfiler(p) {
+		return
+	}
+	if reports.reportConflicts != nil {
+		reports.reportConflicts()
+	}
+	if !isActiveProfiler(p) {
+		return
+	}
+	startTelemetry(p.cfg, func() bool { return isActiveProfiler(p) })
+}
+
+func reportUnpublishedProfilerAttempt(revision uint64, reports profilerStartReports) {
+	if !isProfilerRevisionCurrent(revision) {
+		return
+	}
+	internalconfig.ReportProfilerConfigEvents(reports.configEvents)
+	if !isProfilerRevisionCurrent(revision) {
+		return
+	}
+	if reports.reportGit != nil {
+		reports.reportGit()
+	}
+}
+
+func isActiveProfiler(p *profiler) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return activeProfiler == p
+}
+
+func isProfilerRevisionCurrent(revision uint64) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return startRevision == revision
 }
 
 // Stop cancels any ongoing profiling or upload operations and returns after
 // everything has been stopped.
 func Stop() {
-	mu.Lock()
-	if activeProfiler != nil {
-		activeProfiler.stop()
-		activeProfiler = nil
-		traceprof.SetProfilerEnabled(false)
+	_, old, priorStop, priorClaims, stopDone := beginProfilerTransition()
+	waitForProfilerTransition(priorStop)
+	waitForProfilerTransition(priorClaims)
+	if old != nil {
+		old.stopRuntime()
 	}
-	mu.Unlock()
+	close(stopDone)
+	if old != nil {
+		old.logStopped()
+	}
 }
 
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
@@ -112,6 +236,7 @@ type profiler struct {
 	compressors     map[ProfileType]compressor
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
+	releaseClaims   func()         // release programmatic shared-configuration claims
 
 	// lastTrace is the last time an execution trace was collected
 	lastTrace time.Time
@@ -135,12 +260,34 @@ var (
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
-	if env.Get("AWS_LAMBDA_FUNCTION_NAME") != "" {
-		return nil, errProfilingNotSupportedInAWSLambda
-	}
-	cfg, err := defaultConfig()
+	p, reports, err := prepareProfiler(opts...)
 	if err != nil {
+		reports.reportResolved()
 		return nil, err
+	}
+	releaseClaims, accepted, reportConflicts := internalconfig.PrepareProductClaims(
+		internalconfig.ProductProfiler,
+		p.cfg.requestedClaims(),
+	)
+	reports.reportConflicts = reportConflicts
+	p.cfg.restoreRejectedClaims(accepted)
+	finalizeProfilerConfig(p.cfg)
+	p.releaseClaims = releaseClaims
+	if p.cfg.logStartup {
+		logStartup(p.cfg)
+	}
+	reports.reportResolved()
+	return p, nil
+}
+
+func prepareProfiler(opts ...Option) (*profiler, profilerStartReports, error) {
+	var reports profilerStartReports
+	if env.Get("AWS_LAMBDA_FUNCTION_NAME") != "" {
+		return nil, reports, errProfilingNotSupportedInAWSLambda
+	}
+	cfg, reports, err := prepareDefaultConfig()
+	if err != nil {
+		return nil, reports, err
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -162,12 +309,11 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errAgentlessUploadRequiresAPIKey
+			return nil, reports, errAgentlessUploadRequiresAPIKey
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
 		log.Warn("Agentless upload is currently for internal usage only and not officially supported.")
-		cfg.targetURL = cfg.apiURL
 	} else {
 		// Historically people could use an API Key to enable agentless uploading.
 		// As of v1.30.0 customers the default behavior is to use agent based
@@ -177,13 +323,12 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		if cfg.apiKey != "" {
 			log.Warn("You are currently setting the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please verify that your integration is still working.")
 		}
-		cfg.targetURL = cfg.agentURL
 	}
 	if cfg.hostname == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
-			if cfg.targetURL == cfg.apiURL {
-				return nil, fmt.Errorf("could not obtain hostname: %s", err)
+			if cfg.agentless {
+				return nil, reports, fmt.Errorf("could not obtain hostname: %s", err)
 			}
 			log.Warn("unable to look up hostname: %s", err.Error())
 		}
@@ -198,40 +343,16 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	//
 	// see similar discussion: https://github.com/golang/go/issues/39177
 	if cfg.uploadTimeout <= 0 {
-		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
+		return nil, reports, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
 	}
 	for pt := range cfg.types {
 		if _, ok := profileTypes[pt]; !ok {
-			return nil, fmt.Errorf("unknown profile type: %d", pt)
+			return nil, reports, fmt.Errorf("unknown profile type: %d", pt)
 		}
 	}
 	if cfg.cpuDuration > cfg.period {
 		cfg.cpuDuration = cfg.period
 	}
-	if cfg.logStartup {
-		logStartup(cfg)
-	}
-	var tags []string
-	var seenVersionTag bool
-	for _, tag := range cfg.tags.Slice() {
-		// If the user configured a tag via DD_VERSION or WithVersion,
-		// override any version tags the user provided via WithTags,
-		// since having more than one version tag breaks the comparison
-		// UI. If a version is only supplied by WithTags, keep only the
-		// first one.
-		if strings.HasPrefix(strings.ToLower(tag), "version:") {
-			if cfg.version != "" || seenVersionTag {
-				continue
-			}
-			seenVersionTag = true
-		}
-		tags = append(tags, tag)
-	}
-	if cfg.version != "" {
-		tags = append(tags, "version:"+cfg.version)
-	}
-	cfg.tags = immutable.NewStringSlice(tags)
-
 	p := profiler{
 		cfg:         cfg,
 		out:         make(chan batch, outChannelSize),
@@ -253,7 +374,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		in, out := compressionStrategy(pt, isDelta, p.cfg.compressionConfig)
 		compressor, err := pipelineBuilder.Build(in, out)
 		if err != nil {
-			return nil, err
+			return nil, reports, err
 		}
 		p.compressors[pt] = compressor
 
@@ -261,7 +382,35 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			p.deltas[pt] = newFastDeltaProfiler(compressor, profileTypes[pt].DeltaValues...)
 		}
 	}
-	return &p, nil
+	return &p, reports, nil
+}
+
+func finalizeProfilerConfig(cfg *config) {
+	if cfg.agentless {
+		cfg.targetURL = cfg.apiURL
+	} else {
+		cfg.targetURL = cfg.agentURL
+	}
+	var tags []string
+	var seenVersionTag bool
+	for _, tag := range cfg.tags.Slice() {
+		// If the user configured a tag via DD_VERSION or WithVersion,
+		// override any version tags the user provided via WithTags,
+		// since having more than one version tag breaks the comparison
+		// UI. If a version is only supplied by WithTags, keep only the
+		// first one.
+		if strings.HasPrefix(strings.ToLower(tag), "version:") {
+			if cfg.version != "" || seenVersionTag {
+				continue
+			}
+			seenVersionTag = true
+		}
+		tags = append(tags, tag)
+	}
+	if cfg.version != "" {
+		tags = append(tags, "version:"+cfg.version)
+	}
+	cfg.tags = immutable.NewStringSlice(tags)
 }
 
 var goroutineLeakProfileAvailable = sync.OnceValue(func() bool {
@@ -280,8 +429,8 @@ var goroutineLeakProfileAvailable = sync.OnceValue(func() bool {
 	return false
 })
 
-// run runs the profiler.
-func (p *profiler) run() {
+// runRuntime publishes the profiler's runtime effects and goroutines.
+func (p *profiler) runRuntime() {
 	profileEnabled := func(t ProfileType) bool {
 		_, ok := p.cfg.types[t]
 		return ok
@@ -292,7 +441,6 @@ func (p *profiler) run() {
 	if profileEnabled(BlockProfile) {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
-	startTelemetry(p.cfg)
 	p.wg.Go(func() {
 		tick := time.NewTicker(p.cfg.period)
 		defer tick.Stop()
@@ -544,14 +692,25 @@ func (p *profiler) interruptibleSleep(d time.Duration) bool {
 	}
 }
 
-// stop stops the profiler.
-func (p *profiler) stop() {
+// stopRuntime stops collection and releases product claims without invoking
+// user-controlled callbacks.
+func (p *profiler) stopRuntime() {
 	p.stopOnce.Do(func() {
 		close(p.exit)
 	})
 	p.wg.Wait()
+	p.releaseProductClaims()
+}
+
+func (p *profiler) logStopped() {
 	if p.cfg.logStartup {
 		log.Info("Profiling stopped")
+	}
+}
+
+func (p *profiler) releaseProductClaims() {
+	if p.releaseClaims != nil {
+		p.releaseClaims()
 	}
 }
 

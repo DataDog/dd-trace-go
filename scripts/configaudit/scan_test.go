@@ -696,14 +696,13 @@ func TestScan_Fixture(t *testing.T) {
 }
 
 func TestScan_RealRepoFindsUnmigratedReads(t *testing.T) {
-	// Smoke test: DD_PROFILING_ENABLED is still read directly by the profiler,
-	// so it should appear as an unmigrated call site.
+	// Smoke test against a configuration key owned by the later OTel migration.
 	root := filepath.Join("..", "..")
 	got, err := scan(root, defaultRecognizers(), defaultExcludes())
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if len(got["DD_PROFILING_ENABLED"]) == 0 {
-		t.Fatal("expected DD_PROFILING_ENABLED call sites in real repo, got none")
+	if len(got["OTEL_BLRP_MAX_QUEUE_SIZE"]) == 0 {
+		t.Fatal("expected OTEL_BLRP_MAX_QUEUE_SIZE call sites in real repo, got none")
 	}
 }

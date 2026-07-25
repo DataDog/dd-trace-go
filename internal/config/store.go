@@ -214,10 +214,20 @@ func SetUseFreshConfig(use bool) {
 	globalStore.mu.Unlock()
 }
 
-// AcquireProductClaims acquires every non-conflicting claim independently.
-// Same-value claims may have multiple holders. The returned release function is
-// idempotent and removes only the leases acquired by this call.
+// AcquireProductClaims acquires every non-conflicting claim independently and
+// reports conflicts before returning. Same-value claims may have multiple
+// holders. The returned release function is idempotent and removes only the
+// leases acquired by this call.
 func AcquireProductClaims(product Product, claims []Claim) (release func(), accepted map[string]bool) {
+	release, accepted, reportConflicts := PrepareProductClaims(product, claims)
+	reportConflicts()
+	return release, accepted
+}
+
+// PrepareProductClaims acquires every non-conflicting claim independently and
+// returns an idempotent conflict reporter. Callers that publish runtime state
+// under a lock can defer the reporter until after publication and unlock.
+func PrepareProductClaims(product Product, claims []Claim) (release func(), accepted map[string]bool, reportConflicts func()) {
 	claimStore := globalStore
 	accepted = make(map[string]bool, len(claims))
 	if product != ProductProfiler {
@@ -226,7 +236,7 @@ func AcquireProductClaims(product Product, claims []Claim) (release func(), acce
 				accepted[claim.Name] = false
 			}
 		}
-		return func() {}, accepted
+		return func() {}, accepted, func() {}
 	}
 	type requestedClaim struct {
 		name  string
@@ -290,8 +300,13 @@ func AcquireProductClaims(product Product, claims []Claim) (release func(), acce
 	}
 	claimStore.mu.Unlock()
 
-	for _, conflict := range conflicts {
-		reportProductConflict(conflict.name, conflict.first, product)
+	var reportOnce sync.Once
+	reportConflicts = func() {
+		reportOnce.Do(func() {
+			for _, conflict := range conflicts {
+				reportProductConflict(conflict.name, conflict.first, product)
+			}
+		})
 	}
 
 	var once sync.Once
@@ -314,7 +329,7 @@ func AcquireProductClaims(product Product, claims []Claim) (release func(), acce
 			}
 			claimStore.mu.Unlock()
 		})
-	}, accepted
+	}, accepted, reportConflicts
 }
 
 // PrepareClaims reverts claims that already conflict with another active

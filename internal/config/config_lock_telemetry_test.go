@@ -121,6 +121,38 @@ func TestConfigConflictReportsAfterUnlockWithoutValues(t *testing.T) {
 	}, client.conflictTags())
 }
 
+func TestPrepareProductClaimsDefersConflictReporting(t *testing.T) {
+	resetGlobalState()
+	t.Cleanup(resetGlobalState)
+	cfg := &Config{overrides: make(map[string]programmaticOverride)}
+	client := &getterOnConflictClient{
+		RecordClient: new(telemetrytest.RecordClient),
+		cfg:          cfg,
+	}
+	enableTelemetryForLockTest(t, client)
+
+	releaseFirst, accepted := AcquireProductClaims(ProductProfiler, []Claim{{
+		Name: "DD_SERVICE", Value: "first",
+	}})
+	t.Cleanup(releaseFirst)
+	require.True(t, accepted["DD_SERVICE"])
+
+	releaseConflict, accepted, reportConflict := PrepareProductClaims(ProductProfiler, []Claim{{
+		Name: "DD_SERVICE", Value: "second",
+	}})
+	t.Cleanup(releaseConflict)
+	require.False(t, accepted["DD_SERVICE"])
+	require.Empty(t, client.conflictTags())
+
+	reportConflict()
+	reportConflict()
+	require.ElementsMatch(t, []string{
+		"name:DD_SERVICE",
+		"first_product:profiler",
+		"second_product:profiler",
+	}, client.conflictTags())
+}
+
 func TestDynamicConfigReportsAfterUnlock(t *testing.T) {
 	dynamic := newDynamicConfig("DD_TRACE_ENABLED", true, telemetry.OriginDefault, equal[bool], nil)
 	client := &getterOnConfigReportClient{

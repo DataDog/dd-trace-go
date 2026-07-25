@@ -84,6 +84,18 @@ func Test202Accepted(t *testing.T) {
 	backend.ReceiveProfile(t)
 }
 
+func TestUploadActivationUsesStartSnapshot(t *testing.T) {
+	t.Setenv("DD_PROFILING_ENABLED", "auto")
+	backend := startTestProfiler(t, 1,
+		WithProfileTypes(),
+		WithPeriod(100*time.Millisecond),
+	)
+	t.Setenv("DD_PROFILING_ENABLED", "false")
+
+	profile := backend.ReceiveProfile(t)
+	require.Equal(t, "auto", profile.event.Info.Profiler.Activation)
+}
+
 func TestOldAgent(t *testing.T) {
 	ch := make(chan struct{}, 2)
 	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

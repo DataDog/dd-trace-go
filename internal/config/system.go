@@ -98,7 +98,10 @@ var (
 	gitMetadataCache struct {
 		sync.Mutex
 		initialized bool
+		generation  uint64
+		reported    bool
 		value       GitMetadataSnapshot
+		events      []ConfigEvent
 	}
 )
 
@@ -297,20 +300,38 @@ func binaryGitMetadata(readBuildInfo func() (*debug.BuildInfo, bool)) map[string
 	}
 }
 
-// GitMetadataSnapshotValue returns the first-use process snapshot.
-func GitMetadataSnapshotValue() GitMetadataSnapshot {
+// PrepareGitMetadataSnapshot returns the first-use process snapshot and an
+// idempotent reporter for the events captured when that snapshot was first
+// resolved.
+func PrepareGitMetadataSnapshot() (GitMetadataSnapshot, func()) {
 	gitMetadataCache.Lock()
 	if !gitMetadataCache.initialized {
 		value, events := ResolveGitMetadataSnapshot()
 		gitMetadataCache.value = GitMetadataSnapshot{Tags: maps.Clone(value.Tags)}
+		gitMetadataCache.events = cloneConfigEvents(events)
 		gitMetadataCache.initialized = true
-		result := GitMetadataSnapshot{Tags: maps.Clone(gitMetadataCache.value.Tags)}
-		gitMetadataCache.Unlock()
-		reportInstrumentationEvents(events)
-		return result
 	}
 	result := GitMetadataSnapshot{Tags: maps.Clone(gitMetadataCache.value.Tags)}
+	generation := gitMetadataCache.generation
 	gitMetadataCache.Unlock()
+
+	return result, func() {
+		gitMetadataCache.Lock()
+		if gitMetadataCache.generation != generation || gitMetadataCache.reported {
+			gitMetadataCache.Unlock()
+			return
+		}
+		gitMetadataCache.reported = true
+		events := cloneConfigEvents(gitMetadataCache.events)
+		gitMetadataCache.Unlock()
+		reportInstrumentationEvents(events)
+	}
+}
+
+// GitMetadataSnapshotValue returns the first-use process snapshot.
+func GitMetadataSnapshotValue() GitMetadataSnapshot {
+	result, report := PrepareGitMetadataSnapshot()
+	report()
 	return result
 }
 
@@ -320,7 +341,10 @@ func RefreshGitMetadataForTesting() {
 	value, events := ResolveGitMetadataSnapshot()
 	gitMetadataCache.Lock()
 	gitMetadataCache.value = GitMetadataSnapshot{Tags: maps.Clone(value.Tags)}
+	gitMetadataCache.events = cloneConfigEvents(events)
 	gitMetadataCache.initialized = true
+	gitMetadataCache.generation++
+	gitMetadataCache.reported = true
 	gitMetadataCache.Unlock()
 	reportInstrumentationEvents(events)
 }
@@ -328,7 +352,10 @@ func RefreshGitMetadataForTesting() {
 func resetGitMetadataCacheForTesting() {
 	gitMetadataCache.Lock()
 	gitMetadataCache.value = GitMetadataSnapshot{}
+	gitMetadataCache.events = nil
 	gitMetadataCache.initialized = false
+	gitMetadataCache.generation++
+	gitMetadataCache.reported = false
 	gitMetadataCache.Unlock()
 }
 

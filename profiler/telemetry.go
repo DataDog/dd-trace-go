@@ -17,13 +17,19 @@ import (
 // If the telemetry client has already been started by the tracer, then
 // app-product-change event is queued to signal the profiler is enabled, and an
 // app-client-configuration-change event is also queued with profiler config data.
-func startTelemetry(c *config) {
+func startTelemetry(c *config, current func() bool) {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
 		return
 	}
 	telemetry.ProductStarted(telemetry.NamespaceProfilers)
+	if !current() {
+		return
+	}
 	telemetry.RegisterAppConfigs(telemetryConfiguration(c)...)
+	if !current() {
+		return
+	}
 	if telemetry.GlobalClient() == nil {
 		clientConfig := telemetry.ClientConfig{
 			HTTPClient: c.httpClient,
@@ -31,9 +37,15 @@ func startTelemetry(c *config) {
 			AgentURL:   c.agentURL,
 		}
 		internalconfig.ConfigureTelemetryClient(&clientConfig)
+		if !current() {
+			return
+		}
 		client, err := telemetry.NewClient(c.service, c.env, c.version, clientConfig)
 		if err != nil {
 			log.Debug("profiler: failed to create telemetry client: %s", err.Error())
+			return
+		}
+		if !current() {
 			return
 		}
 		telemetry.StartApp(client)

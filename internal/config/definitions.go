@@ -190,7 +190,7 @@ func init() {
 	registerRaw(RawDefinition{Key: "DD_TRACE_AGENT_PORT", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_TRACE_AGENT_PROTOCOL_VERSION", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_TRACE_AGENT_TIMEOUT", Sources: SourceStable, Telemetry: TelemetryReport})
-	registerRaw(RawDefinition{Key: "DD_TRACE_AGENT_URL", Sources: SourceStable, Telemetry: TelemetryReport})
+	registerRaw(RawDefinition{Key: "DD_TRACE_AGENT_URL", Sources: SourceStable, Telemetry: TelemetrySanitizeURL})
 	registerRaw(RawDefinition{Key: "DD_TRACE_ANALYTICS_ENABLED", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_TRACE_DEBUG", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_TRACE_DEBUG_ABANDONED_SPANS", Sources: SourceStable, Telemetry: TelemetryReport})

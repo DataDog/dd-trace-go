@@ -41,6 +41,12 @@ values may coexist; a different value is rejected. Each successful acquisition
 returns an independent release function, and stale releases cannot remove newer
 claims.
 
+`AcquireProductClaims` reports conflicts before it returns. A product that must
+publish its runtime state while holding its own lock uses
+`PrepareProductClaims`, publishes and unlocks, and then invokes the returned
+idempotent conflict reporter. This keeps telemetry callbacks outside the
+product lock without delaying claim acquisition.
+
 Rules:
 
 - **Env vars, defaults, and RC always pass through** — claims apply only to programmatic `OriginCode` values.

@@ -16,6 +16,12 @@ The Go profiler client library works as follows:
 	  profiler.Start function, typically in main(). Collection
 	  starts asynchronously, so profiler.Start will return quickly and the
 	  actual data collection is done in the background.
+	* Each Start stops the previous profiler, resolves a fresh configuration
+	  snapshot, applies options once, and coordinates shared programmatic
+	  service, environment, version, site, agent URL, and tag claims with the
+	  tracer. The new profiler is published before configuration and conflict
+	  telemetry callbacks run. A concurrent newer Start or Stop retires the
+	  older attempt and releases any claims it acquired.
 	* The user calls profiler.Stop at the end of the program to end profile
 	  collection and uploading. This is typically done via a defer statement
 	  in main() after calling profiler.Start.

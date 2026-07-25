@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path"
 	"runtime"
@@ -24,6 +25,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -31,9 +33,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/config/bootstrap"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -176,6 +182,439 @@ func TestStart(t *testing.T) {
 	})
 }
 
+func publishTracerConfigForProfilerTest(t *testing.T, configure func(*internalconfig.Config)) {
+	t.Helper()
+	Stop()
+	staged := internalconfig.NewTracerGeneration()
+	configure(staged)
+	require.NoError(t, internalconfig.PublishTracerGeneration(staged, staged.PrepareClaims(), nil))
+	t.Cleanup(func() {
+		Stop()
+		clean := internalconfig.NewTracerGeneration()
+		require.NoError(t, internalconfig.PublishTracerGeneration(clean, clean.PrepareClaims(), nil))
+	})
+}
+
+func activeProfilerConfigForTest(t *testing.T) *config {
+	t.Helper()
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotNil(t, activeProfiler)
+	return activeProfiler.cfg
+}
+
+func TestStartOptionRunsExactlyOnceAndRejectedClaimUsesStartBaseline(t *testing.T) {
+	t.Setenv("DD_SERVICE", "environment-service")
+	publishTracerConfigForProfilerTest(t, func(cfg *internalconfig.Config) {
+		cfg.SetServiceName("tracer-service", internalconfig.OriginCode, internalconfig.ProductTracer)
+	})
+	var calls int
+	option := func(cfg *config) {
+		calls++
+		WithService("profiler-service")(cfg)
+	}
+
+	require.NoError(t, Start(option, WithProfileTypes(), WithPeriod(time.Hour)))
+	defer Stop()
+	require.Equal(t, 1, calls)
+	require.Equal(t, "environment-service", activeProfilerConfigForTest(t).service)
+}
+
+func TestStartOptionMayCallStartOrStopWithoutDeadlock(t *testing.T) {
+	t.Run("Start", func(t *testing.T) {
+		var calls int
+		outer := func(cfg *config) {
+			calls++
+			require.NoError(t, Start(
+				WithService("nested"),
+				WithProfileTypes(),
+				WithPeriod(time.Hour),
+			))
+			WithEnv("stale-outer")(cfg)
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			done <- Start(outer, WithProfileTypes(), WithPeriod(time.Hour))
+		}()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("Start deadlocked when an option called Start")
+		}
+		defer Stop()
+		require.Equal(t, 1, calls)
+		require.Equal(t, "nested", activeProfilerConfigForTest(t).service)
+
+		release, accepted := internalconfig.AcquireProductClaims(internalconfig.ProductProfiler, []internalconfig.Claim{{
+			Name: "DD_ENV", Value: "stale-outer",
+		}})
+		defer release()
+		require.True(t, accepted["DD_ENV"], "the stale outer Start must not retain claims")
+	})
+
+	t.Run("Stop", func(t *testing.T) {
+		require.NoError(t, Start(WithProfileTypes(), WithPeriod(time.Hour)))
+		var calls int
+		outer := func(cfg *config) {
+			calls++
+			Stop()
+			WithService("stale-after-stop")(cfg)
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			done <- Start(outer, WithProfileTypes(), WithPeriod(time.Hour))
+		}()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("Start deadlocked when an option called Stop")
+		}
+		require.Equal(t, 1, calls)
+		mu.Lock()
+		require.Nil(t, activeProfiler)
+		mu.Unlock()
+
+		release, accepted := internalconfig.AcquireProductClaims(internalconfig.ProductProfiler, []internalconfig.Claim{{
+			Name: "DD_SERVICE", Value: "stale-after-stop",
+		}})
+		defer release()
+		require.True(t, accepted["DD_SERVICE"], "the stopped outer Start must not retain claims")
+	})
+}
+
+type restartOnProfilerStoppedLogger struct {
+	called atomic.Bool
+	action func()
+}
+
+func (l *restartOnProfilerStoppedLogger) Log(message string) {
+	if strings.Contains(message, "Profiling stopped") && l.called.CompareAndSwap(false, true) {
+		l.action()
+	}
+}
+
+func TestStopReleasesClaimsBeforeReentrantStoppedLog(t *testing.T) {
+	require.NoError(t, Start(
+		WithService("first"),
+		WithProfileTypes(),
+		WithPeriod(time.Hour),
+	))
+	logger := &restartOnProfilerStoppedLogger{
+		action: func() {
+			require.NoError(t, Start(
+				WithService("replacement"),
+				WithProfileTypes(),
+				WithPeriod(time.Hour),
+			))
+		},
+	}
+	defer log.UseLogger(logger)()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Stop()
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Stop deadlocked when the stopped log callback restarted the profiler")
+	}
+	defer Stop()
+	require.True(t, logger.called.Load())
+	require.Equal(t, "replacement", activeProfilerConfigForTest(t).service,
+		"the replacement must acquire the released service claim")
+}
+
+type reentrantProfilerConfigClient struct {
+	*telemetrytest.RecordClient
+	once      sync.Once
+	sawActive atomic.Bool
+	action    func()
+}
+
+func (c *reentrantProfilerConfigClient) RegisterAppConfigs(configs ...telemetry.Configuration) {
+	c.once.Do(func() {
+		mu.Lock()
+		c.sawActive.Store(activeProfiler != nil)
+		mu.Unlock()
+		c.action()
+	})
+	c.RecordClient.RegisterAppConfigs(configs...)
+}
+
+type profilerMetricHandle struct{}
+
+func (profilerMetricHandle) Submit(float64) {}
+func (profilerMetricHandle) Get() float64   { return 0 }
+
+type reentrantProfilerConflictClient struct {
+	*telemetrytest.RecordClient
+	called    atomic.Bool
+	sawActive atomic.Bool
+	action    func()
+}
+
+func (c *reentrantProfilerConflictClient) Count(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
+	if name != "config.product_conflict" {
+		return c.RecordClient.Count(namespace, name, tags)
+	}
+	if c.called.CompareAndSwap(false, true) {
+		mu.Lock()
+		c.sawActive.Store(activeProfiler != nil)
+		mu.Unlock()
+		c.action()
+	}
+	return profilerMetricHandle{}
+}
+
+func prepareProfilerReentrantTelemetryTest(t *testing.T, client telemetry.Client) {
+	t.Helper()
+	bootstrap.ResetForTesting()
+	t.Cleanup(bootstrap.ResetForTesting)
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	t.Cleanup(telemetry.MockClient(client))
+}
+
+func TestStartPublishesBeforeReentrantConfigReporting(t *testing.T) {
+	client := &reentrantProfilerConfigClient{
+		RecordClient: new(telemetrytest.RecordClient),
+		action:       Stop,
+	}
+	prepareProfilerReentrantTelemetryTest(t, client)
+	t.Setenv("DD_SERVICE", "reentrant-config-report")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Start(WithProfileTypes(), WithPeriod(time.Hour))
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("config reporting deadlocked when its callback stopped the profiler")
+	}
+	require.True(t, client.sawActive.Load(), "the profiler must be published before configuration reporting")
+	mu.Lock()
+	require.Nil(t, activeProfiler)
+	mu.Unlock()
+}
+
+func TestStartPublishesBeforeReentrantConflictReporting(t *testing.T) {
+	t.Setenv("DD_SERVICE", "conflict-baseline")
+	publishTracerConfigForProfilerTest(t, func(cfg *internalconfig.Config) {
+		cfg.SetServiceName("tracer-conflict", internalconfig.OriginCode, internalconfig.ProductTracer)
+	})
+	client := &reentrantProfilerConflictClient{
+		RecordClient: new(telemetrytest.RecordClient),
+		action: func() {
+			require.NoError(t, Start(
+				WithService("tracer-conflict"),
+				WithProfileTypes(),
+				WithPeriod(time.Hour),
+			))
+		},
+	}
+	prepareProfilerReentrantTelemetryTest(t, client)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Start(
+			WithService("profiler-conflict"),
+			WithProfileTypes(),
+			WithPeriod(time.Hour),
+		)
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("claim conflict reporting deadlocked when its callback restarted the profiler")
+	}
+	defer Stop()
+	require.True(t, client.sawActive.Load(), "the profiler must be published before conflict reporting")
+	require.Equal(t, "tracer-conflict", activeProfilerConfigForTest(t).service)
+}
+
+func TestProfilerSiteClaimOptionOrder(t *testing.T) {
+	t.Setenv("DD_SITE", "environment.example")
+	t.Setenv("DD_PROFILING_URL", "https://environment.example/custom")
+	publishTracerConfigForProfilerTest(t, func(cfg *internalconfig.Config) {
+		cfg.SetSite("tracer.example", internalconfig.OriginCode, internalconfig.ProductTracer)
+	})
+
+	for _, test := range []struct {
+		name     string
+		options  []Option
+		wantURL  string
+		wantSite string
+	}{
+		{
+			name:     "rejected WithSite falls back to environment profiling URL",
+			options:  []Option{WithSite("profiler.example")},
+			wantURL:  "https://environment.example/custom",
+			wantSite: "environment.example",
+		},
+		{
+			name:     "WithURL supersedes WithSite and clears its claim",
+			options:  []Option{WithSite("profiler.example"), WithURL("https://option.example/one")},
+			wantURL:  "https://option.example/one",
+			wantSite: "environment.example",
+		},
+		{
+			name:     "later WithSite falls back to preceding WithURL",
+			options:  []Option{WithURL("https://option.example/two"), WithSite("profiler.example")},
+			wantURL:  "https://option.example/two",
+			wantSite: "environment.example",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			options := append([]Option{}, test.options...)
+			options = append(options, WithProfileTypes(), WithPeriod(time.Hour))
+			require.NoError(t, Start(options...))
+			cfg := activeProfilerConfigForTest(t)
+			require.Equal(t, test.wantURL, cfg.apiURL)
+			require.Equal(t, test.wantSite, cfg.site)
+			Stop()
+		})
+	}
+}
+
+func TestProfilerAgentClaimOptionOrder(t *testing.T) {
+	t.Setenv("DD_TRACE_AGENT_URL", "http://environment-agent:8126")
+	tracerURL, err := url.Parse("http://tracer-agent:8126")
+	require.NoError(t, err)
+	publishTracerConfigForProfilerTest(t, func(cfg *internalconfig.Config) {
+		cfg.SetAgentURL(tracerURL, internalconfig.OriginCode, internalconfig.ProductTracer)
+	})
+	customClient := &http.Client{}
+
+	for _, test := range []struct {
+		name       string
+		options    []Option
+		wantClient *http.Client
+	}{
+		{
+			name:       "rejected UDS restores baseline client",
+			options:    []Option{WithUDS("/tmp/rejected-profiler.sock")},
+			wantClient: defaultClient,
+		},
+		{
+			name:       "later HTTP client survives rejected UDS",
+			options:    []Option{WithUDS("/tmp/rejected-profiler.sock"), WithHTTPClient(customClient)},
+			wantClient: customClient,
+		},
+		{
+			name:       "earlier HTTP client survives rejected UDS",
+			options:    []Option{WithHTTPClient(customClient), WithUDS("/tmp/rejected-profiler.sock")},
+			wantClient: customClient,
+		},
+		{
+			name:       "WithAgentAddr after UDS rejects generated transport",
+			options:    []Option{WithUDS("/tmp/rejected-profiler.sock"), WithAgentAddr("profiler-agent:8126")},
+			wantClient: defaultClient,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			options := append([]Option{}, test.options...)
+			options = append(options, WithProfileTypes(), WithPeriod(time.Hour))
+			require.NoError(t, Start(options...))
+			cfg := activeProfilerConfigForTest(t)
+			require.Equal(t, "http://environment-agent:8126", cfg.agentBaseURL)
+			require.Equal(t, "http://environment-agent:8126/profiling/v1/input", cfg.agentURL)
+			require.Same(t, test.wantClient, cfg.httpClient)
+			Stop()
+		})
+	}
+}
+
+func TestProfilerUDSClaimsUseCanonicalBaseURL(t *testing.T) {
+	const tracerSocket = "/tmp/shared-profiler-agent.sock"
+	t.Setenv("DD_TRACE_AGENT_URL", "http://environment-agent:8126")
+	publishTracerConfigForProfilerTest(t, func(cfg *internalconfig.Config) {
+		cfg.SetAgentURL(
+			&url.URL{Scheme: "unix", Path: tracerSocket},
+			internalconfig.OriginCode,
+			internalconfig.ProductTracer,
+		)
+	})
+
+	require.NoError(t, Start(WithUDS(tracerSocket), WithProfileTypes(), WithPeriod(time.Hour)))
+	cfg := activeProfilerConfigForTest(t)
+	require.Equal(t, "unix:///tmp/shared-profiler-agent.sock", cfg.agentBaseURL)
+	require.NotSame(t, defaultClient, cfg.httpClient)
+	Stop()
+
+	require.NoError(t, Start(WithUDS("/tmp/distinct-profiler-agent.sock"), WithProfileTypes(), WithPeriod(time.Hour)))
+	defer Stop()
+	cfg = activeProfilerConfigForTest(t)
+	require.Equal(t, "http://environment-agent:8126", cfg.agentBaseURL)
+	require.Equal(t, "http://environment-agent:8126/profiling/v1/input", cfg.agentURL)
+	require.Same(t, defaultClient, cfg.httpClient)
+}
+
+func TestProfilerClaimLifecycle(t *testing.T) {
+	t.Run("construction failure and disabled start leave no claim", func(t *testing.T) {
+		require.Error(t, Start(WithService("failed"), WithUploadTimeout(0)))
+		release, accepted := internalconfig.AcquireProductClaims(internalconfig.ProductProfiler, []internalconfig.Claim{{
+			Name: "DD_SERVICE", Value: "other",
+		}})
+		require.True(t, accepted["DD_SERVICE"])
+		release()
+
+		t.Setenv("DD_PROFILING_ENABLED", "false")
+		require.NoError(t, Start(WithService("disabled")))
+		release, accepted = internalconfig.AcquireProductClaims(internalconfig.ProductProfiler, []internalconfig.Claim{{
+			Name: "DD_SERVICE", Value: "other",
+		}})
+		require.True(t, accepted["DD_SERVICE"])
+		release()
+	})
+
+	t.Run("Stop and replacement release the active lease", func(t *testing.T) {
+		require.NoError(t, Start(WithService("first"), WithProfileTypes(), WithPeriod(time.Hour)))
+		release, accepted := internalconfig.AcquireProductClaims(internalconfig.ProductProfiler, []internalconfig.Claim{{
+			Name: "DD_SERVICE", Value: "conflict",
+		}})
+		require.False(t, accepted["DD_SERVICE"])
+		release()
+
+		require.NoError(t, Start(WithService("second"), WithProfileTypes(), WithPeriod(time.Hour)))
+		require.Equal(t, "second", activeProfilerConfigForTest(t).service)
+		Stop()
+
+		release, accepted = internalconfig.AcquireProductClaims(internalconfig.ProductProfiler, []internalconfig.Claim{{
+			Name: "DD_SERVICE", Value: "after-stop",
+		}})
+		require.True(t, accepted["DD_SERVICE"])
+		release()
+	})
+
+	t.Run("same value shares with tracer", func(t *testing.T) {
+		t.Setenv("DD_SERVICE", "environment")
+		publishTracerConfigForProfilerTest(t, func(cfg *internalconfig.Config) {
+			cfg.SetServiceName("shared", internalconfig.OriginCode, internalconfig.ProductTracer)
+		})
+		require.NoError(t, Start(WithService("shared"), WithProfileTypes(), WithPeriod(time.Hour)))
+		require.Equal(t, "shared", activeProfilerConfigForTest(t).service)
+		Stop()
+	})
+}
+
+func TestProfilerClaimAcquisitionInvalidatesPreparedTracerPublication(t *testing.T) {
+	staged := internalconfig.NewTracerGeneration()
+	staged.SetServiceName("tracer-race", internalconfig.OriginCode, internalconfig.ProductTracer)
+	prepared := staged.PrepareClaims()
+
+	require.NoError(t, Start(WithService("profiler-race"), WithProfileTypes(), WithPeriod(time.Hour)))
+	defer Stop()
+	require.Error(t, internalconfig.PublishTracerGeneration(staged, prepared, nil))
+}
+
 // TestStartWithoutStopReconfigures verifies that calling Start while the
 // profiler is already running will restart it with the given configuration.
 func TestStartWithoutStopReconfigures(t *testing.T) {
@@ -209,6 +648,18 @@ func TestStartWithoutStopReconfigures(t *testing.T) {
 	if _, ok := m.attachments["delta-heap.pprof"]; ok {
 		t.Errorf("unexpectedly saw a heap profile")
 	}
+}
+
+func TestStartResamplesEnvironmentOnEveryCall(t *testing.T) {
+	t.Setenv("DD_SITE", "datadoghq.com")
+	require.NoError(t, Start(WithProfileTypes(), WithPeriod(time.Hour)))
+	require.Equal(t, "datadoghq.com", activeProfilerConfigForTest(t).site)
+	Stop()
+
+	t.Setenv("DD_SITE", "datadoghq.eu")
+	require.NoError(t, Start(WithProfileTypes(), WithPeriod(time.Hour)))
+	defer Stop()
+	require.Equal(t, "datadoghq.eu", activeProfilerConfigForTest(t).site)
 }
 
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
