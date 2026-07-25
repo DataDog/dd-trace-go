@@ -19,6 +19,7 @@ import (
 
 // config holds the configuration for the MeterProvider
 type config struct {
+	snapshot               internalconfig.OTelMetricSnapshot
 	resourceOptions        []resource.Option
 	httpExporterOptions    []otlpmetrichttp.Option
 	grpcExporterOptions    []otlpmetricgrpc.Option
@@ -30,16 +31,12 @@ type config struct {
 	ddConfig               *internalconfig.Config
 }
 
-// newConfig creates a default configuration. The export interval and timeout
-// honor the OTel SDK env vars OTEL_METRIC_EXPORT_INTERVAL and
-// OTEL_METRIC_EXPORT_TIMEOUT (in milliseconds) when set, otherwise fall back
-// to the package defaults.
-func newConfig() *config {
-	intervalMs := getMillisecondsConfig(envOtelMetricExportInterval, defaultExportIntervalMs)
-	timeoutMs := getMillisecondsConfig(envOtelMetricExportTimeout, defaultExportTimeoutMs)
+// newConfig creates a default configuration from one constructor snapshot.
+func newConfig(snapshot internalconfig.OTelMetricSnapshot) *config {
 	return &config{
-		exportInterval: time.Duration(intervalMs.value) * time.Millisecond,
-		exportTimeout:  time.Duration(timeoutMs.value) * time.Millisecond,
+		snapshot:       snapshot,
+		exportInterval: snapshot.ReaderInterval,
+		exportTimeout:  snapshot.ReaderTimeout,
 	}
 }
 
@@ -101,7 +98,7 @@ func WithExportTimeout(timeout time.Duration) Option {
 // WithDeltaTemporality configures the MeterProvider to use delta temporality (default).
 func WithDeltaTemporality() Option {
 	return optionFunc(func(c *config) {
-		c.temporalitySelector = deltaTemporalitySelector()
+		c.temporalitySelector = deltaTemporalitySelectorFromSnapshot(c.snapshot)
 	})
 }
 

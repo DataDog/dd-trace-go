@@ -9,6 +9,7 @@ import (
 	"context"
 	"sync"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	otellog "go.opentelemetry.io/otel/log"
@@ -42,49 +43,57 @@ var (
 // Returns an error if LoggerProvider creation fails.
 func InitGlobalLoggerProvider(ctx context.Context) error {
 	var err error
+	var created bool
+	var report func()
 	globalLoggerProviderOnce.Do(func() {
-		globalLoggerProviderMu.Lock()
-		defer globalLoggerProviderMu.Unlock()
+		snapshot, snapshotReport := internalconfig.PrepareOTelLogSnapshot()
+		report = snapshotReport
+		created = func() bool {
+			globalLoggerProviderMu.Lock()
+			defer globalLoggerProviderMu.Unlock()
 
-		// Create resource with Datadog precedence
-		resource, resourceErr := buildResource(ctx)
-		if resourceErr != nil {
-			err = resourceErr
-			log.Error("Failed to build resource for LoggerProvider: %v", resourceErr.Error())
-			return
-		}
+			// Create resource with Datadog precedence
+			resource, resourceErr := buildResourceFromSnapshot(ctx, snapshot)
+			if resourceErr != nil {
+				err = resourceErr
+				log.Error("Failed to build resource for LoggerProvider: %v", resourceErr.Error())
+				return false
+			}
 
-		// Create OTLP exporter (HTTP or gRPC based on protocol)
-		exporter, exporterErr := newOTLPExporter(ctx, nil, nil)
-		if exporterErr != nil {
-			err = exporterErr
-			log.Error("Failed to create OTLP exporter for LoggerProvider: %v", exporterErr.Error())
-			return
-		}
+			// Create OTLP exporter (HTTP or gRPC based on protocol)
+			exporter, exporterErr := newOTLPExporterFromSnapshot(ctx, snapshot, nil, nil)
+			if exporterErr != nil {
+				err = exporterErr
+				log.Error("Failed to create OTLP exporter for LoggerProvider: %v", exporterErr.Error())
+				return false
+			}
 
-		// Create BatchLogRecordProcessor with BLRP environment variables
-		processor := sdklog.NewBatchProcessor(
-			exporter,
-			sdklog.WithMaxQueueSize(resolveBLRPMaxQueueSize()),
-			sdklog.WithExportInterval(resolveBLRPScheduleDelay()),
-			sdklog.WithExportTimeout(resolveBLRPExportTimeout()),
-			sdklog.WithExportMaxBatchSize(resolveBLRPMaxExportBatchSize()),
-		)
+			// Create BatchLogRecordProcessor with BLRP environment variables
+			processor := sdklog.NewBatchProcessor(
+				exporter,
+				sdklog.WithMaxQueueSize(snapshot.MaxQueueSize),
+				sdklog.WithExportInterval(snapshot.ScheduleDelay),
+				sdklog.WithExportTimeout(snapshot.BatchExportTimeout),
+				sdklog.WithExportMaxBatchSize(snapshot.MaxExportBatchSize),
+			)
 
-		// Create LoggerProvider with resource and processor
-		globalLoggerProvider = sdklog.NewLoggerProvider(
-			sdklog.WithResource(resource),
-			sdklog.WithProcessor(processor),
-		)
+			// Create LoggerProvider with resource and processor
+			globalLoggerProvider = sdklog.NewLoggerProvider(
+				sdklog.WithResource(resource),
+				sdklog.WithProcessor(processor),
+			)
 
-		// Create the DD-aware wrapper
-		globalLoggerProviderWrapper = &ddAwareLoggerProvider{underlying: globalLoggerProvider}
-
-		// Register telemetry configuration
-		registerTelemetry()
-
-		log.Debug("OTel LoggerProvider initialized")
+			// Create the DD-aware wrapper
+			globalLoggerProviderWrapper = &ddAwareLoggerProvider{underlying: globalLoggerProvider}
+			return true
+		}()
 	})
+	if created {
+		// Publish and leave sync.Once before reporting so telemetry callbacks may
+		// safely reenter provider access and initialization.
+		report()
+		log.Debug("OTel LoggerProvider initialized")
+	}
 
 	return err
 }

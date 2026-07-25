@@ -1865,6 +1865,13 @@
         "sensitive": true
       }
     ],
+    "OTEL_EXPORTER_OTLP_INSECURE": [
+      {
+        "implementation": "B",
+        "type": "bool",
+        "default": "false"
+      }
+    ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
       {
         "implementation": "A",
@@ -1878,6 +1885,13 @@
         "type": "string",
         "default": null,
         "sensitive": true
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_LOGS_INSECURE": [
+      {
+        "implementation": "B",
+        "type": "bool",
+        "default": null
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
@@ -1907,6 +1921,13 @@
         "type": "string",
         "default": null,
         "sensitive": true
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_INSECURE": [
+      {
+        "implementation": "B",
+        "type": "bool",
+        "default": null
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [

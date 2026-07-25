@@ -58,6 +58,63 @@ func TestNewEnvironmentPreservesOrdinalsWithoutDeclarativeSources(t *testing.T) 
 	}
 }
 
+func TestNewDirectEnvironmentPreservesOrdinalsAndSkipsOTelMappings(t *testing.T) {
+	for _, key := range []string{"DD_SERVICE", "DD_TAGS"} {
+		old, present := os.LookupEnv(key)
+		require.NoError(t, os.Unsetenv(key))
+		t.Cleanup(func() {
+			if present {
+				require.NoError(t, os.Setenv(key, old))
+			} else {
+				require.NoError(t, os.Unsetenv(key))
+			}
+		})
+	}
+	t.Setenv("OTEL_SERVICE_NAME", "mapped-service")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "team=mapped-team")
+
+	p := NewDirectEnvironment()
+	require.Len(t, p.sources, int(schema.SourceOrdinalDefault))
+	assert.IsType(t, omittedConfigSource{}, p.sources[schema.SourceOrdinalManagedStable])
+	assert.IsType(t, new(envConfigSource), p.sources[schema.SourceOrdinalEnvironment])
+	assert.IsType(t, omittedConfigSource{}, p.sources[schema.SourceOrdinalOTelEnvironment])
+	assert.IsType(t, omittedConfigSource{}, p.sources[schema.SourceOrdinalLocalStable])
+
+	binding := schema.ConsumerBinding{
+		ID: "direct", Consumer: "test", Keys: []string{"DD_SERVICE", "DD_TAGS"},
+		Sampling: schema.SampleConstructor, EnvironmentOnly: true,
+	}
+	service, _ := ResolveWithBinding(
+		p,
+		testDefinition("DD_SERVICE", schema.SourceStable),
+		binding,
+		"default-service",
+		parseTestString,
+	)
+	tags, _ := ResolveWithBinding(
+		p,
+		testDefinition("DD_TAGS", schema.SourceStable),
+		binding,
+		"default-tags",
+		parseTestString,
+	)
+	assert.Equal(t, "default-service", service.Winner.Value)
+	assert.Equal(t, "default-tags", tags.Winner.Value)
+	require.Len(t, service.Attempts, 1)
+
+	t.Setenv("DD_SERVICE", "direct-service")
+	service, events := ResolveWithBinding(
+		p,
+		testDefinition("DD_SERVICE", schema.SourceStable),
+		binding,
+		"default-service",
+		parseTestString,
+	)
+	assert.Equal(t, "direct-service", service.Winner.Value)
+	require.NotEmpty(t, events)
+	assert.Equal(t, schema.SourceOrdinalEnvironment, events[0].SourceOrdinal)
+}
+
 type testConfigSource struct {
 	entries     map[string]string
 	originValue telemetry.Origin

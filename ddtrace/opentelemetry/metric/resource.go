@@ -7,11 +7,9 @@ package metric
 
 import (
 	"context"
-	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -45,34 +43,36 @@ const (
 //     → If DD_TRACE_REPORT_HOSTNAME="true": DD_HOSTNAME → detected hostname (os.Hostname())
 //     → Otherwise: hostname is NOT added to resource
 func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resource.Resource, error) {
+	return buildDatadogResourceFromSnapshot(ctx, internalconfig.ResolveOTelMetricSnapshot(), opts...)
+}
+
+func buildDatadogResourceFromSnapshot(
+	ctx context.Context,
+	snapshot internalconfig.OTelMetricSnapshot,
+	opts ...resource.Option,
+) (*resource.Resource, error) {
 	attrs := []attribute.KeyValue{}
 
 	// Parse DD_TAGS first to check for service, env, version there
-	ddTags := make(map[string]string)
-	if ddTagsStr := env.Get(envDDTags); ddTagsStr != "" {
-		ddTags = internal.ParseTagString(ddTagsStr)
-	}
+	ddTags := snapshot.Tags
 
 	// Parse OTEL_RESOURCE_ATTRIBUTES
-	otelAttrs := make(map[string]string)
-	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
-		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
-	}
+	otelAttrs := snapshot.ResourceAttributes
 
 	// 1. Service name priority: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
-	serviceName := serviceName(ddTags, otelAttrs)
+	serviceName := serviceNameFromSnapshot(snapshot, ddTags, otelAttrs)
 	if serviceName != "" {
 		attrs = append(attrs, semconv.ServiceName(serviceName))
 	}
 
 	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
-	envName := environmentName(ddTags, otelAttrs)
+	envName := environmentNameFromSnapshot(snapshot, ddTags, otelAttrs)
 	if envName != "" {
 		attrs = append(attrs, semconv.DeploymentEnvironmentNameKey.String(envName))
 	}
 
 	// 3. Version priority: DD_VERSION → DD_TAGS[version] → OTEL_RESOURCE_ATTRIBUTES[service.version]
-	version := version(ddTags, otelAttrs)
+	version := versionFromSnapshot(snapshot, ddTags, otelAttrs)
 	if version != "" {
 		attrs = append(attrs, semconv.ServiceVersion(version))
 	}
@@ -80,9 +80,8 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	// 4. Hostname: Only add if OTEL sets it OR if DD_TRACE_REPORT_HOSTNAME=true
 	// Priority: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest) → DD_HOSTNAME → detected hostname
 	// If DD_TRACE_REPORT_HOSTNAME != "true" and no OTEL host.name, do NOT add hostname
-	hostname, shouldAddHostname := hostname(otelAttrs)
-	if shouldAddHostname && hostname != "" {
-		attrs = append(attrs, semconv.HostName(hostname))
+	if snapshot.HasHostname && snapshot.Hostname != "" {
+		attrs = append(attrs, semconv.HostName(snapshot.Hostname))
 	}
 
 	// 5. Add all other DD_TAGS as attributes (excluding service, env, version which were handled above)
@@ -126,17 +125,21 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 
 // serviceName returns the service name from environment variables with priority order
 func serviceName(ddTags, otelAttrs map[string]string) string {
+	return serviceNameFromSnapshot(internalconfig.ResolveOTelMetricSnapshot(), ddTags, otelAttrs)
+}
+
+func serviceNameFromSnapshot(snapshot internalconfig.OTelMetricSnapshot, ddTags, otelAttrs map[string]string) string {
 	// DD_SERVICE has highest priority
-	if v := env.Get(envDDService); v != "" {
-		return v
+	if snapshot.Service != "" {
+		return snapshot.Service
 	}
 	// DD_TAGS[service]
 	if v, ok := ddTags["service"]; ok && v != "" {
 		return v
 	}
 	// OTEL_SERVICE_NAME
-	if v := env.Get(envOtelServiceName); v != "" {
-		return v
+	if snapshot.OTelService != "" {
+		return snapshot.OTelService
 	}
 	// OTEL_RESOURCE_ATTRIBUTES[service.name]
 	if v, ok := otelAttrs["service.name"]; ok && v != "" {
@@ -147,9 +150,13 @@ func serviceName(ddTags, otelAttrs map[string]string) string {
 
 // environmentName returns the environment name from environment variables with priority order
 func environmentName(ddTags, otelAttrs map[string]string) string {
+	return environmentNameFromSnapshot(internalconfig.ResolveOTelMetricSnapshot(), ddTags, otelAttrs)
+}
+
+func environmentNameFromSnapshot(snapshot internalconfig.OTelMetricSnapshot, ddTags, otelAttrs map[string]string) string {
 	// DD_ENV has highest priority
-	if v := env.Get(envDDEnv); v != "" {
-		return v
+	if snapshot.Environment != "" {
+		return snapshot.Environment
 	}
 	// DD_TAGS[env]
 	if v, ok := ddTags["env"]; ok && v != "" {
@@ -164,9 +171,13 @@ func environmentName(ddTags, otelAttrs map[string]string) string {
 
 // version returns the version from environment variables with priority order
 func version(ddTags, otelAttrs map[string]string) string {
+	return versionFromSnapshot(internalconfig.ResolveOTelMetricSnapshot(), ddTags, otelAttrs)
+}
+
+func versionFromSnapshot(snapshot internalconfig.OTelMetricSnapshot, ddTags, otelAttrs map[string]string) string {
 	// DD_VERSION has highest priority
-	if v := env.Get(envDDVersion); v != "" {
-		return v
+	if snapshot.Version != "" {
+		return snapshot.Version
 	}
 	// DD_TAGS[version]
 	if v, ok := ddTags["version"]; ok && v != "" {
@@ -192,32 +203,11 @@ func version(ddTags, otelAttrs map[string]string) string {
 //
 // 3. Otherwise, do NOT add hostname at all
 func hostname(otelAttrs map[string]string) (string, bool) {
-	// 1. OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - always use if present
-	if v, ok := otelAttrs["host.name"]; ok && v != "" {
-		return v, true
+	snapshot := internalconfig.ResolveOTelMetricSnapshot()
+	if value := otelAttrs["host.name"]; value != "" {
+		return value, true
 	}
-
-	// 2. Check if DD_TRACE_REPORT_HOSTNAME is explicitly set to "true"
-	reportHostname := env.Get(envDDTraceReportHostname)
-	if reportHostname != "true" {
-		// If not explicitly "true", do NOT add hostname
-		return "", false
-	}
-
-	// 3. DD_TRACE_REPORT_HOSTNAME="true" - try DD_HOSTNAME first
-	if v := env.Get(envDDHostname); v != "" {
-		return v, true
-	}
-
-	// 4. Fall back to detected hostname (reusing tracer logic)
-	if hostname, err := os.Hostname(); err == nil && hostname != "" {
-		return hostname, true
-	} else if err != nil {
-		log.Warn("unable to look up hostname: %s", err.Error())
-	}
-
-	// No hostname could be determined
-	return "", false
+	return snapshot.Hostname, snapshot.HasHostname
 }
 
 // parseOtelResourceAttributes parses OTEL_RESOURCE_ATTRIBUTES string into a map.

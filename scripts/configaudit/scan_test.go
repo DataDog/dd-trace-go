@@ -702,7 +702,7 @@ func TestScan_RealRepoFindsUnmigratedReads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if len(got["OTEL_BLRP_MAX_QUEUE_SIZE"]) == 0 {
-		t.Fatal("expected OTEL_BLRP_MAX_QUEUE_SIZE call sites in real repo, got none")
+	if len(got["DD_SERVICE"]) == 0 {
+		t.Fatal("expected DD_SERVICE call sites in real repo, got none")
 	}
 }

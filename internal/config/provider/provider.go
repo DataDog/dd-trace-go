@@ -54,6 +54,20 @@ func NewEnvironment() *Provider {
 	}
 }
 
+// NewDirectEnvironment returns a Provider that reads only the named
+// environment key, without applying OTel-to-Datadog compatibility mappings.
+// Omitted source slots preserve the canonical source ordinals.
+func NewDirectEnvironment() *Provider {
+	return &Provider{
+		sources: []configSource{
+			omittedConfigSource{originValue: telemetry.OriginManagedStableConfig},
+			new(envConfigSource),
+			omittedConfigSource{originValue: telemetry.OriginEnvVar},
+			omittedConfigSource{originValue: telemetry.OriginLocalStableConfig},
+		},
+	}
+}
+
 type omittedConfigSource struct {
 	originValue telemetry.Origin
 }

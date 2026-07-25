@@ -8,12 +8,14 @@ package metric
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -81,8 +83,22 @@ func (e *telemetryExporter) Export(ctx context.Context, rm *metricdata.ResourceM
 // 4. DD_AGENT_HOST with appropriate port
 // 5. localhost with default port (default)
 func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Option, grpcOpts []otlpmetricgrpc.Option) (metric.Exporter, error) {
+	return newDatadogOTLPExporterFromSnapshot(
+		ctx,
+		internalconfig.ResolveOTelMetricSnapshot(),
+		httpOpts,
+		grpcOpts,
+	)
+}
+
+func newDatadogOTLPExporterFromSnapshot(
+	ctx context.Context,
+	snapshot internalconfig.OTelMetricSnapshot,
+	httpOpts []otlpmetrichttp.Option,
+	grpcOpts []otlpmetricgrpc.Option,
+) (metric.Exporter, error) {
 	// Determine protocol
-	protocol := otlpProtocol()
+	protocol := snapshot.Protocol
 
 	var exporter metric.Exporter
 	var err error
@@ -90,16 +106,16 @@ func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Optio
 
 	switch protocol {
 	case protocolGRPC:
-		exporter, err = newDatadogOTLPGRPCExporter(ctx, grpcOpts...)
+		exporter, err = newDatadogOTLPGRPCExporterFromSnapshot(ctx, snapshot, grpcOpts...)
 		protocolTag = protocolGRPC
 		encodingTag = encodingProtobuf
 	case defaultOTLPProtocol, protocolHTTP:
-		exporter, err = newDatadogOTLPHTTPExporter(ctx, httpOpts...)
+		exporter, err = newDatadogOTLPHTTPExporterFromSnapshot(ctx, snapshot, httpOpts...)
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
 	default:
 		log.Warn("Unknown OTLP protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
-		exporter, err = newDatadogOTLPHTTPExporter(ctx, httpOpts...)
+		exporter, err = newDatadogOTLPHTTPExporterFromSnapshot(ctx, snapshot, httpOpts...)
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
 	}
@@ -118,22 +134,21 @@ func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Optio
 // otlpProtocol returns the OTLP protocol from environment variables.
 // Priority: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/protobuf"
 func otlpProtocol() string {
-	// Check metrics-specific protocol first
-	if protocol := env.Get(envOTLPMetricsProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Fall back to general OTLP protocol
-	if protocol := env.Get(envOTLPProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Default to HTTP with protobuf
-	return defaultOTLPProtocol
+	return internalconfig.ResolveOTelMetricSnapshot().Protocol
 }
 
 // newDatadogOTLPHTTPExporter creates an OTLP HTTP exporter configured with Datadog-specific defaults.
 func newDatadogOTLPHTTPExporter(ctx context.Context, opts ...otlpmetrichttp.Option) (metric.Exporter, error) {
+	return newDatadogOTLPHTTPExporterFromSnapshot(ctx, internalconfig.ResolveOTelMetricSnapshot(), opts...)
+}
+
+func newDatadogOTLPHTTPExporterFromSnapshot(
+	ctx context.Context,
+	snapshot internalconfig.OTelMetricSnapshot,
+	opts ...otlpmetrichttp.Option,
+) (metric.Exporter, error) {
 	// Build exporter options with DD defaults
-	exporterOpts := buildHTTPExporterOptions(opts...)
+	exporterOpts := buildHTTPExporterOptionsFromSnapshot(snapshot, opts...)
 
 	// Create the OTLP HTTP exporter
 	exporter, err := otlpmetrichttp.New(ctx, exporterOpts...)
@@ -146,8 +161,16 @@ func newDatadogOTLPHTTPExporter(ctx context.Context, opts ...otlpmetrichttp.Opti
 
 // newDatadogOTLPGRPCExporter creates an OTLP gRPC exporter configured with Datadog-specific defaults.
 func newDatadogOTLPGRPCExporter(ctx context.Context, opts ...otlpmetricgrpc.Option) (metric.Exporter, error) {
+	return newDatadogOTLPGRPCExporterFromSnapshot(ctx, internalconfig.ResolveOTelMetricSnapshot(), opts...)
+}
+
+func newDatadogOTLPGRPCExporterFromSnapshot(
+	ctx context.Context,
+	snapshot internalconfig.OTelMetricSnapshot,
+	opts ...otlpmetricgrpc.Option,
+) (metric.Exporter, error) {
 	// Build exporter options with DD defaults
-	exporterOpts := buildGRPCExporterOptions(opts...)
+	exporterOpts := buildGRPCExporterOptionsFromSnapshot(snapshot, opts...)
 
 	// Create the OTLP gRPC exporter
 	exporter, err := otlpmetricgrpc.New(ctx, exporterOpts...)
@@ -160,24 +183,40 @@ func newDatadogOTLPGRPCExporter(ctx context.Context, opts ...otlpmetricgrpc.Opti
 
 // buildHTTPExporterOptions constructs the OTLP HTTP exporter options with DD-specific defaults
 func buildHTTPExporterOptions(userOpts ...otlpmetrichttp.Option) []otlpmetrichttp.Option {
+	return buildHTTPExporterOptionsFromSnapshot(
+		internalconfig.ResolveOTelMetricSnapshot(),
+		userOpts...,
+	)
+}
+
+func buildHTTPExporterOptionsFromSnapshot(
+	snapshot internalconfig.OTelMetricSnapshot,
+	userOpts ...otlpmetrichttp.Option,
+) []otlpmetrichttp.Option {
 	opts := []otlpmetrichttp.Option{
 		// Set retry configuration
 		otlpmetrichttp.WithRetry(datadogRetryConfig()),
 		// Set timeout
-		otlpmetrichttp.WithTimeout(30 * time.Second),
+		otlpmetrichttp.WithTimeout(snapshot.ExporterTimeout),
 		// Set delta temporality as default (Datadog preference)
-		otlpmetrichttp.WithTemporalitySelector(deltaTemporalitySelector()),
+		otlpmetrichttp.WithTemporalitySelector(deltaTemporalitySelectorFromSnapshot(snapshot)),
 	}
 
-	// Only set endpoint if not already set by OTEL environment variables
-	if !hasOTLPEndpointInEnv() {
-		endpoint, path, insecure := resolveOTLPEndpointHTTP()
-		opts = append(opts, otlpmetrichttp.WithEndpoint(endpoint))
-		opts = append(opts, otlpmetrichttp.WithURLPath(path))
-		if insecure {
-			opts = append(opts, otlpmetrichttp.WithInsecure())
-		}
+	if hasOTLPEndpointInSnapshot(snapshot) {
+		endpointURL := metricHTTPEndpointURLFromSnapshot(snapshot)
+		insecure := metricOTLPEndpointInsecureFromSnapshot(snapshot)
+		opts = append(opts, otlpmetrichttp.WithEndpointURL(
+			metricEndpointURLWithInsecure(endpointURL, insecure),
+		))
+	} else {
+		endpoint, urlPath, ddInsecure := resolveOTLPEndpointHTTPFromSnapshot(snapshot)
+		insecure := metricDDInsecureFromSnapshot(snapshot, ddInsecure)
+		endpointURL := url.URL{Host: endpoint, Path: urlPath}
+		opts = append(opts, otlpmetrichttp.WithEndpointURL(
+			metricEndpointURLWithInsecure(endpointURL.String(), insecure),
+		))
 	}
+	opts = append(opts, otlpmetrichttp.WithHeaders(maps.Clone(snapshot.Headers)))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -187,23 +226,42 @@ func buildHTTPExporterOptions(userOpts ...otlpmetrichttp.Option) []otlpmetrichtt
 
 // buildGRPCExporterOptions constructs the OTLP gRPC exporter options with DD-specific defaults
 func buildGRPCExporterOptions(userOpts ...otlpmetricgrpc.Option) []otlpmetricgrpc.Option {
+	return buildGRPCExporterOptionsFromSnapshot(
+		internalconfig.ResolveOTelMetricSnapshot(),
+		userOpts...,
+	)
+}
+
+func buildGRPCExporterOptionsFromSnapshot(
+	snapshot internalconfig.OTelMetricSnapshot,
+	userOpts ...otlpmetricgrpc.Option,
+) []otlpmetricgrpc.Option {
 	opts := []otlpmetricgrpc.Option{
 		// Set timeout
-		otlpmetricgrpc.WithTimeout(30 * time.Second),
+		otlpmetricgrpc.WithTimeout(snapshot.ExporterTimeout),
 		// Set delta temporality as default (Datadog preference)
-		otlpmetricgrpc.WithTemporalitySelector(deltaTemporalitySelector()),
+		otlpmetricgrpc.WithTemporalitySelector(deltaTemporalitySelectorFromSnapshot(snapshot)),
 		// Set retry config
 		otlpmetricgrpc.WithRetry(datadogGRPCRetryConfig()),
 	}
 
-	// Only set endpoint if not already set by OTEL environment variables
-	if !hasOTLPEndpointInEnv() {
-		endpoint, insecure := resolveOTLPEndpointGRPC()
+	if hasOTLPEndpointInSnapshot(snapshot) {
+		endpointURL, endpoint := metricGRPCEndpointFromSnapshot(snapshot)
+		insecure := metricOTLPEndpointInsecureFromSnapshot(snapshot)
+		opts = append(opts, otlpmetricgrpc.WithEndpointURL(
+			metricEndpointURLWithInsecure(endpointURL, insecure),
+		))
 		opts = append(opts, otlpmetricgrpc.WithEndpoint(endpoint))
-		if insecure {
-			opts = append(opts, otlpmetricgrpc.WithInsecure())
-		}
+	} else {
+		endpoint, ddInsecure := resolveOTLPEndpointGRPCFromSnapshot(snapshot)
+		insecure := metricDDInsecureFromSnapshot(snapshot, ddInsecure)
+		endpointURL := url.URL{Host: endpoint}
+		opts = append(opts, otlpmetricgrpc.WithEndpointURL(
+			metricEndpointURLWithInsecure(endpointURL.String(), insecure),
+		))
+		opts = append(opts, otlpmetricgrpc.WithEndpoint(endpoint))
 	}
+	opts = append(opts, otlpmetricgrpc.WithHeaders(maps.Clone(snapshot.Headers)))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -213,13 +271,99 @@ func buildGRPCExporterOptions(userOpts ...otlpmetricgrpc.Option) []otlpmetricgrp
 
 // hasOTLPEndpointInEnv checks if OTLP endpoint is configured via OTEL environment variables
 func hasOTLPEndpointInEnv() bool {
-	if v := env.Get(envOTLPMetricsEndpoint); v != "" {
+	return hasOTLPEndpointInSnapshot(internalconfig.ResolveOTelMetricSnapshot())
+}
+
+func hasOTLPEndpointInSnapshot(snapshot internalconfig.OTelMetricSnapshot) bool {
+	return snapshot.Signal.Endpoint.Value != "" || snapshot.Generic.Endpoint.Value != ""
+}
+
+func metricHTTPEndpointURLFromSnapshot(snapshot internalconfig.OTelMetricSnapshot) string {
+	if endpoint, signalSpecific, ok := parsedMetricEndpoint(snapshot); ok {
+		if signalSpecific {
+			if endpoint.Path == "" {
+				endpoint.Path = "/"
+			}
+		} else {
+			endpoint.Path = path.Join(endpoint.Path, defaultOTLPPath)
+		}
+		return endpoint.String()
+	}
+	return "https://localhost:4318" + defaultOTLPPath
+}
+
+func metricGRPCEndpointFromSnapshot(snapshot internalconfig.OTelMetricSnapshot) (string, string) {
+	if endpoint, _, ok := parsedMetricEndpoint(snapshot); ok {
+		return endpoint.String(), path.Join(endpoint.Host, endpoint.Path)
+	}
+	const defaultGRPCEndpoint = "localhost:4317"
+	return "https://" + defaultGRPCEndpoint, defaultGRPCEndpoint
+}
+
+func parsedMetricEndpoint(snapshot internalconfig.OTelMetricSnapshot) (*url.URL, bool, bool) {
+	var selected *url.URL
+	if raw := strings.TrimSpace(snapshot.Generic.Endpoint.Value); raw != "" {
+		if endpoint, err := url.Parse(raw); err == nil {
+			selected = endpoint
+		}
+	}
+	signalSpecific := false
+	if raw := strings.TrimSpace(snapshot.Signal.Endpoint.Value); raw != "" {
+		if endpoint, err := url.Parse(raw); err == nil {
+			selected = endpoint
+			signalSpecific = true
+		}
+	}
+	return selected, signalSpecific, selected != nil
+}
+
+func metricOTLPEndpointInsecureFromSnapshot(snapshot internalconfig.OTelMetricSnapshot) bool {
+	insecure := false
+	if endpoint, _, ok := parsedMetricEndpoint(snapshot); ok {
+		switch strings.ToLower(endpoint.Scheme) {
+		case "http", "unix":
+			insecure = true
+		}
+	}
+	return applyMetricInsecureSnapshot(snapshot, insecure)
+}
+
+func metricDDInsecureFromSnapshot(snapshot internalconfig.OTelMetricSnapshot, ddInsecure bool) bool {
+	insecure := applyMetricInsecureSnapshot(snapshot, false)
+	if ddInsecure {
+		// Datadog's explicit insecure fallback was historically applied after
+		// the SDK environment, so it wins when the DD endpoint uses plaintext.
 		return true
 	}
-	if v := env.Get(envOTLPEndpoint); v != "" {
-		return true
+	return insecure
+}
+
+func applyMetricInsecureSnapshot(snapshot internalconfig.OTelMetricSnapshot, insecure bool) bool {
+	for _, setting := range []internalconfig.OTelRawSetting{
+		snapshot.Generic.Insecure,
+		snapshot.Signal.Insecure,
+	} {
+		value := strings.TrimSpace(setting.Value)
+		if value != "" {
+			// Match the OTel SDK: only "true" selects insecure; every other
+			// non-empty value explicitly selects secure.
+			insecure = strings.ToLower(value) == "true"
+		}
 	}
-	return false
+	return insecure
+}
+
+func metricEndpointURLWithInsecure(endpointURL string, insecure bool) string {
+	endpoint, err := url.Parse(endpointURL)
+	if err != nil {
+		return endpointURL
+	}
+	if insecure {
+		endpoint.Scheme = "http"
+	} else {
+		endpoint.Scheme = "https"
+	}
+	return endpoint.String()
 }
 
 // resolveOTLPEndpointHTTP determines the OTLP HTTP endpoint from DD agent configuration.
@@ -233,11 +377,17 @@ func hasOTLPEndpointInEnv() bool {
 // 2. DD_AGENT_HOST:4318
 // 3. localhost:4318 (default)
 func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
+	return resolveOTLPEndpointHTTPFromSnapshot(internalconfig.ResolveOTelMetricSnapshot())
+}
+
+func resolveOTLPEndpointHTTPFromSnapshot(
+	snapshot internalconfig.OTelMetricSnapshot,
+) (endpoint, path string, insecure bool) {
 	path = defaultOTLPPath
 	insecure = true // default to http
 
 	// Check DD_TRACE_AGENT_URL first
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
+	if agentURL := snapshot.AgentURL; agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
 			log.Warn("Failed to parse DD_TRACE_AGENT_URL for metrics: %s, using default", err.Error())
@@ -255,7 +405,7 @@ func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 	}
 
 	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
+	if host := snapshot.AgentHost; host != "" {
 		endpoint = net.JoinHostPort(host, defaultOTLPPort)
 		insecure = true
 		return
@@ -277,11 +427,17 @@ func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 // 2. DD_AGENT_HOST:4317
 // 3. localhost:4317 (default)
 func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
+	return resolveOTLPEndpointGRPCFromSnapshot(internalconfig.ResolveOTelMetricSnapshot())
+}
+
+func resolveOTLPEndpointGRPCFromSnapshot(
+	snapshot internalconfig.OTelMetricSnapshot,
+) (endpoint string, insecure bool) {
 	insecure = true // default to grpc (not grpcs)
 	const defaultGRPCPort = "4317"
 
 	// Check DD_TRACE_AGENT_URL first
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
+	if agentURL := snapshot.AgentURL; agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
 			log.Warn("Failed to parse DD_TRACE_AGENT_URL for metrics: %s, using default", err.Error())
@@ -299,7 +455,7 @@ func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
 	}
 
 	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
+	if host := snapshot.AgentHost; host != "" {
 		endpoint = net.JoinHostPort(host, defaultGRPCPort)
 		log.Debug("Using OTLP gRPC metrics endpoint from DD_AGENT_HOST: %s", endpoint)
 		return

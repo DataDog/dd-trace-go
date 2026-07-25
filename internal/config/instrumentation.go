@@ -21,6 +21,7 @@ var (
 	instrumentationReporter   Reporter
 	instrumentationGeneration atomic.Uint64
 	newEnvironmentProvider    = provider.NewEnvironment
+	newDirectEnvProvider      = provider.NewDirectEnvironment
 	newStableProvider         = sync.OnceValue(provider.New)
 	instrumentationRawIndex   struct {
 		once  sync.Once

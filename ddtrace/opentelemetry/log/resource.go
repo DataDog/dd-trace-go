@@ -8,11 +8,9 @@ package log
 import (
 	"context"
 	"maps"
-	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -51,17 +49,19 @@ const (
 //
 // - Datadog hostname takes precedence over OTEL hostname if both are present
 func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Resource, error) {
+	return buildResourceFromSnapshot(ctx, internalconfig.ResolveOTelLogSnapshot(), opts...)
+}
+
+func buildResourceFromSnapshot(
+	ctx context.Context,
+	snapshot internalconfig.OTelLogSnapshot,
+	opts ...resource.Option,
+) (*resource.Resource, error) {
 	// Step 1: Parse OTEL_RESOURCE_ATTRIBUTES as base layer
-	otelAttrs := make(map[string]string)
-	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
-		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
-	}
+	otelAttrs := snapshot.ResourceAttributes
 
 	// Step 2: Parse DD_TAGS
-	ddTags := make(map[string]string)
-	if ddTagsStr := env.Get(envDDTags); ddTagsStr != "" {
-		ddTags = internal.ParseTagString(ddTagsStr)
-	}
+	ddTags := snapshot.Tags
 
 	// Step 3: Overlay Datadog attributes (these win over OTEL)
 	// Start with OTEL attributes as base
@@ -69,18 +69,18 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	maps.Copy(attrs, otelAttrs)
 
 	// Overlay DD_SERVICE → service.name
-	if ddService := env.Get(envDDService); ddService != "" {
-		attrs["service.name"] = ddService
+	if snapshot.Service != "" {
+		attrs["service.name"] = snapshot.Service
 	}
 
 	// Overlay DD_ENV → deployment.environment.name
-	if ddEnv := env.Get(envDDEnv); ddEnv != "" {
-		attrs["deployment.environment.name"] = ddEnv
+	if snapshot.Environment != "" {
+		attrs["deployment.environment.name"] = snapshot.Environment
 	}
 
 	// Overlay DD_VERSION → service.version
-	if ddVersion := env.Get(envDDVersion); ddVersion != "" {
-		attrs["service.version"] = ddVersion
+	if snapshot.Version != "" {
+		attrs["service.version"] = snapshot.Version
 	}
 
 	// Overlay DD_TAGS (all key-value pairs)
@@ -90,9 +90,8 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	// OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - never override it
 	if _, hasOtelHostname := otelAttrs["host.name"]; !hasOtelHostname {
 		// OTEL didn't set hostname, so check DD settings
-		hostname, shouldAddHostname := resolveHostname()
-		if shouldAddHostname && hostname != "" {
-			attrs["host.name"] = hostname
+		if snapshot.HasHostname && snapshot.Hostname != "" {
+			attrs["host.name"] = snapshot.Hostname
 		}
 	}
 
@@ -123,44 +122,6 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 
 	// Create the resource
 	return resource.New(ctx, opts...)
-}
-
-// resolveHostname determines the hostname value and whether it should be included.
-// Returns (hostname, shouldAdd) where:
-//   - hostname: the resolved hostname value
-//   - shouldAdd: true if hostname should be added to resource, false otherwise
-//
-// Hostname is ONLY added if:
-// 1. DD_TRACE_REPORT_HOSTNAME=true (uses DD_HOSTNAME or detected hostname), OR
-// 2. OTEL_RESOURCE_ATTRIBUTES already includes host.name (handled by caller)
-//
-// Just setting DD_HOSTNAME alone does NOT add hostname - it needs DD_TRACE_REPORT_HOSTNAME=true.
-// This ensures hostname is only sent when explicitly enabled (privacy by default).
-func resolveHostname() (string, bool) {
-	// Check if DD_TRACE_REPORT_HOSTNAME is set to "true"
-	reportHostname := env.Get(envDDTraceReportHostname)
-	if reportHostname != "true" {
-		// Hostname reporting not enabled - do not add hostname
-		return "", false
-	}
-
-	// DD_TRACE_REPORT_HOSTNAME=true, so we should add hostname
-	// Priority: DD_HOSTNAME → detected hostname
-
-	// Check DD_HOSTNAME first
-	if ddHostname := env.Get(envDDHostname); ddHostname != "" {
-		return ddHostname, true
-	}
-
-	// Try to detect hostname
-	if hostname, err := os.Hostname(); err == nil && hostname != "" {
-		return hostname, true
-	} else if err != nil {
-		log.Warn("unable to look up hostname: %s", err.Error())
-	}
-
-	// Could not determine hostname
-	return "", false
 }
 
 // parseOtelResourceAttributes parses OTEL_RESOURCE_ATTRIBUTES string into a map.

@@ -7,7 +7,6 @@ package metric
 
 import (
 	"context"
-	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -18,7 +17,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 )
 
@@ -99,24 +97,21 @@ func NewMeterProvider(opts ...Option) (otelmetric.MeterProvider, error) {
 }
 
 func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetric.MeterProvider, error) {
-
-	cfg := newConfig()
+	snapshot, report := internalconfig.PrepareOTelMetricSnapshot()
+	cfg := newConfig(snapshot)
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
 
-	if !metricsEnabled(cfg.ddConfig) {
+	if !metricsEnabled(cfg.ddConfig, snapshot) {
 		// Report to telemetry that metrics are disabled
 		registerNoopTelemetry()
 		// Return a no-op MeterProvider that doesn't export metrics
 		return noop.NewMeterProvider(), nil
 	}
 
-	// Report configuration to telemetry
-	registerTelemetry(cfg)
-
 	// Build Datadog-specific resource
-	res, err := buildDatadogResource(ctx, cfg.resourceOptions...)
+	res, err := buildDatadogResourceFromSnapshot(ctx, snapshot, cfg.resourceOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +129,7 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 	}
 
 	// Create OTLP exporter with DD defaults (supports both HTTP and gRPC)
-	exporter, err := newDatadogOTLPExporter(ctx, cfg.httpExporterOptions, cfg.grpcExporterOptions)
+	exporter, err := newDatadogOTLPExporterFromSnapshot(ctx, snapshot, cfg.httpExporterOptions, cfg.grpcExporterOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -151,27 +146,20 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 	}
 	reader := metric.NewPeriodicReader(exporter, readerOpts...)
 
-	// Create the MeterProvider
-	return metric.NewMeterProvider(
+	// Create the MeterProvider before reporting its configuration.
+	provider := metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(reader),
-	), nil
+	)
+	report()
+	return provider, nil
 }
 
-func metricsEnabled(c *internalconfig.Config) bool {
+func metricsEnabled(c *internalconfig.Config, snapshot internalconfig.OTelMetricSnapshot) bool {
 	if c != nil {
 		return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
 	}
-	if exporter := env.Get(envOtelMetricsExporter); exporter != "" {
-		if strings.ToLower(strings.TrimSpace(exporter)) == "none" {
-			return false
-		}
-	}
-	switch strings.ToLower(strings.TrimSpace(env.Get(envDDMetricsOtelEnabled))) {
-	case "true", "1":
-		return true
-	}
-	return false
+	return snapshot.StandaloneEnabled
 }
 
 // isNoop returns true if the given MeterProvider is a no-op provider that doesn't export metrics.
@@ -213,9 +201,10 @@ func ForceFlush(ctx context.Context, mp otelmetric.MeterProvider) error {
 // It respects OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE if set, with one exception:
 // UpDownCounter and ObservableUpDownCounter ALWAYS use Cumulative (even if DELTA is requested).
 func deltaTemporalitySelector() metric.TemporalitySelector {
-	// Check if user has explicitly set temporality preference
-	temporalityPref := strings.ToUpper(strings.TrimSpace(env.Get("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")))
+	return deltaTemporalitySelectorFromSnapshot(internalconfig.ResolveOTelMetricSnapshot())
+}
 
+func deltaTemporalitySelectorFromSnapshot(snapshot internalconfig.OTelMetricSnapshot) metric.TemporalitySelector {
 	return func(kind metric.InstrumentKind) metricdata.Temporality {
 		// UpDownCounter and Gauge ALWAYS use cumulative, regardless of preference
 		// They represent current state, not monotonic changes
@@ -226,7 +215,7 @@ func deltaTemporalitySelector() metric.TemporalitySelector {
 		}
 
 		// For monotonic instruments, respect the user's preference if set
-		if temporalityPref == "CUMULATIVE" {
+		if snapshot.TemporalityPreference == "CUMULATIVE" {
 			return metricdata.CumulativeTemporality
 		}
 
