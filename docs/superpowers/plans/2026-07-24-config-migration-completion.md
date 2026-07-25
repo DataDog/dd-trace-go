@@ -1023,20 +1023,245 @@ git add internal/config ddtrace/opentelemetry
 git commit -m "refactor(config): migrate OTel signal configuration"
 ```
 
+## Task 12a: Close residual reads and audit blind spots
+
+**Files:**
+
+- Modify: `scripts/configaudit/syntax.go`
+- Modify: `scripts/configaudit/scan.go`
+- Modify: `scripts/configaudit/main.go`
+- Modify: `scripts/configaudit/classify.go`
+- Modify: `scripts/configaudit/modules.go`
+- Modify: corresponding config-audit tests
+- Modify: `internal/config/provider/otelenvconfigsource.go`
+- Modify: `internal/config/config.go`
+- Modify: `internal/config/definitions.go`
+- Modify: `internal/config/bootstrap/telemetry.go`
+- Modify: `instrumentation/options/options.go`
+- Modify: `internal/appsec/appsec.go`
+- Modify: `internal/env.go`
+- Delete: `internal/stableconfig`
+- Test: corresponding package tests
+
+**Interfaces:**
+
+- Produces: receiver-aware, live-entry-validated raw-read allowlist
+- Produces: non-failing JSON scope metadata for the root and excluded modules
+- Consumes: registry, resolver, and publication-event foundations
+
+Commit this reviewed plan correction before Task 12a starts, and require a
+clean worktree before recording RED evidence.
+
+- [ ] **Step 1: Add failing scanner-integrity tests**
+
+Test receiver identity, same-name collisions, missing and stale allowlist rows,
+suppression annotations, `instrumentation/options.GetBoolEnv`,
+`internal.IPEnv`, and deterministic root/excluded-module scope metadata.
+
+A suppression must remain a finding even when it is attached to an
+allowlisted read. JSON scope metadata does not affect `AuditResult.Clean`, and
+clean table output remains empty.
+
+Use this JSON shape:
+
+```json
+{
+  "scope": {
+    "root_module": "github.com/DataDog/dd-trace-go/v2",
+    "excluded_modules": [
+      {"path": "module/path", "dir": "root/relative/directory"}
+    ]
+  }
+}
+```
+
+Sort exclusions by directory. Coverage tests must also prove that every
+supported build variant loads a nonzero, expected root-package count. Add an
+integration test that independently calls `discoverModules`, normalizes its
+complete nested-module set, and compares that set with the scope attached to
+the audit result. Require nonempty paths and directories, unique directories,
+and root-relative directories.
+
+- [ ] **Step 2: Implement exact boundaries and scope reporting**
+
+Add normalized receiver identity to raw-read locations. Validate that every
+allowlist row identifies one declaration containing a recognized raw read.
+Reject missing, ambiguous, stale, and excluded-module entries.
+
+For provider source methods, add only these three existing entries:
+
+- `envConfigSource.lookup`;
+- `otelEnvConfigSource.lookupRaw`;
+- `otelEnvConfigSource.lookupWithEvents`.
+
+Keep `instrumentation/options.GetBoolEnv` as the exact adapter for independent
+nested modules. Root-module callers remain visible to both scanner passes.
+
+- [ ] **Step 3: Close the sampler and hostname residuals**
+
+Move `OTEL_TRACES_SAMPLER_ARG` into the explicit OTel source method. Preserve
+absence and explicit-empty fallback to `1.0`, per-resolution resampling,
+Datadog precedence, and warnings.
+
+Create the sampler method and add its receiver-aware allowlist entry in the
+same step so live-entry validation never observes a missing declaration.
+
+Resolve `DD_TRACE_SOURCE_HOSTNAME` with the registered environment-only tracer
+binding. Stage its events on the tracer candidate and use source-attempt
+presence so explicit empty differs from absence. Test invalidated,
+unpublished, and winning candidates, one-time publication, construction
+resampling, and later `WithHostname` precedence.
+
+- [ ] **Step 4: Retire duplicate helper implementations**
+
+First add failing absent, valid, invalid, explicit-empty, and warning tests for
+bootstrap telemetry, `instrumentation/options.GetBoolEnv`, and both private
+AppSec gates.
+
+Reimplement bootstrap telemetry, the nested-module boolean adapter, and the
+two literal private AppSec gates at their exact owners. Delete `IntEnv`,
+`DurationEnv`, `DurationEnvWithUnit`, `IPEnv`, and `FloatEnv`; Task 12 retains
+and then deletes `BoolEnv` and `BoolEnvNoDefault` after OpenFeature migrates.
+
+Prove that `internal/stableconfig` has no non-test importer, retain equivalent
+provider behavior coverage, and delete the duplicate package.
+
+- [ ] **Step 5: Prove the exact intermediate report and commit**
+
+Run:
+
+```sh
+go test ./internal/config/provider ./internal/config ./internal/config/bootstrap
+go test ./instrumentation/options ./internal/appsec ./ddtrace/tracer ./openfeature
+(cd scripts/configaudit && GOWORK=off go test ./...)
+(cd scripts/configaudit && GOWORK=off go run . -root ../.. -format json \
+  > /tmp/config-audit-task12a.json) || true
+make config-audit > /tmp/config-audit-task12a.txt || true
+```
+
+Run the affected nested-module tests explicitly:
+
+```sh
+(cd contrib/go-redis/redis.v7 && go test ./...)
+(cd contrib/go-redis/redis.v8 && go test ./...)
+(cd contrib/go.uber.org/zap && go test ./...)
+(cd contrib/gomodule/redigo && go test ./...)
+(cd contrib/julienschmidt/httprouter && go test ./...)
+(cd contrib/log/slog && go test ./...)
+(cd contrib/net/http && go test ./...)
+(cd contrib/redis/go-redis.v9 && go test ./...)
+(cd contrib/redis/rueidis && go test ./...)
+(cd contrib/rs/zerolog && go test ./...)
+(cd contrib/sirupsen/logrus && go test ./...)
+(cd contrib/valkey-io/valkey-go && go test ./...)
+make fix-modules
+git diff --exit-code -- ':(glob)**/go.mod' ':(glob)**/go.sum'
+```
+
+The report must contain exactly:
+
+- two unmigrated OpenFeature booleans, one call each;
+- provider enablement once and service, environment, and version twice each in
+  `migrated_but_still_read_outside`;
+- two unresolved dynamic reads inside the retained `BoolEnv` and
+  `BoolEnvNoDefault` implementations;
+- no untracked keys, suppressions, or coverage errors.
+
+Assert the report:
+
+```sh
+jq -e '
+  def calls($bucket; $name):
+    ([.[$bucket][]? | select(.name == $name) | .call_sites[]?] | length);
+  ([.unmigrated[].name] | sort) == [
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED",
+    "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
+  ] and
+  calls("unmigrated";
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED") == 1 and
+  calls("unmigrated"; "DD_FLAGGING_EVALUATION_COUNTS_ENABLED") == 1 and
+  ([.migrated_but_still_read_outside[].name] | sort) == [
+    "DD_ENV",
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED",
+    "DD_SERVICE",
+    "DD_VERSION"
+  ] and
+  calls("migrated_but_still_read_outside"; "DD_ENV") == 2 and
+  calls("migrated_but_still_read_outside";
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED") == 1 and
+  calls("migrated_but_still_read_outside"; "DD_SERVICE") == 2 and
+  calls("migrated_but_still_read_outside"; "DD_VERSION") == 2 and
+  ([.unresolved[].call_site.Func] | sort) == [
+    "github.com/DataDog/dd-trace-go/v2/internal.BoolEnvNoDefault",
+    "github.com/DataDog/dd-trace-go/v2/internal/env.Lookup"
+  ] and
+  ((.untracked // []) | length) == 0 and
+  ((.suppressions // []) | length) == 0 and
+  ((.coverage_errors // []) | length) == 0 and
+  .scope.root_module == "github.com/DataDog/dd-trace-go/v2" and
+  ((.scope.excluded_modules // []) | length) > 0 and
+  all(.scope.excluded_modules[];
+    ((.path | type) == "string" and (.path | length) > 0) and
+    ((.dir | type) == "string" and (.dir | length) > 0)) and
+  ([.scope.excluded_modules[].dir] ==
+    ([.scope.excluded_modules[].dir] | sort)) and
+  ([.scope.excluded_modules[].dir] | length) ==
+    ([.scope.excluded_modules[].dir] | unique | length)
+' /tmp/config-audit-task12a.json
+```
+
+The JSON command is expected to exit nonzero until Task 12; this assertion,
+not its exit code, validates the intermediate report.
+
+Do not allowlist `internal/env.go`. Run the remaining verification:
+
+```sh
+go test -race ./internal/config/provider ./internal/config \
+  ./internal/config/bootstrap ./instrumentation/options ./internal/appsec
+go test -tags=deadlock ./internal/config/provider ./internal/config \
+  ./internal/config/bootstrap ./instrumentation/options ./internal/appsec
+gofmt -w $(git diff --name-only --diff-filter=ACM -- '*.go')
+git diff --check
+```
+
+Run `ai-writing-check` on prose and write the ignored implementation report
+with the verification results. Then commit:
+
+```sh
+git add scripts/configaudit internal/config internal/appsec internal/env.go \
+  instrumentation/options
+git add -u
+git diff --cached --check
+git commit -m "refactor(config): close residual configuration reads"
+```
+
+Afterward, request a fresh history-free adversarial review. Fix each actionable
+finding, amend the same commit, and repeat with a new reviewer until the
+verdict is exactly `Approved`.
+
 ## Task 12: Migrate OpenFeature and prove the inventory is exhausted
 
 **Files:**
 
 - Create: `internal/config/openfeature.go`
 - Create: `internal/config/openfeature_test.go`
+- Modify: `internal/config/definitions_test.go`
+- Modify: `internal/env.go`
 - Modify: `openfeature/exposure.go`
 - Modify: `openfeature/flageval_logging.go`
 - Modify: `openfeature/provider.go`
+- Modify: `openfeature/remoteconfig.go`
+- Modify: corresponding OpenFeature tests
+- Modify: remaining tests that call deleted root environment helpers
+- Modify: `scripts/configaudit/migrated_test.go`
+- Modify: `scripts/configaudit/scan_test.go`
 - Test: corresponding package tests
 
 **Interfaces:**
 
 - Produces: `ResolveOpenFeatureSnapshot() OpenFeatureSnapshot`
+- Produces: an ungated provider-construction snapshot mode for compatibility
+  helpers
 - Consumes: registry and resolver foundation
 
 - [ ] **Step 1: Capture the remaining report**
@@ -1045,18 +1270,28 @@ Run:
 
 ```sh
 make config-audit > /tmp/config-audit-task12-before.txt || true
-(cd scripts/configaudit && GOWORK=off go run . -root ../.. -format json) \
-  > /tmp/config-audit-task12.json
+(cd scripts/configaudit && GOWORK=off go run . -root ../.. -format json \
+  > /tmp/config-audit-task12.json) || true
 ```
 
-The only expected findings are the OpenFeature call sites listed in this task.
-Any other finding means its owning earlier task is incomplete; return to that
-task and its behavior tests before changing OpenFeature.
+Require the exact Task 12a residual set: nine OpenFeature consumer calls and
+the two unresolved reads inside `BoolEnv` and `BoolEnvNoDefault`. Any other
+finding means its owning earlier task is incomplete. Re-run the same `jq`
+assertion used by Task 12a before editing.
 
 - [ ] **Step 2: Add failing OpenFeature tests**
 
-Test executable fallback for service, environment-only env/version, feature
-booleans, and construction-time resampling.
+Test the six snapshot fields, disabled short-circuit, executable and global
+service fallback, environment-only service/environment/version, all accepted
+boolean spellings, invalid and explicit-empty input, construction resampling,
+raw telemetry values, exact hook ordering, and immutable fast and slow Remote
+Config paths.
+
+The public mode must resolve enablement first and sample nothing else when
+disabled. The ungated compatibility mode samples the five provider fields
+without consulting enablement. Existing standalone writer helpers must sample
+only service, environment, and version; they must not read the gate or either
+secondary boolean.
 
 - [ ] **Step 3: Run and observe failures**
 
@@ -1070,15 +1305,30 @@ Expected: missing snapshot API.
 
 - [ ] **Step 4: Implement and replace remaining consumers**
 
-Create the OpenFeature snapshot with environment-only shared fields and the
-existing global service fallback. Replace the direct reads in
-`exposure.go`, `flageval_logging.go`, and `provider.go`.
+Register the two missing booleans and one environment-only, constructor-scoped
+binding containing all six keys. Use one direct environment provider; do not
+use the OTel-compatible or stable provider.
+
+Pass one immutable snapshot through `NewDatadogProvider`,
+`startWithRemoteConfig`, provider construction, and both writers. Preserve the
+disabled no-op path, Remote Config kill switch, shared EVP client, exact hook
+order, boolean defaults, and `DD_SERVICE` then global service then executable
+fallback. Telemetry reports the raw environment value, not a fallback.
+
+Keep explicit snapshot-aware production helpers and compatibility wrappers
+with their existing sampling behavior. Context-only writer wrappers resolve
+only service, environment, and version. Delete `BoolEnv`,
+`BoolEnvNoDefault`, and their remaining test callers only after OpenFeature no
+longer uses them.
 
 - [ ] **Step 5: Prove an empty audit and commit**
 
 Run:
 
 ```sh
+go test ./openfeature ./internal/config ./ddtrace/tracer \
+  ./internal/civisibility/integrations/gotesting
+go test -race ./openfeature ./internal/config
 (cd scripts/configaudit && GOWORK=off go test ./...)
 (cd scripts/configaudit && GOWORK=off go run . -root ../.. -format json) \
   > /tmp/config-audit-zero.json
@@ -1088,16 +1338,41 @@ jq -e '
   ((.migrated_but_still_read_outside // []) | length) == 0 and
   ((.unresolved // []) | length) == 0 and
   ((.suppressions // []) | length) == 0 and
-  ((.coverage_errors // []) | length) == 0
+  ((.coverage_errors // []) | length) == 0 and
+  .scope.root_module == "github.com/DataDog/dd-trace-go/v2" and
+  ((.scope.excluded_modules // []) | length) > 0 and
+  all(.scope.excluded_modules[];
+    ((.path | type) == "string" and (.path | length) > 0) and
+    ((.dir | type) == "string" and (.dir | length) > 0)) and
+  ([.scope.excluded_modules[].dir] ==
+    ([.scope.excluded_modules[].dir] | sort)) and
+  ([.scope.excluded_modules[].dir] | length) ==
+    ([.scope.excluded_modules[].dir] | unique | length)
 ' /tmp/config-audit-zero.json
 make config-audit > /tmp/config-audit-zero.txt
 test ! -s /tmp/config-audit-zero.txt
-gofmt -w $(git diff --name-only --diff-filter=ACM -- '*.go')
+gofmt -w $(git ls-files --modified --others --exclude-standard -- '*.go')
 git diff --check
-git add internal/config openfeature
+```
+
+Add the two keys to the migrated inventory, update the registry-count
+assertion from the actual post-Task-12a baseline, and replace the real-repo
+nonzero smoke assertion with a clean-root assertion. The supported
+configuration JSON already contains both keys and should not change.
+
+The JSON report must retain the root and excluded-module scope metadata while
+all six failure buckets are empty. Run `ai-writing-check` on prose and write
+the ignored implementation report with the verification results. Then commit:
+
+```sh
+git add internal/config internal/env.go openfeature scripts/configaudit
 git add -u
+git diff --cached --check
 git commit -m "refactor(config): finish root-module configuration migration"
 ```
+
+Obtain a fresh history-free adversarial review, amend every actionable finding
+into the Task 12 commit, and repeat until the verdict is exactly `Approved`.
 
 ## Task 13: Update docs and run final verification
 
