@@ -40,6 +40,13 @@ func (o *otelEnvConfigSource) lookupRaw(key string) (string, bool) {
 	return env.Lookup(entry.ot)
 }
 
+func (o *otelEnvConfigSource) lookupSamplerArgument() string {
+	if value := env.Get("OTEL_TRACES_SAMPLER_ARG"); value != "" {
+		return value
+	}
+	return "1.0"
+}
+
 func (o *otelEnvConfigSource) lookupWithEvents(key string) (string, bool, bool, error, []ConfigEvent) {
 	ddKey := normalizeKey(key)
 	entry := otelConfigs[ddKey]
@@ -213,14 +220,6 @@ func mapEnabled(ot string) (string, error) {
 	}
 }
 
-// otelTraceIDRatio returns the value of OTEL_TRACES_SAMPLER_ARG if set, otherwise "1.0"
-func otelTraceIDRatio() string {
-	if v := env.Get("OTEL_TRACES_SAMPLER_ARG"); v != "" {
-		return v
-	}
-	return "1.0"
-}
-
 // mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE
 func mapSampleRate(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
@@ -232,7 +231,7 @@ func mapSampleRate(ot string) (string, error) {
 	var samplerMapping = map[string]string{
 		"parentbased_always_on":    "1.0",
 		"parentbased_always_off":   "0.0",
-		"parentbased_traceidratio": otelTraceIDRatio(),
+		"parentbased_traceidratio": new(otelEnvConfigSource).lookupSamplerArgument(),
 	}
 	if v, ok := samplerMapping[ot]; ok {
 		return v, nil

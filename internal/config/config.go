@@ -409,10 +409,13 @@ func (c *Config) DrainPublicationTelemetry() {
 		p.FlushTelemetry()
 	}
 	for {
+		// Source attempts are accepted while the candidate is loaded, before
+		// programmatic setters run. Submit them first so a later code override
+		// receives the higher sequence ID used to select the winning value.
+		instrumentationReporter.Report(configEvents, generation)
 		for _, report := range pending {
 			report.submit()
 		}
-		instrumentationReporter.Report(configEvents, generation)
 		c.mu.Lock()
 		if len(c.pendingTelemetry) == 0 && len(c.pendingConfigEvents) == 0 {
 			c.deferTelemetry = false
@@ -652,10 +655,12 @@ func loadConfig() *Config {
 		cfg.hostname = hostname
 		cfg.reportHostname = true
 	}
-	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set, it takes precedence over the hostname lookup
-	if sourceHostname, ok := env.Lookup("DD_TRACE_SOURCE_HOSTNAME"); ok {
+	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set, it takes precedence over the hostname lookup.
+	sourceHostname, sourceHostnameEvents := resolveString("DD_TRACE_SOURCE_HOSTNAME", tracerSourceHostnameBinding)
+	reportTracerCandidateEvents(cfg, sourceHostnameEvents)
+	if sourcePresent(sourceHostname.Attempts) {
 		// Explicitly configured hostname - always report it
-		cfg.hostname = sourceHostname
+		cfg.hostname = sourceHostname.Winner.Value
 		cfg.reportHostname = true
 	}
 

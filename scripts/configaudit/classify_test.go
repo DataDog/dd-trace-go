@@ -165,6 +165,12 @@ func TestFilterByPackage(t *testing.T) {
 func TestRenderJSON(t *testing.T) {
 	res := AuditResult{
 		Unmigrated: []ConfigEntry{{Name: "DD_SITE"}},
+		Scope: AuditScope{
+			RootModule: "example.com/root",
+			ExcludedModules: []ScopeModule{
+				{Path: "example.com/nested", Dir: "nested"},
+			},
+		},
 	}
 	var buf bytes.Buffer
 	if err := renderJSON(&buf, res); err != nil {
@@ -176,6 +182,11 @@ func TestRenderJSON(t *testing.T) {
 	}
 	if len(got.Unmigrated) != 1 || got.Unmigrated[0].Name != "DD_SITE" {
 		t.Fatalf("round-trip failed: %+v", got)
+	}
+	if got.Scope.RootModule != "example.com/root" ||
+		len(got.Scope.ExcludedModules) != 1 ||
+		got.Scope.ExcludedModules[0] != (ScopeModule{Path: "example.com/nested", Dir: "nested"}) {
+		t.Fatalf("scope round-trip failed: %+v", got.Scope)
 	}
 }
 
@@ -194,6 +205,25 @@ func TestAuditResultClean(t *testing.T) {
 		if result.Clean() {
 			t.Errorf("%s result should not be clean", name)
 		}
+	}
+}
+
+func TestAuditScopeDoesNotAffectCleanOrTableOutput(t *testing.T) {
+	result := AuditResult{Scope: AuditScope{
+		RootModule: "example.com/root",
+		ExcludedModules: []ScopeModule{
+			{Path: "example.com/nested", Dir: "nested"},
+		},
+	}}
+	if !result.Clean() {
+		t.Fatal("scope metadata must not make an otherwise clean result fail")
+	}
+	var output bytes.Buffer
+	if err := renderTable(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("scope-only table output = %q, want empty", output.String())
 	}
 }
 

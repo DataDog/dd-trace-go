@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -45,12 +46,28 @@ func TestScanCoverage_ReportsVariantPackageErrors(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "broken_windows.go"), []byte("//go:build windows\n\npackage coverage\nfunc Broken() { missing }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	errs := scanCoverage(dir)
-	if len(errs) == 0 {
+	coverage := scanCoverage(dir)
+	if len(coverage.Errors) == 0 {
 		t.Fatal("expected windows variant package errors")
 	}
-	if !strings.Contains(strings.Join(errs, "\n"), "windows-amd64") {
-		t.Fatalf("coverage errors = %v, want windows-amd64 error", errs)
+	if !strings.Contains(strings.Join(coverage.Errors, "\n"), "windows-amd64") {
+		t.Fatalf("coverage errors = %v, want windows-amd64 error", coverage.Errors)
+	}
+}
+
+func TestScanCoverage_RealRepoPackageCounts(t *testing.T) {
+	coverage := scanCoverage(filepath.Join("..", ".."))
+	if len(coverage.Errors) != 0 {
+		t.Fatalf("coverage errors = %v", coverage.Errors)
+	}
+	want := map[string]int{
+		"host":               149,
+		"linux-amd64":        149,
+		"windows-amd64":      149,
+		"linux-amd64-appsec": 149,
+	}
+	if !reflect.DeepEqual(coverage.PackageCounts, want) {
+		t.Fatalf("package counts = %#v, want %#v", coverage.PackageCounts, want)
 	}
 }
 
@@ -133,6 +150,46 @@ func readConfig() {
 	}
 }
 
+func TestScan_KnownSamePackageReaderIdentityIsNotFlattened(t *testing.T) {
+	dir := writeSyntaxFixtureWithModule(t, "github.com/DataDog/dd-trace-go/v2", map[string]string{
+		"internal/env.go": `package internal
+
+import env "github.com/DataDog/dd-trace-go/v2/internal/env"
+
+func BoolEnv(key string, def bool) bool {
+	value, ok := BoolEnvNoDefault(key)
+	if !ok {
+		return def
+	}
+	return value
+}
+
+func BoolEnvNoDefault(key string) (bool, bool) {
+	_, ok := env.Lookup(key)
+	return false, ok
+}
+`,
+	})
+	findings, err := scanSyntax(dir, nil)
+	if err != nil {
+		t.Fatalf("scanSyntax: %v", err)
+	}
+	var identities []string
+	for _, finding := range findings {
+		if finding.Unresolved {
+			identities = append(identities, finding.CallSite.Func)
+		}
+	}
+	sort.Strings(identities)
+	want := []string{
+		"github.com/DataDog/dd-trace-go/v2/internal.BoolEnvNoDefault",
+		"github.com/DataDog/dd-trace-go/v2/internal/env.Lookup",
+	}
+	if !reflect.DeepEqual(identities, want) {
+		t.Fatalf("unresolved reader identities = %#v, want %#v", identities, want)
+	}
+}
+
 func TestScan_ExactAllowlistedWrapperSuppressesUnderlyingRead(t *testing.T) {
 	dir := writeSyntaxFixture(t, map[string]string{
 		"wrapper.go": `package fixture
@@ -152,6 +209,176 @@ func allowedRead(key string) string {
 	}
 	if len(findings) != 0 {
 		t.Fatalf("exact allowlisted wrapper should suppress its underlying read, got %#v", findings)
+	}
+}
+
+func TestScan_AllowlistUsesReceiverIdentity(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"readers.go": `package fixture
+
+import "os"
+
+type allowedReader struct{}
+type otherReader struct{}
+
+func (allowedReader) lookup() string {
+	return os.Getenv("DD_ALLOWED_RECEIVER")
+}
+
+func (otherReader) lookup() string {
+	return os.Getenv("DD_OTHER_RECEIVER")
+}
+
+func lookup() string {
+	return os.Getenv("DD_FREE_FUNCTION")
+}
+
+func rogue() string {
+	return os.Getenv("DD_ROGUE_FUNCTION")
+}
+`,
+	})
+	findings, err := scanSyntax(dir, rawReadAllowlist{
+		{File: "readers.go", Receiver: "allowedReader", Func: "lookup"}: {},
+	})
+	if err != nil {
+		t.Fatalf("scanSyntax: %v", err)
+	}
+	if hasFinding(findings, "DD_ALLOWED_RECEIVER", false, false) {
+		t.Fatalf("exact receiver boundary must suppress its own raw read, got %#v", findings)
+	}
+	for _, key := range []string{"DD_OTHER_RECEIVER", "DD_FREE_FUNCTION", "DD_ROGUE_FUNCTION"} {
+		if !hasFinding(findings, key, false, false) {
+			t.Errorf("allowlist must not suppress %s, got %#v", key, findings)
+		}
+	}
+}
+
+func TestScan_AllowlistNormalizesPointerAndGenericReceivers(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"readers.go": `package fixture
+
+import "os"
+
+type pointerReader struct{}
+type genericReader[T any] struct{}
+
+func (*pointerReader) lookup() string {
+	return os.Getenv("DD_POINTER_RECEIVER")
+}
+
+func (*genericReader[T]) lookup() string {
+	return os.Getenv("DD_GENERIC_RECEIVER")
+}
+`,
+	})
+	findings, err := scanSyntax(dir, rawReadAllowlist{
+		{File: "readers.go", Receiver: "pointerReader", Func: "lookup"}: {},
+		{File: "readers.go", Receiver: "genericReader", Func: "lookup"}: {},
+	})
+	if err != nil {
+		t.Fatalf("scanSyntax: %v", err)
+	}
+	for _, key := range []string{"DD_POINTER_RECEIVER", "DD_GENERIC_RECEIVER"} {
+		if hasFinding(findings, key, false, false) {
+			t.Errorf("normalized receiver boundary must suppress %s, got %#v", key, findings)
+		}
+	}
+}
+
+func TestDefaultRawReadAllowlistProviderBoundaries(t *testing.T) {
+	var got []rawReadLocation
+	for location := range defaultRawReadAllowlist() {
+		if strings.HasPrefix(location.File, "internal/config/provider/") {
+			got = append(got, location)
+		}
+	}
+	sort.Slice(got, func(i, j int) bool {
+		if got[i].File != got[j].File {
+			return got[i].File < got[j].File
+		}
+		if got[i].Receiver != got[j].Receiver {
+			return got[i].Receiver < got[j].Receiver
+		}
+		return got[i].Func < got[j].Func
+	})
+	want := []rawReadLocation{
+		{File: "internal/config/provider/envconfigsource.go", Receiver: "envConfigSource", Func: "lookup"},
+		{File: "internal/config/provider/otelenvconfigsource.go", Receiver: "otelEnvConfigSource", Func: "lookupRaw"},
+		{File: "internal/config/provider/otelenvconfigsource.go", Receiver: "otelEnvConfigSource", Func: "lookupSamplerArgument"},
+		{File: "internal/config/provider/otelenvconfigsource.go", Receiver: "otelEnvConfigSource", Func: "lookupWithEvents"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("provider boundaries = %#v, want %#v", got, want)
+	}
+}
+
+func TestScan_RejectsMissingRawReadAllowlistEntry(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"readers.go": "package fixture\n",
+	})
+	_, err := scanSyntax(dir, rawReadAllowlist{
+		{File: "readers.go", Receiver: "missingReader", Func: "lookup"}: {},
+	})
+	if err == nil || !strings.Contains(err.Error(), "readers.go: missingReader.lookup declaration not found") {
+		t.Fatalf("scanSyntax error = %v, want missing allowlist declaration", err)
+	}
+}
+
+func TestScan_RejectsAmbiguousRawReadAllowlistEntry(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"readers.go": `package fixture
+
+import "os"
+
+type reader struct{}
+
+func (reader) lookup() string { return os.Getenv("DD_FIRST") }
+func (reader) lookup() string { return os.Getenv("DD_SECOND") }
+`,
+	})
+	_, err := scanSyntax(dir, rawReadAllowlist{
+		{File: "readers.go", Receiver: "reader", Func: "lookup"}: {},
+	})
+	if err == nil || !strings.Contains(err.Error(), "readers.go: reader.lookup matches 2 declarations") {
+		t.Fatalf("scanSyntax error = %v, want ambiguous allowlist declaration", err)
+	}
+}
+
+func TestScan_RejectsStaleRawReadAllowlistEntry(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"readers.go": `package fixture
+
+type reader struct{}
+
+func (reader) lookup() string { return "constant" }
+`,
+	})
+	_, err := scanSyntax(dir, rawReadAllowlist{
+		{File: "readers.go", Receiver: "reader", Func: "lookup"}: {},
+	})
+	if err == nil || !strings.Contains(err.Error(), "readers.go: reader.lookup contains no recognized raw read") {
+		t.Fatalf("scanSyntax error = %v, want stale allowlist entry", err)
+	}
+}
+
+func TestScan_RejectsRawReadAllowlistEntryInExcludedModule(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"nested/go.mod": "module example.com/nested\n\ngo 1.25.0\n",
+		"nested/readers.go": `package nested
+
+import "os"
+
+type reader struct{}
+
+func (reader) lookup() string { return os.Getenv("DD_NESTED") }
+`,
+	})
+	_, err := scanSyntax(dir, rawReadAllowlist{
+		{File: "nested/readers.go", Receiver: "reader", Func: "lookup"}: {},
+	})
+	if err == nil || !strings.Contains(err.Error(), "nested/readers.go: reader.lookup belongs to excluded nested module") {
+		t.Fatalf("scanSyntax error = %v, want excluded-module allowlist entry", err)
 	}
 }
 
@@ -211,6 +438,74 @@ func TestScan_StringLiteralsAreUnquoted(t *testing.T) {
 		if !hasFinding(findings, key, false, false) {
 			t.Errorf("expected decoded %s finding, got %#v", key, findings)
 		}
+	}
+}
+
+func TestScanSyntaxRecognizesOptionsBoolAndInternalIPReaders(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"reader.go": `package fixture
+
+import (
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+)
+
+func read() {
+	_ = options.GetBoolEnv("DD_OPTIONS_BOOL", false)
+	_ = globalinternal.IPEnv("DD_INTERNAL_IP", nil)
+}
+`,
+	})
+	findings, err := scanSyntax(dir, nil)
+	if err != nil {
+		t.Fatalf("scanSyntax: %v", err)
+	}
+	for _, key := range []string{"DD_OPTIONS_BOOL", "DD_INTERNAL_IP"} {
+		if !hasFinding(findings, key, false, false) {
+			t.Errorf("syntax pass missed %s: %#v", key, findings)
+		}
+	}
+}
+
+func TestScanTypeRecognizesExactOptionsBoolAndInternalIPReaders(t *testing.T) {
+	dir := writeSyntaxFixtureWithModule(t, "github.com/DataDog/dd-trace-go/v2", map[string]string{
+		"internal/readers.go": `package internal
+
+func IPEnv(key, def string) string { return def }
+`,
+		"instrumentation/options/options.go": `package options
+
+func GetBoolEnv(key string, def bool) bool { return def }
+
+type Reader struct{}
+
+func (Reader) GetBoolEnv(key string, def bool) bool { return def }
+`,
+		"consumer/read.go": `package consumer
+
+import (
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+)
+
+func read() {
+	_ = options.GetBoolEnv("DD_OPTIONS_BOOL", false)
+	_ = globalinternal.IPEnv("DD_INTERNAL_IP", "")
+	_ = (options.Reader{}).GetBoolEnv("DD_METHOD_FALSE_POSITIVE", false)
+}
+`,
+	})
+	reads, err := scan(dir, defaultRecognizers(), nil)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	for _, key := range []string{"DD_OPTIONS_BOOL", "DD_INTERNAL_IP"} {
+		if len(reads[key]) != 1 {
+			t.Errorf("%s call sites = %#v, want exactly one", key, reads[key])
+		}
+	}
+	if len(reads["DD_METHOD_FALSE_POSITIVE"]) != 0 {
+		t.Fatalf("method call must not match package-function recognizer: %#v", reads["DD_METHOD_FALSE_POSITIVE"])
 	}
 }
 
@@ -547,8 +842,88 @@ func TestScan_Suppression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scanSyntax: %v", err)
 	}
+	if !hasFinding(findings, "DD_SUPPRESSED", false, false) {
+		t.Fatalf("suppression annotation must not hide the ordinary read, got %#v", findings)
+	}
 	if !hasFinding(findings, "DD_SUPPRESSED", false, true) {
 		t.Fatalf("expected suppression finding, got %#v", findings)
+	}
+}
+
+func TestScan_SuppressionSurvivesAllowlistFiltering(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"reader.go": `package fixture
+
+import "os"
+
+type reader struct{}
+
+func (reader) lookup() string {
+	return os.Getenv("DD_ALLOWLISTED_SUPPRESSION") //nolint:configaudit
+}
+`,
+	})
+	findings, err := scanSyntax(dir, rawReadAllowlist{
+		{File: "reader.go", Receiver: "reader", Func: "lookup"}: {},
+	})
+	if err != nil {
+		t.Fatalf("scanSyntax: %v", err)
+	}
+	if got := countSuppressions(findings); got != 1 {
+		t.Fatalf("suppression count = %d, want 1: %#v", got, findings)
+	}
+	if !hasFinding(findings, "DD_ALLOWLISTED_SUPPRESSION", false, true) {
+		t.Fatalf("allowlisted suppression must retain reader details, got %#v", findings)
+	}
+	if hasFinding(findings, "DD_ALLOWLISTED_SUPPRESSION", false, false) {
+		t.Fatalf("allowlisted raw read must remain exempt, got %#v", findings)
+	}
+}
+
+func TestScan_StandaloneSuppressionIsReported(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"reader.go": `package fixture
+
+func read() {
+	//nolint:configaudit
+	_ = "no raw read"
+}
+`,
+	})
+	findings, err := scanSyntax(dir, nil)
+	if err != nil {
+		t.Fatalf("scanSyntax: %v", err)
+	}
+	if got := countSuppressions(findings); got != 1 {
+		t.Fatalf("suppression count = %d, want 1: %#v", got, findings)
+	}
+	if !hasFinding(findings, "", false, true) {
+		t.Fatalf("standalone suppression must be reported without invented key, got %#v", findings)
+	}
+}
+
+func TestScan_OneSuppressionRowPerAnnotation(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"reader.go": `package fixture
+
+import "os"
+
+func read() {
+	_ = os.Getenv("DD_FIRST") + os.Getenv("DD_SECOND") //nolint:configaudit
+}
+`,
+	})
+	findings, err := scanSyntax(dir, nil)
+	if err != nil {
+		t.Fatalf("scanSyntax: %v", err)
+	}
+	if got := countSuppressions(findings); got != 1 {
+		t.Fatalf("suppression count = %d, want one annotation row: %#v", got, findings)
+	}
+	for _, key := range []string{"DD_FIRST", "DD_SECOND"} {
+		if !hasFinding(findings, key, false, false) {
+			t.Errorf("ordinary %s read must remain visible, got %#v", key, findings)
+		}
 	}
 }
 
@@ -562,6 +937,97 @@ func TestDiscoverModules(t *testing.T) {
 	}
 	if len(nested) == 0 {
 		t.Fatal("expected nested modules")
+	}
+}
+
+func TestBuildAuditScopeIncludesNestedModulesAtEveryDepth(t *testing.T) {
+	dir := writeSyntaxFixture(t, map[string]string{
+		"nested/go.mod": "module example.com/nested\n\ngo 1.25.0\n",
+		"nested/reader.go": `package nested
+
+import "os"
+
+func read() { _ = os.Getenv("DD_NESTED") }
+`,
+		"nested/deeper/go.mod": "module example.com/nested/deeper\n\ngo 1.25.0\n",
+		"nested/deeper/reader.go": `package deeper
+
+import "os"
+
+func read() { _ = os.Getenv("DD_NESTED_DEEPER") }
+`,
+		"root.go": `package fixture
+
+import "os"
+
+func read() { _ = os.Getenv("DD_ROOT") }
+`,
+	})
+
+	scope, err := buildAuditScope(dir)
+	if err != nil {
+		t.Fatalf("buildAuditScope: %v", err)
+	}
+	want := []ScopeModule{
+		{Path: "example.com/nested", Dir: "nested"},
+		{Path: "example.com/nested/deeper", Dir: "nested/deeper"},
+	}
+	if !reflect.DeepEqual(scope.ExcludedModules, want) {
+		t.Fatalf("excluded modules = %#v, want %#v", scope.ExcludedModules, want)
+	}
+
+	findings, err := scanSyntax(dir, nil)
+	if err != nil {
+		t.Fatalf("scanSyntax: %v", err)
+	}
+	if !hasFinding(findings, "DD_ROOT", false, false) {
+		t.Fatalf("root read must be scanned, got %#v", findings)
+	}
+	for _, key := range []string{"DD_NESTED", "DD_NESTED_DEEPER"} {
+		if hasFinding(findings, key, false, false) {
+			t.Fatalf("nested module read %s must be excluded, got %#v", key, findings)
+		}
+	}
+}
+
+func TestCollectAuditScopeMatchesDiscoveredModules(t *testing.T) {
+	root := filepath.Join("..", "..")
+	rootModule, nested, err := discoverModules(root)
+	if err != nil {
+		t.Fatalf("discoverModules: %v", err)
+	}
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := make([]ScopeModule, 0, len(nested))
+	seenDirs := make(map[string]struct{}, len(nested))
+	for _, module := range nested {
+		rel, err := filepath.Rel(absoluteRoot, module.Dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir := filepath.ToSlash(rel)
+		if module.Path == "" || dir == "" || dir == "." || strings.HasPrefix(dir, "../") {
+			t.Fatalf("invalid discovered module: path=%q dir=%q", module.Path, dir)
+		}
+		if _, duplicate := seenDirs[dir]; duplicate {
+			t.Fatalf("duplicate discovered module directory %q", dir)
+		}
+		seenDirs[dir] = struct{}{}
+		want = append(want, ScopeModule{Path: module.Path, Dir: dir})
+	}
+	sort.Slice(want, func(i, j int) bool { return want[i].Dir < want[j].Dir })
+
+	result, err := collectAudit(root, "")
+	if err != nil {
+		t.Fatalf("collectAudit: %v", err)
+	}
+	if result.Scope.RootModule != rootModule.Path {
+		t.Fatalf("root module = %q, want %q", result.Scope.RootModule, rootModule.Path)
+	}
+	if !reflect.DeepEqual(result.Scope.ExcludedModules, want) {
+		t.Fatalf("excluded modules = %#v, want complete discovered set %#v", result.Scope.ExcludedModules, want)
 	}
 }
 
@@ -611,7 +1077,7 @@ func Rogue() string {
 }
 `,
 	})
-	result, err := collectAudit(dir, "")
+	result, err := collectAuditWithRawReadAllowlist(dir, "", nil)
 	if err != nil {
 		t.Fatalf("collectAudit: %v", err)
 	}
@@ -640,8 +1106,14 @@ func hasFinding(findings []Finding, key string, unresolved, suppressed bool) boo
 
 func writeSyntaxFixture(t *testing.T, files map[string]string) string {
 	t.Helper()
+	return writeSyntaxFixtureWithModule(t, "example.com/fixture", files)
+}
+
+func writeSyntaxFixtureWithModule(t *testing.T, module string, files map[string]string) string {
+	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/fixture\n\ngo 1.25.0\n"), 0o600); err != nil {
+	goMod := "module " + module + "\n\ngo 1.25.0\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for name, contents := range files {
@@ -677,7 +1149,7 @@ func TestScan_Fixture(t *testing.T) {
 		gotKeys = append(gotKeys, k)
 	}
 	sort.Strings(gotKeys)
-	want := []string{"DD_HOSTNAME", "DD_PROFILING_ENABLED", "DD_SITE", "DD_TRACE_AGENT_PORT"}
+	want := []string{"DD_ENV", "DD_HOSTNAME", "DD_PROFILING_ENABLED", "DD_SITE", "DD_SUPPRESSED", "DD_TRACE_AGENT_PORT"}
 	if len(gotKeys) != len(want) {
 		t.Fatalf("got keys %v, want %v", gotKeys, want)
 	}
@@ -689,10 +1161,20 @@ func TestScan_Fixture(t *testing.T) {
 	if len(got["DD_SITE"]) != 1 {
 		t.Errorf("DD_SITE call-site count = %d, want 1", len(got["DD_SITE"]))
 	}
-	// DD_ENV is suppressed with //nolint:configaudit and must not appear.
-	if len(got["DD_ENV"]) != 0 {
-		t.Errorf("DD_ENV should be suppressed, got %d call sites", len(got["DD_ENV"]))
+	// A suppression is an independent audit finding and cannot hide the read.
+	if len(got["DD_ENV"]) != 1 {
+		t.Errorf("DD_ENV call-site count = %d, want 1", len(got["DD_ENV"]))
 	}
+}
+
+func countSuppressions(findings []Finding) int {
+	count := 0
+	for _, finding := range findings {
+		if finding.Suppressed {
+			count++
+		}
+	}
+	return count
 }
 
 func TestScan_RealRepoFindsUnmigratedReads(t *testing.T) {

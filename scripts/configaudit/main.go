@@ -70,6 +70,14 @@ func runWithAudit(root, format, pkgPrefix string, out io.Writer, audit auditFunc
 }
 
 func collectAudit(root, pkgPrefix string) (AuditResult, error) {
+	return collectAuditWithRawReadAllowlist(root, pkgPrefix, defaultRawReadAllowlist())
+}
+
+func collectAuditWithRawReadAllowlist(root, pkgPrefix string, allow rawReadAllowlist) (AuditResult, error) {
+	scope, err := buildAuditScope(root)
+	if err != nil {
+		return AuditResult{}, err
+	}
 	known, err := loadKnown(filepath.Join(root, "internal", "env", "supported_configurations.json"))
 	if err != nil {
 		return AuditResult{}, err
@@ -82,23 +90,24 @@ func collectAudit(root, pkgPrefix string) (AuditResult, error) {
 	if err != nil {
 		return AuditResult{}, err
 	}
-	findings, err := scanSyntax(root, defaultRawReadAllowlist())
+	findings, err := scanSyntax(root, allow)
 	if err != nil {
 		return AuditResult{}, err
 	}
 	for _, finding := range findings {
-		if finding.Key != "" {
+		if finding.Key != "" && !finding.Suppressed {
 			reads[finding.Key] = appendUniqueCallSite(reads[finding.Key], finding.CallSite)
 		}
 	}
 	reads = filterByPackage(reads, pkgPrefix)
 	res := classify(known, migrated, reads)
-	res.CoverageErrors = scanCoverage(root)
+	res.Scope = scope
+	res.CoverageErrors = scanCoverage(root).Errors
 	for _, finding := range findings {
 		if !matchesPackage(finding.CallSite, pkgPrefix) {
 			continue
 		}
-		if finding.Unresolved {
+		if finding.Unresolved && !finding.Suppressed {
 			res.Unresolved = append(res.Unresolved, finding)
 		}
 		if finding.Suppressed {

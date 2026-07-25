@@ -8,10 +8,12 @@
 package bootstrap
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var telemetryStatePointer atomic.Pointer[telemetryState]
@@ -31,9 +33,22 @@ func TelemetryEnabled() bool {
 		return false
 	}
 	state.once.Do(func() {
-		state.enabled = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+		raw, present := env.Lookup("DD_INSTRUMENTATION_TELEMETRY_ENABLED")
+		state.enabled = parseTelemetryEnabledValue(raw, present)
 	})
 	return state.enabled && !state.disabled.Load()
+}
+
+func parseTelemetryEnabledValue(raw string, present bool) bool {
+	if !present {
+		return true
+	}
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Warn("Non-boolean value for env var %s. Parse failed with error: %v", "DD_INSTRUMENTATION_TELEMETRY_ENABLED", err.Error())
+		return true
+	}
+	return enabled
 }
 
 // Disable permanently disables telemetry after a fatal telemetry failure.

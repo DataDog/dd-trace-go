@@ -20,8 +20,22 @@ type ConfigEntry struct {
 	CallSites []CallSite `json:"call_sites,omitempty"`
 }
 
+// ScopeModule identifies a nested module excluded from the root-module audit.
+type ScopeModule struct {
+	Path string `json:"path"`
+	Dir  string `json:"dir"`
+}
+
+// AuditScope describes the root module and every nested module excluded from
+// the audit.
+type AuditScope struct {
+	RootModule      string        `json:"root_module"`
+	ExcludedModules []ScopeModule `json:"excluded_modules"`
+}
+
 // AuditResult is the structured output of one audit run.
 type AuditResult struct {
+	Scope                       AuditScope    `json:"scope"`
 	Migrated                    []ConfigEntry `json:"migrated"`
 	Unmigrated                  []ConfigEntry `json:"unmigrated"`
 	Untracked                   []ConfigEntry `json:"untracked"`

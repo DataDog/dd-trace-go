@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"golang.org/x/mod/modfile"
 )
@@ -53,12 +55,47 @@ func discoverModules(root string) (rootModule Module, nested []Module, err error
 			return readErr
 		}
 		nested = append(nested, module)
-		return filepath.SkipDir
+		return nil
 	})
 	if err != nil {
 		return Module{}, nil, fmt.Errorf("discovering nested modules: %w", err)
 	}
 	return rootModule, nested, nil
+}
+
+func buildAuditScope(root string) (AuditScope, error) {
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return AuditScope{}, fmt.Errorf("resolving audit scope root: %w", err)
+	}
+	rootModule, nested, err := discoverModules(absoluteRoot)
+	if err != nil {
+		return AuditScope{}, err
+	}
+	scope := AuditScope{
+		RootModule:      rootModule.Path,
+		ExcludedModules: make([]ScopeModule, 0, len(nested)),
+	}
+	seenDirs := make(map[string]struct{}, len(nested))
+	for _, module := range nested {
+		rel, err := filepath.Rel(absoluteRoot, module.Dir)
+		if err != nil {
+			return AuditScope{}, fmt.Errorf("relativizing nested module %q: %w", module.Dir, err)
+		}
+		dir := filepath.ToSlash(rel)
+		if module.Path == "" || dir == "" || dir == "." || filepath.IsAbs(rel) || strings.HasPrefix(dir, "../") {
+			return AuditScope{}, fmt.Errorf("invalid nested module scope path=%q dir=%q", module.Path, dir)
+		}
+		if _, duplicate := seenDirs[dir]; duplicate {
+			return AuditScope{}, fmt.Errorf("duplicate nested module scope directory %q", dir)
+		}
+		seenDirs[dir] = struct{}{}
+		scope.ExcludedModules = append(scope.ExcludedModules, ScopeModule{Path: module.Path, Dir: dir})
+	}
+	sort.Slice(scope.ExcludedModules, func(i, j int) bool {
+		return scope.ExcludedModules[i].Dir < scope.ExcludedModules[j].Dir
+	})
+	return scope, nil
 }
 
 func readModule(dir string) (Module, error) {

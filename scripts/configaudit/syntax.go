@@ -18,25 +18,35 @@ import (
 )
 
 type rawReadLocation struct {
-	File string
-	Func string
+	File     string
+	Receiver string
+	Func     string
 }
 
 type rawReadAllowlist map[rawReadLocation]struct{}
+
+type rawReadAllowlistStats struct {
+	declarations map[rawReadLocation]int
+	reads        map[rawReadLocation]int
+}
 
 const unresolvedAliasIdentity = "unresolved raw-read alias"
 
 func defaultRawReadAllowlist() rawReadAllowlist {
 	return rawReadAllowlist{
-		{File: "internal/env/env.go", Func: "Get"}:                                                   {},
-		{File: "internal/env/env.go", Func: "Lookup"}:                                                {},
-		{File: "internal/config/bootstrap/appsec.go", Func: "resolveAppSecStackTrace"}:               {},
-		{File: "internal/config/bootstrap/telemetry.go", Func: "TelemetryEnabled"}:                   {},
-		{File: "internal/config/bootstrap/testoptimization.go", Func: "resolveTestOptimization"}:     {},
-		{File: "internal/civisibility/utils/ci_environment.go", Func: "lookupCIProviderEnvironment"}: {},
-		{File: "instrumentation/env/env.go", Func: "Get"}:                                            {},
-		{File: "instrumentation/env/env.go", Func: "Lookup"}:                                         {},
-		{File: "instrumentation/options/options.go", Func: "GetBoolEnv"}:                             {},
+		{File: "internal/env/env.go", Func: "Get"}:                                                                                {},
+		{File: "internal/env/env.go", Func: "Lookup"}:                                                                             {},
+		{File: "internal/config/bootstrap/appsec.go", Func: "resolveAppSecStackTrace"}:                                            {},
+		{File: "internal/config/bootstrap/telemetry.go", Func: "TelemetryEnabled"}:                                                {},
+		{File: "internal/config/bootstrap/testoptimization.go", Func: "resolveTestOptimization"}:                                  {},
+		{File: "internal/config/provider/envconfigsource.go", Receiver: "envConfigSource", Func: "lookup"}:                        {},
+		{File: "internal/config/provider/otelenvconfigsource.go", Receiver: "otelEnvConfigSource", Func: "lookupRaw"}:             {},
+		{File: "internal/config/provider/otelenvconfigsource.go", Receiver: "otelEnvConfigSource", Func: "lookupSamplerArgument"}: {},
+		{File: "internal/config/provider/otelenvconfigsource.go", Receiver: "otelEnvConfigSource", Func: "lookupWithEvents"}:      {},
+		{File: "internal/civisibility/utils/ci_environment.go", Func: "lookupCIProviderEnvironment"}:                              {},
+		{File: "instrumentation/env/env.go", Func: "Get"}:                                                                         {},
+		{File: "instrumentation/env/env.go", Func: "Lookup"}:                                                                      {},
+		{File: "instrumentation/options/options.go", Func: "GetBoolEnv"}:                                                          {},
 	}
 }
 
@@ -109,23 +119,39 @@ func scanSyntax(root string, allow rawReadAllowlist) ([]Finding, error) {
 	}
 	sort.Strings(keys)
 	var findings []Finding
+	stats := rawReadAllowlistStats{
+		declarations: make(map[rawReadLocation]int),
+		reads:        make(map[rawReadLocation]int),
+	}
 	for _, key := range keys {
 		files := packages[key]
 		aliases := packageFunctionAliases(files)
+		for name, identity := range knownSamePackageReaderAliases(root, module.Path, files) {
+			aliases[name] = identity
+		}
 		for name, identity := range packageFunctionWrappers(files, aliases) {
 			aliases[name] = identity
 		}
 		for _, file := range files {
-			findings = append(findings, syntaxFindings(fset, file.file, file.filename, root, module.Path, allow, aliases)...)
+			findings = append(findings, syntaxFindings(fset, file.file, file.filename, root, module.Path, allow, aliases, &stats)...)
 		}
+	}
+	if err := validateRawReadAllowlist(root, nested, allow, stats); err != nil {
+		return nil, err
 	}
 	return findings, nil
 }
 
-func syntaxFindings(fset *token.FileSet, file *ast.File, filename, root, modulePath string, allow rawReadAllowlist, packageAliases map[string]string) []Finding {
+func syntaxFindings(
+	fset *token.FileSet,
+	file *ast.File,
+	filename, root, modulePath string,
+	allow rawReadAllowlist,
+	packageAliases map[string]string,
+	stats *rawReadAllowlistStats,
+) []Finding {
 	imports := importPaths(file)
 	constants := stringConstants(file)
-	suppressed := syntaxSuppressedLines(fset, file)
 	rel, err := filepath.Rel(root, filename)
 	if err != nil {
 		rel = filename
@@ -135,7 +161,7 @@ func syntaxFindings(fset *token.FileSet, file *ast.File, filename, root, moduleP
 	if dir := filepath.ToSlash(filepath.Dir(rel)); dir != "." {
 		pkgPath += "/" + dir
 	}
-	var findings []Finding
+	findings, suppressionsByLine := syntaxSuppressionFindings(fset, file, filename, pkgPath)
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Body == nil {
@@ -149,18 +175,27 @@ func syntaxFindings(fset *token.FileSet, file *ast.File, filename, root, moduleP
 		bindFieldNames(scope, fn.Type.Params)
 		bindFieldNames(scope, fn.Type.Results)
 		state := newSyntaxFunctionState()
+		location := rawReadLocation{
+			File:     rel,
+			Receiver: receiverBaseType(fn.Recv),
+			Func:     fn.Name.Name,
+		}
+		stats.declarations[location]++
 		handle := func(call *ast.CallExpr, identity string) {
 			if len(call.Args) == 0 {
 				return
 			}
-			if _, ok := allow[rawReadLocation{File: rel, Func: fn.Name.Name}]; ok {
+			stats.reads[location]++
+			key, resolved := syntaxStringArg(call.Args[0], constants)
+			pos := fset.Position(call.Pos())
+			end := fset.Position(call.End())
+			enrichSyntaxSuppressions(findings, suppressionsByLine, pos.Line, end.Line, key, identity, resolved)
+			if _, ok := allow[location]; ok {
 				return
 			}
-			key, resolved := syntaxStringArg(call.Args[0], constants)
 			if resolved && !isConfigKey(key) {
 				return
 			}
-			pos := fset.Position(call.Pos())
 			finding := Finding{
 				Key: key,
 				CallSite: CallSite{
@@ -171,18 +206,138 @@ func syntaxFindings(fset *token.FileSet, file *ast.File, filename, root, moduleP
 				},
 				Unresolved: !resolved || identity == unresolvedAliasIdentity,
 			}
-			for line := pos.Line; line <= fset.Position(call.End()).Line; line++ {
-				if suppressed[line] {
-					finding.Suppressed = true
-					break
-				}
-			}
 			findings = append(findings, finding)
 		}
 		scanSyntaxBlock(fn.Body, scope, imports, handle, state)
 		state.flushPending(handle)
 	}
 	return findings
+}
+
+func syntaxSuppressionFindings(
+	fset *token.FileSet,
+	file *ast.File,
+	filename, pkgPath string,
+) ([]Finding, map[int][]int) {
+	var findings []Finding
+	byLine := make(map[int][]int)
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			if !hasNolintConfigaudit(comment.Text) {
+				continue
+			}
+			line := fset.Position(comment.Pos()).Line
+			byLine[line] = append(byLine[line], len(findings))
+			findings = append(findings, Finding{
+				CallSite: CallSite{
+					File:    filename,
+					Line:    line,
+					Func:    "nolint:configaudit",
+					Package: pkgPath,
+				},
+				Suppressed: true,
+			})
+		}
+	}
+	return findings, byLine
+}
+
+func enrichSyntaxSuppressions(
+	findings []Finding,
+	byLine map[int][]int,
+	startLine, endLine int,
+	key, identity string,
+	resolved bool,
+) {
+	for line := startLine; line <= endLine; line++ {
+		for _, index := range byLine[line] {
+			if findings[index].CallSite.Func != "nolint:configaudit" {
+				continue
+			}
+			findings[index].Key = key
+			findings[index].CallSite.Func = identity
+			findings[index].Unresolved = !resolved || identity == unresolvedAliasIdentity
+		}
+	}
+}
+
+func validateRawReadAllowlist(
+	root string,
+	nested []Module,
+	allow rawReadAllowlist,
+	stats rawReadAllowlistStats,
+) error {
+	locations := make([]rawReadLocation, 0, len(allow))
+	for location := range allow {
+		locations = append(locations, location)
+	}
+	sort.Slice(locations, func(i, j int) bool {
+		if locations[i].File != locations[j].File {
+			return locations[i].File < locations[j].File
+		}
+		if locations[i].Receiver != locations[j].Receiver {
+			return locations[i].Receiver < locations[j].Receiver
+		}
+		return locations[i].Func < locations[j].Func
+	})
+	for _, location := range locations {
+		if rawReadLocationInNestedModule(root, nested, location) {
+			return fmt.Errorf("%s belongs to excluded nested module", formatRawReadLocation(location))
+		}
+		switch count := stats.declarations[location]; {
+		case count == 0:
+			return fmt.Errorf("%s declaration not found", formatRawReadLocation(location))
+		case count > 1:
+			return fmt.Errorf("%s matches %d declarations", formatRawReadLocation(location), count)
+		case stats.reads[location] == 0:
+			return fmt.Errorf("%s contains no recognized raw read", formatRawReadLocation(location))
+		}
+	}
+	return nil
+}
+
+func rawReadLocationInNestedModule(root string, nested []Module, location rawReadLocation) bool {
+	filename := filepath.Join(root, filepath.FromSlash(location.File))
+	for _, module := range nested {
+		rel, err := filepath.Rel(module.Dir, filename)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func formatRawReadLocation(location rawReadLocation) string {
+	name := location.Func
+	if location.Receiver != "" {
+		name = location.Receiver + "." + name
+	}
+	return location.File + ": " + name
+}
+
+func receiverBaseType(fields *ast.FieldList) string {
+	if fields == nil || len(fields.List) != 1 {
+		return ""
+	}
+	var expr ast.Expr = fields.List[0].Type
+	for {
+		switch typed := expr.(type) {
+		case *ast.ParenExpr:
+			expr = typed.X
+		case *ast.StarExpr:
+			expr = typed.X
+		case *ast.IndexExpr:
+			expr = typed.X
+		case *ast.IndexListExpr:
+			expr = typed.X
+		case *ast.Ident:
+			return typed.Name
+		case *ast.SelectorExpr:
+			return typed.Sel.Name
+		default:
+			return ""
+		}
+	}
 }
 
 func packageFunctionAliases(files []syntaxFile) map[string]string {
@@ -218,6 +373,31 @@ func packageFunctionAliases(files []syntaxFile) map[string]string {
 	return aliases
 }
 
+func knownSamePackageReaderAliases(root, modulePath string, files []syntaxFile) map[string]string {
+	aliases := map[string]string{}
+	if len(files) == 0 {
+		return aliases
+	}
+	rel, err := filepath.Rel(root, filepath.Dir(files[0].filename))
+	if err != nil {
+		return aliases
+	}
+	pkgPath := modulePath
+	if dir := filepath.ToSlash(rel); dir != "." {
+		pkgPath += "/" + dir
+	}
+	for _, file := range files {
+		for _, declaration := range file.file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv != nil || !isKnownReader(pkgPath, function.Name.Name) {
+				continue
+			}
+			aliases[function.Name.Name] = pkgPath + "." + function.Name.Name
+		}
+	}
+	return aliases
+}
+
 func packageFunctionWrappers(files []syntaxFile, packageAliases map[string]string) map[string]string {
 	wrappers := map[string]string{}
 	for changed := true; changed; {
@@ -234,6 +414,9 @@ func packageFunctionWrappers(files []syntaxFile, packageAliases map[string]strin
 			for _, decl := range file.file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if !ok || fn.Recv != nil || fn.Body == nil {
+					continue
+				}
+				if _, known := packageAliases[fn.Name.Name]; known {
 					continue
 				}
 				identity, ok := forwardingFunctionIdentity(fn, imports, aliases)
@@ -801,9 +984,12 @@ func isKnownReader(path, name string) bool {
 	}
 	if path == "github.com/DataDog/dd-trace-go/v2/internal" {
 		switch name {
-		case "BoolEnv", "BoolEnvNoDefault", "IntEnv", "FloatEnv", "DurationEnv", "DurationEnvWithUnit":
+		case "BoolEnv", "BoolEnvNoDefault", "IntEnv", "IPEnv", "FloatEnv", "DurationEnv", "DurationEnvWithUnit":
 			return true
 		}
+	}
+	if path == "github.com/DataDog/dd-trace-go/v2/instrumentation/options" {
+		return name == "GetBoolEnv"
 	}
 	if path == "github.com/DataDog/dd-trace-go/v2/internal/stableconfig" {
 		switch name {
@@ -839,18 +1025,6 @@ func syntaxStringArg(expr ast.Expr, constants map[string]string) (string, bool) 
 		}
 	}
 	return "", false
-}
-
-func syntaxSuppressedLines(fset *token.FileSet, file *ast.File) map[int]bool {
-	lines := map[int]bool{}
-	for _, group := range file.Comments {
-		for _, comment := range group.List {
-			if hasNolintConfigaudit(comment.Text) {
-				lines[fset.Position(comment.Pos()).Line] = true
-			}
-		}
-	}
-	return lines
 }
 
 func isConfigKey(key string) bool {

@@ -9,12 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -41,15 +42,7 @@ func RASPEnabled() bool {
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(opts ...config.StartOption) {
-	// TODO: Add support to configure the tracer via a public interface
-	if globalinternal.BoolEnv("_DD_APPSEC_BLOCKING_UNAVAILABLE", false) {
-		opts = append(opts, config.WithBlockingUnavailable(true))
-	}
-	if globalinternal.BoolEnv("_DD_APPSEC_PROXY_ENVIRONMENT", false) {
-		opts = append(opts, config.WithProxyEnvironment())
-	}
-
-	startConfig := config.NewStartConfig(opts...)
+	startConfig := newStartConfig(opts...)
 
 	// AppSec can start either:
 	// 1. Manually thanks to DD_APPSEC_ENABLED (or via [config.WithEnablementMode])
@@ -122,6 +115,31 @@ func Start(opts ...config.StartOption) {
 	}
 
 	setActiveAppSec(appsec)
+}
+
+func newStartConfig(opts ...config.StartOption) *config.StartConfig {
+	// TODO: Add support to configure the tracer via a public interface
+	blockingUnavailable, blockingUnavailablePresent := os.LookupEnv("_DD_APPSEC_BLOCKING_UNAVAILABLE")
+	if parsePrivateAppSecBool("_DD_APPSEC_BLOCKING_UNAVAILABLE", blockingUnavailable, blockingUnavailablePresent) {
+		opts = append(opts, config.WithBlockingUnavailable(true))
+	}
+	proxyEnvironment, proxyEnvironmentPresent := os.LookupEnv("_DD_APPSEC_PROXY_ENVIRONMENT")
+	if parsePrivateAppSecBool("_DD_APPSEC_PROXY_ENVIRONMENT", proxyEnvironment, proxyEnvironmentPresent) {
+		opts = append(opts, config.WithProxyEnvironment())
+	}
+	return config.NewStartConfig(opts...)
+}
+
+func parsePrivateAppSecBool(key, raw string, present bool) bool {
+	if !present {
+		return false
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Warn("Non-boolean value for env var %s. Parse failed with error: %v", key, err.Error())
+		return false
+	}
+	return value
 }
 
 // Implement the AppSec log message C1

@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 	"sort"
 
@@ -138,7 +139,7 @@ func loadRegistry(pkgs []*packages.Package) (*declarationRegistry, error) {
 					case "registerRaw":
 						err = parseRawDeclaration(registry, pkg.TypesInfo, call)
 					case "registerBinding":
-						err = parseBindingDeclaration(registry, pkg.TypesInfo, call)
+						err = parseBindingDeclaration(registry, pkg, call)
 					}
 					if err != nil {
 						return nil, err
@@ -253,11 +254,12 @@ func parseRawDeclaration(registry *declarationRegistry, info *types.Info, call *
 	})
 }
 
-func parseBindingDeclaration(registry *declarationRegistry, info *types.Info, call *ast.CallExpr) error {
-	literal, err := registryLiteral(call, "consumer binding")
+func parseBindingDeclaration(registry *declarationRegistry, pkg *packages.Package, call *ast.CallExpr) error {
+	literal, err := bindingRegistrationLiteral(pkg, call)
 	if err != nil {
 		return err
 	}
+	info := pkg.TypesInfo
 	idExpr, ok := literalField(literal, "ID")
 	if !ok {
 		return fmt.Errorf("consumer binding ID must be constant")
@@ -316,6 +318,51 @@ func parseBindingDeclaration(registry *declarationRegistry, info *types.Info, ca
 		sampling:        sampling,
 		environmentOnly: environmentOnly,
 	})
+}
+
+func bindingRegistrationLiteral(pkg *packages.Package, call *ast.CallExpr) (*ast.CompositeLit, error) {
+	if len(call.Args) != 1 {
+		return nil, fmt.Errorf("consumer binding registration must have one argument")
+	}
+	if literal, ok := call.Args[0].(*ast.CompositeLit); ok {
+		return literal, nil
+	}
+	ident, ok := call.Args[0].(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("consumer binding registration must use a composite literal")
+	}
+	object, ok := pkg.TypesInfo.Uses[ident].(*types.Var)
+	if !ok || object.Pkg() != pkg.Types || pkg.Types.Scope().Lookup(object.Name()) != object {
+		return nil, fmt.Errorf("consumer binding registration must use a composite literal")
+	}
+	for _, file := range pkg.Syntax {
+		for _, declaration := range file.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok || general.Tok != token.VAR {
+				continue
+			}
+			for _, specification := range general.Specs {
+				values, ok := specification.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range values.Names {
+					if pkg.TypesInfo.Defs[name] != object {
+						continue
+					}
+					if len(values.Values) != len(values.Names) {
+						return nil, fmt.Errorf("consumer binding variable must use a composite literal initializer")
+					}
+					literal, ok := values.Values[i].(*ast.CompositeLit)
+					if !ok {
+						return nil, fmt.Errorf("consumer binding variable must use a composite literal initializer")
+					}
+					return literal, nil
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("consumer binding variable must use a composite literal initializer")
 }
 
 func registryLiteral(call *ast.CallExpr, declaration string) (*ast.CompositeLit, error) {

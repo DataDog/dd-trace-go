@@ -297,6 +297,64 @@ func TestLoadMigrated_ResolvesPackageConstants(t *testing.T) {
 	}
 }
 
+func TestLoadMigrated_AcceptsNamedPackageBindingLiteral(t *testing.T) {
+	pkgDir := writeRegistryFixture(t, `
+	registerRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport})
+	registerBinding(tracerServiceBinding)
+`)
+	definitionsPath := filepath.Join(pkgDir, "definitions.go")
+	source, err := os.ReadFile(definitionsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source = append(source, []byte(`
+var tracerServiceBinding = ConsumerBinding{
+	ID: "tracer.service", Consumer: "tracer",
+	Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction,
+}
+`)...)
+	if err := os.WriteFile(definitionsPath, source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := loadMigrated(pkgDir)
+	if err != nil {
+		t.Fatalf("loadMigrated: %v", err)
+	}
+	if _, ok := got["DD_SERVICE"]; !ok {
+		t.Fatalf("migrated keys = %#v, want DD_SERVICE", got)
+	}
+}
+
+func TestLoadMigrated_RejectsNamedBindingWithoutLiteralInitializer(t *testing.T) {
+	pkgDir := writeRegistryFixture(t, `
+	registerRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport})
+	registerBinding(tracerServiceBinding)
+`)
+	definitionsPath := filepath.Join(pkgDir, "definitions.go")
+	source, err := os.ReadFile(definitionsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source = append(source, []byte(`
+func makeTracerServiceBinding() ConsumerBinding {
+	return ConsumerBinding{
+		ID: "tracer.service", Consumer: "tracer",
+		Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction,
+	}
+}
+var tracerServiceBinding = makeTracerServiceBinding()
+`)...)
+	if err := os.WriteFile(definitionsPath, source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = loadMigrated(pkgDir)
+	if err == nil || !strings.Contains(err.Error(), "consumer binding variable must use a composite literal initializer") {
+		t.Fatalf("loadMigrated error = %v, want nonliteral named binding rejection", err)
+	}
+}
+
 func TestLoadMigrated_RejectsDuplicateRawKeys(t *testing.T) {
 	pkgDir := writeRegistryFixture(t, `
 	registerRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport})

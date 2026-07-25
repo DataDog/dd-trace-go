@@ -5,7 +5,12 @@
 
 package options
 
-import "github.com/DataDog/dd-trace-go/v2/internal"
+import (
+	"strconv"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+)
 
 // Copy should be used any time existing options are copied into
 // a new locally scoped set of options. This is to avoid data races and
@@ -36,5 +41,18 @@ func Expand[T any](opts []T, initialPosition, trailCapacity int) []T {
 // the internal directory. This function should not be used if the internal directory
 // can be
 func GetBoolEnv(key string, def bool) bool {
-	return internal.BoolEnv(key, def)
+	raw, present := env.Lookup(key)
+	return parseBoolEnvValue(key, raw, present, def)
+}
+
+func parseBoolEnvValue(key, raw string, present, def bool) bool {
+	if !present {
+		return def
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Warn("Non-boolean value for env var %s. Parse failed with error: %v", key, err.Error())
+		return def
+	}
+	return value
 }

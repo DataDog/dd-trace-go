@@ -57,9 +57,13 @@ func defaultRecognizers() recognizers {
 				"BoolEnv":             true,
 				"BoolEnvNoDefault":    true,
 				"IntEnv":              true,
+				"IPEnv":               true,
 				"FloatEnv":            true,
 				"DurationEnv":         true,
 				"DurationEnvWithUnit": true,
+			},
+			"github.com/DataDog/dd-trace-go/v2/instrumentation/options": {
+				"GetBoolEnv": true,
 			},
 			"github.com/DataDog/dd-trace-go/v2/internal/stableconfig": {
 				"Bool":   true,
@@ -113,7 +117,6 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 			if excluded(filename, exclude) {
 				continue
 			}
-			suppressed := suppressedLines(file, pkg)
 			ast.Inspect(file, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok || len(call.Args) == 0 {
@@ -131,17 +134,6 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 					return true
 				}
 				pos := pkg.Fset.Position(call.Pos())
-				end := pkg.Fset.Position(call.End())
-				isSuppressed := false
-				for line := pos.Line; line <= end.Line; line++ {
-					if suppressed[line] {
-						isSuppressed = true
-						break
-					}
-				}
-				if isSuppressed {
-					return true
-				}
 				out[key] = append(out[key], CallSite{
 					File:    pos.Filename,
 					Line:    pos.Line,
@@ -158,8 +150,13 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 // scanCoverage loads the root module under every supported build variant and
 // returns any package errors. The syntax pass provides read coverage for files
 // that do not type-load in the host variant.
-func scanCoverage(root string) []string {
-	var coverageErrors []string
+type coverageResult struct {
+	Errors        []string
+	PackageCounts map[string]int
+}
+
+func scanCoverage(root string) coverageResult {
+	result := coverageResult{PackageCounts: make(map[string]int, len(buildVariants))}
 	for _, variant := range buildVariants {
 		cfg := &packages.Config{
 			Mode:       packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
@@ -171,18 +168,19 @@ func scanCoverage(root string) []string {
 		}
 		pkgs, err := packages.Load(cfg, "./...")
 		if err != nil {
-			coverageErrors = append(coverageErrors, fmt.Sprintf("%s: packages.Load: %v", variant.Name, err))
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: packages.Load: %v", variant.Name, err))
 			continue
 		}
+		result.PackageCounts[variant.Name] = len(pkgs)
 		if len(pkgs) == 0 {
-			coverageErrors = append(coverageErrors, fmt.Sprintf("%s: no root-module packages loaded", variant.Name))
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: no root-module packages loaded", variant.Name))
 			continue
 		}
 		for _, pkgErr := range packageErrors(pkgs) {
-			coverageErrors = append(coverageErrors, fmt.Sprintf("%s: %v", variant.Name, pkgErr))
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", variant.Name, pkgErr))
 		}
 	}
-	return coverageErrors
+	return result
 }
 
 // hasNolintConfigaudit reports whether text is a nolint comment that names
@@ -202,21 +200,6 @@ func hasNolintConfigaudit(text string) bool {
 		}
 	}
 	return false
-}
-
-// suppressedLines returns the set of 1-based line numbers in file that carry
-// a //nolint:configaudit annotation. Calls on those lines are intentionally
-// not migrated and are excluded from the audit output.
-func suppressedLines(file *ast.File, pkg *packages.Package) map[int]bool {
-	out := map[int]bool{}
-	for _, cg := range file.Comments {
-		for _, c := range cg.List {
-			if hasNolintConfigaudit(c.Text) {
-				out[pkg.Fset.Position(c.Pos()).Line] = true
-			}
-		}
-	}
-	return out
 }
 
 // callIdentity decides whether the call matches one of our recognizers, and
@@ -242,6 +225,10 @@ func callIdentity(pkg *packages.Package, call *ast.CallExpr, r recognizers) (str
 		// Only function calls (not method calls) are env helpers.
 		fnObj, ok := obj.(*types.Func)
 		if !ok {
+			return "", false
+		}
+		signature, ok := fnObj.Type().(*types.Signature)
+		if !ok || signature.Recv() != nil {
 			return "", false
 		}
 		impPkg := fnObj.Pkg()

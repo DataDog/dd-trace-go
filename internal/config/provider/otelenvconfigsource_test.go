@@ -6,6 +6,7 @@
 package provider
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,6 +19,34 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+func TestOtelEnvConfigSourceSamplerArgumentLookup(t *testing.T) {
+	const key = "OTEL_TRACES_SAMPLER_ARG"
+	old, present := os.LookupEnv(key)
+	require.NoError(t, os.Unsetenv(key))
+	t.Cleanup(func() {
+		if present {
+			require.NoError(t, os.Setenv(key, old))
+		} else {
+			require.NoError(t, os.Unsetenv(key))
+		}
+	})
+
+	source := new(otelEnvConfigSource)
+	t.Run("absent", func(t *testing.T) {
+		require.Equal(t, "1.0", source.lookupSamplerArgument())
+	})
+	t.Run("explicit empty", func(t *testing.T) {
+		t.Setenv(key, "")
+		require.Equal(t, "1.0", source.lookupSamplerArgument())
+	})
+	t.Run("resamples changes", func(t *testing.T) {
+		t.Setenv(key, "0.25")
+		require.Equal(t, "0.25", source.lookupSamplerArgument())
+		t.Setenv(key, "0.75")
+		require.Equal(t, "0.75", source.lookupSamplerArgument())
+	})
+}
 
 func TestOtelEnvConfigSource(t *testing.T) {
 	t.Run("maps OTEL_SERVICE_NAME to service", func(t *testing.T) {

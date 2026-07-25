@@ -169,7 +169,11 @@ func TestInstrumentationRawDefinitionPolicies(t *testing.T) {
 }
 
 func TestRuntimeBindingsMatchRegisteredMetadata(t *testing.T) {
-	_, bindings := RegisteredDefinitions()
+	raw, bindings := RegisteredDefinitions()
+	rawByKey := make(map[string]RawDefinition, len(raw))
+	for _, def := range raw {
+		rawByKey[def.Key] = def
+	}
 	registered := make(map[string]ConsumerBinding, len(bindings))
 	for _, binding := range bindings {
 		registered[binding.ID] = binding
@@ -177,12 +181,41 @@ func TestRuntimeBindingsMatchRegisteredMetadata(t *testing.T) {
 
 	require.Equal(t, httpTraceBinding, registered[httpTraceBinding.ID])
 	require.Equal(t, propagationBinding, registered[propagationBinding.ID])
+	require.Equal(t, tracerSourceHostnameBinding, registered[tracerSourceHostnameBinding.ID])
+	require.Equal(t, SourceEnvironment, rawByKey["DD_TRACE_SOURCE_HOSTNAME"].Sources)
+	require.Equal(t, TelemetryReport, rawByKey["DD_TRACE_SOURCE_HOSTNAME"].Telemetry)
 	for name, binding := range tracerOTelBindings {
 		if name == "propagationStyle" {
 			continue
 		}
 		require.Equal(t, binding, registered[binding.ID], name)
 	}
+}
+
+func TestTracerSourceHostnameUsesEnvironmentProvider(t *testing.T) {
+	originalEnvironment := newEnvironmentProvider
+	originalStable := newStableProvider
+	t.Cleanup(func() {
+		newEnvironmentProvider = originalEnvironment
+		newStableProvider = originalStable
+	})
+	environmentConstructions := 0
+	stableConstructions := 0
+	newEnvironmentProvider = func() *provider.Provider {
+		environmentConstructions++
+		return provider.NewEnvironment()
+	}
+	newStableProvider = func() *provider.Provider {
+		stableConstructions++
+		return provider.New()
+	}
+	t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "environment-hostname")
+
+	resolved, _ := resolveString("DD_TRACE_SOURCE_HOSTNAME", tracerSourceHostnameBinding)
+	require.Equal(t, "environment-hostname", resolved.Winner.Value)
+	require.Equal(t, 1, environmentConstructions)
+	require.Zero(t, stableConstructions,
+		"the environment-only hostname must not stat or parse stable configuration files")
 }
 
 func TestMigratedBooleanPreservesInvalidValueWarning(t *testing.T) {
@@ -363,10 +396,66 @@ func TestTracerOTelCompatibilitySharesStableProviderAndResamplesEnvironment(t *t
 		"stable YAML sources must be parsed once and shared across legacy accessors")
 }
 
+func TestTracerOTelSampleRateSamplerArgumentSemantics(t *testing.T) {
+	for _, key := range []string{
+		"DD_TRACE_SAMPLE_RATE",
+		"OTEL_TRACES_SAMPLER",
+		"OTEL_TRACES_SAMPLER_ARG",
+	} {
+		unsetForTest(t, key)
+	}
+	t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_traceidratio")
+
+	require.Equal(t, "1.0", TracerOTelDDValue("sampleRate"), "absent argument")
+
+	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "")
+	require.Equal(t, "1.0", TracerOTelDDValue("sampleRate"), "explicit empty argument")
+
+	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.25")
+	require.Equal(t, "0.25", TracerOTelDDValue("sampleRate"))
+	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.75")
+	require.Equal(t, "0.75", TracerOTelDDValue("sampleRate"),
+		"each resolution must resample the current argument")
+
+	t.Setenv("DD_TRACE_SAMPLE_RATE", "0.5")
+	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.1")
+	require.Equal(t, "0.5", TracerOTelDDValue("sampleRate"),
+		"an applicable Datadog value must win")
+}
+
 func TestTracerOTelCompatibilityPreservesStableSourceBoundary(t *testing.T) {
 	for name, binding := range tracerOTelBindings {
 		require.Equal(t, name == "debugMode", !binding.EnvironmentOnly, name)
 		require.Equal(t, SourceStable, registeredDefinition(tracerOTelDDKeys[name]).Sources, name)
+	}
+	require.Contains(t, tracerOTelBindings["sampleRate"].Keys, "OTEL_TRACES_SAMPLER_ARG")
+}
+
+func TestTracerSourceHostnameConstructionResamplesAndStagesExactEvent(t *testing.T) {
+	resetGlobalState()
+	t.Cleanup(resetGlobalState)
+	unsetForTest(t, "DD_TRACE_SOURCE_HOSTNAME")
+
+	for _, value := range []string{"first-hostname", "second-hostname", ""} {
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", value)
+		candidate := NewTracerGeneration()
+		require.Equal(t, value, candidate.Hostname())
+		require.True(t, candidate.ReportHostname())
+
+		event := tracerSourceHostnameEnvironmentEvent(t, candidate)
+		require.Equal(t, ConfigEvent{
+			Kind:          EventConfiguration,
+			BindingID:     tracerSourceHostnameBinding.ID,
+			Name:          "DD_TRACE_SOURCE_HOSTNAME",
+			Value:         value,
+			Present:       true,
+			Valid:         true,
+			Origin:        telemetry.OriginEnvVar,
+			SourceOrdinal: schema.SourceOrdinalEnvironment,
+			Policy:        TelemetryReport,
+			Cadence:       ReportOncePerGeneration,
+			ReportValue:   true,
+		}, event)
 	}
 }
 
@@ -423,6 +512,101 @@ func TestTracerConstructionEventsWaitForWinningPublication(t *testing.T) {
 		"publication events must drain once")
 }
 
+func TestTracerSourceHostnameEventsWaitForWinningPublication(t *testing.T) {
+	resetGlobalState()
+	t.Cleanup(resetGlobalState)
+	instrumentationReporter.ResetForTesting()
+	t.Cleanup(instrumentationReporter.ResetForTesting)
+	rec := new(telemetrytest.RecordClient)
+	t.Cleanup(telemetry.MockClient(rec))
+	unsetForTest(t, "DD_TRACE_SOURCE_HOSTNAME")
+
+	t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "failed-hostname")
+	failed := NewTracerGeneration()
+	failedPrepared := failed.PrepareClaims()
+	failed.SetEnv("invalidate-failed-hostname", OriginCode, ProductTracer)
+	require.Error(t, PublishTracerGeneration(failed, failedPrepared, nil))
+	require.Zero(t, countConfiguration(rec.Configuration, "DD_TRACE_SOURCE_HOSTNAME", telemetry.OriginEnvVar, "failed-hostname"))
+
+	t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "unpublished-hostname")
+	_ = NewTracerGeneration()
+	require.Zero(t, countConfiguration(rec.Configuration, "DD_TRACE_SOURCE_HOSTNAME", telemetry.OriginEnvVar, "unpublished-hostname"))
+
+	t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "winning-hostname")
+	winner := NewTracerGeneration()
+	require.Zero(t, countConfiguration(rec.Configuration, "DD_TRACE_SOURCE_HOSTNAME", telemetry.OriginEnvVar, "winning-hostname"))
+	require.NoError(t, PublishTracerGeneration(winner, winner.PrepareClaims(), func(Publication) {
+		winner.DrainPublicationTelemetry()
+	}))
+	require.Equal(t, 1, countConfiguration(rec.Configuration, "DD_TRACE_SOURCE_HOSTNAME", telemetry.OriginEnvVar, "winning-hostname"))
+	winner.DrainPublicationTelemetry()
+	require.Equal(t, 1, countConfiguration(rec.Configuration, "DD_TRACE_SOURCE_HOSTNAME", telemetry.OriginEnvVar, "winning-hostname"),
+		"publication events must drain once")
+
+	t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "")
+	explicitEmpty := NewTracerGeneration()
+	require.NoError(t, PublishTracerGeneration(explicitEmpty, explicitEmpty.PrepareClaims(), func(Publication) {
+		explicitEmpty.DrainPublicationTelemetry()
+	}))
+	require.Equal(t, 1, countConfiguration(rec.Configuration, "DD_TRACE_SOURCE_HOSTNAME", telemetry.OriginEnvVar, ""))
+	explicitEmpty.DrainPublicationTelemetry()
+	require.Equal(t, 1, countConfiguration(rec.Configuration, "DD_TRACE_SOURCE_HOSTNAME", telemetry.OriginEnvVar, ""),
+		"the next published generation must report explicit empty exactly once")
+}
+
+func TestTracerSourceHostnameProgrammaticOverrideTelemetryWins(t *testing.T) {
+	resetGlobalState()
+	t.Cleanup(resetGlobalState)
+	instrumentationReporter.ResetForTesting()
+	t.Cleanup(instrumentationReporter.ResetForTesting)
+	rec := new(telemetrytest.RecordClient)
+	t.Cleanup(telemetry.MockClient(rec))
+	t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "environment-hostname")
+
+	candidate := NewTracerGeneration()
+	candidate.SetHostname("option-hostname", OriginCode)
+	require.Equal(t, "option-hostname", candidate.Hostname())
+	require.NoError(t, PublishTracerGeneration(candidate, candidate.PrepareClaims(), func(Publication) {
+		candidate.DrainPublicationTelemetry()
+	}))
+
+	var environment, code *telemetry.Configuration
+	for i := range rec.Configuration {
+		entry := &rec.Configuration[i]
+		if entry.Name != "DD_TRACE_SOURCE_HOSTNAME" {
+			continue
+		}
+		switch entry.Origin {
+		case telemetry.OriginEnvVar:
+			environment = entry
+		case telemetry.OriginCode:
+			code = entry
+		}
+	}
+	require.NotNil(t, environment, "the environment attempt must be reported")
+	require.NotNil(t, code, "the WithHostname override must be reported")
+	require.Equal(t, "environment-hostname", environment.Value)
+	require.Equal(t, "option-hostname", code.Value)
+	require.Greater(t, code.SeqID, environment.SeqID,
+		"the programmatic winner must have a higher sequence ID than the environment attempt")
+}
+
+func tracerSourceHostnameEnvironmentEvent(t *testing.T, candidate *Config) ConfigEvent {
+	t.Helper()
+	candidate.mu.Lock()
+	events := cloneConfigEvents(candidate.pendingConfigEvents)
+	candidate.mu.Unlock()
+	for _, event := range events {
+		if event.BindingID == tracerSourceHostnameBinding.ID &&
+			event.Name == "DD_TRACE_SOURCE_HOSTNAME" &&
+			event.SourceOrdinal == schema.SourceOrdinalEnvironment {
+			return event
+		}
+	}
+	t.Fatalf("DD_TRACE_SOURCE_HOSTNAME environment event not staged: %#v", events)
+	return ConfigEvent{}
+}
+
 func TestStagePublicationConfigEventsDefensivelyClonesAndScrubsOmittedValues(t *testing.T) {
 	resetGlobalState()
 	t.Cleanup(resetGlobalState)
@@ -432,6 +616,7 @@ func TestStagePublicationConfigEventsDefensivelyClonesAndScrubsOmittedValues(t *
 	t.Cleanup(telemetry.MockClient(rec))
 
 	candidate := NewTracerGeneration()
+	initialEvents := len(candidate.pendingConfigEvents)
 	value := []string{"before"}
 	candidate.StagePublicationConfigEvents([]ConfigEvent{{
 		Kind: EventConfiguration, BindingID: "tracer.llmobs", Name: "DD_LLMOBS_ENABLED",
@@ -452,9 +637,9 @@ func TestStagePublicationConfigEventsDefensivelyClonesAndScrubsOmittedValues(t *
 		Cadence: ReportOncePerGeneration, ReportValue: true,
 	}})
 	value[0] = "after"
-	require.Equal(t, []string{"before"}, candidate.pendingConfigEvents[0].Value)
-	require.Nil(t, candidate.pendingConfigEvents[2].Value)
-	require.NoError(t, candidate.pendingConfigEvents[2].Err)
+	require.Equal(t, []string{"before"}, candidate.pendingConfigEvents[initialEvents].Value)
+	require.Nil(t, candidate.pendingConfigEvents[initialEvents+2].Value)
+	require.NoError(t, candidate.pendingConfigEvents[initialEvents+2].Err)
 
 	require.NoError(t, PublishTracerGeneration(candidate, candidate.PrepareClaims(), func(Publication) {
 		candidate.DrainPublicationTelemetry()

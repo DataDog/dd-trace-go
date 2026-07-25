@@ -139,6 +139,13 @@ func (r *registry) definitions() ([]RawDefinition, []ConsumerBinding) {
 
 var definitionsRegistry = newRegistry()
 
+var tracerSourceHostnameBinding = ConsumerBinding{
+	ID:       "tracer.DD_TRACE_SOURCE_HOSTNAME",
+	Consumer: "tracer",
+	Keys:     []string{"DD_TRACE_SOURCE_HOSTNAME"},
+	Sampling: SampleTracerConstruction,
+}
+
 func registerRaw(def RawDefinition) {
 	definitionsRegistry.addRaw(def)
 }
@@ -293,7 +300,7 @@ func init() {
 	registerBinding(ConsumerBinding{ID: "tracer.DD_TRACE_RETRY_INTERVAL", Consumer: "tracer", Keys: []string{"DD_TRACE_RETRY_INTERVAL"}, Sampling: SampleTracerConstruction})
 	registerBinding(ConsumerBinding{ID: "tracer.DD_TRACE_SAMPLE_RATE", Consumer: "tracer", Keys: []string{"DD_TRACE_SAMPLE_RATE"}, Sampling: SampleTracerConstruction})
 	registerBinding(ConsumerBinding{ID: "tracer.DD_TRACE_SEND_RETRIES", Consumer: "tracer", Keys: []string{"DD_TRACE_SEND_RETRIES"}, Sampling: SampleTracerConstruction})
-	registerBinding(ConsumerBinding{ID: "tracer.DD_TRACE_SOURCE_HOSTNAME", Consumer: "tracer", Keys: []string{"DD_TRACE_SOURCE_HOSTNAME"}, Sampling: SampleTracerConstruction})
+	registerBinding(tracerSourceHostnameBinding)
 	registerBinding(ConsumerBinding{ID: "tracer.DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", Consumer: "tracer", Keys: []string{"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA"}, Sampling: SampleTracerConstruction})
 	registerBinding(ConsumerBinding{ID: "tracer.DD_TRACE_STARTUP_LOGS", Consumer: "tracer", Keys: []string{"DD_TRACE_STARTUP_LOGS"}, Sampling: SampleTracerConstruction})
 	registerBinding(ConsumerBinding{ID: "tracer.DD_TRACE_STATS_ADDITIONAL_TAGS", Consumer: "tracer", Keys: []string{"DD_TRACE_STATS_ADDITIONAL_TAGS"}, Sampling: SampleTracerConstruction})

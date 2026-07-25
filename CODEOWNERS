@@ -28,7 +28,6 @@
 
 # capabilities - config, dynamic config, remote config
 /internal/env                        @DataDog/apm-sdk-capabilities-go
-/internal/stableconfig               @DataDog/apm-sdk-capabilities-go
 /internal/globalconfig               @DataDog/apm-sdk-capabilities-go
 /internal/remoteconfig               @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/dynamic_config.go    @DataDog/apm-sdk-capabilities-go
