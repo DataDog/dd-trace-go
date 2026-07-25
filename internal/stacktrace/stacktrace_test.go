@@ -14,7 +14,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace/configbridge"
 )
+
+func TestStackTraceConfigApplicationUsesOneAtomicSnapshot(t *testing.T) {
+	original := currentStackTraceConfig()
+	t.Cleanup(func() { applyStackTraceConfig(original) })
+
+	applyStackTraceConfig(configbridge.Config{Enabled: false, MaxDepth: 64, TopFrameDepth: 16})
+	require.False(t, Enabled())
+	require.Equal(t, 64, currentStackTraceConfig().MaxDepth)
+	require.Equal(t, 16, currentStackTraceConfig().TopFrameDepth)
+}
 
 func TestNewStackTrace(t *testing.T) {
 	stack := CaptureWithRedaction(defaultCallerSkip)
@@ -61,12 +73,13 @@ func recursive(i int) StackTrace {
 }
 
 func TestTruncatedStack(t *testing.T) {
-	stack := recursive(defaultMaxDepth * 2)
+	maxDepth := currentStackTraceConfig().MaxDepth
+	stack := recursive(maxDepth * 2)
 
 	// With internal stacktrace method filtering, we get fewer frames than before
 	// since recursive() calls are now filtered out as internal plumbing
 	require.Greater(t, len(stack), 0, "should capture some frames")
-	require.LessOrEqual(t, len(stack), defaultMaxDepth, "should not exceed max depth")
+	require.LessOrEqual(t, len(stack), maxDepth, "should not exceed max depth")
 
 	// Verify that all returned frames have valid content
 	for i, frame := range stack {
@@ -231,7 +244,9 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 	// b.Loop() makes this benchmark to fail with "B.Loop called with timer stopped" error.
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(strconv.Itoa(depth), func(b *testing.B) {
-			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
+			original := currentStackTraceConfig()
+			applyStackTraceConfig(configbridge.Config{Enabled: original.Enabled, MaxDepth: depth * 2, TopFrameDepth: depth / 2})
+			b.Cleanup(func() { applyStackTraceConfig(original) })
 			for range b.N {
 				runtime.KeepAlive(recursiveBench(depth, depth, b))
 			}
@@ -242,9 +257,9 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 func BenchmarkCaptureWithRedaction(b *testing.B) {
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(fmt.Sprintf("depth_%d", depth), func(b *testing.B) {
-			originalMaxDepth := defaultMaxDepth
-			defaultMaxDepth = depth * 2 // Ensure we capture the full stack
-			b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
+			original := currentStackTraceConfig()
+			applyStackTraceConfig(configbridge.Config{Enabled: original.Enabled, MaxDepth: depth * 2, TopFrameDepth: depth / 2})
+			b.Cleanup(func() { applyStackTraceConfig(original) })
 
 			b.ResetTimer()
 			for b.Loop() {
@@ -257,9 +272,9 @@ func BenchmarkCaptureWithRedaction(b *testing.B) {
 
 func BenchmarkStacktraceComparison(b *testing.B) {
 	const depth = 50
-	originalMaxDepth := defaultMaxDepth
-	defaultMaxDepth = depth * 2
-	b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
+	original := currentStackTraceConfig()
+	applyStackTraceConfig(configbridge.Config{Enabled: original.Enabled, MaxDepth: depth * 2, TopFrameDepth: depth / 2})
+	b.Cleanup(func() { applyStackTraceConfig(original) })
 
 	b.Run("SkipAndCapture", func(b *testing.B) {
 		b.ResetTimer()

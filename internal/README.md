@@ -14,7 +14,9 @@ Handles and controls global configuration values. The values on the config are d
 
 The [bootstrap](./config/bootstrap/) package owns configuration reads that must
 happen before the provider and telemetry reporter are available. These reads
-are cached and intentionally do not report configuration telemetry.
+are cached. Telemetry enablement intentionally does not report itself; AppSec
+stack-trace bootstrap retains telemetry-safe source metadata that
+`internal/config` projects exactly once after the reporter is available.
 
 This package is currently under development to migrate to a config with global access (see [/config/config.go](./config/config.go))
 
@@ -45,6 +47,15 @@ Contains internal Orchestrion implementations for all supported contribs in [./o
 ### Sampling Rules
 
 Defines the types and parsing logic for trace and span sampling rules (`DD_TRACE_SAMPLING_RULES`, `DD_SPAN_SAMPLING_RULES`, and their `WithSamplingRules` code equivalents), including glob/regex matching, rate limiting, and Remote Config provenance. It is shared between `internal/config` (configuration ownership) and `ddtrace/tracer` (runtime sampling decisions).
+
+### Stack Traces
+
+The [configbridge](./stacktrace/configbridge/) package applies AppSec
+stack-trace settings without introducing a dependency cycle. Its permanent
+provider reads the cached bootstrap snapshot, so standalone imports of
+`instrumentation/errortrace` or `internal/telemetry` do not require
+`internal/config`; provider and consumer registrations remain replaceable for
+isolated tests.
 
 ### Telemetry
 

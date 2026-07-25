@@ -41,11 +41,20 @@ Raw environment reads are permitted only in these low-level boundaries:
 - `internal/env` implementation functions
 - `internal/config/provider` source lookup functions
 - `internal/config/bootstrap.TelemetryEnabled`
+- `internal/config/bootstrap.resolveAppSecStackTrace`
 - the exported adapter implementations in `instrumentation/env`
 - `instrumentation/options.GetBoolEnv`
 
 The audit rejects raw reads everywhere else, including ad hoc reads elsewhere
-inside `internal/config`.
+inside `internal/config`. The AppSec bootstrap boundary is an exact,
+function-scoped exception rather than a suppression: standalone import graphs
+reach `internal/stacktrace` through `instrumentation/errortrace` and
+`internal/telemetry` without importing `internal/config`, while
+`internal/config` already depends transitively on stack traces. Installing the
+normal provider would therefore either miss those imports or introduce a
+cycle. The bootstrap function is the migrated owner for its two registered,
+environment-only package-init keys; it caches one raw snapshot, preserves the
+legacy diagnostics, and retains metadata for one later telemetry projection.
 
 ## Configuration definitions and consumer bindings
 
@@ -288,11 +297,18 @@ attempt, and the binding's cadence:
 Disabled telemetry drops events instead of queuing them. There is no
 process-wide unbounded event queue.
 
-`DD_INSTRUMENTATION_TELEMETRY_ENABLED` is the bootstrap exception. The leaf
+`DD_INSTRUMENTATION_TELEMETRY_ENABLED` is a bootstrap exception. The leaf
 package `internal/config/bootstrap` reads and caches it with the same
 `sync.Once` behavior as the existing telemetry implementation. Both
-`internal/config/provider` and `internal/telemetry` may import the leaf. The
+`internal/config/provider` and `internal/telemetry` may import the leaf. This
 bootstrap read does not report itself.
+
+The two AppSec stack-trace package-init keys use the other exact bootstrap
+boundary. The bridge consumes their cached snapshot even when
+`internal/config` is absent from the import graph. When `internal/config`
+initializes, it atomically claims and projects that snapshot once through the
+registered binding. The raw reads, parse diagnostics, and telemetry projection
+therefore each occur at most once.
 
 Sensitive values use an explicit policy:
 

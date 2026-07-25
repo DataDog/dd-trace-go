@@ -149,7 +149,6 @@ var integrationAnalyticsBindings map[string]ConsumerBinding
 
 func init() {
 	registerRaw(RawDefinition{Key: "DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", Sources: SourceEnvironment, Telemetry: TelemetryReport})
-	registerRaw(RawDefinition{Key: "DD_APM_TRACING_ENABLED", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS", Sources: SourceEnvironment, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_LLMOBS_AGENTLESS_ENABLED", Sources: SourceEnvironment, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_LLMOBS_ENABLED", Sources: SourceEnvironment, Telemetry: TelemetryReport})

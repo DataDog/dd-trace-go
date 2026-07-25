@@ -9,14 +9,13 @@ import (
 	"bytes"
 	_ "embed" // embed is used to embed the blocked-template.json and blocked-template.html files
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -30,22 +29,13 @@ var blockedTemplateJSON []byte
 //go:embed blocked-template.html
 var blockedTemplateHTML []byte
 
-const (
-	envBlockedTemplateHTML      = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
-	envBlockedTemplateJSON      = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
-	securityResponsePlaceholder = "[security_response_id]"
-)
+const securityResponsePlaceholder = "[security_response_id]"
 
 func init() {
-	for key, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
-		if path, ok := env.Lookup(key); ok {
-			if t, err := os.ReadFile(path); err != nil {
-				log.Error("Could not read template at %q: %v", path, err.Error())
-			} else {
-				*template = t
-			}
-		}
-	}
+	templates, events := internalconfig.ResolveAppSecBlockedTemplates(blockedTemplateJSON, blockedTemplateHTML)
+	internalconfig.ReportAppSecDiagnostics(events)
+	blockedTemplateJSON = templates.JSON
+	blockedTemplateHTML = templates.HTML
 
 	registerActionHandler("block_request", NewBlockAction)
 }

@@ -49,15 +49,16 @@ func TestAgenticOnboarding(t *testing.T) {
 				t.Setenv(EnvAgenticOnboarding, tc.envVarVal)
 			}
 
-			expected := []telemetry.Configuration{{Name: name, Value: tc.expectedValue, Origin: tc.expectedOrigin}}
+			expected := telemetry.Configuration{Name: name, Value: tc.expectedValue, Origin: tc.expectedOrigin}
+			expectedConfigs := configurationMatcher(expected)
 			telemetryClient := new(telemetrytest.MockClient)
-			telemetryClient.On("RegisterAppConfigs", expected).Return()
+			telemetryClient.On("RegisterAppConfigs", expectedConfigs).Return()
 			defer telemetry.MockClient(telemetryClient)()
 
 			registerAgenticOnboardingTelemetry()
 
 			// Always emitted, even when unset (RFC-1113).
-			telemetryClient.AssertCalled(t, "RegisterAppConfigs", expected)
+			telemetryClient.AssertCalled(t, "RegisterAppConfigs", expectedConfigs)
 			telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 1)
 		})
 	}
@@ -103,7 +104,8 @@ func TestSCAEnabled(t *testing.T) {
 			}
 
 			telemetryClient := new(telemetrytest.MockClient)
-			telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar}}).Return()
+			expectedConfigs := configurationMatcher(telemetry.Configuration{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar})
+			telemetryClient.On("RegisterAppConfigs", expectedConfigs).Return()
 			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
 
 			var logMatcher any
@@ -118,7 +120,7 @@ func TestSCAEnabled(t *testing.T) {
 			registerSCAAppConfigTelemetry()
 
 			if tc.telemetryExpected {
-				telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar}})
+				telemetryClient.AssertCalled(t, "RegisterAppConfigs", expectedConfigs)
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 1)
 			} else {
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 0)
@@ -128,4 +130,20 @@ func TestSCAEnabled(t *testing.T) {
 			}
 		})
 	}
+}
+
+func configurationMatcher(expected telemetry.Configuration) any {
+	return mock.MatchedBy(func(actual []telemetry.Configuration) bool {
+		if len(actual) != 1 {
+			return false
+		}
+		got := actual[0]
+		if got.Name != expected.Name || got.Value != expected.Value || got.Origin != expected.Origin || got.ID != expected.ID {
+			return false
+		}
+		if got.Origin == telemetry.OriginDefault {
+			return got.SeqID == 1
+		}
+		return got.SeqID > 1
+	})
 }

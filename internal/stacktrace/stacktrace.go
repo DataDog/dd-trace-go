@@ -9,20 +9,17 @@
 package stacktrace
 
 import (
-	"errors"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace/configbridge"
 )
 
 var (
-	enabled              = true
-	defaultTopFrameDepth = 8
-	defaultMaxDepth      = 32
+	stackTraceConfig atomic.Pointer[configbridge.Config]
 
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
@@ -55,9 +52,6 @@ type frameType string
 const (
 	defaultCallerSkip = 4
 
-	envStackTraceDepth   = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
-	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLED"
-
 	frameTypeDatadog    frameType = "datadog"
 	frameTypeRuntime    frameType = "runtime"
 	frameTypeThirdParty frameType = "third_party"
@@ -67,31 +61,8 @@ const (
 )
 
 func init() {
-	if env := env.Get(envStackTraceEnabled); env != "" {
-		if e, err := strconv.ParseBool(env); err == nil {
-			enabled = e
-		} else {
-			log.Error("Failed to parse %s env var as boolean: (using default value: %t) %v", envStackTraceEnabled, enabled, err.Error())
-		}
-	}
-
-	if env := env.Get(envStackTraceDepth); env != "" {
-		if !enabled {
-			log.Warn("Ignoring %s because stacktrace generation is disable", envStackTraceDepth)
-			return
-		}
-
-		if depth, err := strconv.Atoi(env); err == nil {
-			defaultMaxDepth = depth
-		} else {
-			if depth <= 0 {
-				err = errors.New("value is not a strictly positive integer")
-			}
-			log.Error("Failed to parse %s env var as a positive integer: (using default value: %d) %v", envStackTraceDepth, defaultMaxDepth, err.Error())
-		}
-	}
-
-	defaultTopFrameDepth = defaultMaxDepth / 4
+	applyStackTraceConfig(configbridge.Config{Enabled: true, MaxDepth: 32, TopFrameDepth: 8})
+	configbridge.SetConsumer(applyStackTraceConfig)
 
 	thirdPartyTrie = newSegmentPrefixTrie()
 	thirdPartyTrie.InsertAll(slices.Concat(knownThirdPartyLibraries, []string{"golang.org/"}))
@@ -102,7 +73,19 @@ func init() {
 
 // Enabled returns whether stacktrace should be collected
 func Enabled() bool {
-	return enabled
+	return currentStackTraceConfig().Enabled
+}
+
+func applyStackTraceConfig(settings configbridge.Config) {
+	copy := settings
+	stackTraceConfig.Store(&copy)
+}
+
+func currentStackTraceConfig() configbridge.Config {
+	if settings := stackTraceConfig.Load(); settings != nil {
+		return *settings
+	}
+	return configbridge.Config{Enabled: true, MaxDepth: 32, TopFrameDepth: 8}
 }
 
 type (
@@ -253,7 +236,7 @@ func Capture() StackTrace {
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	return iterator(skip, defaultMaxDepth, frameOptions{
+	return iterator(skip, currentStackTraceConfig().MaxDepth, frameOptions{
 		skipInternalFrames:      true,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: internalSymbolPrefixes,
@@ -265,7 +248,7 @@ func SkipAndCapture(skip int) StackTrace {
 func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 	// Use default depth if not specified
 	if depth == 0 {
-		depth = defaultMaxDepth
+		depth = currentStackTraceConfig().MaxDepth
 	}
 	return iterator(skip, depth, frameOptions{
 		skipInternalFrames:      false,
@@ -279,7 +262,7 @@ func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 // and symbol parsing. The skip parameter determines how many frames to skip from
 // the top of the stack (similar to runtime.Callers).
 func CaptureRaw(skip int) RawStackTrace {
-	pcs := make([]uintptr, defaultMaxDepth)
+	pcs := make([]uintptr, currentStackTraceConfig().MaxDepth)
 	n := runtime.Callers(skip, pcs)
 	return RawStackTrace{
 		PCs: pcs[:n],
@@ -290,7 +273,7 @@ func CaptureRaw(skip int) RawStackTrace {
 // This is designed for telemetry logging where we want to see internal frames for debugging
 // but need to redact customer code for security
 func CaptureWithRedaction(skip int) StackTrace {
-	return iterator(skip+1, defaultMaxDepth, frameOptions{
+	return iterator(skip+1, currentStackTraceConfig().MaxDepth, frameOptions{
 		skipInternalFrames:      false, // Keep DD internal frames
 		redactCustomerFrames:    true,  // Redact customer code
 		internalPackagePrefixes: internalSymbolPrefixes,
@@ -402,7 +385,7 @@ func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
 
 // iteratorFromRaw creates an iterator from pre-captured PCs for deferred symbolication
 func iteratorFromRaw(pcs []uintptr, opts frameOptions) *framesIterator {
-	maxDepth := min(len(pcs), defaultMaxDepth)
+	maxDepth := min(len(pcs), currentStackTraceConfig().MaxDepth)
 	topFrameDepth := max(maxDepth/4, 1)
 
 	return &framesIterator{

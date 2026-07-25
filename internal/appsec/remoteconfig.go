@@ -17,7 +17,6 @@ import (
 	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -363,8 +362,8 @@ func (a *appsec) enableRCBlocking() {
 		}
 	}
 
-	if localRulesPath, hasLocalRules := env.Lookup(config.EnvRules); hasLocalRules {
-		log.Debug("appsec: remote config: using rules from %s; will not register blocking capabilities", localRulesPath)
+	if a.cfg.RulesPresent {
+		log.Debug("appsec: remote config: using locally configured rules; will not register blocking capabilities")
 		return
 	}
 	if !a.cfg.BlockingUnavailable {

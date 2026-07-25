@@ -191,6 +191,41 @@ func TestResolveKeepsAllSourceAttempts(t *testing.T) {
 	require.Error(t, got.Attempts[3].Err)
 }
 
+func TestResolveAppSecEnablementFallsThroughInvalidManagedToValidEnvironment(t *testing.T) {
+	p := newTestProvider(
+		&resolveTestSource{raw: "managed-invalid", present: true, originValue: telemetry.OriginManagedStableConfig, configID: "managed-id"},
+		&resolveTestSource{raw: "true", present: true, originValue: telemetry.OriginEnvVar, environment: true},
+	)
+	def := schema.RawDefinition{
+		Key: "DD_APPSEC_ENABLED", Sources: schema.SourceStable, Telemetry: schema.TelemetryReport,
+	}
+	binding := schema.ConsumerBinding{
+		ID: "appsec.enablement", Consumer: "internal/appsec/config.IsEnabledByEnvironment",
+		Keys: []string{"DD_APPSEC_ENABLED"}, Sampling: schema.SampleProductStart,
+	}
+
+	got, events := ResolveWithBinding(p, def, binding, false, strconv.ParseBool)
+
+	require.True(t, got.Winner.Value)
+	require.Equal(t, telemetry.OriginEnvVar, got.Winner.Origin)
+	require.False(t, got.Winner.DefaultUsed)
+	require.Len(t, got.Attempts, 2)
+	require.True(t, got.Attempts[0].Present)
+	require.True(t, got.Attempts[0].Valid)
+	require.Equal(t, telemetry.OriginEnvVar, got.Attempts[0].Origin)
+	require.True(t, got.Attempts[1].Present)
+	require.False(t, got.Attempts[1].Valid)
+	require.Equal(t, telemetry.OriginManagedStableConfig, got.Attempts[1].Origin)
+	require.Error(t, got.Attempts[1].Err)
+	require.Len(t, events, 3)
+	require.Equal(t, telemetry.OriginEnvVar, events[0].Origin)
+	require.True(t, events[0].Valid)
+	require.Equal(t, telemetry.OriginManagedStableConfig, events[1].Origin)
+	require.False(t, events[1].Valid)
+	require.Error(t, events[1].Err)
+	require.Equal(t, telemetry.OriginDefault, events[2].Origin)
+}
+
 func TestResolveSourcePolicies(t *testing.T) {
 	p := newTestProvider(
 		&resolveTestSource{raw: "managed", present: true, originValue: telemetry.OriginManagedStableConfig},

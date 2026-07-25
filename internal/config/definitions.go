@@ -160,6 +160,7 @@ func init() {
 	registerRaw(RawDefinition{Key: "DD_AGENT_HOST", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_API_KEY", Sources: SourceStable, Telemetry: TelemetryOmit})
 	registerRaw(RawDefinition{Key: "DD_APP_KEY", Sources: SourceStable, Telemetry: TelemetryOmit})
+	registerRaw(RawDefinition{Key: "DD_APM_TRACING_ENABLED", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_CIVISIBILITY_AGENTLESS_ENABLED", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_CIVISIBILITY_AGENTLESS_URL", Sources: SourceStable, Telemetry: TelemetryReport})
 	registerRaw(RawDefinition{Key: "DD_CIVISIBILITY_ENABLED", Sources: SourceStable, Telemetry: TelemetryReport})

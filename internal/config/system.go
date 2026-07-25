@@ -140,6 +140,7 @@ func init() {
 }
 
 func initializeSystemPackageSettings() {
+	installAppSecInitProviders()
 	applyLoggingRate()
 	processtags.SetEnabledProvider(ProcessTagsEnabled)
 	processtags.ReloadWithEnabled(ProcessTagsEnabled())

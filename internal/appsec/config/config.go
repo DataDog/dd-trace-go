@@ -10,9 +10,9 @@ import (
 	"log/slog"
 	"time"
 
-	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
@@ -26,17 +26,15 @@ func init() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry() {
-	_, _, err := stableconfig.Bool(EnvSCAEnabled, false)
-	if err != nil {
+	if err := internalconfig.ReportAppSecSCAInitTelemetry(); err != nil {
 		telemetrylog.Error("appsec: failed to get SCA config", slog.Any("error", telemetrylog.NewSafeError(err)))
-		return
 	}
 }
 
 // registerAgenticOnboardingTelemetry reports [EnvAgenticOnboarding] verbatim in configuration
 // telemetry (RFC-1113), always emitted: unset reports an empty value with origin=default.
 func registerAgenticOnboardingTelemetry() {
-	stableconfig.String(EnvAgenticOnboarding, "")
+	internalconfig.ReportAppSecAgenticInitTelemetry()
 }
 
 // The following environment variables dictate the enablement of different the ASM products.
@@ -168,6 +166,9 @@ type Config struct {
 	MetaStructAvailable bool
 	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
 	BlockingUnavailable bool
+	// RulesPresent reports whether DD_APPSEC_RULES was explicitly present,
+	// including an explicit empty value.
+	RulesPresent bool
 	// TracingAsTransport is true if APM is disabled and manually force keeping a trace is the only way for it to be sent.
 	TracingAsTransport bool
 }
@@ -200,33 +201,56 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 // If the [EnvEnabled] variable is set to a value that is not a valid boolean (according to
 // [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
-	enabled, origin, err := stableconfig.Bool(EnvEnabled, false)
-	if origin != telemetry.OriginDefault {
-		set = true
-	}
+	enabled, set, _, err, events := internalconfig.ResolveAppSecEnablement()
+	internalconfig.ReportAppSecDiagnostics(events)
 	return enabled, set, err
 }
 
 // NewConfig returns a fresh appsec configuration read from the env
 func (c *StartConfig) NewConfig() (*Config, error) {
-	data, err := RulesFromEnv()
+	rules, rulesPresent, err, _, events := internalconfig.ResolveAppSecRules()
+	internalconfig.ReportAppSecDiagnostics(events)
 	if err != nil {
 		return nil, fmt.Errorf("reading WAF rules from environment: %w", err)
 	}
-	manager, err := NewWAFManagerWithStaticRules(NewObfuscatorConfig(), data)
+	if rules == nil {
+		log.Debug("appsec: using the default built-in recommended security rules")
+	} else {
+		log.Debug("appsec: using the configured security rules")
+	}
+
+	obfuscator, events := internalconfig.ResolveAppSecObfuscatorSnapshot()
+	internalconfig.ReportAppSecDiagnostics(events)
+	manager, err := NewWAFManagerWithStaticRules(ObfuscatorConfig{
+		KeyRegex:   obfuscator.KeyRegex,
+		ValueRegex: obfuscator.ValueRegex,
+	}, rules)
 	if err != nil {
 		return nil, err
 	}
 
+	wafTimeout, _, events := internalconfig.ResolveAppSecWAFTimeout()
+	internalconfig.ReportAppSecDiagnostics(events)
+	traceRateLimit, _, events := internalconfig.ResolveAppSecTraceRateLimit()
+	internalconfig.ReportAppSecDiagnostics(events)
+	apiSecurity, events := internalconfig.ResolveAppSecAPISecuritySnapshot()
+	internalconfig.ReportAppSecDiagnostics(events)
+	apiSecurityConfig := newAPISecConfig(apiSecurity, c.APISecOptions...)
+	rasp, _, events := internalconfig.ResolveAppSecRASPEnabled()
+	internalconfig.ReportAppSecDiagnostics(events)
+	tracingEnabled, _, _, events := internalconfig.ResolveAppSecTracingEnabled()
+	internalconfig.ReportAppSecDiagnostics(events)
+
 	return &Config{
 		WAFManager:          manager,
-		WAFTimeout:          WAFTimeoutFromEnv(),
-		TraceRateLimit:      RateLimitFromEnv(),
-		APISec:              NewAPISecConfig(c.APISecOptions...),
-		RASP:                RASPEnabled(),
+		WAFTimeout:          wafTimeout,
+		TraceRateLimit:      traceRateLimit,
+		APISec:              apiSecurityConfig,
+		RASP:                rasp,
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
 		BlockingUnavailable: c.BlockingUnavailable,
-		TracingAsTransport:  !sharedinternal.BoolEnv("DD_APM_TRACING_ENABLED", true),
+		RulesPresent:        rulesPresent,
+		TracingAsTransport:  !tracingEnabled,
 	}, nil
 }

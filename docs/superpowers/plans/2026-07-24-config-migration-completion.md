@@ -739,11 +739,18 @@ git commit -m "refactor(config): centralize process-wide configuration"
 
 - Create: `internal/config/appsec.go`
 - Create: `internal/config/appsec_test.go`
+- Create: `internal/config/bootstrap/appsec.go`
+- Create: `internal/config/bootstrap/appsec_test.go`
+- Create: `internal/stacktrace/configbridge/config.go`
+- Create: `internal/stacktrace/configbridge/config_test.go`
+- Create: `internal/stacktrace/standalone_test.go`
 - Modify: `internal/appsec/config/config.go`
 - Modify: `internal/appsec/config/internal_config.go`
 - Modify: `internal/appsec/listener/httpsec/request.go`
 - Modify: `internal/appsec/remoteconfig.go`
 - Modify: `internal/stacktrace/stacktrace.go`
+- Modify: `scripts/configaudit/syntax.go`
+- Modify: `scripts/configaudit/scan_test.go`
 - Modify: `instrumentation/appsec/emitter/waf/actions/block.go`
 - Modify: `instrumentation/instrumentation.go`
 - Test: existing AppSec package tests
@@ -759,7 +766,11 @@ git commit -m "refactor(config): centralize process-wide configuration"
 Test explicit-empty `DD_APPSEC_RULES`, invalid enablement, sample-rate clamps,
 unitless WAF microseconds, positive rate limits, stack depth, and API Security
 message-limit warnings. Include managed-invalid plus environment-valid
-fallthrough.
+fallthrough. Cover managed/local explicit-empty stable values for enablement,
+SCA, and agentic onboarding, while preserving explicit-empty environment
+semantics. Build an isolated executable that imports stack traces through
+`instrumentation/errortrace` and `internal/telemetry` without
+`internal/config`.
 
 - [ ] **Step 2: Run and observe failures**
 
@@ -784,6 +795,15 @@ generic duration or boolean parsing.
 Construct the snapshot at the existing AppSec config boundary. Use the rules
 presence bit for remote-config capability suppression. Resolve stack-trace init
 settings through a targeted init binding.
+
+The standalone stack-trace import graph cannot receive an
+`internal/config`-installed provider because `internal/config` already depends
+transitively on stack traces. Cache the two environment-only stack-trace keys in
+the dependency-leaf bootstrap package instead. The bridge's permanent provider
+must consume that snapshot, and `internal/config` must atomically claim its
+telemetry metadata once after the reporter is available. Add only the exact
+`internal/config/bootstrap/appsec.go:resolveAppSecStackTrace` audit boundary and
+test that no broader bootstrap function is allowlisted.
 
 - [ ] **Step 5: Run and commit**
 

@@ -6,18 +6,10 @@
 package config
 
 import (
-	"fmt"
-	"math"
-	"os"
-	"regexp"
-	"strconv"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -57,25 +49,25 @@ const (
 // Configuration constants and default values
 const (
 	// DefaultAPISecSampleRate is the default rate at which API Security schemas are extracted from requests
-	DefaultAPISecSampleRate = .1
+	DefaultAPISecSampleRate = internalconfig.AppSecDefaultAPISecuritySampleRate
 	// DefaultAPISecSampleInterval is the default interval between two samples being taken.
-	DefaultAPISecSampleInterval = 30 * time.Second
+	DefaultAPISecSampleInterval = internalconfig.AppSecDefaultAPISecuritySampleInterval
 	// DefaultAPISecProxySampleRate is the default rate (schemas per minute) at which API Security schemas are extracted from requests
-	DefaultAPISecProxySampleRate = 300
+	DefaultAPISecProxySampleRate = internalconfig.AppSecDefaultAPISecurityProxySampleRate
 	// DefaultAPISecProxySampleInterval is the default time window for the API Security proxy sampler rate limiter.
 	DefaultAPISecProxySampleInterval = time.Minute
 	// DefaultDownstreamRequestBodyAnalysisSampleRate is the default sample rate for downstream request body analysis per incoming request.
-	DefaultDownstreamRequestBodyAnalysisSampleRate = 0.5
+	DefaultDownstreamRequestBodyAnalysisSampleRate = internalconfig.AppSecDefaultDownstreamRequestBodyAnalysisSampleRate
 	// DefaultMaxDownstreamRequestBodyAnalysis is the default maximum size in bytes of downstream request body to be analyzed.
-	DefaultMaxDownstreamRequestBodyAnalysis = 1
+	DefaultMaxDownstreamRequestBodyAnalysis = internalconfig.AppSecDefaultMaxDownstreamRequestBodyAnalysis
 	// DefaultObfuscatorKeyRegex is the default regexp used to obfuscate keys
-	DefaultObfuscatorKeyRegex = `(?i)pass|pw(?:or)?d|secret|(?:api|private|public|access)[_-]?key|token|consumer[_-]?(?:id|key|secret)|sign(?:ed|ature)|bearer|authorization|jsessionid|phpsessid|asp\.net[_-]sessionid|sid|jwt`
+	DefaultObfuscatorKeyRegex = internalconfig.AppSecDefaultObfuscatorKeyRegex
 	// DefaultObfuscatorValueRegex is the default regexp used to obfuscate values
-	DefaultObfuscatorValueRegex = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:[_-]?phrase)?|secret(?:[_-]?key)?|(?:(?:api|private|public|access)[_-]?)key(?:[_-]?id)?|(?:(?:auth|access|id|refresh)[_-]?)?token|consumer[_-]?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?|jsessionid|phpsessid|asp\.net(?:[_-]|-)sessionid|sid|jwt)(?:\s*=([^;&]+)|"\s*:\s*("[^"]+"|\d+))|bearer\s+([a-z0-9\._\-]+)|token\s*:\s*([a-z0-9]{13})|gh[opsu]_([0-9a-zA-Z]{36})|ey[I-L][\w=-]+\.(ey[I-L][\w=-]+(?:\.[\w.+\/=-]+)?)|[\-]{5}BEGIN[a-z\s]+PRIVATE\sKEY[\-]{5}([^\-]+)[\-]{5}END[a-z\s]+PRIVATE\sKEY|ssh-rsa\s*([a-z0-9\/\.+]{100,})`
+	DefaultObfuscatorValueRegex = internalconfig.AppSecDefaultObfuscatorValueRegex
 	// DefaultWAFTimeout is the default time limit past which a WAF run will timeout
-	DefaultWAFTimeout = 2 * time.Millisecond
+	DefaultWAFTimeout = internalconfig.AppSecDefaultWAFTimeout
 	// DefaultTraceRate is the default limit (trace/sec) past which ASM traces are sampled out
-	DefaultTraceRate = 100 // up to 100 appsec traces/s
+	DefaultTraceRate = internalconfig.AppSecDefaultTraceRate // up to 100 appsec traces/s
 )
 
 // APISecConfig holds the configuration for API Security schemas reporting.
@@ -102,17 +94,23 @@ type APISecOption func(*APISecConfig)
 
 // NewAPISecConfig creates and returns a new API Security configuration by reading the env
 func NewAPISecConfig(opts ...APISecOption) APISecConfig {
+	snapshot, events := internalconfig.ResolveAppSecAPISecuritySnapshot()
+	internalconfig.ReportAppSecDiagnostics(events)
+	return newAPISecConfig(snapshot, opts...)
+}
+
+func newAPISecConfig(snapshot internalconfig.AppSecAPISecuritySnapshot, opts ...APISecOption) APISecConfig {
 	cfg := APISecConfig{
-		Enabled:                                 internal.BoolEnv(EnvAPISecEnabled, true),
-		DownstreamRequestBodyAnalysisSampleRate: internal.FloatEnv(EnvAPISecDownstreamRequestBodyAnalysisSampleRate, DefaultDownstreamRequestBodyAnalysisSampleRate),
-		MaxDownstreamRequestBodyAnalysis:        internal.IntEnv(EnvAPISecMaxDownstreamRequestBodyAnalysis, DefaultMaxDownstreamRequestBodyAnalysis),
-		SampleRate:                              readAPISecuritySampleRate(),
+		Enabled:                                 snapshot.Enabled,
+		DownstreamRequestBodyAnalysisSampleRate: snapshot.DownstreamRequestBodyAnalysisSampleRate,
+		MaxDownstreamRequestBodyAnalysis:        snapshot.MaxDownstreamRequestBodyAnalysis,
+		SampleRate:                              snapshot.SampleRate,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
-	if !RASPEnabled() {
+	if !snapshot.RASPEnabled {
 		log.Debug("appsec: RASP functionalities are disabled, disabling API Security downward request body analysis")
 		cfg.DownstreamRequestBodyAnalysisSampleRate = 0.0
 		cfg.MaxDownstreamRequestBodyAnalysis = 0
@@ -123,10 +121,10 @@ func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 	}
 
 	if cfg.IsProxy {
-		rate := internal.IntEnv(EnvAPISecProxySampleRate, DefaultAPISecProxySampleRate)
+		rate, _ := internalconfig.ResolveAPISecuritySamplerConfig(true)
 		cfg.Sampler = apisec.NewProxySampler(rate, DefaultAPISecProxySampleInterval)
 	} else {
-		interval := internal.DurationEnvWithUnit(envAPISecSampleDelay, "s", DefaultAPISecSampleInterval)
+		_, interval := internalconfig.ResolveAPISecuritySamplerConfig(false)
 		cfg.Sampler = apisec.NewSampler(interval)
 	}
 
@@ -134,22 +132,8 @@ func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 }
 
 func readAPISecuritySampleRate() float64 {
-	value := env.Get(EnvAPISecSampleRate)
-	if value == "" {
-		return DefaultAPISecSampleRate
-	}
-
-	rate, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		logEnvVarParsingError(EnvAPISecSampleRate, value, err, DefaultAPISecSampleRate)
-		return DefaultAPISecSampleRate
-	}
-	// Clamp the value so that 0.0 <= rate <= 1.0
-	if rate < 0. {
-		rate = 0.
-	} else if rate > 1. {
-		rate = 1.
-	}
+	rate, events := internalconfig.ResolveAPISecuritySampleRate()
+	internalconfig.ReportAppSecDiagnostics(events)
 	return rate
 }
 
@@ -171,107 +155,46 @@ func WithProxy() APISecOption {
 // RASPEnabled returns true if RASP functionalities are enabled through the env, or if DD_APPSEC_RASP_ENABLED
 // is not set
 func RASPEnabled() bool {
-	return internal.BoolEnv(EnvRASPEnabled, true)
+	enabled, _, events := internalconfig.ResolveAppSecRASPEnabled()
+	internalconfig.ReportAppSecDiagnostics(events)
+	return enabled
 }
 
 // NewObfuscatorConfig creates and returns a new WAF obfuscator configuration by reading the env
 func NewObfuscatorConfig() ObfuscatorConfig {
-	keyRE := readObfuscatorConfigRegexp(EnvObfuscatorKey, DefaultObfuscatorKeyRegex)
-	valueRE := readObfuscatorConfigRegexp(EnvObfuscatorValue, DefaultObfuscatorValueRegex)
-	return ObfuscatorConfig{KeyRegex: keyRE, ValueRegex: valueRE}
-}
-
-func readObfuscatorConfigRegexp(name, defaultValue string) string {
-	val, present := env.Lookup(name)
-	if !present {
-		log.Debug("appsec: %s not defined, starting with the default obfuscator regular expression", name)
-		return defaultValue
-	}
-	if _, err := regexp.Compile(val); err != nil {
-		logUnexpectedEnvVarValue(name, val, "could not compile the configured obfuscator regular expression", defaultValue)
-		return defaultValue
-	}
-	log.Debug("appsec: starting with the configured obfuscator regular expression %s", name)
-	return val
+	snapshot, events := internalconfig.ResolveAppSecObfuscatorSnapshot()
+	internalconfig.ReportAppSecDiagnostics(events)
+	return ObfuscatorConfig{KeyRegex: snapshot.KeyRegex, ValueRegex: snapshot.ValueRegex}
 }
 
 // WAFTimeoutFromEnv reads and parses the WAF timeout value set through the env
 // If not set, it defaults to `DefaultWAFTimeout`
 func WAFTimeoutFromEnv() (timeout time.Duration) {
-	timeout = DefaultWAFTimeout
-	value := env.Get(EnvWAFTimeout)
-	if value == "" {
-		return
-	}
-
-	// Check if the value ends with a letter, which means the user has
-	// specified their own time duration unit(s) such as 1s200ms.
-	// Otherwise, default to microseconds.
-	if lastRune, _ := utf8.DecodeLastRuneInString(value); !unicode.IsLetter(lastRune) {
-		value += "us" // Add the default microsecond time-duration suffix
-	}
-
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		logEnvVarParsingError(EnvWAFTimeout, value, err, timeout)
-		return
-	}
-	if parsed <= 0 {
-		logUnexpectedEnvVarValue(EnvWAFTimeout, parsed, "expecting a strictly positive duration", timeout)
-		return
-	}
-	return parsed
+	timeout, _, events := internalconfig.ResolveAppSecWAFTimeout()
+	internalconfig.ReportAppSecDiagnostics(events)
+	return timeout
 }
 
 // RateLimitFromEnv reads and parses the trace rate limit set through the env
 // If not set, it defaults to `DefaultTraceRate`
 func RateLimitFromEnv() (rate int64) {
-	rate = DefaultTraceRate
-	value := env.Get(EnvTraceRateLimit)
-	if value == "" {
-		return rate
-	}
-	parsed, err := strconv.ParseUint(value, 10, 0)
-	if err != nil {
-		logEnvVarParsingError(EnvTraceRateLimit, value, err, rate)
-		return
-	}
-	if parsed == 0 {
-		logUnexpectedEnvVarValue(EnvTraceRateLimit, parsed, "expecting a value strictly greater than 0", rate)
-		return
-	}
-	if parsed > math.MaxInt64 {
-		logUnexpectedEnvVarValue(EnvTraceRateLimit, parsed, "expecting a value less than or equal to math.MaxInt64", rate)
-		return
-	}
-	return int64(parsed)
+	rate, _, events := internalconfig.ResolveAppSecTraceRateLimit()
+	internalconfig.ReportAppSecDiagnostics(events)
+	return rate
 }
 
 // RulesFromEnv returns the security rules provided through the environment
 // If the env var is not set, the default recommended rules are returned instead
 func RulesFromEnv() ([]byte, error) {
-	filepath := env.Get(EnvRules)
-	if filepath == "" {
+	rules, _, err, _, events := internalconfig.ResolveAppSecRules()
+	internalconfig.ReportAppSecDiagnostics(events)
+	if err != nil {
+		return nil, err
+	}
+	if rules == nil {
 		log.Debug("appsec: using the default built-in recommended security rules")
 		return nil, nil
 	}
-	buf, err := os.ReadFile(filepath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			err = fmt.Errorf("appsec: could not find the rules file in path %s: %w", filepath, err)
-		}
-		return nil, err
-	}
-	log.Debug("appsec: using the security rules from file %s", filepath)
-	return buf, nil
-}
-
-func logEnvVarParsingError(name, value string, err error, defaultValue any) {
-	//nolint:gocritic // we're trying to be helpful here...
-	log.Debug("appsec: could not parse the env var %s=%s as a duration: %v. Using default value %v.", name, value, err, defaultValue)
-}
-
-func logUnexpectedEnvVarValue(name string, value any, reason string, defaultValue any) {
-	//nolint:gocritic // we're trying to be helpful here...
-	log.Debug("appsec: unexpected configuration value of %s=%v: %s. Using default value %v.", name, value, reason, defaultValue)
+	log.Debug("appsec: using the configured security rules")
+	return rules, nil
 }

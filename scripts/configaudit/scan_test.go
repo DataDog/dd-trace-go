@@ -155,17 +155,25 @@ func allowedRead(key string) string {
 	}
 }
 
-func TestDefaultRawReadAllowlistIncludesOnlyTelemetryBootstrapBoundary(t *testing.T) {
+func TestDefaultRawReadAllowlistIncludesOnlyExactBootstrapBoundaries(t *testing.T) {
 	allow := defaultRawReadAllowlist()
-	location := rawReadLocation{
-		File: "internal/config/bootstrap/telemetry.go",
-		Func: "TelemetryEnabled",
+	locations := map[rawReadLocation]struct{}{
+		{
+			File: "internal/config/bootstrap/telemetry.go",
+			Func: "TelemetryEnabled",
+		}: {},
+		{
+			File: "internal/config/bootstrap/appsec.go",
+			Func: "resolveAppSecStackTrace",
+		}: {},
 	}
-	if _, ok := allow[location]; !ok {
-		t.Fatalf("telemetry bootstrap boundary is not allowlisted: %#v", allow)
+	for location := range locations {
+		if _, ok := allow[location]; !ok {
+			t.Fatalf("bootstrap boundary is not allowlisted: %#v", location)
+		}
 	}
 	for candidate := range allow {
-		if strings.HasPrefix(candidate.File, "internal/config/bootstrap/") && candidate != location {
+		if _, ok := locations[candidate]; strings.HasPrefix(candidate.File, "internal/config/bootstrap/") && !ok {
 			t.Fatalf("unexpected broader bootstrap allowlist entry: %#v", candidate)
 		}
 	}
@@ -668,15 +676,14 @@ func TestScan_Fixture(t *testing.T) {
 }
 
 func TestScan_RealRepoFindsUnmigratedReads(t *testing.T) {
-	// Smoke test: DD_APPSEC_ENABLED is read directly in internal/appsec/config
-	// and is outside the tracer migration scope, so it should always appear as
-	// an unmigrated call site.
+	// Smoke test: DD_PROFILING_ENABLED is still read directly by the profiler,
+	// so it should appear as an unmigrated call site.
 	root := filepath.Join("..", "..")
 	got, err := scan(root, defaultRecognizers(), defaultExcludes())
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if len(got["DD_APPSEC_ENABLED"]) == 0 {
-		t.Fatal("expected DD_APPSEC_ENABLED call sites in real repo, got none")
+	if len(got["DD_PROFILING_ENABLED"]) == 0 {
+		t.Fatal("expected DD_PROFILING_ENABLED call sites in real repo, got none")
 	}
 }
