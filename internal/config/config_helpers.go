@@ -199,7 +199,7 @@ func resolveTraceProtocol(v string) float64 {
 }
 
 // resolveAgentURL computes the final agent URL from the three env-var strings
-// read through the provider. The priority mirrors internal.AgentURLFromEnv:
+// read through the provider:
 //  1. DD_TRACE_AGENT_URL (if non-empty and valid)
 //  2. DD_AGENT_HOST / DD_TRACE_AGENT_PORT (if either is non-empty)
 //  3. DefaultTraceAgentUDSPath (if the socket file exists)
