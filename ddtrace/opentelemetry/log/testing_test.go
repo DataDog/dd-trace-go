@@ -7,10 +7,21 @@ package log
 
 import (
 	"context"
+	"os"
 	"sync"
+	"testing"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
+
+func TestMain(m *testing.M) {
+	internalconfig.SetUseFreshConfig(true)
+	code := m.Run()
+	internalconfig.SetUseFreshConfig(false)
+	os.Exit(code)
+}
 
 // testExporter is a simple in-memory exporter for testing.
 // It captures all exported log records for verification.

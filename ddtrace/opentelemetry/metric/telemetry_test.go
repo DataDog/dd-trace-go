@@ -38,9 +38,8 @@ func TestTelemetryDefaultConfigurations(t *testing.T) {
 	for configName, expectedValue := range expectedDefaults {
 		found := false
 		for _, cfg := range recorder.Configuration {
-			if cfg.Name == configName {
+			if cfg.Name == configName && assert.ObjectsAreEqual(expectedValue, cfg.Value) {
 				found = true
-				assert.Equal(t, expectedValue, cfg.Value, "config %s has wrong value", configName)
 				assert.Equal(t, telemetry.OriginDefault, cfg.Origin, "config %s should have default origin", configName)
 				break
 			}
@@ -83,9 +82,8 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 	for configName, expectedValue := range expectedConfigs {
 		found := false
 		for _, cfg := range recorder.Configuration {
-			if cfg.Name == configName {
+			if cfg.Name == configName && assert.ObjectsAreEqual(expectedValue, cfg.Value) {
 				found = true
-				assert.Equal(t, expectedValue, cfg.Value, "config %s has wrong value", configName)
 				assert.Equal(t, telemetry.OriginEnvVar, cfg.Origin, "config %s should have env_var origin", configName)
 				break
 			}
@@ -136,9 +134,8 @@ func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
 	for configName, expectedValue := range expectedConfigs {
 		found := false
 		for _, cfg := range recorder.Configuration {
-			if cfg.Name == configName {
+			if cfg.Name == configName && assert.ObjectsAreEqual(expectedValue, cfg.Value) {
 				found = true
-				assert.Equal(t, expectedValue, cfg.Value, "config %s has wrong value", configName)
 				assert.Equal(t, telemetry.OriginEnvVar, cfg.Origin, "config %s should have env_var origin", configName)
 				break
 			}

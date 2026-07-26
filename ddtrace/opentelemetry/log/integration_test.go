@@ -11,18 +11,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func TestStart(t *testing.T) {
 	t.Run("does nothing when DD_LOGS_OTEL_ENABLED=false", func(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
-
-		// Ensure DD_LOGS_OTEL_ENABLED is false (default)
-		config.SetUseFreshConfig(true)
-		defer config.SetUseFreshConfig(false)
 
 		err := Start(context.Background())
 		assert.NoError(t, err)
@@ -37,8 +31,6 @@ func TestStart(t *testing.T) {
 		_ = ShutdownGlobalLoggerProvider(context.Background())
 
 		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
-		config.SetUseFreshConfig(true)
-		defer config.SetUseFreshConfig(false)
 
 		err := Start(context.Background())
 		require.NoError(t, err)
@@ -57,8 +49,6 @@ func TestStart(t *testing.T) {
 		_ = ShutdownGlobalLoggerProvider(context.Background())
 
 		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
-		config.SetUseFreshConfig(true)
-		defer config.SetUseFreshConfig(false)
 
 		err1 := Start(context.Background())
 		require.NoError(t, err1)
@@ -141,8 +131,6 @@ func TestIntegration(t *testing.T) {
 		t.Setenv("DD_SERVICE", "test-service")
 		t.Setenv("DD_ENV", "test")
 		t.Setenv("DD_VERSION", "1.0.0")
-		config.SetUseFreshConfig(true)
-		defer config.SetUseFreshConfig(false)
 
 		// Start
 		err := Start(context.Background())
@@ -162,9 +150,6 @@ func TestIntegration(t *testing.T) {
 	t.Run("full lifecycle with DD_LOGS_OTEL_ENABLED=false", func(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
-
-		config.SetUseFreshConfig(true)
-		defer config.SetUseFreshConfig(false)
 
 		// Start (should be no-op)
 		err := Start(context.Background())

@@ -10,7 +10,7 @@ import (
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -45,17 +45,18 @@ const (
 //     → If DD_TRACE_REPORT_HOSTNAME="true": DD_HOSTNAME → detected hostname (os.Hostname())
 //     → Otherwise: hostname is NOT added to resource
 func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resource.Resource, error) {
+	cfg := internalconfig.Get()
 	attrs := []attribute.KeyValue{}
 
 	// Parse DD_TAGS first to check for service, env, version there
 	ddTags := make(map[string]string)
-	if ddTagsStr := env.Get(envDDTags); ddTagsStr != "" {
+	if ddTagsStr := cfg.RawGlobalTags(); ddTagsStr != "" {
 		ddTags = internal.ParseTagString(ddTagsStr)
 	}
 
 	// Parse OTEL_RESOURCE_ATTRIBUTES
 	otelAttrs := make(map[string]string)
-	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
+	if otelAttrStr := cfg.OTelResourceAttributes(); otelAttrStr != "" {
 		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
 	}
 
@@ -127,7 +128,7 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 // serviceName returns the service name from environment variables with priority order
 func serviceName(ddTags, otelAttrs map[string]string) string {
 	// DD_SERVICE has highest priority
-	if v := env.Get(envDDService); v != "" {
+	if v := internalconfig.Get().ServiceName(); v != "" {
 		return v
 	}
 	// DD_TAGS[service]
@@ -135,7 +136,7 @@ func serviceName(ddTags, otelAttrs map[string]string) string {
 		return v
 	}
 	// OTEL_SERVICE_NAME
-	if v := env.Get(envOtelServiceName); v != "" {
+	if v := internalconfig.Get().OTelServiceName(); v != "" {
 		return v
 	}
 	// OTEL_RESOURCE_ATTRIBUTES[service.name]
@@ -148,7 +149,7 @@ func serviceName(ddTags, otelAttrs map[string]string) string {
 // environmentName returns the environment name from environment variables with priority order
 func environmentName(ddTags, otelAttrs map[string]string) string {
 	// DD_ENV has highest priority
-	if v := env.Get(envDDEnv); v != "" {
+	if v := internalconfig.Get().Env(); v != "" {
 		return v
 	}
 	// DD_TAGS[env]
@@ -165,7 +166,7 @@ func environmentName(ddTags, otelAttrs map[string]string) string {
 // version returns the version from environment variables with priority order
 func version(ddTags, otelAttrs map[string]string) string {
 	// DD_VERSION has highest priority
-	if v := env.Get(envDDVersion); v != "" {
+	if v := internalconfig.Get().Version(); v != "" {
 		return v
 	}
 	// DD_TAGS[version]
@@ -197,15 +198,15 @@ func hostname(otelAttrs map[string]string) (string, bool) {
 		return v, true
 	}
 
-	// 2. Check if DD_TRACE_REPORT_HOSTNAME is explicitly set to "true"
-	reportHostname := env.Get(envDDTraceReportHostname)
-	if reportHostname != "true" {
+	// 2. Check whether hostname reporting is enabled.
+	cfg := internalconfig.Get()
+	if !cfg.ReportHostname() {
 		// If not explicitly "true", do NOT add hostname
 		return "", false
 	}
 
 	// 3. DD_TRACE_REPORT_HOSTNAME="true" - try DD_HOSTNAME first
-	if v := env.Get(envDDHostname); v != "" {
+	if v := cfg.ConfiguredHostname(); v != "" {
 		return v, true
 	}
 

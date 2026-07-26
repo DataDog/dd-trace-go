@@ -85,6 +85,9 @@ func TestRegisterTelemetry(t *testing.T) {
 		var foundLogsTimeout, foundMaxQueueSize, foundScheduleDelay, foundExportTimeout, foundMaxBatchSize bool
 
 		for _, cfg := range recorder.Configuration {
+			if _, ok := cfg.Value.(int); !ok {
+				continue
+			}
 			switch cfg.Name {
 			case envOTLPLogsTimeout:
 				foundLogsTimeout = true

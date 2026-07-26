@@ -9,11 +9,10 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/url"
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -118,12 +117,13 @@ func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Optio
 // otlpProtocol returns the OTLP protocol from environment variables.
 // Priority: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/protobuf"
 func otlpProtocol() string {
+	cfg := internalconfig.Get()
 	// Check metrics-specific protocol first
-	if protocol := env.Get(envOTLPMetricsProtocol); protocol != "" {
+	if protocol := cfg.OTelExporterOTLPMetricsProtocol(); protocol != "" {
 		return strings.ToLower(strings.TrimSpace(protocol))
 	}
 	// Fall back to general OTLP protocol
-	if protocol := env.Get(envOTLPProtocol); protocol != "" {
+	if protocol := cfg.OTelExporterOTLPProtocol(); protocol != "" {
 		return strings.ToLower(strings.TrimSpace(protocol))
 	}
 	// Default to HTTP with protobuf
@@ -213,10 +213,11 @@ func buildGRPCExporterOptions(userOpts ...otlpmetricgrpc.Option) []otlpmetricgrp
 
 // hasOTLPEndpointInEnv checks if OTLP endpoint is configured via OTEL environment variables
 func hasOTLPEndpointInEnv() bool {
-	if v := env.Get(envOTLPMetricsEndpoint); v != "" {
+	cfg := internalconfig.Get()
+	if v := cfg.OTelExporterOTLPMetricsEndpoint(); v != "" {
 		return true
 	}
-	if v := env.Get(envOTLPEndpoint); v != "" {
+	if v := cfg.OTelExporterOTLPEndpoint(); v != "" {
 		return true
 	}
 	return false
@@ -236,29 +237,17 @@ func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 	path = defaultOTLPPath
 	insecure = true // default to http
 
-	// Check DD_TRACE_AGENT_URL first
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for metrics: %s, using default", err.Error())
-		} else {
-			// Extract hostname from the agent URL and use port 4318
-			hostname := u.Hostname()
-			if hostname != "" {
-				endpoint = net.JoinHostPort(hostname, defaultOTLPPort)
-				// Preserve the scheme from DD_TRACE_AGENT_URL
-				insecure = (u.Scheme == "http" || u.Scheme == "unix")
-				log.Debug("Using OTLP metrics endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
-				return
-			}
+	// The singleton has already applied DD_TRACE_AGENT_URL > DD_AGENT_HOST > default priority.
+	if agentURL := internalconfig.Get().RawAgentURL(); agentURL != nil {
+		// Extract hostname from the agent URL and use port 4318.
+		hostname := agentURL.Hostname()
+		if hostname != "" {
+			endpoint = net.JoinHostPort(hostname, defaultOTLPPort)
+			// Preserve the configured agent URL scheme.
+			insecure = (agentURL.Scheme == "http" || agentURL.Scheme == "unix")
+			log.Debug("Using OTLP metrics endpoint from configured agent URL: %s", endpoint)
+			return
 		}
-	}
-
-	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, defaultOTLPPort)
-		insecure = true
-		return
 	}
 
 	// Default to localhost:4318
@@ -280,29 +269,17 @@ func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
 	insecure = true // default to grpc (not grpcs)
 	const defaultGRPCPort = "4317"
 
-	// Check DD_TRACE_AGENT_URL first
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for metrics: %s, using default", err.Error())
-		} else {
-			// Extract hostname from the agent URL and use port 4317 for gRPC
-			hostname := u.Hostname()
-			if hostname != "" {
-				endpoint = net.JoinHostPort(hostname, defaultGRPCPort)
-				// Preserve the scheme from DD_TRACE_AGENT_URL
-				insecure = (u.Scheme == "http" || u.Scheme == "unix")
-				log.Debug("Using OTLP gRPC metrics endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
-				return
-			}
+	// The singleton has already applied DD_TRACE_AGENT_URL > DD_AGENT_HOST > default priority.
+	if agentURL := internalconfig.Get().RawAgentURL(); agentURL != nil {
+		// Extract hostname from the agent URL and use port 4317.
+		hostname := agentURL.Hostname()
+		if hostname != "" {
+			endpoint = net.JoinHostPort(hostname, defaultGRPCPort)
+			// Preserve the configured agent URL scheme.
+			insecure = (agentURL.Scheme == "http" || agentURL.Scheme == "unix")
+			log.Debug("Using OTLP gRPC metrics endpoint from configured agent URL: %s", endpoint)
+			return
 		}
-	}
-
-	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, defaultGRPCPort)
-		log.Debug("Using OTLP gRPC metrics endpoint from DD_AGENT_HOST: %s", endpoint)
-		return
 	}
 
 	// Default to localhost:4317

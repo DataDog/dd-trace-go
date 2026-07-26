@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -28,6 +29,7 @@ import (
 //   - BatchLogRecordProcessor Configurations: OTEL_BLRP_MAX_QUEUE_SIZE, OTEL_BLRP_SCHEDULE_DELAY,
 //     OTEL_BLRP_EXPORT_TIMEOUT, OTEL_BLRP_MAX_EXPORT_BATCH_SIZE
 func registerTelemetry() {
+	cfg := internalconfig.Get()
 	telemetryConfigs := []telemetry.Configuration{}
 
 	// ===========================================
@@ -45,7 +47,7 @@ func registerTelemetry() {
 	})
 
 	// OTEL_EXPORTER_OTLP_HEADERS
-	if headers := env.Get(envOTLPHeaders); headers != "" {
+	if headers := cfg.OTelExporterOTLPHeaders(); headers != "" {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 			Name:   envOTLPHeaders,
 			Value:  headers,
@@ -54,7 +56,7 @@ func registerTelemetry() {
 	}
 
 	// OTEL_EXPORTER_OTLP_PROTOCOL
-	if protocol := env.Get(envOTLPProtocol); protocol != "" {
+	if protocol := cfg.OTelExporterOTLPProtocol(); protocol != "" {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 			Name:   envOTLPProtocol,
 			Value:  strings.ToLower(strings.TrimSpace(protocol)),
@@ -63,7 +65,7 @@ func registerTelemetry() {
 	}
 
 	// OTEL_EXPORTER_OTLP_ENDPOINT
-	if endpoint := env.Get(envOTLPEndpoint); endpoint != "" {
+	if endpoint := cfg.OTelExporterOTLPEndpoint(); endpoint != "" {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 			Name:   envOTLPEndpoint,
 			Value:  endpoint,
@@ -84,7 +86,7 @@ func registerTelemetry() {
 	})
 
 	// OTEL_EXPORTER_OTLP_LOGS_HEADERS
-	if headers := env.Get(envOTLPLogsHeaders); headers != "" {
+	if headers := cfg.OTelExporterOTLPLogsHeaders(); headers != "" {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 			Name:   envOTLPLogsHeaders,
 			Value:  headers,
@@ -93,7 +95,7 @@ func registerTelemetry() {
 	}
 
 	// OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
-	if protocol := env.Get(envOTLPLogsProtocol); protocol != "" {
+	if protocol := cfg.OTelExporterOTLPLogsProtocol(); protocol != "" {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 			Name:   envOTLPLogsProtocol,
 			Value:  strings.ToLower(strings.TrimSpace(protocol)),
@@ -102,7 +104,7 @@ func registerTelemetry() {
 	}
 
 	// OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
-	if endpoint := env.Get(envOTLPLogsEndpoint); endpoint != "" {
+	if endpoint := cfg.OTelExporterOTLPLogsEndpoint(); endpoint != "" {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 			Name:   envOTLPLogsEndpoint,
 			Value:  endpoint,

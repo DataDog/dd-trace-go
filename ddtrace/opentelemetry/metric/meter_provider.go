@@ -18,7 +18,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 )
 
@@ -159,19 +158,10 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 }
 
 func metricsEnabled(c *internalconfig.Config) bool {
-	if c != nil {
-		return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
+	if c == nil {
+		c = internalconfig.Get()
 	}
-	if exporter := env.Get(envOtelMetricsExporter); exporter != "" {
-		if strings.ToLower(strings.TrimSpace(exporter)) == "none" {
-			return false
-		}
-	}
-	switch strings.ToLower(strings.TrimSpace(env.Get(envDDMetricsOtelEnabled))) {
-	case "true", "1":
-		return true
-	}
-	return false
+	return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
 }
 
 // isNoop returns true if the given MeterProvider is a no-op provider that doesn't export metrics.
@@ -214,7 +204,7 @@ func ForceFlush(ctx context.Context, mp otelmetric.MeterProvider) error {
 // UpDownCounter and ObservableUpDownCounter ALWAYS use Cumulative (even if DELTA is requested).
 func deltaTemporalitySelector() metric.TemporalitySelector {
 	// Check if user has explicitly set temporality preference
-	temporalityPref := strings.ToUpper(strings.TrimSpace(env.Get("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")))
+	temporalityPref := strings.ToUpper(strings.TrimSpace(internalconfig.Get().OTelExporterOTLPMetricsTemporalityPreference()))
 
 	return func(kind metric.InstrumentKind) metricdata.Temporality {
 		// UpDownCounter and Gauge ALWAYS use cumulative, regardless of preference

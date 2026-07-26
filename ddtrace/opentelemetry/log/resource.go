@@ -11,7 +11,7 @@ import (
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -51,15 +51,17 @@ const (
 //
 // - Datadog hostname takes precedence over OTEL hostname if both are present
 func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Resource, error) {
+	cfg := internalconfig.Get()
+
 	// Step 1: Parse OTEL_RESOURCE_ATTRIBUTES as base layer
 	otelAttrs := make(map[string]string)
-	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
+	if otelAttrStr := cfg.OTelResourceAttributes(); otelAttrStr != "" {
 		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
 	}
 
 	// Step 2: Parse DD_TAGS
 	ddTags := make(map[string]string)
-	if ddTagsStr := env.Get(envDDTags); ddTagsStr != "" {
+	if ddTagsStr := cfg.RawGlobalTags(); ddTagsStr != "" {
 		ddTags = internal.ParseTagString(ddTagsStr)
 	}
 
@@ -67,24 +69,23 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	// Start with OTEL attributes as base
 	attrs := make(map[string]string)
 	maps.Copy(attrs, otelAttrs)
+	// Overlay DD_TAGS (all key-value pairs)
+	maps.Copy(attrs, ddTags)
 
 	// Overlay DD_SERVICE → service.name
-	if ddService := env.Get(envDDService); ddService != "" {
+	if ddService := cfg.ServiceName(); ddService != "" {
 		attrs["service.name"] = ddService
 	}
 
 	// Overlay DD_ENV → deployment.environment.name
-	if ddEnv := env.Get(envDDEnv); ddEnv != "" {
+	if ddEnv := cfg.Env(); ddEnv != "" {
 		attrs["deployment.environment.name"] = ddEnv
 	}
 
 	// Overlay DD_VERSION → service.version
-	if ddVersion := env.Get(envDDVersion); ddVersion != "" {
+	if ddVersion := cfg.Version(); ddVersion != "" {
 		attrs["service.version"] = ddVersion
 	}
-
-	// Overlay DD_TAGS (all key-value pairs)
-	maps.Copy(attrs, ddTags)
 
 	// Step 4: Handle hostname with special rules
 	// OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - never override it
@@ -137,9 +138,8 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 // Just setting DD_HOSTNAME alone does NOT add hostname - it needs DD_TRACE_REPORT_HOSTNAME=true.
 // This ensures hostname is only sent when explicitly enabled (privacy by default).
 func resolveHostname() (string, bool) {
-	// Check if DD_TRACE_REPORT_HOSTNAME is set to "true"
-	reportHostname := env.Get(envDDTraceReportHostname)
-	if reportHostname != "true" {
+	cfg := internalconfig.Get()
+	if !cfg.ReportHostname() {
 		// Hostname reporting not enabled - do not add hostname
 		return "", false
 	}
@@ -148,7 +148,7 @@ func resolveHostname() (string, bool) {
 	// Priority: DD_HOSTNAME → detected hostname
 
 	// Check DD_HOSTNAME first
-	if ddHostname := env.Get(envDDHostname); ddHostname != "" {
+	if ddHostname := cfg.ConfiguredHostname(); ddHostname != "" {
 		return ddHostname, true
 	}
 
