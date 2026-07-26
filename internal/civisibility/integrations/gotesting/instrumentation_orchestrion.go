@@ -19,12 +19,12 @@ import (
 	_ "unsafe" // required blank import to run orchestrion
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -61,7 +61,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 			coverage.InitializeCoverage(m, true)
 			coverageInitialized = true
 		}
-		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+		if settings.TestManagement.Enabled && internalconfig.Get().TestManagementEnabled() {
 			// Set the test management tag if enabled.
 			session.SetTag(constants.TestManagementEnabled, "true")
 		}

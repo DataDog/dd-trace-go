@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
@@ -31,6 +32,8 @@ import (
 var mockTracer mocktracer.Tracer
 
 func TestMain(m *testing.M) {
+	internalconfig.SetUseFreshConfig(true)
+
 	// Avoid any backend calls during tests
 	additionalFeaturesInitializationOnce = sync.Once{}
 	additionalFeaturesInitializationOnce.Do(func() {})

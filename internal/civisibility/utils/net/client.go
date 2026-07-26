@@ -20,7 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -98,16 +98,17 @@ var (
 // NewClientWithServiceNameAndSubdomain creates a new client with the given service name and subdomain.
 func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client {
 	ciTags := utils.GetCITags()
+	processConfig := internalconfig.Get()
 
 	// get the environment
-	environment := env.Get("DD_ENV")
+	environment := processConfig.Env()
 	if environment == "" {
 		environment = "none"
 	}
 
 	// get the service name
 	if serviceName == "" {
-		serviceName = env.Get("DD_SERVICE")
+		serviceName = processConfig.ServiceName()
 		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
@@ -123,7 +124,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 
 	// get all custom configuration (test.configuration.*)
 	var customConfiguration map[string]string
-	if v := env.Get("DD_TAGS"); v != "" {
+	if v := processConfig.RawGlobalTags(); v != "" {
 		prefix := "test.configuration."
 		for k, v := range internal.ParseTagString(v) {
 			if strings.HasPrefix(k, prefix) {
@@ -143,10 +144,10 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	var agentURL *url.URL
 	var apiKeyValue string
 
-	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	agentlessEnabled := processConfig.CIVisibilityAgentless()
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		apiKeyValue = env.Get(constants.APIKeyEnvironmentVariable)
+		apiKeyValue = processConfig.APIKey()
 		if apiKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 			return nil
@@ -155,14 +156,11 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		defaultHeaders["dd-api-key"] = apiKeyValue
 
 		// Check for a custom agentless URL.
-		agentlessURL := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable)
+		agentlessURL := processConfig.CIVisibilityAgentlessURL()
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
-			site := "datadoghq.com"
-			if v := env.Get("DD_SITE"); v != "" {
-				site = v
-			}
+			site := processConfig.Site()
 			baseURL = fmt.Sprintf("https://%s.%s", subdomain, site)
 		} else {
 			// Use the custom agentless URL.
@@ -174,7 +172,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		// Use agent mode with the EVP proxy.
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = subdomain
 
-		agentURL = internal.AgentURLFromEnv()
+		agentURL = processConfig.RawAgentURL()
 		if agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
@@ -214,7 +212,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			if agentURL != nil {
 				cfg.AgentURL = agentURL.String()
 			}
-			client, err := telemetry.NewClient(serviceName, environment, env.Get("DD_VERSION"), cfg)
+			client, err := telemetry.NewClient(serviceName, environment, processConfig.Version(), cfg)
 			if err != nil {
 				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())
 				return

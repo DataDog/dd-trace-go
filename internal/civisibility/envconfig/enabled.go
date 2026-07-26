@@ -10,8 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 // EnabledMode is the parsed mode for DD_CIVISIBILITY_ENABLED.
@@ -55,9 +54,9 @@ func Enabled(mode EnabledMode) bool {
 	return mode == EnabledModeEnabled || mode == EnabledModeParent
 }
 
-// FromEnv reads and parses DD_CIVISIBILITY_ENABLED from the process environment.
+// FromEnv reads and parses DD_CIVISIBILITY_ENABLED from the process configuration.
 func FromEnv() (EnabledMode, bool) {
-	value, ok := internalenv.Lookup(constants.CIVisibilityEnabledEnvironmentVariable)
+	value, ok := internalconfig.Get().CIVisibilityEnabledRaw()
 	if !ok {
 		return EnabledModeDisabled, false
 	}

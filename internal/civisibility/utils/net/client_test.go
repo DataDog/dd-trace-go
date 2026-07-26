@@ -13,7 +13,13 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
+
+func TestMain(m *testing.M) {
+	internalconfig.SetUseFreshConfig(true)
+	os.Exit(m.Run())
+}
 
 // saveEnv captures the current process environment so tests can restore it after mutating globals.
 func saveEnv() []string {

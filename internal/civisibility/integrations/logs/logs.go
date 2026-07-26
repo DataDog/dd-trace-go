@@ -11,8 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
-
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 )
 
@@ -43,7 +42,7 @@ func IsEnabled() bool {
 // logsMu must be held by the caller.
 func isEnabledLocked() bool {
 	if enabled == nil {
-		v, _, _ := stableconfig.Bool("DD_CIVISIBILITY_LOGS_ENABLED", false)
+		v := internalconfig.Get().CIVisibilityLogsEnabled()
 		enabled = &v
 	}
 

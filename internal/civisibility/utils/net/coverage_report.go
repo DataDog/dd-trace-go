@@ -17,7 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -37,7 +37,7 @@ const (
 func NewClientForCoverageReportUpload() Client {
 	client := NewClientWithServiceNameAndSubdomain("", coverageReportSubDomain)
 	if coverageClient, ok := client.(coverageClient); ok {
-		coverageClient.SetCoverageFlags(parseCoverageReportFlags(env.Get(constants.CodeCoverageFlagsEnvironmentVariable)))
+		coverageClient.SetCoverageFlags(parseCoverageReportFlags(internalconfig.Get().CodeCoverageFlags()))
 	}
 	return client
 }

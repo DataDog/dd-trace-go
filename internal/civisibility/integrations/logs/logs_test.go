@@ -14,9 +14,16 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	internalconfig.SetUseFreshConfig(true)
+	os.Exit(m.Run())
+}
 
 // resetGlobalState is a helper that resets the package level variables that keep
 // state between invocations. This is required so that each test can start with

@@ -23,9 +23,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -95,10 +94,11 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 	ciVisibilityInitializationOnce.Do(func() {
 		civisibility.SetState(civisibility.StateInitializing)
 		defer civisibility.SetState(civisibility.StateInitialized)
+		cfg := internalconfig.Get()
 
 		// check the debug flag to enable debug logs. The tracer initialization happens
 		// after the CI Visibility initialization so we need to handle this flag ourselves
-		if enabled, _, _ := stableconfig.Bool("DD_TRACE_DEBUG", false); enabled {
+		if cfg.Debug() {
 			log.SetLevel(log.LevelDebug)
 		}
 
@@ -122,7 +122,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
-		serviceName := env.Get("DD_SERVICE")
+		serviceName := cfg.ServiceName()
 		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name

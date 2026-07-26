@@ -30,6 +30,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -40,6 +41,8 @@ var parallelEfd bool
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
+	internalconfig.SetUseFreshConfig(true)
+
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
 	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 

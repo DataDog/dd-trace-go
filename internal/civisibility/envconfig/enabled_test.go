@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
 
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,9 @@ func TestEnabled(t *testing.T) {
 }
 
 func TestFromEnv(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
+
 	t.Run("missing", func(t *testing.T) {
 		unsetCIVisibilityEnabledForTest(t)
 

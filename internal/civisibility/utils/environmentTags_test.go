@@ -12,9 +12,15 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestMain(m *testing.M) {
+	internalconfig.SetUseFreshConfig(true)
+	os.Exit(m.Run())
+}
 
 func TestGetCITagsCache(t *testing.T) {
 	ResetCITags()

@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -110,6 +110,7 @@ func ensureSettingsInitialization(serviceName string) {
 	settingsInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing settings")
 		defer log.Debug("civisibility: settings initialization complete")
+		cfg := internalconfig.Get()
 
 		// Create the CI Visibility client
 		ciVisibilityClient = newCIVisibilityClientWithServiceNameFunc(serviceName)
@@ -120,7 +121,7 @@ func ensureSettingsInitialization(serviceName string) {
 
 		testOptimizationMode := bazel.CurrentMode()
 		var uploadChannel = make(chan struct{})
-		gitUploadEnabled := internal.BoolEnv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, true)
+		gitUploadEnabled := cfg.CIVisibilityGitUploadEnabled()
 		uploadEnabled := gitUploadEnabled && !testOptimizationMode.ManifestEnabled && !testOptimizationMode.PayloadFilesEnabled
 		log.Debug("civisibility: settings initialization mode [manifest:%t payload_files:%t manifest_file:%s payload_root:%s git_upload_enabled:%t repository_upload_enabled:%t]",
 			testOptimizationMode.ManifestEnabled, testOptimizationMode.PayloadFilesEnabled, bazel.TestOptimizationPathForLog(testOptimizationMode.ManifestPath), testOptimizationMode.PayloadsRoot, gitUploadEnabled, uploadEnabled)
@@ -202,31 +203,31 @@ func ensureSettingsInitialization(serviceName string) {
 		}
 
 		// check if flaky test retries is disabled by env-vars
-		if ciSettings.FlakyTestRetriesEnabled && !internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true) {
+		if ciSettings.FlakyTestRetriesEnabled && !cfg.CIVisibilityFlakyRetryEnabled() {
 			log.Warn("civisibility: flaky test retries was disabled by the environment variable")
 			ciSettings.FlakyTestRetriesEnabled = false
 		}
 
 		// check if impacted tests is disabled by env-vars
-		if ciSettings.ImpactedTestsEnabled && !internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, true) {
+		if ciSettings.ImpactedTestsEnabled && !cfg.CIVisibilityImpactedTestsDetectionEnabled() {
 			log.Warn("civisibility: impacted tests was disabled by the environment variable")
 			ciSettings.ImpactedTestsEnabled = false
 		}
 
 		// check if code coverage report upload is disabled by env-vars
-		if ciSettings.CoverageReportUploadEnabled && !internal.BoolEnv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, true) {
+		if ciSettings.CoverageReportUploadEnabled && !cfg.CIVisibilityCodeCoverageReportUploadEnabled() {
 			log.Warn("civisibility: code coverage report upload was disabled by the environment variable")
 			ciSettings.CoverageReportUploadEnabled = false
 		}
 
 		// check if test management is disabled by env-vars
-		if ciSettings.TestManagement.Enabled && !internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+		if ciSettings.TestManagement.Enabled && !cfg.TestManagementEnabled() {
 			log.Warn("civisibility: test management was disabled by the environment variable")
 			ciSettings.TestManagement.Enabled = false
 		}
 
 		// overwrite the test management attempt to fix retries with the env var if set
-		testManagementAttemptToFixRetriesEnv := internal.IntEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, -1)
+		testManagementAttemptToFixRetriesEnv := cfg.TestManagementAttemptToFixRetries()
 		if testManagementAttemptToFixRetriesEnv != -1 {
 			ciSettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
 		}
@@ -245,7 +246,7 @@ func ensureSettingsInitialization(serviceName string) {
 		}
 
 		// determine if subtest-specific features are enabled via environment variables
-		subtestFeaturesEnabled := internal.BoolEnv(constants.CIVisibilitySubtestFeaturesEnabled, true)
+		subtestFeaturesEnabled := cfg.CIVisibilitySubtestFeaturesEnabled()
 		if !subtestFeaturesEnabled {
 			log.Debug("civisibility: subtest test management features disabled by environment variable")
 		}
@@ -287,6 +288,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 	additionalFeaturesInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing additional features")
 		defer log.Debug("civisibility: additional features initialization complete")
+		cfg := internalconfig.Get()
 
 		// get a copy of the settings instance
 		currentSettings := *GetSettings()
@@ -325,8 +327,8 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 
 		// if flaky test retries is enabled then let's load the flaky retries settings
 		if currentSettings.FlakyTestRetriesEnabled {
-			totalRetriesCount := (int64)(internal.IntEnv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, DefaultFlakyTotalRetryCount))
-			retryCount := (int64)(internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, DefaultFlakyRetryCount))
+			totalRetriesCount := int64(cfg.CIVisibilityTotalFlakyRetryCount())
+			retryCount := int64(cfg.CIVisibilityFlakyRetryCount())
 			ciVisibilityFlakyRetriesSettings = FlakyRetriesSetting{
 				RetryCount:               retryCount,
 				TotalRetryCount:          totalRetriesCount,

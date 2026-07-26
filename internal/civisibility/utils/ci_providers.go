@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -915,8 +916,9 @@ func extractAwsCodePipeline() map[string]string {
 	}
 
 	tags[constants.CIProviderName] = "awscodepipeline"
-	tags[constants.CIPipelineID] = env.Get("DD_PIPELINE_EXECUTION_ID")
-	tags[constants.CIJobID] = env.Get("DD_ACTION_EXECUTION_ID")
+	cfg := internalconfig.Get()
+	tags[constants.CIPipelineID] = cfg.PipelineExecutionID()
+	tags[constants.CIJobID] = cfg.ActionExecutionID()
 
 	jsonString, err := getEnvVarsJSON("CODEBUILD_BUILD_ARN", "DD_ACTION_EXECUTION_ID", "DD_PIPELINE_EXECUTION_ID")
 	if err == nil {
