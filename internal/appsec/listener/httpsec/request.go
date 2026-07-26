@@ -14,13 +14,10 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 const (
-	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
-	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
-
 	// Headers used to identify Datadog security testing requests.
 	securityTestingEndpointScanHeader = "x-datadog-endpoint-scan"
 	securityTestingHeader             = "x-datadog-security-test"
@@ -92,7 +89,7 @@ var (
 
 	// monitoredClientIPHeadersCfg is the list of IP-related headers leveraged to
 	// retrieve the public client IP address in RemoteAddr. This is defined at init
-	// time in function of the value of the envClientIPHeader environment variable.
+	// time in function of the configured client IP header.
 	monitoredClientIPHeadersCfg []string
 )
 
@@ -249,7 +246,7 @@ func makeCollectedHTTPHeadersLookupMap() {
 }
 
 func readMonitoredClientIPHeadersConfig() {
-	if header := env.Get(envClientIPHeader); header != "" {
+	if header := internalconfig.Get().TraceClientIPHeader(); header != "" {
 		// Make this header the only one to consider in RemoteAddr
 		monitoredClientIPHeadersCfg = []string{header}
 

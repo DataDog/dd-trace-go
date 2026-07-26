@@ -9,14 +9,10 @@
 package stacktrace
 
 import (
-	"errors"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var (
@@ -55,9 +51,6 @@ type frameType string
 const (
 	defaultCallerSkip = 4
 
-	envStackTraceDepth   = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
-	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLED"
-
 	frameTypeDatadog    frameType = "datadog"
 	frameTypeRuntime    frameType = "runtime"
 	frameTypeThirdParty frameType = "third_party"
@@ -67,30 +60,6 @@ const (
 )
 
 func init() {
-	if env := env.Get(envStackTraceEnabled); env != "" {
-		if e, err := strconv.ParseBool(env); err == nil {
-			enabled = e
-		} else {
-			log.Error("Failed to parse %s env var as boolean: (using default value: %t) %v", envStackTraceEnabled, enabled, err.Error())
-		}
-	}
-
-	if env := env.Get(envStackTraceDepth); env != "" {
-		if !enabled {
-			log.Warn("Ignoring %s because stacktrace generation is disable", envStackTraceDepth)
-			return
-		}
-
-		if depth, err := strconv.Atoi(env); err == nil {
-			defaultMaxDepth = depth
-		} else {
-			if depth <= 0 {
-				err = errors.New("value is not a strictly positive integer")
-			}
-			log.Error("Failed to parse %s env var as a positive integer: (using default value: %d) %v", envStackTraceDepth, defaultMaxDepth, err.Error())
-		}
-	}
-
 	defaultTopFrameDepth = defaultMaxDepth / 4
 
 	thirdPartyTrie = newSegmentPrefixTrie()
@@ -98,6 +67,13 @@ func init() {
 
 	internalPrefixTrie = newSegmentPrefixTrie()
 	internalPrefixTrie.InsertAll(internalSymbolPrefixes)
+}
+
+// Configure sets the process-wide AppSec stack trace configuration.
+func Configure(stackTraceEnabled bool, maxDepth int) {
+	enabled = stackTraceEnabled
+	defaultMaxDepth = maxDepth
+	defaultTopFrameDepth = defaultMaxDepth / 4
 }
 
 // Enabled returns whether stacktrace should be collected

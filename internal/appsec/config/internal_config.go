@@ -15,8 +15,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -100,12 +100,13 @@ type ObfuscatorConfig struct {
 
 type APISecOption func(*APISecConfig)
 
-// NewAPISecConfig creates and returns a new API Security configuration by reading the env
+// NewAPISecConfig creates and returns a new API Security configuration.
 func NewAPISecConfig(opts ...APISecOption) APISecConfig {
+	processConfig := internalconfig.Get()
 	cfg := APISecConfig{
-		Enabled:                                 internal.BoolEnv(EnvAPISecEnabled, true),
-		DownstreamRequestBodyAnalysisSampleRate: internal.FloatEnv(EnvAPISecDownstreamRequestBodyAnalysisSampleRate, DefaultDownstreamRequestBodyAnalysisSampleRate),
-		MaxDownstreamRequestBodyAnalysis:        internal.IntEnv(EnvAPISecMaxDownstreamRequestBodyAnalysis, DefaultMaxDownstreamRequestBodyAnalysis),
+		Enabled:                                 processConfig.APISecurityEnabled(),
+		DownstreamRequestBodyAnalysisSampleRate: processConfig.APISecurityDownstreamBodyAnalysisSampleRate(),
+		MaxDownstreamRequestBodyAnalysis:        processConfig.APISecurityMaxDownstreamRequestBodyAnalysis(),
 		SampleRate:                              readAPISecuritySampleRate(),
 	}
 	for _, opt := range opts {
@@ -123,10 +124,18 @@ func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 	}
 
 	if cfg.IsProxy {
-		rate := internal.IntEnv(EnvAPISecProxySampleRate, DefaultAPISecProxySampleRate)
+		rate := processConfig.APISecurityProxySampleRate()
 		cfg.Sampler = apisec.NewProxySampler(rate, DefaultAPISecProxySampleInterval)
 	} else {
-		interval := internal.DurationEnvWithUnit(envAPISecSampleDelay, "s", DefaultAPISecSampleInterval)
+		interval := DefaultAPISecSampleInterval
+		if value := processConfig.APISecuritySampleDelay(); value != "" {
+			parsed, err := time.ParseDuration(value + "s")
+			if err != nil {
+				log.Warn("Non-duration value for env var %s, defaulting to %d. Parse failed with error: %v", envAPISecSampleDelay, interval, err.Error())
+			} else {
+				interval = parsed
+			}
+		}
 		cfg.Sampler = apisec.NewSampler(interval)
 	}
 
@@ -134,7 +143,7 @@ func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 }
 
 func readAPISecuritySampleRate() float64 {
-	value := env.Get(EnvAPISecSampleRate)
+	value := internalconfig.Get().APISecurityRequestSampleRate()
 	if value == "" {
 		return DefaultAPISecSampleRate
 	}
@@ -168,10 +177,9 @@ func WithProxy() APISecOption {
 	}
 }
 
-// RASPEnabled returns true if RASP functionalities are enabled through the env, or if DD_APPSEC_RASP_ENABLED
-// is not set
+// RASPEnabled returns the process-wide RASP enablement value.
 func RASPEnabled() bool {
-	return internal.BoolEnv(EnvRASPEnabled, true)
+	return internalconfig.Get().AppSecRASPEnabled()
 }
 
 // NewObfuscatorConfig creates and returns a new WAF obfuscator configuration by reading the env
@@ -195,11 +203,11 @@ func readObfuscatorConfigRegexp(name, defaultValue string) string {
 	return val
 }
 
-// WAFTimeoutFromEnv reads and parses the WAF timeout value set through the env
+// WAFTimeoutFromEnv reads and parses the configured WAF timeout value.
 // If not set, it defaults to `DefaultWAFTimeout`
 func WAFTimeoutFromEnv() (timeout time.Duration) {
 	timeout = DefaultWAFTimeout
-	value := env.Get(EnvWAFTimeout)
+	value := internalconfig.Get().AppSecWAFTimeout()
 	if value == "" {
 		return
 	}
@@ -223,11 +231,11 @@ func WAFTimeoutFromEnv() (timeout time.Duration) {
 	return parsed
 }
 
-// RateLimitFromEnv reads and parses the trace rate limit set through the env
+// RateLimitFromEnv reads and parses the configured trace rate limit.
 // If not set, it defaults to `DefaultTraceRate`
 func RateLimitFromEnv() (rate int64) {
 	rate = DefaultTraceRate
-	value := env.Get(EnvTraceRateLimit)
+	value := internalconfig.Get().AppSecTraceRateLimit()
 	if value == "" {
 		return rate
 	}
@@ -247,10 +255,10 @@ func RateLimitFromEnv() (rate int64) {
 	return int64(parsed)
 }
 
-// RulesFromEnv returns the security rules provided through the environment
-// If the env var is not set, the default recommended rules are returned instead
+// RulesFromEnv returns the configured security rules.
+// If no rules path is configured, the default recommended rules are returned instead.
 func RulesFromEnv() ([]byte, error) {
-	filepath := env.Get(EnvRules)
+	filepath, _ := internalconfig.Get().AppSecRules()
 	if filepath == "" {
 		log.Debug("appsec: using the default built-in recommended security rules")
 		return nil, nil

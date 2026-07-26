@@ -16,6 +16,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestConfigure(t *testing.T) {
+	previousEnabled := enabled
+	previousMaxDepth := defaultMaxDepth
+	previousTopFrameDepth := defaultTopFrameDepth
+	t.Cleanup(func() {
+		enabled = previousEnabled
+		defaultMaxDepth = previousMaxDepth
+		defaultTopFrameDepth = previousTopFrameDepth
+	})
+
+	Configure(false, 20)
+
+	require.False(t, Enabled())
+	require.Equal(t, 20, defaultMaxDepth)
+	require.Equal(t, 5, defaultTopFrameDepth)
+}
+
 func TestNewStackTrace(t *testing.T) {
 	stack := CaptureWithRedaction(defaultCallerSkip)
 	if len(stack) == 0 {

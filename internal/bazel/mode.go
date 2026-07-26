@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -69,9 +68,24 @@ var (
 	modeOnce sync.Once
 	// currentMode caches the resolved Bazel mode for the current process.
 	currentMode Mode
+	// configuredManifestFile and configuredPayloadsInFiles are populated by the
+	// process-wide configuration owner before the mode is resolved.
+	configuredManifestFile    string
+	configuredPayloadsInFiles bool
 	// payloadFileCount keeps payload filenames unique within a process and orders telemetry files deterministically.
 	payloadFileCount uint64
 )
+
+// Configure sets the process-wide Bazel compatibility configuration.
+func Configure(manifestFile string, payloadsInFiles bool) {
+	modeMu.Lock()
+	defer modeMu.Unlock()
+
+	configuredManifestFile = strings.TrimSpace(manifestFile)
+	configuredPayloadsInFiles = payloadsInFiles
+	modeOnce = sync.Once{}
+	currentMode = Mode{}
+}
 
 // CurrentMode returns the resolved process-wide Bazel mode.
 func CurrentMode() Mode {
@@ -90,7 +104,7 @@ func IsManifestModeEnabled() bool {
 	return CurrentMode().ManifestEnabled
 }
 
-// IsPayloadFilesModeEnabled returns true when payload-file mode is enabled through environment variables.
+// IsPayloadFilesModeEnabled returns true when payload-file mode is enabled.
 func IsPayloadFilesModeEnabled() bool {
 	return CurrentMode().PayloadFilesEnabled
 }
@@ -177,11 +191,11 @@ func payloadFileName(kind PayloadKind, seq uint64) string {
 func resolveMode() Mode {
 	mode := Mode{}
 
-	manifestRloc := strings.TrimSpace(env.Get(ManifestFilePathEnv))
-	payloadFilesEnv := strings.TrimSpace(env.Get(PayloadsInFilesEnv))
+	manifestRloc := configuredManifestFile
+	payloadFilesEnabled := configuredPayloadsInFiles
 	undeclaredOutputsDir := strings.TrimSpace(env.Get(UndeclaredOutputsDirEnv))
-	logger.Debug("civisibility: resolving test optimization mode [manifest_env:%q payload_files_env:%q undeclared_outputs_dir:%q]",
-		manifestRloc, payloadFilesEnv, undeclaredOutputsDir)
+	logger.Debug("civisibility: resolving test optimization mode [manifest_env:%q payload_files_enabled:%t undeclared_outputs_dir:%q]",
+		manifestRloc, payloadFilesEnabled, undeclaredOutputsDir)
 
 	if manifestRloc != "" {
 		logger.Debug("civisibility: resolving manifest path from %q", manifestRloc)
@@ -195,7 +209,7 @@ func resolveMode() Mode {
 		}
 	}
 
-	mode.PayloadFilesEnabled = parseBoolEnv(payloadFilesEnv)
+	mode.PayloadFilesEnabled = payloadFilesEnabled
 	if mode.PayloadFilesEnabled {
 		if undeclaredOutputsDir != "" {
 			mode.PayloadsRoot = filepath.Join(undeclaredOutputsDir, "payloads")
@@ -203,19 +217,11 @@ func resolveMode() Mode {
 		} else {
 			logger.Debug("civisibility: payload-file mode enabled but %s is empty", UndeclaredOutputsDirEnv)
 		}
-	} else if payloadFilesEnv != "" {
-		logger.Debug("civisibility: payload-file mode disabled after parsing value %q", payloadFilesEnv)
 	}
 
 	logger.Debug("civisibility: test optimization mode [manifest:%t payload_files:%t manifest_file:%s payload_root:%s]",
 		mode.ManifestEnabled, mode.PayloadFilesEnabled, TestOptimizationPathForLog(mode.ManifestPath), absolutePathForLog(mode.PayloadsRoot))
 	return mode
-}
-
-// parseBoolEnv accepts the same syntax as strconv.ParseBool while treating invalid values as disabled.
-func parseBoolEnv(raw string) bool {
-	parsed, err := strconv.ParseBool(raw)
-	return err == nil && parsed
 }
 
 // resolveManifestPath resolves a manifest rlocation using direct, runfiles-dir, manifest-file, and test-srcdir lookups.
@@ -388,5 +394,7 @@ func ResetForTesting() {
 	defer modeMu.Unlock()
 	modeOnce = sync.Once{}
 	currentMode = Mode{}
+	configuredManifestFile = ""
+	configuredPayloadsInFiles = false
 	atomic.StoreUint64(&payloadFileCount, 0)
 }

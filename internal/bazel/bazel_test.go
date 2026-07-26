@@ -26,7 +26,7 @@ func TestCurrentMode_DirectManifestPath(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	mode := CurrentMode()
 	if !mode.ManifestEnabled {
@@ -51,7 +51,7 @@ func TestCurrentMode_RunfilesDirResolution(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestRel)
+	Configure(manifestRel, false)
 	t.Setenv("RUNFILES_DIR", runfilesDir)
 
 	mode := CurrentMode()
@@ -78,7 +78,7 @@ func TestCurrentMode_RunfilesManifestResolution(t *testing.T) {
 		t.Fatalf("write runfiles manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestRel)
+	Configure(manifestRel, false)
 	t.Setenv("RUNFILES_MANIFEST_FILE", runfilesManifest)
 
 	mode := CurrentMode()
@@ -110,7 +110,7 @@ func TestCurrentMode_RunfilesManifestMissingEntryFallsBackToTestSrcDir(t *testin
 		t.Fatalf("write runfiles manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestRel)
+	Configure(manifestRel, false)
 	t.Setenv("RUNFILES_MANIFEST_FILE", runfilesManifest)
 	t.Setenv("TEST_SRCDIR", testSrcDir)
 
@@ -137,7 +137,7 @@ func TestCurrentMode_TestSrcDirResolution(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestRel)
+	Configure(manifestRel, false)
 	t.Setenv("TEST_SRCDIR", testSrcDir)
 
 	mode := CurrentMode()
@@ -158,7 +158,7 @@ func TestCurrentMode_InvalidManifestVersion(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	mode := CurrentMode()
 	if mode.ManifestEnabled {
@@ -170,7 +170,7 @@ func TestCurrentMode_MissingManifestDisablesMode(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)
 
-	t.Setenv(ManifestFilePathEnv, filepath.Join(t.TempDir(), "missing-manifest.txt"))
+	Configure(filepath.Join(t.TempDir(), "missing-manifest.txt"), false)
 
 	mode := CurrentMode()
 	if mode.ManifestEnabled {
@@ -187,7 +187,7 @@ func TestCurrentMode_ManifestVersionUsesFirstNonEmptyLine(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	mode := CurrentMode()
 	if !mode.ManifestEnabled {
@@ -204,7 +204,7 @@ func TestCurrentMode_ManifestVersionAssignmentIsSupported(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	mode := CurrentMode()
 	if !mode.ManifestEnabled {
@@ -221,7 +221,7 @@ func TestCurrentMode_ManifestVersionAssignmentWithSpacesIsSupported(t *testing.T
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	mode := CurrentMode()
 	if !mode.ManifestEnabled {
@@ -233,7 +233,7 @@ func TestPayloadFilesModeHelpers(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)
 
-	t.Setenv(PayloadsInFilesEnv, "true")
+	Configure("", true)
 	t.Setenv(UndeclaredOutputsDirEnv, t.TempDir())
 
 	if IsManifestModeEnabled() {
@@ -252,7 +252,7 @@ func TestCurrentMode_PayloadFiles(t *testing.T) {
 	t.Cleanup(ResetForTesting)
 
 	outDir := t.TempDir()
-	t.Setenv(PayloadsInFilesEnv, "true")
+	Configure("", true)
 	t.Setenv(UndeclaredOutputsDirEnv, outDir)
 
 	mode := CurrentMode()
@@ -294,8 +294,7 @@ func TestCurrentMode_LogsManifestResolutionAndPayloadFileWrite(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
-	t.Setenv(PayloadsInFilesEnv, "true")
+	Configure(manifestPath, true)
 	t.Setenv(UndeclaredOutputsDirEnv, outDir)
 
 	mode := CurrentMode()
@@ -354,7 +353,7 @@ func TestCurrentMode_LogsManifestVersionAssignmentParsing(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	mode := CurrentMode()
 	if !mode.ManifestEnabled {
@@ -381,7 +380,7 @@ func TestWritePayloadFileInvalidKind(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)
 
-	t.Setenv(PayloadsInFilesEnv, "true")
+	Configure("", true)
 	t.Setenv(UndeclaredOutputsDirEnv, t.TempDir())
 
 	if err := WritePayloadFile(PayloadKind("unknown"), []byte(`{"ok":true}`)); err == nil {
@@ -393,7 +392,7 @@ func TestWritePayloadFileMissingOutputDir(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)
 
-	t.Setenv(PayloadsInFilesEnv, "true")
+	Configure("", true)
 
 	err := WritePayloadFile(PayloadKindTests, []byte(`{"ok":true}`))
 	if err == nil {
@@ -409,7 +408,7 @@ func TestWritePayloadFileTelemetryOrdering(t *testing.T) {
 	t.Cleanup(ResetForTesting)
 
 	outDir := t.TempDir()
-	t.Setenv(PayloadsInFilesEnv, "true")
+	Configure("", true)
 	t.Setenv(UndeclaredOutputsDirEnv, outDir)
 
 	if err := WritePayloadFile(PayloadKindTelemetry, []byte(`{"seq":1}`)); err != nil {
@@ -443,7 +442,7 @@ func TestCurrentMode_EmptyManifestDisablesMode(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	if mode := CurrentMode(); mode.ManifestEnabled {
 		t.Fatal("expected empty manifest to disable manifest mode")
@@ -459,7 +458,7 @@ func TestCurrentMode_InvalidManifestAssignmentDisablesMode(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	if mode := CurrentMode(); mode.ManifestEnabled {
 		t.Fatal("expected invalid version assignment to disable manifest mode")
@@ -476,7 +475,7 @@ func TestCacheHTTPFile(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	cacheFile, ok := CacheHTTPFile("settings.json")
 	if !ok {
@@ -502,7 +501,7 @@ func TestCacheHTTPFileDisabledOrBlankName(t *testing.T) {
 	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	t.Setenv(ManifestFilePathEnv, manifestPath)
+	Configure(manifestPath, false)
 
 	if cacheFile, ok := CacheHTTPFile("   "); ok || cacheFile != "" {
 		t.Fatalf("expected blank cache file name to be rejected, got %q %t", cacheFile, ok)
@@ -569,7 +568,7 @@ func TestIsGitCLIDisabled(t *testing.T) {
 	}
 
 	ResetForTesting()
-	t.Setenv(PayloadsInFilesEnv, "true")
+	Configure("", true)
 	t.Setenv(UndeclaredOutputsDirEnv, t.TempDir())
 
 	if !IsGitCLIDisabled() {

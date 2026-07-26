@@ -7,37 +7,12 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 	"time"
 
-	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
-
-func init() {
-	registerSCAAppConfigTelemetry()
-	registerAgenticOnboardingTelemetry()
-}
-
-// Register the global app telemetry configuration related to the Software Composition Analysis (SCA) product.
-// Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
-// case of an error or if the env var is not set.
-func registerSCAAppConfigTelemetry() {
-	_, _, err := stableconfig.Bool(EnvSCAEnabled, false)
-	if err != nil {
-		telemetrylog.Error("appsec: failed to get SCA config", slog.Any("error", telemetrylog.NewSafeError(err)))
-		return
-	}
-}
-
-// registerAgenticOnboardingTelemetry reports [EnvAgenticOnboarding] verbatim in configuration
-// telemetry (RFC-1113), always emitted: unset reports an empty value with origin=default.
-func registerAgenticOnboardingTelemetry() {
-	stableconfig.String(EnvAgenticOnboarding, "")
-}
 
 // The following environment variables dictate the enablement of different the ASM products.
 const (
@@ -194,20 +169,17 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 	return false
 }
 
-// IsEnabledByEnvironment returns true when appsec is enabled by the environment variable
-// [EnvEnabled] being set to a truthy value, as well as whether the environment variable was set at
-// all or not (so it is possible to distinguish between explicitly false, and false-by-default).
-// If the [EnvEnabled] variable is set to a value that is not a valid boolean (according to
-// [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
+// IsEnabledByEnvironment returns the process-wide AppSec enablement value and
+// whether it came from a configured source rather than the default.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
-	enabled, origin, err := stableconfig.Bool(EnvEnabled, false)
+	enabled, origin := internalconfig.Get().AppSecEnabled()
 	if origin != telemetry.OriginDefault {
 		set = true
 	}
-	return enabled, set, err
+	return enabled, set, nil
 }
 
-// NewConfig returns a fresh appsec configuration read from the env
+// NewConfig returns a fresh AppSec configuration.
 func (c *StartConfig) NewConfig() (*Config, error) {
 	data, err := RulesFromEnv()
 	if err != nil {
@@ -227,6 +199,6 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
 		BlockingUnavailable: c.BlockingUnavailable,
-		TracingAsTransport:  !sharedinternal.BoolEnv("DD_APM_TRACING_ENABLED", true),
+		TracingAsTransport:  !internalconfig.Get().APMTracingEnabled(),
 	}, nil
 }
