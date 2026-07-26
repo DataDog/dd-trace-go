@@ -11,7 +11,6 @@ import (
 
 	"github.com/puzpuzpuz/xsync/v4"
 
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
@@ -122,18 +121,10 @@ func StopApp() {
 	}
 }
 
-var (
-	telemetryClientEnabled bool
-	telemetryEnabledOnce   sync.Once
-)
-
 // Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
-	telemetryEnabledOnce.Do(func() {
-		telemetryClientEnabled = globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
-	})
-	return telemetryClientEnabled == false
+	return !instrumentationTelemetryEnabled.Load()
 }
 
 // Count creates a new metric handle for the given parameters that can be used to submit values.

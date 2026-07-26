@@ -6,25 +6,20 @@
 package telemetry
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// Ensure that DD_INSTRUMENTATION_TELEMETRY_ENABLED is read once and cached,
-// matching the expectation that env vars are set before telemetry is first used.
-func TestDisabledCachesInitialEnv(t *testing.T) {
-	// Reset lazy init state
-	telemetryEnabledOnce = sync.Once{}
+func TestDisabledUsesSingletonConfiguration(t *testing.T) {
+	previous := instrumentationTelemetryEnabled.Load()
+	t.Cleanup(func() {
+		SetInstrumentationTelemetryEnabled(previous)
+	})
 
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+	SetInstrumentationTelemetryEnabled(false)
 	require.True(t, Disabled())
 
-	// Changing the env after the first call should not flip the cached value.
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
-	require.True(t, Disabled())
-
-	// Reset again
-	telemetryEnabledOnce = sync.Once{}
+	SetInstrumentationTelemetryEnabled(true)
+	require.False(t, Disabled())
 }

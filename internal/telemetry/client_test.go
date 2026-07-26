@@ -127,9 +127,15 @@ func TestDefaultConfigAgentlessURL(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			previous := currentEnvironmentConfig()
+			environment := previous
 			if test.site != "" {
-				t.Setenv("DD_SITE", test.site)
+				environment.Site = test.site
 			}
+			ConfigureEnvironment(environment)
+			t.Cleanup(func() {
+				ConfigureEnvironment(previous)
+			})
 			config := defaultConfig(test.config)
 			assert.Equal(t, test.expected, config.AgentlessURL)
 		})
@@ -1195,8 +1201,14 @@ func TestClientFlush(t *testing.T) {
 }
 
 func TestMetricsDisabled(t *testing.T) {
-	t.Setenv("DD_TELEMETRY_METRICS_ENABLED", "false")
-	t.Setenv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", "false")
+	previous := currentEnvironmentConfig()
+	environment := previous
+	environment.MetricsEnabled = false
+	environment.DependencyCollectionEnabled = false
+	ConfigureEnvironment(environment)
+	t.Cleanup(func() {
+		ConfigureEnvironment(previous)
+	})
 
 	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"})
 	require.NoError(t, err)

@@ -417,6 +417,8 @@ func loadConfig() *Config {
 		overrides: make(map[string]programmaticOverride),
 	}
 	p := provider.New()
+	cfg.instrumentationTelemetryEnabled = p.GetBool("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	telemetry.SetInstrumentationTelemetryEnabled(cfg.instrumentationTelemetryEnabled)
 
 	// Resolve agent URL from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT.
 	// All three are read through the provider so telemetry is reported for each.
@@ -612,7 +614,6 @@ func loadConfig() *Config {
 	if value, valueOrigin := p.GetFloatWithValidatorOrigin("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL", 0, nil); valueOrigin != telemetry.OriginDefault {
 		cfg.telemetryExtendedHeartbeatInterval = &value
 	}
-	cfg.instrumentationTelemetryEnabled = p.GetBool("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 	cfg.flagEvaluationCountsEnabled = p.GetBool("DD_FLAGGING_EVALUATION_COUNTS_ENABLED", true)
 	cfg.flaggingProviderSpanEnrichmentEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED", false)
 	cfg.llmObsEnabled = p.GetBool("DD_LLMOBS_ENABLED", false)
@@ -793,6 +794,25 @@ func loadConfig() *Config {
 	cfg.spanSamplingRules = spanRules
 	cfg.spanSamplingRulesOrigin = spanOrigin
 	configtelemetry.ReportDefault("span_sample_rules", spanRules)
+
+	telemetryConfig := telemetry.EnvironmentConfig{
+		Debug:                       cfg.telemetryDebug,
+		Site:                        cfg.site,
+		APIKey:                      cfg.apiKey,
+		DependencyCollectionEnabled: cfg.telemetryDependencyCollectionEnabled,
+		MetricsEnabled:              cfg.telemetryMetricsEnabled,
+		LogCollectionEnabled:        cfg.telemetryLogCollectionEnabled,
+		APISecurityEndpointCollectionMessageLimit: cfg.apiSecurityEndpointCollectionMessageLimit,
+	}
+	if cfg.telemetryHeartbeatInterval != nil {
+		telemetryConfig.HeartbeatInterval = *cfg.telemetryHeartbeatInterval
+		telemetryConfig.HeartbeatIntervalSet = true
+	}
+	if cfg.telemetryExtendedHeartbeatInterval != nil {
+		telemetryConfig.ExtendedHeartbeatInterval = *cfg.telemetryExtendedHeartbeatInterval
+		telemetryConfig.ExtendedHeartbeatIntervalSet = true
+	}
+	telemetry.ConfigureEnvironment(telemetryConfig)
 
 	return cfg
 }

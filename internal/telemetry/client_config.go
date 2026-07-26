@@ -13,9 +13,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 )
@@ -165,18 +163,15 @@ func (config ClientConfig) validateConfig() error {
 
 // defaultConfig returns a ClientConfig with default values set.
 func defaultConfig(config ClientConfig) ClientConfig {
-	config.Debug = config.Debug || globalinternal.BoolEnv("DD_TELEMETRY_DEBUG", false)
+	environment := currentEnvironmentConfig()
+	config.Debug = config.Debug || environment.Debug
 
 	if config.AgentlessURL == "" {
-		site := "datadoghq.com"
-		if v := env.Get("DD_SITE"); v != "" {
-			site = v
-		}
-		config.AgentlessURL = fmt.Sprintf(agentlessURLTemplate, site)
+		config.AgentlessURL = fmt.Sprintf(agentlessURLTemplate, environment.Site)
 	}
 
 	if config.APIKey == "" {
-		config.APIKey = env.Get("DD_API_KEY")
+		config.APIKey = environment.APIKey
 	}
 
 	if config.FlushInterval.Min == 0 {
@@ -196,8 +191,10 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		heartBeatInterval = config.HeartbeatInterval
 	}
 
-	envVal := globalinternal.FloatEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", heartBeatInterval.Seconds())
-	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(time.Duration(envVal * float64(time.Second)))
+	if environment.HeartbeatIntervalSet {
+		heartBeatInterval = time.Duration(environment.HeartbeatInterval * float64(time.Second))
+	}
+	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(heartBeatInterval)
 	if config.HeartbeatInterval != defaultHeartbeatInterval {
 		log.Debug("telemetry: using custom heartbeat interval %s", config.HeartbeatInterval)
 	}
@@ -208,16 +205,16 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		config.HeartbeatInterval = config.HeartbeatInterval - 10*time.Millisecond
 	}
 
-	if config.DependencyLoader == nil && globalinternal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
+	if config.DependencyLoader == nil && environment.DependencyCollectionEnabled {
 		config.DependencyLoader = debug.ReadBuildInfo
 	}
 
 	if !config.MetricsEnabled {
-		config.MetricsEnabled = globalinternal.BoolEnv("DD_TELEMETRY_METRICS_ENABLED", true)
+		config.MetricsEnabled = environment.MetricsEnabled
 	}
 
 	if !config.LogsEnabled {
-		config.LogsEnabled = globalinternal.BoolEnv("DD_TELEMETRY_LOG_COLLECTION_ENABLED", true)
+		config.LogsEnabled = environment.LogCollectionEnabled
 	}
 
 	if !config.internalMetricsEnabled {
@@ -232,8 +229,10 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	if config.ExtendedHeartbeatInterval != 0 {
 		extendedHeartbeatInterval = config.ExtendedHeartbeatInterval
 	}
-	envExtVal := globalinternal.FloatEnv("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL", extendedHeartbeatInterval.Seconds())
-	config.ExtendedHeartbeatInterval = time.Duration(envExtVal * float64(time.Second))
+	if environment.ExtendedHeartbeatIntervalSet {
+		extendedHeartbeatInterval = time.Duration(environment.ExtendedHeartbeatInterval * float64(time.Second))
+	}
+	config.ExtendedHeartbeatInterval = extendedHeartbeatInterval
 
 	if config.PayloadQueueSize.Min == 0 {
 		config.PayloadQueueSize.Min = defaultPayloadQueueSize.Min

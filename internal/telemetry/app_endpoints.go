@@ -6,15 +6,10 @@
 package telemetry
 
 import (
-	"strconv"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
-
-var appEndpointsMessageLimit = 300
 
 type appEndpointKey struct {
 	OperationName string
@@ -56,7 +51,7 @@ func (a *appEndpoints) Payload() transport.Payload {
 		return nil
 	}
 
-	count := min(len(a.store), appEndpointsMessageLimit)
+	count := min(len(a.store), currentEnvironmentConfig().APISecurityEndpointCollectionMessageLimit)
 	payload := &transport.AppEndpoints{
 		IsFirst:   a.isFirst,
 		Endpoints: a.store[:count],
@@ -70,17 +65,4 @@ func (a *appEndpoints) Payload() transport.Payload {
 	}
 
 	return payload
-}
-
-func init() {
-	val, ok := env.Lookup("DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT")
-	if !ok {
-		return
-	}
-	intVal, err := strconv.Atoi(val)
-	if err != nil {
-		log.Warn("Invalid value for DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT (expected an integer): %s", err.Error())
-		return
-	}
-	appEndpointsMessageLimit = intVal
 }
