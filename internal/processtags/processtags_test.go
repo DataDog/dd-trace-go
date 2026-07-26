@@ -113,9 +113,8 @@ func TestSetServiceNameTag(t *testing.T) {
 	})
 
 	t.Run("no-op when disabled", func(t *testing.T) {
-		t.Cleanup(Reload) // register before t.Setenv so it runs after env is restored
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		Reload()
+		t.Cleanup(func() { Configure(true) })
+		Configure(false)
 		SetServiceNameTag("myapp", false)
 		assert.Nil(t, GlobalTags())
 	})
@@ -134,8 +133,8 @@ func TestProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		Reload()
+		t.Cleanup(func() { Configure(true) })
+		Configure(false)
 
 		p := GlobalTags()
 		assert.Nil(t, p)

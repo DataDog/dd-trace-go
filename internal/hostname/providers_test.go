@@ -48,6 +48,7 @@ func TestGetCached(t *testing.T) {
 
 func resetVars() {
 	fargatePf = fargate
+	SetConfiguredHostname("")
 }
 
 func TestGet(t *testing.T) {
@@ -66,7 +67,7 @@ func TestGet(t *testing.T) {
 	})
 
 	t.Run("ConfigOK", func(t *testing.T) {
-		t.Setenv("DD_HOSTNAME", "myConfigHost")
+		SetConfiguredHostname("myConfigHost")
 		updateHostname(time.Time{})
 		result := Get()
 		for isRefreshing.Load() == true {

@@ -846,11 +846,11 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 // +checklocks:s.mu
 func updateTracerGitMetadataTags(s *Span) {
 	assert.RWMutexLocked(&s.mu)
-	gitMetadataTags := sharedinternal.GetGitMetadataTags()
+	cfg := internalconfig.Get()
 	for ix := range sharedinternal.TracerGitMetadataKeys {
 		pair := sharedinternal.TracerGitMetadataKeys[ix]
 		src, dst := pair[0], pair[1]
-		if v := gitMetadataTags[src]; v != "" {
+		if v := cfg.GitMetadataTag(src); v != "" {
 			s.setMetaLocked(dst, v)
 		}
 	}

@@ -8,11 +8,13 @@ package namingschema
 import (
 	"testing"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestNamingSchema(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
+		internalconfig.CreateNew()
 		LoadFromEnv()
 
 		cfg := GetConfig()
@@ -25,6 +27,7 @@ func TestNamingSchema(t *testing.T) {
 		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
 		t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
 
+		internalconfig.CreateNew()
 		LoadFromEnv()
 
 		cfg := GetConfig()
@@ -34,6 +37,7 @@ func TestNamingSchema(t *testing.T) {
 	})
 
 	t.Run("options", func(t *testing.T) {
+		internalconfig.CreateNew()
 		LoadFromEnv()
 		SetRemoveIntegrationServiceNames(true)
 
@@ -47,6 +51,7 @@ func TestNamingSchema(t *testing.T) {
 		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "invalid")
 		t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
 
+		internalconfig.CreateNew()
 		LoadFromEnv()
 
 		cfg := GetConfig()

@@ -22,6 +22,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -108,7 +109,7 @@ func datadogHeaders() map[string]string {
 	if eid := internal.EntityID(); eid != "" {
 		h[entityIDHeader] = eid
 	}
-	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
+	if extEnv := internalconfig.Get().ExternalEnvironment(); extEnv != "" {
 		h["Datadog-External-Env"] = extEnv
 	}
 	return h

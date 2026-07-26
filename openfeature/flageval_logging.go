@@ -16,8 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
@@ -272,6 +271,7 @@ func newFlagEvalLoggingWriter(config ProviderConfig) *flagEvalLoggingWriter {
 
 func newFlagEvalLoggingWriterWithEVP(config ProviderConfig, evp *evpClient) *flagEvalLoggingWriter {
 	executable, _ := os.Executable()
+	cfg := internalconfig.Get()
 
 	flushInterval := cmp.Or(config.FlagEvaluationFlushInterval, defaultFlagEvalFlushInterval)
 
@@ -282,9 +282,9 @@ func newFlagEvalLoggingWriterWithEVP(config ProviderConfig, evp *evpClient) *fla
 		workerDone:    make(chan struct{}),
 		events:        make(chan evalEvent, defaultEvalEventBufferSize),
 		ddContext: flagEvalDDContext{
-			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
-			Version: env.Get("DD_VERSION"),
-			Env:     env.Get("DD_ENV"),
+			Service: cmp.Or(cfg.ServiceName(), executable),
+			Version: cfg.Version(),
+			Env:     cfg.Env(),
 		},
 		aggregator: flagEvalLoggingAggregator{
 			full:        make(map[evaluationAggregationKey]*evaluationEntry),

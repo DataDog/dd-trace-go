@@ -33,7 +33,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -42,7 +41,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -220,10 +218,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	// LLM Observability config
 	c.llmobs = llmobsconfig.Config{
-		Enabled:          internal.BoolEnv(envLLMObsEnabled, false),
-		MLApp:            env.Get(envLLMObsMlApp),
-		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
-		ProjectName:      env.Get(envLLMObsProjectName),
+		Enabled:          c.internalConfig.LLMObsEnabled(),
+		MLApp:            c.internalConfig.LLMObsMLApp(),
+		AgentlessEnabled: c.internalConfig.LLMObsAgentlessEnabled(),
+		ProjectName:      c.internalConfig.LLMObsProjectName(),
 	}
 	for _, fn := range opts {
 		if fn == nil {
@@ -364,7 +362,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.internalConfig.ApplyAgentReportedStatsdPort(af.StatsdPort)
 		globalconfig.SetDogstatsdAddr(c.internalConfig.DogstatsdAddr())
 	}
-	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
+	if !c.internalConfig.APMTracingEnabled() {
 		apmTracingDisabled(c)
 	}
 	// Update the llmobs config with stuff needed from the tracer.
@@ -408,14 +406,6 @@ func computeOtelRuntimeMetricsShouldBeEnabled(c *config) bool {
 // Orchestrion build (orchestrion.Enabled() is a build-time constant).
 func shouldDisableSpanPool(spanPoolEnabled, orchestrionEnabled bool) bool {
 	return spanPoolEnabled && orchestrionEnabled
-}
-
-func llmobsAgentlessEnabledFromEnv() *bool {
-	v, ok := internal.BoolEnvNoDefault(envLLMObsAgentlessEnabled)
-	if !ok {
-		return nil
-	}
-	return &v
 }
 
 func apmTracingDisabled(c *config) {

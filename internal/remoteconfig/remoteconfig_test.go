@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -270,6 +271,7 @@ func TestConfig(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Setenv(envPollIntervalSec, tc.env)
+				internalconfig.CreateNew()
 				duration := pollIntervalFromEnv()
 				require.Equal(t, tc.expected, duration)
 
@@ -422,8 +424,7 @@ func TestProcessTags(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("enabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
-		processtags.Reload()
+		processtags.Configure(true)
 
 		b, err := client.newUpdateRequest()
 		require.NoError(t, err)
@@ -435,10 +436,8 @@ func TestProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		// Run a cleanup after the env var is restored to re-enable process tags for later tests.
-		t.Cleanup(processtags.Reload)
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
+		t.Cleanup(func() { processtags.Configure(true) })
+		processtags.Configure(false)
 
 		b, err := client.newUpdateRequest()
 		require.NoError(t, err)

@@ -17,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -149,7 +150,7 @@ func TestEVPOriginHeader(t *testing.T) {
 func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
-		maininternal.RefreshGitMetadataTags()
+		internalconfig.CreateNew()
 
 		profile := doOneShortProfileUpload(t)
 
@@ -160,7 +161,7 @@ func TestGitMetadata(t *testing.T) {
 	})
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:http://u@github.com/user/repo go_path:somepath")
-		maininternal.RefreshGitMetadataTags()
+		internalconfig.CreateNew()
 
 		profile := doOneShortProfileUpload(t)
 
@@ -175,7 +176,7 @@ func TestGitMetadata(t *testing.T) {
 		// git metadata env has priority under DD_TAGS
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-		maininternal.RefreshGitMetadataTags()
+		internalconfig.CreateNew()
 
 		profile := doOneShortProfileUpload(t)
 
@@ -186,7 +187,7 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
 		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u@github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-		maininternal.RefreshGitMetadataTags()
+		internalconfig.CreateNew()
 
 		profile := doOneShortProfileUpload(t)
 
@@ -200,7 +201,7 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCD")
-		maininternal.RefreshGitMetadataTags()
+		internalconfig.CreateNew()
 
 		profile := doOneShortProfileUpload(t)
 

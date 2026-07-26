@@ -17,8 +17,7 @@ import (
 	"maps"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -199,10 +198,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	if cfg.ExtractFirst != nil {
 		cp.onlyExtractFirst = *cfg.ExtractFirst
 	} else {
-		cp.onlyExtractFirst = internal.BoolEnv(envPropagationExtractFirst, false)
+		cp.onlyExtractFirst = internalconfig.Get().PropagationExtractFirst()
 	}
 	if cfg.BehaviorExtract == "" {
-		cfg.BehaviorExtract = env.Get(envPropagationBehaviorExtract)
+		cfg.BehaviorExtract = internalconfig.Get().PropagationBehaviorExtract()
 	}
 	switch cfg.BehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
@@ -220,10 +219,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		return cp
 	}
 	if cfg.InjectStyle == "" {
-		cfg.InjectStyle = env.Get(envPropagationStyleInject)
+		cfg.InjectStyle = internalconfig.Get().PropagationStyleInject()
 	}
 	if cfg.ExtractStyle == "" {
-		cfg.ExtractStyle = env.Get(envPropagationStyleExtract)
+		cfg.ExtractStyle = internalconfig.Get().PropagationStyleExtract()
 	}
 	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle)

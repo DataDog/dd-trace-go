@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -181,10 +182,7 @@ func mapEnabled(ot string) (string, error) {
 
 // mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE
 func otelTraceIDRatio() string {
-	if v := env.Get("OTEL_TRACES_SAMPLER_ARG"); v != "" {
-		return v
-	}
-	return "1.0"
+	return internalconfig.Get().OTelTracesSamplerArg()
 }
 
 // mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE

@@ -16,7 +16,6 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -42,7 +41,13 @@ var (
 )
 
 func init() {
-	Reload()
+	Configure(true)
+}
+
+// Configure updates process-tag collection using the value owned by internal/config.
+func Configure(collectEnabled bool) {
+	enabled = collectEnabled
+	reload()
 }
 
 type ProcessTags struct {
@@ -121,7 +126,10 @@ func (p *ProcessTags) rebuild() {
 
 // Reload initializes the configuration and process tags collection. This is useful for tests.
 func Reload() {
-	enabled = internal.BoolEnv(envProcessTagsEnabled, true)
+	reload()
+}
+
+func reload() {
 	if !enabled {
 		return
 	}

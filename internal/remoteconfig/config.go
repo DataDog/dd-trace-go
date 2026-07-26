@@ -9,8 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -44,25 +43,29 @@ type ClientConfig struct {
 
 // DefaultClientConfig returns the default remote config client configuration
 func DefaultClientConfig() ClientConfig {
+	cfg := internalconfig.Get()
 	return ClientConfig{
-		Env:           env.Get("DD_ENV"),
+		Env:           cfg.Env(),
 		HTTP:          &http.Client{Timeout: 10 * time.Second},
-		PollInterval:  pollIntervalFromEnv(),
+		PollInterval:  pollInterval(cfg.RemoteConfigPollInterval()),
 		RuntimeID:     globalconfig.RuntimeID(),
 		ServiceName:   globalconfig.ServiceName(),
 		TracerVersion: version.Tag,
-		TUFRoot:       env.Get("DD_RC_TUF_ROOT"),
+		TUFRoot:       cfg.RemoteConfigTUFRoot(),
 	}
 }
 
-func pollIntervalFromEnv() time.Duration {
-	interval := internal.FloatEnv(envPollIntervalSec, 5.0)
+func pollInterval(interval time.Duration) time.Duration {
 	if interval < 0 {
-		log.Debug("Remote config: cannot use a negative poll interval: %s = %f. Defaulting to 5s.", envPollIntervalSec, interval)
-		interval = 5.0
+		log.Debug("Remote config: cannot use a negative poll interval: %s = %f. Defaulting to 5s.", envPollIntervalSec, interval.Seconds())
+		interval = 5 * time.Second
 	} else if interval == 0 {
 		log.Debug("Remote config: poll interval set to 0. Polling will be continuous.")
 		return time.Nanosecond
 	}
-	return time.Duration(interval * float64(time.Second))
+	return interval
+}
+
+func pollIntervalFromEnv() time.Duration {
+	return pollInterval(internalconfig.Get().RemoteConfigPollInterval())
 }

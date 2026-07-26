@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -48,6 +49,7 @@ func Test_pollIntervalFromEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setup(t)
+			internalconfig.CreateNew()
 			assert.Equal(t, tt.want, pollIntervalFromEnv())
 		})
 	}

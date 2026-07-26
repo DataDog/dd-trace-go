@@ -6,7 +6,6 @@
 package profiler
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,12 +21,10 @@ import (
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
 
@@ -173,6 +170,8 @@ func (c *config) addProfileType(t ProfileType) {
 }
 
 func defaultConfig() (*config, error) {
+	processConfig := internalconfig.CreateNew()
+	executionTraceEnabled, executionTracePeriod, executionTraceLimit := processConfig.ProfilingExecutionTraceConfig()
 	c := config{
 		apiURL:               defaultAPIURL,
 		service:              filepath.Base(os.Args[0]),
@@ -183,14 +182,14 @@ func defaultConfig() (*config, error) {
 		blockRate:            DefaultBlockRate,
 		mutexFraction:        DefaultMutexFraction,
 		uploadTimeout:        DefaultUploadTimeout,
-		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
-		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
-		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
-		compressionConfig:    cmp.Or(env.Get("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"), "zstd"),
+		deltaProfiles:        processConfig.ProfilingDelta(),
+		logStartup:           processConfig.LogStartup(),
+		endpointCountEnabled: processConfig.ProfilingEndpointCountEnabled(),
+		compressionConfig:    processConfig.ProfilingDebugCompressionSettings(),
 		traceConfig: executionTraceConfig{
-			Enabled: internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault),
-			Period:  internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute),
-			Limit:   internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit),
+			Enabled: executionTraceEnabled,
+			Period:  executionTracePeriod,
+			Limit:   executionTraceLimit,
 		},
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
@@ -198,50 +197,44 @@ func defaultConfig() (*config, error) {
 		c.addProfileType(t)
 	}
 
-	url := internal.AgentURLFromEnv()
+	url := processConfig.RawAgentURL()
 	if url.Scheme == "unix" {
 		WithUDS(url.Path)(&c)
 	} else {
 		c.agentURL = url.String() + "/profiling/v1/input"
 	}
-	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
-	// the Datadog admission controller, so we set it to true.
-	if v, _ := stableconfig.String("DD_PROFILING_ENABLED", ""); v == "auto" {
-		c.enabled = true
-	} else {
-		c.enabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
-	}
-	if v := env.Get("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
+	c.enabled = processConfig.ProfilingEnabled()
+	if v := processConfig.ProfilingUploadTimeout(); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
 		}
 		WithUploadTimeout(d)(&c)
 	}
-	if v := env.Get("DD_API_KEY"); v != "" {
+	if v := processConfig.APIKey(); v != "" {
 		c.apiKey = v
 	}
-	c.agentless = internal.BoolEnv("DD_PROFILING_AGENTLESS", false)
-	if v := env.Get("DD_SITE"); v != "" {
+	c.agentless = processConfig.ProfilingAgentless()
+	if v := processConfig.Site(); v != "" {
 		WithSite(v)(&c)
 	}
-	if v := env.Get("DD_ENV"); v != "" {
+	if v := processConfig.Env(); v != "" {
 		WithEnv(v)(&c)
 	}
-	if v := env.Get("DD_SERVICE"); v != "" {
+	if v := processConfig.ServiceName(); v != "" {
 		WithService(v)(&c)
 	}
-	if v := env.Get("DD_VERSION"); v != "" {
+	if v := processConfig.Version(); v != "" {
 		WithVersion(v)(&c)
 	}
-	c.flushOnExit = internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false)
+	c.flushOnExit = processConfig.ProfilingFlushOnExit()
 
 	tags := make(map[string]string)
-	if v := env.Get("DD_TAGS"); v != "" {
+	if v := processConfig.RawGlobalTags(); v != "" {
 		tags = internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 	}
-	maps.Copy(tags, internal.GetGitMetadataTags())
+	maps.Copy(tags, processConfig.GitMetadataTags())
 	for key, val := range tags {
 		if val != "" {
 			WithTags(key + ":" + val)(&c)
@@ -259,11 +252,11 @@ func defaultConfig() (*config, error) {
 		"runtime-id:"+globalconfig.RuntimeID(),
 	)(&c)
 	// not for public use
-	if v := env.Get("DD_PROFILING_URL"); v != "" {
+	if v := processConfig.ProfilingURL(); v != "" {
 		WithURL(v)(&c)
 	}
 	// not for public use
-	if v := env.Get("DD_PROFILING_OUTPUT_DIR"); v != "" {
+	if v := processConfig.ProfilingOutputDir(); v != "" {
 		withOutputDir(v)(&c)
 	}
 	return &c, nil

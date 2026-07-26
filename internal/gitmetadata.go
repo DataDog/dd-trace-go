@@ -8,9 +8,7 @@ package internal
 import (
 	"net/url"
 	"runtime/debug"
-	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -39,11 +37,6 @@ const (
 	TraceTagGoPath = "_dd.go_path"
 )
 
-var (
-	initOnce        sync.Once
-	gitMetadataTags map[string]string
-)
-
 func updateTags(tags map[string]string, key string, value string) {
 	if _, ok := tags[key]; !ok && value != "" {
 		tags[key] = value
@@ -56,17 +49,15 @@ func updateAllTags(tags map[string]string, newtags map[string]string) {
 	}
 }
 
-// Get git metadata from environment variables
-func getTagsFromEnv() map[string]string {
+func getTagsFromConfig(repositoryURL, commitSHA string) map[string]string {
 	return map[string]string{
-		TagRepositoryURL: removeCredentials(env.Get(EnvGitRepositoryURL)),
-		TagCommitSha:     env.Get(EnvGitCommitSha),
+		TagRepositoryURL: removeCredentials(repositoryURL),
+		TagCommitSha:     commitSHA,
 	}
 }
 
-// Get git metadata from DD_TAGS
-func getTagsFromDDTags() map[string]string {
-	etags := ParseTagString(env.Get(EnvDDTags))
+func getTagsFromDDTags(rawTags string) map[string]string {
+	etags := ParseTagString(rawTags)
 
 	return map[string]string{
 		TagRepositoryURL: removeCredentials(etags[TagRepositoryURL]),
@@ -101,25 +92,15 @@ func getTagsFromBinary(readBuildInfo func() (*debug.BuildInfo, bool)) map[string
 	return res
 }
 
-// GetGitMetadataTags returns git metadata tags. Returned map is read-only
-func GetGitMetadataTags() map[string]string {
-	initOnce.Do(initGitMetadataTags)
-	return gitMetadataTags
-}
-
-func initGitMetadataTags() {
-	gitMetadataTags = make(map[string]string)
-
-	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
-		updateAllTags(gitMetadataTags, getTagsFromEnv())
-		updateAllTags(gitMetadataTags, getTagsFromDDTags())
-		updateAllTags(gitMetadataTags, getTagsFromBinary(debug.ReadBuildInfo))
+// GitMetadataTags resolves git metadata from the values owned by internal/config.
+func GitMetadataTags(enabled bool, repositoryURL, commitSHA, rawTags string) map[string]string {
+	tags := make(map[string]string)
+	if enabled {
+		updateAllTags(tags, getTagsFromConfig(repositoryURL, commitSHA))
+		updateAllTags(tags, getTagsFromDDTags(rawTags))
+		updateAllTags(tags, getTagsFromBinary(debug.ReadBuildInfo))
 	}
-}
-
-// RefreshGitMetadataTags reset cached metadata tags. NOT thread-safe, use for testing only
-func RefreshGitMetadataTags() {
-	initGitMetadataTags()
+	return tags
 }
 
 // CleanGitMetadataTags cleans up tags from git metadata

@@ -14,7 +14,7 @@ import (
 
 	"github.com/open-feature/go-sdk/openfeature"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -91,7 +91,7 @@ type DatadogProvider struct {
 // Returns an error if the default configuration of the Remote Config client is NOT working
 // In this case, please call tracer.Start before creating the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
-	if !internal.BoolEnv(ffeProductEnvVar, false) {
+	if !internalconfig.Get().ExperimentalFlaggingProviderEnabled() {
 		log.Error("openfeature: experimental flagging provider is not enabled, please set %s=true to enable it", ffeProductEnvVar)
 		return &openfeature.NoopProvider{}, nil
 	}
@@ -121,13 +121,14 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// The OTel hook (flagEvalHook above) is registered unconditionally.
 	var evalWriter *flagEvalLoggingWriter
 	var evalLoggingHook *flagEvalLoggingHook
-	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
+	cfg := internalconfig.Get()
+	if cfg.FlagEvaluationCountsEnabled() {
 		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	}
 
 	var spanEnrichmentHook *spanEnrichmentHook
-	if internal.BoolEnv(spanEnrichmentEnvVar, false) {
+	if cfg.FlaggingProviderSpanEnrichmentEnabled() {
 		spanEnrichmentHook = newSpanEnrichmentHook()
 		log.Debug("openfeature: span enrichment is enabled")
 	} else {

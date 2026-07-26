@@ -2353,8 +2353,6 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
-		internal.RefreshGitMetadataTags()
-
 		tracer, _, err := bootstrapInspectableTracer(t)
 		assert.NoError(err)
 
@@ -2375,8 +2373,6 @@ func TestGitMetadata(t *testing.T) {
 
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
-		internal.RefreshGitMetadataTags()
-
 		tracer, _, _, stop, err := startTestTracer(t)
 		require.Nil(t, err)
 		defer stop()
@@ -2402,8 +2398,6 @@ func TestGitMetadata(t *testing.T) {
 		// git metadata env has priority over DD_TAGS
 		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
-		internal.RefreshGitMetadataTags()
-
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
@@ -2424,8 +2418,6 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
 		t.Setenv(internal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
 		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
-		internal.RefreshGitMetadataTags()
-
 		tracer, _, _, stop, err := startTestTracer(t)
 		require.Nil(t, err)
 		defer stop()
@@ -2446,8 +2438,6 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD")
 		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo")
-		internal.RefreshGitMetadataTags()
-
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
@@ -2471,8 +2461,6 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
-		internal.RefreshGitMetadataTags()
-
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()

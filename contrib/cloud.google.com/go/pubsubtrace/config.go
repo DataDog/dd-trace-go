@@ -6,10 +6,8 @@
 package pubsubtrace
 
 import (
-	"strconv"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 const envPropagationAsSpanLinks = "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS"
@@ -29,14 +27,13 @@ type Option interface {
 }
 
 func (tr *Tracer) defaultConfig() *config {
-	propagationAsSpanLinks, _ := strconv.ParseBool(env.Get(envPropagationAsSpanLinks))
 	return &config{
 		serviceName:            tr.instr.ServiceName(instrumentation.ComponentConsumer, nil),
 		serviceSource:          string(tr.component),
 		publishSpanName:        tr.instr.OperationName(instrumentation.ComponentProducer, nil),
 		receiveSpanName:        tr.instr.OperationName(instrumentation.ComponentConsumer, nil),
 		measured:               false,
-		propagationAsSpanLinks: propagationAsSpanLinks,
+		propagationAsSpanLinks: internalconfig.Get().PubsubPropagationAsSpanLinks(),
 	}
 }
 

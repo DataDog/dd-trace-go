@@ -15,14 +15,14 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 )
 
 // ErrorExtensionsFromEnv returns the configured error extensions from an environment variable.
 func ErrorExtensionsFromEnv() []string {
-	s := env.Get("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS")
+	s := internalconfig.Get().GraphQLErrorExtensions()
 	if s == "" {
 		return nil
 	}

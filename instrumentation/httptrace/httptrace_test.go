@@ -305,9 +305,6 @@ func TestTraceClientIPFlag(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	tp := new(log.RecordLogger)
-	defer log.UseLogger(tp)()
-
 	// use 0.0.0.0 as ip address of all test cases
 	// more comprehensive ip address testing is done in testing
 	// of ClientIPTags in appsec/dyngo/instrumentation/httpsec
@@ -371,11 +368,6 @@ func TestTraceClientIPFlag(t *testing.T) {
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
 			} else {
 				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
-				if _, err := strconv.ParseBool(tc.traceClientIPEnvVal); err != nil && tc.traceClientIPEnvVal != "" {
-					logs := tp.Logs()
-					assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_CLIENT_IP_ENABLED")
-					tp.Reset()
-				}
 			}
 			mt.Reset()
 		})

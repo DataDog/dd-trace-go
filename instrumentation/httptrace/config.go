@@ -13,10 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -75,24 +74,26 @@ func ResetCfg() {
 }
 
 func newConfig() config {
+	configured := internalconfig.CreateNew()
+	globalAllowlist, clientAllowlist, serverAllowlist := configured.HTTPQueryStringAllowlists()
 	c := config{
-		queryString:                              !internal.BoolEnv(envQueryStringDisabled, false),
-		traceClientIP:                            internal.BoolEnv(envTraceClientIPEnabled, false),
+		queryString:                              !configured.HTTPQueryStringDisabled(),
+		traceClientIP:                            configured.TraceClientIPEnabled(),
 		isStatusError:                            isServerError,
-		inferredProxyServicesEnabled:             internal.BoolEnv(envInferredProxyServicesEnabled, false),
-		pubsubPropagationAsSpanLinks:             internal.BoolEnv(envPubsubPropagationAsSpanLinks, false),
+		inferredProxyServicesEnabled:             configured.InferredProxyServicesEnabled(),
+		pubsubPropagationAsSpanLinks:             configured.PubsubPropagationAsSpanLinks(),
 		baggageTagKeys:                           make(map[string]struct{}),
-		resourceRenamingAlwaysSimplifiedEndpoint: internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false),
+		resourceRenamingAlwaysSimplifiedEndpoint: configured.ResourceRenamingAlwaysSimplifiedEndpoint(),
 		appsecEnabledMode:                        sync.OnceValue(appsecEnabledAtStartup),
 	}
-	if _, ok := env.Lookup(EnvQueryStringRegexp); ok {
+	if _, ok := configured.HTTPQueryStringObfuscationRegexp(); ok {
 		c.queryStringRegexp = QueryStringRegexp()
 	} else {
 		// Use an in-code state-machine obfuscator by default instead of `defaultQueryStringRegexp`
 		// for performance reasons.
 		c.useDefaultObfuscator = true
 	}
-	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
+	if v, ok := configured.HTTPBaggageTagKeys(); ok {
 		if v == "*" {
 			c.allowAllBaggage = true
 		} else {
@@ -107,24 +108,22 @@ func newConfig() config {
 	} else {
 		c.baggageTagKeys = defaultBaggageTagKeys()
 	}
-	v := env.Get(envServerErrorStatuses)
+	v := configured.HTTPServerErrorStatuses()
 	if fn := GetErrorCodesFromInput(v); fn != nil {
 		c.isStatusError = fn
 	}
-	if vv, ok := internal.BoolEnvNoDefault("DD_TRACE_RESOURCE_RENAMING_ENABLED"); ok {
-		c.resourceRenamingEnabled = &vv
-	}
+	c.resourceRenamingEnabled = configured.ResourceRenamingEnabled()
 	// Global allowlist applies to both client and server; specific env vars override it.
-	if v, ok := env.Lookup(envQueryStringAllowlist); ok && v != "" {
-		globalAllowlist := parseAllowlist(v)
-		c.clientQueryStringAllowlist = globalAllowlist
-		c.serverQueryStringAllowlist = globalAllowlist
+	if globalAllowlist != "" {
+		allowlist := parseAllowlist(globalAllowlist)
+		c.clientQueryStringAllowlist = allowlist
+		c.serverQueryStringAllowlist = allowlist
 	}
-	if v, ok := env.Lookup(envClientQueryStringAllowlist); ok && v != "" {
-		c.clientQueryStringAllowlist = parseAllowlist(v)
+	if clientAllowlist != "" {
+		c.clientQueryStringAllowlist = parseAllowlist(clientAllowlist)
 	}
-	if v, ok := env.Lookup(envServerQueryStringAllowlist); ok && v != "" {
-		c.serverQueryStringAllowlist = parseAllowlist(v)
+	if serverAllowlist != "" {
+		c.serverQueryStringAllowlist = parseAllowlist(serverAllowlist)
 	}
 	return c
 }
@@ -142,7 +141,7 @@ func isServerError(statusCode int) bool {
 }
 
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := env.Lookup(EnvQueryStringRegexp); ok {
+	if s, ok := internalconfig.Get().HTTPQueryStringObfuscationRegexp(); ok {
 		if s == "" {
 			return nil
 		}

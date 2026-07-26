@@ -35,12 +35,19 @@ var (
 	cacheExpiration = 5 * time.Minute
 	m               sync.RWMutex
 	isRefreshing    atomic.Value
+	configuredValue atomic.Value
 )
 
 const fargateName = "fargate"
 
 func init() {
 	isRefreshing.Store(false)
+	configuredValue.Store("")
+}
+
+// SetConfiguredHostname updates the DD_HOSTNAME value owned by internal/config.
+func SetConfiguredHostname(hostname string) {
+	configuredValue.Store(hostname)
 }
 
 // getCached returns the cached hostname, cached provider and a bool indicating if the hostname has expired
@@ -173,7 +180,7 @@ func updateHostname(now time.Time) {
 }
 
 func fromConfig(_ context.Context, _ string) (string, error) {
-	hn := env.Get("DD_HOSTNAME")
+	hn := configuredValue.Load().(string)
 	err := validate.ValidHostname(hn)
 	if err != nil {
 		return "", err
