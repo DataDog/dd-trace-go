@@ -31,6 +31,16 @@ func newTestReporter(t *testing.T) (*Reporter, *telemetrytest.RecordClient) {
 	return newReporter(), rec
 }
 
+func newZeroValueTestReporter(t *testing.T) (*Reporter, *telemetrytest.RecordClient) {
+	t.Helper()
+	bootstrap.ResetForTesting()
+	t.Cleanup(bootstrap.ResetForTesting)
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	rec := new(telemetrytest.RecordClient)
+	t.Cleanup(telemetry.MockClient(rec))
+	return new(Reporter), rec
+}
+
 func newTestReporterWithDefinitions(
 	t *testing.T,
 	raw []RawDefinition,
@@ -69,6 +79,173 @@ func configEvent(value any, policy TelemetryPolicy, cadence ReportCadence) Confi
 		ReportValue:   true,
 		SourceOrdinal: 1,
 	}
+}
+
+func TestZeroValueReporterIndexesAcceptedBindingsLazily(t *testing.T) {
+	r, rec := newZeroValueTestReporter(t)
+	require.Empty(t, r.bindings)
+	require.Empty(t, r.generation)
+	require.Empty(t, r.once)
+	require.Empty(t, r.changes)
+
+	service := configEvent("service", TelemetryReport, ReportOncePerGeneration)
+	r.Report([]ConfigEvent{service}, 1)
+
+	require.Len(t, rec.Configuration, 1, "the first accepted event must report immediately")
+	require.Len(t, r.bindings, 1)
+	require.Contains(t, r.bindings, service.BindingID)
+
+	version := configEvent("version", TelemetryReport, ReportOncePerGeneration)
+	version.BindingID = "tracer.DD_VERSION"
+	version.Name = "DD_VERSION"
+	r.Report([]ConfigEvent{version}, 1)
+
+	require.Len(t, rec.Configuration, 2)
+	require.Len(t, r.bindings, 2)
+	require.Contains(t, r.bindings, version.BindingID)
+}
+
+func TestConstructedReportersRemainComplete(t *testing.T) {
+	_, registeredBindings := RegisteredDefinitions()
+	eager := NewReporter()
+	require.Len(t, eager.bindings, len(registeredBindings))
+
+	custom, rec := newTestReporterWithDefinitions(t,
+		[]RawDefinition{{Key: "DD_TEST_CUSTOM", Telemetry: TelemetryReport}},
+		[]ConsumerBinding{{
+			ID: "test.custom", Consumer: "test",
+			Keys: []string{"DD_TEST_CUSTOM"}, Sampling: SampleTracerConstruction,
+		}},
+	)
+	custom.Report([]ConfigEvent{configEvent(
+		"global", TelemetryReport, ReportOncePerGeneration,
+	)}, 1)
+
+	require.Empty(t, rec.Configuration,
+		"a custom-definition reporter must not fall back to global bindings")
+	require.Len(t, custom.bindings, 1)
+}
+
+func TestZeroValueReporterRejectsAdversarialEventsWithoutState(t *testing.T) {
+	r, rec := newZeroValueTestReporter(t)
+	unsupported := &reporterGoStringer{reporter: r, called: make(chan struct{})}
+	for i := 0; i < 1000; i++ {
+		events := []ConfigEvent{
+			configEvent("unknown", TelemetryReport, ReportOncePerGeneration),
+			configEvent("bad-name", TelemetryReport, ReportOncePerGeneration),
+			configEvent("bad-policy", TelemetryRedact, ReportOncePerGeneration),
+			configEvent("bad-cadence", TelemetryReport, ReportOnChange),
+			configEvent("never", TelemetryReport, ReportNever),
+			configEvent("bad-origin", TelemetryReport, ReportOncePerGeneration),
+			configEvent("bad-ordinal", TelemetryReport, ReportOncePerGeneration),
+			configEvent("bad-kind", TelemetryReport, ReportOncePerGeneration),
+			configEvent("omit", TelemetryOmit, ReportOncePerGeneration),
+		}
+		events[0].BindingID = fmt.Sprintf("unknown-%d", i)
+		events[1].Name = fmt.Sprintf("DD_UNKNOWN_%d", i)
+		events[5].Origin = telemetry.Origin(fmt.Sprintf("unknown-%d", i))
+		events[6].SourceOrdinal = schema.SourceOrdinalMax + 1
+		events[7].Kind = EventKind(255)
+		events[8].BindingID = "tracer.DD_TAGS"
+		events[8].Name = "DD_TAGS"
+		r.Report(events, uint64(i+1))
+	}
+	r.Report([]ConfigEvent{
+		configEvent(unsupported, TelemetryReport, ReportOncePerGeneration),
+	}, 1001)
+	absent := configEvent(nil, TelemetryReport, ReportOnChange)
+	absent.BindingID = "system.hostname"
+	absent.Name = "DD_HOSTNAME"
+	absent.Present = false
+	absent.Valid = false
+	absent.ReportValue = false
+	r.Report([]ConfigEvent{absent}, 1002)
+
+	require.Empty(t, rec.Configuration)
+	require.Empty(t, r.bindings)
+	require.Empty(t, r.generation)
+	require.Empty(t, r.once)
+	require.Empty(t, r.changes)
+	select {
+	case <-unsupported.called:
+		t.Fatal("unsupported pointer value invoked a formatting callback")
+	default:
+	}
+}
+
+func TestZeroValueReporterPreservesGenerationAndOnChange(t *testing.T) {
+	r, rec := newZeroValueTestReporter(t)
+	service := configEvent("first", TelemetryReport, ReportOncePerGeneration)
+
+	r.Report([]ConfigEvent{service}, 2)
+	r.Report([]ConfigEvent{service}, 1)
+	service.Value = "second"
+	r.Report([]ConfigEvent{service}, 3)
+
+	hostname := configEvent("one", TelemetryReport, ReportOnChange)
+	hostname.BindingID = "system.hostname"
+	hostname.Name = "DD_HOSTNAME"
+	r.Report([]ConfigEvent{hostname}, 1)
+	r.Report([]ConfigEvent{hostname}, 2)
+	hostname.Value = "two"
+	r.Report([]ConfigEvent{hostname}, 3)
+
+	require.Len(t, rec.Configuration, 4)
+	require.Equal(t, []any{"first", "second", "one", "two"}, []any{
+		rec.Configuration[0].Value,
+		rec.Configuration[1].Value,
+		rec.Configuration[2].Value,
+		rec.Configuration[3].Value,
+	})
+	require.Len(t, r.bindings, 2)
+	require.Len(t, r.generation, 2)
+	require.Len(t, r.once, 1)
+	require.Len(t, r.changes, 1)
+}
+
+func TestZeroValueReporterConcurrentFirstUse(t *testing.T) {
+	r, rec := newZeroValueTestReporter(t)
+	service := configEvent("service", TelemetryReport, ReportOncePerGeneration)
+	version := configEvent("version", TelemetryReport, ReportOncePerGeneration)
+	version.BindingID = "tracer.DD_VERSION"
+	version.Name = "DD_VERSION"
+
+	const goroutines = 64
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		event := service
+		if i%2 != 0 {
+			event = version
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			r.Report([]ConfigEvent{event}, 1)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	require.Len(t, rec.Configuration, 2)
+	require.Len(t, r.bindings, 2)
+	require.Len(t, r.generation, 2)
+	require.Len(t, r.once, 2)
+	require.Empty(t, r.changes)
+}
+
+func TestZeroValueReporterReportsPackageInitEventImmediatelyOnce(t *testing.T) {
+	r, rec := newZeroValueTestReporter(t)
+	event := configEvent("false", TelemetryReport, ReportOncePerGeneration)
+	event.BindingID = "tracer.seelog-init"
+	event.Name = "DD_TRACE_DEBUG_SEELOG_WORKAROUND"
+
+	r.Report([]ConfigEvent{event, event}, 1)
+
+	require.Len(t, rec.Configuration, 1)
+	require.Equal(t, "false", rec.Configuration[0].Value)
+	require.Len(t, r.bindings, 1)
 }
 
 func TestReporterDropsDisabledWithoutState(t *testing.T) {

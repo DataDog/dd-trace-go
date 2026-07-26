@@ -59,6 +59,7 @@ type reporterBinding struct {
 type Reporter struct {
 	mu sync.Mutex
 
+	complete   bool
 	bindings   map[string]reporterBinding
 	generation map[string]uint64
 	once       map[reportKey]struct{}
@@ -83,14 +84,6 @@ func newReporterWithDefinitions(raw []RawDefinition, bindings []ConsumerBinding)
 	return r
 }
 
-func (r *Reporter) initializeLocked() {
-	if r.bindings != nil {
-		return
-	}
-	raw, bindings := RegisteredDefinitions()
-	r.initializeWithDefinitionsLocked(raw, bindings)
-}
-
 func (r *Reporter) initializeWithDefinitionsLocked(raw []RawDefinition, bindings []ConsumerBinding) {
 	policies := make(map[string]TelemetryPolicy, len(raw))
 	for _, definition := range raw {
@@ -112,6 +105,7 @@ func (r *Reporter) initializeWithDefinitionsLocked(raw []RawDefinition, bindings
 		}
 		registered[binding.ID] = reporterBinding{policies: keys, cadence: cadence}
 	}
+	r.complete = true
 	r.bindings = registered
 	r.generation = make(map[string]uint64, len(bindings))
 	r.once = make(map[reportKey]struct{})
@@ -123,52 +117,54 @@ func (r *Reporter) Report(events []ConfigEvent, generation uint64) {
 	if !bootstrap.TelemetryEnabled() {
 		return
 	}
-	r.mu.Lock()
-	r.initializeLocked()
-	r.mu.Unlock()
 
 	prepared := make([]preparedReport, 0, len(events))
 	for _, event := range events {
-		if event.Cadence == ReportNever {
-			continue
-		}
-		if !r.validEvent(event) {
+		if !validReporterEventShape(event) {
 			continue
 		}
 		if event.Kind == EventConfiguration && event.Policy == TelemetryOmit {
 			continue
 		}
+		var report preparedReport
 		if event.Kind == EventConfiguration && !event.ReportValue {
-			if event.Cadence == ReportOnChange {
-				reportedEvent := event
-				reportedEvent.Value = nil
-				reportedEvent.Err = nil
-				prepared = append(prepared, preparedReport{
-					action: reportAction{event: reportedEvent},
-					hash:   telemetryStateHash(event, nil),
-				})
+			if event.Cadence != ReportOnChange {
+				continue
 			}
+			reportedEvent := event
+			reportedEvent.Value = nil
+			reportedEvent.Err = nil
+			report = preparedReport{
+				action: reportAction{event: reportedEvent},
+				hash:   telemetryStateHash(event, nil),
+			}
+		} else {
+			value, ok := transformTelemetryValue(event)
+			if !ok {
+				continue
+			}
+			reportedEvent := event
+			reportedEvent.Value = nil
+			reportedEvent.Err = nil
+			report = preparedReport{
+				action:     reportAction{event: reportedEvent, value: value},
+				actionable: true,
+			}
+			if event.Cadence == ReportOnChange {
+				report.hash = telemetryStateHash(event, value)
+			}
+		}
+		if !r.acceptBinding(event, report.actionable) {
 			continue
-		}
-		value, ok := transformTelemetryValue(event)
-		if !ok {
-			continue
-		}
-		reportedEvent := event
-		reportedEvent.Value = nil
-		reportedEvent.Err = nil
-		report := preparedReport{
-			action:     reportAction{event: reportedEvent, value: value},
-			actionable: true,
-		}
-		if event.Cadence == ReportOnChange {
-			report.hash = telemetryStateHash(event, value)
 		}
 		prepared = append(prepared, report)
 	}
 
 	actions := make([]reportAction, 0, len(prepared))
 	r.mu.Lock()
+	if len(prepared) != 0 {
+		r.initializeStateLocked()
+	}
 	for _, report := range prepared {
 		event := report.action.event
 		current, seen := r.generation[event.BindingID]
@@ -201,13 +197,8 @@ func (r *Reporter) Report(events []ConfigEvent, generation uint64) {
 	}
 }
 
-func (r *Reporter) validEvent(event ConfigEvent) bool {
-	binding, ok := r.bindings[event.BindingID]
-	if !ok {
-		return false
-	}
-	policy, ok := binding.policies[event.Name]
-	if !ok || event.Policy != policy || event.Cadence != binding.cadence {
+func validReporterEventShape(event ConfigEvent) bool {
+	if event.Cadence != ReportOncePerGeneration && event.Cadence != ReportOnChange {
 		return false
 	}
 	if event.Kind > EventOTelEnvInvalid || event.SourceOrdinal > schema.SourceOrdinalMax {
@@ -220,6 +211,64 @@ func (r *Reporter) validEvent(event ConfigEvent) bool {
 		return false
 	}
 	return true
+}
+
+func validReporterBinding(event ConfigEvent, binding reporterBinding) bool {
+	policy, ok := binding.policies[event.Name]
+	return ok && event.Policy == policy && event.Cadence == binding.cadence
+}
+
+func (r *Reporter) acceptBinding(event ConfigEvent, cache bool) bool {
+	r.mu.Lock()
+	if binding, ok := r.bindings[event.BindingID]; ok {
+		r.mu.Unlock()
+		return validReporterBinding(event, binding)
+	}
+	if r.complete {
+		r.mu.Unlock()
+		return false
+	}
+
+	binding, definition, ok := definitionsRegistry.reporterMetadata(event.BindingID, event.Name)
+	if !ok {
+		r.mu.Unlock()
+		return false
+	}
+	cadence := reportCadence(binding)
+	if event.Policy != definition.Telemetry || event.Cadence != cadence || !cache {
+		r.mu.Unlock()
+		return false
+	}
+	cached, ok := definitionsRegistry.reporterBinding(binding)
+	if !ok {
+		r.mu.Unlock()
+		return false
+	}
+	if r.bindings == nil {
+		r.bindings = make(map[string]reporterBinding)
+	}
+	r.bindings[binding.ID] = cached
+	r.mu.Unlock()
+	return true
+}
+
+func (r *Reporter) initializeStateLocked() {
+	if r.generation == nil {
+		r.generation = make(map[string]uint64)
+	}
+	if r.once == nil {
+		r.once = make(map[reportKey]struct{})
+	}
+	if r.changes == nil {
+		r.changes = make(map[changeKey][sha256.Size]byte)
+	}
+}
+
+func reportCadence(binding ConsumerBinding) ReportCadence {
+	if binding.Sampling == SamplePerCall {
+		return ReportOnChange
+	}
+	return ReportOncePerGeneration
 }
 
 func validReporterOrigin(event ConfigEvent) bool {

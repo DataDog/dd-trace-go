@@ -137,6 +137,55 @@ func (r *registry) definitions() ([]RawDefinition, []ConsumerBinding) {
 	return raw, bindings
 }
 
+func (r *registry) rawDefinition(key string) (RawDefinition, bool) {
+	for _, definition := range r.raw {
+		if definition.Key == key {
+			return definition, true
+		}
+	}
+	return RawDefinition{}, false
+}
+
+func (r *registry) reporterMetadata(bindingID, key string) (ConsumerBinding, RawDefinition, bool) {
+	var found ConsumerBinding
+	for _, binding := range r.bindings {
+		if binding.ID == bindingID {
+			found = binding
+			break
+		}
+	}
+	if found.ID == "" {
+		return ConsumerBinding{}, RawDefinition{}, false
+	}
+	matches := false
+	for _, bindingKey := range found.Keys {
+		if bindingKey == key {
+			matches = true
+			break
+		}
+	}
+	if !matches {
+		return ConsumerBinding{}, RawDefinition{}, false
+	}
+	definition, ok := r.rawDefinition(key)
+	return found, definition, ok
+}
+
+func (r *registry) reporterBinding(binding ConsumerBinding) (reporterBinding, bool) {
+	policies := make(map[string]TelemetryPolicy, len(binding.Keys))
+	for _, key := range binding.Keys {
+		definition, ok := r.rawDefinition(key)
+		if !ok {
+			return reporterBinding{}, false
+		}
+		policies[key] = definition.Telemetry
+	}
+	return reporterBinding{
+		policies: policies,
+		cadence:  reportCadence(binding),
+	}, true
+}
+
 var definitionsRegistry = newRegistry()
 
 var tracerSourceHostnameBinding = ConsumerBinding{

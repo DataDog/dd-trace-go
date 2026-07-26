@@ -420,8 +420,22 @@ func registeredDefinition(key string) RawDefinition {
 	panic("config definition not registered: " + key)
 }
 
+func registeredDefinitionForInit(key string) RawDefinition {
+	if def, ok := definitionsRegistry.rawDefinition(key); ok {
+		return def
+	}
+	panic("config definition not registered: " + key)
+}
+
+func registeredDefinitionForBinding(key string, binding ConsumerBinding) RawDefinition {
+	if binding.Sampling == SamplePackageInit {
+		return registeredDefinitionForInit(key)
+	}
+	return registeredDefinition(key)
+}
+
 func resolveString(key string, binding ConsumerBinding) (schema.Resolved[string], []ConfigEvent) {
-	def := registeredDefinition(key)
+	def := registeredDefinitionForBinding(key, binding)
 	return resolveStringWithProvider(providerFor(def, binding), def, binding)
 }
 
@@ -432,7 +446,7 @@ func resolveStringWithProvider(p *provider.Provider, def RawDefinition, binding 
 }
 
 func resolveNonEmptyString(key string, binding ConsumerBinding) (schema.Resolved[string], []ConfigEvent) {
-	def := registeredDefinition(key)
+	def := registeredDefinitionForBinding(key, binding)
 	return resolveBoundWithProvider(providerFor(def, binding), def, binding, "", func(raw string) (string, error) {
 		if raw == "" {
 			return "", errors.New("empty value")
@@ -442,7 +456,7 @@ func resolveNonEmptyString(key string, binding ConsumerBinding) (schema.Resolved
 }
 
 func resolveBool(key string, binding ConsumerBinding, defaultValue bool) (schema.Resolved[bool], []ConfigEvent) {
-	def := registeredDefinition(key)
+	def := registeredDefinitionForBinding(key, binding)
 	return resolveBoolWithProvider(providerFor(def, binding), def, binding, defaultValue)
 }
 
@@ -457,7 +471,7 @@ func resolveBoolWithProvider(p *provider.Provider, def RawDefinition, binding Co
 }
 
 func resolveBoolQuiet(key string, binding ConsumerBinding, defaultValue bool) (schema.Resolved[bool], []ConfigEvent) {
-	def := registeredDefinition(key)
+	def := registeredDefinitionForBinding(key, binding)
 	return resolveBoolQuietWithProvider(providerFor(def, binding), def, binding, defaultValue)
 }
 
@@ -798,8 +812,17 @@ type NamingSchemaConfig struct {
 
 func namingSchemaSnapshot(binding ConsumerBinding, candidate *Config) NamingSchemaConfig {
 	p := newEnvironmentProvider()
-	schemaValue, schemaEvents := resolveStringWithProvider(p, registeredDefinition("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA"), binding)
-	removeNames, removeEvents := resolveBoolWithProvider(p, registeredDefinition("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED"), binding, false)
+	schemaValue, schemaEvents := resolveStringWithProvider(
+		p,
+		registeredDefinitionForBinding("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", binding),
+		binding,
+	)
+	removeNames, removeEvents := resolveBoolWithProvider(
+		p,
+		registeredDefinitionForBinding("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", binding),
+		binding,
+		false,
+	)
 	events := append(schemaEvents, removeEvents...)
 	if candidate == nil {
 		reportInstrumentationEvents(events)

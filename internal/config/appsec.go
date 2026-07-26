@@ -486,7 +486,7 @@ func ResolveAppSecBlockedTemplates(jsonDefault, htmlDefault []byte) (AppSecBlock
 	resolve := func(key string, fallback []byte) ([]byte, []ConfigEvent) {
 		resolved, events := resolveBoundWithProvider(
 			p,
-			registeredDefinition(key),
+			registeredDefinitionForBinding(key, appSecBlockedTemplatesBinding),
 			appSecBlockedTemplatesBinding,
 			cloneAppSecBytes(fallback),
 			func(raw string) ([]byte, error) {
@@ -542,7 +542,7 @@ func appSecStackTraceEvents(snapshot bootstrap.AppSecStackTraceSnapshot) []Confi
 	}
 	events := make([]ConfigEvent, 0, len(settings)*2)
 	for _, setting := range settings {
-		def := registeredDefinition(setting.key)
+		def := registeredDefinitionForBinding(setting.key, appSecStackTraceBinding)
 		events = append(events,
 			ConfigEvent{
 				Kind:          EventConfiguration,
@@ -697,7 +697,7 @@ func resolveAppSecStable[T any](
 	parse schema.Parser[T],
 ) (schema.Resolved[T], []ConfigEvent) {
 	resolved, events := resolveBound(
-		registeredDefinition(key),
+		registeredDefinitionForBinding(key, binding),
 		binding,
 		defaultValue,
 		parse,

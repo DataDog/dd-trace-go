@@ -144,7 +144,7 @@ func initializeSystemPackageSettings() {
 	installAppSecInitProviders()
 	applyLoggingRate()
 	processtags.SetEnabledProvider(ProcessTagsEnabled)
-	processtags.ReloadWithEnabled(ProcessTagsEnabled())
+	processtags.ReloadWithEnabled(processTagsEnabledForInit())
 	hostname.SetConfigProvider(HostnameConfig)
 	telemetry.SetAppEndpointsMessageLimit(appEndpointsMessageLimit())
 }
@@ -656,8 +656,21 @@ func HostnameConfig() string {
 
 // ProcessTagsEnabled samples the process-tag gate for one reload.
 func ProcessTagsEnabled() bool {
-	resolved, events := resolveBool(
-		"DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED",
+	return processTagsEnabled(
+		registeredDefinition("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED"),
+	)
+}
+
+func processTagsEnabledForInit() bool {
+	return processTagsEnabled(
+		registeredDefinitionForInit("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED"),
+	)
+}
+
+func processTagsEnabled(def RawDefinition) bool {
+	resolved, events := resolveBoolWithProvider(
+		providerFor(def, systemProcessTagsBinding),
+		def,
 		systemProcessTagsBinding,
 		true,
 	)
@@ -679,7 +692,10 @@ func applyLoggingRate() {
 }
 
 func appEndpointsMessageLimit() int {
-	def := registeredDefinition("DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT")
+	def := registeredDefinitionForBinding(
+		"DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT",
+		systemAppEndpointsBinding,
+	)
 	resolved, events := resolveBound(
 		def,
 		systemAppEndpointsBinding,
