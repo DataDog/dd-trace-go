@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
@@ -29,6 +30,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
@@ -684,6 +686,8 @@ func loadConfig() *Config {
 	cfg.testOptimizationManifestFile = strings.TrimSpace(p.GetString("DD_TEST_OPTIMIZATION_MANIFEST_FILE", ""))
 	payloadsInFiles := strings.TrimSpace(p.GetString("DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES", ""))
 	cfg.testOptimizationPayloadsInFiles, _ = strconv.ParseBool(payloadsInFiles)
+	bazel.Configure(cfg.testOptimizationManifestFile, cfg.testOptimizationPayloadsInFiles)
+	stacktrace.Configure(cfg.appSecStackTraceEnabled, cfg.appSecMaxStackTraceDepth)
 	cfg.ciVisibilityGitUploadEnabled = p.GetBool("DD_CIVISIBILITY_GIT_UPLOAD_ENABLED", true)
 	cfg.ciVisibilityFlakyRetryEnabled = p.GetBool("DD_CIVISIBILITY_FLAKY_RETRY_ENABLED", true)
 	cfg.ciVisibilityImpactedTestsDetectionEnabled = p.GetBool("DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED", true)
