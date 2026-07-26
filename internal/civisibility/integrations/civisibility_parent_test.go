@@ -22,7 +22,7 @@ func TestInternalCiVisibilityInitializationParentModeRewritesEnvAfterTracerIniti
 	resetCIVisibilityBootstrapStateForTesting()
 	t.Cleanup(restoreCIVisibilityMockModeForTesting)
 	disableAdditionalFeaturesForBootstrapTest()
-	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "parent")
+	setConfigEnv(t, constants.CIVisibilityEnabledEnvironmentVariable, "parent")
 
 	var valueDuringTracerInit string
 	internalCiVisibilityInitialization(func(_ []tracer.StartOption) {
@@ -41,7 +41,7 @@ func TestInternalCiVisibilityInitializationExplicitTrueDoesNotRewriteEnvToFalse(
 	resetCIVisibilityBootstrapStateForTesting()
 	t.Cleanup(restoreCIVisibilityMockModeForTesting)
 	disableAdditionalFeaturesForBootstrapTest()
-	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "true")
+	setConfigEnv(t, constants.CIVisibilityEnabledEnvironmentVariable, "true")
 
 	var valueDuringTracerInit string
 	internalCiVisibilityInitialization(func(_ []tracer.StartOption) {

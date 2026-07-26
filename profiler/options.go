@@ -84,8 +84,9 @@ var defaultClient = &http.Client{
 var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
-	apiKey    string
-	agentless bool
+	apiKey               string
+	agentless            bool
+	profilingAutoEnabled bool
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
 	// based on the other options.
 	targetURL            string
@@ -170,7 +171,7 @@ func (c *config) addProfileType(t ProfileType) {
 }
 
 func defaultConfig() (*config, error) {
-	processConfig := internalconfig.CreateNew()
+	processConfig := internalconfig.Get()
 	executionTraceEnabled, executionTracePeriod, executionTraceLimit := processConfig.ProfilingExecutionTraceConfig()
 	c := config{
 		apiURL:               defaultAPIURL,
@@ -183,9 +184,10 @@ func defaultConfig() (*config, error) {
 		mutexFraction:        DefaultMutexFraction,
 		uploadTimeout:        DefaultUploadTimeout,
 		deltaProfiles:        processConfig.ProfilingDelta(),
-		logStartup:           processConfig.LogStartup(),
+		logStartup:           processConfig.ProfilingLogStartup(),
 		endpointCountEnabled: processConfig.ProfilingEndpointCountEnabled(),
 		compressionConfig:    processConfig.ProfilingDebugCompressionSettings(),
+		profilingAutoEnabled: processConfig.ProfilingAutoEnabledFromEnv(),
 		traceConfig: executionTraceConfig{
 			Enabled: executionTraceEnabled,
 			Period:  executionTracePeriod,
@@ -197,7 +199,7 @@ func defaultConfig() (*config, error) {
 		c.addProfileType(t)
 	}
 
-	url := processConfig.RawAgentURL()
+	url := processConfig.EnvAgentURL()
 	if url.Scheme == "unix" {
 		WithUDS(url.Path)(&c)
 	} else {
@@ -211,20 +213,20 @@ func defaultConfig() (*config, error) {
 		}
 		WithUploadTimeout(d)(&c)
 	}
-	if v := processConfig.APIKey(); v != "" {
+	if v := processConfig.RawAPIKey(); v != "" {
 		c.apiKey = v
 	}
 	c.agentless = processConfig.ProfilingAgentless()
-	if v := processConfig.Site(); v != "" {
+	if v := processConfig.RawSite(); v != "" {
 		WithSite(v)(&c)
 	}
-	if v := processConfig.Env(); v != "" {
+	if v := processConfig.RawEnv(); v != "" {
 		WithEnv(v)(&c)
 	}
-	if v := processConfig.ServiceName(); v != "" {
+	if v := processConfig.RawServiceName(); v != "" {
 		WithService(v)(&c)
 	}
-	if v := processConfig.Version(); v != "" {
+	if v := processConfig.RawVersion(); v != "" {
 		WithVersion(v)(&c)
 	}
 	c.flushOnExit = processConfig.ProfilingFlushOnExit()
@@ -234,7 +236,7 @@ func defaultConfig() (*config, error) {
 		tags = internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 	}
-	maps.Copy(tags, processConfig.GitMetadataTags())
+	maps.Copy(tags, internal.GetGitMetadataTags())
 	for key, val := range tags {
 		if val != "" {
 			WithTags(key + ":" + val)(&c)

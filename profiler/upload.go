@@ -19,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -209,7 +208,7 @@ func encode(bat batch, cfg *config) (contentType string, body io.Reader, err err
 	// admission controller. Otherwise, the client library doesn't care
 	// about the value and assumes it was something "truthy", or this code
 	// wouldn't run. We just track it to be consistent with other languages
-	if internalconfig.Get().ProfilingAutoEnabled() {
+	if cfg.profilingAutoEnabled {
 		event.Info.Profiler.Activation = "auto"
 	} else {
 		event.Info.Profiler.Activation = "manual"

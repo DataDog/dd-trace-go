@@ -113,7 +113,7 @@ func startTelemetry(c *config) telemetry.Client {
 	if c.internalConfig.LogToStdout() || c.internalConfig.CIVisibilityAgentlessActive() {
 		cfg.APIKey = c.internalConfig.APIKey()
 	}
-	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg)
+	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg, c.internalConfig)
 	if err != nil {
 		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
 		return nil

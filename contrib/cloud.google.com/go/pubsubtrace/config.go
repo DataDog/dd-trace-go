@@ -6,6 +6,8 @@
 package pubsubtrace
 
 import (
+	"strconv"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
@@ -27,13 +29,15 @@ type Option interface {
 }
 
 func (tr *Tracer) defaultConfig() *config {
+	rawPropagationAsSpanLinks, _ := internalconfig.Get().PubsubPropagationAsSpanLinks()
+	propagationAsSpanLinks, _ := strconv.ParseBool(rawPropagationAsSpanLinks)
 	return &config{
 		serviceName:            tr.instr.ServiceName(instrumentation.ComponentConsumer, nil),
 		serviceSource:          string(tr.component),
 		publishSpanName:        tr.instr.OperationName(instrumentation.ComponentProducer, nil),
 		receiveSpanName:        tr.instr.OperationName(instrumentation.ComponentConsumer, nil),
 		measured:               false,
-		propagationAsSpanLinks: internalconfig.Get().PubsubPropagationAsSpanLinks(),
+		propagationAsSpanLinks: propagationAsSpanLinks,
 	}
 }
 

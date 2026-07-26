@@ -13,6 +13,7 @@ import (
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Version represents the available naming schema versions.
@@ -38,7 +39,13 @@ var (
 
 func LoadFromEnv() {
 	cfg := internalconfig.Get()
-	setVersion(Version(cfg.SpanAttributeSchemaVersion()))
+	schemaVersion := cfg.RawSpanAttributeSchema()
+	if version, ok := parseVersionStr(schemaVersion); ok {
+		setVersion(version)
+	} else {
+		setVersion(SchemaV0)
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersion, SchemaV0)
+	}
 	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
 	// These default service names are always disabled for v1 onwards.
 	SetRemoveIntegrationServiceNames(cfg.RemoveIntegrationServiceNames())
@@ -46,8 +53,9 @@ func LoadFromEnv() {
 
 // ReloadConfig is used to reload the configuration in tests.
 func ReloadConfig() {
+	cfg := internalconfig.Get()
 	LoadFromEnv()
-	globalconfig.SetServiceName(internalconfig.Get().ServiceName())
+	globalconfig.SetServiceName(cfg.RawServiceName())
 }
 
 // GetConfig returns the naming schema config.

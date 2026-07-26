@@ -19,8 +19,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-const envProcessTagsEnabled = "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED"
-
 const (
 	tagEntrypointName    = "entrypoint.name"
 	tagEntrypointBasedir = "entrypoint.basedir"
@@ -35,19 +33,30 @@ const (
 )
 
 var (
-	enabled           bool
-	pTags             *ProcessTags
+	configureOnce     sync.Once
+	configProvider    = func() bool { return true }
+	pTags             atomic.Pointer[ProcessTags]
 	containerTagsHash atomic.Value
 )
 
 func init() {
-	Configure(true)
+	reload(true)
 }
 
-// Configure updates process-tag collection using the value owned by internal/config.
+// SetConfigProvider supplies the singleton-backed configuration reader used by
+// Reload. It exists to avoid an import cycle with internal/config.
+func SetConfigProvider(provider func() bool) {
+	configProvider = provider
+}
+
+// Configure supplies the process-wide value owned by internal/config. The first
+// value wins, matching the package's original init-time configuration lifetime.
 func Configure(collectEnabled bool) {
-	enabled = collectEnabled
-	reload()
+	configureOnce.Do(func() {
+		if !collectEnabled {
+			pTags.Store(nil)
+		}
+	})
 }
 
 type ProcessTags struct {
@@ -85,8 +94,8 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 	if len(newTags) == 0 {
 		return
 	}
-	pTags.mu.Lock()
-	defer pTags.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if p.tags == nil {
 		p.tags = make(map[string]string)
@@ -126,17 +135,24 @@ func (p *ProcessTags) rebuild() {
 
 // Reload initializes the configuration and process tags collection. This is useful for tests.
 func Reload() {
-	reload()
+	reload(configProvider())
 }
 
-func reload() {
-	if !enabled {
+// ReloadForTesting rebuilds process tags with an explicit enablement value.
+func ReloadForTesting(collectEnabled bool) {
+	reload(collectEnabled)
+}
+
+func reload(collectEnabled bool) {
+	if !collectEnabled {
+		pTags.Store(nil)
 		return
 	}
-	pTags = &ProcessTags{}
-	tags := collect()
-	if len(tags) > 0 {
-		add(tags)
+	processTags := &ProcessTags{}
+	pTags.Store(processTags)
+	collected := collect()
+	if len(collected) > 0 {
+		processTags.merge(collected)
 	}
 }
 
@@ -176,10 +192,7 @@ func directoryTagValue(dir string) (string, bool) {
 
 // GlobalTags returns the global process tags.
 func GlobalTags() *ProcessTags {
-	if !enabled {
-		return nil
-	}
-	return pTags
+	return pTags.Load()
 }
 
 // SetContainerTagsHash stores the container tags hash returned by the agent.
@@ -194,10 +207,11 @@ func ContainerTagsHash() string {
 }
 
 func add(tags map[string]string) {
-	if !enabled {
+	processTags := pTags.Load()
+	if processTags == nil {
 		return
 	}
-	pTags.merge(tags)
+	processTags.merge(tags)
 }
 
 // SetServiceNameTag sets the appropriate process tag for the global service name.
@@ -205,20 +219,21 @@ func add(tags map[string]string) {
 // previously set tag before adding the new one.
 // If isUserDefined is true, sets svc.user:true; otherwise sets svc.auto:<name>.
 func SetServiceNameTag(name string, isUserDefined bool) {
-	if !enabled {
+	processTags := pTags.Load()
+	if processTags == nil {
 		return
 	}
-	pTags.mu.Lock()
-	defer pTags.mu.Unlock()
-	if pTags.tags == nil {
-		pTags.tags = make(map[string]string)
+	processTags.mu.Lock()
+	defer processTags.mu.Unlock()
+	if processTags.tags == nil {
+		processTags.tags = make(map[string]string)
 	}
-	delete(pTags.tags, tagSvcAuto)
-	delete(pTags.tags, tagSvcUser)
+	delete(processTags.tags, tagSvcAuto)
+	delete(processTags.tags, tagSvcUser)
 	if isUserDefined {
-		pTags.tags[tagSvcUser] = "true"
+		processTags.tags[tagSvcUser] = "true"
 	} else {
-		pTags.tags[tagSvcAuto] = name
+		processTags.tags[tagSvcAuto] = name
 	}
-	pTags.rebuild()
+	processTags.rebuild()
 }

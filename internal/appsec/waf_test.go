@@ -40,12 +40,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestCustomRules(t *testing.T) {
-	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
+	withConfigEnv(t, func() {
+		t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
+	})
 	testutils.StartAppSec(t)
 
 	// Start and trace an HTTP server
@@ -117,7 +120,9 @@ func TestCustomRules(t *testing.T) {
 }
 
 func TestUserRules(t *testing.T) {
-	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	withConfigEnv(t, func() {
+		t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	})
 	testutils.StartAppSec(t)
 
 	// Start and trace an HTTP server
@@ -324,7 +329,9 @@ func TestWAF(t *testing.T) {
 
 // Test that request blocking works by using custom rules/rules data
 func TestBlocking(t *testing.T) {
-	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
+	withConfigEnv(t, func() {
+		t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
+	})
 	testutils.StartAppSec(t)
 
 	const (
@@ -492,7 +499,9 @@ func TestBlocking(t *testing.T) {
 // Test that API Security schemas get collected when API security is enabled
 func TestAPISecurity(t *testing.T) {
 	// Start and trace an HTTP server
-	t.Setenv(config.EnvEnabled, "true")
+	withConfigEnv(t, func() {
+		t.Setenv(config.EnvEnabled, "true")
+	})
 	if wafOK, err := libddwaf.Usable(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
@@ -516,7 +525,9 @@ func TestAPISecurity(t *testing.T) {
 		}
 		sampler.On("DecisionFor", samplingKey).Return(true).Once()
 
-		t.Setenv(config.EnvAPISecEnabled, "true")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvAPISecEnabled, "true")
+		})
 		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
@@ -561,7 +572,9 @@ func TestAPISecurity(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		var sampler mockSampler
 
-		t.Setenv(config.EnvAPISecEnabled, "false")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvAPISecEnabled, "false")
+		})
 		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
@@ -602,10 +615,12 @@ func TestAPISecurityProxy(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("rate-limits", func(t *testing.T) {
-		t.Setenv(config.EnvEnabled, "true")
-		t.Setenv(config.EnvAPISecEnabled, "true")
-		// Set the rate to 1 schema per minute
-		t.Setenv(config.EnvAPISecProxySampleRate, "1")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "true")
+			t.Setenv(config.EnvAPISecEnabled, "true")
+			// Set the rate to 1 schema per minute
+			t.Setenv(config.EnvAPISecProxySampleRate, "1")
+		})
 		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithProxy()))
 		require.True(t, appsec.Enabled())
 
@@ -631,9 +646,11 @@ func TestAPISecurityProxy(t *testing.T) {
 	})
 
 	t.Run("disabled-with-rate-0", func(t *testing.T) {
-		t.Setenv(config.EnvEnabled, "true")
-		t.Setenv(config.EnvAPISecEnabled, "true")
-		t.Setenv(config.EnvAPISecProxySampleRate, "0")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "true")
+			t.Setenv(config.EnvAPISecEnabled, "true")
+			t.Setenv(config.EnvAPISecProxySampleRate, "0")
+		})
 		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithProxy()))
 		require.True(t, appsec.Enabled())
 
@@ -651,7 +668,9 @@ func TestAPISecurityProxy(t *testing.T) {
 }
 
 func TestRASPLFI(t *testing.T) {
-	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
+	withConfigEnv(t, func() {
+		t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
+	})
 	testutils.StartAppSec(t)
 
 	// Simulate what orchestrion does
@@ -767,7 +786,9 @@ func TestRASPLFI(t *testing.T) {
 }
 
 func TestSuspiciousAttackerBlocking(t *testing.T) {
-	t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
+	withConfigEnv(t, func() {
+		t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
+	})
 	testutils.StartAppSec(t)
 
 	const bodyBlockingRule = "crs-933-130-block"
@@ -881,7 +902,9 @@ func TestSuspiciousAttackerBlocking(t *testing.T) {
 }
 
 func TestWafEventsInMetaStruct(t *testing.T) {
-	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	withConfigEnv(t, func() {
+		t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	})
 	appsec.Start(config.WithMetaStructAvailable(true))
 	defer appsec.Stop()
 
@@ -1119,7 +1142,9 @@ func BenchmarkSampleWAFSubContext(b *testing.B) {
 }
 
 func TestAttackerFingerprinting(t *testing.T) {
-	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
+	withConfigEnv(t, func() {
+		t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
+	})
 	testutils.StartAppSec(t)
 
 	// Start and trace an HTTP server
@@ -1252,5 +1277,6 @@ func init() {
 	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
 	if _, ok := os.LookupEnv(config.EnvWAFTimeout); !ok {
 		os.Setenv(config.EnvWAFTimeout, "1s")
+		internalconfig.CreateNew()
 	}
 }

@@ -9,11 +9,13 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/stretchr/testify/assert"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func Test_pollIntervalFromEnv(t *testing.T) {
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	defaultInterval := time.Second * time.Duration(5.0)
 	tests := []struct {
 		name  string
@@ -38,6 +40,11 @@ func Test_pollIntervalFromEnv(t *testing.T) {
 		{
 			name:  "negative",
 			setup: func(t *testing.T) { t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "-1") },
+			want:  defaultInterval,
+		},
+		{
+			name:  "sub-nanosecond negative",
+			setup: func(t *testing.T) { t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "-0.0000000001") },
 			want:  defaultInterval,
 		},
 		{

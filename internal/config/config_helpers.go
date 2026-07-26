@@ -198,13 +198,17 @@ func resolveTraceProtocol(v string) float64 {
 	return TraceProtocolV04
 }
 
-// resolveAgentURL computes the final agent URL from the three env-var strings
-// read through the provider:
-//  1. DD_TRACE_AGENT_URL (if non-empty and valid)
-//  2. DD_AGENT_HOST / DD_TRACE_AGENT_PORT (if either is non-empty)
-//  3. DefaultTraceAgentUDSPath (if the socket file exists)
-//  4. http://localhost:8126
+// resolveAgentURL checks the explicit URL, host/port, default UDS,
+// then localhost.
 func resolveAgentURL(agentURLStr, host, port string) *url.URL {
+	return resolveAgentURLWithWarnings(agentURLStr, host, port, true)
+}
+
+func resolveAgentURLWithoutWarnings(agentURLStr, host, port string) *url.URL {
+	return resolveAgentURLWithWarnings(agentURLStr, host, port, false)
+}
+
+func resolveAgentURLWithWarnings(agentURLStr, host, port string, warn bool) *url.URL {
 	if agentURLStr != "" {
 		u, err := url.Parse(agentURLStr)
 		if err == nil {
@@ -212,9 +216,11 @@ func resolveAgentURL(agentURLStr, host, port string) *url.URL {
 			case URLSchemeUnix, URLSchemeHTTP, URLSchemeHTTPS:
 				return u
 			default:
-				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: %s, %s, %s.", u.Scheme, agentURLStr, URLSchemeHTTP, URLSchemeHTTPS, URLSchemeUnix)
+				if warn {
+					log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: %s, %s, %s.", u.Scheme, agentURLStr, URLSchemeHTTP, URLSchemeHTTPS, URLSchemeUnix)
+				}
 			}
-		} else {
+		} else if warn {
 			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
 		}
 	}

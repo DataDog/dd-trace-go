@@ -17,9 +17,27 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMain(m *testing.M) {
-	internalconfig.SetUseFreshConfig(true)
-	os.Exit(m.Run())
+func setConfigEnv(t *testing.T, key, value string) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	t.Setenv(key, value)
+	internalconfig.CreateNew()
+}
+
+func resetBazelConfigForTest(t *testing.T) {
+	t.Helper()
+	bazel.ResetForTesting()
+	t.Cleanup(func() {
+		bazel.ResetForTesting()
+		internalconfig.CreateNew()
+	})
+}
+
+func reloadBazelConfig() {
+	bazel.ResetForTesting()
+	internalconfig.CreateNew()
 }
 
 func TestGetCITagsCache(t *testing.T) {
@@ -142,9 +160,8 @@ func TestGetRelativePathFromCITagsSourceRoot(t *testing.T) {
 
 func TestGetCITagsUsesGitEnrichmentOutsidePayloadFilesMode(t *testing.T) {
 	ResetCITags()
-	bazel.ResetForTesting()
+	resetBazelConfigForTest(t)
 	t.Cleanup(ResetCITags)
-	t.Cleanup(bazel.ResetForTesting)
 
 	originalGetProviderTagsFunc := getProviderTagsFunc
 	originalGetLocalGitDataFunc := getLocalGitDataFunc
@@ -205,13 +222,12 @@ func TestGetCITagsUsesGitEnrichmentOutsidePayloadFilesMode(t *testing.T) {
 
 func TestGetCITagsSkipsGitEnrichmentInPayloadFilesMode(t *testing.T) {
 	ResetCITags()
-	bazel.ResetForTesting()
+	resetBazelConfigForTest(t)
 	t.Cleanup(ResetCITags)
-	t.Cleanup(bazel.ResetForTesting)
 
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 
 	originalGetProviderTagsFunc := getProviderTagsFunc
 	originalGetLocalGitDataFunc := getLocalGitDataFunc
@@ -282,13 +298,12 @@ func TestGetCITagsSkipsGitEnrichmentInPayloadFilesMode(t *testing.T) {
 
 func TestGetCITagsAddsBazelProviderInPayloadFilesModeWithoutProvider(t *testing.T) {
 	ResetCITags()
-	bazel.ResetForTesting()
+	resetBazelConfigForTest(t)
 	t.Cleanup(ResetCITags)
-	t.Cleanup(bazel.ResetForTesting)
 
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 
 	originalGetProviderTagsFunc := getProviderTagsFunc
 	originalApplyEnvironmentalDataIfRequiredFunc := applyEnvironmentalDataIfRequiredFunc
@@ -308,13 +323,12 @@ func TestGetCITagsAddsBazelProviderInPayloadFilesModeWithoutProvider(t *testing.
 
 func TestGetCITagsPreservesDetectedProviderInPayloadFilesMode(t *testing.T) {
 	ResetCITags()
-	bazel.ResetForTesting()
+	resetBazelConfigForTest(t)
 	t.Cleanup(ResetCITags)
-	t.Cleanup(bazel.ResetForTesting)
 
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 
 	originalGetProviderTagsFunc := getProviderTagsFunc
 	originalApplyEnvironmentalDataIfRequiredFunc := applyEnvironmentalDataIfRequiredFunc
@@ -334,13 +348,12 @@ func TestGetCITagsPreservesDetectedProviderInPayloadFilesMode(t *testing.T) {
 
 func TestGetCITagsPreservesEnvironmentalDataProviderInPayloadFilesMode(t *testing.T) {
 	ResetCITags()
-	bazel.ResetForTesting()
+	resetBazelConfigForTest(t)
 	t.Cleanup(ResetCITags)
-	t.Cleanup(bazel.ResetForTesting)
 
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 
 	originalGetProviderTagsFunc := getProviderTagsFunc
 	originalApplyEnvironmentalDataIfRequiredFunc := applyEnvironmentalDataIfRequiredFunc
@@ -362,14 +375,13 @@ func TestGetCITagsPreservesEnvironmentalDataProviderInPayloadFilesMode(t *testin
 
 func TestGetCITagsAddsBazelProviderInManifestModeWithoutProvider(t *testing.T) {
 	ResetCITags()
-	bazel.ResetForTesting()
+	resetBazelConfigForTest(t)
 	t.Cleanup(ResetCITags)
-	t.Cleanup(bazel.ResetForTesting)
 
 	manifestPath := filepath.Join(t.TempDir(), "manifest.txt")
 	assert.NoError(t, os.WriteFile(manifestPath, []byte("version=1\n"), 0o644))
 	t.Setenv(bazel.ManifestFilePathEnv, manifestPath)
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 
 	originalGetProviderTagsFunc := getProviderTagsFunc
 	originalGetLocalGitDataFunc := getLocalGitDataFunc
@@ -399,9 +411,8 @@ func TestGetCITagsAddsBazelProviderInManifestModeWithoutProvider(t *testing.T) {
 
 func TestGetCITagsDoesNotAddBazelProviderOutsideBazelMode(t *testing.T) {
 	ResetCITags()
-	bazel.ResetForTesting()
+	resetBazelConfigForTest(t)
 	t.Cleanup(ResetCITags)
-	t.Cleanup(bazel.ResetForTesting)
 
 	originalGetProviderTagsFunc := getProviderTagsFunc
 	originalGetLocalGitDataFunc := getLocalGitDataFunc

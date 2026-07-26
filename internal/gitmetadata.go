@@ -8,7 +8,9 @@ package internal
 import (
 	"net/url"
 	"runtime/debug"
+	"sync"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -35,6 +37,15 @@ const (
 	TraceTagCommitSha = "_dd.git.commit.sha"
 	// TraceTagGoPath specifies the trace tag name for go module path
 	TraceTagGoPath = "_dd.go_path"
+)
+
+var (
+	initOnce                  sync.Once
+	gitMetadataTags           map[string]string
+	gitMetadataConfigMu       locking.RWMutex
+	gitMetadataConfigProvider = func() (bool, string, string, string) {
+		return true, "", "", ""
+	}
 )
 
 func updateTags(tags map[string]string, key string, value string) {
@@ -92,15 +103,47 @@ func getTagsFromBinary(readBuildInfo func() (*debug.BuildInfo, bool)) map[string
 	return res
 }
 
-// GitMetadataTags resolves git metadata from the values owned by internal/config.
-func GitMetadataTags(enabled bool, repositoryURL, commitSHA, rawTags string) map[string]string {
-	tags := make(map[string]string)
+// SetGitMetadataConfigProvider registers the singleton-owned configuration
+// provider used when the process-wide metadata cache initializes.
+func SetGitMetadataConfigProvider(provider func() (bool, string, string, string)) {
+	gitMetadataConfigMu.Lock()
+	defer gitMetadataConfigMu.Unlock()
+	gitMetadataConfigProvider = provider
+}
+
+// ConfigureGitMetadata replaces the configuration provider with fixed values.
+// It is intended for tests.
+func ConfigureGitMetadata(enabled bool, repositoryURL, commitSHA, rawTags string) {
+	SetGitMetadataConfigProvider(func() (bool, string, string, string) {
+		return enabled, repositoryURL, commitSHA, rawTags
+	})
+}
+
+// GetGitMetadataTags returns git metadata tags. Returned map is read-only.
+func GetGitMetadataTags() map[string]string {
+	initOnce.Do(initGitMetadataTags)
+	return gitMetadataTags
+}
+
+func initGitMetadataTags() {
+	gitMetadataConfigMu.RLock()
+	provider := gitMetadataConfigProvider
+	gitMetadataConfigMu.RUnlock()
+	enabled, repositoryURL, commitSHA, rawTags := provider()
+
+	gitMetadataTags = make(map[string]string)
 	if enabled {
-		updateAllTags(tags, getTagsFromConfig(repositoryURL, commitSHA))
-		updateAllTags(tags, getTagsFromDDTags(rawTags))
-		updateAllTags(tags, getTagsFromBinary(debug.ReadBuildInfo))
+		updateAllTags(gitMetadataTags, getTagsFromConfig(repositoryURL, commitSHA))
+		updateAllTags(gitMetadataTags, getTagsFromDDTags(rawTags))
+		updateAllTags(gitMetadataTags, getTagsFromBinary(debug.ReadBuildInfo))
 	}
-	return tags
+}
+
+// RefreshGitMetadataTags refreshes cached metadata tags. NOT thread-safe, use
+// for testing only. Refresh the configuration singleton first when changing
+// configuration inputs.
+func RefreshGitMetadataTags() {
+	initGitMetadataTags()
 }
 
 // CleanGitMetadataTags cleans up tags from git metadata

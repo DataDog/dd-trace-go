@@ -123,7 +123,7 @@ func TestSkippableApiRequestFailToGet(t *testing.T) {
 
 func TestSkippableApiRequestFromManifestModeIgnoresCache(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	validCache, err := json.Marshal(skippableResponse{
 		Meta: skippableResponseMeta{
@@ -181,7 +181,7 @@ func TestSkippableApiRequestFromManifestModeIgnoresCache(t *testing.T) {
 			path := os.Getenv("PATH")
 			defer restoreEnv(origEnv)
 			setCiVisibilityEnv(path, server.URL)
-			os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+			setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath)
 
 			cInterface := NewClient()
 			response, err := cInterface.GetSkippableTests()

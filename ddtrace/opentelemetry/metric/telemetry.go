@@ -11,17 +11,12 @@ import (
 	"strings"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // Environment variable names for telemetry reporting
 // Note: envOtelMetricsExporter and envDDMetricsOtelEnabled are defined in meter_provider.go
 const (
-	// OTel Metrics SDK configurations
-	envOtelMetricExportInterval = "OTEL_METRIC_EXPORT_INTERVAL"
-	envOtelMetricExportTimeout  = "OTEL_METRIC_EXPORT_TIMEOUT"
-
 	// Generic OTLP exporter configurations (apply to all signals)
 	envOTLPTimeout = "OTEL_EXPORTER_OTLP_TIMEOUT"
 	envOTLPHeaders = "OTEL_EXPORTER_OTLP_HEADERS"
@@ -31,9 +26,7 @@ const (
 	envOTLPMetricsTimeout = "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT"
 
 	// Default values (in milliseconds) per OTel spec
-	defaultExportIntervalMs = 10000 // 10 seconds
-	defaultExportTimeoutMs  = 7500  // 7.5 seconds (75% of interval, per OTel spec)
-	defaultOTLPTimeoutMs    = 10000 // 10 seconds
+	defaultOTLPTimeoutMs = 10000 // 10 seconds
 )
 
 // registerTelemetry reports OTel metrics configuration to Datadog telemetry.
@@ -46,7 +39,10 @@ const (
 //     OTEL_EXPORTER_OTLP_METRICS_HEADERS, OTEL_EXPORTER_OTLP_METRICS_PROTOCOL, OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
 //   - OpenTelemetry Metrics SDK Configurations: OTEL_METRIC_EXPORT_INTERVAL, OTEL_METRIC_EXPORT_TIMEOUT
 func registerTelemetry(cfg *config) {
-	ddConfig := internalconfig.Get()
+	ddConfig := cfg.ddConfig
+	if ddConfig == nil {
+		ddConfig = internalconfig.Get()
+	}
 	telemetryConfigs := []telemetry.Configuration{}
 
 	// ===========================================
@@ -97,7 +93,7 @@ func registerTelemetry(cfg *config) {
 	// ===========================================
 
 	// OTEL_EXPORTER_OTLP_METRICS_TIMEOUT
-	metricsTimeout := getMillisecondsConfig(envOTLPMetricsTimeout, defaultOTLPTimeoutMs)
+	metricsTimeout := getMillisecondsConfig(ddConfig.OTelExporterOTLPMetricsTimeout(), defaultOTLPTimeoutMs)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envOTLPMetricsTimeout,
 		Value:  metricsTimeout.value,
@@ -136,7 +132,7 @@ func registerTelemetry(cfg *config) {
 	// ===========================================
 
 	// OTEL_METRIC_EXPORT_INTERVAL
-	exportInterval := getMillisecondsConfig(envOtelMetricExportInterval, defaultExportIntervalMs)
+	exportInterval := getMillisecondsConfig(ddConfig.OTelMetricExportInterval(), defaultExportIntervalMs)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envOtelMetricExportInterval,
 		Value:  exportInterval.value,
@@ -144,7 +140,7 @@ func registerTelemetry(cfg *config) {
 	})
 
 	// OTEL_METRIC_EXPORT_TIMEOUT
-	exportTimeout := getMillisecondsConfig(envOtelMetricExportTimeout, defaultExportTimeoutMs)
+	exportTimeout := getMillisecondsConfig(ddConfig.OTelMetricExportTimeout(), defaultExportTimeoutMs)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envOtelMetricExportTimeout,
 		Value:  exportTimeout.value,
@@ -179,22 +175,19 @@ type msConfig struct {
 	origin telemetry.Origin
 }
 
-// parseMsFromEnv attempts to parse a milliseconds value from an environment variable.
-// Returns a zero msConfig if the env var is empty or parsing fails.
-func parseMsFromEnv(envVar string) msConfig {
-	if v := env.Get(envVar); v != "" {
-		if ms, err := parseMilliseconds(v); err == nil {
+// parseMsConfig returns an unset value when parsing fails.
+func parseMsConfig(value string) msConfig {
+	if value != "" {
+		if ms, err := parseMilliseconds(value); err == nil {
 			return msConfig{value: ms, origin: telemetry.OriginEnvVar}
 		}
 	}
 	return msConfig{}
 }
 
-// getMillisecondsConfig reads a milliseconds value from an environment variable,
-// falling back to the provided default. Uses cmp.Or to select the first valid config.
-func getMillisecondsConfig(envVar string, defaultMs int) msConfig {
+func getMillisecondsConfig(value string, defaultMs int) msConfig {
 	return cmp.Or(
-		parseMsFromEnv(envVar),
+		parseMsConfig(value),
 		msConfig{value: defaultMs, origin: telemetry.OriginDefault},
 	)
 }

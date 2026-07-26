@@ -6,15 +6,18 @@
 package openfeature
 
 import (
-	"os"
 	"testing"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
-func TestMain(m *testing.M) {
-	internalconfig.SetUseFreshConfig(true)
-	code := m.Run()
-	internalconfig.SetUseFreshConfig(false)
-	os.Exit(code)
+func setConfigEnv(t *testing.T, values map[string]string) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	for key, value := range values {
+		t.Setenv(key, value)
+	}
+	internalconfig.CreateNew()
 }

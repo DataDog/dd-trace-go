@@ -147,7 +147,7 @@ func TestTestManagementTestsApiRequestFailToGet(t *testing.T) {
 
 func TestTestManagementTestsApiRequestFromManifestCache(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	var hits int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -195,7 +195,7 @@ func TestTestManagementTestsApiRequestFromManifestCache(t *testing.T) {
 	path := os.Getenv("PATH")
 	defer restoreEnv(origEnv)
 	setCiVisibilityEnv(path, server.URL)
-	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+	setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath)
 
 	recordLogger := new(log.RecordLogger)
 	oldLevel := log.GetLevel()
@@ -214,7 +214,7 @@ func TestTestManagementTestsApiRequestFromManifestCache(t *testing.T) {
 
 func TestTestManagementTestsApiRequestFromManifestCacheMissingFile(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	var hits int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -236,7 +236,7 @@ func TestTestManagementTestsApiRequestFromManifestCacheMissingFile(t *testing.T)
 	path := os.Getenv("PATH")
 	defer restoreEnv(origEnv)
 	setCiVisibilityEnv(path, server.URL)
-	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+	setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath)
 
 	cInterface := NewClient()
 	responseData, err := cInterface.GetTestManagementTests()
@@ -249,7 +249,7 @@ func TestTestManagementTestsApiRequestFromManifestCacheMissingFile(t *testing.T)
 
 func TestTestManagementTestsApiRequestFromManifestCacheMalformedFile(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	var hits int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -274,7 +274,7 @@ func TestTestManagementTestsApiRequestFromManifestCacheMalformedFile(t *testing.
 	path := os.Getenv("PATH")
 	defer restoreEnv(origEnv)
 	setCiVisibilityEnv(path, server.URL)
-	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+	setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath)
 
 	recordLogger := new(log.RecordLogger)
 	oldLevel := log.GetLevel()

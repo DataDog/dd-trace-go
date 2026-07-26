@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -49,6 +50,7 @@ func WrapN(err error, skip uint) *TracerError {
 		return e
 	}
 
+	internalconfig.Get()
 	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Submit(1)
 	now := time.Now()
 	defer func() {

@@ -13,12 +13,15 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 var (
-	enabled              = true
-	defaultTopFrameDepth = 8
-	defaultMaxDepth      = 32
+	enabled              atomic.Bool
+	defaultTopFrameDepth atomic.Int64
+	defaultMaxDepth      atomic.Int64
+	configureOnce        sync.Once
 
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
@@ -60,7 +63,9 @@ const (
 )
 
 func init() {
-	defaultTopFrameDepth = defaultMaxDepth / 4
+	enabled.Store(true)
+	defaultMaxDepth.Store(32)
+	defaultTopFrameDepth.Store(8)
 
 	thirdPartyTrie = newSegmentPrefixTrie()
 	thirdPartyTrie.InsertAll(slices.Concat(knownThirdPartyLibraries, []string{"golang.org/"}))
@@ -71,14 +76,16 @@ func init() {
 
 // Configure sets the process-wide AppSec stack trace configuration.
 func Configure(stackTraceEnabled bool, maxDepth int) {
-	enabled = stackTraceEnabled
-	defaultMaxDepth = maxDepth
-	defaultTopFrameDepth = defaultMaxDepth / 4
+	configureOnce.Do(func() {
+		enabled.Store(stackTraceEnabled)
+		defaultMaxDepth.Store(int64(maxDepth))
+		defaultTopFrameDepth.Store(int64(maxDepth / 4))
+	})
 }
 
 // Enabled returns whether stacktrace should be collected
 func Enabled() bool {
-	return enabled
+	return enabled.Load()
 }
 
 type (
@@ -229,7 +236,7 @@ func Capture() StackTrace {
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	return iterator(skip, defaultMaxDepth, frameOptions{
+	return iterator(skip, int(defaultMaxDepth.Load()), frameOptions{
 		skipInternalFrames:      true,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: internalSymbolPrefixes,
@@ -241,7 +248,7 @@ func SkipAndCapture(skip int) StackTrace {
 func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 	// Use default depth if not specified
 	if depth == 0 {
-		depth = defaultMaxDepth
+		depth = int(defaultMaxDepth.Load())
 	}
 	return iterator(skip, depth, frameOptions{
 		skipInternalFrames:      false,
@@ -255,7 +262,7 @@ func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 // and symbol parsing. The skip parameter determines how many frames to skip from
 // the top of the stack (similar to runtime.Callers).
 func CaptureRaw(skip int) RawStackTrace {
-	pcs := make([]uintptr, defaultMaxDepth)
+	pcs := make([]uintptr, int(defaultMaxDepth.Load()))
 	n := runtime.Callers(skip, pcs)
 	return RawStackTrace{
 		PCs: pcs[:n],
@@ -266,7 +273,7 @@ func CaptureRaw(skip int) RawStackTrace {
 // This is designed for telemetry logging where we want to see internal frames for debugging
 // but need to redact customer code for security
 func CaptureWithRedaction(skip int) StackTrace {
-	return iterator(skip+1, defaultMaxDepth, frameOptions{
+	return iterator(skip+1, int(defaultMaxDepth.Load()), frameOptions{
 		skipInternalFrames:      false, // Keep DD internal frames
 		redactCustomerFrames:    true,  // Redact customer code
 		internalPackagePrefixes: internalSymbolPrefixes,
@@ -378,7 +385,7 @@ func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
 
 // iteratorFromRaw creates an iterator from pre-captured PCs for deferred symbolication
 func iteratorFromRaw(pcs []uintptr, opts frameOptions) *framesIterator {
-	maxDepth := min(len(pcs), defaultMaxDepth)
+	maxDepth := min(len(pcs), int(defaultMaxDepth.Load()))
 	topFrameDepth := max(maxDepth/4, 1)
 
 	return &framesIterator{

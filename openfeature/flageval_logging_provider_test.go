@@ -44,7 +44,9 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(flagEvalCountsEnabledEnvVar, tc.envValue)
+			setConfigEnv(t, map[string]string{
+				flagEvalCountsEnabledEnvVar: tc.envValue,
+			})
 
 			p := newDatadogProvider(ProviderConfig{})
 

@@ -101,14 +101,14 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	processConfig := internalconfig.Get()
 
 	// get the environment
-	environment := processConfig.Env()
+	environment := processConfig.RawEnv()
 	if environment == "" {
 		environment = "none"
 	}
 
 	// get the service name
 	if serviceName == "" {
-		serviceName = processConfig.ServiceName()
+		serviceName = processConfig.RawServiceName()
 		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
@@ -144,10 +144,10 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	var agentURL *url.URL
 	var apiKeyValue string
 
-	agentlessEnabled := processConfig.CIVisibilityAgentless()
+	agentlessEnabled := processConfig.CIVisibilityAgentlessFromEnv()
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		apiKeyValue = processConfig.APIKey()
+		apiKeyValue = processConfig.RawAPIKey()
 		if apiKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 			return nil
@@ -156,11 +156,14 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		defaultHeaders["dd-api-key"] = apiKeyValue
 
 		// Check for a custom agentless URL.
-		agentlessURL := processConfig.CIVisibilityAgentlessURL()
+		agentlessURL := processConfig.CIVisibilityAgentlessURLFromEnv()
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
-			site := processConfig.Site()
+			site := processConfig.RawSite()
+			if site == "" {
+				site = "datadoghq.com"
+			}
 			baseURL = fmt.Sprintf("https://%s.%s", subdomain, site)
 		} else {
 			// Use the custom agentless URL.
@@ -172,7 +175,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		// Use agent mode with the EVP proxy.
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = subdomain
 
-		agentURL = processConfig.RawAgentURL()
+		agentURL = processConfig.EnvAgentURL()
 		if agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
@@ -212,7 +215,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			if agentURL != nil {
 				cfg.AgentURL = agentURL.String()
 			}
-			client, err := telemetry.NewClient(serviceName, environment, processConfig.Version(), cfg)
+			client, err := telemetry.NewClient(serviceName, environment, processConfig.RawVersion(), cfg, processConfig)
 			if err != nil {
 				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())
 				return

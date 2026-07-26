@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,20 +18,20 @@ import (
 )
 
 func TestConfigure(t *testing.T) {
-	previousEnabled := enabled
-	previousMaxDepth := defaultMaxDepth
-	previousTopFrameDepth := defaultTopFrameDepth
+	previousEnabled := enabled.Load()
+	previousMaxDepth := int(defaultMaxDepth.Load())
 	t.Cleanup(func() {
-		enabled = previousEnabled
-		defaultMaxDepth = previousMaxDepth
-		defaultTopFrameDepth = previousTopFrameDepth
+		configureOnce = sync.Once{}
+		Configure(previousEnabled, previousMaxDepth)
 	})
 
+	configureOnce = sync.Once{}
 	Configure(false, 20)
+	Configure(true, 40)
 
 	require.False(t, Enabled())
-	require.Equal(t, 20, defaultMaxDepth)
-	require.Equal(t, 5, defaultTopFrameDepth)
+	require.Equal(t, int64(20), defaultMaxDepth.Load())
+	require.Equal(t, int64(5), defaultTopFrameDepth.Load())
 }
 
 func TestNewStackTrace(t *testing.T) {
@@ -78,12 +79,12 @@ func recursive(i int) StackTrace {
 }
 
 func TestTruncatedStack(t *testing.T) {
-	stack := recursive(defaultMaxDepth * 2)
+	stack := recursive(int(defaultMaxDepth.Load()) * 2)
 
 	// With internal stacktrace method filtering, we get fewer frames than before
 	// since recursive() calls are now filtered out as internal plumbing
 	require.Greater(t, len(stack), 0, "should capture some frames")
-	require.LessOrEqual(t, len(stack), defaultMaxDepth, "should not exceed max depth")
+	require.LessOrEqual(t, len(stack), int(defaultMaxDepth.Load()), "should not exceed max depth")
 
 	// Verify that all returned frames have valid content
 	for i, frame := range stack {
@@ -248,7 +249,7 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 	// b.Loop() makes this benchmark to fail with "B.Loop called with timer stopped" error.
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(strconv.Itoa(depth), func(b *testing.B) {
-			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
+			defaultMaxDepth.Store(int64(depth * 2)) // Making sure we are capturing the full stack
 			for range b.N {
 				runtime.KeepAlive(recursiveBench(depth, depth, b))
 			}
@@ -259,9 +260,9 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 func BenchmarkCaptureWithRedaction(b *testing.B) {
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(fmt.Sprintf("depth_%d", depth), func(b *testing.B) {
-			originalMaxDepth := defaultMaxDepth
-			defaultMaxDepth = depth * 2 // Ensure we capture the full stack
-			b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
+			originalMaxDepth := defaultMaxDepth.Load()
+			defaultMaxDepth.Store(int64(depth * 2)) // Ensure we capture the full stack
+			b.Cleanup(func() { defaultMaxDepth.Store(originalMaxDepth) })
 
 			b.ResetTimer()
 			for b.Loop() {
@@ -274,9 +275,9 @@ func BenchmarkCaptureWithRedaction(b *testing.B) {
 
 func BenchmarkStacktraceComparison(b *testing.B) {
 	const depth = 50
-	originalMaxDepth := defaultMaxDepth
-	defaultMaxDepth = depth * 2
-	b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
+	originalMaxDepth := defaultMaxDepth.Load()
+	defaultMaxDepth.Store(int64(depth * 2))
+	b.Cleanup(func() { defaultMaxDepth.Store(originalMaxDepth) })
 
 	b.Run("SkipAndCapture", func(b *testing.B) {
 		b.ResetTimer()

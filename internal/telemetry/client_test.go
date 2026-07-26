@@ -33,6 +33,48 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
+type testSingletonConfig struct {
+	site                         string
+	apiKey                       string
+	debug                        bool
+	heartbeatInterval            string
+	heartbeatIntervalSet         bool
+	dependencyCollectionEnabled  bool
+	metricsEnabled               bool
+	logCollectionEnabled         bool
+	extendedHeartbeatInterval    string
+	extendedHeartbeatIntervalSet bool
+}
+
+func defaultTestSingletonConfig() testSingletonConfig {
+	return testSingletonConfig{
+		site:                        "datadoghq.com",
+		dependencyCollectionEnabled: true,
+		metricsEnabled:              true,
+		logCollectionEnabled:        true,
+	}
+}
+
+func (c testSingletonConfig) RawSite() string   { return c.site }
+func (c testSingletonConfig) RawAPIKey() string { return c.apiKey }
+func (c testSingletonConfig) TelemetryDebug() bool {
+	return c.debug
+}
+func (c testSingletonConfig) TelemetryHeartbeatInterval() (string, bool) {
+	return c.heartbeatInterval, c.heartbeatIntervalSet
+}
+func (c testSingletonConfig) TelemetryDependencyCollectionEnabled() bool {
+	return c.dependencyCollectionEnabled
+}
+func (c testSingletonConfig) TelemetryMetricsEnabled() bool {
+	return c.metricsEnabled
+}
+func (c testSingletonConfig) TelemetryLogCollectionEnabled() bool {
+	return c.logCollectionEnabled
+}
+func (c testSingletonConfig) TelemetryExtendedHeartbeatInterval() (string, bool) {
+	return c.extendedHeartbeatInterval, c.extendedHeartbeatIntervalSet
+}
 func TestNewClient(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -127,26 +169,26 @@ func TestDefaultConfigAgentlessURL(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			previous := currentEnvironmentConfig()
-			environment := previous
+			var singleton []singletonConfig
 			if test.site != "" {
-				environment.Site = test.site
+				processConfig := defaultTestSingletonConfig()
+				processConfig.site = test.site
+				singleton = append(singleton, processConfig)
 			}
-			ConfigureEnvironment(environment)
-			t.Cleanup(func() {
-				ConfigureEnvironment(previous)
-			})
-			config := defaultConfig(test.config)
+			config := defaultConfig(test.config, singleton...)
 			assert.Equal(t, test.expected, config.AgentlessURL)
 		})
 	}
 }
 
 func TestNewClient_FileSinkModeWithoutEndpoints(t *testing.T) {
-	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	bazel.Configure("", true)
+	t.Cleanup(func() {
+		bazel.Configure("", false)
+		bazel.ResetForTesting()
+	})
 
 	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{})
 	require.NoError(t, err)
@@ -1201,16 +1243,11 @@ func TestClientFlush(t *testing.T) {
 }
 
 func TestMetricsDisabled(t *testing.T) {
-	previous := currentEnvironmentConfig()
-	environment := previous
-	environment.MetricsEnabled = false
-	environment.DependencyCollectionEnabled = false
-	ConfigureEnvironment(environment)
-	t.Cleanup(func() {
-		ConfigureEnvironment(previous)
-	})
+	processConfig := defaultTestSingletonConfig()
+	processConfig.metricsEnabled = false
+	processConfig.dependencyCollectionEnabled = false
 
-	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"})
+	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"}, processConfig)
 	require.NoError(t, err)
 
 	recordWriter := &internal.RecordWriter{}

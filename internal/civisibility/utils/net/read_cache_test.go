@@ -591,8 +591,7 @@ func TestReadCacheSkippableManifestModeIgnoresShortLivedCache(t *testing.T) {
 	manifestPath := filepath.Join(manifestDir, "manifest.txt")
 	require.NoError(t, os.MkdirAll(manifestDir, 0o755))
 	require.NoError(t, os.WriteFile(manifestPath, []byte("1\n"), 0o644))
-	require.NoError(t, os.Setenv(bazel.ManifestFilePathEnv, manifestPath))
-	bazel.ResetForTesting()
+	require.NoError(t, setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath))
 
 	response, err := c.GetSkippableTests()
 	require.NoError(t, err)

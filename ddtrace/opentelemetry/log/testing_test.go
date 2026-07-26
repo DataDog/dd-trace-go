@@ -7,7 +7,6 @@ package log
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 
@@ -16,11 +15,13 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-func TestMain(m *testing.M) {
-	internalconfig.SetUseFreshConfig(true)
-	code := m.Run()
-	internalconfig.SetUseFreshConfig(false)
-	os.Exit(code)
+func setConfigEnv(t *testing.T, key, value string) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	t.Setenv(key, value)
+	internalconfig.CreateNew()
 }
 
 // testExporter is a simple in-memory exporter for testing.

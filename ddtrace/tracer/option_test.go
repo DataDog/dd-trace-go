@@ -1225,12 +1225,7 @@ func TestServiceName(t *testing.T) {
 func TestServiceNameProcessTag(t *testing.T) {
 	setup := func(t *testing.T) {
 		t.Helper()
-		internalconfig.SetUseFreshConfig(true)
-		t.Cleanup(func() {
-			internalconfig.SetUseFreshConfig(false)
-			processtags.Reload()
-		})
-		processtags.Reload()
+		setProcessTagsEnabled(t, true)
 	}
 
 	t.Run("no DD_SERVICE defaults to binary name and sets svc.auto", func(t *testing.T) {
@@ -1573,16 +1568,9 @@ func TestEnvConfig(t *testing.T) {
 }
 
 func TestStatsTags(t *testing.T) {
-	setupProcessTags := func(t *testing.T, enabled string) {
-		t.Helper()
-		t.Cleanup(processtags.Reload)
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", enabled)
-		processtags.Reload()
-	}
-
 	t.Run("process tags are shared with contrib stats tags", func(t *testing.T) {
 		assert := assert.New(t)
-		setupProcessTags(t, "true")
+		setProcessTagsEnabled(t, true)
 		t.Cleanup(func() {
 			globalconfig.SetServiceName("")
 			globalconfig.SetStatsTags(nil)
@@ -1619,7 +1607,7 @@ func TestStatsTags(t *testing.T) {
 
 	t.Run("process tags collection disabled", func(t *testing.T) {
 		assert := assert.New(t)
-		setupProcessTags(t, "false")
+		setProcessTagsEnabled(t, false)
 		t.Cleanup(func() {
 			globalconfig.SetServiceName("")
 			globalconfig.SetStatsTags(nil)

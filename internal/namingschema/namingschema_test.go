@@ -8,8 +8,9 @@ package namingschema
 import (
 	"testing"
 
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/stretchr/testify/assert"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func TestNamingSchema(t *testing.T) {

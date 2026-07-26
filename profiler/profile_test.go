@@ -127,7 +127,7 @@ main;bar 0 0 8 16
 		return
 	}
 
-	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
+	setConfigEnv(t, "DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	for _, test := range tests {
 		for _, profType := range test.Types {
 			t.Run(profType.String(), func(t *testing.T) {

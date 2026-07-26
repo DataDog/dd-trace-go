@@ -109,7 +109,10 @@ func TestGetTagsFromBinary(t *testing.T) {
 }
 
 func BenchmarkGetGitMetadataTags(b *testing.B) {
+	ConfigureGitMetadata(true, "", "", "")
+	RefreshGitMetadataTags()
+	b.ResetTimer()
 	for b.Loop() {
-		GitMetadataTags(true, "", "", "")
+		GetGitMetadataTags()
 	}
 }

@@ -5,22 +5,28 @@
 
 package config
 
+func (c *Config) CIVisibilityDebugEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityDebug
+}
+
 func (c *Config) CIVisibilityEnabledRaw() (string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.ciVisibilityEnabledRaw, c.ciVisibilityEnabledSet
 }
 
-func (c *Config) TestOptimizationManifestFile() string {
+func (c *Config) CIVisibilityAgentlessFromEnv() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.testOptimizationManifestFile
+	return c.ciVisibilityAgentlessEnv
 }
 
-func (c *Config) TestOptimizationPayloadsInFiles() bool {
+func (c *Config) CIVisibilityAgentlessURLFromEnv() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.testOptimizationPayloadsInFiles
+	return c.ciVisibilityAgentlessURLEnv
 }
 
 func (c *Config) CIVisibilityGitUploadEnabled() bool {

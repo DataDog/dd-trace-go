@@ -87,7 +87,6 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	internalconfig.SetUseFreshConfig(true)
 	if internal.BoolEnv("DD_APPSEC_ENABLED", false) {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
@@ -111,6 +110,17 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "See Goroutine Leak section in CONTRIBUTING.md for more information on how to fix this.\n")
 		os.Exit(1)
 	}
+}
+
+func setProcessTagsEnabled(t *testing.T, enabled bool) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+		processtags.Reload()
+	})
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", strconv.FormatBool(enabled))
+	internalconfig.CreateNew()
+	processtags.Reload()
 }
 
 // noopRoundTripper is an http.RoundTripper that immediately returns 404 for all
@@ -1577,9 +1587,7 @@ func TestOTLPExportModeProcessTags(t *testing.T) {
 	}
 
 	t.Run("enabled", func(t *testing.T) {
-		t.Cleanup(processtags.Reload)
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
-		processtags.Reload()
+		setProcessTagsEnabled(t, true)
 
 		srv := newTestOTLPServer()
 		defer srv.Close()
@@ -1615,9 +1623,7 @@ func TestOTLPExportModeProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		t.Cleanup(processtags.Reload)
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
+		setProcessTagsEnabled(t, false)
 
 		srv := newTestOTLPServer()
 		defer srv.Close()
@@ -2353,6 +2359,9 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+		internalconfig.CreateNew()
+		internal.RefreshGitMetadataTags()
+
 		tracer, _, err := bootstrapInspectableTracer(t)
 		assert.NoError(err)
 
@@ -2373,6 +2382,9 @@ func TestGitMetadata(t *testing.T) {
 
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
+		internalconfig.CreateNew()
+		internal.RefreshGitMetadataTags()
+
 		tracer, _, _, stop, err := startTestTracer(t)
 		require.Nil(t, err)
 		defer stop()
@@ -2398,6 +2410,9 @@ func TestGitMetadata(t *testing.T) {
 		// git metadata env has priority over DD_TAGS
 		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
+		internalconfig.CreateNew()
+		internal.RefreshGitMetadataTags()
+
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
@@ -2418,6 +2433,9 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
 		t.Setenv(internal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
 		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
+		internalconfig.CreateNew()
+		internal.RefreshGitMetadataTags()
+
 		tracer, _, _, stop, err := startTestTracer(t)
 		require.Nil(t, err)
 		defer stop()
@@ -2438,6 +2456,9 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD")
 		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo")
+		internalconfig.CreateNew()
+		internal.RefreshGitMetadataTags()
+
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
@@ -2461,6 +2482,9 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
+		internalconfig.CreateNew()
+		internal.RefreshGitMetadataTags()
+
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()

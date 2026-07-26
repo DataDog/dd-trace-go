@@ -24,7 +24,7 @@ import (
 func TestInferredProxySpans(t *testing.T) {
 	t.Setenv("DD_SERVICE", "aws-server")
 	t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
-	ResetCfg()
+	reloadConfigFromEnvForTesting()
 
 	startTime := time.Now().Add(-5 * time.Second)
 

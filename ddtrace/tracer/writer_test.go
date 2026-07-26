@@ -160,9 +160,7 @@ func TestLogWriter(t *testing.T) {
 
 	t.Run("fullspan", func(t *testing.T) {
 		// Disable process tags so the expected meta map stays deterministic.
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
-		t.Cleanup(processtags.Reload)
+		setProcessTagsEnabled(t, false)
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		cfg, err := newTestConfig()
@@ -279,9 +277,7 @@ func TestLogWriterProcessTags(t *testing.T) {
 		Traces [][]jsonSpan `json:"traces"`
 	}
 
-	t.Cleanup(processtags.Reload)
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-	processtags.Reload()
+	setProcessTagsEnabled(t, false)
 
 	var buf bytes.Buffer
 	cfg, err := newTestConfig()
@@ -768,8 +764,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 func TestPayloadSizeReporting(t *testing.T) {
 	t.Run("v1-size-after-push", func(t *testing.T) {
 		// Reset process tags to ensure deterministic payload sizes
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
+		setProcessTagsEnabled(t, false)
 
 		assert := assert.New(t)
 		p := newPayloadV1()
@@ -792,8 +787,7 @@ func TestPayloadSizeReporting(t *testing.T) {
 
 	t.Run("v04-size-after-push", func(t *testing.T) {
 		// Reset process tags to ensure deterministic payload sizes
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
+		setProcessTagsEnabled(t, false)
 
 		assert := assert.New(t)
 		p := newPayloadV04()

@@ -6,20 +6,43 @@
 package telemetry
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestDisabledUsesSingletonConfiguration(t *testing.T) {
-	previous := instrumentationTelemetryEnabled.Load()
+	previousLoader := instrumentationTelemetryLoader.Load().(instrumentationTelemetryEnabledLoader)
+	previousEnabled := instrumentationTelemetryEnabled.Load()
 	t.Cleanup(func() {
-		SetInstrumentationTelemetryEnabled(previous)
+		instrumentationTelemetryLoader.Store(previousLoader)
+		instrumentationTelemetryEnabled.Store(previousEnabled)
+		instrumentationTelemetryOnce = sync.Once{}
 	})
+	instrumentationTelemetryOnce = sync.Once{}
 
-	SetInstrumentationTelemetryEnabled(false)
+	setInstrumentationTelemetryEnabled(false)
 	require.True(t, Disabled())
 
-	SetInstrumentationTelemetryEnabled(true)
+	setInstrumentationTelemetryEnabled(true)
+	require.True(t, Disabled())
+}
+
+func TestRuntimeFailureDisableIsSticky(t *testing.T) {
+	previousLoader := instrumentationTelemetryLoader.Load().(instrumentationTelemetryEnabledLoader)
+	previousEnabled := instrumentationTelemetryEnabled.Load()
+	t.Cleanup(func() {
+		instrumentationTelemetryLoader.Store(previousLoader)
+		instrumentationTelemetryEnabled.Store(previousEnabled)
+		instrumentationTelemetryOnce = sync.Once{}
+	})
+	instrumentationTelemetryOnce = sync.Once{}
+	setInstrumentationTelemetryEnabled(true)
 	require.False(t, Disabled())
+
+	disableInstrumentationTelemetryAfterFailure()
+	require.True(t, Disabled())
+
+	require.True(t, Disabled())
 }

@@ -113,14 +113,16 @@ func TestReadCachePreservesAdditionalFeatureInitialization(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
-	t.Setenv(constants.APIKeyEnvironmentVariable, "test_api_key")
-	t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
-	t.Setenv("DD_GIT_REPOSITORY_URL", "https://github.com/DataDog/dd-trace-go.git")
-	t.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
-	t.Setenv("DD_GIT_BRANCH", "refs/heads/main")
-	t.Setenv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, "false")
-	t.Setenv(constants.CIVisibilityImpactedTestsDetectionEnabled, "false")
+	setConfigEnvs(t, map[string]string{
+		constants.CIVisibilityAgentlessEnabledEnvironmentVariable:  "true",
+		constants.APIKeyEnvironmentVariable:                        "test_api_key",
+		constants.CIVisibilityAgentlessURLEnvironmentVariable:      server.URL,
+		"DD_GIT_REPOSITORY_URL":                                    "https://github.com/DataDog/dd-trace-go.git",
+		"DD_GIT_COMMIT_SHA":                                        "1234567890abcdef1234567890abcdef12345678",
+		"DD_GIT_BRANCH":                                            "refs/heads/main",
+		constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable: "false",
+		constants.CIVisibilityImpactedTestsDetectionEnabled:        "false",
+	})
 	utils.ResetCITags()
 	bazel.ResetForTesting()
 

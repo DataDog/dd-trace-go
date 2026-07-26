@@ -9,9 +9,18 @@ import (
 	"net/http"
 	"testing"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func setPropagatorConfigEnv(tb testing.TB, key, value string) {
+	tb.Helper()
+	tb.Cleanup(func() { internalconfig.CreateNew() })
+	tb.Setenv(key, value)
+	internalconfig.CreateNew()
+}
 
 // TestExtractHeaderNameCaseInsensitivity pins the case-insensitive header-name
 // dispatch: extractors match header names with strings.EqualFold, so an
@@ -21,7 +30,7 @@ import (
 // incoming case, and that a user-configured mixed-case header name matches.
 func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	t.Run("datadog default headers, non-canonical case", func(t *testing.T) {
-		t.Setenv(envPropagationStyleExtract, "datadog")
+		setPropagatorConfigEnv(t, envPropagationStyleExtract, "datadog")
 		p := NewPropagator(nil)
 		// TextMapCarrier does not canonicalize keys, so the exact case below is
 		// what reaches the extractor.
@@ -42,7 +51,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	})
 
 	t.Run("b3 headers, non-canonical case", func(t *testing.T) {
-		t.Setenv(envPropagationStyleExtract, "b3multi")
+		setPropagatorConfigEnv(t, envPropagationStyleExtract, "b3multi")
 		p := NewPropagator(nil)
 		carrier := TextMapCarrier{
 			"X-B3-TraceId": "0000000000000000000000000000007b",
@@ -57,7 +66,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	})
 
 	t.Run("w3c traceparent, non-canonical case", func(t *testing.T) {
-		t.Setenv(envPropagationStyleExtract, "tracecontext")
+		setPropagatorConfigEnv(t, envPropagationStyleExtract, "tracecontext")
 		p := NewPropagator(nil)
 		carrier := TextMapCarrier{
 			"TraceParent": "00-00000000000000000000000000000064-00000000000000c8-01",
@@ -70,7 +79,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	})
 
 	t.Run("custom mixed-case configured header", func(t *testing.T) {
-		t.Setenv(envPropagationStyleExtract, "datadog")
+		setPropagatorConfigEnv(t, envPropagationStyleExtract, "datadog")
 		p := NewPropagator(&PropagatorConfig{
 			TraceHeader:  "My-Trace-Id",
 			ParentHeader: "My-Parent-Id",
@@ -115,7 +124,7 @@ func canonicalW3CHeaders() HTTPHeadersCarrier {
 // carrier (unlike BenchmarkExtractDatadog, which uses a pre-lowercased
 // TextMapCarrier and so never exercises header-name case folding).
 func BenchmarkExtractDatadogHTTPHeaders(b *testing.B) {
-	b.Setenv(envPropagationStyleExtract, "datadog")
+	setPropagatorConfigEnv(b, envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 	carrier := canonicalDatadogHeaders()
 	b.ReportAllocs()
@@ -128,7 +137,7 @@ func BenchmarkExtractDatadogHTTPHeaders(b *testing.B) {
 // BenchmarkExtractW3CHTTPHeaders is the W3C counterpart to
 // BenchmarkExtractDatadogHTTPHeaders.
 func BenchmarkExtractW3CHTTPHeaders(b *testing.B) {
-	b.Setenv(envPropagationStyleExtract, "tracecontext")
+	setPropagatorConfigEnv(b, envPropagationStyleExtract, "tracecontext")
 	propagator := NewPropagator(nil)
 	carrier := canonicalW3CHeaders()
 	b.ReportAllocs()

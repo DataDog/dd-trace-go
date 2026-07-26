@@ -185,6 +185,19 @@ func TestGet(t *testing.T) {
 		assert.True(t, debug, "Config should have loaded DD_TRACE_DEBUG=true")
 	})
 
+	t.Run("CI debug does not inherit OTEL_LOG_LEVEL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_DEBUG", "")
+		require.NoError(t, os.Unsetenv("DD_TRACE_DEBUG"))
+		t.Setenv("OTEL_LOG_LEVEL", "debug")
+
+		cfg := Get()
+		assert.True(t, cfg.Debug())
+		assert.False(t, cfg.CIVisibilityDebugEnabled())
+	})
+
 	t.Run("Setter methods update config and maintain thread-safety", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
@@ -1330,6 +1343,7 @@ func TestCIVisibilityAgentlessActive(t *testing.T) {
 		{"agentless only", "", "true", false},
 		{"ci vis only", "true", "", false},
 		{"both set", "true", "true", true},
+		{"parent remains bootstrap-only", "parent", "true", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

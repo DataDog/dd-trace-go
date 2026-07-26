@@ -18,9 +18,9 @@ import (
 // TestBuildDatadogResource_DDService verifies that DD_SERVICE, DD_ENV, and DD_VERSION
 // environment variables are correctly mapped to OTel resource attributes.
 func TestBuildDatadogResource_DDService(t *testing.T) {
-	t.Setenv(envDDService, "my-service")
-	t.Setenv(envDDEnv, "production")
-	t.Setenv(envDDVersion, "v1.2.3")
+	setConfigEnv(t, envDDService, "my-service")
+	setConfigEnv(t, envDDEnv, "production")
+	setConfigEnv(t, envDDVersion, "v1.2.3")
 
 	res, err := buildDatadogResource(context.Background())
 	require.NoError(t, err)
@@ -47,7 +47,7 @@ func TestBuildDatadogResource_DDService(t *testing.T) {
 // TestBuildDatadogResource_DDTags verifies that DD_TAGS are parsed and mapped
 // to OTel resource attributes, including reserved tags (service, env, version).
 func TestBuildDatadogResource_DDTags(t *testing.T) {
-	t.Setenv(envDDTags, "service:tag-service,env:tag-env,version:tag-version,custom:value")
+	setConfigEnv(t, envDDTags, "service:tag-service,env:tag-env,version:tag-version,custom:value")
 
 	res, err := buildDatadogResource(context.Background())
 	require.NoError(t, err)
@@ -68,8 +68,8 @@ func TestBuildDatadogResource_DDTags(t *testing.T) {
 // over DD_TAGS[service] for service name resolution.
 func TestBuildDatadogResource_Priority(t *testing.T) {
 	// DD_SERVICE should take priority over DD_TAGS[service]
-	t.Setenv(envDDService, "priority-service")
-	t.Setenv(envDDTags, "service:tag-service")
+	setConfigEnv(t, envDDService, "priority-service")
+	setConfigEnv(t, envDDTags, "service:tag-service")
 
 	res, err := buildDatadogResource(context.Background())
 	require.NoError(t, err)
@@ -88,8 +88,8 @@ func TestBuildDatadogResource_Priority(t *testing.T) {
 // TestBuildDatadogResource_OtelFallback verifies that OTEL_SERVICE_NAME and
 // OTEL_RESOURCE_ATTRIBUTES are used as fallbacks when DD_* vars are not set.
 func TestBuildDatadogResource_OtelFallback(t *testing.T) {
-	t.Setenv(envOtelServiceName, "otel-service")
-	t.Setenv(envOtelResourceAttributes, "deployment.environment=otel-env,service.version=otel-version")
+	setConfigEnv(t, envOtelServiceName, "otel-service")
+	setConfigEnv(t, envOtelResourceAttributes, "deployment.environment=otel-env,service.version=otel-version")
 
 	res, err := buildDatadogResource(context.Background())
 	require.NoError(t, err)
@@ -112,9 +112,9 @@ func TestBuildDatadogResource_OtelFallback(t *testing.T) {
 // 4. No hostname otherwise
 func TestBuildDatadogResource_Hostname(t *testing.T) {
 	t.Run("OTEL_RESOURCE_ATTRIBUTES host.name has highest priority", func(t *testing.T) {
-		t.Setenv(envOtelResourceAttributes, "host.name=otel-host")
-		t.Setenv(envDDHostname, "dd-host")
-		t.Setenv(envDDTraceReportHostname, "false") // Even with false, OTEL wins
+		setConfigEnv(t, envOtelResourceAttributes, "host.name=otel-host")
+		setConfigEnv(t, envDDHostname, "dd-host")
+		setConfigEnv(t, envDDTraceReportHostname, "false") // Even with false, OTEL wins
 
 		res, err := buildDatadogResource(context.Background())
 		require.NoError(t, err)
@@ -130,8 +130,8 @@ func TestBuildDatadogResource_Hostname(t *testing.T) {
 	})
 
 	t.Run("DD_HOSTNAME with DD_TRACE_REPORT_HOSTNAME=true", func(t *testing.T) {
-		t.Setenv(envDDTraceReportHostname, "true")
-		t.Setenv(envDDHostname, "custom-host")
+		setConfigEnv(t, envDDTraceReportHostname, "true")
+		setConfigEnv(t, envDDHostname, "custom-host")
 
 		res, err := buildDatadogResource(context.Background())
 		require.NoError(t, err)
@@ -146,7 +146,7 @@ func TestBuildDatadogResource_Hostname(t *testing.T) {
 	})
 
 	t.Run("DD_TRACE_REPORT_HOSTNAME=true without DD_HOSTNAME", func(t *testing.T) {
-		t.Setenv(envDDTraceReportHostname, "true")
+		setConfigEnv(t, envDDTraceReportHostname, "true")
 		// DD_HOSTNAME not set - should detect OS hostname
 
 		res, err := buildDatadogResource(context.Background())
@@ -166,7 +166,7 @@ func TestBuildDatadogResource_Hostname(t *testing.T) {
 	})
 
 	t.Run("No hostname when DD_TRACE_REPORT_HOSTNAME not true", func(t *testing.T) {
-		t.Setenv(envDDHostname, "should-not-appear")
+		setConfigEnv(t, envDDHostname, "should-not-appear")
 		// DD_TRACE_REPORT_HOSTNAME not set (defaults to not reporting)
 
 		res, err := buildDatadogResource(context.Background())
@@ -186,8 +186,8 @@ func TestBuildDatadogResource_Hostname(t *testing.T) {
 	})
 
 	t.Run("No hostname when DD_TRACE_REPORT_HOSTNAME=false", func(t *testing.T) {
-		t.Setenv(envDDTraceReportHostname, "false")
-		t.Setenv(envDDHostname, "should-not-appear")
+		setConfigEnv(t, envDDTraceReportHostname, "false")
+		setConfigEnv(t, envDDHostname, "should-not-appear")
 
 		res, err := buildDatadogResource(context.Background())
 		require.NoError(t, err)
@@ -296,13 +296,34 @@ func TestGetHostname(t *testing.T) {
 			expectedHostname:  "",
 			expectedShouldAdd: false,
 		},
+		{
+			name:              "REPORT_HOSTNAME must be exactly true",
+			otelAttrs:         map[string]string{},
+			envVars:           map[string]string{envDDTraceReportHostname: "TRUE", envDDHostname: "dd-host"},
+			expectedHostname:  "",
+			expectedShouldAdd: false,
+		},
+		{
+			name:              "REPORT_HOSTNAME numeric true is rejected",
+			otelAttrs:         map[string]string{},
+			envVars:           map[string]string{envDDTraceReportHostname: "1", envDDHostname: "dd-host"},
+			expectedHostname:  "",
+			expectedShouldAdd: false,
+		},
+		{
+			name:              "SOURCE_HOSTNAME alone is rejected",
+			otelAttrs:         map[string]string{},
+			envVars:           map[string]string{envDDTraceSourceHostname: "source-host"},
+			expectedHostname:  "",
+			expectedShouldAdd: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range tt.envVars {
-				t.Setenv(k, v)
+				setConfigEnv(t, k, v)
 			}
 
 			hostVal, shouldAdd := hostname(tt.otelAttrs)
@@ -324,8 +345,8 @@ func TestGetHostname(t *testing.T) {
 func TestDDTagsPriority(t *testing.T) {
 	t.Run("DD_TAGS overrides OTEL_RESOURCE_ATTRIBUTES for custom tags", func(t *testing.T) {
 		// DD_TAGS should win over OTEL_RESOURCE_ATTRIBUTES for custom tags
-		t.Setenv(envDDTags, "foo:bar1,baz:qux1,service:my-service")
-		t.Setenv(envOtelResourceAttributes, "foo=ignored_bar1,baz=ignored_qux1,service.name=ignored_service")
+		setConfigEnv(t, envDDTags, "foo:bar1,baz:qux1,service:my-service")
+		setConfigEnv(t, envOtelResourceAttributes, "foo=ignored_bar1,baz=ignored_qux1,service.name=ignored_service")
 
 		res, err := buildDatadogResource(context.Background())
 		require.NoError(t, err)
@@ -344,8 +365,8 @@ func TestDDTagsPriority(t *testing.T) {
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES used when DD_TAGS doesn't have the key", func(t *testing.T) {
-		t.Setenv(envDDTags, "foo:bar1")
-		t.Setenv(envOtelResourceAttributes, "foo=ignored,baz=qux_from_otel")
+		setConfigEnv(t, envDDTags, "foo:bar1")
+		setConfigEnv(t, envOtelResourceAttributes, "foo=ignored,baz=qux_from_otel")
 
 		res, err := buildDatadogResource(context.Background())
 		require.NoError(t, err)
@@ -425,13 +446,19 @@ func TestGetServiceName(t *testing.T) {
 			ddTags:   map[string]string{"service": "tag-service"},
 			expected: "dd-service",
 		},
+		{
+			name:     "priority: DD_TAGS over OTEL_SERVICE_NAME",
+			envVars:  map[string]string{envOtelServiceName: "otel-service"},
+			ddTags:   map[string]string{"service": "tag-service"},
+			expected: "tag-service",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range tt.envVars {
-				t.Setenv(k, v)
+				setConfigEnv(t, k, v)
 			}
 
 			result := serviceName(tt.ddTags, tt.otelAttrs)

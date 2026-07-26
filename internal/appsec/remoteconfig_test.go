@@ -26,11 +26,21 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
 //go:embed "testdata/custom-data-classification/*.json"
 var customDataClassificationPayloads embed.FS
+
+func withConfigEnv(t *testing.T, set func()) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	set()
+	internalconfig.CreateNew()
+}
 
 func TestASMFeaturesCallback(t *testing.T) {
 	if supported, _ := libddwaf.Usable(); !supported {
@@ -46,8 +56,10 @@ func TestASMFeaturesCallback(t *testing.T) {
 	err = a.startRC()
 	require.NoError(t, err)
 
-	t.Setenv(config.EnvEnabled, "")
-	os.Unsetenv(config.EnvEnabled)
+	withConfigEnv(t, func() {
+		t.Setenv(config.EnvEnabled, "")
+		os.Unsetenv(config.EnvEnabled)
+	})
 
 	for _, tc := range []struct {
 		name   string
@@ -131,8 +143,10 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	}
 
 	t.Run("DD_APPSEC_ENABLED unset", func(t *testing.T) {
-		t.Setenv(config.EnvEnabled, "")
-		os.Unsetenv(config.EnvEnabled)
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "")
+			os.Unsetenv(config.EnvEnabled)
+		})
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 
@@ -147,7 +161,9 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	})
 
 	t.Run("DD_APPSEC_ENABLED=true", func(t *testing.T) {
-		t.Setenv(config.EnvEnabled, "true")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "true")
+		})
 		remoteconfig.Reset()
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
@@ -164,7 +180,9 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	t.Run("WithEnablementMode(EnabledModeForcedOn)", func(t *testing.T) {
 		for _, envVal := range []string{"", "true", "false"} {
 			t.Run("DD_APPSEC_ENABLED="+envVal, func(t *testing.T) {
-				t.Setenv(config.EnvEnabled, envVal)
+				withConfigEnv(t, func() {
+					t.Setenv(config.EnvEnabled, envVal)
+				})
 
 				remoteconfig.Reset()
 				Start(config.WithEnablementMode(config.ForcedOn), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
@@ -182,7 +200,9 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	})
 
 	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
-		t.Setenv(config.EnvEnabled, "false")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "false")
+		})
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 		require.Nil(t, activeAppSec)
@@ -192,7 +212,9 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	t.Run("WithEnablementMode(EnabledModeForcedOff)", func(t *testing.T) {
 		for _, envVal := range []string{"", "true", "false"} {
 			t.Run("DD_APPSEC_ENABLED="+envVal, func(t *testing.T) {
-				t.Setenv(config.EnvEnabled, envVal)
+				withConfigEnv(t, func() {
+					t.Setenv(config.EnvEnabled, envVal)
+				})
 
 				Start(config.WithEnablementMode(config.ForcedOff), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 				defer Stop()
@@ -235,11 +257,13 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 	} {
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(config.EnvEnabled, "")
-			os.Unsetenv(config.EnvEnabled)
-			for k, v := range tc.env {
-				t.Setenv(k, v)
-			}
+			withConfigEnv(t, func() {
+				t.Setenv(config.EnvEnabled, "")
+				os.Unsetenv(config.EnvEnabled)
+				for k, v := range tc.env {
+					t.Setenv(k, v)
+				}
+			})
 			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 			defer Stop()
 			if !Enabled() && activeAppSec == nil {
@@ -278,11 +302,13 @@ func TestCapabilitiesAndProductsBlockingUnavailable(t *testing.T) {
 	} {
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(config.EnvEnabled, "")
-			os.Unsetenv(config.EnvEnabled)
-			for k, v := range tc.env {
-				t.Setenv(k, v)
-			}
+			withConfigEnv(t, func() {
+				t.Setenv(config.EnvEnabled, "")
+				os.Unsetenv(config.EnvEnabled)
+				for k, v := range tc.env {
+					t.Setenv(k, v)
+				}
+			})
 			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()), config.WithBlockingUnavailable(true))
 			defer Stop()
 			if !Enabled() && activeAppSec == nil {
@@ -549,7 +575,9 @@ func TestOnRCUpdate(t *testing.T) {
 		// - Tracers MUST provide the `ASM_PROCESSOR_OVERRIDES` and
 		//   `ASM_CUSTOM_DATA_SCANNERS` capabilities through remote configuration.
 
-		t.Setenv(config.EnvEnabled, "1")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "1")
+		})
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 
@@ -615,8 +643,10 @@ func TestOnRCUpdate(t *testing.T) {
 			t.Skip("WAF needs to be available for this test (remote activation requirement)")
 		}
 
-		t.Setenv(config.EnvEnabled, "")
-		os.Unsetenv(config.EnvEnabled)
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "")
+			os.Unsetenv(config.EnvEnabled)
+		})
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 		require.False(t, Enabled())

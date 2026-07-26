@@ -111,11 +111,10 @@ func TestFilterSensitiveInfo(t *testing.T) {
 }
 
 func TestExecGitStringDisabledInPayloadFilesMode(t *testing.T) {
+	resetBazelConfigForTest(t)
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
-
-	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	reloadBazelConfig()
 
 	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
 	assert.Empty(t, out)

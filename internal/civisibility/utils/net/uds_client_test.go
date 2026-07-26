@@ -22,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -370,7 +369,7 @@ func setCiVisibilityUDSAgentEnv(path, socketURL string) {
 	os.Setenv("DD_GIT_COMMIT_MESSAGE", "fix uds client")
 	os.Setenv("DD_GIT_BRANCH", "main")
 	civisibilityutils.ResetCITags()
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 }
 
 func assertUDSAgentRequest(t *testing.T, c *client, r *http.Request, subdomain, path string) {

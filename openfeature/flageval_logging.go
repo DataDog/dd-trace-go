@@ -17,6 +17,7 @@ import (
 	"time"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
@@ -282,9 +283,9 @@ func newFlagEvalLoggingWriterWithEVP(config ProviderConfig, evp *evpClient) *fla
 		workerDone:    make(chan struct{}),
 		events:        make(chan evalEvent, defaultEvalEventBufferSize),
 		ddContext: flagEvalDDContext{
-			Service: cmp.Or(cfg.ServiceName(), executable),
-			Version: cfg.Version(),
-			Env:     cfg.Env(),
+			Service: cmp.Or(cfg.RawServiceName(), globalconfig.ServiceName(), executable),
+			Version: cfg.RawVersion(),
+			Env:     cfg.RawEnv(),
 		},
 		aggregator: flagEvalLoggingAggregator{
 			full:        make(map[evaluationAggregationKey]*evaluationEntry),

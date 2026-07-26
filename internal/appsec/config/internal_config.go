@@ -17,7 +17,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -128,7 +127,7 @@ func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 		cfg.Sampler = apisec.NewProxySampler(rate, DefaultAPISecProxySampleInterval)
 	} else {
 		interval := DefaultAPISecSampleInterval
-		if value := processConfig.APISecuritySampleDelay(); value != "" {
+		if value, set := processConfig.APISecuritySampleDelay(); set {
 			parsed, err := time.ParseDuration(value + "s")
 			if err != nil {
 				log.Warn("Non-duration value for env var %s, defaulting to %d. Parse failed with error: %v", envAPISecSampleDelay, interval, err.Error())
@@ -184,13 +183,13 @@ func RASPEnabled() bool {
 
 // NewObfuscatorConfig creates and returns a new WAF obfuscator configuration by reading the env
 func NewObfuscatorConfig() ObfuscatorConfig {
-	keyRE := readObfuscatorConfigRegexp(EnvObfuscatorKey, DefaultObfuscatorKeyRegex)
-	valueRE := readObfuscatorConfigRegexp(EnvObfuscatorValue, DefaultObfuscatorValueRegex)
+	key, keySet, value, valueSet := internalconfig.Get().AppSecObfuscatorRegexps()
+	keyRE := readObfuscatorConfigRegexp(EnvObfuscatorKey, key, keySet, DefaultObfuscatorKeyRegex)
+	valueRE := readObfuscatorConfigRegexp(EnvObfuscatorValue, value, valueSet, DefaultObfuscatorValueRegex)
 	return ObfuscatorConfig{KeyRegex: keyRE, ValueRegex: valueRE}
 }
 
-func readObfuscatorConfigRegexp(name, defaultValue string) string {
-	val, present := env.Lookup(name)
+func readObfuscatorConfigRegexp(name, val string, present bool, defaultValue string) string {
 	if !present {
 		log.Debug("appsec: %s not defined, starting with the default obfuscator regular expression", name)
 		return defaultValue

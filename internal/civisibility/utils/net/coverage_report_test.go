@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	coretelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -75,6 +76,7 @@ func TestCoverageReportApiRequest(t *testing.T) {
 
 	setCiVisibilityEnv(path, server.URL)
 	os.Setenv(constants.CodeCoverageFlagsEnvironmentVariable, "type:unit-tests,jvm-21,type:unit-tests")
+	internalconfig.CreateNew()
 	civisibilityutils.AddCITagsMap(map[string]string{
 		constants.CIWorkspacePath: "/ci/workspace",
 		constants.PrNumber:        "42",
@@ -189,6 +191,7 @@ func TestCoverageReportApiRequestOmitsInvalidFlags(t *testing.T) {
 			setCiVisibilityEnv(path, server.URL)
 			if test.value != nil {
 				os.Setenv(constants.CodeCoverageFlagsEnvironmentVariable, *test.value)
+				internalconfig.CreateNew()
 			}
 
 			client := NewClientForCoverageReportUpload()
@@ -216,6 +219,7 @@ func TestCoverageReportFlagsAreSnapshotted(t *testing.T) {
 
 	setCiVisibilityEnv(path, server.URL)
 	os.Setenv(constants.CodeCoverageFlagsEnvironmentVariable, "first,second")
+	internalconfig.CreateNew()
 	client := NewClientForCoverageReportUpload()
 	require.NotNil(t, client)
 	os.Setenv(constants.CodeCoverageFlagsEnvironmentVariable, "later")
@@ -310,7 +314,7 @@ func TestCoverageReportApiRequestRejectsInvalidInput(t *testing.T) {
 
 func TestCoverageReportApiRequestPayloadFilesModeSkipsNetwork(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	var hits int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -326,7 +330,7 @@ func TestCoverageReportApiRequestPayloadFilesModeSkipsNetwork(t *testing.T) {
 	setCiVisibilityEnv(path, server.URL)
 	os.Setenv(bazel.PayloadsInFilesEnv, "true")
 	os.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 
 	client := NewClientForCoverageReportUpload()
 	require.NotNil(t, client)

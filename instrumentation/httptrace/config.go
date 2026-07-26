@@ -28,20 +28,8 @@ const (
 	EnvQueryStringRegexp = "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP"
 	// envTraceClientIPEnabled is the name of the env var used to specify whether or not to collect client ip in span tags
 	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
-	// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
-	envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
-	// envInferredProxyServicesEnabled is the name of the env var used for enabling inferred span tracing
-	envInferredProxyServicesEnabled = "DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED"
 	// envPubsubPropagationAsSpanLinks determines if pubsub context is propogated by span link rather than by reparenting
 	envPubsubPropagationAsSpanLinks = "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS"
-	// envQueryStringAllowlist is the name of the env var used to specify which query string parameter keys
-	// to keep in the http.url span tag. When set, only these keys are retained and the expensive default
-	// obfuscation regex is bypassed. Comma-separated list of parameter names.
-	envQueryStringAllowlist = "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST"
-	// envClientQueryStringAllowlist overrides envQueryStringAllowlist for HTTP client spans only.
-	envClientQueryStringAllowlist = "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT"
-	// envServerQueryStringAllowlist overrides envQueryStringAllowlist for HTTP server spans only.
-	envServerQueryStringAllowlist = "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER"
 )
 
 // defaultQueryStringRegexp is the regexp used for query string obfuscation if [EnvQueryStringRegexp] is empty.
@@ -70,18 +58,20 @@ func (c config) String() string {
 
 // ResetCfg sets local variable cfg back to its defaults (mainly useful for testing)
 func ResetCfg() {
+	internalconfig.CreateNew()
 	cfg = newConfig()
 }
 
 func newConfig() config {
-	configured := internalconfig.CreateNew()
+	configured := internalconfig.Get()
 	globalAllowlist, clientAllowlist, serverAllowlist := configured.HTTPQueryStringAllowlists()
+	rawPropagationAsSpanLinks, propagationAsSpanLinksSet := configured.PubsubPropagationAsSpanLinks()
 	c := config{
 		queryString:                              !configured.HTTPQueryStringDisabled(),
 		traceClientIP:                            configured.TraceClientIPEnabled(),
 		isStatusError:                            isServerError,
 		inferredProxyServicesEnabled:             configured.InferredProxyServicesEnabled(),
-		pubsubPropagationAsSpanLinks:             configured.PubsubPropagationAsSpanLinks(),
+		pubsubPropagationAsSpanLinks:             parseBoolConfig(rawPropagationAsSpanLinks, propagationAsSpanLinksSet, envPubsubPropagationAsSpanLinks, false),
 		baggageTagKeys:                           make(map[string]struct{}),
 		resourceRenamingAlwaysSimplifiedEndpoint: configured.ResourceRenamingAlwaysSimplifiedEndpoint(),
 		appsecEnabledMode:                        sync.OnceValue(appsecEnabledAtStartup),
@@ -126,6 +116,18 @@ func newConfig() config {
 		c.serverQueryStringAllowlist = parseAllowlist(serverAllowlist)
 	}
 	return c
+}
+
+func parseBoolConfig(raw string, set bool, name string, defaultValue bool) bool {
+	if !set {
+		return defaultValue
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Warn("Non-boolean value for env var %s. Parse failed with error: %v", name, err.Error())
+		return defaultValue
+	}
+	return value
 }
 
 func appsecEnabledAtStartup() bool {

@@ -416,10 +416,9 @@ func TestSetCheckpointContainerTagsHash(t *testing.T) {
 func TestSetCheckpointContainerTagsHashRequiresProcessTags(t *testing.T) {
 	t.Cleanup(func() {
 		processtags.SetContainerTagsHash("")
-		processtags.Reload()
+		processtags.ReloadForTesting(true)
 	})
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-	processtags.Reload()
+	processtags.ReloadForTesting(false)
 	processtags.SetContainerTagsHash("container-tags-hash")
 
 	processor := Processor{

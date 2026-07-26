@@ -21,7 +21,6 @@ import (
 	"github.com/tinylib/msgp/msgp"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 func TestCIVisibilityImplementsTraceWriter(t *testing.T) {
@@ -228,9 +227,7 @@ func waitForCIVisibilityHTTPConnectionState(t *testing.T, state <-chan struct{},
 // does not appear in CI Visibility events when the feature is disabled. The
 // enabled path is covered by the full span lifecycle via setTraceTagsLocked.
 func TestCiVisibilityTraceWriterProcessTagsDisabled(t *testing.T) {
-	t.Cleanup(processtags.Reload)
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-	processtags.Reload()
+	setProcessTagsEnabled(t, false)
 
 	captured := &capturingCiTransport{}
 	cfg, err := newTestConfig(func(c *config) { c.ddTransport = captured })

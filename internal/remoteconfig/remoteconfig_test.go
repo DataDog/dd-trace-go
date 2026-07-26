@@ -424,7 +424,13 @@ func TestProcessTags(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("enabled", func(t *testing.T) {
-		processtags.Configure(true)
+		t.Cleanup(func() {
+			internalconfig.CreateNew()
+			processtags.Reload()
+		})
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		internalconfig.CreateNew()
+		processtags.Reload()
 
 		b, err := client.newUpdateRequest()
 		require.NoError(t, err)
@@ -436,8 +442,13 @@ func TestProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		t.Cleanup(func() { processtags.Configure(true) })
-		processtags.Configure(false)
+		t.Cleanup(func() {
+			internalconfig.CreateNew()
+			processtags.Reload()
+		})
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		internalconfig.CreateNew()
+		processtags.Reload()
 
 		b, err := client.newUpdateRequest()
 		require.NoError(t, err)

@@ -19,11 +19,21 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+func withConfigEnv(t *testing.T, set func()) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	set()
+	internalconfig.CreateNew()
+}
 
 func TestEnabled(t *testing.T) {
 	enabledConfig, _ := strconv.ParseBool(os.Getenv(config.EnvEnabled))
@@ -39,9 +49,11 @@ func TestEnabled(t *testing.T) {
 
 // Test that everything goes well when simply starting and stopping appsec
 func TestStartStop(t *testing.T) {
-	// Use t.Setenv() to automatically restore the initial env var value, if set
-	t.Setenv(config.EnvEnabled, "")
-	os.Unsetenv(config.EnvEnabled)
+	withConfigEnv(t, func() {
+		// Use t.Setenv() to automatically restore the initial env var value, if set
+		t.Setenv(config.EnvEnabled, "")
+		os.Unsetenv(config.EnvEnabled)
+	})
 	testutils.StartAppSec(t)
 	appsec.Stop()
 }
@@ -50,7 +62,9 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		var telemetryClient telemetrytest.RecordClient
 		defer telemetry.MockClient(&telemetryClient)()
-		t.Setenv(config.EnvEnabled, "")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "")
+		})
 
 		appsec.Start()
 		defer appsec.Stop()
@@ -61,7 +75,9 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	t.Run("env_enabled", func(t *testing.T) {
 		var telemetryClient telemetrytest.RecordClient
 		defer telemetry.MockClient(&telemetryClient)()
-		t.Setenv(config.EnvEnabled, "true")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "true")
+		})
 
 		appsec.Start()
 		defer appsec.Stop()
@@ -73,7 +89,9 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	t.Run("env_disable", func(t *testing.T) {
 		var telemetryClient telemetrytest.RecordClient
 		defer telemetry.MockClient(&telemetryClient)()
-		t.Setenv(config.EnvEnabled, "false")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "false")
+		})
 
 		appsec.Start()
 		defer appsec.Stop()
@@ -84,7 +102,9 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	t.Run("code_enabled", func(t *testing.T) {
 		var telemetryClient telemetrytest.RecordClient
 		defer telemetry.MockClient(&telemetryClient)()
-		t.Setenv(config.EnvEnabled, "")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "")
+		})
 
 		appsec.Start(config.WithEnablementMode(config.ForcedOn))
 		defer appsec.Stop()
@@ -96,7 +116,9 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	t.Run("code_enabled", func(t *testing.T) {
 		var telemetryClient telemetrytest.RecordClient
 		defer telemetry.MockClient(&telemetryClient)()
-		t.Setenv(config.EnvEnabled, "")
+		withConfigEnv(t, func() {
+			t.Setenv(config.EnvEnabled, "")
+		})
 
 		appsec.Start(config.WithEnablementMode(config.ForcedOff))
 		defer appsec.Stop()
@@ -112,10 +134,12 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 // is explicitly disabled, it simply can't be remotely activated — which is
 // expected and should not be treated as an unexpected error.
 func TestNoAppsecErrorWhenRCDisabled(t *testing.T) {
-	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
-	// Ensure DD_APPSEC_ENABLED is not set (RCStandby mode)
-	t.Setenv(config.EnvEnabled, "")
-	os.Unsetenv(config.EnvEnabled)
+	withConfigEnv(t, func() {
+		t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
+		// Ensure DD_APPSEC_ENABLED is not set (RCStandby mode)
+		t.Setenv(config.EnvEnabled, "")
+		os.Unsetenv(config.EnvEnabled)
+	})
 
 	var logger log.RecordLogger
 	defer log.UseLogger(&logger)()

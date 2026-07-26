@@ -42,10 +42,6 @@ const (
 	envOTLPHeaders  = "OTEL_EXPORTER_OTLP_HEADERS"
 	envOTLPTimeout  = "OTEL_EXPORTER_OTLP_TIMEOUT"
 
-	// DD environment variables for agent configuration
-	envDDTraceAgentURL = "DD_TRACE_AGENT_URL"
-	envDDAgentHost     = "DD_AGENT_HOST"
-
 	// BatchLogRecordProcessor environment variables
 	envBLRPMaxQueueSize       = "OTEL_BLRP_MAX_QUEUE_SIZE"
 	envBLRPScheduleDelay      = "OTEL_BLRP_SCHEDULE_DELAY"
@@ -156,26 +152,21 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		return nil, err
 	}
 
-	// Wrap the exporter with telemetry tracking
 	return &telemetryExporter{
 		Exporter:  exporter,
 		telemetry: NewLogsExportTelemetry(protocolTag, encodingTag),
 	}, nil
 }
 
-// resolveOTLPProtocol returns the OTLP protocol from environment variables.
 // Priority: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/json"
 func resolveOTLPProtocol() string {
 	cfg := internalconfig.Get()
-	// Check logs-specific protocol first
 	if protocol := cfg.OTelExporterOTLPLogsProtocol(); protocol != "" {
 		return strings.ToLower(strings.TrimSpace(protocol))
 	}
-	// Fall back to general OTLP protocol
 	if protocol := cfg.OTelExporterOTLPProtocol(); protocol != "" {
 		return strings.ToLower(strings.TrimSpace(protocol))
 	}
-	// Default to HTTP with JSON
 	return defaultOTLPProtocol
 }
 
@@ -216,8 +207,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
 
-	// Check if OTEL environment variables are set
-	if hasOTLPEndpointInEnv() {
+	if hasConfiguredOTLPEndpoint() {
 		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
 		cfg := internalconfig.Get()
 		rawEndpoint := cmp.Or(cfg.OTelExporterOTLPLogsEndpoint(), cfg.OTelExporterOTLPEndpoint())
@@ -267,8 +257,7 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		otlploggrpc.WithRetry(grpcRetryConfig()),
 	}
 
-	// Check if OTEL environment variables are set
-	if hasOTLPEndpointInEnv() {
+	if hasConfiguredOTLPEndpoint() {
 		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
 		cfg := internalconfig.Get()
 		rawEndpoint := cmp.Or(cfg.OTelExporterOTLPLogsEndpoint(), cfg.OTelExporterOTLPEndpoint())
@@ -317,9 +306,7 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	return opts
 }
 
-// hasOTLPEndpointInEnv checks if OTLP endpoint is configured via OTEL environment variables.
-// When true, we'll read and sanitize the endpoint ourselves to ensure proper URL formatting.
-func hasOTLPEndpointInEnv() bool {
+func hasConfiguredOTLPEndpoint() bool {
 	cfg := internalconfig.Get()
 	if v := cfg.OTelExporterOTLPLogsEndpoint(); v != "" {
 		return true
@@ -359,35 +346,36 @@ func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
 	return u.String()
 }
 
-// resolveOTLPEndpointHTTP determines the OTLP HTTP endpoint from DD agent configuration.
-// Returns (endpoint, path, insecure) where:
-// - endpoint is the host:port (e.g., "localhost:4318")
-// - path is the URL path (e.g., "/v1/logs")
-// - insecure indicates whether to use http (true) or https (false)
-//
-// Priority order:
-// 1. DD_TRACE_AGENT_URL with port changed to 4318
-// 2. DD_AGENT_HOST:4318
-// 3. localhost:4318 (default)
-//
-// Note: This function is only called when OTEL_EXPORTER_OTLP_ENDPOINT and
-// OTEL_EXPORTER_OTLP_LOGS_ENDPOINT are NOT set, as the OTel SDK automatically
-// reads those environment variables.
+// resolveOTLPEndpointHTTP checks DD_TRACE_AGENT_URL, DD_AGENT_HOST, then localhost.
 func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 	path = defaultOTLPLogsPath
 	insecure = true // default to http
 
-	// The singleton has already applied DD_TRACE_AGENT_URL > DD_AGENT_HOST > default priority.
-	if agentURL := internalconfig.Get().RawAgentURL(); agentURL != nil {
-		// Extract hostname from the agent URL and use port 4318.
-		hostname := agentURL.Hostname()
-		if hostname != "" {
-			endpoint = net.JoinHostPort(hostname, defaultOTLPHTTPPort)
-			// Preserve the scheme from DD_TRACE_AGENT_URL.
-			insecure = (agentURL.Scheme == "http" || agentURL.Scheme == "unix")
-			log.Debug("Using OTLP logs endpoint from configured agent URL: %s", endpoint)
-			return
+	cfg := internalconfig.Get()
+	// Check DD_TRACE_AGENT_URL
+	if agentURL := cfg.RawTraceAgentURL(); agentURL != "" {
+		u, err := url.Parse(agentURL)
+		if err != nil {
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error())
+		} else {
+			// Extract hostname from the agent URL and use port 4318
+			hostname := u.Hostname()
+			if hostname != "" {
+				endpoint = net.JoinHostPort(hostname, defaultOTLPHTTPPort)
+				// Preserve the scheme from DD_TRACE_AGENT_URL
+				insecure = (u.Scheme == "http" || u.Scheme == "unix")
+				log.Debug("Using OTLP logs endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
+				return
+			}
 		}
+	}
+
+	// Check DD_AGENT_HOST
+	if host := cfg.RawAgentHost(); host != "" {
+		endpoint = net.JoinHostPort(host, defaultOTLPHTTPPort)
+		insecure = true
+		log.Debug("Using OTLP logs endpoint from DD_AGENT_HOST: %s", endpoint)
+		return
 	}
 
 	// Default to localhost:4318
@@ -409,17 +397,30 @@ func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
 	insecure = true // default to grpc (not grpcs)
 
-	// The singleton has already applied DD_TRACE_AGENT_URL > DD_AGENT_HOST > default priority.
-	if agentURL := internalconfig.Get().RawAgentURL(); agentURL != nil {
-		// Extract hostname from the agent URL and use port 4317 for gRPC.
-		hostname := agentURL.Hostname()
-		if hostname != "" {
-			endpoint = net.JoinHostPort(hostname, defaultOTLPGRPCPort)
-			// Preserve the scheme from DD_TRACE_AGENT_URL.
-			insecure = (agentURL.Scheme == "http" || agentURL.Scheme == "unix")
-			log.Debug("Using OTLP gRPC logs endpoint from configured agent URL: %s", endpoint)
-			return
+	cfg := internalconfig.Get()
+	// Check DD_TRACE_AGENT_URL
+	if agentURL := cfg.RawTraceAgentURL(); agentURL != "" {
+		u, err := url.Parse(agentURL)
+		if err != nil {
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error())
+		} else {
+			// Extract hostname from the agent URL and use port 4317 for gRPC
+			hostname := u.Hostname()
+			if hostname != "" {
+				endpoint = net.JoinHostPort(hostname, defaultOTLPGRPCPort)
+				// Preserve the scheme from DD_TRACE_AGENT_URL
+				insecure = (u.Scheme == "http" || u.Scheme == "unix")
+				log.Debug("Using OTLP gRPC logs endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
+				return
+			}
 		}
+	}
+
+	// Check DD_AGENT_HOST
+	if host := cfg.RawAgentHost(); host != "" {
+		endpoint = net.JoinHostPort(host, defaultOTLPGRPCPort)
+		log.Debug("Using OTLP gRPC logs endpoint from DD_AGENT_HOST: %s", endpoint)
+		return
 	}
 
 	// Default to localhost:4317
@@ -467,23 +468,19 @@ func parseHeaders(str string) map[string]string {
 	return headers
 }
 
-// resolveExportTimeout returns the export timeout from environment variables.
 // Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (30s)
 func resolveExportTimeout() time.Duration {
 	cfg := internalconfig.Get()
-	// Check logs-specific timeout first
 	if timeoutStr := cfg.OTelExporterOTLPLogsTimeout(); timeoutStr != "" {
 		if timeout, err := parseTimeout(timeoutStr); err == nil {
 			return timeout
 		}
 	}
-	// Fall back to general OTLP timeout
 	if timeoutStr := cfg.OTelExporterOTLPTimeout(); timeoutStr != "" {
 		if timeout, err := parseTimeout(timeoutStr); err == nil {
 			return timeout
 		}
 	}
-	// Default to 30 seconds
 	return 30 * time.Second
 }
 

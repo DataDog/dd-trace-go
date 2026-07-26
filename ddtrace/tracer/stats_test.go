@@ -26,7 +26,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
@@ -168,7 +167,7 @@ func TestConcentrator(t *testing.T) {
 		})
 
 		t.Run("processTagsEnabled", func(t *testing.T) {
-			processtags.Reload()
+			setProcessTagsEnabled(t, true)
 
 			transport := newDummyTransport()
 			c := newConcentrator(newTestConfigWithTransport(t, transport), 500_000, &statsd.NoOpClientDirect{})
@@ -184,8 +183,7 @@ func TestConcentrator(t *testing.T) {
 			assert.NotEmpty(t, gotStats[0].ProcessTags)
 		})
 		t.Run("processTagsDisabled", func(t *testing.T) {
-			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-			processtags.Reload()
+			setProcessTagsEnabled(t, false)
 
 			transport := newDummyTransport()
 			c := newConcentrator(newTestConfigWithTransport(t, transport), 500_000, &statsd.NoOpClientDirect{})

@@ -37,6 +37,24 @@ func TestCurrentMode_DirectManifestPath(t *testing.T) {
 	}
 }
 
+func TestCurrentModeFirstResolutionWins(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	t.Setenv(UndeclaredOutputsDirEnv, t.TempDir())
+	Configure("", true)
+
+	first := CurrentMode()
+	if !first.PayloadFilesEnabled {
+		t.Fatal("expected the resolved configuration to enable payload files")
+	}
+
+	Configure("", false)
+	if got := CurrentMode(); got != first {
+		t.Fatalf("expected resolved mode to remain unchanged, got %#v, want %#v", got, first)
+	}
+}
+
 func TestCurrentMode_RunfilesDirResolution(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)

@@ -207,6 +207,7 @@ func TestError(t *testing.T) {
 	})
 	t.Run("envvar", func(t *testing.T) {
 		assert := assert.New(t)
+		t.Cleanup(httptrace.ResetCfg)
 		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "200")
 		mt := mocktracer.Start()
 		defer mt.Stop()

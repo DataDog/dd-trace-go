@@ -22,6 +22,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
@@ -117,6 +118,7 @@ func Start(settings net.SettingsResponseData, tests []SkippableTest, coverage ma
 		"DD_GIT_COMMIT_SHA":                 "1234567890abcdef1234567890abcdef12345678",
 		"DD_GIT_BRANCH":                     "main",
 	})
+	internalconfig.CreateNew()
 	return mock
 }
 
@@ -124,6 +126,7 @@ func Start(settings net.SettingsResponseData, tests []SkippableTest, coverage ma
 func (s *Server) Close() {
 	if s.restore != nil {
 		s.restore()
+		internalconfig.CreateNew()
 	}
 	if s.server != nil {
 		s.server.Close()

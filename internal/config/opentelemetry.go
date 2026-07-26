@@ -71,10 +71,10 @@ func (c *Config) OTelServiceName() string {
 	return c.otelServiceName
 }
 
-func (c *Config) OTelMetricsExporter() string {
+func (c *Config) OTelResourceHostnameEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.otelMetricsExporter
+	return c.otelResourceHostnameEnabled
 }
 
 func (c *Config) OTelExporterOTLPMetricsEndpoint() string {
@@ -105,4 +105,28 @@ func (c *Config) OTelExporterOTLPMetricsTemporalityPreference() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otelExporterOTLPMetricsTemporalityPreference
+}
+
+func (c *Config) OTelMetricExportInterval() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelMetricExportInterval
+}
+
+func (c *Config) OTelMetricExportTimeout() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelMetricExportTimeout
+}
+
+func (c *Config) OTelMetricsExporterEnabledFromEnv() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelMetricsExporterEnabledEnv
+}
+
+func (c *Config) OTelMetricsEnabledFromEnv() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelMetricsEnabledEnv
 }

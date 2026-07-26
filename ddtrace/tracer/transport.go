@@ -96,6 +96,10 @@ func newHTTPTransport(traceURL string, statsURL string, client *http.Client, hea
 }
 
 func datadogHeaders() map[string]string {
+	return datadogHeadersFromConfig(internalconfig.Get())
+}
+
+func datadogHeadersFromConfig(cfg *internalconfig.Config) map[string]string {
 	h := map[string]string{
 		"Datadog-Meta-Lang":             "go",
 		"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
@@ -109,7 +113,7 @@ func datadogHeaders() map[string]string {
 	if eid := internal.EntityID(); eid != "" {
 		h[entityIDHeader] = eid
 	}
-	if extEnv := internalconfig.Get().ExternalEnvironment(); extEnv != "" {
+	if extEnv := cfg.ExternalEnvironment(); extEnv != "" {
 		h["Datadog-External-Env"] = extEnv
 	}
 	return h

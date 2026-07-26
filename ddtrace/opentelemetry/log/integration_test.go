@@ -30,7 +30,7 @@ func TestStart(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
 
-		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		setConfigEnv(t, "DD_LOGS_OTEL_ENABLED", "true")
 
 		err := Start(context.Background())
 		require.NoError(t, err)
@@ -48,7 +48,7 @@ func TestStart(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
 
-		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		setConfigEnv(t, "DD_LOGS_OTEL_ENABLED", "true")
 
 		err1 := Start(context.Background())
 		require.NoError(t, err1)
@@ -127,10 +127,10 @@ func TestIntegration(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
 
-		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
-		t.Setenv("DD_SERVICE", "test-service")
-		t.Setenv("DD_ENV", "test")
-		t.Setenv("DD_VERSION", "1.0.0")
+		setConfigEnv(t, "DD_LOGS_OTEL_ENABLED", "true")
+		setConfigEnv(t, "DD_SERVICE", "test-service")
+		setConfigEnv(t, "DD_ENV", "test")
+		setConfigEnv(t, "DD_VERSION", "1.0.0")
 
 		// Start
 		err := Start(context.Background())

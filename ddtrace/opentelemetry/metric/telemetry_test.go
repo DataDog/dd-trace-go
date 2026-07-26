@@ -20,7 +20,7 @@ func TestTelemetryDefaultConfigurations(t *testing.T) {
 	recorder := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(recorder)()
 
-	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	setConfigEnv(t, "DD_METRICS_OTEL_ENABLED", "true")
 
 	mp, err := NewMeterProvider()
 	if err != nil {
@@ -56,13 +56,13 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 	defer telemetry.MockClient(recorder)()
 
 	// Set environment variables
-	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-	t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "30000")
-	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=SENTINEL_OTLP_BASE,other-config-value=value")
-	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
-	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
-	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
-	t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", "5000")
+	setConfigEnv(t, "DD_METRICS_OTEL_ENABLED", "true")
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_TIMEOUT", "30000")
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_HEADERS", "api-key=SENTINEL_OTLP_BASE,other-config-value=value")
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+	setConfigEnv(t, "OTEL_METRIC_EXPORT_INTERVAL", "5000")
+	setConfigEnv(t, "OTEL_METRIC_EXPORT_TIMEOUT", "5000")
 
 	mp, err := NewMeterProvider()
 	if err != nil {
@@ -112,11 +112,11 @@ func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
 	defer telemetry.MockClient(recorder)()
 
 	// Set environment variables
-	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TIMEOUT", "30000")
-	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=SENTINEL_OTLP_METRICS,other-config-value=value")
-	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
-	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://localhost:4325")
+	setConfigEnv(t, "DD_METRICS_OTEL_ENABLED", "true")
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT", "30000")
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=SENTINEL_OTLP_METRICS,other-config-value=value")
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://localhost:4325")
 
 	mp, err := NewMeterProvider()
 	if err != nil {

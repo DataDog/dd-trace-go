@@ -39,6 +39,12 @@ func (c *Config) APMTracingEnabled() bool {
 	return c.apmTracingEnabled
 }
 
+func (c *Config) PropagationStyle() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyle
+}
+
 func (c *Config) TraceID128BitLoggingEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -57,6 +63,30 @@ func (c *Config) OTelTracesSamplerArg() string {
 	return c.otelTracesSamplerArg
 }
 
+func (c *Config) PropagationStyleInjectFromEnv() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyleInjectEnv
+}
+
+func (c *Config) PropagationStyleExtractFromEnv() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyleExtractEnv
+}
+
+func (c *Config) PropagationBehaviorExtractFromEnv() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationBehaviorExtractEnv
+}
+
+func (c *Config) PropagationExtractFirstFromEnv() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationExtractFirstEnv
+}
+
 func (c *Config) APISecurityEndpointCollectionEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -69,10 +99,10 @@ func (c *Config) GraphQLErrorExtensions() string {
 	return c.graphQLErrorExtensions
 }
 
-func (c *Config) PubsubPropagationAsSpanLinks() bool {
+func (c *Config) PubsubPropagationAsSpanLinks() (string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.pubsubPropagationAsSpanLinks
+	return c.pubsubPropagationAsSpanLinks, c.pubsubPropagationAsSpanLinksSet
 }
 
 func (c *Config) KafkaAnalyticsEnabled() bool {

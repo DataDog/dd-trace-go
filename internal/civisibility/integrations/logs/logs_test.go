@@ -20,9 +20,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMain(m *testing.M) {
-	internalconfig.SetUseFreshConfig(true)
-	os.Exit(m.Run())
+func setConfigEnv(t *testing.T, key, value string) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	t.Setenv(key, value)
+	internalconfig.CreateNew()
+}
+
+func unsetConfigEnv(t *testing.T, key string) {
+	t.Helper()
+	previous, wasSet := os.LookupEnv(key)
+	t.Cleanup(func() {
+		if wasSet {
+			_ = os.Setenv(key, previous)
+		} else {
+			_ = os.Unsetenv(key)
+		}
+		internalconfig.CreateNew()
+	})
+	_ = os.Unsetenv(key)
+	internalconfig.CreateNew()
 }
 
 // resetGlobalState is a helper that resets the package level variables that keep
@@ -39,15 +58,14 @@ func resetGlobalState() {
 
 func TestIsEnabled_DefaultsToFalse(t *testing.T) {
 	resetGlobalState()
-	os.Unsetenv("DD_CIVISIBILITY_LOGS_ENABLED")
+	unsetConfigEnv(t, "DD_CIVISIBILITY_LOGS_ENABLED")
 
 	assert.False(t, IsEnabled(), "IsEnabled should be false when the env var is not set")
 }
 
 func TestIsEnabled_EnvVarTrue(t *testing.T) {
 	resetGlobalState()
-	os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
-	t.Cleanup(func() { os.Unsetenv("DD_CIVISIBILITY_LOGS_ENABLED") })
+	setConfigEnv(t, "DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
 	assert.True(t, IsEnabled(), "IsEnabled should be true when the env var is set to true")
 }
@@ -55,8 +73,7 @@ func TestIsEnabled_EnvVarTrue(t *testing.T) {
 func TestInitializeAndStop(t *testing.T) {
 	// Make sure feature is enabled
 	resetGlobalState()
-	os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
-	t.Cleanup(func() { os.Unsetenv("DD_CIVISIBILITY_LOGS_ENABLED") })
+	setConfigEnv(t, "DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
 	Initialize("my-awesome-service")
 	assert.NotNil(t, logsWriterInstance, "logsWriterInstance should be set after Initialize")
@@ -69,7 +86,7 @@ func TestInitializeAndStop(t *testing.T) {
 
 func TestWriteLog_WhenDisabled_NoOp(t *testing.T) {
 	resetGlobalState()
-	os.Unsetenv("DD_CIVISIBILITY_LOGS_ENABLED")
+	unsetConfigEnv(t, "DD_CIVISIBILITY_LOGS_ENABLED")
 
 	// Call WriteLog – it should not panic and should not create a writer.
 	WriteLog(123, "module", "suite", "test", "msg", "")
@@ -78,8 +95,7 @@ func TestWriteLog_WhenDisabled_NoOp(t *testing.T) {
 
 func TestWriteLog_WritesEntry(t *testing.T) {
 	resetGlobalState()
-	os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
-	t.Cleanup(func() { os.Unsetenv("DD_CIVISIBILITY_LOGS_ENABLED") })
+	setConfigEnv(t, "DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
 	Initialize("writer-test-service")
 	assert.NotNil(t, logsWriterInstance)
@@ -94,7 +110,7 @@ func TestWriteLog_WritesEntry(t *testing.T) {
 
 func TestInitializeWriteLogStopConcurrentRace(t *testing.T) {
 	resetGlobalState()
-	t.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
+	setConfigEnv(t, "DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
 	Initialize("race-test-service")
 	logsMu.Lock()

@@ -186,7 +186,9 @@ func TestBuildEvaluation(t *testing.T) {
 }
 
 func TestSpanEnrichment_Integration(t *testing.T) {
-	t.Setenv(spanEnrichmentEnvVar, "true")
+	setConfigEnv(t, map[string]string{
+		spanEnrichmentEnvVar: "true",
+	})
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -327,7 +329,9 @@ func setupEnrichmentProvider(t *testing.T, domain string) *of.Client {
 }
 
 func TestSpanEnrichment_NoSpanInContext(t *testing.T) {
-	t.Setenv(spanEnrichmentEnvVar, "true")
+	setConfigEnv(t, map[string]string{
+		spanEnrichmentEnvVar: "true",
+	})
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -345,7 +349,9 @@ func TestSpanEnrichment_NoSpanInContext(t *testing.T) {
 }
 
 func TestSpanEnrichment_AfterRootFinished(t *testing.T) {
-	t.Setenv(spanEnrichmentEnvVar, "true")
+	setConfigEnv(t, map[string]string{
+		spanEnrichmentEnvVar: "true",
+	})
 
 	mt := mocktracer.Start()
 	defer mt.Stop()

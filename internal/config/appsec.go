@@ -5,10 +5,16 @@
 
 package config
 
-func (c *Config) AppSecEnabled() (bool, Origin) {
+func (c *Config) AppSecEnabled() (bool, Origin, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.appSecEnabled, c.appSecEnabledOrigin
+	return c.appSecEnabled, c.appSecEnabledOrigin, c.appSecEnabledErr
+}
+
+func (c *Config) AppSecSCAEnabledError() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.appSecSCAEnabledErr
 }
 
 func (c *Config) APISecurityEnabled() bool {
@@ -35,10 +41,10 @@ func (c *Config) APISecurityProxySampleRate() int {
 	return c.apiSecurityProxySampleRate
 }
 
-func (c *Config) APISecuritySampleDelay() string {
+func (c *Config) APISecuritySampleDelay() (string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.apiSecuritySampleDelay
+	return c.apiSecuritySampleDelay, c.apiSecuritySampleDelaySet
 }
 
 func (c *Config) APISecurityRequestSampleRate() string {
@@ -71,14 +77,15 @@ func (c *Config) AppSecRules() (string, bool) {
 	return c.appSecRules, c.appSecRulesSet
 }
 
+func (c *Config) AppSecObfuscatorRegexps() (key string, keySet bool, value string, valueSet bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.appSecObfuscatorKeyRegexp, c.appSecObfuscatorKeyRegexpSet,
+		c.appSecObfuscatorValueRegexp, c.appSecObfuscatorValueRegexpSet
+}
+
 func (c *Config) TraceClientIPHeader() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.traceClientIPHeader
-}
-
-func (c *Config) AppSecStackTraceConfig() (bool, int) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.appSecStackTraceEnabled, c.appSecMaxStackTraceDepth
 }

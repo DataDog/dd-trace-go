@@ -837,7 +837,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 
 	capa := c.allCapabilities()
 	var tags []string
-	for k, v := range internalconfig.Get().GitMetadataTags() {
+	for k, v := range internal.GetGitMetadataTags() {
 		tags = append(tags, k+":"+v)
 	}
 	req := clientGetConfigsRequest{

@@ -11,6 +11,19 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
+var (
+	appEndpointsMessageLimit     = 300
+	appEndpointsMessageLimitOnce sync.Once
+)
+
+// SetAppEndpointsMessageLimit supplies the singleton-backed process value
+// without introducing an import cycle.
+func SetAppEndpointsMessageLimit(limit int) {
+	appEndpointsMessageLimitOnce.Do(func() {
+		appEndpointsMessageLimit = limit
+	})
+}
+
 type appEndpointKey struct {
 	OperationName string
 	ResourceName  string
@@ -51,7 +64,7 @@ func (a *appEndpoints) Payload() transport.Payload {
 		return nil
 	}
 
-	count := min(len(a.store), currentEnvironmentConfig().APISecurityEndpointCollectionMessageLimit)
+	count := min(len(a.store), appEndpointsMessageLimit)
 	payload := &transport.AppEndpoints{
 		IsFirst:   a.isFirst,
 		Endpoints: a.store[:count],

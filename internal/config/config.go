@@ -6,6 +6,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -30,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -41,6 +43,27 @@ var (
 	// mu protects instance and useFreshConfig
 	mu sync.Mutex
 )
+
+func init() {
+	bazel.SetConfigProvider(func() (string, bool) {
+		cfg := Get()
+		cfg.mu.RLock()
+		defer cfg.mu.RUnlock()
+		return cfg.testOptimizationManifestFile, cfg.testOptimizationPayloadsInFiles
+	})
+	internal.SetGitMetadataConfigProvider(func() (bool, string, string, string) {
+		cfg := Get()
+		cfg.mu.RLock()
+		defer cfg.mu.RUnlock()
+		return cfg.gitMetadataEnabled, cfg.gitRepositoryURL, cfg.gitCommitSHA, cfg.rawGlobalTags
+	})
+	processtags.SetConfigProvider(func() bool {
+		return Get().ProcessTagsEnabled()
+	})
+	telemetry.SetInstrumentationTelemetryEnabledLoader(func() bool {
+		return internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	})
+}
 
 // Origin represents where a configuration value came from.
 // Re-exported so callers don't need to import internal/telemetry.
@@ -94,6 +117,13 @@ type Config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 	version     string
+	// rawServiceName, rawEnv, and rawVersion are environment-only values.
+	rawServiceName         string
+	rawEnv                 string
+	rawVersion             string
+	rawSite                string
+	rawAPIKey              string
+	rawSpanAttributeSchema string
 	// universalVersion, when true, applies the configured version tag to every span
 	// regardless of service. When false, only spans whose service matches the
 	// configured service get the version tag.
@@ -188,7 +218,8 @@ type Config struct {
 	debugStack bool
 	// reportHostname indicates whether hostname should be reported on spans.
 	// Set to true when DD_TRACE_REPORT_HOSTNAME=true, or when hostname is explicitly configured via DD_TRACE_SOURCE_HOSTNAME or WithHostname().
-	reportHostname bool
+	reportHostname              bool
+	otelResourceHostnameEnabled bool
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
@@ -254,15 +285,15 @@ type Config struct {
 	// spanPoolEnabled enables the experimental span pool.
 	spanPoolEnabled bool
 
-	// Remaining process-wide configuration values. These fields are intentionally
-	// kept on Config so callers can migrate off direct environment reads without
-	// introducing a second configuration mechanism.
+	// Process-wide configuration values.
 	externalEnvironment                          string
+	rawTraceAgentURL                             string
+	rawAgentHost                                 string
+	rawTraceAgentPort                            string
 	gitMetadataEnabled                           bool
 	gitRepositoryURL                             string
 	gitCommitSHA                                 string
 	rawGlobalTags                                string
-	gitMetadataTags                              map[string]string
 	instrumentationInstallID                     string
 	instrumentationInstallType                   string
 	instrumentationInstallTime                   string
@@ -270,18 +301,22 @@ type Config struct {
 	processTagsEnabled                           bool
 	removeIntegrationServiceNames                bool
 	remoteConfigTUFRoot                          string
-	remoteConfigPollInterval                     time.Duration
+	remoteConfigPollIntervalSeconds              float64
 	remoteConfigEnabled                          bool
 	apiSecurityEndpointCollectionMessageLimit    int
 	telemetryDebug                               bool
-	telemetryHeartbeatInterval                   *float64
+	telemetryHeartbeatInterval                   string
+	telemetryHeartbeatIntervalSet                bool
 	telemetryDependencyCollectionEnabled         bool
 	telemetryMetricsEnabled                      bool
 	telemetryLogCollectionEnabled                bool
-	telemetryExtendedHeartbeatInterval           *float64
+	telemetryExtendedHeartbeatInterval           string
+	telemetryExtendedHeartbeatIntervalSet        bool
 	instrumentationTelemetryEnabled              bool
+	profilingLogStartup                          bool
 	flagEvaluationCountsEnabled                  bool
 	flaggingProviderSpanEnrichmentEnabled        bool
+	experimentalFlaggingProviderEnabledEnv       bool
 	llmObsEnabled                                bool
 	llmObsMLApp                                  string
 	llmObsProjectName                            string
@@ -290,9 +325,11 @@ type Config struct {
 	traceID128BitLoggingEnabled                  bool
 	debugSeelogWorkaroundEnabled                 bool
 	otelTracesSamplerArg                         string
+	propagationStyle                             string
 	apiSecurityEndpointCollectionEnabled         bool
 	graphQLErrorExtensions                       string
-	pubsubPropagationAsSpanLinks                 bool
+	pubsubPropagationAsSpanLinks                 string
+	pubsubPropagationAsSpanLinksSet              bool
 	kafkaAnalyticsEnabled                        bool
 	httpQueryStringDisabled                      bool
 	traceClientIPEnabled                         bool
@@ -314,7 +351,7 @@ type Config struct {
 	profilingExecutionTracePeriod                time.Duration
 	profilingExecutionTraceLimitBytes            int
 	profilingEnabled                             bool
-	profilingAutoEnabled                         bool
+	profilingAutoEnabledEnv                      bool
 	profilingUploadTimeout                       string
 	profilingAgentless                           bool
 	profilingFlushOnExit                         bool
@@ -322,19 +359,24 @@ type Config struct {
 	profilingOutputDir                           string
 	appSecEnabled                                bool
 	appSecEnabledOrigin                          telemetry.Origin
-	appSecSCAEnabled                             bool
-	appSecAgenticOnboarding                      string
+	appSecEnabledErr                             error
+	appSecSCAEnabledErr                          error
 	apiSecurityEnabled                           bool
 	apiSecurityDownstreamBodyAnalysisSampleRate  float64
 	apiSecurityMaxDownstreamRequestBodyAnalysis  int
 	apiSecurityProxySampleRate                   int
 	apiSecuritySampleDelay                       string
+	apiSecuritySampleDelaySet                    bool
 	apiSecurityRequestSampleRate                 string
 	appSecRASPEnabled                            bool
 	appSecWAFTimeout                             string
 	appSecTraceRateLimit                         string
 	appSecRules                                  string
 	appSecRulesSet                               bool
+	appSecObfuscatorKeyRegexp                    string
+	appSecObfuscatorKeyRegexpSet                 bool
+	appSecObfuscatorValueRegexp                  string
+	appSecObfuscatorValueRegexpSet               bool
 	traceClientIPHeader                          string
 	appSecStackTraceEnabled                      bool
 	appSecMaxStackTraceDepth                     int
@@ -342,6 +384,9 @@ type Config struct {
 	testOptimizationPayloadsInFiles              bool
 	ciVisibilityEnabledRaw                       string
 	ciVisibilityEnabledSet                       bool
+	ciVisibilityDebug                            bool
+	ciVisibilityAgentlessEnv                     bool
+	ciVisibilityAgentlessURLEnv                  string
 	ciVisibilityGitUploadEnabled                 bool
 	ciVisibilityFlakyRetryEnabled                bool
 	ciVisibilityImpactedTestsDetectionEnabled    bool
@@ -374,12 +419,19 @@ type Config struct {
 	otelBLRPMaxExportBatchSize                   string
 	otelResourceAttributes                       string
 	otelServiceName                              string
-	otelMetricsExporter                          string
 	otelExporterOTLPMetricsEndpoint              string
 	otelExporterOTLPMetricsHeaders               string
 	otelExporterOTLPMetricsProtocol              string
 	otelExporterOTLPMetricsTimeout               string
 	otelExporterOTLPMetricsTemporalityPreference string
+	otelMetricExportInterval                     string
+	otelMetricExportTimeout                      string
+	otelMetricsExporterEnabledEnv                bool
+	otelMetricsEnabledEnv                        bool
+	propagationStyleInjectEnv                    string
+	propagationStyleExtractEnv                   string
+	propagationBehaviorExtractEnv                string
+	propagationExtractFirstEnv                   bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -419,8 +471,9 @@ func loadConfig() *Config {
 		overrides: make(map[string]programmaticOverride),
 	}
 	p := provider.New()
-	cfg.instrumentationTelemetryEnabled = p.GetBool("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
-	telemetry.SetInstrumentationTelemetryEnabled(cfg.instrumentationTelemetryEnabled)
+	cfg.instrumentationTelemetryEnabled = telemetry.ResolveInstrumentationTelemetryEnabled(func() bool {
+		return internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	})
 
 	// Resolve agent URL from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT.
 	// All three are read through the provider so telemetry is reported for each.
@@ -428,6 +481,9 @@ func loadConfig() *Config {
 	agentHost := p.GetString("DD_AGENT_HOST", "")
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+	cfg.rawTraceAgentURL = env.Get("DD_TRACE_AGENT_URL")
+	cfg.rawAgentHost = env.Get("DD_AGENT_HOST")
+	cfg.rawTraceAgentPort = env.Get("DD_TRACE_AGENT_PORT")
 
 	dogstatsdURL := p.GetString("DD_DOGSTATSD_URL", "")
 	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
@@ -438,16 +494,27 @@ func loadConfig() *Config {
 	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdURL, dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
+	cfg.ciVisibilityDebug, _, _ = stableconfig.Bool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
+	cfg.profilingLogStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = p.GetString("DD_SERVICE", "")
 	cfg.version = p.GetString("DD_VERSION", "")
 	cfg.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
 	cfg.env = p.GetString("DD_ENV", "")
 	cfg.site = p.GetString("DD_SITE", "datadoghq.com")
+	cfg.rawServiceName = env.Get("DD_SERVICE")
+	cfg.rawEnv = env.Get("DD_ENV")
+	cfg.rawVersion = env.Get("DD_VERSION")
+	cfg.rawSite = env.Get("DD_SITE")
+	cfg.rawSpanAttributeSchema = env.Get("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	cfg.runtimeMetricsOtel = p.GetBool("DD_METRICS_OTEL_ENABLED", false)
+	switch strings.ToLower(strings.TrimSpace(env.Get("DD_METRICS_OTEL_ENABLED"))) {
+	case "true", "1":
+		cfg.otelMetricsEnabledEnv = true
+	}
 	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
 	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -499,16 +566,8 @@ func loadConfig() *Config {
 		cfg.statsOriginCardinalityLimit = defaultStatsOriginCardinalityLimit
 	}
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
-	cfg.ciVisibilityEnabledRaw = p.GetString(constants.CIVisibilityEnabledEnvironmentVariable, "")
-	cfg.ciVisibilityEnabledSet = p.IsSet(constants.CIVisibilityEnabledEnvironmentVariable)
-	if _, setInEnv := env.Lookup(constants.CIVisibilityEnabledEnvironmentVariable); setInEnv {
-		cfg.ciVisibilityEnabledSet = true
-	}
-	if strings.EqualFold(strings.TrimSpace(cfg.ciVisibilityEnabledRaw), "parent") {
-		cfg.ciVisibilityEnabled = true
-	} else if enabled, err := strconv.ParseBool(strings.TrimSpace(cfg.ciVisibilityEnabledRaw)); err == nil {
-		cfg.ciVisibilityEnabled = enabled
-	}
+	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
+	cfg.ciVisibilityEnabledRaw, cfg.ciVisibilityEnabledSet = env.Lookup(constants.CIVisibilityEnabledEnvironmentVariable)
 	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
 	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
@@ -522,8 +581,8 @@ func loadConfig() *Config {
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
-	cfg.otelMetricsExporter = p.GetString("OTEL_METRICS_EXPORTER", "")
-	cfg.otlpExportMetricsMode = cfg.otelMetricsExporter == "" || cfg.otelMetricsExporter == "otlp"
+	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
+	cfg.otelMetricsExporterEnabledEnv = strings.ToLower(strings.TrimSpace(env.Get("OTEL_METRICS_EXPORTER"))) != "none"
 	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion))
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
@@ -546,28 +605,30 @@ func loadConfig() *Config {
 			}
 		}
 	}
-	cfg.otelExporterOTLPEndpoint = p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-	cfg.otelExporterOTLPHeaders = p.GetString("OTEL_EXPORTER_OTLP_HEADERS", "")
-	cfg.otelExporterOTLPProtocol = p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "")
-	cfg.otelExporterOTLPTimeout = p.GetString("OTEL_EXPORTER_OTLP_TIMEOUT", "")
-	cfg.otelExporterOTLPMetricsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
-	cfg.otelExporterOTLPMetricsHeaders = p.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "")
-	cfg.otelExporterOTLPMetricsProtocol = p.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "")
-	cfg.otelExporterOTLPMetricsTimeout = p.GetString("OTEL_EXPORTER_OTLP_METRICS_TIMEOUT", "")
-	cfg.otelExporterOTLPMetricsTemporalityPreference = p.GetString("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "")
-	cfg.otelExporterOTLPLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "")
-	cfg.otelExporterOTLPLogsHeaders = p.GetString("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "")
-	cfg.otelExporterOTLPLogsProtocol = p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "")
-	cfg.otelExporterOTLPLogsTimeout = p.GetString("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "")
-	cfg.otelBLRPMaxQueueSize = p.GetString("OTEL_BLRP_MAX_QUEUE_SIZE", "")
-	cfg.otelBLRPScheduleDelay = p.GetString("OTEL_BLRP_SCHEDULE_DELAY", "")
-	cfg.otelBLRPExportTimeout = p.GetString("OTEL_BLRP_EXPORT_TIMEOUT", "")
-	cfg.otelBLRPMaxExportBatchSize = p.GetString("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "")
-	cfg.otelResourceAttributes = p.GetString("OTEL_RESOURCE_ATTRIBUTES", "")
-	cfg.otelServiceName = p.GetString("OTEL_SERVICE_NAME", "")
-	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, cfg.otelExporterOTLPEndpoint)
+	cfg.otelExporterOTLPEndpoint = env.Get("OTEL_EXPORTER_OTLP_ENDPOINT")
+	cfg.otelExporterOTLPHeaders = env.Get("OTEL_EXPORTER_OTLP_HEADERS")
+	cfg.otelExporterOTLPProtocol = env.Get("OTEL_EXPORTER_OTLP_PROTOCOL")
+	cfg.otelExporterOTLPTimeout = env.Get("OTEL_EXPORTER_OTLP_TIMEOUT")
+	cfg.otelExporterOTLPMetricsEndpoint = env.Get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
+	cfg.otelExporterOTLPMetricsHeaders = env.Get("OTEL_EXPORTER_OTLP_METRICS_HEADERS")
+	cfg.otelExporterOTLPMetricsProtocol = env.Get("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
+	cfg.otelExporterOTLPMetricsTimeout = env.Get("OTEL_EXPORTER_OTLP_METRICS_TIMEOUT")
+	cfg.otelExporterOTLPMetricsTemporalityPreference = env.Get("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+	cfg.otelMetricExportInterval = env.Get("OTEL_METRIC_EXPORT_INTERVAL")
+	cfg.otelMetricExportTimeout = env.Get("OTEL_METRIC_EXPORT_TIMEOUT")
+	cfg.otelExporterOTLPLogsEndpoint = env.Get("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")
+	cfg.otelExporterOTLPLogsHeaders = env.Get("OTEL_EXPORTER_OTLP_LOGS_HEADERS")
+	cfg.otelExporterOTLPLogsProtocol = env.Get("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL")
+	cfg.otelExporterOTLPLogsTimeout = env.Get("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT")
+	cfg.otelBLRPMaxQueueSize = env.Get("OTEL_BLRP_MAX_QUEUE_SIZE")
+	cfg.otelBLRPScheduleDelay = env.Get("OTEL_BLRP_SCHEDULE_DELAY")
+	cfg.otelBLRPExportTimeout = env.Get("OTEL_BLRP_EXPORT_TIMEOUT")
+	cfg.otelBLRPMaxExportBatchSize = env.Get("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE")
+	cfg.otelResourceAttributes = env.Get("OTEL_RESOURCE_ATTRIBUTES")
+	cfg.otelServiceName = env.Get("OTEL_SERVICE_NAME")
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
 	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
-		cfg.otelExporterOTLPMetricsEndpoint,
+		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
 		cfg.otlpEndpoint,
 	)
 	cfg.otlpMetricsHeaders = buildOTLPMetricsHeaders(
@@ -579,21 +640,30 @@ func loadConfig() *Config {
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
 	cfg.propagationStyleExtract = p.GetString("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "")
+	cfg.propagationStyle = p.GetString("DD_TRACE_PROPAGATION_STYLE", "")
 	cfg.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "continue")
 	cfg.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
+	cfg.propagationStyleInjectEnv = env.Get("DD_TRACE_PROPAGATION_STYLE_INJECT")
+	cfg.propagationStyleExtractEnv = env.Get("DD_TRACE_PROPAGATION_STYLE_EXTRACT")
+	cfg.propagationBehaviorExtractEnv = env.Get("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT")
+	cfg.propagationExtractFirstEnv = internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 	cfg.appKey = p.GetString("DD_APP_KEY", "")
 	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
+	cfg.ciVisibilityAgentlessEnv = internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	cfg.ciVisibilityAgentlessURLEnv = env.Get("DD_CIVISIBILITY_AGENTLESS_URL")
 	cfg.experimentalFlaggingProviderEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
+	cfg.experimentalFlaggingProviderEnabledEnv = internal.BoolEnv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
 	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
-	cfg.externalEnvironment = p.GetString("DD_EXTERNAL_ENV", "")
-	cfg.gitMetadataEnabled = p.GetBool("DD_TRACE_GIT_METADATA_ENABLED", true)
-	cfg.gitRepositoryURL = p.GetString("DD_GIT_REPOSITORY_URL", "")
-	cfg.gitCommitSHA = p.GetString("DD_GIT_COMMIT_SHA", "")
-	cfg.instrumentationInstallID = p.GetString("DD_INSTRUMENTATION_INSTALL_ID", "")
-	cfg.instrumentationInstallType = p.GetString("DD_INSTRUMENTATION_INSTALL_TYPE", "")
-	cfg.instrumentationInstallTime = p.GetString("DD_INSTRUMENTATION_INSTALL_TIME", "")
-	cfg.configuredHostname = p.GetString("DD_HOSTNAME", "")
-	cfg.processTagsEnabled = p.GetBool("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", true)
+	cfg.externalEnvironment = env.Get("DD_EXTERNAL_ENV")
+	cfg.gitMetadataEnabled = internal.BoolEnv("DD_TRACE_GIT_METADATA_ENABLED", true)
+	cfg.gitRepositoryURL = env.Get("DD_GIT_REPOSITORY_URL")
+	cfg.gitCommitSHA = env.Get("DD_GIT_COMMIT_SHA")
+	cfg.rawGlobalTags = env.Get("DD_TAGS")
+	cfg.instrumentationInstallID = env.Get("DD_INSTRUMENTATION_INSTALL_ID")
+	cfg.instrumentationInstallType = env.Get("DD_INSTRUMENTATION_INSTALL_TYPE")
+	cfg.instrumentationInstallTime = env.Get("DD_INSTRUMENTATION_INSTALL_TIME")
+	cfg.configuredHostname = env.Get("DD_HOSTNAME")
+	cfg.processTagsEnabled = internal.BoolEnv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", true)
 	globalconfig.SetInstrumentationInstallSignature(
 		cfg.instrumentationInstallID,
 		cfg.instrumentationInstallType,
@@ -601,112 +671,146 @@ func loadConfig() *Config {
 	)
 	hostname.SetConfiguredHostname(cfg.configuredHostname)
 	processtags.Configure(cfg.processTagsEnabled)
-	cfg.removeIntegrationServiceNames = p.GetBool("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
-	cfg.remoteConfigTUFRoot = p.GetString("DD_RC_TUF_ROOT", "")
-	cfg.remoteConfigPollInterval = time.Duration(p.GetFloat("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", 5.0) * float64(time.Second))
-	cfg.remoteConfigEnabled = p.GetBool("DD_REMOTE_CONFIGURATION_ENABLED", true)
-	cfg.apiSecurityEndpointCollectionMessageLimit = p.GetInt("DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT", 300)
-	cfg.telemetryDebug = p.GetBool("DD_TELEMETRY_DEBUG", false)
-	if value, valueOrigin := p.GetFloatWithValidatorOrigin("DD_TELEMETRY_HEARTBEAT_INTERVAL", 0, nil); valueOrigin != telemetry.OriginDefault {
-		cfg.telemetryHeartbeatInterval = &value
+	cfg.removeIntegrationServiceNames = internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
+	cfg.remoteConfigTUFRoot = env.Get("DD_RC_TUF_ROOT")
+	cfg.remoteConfigPollIntervalSeconds = internal.FloatEnv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", 5.0)
+	cfg.remoteConfigEnabled = internal.BoolEnv("DD_REMOTE_CONFIGURATION_ENABLED", true)
+	cfg.apiSecurityEndpointCollectionMessageLimit = 300
+	if value, ok := env.Lookup("DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT"); ok {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			cfg.apiSecurityEndpointCollectionMessageLimit = parsed
+		} else {
+			log.Warn("Invalid value for DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT (expected an integer): %s", err.Error())
+		}
 	}
-	cfg.telemetryDependencyCollectionEnabled = p.GetBool("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
-	cfg.telemetryMetricsEnabled = p.GetBool("DD_TELEMETRY_METRICS_ENABLED", true)
-	cfg.telemetryLogCollectionEnabled = p.GetBool("DD_TELEMETRY_LOG_COLLECTION_ENABLED", true)
-	if value, valueOrigin := p.GetFloatWithValidatorOrigin("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL", 0, nil); valueOrigin != telemetry.OriginDefault {
-		cfg.telemetryExtendedHeartbeatInterval = &value
-	}
-	cfg.flagEvaluationCountsEnabled = p.GetBool("DD_FLAGGING_EVALUATION_COUNTS_ENABLED", true)
-	cfg.flaggingProviderSpanEnrichmentEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED", false)
-	cfg.llmObsEnabled = p.GetBool("DD_LLMOBS_ENABLED", false)
-	cfg.llmObsMLApp = p.GetString("DD_LLMOBS_ML_APP", "")
-	cfg.llmObsProjectName = p.GetString("DD_LLMOBS_PROJECT_NAME", "")
-	if value, valueOrigin := p.GetBoolWithOrigin("DD_LLMOBS_AGENTLESS_ENABLED", false); valueOrigin != telemetry.OriginDefault {
+	telemetry.SetAppEndpointsMessageLimit(cfg.apiSecurityEndpointCollectionMessageLimit)
+	cfg.telemetryDebug = internal.BoolEnv("DD_TELEMETRY_DEBUG", false)
+	cfg.telemetryHeartbeatInterval, cfg.telemetryHeartbeatIntervalSet = env.Lookup("DD_TELEMETRY_HEARTBEAT_INTERVAL")
+	cfg.telemetryDependencyCollectionEnabled = internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
+	cfg.telemetryMetricsEnabled = internal.BoolEnv("DD_TELEMETRY_METRICS_ENABLED", true)
+	cfg.telemetryLogCollectionEnabled = internal.BoolEnv("DD_TELEMETRY_LOG_COLLECTION_ENABLED", true)
+	cfg.telemetryExtendedHeartbeatInterval, cfg.telemetryExtendedHeartbeatIntervalSet = env.Lookup("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL")
+	cfg.flagEvaluationCountsEnabled = internal.BoolEnv("DD_FLAGGING_EVALUATION_COUNTS_ENABLED", true)
+	cfg.flaggingProviderSpanEnrichmentEnabled = internal.BoolEnv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED", false)
+	cfg.llmObsEnabled = internal.BoolEnv("DD_LLMOBS_ENABLED", false)
+	cfg.llmObsMLApp = env.Get("DD_LLMOBS_ML_APP")
+	cfg.llmObsProjectName = env.Get("DD_LLMOBS_PROJECT_NAME")
+	if value, ok := internal.BoolEnvNoDefault("DD_LLMOBS_AGENTLESS_ENABLED"); ok {
 		cfg.llmObsAgentlessEnabled = &value
 	}
 	cfg.apmTracingEnabled = p.GetBool("DD_APM_TRACING_ENABLED", true)
-	cfg.traceID128BitLoggingEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true)
-	cfg.debugSeelogWorkaroundEnabled = p.GetString("DD_TRACE_DEBUG_SEELOG_WORKAROUND", "") != "false"
-	cfg.otelTracesSamplerArg = p.GetString("OTEL_TRACES_SAMPLER_ARG", "1.0")
-	cfg.apiSecurityEndpointCollectionEnabled = p.GetBool("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", true)
-	cfg.graphQLErrorExtensions = p.GetString("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS", "")
-	cfg.pubsubPropagationAsSpanLinks = p.GetBool("DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS", false)
-	cfg.kafkaAnalyticsEnabled = p.GetBool("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false)
-	cfg.httpQueryStringDisabled = p.GetBool("DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED", false)
-	cfg.traceClientIPEnabled = p.GetBool("DD_TRACE_CLIENT_IP_ENABLED", false)
-	cfg.inferredProxyServicesEnabled = p.GetBool("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", false)
-	cfg.resourceRenamingAlwaysSimplifiedEndpoint = p.GetBool("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false)
-	cfg.httpServerErrorStatuses = p.GetString("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "")
-	if value, valueOrigin := p.GetBoolWithOrigin("DD_TRACE_RESOURCE_RENAMING_ENABLED", false); valueOrigin != telemetry.OriginDefault {
+	cfg.traceID128BitLoggingEnabled = internal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true)
+	cfg.debugSeelogWorkaroundEnabled = env.Get("DD_TRACE_DEBUG_SEELOG_WORKAROUND") != "false"
+	cfg.otelTracesSamplerArg = env.Get("OTEL_TRACES_SAMPLER_ARG")
+	if cfg.otelTracesSamplerArg == "" {
+		cfg.otelTracesSamplerArg = "1.0"
+	}
+	cfg.apiSecurityEndpointCollectionEnabled = internal.BoolEnv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", true)
+	cfg.graphQLErrorExtensions = env.Get("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS")
+	cfg.pubsubPropagationAsSpanLinks, cfg.pubsubPropagationAsSpanLinksSet = env.Lookup("DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS")
+	cfg.kafkaAnalyticsEnabled = internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false)
+	cfg.httpQueryStringDisabled = internal.BoolEnv("DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED", false)
+	cfg.traceClientIPEnabled = internal.BoolEnv("DD_TRACE_CLIENT_IP_ENABLED", false)
+	cfg.inferredProxyServicesEnabled = internal.BoolEnv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", false)
+	cfg.resourceRenamingAlwaysSimplifiedEndpoint = internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false)
+	cfg.httpServerErrorStatuses = env.Get("DD_TRACE_HTTP_SERVER_ERROR_STATUSES")
+	if value, ok := internal.BoolEnvNoDefault("DD_TRACE_RESOURCE_RENAMING_ENABLED"); ok {
 		cfg.resourceRenamingEnabled = &value
 	}
-	cfg.httpBaggageTagKeys = p.GetString("DD_TRACE_BAGGAGE_TAG_KEYS", "")
-	_, baggageTagKeysSetInEnv := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS")
-	cfg.httpBaggageTagKeysSet = p.IsSet("DD_TRACE_BAGGAGE_TAG_KEYS") || baggageTagKeysSetInEnv
-	cfg.httpQueryStringAllowlist = p.GetString("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST", "")
-	cfg.httpClientQueryStringAllowlist = p.GetString("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT", "")
-	cfg.httpServerQueryStringAllowlist = p.GetString("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "")
-	cfg.httpQueryStringObfuscationRegexp = p.GetString("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP", "")
-	_, queryStringRegexpSetInEnv := env.Lookup("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP")
-	cfg.httpQueryStringObfuscationRegexpConfigured = p.IsSet("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP") || queryStringRegexpSetInEnv
-	cfg.profilingDelta = p.GetBool("DD_PROFILING_DELTA", true)
-	cfg.profilingEndpointCountEnabled = p.GetBool("DD_PROFILING_ENDPOINT_COUNT_ENABLED", false)
-	cfg.profilingDebugCompressionSettings = p.GetString("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "zstd")
-	cfg.profilingExecutionTraceEnabled = p.GetBool(
+	cfg.httpBaggageTagKeys, cfg.httpBaggageTagKeysSet = env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS")
+	cfg.httpQueryStringAllowlist = env.Get("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST")
+	cfg.httpClientQueryStringAllowlist = env.Get("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT")
+	cfg.httpServerQueryStringAllowlist = env.Get("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER")
+	cfg.httpQueryStringObfuscationRegexp, cfg.httpQueryStringObfuscationRegexpConfigured = env.Lookup("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP")
+	cfg.profilingDelta = internal.BoolEnv("DD_PROFILING_DELTA", true)
+	cfg.profilingEndpointCountEnabled = internal.BoolEnv("DD_PROFILING_ENDPOINT_COUNT_ENABLED", false)
+	cfg.profilingDebugCompressionSettings = env.Get("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS")
+	if cfg.profilingDebugCompressionSettings == "" {
+		cfg.profilingDebugCompressionSettings = "zstd"
+	}
+	cfg.profilingExecutionTraceEnabled = internal.BoolEnv(
 		"DD_PROFILING_EXECUTION_TRACE_ENABLED",
 		runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64",
 	)
-	cfg.profilingExecutionTracePeriod = p.GetDuration("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
-	cfg.profilingExecutionTraceLimitBytes = p.GetInt("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", 5*1024*1024)
-	cfg.profilingAutoEnabled = p.GetString("DD_PROFILING_ENABLED", "") == "auto"
-	cfg.profilingEnabled = cfg.profilingAutoEnabled || p.GetBool("DD_PROFILING_ENABLED", true)
-	cfg.profilingUploadTimeout = p.GetString("DD_PROFILING_UPLOAD_TIMEOUT", "")
-	cfg.profilingAgentless = p.GetBool("DD_PROFILING_AGENTLESS", false)
-	cfg.profilingFlushOnExit = p.GetBool("DD_PROFILING_FLUSH_ON_EXIT", false)
-	cfg.profilingURL = p.GetString("DD_PROFILING_URL", "")
-	cfg.profilingOutputDir = p.GetString("DD_PROFILING_OUTPUT_DIR", "")
-	cfg.appSecEnabled, cfg.appSecEnabledOrigin = p.GetBoolWithOrigin("DD_APPSEC_ENABLED", false)
-	cfg.appSecSCAEnabled = p.GetBool("DD_APPSEC_SCA_ENABLED", false)
-	cfg.appSecAgenticOnboarding = p.GetString("DD_APPSEC_AGENTIC_ONBOARDING", "")
-	cfg.apiSecurityEnabled = p.GetBool("DD_API_SECURITY_ENABLED", true)
-	cfg.apiSecurityDownstreamBodyAnalysisSampleRate = p.GetFloat("DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE", 0.5)
-	cfg.apiSecurityMaxDownstreamRequestBodyAnalysis = p.GetInt("DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS", 1)
-	cfg.apiSecurityProxySampleRate = p.GetInt("DD_API_SECURITY_PROXY_SAMPLE_RATE", 300)
-	cfg.apiSecuritySampleDelay = p.GetString("DD_API_SECURITY_SAMPLE_DELAY", "")
-	cfg.apiSecurityRequestSampleRate = p.GetString("DD_API_SECURITY_REQUEST_SAMPLE_RATE", "")
-	cfg.appSecRASPEnabled = p.GetBool("DD_APPSEC_RASP_ENABLED", true)
-	cfg.appSecWAFTimeout = p.GetString("DD_APPSEC_WAF_TIMEOUT", "")
-	cfg.appSecTraceRateLimit = p.GetString("DD_APPSEC_TRACE_RATE_LIMIT", "")
-	cfg.appSecRules = p.GetString("DD_APPSEC_RULES", "")
-	_, appSecRulesSetInEnv := env.Lookup("DD_APPSEC_RULES")
-	cfg.appSecRulesSet = p.IsSet("DD_APPSEC_RULES") || appSecRulesSetInEnv
-	cfg.traceClientIPHeader = p.GetString("DD_TRACE_CLIENT_IP_HEADER", "")
-	cfg.appSecStackTraceEnabled = p.GetBool("DD_APPSEC_STACK_TRACE_ENABLED", true)
-	cfg.appSecMaxStackTraceDepth = p.GetInt("DD_APPSEC_MAX_STACK_TRACE_DEPTH", 32)
-	cfg.testOptimizationManifestFile = strings.TrimSpace(p.GetString("DD_TEST_OPTIMIZATION_MANIFEST_FILE", ""))
-	payloadsInFiles := strings.TrimSpace(p.GetString("DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES", ""))
+	cfg.profilingExecutionTracePeriod = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
+	cfg.profilingExecutionTraceLimitBytes = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", 5*1024*1024)
+	profilingEnabled, _ := stableconfig.String("DD_PROFILING_ENABLED", "")
+	profilingAutoEnabled := profilingEnabled == "auto"
+	cfg.profilingAutoEnabledEnv = env.Get("DD_PROFILING_ENABLED") == "auto"
+	if profilingAutoEnabled {
+		cfg.profilingEnabled = true
+	} else {
+		cfg.profilingEnabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
+	}
+	cfg.profilingUploadTimeout = env.Get("DD_PROFILING_UPLOAD_TIMEOUT")
+	cfg.profilingAgentless = internal.BoolEnv("DD_PROFILING_AGENTLESS", false)
+	cfg.profilingFlushOnExit = internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false)
+	cfg.profilingURL = env.Get("DD_PROFILING_URL")
+	cfg.profilingOutputDir = env.Get("DD_PROFILING_OUTPUT_DIR")
+	cfg.appSecEnabled, cfg.appSecEnabledOrigin, cfg.appSecEnabledErr = stableconfig.Bool("DD_APPSEC_ENABLED", false)
+	_, _, cfg.appSecSCAEnabledErr = stableconfig.Bool("DD_APPSEC_SCA_ENABLED", false)
+	stableconfig.String("DD_APPSEC_AGENTIC_ONBOARDING", "") // reported for configuration telemetry only
+	cfg.apiSecurityEnabled = internal.BoolEnv("DD_API_SECURITY_ENABLED", true)
+	cfg.apiSecurityDownstreamBodyAnalysisSampleRate = internal.FloatEnv("DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE", 0.5)
+	cfg.apiSecurityMaxDownstreamRequestBodyAnalysis = internal.IntEnv("DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS", 1)
+	cfg.apiSecurityProxySampleRate = internal.IntEnv("DD_API_SECURITY_PROXY_SAMPLE_RATE", 300)
+	cfg.apiSecuritySampleDelay, cfg.apiSecuritySampleDelaySet = env.Lookup("DD_API_SECURITY_SAMPLE_DELAY")
+	cfg.apiSecurityRequestSampleRate = env.Get("DD_API_SECURITY_REQUEST_SAMPLE_RATE")
+	cfg.appSecRASPEnabled = internal.BoolEnv("DD_APPSEC_RASP_ENABLED", true)
+	cfg.appSecWAFTimeout = env.Get("DD_APPSEC_WAF_TIMEOUT")
+	cfg.appSecTraceRateLimit = env.Get("DD_APPSEC_TRACE_RATE_LIMIT")
+	cfg.appSecRules, cfg.appSecRulesSet = env.Lookup("DD_APPSEC_RULES")
+	cfg.appSecObfuscatorKeyRegexp, cfg.appSecObfuscatorKeyRegexpSet = env.Lookup("DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP")
+	cfg.appSecObfuscatorValueRegexp, cfg.appSecObfuscatorValueRegexpSet = env.Lookup("DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP")
+	cfg.traceClientIPHeader = env.Get("DD_TRACE_CLIENT_IP_HEADER")
+	cfg.appSecStackTraceEnabled = true
+	if value := env.Get("DD_APPSEC_STACK_TRACE_ENABLED"); value != "" {
+		if enabled, err := strconv.ParseBool(value); err == nil {
+			cfg.appSecStackTraceEnabled = enabled
+		} else {
+			log.Error(
+				"Failed to parse DD_APPSEC_STACK_TRACE_ENABLED env var as boolean: (using default value: %t) %v",
+				cfg.appSecStackTraceEnabled,
+				err.Error(),
+			)
+		}
+	}
+	cfg.appSecMaxStackTraceDepth = 32
+	if value := env.Get("DD_APPSEC_MAX_STACK_TRACE_DEPTH"); value != "" {
+		if !cfg.appSecStackTraceEnabled {
+			log.Warn("Ignoring DD_APPSEC_MAX_STACK_TRACE_DEPTH because stacktrace generation is disable")
+		} else if depth, err := strconv.Atoi(value); err == nil {
+			cfg.appSecMaxStackTraceDepth = depth
+		} else {
+			err = errors.New("value is not a strictly positive integer")
+			log.Error(
+				"Failed to parse DD_APPSEC_MAX_STACK_TRACE_DEPTH env var as a positive integer: (using default value: %d) %v",
+				cfg.appSecMaxStackTraceDepth,
+				err.Error(),
+			)
+		}
+	}
+	cfg.testOptimizationManifestFile = strings.TrimSpace(env.Get("DD_TEST_OPTIMIZATION_MANIFEST_FILE"))
+	payloadsInFiles := strings.TrimSpace(env.Get("DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES"))
 	cfg.testOptimizationPayloadsInFiles, _ = strconv.ParseBool(payloadsInFiles)
-	bazel.Configure(cfg.testOptimizationManifestFile, cfg.testOptimizationPayloadsInFiles)
 	stacktrace.Configure(cfg.appSecStackTraceEnabled, cfg.appSecMaxStackTraceDepth)
-	cfg.ciVisibilityGitUploadEnabled = p.GetBool("DD_CIVISIBILITY_GIT_UPLOAD_ENABLED", true)
-	cfg.ciVisibilityFlakyRetryEnabled = p.GetBool("DD_CIVISIBILITY_FLAKY_RETRY_ENABLED", true)
-	cfg.ciVisibilityImpactedTestsDetectionEnabled = p.GetBool("DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED", true)
-	cfg.ciVisibilityCodeCoverageReportUploadEnabled = p.GetBool("DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED", true)
-	cfg.testManagementEnabled = p.GetBool("DD_TEST_MANAGEMENT_ENABLED", true)
-	cfg.testManagementAttemptToFixRetries = p.GetInt("DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES", -1)
-	cfg.ciVisibilitySubtestFeaturesEnabled = p.GetBool("DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED", true)
-	cfg.ciVisibilityTotalFlakyRetryCount = p.GetInt("DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT", 1000)
-	cfg.ciVisibilityFlakyRetryCount = p.GetInt("DD_CIVISIBILITY_FLAKY_RETRY_COUNT", 5)
-	cfg.ciVisibilityInternalParallelEFDEnabled = p.GetBool("DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED", false)
+	cfg.ciVisibilityGitUploadEnabled = internal.BoolEnv("DD_CIVISIBILITY_GIT_UPLOAD_ENABLED", true)
+	cfg.ciVisibilityFlakyRetryEnabled = internal.BoolEnv("DD_CIVISIBILITY_FLAKY_RETRY_ENABLED", true)
+	cfg.ciVisibilityImpactedTestsDetectionEnabled = internal.BoolEnv("DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED", true)
+	cfg.ciVisibilityCodeCoverageReportUploadEnabled = internal.BoolEnv("DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED", true)
+	cfg.testManagementEnabled = internal.BoolEnv("DD_TEST_MANAGEMENT_ENABLED", true)
+	cfg.testManagementAttemptToFixRetries = internal.IntEnv("DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES", -1)
+	cfg.ciVisibilitySubtestFeaturesEnabled = internal.BoolEnv("DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED", true)
+	cfg.ciVisibilityTotalFlakyRetryCount = internal.IntEnv("DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT", 1000)
+	cfg.ciVisibilityFlakyRetryCount = internal.IntEnv("DD_CIVISIBILITY_FLAKY_RETRY_COUNT", 5)
+	cfg.ciVisibilityInternalParallelEFDEnabled = internal.BoolEnv("DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED", false)
 	cfg.ciVisibilityLogsEnabled = p.GetBool("DD_CIVISIBILITY_LOGS_ENABLED", false)
-	cfg.testSessionName = p.GetString("DD_TEST_SESSION_NAME", "")
-	_, testSessionNameSetInEnv := env.Lookup("DD_TEST_SESSION_NAME")
-	cfg.testSessionNameSet = p.IsSet("DD_TEST_SESSION_NAME") || testSessionNameSetInEnv
-	cfg.testOptimizationEnvironmentDataFile = p.GetString("DD_TEST_OPTIMIZATION_ENV_DATA_FILE", "")
-	cfg.pipelineExecutionID = p.GetString("DD_PIPELINE_EXECUTION_ID", "")
-	cfg.actionExecutionID = p.GetString("DD_ACTION_EXECUTION_ID", "")
-	cfg.codeCoverageFlags = p.GetString("DD_CODE_COVERAGE_FLAGS", "")
-	cfg.ciVisibilityAutoInstrumentationProvider = p.GetString("DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER", "")
+	cfg.testSessionName, cfg.testSessionNameSet = env.Lookup("DD_TEST_SESSION_NAME")
+	cfg.testOptimizationEnvironmentDataFile = env.Get("DD_TEST_OPTIMIZATION_ENV_DATA_FILE")
+	cfg.pipelineExecutionID = env.Get("DD_PIPELINE_EXECUTION_ID")
+	cfg.actionExecutionID = env.Get("DD_ACTION_EXECUTION_ID")
+	cfg.codeCoverageFlags = env.Get("DD_CODE_COVERAGE_FLAGS")
+	cfg.ciVisibilityAutoInstrumentationProvider = env.Get("DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER")
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
@@ -721,13 +825,6 @@ func loadConfig() *Config {
 	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
 
 	rawTags, globalTagsOrigin := p.GetStringWithOrigin("DD_TAGS", "")
-	cfg.rawGlobalTags = rawTags
-	cfg.gitMetadataTags = internal.GitMetadataTags(
-		cfg.gitMetadataEnabled,
-		cfg.gitRepositoryURL,
-		cfg.gitCommitSHA,
-		rawTags,
-	)
 	cfg.globalTags = newDynamicConfig("trace_tags", parseGlobalTags(rawTags), globalTagsOrigin, equalMap[string], nil)
 	for k, v := range cfg.globalTags.Get() {
 		reportGlobalTagTelemetry(k, v, globalTagsOrigin)
@@ -772,6 +869,8 @@ func loadConfig() *Config {
 	// If the hostname lookup fails, an error is set and the hostname is not reported
 	// The tracer will fail to start if the hostname lookup fails when it is explicitly configured
 	// to report the hostname.
+	reportHostname, _ := env.Lookup("DD_TRACE_REPORT_HOSTNAME")
+	cfg.otelResourceHostnameEnabled = reportHostname == "true"
 	if p.GetBool("DD_TRACE_REPORT_HOSTNAME", false) {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -789,6 +888,7 @@ func loadConfig() *Config {
 	}
 
 	cfg.apiKey = p.GetString("DD_API_KEY", "")
+	cfg.rawAPIKey = env.Get("DD_API_KEY")
 
 	traceRules, traceOrigin := samplingRulesFromSource(p, "DD_TRACE_SAMPLING_RULES", samplingrules.SamplingRuleTrace)
 	cfg.traceSamplingRules = newDynamicConfig("trace_sample_rules", traceRules, traceOrigin, samplingrules.EqualsFalseNegative, nil)
@@ -798,25 +898,6 @@ func loadConfig() *Config {
 	cfg.spanSamplingRules = spanRules
 	cfg.spanSamplingRulesOrigin = spanOrigin
 	configtelemetry.ReportDefault("span_sample_rules", spanRules)
-
-	telemetryConfig := telemetry.EnvironmentConfig{
-		Debug:                       cfg.telemetryDebug,
-		Site:                        cfg.site,
-		APIKey:                      cfg.apiKey,
-		DependencyCollectionEnabled: cfg.telemetryDependencyCollectionEnabled,
-		MetricsEnabled:              cfg.telemetryMetricsEnabled,
-		LogCollectionEnabled:        cfg.telemetryLogCollectionEnabled,
-		APISecurityEndpointCollectionMessageLimit: cfg.apiSecurityEndpointCollectionMessageLimit,
-	}
-	if cfg.telemetryHeartbeatInterval != nil {
-		telemetryConfig.HeartbeatInterval = *cfg.telemetryHeartbeatInterval
-		telemetryConfig.HeartbeatIntervalSet = true
-	}
-	if cfg.telemetryExtendedHeartbeatInterval != nil {
-		telemetryConfig.ExtendedHeartbeatInterval = *cfg.telemetryExtendedHeartbeatInterval
-		telemetryConfig.ExtendedHeartbeatIntervalSet = true
-	}
-	telemetry.ConfigureEnvironment(telemetryConfig)
 
 	return cfg
 }

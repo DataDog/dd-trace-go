@@ -35,7 +35,7 @@ func pubsubPushHeaders() map[string]string {
 func TestInferredPubsubPushSpans(t *testing.T) {
 	t.Setenv("DD_SERVICE", "pubsub-push-server")
 	t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
-	ResetCfg()
+	reloadConfigFromEnvForTesting()
 
 	srvURL := "https://my-service.example.com/push-endpoint"
 
@@ -209,7 +209,7 @@ func TestInferredPubsubPushSpansWithPropagationAsSpanLinks(t *testing.T) {
 	t.Setenv("DD_SERVICE", "pubsub-push-server")
 	t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
 	t.Setenv("DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS", "true")
-	ResetCfg()
+	reloadConfigFromEnvForTesting()
 	defer ResetCfg()
 
 	srvURL := "https://my-service.example.com/push-endpoint"
@@ -295,7 +295,7 @@ func TestInferredPubsubPushSpansWithPropagationAsSpanLinksAndRestartBehavior(t *
 	t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
 	t.Setenv("DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS", "true")
 	t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "restart")
-	ResetCfg()
+	reloadConfigFromEnvForTesting()
 	defer ResetCfg()
 
 	mt := mocktracer.Start()
@@ -337,7 +337,7 @@ func TestInferredPubsubPushSpansWithPropagationAsSpanLinksAndConflictingHeaders(
 	t.Setenv("DD_SERVICE", "pubsub-push-server")
 	t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
 	t.Setenv("DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS", "true")
-	ResetCfg()
+	reloadConfigFromEnvForTesting()
 	defer ResetCfg()
 
 	mt := mocktracer.Start()

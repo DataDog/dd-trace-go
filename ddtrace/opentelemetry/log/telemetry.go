@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -39,7 +38,7 @@ func registerTelemetry() {
 
 	// OTEL_EXPORTER_OTLP_TIMEOUT
 	// Always report this (with default) since it's used as fallback for logs timeout
-	genericTimeout := getMillisecondsConfig(envOTLPTimeout, defaultOTLPTimeoutMs)
+	genericTimeout := getMillisecondsConfig(cfg.OTelExporterOTLPTimeout(), defaultOTLPTimeoutMs)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envOTLPTimeout,
 		Value:  genericTimeout.value,
@@ -78,7 +77,7 @@ func registerTelemetry() {
 	// ===========================================
 
 	// OTEL_EXPORTER_OTLP_LOGS_TIMEOUT
-	logsTimeout := getMillisecondsConfig(envOTLPLogsTimeout, defaultOTLPTimeoutMs)
+	logsTimeout := getMillisecondsConfig(cfg.OTelExporterOTLPLogsTimeout(), defaultOTLPTimeoutMs)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envOTLPLogsTimeout,
 		Value:  logsTimeout.value,
@@ -116,8 +115,10 @@ func registerTelemetry() {
 	// BatchLogRecordProcessor Configurations
 	// ===========================================
 
+	maxQueueSizeValue, scheduleDelayValue, exportTimeoutValue, maxExportBatchSizeValue := cfg.OTelBLRPConfig()
+
 	// OTEL_BLRP_MAX_QUEUE_SIZE
-	maxQueueSize := getIntConfig(envBLRPMaxQueueSize, defaultBLRPMaxQueueSize)
+	maxQueueSize := getIntConfig(maxQueueSizeValue, defaultBLRPMaxQueueSize)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envBLRPMaxQueueSize,
 		Value:  maxQueueSize.value,
@@ -125,7 +126,7 @@ func registerTelemetry() {
 	})
 
 	// OTEL_BLRP_SCHEDULE_DELAY
-	scheduleDelay := getMillisecondsConfig(envBLRPScheduleDelay, defaultBLRPScheduleDelayMs)
+	scheduleDelay := getMillisecondsConfig(scheduleDelayValue, defaultBLRPScheduleDelayMs)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envBLRPScheduleDelay,
 		Value:  scheduleDelay.value,
@@ -133,7 +134,7 @@ func registerTelemetry() {
 	})
 
 	// OTEL_BLRP_EXPORT_TIMEOUT
-	exportTimeout := getMillisecondsConfig(envBLRPExportTimeout, defaultBLRPExportTimeoutMs)
+	exportTimeout := getMillisecondsConfig(exportTimeoutValue, defaultBLRPExportTimeoutMs)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envBLRPExportTimeout,
 		Value:  exportTimeout.value,
@@ -141,7 +142,7 @@ func registerTelemetry() {
 	})
 
 	// OTEL_BLRP_MAX_EXPORT_BATCH_SIZE
-	maxExportBatchSize := getIntConfig(envBLRPMaxExportBatchSize, defaultBLRPMaxExportBatchSize)
+	maxExportBatchSize := getIntConfig(maxExportBatchSizeValue, defaultBLRPMaxExportBatchSize)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envBLRPMaxExportBatchSize,
 		Value:  maxExportBatchSize.value,
@@ -173,42 +174,36 @@ type configValue struct {
 	origin telemetry.Origin
 }
 
-// parseMsFromEnv attempts to parse a milliseconds value from an environment variable.
-// Returns a zero configValue if the env var is empty or parsing fails.
-func parseMsFromEnv(envVar string) configValue {
-	if v := env.Get(envVar); v != "" {
-		if ms, err := parseMilliseconds(v); err == nil {
+// parseMsConfig returns an unset value when parsing fails.
+func parseMsConfig(value string) configValue {
+	if value != "" {
+		if ms, err := parseMilliseconds(value); err == nil {
 			return configValue{value: ms, origin: telemetry.OriginEnvVar}
 		}
 	}
 	return configValue{}
 }
 
-// parseIntFromEnv attempts to parse an integer value from an environment variable.
-// Returns a zero configValue if the env var is empty or parsing fails.
-func parseIntFromEnv(envVar string) configValue {
-	if v := env.Get(envVar); v != "" {
-		if val, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+// parseIntConfig returns an unset value when parsing fails.
+func parseIntConfig(value string) configValue {
+	if value != "" {
+		if val, err := strconv.Atoi(strings.TrimSpace(value)); err == nil {
 			return configValue{value: val, origin: telemetry.OriginEnvVar}
 		}
 	}
 	return configValue{}
 }
 
-// getMillisecondsConfig reads a milliseconds value from an environment variable,
-// falling back to the provided default. Uses cmp.Or to select the first valid config.
-func getMillisecondsConfig(envVar string, defaultMs int) configValue {
+func getMillisecondsConfig(value string, defaultMs int) configValue {
 	return cmp.Or(
-		parseMsFromEnv(envVar),
+		parseMsConfig(value),
 		configValue{value: defaultMs, origin: telemetry.OriginDefault},
 	)
 }
 
-// getIntConfig reads an integer value from an environment variable,
-// falling back to the provided default. Uses cmp.Or to select the first valid config.
-func getIntConfig(envVar string, defaultVal int) configValue {
+func getIntConfig(value string, defaultVal int) configValue {
 	return cmp.Or(
-		parseIntFromEnv(envVar),
+		parseIntConfig(value),
 		configValue{value: defaultVal, origin: telemetry.OriginDefault},
 	)
 }

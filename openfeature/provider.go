@@ -91,7 +91,7 @@ type DatadogProvider struct {
 // Returns an error if the default configuration of the Remote Config client is NOT working
 // In this case, please call tracer.Start before creating the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
-	if !internalconfig.Get().ExperimentalFlaggingProviderEnabled() {
+	if !internalconfig.Get().ExperimentalFlaggingProviderEnabledFromEnv() {
 		log.Error("openfeature: experimental flagging provider is not enabled, please set %s=true to enable it", ffeProductEnvVar)
 		return &openfeature.NoopProvider{}, nil
 	}

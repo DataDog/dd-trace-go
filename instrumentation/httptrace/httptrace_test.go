@@ -107,7 +107,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "199-399,400,501")
 
 		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
-		ResetCfg()
+		reloadConfigFromEnvForTesting()
 
 		statuses := []int{0, 200, 400, 500}
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -137,7 +137,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "0")
 
 		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
-		ResetCfg()
+		reloadConfigFromEnvForTesting()
 
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
 		sp, _, _ := StartRequestSpan(r)
@@ -270,7 +270,7 @@ func TestBeforeHandleSecurityTestingHeadersWithAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_ENABLED", "true")
 	appsec.Start()
 	defer appsec.Stop()
-	ResetCfg()
+	reloadConfigFromEnvForTesting()
 
 	r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
 	r.Header.Set("X-Datadog-Endpoint-Scan", "scan-uuid")
@@ -304,6 +304,9 @@ func TestStartRequestSpan(t *testing.T) {
 func TestTraceClientIPFlag(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
+
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
 
 	// use 0.0.0.0 as ip address of all test cases
 	// more comprehensive ip address testing is done in testing
@@ -355,7 +358,7 @@ func TestTraceClientIPFlag(t *testing.T) {
 			t.Setenv(envTraceClientIPEnabled, tc.traceClientIPEnvVal)
 
 			// reset config based on new DD_TRACE_CLIENT_IP_ENABLED value
-			cfg = newConfig()
+			reloadConfigFromEnvForTesting()
 
 			r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
 			r.RemoteAddr = tc.remoteAddr
@@ -368,6 +371,11 @@ func TestTraceClientIPFlag(t *testing.T) {
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
 			} else {
 				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
+				if _, err := strconv.ParseBool(tc.traceClientIPEnvVal); err != nil && tc.traceClientIPEnvVal != "" {
+					logs := tp.Logs()
+					assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_CLIENT_IP_ENABLED")
+					tp.Reset()
+				}
 			}
 			mt.Reset()
 		})
@@ -619,7 +627,7 @@ func TestURLTagWithClientServerAllowlist(t *testing.T) {
 
 		oldCfg := cfg
 		defer func() { cfg = oldCfg }()
-		cfg = newConfig()
+		reloadConfigFromEnvForTesting()
 
 		r := makeRequest("global_key=1&client_key=2&server_key=3")
 		require.Equal(t, "http://example.com?client_key=2", URLFromClientRequest(r, true))
@@ -631,7 +639,7 @@ func TestURLTagWithClientServerAllowlist(t *testing.T) {
 
 		oldCfg := cfg
 		defer func() { cfg = oldCfg }()
-		cfg = newConfig()
+		reloadConfigFromEnvForTesting()
 
 		r := makeRequest("shared=1&other=2")
 		require.Equal(t, "http://example.com?shared=1", URLFromClientRequest(r, true))
@@ -1213,7 +1221,7 @@ func TestBeforeHandleHTTPEndpoint(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", c.trn)
 			t.Setenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", c.always)
-			ResetCfg()
+			reloadConfigFromEnvForTesting()
 
 			r := httptest.NewRequest(http.MethodGet, "https://example.com/api/v1/users/123?foo=bar", nil)
 			w := httptest.NewRecorder()
@@ -1280,7 +1288,7 @@ func TestResourceRenamingActivation(t *testing.T) {
 			}
 			defer appsec.Stop()
 
-			ResetCfg()
+			reloadConfigFromEnvForTesting()
 
 			r, w, cfg := makeReq()
 			rw, rt, after, handled := BeforeHandle(cfg, w, r)
@@ -1447,7 +1455,7 @@ func runBaggageSpanTagTest(t *testing.T, tc baggageSpanTagTest) {
 		os.Setenv("DD_TRACE_BAGGAGE_TAG_KEYS", tc.envValue)
 		defer os.Unsetenv("DD_TRACE_BAGGAGE_TAG_KEYS")
 		if tc.needsResetCfg {
-			ResetCfg()
+			reloadConfigFromEnvForTesting()
 		}
 	}
 

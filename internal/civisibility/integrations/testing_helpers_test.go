@@ -7,10 +7,12 @@ package integrations
 
 import (
 	"sync"
+	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	internaltelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -58,4 +60,14 @@ func resetCIVisibilityStateForTesting() {
 	utils.ResetCIMetrics()
 	utils.ResetCodeOwnersForTesting()
 	bazel.ResetForTesting()
+	internalconfig.CreateNew()
+}
+
+func setConfigEnvs(t *testing.T, envs map[string]string) {
+	t.Helper()
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	for key, value := range envs {
+		t.Setenv(key, value)
+	}
+	internalconfig.CreateNew()
 }

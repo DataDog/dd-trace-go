@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -63,7 +65,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("AgentURL", func(t *testing.T) {
-		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		setConfigEnv(t, "DD_TRACE_AGENT_URL", "https://custom:1234")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		expectedURL := "https://custom:1234/profiling/v1/input"
@@ -71,9 +73,9 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("AgentURL/override-env", func(t *testing.T) {
-		t.Setenv("DD_AGENT_HOST", "testhost")
-		t.Setenv("DD_TRACE_AGENT_PORT", "3333")
-		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		setConfigEnv(t, "DD_AGENT_HOST", "testhost")
+		setConfigEnv(t, "DD_TRACE_AGENT_PORT", "3333")
+		setConfigEnv(t, "DD_TRACE_AGENT_URL", "https://custom:1234")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		expectedURL := "https://custom:1234/profiling/v1/input"
@@ -81,7 +83,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("AgentURL/code-override", func(t *testing.T) {
-		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		setConfigEnv(t, "DD_TRACE_AGENT_URL", "https://custom:1234")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithAgentAddr("test:1234")(cfg)
@@ -163,7 +165,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithService/override", func(t *testing.T) {
-		t.Setenv("DD_SERVICE", "envService")
+		setConfigEnv(t, "DD_SERVICE", "envService")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithService("serviceName")(cfg)
@@ -177,7 +179,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithSite/override", func(t *testing.T) {
-		t.Setenv("DD_SITE", "wrong.site")
+		setConfigEnv(t, "DD_SITE", "wrong.site")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithSite("datadog.eu")(cfg)
@@ -191,7 +193,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithEnv/override", func(t *testing.T) {
-		t.Setenv("DD_ENV", "envEnv")
+		setConfigEnv(t, "DD_ENV", "envEnv")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithEnv("envName")(cfg)
@@ -205,7 +207,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithVersion/override", func(t *testing.T) {
-		t.Setenv("DD_VERSION", "envVersion")
+		setConfigEnv(t, "DD_VERSION", "envVersion")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithVersion("1.2.3")(cfg)
@@ -222,7 +224,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithTags/override", func(t *testing.T) {
-		t.Setenv("DD_TAGS", "env1:tag1,env2:tag2")
+		setConfigEnv(t, "DD_TAGS", "env1:tag1,env2:tag2")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithTags("a:1", "b:2", "c:3")(cfg)
@@ -251,14 +253,14 @@ func TestOptions(t *testing.T) {
 
 func TestEnvVars(t *testing.T) {
 	t.Run("DD_AGENT_HOST", func(t *testing.T) {
-		t.Setenv("DD_AGENT_HOST", "agent_host_1")
+		setConfigEnv(t, "DD_AGENT_HOST", "agent_host_1")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "http://agent_host_1:8126/profiling/v1/input", cfg.agentURL)
 	})
 
 	t.Run("DD_TRACE_AGENT_PORT", func(t *testing.T) {
-		t.Setenv("DD_TRACE_AGENT_PORT", "6218")
+		setConfigEnv(t, "DD_TRACE_AGENT_PORT", "6218")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "http://localhost:6218/profiling/v1/input", cfg.agentURL)
@@ -272,7 +274,7 @@ func TestEnvVars(t *testing.T) {
 		})
 
 		t.Run("override", func(t *testing.T) {
-			t.Setenv("DD_PROFILING_ENABLED", "false")
+			setConfigEnv(t, "DD_PROFILING_ENABLED", "false")
 			cfg, err := defaultConfig()
 			require.NoError(t, err)
 			assert.Equal(t, false, cfg.enabled)
@@ -280,57 +282,57 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("DD_PROFILING_UPLOAD_TIMEOUT", func(t *testing.T) {
-		t.Setenv("DD_PROFILING_UPLOAD_TIMEOUT", "3s")
+		setConfigEnv(t, "DD_PROFILING_UPLOAD_TIMEOUT", "3s")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, 3*time.Second, cfg.uploadTimeout)
 	})
 
 	t.Run("DD_AGENT_HOST+DD_TRACE_AGENT_PORT", func(t *testing.T) {
-		t.Setenv("DD_AGENT_HOST", "agent_host_1")
-		t.Setenv("DD_TRACE_AGENT_PORT", "6218")
+		setConfigEnv(t, "DD_AGENT_HOST", "agent_host_1")
+		setConfigEnv(t, "DD_TRACE_AGENT_PORT", "6218")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "http://agent_host_1:6218/profiling/v1/input", cfg.agentURL)
 	})
 
 	t.Run("DD_API_KEY", func(t *testing.T) {
-		t.Setenv("DD_API_KEY", testAPIKey)
+		setConfigEnv(t, "DD_API_KEY", testAPIKey)
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, testAPIKey, cfg.apiKey)
 	})
 
 	t.Run("DD_SITE", func(t *testing.T) {
-		t.Setenv("DD_SITE", "datadog.eu")
+		setConfigEnv(t, "DD_SITE", "datadog.eu")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
 	})
 
 	t.Run("DD_ENV", func(t *testing.T) {
-		t.Setenv("DD_ENV", "someEnv")
+		setConfigEnv(t, "DD_ENV", "someEnv")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "someEnv", cfg.env)
 	})
 
 	t.Run("DD_SERVICE", func(t *testing.T) {
-		t.Setenv("DD_SERVICE", "someService")
+		setConfigEnv(t, "DD_SERVICE", "someService")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "someService", cfg.service)
 	})
 
 	t.Run("DD_VERSION", func(t *testing.T) {
-		t.Setenv("DD_VERSION", "1.2.3")
+		setConfigEnv(t, "DD_VERSION", "1.2.3")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, cfg.version, "1.2.3")
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
-		t.Setenv("DD_TAGS", "a:1,b:2,c:3")
+		setConfigEnv(t, "DD_TAGS", "a:1,b:2,c:3")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		tags := cfg.tags.Slice()
@@ -340,7 +342,7 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("DD_TAGS_SPACES", func(t *testing.T) {
-		t.Setenv("DD_TAGS", "a:1 b:2 c")
+		setConfigEnv(t, "DD_TAGS", "a:1 b:2 c")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		tags := cfg.tags.Slice()
@@ -350,7 +352,7 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("DD_PROFILING_DELTA", func(t *testing.T) {
-		t.Setenv("DD_PROFILING_DELTA", "false")
+		setConfigEnv(t, "DD_PROFILING_DELTA", "false")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, cfg.deltaProfiles, false)
@@ -384,6 +386,19 @@ func TestDefaultConfig(t *testing.T) {
 	})
 }
 
+func TestDefaultConfigPreservesSingleton(t *testing.T) {
+	processConfig := internalconfig.CreateNew()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	processConfig.SetEnv("programmatic", telemetry.OriginCode)
+
+	_, err := defaultConfig()
+	require.NoError(t, err)
+	require.Same(t, processConfig, internalconfig.Get())
+	require.Equal(t, "programmatic", internalconfig.Get().Env())
+}
+
 func TestAddProfileType(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
@@ -413,7 +428,7 @@ func TestWith_outputDir(t *testing.T) {
 	dir := t.TempDir()
 
 	// Use env to enable this like a user would.
-	t.Setenv("DD_PROFILING_OUTPUT_DIR", dir)
+	setConfigEnv(t, "DD_PROFILING_OUTPUT_DIR", dir)
 
 	startTestProfiler(t, 1,
 		WithProfileTypes(HeapProfile),

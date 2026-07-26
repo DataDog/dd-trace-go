@@ -117,7 +117,7 @@ func TestSettingsApiRequestFailToGet(t *testing.T) {
 
 func TestSettingsApiRequestFromManifestCache(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	var hits int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -156,7 +156,7 @@ func TestSettingsApiRequestFromManifestCache(t *testing.T) {
 	path := os.Getenv("PATH")
 	defer restoreEnv(origEnv)
 	setCiVisibilityEnv(path, server.URL)
-	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+	setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath)
 
 	recordLogger := new(log.RecordLogger)
 	oldLevel := log.GetLevel()
@@ -176,7 +176,7 @@ func TestSettingsApiRequestFromManifestCache(t *testing.T) {
 
 func TestSettingsApiRequestFromManifestCacheMissingFile(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	var hits int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -198,7 +198,7 @@ func TestSettingsApiRequestFromManifestCacheMissingFile(t *testing.T) {
 	path := os.Getenv("PATH")
 	defer restoreEnv(origEnv)
 	setCiVisibilityEnv(path, server.URL)
-	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+	setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath)
 
 	cInterface := NewClient()
 	settings, err := cInterface.GetSettings()
@@ -209,7 +209,7 @@ func TestSettingsApiRequestFromManifestCacheMissingFile(t *testing.T) {
 
 func TestSettingsApiRequestFromManifestCacheMalformedFile(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	var hits int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -234,7 +234,7 @@ func TestSettingsApiRequestFromManifestCacheMalformedFile(t *testing.T) {
 	path := os.Getenv("PATH")
 	defer restoreEnv(origEnv)
 	setCiVisibilityEnv(path, server.URL)
-	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+	setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath)
 
 	recordLogger := new(log.RecordLogger)
 	oldLevel := log.GetLevel()

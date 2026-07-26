@@ -64,27 +64,33 @@ type Mode struct {
 var (
 	// modeMu protects the lazy resolution state so tests can safely reset it.
 	modeMu sync.Mutex
-	// modeOnce resolves the process-wide Bazel mode exactly once per environment configuration.
+	// modeOnce resolves the process-wide Bazel mode exactly once.
 	modeOnce sync.Once
 	// currentMode caches the resolved Bazel mode for the current process.
 	currentMode Mode
-	// configuredManifestFile and configuredPayloadsInFiles are populated by the
-	// process-wide configuration owner before the mode is resolved.
-	configuredManifestFile    string
-	configuredPayloadsInFiles bool
+	// registeredConfigProvider is the singleton-owned production provider.
+	registeredConfigProvider = func() (string, bool) { return "", false }
+	// currentConfigProvider may be replaced by tests before mode resolution.
+	currentConfigProvider = registeredConfigProvider
 	// payloadFileCount keeps payload filenames unique within a process and orders telemetry files deterministically.
 	payloadFileCount uint64
 )
 
-// Configure sets the process-wide Bazel compatibility configuration.
+// SetConfigProvider registers the singleton-owned process configuration.
+func SetConfigProvider(provider func() (string, bool)) {
+	modeMu.Lock()
+	defer modeMu.Unlock()
+	registeredConfigProvider = provider
+	currentConfigProvider = provider
+}
+
+// Configure replaces the unresolved configuration for a test.
 func Configure(manifestFile string, payloadsInFiles bool) {
 	modeMu.Lock()
 	defer modeMu.Unlock()
-
-	configuredManifestFile = strings.TrimSpace(manifestFile)
-	configuredPayloadsInFiles = payloadsInFiles
-	modeOnce = sync.Once{}
-	currentMode = Mode{}
+	currentConfigProvider = func() (string, bool) {
+		return manifestFile, payloadsInFiles
+	}
 }
 
 // CurrentMode returns the resolved process-wide Bazel mode.
@@ -191,8 +197,8 @@ func payloadFileName(kind PayloadKind, seq uint64) string {
 func resolveMode() Mode {
 	mode := Mode{}
 
-	manifestRloc := configuredManifestFile
-	payloadFilesEnabled := configuredPayloadsInFiles
+	manifestRloc, payloadFilesEnabled := currentConfigProvider()
+	manifestRloc = strings.TrimSpace(manifestRloc)
 	undeclaredOutputsDir := strings.TrimSpace(env.Get(UndeclaredOutputsDirEnv))
 	logger.Debug("civisibility: resolving test optimization mode [manifest_env:%q payload_files_enabled:%t undeclared_outputs_dir:%q]",
 		manifestRloc, payloadFilesEnabled, undeclaredOutputsDir)
@@ -394,7 +400,6 @@ func ResetForTesting() {
 	defer modeMu.Unlock()
 	modeOnce = sync.Once{}
 	currentMode = Mode{}
-	configuredManifestFile = ""
-	configuredPayloadsInFiles = false
+	currentConfigProvider = registeredConfigProvider
 	atomic.StoreUint64(&payloadFileCount, 0)
 }

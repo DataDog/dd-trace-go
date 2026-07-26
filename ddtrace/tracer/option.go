@@ -47,13 +47,6 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
-const (
-	envLLMObsEnabled          = "DD_LLMOBS_ENABLED"
-	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
-	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
-	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
-)
-
 var contribIntegrations = map[string]struct {
 	name     string // user readable name for startup logs
 	imported bool   // true if the user has imported the integration
@@ -433,7 +426,7 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 	if cfg.TraceProtocol() == traceProtocolV1 {
 		traceURL = agentURL + tracesAPIPathV1
 	}
-	return traceURL, datadogHeaders()
+	return traceURL, datadogHeadersFromConfig(cfg)
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {

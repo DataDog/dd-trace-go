@@ -29,7 +29,7 @@ func TestBuildResource(t *testing.T) {
 	})
 
 	t.Run("DD_SERVICE maps to service.name", func(t *testing.T) {
-		t.Setenv("DD_SERVICE", "my-service")
+		setConfigEnv(t, "DD_SERVICE", "my-service")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestBuildResource(t *testing.T) {
 	})
 
 	t.Run("DD_ENV maps to deployment.environment", func(t *testing.T) {
-		t.Setenv("DD_ENV", "production")
+		setConfigEnv(t, "DD_ENV", "production")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -47,7 +47,7 @@ func TestBuildResource(t *testing.T) {
 	})
 
 	t.Run("DD_VERSION maps to service.version", func(t *testing.T) {
-		t.Setenv("DD_VERSION", "1.2.3")
+		setConfigEnv(t, "DD_VERSION", "1.2.3")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -56,7 +56,7 @@ func TestBuildResource(t *testing.T) {
 	})
 
 	t.Run("DD_TAGS converts to resource attributes", func(t *testing.T) {
-		t.Setenv("DD_TAGS", "team:backend,region:us-east-1")
+		setConfigEnv(t, "DD_TAGS", "team:backend,region:us-east-1")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -66,7 +66,7 @@ func TestBuildResource(t *testing.T) {
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES parses correctly", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "otel.key=otel.value,another=test")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "otel.key=otel.value,another=test")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -78,8 +78,8 @@ func TestBuildResource(t *testing.T) {
 
 func TestPrecedence(t *testing.T) {
 	t.Run("DD_SERVICE wins over OTEL service.name", func(t *testing.T) {
-		t.Setenv("DD_SERVICE", "dd-service")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service")
+		setConfigEnv(t, "DD_SERVICE", "dd-service")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -87,9 +87,19 @@ func TestPrecedence(t *testing.T) {
 		assertResourceAttribute(t, res, semconv.ServiceNameKey, "dd-service")
 	})
 
+	t.Run("OTEL_SERVICE_NAME does not override OTEL resource service.name", func(t *testing.T) {
+		setConfigEnv(t, "OTEL_SERVICE_NAME", "otel-service-name")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "resource-service")
+	})
+
 	t.Run("DD_ENV wins over OTEL deployment.environment.name", func(t *testing.T) {
-		t.Setenv("DD_ENV", "dd-env")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=otel-env")
+		setConfigEnv(t, "DD_ENV", "dd-env")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=otel-env")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -98,8 +108,8 @@ func TestPrecedence(t *testing.T) {
 	})
 
 	t.Run("DD_VERSION wins over OTEL service.version", func(t *testing.T) {
-		t.Setenv("DD_VERSION", "2.0.0")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.version=1.0.0")
+		setConfigEnv(t, "DD_VERSION", "2.0.0")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "service.version=1.0.0")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -108,8 +118,8 @@ func TestPrecedence(t *testing.T) {
 	})
 
 	t.Run("DD_TAGS wins over OTEL custom attributes", func(t *testing.T) {
-		t.Setenv("DD_TAGS", "custom.key:dd-value")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "custom.key=otel-value")
+		setConfigEnv(t, "DD_TAGS", "custom.key:dd-value")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "custom.key=otel-value")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -118,7 +128,7 @@ func TestPrecedence(t *testing.T) {
 	})
 
 	t.Run("OTEL attributes used when DD not set", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service,deployment.environment.name=otel-env,service.version=1.0.0")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service,deployment.environment.name=otel-env,service.version=1.0.0")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -129,8 +139,8 @@ func TestPrecedence(t *testing.T) {
 	})
 
 	t.Run("mixed DD and OTEL attributes coexist", func(t *testing.T) {
-		t.Setenv("DD_SERVICE", "dd-service")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "otel.only=value,service.name=ignored")
+		setConfigEnv(t, "DD_SERVICE", "dd-service")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "otel.only=value,service.name=ignored")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -155,7 +165,7 @@ func TestHostname(t *testing.T) {
 	})
 
 	t.Run("DD_HOSTNAME alone does not set hostname", func(t *testing.T) {
-		t.Setenv("DD_HOSTNAME", "my-host")
+		setConfigEnv(t, "DD_HOSTNAME", "my-host")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -168,7 +178,7 @@ func TestHostname(t *testing.T) {
 	})
 
 	t.Run("DD_TRACE_REPORT_HOSTNAME=true uses detected hostname", func(t *testing.T) {
-		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+		setConfigEnv(t, "DD_TRACE_REPORT_HOSTNAME", "true")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -181,7 +191,7 @@ func TestHostname(t *testing.T) {
 	})
 
 	t.Run("DD_TRACE_REPORT_HOSTNAME=false does not add hostname", func(t *testing.T) {
-		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "false")
+		setConfigEnv(t, "DD_TRACE_REPORT_HOSTNAME", "false")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -192,9 +202,31 @@ func TestHostname(t *testing.T) {
 		}
 	})
 
+	t.Run("DD_TRACE_REPORT_HOSTNAME must be exactly true", func(t *testing.T) {
+		setConfigEnv(t, "DD_TRACE_REPORT_HOSTNAME", "TRUE")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		for _, attr := range res.Attributes() {
+			assert.NotEqual(t, semconv.HostNameKey, attr.Key, "host.name should not be present unless DD_TRACE_REPORT_HOSTNAME is exactly true")
+		}
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME alone does not set hostname", func(t *testing.T) {
+		setConfigEnv(t, "DD_TRACE_SOURCE_HOSTNAME", "source-host")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		for _, attr := range res.Attributes() {
+			assert.NotEqual(t, semconv.HostNameKey, attr.Key, "host.name should not be present for DD_TRACE_SOURCE_HOSTNAME alone")
+		}
+	})
+
 	t.Run("DD_HOSTNAME wins over DD_TRACE_REPORT_HOSTNAME", func(t *testing.T) {
-		t.Setenv("DD_HOSTNAME", "explicit-host")
-		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+		setConfigEnv(t, "DD_HOSTNAME", "explicit-host")
+		setConfigEnv(t, "DD_TRACE_REPORT_HOSTNAME", "true")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -203,9 +235,9 @@ func TestHostname(t *testing.T) {
 	})
 
 	t.Run("OTEL host.name has highest priority", func(t *testing.T) {
-		t.Setenv("DD_HOSTNAME", "dd-host")
-		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "host.name=otel-host")
+		setConfigEnv(t, "DD_HOSTNAME", "dd-host")
+		setConfigEnv(t, "DD_TRACE_REPORT_HOSTNAME", "true")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "host.name=otel-host")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -215,7 +247,7 @@ func TestHostname(t *testing.T) {
 	})
 
 	t.Run("OTEL host.name used when DD not set", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "host.name=otel-host")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "host.name=otel-host")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -224,7 +256,7 @@ func TestHostname(t *testing.T) {
 	})
 
 	t.Run("DD_HOSTNAME without DD_TRACE_REPORT_HOSTNAME does not add hostname", func(t *testing.T) {
-		t.Setenv("DD_HOSTNAME", "should-not-appear")
+		setConfigEnv(t, "DD_HOSTNAME", "should-not-appear")
 		// DD_TRACE_REPORT_HOSTNAME not set - hostname should not be added
 
 		res, err := buildResource(context.Background())
@@ -240,7 +272,7 @@ func TestHostname(t *testing.T) {
 
 func TestInvalidInputs(t *testing.T) {
 	t.Run("empty DD_TAGS is handled gracefully", func(t *testing.T) {
-		t.Setenv("DD_TAGS", "")
+		setConfigEnv(t, "DD_TAGS", "")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -248,7 +280,7 @@ func TestInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("malformed DD_TAGS handled gracefully", func(t *testing.T) {
-		t.Setenv("DD_TAGS", "invalid-no-value,valid:value")
+		setConfigEnv(t, "DD_TAGS", "invalid-no-value,valid:value")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -258,7 +290,7 @@ func TestInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("empty OTEL_RESOURCE_ATTRIBUTES is handled gracefully", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -266,7 +298,7 @@ func TestInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("malformed OTEL_RESOURCE_ATTRIBUTES handled gracefully", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "invalid-no-equals,valid=value")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "invalid-no-equals,valid=value")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -276,7 +308,7 @@ func TestInvalidInputs(t *testing.T) {
 	})
 
 	t.Run("special characters in values preserved", func(t *testing.T) {
-		t.Setenv("DD_TAGS", "special:with-dash_underscore.dot")
+		setConfigEnv(t, "DD_TAGS", "special:with-dash_underscore.dot")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -287,12 +319,12 @@ func TestInvalidInputs(t *testing.T) {
 
 func TestComplexScenarios(t *testing.T) {
 	t.Run("all DD settings together", func(t *testing.T) {
-		t.Setenv("DD_SERVICE", "my-service")
-		t.Setenv("DD_ENV", "staging")
-		t.Setenv("DD_VERSION", "3.0.0")
-		t.Setenv("DD_TAGS", "team:platform,tier:critical")
-		t.Setenv("DD_HOSTNAME", "server-01")
-		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true") // Required to enable hostname reporting
+		setConfigEnv(t, "DD_SERVICE", "my-service")
+		setConfigEnv(t, "DD_ENV", "staging")
+		setConfigEnv(t, "DD_VERSION", "3.0.0")
+		setConfigEnv(t, "DD_TAGS", "team:platform,tier:critical")
+		setConfigEnv(t, "DD_HOSTNAME", "server-01")
+		setConfigEnv(t, "DD_TRACE_REPORT_HOSTNAME", "true") // Required to enable hostname reporting
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -306,13 +338,13 @@ func TestComplexScenarios(t *testing.T) {
 	})
 
 	t.Run("DD overrides OTEL for service/env/version except hostname", func(t *testing.T) {
-		t.Setenv("DD_SERVICE", "dd-service")
-		t.Setenv("DD_ENV", "dd-env")
-		t.Setenv("DD_VERSION", "dd-version")
-		t.Setenv("DD_TAGS", "custom:dd-tag")
-		t.Setenv("DD_HOSTNAME", "dd-host")
-		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service,deployment.environment.name=otel-env,service.version=otel-version,custom=otel-tag,host.name=otel-host")
+		setConfigEnv(t, "DD_SERVICE", "dd-service")
+		setConfigEnv(t, "DD_ENV", "dd-env")
+		setConfigEnv(t, "DD_VERSION", "dd-version")
+		setConfigEnv(t, "DD_TAGS", "custom:dd-tag")
+		setConfigEnv(t, "DD_HOSTNAME", "dd-host")
+		setConfigEnv(t, "DD_TRACE_REPORT_HOSTNAME", "true")
+		setConfigEnv(t, "OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service,deployment.environment.name=otel-env,service.version=otel-version,custom=otel-tag,host.name=otel-host")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -328,7 +360,7 @@ func TestComplexScenarios(t *testing.T) {
 
 	t.Run("multiple DD_TAGS with same key uses last value", func(t *testing.T) {
 		// Note: This tests internal.ParseTagString behavior
-		t.Setenv("DD_TAGS", "key:first,key:second")
+		setConfigEnv(t, "DD_TAGS", "key:first,key:second")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)

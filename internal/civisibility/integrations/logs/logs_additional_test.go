@@ -20,7 +20,7 @@ import (
 // effect.
 func TestIsEnabled_CachesValue(t *testing.T) {
 	resetGlobalState()
-	os.Unsetenv("DD_CIVISIBILITY_LOGS_ENABLED")
+	unsetConfigEnv(t, "DD_CIVISIBILITY_LOGS_ENABLED")
 
 	// First call should evaluate the env var (unset => false)
 	assert.False(t, IsEnabled())
@@ -51,8 +51,7 @@ func TestLogsPayloadPushAfterRead(t *testing.T) {
 // structure into the payload buffer.
 func TestWriteLog_Serialization(t *testing.T) {
 	resetGlobalState()
-	os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
-	t.Cleanup(func() { os.Unsetenv("DD_CIVISIBILITY_LOGS_ENABLED") })
+	setConfigEnv(t, "DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
 	Initialize("serialization-service")
 	assert.NotNil(t, logsWriterInstance)

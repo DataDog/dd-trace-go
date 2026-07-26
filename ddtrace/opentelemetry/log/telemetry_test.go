@@ -23,14 +23,14 @@ func TestRegisterTelemetry(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
-		t.Setenv(envOTLPTimeout, "5000")
-		t.Setenv(envOTLPHeaders, "api-key=SENTINEL_OTLP_BASE")
-		t.Setenv(envOTLPProtocol, "http/protobuf")
-		t.Setenv(envOTLPEndpoint, "http://example.com:4318")
-		t.Setenv(envOTLPLogsTimeout, "8000")
-		t.Setenv(envOTLPLogsHeaders, "log-key=SENTINEL_OTLP_LOGS")
-		t.Setenv(envOTLPLogsProtocol, "grpc")
-		t.Setenv(envOTLPLogsEndpoint, "http://logs.example.com:4317")
+		setConfigEnv(t, envOTLPTimeout, "5000")
+		setConfigEnv(t, envOTLPHeaders, "api-key=SENTINEL_OTLP_BASE")
+		setConfigEnv(t, envOTLPProtocol, "http/protobuf")
+		setConfigEnv(t, envOTLPEndpoint, "http://example.com:4318")
+		setConfigEnv(t, envOTLPLogsTimeout, "8000")
+		setConfigEnv(t, envOTLPLogsHeaders, "log-key=SENTINEL_OTLP_LOGS")
+		setConfigEnv(t, envOTLPLogsProtocol, "grpc")
+		setConfigEnv(t, envOTLPLogsEndpoint, "http://logs.example.com:4317")
 
 		registerTelemetry()
 
@@ -62,10 +62,10 @@ func TestRegisterTelemetry(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
-		t.Setenv(envBLRPMaxQueueSize, "4096")
-		t.Setenv(envBLRPScheduleDelay, "2000")
-		t.Setenv(envBLRPExportTimeout, "60000")
-		t.Setenv(envBLRPMaxExportBatchSize, "1024")
+		setConfigEnv(t, envBLRPMaxQueueSize, "4096")
+		setConfigEnv(t, envBLRPScheduleDelay, "2000")
+		setConfigEnv(t, envBLRPExportTimeout, "60000")
+		setConfigEnv(t, envBLRPMaxExportBatchSize, "1024")
 
 		registerTelemetry()
 

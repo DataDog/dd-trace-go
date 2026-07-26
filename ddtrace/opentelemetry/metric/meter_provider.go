@@ -158,10 +158,11 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 }
 
 func metricsEnabled(c *internalconfig.Config) bool {
-	if c == nil {
-		c = internalconfig.Get()
+	if c != nil {
+		return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
 	}
-	return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
+	c = internalconfig.Get()
+	return c.OTelMetricsEnabledFromEnv() && c.OTelMetricsExporterEnabledFromEnv()
 }
 
 // isNoop returns true if the given MeterProvider is a no-op provider that doesn't export metrics.

@@ -6,15 +6,16 @@
 package metric
 
 import (
-	"os"
 	"testing"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
-func TestMain(m *testing.M) {
-	internalconfig.SetUseFreshConfig(true)
-	code := m.Run()
-	internalconfig.SetUseFreshConfig(false)
-	os.Exit(code)
+func setConfigEnv(t *testing.T, key, value string) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	t.Setenv(key, value)
+	internalconfig.CreateNew()
 }

@@ -37,10 +37,16 @@ func (c *Config) ProfilingEnabled() bool {
 	return c.profilingEnabled
 }
 
-func (c *Config) ProfilingAutoEnabled() bool {
+func (c *Config) ProfilingAutoEnabledFromEnv() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.profilingAutoEnabled
+	return c.profilingAutoEnabledEnv
+}
+
+func (c *Config) ProfilingLogStartup() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.profilingLogStartup
 }
 
 func (c *Config) ProfilingUploadTimeout() string {

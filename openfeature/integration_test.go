@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -1386,23 +1385,11 @@ func TestEndToEnd_ExposurePayloadStructure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Set the agent URL to our test server BEFORE creating provider
-	// Use os.Setenv since t.Setenv doesn't work with internal env package
-	oldAgentURL := os.Getenv("DD_TRACE_AGENT_URL")
-	oldService := os.Getenv("DD_SERVICE")
-	oldVersion := os.Getenv("DD_VERSION")
-	oldEnv := os.Getenv("DD_ENV")
-
-	os.Setenv("DD_TRACE_AGENT_URL", server.URL)
-	os.Setenv("DD_SERVICE", "test-service")
-	os.Setenv("DD_VERSION", "1.2.3")
-	os.Setenv("DD_ENV", "testing")
-
-	t.Cleanup(func() {
-		os.Setenv("DD_TRACE_AGENT_URL", oldAgentURL)
-		os.Setenv("DD_SERVICE", oldService)
-		os.Setenv("DD_VERSION", oldVersion)
-		os.Setenv("DD_ENV", oldEnv)
+	setConfigEnv(t, map[string]string{
+		"DD_TRACE_AGENT_URL": server.URL,
+		"DD_SERVICE":         "test-service",
+		"DD_VERSION":         "1.2.3",
+		"DD_ENV":             "testing",
 	})
 
 	// Create provider with short flush interval (must be after setting env vars)
@@ -1537,8 +1524,10 @@ func TestEndToEnd_ExposureFlushInterval(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
-	t.Setenv("DD_SERVICE", "flush-test")
+	setConfigEnv(t, map[string]string{
+		"DD_TRACE_AGENT_URL": server.URL,
+		"DD_SERVICE":         "flush-test",
+	})
 
 	// Create provider with very short flush interval
 	flushInterval := 50 * time.Millisecond
@@ -1604,8 +1593,10 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
-	t.Setenv("DD_SERVICE", "dolog-test")
+	setConfigEnv(t, map[string]string{
+		"DD_TRACE_AGENT_URL": server.URL,
+		"DD_SERVICE":         "dolog-test",
+	})
 
 	provider := newDatadogProvider(ProviderConfig{
 		ExposureFlushInterval: 50 * time.Millisecond,
@@ -1704,8 +1695,10 @@ func TestEndToEnd_ExposureContextAttributes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
-	t.Setenv("DD_SERVICE", "attr-test")
+	setConfigEnv(t, map[string]string{
+		"DD_TRACE_AGENT_URL": server.URL,
+		"DD_SERVICE":         "attr-test",
+	})
 
 	provider := newDatadogProvider(ProviderConfig{
 		ExposureFlushInterval: 50 * time.Millisecond,
@@ -1834,10 +1827,12 @@ func TestEndToEnd_ExposureAgentSide(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
-	t.Setenv("DD_SERVICE", "error-test")
-	t.Setenv("DD_VERSION", "0.1.0")
-	t.Setenv("DD_ENV", "test")
+	setConfigEnv(t, map[string]string{
+		"DD_TRACE_AGENT_URL": server.URL,
+		"DD_SERVICE":         "error-test",
+		"DD_VERSION":         "0.1.0",
+		"DD_ENV":             "test",
+	})
 
 	provider := newDatadogProvider(ProviderConfig{
 		ExposureFlushInterval: 50 * time.Millisecond,

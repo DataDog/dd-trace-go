@@ -8,8 +8,15 @@ package httptrace
 import (
 	"testing"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+
 	"github.com/stretchr/testify/require"
 )
+
+func reloadConfigFromEnvForTesting() {
+	internalconfig.CreateNew()
+	ResetCfg()
+}
 
 func TestConfig(t *testing.T) {
 	defaultCfg := config{
@@ -54,6 +61,9 @@ func TestConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
+			}
+			if len(tc.env) > 0 {
+				internalconfig.CreateNew()
 			}
 			c := newConfig()
 			require.Equal(t, tc.cfg.queryStringRegexp, c.queryStringRegexp)

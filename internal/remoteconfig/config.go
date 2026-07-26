@@ -45,9 +45,9 @@ type ClientConfig struct {
 func DefaultClientConfig() ClientConfig {
 	cfg := internalconfig.Get()
 	return ClientConfig{
-		Env:           cfg.Env(),
+		Env:           cfg.RawEnv(),
 		HTTP:          &http.Client{Timeout: 10 * time.Second},
-		PollInterval:  pollInterval(cfg.RemoteConfigPollInterval()),
+		PollInterval:  pollInterval(cfg.RemoteConfigPollIntervalSeconds()),
 		RuntimeID:     globalconfig.RuntimeID(),
 		ServiceName:   globalconfig.ServiceName(),
 		TracerVersion: version.Tag,
@@ -55,17 +55,17 @@ func DefaultClientConfig() ClientConfig {
 	}
 }
 
-func pollInterval(interval time.Duration) time.Duration {
+func pollInterval(interval float64) time.Duration {
 	if interval < 0 {
-		log.Debug("Remote config: cannot use a negative poll interval: %s = %f. Defaulting to 5s.", envPollIntervalSec, interval.Seconds())
-		interval = 5 * time.Second
+		log.Debug("Remote config: cannot use a negative poll interval: %s = %f. Defaulting to 5s.", envPollIntervalSec, interval)
+		interval = 5.0
 	} else if interval == 0 {
 		log.Debug("Remote config: poll interval set to 0. Polling will be continuous.")
 		return time.Nanosecond
 	}
-	return interval
+	return time.Duration(interval * float64(time.Second))
 }
 
 func pollIntervalFromEnv() time.Duration {
-	return pollInterval(internalconfig.Get().RemoteConfigPollInterval())
+	return pollInterval(internalconfig.Get().RemoteConfigPollIntervalSeconds())
 }

@@ -121,10 +121,10 @@ func StopApp() {
 	}
 }
 
-// Disabled returns whether instrumentation telemetry is disabled
-// according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+// Disabled reports whether instrumentation telemetry is disabled by process
+// configuration or by a permanent runtime failure.
 func Disabled() bool {
-	return !instrumentationTelemetryEnabled.Load()
+	return instrumentationTelemetryDisabled()
 }
 
 // Count creates a new metric handle for the given parameters that can be used to submit values.

@@ -55,11 +55,11 @@ func TestEnabled(t *testing.T) {
 }
 
 func TestFromEnv(t *testing.T) {
-	internalconfig.SetUseFreshConfig(true)
-	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
+	t.Cleanup(func() { internalconfig.CreateNew() })
 
 	t.Run("missing", func(t *testing.T) {
 		unsetCIVisibilityEnabledForTest(t)
+		internalconfig.CreateNew()
 
 		gotMode, gotOK := FromEnv()
 		assert.Equal(t, EnabledModeDisabled, gotMode)
@@ -68,6 +68,7 @@ func TestFromEnv(t *testing.T) {
 
 	t.Run("parent", func(t *testing.T) {
 		t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "parent")
+		internalconfig.CreateNew()
 
 		gotMode, gotOK := FromEnv()
 		assert.Equal(t, EnabledModeParent, gotMode)
@@ -76,6 +77,7 @@ func TestFromEnv(t *testing.T) {
 
 	t.Run("invalid", func(t *testing.T) {
 		t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "enabled")
+		internalconfig.CreateNew()
 
 		gotMode, gotOK := FromEnv()
 		assert.Equal(t, EnabledModeDisabled, gotMode)

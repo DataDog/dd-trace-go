@@ -19,19 +19,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
 
-const (
-	// DD environment variable names
-	envDDService             = "DD_SERVICE"
-	envDDEnv                 = "DD_ENV"
-	envDDVersion             = "DD_VERSION"
-	envDDTags                = "DD_TAGS"
-	envDDHostname            = "DD_HOSTNAME"
-	envDDTraceReportHostname = "DD_TRACE_REPORT_HOSTNAME"
-
-	// OTel environment variable names
-	envOtelResourceAttributes = "OTEL_RESOURCE_ATTRIBUTES"
-)
-
 // buildResource creates an OpenTelemetry resource for logs with Datadog-specific attributes.
 //
 // Precedence rule (critical): Datadog settings win over OTEL_RESOURCE_ATTRIBUTES
@@ -69,23 +56,24 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	// Start with OTEL attributes as base
 	attrs := make(map[string]string)
 	maps.Copy(attrs, otelAttrs)
-	// Overlay DD_TAGS (all key-value pairs)
-	maps.Copy(attrs, ddTags)
 
 	// Overlay DD_SERVICE → service.name
-	if ddService := cfg.ServiceName(); ddService != "" {
+	if ddService := cfg.RawServiceName(); ddService != "" {
 		attrs["service.name"] = ddService
 	}
 
 	// Overlay DD_ENV → deployment.environment.name
-	if ddEnv := cfg.Env(); ddEnv != "" {
+	if ddEnv := cfg.RawEnv(); ddEnv != "" {
 		attrs["deployment.environment.name"] = ddEnv
 	}
 
 	// Overlay DD_VERSION → service.version
-	if ddVersion := cfg.Version(); ddVersion != "" {
+	if ddVersion := cfg.RawVersion(); ddVersion != "" {
 		attrs["service.version"] = ddVersion
 	}
+
+	// Overlay DD_TAGS (all key-value pairs)
+	maps.Copy(attrs, ddTags)
 
 	// Step 4: Handle hostname with special rules
 	// OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - never override it
@@ -139,7 +127,7 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 // This ensures hostname is only sent when explicitly enabled (privacy by default).
 func resolveHostname() (string, bool) {
 	cfg := internalconfig.Get()
-	if !cfg.ReportHostname() {
+	if !cfg.OTelResourceHostnameEnabled() {
 		// Hostname reporting not enabled - do not add hostname
 		return "", false
 	}

@@ -7,14 +7,62 @@ package metric
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
+
+func TestNewConfigUsesCapturedMetricTiming(t *testing.T) {
+	setConfigEnv(t, envOtelMetricExportInterval, "1234")
+	setConfigEnv(t, envOtelMetricExportTimeout, "567")
+	internalconfig.CreateNew()
+
+	require.NoError(t, os.Unsetenv(envOtelMetricExportInterval))
+	require.NoError(t, os.Unsetenv(envOtelMetricExportTimeout))
+
+	cfg := newConfig()
+	assert.Equal(t, 1234*time.Millisecond, cfg.exportInterval)
+	assert.Equal(t, 567*time.Millisecond, cfg.exportTimeout)
+}
+
+func TestHTTPExporterUsesOTelSDKEnvParsing(t *testing.T) {
+	requests := make(chan *http.Request, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requests <- r.Clone(r.Context()):
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	setConfigEnv(t, envOTLPMetricsEndpoint, server.URL)
+	setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_HEADERS", "x-test-header=hello%20world")
+
+	ctx := t.Context()
+	exporter, err := newDatadogOTLPHTTPExporter(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = exporter.Shutdown(ctx) })
+
+	require.NoError(t, exporter.Export(ctx, &metricdata.ResourceMetrics{}))
+	select {
+	case req := <-requests:
+		assert.Equal(t, "/", req.URL.Path)
+		assert.Equal(t, "hello world", req.Header.Get("x-test-header"))
+	case <-time.After(time.Second):
+		t.Fatal("OTLP exporter did not use the OTel SDK environment configuration")
+	}
+}
 
 // TestResolveOTLPEndpoint_Default verifies that the default HTTP endpoint
 // is localhost:4318 with /v1/metrics path and insecure connection.
@@ -58,11 +106,17 @@ func TestResolveOTLPEndpoint_DDTraceAgentURL(t *testing.T) {
 			expectedEndpoint: "agent.example.com:4318",
 			expectedInsecure: true,
 		},
+		{
+			name:             "non-HTTP scheme",
+			agentURL:         "grpc://agent.example.com:8126",
+			expectedEndpoint: "agent.example.com:4318",
+			expectedInsecure: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(envDDTraceAgentURL, tt.agentURL)
+			setConfigEnv(t, envDDTraceAgentURL, tt.agentURL)
 
 			endpoint, path, insecure := resolveOTLPEndpointHTTP()
 			assert.Equal(t, tt.expectedEndpoint, endpoint)
@@ -76,28 +130,36 @@ func TestResolveOTLPEndpoint_DDTraceAgentURL(t *testing.T) {
 // DD_TRACE_AGENT_URL > DD_AGENT_HOST > default (localhost:4318)
 func TestResolveOTLPEndpoint_Priority(t *testing.T) {
 	t.Run("DD_TRACE_AGENT_URL takes priority", func(t *testing.T) {
-		t.Setenv(envDDTraceAgentURL, "http://priority-agent:8126")
-		t.Setenv(envDDAgentHost, "fallback-agent")
+		setConfigEnv(t, envDDTraceAgentURL, "http://priority-agent:8126")
+		setConfigEnv(t, envDDAgentHost, "fallback-agent")
 
 		endpoint, _, _ := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "priority-agent:4318", endpoint)
 	})
 
 	t.Run("DD_AGENT_HOST as fallback", func(t *testing.T) {
-		t.Setenv(envDDAgentHost, "fallback-agent")
+		setConfigEnv(t, envDDAgentHost, "fallback-agent")
 
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "fallback-agent:4318", endpoint)
 		assert.Equal(t, "/v1/metrics", path)
 		assert.True(t, insecure)
 	})
+
+	t.Run("unix socket falls back to DD_AGENT_HOST", func(t *testing.T) {
+		setConfigEnv(t, envDDTraceAgentURL, "unix:///var/run/datadog/apm.socket")
+		setConfigEnv(t, envDDAgentHost, "fallback-agent")
+
+		endpoint, _, _ := resolveOTLPEndpointHTTP()
+		assert.Equal(t, "fallback-agent:4318", endpoint)
+	})
 }
 
 // TestResolveOTLPEndpoint_InvalidURL verifies that when DD_TRACE_AGENT_URL is invalid,
 // the endpoint resolution falls back to DD_AGENT_HOST.
 func TestResolveOTLPEndpoint_InvalidURL(t *testing.T) {
-	t.Setenv(envDDTraceAgentURL, "://invalid-url")
-	t.Setenv(envDDAgentHost, "fallback-agent")
+	setConfigEnv(t, envDDTraceAgentURL, "://invalid-url")
+	setConfigEnv(t, envDDAgentHost, "fallback-agent")
 
 	// Should fall back to DD_AGENT_HOST when URL parsing fails
 	endpoint, _, _ := resolveOTLPEndpointHTTP()
@@ -108,12 +170,12 @@ func TestResolveOTLPEndpoint_InvalidURL(t *testing.T) {
 // and OTEL_EXPORTER_OTLP_METRICS_ENDPOINT environment variables.
 func TestHasOTLPEndpointInEnv(t *testing.T) {
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT set", func(t *testing.T) {
-		t.Setenv(envOTLPMetricsEndpoint, "http://custom:4318")
+		setConfigEnv(t, envOTLPMetricsEndpoint, "http://custom:4318")
 		assert.True(t, hasOTLPEndpointInEnv())
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT set", func(t *testing.T) {
-		t.Setenv(envOTLPEndpoint, "http://custom:4318")
+		setConfigEnv(t, envOTLPEndpoint, "http://custom:4318")
 		assert.True(t, hasOTLPEndpointInEnv())
 	})
 
@@ -133,29 +195,29 @@ func TestGetOTLPProtocol(t *testing.T) {
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL takes priority", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_PROTOCOL", "http")
 
 		protocol := otlpProtocol()
 		assert.Equal(t, "grpc", protocol)
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_PROTOCOL as fallback", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
 
 		protocol := otlpProtocol()
 		assert.Equal(t, "grpc", protocol)
 	})
 
 	t.Run("Case insensitive", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "GRPC")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_PROTOCOL", "GRPC")
 
 		protocol := otlpProtocol()
 		assert.Equal(t, "grpc", protocol)
 	})
 
 	t.Run("Trim whitespace", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "  http/protobuf  ")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_PROTOCOL", "  http/protobuf  ")
 
 		protocol := otlpProtocol()
 		assert.Equal(t, defaultOTLPProtocol, protocol)
@@ -172,15 +234,31 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 	})
 
 	t.Run("DD_TRACE_AGENT_URL", func(t *testing.T) {
-		t.Setenv(envDDTraceAgentURL, "http://custom-agent:8126")
+		setConfigEnv(t, envDDTraceAgentURL, "http://custom-agent:8126")
 
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "custom-agent:4317", endpoint)
 		assert.True(t, insecure)
 	})
 
+	t.Run("non-HTTP DD_TRACE_AGENT_URL scheme", func(t *testing.T) {
+		setConfigEnv(t, envDDTraceAgentURL, "grpc://custom-agent:8126")
+
+		endpoint, insecure := resolveOTLPEndpointGRPC()
+		assert.Equal(t, "custom-agent:4317", endpoint)
+		assert.False(t, insecure)
+	})
+
 	t.Run("DD_AGENT_HOST", func(t *testing.T) {
-		t.Setenv(envDDAgentHost, "custom-host")
+		setConfigEnv(t, envDDAgentHost, "custom-host")
+
+		endpoint, _ := resolveOTLPEndpointGRPC()
+		assert.Equal(t, "custom-host:4317", endpoint)
+	})
+
+	t.Run("unix socket falls back to DD_AGENT_HOST", func(t *testing.T) {
+		setConfigEnv(t, envDDTraceAgentURL, "unix:///var/run/datadog/apm.socket")
+		setConfigEnv(t, envDDAgentHost, "custom-host")
 
 		endpoint, _ := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "custom-host:4317", endpoint)
@@ -223,7 +301,7 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=CUMULATIVE", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "CUMULATIVE")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "CUMULATIVE")
 		selector := deltaTemporalitySelector()
 
 		// All instruments should use cumulative when explicitly set
@@ -243,7 +321,7 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=DELTA", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "DELTA")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "DELTA")
 		selector := deltaTemporalitySelector()
 
 		// Monotonic instruments should use delta
@@ -270,7 +348,7 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 	})
 
 	t.Run("Case insensitive", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "cumulative")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "cumulative")
 		selector := deltaTemporalitySelector()
 
 		got := selector(metric.InstrumentKindCounter)
@@ -278,7 +356,7 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 	})
 
 	t.Run("With whitespace", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "  CUMULATIVE  ")
+		setConfigEnv(t, "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "  CUMULATIVE  ")
 		selector := deltaTemporalitySelector()
 
 		got := selector(metric.InstrumentKindCounter)

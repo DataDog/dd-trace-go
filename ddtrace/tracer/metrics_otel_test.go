@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 
@@ -52,8 +51,6 @@ func TestTracerStartOtelRuntimeMetricsRequiresAllFlags(t *testing.T) {
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	internalconfig.SetUseFreshConfig(true)
-	defer internalconfig.SetUseFreshConfig(false)
 	defer shutdownAndResetProvider(t)
 
 	started := withTestHooks(t)
@@ -67,9 +64,6 @@ func TestTracerStartOtelRuntimeMetricsRequiresAllFlags(t *testing.T) {
 func TestTracerLegacyRuntimeMetricsSuppressedWhenOtelActive(t *testing.T) {
 	t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-	internalconfig.SetUseFreshConfig(true)
-	defer internalconfig.SetUseFreshConfig(false)
-
 	withTestHooks(t)
 
 	tp := new(log.RecordLogger)
@@ -88,8 +82,6 @@ func TestTracerStartSkipsOtelRuntimeMetricsWhenExporterNone(t *testing.T) {
 	t.Setenv("OTEL_METRICS_EXPORTER", "none")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	internalconfig.SetUseFreshConfig(true)
-	defer internalconfig.SetUseFreshConfig(false)
 	defer shutdownAndResetProvider(t)
 
 	started := withTestHooks(t)

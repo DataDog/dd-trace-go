@@ -7,12 +7,26 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
+
+func init() {
+	registerSCAAppConfigTelemetry()
+}
+
+// registerSCAAppConfigTelemetry reports invalid SCA enablement configuration.
+// Valid configured values are reported by the singleton's config provider.
+func registerSCAAppConfigTelemetry() {
+	if err := internalconfig.Get().AppSecSCAEnabledError(); err != nil {
+		telemetrylog.Error("appsec: failed to get SCA config", slog.Any("error", telemetrylog.NewSafeError(err)))
+	}
+}
 
 // The following environment variables dictate the enablement of different the ASM products.
 const (
@@ -169,14 +183,14 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 	return false
 }
 
-// IsEnabledByEnvironment returns the process-wide AppSec enablement value and
-// whether it came from a configured source rather than the default.
+// IsEnabledByEnvironment returns true when AppSec is enabled by DD_APPSEC_ENABLED,
+// whether the value was configured, and any boolean parsing error.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
-	enabled, origin := internalconfig.Get().AppSecEnabled()
+	enabled, origin, err := internalconfig.Get().AppSecEnabled()
 	if origin != telemetry.OriginDefault {
 		set = true
 	}
-	return enabled, set, nil
+	return enabled, set, err
 }
 
 // NewConfig returns a fresh AppSec configuration.

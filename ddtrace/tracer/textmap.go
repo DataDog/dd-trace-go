@@ -174,6 +174,13 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
 	}
+	var processConfig *internalconfig.Config
+	getProcessConfig := func() *internalconfig.Config {
+		if processConfig == nil {
+			processConfig = internalconfig.Get()
+		}
+		return processConfig
+	}
 	if cfg.BaggagePrefix == "" {
 		cfg.BaggagePrefix = DefaultBaggageHeaderPrefix
 	}
@@ -198,10 +205,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	if cfg.ExtractFirst != nil {
 		cp.onlyExtractFirst = *cfg.ExtractFirst
 	} else {
-		cp.onlyExtractFirst = internalconfig.Get().PropagationExtractFirst()
+		cp.onlyExtractFirst = getProcessConfig().PropagationExtractFirstFromEnv()
 	}
 	if cfg.BehaviorExtract == "" {
-		cfg.BehaviorExtract = internalconfig.Get().PropagationBehaviorExtract()
+		cfg.BehaviorExtract = getProcessConfig().PropagationBehaviorExtractFromEnv()
 	}
 	switch cfg.BehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
@@ -219,10 +226,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		return cp
 	}
 	if cfg.InjectStyle == "" {
-		cfg.InjectStyle = internalconfig.Get().PropagationStyleInject()
+		cfg.InjectStyle = getProcessConfig().PropagationStyleInjectFromEnv()
 	}
 	if cfg.ExtractStyle == "" {
-		cfg.ExtractStyle = internalconfig.Get().PropagationStyleExtract()
+		cfg.ExtractStyle = getProcessConfig().PropagationStyleExtractFromEnv()
 	}
 	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle)
@@ -254,7 +261,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		defaultPsName += ",b3"
 	}
 	if ps == "" {
-		if prop := getDDorOtelConfig("propagationStyle"); prop != "" {
+		if prop := internalconfig.Get().PropagationStyle(); prop != "" {
 			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
 		} else {
 			return defaultPs, defaultPsName // no env set, so use default from configuration

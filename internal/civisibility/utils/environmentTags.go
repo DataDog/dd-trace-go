@@ -259,7 +259,7 @@ func createCITagsMap() map[string]string {
 	log.Debug("civisibility: test session name: %s", localTags[constants.TestSessionName])
 
 	// Check if the user provided the test service
-	if cfg.ServiceName() != "" {
+	if cfg.RawServiceName() != "" {
 		localTags[constants.UserProvidedTestServiceTag] = "true"
 	} else {
 		localTags[constants.UserProvidedTestServiceTag] = "false"

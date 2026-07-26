@@ -16,6 +16,9 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	internaltelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // TestMeterProviderInstruments verifies that various OTel instrument types
@@ -73,13 +76,13 @@ func TestForceFlush(t *testing.T) {
 
 func setMetricsExportEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	setConfigEnv(t, "DD_METRICS_OTEL_ENABLED", "true")
 
 }
 
 func TestInstallGlobalWithMetricsExport(t *testing.T) {
 	setMetricsExportEnv(t)
-	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
+	setConfigEnv(t, "OTEL_METRIC_EXPORT_INTERVAL", "86400000")
 	defer otel.SetMeterProvider(noop.NewMeterProvider())
 
 	require.NoError(t, installGlobal())
@@ -113,6 +116,39 @@ func TestMetricsEnabled(t *testing.T) {
 	defer Shutdown(ctx, mp)
 }
 
+func TestMetricsEnabledEnvironmentSemantics(t *testing.T) {
+	tests := []struct {
+		name        string
+		exporter    string
+		ddEnabled   string
+		wantEnabled bool
+	}{
+		{name: "uppercase OTLP is not disabled", exporter: "OTLP", ddEnabled: "true", wantEnabled: true},
+		{name: "other exporter is not disabled", exporter: "console", ddEnabled: "1", wantEnabled: true},
+		{name: "none disables", exporter: "none", ddEnabled: "true", wantEnabled: false},
+		{name: "other ParseBool forms stay disabled", exporter: "otlp", ddEnabled: "t", wantEnabled: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setConfigEnv(t, "OTEL_METRICS_EXPORTER", tt.exporter)
+			setConfigEnv(t, "DD_METRICS_OTEL_ENABLED", tt.ddEnabled)
+			assert.Equal(t, tt.wantEnabled, metricsEnabled(nil))
+		})
+	}
+}
+
+func TestMetricsEnabledUsesCanonicalConfigWhenProvided(t *testing.T) {
+	setConfigEnv(t, "DD_METRICS_OTEL_ENABLED", "false")
+	setConfigEnv(t, "OTEL_METRICS_EXPORTER", "none")
+
+	cfg := internalconfig.Get()
+	cfg.SetRuntimeMetricsOtelEnabled(true, internaltelemetry.OriginCode)
+	cfg.SetOTLPExportMetricsMode(true, internaltelemetry.OriginCode)
+
+	assert.True(t, metricsEnabled(cfg))
+}
+
 // TestMeterProviderExporterProtocols verifies that the MeterProvider can be created
 // with both gRPC and HTTP exporters and instruments work correctly.
 func TestMeterProviderExporterProtocols(t *testing.T) {
@@ -121,7 +157,7 @@ func TestMeterProviderExporterProtocols(t *testing.T) {
 	for _, protocol := range protocols {
 		t.Run(protocol, func(t *testing.T) {
 			setMetricsExportEnv(t)
-			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", protocol)
+			setConfigEnv(t, "OTEL_EXPORTER_OTLP_PROTOCOL", protocol)
 
 			mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 			require.NoError(t, err)

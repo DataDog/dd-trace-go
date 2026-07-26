@@ -21,12 +21,12 @@ import (
 )
 
 // NewClient creates a new telemetry client with the given service, environment, and version and config.
-func NewClient(service, env, version string, config ClientConfig) (Client, error) {
+func NewClient(service, env, version string, config ClientConfig, singleton ...singletonConfig) (Client, error) {
 	if service == "" {
 		return nil, errors.New("service name must not be empty")
 	}
 
-	config = defaultConfig(config)
+	config = defaultConfig(config, singleton...)
 	if err := config.validateConfig(); err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func (c *client) Flush() {
 		} else {
 			log.Warn("panic while flushing telemetry data, stopping telemetry!")
 		}
-		SetInstrumentationTelemetryEnabled(false)
+		disableInstrumentationTelemetryAfterFailure()
 		if gc, ok := GlobalClient().(*client); ok && gc == c {
 			SwapClient(nil)
 		}

@@ -20,7 +20,7 @@ import (
 // TestGetEnvironmentalData_NoFile verifies that when the expected environmental
 // data file does not exist, getEnvironmentalData returns nil.
 func TestGetEnvironmentalData_NoFile(t *testing.T) {
-	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, "")
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, "")
 
 	origArg := os.Args[0]
 	defer func() { os.Args[0] = origArg }()
@@ -44,7 +44,7 @@ func TestGetEnvironmentalData_NoFile(t *testing.T) {
 // TestGetEnvironmentalData_InvalidJSON creates an env file with invalid JSON and
 // verifies that getEnvironmentalData returns nil.
 func TestGetEnvironmentalData_InvalidJSON(t *testing.T) {
-	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, "")
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, "")
 
 	origArg := os.Args[0]
 	defer func() { os.Args[0] = origArg }()
@@ -73,7 +73,7 @@ func TestGetEnvironmentalData_InvalidJSON(t *testing.T) {
 // TestGetEnvironmentalData_ValidJSON creates a valid env file and verifies that
 // getEnvironmentalData correctly decodes it.
 func TestGetEnvironmentalData_ValidJSON(t *testing.T) {
-	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, "")
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, "")
 
 	origArg := os.Args[0]
 	defer func() { os.Args[0] = origArg }()
@@ -137,9 +137,6 @@ func TestGetEnvironmentalData_ValidJSON(t *testing.T) {
 // TestGetEnvironmentalData_UsesEnvVar verifies that when the environment variable
 // is set, getEnvironmentalData uses that file.
 func TestGetEnvironmentalData_UsesEnvVar(t *testing.T) {
-	origEnv := os.Getenv(constants.CIVisibilityEnvironmentDataFilePath)
-	defer os.Setenv(constants.CIVisibilityEnvironmentDataFilePath, origEnv)
-
 	// Create a temporary file for environmental data.
 	tempDir, err := os.MkdirTemp("", "envtest")
 	if err != nil {
@@ -148,9 +145,7 @@ func TestGetEnvironmentalData_UsesEnvVar(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	customPath := filepath.Join(tempDir, "custom.env.json")
-	if err := os.Setenv(constants.CIVisibilityEnvironmentDataFilePath, customPath); err != nil {
-		t.Fatal(err)
-	}
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, customPath)
 
 	expected := &fileEnvironmentalData{
 		// other fields can be left empty for this test
@@ -179,12 +174,7 @@ func TestGetEnvironmentalData_UsesEnvVar(t *testing.T) {
 // value from the environment variable when set.
 func TestGetEnvDataFileName_WithEnvVar(t *testing.T) {
 	const customPath = "/tmp/custom.env.json"
-	orig := os.Getenv(constants.CIVisibilityEnvironmentDataFilePath)
-	defer os.Setenv(constants.CIVisibilityEnvironmentDataFilePath, orig)
-
-	if err := os.Setenv(constants.CIVisibilityEnvironmentDataFilePath, customPath); err != nil {
-		t.Fatal(err)
-	}
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, customPath)
 	if got := getEnvDataFileName(); got != customPath {
 		t.Errorf("Expected %q, got %q", customPath, got)
 	}
@@ -193,9 +183,7 @@ func TestGetEnvDataFileName_WithEnvVar(t *testing.T) {
 // TestGetEnvDataFileName_WithoutEnvVar verifies that getEnvDataFileName constructs
 // the file name based on os.Args[0] when the env var is not set.
 func TestGetEnvDataFileName_WithoutEnvVar(t *testing.T) {
-	origEnv := os.Getenv(constants.CIVisibilityEnvironmentDataFilePath)
-	defer os.Setenv(constants.CIVisibilityEnvironmentDataFilePath, origEnv)
-	os.Setenv(constants.CIVisibilityEnvironmentDataFilePath, "")
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, "")
 
 	origArg := os.Args[0]
 	defer func() { os.Args[0] = origArg }()
@@ -220,7 +208,7 @@ func TestGetEnvDataFileName_WithoutEnvVar(t *testing.T) {
 // TestApplyEnvironmentalDataIfRequired_NoEnvFile verifies that if there is no
 // environmental file, the tags map remains unchanged.
 func TestApplyEnvironmentalDataIfRequired_NoEnvFile(t *testing.T) {
-	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, "")
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, "")
 
 	origArg := os.Args[0]
 	defer func() { os.Args[0] = origArg }()
@@ -271,7 +259,7 @@ func TestApplyEnvironmentalDataIfRequired_NoEnvFile(t *testing.T) {
 // TestApplyEnvironmentalDataIfRequired_WithEnvFile creates an env file and checks
 // that applyEnvironmentalDataIfRequired populates only the missing values.
 func TestApplyEnvironmentalDataIfRequired_WithEnvFile(t *testing.T) {
-	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, "")
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, "")
 
 	origArg := os.Args[0]
 	defer func() { os.Args[0] = origArg }()
@@ -475,7 +463,7 @@ func TestCreateEnvironmentalDataFromTags(t *testing.T) {
 // TestWriteEnvironmentalDataToFile_NilTags verifies that if tags is nil,
 // the function returns nil and does not create a file.
 func TestWriteEnvironmentalDataToFile_NilTags(t *testing.T) {
-	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, "")
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, "")
 
 	tempDir, err := os.MkdirTemp("", "envtest")
 	if err != nil {
@@ -496,7 +484,7 @@ func TestWriteEnvironmentalDataToFile_NilTags(t *testing.T) {
 // TestWriteEnvironmentalDataToFile_WithTags creates a file from given tags and
 // verifies that the written JSON matches the expected values.
 func TestWriteEnvironmentalDataToFile_WithTags(t *testing.T) {
-	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, "")
+	setConfigEnv(t, constants.CIVisibilityEnvironmentDataFilePath, "")
 
 	tempDir, err := os.MkdirTemp("", "envtest")
 	if err != nil {

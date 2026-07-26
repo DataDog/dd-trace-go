@@ -32,8 +32,6 @@ import (
 var mockTracer mocktracer.Tracer
 
 func TestMain(m *testing.M) {
-	internalconfig.SetUseFreshConfig(true)
-
 	// Avoid any backend calls during tests
 	additionalFeaturesInitializationOnce = sync.Once{}
 	additionalFeaturesInitializationOnce.Do(func() {})
@@ -95,6 +93,10 @@ func commonAssertions(assert *assert.Assertions, sessionSpan *mocktracer.Span) {
 func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
+	t.Cleanup(func() {
+		bazel.ResetForTesting()
+		internalconfig.CreateNew()
+	})
 
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
@@ -102,6 +104,7 @@ func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
 	utils.ResetCITags()
 	utils.ResetCIMetrics()
 	bazel.ResetForTesting()
+	internalconfig.CreateNew()
 	t.Cleanup(func() {
 		utils.ResetCITags()
 		utils.ResetCIMetrics()
@@ -131,6 +134,10 @@ func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
 func TestPayloadFilesModeUsesAvailableWorkspaceMetadataForWorkingDirectory(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
+	t.Cleanup(func() {
+		bazel.ResetForTesting()
+		internalconfig.CreateNew()
+	})
 
 	workspaceDir := t.TempDir()
 	subDir := filepath.Join(workspaceDir, "pkg")
@@ -158,6 +165,7 @@ func TestPayloadFilesModeUsesAvailableWorkspaceMetadataForWorkingDirectory(t *te
 	utils.ResetCITags()
 	utils.ResetCIMetrics()
 	bazel.ResetForTesting()
+	internalconfig.CreateNew()
 	t.Cleanup(func() {
 		utils.ResetCITags()
 		utils.ResetCIMetrics()

@@ -8,6 +8,8 @@ package errortrace
 import (
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,6 +24,24 @@ func testErrorWrapper() *TracerError {
 // Creates a new TracerError instance with default parameters (n = 32, skip = 0)
 func createTestError() *TracerError {
 	return New("Something wrong")
+}
+
+func TestStackDepthFromSingleton(t *testing.T) {
+	const helper = "DD_ERRORTRACE_STACK_DEPTH_HELPER"
+	if os.Getenv(helper) == "1" {
+		err := createTestError()
+		if got := len(err.rawStack.PCs); got > 1 {
+			t.Fatalf("captured %d frames, want at most 1", got)
+		}
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestStackDepthFromSingleton$")
+	cmd.Env = append(os.Environ(), helper+"=1", "DD_APPSEC_MAX_STACK_TRACE_DEPTH=1")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("helper process failed: %v\n%s", err, output)
+	}
 }
 
 func TestWrap(t *testing.T) {

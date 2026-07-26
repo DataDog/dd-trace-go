@@ -17,6 +17,14 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
+const (
+	envOtelMetricExportInterval = "OTEL_METRIC_EXPORT_INTERVAL"
+	envOtelMetricExportTimeout  = "OTEL_METRIC_EXPORT_TIMEOUT"
+
+	defaultExportIntervalMs = 10000
+	defaultExportTimeoutMs  = 7500
+)
+
 // config holds the configuration for the MeterProvider
 type config struct {
 	resourceOptions        []resource.Option
@@ -35,8 +43,9 @@ type config struct {
 // OTEL_METRIC_EXPORT_TIMEOUT (in milliseconds) when set, otherwise fall back
 // to the package defaults.
 func newConfig() *config {
-	intervalMs := getMillisecondsConfig(envOtelMetricExportInterval, defaultExportIntervalMs)
-	timeoutMs := getMillisecondsConfig(envOtelMetricExportTimeout, defaultExportTimeoutMs)
+	ddConfig := internalconfig.Get()
+	intervalMs := getMillisecondsConfig(ddConfig.OTelMetricExportInterval(), defaultExportIntervalMs)
+	timeoutMs := getMillisecondsConfig(ddConfig.OTelMetricExportTimeout(), defaultExportTimeoutMs)
 	return &config{
 		exportInterval: time.Duration(intervalMs.value) * time.Millisecond,
 		exportTimeout:  time.Duration(timeoutMs.value) * time.Millisecond,

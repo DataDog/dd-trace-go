@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
@@ -48,6 +49,15 @@ func TestMain(m *testing.M) {
 	// with logs
 	log.UseLogger(log.DiscardLogger{})
 	os.Exit(m.Run())
+}
+
+func setConfigEnv(t *testing.T, key, value string) {
+	t.Helper()
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+	})
+	t.Setenv(key, value)
+	internalconfig.CreateNew()
 }
 
 func TestStart(t *testing.T) {
@@ -88,7 +98,7 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("dd_profiling_not_enabled", func(t *testing.T) {
-		t.Setenv("DD_PROFILING_ENABLED", "false")
+		setConfigEnv(t, "DD_PROFILING_ENABLED", "false")
 		if err := Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -114,7 +124,7 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("Agent/GoodAPIKey", func(t *testing.T) {
-		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
+		setConfigEnv(t, "DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
@@ -129,8 +139,8 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("Agentless/GoodAPIKey", func(t *testing.T) {
-		t.Setenv("DD_PROFILING_AGENTLESS", "True")
-		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
+		setConfigEnv(t, "DD_PROFILING_AGENTLESS", "True")
+		setConfigEnv(t, "DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
@@ -145,8 +155,8 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("Agentless/NoAPIKey", func(t *testing.T) {
-		t.Setenv("DD_PROFILING_AGENTLESS", "True")
-		t.Setenv("DD_API_KEY", "") // In case one is present in the environment...
+		setConfigEnv(t, "DD_PROFILING_AGENTLESS", "True")
+		setConfigEnv(t, "DD_API_KEY", "") // In case one is present in the environment...
 		err := Start()
 		defer Stop()
 		assert.ErrorIs(t, err, errAgentlessUploadRequiresAPIKey)
@@ -157,8 +167,8 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("Agentless/BadAPIKey", func(t *testing.T) {
-		t.Setenv("DD_PROFILING_AGENTLESS", "True")
-		t.Setenv("DD_API_KEY", "aaaa")
+		setConfigEnv(t, "DD_PROFILING_AGENTLESS", "True")
+		setConfigEnv(t, "DD_API_KEY", "aaaa")
 		err := Start()
 		defer Stop()
 		assert.ErrorIs(t, err, errAgentlessUploadRequiresAPIKey)
@@ -169,7 +179,7 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("aws-lambda", func(t *testing.T) {
-		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function-name")
+		setConfigEnv(t, "AWS_LAMBDA_FUNCTION_NAME", "my-function-name")
 		err := Start()
 		defer Stop()
 		assert.ErrorIs(t, err, errProfilingNotSupportedInAWSLambda)
@@ -253,7 +263,7 @@ func TestStopLatency(t *testing.T) {
 }
 
 func TestFlushAndStop(t *testing.T) {
-	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	setConfigEnv(t, "DD_PROFILING_FLUSH_ON_EXIT", "1")
 	backend := startTestProfiler(t, 1,
 		WithProfileTypes(CPUProfile, HeapProfile),
 		WithPeriod(time.Hour),
@@ -289,7 +299,7 @@ func TestFlushAndStopTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	setConfigEnv(t, "DD_PROFILING_FLUSH_ON_EXIT", "1")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithPeriod(time.Hour),
@@ -440,7 +450,7 @@ func TestAllUploaded(t *testing.T) {
 		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
 	}
 
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
+	setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
@@ -539,7 +549,7 @@ func TestImmediateProfile(t *testing.T) {
 }
 
 func TestEnabledFalse(t *testing.T) {
-	t.Setenv("DD_PROFILING_ENABLED", "false")
+	setConfigEnv(t, "DD_PROFILING_ENABLED", "false")
 	backend := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes())
 	select {
 	case <-backend.profiles:
@@ -561,9 +571,9 @@ func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	// fatal error: runtime: netpoll failed
 	cpuProfileRate := int(9999 + rand.Int63n(9999))
 
-	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
+	setConfigEnv(t, "DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
+	setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
 	backend := startTestProfiler(t, 1,
 		WithPeriod(10*time.Millisecond),
 		WithProfileTypes(CPUProfile),
@@ -592,8 +602,8 @@ func TestExecutionTraceMisconfiguration(t *testing.T) {
 	// spec says that implementations _will_ panic for integer division by
 	// 0, and _may_ choose to panic for floating point division by 0.
 	// See go.dev/ref/spec#Arithmetic_operators, and go.dev/issue/43577
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "0ms")
+	setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_PERIOD", "0ms")
 	profile := doOneShortProfileUpload(t,
 		WithProfileTypes(),
 		WithPeriod(10*time.Millisecond),
@@ -611,8 +621,8 @@ func TestExecutionTraceMisconfiguration(t *testing.T) {
 
 func TestExecutionTraceRandom(t *testing.T) {
 	collectTraces := func(t *testing.T, profilePeriod, tracePeriod time.Duration, count int) int {
-		t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
-		t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
+		setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+		setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
 		backend := startTestProfiler(t, 10,
 			WithProfileTypes(),
 			WithPeriod(profilePeriod),
@@ -683,7 +693,7 @@ func TestEndpointCounts(t *testing.T) {
 		name := fmt.Sprintf("enabled=%v", enabled)
 		t.Run(name, func(t *testing.T) {
 			// Configure endpoint counting
-			t.Setenv(traceprof.EndpointCountEnvVar, strconv.FormatBool(enabled))
+			setConfigEnv(t, traceprof.EndpointCountEnvVar, strconv.FormatBool(enabled))
 
 			// Start the tracer (before profiler to avoid race in case of slow tracer start)
 			tracer.Start()
@@ -738,9 +748,9 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	}()
 	defer close(done)
 
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
+	setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
+	setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
 	backend := startTestProfiler(t, 1,
 		WithProfileTypes(), // just want the execution trace
 		WithPeriod(2*time.Second),
@@ -761,8 +771,8 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 func TestExecutionTraceEnabledFlag(t *testing.T) {
 	for _, status := range []string{"true", "false"} {
 		t.Run(status, func(t *testing.T) {
-			t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", status)
-			t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
+			setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_ENABLED", status)
+			setConfigEnv(t, "DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
 			backend := startTestProfiler(t, 1,
 				WithProfileTypes(),
 				WithPeriod(10*time.Millisecond),
@@ -793,7 +803,7 @@ func TestVersionResolution(t *testing.T) {
 
 	t.Run("env", func(t *testing.T) {
 		// Environment variable gets priority over tags
-		t.Setenv("DD_VERSION", "1.2.3")
+		setConfigEnv(t, "DD_VERSION", "1.2.3")
 		data := doOneShortProfileUpload(t, WithTags("version:4.5.6"))
 		assert.NotContains(t, data.tags, "version:4.5.6")
 		assert.Contains(t, data.tags, "version:1.2.3")
@@ -801,7 +811,7 @@ func TestVersionResolution(t *testing.T) {
 
 	t.Run("WithVersion", func(t *testing.T) {
 		// WithVersion gets the highest priority
-		t.Setenv("DD_VERSION", "1.2.3")
+		setConfigEnv(t, "DD_VERSION", "1.2.3")
 		data := doOneShortProfileUpload(t, WithTags("version:4.5.6"), WithVersion("7.8.9"))
 		assert.NotContains(t, data.tags, "version:1.2.3")
 		assert.NotContains(t, data.tags, "version:4.5.6")
@@ -861,7 +871,7 @@ func TestOrchestrionProfileInfo(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("env=\"%s\"", tc.env), func(t *testing.T) {
-			t.Setenv("DD_PROFILING_ENABLED", tc.env)
+			setConfigEnv(t, "DD_PROFILING_ENABLED", tc.env)
 			p := doOneShortProfileUpload(t)
 			info := p.event.Info.Profiler
 			t.Logf("%+v", info)
@@ -913,7 +923,7 @@ func gzipDecompress(data []byte) ([]byte, error) {
 }
 
 func TestHeapProfileCompression(t *testing.T) {
-	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
+	setConfigEnv(t, "DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	t.Run("delta", func(t *testing.T) { testHeapProfileCompression(t, true) })
 	t.Run("non-delta", func(t *testing.T) { testHeapProfileCompression(t, false) })
 }

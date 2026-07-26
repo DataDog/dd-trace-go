@@ -28,7 +28,7 @@ type evpClient struct {
 }
 
 func newEVPClient() *evpClient {
-	agentURL := internalconfig.Get().RawAgentURL()
+	agentURL := internalconfig.Get().EnvAgentURL()
 	var httpClient *http.Client
 	if agentURL.Scheme == "unix" {
 		httpClient = internal.UDSClient(agentURL.Path, defaultHTTPTimeout)

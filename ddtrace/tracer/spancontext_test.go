@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +20,6 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -171,13 +169,7 @@ func TestAsyncSpanRacePartialFlush(t *testing.T) {
 func testAsyncSpanRace(t *testing.T) {
 	// disabling process tags as it causes map writes on span.meta and span.metrics (due to key deletion)
 	// defeating the purpose of testAsyncSpanRace and trigerring systematically a read/write race
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-	processtags.Reload()
-	defer func() {
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
-		// reloading as this is a shared var process and can impact other tests
-		processtags.Reload()
-	}()
+	setProcessTagsEnabled(t, false)
 	// This tests a regression where asynchronously finishing spans would
 	// modify a flushing root's sampling priority.
 	_, _, _, stop, err := startTestTracer(t)
@@ -1381,8 +1373,7 @@ func TestSpanProcessTags(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", strconv.FormatBool(tc.enabled))
-			processtags.Reload()
+			setProcessTagsEnabled(t, tc.enabled)
 			tracer, transport, flush, stop, err := startTestTracer(t, func(c *config) {
 				c.internalConfig.SetTraceProtocol(tc.protocol, internalconfig.OriginCode)
 			})
@@ -1461,6 +1452,9 @@ func FuzzSpanIDHexEncoded(f *testing.F) {
 
 func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 	b.Run("old GetTracerGitMetadataTags", func(b *testing.B) {
+		b.Setenv(internal.EnvGitMetadataEnabledFlag, "true")
+		internalconfig.CreateNew()
+		internal.RefreshGitMetadataTags()
 		updateTags := func(tags map[string]string, key, value string) {
 			if _, ok := tags[key]; !ok && value != "" {
 				tags[key] = value
@@ -1469,7 +1463,7 @@ func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 		// Emulates old implementation of GetTracerGitMetadataTags
 		old := func() map[string]string {
 			results := make(map[string]string)
-			tags := internal.GitMetadataTags(true, "", "", "")
+			tags := internal.GetGitMetadataTags()
 			updateTags(results, internal.TraceTagRepositoryURL, tags[internal.TagRepositoryURL])
 			updateTags(results, internal.TraceTagCommitSha, tags[internal.TagCommitSha])
 			updateTags(results, internal.TraceTagGoPath, tags[internal.TagGoPath])
@@ -1486,6 +1480,7 @@ func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 	b.Run("new UpdateTracerGitMetadataTags", func(b *testing.B) {
 		b.Setenv(internal.EnvGitMetadataEnabledFlag, "true")
 		internalconfig.CreateNew()
+		internal.RefreshGitMetadataTags()
 		span := newBasicSpan("span")
 		b.ResetTimer()
 		for b.Loop() {

@@ -106,18 +106,27 @@ func TestSetServiceNameTag(t *testing.T) {
 		t.Cleanup(Reload)
 		// Simulate collect() returning empty (e.g. os.Executable fails):
 		// Reload creates pTags but add is never called, leaving pTags.tags nil.
-		pTags = &ProcessTags{}
+		pTags.Store(&ProcessTags{})
 		SetServiceNameTag("myapp", false)
 		tags := GlobalTags()
 		assert.Contains(t, tags.String(), "svc.auto:myapp")
 	})
 
 	t.Run("no-op when disabled", func(t *testing.T) {
-		t.Cleanup(func() { Configure(true) })
-		Configure(false)
+		t.Cleanup(func() { resetForTesting(true) })
+		resetForTesting(false)
 		SetServiceNameTag("myapp", false)
 		assert.Nil(t, GlobalTags())
 	})
+}
+
+func resetForTesting(collectEnabled bool) {
+	configureOnce = sync.Once{}
+	pTags.Store(nil)
+	if collectEnabled {
+		reload(true)
+	}
+	Configure(collectEnabled)
 }
 
 func TestProcessTags(t *testing.T) {
@@ -133,8 +142,8 @@ func TestProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		t.Cleanup(func() { Configure(true) })
-		Configure(false)
+		t.Cleanup(func() { resetForTesting(true) })
+		resetForTesting(false)
 
 		p := GlobalTags()
 		assert.Nil(t, p)

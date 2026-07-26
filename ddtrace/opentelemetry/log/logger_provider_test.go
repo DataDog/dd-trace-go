@@ -59,7 +59,7 @@ func TestInitGlobalLoggerProvider(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
 
-		t.Setenv("DD_SERVICE", "test-service")
+		setConfigEnv(t, "DD_SERVICE", "test-service")
 
 		err := InitGlobalLoggerProvider(context.Background())
 		require.NoError(t, err)
@@ -76,10 +76,10 @@ func TestInitGlobalLoggerProvider(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
 
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "1024")
-		t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "500")
-		t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", "15000")
-		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "256")
+		setConfigEnv(t, "OTEL_BLRP_MAX_QUEUE_SIZE", "1024")
+		setConfigEnv(t, "OTEL_BLRP_SCHEDULE_DELAY", "500")
+		setConfigEnv(t, "OTEL_BLRP_EXPORT_TIMEOUT", "15000")
+		setConfigEnv(t, "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "256")
 
 		err := InitGlobalLoggerProvider(context.Background())
 		require.NoError(t, err)

@@ -79,8 +79,8 @@ func TestNewWriter_ProcessTags(t *testing.T) {
 		assert.NotEmpty(t, body.Application.ProcessTags)
 	})
 	t.Run("disabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
+		t.Cleanup(func() { processtags.ReloadForTesting(true) })
+		processtags.ReloadForTesting(false)
 
 		w, err := NewWriter(cfg)
 		require.NoError(t, err)
@@ -267,6 +267,7 @@ func TestWriter_Flush_FileSinkWritesTelemetryPayload(t *testing.T) {
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, outputsDir)
 	bazel.ResetForTesting()
 	t.Cleanup(bazel.ResetForTesting)
+	bazel.Configure("", true)
 
 	var httpCalls atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -321,6 +322,7 @@ func TestWriter_Flush_FileSinkMissingOutputsDir(t *testing.T) {
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, "")
 	bazel.ResetForTesting()
 	t.Cleanup(bazel.ResetForTesting)
+	bazel.Configure("", true)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.ReadAll(r.Body)
@@ -355,6 +357,7 @@ func TestWriter_Flush_FileSinkOrdering(t *testing.T) {
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, outputsDir)
 	bazel.ResetForTesting()
 	t.Cleanup(bazel.ResetForTesting)
+	bazel.Configure("", true)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.ReadAll(r.Body)

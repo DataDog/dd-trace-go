@@ -27,6 +27,7 @@ import (
 	gotesting "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -792,6 +793,7 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 		for i := len(envSnapshots) - 1; i >= 0; i-- {
 			envSnapshots[i].restore()
 		}
+		internalconfig.CreateNew()
 	}()
 
 	_, restore := startSubtestServer(subtestServerConfig{
@@ -799,6 +801,7 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 		attemptToFixRetries: ctx.attemptToFixRetries,
 	})
 	defer restore()
+	internalconfig.CreateNew()
 
 	settings := integrations.GetSettings()
 	if settings != nil {

@@ -5,33 +5,12 @@
 
 package config
 
-import (
-	"maps"
-	"time"
-)
+import "net/url"
 
 func (c *Config) ExternalEnvironment() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.externalEnvironment
-}
-
-func (c *Config) GitMetadataEnabled() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.gitMetadataEnabled
-}
-
-func (c *Config) GitRepositoryURL() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.gitRepositoryURL
-}
-
-func (c *Config) GitCommitSHA() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.gitCommitSHA
 }
 
 func (c *Config) RawGlobalTags() string {
@@ -40,34 +19,61 @@ func (c *Config) RawGlobalTags() string {
 	return c.rawGlobalTags
 }
 
-func (c *Config) GitMetadataTags() map[string]string {
+func (c *Config) RawServiceName() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return maps.Clone(c.gitMetadataTags)
+	return c.rawServiceName
 }
 
-func (c *Config) GitMetadataTag(key string) string {
+func (c *Config) RawEnv() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.gitMetadataTags[key]
+	return c.rawEnv
 }
 
-func (c *Config) InstrumentationInstallID() string {
+func (c *Config) RawVersion() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.instrumentationInstallID
+	return c.rawVersion
 }
 
-func (c *Config) InstrumentationInstallType() string {
+func (c *Config) RawSite() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.instrumentationInstallType
+	return c.rawSite
 }
 
-func (c *Config) InstrumentationInstallTime() string {
+func (c *Config) RawAPIKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.instrumentationInstallTime
+	return c.rawAPIKey
+}
+
+func (c *Config) RawSpanAttributeSchema() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.rawSpanAttributeSchema
+}
+
+func (c *Config) RawTraceAgentURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.rawTraceAgentURL
+}
+
+func (c *Config) RawAgentHost() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.rawAgentHost
+}
+
+func (c *Config) EnvAgentURL() *url.URL {
+	c.mu.RLock()
+	agentURL := c.rawTraceAgentURL
+	agentHost := c.rawAgentHost
+	agentPort := c.rawTraceAgentPort
+	c.mu.RUnlock()
+	return resolveAgentURLWithoutWarnings(agentURL, agentHost, agentPort)
 }
 
 func (c *Config) ConfiguredHostname() string {
@@ -94,10 +100,10 @@ func (c *Config) RemoteConfigTUFRoot() string {
 	return c.remoteConfigTUFRoot
 }
 
-func (c *Config) RemoteConfigPollInterval() time.Duration {
+func (c *Config) RemoteConfigPollIntervalSeconds() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.remoteConfigPollInterval
+	return c.remoteConfigPollIntervalSeconds
 }
 
 func (c *Config) RemoteConfigEnabled() bool {
@@ -106,25 +112,16 @@ func (c *Config) RemoteConfigEnabled() bool {
 	return c.remoteConfigEnabled
 }
 
-func (c *Config) APISecurityEndpointCollectionMessageLimit() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.apiSecurityEndpointCollectionMessageLimit
-}
-
 func (c *Config) TelemetryDebug() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.telemetryDebug
 }
 
-func (c *Config) TelemetryHeartbeatInterval() (float64, bool) {
+func (c *Config) TelemetryHeartbeatInterval() (string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.telemetryHeartbeatInterval == nil {
-		return 0, false
-	}
-	return *c.telemetryHeartbeatInterval, true
+	return c.telemetryHeartbeatInterval, c.telemetryHeartbeatIntervalSet
 }
 
 func (c *Config) TelemetryDependencyCollectionEnabled() bool {
@@ -145,19 +142,10 @@ func (c *Config) TelemetryLogCollectionEnabled() bool {
 	return c.telemetryLogCollectionEnabled
 }
 
-func (c *Config) TelemetryExtendedHeartbeatInterval() (float64, bool) {
+func (c *Config) TelemetryExtendedHeartbeatInterval() (string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.telemetryExtendedHeartbeatInterval == nil {
-		return 0, false
-	}
-	return *c.telemetryExtendedHeartbeatInterval, true
-}
-
-func (c *Config) InstrumentationTelemetryEnabled() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.instrumentationTelemetryEnabled
+	return c.telemetryExtendedHeartbeatInterval, c.telemetryExtendedHeartbeatIntervalSet
 }
 
 func (c *Config) FlagEvaluationCountsEnabled() bool {
@@ -170,4 +158,10 @@ func (c *Config) FlaggingProviderSpanEnrichmentEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.flaggingProviderSpanEnrichmentEnabled
+}
+
+func (c *Config) ExperimentalFlaggingProviderEnabledFromEnv() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.experimentalFlaggingProviderEnabledEnv
 }

@@ -16,9 +16,17 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
-func TestMain(m *testing.M) {
-	internalconfig.SetUseFreshConfig(true)
-	os.Exit(m.Run())
+func reloadBazelConfig() {
+	bazel.ResetForTesting()
+	internalconfig.CreateNew()
+}
+
+func setBazelConfigEnv(key, value string) error {
+	if err := os.Setenv(key, value); err != nil {
+		return err
+	}
+	reloadBazelConfig()
+	return nil
 }
 
 // saveEnv captures the current process environment so tests can restore it after mutating globals.
@@ -34,7 +42,7 @@ func restoreEnv(env []string) {
 		os.Setenv(kv[0], kv[1])
 	}
 	civisibilityutils.ResetCITags()
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 }
 
 func TestNewClient_DefaultValues(t *testing.T) {
@@ -45,6 +53,7 @@ func TestNewClient_DefaultValues(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("PATH", path)
 	// Do not set any environment variables to simulate default behavior
+	reloadBazelConfig()
 
 	cInterface := NewClient()
 	if cInterface == nil {
@@ -81,6 +90,7 @@ func TestNewClient_AgentlessEnabled(t *testing.T) {
 	os.Setenv("DD_CIVISIBILITY_AGENTLESS_ENABLED", "true")
 	os.Setenv("DD_API_KEY", "test_api_key")
 	os.Setenv("DD_SITE", "site.com")
+	reloadBazelConfig()
 
 	cInterface := NewClient()
 	if cInterface == nil {
@@ -114,6 +124,7 @@ func TestNewClient_AgentlessEnabledWithNoApiKey(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("PATH", path)
 	os.Setenv("DD_CIVISIBILITY_AGENTLESS_ENABLED", "true")
+	reloadBazelConfig()
 
 	cInterface := NewClient()
 	if cInterface != nil {
@@ -219,6 +230,7 @@ func TestNewClient_TestConfigurations(t *testing.T) {
 
 	setCiVisibilityEnv(path, "https://custom.agentless.url")
 	os.Setenv("DD_TAGS", "test.configuration.MyTag:MyValue")
+	internalconfig.CreateNew()
 
 	cInterface := NewClient()
 	if cInterface == nil {
@@ -246,5 +258,5 @@ func setCiVisibilityEnv(path string, url string) {
 	os.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
 	os.Setenv("DD_GIT_BRANCH", "refs/heads/main")
 	civisibilityutils.ResetCITags()
-	bazel.ResetForTesting()
+	reloadBazelConfig()
 }

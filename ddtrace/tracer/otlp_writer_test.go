@@ -24,7 +24,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -455,9 +454,7 @@ func TestOTLPWriterDoesNotReuseAgentHTTPClient(t *testing.T) {
 // the enabled path (via setTraceTagsLocked → span.meta → convertSpanAttributes)
 // lives in TestOTLPExportModeProcessTags.
 func TestOTLPWriterProcessTagsDisabled(t *testing.T) {
-	t.Cleanup(processtags.Reload)
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-	processtags.Reload()
+	setProcessTagsEnabled(t, false)
 
 	srv := newTestOTLPServer()
 	defer srv.Close()

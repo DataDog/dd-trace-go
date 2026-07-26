@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -27,7 +28,9 @@ import (
 func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 
-	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, true, true))
+	setConfigEnvs(t, map[string]string{
+		bazel.ManifestFilePathEnv: writeSettingsManifestCache(t, true, true, true),
+	})
 	bazel.ResetForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
 
@@ -48,9 +51,11 @@ func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testin
 func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDisablesImpactedTests(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 
-	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, true, true))
-	t.Setenv(bazel.PayloadsInFilesEnv, "true")
-	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	setConfigEnvs(t, map[string]string{
+		bazel.ManifestFilePathEnv:     writeSettingsManifestCache(t, true, true, true),
+		bazel.PayloadsInFilesEnv:      "true",
+		bazel.UndeclaredOutputsDirEnv: t.TempDir(),
+	})
 	// Registered after TempDir so it executes before TempDir's RemoveAll (LIFO).
 	// Drains the async Flush goroutine started by telemetry.StartApp, preventing
 	// a race where that goroutine writes to payloads/telemetry while RemoveAll runs.
@@ -75,8 +80,10 @@ func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDis
 func TestEnsureSettingsInitializationManifestModeAppliesSubtestFeaturesEnvOverride(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 
-	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, false, false))
-	t.Setenv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
+	setConfigEnvs(t, map[string]string{
+		bazel.ManifestFilePathEnv:                    writeSettingsManifestCache(t, true, false, false),
+		constants.CIVisibilitySubtestFeaturesEnabled: "false",
+	})
 	bazel.ResetForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
 
@@ -95,12 +102,14 @@ func TestEnsureSettingsInitializationOnlineSettingsErrorRegistersCloseAction(t *
 	}))
 	defer server.Close()
 
-	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
-	t.Setenv(constants.APIKeyEnvironmentVariable, "test_api_key")
-	t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
-	t.Setenv("DD_GIT_REPOSITORY_URL", "https://github.com/DataDog/dd-trace-go.git")
-	t.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
-	t.Setenv("DD_GIT_BRANCH", "refs/heads/main")
+	setConfigEnvs(t, map[string]string{
+		constants.CIVisibilityAgentlessEnabledEnvironmentVariable: "true",
+		constants.APIKeyEnvironmentVariable:                       "test_api_key",
+		constants.CIVisibilityAgentlessURLEnvironmentVariable:     server.URL,
+		"DD_GIT_REPOSITORY_URL":                                   "https://github.com/DataDog/dd-trace-go.git",
+		"DD_GIT_COMMIT_SHA":                                       "1234567890abcdef1234567890abcdef12345678",
+		"DD_GIT_BRANCH":                                           "refs/heads/main",
+	})
 
 	uploadDone := make(chan struct{}, 1)
 	uploadRepositoryChangesFunc = func() (int64, error) {
@@ -122,7 +131,9 @@ func TestEnsureSettingsInitializationOnlineSettingsErrorRegistersCloseAction(t *
 }
 
 func TestShouldInitializeCiVisibilityLogsDisablesManifestMode(t *testing.T) {
-	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, false, false, false))
+	setConfigEnvs(t, map[string]string{
+		bazel.ManifestFilePathEnv: writeSettingsManifestCache(t, false, false, false),
+	})
 	bazel.ResetForTesting()
 	t.Cleanup(bazel.ResetForTesting)
 
@@ -131,8 +142,10 @@ func TestShouldInitializeCiVisibilityLogsDisablesManifestMode(t *testing.T) {
 }
 
 func TestShouldInitializeCiVisibilityLogsDisablesPayloadFilesMode(t *testing.T) {
-	t.Setenv(bazel.PayloadsInFilesEnv, "true")
-	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	setConfigEnvs(t, map[string]string{
+		bazel.PayloadsInFilesEnv:      "true",
+		bazel.UndeclaredOutputsDirEnv: t.TempDir(),
+	})
 	bazel.ResetForTesting()
 	t.Cleanup(bazel.ResetForTesting)
 
@@ -142,6 +155,7 @@ func TestShouldInitializeCiVisibilityLogsDisablesPayloadFilesMode(t *testing.T) 
 
 func TestShouldInitializeCiVisibilityLogsAllowsOnlineEnabledMode(t *testing.T) {
 	bazel.ResetForTesting()
+	internalconfig.CreateNew()
 	t.Cleanup(bazel.ResetForTesting)
 
 	assert.False(t, shouldInitializeCiVisibilityLogs(false))
@@ -156,7 +170,9 @@ func TestInitializeCiVisibilityLogsSkipsOfflineModes(t *testing.T) {
 	defer log.SetLevel(oldLevel)
 
 	t.Run("manifest", func(t *testing.T) {
-		t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, false, false, false))
+		setConfigEnvs(t, map[string]string{
+			bazel.ManifestFilePathEnv: writeSettingsManifestCache(t, false, false, false),
+		})
 		bazel.ResetForTesting()
 		t.Cleanup(bazel.ResetForTesting)
 
@@ -166,8 +182,10 @@ func TestInitializeCiVisibilityLogsSkipsOfflineModes(t *testing.T) {
 	})
 
 	t.Run("payload-files", func(t *testing.T) {
-		t.Setenv(bazel.PayloadsInFilesEnv, "true")
-		t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+		setConfigEnvs(t, map[string]string{
+			bazel.PayloadsInFilesEnv:      "true",
+			bazel.UndeclaredOutputsDirEnv: t.TempDir(),
+		})
 		bazel.ResetForTesting()
 		t.Cleanup(bazel.ResetForTesting)
 
@@ -185,6 +203,7 @@ func TestInitializeCiVisibilityLogsReportsDisabledState(t *testing.T) {
 	defer log.SetLevel(oldLevel)
 
 	bazel.ResetForTesting()
+	internalconfig.CreateNew()
 	t.Cleanup(bazel.ResetForTesting)
 
 	initializeCiVisibilityLogs("online-service")
@@ -222,18 +241,20 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
-	t.Setenv(constants.APIKeyEnvironmentVariable, "test_api_key")
-	t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
-	t.Setenv("DD_GIT_REPOSITORY_URL", "https://github.com/DataDog/dd-trace-go.git")
-	t.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
-	t.Setenv("DD_GIT_BRANCH", "refs/heads/main")
-	t.Setenv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, "false")
-	t.Setenv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, "false")
-	t.Setenv(constants.CIVisibilityImpactedTestsDetectionEnabled, "false")
-	t.Setenv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, "false")
-	t.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "7")
-	t.Setenv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
+	setConfigEnvs(t, map[string]string{
+		constants.CIVisibilityAgentlessEnabledEnvironmentVariable:                  "true",
+		constants.APIKeyEnvironmentVariable:                                        "test_api_key",
+		constants.CIVisibilityAgentlessURLEnvironmentVariable:                      server.URL,
+		"DD_GIT_REPOSITORY_URL":                                                    "https://github.com/DataDog/dd-trace-go.git",
+		"DD_GIT_COMMIT_SHA":                                                        "1234567890abcdef1234567890abcdef12345678",
+		"DD_GIT_BRANCH":                                                            "refs/heads/main",
+		constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable:                 "false",
+		constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable:   "false",
+		constants.CIVisibilityImpactedTestsDetectionEnabled:                        "false",
+		constants.CIVisibilityTestManagementEnabledEnvironmentVariable:             "false",
+		constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable: "7",
+		constants.CIVisibilitySubtestFeaturesEnabled:                               "false",
+	})
 	utils.ResetCITags()
 
 	uploadDone := make(chan struct{}, 1)

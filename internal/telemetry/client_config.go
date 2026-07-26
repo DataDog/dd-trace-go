@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
@@ -83,6 +84,17 @@ type ClientConfig struct {
 
 	// internalMetricsEnabled determines whether client stats metrics are sent via telemetry. Default to true.
 	internalMetricsEnabled bool
+}
+
+type singletonConfig interface {
+	RawSite() string
+	RawAPIKey() string
+	TelemetryDebug() bool
+	TelemetryHeartbeatInterval() (string, bool)
+	TelemetryDependencyCollectionEnabled() bool
+	TelemetryMetricsEnabled() bool
+	TelemetryLogCollectionEnabled() bool
+	TelemetryExtendedHeartbeatInterval() (string, bool)
 }
 
 var (
@@ -162,16 +174,31 @@ func (config ClientConfig) validateConfig() error {
 }
 
 // defaultConfig returns a ClientConfig with default values set.
-func defaultConfig(config ClientConfig) ClientConfig {
-	environment := currentEnvironmentConfig()
-	config.Debug = config.Debug || environment.Debug
+func defaultConfig(config ClientConfig, singleton ...singletonConfig) ClientConfig {
+	site := "datadoghq.com"
+	dependencyCollectionEnabled := true
+	metricsEnabled := true
+	logCollectionEnabled := true
 
-	if config.AgentlessURL == "" {
-		config.AgentlessURL = fmt.Sprintf(agentlessURLTemplate, environment.Site)
+	var processConfig singletonConfig
+	if len(singleton) > 0 {
+		processConfig = singleton[0]
+	}
+	if processConfig != nil {
+		if configuredSite := processConfig.RawSite(); configuredSite != "" {
+			site = configuredSite
+		}
+		config.Debug = config.Debug || processConfig.TelemetryDebug()
+		if config.APIKey == "" {
+			config.APIKey = processConfig.RawAPIKey()
+		}
+		dependencyCollectionEnabled = processConfig.TelemetryDependencyCollectionEnabled()
+		metricsEnabled = processConfig.TelemetryMetricsEnabled()
+		logCollectionEnabled = processConfig.TelemetryLogCollectionEnabled()
 	}
 
-	if config.APIKey == "" {
-		config.APIKey = environment.APIKey
+	if config.AgentlessURL == "" {
+		config.AgentlessURL = fmt.Sprintf(agentlessURLTemplate, site)
 	}
 
 	if config.FlushInterval.Min == 0 {
@@ -191,8 +218,19 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		heartBeatInterval = config.HeartbeatInterval
 	}
 
-	if environment.HeartbeatIntervalSet {
-		heartBeatInterval = time.Duration(environment.HeartbeatInterval * float64(time.Second))
+	if processConfig != nil {
+		if rawInterval, set := processConfig.TelemetryHeartbeatInterval(); set {
+			interval, err := strconv.ParseFloat(rawInterval, 64)
+			if err != nil {
+				log.Warn(
+					"Non-float value for env var DD_TELEMETRY_HEARTBEAT_INTERVAL, defaulting to %f. Parse failed with error: %v",
+					heartBeatInterval.Seconds(),
+					err.Error(),
+				)
+			} else {
+				heartBeatInterval = time.Duration(interval * float64(time.Second))
+			}
+		}
 	}
 	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(heartBeatInterval)
 	if config.HeartbeatInterval != defaultHeartbeatInterval {
@@ -205,16 +243,16 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		config.HeartbeatInterval = config.HeartbeatInterval - 10*time.Millisecond
 	}
 
-	if config.DependencyLoader == nil && environment.DependencyCollectionEnabled {
+	if config.DependencyLoader == nil && dependencyCollectionEnabled {
 		config.DependencyLoader = debug.ReadBuildInfo
 	}
 
 	if !config.MetricsEnabled {
-		config.MetricsEnabled = environment.MetricsEnabled
+		config.MetricsEnabled = metricsEnabled
 	}
 
 	if !config.LogsEnabled {
-		config.LogsEnabled = environment.LogCollectionEnabled
+		config.LogsEnabled = logCollectionEnabled
 	}
 
 	if !config.internalMetricsEnabled {
@@ -229,8 +267,19 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	if config.ExtendedHeartbeatInterval != 0 {
 		extendedHeartbeatInterval = config.ExtendedHeartbeatInterval
 	}
-	if environment.ExtendedHeartbeatIntervalSet {
-		extendedHeartbeatInterval = time.Duration(environment.ExtendedHeartbeatInterval * float64(time.Second))
+	if processConfig != nil {
+		if rawInterval, set := processConfig.TelemetryExtendedHeartbeatInterval(); set {
+			interval, err := strconv.ParseFloat(rawInterval, 64)
+			if err != nil {
+				log.Warn(
+					"Non-float value for env var DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL, defaulting to %f. Parse failed with error: %v",
+					extendedHeartbeatInterval.Seconds(),
+					err.Error(),
+				)
+			} else {
+				extendedHeartbeatInterval = time.Duration(interval * float64(time.Second))
+			}
+		}
 	}
 	config.ExtendedHeartbeatInterval = extendedHeartbeatInterval
 

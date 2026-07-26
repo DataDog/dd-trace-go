@@ -16,6 +16,10 @@ import (
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
+func setConfigEnv(t *testing.T, key, value string) {
+	setConfigEnvs(t, map[string]string{key: value})
+}
+
 func TestSearchCommitsResponseMissingCommitsPreservesLocalOrder(t *testing.T) {
 	response := newSearchCommitsResponse(
 		[]string{"local-1", "remote-1", "local-2", "remote-2", "local-3"},
@@ -168,7 +172,7 @@ func TestEnsureSettingsInitializationNilClientFactoryDoesNotStartUpload(t *testi
 func TestEnsureSettingsInitializationGitUploadDisabledDoesNotStartUploadOrRetrySettings(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
-	t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
+	setConfigEnv(t, constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
 
 	settingsCalls := 0
 	newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
@@ -195,7 +199,7 @@ func TestEnsureSettingsInitializationGitUploadDisabledDoesNotStartUploadOrRetryS
 func TestEnsureSettingsInitializationGitUploadDisabledSettingsErrorDoesNotRegisterCloseAction(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
-	t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
+	setConfigEnv(t, constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
 
 	newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
 		return &mockCIVisibilityClient{

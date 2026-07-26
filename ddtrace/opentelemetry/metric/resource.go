@@ -127,8 +127,9 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 
 // serviceName returns the service name from environment variables with priority order
 func serviceName(ddTags, otelAttrs map[string]string) string {
+	cfg := internalconfig.Get()
 	// DD_SERVICE has highest priority
-	if v := internalconfig.Get().ServiceName(); v != "" {
+	if v := cfg.RawServiceName(); v != "" {
 		return v
 	}
 	// DD_TAGS[service]
@@ -136,7 +137,7 @@ func serviceName(ddTags, otelAttrs map[string]string) string {
 		return v
 	}
 	// OTEL_SERVICE_NAME
-	if v := internalconfig.Get().OTelServiceName(); v != "" {
+	if v := cfg.OTelServiceName(); v != "" {
 		return v
 	}
 	// OTEL_RESOURCE_ATTRIBUTES[service.name]
@@ -149,7 +150,7 @@ func serviceName(ddTags, otelAttrs map[string]string) string {
 // environmentName returns the environment name from environment variables with priority order
 func environmentName(ddTags, otelAttrs map[string]string) string {
 	// DD_ENV has highest priority
-	if v := internalconfig.Get().Env(); v != "" {
+	if v := internalconfig.Get().RawEnv(); v != "" {
 		return v
 	}
 	// DD_TAGS[env]
@@ -166,7 +167,7 @@ func environmentName(ddTags, otelAttrs map[string]string) string {
 // version returns the version from environment variables with priority order
 func version(ddTags, otelAttrs map[string]string) string {
 	// DD_VERSION has highest priority
-	if v := internalconfig.Get().Version(); v != "" {
+	if v := internalconfig.Get().RawVersion(); v != "" {
 		return v
 	}
 	// DD_TAGS[version]
@@ -198,9 +199,8 @@ func hostname(otelAttrs map[string]string) (string, bool) {
 		return v, true
 	}
 
-	// 2. Check whether hostname reporting is enabled.
 	cfg := internalconfig.Get()
-	if !cfg.ReportHostname() {
+	if !cfg.OTelResourceHostnameEnabled() {
 		// If not explicitly "true", do NOT add hostname
 		return "", false
 	}

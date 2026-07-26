@@ -159,7 +159,7 @@ func TestSendPackFilesApiRequestNoFile(t *testing.T) {
 
 func TestSendPackFilesApiRequestManifestModeNoop(t *testing.T) {
 	bazel.ResetForTesting()
-	t.Cleanup(bazel.ResetForTesting)
+	t.Cleanup(reloadBazelConfig)
 
 	var hits int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -181,7 +181,7 @@ func TestSendPackFilesApiRequestManifestModeNoop(t *testing.T) {
 	path := os.Getenv("PATH")
 	defer restoreEnv(origEnv)
 	setCiVisibilityEnv(path, server.URL)
-	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+	setBazelConfigEnv(bazel.ManifestFilePathEnv, manifestPath)
 
 	cInterface := NewClient()
 	bytes, err := cInterface.SendPackFiles("commit-sha", []string{"definitely-missing.pack"})

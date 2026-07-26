@@ -83,6 +83,10 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 	internalCiVisibilityInitialization(func([]tracer.StartOption) {
 		// Set the library to test mode
 		civisibility.SetTestMode()
+		// internalCiVisibilityInitialization enables CI Visibility in the
+		// environment before invoking this test initializer. Refresh the
+		// singleton so the mock tracer observes that update.
+		internalconfig.CreateNew()
 		// Initialize the mocktracer
 		mTracer = mocktracer.Start()
 	})
@@ -98,7 +102,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 
 		// check the debug flag to enable debug logs. The tracer initialization happens
 		// after the CI Visibility initialization so we need to handle this flag ourselves
-		if cfg.Debug() {
+		if cfg.CIVisibilityDebugEnabled() {
 			log.SetLevel(log.LevelDebug)
 		}
 
@@ -122,7 +126,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
-		serviceName := cfg.ServiceName()
+		serviceName := cfg.RawServiceName()
 		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
