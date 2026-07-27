@@ -112,6 +112,147 @@ func TestSpanGLSNoHeapLeakCrossGoroutine(t *testing.T) {
 		r.PerRecord)
 }
 
+// TestSpanGLSNoTraceMergeAfterCrossGoroutineFinish covers the consumer half of
+// APMS-20132: a Kafka span created and finished on another goroutine is re-injected
+// here via ContextWithSpan, so it sits on this goroutine's GLS stack already
+// finished. The next inbound request (fresh context, no upstream headers, so the
+// GLS is its only parent source) must not adopt it and must start its own trace.
+func TestSpanGLSNoTraceMergeAfterCrossGoroutineFinish(t *testing.T) {
+	if !orchestrionEnabled {
+		t.Skip("GLS only exists in orchestrion builds")
+	}
+	require.True(t, built.WithOrchestrion)
+
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	defer tracer.Stop()
+
+	var kafkaSpan *tracer.Span
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		kafkaSpan = tracer.StartSpan("kafka.consume")
+		kafkaSpan.Finish()
+	})
+	wg.Wait()
+	_ = tracer.ContextWithSpan(context.Background(), kafkaSpan)
+
+	httpSpan, _ := tracer.StartSpanFromContext(context.Background(), "http.request")
+	defer httpSpan.Finish()
+
+	require.NotEqualf(t,
+		kafkaSpan.Context().TraceID(),
+		httpSpan.Context().TraceID(),
+		"http.request joined the finished kafka.consume span's trace (trace_id=%s); "+
+			"the GLS Peek guard is not applied",
+		kafkaSpan.Context().TraceID(),
+	)
+}
+
+// TestSpanGLSFinishedParentOnlyHonoredViaExplicitContext pins the escape hatch
+// the Peek guard depends on. Skipping finished entries is only safe because the
+// GLS is a fallback: a span handed over explicitly through a context.Context is
+// still honored, finished or not, since glsContext.Value checks the explicit
+// chain first. A refactor that skipped finished spans everywhere rather than only
+// in the fallback would silently break deliberate continuation.
+//
+// Both halves use the same finished span and the same GLS push. The only thing
+// that differs is what the caller passes as ctx, so this asserts the distinction
+// rather than either behaviour alone. Asserting only the explicit half would be a
+// false signal: StartSpanFromContext resolves an explicitly propagated span from
+// the snapshot ContextWithSpan leaves under activeSpanContextKey and returns
+// before ever consulting the GLS, so that half passes even with no guard and even
+// with no orchestrion.
+//
+// The span is finished on a third goroutine so its popper is a no-op on the
+// subtest goroutines, which is what leaves the entry on their stacks already
+// finished. Each subtest runs on its own goroutine and so gets its own GLS stack.
+func TestSpanGLSFinishedParentOnlyHonoredViaExplicitContext(t *testing.T) {
+	if !orchestrionEnabled {
+		t.Skip("GLS only exists in orchestrion builds")
+	}
+	require.True(t, built.WithOrchestrion)
+
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	defer tracer.Stop()
+
+	var finished *tracer.Span
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		finished = tracer.StartSpan("batch.job")
+		finished.Finish()
+	})
+	wg.Wait()
+
+	t.Run("explicit context inherits", func(t *testing.T) {
+		ctx := tracer.ContextWithSpan(context.Background(), finished)
+
+		child, _ := tracer.StartSpanFromContext(ctx, "explicit.child")
+		defer child.Finish()
+
+		require.Equal(t,
+			finished.Context().TraceID(),
+			child.Context().TraceID(),
+			"a finished span propagated explicitly must still parent",
+		)
+	})
+
+	t.Run("GLS fallback does not inherit", func(t *testing.T) {
+		// Same span pushed onto this goroutine's stack, but the caller passes a
+		// context that carries nothing, so the GLS is the only parent source.
+		_ = tracer.ContextWithSpan(context.Background(), finished)
+
+		child, _ := tracer.StartSpanFromContext(context.Background(), "fallback.child")
+		defer child.Finish()
+
+		require.NotEqualf(t,
+			finished.Context().TraceID(),
+			child.Context().TraceID(),
+			"the GLS fallback handed out the finished batch.job span as a parent "+
+				"(trace_id=%s); the Peek guard is not applied",
+			finished.Context().TraceID(),
+		)
+	})
+}
+
+// TestSpanGLSSequentialRequestsStayIndependent covers the publisher half, and is
+// the shape that produced the reported 9,780-span trace. Each iteration is one
+// request on a reused keep-alive goroutine: a publish span finishes on another
+// goroutine and lands above the request's own span, so the request's own finish
+// pops that stray instead (the pop matches position, not identity) and leaves its
+// own finished span behind. Every request must still get its own trace_id; without
+// the guard request N+1 adopts request N and the whole run collapses into one.
+func TestSpanGLSSequentialRequestsStayIndependent(t *testing.T) {
+	if !orchestrionEnabled {
+		t.Skip("GLS only exists in orchestrion builds")
+	}
+	require.True(t, built.WithOrchestrion)
+
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	defer tracer.Stop()
+
+	const requests = 20
+	seenTraceIDs := make(map[string]struct{}, requests)
+
+	for range requests {
+		span, _ := tracer.StartSpanFromContext(context.Background(), "http.request")
+
+		var stray *tracer.Span
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			stray = tracer.StartSpan("kafka.publish")
+			stray.Finish()
+		})
+		wg.Wait()
+		_ = tracer.ContextWithSpan(context.Background(), stray)
+
+		span.Finish() // pops the stray, leaving this request's finished span behind
+		seenTraceIDs[span.Context().TraceID()] = struct{}{}
+	}
+
+	require.Lenf(t, seenTraceIDs, requests,
+		"expected %d distinct trace_ids, got %d: requests were chained into a shared trace",
+		requests, len(seenTraceIDs))
+}
+
 // TestSpanGLSDoubleFinishSameGoroutine verifies the injected pop both restores
 // the parent as the active span when a child finishes, and is idempotent: a
 // second Finish on the same span must not pop the unrelated parent (the
