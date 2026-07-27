@@ -924,7 +924,10 @@ func (s *Span) setMetricLocked(key string, v float64) {
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
+			// Force the keep: an AppSec attack-detection keep must retain the
+			// trace even when the sampling decision was inherited and locked
+			// from an upstream drop, mirroring the manual-keep path above.
+			s.forceSetSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
 	case "_sampling_priority_v1shim":
 		// We have this for backward compatibility with the v1 shim.

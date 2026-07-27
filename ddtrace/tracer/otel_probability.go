@@ -74,23 +74,23 @@ func parseOtelTracestate(value string) (rv uint64, rvOK bool, th uint64, thOK bo
 
 // appendOtelValue writes the value of the `ot=` list-member (without the "ot="
 // prefix) to b: rv as 14 hex digits and/or th with trailing zero nibbles
-// trimmed. Whichever of rv/th is set is emitted (rv first when both are
+// trimmed. A nil rv or th is omitted (rv is written first when both are
 // present). The pairing invariant (never emit th without rv) is enforced by
 // callers on the generation path; an inherited value is forwarded exactly as it
 // arrived, which may legitimately be th-only or rv-only.
-func appendOtelValue(b *strings.Builder, rv uint64, th uint64, rvSet bool, thSet bool) {
+func appendOtelValue(b *strings.Builder, rv, th *uint64) {
 	var buf [otelRVHexLen]byte
-	if rvSet {
+	if rv != nil {
 		b.WriteString("rv:")
-		hexEncode14(&buf, rv)
+		hexEncode14(&buf, *rv)
 		b.Write(buf[:])
 	}
-	if thSet {
-		if rvSet {
+	if th != nil {
+		if rv != nil {
 			b.WriteByte(';')
 		}
 		b.WriteString("th:")
-		hexEncode14(&buf, th)
+		hexEncode14(&buf, *th)
 		// Trim trailing zero nibbles; a th of 0 is written as a single "0".
 		end := otelRVHexLen
 		for end > 1 && buf[end-1] == '0' {

@@ -1374,9 +1374,9 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	// after `dd=`), keeping both DD-managed members at the front so a crowded
 	// tracestate can't truncate them. An inherited value may be rv-only or
 	// th-only; a DD-generated one is always the rv+th pair.
-	if rv, th, rvSet, thSet := ctx.trace.otelTracestate(); rvSet || thSet {
+	if rv, th := ctx.trace.otelTracestate(); rv != nil || th != nil {
 		b.WriteString(",ot=")
-		appendOtelValue(&b, rv, th, rvSet, thSet)
+		appendOtelValue(&b, rv, th)
 		listLength++
 	}
 	// the old state is split by vendors, must be concatenated with a `,`

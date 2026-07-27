@@ -88,12 +88,12 @@ func TestOtelInheritedForwardedUnchanged(t *testing.T) {
 	sctx, err := tr.Extract(headers)
 	assert.NoError(t, err)
 
-	rv, th, rvSet, thSet := sctx.trace.otelTracestate()
-	assert.True(t, rvSet)
-	assert.True(t, thSet)
-	assert.Equal(t, uint64(0xef284ace7a91e1), rv)
-	assert.Equal(t, uint64(0xe6666666666668), th)
-	assert.True(t, sctx.trace.otInherited)
+	rv, th := sctx.trace.otelTracestate()
+	assert.NotNil(t, rv)
+	assert.NotNil(t, th)
+	assert.Equal(t, uint64(0xef284ace7a91e1), *rv)
+	assert.Equal(t, uint64(0xe6666666666668), *th)
+	assert.True(t, sctx.trace.otel.inherited)
 
 	ts := injectTracestate(t, sctx)
 	assert.Contains(t, ts, "ot=rv:ef284ace7a91e1;th:e6666666666668")
@@ -159,10 +159,10 @@ func TestOtelMalformedTreatedAsAbsent(t *testing.T) {
 	sctx, err := tr.Extract(headers)
 	assert.NoError(t, err)
 
-	_, _, rvSet, thSet := sctx.trace.otelTracestate()
-	assert.False(t, rvSet)
-	assert.False(t, thSet)
-	assert.False(t, sctx.trace.otInherited)
+	rv, th := sctx.trace.otelTracestate()
+	assert.Nil(t, rv)
+	assert.Nil(t, th)
+	assert.Nil(t, sctx.trace.otel)
 
 	ts := injectTracestate(t, sctx)
 	assert.Contains(t, ts, "othervendor=abc")

@@ -650,21 +650,21 @@ type trace struct {
 	// +checklocks:mu
 	filterReject bool
 
-	// OpenTelemetry consistent probability sampling state (OTEP 235), carried in
-	// the `ot=` tracestate list-member. otRV/otTH are the 56-bit randomness and
-	// rejection threshold; the *Set flags mark which are present (th is only ever
-	// emitted alongside rv). otInherited records that the values came from an
-	// inbound `ot=`, so they are forwarded verbatim and never regenerated.
+	// otel holds the OpenTelemetry consistent probability sampling state, or nil
+	// when the trace carries none. See otelTraceState.
 	// +checklocks:mu
-	otRV uint64
-	// +checklocks:mu
-	otTH uint64
-	// +checklocks:mu
-	otRVSet bool
-	// +checklocks:mu
-	otTHSet bool
-	// +checklocks:mu
-	otInherited bool
+	otel *otelTraceState
+}
+
+// otelTraceState is the OpenTelemetry consistent probability sampling state
+// (OTEP 235) carried in the `ot=` tracestate list-member: the 56-bit randomness
+// (rv) and rejection threshold (th). A nil field means that value is absent; th
+// can be present without rv, which is how an inherited OTel default-sampling
+// decision arrives. inherited marks values read from an inbound `ot=`, which are
+// forwarded verbatim and never re-derived locally.
+type otelTraceState struct {
+	rv, th    *uint64
+	inherited bool
 }
 
 // setOtelInherited records rv/th parsed from an inbound `ot=` member. The values
@@ -675,15 +675,16 @@ func (t *trace) setOtelInherited(rv uint64, rvOK bool, th uint64, thOK bool) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.otel == nil {
+		t.otel = &otelTraceState{}
+	}
 	if rvOK {
-		t.otRV = rv
-		t.otRVSet = true
+		t.otel.rv = &rv
 	}
 	if thOK {
-		t.otTH = th
-		t.otTHSet = true
+		t.otel.th = &th
 	}
-	t.otInherited = true
+	t.otel.inherited = true
 }
 
 // setOtelProbability records the (rv, th) pair for a genuine DD probability
@@ -696,13 +697,15 @@ func (t *trace) setOtelProbability(traceIDLower uint64, rate float64) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.otInherited {
+	if t.otel == nil {
+		t.otel = &otelTraceState{}
+	} else if t.otel.inherited {
 		return
 	}
-	t.otRV = deriveOtelRV(traceIDLower)
-	t.otTH = deriveOtelTH(rate)
-	t.otRVSet = true
-	t.otTHSet = true
+	rv := deriveOtelRV(traceIDLower)
+	th := deriveOtelTH(rate)
+	t.otel.rv = &rv
+	t.otel.th = &th
 }
 
 // clearOtelProbability erases a locally-derived (rv, th) pair for a
@@ -711,18 +714,22 @@ func (t *trace) setOtelProbability(traceIDLower uint64, rate float64) {
 func (t *trace) clearOtelProbability() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.otInherited {
+	if t.otel == nil || t.otel.inherited {
 		return
 	}
-	t.otRVSet = false
-	t.otTHSet = false
+	t.otel.rv = nil
+	t.otel.th = nil
 }
 
-// otelTracestate returns the resolved OTel sampling state for injection.
-func (t *trace) otelTracestate() (rv uint64, th uint64, rvSet bool, thSet bool) {
+// otelTracestate returns the resolved OTel sampling state for injection. A nil
+// rv or th means that value must not be emitted.
+func (t *trace) otelTracestate() (rv, th *uint64) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.otRV, t.otTH, t.otRVSet, t.otTHSet
+	if t.otel == nil {
+		return nil, nil
+	}
+	return t.otel.rv, t.otel.th
 }
 
 var (
@@ -835,10 +842,10 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	// OTel threshold rather than encode a fabricated rate. An inherited rv is
 	// still forwarded (it describes upstream's randomness); a locally-derived rv
 	// has no meaning without its threshold, so it is dropped too.
-	if sampler == samplernames.Manual || sampler == samplernames.AppSec {
-		t.otTHSet = false
-		if !t.otInherited {
-			t.otRVSet = false
+	if t.otel != nil && (sampler == samplernames.Manual || sampler == samplernames.AppSec) {
+		t.otel.th = nil
+		if !t.otel.inherited {
+			t.otel.rv = nil
 		}
 	}
 
