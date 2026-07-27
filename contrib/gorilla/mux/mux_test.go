@@ -429,7 +429,7 @@ func errorHandler(code int) http.Handler {
 
 func okHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("200!\n"))
+		_, _ = w.Write([]byte("200!\n"))
 	})
 }
 
