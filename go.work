@@ -1,16 +1,16 @@
-go 1.25.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.25.7 // Go version must match the lowest supported version, not the highest, with format X.Y.
 
 use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
-	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
-	./contrib/azure/apim-callout
+	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/aws/datadog-lambda-go
+	./contrib/azure/apim-callout
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v2
@@ -65,8 +65,8 @@ use (
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
-	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
+	./contrib/twmb/franz-go
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go
