@@ -213,7 +213,7 @@ func newClient(config ClientConfig) (*Client, error) {
 	return &Client{
 		ClientConfig: config,
 		clientID:     generateID(),
-		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
+		endpoint:     config.AgentURL + "/v0.7/config",
 		repository:   repo,
 		stop:         make(chan struct{}),
 		done:         make(chan struct{}),

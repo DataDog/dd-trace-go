@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -635,7 +636,7 @@ func TestRuleEnvVars(t *testing.T) {
 				errStr: "\n\terror unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')",
 			},
 		} {
-			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				rules, _ := samplingrules.UnmarshalSamplingRules([]byte(tt.value), samplingrules.SamplingRuleSpan)
 				assert.Len(rules, tt.ruleN)
 			})
@@ -705,7 +706,7 @@ func TestRuleEnvVars(t *testing.T) {
 				rate:          0.5,
 			},
 		} {
-			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				rules, _ := samplingrules.UnmarshalSamplingRules([]byte(tt.rules), samplingrules.SamplingRuleSpan)
 				if tt.srvRegex == "" {
 					assert.Nil(rules[0].Service)
@@ -1036,7 +1037,7 @@ func TestRulesSampler(t *testing.T) {
 				spanName: "abcde",
 			},
 		} {
-			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				assert := assert.New(t)
 				c, err := newTestConfig(WithSamplingRules(tt.rules))
 				assert.NoError(err)
@@ -1487,7 +1488,7 @@ func TestSamplingRuleUnmarshal(t *testing.T) {
 				},
 			},
 		} {
-			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				var r SamplingRule
 				err := r.UnmarshalJSON([]byte(tt.rule))
 				assert.Nil(t, err)
@@ -1865,7 +1866,7 @@ func TestGlobMatch(t *testing.T) {
 		{"*/*", `a/123`, true},
 		{`*\/*`, `a\/123`, true},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			rg := samplingrules.GlobMatch(tt.pattern)
 			if tt.shouldMatch {
 				assert.Regexp(t, rg, tt.input)
@@ -1930,7 +1931,7 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 		{"*/*", `a/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1}`},
 		{`*\/*`, `a\/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1}`},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			// the goal of this test is
 			// 1. to verify that the glob pattern is correctly converted to a regex
 			// 2. to verify that the rule is correctly marshalled
@@ -1950,7 +1951,7 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 }
 
 func BenchmarkGlobMatchSpan(b *testing.B) {
-	var spans []*Span
+	spans := make([]*Span, 0, 1000)
 	for range 1000 {
 		spans = append(spans, newSpan("name.ops.date", "srv.name.ops.date", "", 0, 0, 0))
 	}

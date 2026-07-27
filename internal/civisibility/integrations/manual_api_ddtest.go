@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,10 +77,10 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	if suite.module.session != nil {
-		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, fmt.Sprint(suite.module.session.sessionID))
+		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, strconv.FormatUint(suite.module.session.sessionID, 10))
 	}
-	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
-	setCIVisibilitySpanTag(span, constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
+	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, strconv.FormatUint(suite.module.moduleID, 10))
+	setCIVisibilitySpanTag(span, constants.TestSuiteIDTag, strconv.FormatUint(suite.suiteID, 10))
 	testID := span.Context().SpanID()
 
 	t := &tslvTest{
@@ -195,7 +196,7 @@ func (t *tslvTest) internalClose(options ...tracer.FinishOption) {
 		testingEventType = append(testingEventType, telemetry.HasFailedAllRetriesEventType...)
 	}
 	if retryReason, ok := t.ctx.Value(constants.TestRetryReason).(string); ok {
-		testingEventType = append(testingEventType, []string{fmt.Sprintf("retry_reason:%s", retryReason)}...)
+		testingEventType = append(testingEventType, []string{"retry_reason:" + retryReason}...)
 	}
 	telemetry.EventFinished(t.suite.module.framework, testingEventType)
 }

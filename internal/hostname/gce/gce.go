@@ -7,6 +7,7 @@ package gce
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -113,7 +114,7 @@ func getResponse(ctx context.Context, url string) (string, error) {
 
 	// Some cloud platforms will respond with an empty body, causing the agent to assume a faulty hostname
 	if len(res) <= 0 {
-		return "", fmt.Errorf("empty response body")
+		return "", errors.New("empty response body")
 	}
 
 	return res, nil

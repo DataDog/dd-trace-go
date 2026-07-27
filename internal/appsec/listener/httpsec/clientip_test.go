@@ -503,3 +503,37 @@ func randPrivateIPv6() netip.Addr {
 		}
 	}
 }
+
+func BenchmarkClientIP(b *testing.B) {
+	headers := []struct {
+		name string
+		hdrs map[string][]string
+	}{
+		{
+			name: "x-forwarded-for/single",
+			hdrs: map[string][]string{"X-Forwarded-For": {"203.0.113.1"}},
+		},
+		{
+			name: "x-forwarded-for/multi",
+			hdrs: map[string][]string{"X-Forwarded-For": {"10.0.0.1, 172.16.0.1, 203.0.113.1"}},
+		},
+		{
+			name: "forwarded",
+			hdrs: map[string][]string{"Forwarded": {`for=203.0.113.1;by=unknown;proto=https`}},
+		},
+		{
+			name: "no_match",
+			hdrs: map[string][]string{"Content-Type": {"application/json"}},
+		},
+	}
+	monitoredHdrs := []string{"X-Forwarded-For", "Forwarded"}
+	for _, tc := range headers {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				ClientIP(tc.hdrs, true, "192.168.1.1:8080", monitoredHdrs)
+			}
+		})
+	}
+}

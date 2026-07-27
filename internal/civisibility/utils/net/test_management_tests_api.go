@@ -7,6 +7,7 @@ package net
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -85,7 +86,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 	}
 
 	if c.repositoryURL == "" {
-		return nil, fmt.Errorf("civisibility.GetTestManagementTests: repository URL is required")
+		return nil, errors.New("civisibility.GetTestManagementTests: repository URL is required")
 	}
 
 	// we use the head commit SHA if it is set, otherwise we use the commit SHA

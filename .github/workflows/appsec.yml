@@ -86,7 +86,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version: "1.26.4"
           cache: false
 
       - name: Cache Go modules
@@ -102,7 +102,9 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
-        run: go mod download -x
+        run: |
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption go mod download -x
 
 
   macos:
@@ -113,7 +115,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
-        go-version: [ "1.26", "1.25" ]
+        go-version: [ "1.26.4", "1.25" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -128,7 +130,9 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -138,7 +142,8 @@ jobs:
       - name: Setup testing environment
         run: |-
           mkdir -p "tmp_appsec"
-          go install gotest.tools/gotestsum@latest
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption go install gotest.tools/gotestsum@latest
 
       # go test is being manually called multiple times here for the sake of reusing the runner.
       # Waiting runners is unfortunately so long that we decided to do so for things only requiring recompilation or
@@ -241,11 +246,13 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version: "1.26.4"
           cache: false # we manage the caching ourselves
 
       - run: go env -w GOMODCACHE="${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}"
@@ -254,9 +261,11 @@ jobs:
         if: runner.os != 'Windows'
 
       - name: Setup testing environment
+        shell: bash
         run: |-
           mkdir -p "tmp_appsec"
-          go install gotest.tools/gotestsum@latest
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption go install gotest.tools/gotestsum@latest
 
       - name: go test
         shell: bash
@@ -305,7 +314,7 @@ jobs:
       - go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.26", "1.25" ]
+        go-version: [ "1.26.4", "1.25" ]
         distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 
@@ -323,7 +332,9 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
       # Docker is not present on early-access ARM runners
       - name: Prepare ARM Runner
@@ -363,7 +374,10 @@ jobs:
       - name: Setup testing environment
         run: |-
           mkdir -p "tmp_appsec"
-          sudo docker exec -i test.runner go install gotest.tools/gotestsum@latest
+          # go-retry.sh is bind-mounted into the container at the same path (-v "$PWD:$PWD" -w "$PWD"
+          # above), so it can be sourced from inside via `docker exec` for the same corruption-retry
+          # protection as the host-side install steps.
+          sudo docker exec -i test.runner bash -c 'source ./.github/workflows/apps/go-retry.sh && retry_on_corruption go install gotest.tools/gotestsum@latest'
 
       - name: NOCGO, undefined appsec state
         run: |

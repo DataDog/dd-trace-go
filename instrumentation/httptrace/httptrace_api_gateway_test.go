@@ -6,7 +6,6 @@
 package httptrace
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -43,7 +42,7 @@ func TestInferredProxySpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", srvURL), nil)
+		req, err := http.NewRequest("GET", srvURL+"/", nil)
 		require.NoError(t, err)
 
 		for k, v := range inferredHeaders {
@@ -85,7 +84,7 @@ func TestInferredProxySpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/error", srvURL), nil)
+		req, err := http.NewRequest("GET", srvURL+"/error", nil)
 		require.NoError(t, err)
 
 		for k, v := range inferredHeaders {
@@ -129,7 +128,7 @@ func TestInferredProxySpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", srvURL), nil)
+		req, err := http.NewRequest("GET", srvURL+"/no-aws-headers", nil)
 		require.NoError(t, err)
 
 		_, _, finishSpans := StartRequestSpan(req)
@@ -146,7 +145,7 @@ func TestInferredProxySpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", srvURL), nil)
+		req, err := http.NewRequest("GET", srvURL+"/no-aws-headers", nil)
 		require.NoError(t, err)
 
 		for k, v := range inferredHeaders {
@@ -167,7 +166,7 @@ func TestInferredProxySpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", srvURL), nil)
+		req, err := http.NewRequest("GET", srvURL+"/", nil)
 		require.NoError(t, err)
 		for k, v := range inferredHeaders {
 			req.Header.Set(k, v)
