@@ -965,20 +965,29 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, params Ex
 // condition. It is the single join validator shared by the live SubmitEvaluation
 // path and the offline llmobs/export path.
 func BuildEvaluationJoin(spanID, traceID, tagKey, tagValue string) (transport.EvaluationJoinOn, error) {
-	hasSpanJoin := spanID != "" || traceID != ""
-	hasTagJoin := tagKey != "" || tagValue != ""
+	// Precedence matters: a partially-specified family is reported as that
+	// family's own error (invalid_span / invalid_tag_join) before the "both
+	// present" check, preserving the exact sentinel — and thus telemetry
+	// error_type — each input produced before this was a shared validator.
+	var hasSpanJoin, hasTagJoin bool
+	if spanID != "" || traceID != "" {
+		if spanID == "" || traceID == "" {
+			return transport.EvaluationJoinOn{}, errInvalidSpanJoin
+		}
+		hasSpanJoin = true
+	}
+	if tagKey != "" || tagValue != "" {
+		if tagKey == "" || tagValue == "" {
+			return transport.EvaluationJoinOn{}, errInvalidTagJoin
+		}
+		hasTagJoin = true
+	}
 	switch {
 	case hasSpanJoin && hasTagJoin:
 		return transport.EvaluationJoinOn{}, errEvalJoinBothPresent
 	case hasSpanJoin:
-		if spanID == "" || traceID == "" {
-			return transport.EvaluationJoinOn{}, errInvalidSpanJoin
-		}
 		return transport.EvaluationJoinOn{Span: &transport.EvaluationSpanJoin{SpanID: spanID, TraceID: traceID}}, nil
 	case hasTagJoin:
-		if tagKey == "" || tagValue == "" {
-			return transport.EvaluationJoinOn{}, errInvalidTagJoin
-		}
 		return transport.EvaluationJoinOn{Tag: &transport.EvaluationTagJoin{Key: tagKey, Value: tagValue}}, nil
 	default:
 		return transport.EvaluationJoinOn{}, errEvalJoinNonePresent
