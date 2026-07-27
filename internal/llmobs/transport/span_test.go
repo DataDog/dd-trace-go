@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSpanLinkWireShape locks the dual span-link ID representation: the live
-// tracer path emits numeric IDs (JSON numbers, its historical wire shape) while
-// the offline export path emits opaque string IDs (JSON strings). TraceIDHigh is
-// omitted unless set.
+// TestSpanLinkWireShape locks the span-link wire shape: trace/span IDs are always
+// JSON strings (the live tracer formats its uint64 IDs as decimal strings; the
+// offline export path passes opaque caller IDs through). TraceIDHigh is omitted
+// unless set.
 func TestSpanLinkWireShape(t *testing.T) {
 	cases := []struct {
 		name string
@@ -24,23 +24,20 @@ func TestSpanLinkWireShape(t *testing.T) {
 		want string
 	}{
 		{
-			name: "numeric live path, no high word",
-			link: SpanLink{TraceID: NumericSpanLinkID(111), SpanID: NumericSpanLinkID(222)},
-			want: `{"trace_id":111,"span_id":222}`,
+			name: "no high word",
+			link: SpanLink{TraceID: "111", SpanID: "222"},
+			want: `{"trace_id":"111","span_id":"222"}`,
 		},
 		{
-			name: "numeric live path with high word",
-			link: func() SpanLink {
-				h := NumericSpanLinkID(333)
-				return SpanLink{TraceID: NumericSpanLinkID(111), TraceIDHigh: &h, SpanID: NumericSpanLinkID(222)}
-			}(),
-			want: `{"trace_id":111,"trace_id_high":333,"span_id":222}`,
+			name: "with high word",
+			link: SpanLink{TraceID: "111", TraceIDHigh: "333", SpanID: "222"},
+			want: `{"trace_id":"111","trace_id_high":"333","span_id":"222"}`,
 		},
 		{
-			name: "opaque string export path",
+			name: "opaque IDs with attributes",
 			link: SpanLink{
-				TraceID:    StringSpanLinkID("lt"),
-				SpanID:     StringSpanLinkID("ls"),
+				TraceID:    "lt",
+				SpanID:     "ls",
 				Attributes: map[string]string{"a": "b"},
 			},
 			want: `{"trace_id":"lt","span_id":"ls","attributes":{"a":"b"}}`,
@@ -55,13 +52,11 @@ func TestSpanLinkWireShape(t *testing.T) {
 	}
 }
 
-// TestSpanLinkRoundTrip guards decoding: the in-process test collector (and any
-// intake-response path) decodes transport.SpanLink, so SpanLinkID must accept
-// both a JSON number and a JSON string. A marshal-only type silently breaks
-// json.Unmarshal, dropping any span that carries links.
+// TestSpanLinkRoundTrip guards decoding: the in-process test collector decodes
+// transport.SpanLink, so the string wire shape must round-trip unchanged.
 func TestSpanLinkRoundTrip(t *testing.T) {
 	for _, wire := range []string{
-		`{"trace_id":111,"trace_id_high":333,"span_id":222}`,
+		`{"trace_id":"111","trace_id_high":"333","span_id":"222"}`,
 		`{"trace_id":"lt","span_id":"ls","attributes":{"a":"b"}}`,
 	} {
 		var link SpanLink
