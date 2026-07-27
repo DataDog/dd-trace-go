@@ -80,6 +80,28 @@ const (
 	SpanKindTool SpanKind = "tool"
 )
 
+// SpanStatus is the terminal status of a span on the wire.
+type SpanStatus string
+
+const (
+	// SpanStatusOK marks a span that completed without error.
+	SpanStatusOK SpanStatus = "ok"
+	// SpanStatusError marks a span that ended in error.
+	SpanStatusError SpanStatus = "error"
+)
+
+// EvalMetricType is the type of an evaluation metric value on the wire.
+type EvalMetricType string
+
+const (
+	// EvalMetricTypeCategorical is a categorical (string-valued) metric.
+	EvalMetricTypeCategorical EvalMetricType = "categorical"
+	// EvalMetricTypeScore is a numeric-scored metric.
+	EvalMetricTypeScore EvalMetricType = "score"
+	// EvalMetricTypeBoolean is a boolean-valued metric.
+	EvalMetricTypeBoolean EvalMetricType = "boolean"
+)
+
 const (
 	defaultFlushInterval = 2 * time.Second
 )
@@ -580,10 +602,10 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		meta["tool.version"] = toolVersion
 	}
 
-	spanStatus := "ok"
+	spanStatus := string(SpanStatusOK)
 	var errMsg *transport.ErrorMessage
 	if span.error != nil {
-		spanStatus = "error"
+		spanStatus = string(SpanStatusError)
 		errMsg = transport.NewErrorMessage(span.error)
 		meta["error.message"] = errMsg.Message
 		meta["error.stack"] = errMsg.Stack
@@ -921,6 +943,31 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, params Ex
 	return span, ctx
 }
 
+// BuildEvaluationJoin validates that exactly one join family is fully specified —
+// span (span_id + trace_id) or tag (key + value) — and returns the transport join
+// condition. It is the single join validator shared by the live SubmitEvaluation
+// path and the offline llmobs/export path.
+func BuildEvaluationJoin(spanID, traceID, tagKey, tagValue string) (transport.EvaluationJoinOn, error) {
+	hasSpanJoin := spanID != "" || traceID != ""
+	hasTagJoin := tagKey != "" || tagValue != ""
+	switch {
+	case hasSpanJoin && hasTagJoin:
+		return transport.EvaluationJoinOn{}, errEvalJoinBothPresent
+	case hasSpanJoin:
+		if spanID == "" || traceID == "" {
+			return transport.EvaluationJoinOn{}, errInvalidSpanJoin
+		}
+		return transport.EvaluationJoinOn{Span: &transport.EvaluationSpanJoin{SpanID: spanID, TraceID: traceID}}, nil
+	case hasTagJoin:
+		if tagKey == "" || tagValue == "" {
+			return transport.EvaluationJoinOn{}, errInvalidTagJoin
+		}
+		return transport.EvaluationJoinOn{Tag: &transport.EvaluationTagJoin{Key: tagKey, Value: tagValue}}, nil
+	default:
+		return transport.EvaluationJoinOn{}, errEvalJoinNonePresent
+	}
+}
+
 // SubmitEvaluation submits an evaluation metric for a span.
 // The span can be identified either by span/trace IDs or by tag key-value pairs.
 func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
@@ -932,27 +979,9 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 	if cfg.Label == "" {
 		return errInvalidMetricLabel
 	}
-	var (
-		hasTagJoin  bool
-		hasSpanJoin bool
-	)
-	if cfg.SpanID != "" || cfg.TraceID != "" {
-		if !(cfg.SpanID != "" && cfg.TraceID != "") {
-			return errInvalidSpanJoin
-		}
-		hasSpanJoin = true
-	}
-	if cfg.TagKey != "" || cfg.TagValue != "" {
-		if !(cfg.TagKey != "" && cfg.TagValue != "") {
-			return errInvalidTagJoin
-		}
-		hasTagJoin = true
-	}
-	if hasSpanJoin && hasTagJoin {
-		return errEvalJoinBothPresent
-	}
-	if !hasSpanJoin && !hasTagJoin {
-		return errEvalJoinNonePresent
+	joinOn, err := BuildEvaluationJoin(cfg.SpanID, cfg.TraceID, cfg.TagKey, cfg.TagValue)
+	if err != nil {
+		return err
 	}
 
 	numValues := 0
@@ -978,20 +1007,6 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 		timestampMS = time.Now().UnixMilli()
 	}
 
-	// Build the appropriate join condition
-	var joinOn transport.EvaluationJoinOn
-	if hasSpanJoin {
-		joinOn.Span = &transport.EvaluationSpanJoin{
-			SpanID:  cfg.SpanID,
-			TraceID: cfg.TraceID,
-		}
-	} else {
-		joinOn.Tag = &transport.EvaluationTagJoin{
-			Key:   cfg.TagKey,
-			Value: cfg.TagValue,
-		}
-	}
-
 	tags := make([]string, 0, len(cfg.Tags)+1)
 	for _, tag := range cfg.Tags {
 		if !strings.HasPrefix(tag, "ddtrace.version:") {
@@ -1010,13 +1025,13 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 
 	if cfg.CategoricalValue != nil {
 		metric.CategoricalValue = cfg.CategoricalValue
-		metric.MetricType = "categorical"
+		metric.MetricType = string(EvalMetricTypeCategorical)
 	} else if cfg.ScoreValue != nil {
 		metric.ScoreValue = cfg.ScoreValue
-		metric.MetricType = "score"
+		metric.MetricType = string(EvalMetricTypeScore)
 	} else if cfg.BooleanValue != nil {
 		metric.BooleanValue = cfg.BooleanValue
-		metric.MetricType = "boolean"
+		metric.MetricType = string(EvalMetricTypeBoolean)
 	} else {
 		return errors.New("a metric value (categorical, score, or boolean) is required for evaluation metrics")
 	}
