@@ -102,7 +102,7 @@ require (
 	github.com/valyala/fasthttp v1.58.0
 	go.mongodb.org/mongo-driver v1.17.1
 	google.golang.org/api v0.273.1
-	google.golang.org/grpc v1.82.0
+	google.golang.org/grpc v1.82.1
 	gopkg.in/olivere/elastic.v5 v5.0.84
 	gorm.io/driver/postgres v1.5.5
 	gorm.io/gorm v1.25.12
