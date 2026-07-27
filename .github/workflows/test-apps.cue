@@ -141,7 +141,7 @@ jobs: {
                     {
                         name: "Get Datadog credentials",
                         id: "dd-sts",
-                        uses: "DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75",
+                        uses: "DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2",
                         with: {
                             policy: "dd-trace-go",
                         },
