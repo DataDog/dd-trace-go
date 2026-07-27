@@ -41,6 +41,7 @@ type statsConcentrator interface {
 	flushAndSend(now time.Time, includeCurrent bool)
 	newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool)
 	trySendSpan(s *tracerStatSpan)
+	trySendSpans(spans []*tracerStatSpan)
 }
 
 // concentrator aggregates and stores statistics on incoming spans in time buckets,
@@ -50,7 +51,7 @@ type concentrator struct {
 	// In specifies the channel to be used for feeding data to the concentrator.
 	// In order for In to have a consumer, the concentrator must be started using
 	// a call to Start.
-	In chan *tracerStatSpan
+	In chan []*tracerStatSpan
 
 	// stopped reports whether the concentrator is stopped (when non-zero)
 	stopped uint32 // +checkatomic
@@ -113,7 +114,7 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 	}
 	spanConcentrator := stats.NewSpanConcentrator(sCfg, time.Now())
 	return &concentrator{
-		In:               make(chan *tracerStatSpan, 10000),
+		In:               make(chan []*tracerStatSpan, 10000),
 		bucketSize:       bucketSize,
 		stopped:          1,
 		cfg:              c,
@@ -171,9 +172,11 @@ func (c *concentrator) statsd() internal.StatsdClient {
 func (c *concentrator) runIngester() {
 	for {
 		select {
-		case s := <-c.In:
-			c.statsd().Incr("datadog.tracer.stats.spans_in", nil, 1)
-			c.add(s)
+		case spans := <-c.In:
+			_ = c.statsd().Count("datadog.tracer.stats.spans_in", int64(len(spans)), nil, 1)
+			for _, s := range spans {
+				c.add(s)
+			}
 		case <-c.stop:
 			return
 		}
@@ -246,9 +249,11 @@ func (c *concentrator) Stop() {
 drain:
 	for {
 		select {
-		case s := <-c.In:
-			c.statsd().Incr("datadog.tracer.stats.spans_in", nil, 1)
-			c.add(s)
+		case spans := <-c.In:
+			_ = c.statsd().Count("datadog.tracer.stats.spans_in", int64(len(spans)), nil, 1)
+			for _, s := range spans {
+				c.add(s)
+			}
 		default:
 			break drain
 		}
@@ -349,10 +354,16 @@ func (c *concentrator) emitCollapseMetrics(bc stats.BlockCounts) {
 // trySendSpan attempts a non-blocking send of the stat span to the
 // concentrator's input channel.
 func (c *concentrator) trySendSpan(s *tracerStatSpan) {
+	c.trySendSpans([]*tracerStatSpan{s})
+}
+
+// trySendSpans attempts a non-blocking send of stat spans to the
+// concentrator's input channel.
+func (c *concentrator) trySendSpans(spans []*tracerStatSpan) {
 	select {
-	case c.In <- s:
+	case c.In <- spans:
 	default:
-		log.Error("Stats channel full, disregarding span.")
+		log.Error("Stats channel full, disregarding span batch.")
 	}
 }
 
@@ -366,4 +377,5 @@ func (c *noopConcentrator) flushAndSend(_ time.Time, _ bool) {}
 func (c *noopConcentrator) newTracerStatSpan(_ *Span, _ *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
 	return nil, false
 }
-func (c *noopConcentrator) trySendSpan(_ *tracerStatSpan) {}
+func (c *noopConcentrator) trySendSpan(_ *tracerStatSpan)    {}
+func (c *noopConcentrator) trySendSpans(_ []*tracerStatSpan) {}
