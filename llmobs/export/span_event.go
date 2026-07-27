@@ -246,8 +246,8 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 	ev.Tags = append([]string{}, e.Tags...)
 	for _, l := range e.SpanLinks {
 		ev.SpanLinks = append(ev.SpanLinks, transport.SpanLink{
-			SpanID:     transport.StringSpanLinkID(l.SpanID),
-			TraceID:    transport.StringSpanLinkID(l.TraceID),
+			SpanID:     l.SpanID,
+			TraceID:    l.TraceID,
 			Attributes: l.Attributes,
 		})
 	}

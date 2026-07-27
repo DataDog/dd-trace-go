@@ -3193,12 +3193,11 @@ func TestSpanLinkJSONTags(t *testing.T) {
 }
 
 // TestSpanLinkWire locks the live-tracer span-link wire end to end: links added to
-// an LLM span are emitted with numeric trace/span IDs (the tracer's historical
-// wire shape), and a zero high word is omitted rather than serialized as 0. It
-// drives the toTransportSpanLinks conversion through the real emit path, so a
-// refactor that wrapped the IDs as strings or dropped the TraceIDHigh guard cannot
-// flip the wire (from `"trace_id":123` to `"trace_id":"123"`, or emit
-// `trace_id_high:0`) with every test still green.
+// an LLM span are emitted with their uint64 trace/span IDs formatted as decimal
+// strings, and a zero high word is omitted rather than serialized. It drives the
+// toTransportSpanLinks conversion through the real emit path, so a refactor that
+// stopped string-formatting the IDs or dropped the TraceIDHigh guard cannot flip
+// the wire with every test still green.
 func TestSpanLinkWire(t *testing.T) {
 	_, coll, ll := testTracer(t)
 
@@ -3213,9 +3212,9 @@ func TestSpanLinkWire(t *testing.T) {
 
 	b, err := json.Marshal(l.SpanLinks[0])
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"trace_id":111,"span_id":222}`, string(b))
+	assert.JSONEq(t, `{"trace_id":"111","span_id":"222"}`, string(b))
 
 	b, err = json.Marshal(l.SpanLinks[1])
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"trace_id":333,"trace_id_high":444,"span_id":555,"attributes":{"a":"b"}}`, string(b))
+	assert.JSONEq(t, `{"trace_id":"333","trace_id_high":"444","span_id":"555","attributes":{"a":"b"}}`, string(b))
 }
