@@ -31,7 +31,7 @@ Before writing code, understand what to trace and how the library lets you hook 
 
 ### Path
 
-The integration lives at `contrib/<mirror>`, where `<mirror>` mirrors the import path of the package
+The integration lives at `contrib/<path>`, where `<path>` mirrors the import path of the package
 being instrumented:
 
 - Standard library: use the import path unchanged. `net/http` becomes `contrib/net/http`.
@@ -48,10 +48,12 @@ Libraries using Go modules:
 
 - **v0 or v1** (the import path has no `/vN` element): no suffix. `github.com/gorilla/mux` (v1)
   becomes `contrib/gorilla/mux`.
-- **v2 or higher** (the import path ends in `/vN`): add a `.vN` suffix on the last element, matching
-  the major. `github.com/redis/go-redis/v9` becomes `contrib/redis/go-redis.v9`, and
-  `github.com/confluentinc/confluent-kafka-go/v2/kafka` becomes
-  `contrib/confluentinc/confluent-kafka-go/kafka.v2`.
+- **v2 or higher** (the import path contains a `/vN` element): drop the `/vN` element and add it as a
+  `.vN` suffix on the path element that carried it; keep any subpackage path after that unsuffixed.
+  `github.com/redis/go-redis/v9` becomes `contrib/redis/go-redis.v9`, and
+  `go.mongodb.org/mongo-driver/v2/mongo` becomes `contrib/go.mongodb.org/mongo-driver.v2/mongo`: the
+  suffix lands on `mongo-driver`, the element that carried `/v2`, not on the trailing `mongo`
+  subpackage.
 
 Libraries not using Go modules (consumed through a pseudo-version like `v0.0.0-<date>-<hash>`): treat
 as v0, no suffix. `github.com/bradfitz/gomemcache` becomes `contrib/bradfitz/gomemcache`.
@@ -64,7 +66,7 @@ Each integration is its own Go module. Put `go.mod` and `go.sum` at the root of 
 directory. The module path is:
 
 ```
-github.com/DataDog/dd-trace-go/contrib/<mirror>/v2
+github.com/DataDog/dd-trace-go/contrib/<path>/v2
 ```
 
 The trailing `/v2` is dd-trace-go's own major version. It is on every contrib module and is separate
@@ -73,9 +75,11 @@ from the `.vN` library suffix above. For example, `contrib/gorilla/mux` has modu
 
 Local dependencies (`dd-trace-go/v2` and other contrib modules) live in this repo and are not fetched
 from a released version, so each `go.mod` needs a `replace` directive pointing at the module's
-relative path. Do not write these by hand. Run `make fix-modules` and it adds them, tidies every
-module, and updates `go.work.sum`. Then register the module in the workspace with
-`go work use ./contrib/<mirror>`, which `make fix-modules` does not do for you.
+relative path. Do not write these by hand. First register the module in the workspace with
+`go work use ./contrib/<path>`, which `make fix-modules` does not do for you. Then run
+`make fix-modules`: it adds the `replace` directives, tidies every module, and updates
+`go.work.sum`. A new module must be in `go.work` before `fix-modules` runs, or its `go mod tidy`
+step fails.
 
 ### Files
 
@@ -213,11 +217,12 @@ Every span must set:
 - `span.kind` (`ext.SpanKind`), unless the value is `internal`. See
   [span_kind.go](../ddtrace/ext/span_kind.go).
 - `component` (`ext.Component`): the canonical package path, which is the value of the integration's
-  `instrumentation.Package<Name>` constant. Pass that constant directly.
+  `instrumentation.Package<Name>` constant. Cast it to `string`, or the tracer won't attribute the
+  span to the integration.
 
 ```go
 tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-tracer.Tag(ext.Component, instrumentation.PackageRedisGoRedisV9),
+tracer.Tag(ext.Component, string(instrumentation.PackageRedisGoRedisV9)),
 ```
 
 ### Service name
@@ -295,7 +300,8 @@ func init() {
    `Package<Name>` constant and a `packages` map entry with `TracedPackage` and `EnvVarPrefix`. Do
    not add a `naming` map, see [Service name](#5-spans-tags-and-naming).
 
-3. Add the module import path to `contribIntegrations` in
+3. Add the traced package's import path, the same value used for `TracedPackage` in step 2 (not the
+   contrib module path), to `contribIntegrations` in
    [ddtrace/tracer/option.go](../ddtrace/tracer/option.go). This is how the tracer reports the
    integration as imported, for example in startup logs and integration telemetry.
 
@@ -350,8 +356,9 @@ tests is covered in [ORCHESTRION.md](./ORCHESTRION.md).
 
 Run these in order and commit every change they produce. CI fails on a non-clean `git diff`.
 
-1. `make fix-modules`. Adds replace directives, tidies modules, updates `go.work.sum`. Run it first,
-   and remember `go work use ./contrib/<mirror>`.
+1. For a new contrib module, run `go work use ./contrib/<path>` first (`make fix-modules` will
+   fail to tidy a module that isn't in `go.work` yet). Then run `make fix-modules`. Adds replace
+   directives, tidies modules, updates `go.work.sum`.
 2. `make generate`. Regenerates the auto-instrumentation artifacts and generated tests. Run it after
    `fix-modules`. If it changes a `go.mod`, run `make fix-modules` again.
 3. `make lint` and `make format`.

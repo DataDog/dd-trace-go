@@ -9,7 +9,6 @@ Furthermore, be sure to follow [Effective Go guidelines](https://go.dev/doc/effe
 Use the following files when making specific changes:
 
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
-* [contrib/ORCHESTRION.md](./contrib/ORCHESTRION.md) -- for adding auto-instrumentation (Orchestrion) support to an integration
 * [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
