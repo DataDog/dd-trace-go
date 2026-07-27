@@ -11,19 +11,22 @@ import (
 	"strings"
 	"time"
 
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
-// MetricType is the type of an evaluation metric value.
+// MetricType is the type of an evaluation metric value; the scalar types are
+// shared with internal/llmobs.EvalMetricType.
 type MetricType string
 
 // Evaluation metric types recognized by LLM Obs.
 const (
-	MetricTypeCategorical MetricType = "categorical"
-	MetricTypeScore       MetricType = "score"
-	MetricTypeBoolean     MetricType = "boolean"
+	MetricTypeCategorical = MetricType(illmobs.EvalMetricTypeCategorical)
+	MetricTypeScore       = MetricType(illmobs.EvalMetricTypeScore)
+	MetricTypeBoolean     = MetricType(illmobs.EvalMetricTypeBoolean)
 	// MetricTypeJSON is a structured metric whose value is a json_value object
 	// (e.g. Trajectory's range/segment markers). It must be paired with JSONValue.
+	// It is offline-export-only; the live tracer has no equivalent.
 	MetricTypeJSON MetricType = "json"
 )
 
@@ -64,30 +67,16 @@ type EvaluationMetric struct {
 	Metadata   map[string]any
 }
 
-// lower validates the metric and lowers it to the internal transport metric
-// (reusing internal/llmobs/transport.LLMObsMetric as the single eval-wire
-// source of truth). It returns a non-empty reason string when the metric is
-// invalid (and must not be sent).
+// lower validates the metric and lowers it to the transport wire type, returning
+// a non-empty reason string when the metric is invalid (and must not be sent).
 func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, string) {
 	if m.Label == "" {
 		return nil, "missing label"
 	}
 
-	hasSpanJoin := m.SpanID != "" || m.TraceID != ""
-	hasTagJoin := m.TagKey != "" || m.TagValue != ""
-	switch {
-	case hasSpanJoin && hasTagJoin:
-		return nil, "both span and tag join provided; set exactly one"
-	case hasSpanJoin:
-		if m.SpanID == "" || m.TraceID == "" {
-			return nil, "span join requires both span_id and trace_id"
-		}
-	case hasTagJoin:
-		if m.TagKey == "" || m.TagValue == "" {
-			return nil, "tag join requires both key and value"
-		}
-	default:
-		return nil, "missing join: set span_id+trace_id or tag key+value"
+	joinOn, err := illmobs.BuildEvaluationJoin(m.SpanID, m.TraceID, m.TagKey, m.TagValue)
+	if err != nil {
+		return nil, err.Error()
 	}
 
 	values := 0
@@ -150,6 +139,7 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 	}
 
 	w := &transport.LLMObsMetric{
+		JoinOn:           joinOn,
 		Label:            m.Label,
 		MetricType:       string(metricType),
 		TimestampMS:      timestampMS(m.Timestamp),
@@ -162,11 +152,6 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 		ScoreValue:       m.ScoreValue,
 		BooleanValue:     m.BooleanValue,
 		JSONValue:        m.JSONValue,
-	}
-	if hasSpanJoin {
-		w.JoinOn.Span = &transport.EvaluationSpanJoin{SpanID: m.SpanID, TraceID: m.TraceID}
-	} else {
-		w.JoinOn.Tag = &transport.EvaluationTagJoin{Key: m.TagKey, Value: m.TagValue}
 	}
 	return w, ""
 }

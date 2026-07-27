@@ -9,33 +9,34 @@ import (
 	"maps"
 	"time"
 
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
 // defaultParentID mirrors the LLM Obs convention for a span with no parent.
 const defaultParentID = "undefined"
 
-// Kind is the LLM Obs span kind.
+// Kind is the LLM Obs span kind; its values are shared with internal/llmobs.SpanKind.
 type Kind string
 
 // Span kinds recognized by LLM Obs.
 const (
-	KindLLM       Kind = "llm"
-	KindAgent     Kind = "agent"
-	KindWorkflow  Kind = "workflow"
-	KindTask      Kind = "task"
-	KindTool      Kind = "tool"
-	KindEmbedding Kind = "embedding"
-	KindRetrieval Kind = "retrieval"
+	KindLLM       = Kind(illmobs.SpanKindLLM)
+	KindAgent     = Kind(illmobs.SpanKindAgent)
+	KindWorkflow  = Kind(illmobs.SpanKindWorkflow)
+	KindTask      = Kind(illmobs.SpanKindTask)
+	KindTool      = Kind(illmobs.SpanKindTool)
+	KindEmbedding = Kind(illmobs.SpanKindEmbedding)
+	KindRetrieval = Kind(illmobs.SpanKindRetrieval)
 )
 
-// Status is the terminal status of a span.
+// Status is the terminal status of a span, mirroring internal/llmobs.SpanStatus.
 type Status string
 
 // Span statuses recognized by LLM Obs.
 const (
-	StatusOK    Status = "ok"
-	StatusError Status = "error"
+	StatusOK    = Status(illmobs.SpanStatusOK)
+	StatusError = Status(illmobs.SpanStatusError)
 )
 
 // SpanEvent is a caller-built LLM Obs span to export. IDs are opaque strings and
@@ -176,9 +177,9 @@ type SpanLink struct {
 }
 
 // toWire lowers a public SpanEvent to the shared transport wire shape, applying
-// defaults. The structured meta block is a map[string]any so it reproduces the
-// exact intake JSON (nested meta.span.kind plus the flat meta."span.kind", model
-// fields, input/output, metadata) with the same omitempty behavior as before.
+// defaults. The meta block is a map[string]any so it reproduces the exact intake
+// JSON — nested meta.span.kind plus the flat meta."span.kind", model fields,
+// input/output, and metadata — each with omitempty semantics.
 func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 	parentID := e.ParentID
 	if parentID == "" {
