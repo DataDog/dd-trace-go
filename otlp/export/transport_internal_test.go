@@ -6,6 +6,7 @@
 package export
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -55,6 +56,38 @@ func TestDoPost_ReadErrorOn2xxIsSurfacedAsRetryableFailure(t *testing.T) {
 	require.Error(t, a.Err) // an unreadable 2xx body must not be reported as success
 	assert.Equal(t, 0, a.Status)
 	assert.True(t, otlpRetriable(context.Background(), a.Status)) // treated as transport-class -> retryable
+}
+
+// countingReadCloser records how many bytes were read from the response body, so
+// a test can prove doPost drained the remainder (not just the capped ReadAll).
+type countingReadCloser struct {
+	r    io.Reader
+	read *int
+}
+
+func (c countingReadCloser) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	*c.read += n
+	return n, err
+}
+func (countingReadCloser) Close() error { return nil }
+
+func TestDoPost_DrainsResponseRemainderForConnReuse(t *testing.T) {
+	// A 200 body larger than the 1 MiB ReadAll cap. Without draining the
+	// remainder before Close, http.Transport discards the keep-alive connection
+	// instead of returning it to the idle pool, so each sequential export
+	// re-handshakes TCP+TLS. The bounded drain reads what ReadAll left behind.
+	const size = (1 << 20) + 512
+	var read int
+	tr := stubTransport(stubRoundTripper{
+		status: 200,
+		body:   countingReadCloser{r: bytes.NewReader(make([]byte, size)), read: &read},
+	})
+	a := tr.doPost(context.Background(), []byte("payload"))
+	require.NoError(t, a.Err)
+	// Capped ReadAll consumes 1 MiB; the drain consumes the remaining 512 bytes.
+	// Without the drain this would stop at exactly 1 MiB, leaving the body unread.
+	assert.Equal(t, size, read, "the full response body must be drained so the connection can be reused")
 }
 
 func TestDefaultHTTPClient_DoesNotFollowRedirects(t *testing.T) {
