@@ -117,8 +117,10 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
-// is found in the context, it will be used as the parent of the resulting span. If the ChildOf
-// option is passed, it will only be used as the parent if there is no span found in `ctx`.
+// was placed in ctx by [ContextWithSpan], it is used as the parent of the resulting span even if
+// the ChildOf option is passed. An active span discovered any other way — notably through
+// Orchestrion's goroutine-local storage fallback — is only used as the parent when the caller
+// did not pass ChildOf.
 // +checklocksignore — Initialization time, span just created by StartSpan, not yet shared.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
 	// copy opts in case the caller reuses the slice in parallel
@@ -131,7 +133,12 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 		// Prefer the snapshotted SpanContext to handle span pool recycling.
 		optsLocal = append(optsLocal, ChildOf(sc))
 	} else if s, ok := SpanFromContext(ctx); ok {
-		optsLocal = append(optsLocal, ChildOf(s.Context()))
+		// Reached only when the context chain carries no span snapshot, i.e. the
+		// span came from somewhere other than ContextWithSpan. In practice that
+		// is Orchestrion's GLS fallback, which is an inference about the current
+		// scope rather than a parent the caller named, so it must not override an
+		// explicit ChildOf. See childOfIfUnset.
+		optsLocal = append(optsLocal, childOfIfUnset(s.Context()))
 	}
 	optsLocal = append(optsLocal, withContext(ctx))
 	s := StartSpan(operationName, optsLocal...)
