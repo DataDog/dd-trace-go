@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -546,8 +547,7 @@ func TestSetFeatureFlagsReportsFullList(t *testing.T) {
 		found bool
 		got   telemetry.Configuration
 	)
-	for i := len(rec.Configuration) - 1; i >= 0; i-- {
-		c := rec.Configuration[i]
+	for _, c := range slices.Backward(rec.Configuration) {
 		if c.Name == "DD_TRACE_FEATURES" && c.Origin == telemetry.OriginCode {
 			found = true
 			got = c
@@ -579,8 +579,7 @@ func TestSetServiceMappingReportsFullList(t *testing.T) {
 		found bool
 		got   telemetry.Configuration
 	)
-	for i := len(rec.Configuration) - 1; i >= 0; i-- {
-		c := rec.Configuration[i]
+	for _, c := range slices.Backward(rec.Configuration) {
 		if c.Name == "DD_SERVICE_MAPPING" && c.Origin == telemetry.OriginCode {
 			found = true
 			got = c

@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"testing"
@@ -789,8 +790,8 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 		envSnapshots = append(envSnapshots, setEnv(key, value))
 	}
 	defer func() {
-		for i := len(envSnapshots) - 1; i >= 0; i-- {
-			envSnapshots[i].restore()
+		for _, s := range slices.Backward(envSnapshots) {
+			s.restore()
 		}
 	}()
 
@@ -1116,8 +1117,8 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 	}
 
 	cleanup := func() {
-		for i := len(snapshots) - 1; i >= 0; i-- {
-			snapshots[i].restore()
+		for _, s := range slices.Backward(snapshots) {
+			s.restore()
 		}
 		server.Close()
 	}
