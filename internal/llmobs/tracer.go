@@ -49,8 +49,8 @@ type APMSpan interface {
 }
 
 // SpanLink represents a link between spans. Its IDs are the tracer's native
-// numeric IDs; they are emitted as JSON numbers on the transport wire (see the
-// SpanLinks conversion in llmobs.go).
+// numeric IDs; they are formatted as decimal strings on the transport wire (see
+// the SpanLinks conversion in llmobs.go).
 // The json tags preserve the wire shape of the public llmobs.SpanLink alias:
 // before SpanLink was split out from transport.SpanLink it carried these tags,
 // so callers that persist/replay links via encoding/json keep emitting
