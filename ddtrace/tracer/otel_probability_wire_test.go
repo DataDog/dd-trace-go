@@ -41,6 +41,28 @@ func TestInjectEmitsOtelOnProbabilityDecision(t *testing.T) {
 	assert.Regexp(t, `^dd=[^,]*,ot=rv:ef284ace7a91e1;th:e6666666666668$`, ts)
 }
 
+// On boundary trace IDs where 56-bit truncation would flip the (rv >= th)
+// decision, rv is nudged to match DD's exact 64-bit keep/drop (RFC "64-bit to
+// 56-bit precision"). th is never changed.
+func TestOtelPrecisionBoundaryClamp(t *testing.T) {
+	// DD keeps but the naive rv falls just below th: rv is bumped up to th.
+	keep := &SpanContext{traceID: traceIDFrom64Bits(0x03A93EE8B1999F00), spanID: 1}
+	keep.trace = newTrace()
+	keep.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.RuleRate)
+	keep.trace.setOtelProbability(0x03A93EE8B1999F00, 0.1)
+	assert.Regexp(t, `,ot=rv:e6666666666668;th:e6666666666668$`, injectTracestate(t, keep))
+
+	// DD drops but the naive rv reads as kept: rv is bumped down to th-1.
+	drop := &SpanContext{traceID: traceIDFrom64Bits(5401449561355763072), spanID: 1}
+	drop.trace = newTrace()
+	drop.trace.setOtelProbability(5401449561355763072, 0.05)
+	rv, th := drop.trace.otelTracestate()
+	assert.NotNil(t, rv)
+	assert.NotNil(t, th)
+	assert.Equal(t, uint64(0xf333333333332f), *rv)
+	assert.Equal(t, uint64(0xf3333333333330), *th)
+}
+
 // End-to-end: a root span decided by the global sample rate emits ot= when
 // injected. At rate 1.0 every trace is kept and th is 0.
 func TestInjectEmitsOtelEndToEnd(t *testing.T) {

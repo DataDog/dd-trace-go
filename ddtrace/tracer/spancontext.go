@@ -704,6 +704,17 @@ func (t *trace) setOtelProbability(traceIDLower uint64, rate float64) {
 	}
 	rv := deriveOtelRV(traceIDLower)
 	th := deriveOtelTH(rate)
+	// DD decides keep/drop on the full 64-bit hash, but rv/th carry only 56 bits.
+	// On the rare boundary trace IDs where that truncation would flip a
+	// downstream reader's (rv >= th) decision, nudge rv (never th) so it
+	// reproduces DD's exact keep/drop. rv moves by at most one step.
+	if sampledByRate(traceIDLower, rate) {
+		if rv < th {
+			rv = th
+		}
+	} else if th > 0 && rv >= th { // th == 0 (rate ~= 1) has no drop to represent
+		rv = th - 1
+	}
 	t.otel.rv = &rv
 	t.otel.th = &th
 }
