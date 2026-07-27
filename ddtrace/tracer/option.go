@@ -236,6 +236,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Orchestrion that span may still be referenced from a goroutine-local
 	// storage (GLS) stack whose stale entry has not been drained, so reusing it
 	// can resurface a recycled span or leak the entry (see orchestrion#782).
+	// Recycling also clears the reclaim flag, and that flag now decides which
+	// entry the GLS hands out as a parent, so a pooled span reachable from a
+	// buried entry could parent unrelated work (see contextStack.Peek).
 	// Until the reclaim signal is decoupled from the pooled span, disable
 	// pooling when Orchestrion is active and warn once. Checked after the option
 	// loop so an explicit WithSpanPool(true) is gated too.
