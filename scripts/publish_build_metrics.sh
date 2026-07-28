@@ -64,16 +64,31 @@ if [[ -n "$OTELC_VERSION" ]]; then
   message "  Otelc version: $OTELC_VERSION"
 fi
 
-# Publish measures to CI Visibility — one indexed measure per duration sample, one size sample
+# Publish measures to CI Visibility — one indexed measure per duration sample, 
+# one size sample, skipping any null entries
 message "Publishing measures to Datadog CI Visibility..."
-MEASURE_ARGS=(--measures "go.build.binary_size_bytes:${SIZE}")
+MEASURE_ARGS=()
+BUILD_FAILED=false
+if [[ "$SIZE" != "null" ]]; then
+  MEASURE_ARGS+=(--measures "go.build.binary_size_bytes:${SIZE}")
+else
+  BUILD_FAILED=true
+fi
 for i in "${!DURATIONS[@]}"; do
-  MEASURE_ARGS+=(--measures "go.build.duration_seconds.${i}:${DURATIONS[$i]}")
+  if [[ "${DURATIONS[$i]}" != "null" ]]; then
+    MEASURE_ARGS+=(--measures "go.build.duration_seconds.${i}:${DURATIONS[$i]}")
+  else
+    BUILD_FAILED=true
+  fi
 done
 
-DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
-  "${MEASURE_ARGS[@]}" ||
-  die "Failed to publish measures"
+if [[ "${#MEASURE_ARGS[@]}" -gt 0 ]]; then
+  DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
+    "${MEASURE_ARGS[@]}" ||
+    die "Failed to publish measures"
+else
+  message "No numeric measures to publish (all builds failed); skipping measure publish"
+fi
 
 # Publish tags
 message "Publishing tags to Datadog CI Visibility..."
@@ -82,6 +97,7 @@ TAGS=(
   "build.sample:${SAMPLE}"
   "build.cache:cold"
   "go.version:${GO_VERSION}"
+  "build.failed:${BUILD_FAILED}"
 )
 
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
