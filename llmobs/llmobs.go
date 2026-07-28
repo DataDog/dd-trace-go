@@ -153,6 +153,53 @@ type (
 
 	// ToolResult represents the result of a tool call within an LLM message.
 	ToolResult = illmobs.ToolResult
+
+	// SpanKind is the kind of an LLM Obs span, as reported by [Span.Kind] and
+	// emitted in the span's meta."span.kind".
+	SpanKind = illmobs.SpanKind
+
+	// SpanStatus is the terminal status of an LLM Obs span.
+	SpanStatus = illmobs.SpanStatus
+
+	// EvalMetricType is the type of an evaluation metric's value.
+	EvalMetricType = illmobs.EvalMetricType
+)
+
+// The LLM Obs span kinds. The parenthesized value is the string emitted on the
+// wire and returned by [Span.Kind].
+const (
+	// SpanKindLLM ("llm") is a call to a large language model.
+	SpanKindLLM = illmobs.SpanKindLLM
+	// SpanKindAgent ("agent") is an autonomous agent invocation.
+	SpanKindAgent = illmobs.SpanKindAgent
+	// SpanKindWorkflow ("workflow") orchestrates multiple operations.
+	SpanKindWorkflow = illmobs.SpanKindWorkflow
+	// SpanKindTask ("task") is a general task.
+	SpanKindTask = illmobs.SpanKindTask
+	// SpanKindTool ("tool") is a tool or function call.
+	SpanKindTool = illmobs.SpanKindTool
+	// SpanKindEmbedding ("embedding") generates embeddings.
+	SpanKindEmbedding = illmobs.SpanKindEmbedding
+	// SpanKindRetrieval ("retrieval") retrieves documents.
+	SpanKindRetrieval = illmobs.SpanKindRetrieval
+)
+
+// The terminal LLM Obs span statuses.
+const (
+	// SpanStatusOK ("ok") marks a span that completed without error.
+	SpanStatusOK = illmobs.SpanStatusOK
+	// SpanStatusError ("error") marks a span that ended in error.
+	SpanStatusError = illmobs.SpanStatusError
+)
+
+// The evaluation metric types.
+const (
+	// EvalMetricTypeCategorical ("categorical") is a string-valued metric.
+	EvalMetricTypeCategorical = illmobs.EvalMetricTypeCategorical
+	// EvalMetricTypeScore ("score") is a numeric-valued metric.
+	EvalMetricTypeScore = illmobs.EvalMetricTypeScore
+	// EvalMetricTypeBoolean ("boolean") is a boolean-valued metric.
+	EvalMetricTypeBoolean = illmobs.EvalMetricTypeBoolean
 )
 
 // Span represents a generic LLMObs span that can be converted to specific span types.

@@ -11,32 +11,55 @@ import (
 
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
 // defaultParentID mirrors the LLM Obs convention for a span with no parent.
 const defaultParentID = "undefined"
 
-// Kind is the LLM Obs span kind; its values are shared with internal/llmobs.SpanKind.
-type Kind string
+// Kind is the LLM Obs span kind. It is an alias for [llmobs.SpanKind], so the
+// live and offline paths name a kind with the same type and values.
+type Kind = llmobs.SpanKind
 
-// Span kinds recognized by LLM Obs.
+// The span kinds recognized by LLM Obs; the parenthesized value is what reaches
+// the intake. See [llmobs.SpanKind] for the full set.
 const (
-	KindLLM       = Kind(illmobs.SpanKindLLM)
-	KindAgent     = Kind(illmobs.SpanKindAgent)
-	KindWorkflow  = Kind(illmobs.SpanKindWorkflow)
-	KindTask      = Kind(illmobs.SpanKindTask)
-	KindTool      = Kind(illmobs.SpanKindTool)
-	KindEmbedding = Kind(illmobs.SpanKindEmbedding)
-	KindRetrieval = Kind(illmobs.SpanKindRetrieval)
+	// KindLLM ("llm") is a call to a large language model.
+	KindLLM = llmobs.SpanKindLLM
+	// KindAgent ("agent") is an autonomous agent invocation.
+	KindAgent = llmobs.SpanKindAgent
+	// KindWorkflow ("workflow") orchestrates multiple operations.
+	KindWorkflow = llmobs.SpanKindWorkflow
+	// KindTask ("task") is a general task.
+	KindTask = llmobs.SpanKindTask
+	// KindTool ("tool") is a tool or function call.
+	KindTool = llmobs.SpanKindTool
+	// KindEmbedding ("embedding") generates embeddings.
+	KindEmbedding = llmobs.SpanKindEmbedding
+	// KindRetrieval ("retrieval") retrieves documents.
+	KindRetrieval = llmobs.SpanKindRetrieval
 )
 
-// Status is the terminal status of a span, mirroring internal/llmobs.SpanStatus.
-type Status string
+// Status is the terminal status of a span. It is an alias for
+// [llmobs.SpanStatus].
+type Status = llmobs.SpanStatus
 
-// Span statuses recognized by LLM Obs.
+// The span statuses recognized by LLM Obs.
 const (
-	StatusOK    = Status(illmobs.SpanStatusOK)
-	StatusError = Status(illmobs.SpanStatusError)
+	// StatusOK ("ok") marks a span that completed without error.
+	StatusOK = llmobs.SpanStatusOK
+	// StatusError ("error") marks a span that ended in error.
+	StatusError = llmobs.SpanStatusError
+)
+
+// validKinds and validStatuses bound the values a submitted span may carry, so a
+// typo is a reported row-level drop rather than an unqueryable facet at intake.
+var (
+	validKinds = map[Kind]struct{}{
+		KindLLM: {}, KindAgent: {}, KindWorkflow: {}, KindTask: {},
+		KindTool: {}, KindEmbedding: {}, KindRetrieval: {},
+	}
+	validStatuses = map[Status]struct{}{StatusOK: {}, StatusError: {}}
 )
 
 // SpanEvent is a caller-built LLM Obs span to export. IDs are opaque strings and
@@ -68,8 +91,20 @@ type SpanEvent struct {
 	Status        Status
 	StatusMessage string
 
+	// ErrorMessage, ErrorType and ErrorStack populate the error.message,
+	// error.type and error.stack meta the live path emits for a failed span. They
+	// are only emitted when Status is StatusError; ErrorMessage falls back to
+	// StatusMessage when empty.
+	ErrorMessage string
+	ErrorType    string
+	ErrorStack   string
+
 	// Kind is the LLM Obs span kind (e.g. KindLLM, KindWorkflow).
-	Kind          Kind
+	Kind Kind
+	// ModelName and ModelProvider describe the model behind an LLM or embedding
+	// span. ModelProvider is lower-cased on the wire, and a span reporting only
+	// one of the two gets "custom" for the other — matching the live path, so the
+	// same model does not fragment across the two sources.
 	ModelName     string
 	ModelProvider string
 	// Input and Output are the raw string input/output values.
@@ -207,11 +242,9 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 	if e.Kind != "" {
 		meta["span.kind"] = string(e.Kind)
 	}
-	if e.ModelName != "" {
-		meta["model_name"] = e.ModelName
-	}
-	if e.ModelProvider != "" {
-		meta["model_provider"] = e.ModelProvider
+	if name, provider, ok := illmobs.NormalizeModel(e.Kind, e.ModelName, e.ModelProvider); ok {
+		meta[illmobs.MetaKeyModelName] = name
+		meta[illmobs.MetaKeyModelProvider] = provider
 	}
 	if e.Input != "" {
 		meta["input"] = map[string]any{"value": e.Input}
@@ -222,6 +255,8 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 	if len(e.Metadata) > 0 {
 		meta["metadata"] = e.Metadata
 	}
+	errMsg := e.errorMessage(status)
+	illmobs.SetErrorMeta(meta, errMsg)
 
 	ev := &transport.LLMObsSpanEvent{
 		TraceID:       e.TraceID,
@@ -245,6 +280,13 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 	// Clone the caller's tags so later stamping (env/version) never mutates the
 	// caller's backing array, and so tags is always non-nil in the payload.
 	ev.Tags = append([]string{}, e.Tags...)
+	// The live path always emits an error facet and, for a failed span, error_type;
+	// mirror both so the two sources share one shape. A caller-supplied tag wins,
+	// as it does on the live path.
+	ev.Tags = stampTag(ev.Tags, illmobs.TagKeyError, errTag(status))
+	if errMsg != nil {
+		ev.Tags = stampTag(ev.Tags, illmobs.TagKeyErrorType, errMsg.Type)
+	}
 	for _, l := range e.SpanLinks {
 		ev.SpanLinks = append(ev.SpanLinks, transport.SpanLink{
 			SpanID:     l.SpanID,
@@ -253,6 +295,27 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 		})
 	}
 	return ev
+}
+
+// errorMessage builds the error payload for an errored span, or nil when the span
+// did not fail. ErrorMessage falls back to StatusMessage so a caller that only
+// filled the status still gets an error.message.
+func (e SpanEvent) errorMessage(status Status) *transport.ErrorMessage {
+	if status != StatusError {
+		return nil
+	}
+	msg := e.ErrorMessage
+	if msg == "" {
+		msg = e.StatusMessage
+	}
+	return &transport.ErrorMessage{Message: msg, Type: e.ErrorType, Stack: e.ErrorStack}
+}
+
+func errTag(status Status) string {
+	if status == StatusError {
+		return "1"
+	}
+	return "0"
 }
 
 // startNanos returns the Unix-nanosecond start, or 0 for a zero time (UnixNano

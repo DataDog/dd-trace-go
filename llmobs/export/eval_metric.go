@@ -13,20 +13,25 @@ import (
 
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
-// MetricType is the type of an evaluation metric value; the scalar types are
-// shared with internal/llmobs.EvalMetricType.
-type MetricType string
+// MetricType is the type of an evaluation metric value. It is an alias for
+// [llmobs.EvalMetricType], so the live and offline paths name a metric type with
+// the same type and values.
+type MetricType = llmobs.EvalMetricType
 
-// Evaluation metric types recognized by LLM Obs.
+// The evaluation metric types; the parenthesized value is what reaches the intake.
 const (
-	MetricTypeCategorical = MetricType(illmobs.EvalMetricTypeCategorical)
-	MetricTypeScore       = MetricType(illmobs.EvalMetricTypeScore)
-	MetricTypeBoolean     = MetricType(illmobs.EvalMetricTypeBoolean)
-	// MetricTypeJSON is a structured metric whose value is a json_value object
-	// (e.g. Trajectory's range/segment markers). It must be paired with JSONValue.
-	// It is offline-export-only; the live tracer has no equivalent.
+	// MetricTypeCategorical ("categorical") pairs with CategoricalValue.
+	MetricTypeCategorical = llmobs.EvalMetricTypeCategorical
+	// MetricTypeScore ("score") pairs with ScoreValue.
+	MetricTypeScore = llmobs.EvalMetricTypeScore
+	// MetricTypeBoolean ("boolean") pairs with BooleanValue.
+	MetricTypeBoolean = llmobs.EvalMetricTypeBoolean
+	// MetricTypeJSON ("json") is a structured metric whose value is a json_value
+	// object (e.g. Trajectory's range/segment markers). It must be paired with
+	// JSONValue. It is offline-export-only; the live tracer has no equivalent.
 	MetricTypeJSON MetricType = "json"
 )
 
@@ -68,15 +73,15 @@ type EvaluationMetric struct {
 }
 
 // lower validates the metric and lowers it to the transport wire type, returning
-// a non-empty reason string when the metric is invalid (and must not be sent).
-func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, string) {
+// a non-nil ValidationError when the metric is invalid (and must not be sent).
+func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, *ValidationError) {
 	if m.Label == "" {
-		return nil, "missing label"
+		return nil, &ValidationError{Code: ErrMissingLabel, Reason: "missing label"}
 	}
 
 	joinOn, err := illmobs.BuildEvaluationJoin(m.SpanID, m.TraceID, m.TagKey, m.TagValue)
 	if err != nil {
-		return nil, err.Error()
+		return nil, &ValidationError{Code: ErrInvalidJoin, Reason: err.Error()}
 	}
 
 	values := 0
@@ -93,18 +98,18 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 		values++
 	}
 	if values != 1 {
-		return nil, "exactly one of categorical, score, boolean, or json value must be set"
+		return nil, &ValidationError{Code: ErrInvalidValue, Reason: "exactly one of categorical, score, boolean, or json value must be set"}
 	}
 	if m.JSONValue != nil && len(m.JSONValue) == 0 {
 		// An empty map counts as "set" above, but json:omitempty drops json_value
 		// from the wire, sending a value-less metric that the intake rejects for the
 		// whole chunk. Reject it here as a row-level error instead.
-		return nil, "json_value must not be empty"
+		return nil, &ValidationError{Code: ErrInvalidValue, Reason: "json_value must not be empty"}
 	}
 	if m.ScoreValue != nil && (math.IsNaN(*m.ScoreValue) || math.IsInf(*m.ScoreValue, 0)) {
 		// encoding/json cannot marshal NaN/Inf; reject this row so it does not fail
 		// the whole chunk's marshal.
-		return nil, "score value must be a finite number"
+		return nil, &ValidationError{Code: ErrInvalidValue, Reason: "score value must be a finite number"}
 	}
 
 	// valueType is the metric type implied by the value kind. Exactly one value is
@@ -128,9 +133,15 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 	case metricType == "":
 		metricType = valueType
 	case metricType != MetricTypeCategorical && metricType != MetricTypeScore && metricType != MetricTypeBoolean && metricType != MetricTypeJSON:
-		return nil, fmt.Sprintf("invalid MetricType %q (want categorical, score, boolean, or json)", metricType)
+		return nil, &ValidationError{
+			Code:   ErrTypeMismatch,
+			Reason: fmt.Sprintf("invalid MetricType %q (want categorical, score, boolean, or json)", metricType),
+		}
 	case metricType != valueType:
-		return nil, fmt.Sprintf("MetricType %q does not match the %s value provided", metricType, valueType)
+		return nil, &ValidationError{
+			Code:   ErrTypeMismatch,
+			Reason: fmt.Sprintf("MetricType %q does not match the %s value provided", metricType, valueType),
+		}
 	}
 
 	mlApp := m.MLApp
@@ -153,7 +164,7 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 		BooleanValue:     m.BooleanValue,
 		JSONValue:        m.JSONValue,
 	}
-	return w, ""
+	return w, nil
 }
 
 // timestampMS returns the Unix-millisecond timestamp, or 0 for a zero time so
@@ -169,11 +180,12 @@ func timestampMS(t time.Time) int64 {
 // the SDK's version, matching the live evaluation path so intake can attribute
 // the emitting SDK version.
 func withTracerVersion(tags []string) []string {
+	prefix := illmobs.TagKeyTracerVersion + ":"
 	out := make([]string, 0, len(tags)+1)
 	for _, t := range tags {
-		if !strings.HasPrefix(t, "ddtrace.version:") {
+		if !strings.HasPrefix(t, prefix) {
 			out = append(out, t)
 		}
 	}
-	return append(out, "ddtrace.version:"+tracerVersion())
+	return append(out, prefix+tracerVersion())
 }

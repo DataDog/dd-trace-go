@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	llmconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -21,7 +23,11 @@ const (
 	defaultSite          = "datadoghq.com"
 	defaultSpanBatchSize = 50
 	defaultEvalBatchSize = 1000
-	defaultMaxSpanBytes  = 5 << 20 // 5 MiB, matching internal/llmobs sizeLimitEVPEvent (the EVP event size limit)
+	// defaultMaxSpanBytes is the EVP event size limit the live path enforces per
+	// span event. Export applies it to the whole encoded request body, so it is
+	// the stricter of the two guards and never posts a batch the SDK's own limit
+	// would reject.
+	defaultMaxSpanBytes = illmobs.SizeLimitEVPEvent
 )
 
 // config is the resolved, private client configuration built from ClientOptions.
@@ -49,9 +55,12 @@ type config struct {
 type ClientOption func(*config)
 
 // WithDatadogIntake routes export directly to the Datadog LLM Obs intake for
-// site (e.g. "datadoghq.com"; empty defaults to datadoghq.com) using apiKey in
-// the DD-API-KEY header (agentless). Exactly one of WithDatadogIntake or
-// WithAgentURL must be set.
+// site using apiKey in the DD-API-KEY header (agentless). Exactly one of
+// WithDatadogIntake or WithAgentURL must be set.
+//
+// An empty site falls back to DD_SITE and then to datadoghq.com; an empty apiKey
+// falls back to DD_API_KEY, so a process already configured for the rest of the
+// SDK does not have to read the environment itself.
 func WithDatadogIntake(site, apiKey string) ClientOption {
 	return func(c *config) {
 		c.datadogSet = true
@@ -102,8 +111,10 @@ func WithEvalBatchSize(n int) ClientOption {
 	return func(c *config) { c.evalBatch = n }
 }
 
-// WithMaxSpanPayloadBytes sets the max encoded span-request size before
-// input/output values are truncated (default 5 MiB, the EVP event size limit).
+// WithMaxSpanPayloadBytes sets the max encoded span-request size before an
+// oversized batch is bisected and, as a last resort, a single span's
+// input/output values are truncated. It defaults to the EVP event size limit the
+// live path enforces per span event, applied here to the whole request body.
 // Truncation is best-effort: only input/output are shrunk, so payloads dominated
 // by other fields may still exceed the limit.
 func WithMaxSpanPayloadBytes(n int) ClientOption {
@@ -154,13 +165,21 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 
 	site := cfg.site
 	if site == "" {
+		site = env.Get("DD_SITE")
+	}
+	if site == "" {
 		site = defaultSite
+	}
+
+	apiKey := cfg.apiKey
+	if apiKey == "" {
+		apiKey = env.Get("DD_API_KEY")
 	}
 
 	var agentURL *url.URL
 	if cfg.datadogSet {
-		if cfg.apiKey == "" {
-			return nil, errors.New("llmobs/export: WithDatadogIntake requires an API key; use WithAgentURL to route via the Agent")
+		if apiKey == "" {
+			return nil, errors.New("llmobs/export: WithDatadogIntake requires an API key (argument or DD_API_KEY); use WithAgentURL to route via the Agent")
 		}
 	} else {
 		// Trim a trailing slash so the EVP proxy path is not doubled.
@@ -190,7 +209,7 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 		ResolvedAgentlessEnabled: cfg.datadogSet,
 		TracerConfig: llmconfig.TracerConfig{
 			Site:       site,
-			APIKey:     cfg.apiKey,
+			APIKey:     apiKey,
 			AgentURL:   agentURL,
 			HTTPClient: cfg.httpClient,
 			Service:    cfg.service,
@@ -215,25 +234,48 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
-// SubmitOption customizes a single SubmitSpans or SubmitEvaluations call.
-type SubmitOption func(*submitConfig)
+// SubmitSpansOption customizes a single [Client.SubmitSpans] call.
+type SubmitSpansOption func(*submitSpansConfig)
 
-// submitConfig holds resolved per-call overrides.
-type submitConfig struct {
+type submitSpansConfig struct {
 	service string
 }
 
-// WithCallService overrides the client's default service for this submit call
-// only (stamped as the top-level service field and the service: tag). It applies
-// to SubmitSpans; evaluations carry no service, so it is a no-op there.
-func WithCallService(service string) SubmitOption {
-	return func(sc *submitConfig) {
+// WithCallService overrides the client's default service for this SubmitSpans
+// call only (stamped as the top-level service field and the service: tag).
+func WithCallService(service string) SubmitSpansOption {
+	return func(sc *submitSpansConfig) {
 		sc.service = service
 	}
 }
 
-func (c *Client) resolveSubmit(opts []SubmitOption) submitConfig {
-	sc := submitConfig{service: c.service}
+func (c *Client) resolveSubmitSpans(opts []SubmitSpansOption) submitSpansConfig {
+	sc := submitSpansConfig{service: c.service}
+	for _, opt := range opts {
+		opt(&sc)
+	}
+	return sc
+}
+
+// SubmitEvaluationsOption customizes a single [Client.SubmitEvaluations] call. It
+// is a distinct type from [SubmitSpansOption] so an option that has no meaning
+// for evaluations fails to compile instead of being silently ignored.
+type SubmitEvaluationsOption func(*submitEvaluationsConfig)
+
+type submitEvaluationsConfig struct {
+	mlApp string
+}
+
+// WithCallMLApp overrides the client's default ML app for this SubmitEvaluations
+// call only. A per-metric MLApp still wins over it.
+func WithCallMLApp(mlApp string) SubmitEvaluationsOption {
+	return func(sc *submitEvaluationsConfig) {
+		sc.mlApp = mlApp
+	}
+}
+
+func (c *Client) resolveSubmitEvaluations(opts []SubmitEvaluationsOption) submitEvaluationsConfig {
+	sc := submitEvaluationsConfig{mlApp: c.mlApp}
 	for _, opt := range opts {
 		opt(&sc)
 	}

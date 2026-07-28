@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2025 Datadog, Inc.
+// Copyright 2026 Datadog, Inc.
 
 package transport
 
@@ -19,11 +19,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestExportPostDrainsBodyForConnReuse guards the fix for the review finding that
-// ExportPost closed the response body without draining it. Because ExportPost caps
-// the read at 1MiB, a larger body left the connection unread, so net/http could not
-// reuse the keep-alive connection for the next chunk. Two sequential ExportPost calls
-// against a keep-alive server must therefore open exactly one TCP connection.
+// TestExportPostDrainsBodyForConnReuse locks the drain after ExportPost's capped
+// read: without it a response larger than the 1MiB cap leaves the connection
+// unread, so net/http cannot reuse the keep-alive connection for the next chunk.
+// Two sequential ExportPost calls against a keep-alive server must therefore open
+// exactly one TCP connection.
 func TestExportPostDrainsBodyForConnReuse(t *testing.T) {
 	// 1.5MiB: larger than ExportPost's 1MiB read cap, but within reach of the
 	// follow-up 1MiB drain, so the body still reaches EOF and the connection
@@ -68,35 +68,68 @@ func TestHasRetryAfterHeader(t *testing.T) {
 	assert.True(t, hasRetryAfterHeader(http.Header{"X-Ratelimit-Reset": []string{"5"}}))
 }
 
-func TestParseRetryAfter(t *testing.T) {
-	mk := func(kv ...string) http.Header {
-		h := http.Header{}
-		for i := 0; i+1 < len(kv); i += 2 {
-			h.Set(kv[i], kv[i+1])
-		}
-		return h
+func mkHeader(kv ...string) http.Header {
+	h := http.Header{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		h.Set(kv[i], kv[i+1])
 	}
+	return h
+}
+
+// TestParseRetryAfterIgnoresRetryAfterHeader pins the live 429 path's timing. The
+// live flush passes context.Background() on the paths tracer.Stop() waits for, so
+// honoring a server-advertised Retry-After here would let one 429 stall shutdown
+// for as long as the server asks. Only parseExportRetryAfter reads that header.
+func TestParseRetryAfterIgnoresRetryAfterHeader(t *testing.T) {
 	cases := []struct {
 		name string
 		h    http.Header
 		want time.Duration
 	}{
-		{"standard Retry-After (delta-seconds)", mk("Retry-After", "5"), 5 * time.Second},
-		{"Retry-After wins over x-ratelimit-reset", mk("Retry-After", "7", "x-ratelimit-reset", "3"), 7 * time.Second},
-		{"x-ratelimit-reset fallback (duration seconds)", mk("x-ratelimit-reset", "4"), 4 * time.Second},
+		{"Retry-After is ignored", mkHeader("Retry-After", "890"), time.Second},
+		{"x-ratelimit-reset still honored", mkHeader("x-ratelimit-reset", "4"), 4 * time.Second},
+		{"Retry-After does not override x-ratelimit-reset", mkHeader("Retry-After", "890", "x-ratelimit-reset", "3"), 3 * time.Second},
 		{"default 1s when no header", http.Header{}, time.Second},
-		{"non-positive Retry-After falls back to default", mk("Retry-After", "0"), time.Second},
-		{"unparseable Retry-After falls back to default", mk("Retry-After", "soon"), time.Second},
 	}
 	for _, tc := range cases {
 		if got := parseRetryAfter(tc.h); got != tc.want {
 			t.Errorf("%s: parseRetryAfter = %v, want %v", tc.name, got, tc.want)
 		}
 	}
+}
+
+func TestParseExportRetryAfter(t *testing.T) {
+	cases := []struct {
+		name string
+		h    http.Header
+		want time.Duration
+	}{
+		{"standard Retry-After (delta-seconds)", mkHeader("Retry-After", "5"), 5 * time.Second},
+		{"Retry-After wins over x-ratelimit-reset", mkHeader("Retry-After", "7", "x-ratelimit-reset", "3"), 7 * time.Second},
+		{"x-ratelimit-reset fallback (duration seconds)", mkHeader("x-ratelimit-reset", "4"), 4 * time.Second},
+		{"default 1s when no header", http.Header{}, time.Second},
+		{"non-positive Retry-After falls back to default", mkHeader("Retry-After", "0"), time.Second},
+		{"unparseable Retry-After falls back to default", mkHeader("Retry-After", "soon"), time.Second},
+		// Both header forms are clamped, so no single response can park an export
+		// for minutes inside one Submit call.
+		{"long Retry-After is clamped", mkHeader("Retry-After", "890"), maxExportRetryAfter},
+		{"long x-ratelimit-reset is clamped", mkHeader("x-ratelimit-reset", "890"), maxExportRetryAfter},
+	}
+	for _, tc := range cases {
+		if got := parseExportRetryAfter(tc.h); got != tc.want {
+			t.Errorf("%s: parseExportRetryAfter = %v, want %v", tc.name, got, tc.want)
+		}
+	}
 
 	// An HTTP-date in the future yields a positive, roughly-correct delay.
-	future := time.Now().Add(30 * time.Second).UTC().Format(http.TimeFormat)
-	if got := parseRetryAfter(mk("Retry-After", future)); got <= 0 || got > 31*time.Second {
-		t.Errorf("HTTP-date Retry-After: got %v, want in (0, 31s]", got)
+	future := time.Now().Add(10 * time.Second).UTC().Format(http.TimeFormat)
+	if got := parseExportRetryAfter(mkHeader("Retry-After", future)); got <= 0 || got > 11*time.Second {
+		t.Errorf("HTTP-date Retry-After: got %v, want in (0, 11s]", got)
+	}
+	// A far-future HTTP-date is clamped too; time.Until would otherwise be honored
+	// uncapped.
+	far := time.Now().Add(24 * time.Hour).UTC().Format(http.TimeFormat)
+	if got := parseExportRetryAfter(mkHeader("Retry-After", far)); got != maxExportRetryAfter {
+		t.Errorf("far-future HTTP-date Retry-After: got %v, want %v", got, maxExportRetryAfter)
 	}
 }

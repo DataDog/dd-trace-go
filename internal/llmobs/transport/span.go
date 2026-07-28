@@ -59,15 +59,12 @@ type PushSpanEventsRequest struct {
 	Spans         []*LLMObsSpanEvent `json:"spans,omitempty"`
 }
 
-func (c *Transport) PushSpanEvents(
-	ctx context.Context,
-	events []*LLMObsSpanEvent,
-) error {
-	if len(events) == 0 {
-		return nil
-	}
-	path := EndpointLLMSpan
-	method := http.MethodPost
+// NewPushSpanEventsRequests builds the /api/v2/llmobs request envelopes for
+// events: one envelope per span, because _dd.scope is a per-envelope field taken
+// from the span's own _dd.scope, so spans with differing scopes cannot share one.
+// Shared by the live flush and the offline export client so both emit the same
+// envelope shape.
+func NewPushSpanEventsRequests(events []*LLMObsSpanEvent) []*PushSpanEventsRequest {
 	body := make([]*PushSpanEventsRequest, 0, len(events))
 	for _, ev := range events {
 		req := &PushSpanEventsRequest{
@@ -81,6 +78,19 @@ func (c *Transport) PushSpanEvents(
 		}
 		body = append(body, req)
 	}
+	return body
+}
+
+func (c *Transport) PushSpanEvents(
+	ctx context.Context,
+	events []*LLMObsSpanEvent,
+) error {
+	if len(events) == 0 {
+		return nil
+	}
+	path := EndpointLLMSpan
+	method := http.MethodPost
+	body := NewPushSpanEventsRequests(events)
 
 	result, err := c.jsonRequest(ctx, method, path, SubdomainLLMSpan, body, defaultTimeout)
 	if err != nil {
