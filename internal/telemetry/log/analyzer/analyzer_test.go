@@ -29,6 +29,10 @@ var testFuncs = []analyzer.FuncSpec{
 	// helpers
 	{PkgPath: "example.com/faketelemetrylog", FuncName: "ReportError", MsgArgIndex: 0},
 	{PkgPath: "example.com/faketelemetrylog", FuncName: "ReportPanic", MsgArgIndex: 0},
+
+	// combined local-log + report helpers
+	{PkgPath: "example.com/faketelemetrylog", FuncName: "LogAndReportError", MsgArgIndex: 0},
+	{PkgPath: "example.com/faketelemetrylog", FuncName: "LogAndReportPanic", MsgArgIndex: 0},
 }
 
 // TestAnalyzer verifies that the analyzer flags non-constant message arguments

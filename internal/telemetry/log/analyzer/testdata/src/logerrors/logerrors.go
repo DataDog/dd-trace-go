@@ -45,6 +45,8 @@ func goodTelemetryLogMethod() {
 func goodHelpers(err *myError) {
 	telemetrylog.ReportError("sdk error occurred", err)
 	telemetrylog.ReportPanic("panic in goroutine", recover())
+	telemetrylog.LogAndReportError("sdk error occurred", err)
+	telemetrylog.LogAndReportPanic("panic in goroutine", recover())
 }
 
 // ── Bad: non-constant message arguments ──────────────────────────────────────
@@ -74,4 +76,7 @@ func badHelpers(err *myError) {
 	// ReportPanic: first arg (index 0) is the message.
 	telemetrylog.ReportPanic(dynMsg, recover())                 // want "message argument"
 	telemetrylog.ReportPanic("prefix: "+err.Error(), recover()) // want "message argument"
+
+	telemetrylog.LogAndReportError(err.Error(), err)  // want "message argument"
+	telemetrylog.LogAndReportPanic(dynMsg, recover()) // want "message argument"
 }

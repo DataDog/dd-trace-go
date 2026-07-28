@@ -6,8 +6,10 @@
 package log
 
 import (
+	"fmt"
 	"log/slog"
 
+	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -59,4 +61,35 @@ func ReportPanic(msg string, recovered any) {
 	}
 
 	sendLog(record, telemetry.WithStacktrace())
+}
+
+// LogAndReportError logs msg locally via internal/log.Error and forwards the
+// same constant msg to Error Tracking via [ReportError] — for call sites that
+// want both a local log line and a report without duplicating the message.
+//
+// msg MUST be a constant string — see [ReportError] for the rationale. The
+// format string passed to internal/log.Error is always msg+": %s" regardless
+// of whether err is nil, so the call site's local dedup key stays stable.
+func LogAndReportError(msg string, err error, opts ...telemetry.LogOption) {
+	errStr := "<nil>"
+	if err != nil {
+		errStr = err.Error()
+	}
+	internallog.Error(msg+": %s", errStr)
+	ReportError(msg, err, opts...)
+}
+
+// LogAndReportPanic mirrors [LogAndReportError] for recover() sites, pairing
+// with [ReportPanic].
+func LogAndReportPanic(msg string, recovered any) {
+	errStr := "<nil>"
+	if recovered != nil {
+		if err, ok := recovered.(error); ok {
+			errStr = err.Error()
+		} else {
+			errStr = fmt.Sprint(recovered)
+		}
+	}
+	internallog.Error(msg+": %s", errStr)
+	ReportPanic(msg, recovered)
 }

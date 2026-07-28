@@ -30,6 +30,10 @@ func (l *Logger) Error(message string, attrs ...any) {}
 func ReportError(msg string, err error, opts ...any) {}
 func ReportPanic(msg string, recovered any)          {}
 
+// Combined local-log + report helpers.
+func LogAndReportError(msg string, err error, opts ...any) {}
+func LogAndReportPanic(msg string, recovered any)          {}
+
 // SafeError mirrors internal/telemetry/log.SafeError: it implements
 // slog.LogValuer so telemetrysafety's slog.Any checks treat it as safe.
 type SafeError struct{ errType string }
