@@ -63,6 +63,30 @@ func TestScopedExecutionNotTraced(t *testing.T) {
 		}
 		cleanup() // must not panic
 	})
+
+	t.Run("cleanup closes its own scope, not the top of the stack", func(t *testing.T) {
+		t.Cleanup(orchestrion.MockGLS())
+
+		// The tracer hands this cleanup to Span.taskEnd, so it runs whenever
+		// that span finishes — at no fixed position relative to the pushes
+		// around it. Here a later scope is opened on top before it runs.
+		ctx := WithExecutionTraced(context.Background()) // pushes true
+		_, cleanup := ScopedExecutionNotTraced(ctx)      // pushes false
+		_ = WithExecutionTraced(context.Background())    // pushes true above it
+
+		cleanup()
+
+		// A pop that matched position would take the top true and strand the
+		// false, leaving the stack claiming "not traced" for everything that
+		// follows. Closing by scope removes the false and the true opened
+		// inside it, restoring the original traced marker.
+		if got := orchestrion.GLSStackDepth(); got != 1 {
+			t.Fatalf("GLS depth after cleanup = %d, want 1 (the scope and what it contained are gone)", got)
+		}
+		if got := IsExecutionTraced(orchestrion.WrapContext(nil)); got != true {
+			t.Fatalf("IsExecutionTraced after cleanup = %v, want true (the outer traced marker is active again)", got)
+		}
+	})
 }
 
 func TestWithExecutionTracedGLSCleanup(t *testing.T) {

@@ -7,10 +7,35 @@ package orchestrion
 
 import "slices"
 
+// entry is one pushed value together with the token identifying its scope.
+//
+// A token is what makes scope exit possible. A position cannot identify a scope:
+// push, pop, push again lands the new value at the same index, so an index
+// captured at push time can name an entirely different scope by the time the
+// exit runs. Tokens are handed out by a counter that only ever increases, so a
+// stale one matches nothing.
+type entry struct {
+	val   any
+	token uint64
+}
+
 // contextStack is stored in the GLS slot of runtime.g inserted by orchestrion.
 // It holds context values shared within a single goroutine.
+//
+// The stack is per-goroutine and unsynchronised by design, so next is a plain
+// counter rather than an atomic. It lives on the struct rather than alongside
+// each key's slice because Pop and PopScope delete a key once it empties: a
+// per-key counter would restart from zero on the next push under that key and
+// re-issue a token some popper is still holding.
+//
 // TODO: handle cross-goroutine context values
-type contextStack map[any][]any
+type contextStack struct {
+	stacks map[any][]entry
+	// next is the last token handed out. Push pre-increments, so the first
+	// token is 1 and 0 is free to mean "no scope" — what Push returns when it
+	// pushed nothing, and a value PopScope never matches.
+	next uint64
+}
 
 // reclaimable is implemented by GLS values that can signal they no longer
 // represent a live scope. It is used to bound GLS growth when a value is pushed
@@ -54,6 +79,22 @@ func getDDContextStack() *contextStack {
 	return newStack
 }
 
+// truncate drops stack[i:] from key's slice. The removed elements are zeroed so
+// the GC can collect the values they held, and the key is deleted outright once
+// nothing remains under it, keeping the map from retaining empty slices.
+//
+// stack is passed in rather than re-read because every caller already holds it.
+func (s *contextStack) truncate(key any, stack []entry, i int) {
+	clear(stack[i:])
+	stack = stack[:i]
+
+	if len(stack) == 0 {
+		delete(s.stacks, key)
+		return
+	}
+	s.stacks[key] = stack
+}
+
 // Peek returns the innermost live context from the stack without removing it.
 //
 // Entries reporting themselves reclaimable (see [reclaimable]) are skipped: they
@@ -77,26 +118,27 @@ func getDDContextStack() *contextStack {
 // Peek does not mutate the stack. Values that do not implement [reclaimable] are
 // returned as-is.
 //
-// This addresses a finished entry being surfaced as a parent. It does not help
-// when a still-live entry outlives the scope beneath it: because the pop matches
-// position rather than identity, a scope can be left buried under a live sibling
-// that then parents unrelated later work. Fixing that needs scope-exit semantics
-// (removing an entry and everything above it), not a read-side guard.
+// This addresses a finished entry being surfaced as a parent. It is not what
+// keeps a live entry from outliving the scope beneath it — that is [PopScope]'s
+// job, since no read-side guard can tell a live survivor from a legitimately
+// nested scope.
 func (s *contextStack) Peek(key any) any {
-	if s == nil || *s == nil {
+	if s == nil || s.stacks == nil {
 		return nil
 	}
 
-	for _, v := range slices.Backward((*s)[key]) {
-		if !isReclaimable(v) {
-			return v
+	for _, e := range slices.Backward(s.stacks[key]) {
+		if !isReclaimable(e.val) {
+			return e.val
 		}
 	}
 
 	return nil
 }
 
-// Push adds a context to the stack.
+// Push adds a context to the stack and returns the token identifying the scope
+// it just opened. Pass that token to [PopScope] to close the scope; a zero
+// return means nothing was pushed and there is nothing to close.
 //
 // Before appending, Push drops any trailing entries that report themselves
 // reclaimable (see [reclaimable]). This bounds GLS growth when values are
@@ -107,42 +149,76 @@ func (s *contextStack) Peek(key any) any {
 // restore target, so dropping it preserves stack semantics. Entries whose type
 // does not implement [reclaimable] (e.g. the bool stored under
 // executionTracedKey) are never dropped.
-func (s *contextStack) Push(key, val any) {
-	if s == nil || *s == nil {
-		return
+func (s *contextStack) Push(key, val any) uint64 {
+	if s == nil {
+		return 0
+	}
+	if s.stacks == nil {
+		s.stacks = make(map[any][]entry)
 	}
 
-	stack := (*s)[key]
-	for len(stack) > 0 && isReclaimable(stack[len(stack)-1]) {
-		stack[len(stack)-1] = nil // drop reference so GC can collect the value
+	stack := s.stacks[key]
+	for len(stack) > 0 && isReclaimable(stack[len(stack)-1].val) {
+		stack[len(stack)-1] = entry{} // drop reference so GC can collect the value
 		stack = stack[:len(stack)-1]
 	}
 
-	(*s)[key] = append(stack, val)
+	s.next++
+	s.stacks[key] = append(stack, entry{val: val, token: s.next})
+	return s.next
+}
+
+// PopScope closes the scope token opened under key: it removes that entry and
+// every entry pushed above it, and reports whether it found one to remove.
+//
+// This is what [Pop] cannot do. Pop takes the top of the stack, so any finish
+// that is not strictly LIFO takes somebody else's entry and strands its own —
+// leaving a scope on the stack after it ended, where a later read adopts it as
+// the active one. Removing everything above the target is the point rather than
+// a side effect: those entries were opened inside the scope now ending, so none
+// of them can outlive it either.
+//
+// Tokens ascend from the bottom of a key's slice, so the walk from the top can
+// stop as soon as it passes below the target: a smaller token means the scope is
+// already gone and there is nothing to do. That makes a repeated or late exit a
+// cheap no-op rather than a destructive one — the guarantee a stale token needs,
+// since the position it once occupied may now belong to an unrelated scope.
+func (s *contextStack) PopScope(key any, token uint64) bool {
+	if s == nil || s.stacks == nil || token == 0 {
+		return false
+	}
+
+	stack := s.stacks[key]
+	for i, e := range slices.Backward(stack) {
+		if e.token == token {
+			s.truncate(key, stack, i)
+			return true
+		}
+		if e.token < token {
+			return false
+		}
+	}
+
+	return false
 }
 
 // Pop removes the top context from the stack and returns it.
+//
+// Prefer [PopScope] for anything that can finish out of order: Pop matches
+// position, not identity, so it removes whatever happens to be on top.
 func (s *contextStack) Pop(key any) any {
-	if s == nil || *s == nil {
+	if s == nil || s.stacks == nil {
 		return nil
 	}
 
-	stack, ok := (*s)[key]
-	if !ok || len(stack) == 0 {
-		return nil
-	}
-
-	lastIdx := len(stack) - 1
-	val := stack[lastIdx]
-	// slices.Delete zeroes removed elements in the backing array,
-	// allowing GC to collect popped values.
-	stack = slices.Delete(stack, lastIdx, lastIdx+1)
-
+	stack := s.stacks[key]
 	if len(stack) == 0 {
-		delete(*s, key)
-	} else {
-		(*s)[key] = stack
+		return nil
 	}
+
+	last := len(stack) - 1
+	val := stack[last].val
+	s.truncate(key, stack, last)
 
 	return val
 }
@@ -150,12 +226,12 @@ func (s *contextStack) Pop(key any) any {
 // Depth returns the total number of entries across all keys in the stack.
 // This is useful for detecting GLS leaks where entries are pushed but never popped.
 func (s *contextStack) Depth() int {
-	if s == nil || *s == nil {
+	if s == nil || s.stacks == nil {
 		return 0
 	}
 
 	n := 0
-	for _, stack := range *s {
+	for _, stack := range s.stacks {
 		n += len(stack)
 	}
 	return n

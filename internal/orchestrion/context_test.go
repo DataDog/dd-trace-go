@@ -49,8 +49,8 @@ func TestGLSPopFunc(t *testing.T) {
 	t.Run("same goroutine pops value", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
-		CtxWithValue(context.Background(), key("k"), "v")
-		popFn := GLSPopFunc(key("k"))
+		token := getDDContextStack().Push(key("k"), "v")
+		popFn := GLSPopFunc(key("k"), token)
 
 		require.Equal(t, "v", getDDContextStack().Peek(key("k")))
 
@@ -62,14 +62,14 @@ func TestGLSPopFunc(t *testing.T) {
 	t.Run("different goroutine is no-op", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
-		CtxWithValue(context.Background(), key("k"), "v")
-		popFn := GLSPopFunc(key("k"))
+		token := getDDContextStack().Push(key("k"), "v")
+		popFn := GLSPopFunc(key("k"), token)
 
 		// Simulate a different goroutine by swapping the GLS to a new stack.
 		// In production, each goroutine has its own contextStack pointer in
 		// runtime.g, so getDDContextStack() returns different pointers.
 		originalStack := getDDGLS()
-		differentStack := contextStack(make(map[any][]any))
+		var differentStack contextStack
 		setDDGLS(&differentStack)
 		t.Cleanup(func() { setDDGLS(originalStack) })
 
@@ -85,7 +85,7 @@ func TestGLSPopFunc(t *testing.T) {
 		t.Cleanup(MockGLS())
 		enabled = false // Override MockGLS's enabled=true to test disabled path
 
-		popFn := GLSPopFunc(key("k"))
+		popFn := GLSPopFunc(key("k"), 0)
 		popFn() // must not panic
 	})
 }
@@ -226,8 +226,7 @@ func TestGLSPopFuncCrossGoroutine(t *testing.T) {
 	t.Cleanup(MockGLSPerGoroutine())
 
 	// Push a value and capture the pop function on the main goroutine.
-	CtxWithValue(context.Background(), key("k"), "main-val")
-	popFn := GLSPopFunc(key("k"))
+	_, popFn := CtxWithScopedValue(context.Background(), key("k"), "main-val")
 
 	require.Equal(t, "main-val", getDDContextStack().Peek(key("k")),
 		"main goroutine should see its pushed value")
@@ -318,8 +317,7 @@ func BenchmarkGLSPopFuncSameGoroutine(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		CtxWithValue(context.Background(), k, true)
-		popFn := GLSPopFunc(k)
+		_, popFn := CtxWithScopedValue(context.Background(), k, true)
 		popFn()
 	}
 	if depth := GLSStackDepth(); depth != 0 {
@@ -335,8 +333,7 @@ func BenchmarkGLSPopFuncCrossGoroutine(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		CtxWithValue(context.Background(), k, true)
-		popFn := GLSPopFunc(k)
+		_, popFn := CtxWithScopedValue(context.Background(), k, true)
 		done := make(chan struct{})
 		go func() { defer close(done); popFn() }()
 		<-done

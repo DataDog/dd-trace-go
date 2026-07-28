@@ -16,7 +16,7 @@ import (
 type stackTestKey struct{}
 
 func TestPopNilsBackingArrayElement(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	// Push two values so popping one keeps the map entry alive (len > 0).
 	// This lets us inspect the backing array for the cleared slot.
@@ -29,19 +29,19 @@ func TestPopNilsBackingArrayElement(t *testing.T) {
 
 	// The map entry still exists (one element remains). Check that the
 	// backing array slot at index 1 was cleared so GC can collect it.
-	stack := s[stackTestKey{}]
+	stack := s.stacks[stackTestKey{}]
 	require.Len(t, stack, 1, "one element should remain")
 	rawSlice := stack[:cap(stack)]
-	assert.Nil(t, rawSlice[1], "popped element should be nil in backing array to allow GC")
+	assert.Zero(t, rawSlice[1], "popped element should be zeroed in backing array to allow GC")
 }
 
 func TestPopCleansUpEmptyMapEntry(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	s.Push(stackTestKey{}, "value")
 	s.Pop(stackTestKey{})
 
-	_, exists := s[stackTestKey{}]
+	_, exists := s.stacks[stackTestKey{}]
 	assert.False(t, exists, "empty stack entry should be removed from the map")
 }
 
@@ -58,7 +58,7 @@ type fakeReclaimable struct {
 func (f *fakeReclaimable) GLSReclaimable() bool { return f == nil || f.reclaimed }
 
 func TestPushReclaimsFinishedTopEntry(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	first := &fakeReclaimable{id: 1}
 	s.Push(stackTestKey{}, first)
@@ -75,7 +75,7 @@ func TestPushReclaimsFinishedTopEntry(t *testing.T) {
 }
 
 func TestPushDrainsMultipleReclaimableEntries(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	// Several entries pile up while live (pushed on this goroutine, e.g. via
 	// ContextWithSpan), building real depth.
@@ -100,7 +100,7 @@ func TestPushDrainsMultipleReclaimableEntries(t *testing.T) {
 }
 
 func TestPushKeepsLiveEntries(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	// A live (non-reclaimable) entry on top must never be dropped — this is
 	// the legitimate same-goroutine nesting case (parent still active).
@@ -114,7 +114,7 @@ func TestPushKeepsLiveEntries(t *testing.T) {
 }
 
 func TestPushDoesNotReclaimBuriedEntryUnderLiveTop(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	// Build [buried, liveTop] with both live, so neither is dropped at push.
 	buried := &fakeReclaimable{id: 1, reclaimed: false}
@@ -136,7 +136,7 @@ func TestPushDoesNotReclaimBuriedEntryUnderLiveTop(t *testing.T) {
 }
 
 func TestPushDoesNotDrainNonReclaimableValues(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	// Values that don't implement reclaimable (e.g. the bool stored under
 	// executionTracedKey) must never be drained, even if they pile up.
@@ -210,7 +210,7 @@ func TestPeekSkipsReclaimableEntries(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := contextStack(make(map[any][]any))
+			var s contextStack
 
 			// Push every entry live so the stack actually reaches len(finished).
 			entries := make([]*fakeReclaimable, len(tt.finished))
@@ -245,7 +245,7 @@ func TestPeekSkipsReclaimableEntries(t *testing.T) {
 // leaves its own span behind. Peek must refuse the survivor every time; returning
 // it would make each request a child of the last.
 func TestPeekBreaksStaleParentChain(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 	k := stackTestKey{}
 
 	for i := range 10 {
@@ -273,7 +273,7 @@ func TestPeekBreaksStaleParentChain(t *testing.T) {
 // advice is guarded by `if s != nil`), which is exactly why this needs a test:
 // the guard lives in the woven method, out of reach of the rest of this suite.
 func TestPeekSkipsNilReclaimableEntry(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	live := &fakeReclaimable{id: 1}
 	s.Push(stackTestKey{}, live)
@@ -288,12 +288,131 @@ func TestPeekSkipsNilReclaimableEntry(t *testing.T) {
 // [reclaimable] — e.g. the bool stored under executionTracedKey. They carry no
 // finished state, so Peek must return them unchanged.
 func TestPeekReturnsNonReclaimableValues(t *testing.T) {
-	s := contextStack(make(map[any][]any))
+	var s contextStack
 
 	s.Push(stackTestKey{}, false)
 	s.Push(stackTestKey{}, true)
 
 	assert.Equal(t, true, s.Peek(stackTestKey{}), "non-reclaimable top value must be returned as-is")
+}
+
+// TestPopScopeRemovesTargetAndEverythingAbove is the half of APMS-20132 the Peek
+// guard cannot reach. Pop takes the top rather than the scope that ended, so a
+// non-LIFO exit strands an entry:
+//
+//	push A, push B, push C
+//	A exits  →  Pop takes C, leaving [A(finished), B(live)]
+//
+// Peek walks down from the top and stops at B, because B is LIVE. It is not a
+// finished span the read-side guard can skip; it is a sibling scope that simply
+// outlived the one that ended. Handing it out makes the next request its child.
+//
+// PopScope closes A by token and takes B and C with it: both were opened inside
+// A's scope, so neither can outlive it.
+func TestPopScopeRemovesTargetAndEverythingAbove(t *testing.T) {
+	var s contextStack
+	k := stackTestKey{}
+
+	a := &fakeReclaimable{id: 1}
+	tokenA := s.Push(k, a)
+	b := &fakeReclaimable{id: 2}
+	s.Push(k, b)
+	c := &fakeReclaimable{id: 3}
+	s.Push(k, c)
+	require.Equal(t, 3, s.Depth())
+
+	// A finishes while it is not the top: the non-LIFO exit.
+	a.reclaimed = true
+	require.True(t, s.PopScope(k, tokenA), "PopScope must find the scope its token opened")
+
+	assert.Equal(t, 0, s.Depth(), "A, B and C must all be gone")
+
+	got := s.Peek(k)
+	assert.Nil(t, got, "nothing survives A's exit, so there is no active scope")
+	assert.NotEqual(t, b, got,
+		"B outlived the scope that opened it and became the active one — the top-pop "+
+			"stranding that produced the APMS-20132 trace merge")
+}
+
+// TestPopScopeKeepsEntriesBelow pins the other side of scope exit: an enclosing
+// scope is still live and must become active again. This is ordinary nesting —
+// a child span finishing inside its parent — and a PopScope that cleared the
+// whole slice would break it while still passing every test above.
+func TestPopScopeKeepsEntriesBelow(t *testing.T) {
+	var s contextStack
+	k := stackTestKey{}
+
+	outer := &fakeReclaimable{id: 1}
+	s.Push(k, outer)
+	inner := &fakeReclaimable{id: 2}
+	tokenInner := s.Push(k, inner)
+	leaf := &fakeReclaimable{id: 3}
+	s.Push(k, leaf)
+
+	inner.reclaimed = true
+	require.True(t, s.PopScope(k, tokenInner))
+
+	assert.Equal(t, 1, s.Depth(), "only inner and what inner opened are removed")
+	assert.Same(t, outer, s.Peek(k), "the enclosing scope becomes active again")
+
+	// The vacated slots are zeroed so the GC can collect the values they held,
+	// matching Pop and Push's drain.
+	raw := s.stacks[k]
+	require.GreaterOrEqual(t, cap(raw), 3, "the backing array must still hold the removed slots")
+	raw = raw[:cap(raw)]
+	assert.Zero(t, raw[1], "inner's slot must be cleared")
+	assert.Zero(t, raw[2], "leaf's slot must be cleared")
+}
+
+// TestPopScopeOnRemovedTokenDoesNothing covers the repeated or late exit: a
+// popper that already ran, or one whose scope was swept away by an enclosing
+// PopScope. It must report that there was nothing to close and leave the stack
+// alone, because by then the position it once held may belong to someone else.
+func TestPopScopeOnRemovedTokenDoesNothing(t *testing.T) {
+	var s contextStack
+	k := stackTestKey{}
+
+	gone := &fakeReclaimable{id: 1}
+	token := s.Push(k, gone)
+	require.True(t, s.PopScope(k, token), "the first exit closes the scope")
+
+	assert.False(t, s.PopScope(k, token), "a second exit finds nothing to close")
+	assert.Equal(t, 0, s.Depth())
+
+	// The same holds with an unrelated scope open: the stale exit must not take it.
+	live := &fakeReclaimable{id: 2}
+	s.Push(k, live)
+
+	assert.False(t, s.PopScope(k, token), "the stale token still matches nothing")
+	assert.Equal(t, 1, s.Depth(), "the unrelated scope must survive the stale exit")
+	assert.Same(t, live, s.Peek(k))
+}
+
+// TestPopScopeIgnoresStaleTokenAfterIndexReuse is the ABA case, and the reason
+// an entry carries a token instead of the popper capturing an index. The slice
+// hands index 0 to the second scope after the first is gone, so an index-based
+// exit would close a scope it never opened.
+//
+// The counter lives on the contextStack rather than alongside each key's slice
+// precisely so this holds: PopScope deletes the key once it empties, and a
+// per-key counter would restart from zero and re-issue the stale token.
+func TestPopScopeIgnoresStaleTokenAfterIndexReuse(t *testing.T) {
+	var s contextStack
+	k := stackTestKey{}
+
+	first := &fakeReclaimable{id: 1}
+	stale := s.Push(k, first)
+	require.True(t, s.PopScope(k, stale))
+	require.Equal(t, 0, s.Depth(), "the key is now empty, so the next push starts at index 0 again")
+
+	second := &fakeReclaimable{id: 2}
+	fresh := s.Push(k, second)
+	require.Same(t, second, s.stacks[k][0].val, "the second scope reuses the first scope's index")
+	require.NotEqual(t, stale, fresh, "a reused index must not come with a reused token")
+
+	assert.False(t, s.PopScope(k, stale), "the stale exit matches nothing")
+	assert.Equal(t, 1, s.Depth(), "the unrelated scope at the same index must survive")
+	assert.Same(t, second, s.Peek(k), "the stale exit must not disturb the active scope")
 }
 
 // BenchmarkPeekSkipReclaimed measures Peek's cost as finished entries pile above
@@ -304,7 +423,7 @@ func BenchmarkPeekSkipReclaimed(b *testing.B) {
 	for _, stale := range []int{0, 1, 10, 100} {
 		b.Run(fmt.Sprintf("%d_reclaimed", stale), func(b *testing.B) {
 			k := stackTestKey{}
-			s := contextStack(make(map[any][]any))
+			var s contextStack
 
 			// A live entry at the bottom is what Peek must find.
 			s.Push(k, &fakeReclaimable{id: -1})
@@ -348,7 +467,7 @@ func BenchmarkPushDrainReclaimed(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				b.StopTimer()
-				s := contextStack(make(map[any][]any))
+				var s contextStack
 				entries := make([]*fakeReclaimable, stale)
 				for i := range entries {
 					entries[i] = &fakeReclaimable{id: i}
