@@ -1554,6 +1554,15 @@ func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, 
 func (c *Config) TraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	// OTLP span metrics use their own concentrator and are not native CSS, so the trace
+	// transport must stay on v0.4 where the Datadog Agent can see the
+	// Datadog-Client-Computed-Stats header. Inline OTLPSpanMetricsEnabled logic to avoid
+	// a deadlock on c.mu.
+	otlpSpanMetrics := (c.otlpSpanMetricsEnabled != nil && *c.otlpSpanMetricsEnabled) ||
+		(c.otlpSpanMetricsEnabled == nil && c.otlpExportMode && c.runtimeMetricsOtel)
+	if otlpSpanMetrics {
+		return TraceProtocolV04
+	}
 	return c.traceProtocol
 }
 
