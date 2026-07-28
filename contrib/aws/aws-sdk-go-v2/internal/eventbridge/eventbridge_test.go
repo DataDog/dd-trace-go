@@ -249,7 +249,7 @@ func TestEventBridgeEdgeTags(t *testing.T) {
 	}
 
 	assert.Equal(t,
-		[]string{"direction:out", "type:eventbridge", "topic:orders-bus:order.created"},
+		[]string{"direction:out", "type:eventbridge", "topic:order.created", "exchange:orders-bus"},
 		eventBridgeEdgeTags(entry),
 	)
 }

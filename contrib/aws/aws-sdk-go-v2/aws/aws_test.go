@@ -894,17 +894,9 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 func eventBridgeEdgeTagsForTest(entry *eventBridgeTypes.PutEventsRequestEntry) []string {
 	return []string{
 		"direction:out",
-<<<<<<< HEAD
-		"type:eventbridge:" + eventBridgeNameForTest(entry),
+		"type:eventbridge",
 		"topic:" + eventBridgeDetailTypeForTest(entry),
-||||||| parent of 73371ee39 (fix(contrib/aws/aws-sdk-go-v2): update eventbridge dsm checkpoint tags (#4867))
 		"exchange:" + eventBridgeNameForTest(entry),
-		"topic:" + eventBridgeDetailTypeForTest(entry),
-		"type:eventbridge",
-=======
-		"type:eventbridge",
-		"topic:" + eventBridgeNameForTest(entry) + ":" + eventBridgeDetailTypeForTest(entry),
->>>>>>> 73371ee39 (fix(contrib/aws/aws-sdk-go-v2): update eventbridge dsm checkpoint tags (#4867))
 	}
 }
 
