@@ -52,6 +52,13 @@ var (
 // signal that anything was dropped. The crashed goroutine is always kept.
 const maxReportThreads = 100
 
+// maxFramesPerThread bounds how many frames a single goroutine's stack
+// contributes to a report. maxReportThreads bounds goroutine count, not depth:
+// a single deeply recursive stack (a stack-overflow crash is exactly this) can
+// still produce many thousands of frames in one goroutine, which
+// maxReportThreads does nothing to stop.
+const maxFramesPerThread = 1000
+
 // parseCrashDump parses a raw Go crash dump into a Report.
 // The input is the full text written by the Go runtime to the crash output fd.
 func parseCrashDump(dump []byte) *Report {
@@ -185,6 +192,18 @@ func parseFrames(lines []string) (frames []Frame, incomplete bool, consumed int)
 		// records where the goroutine was spawned. It is not part of the
 		// goroutine's own stack, so skip both lines.
 		if strings.HasPrefix(line, "created by ") {
+			consumed++
+			if consumed < len(lines) && isLocationLine(lines[consumed]) {
+				consumed++
+			}
+			continue
+		}
+
+		// Once the cap is hit, skip the function/location line pair without
+		// extracting or allocating a Frame — only advancing consumed is still
+		// needed so the caller finds the next goroutine header correctly.
+		if len(frames) >= maxFramesPerThread {
+			incomplete = true
 			consumed++
 			if consumed < len(lines) && isLocationLine(lines[consumed]) {
 				consumed++

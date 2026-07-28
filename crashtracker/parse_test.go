@@ -230,6 +230,33 @@ func TestParseCrashDumpCrashingGoroutineFrames(t *testing.T) {
 	}
 }
 
+func TestParseFramesCapsDeepStack(t *testing.T) {
+	// Synthesize a goroutine stack far deeper than maxFramesPerThread, the
+	// shape a real stack-overflow crash produces: one goroutine, thousands of
+	// (function, location) line pairs. maxReportThreads (goroutine count)
+	// does nothing to bound this — the cap under test is per-goroutine.
+	const depth = maxFramesPerThread * 2
+	lines := make([]string, 0, depth*2)
+	for range depth {
+		lines = append(lines,
+			"main.recurse(0x1)",
+			"\t/tmp/main.go:10 +0x20",
+		)
+	}
+
+	frames, incomplete, consumed := parseFrames(lines)
+
+	if len(frames) != maxFramesPerThread {
+		t.Errorf("len(frames) = %d, want %d", len(frames), maxFramesPerThread)
+	}
+	if !incomplete {
+		t.Error("incomplete = false, want true for a capped stack")
+	}
+	if consumed != len(lines) {
+		t.Errorf("consumed = %d, want %d (all input lines, even past the cap)", consumed, len(lines))
+	}
+}
+
 func TestParseCrashDumpSignalDetails(t *testing.T) {
 	dump := readFixture(t, "sigsegv.txt")
 	r := parseCrashDump(dump)
