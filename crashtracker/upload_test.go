@@ -6,12 +6,28 @@
 package crashtracker
 
 import (
+	"compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// decompressBody gunzips a captured request body for JSON assertions.
+func decompressBody(t *testing.T, body []byte) []byte {
+	t.Helper()
+	r, err := gzip.NewReader(strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	defer r.Close()
+	decompressed, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read gzip stream: %v", err)
+	}
+	return decompressed
+}
 
 func newTestReport() *Report {
 	stack := StackTrace{
@@ -69,9 +85,12 @@ func TestUploadReportAgentPath(t *testing.T) {
 
 	assertCanonicalAgentRequest(t, capturedReq)
 
-	// Content-Type header.
+	// Content-Type and Content-Encoding headers.
 	if ct := capturedReq.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if ce := capturedReq.Header.Get("Content-Encoding"); ce != "gzip" {
+		t.Errorf("Content-Encoding = %q, want gzip", ce)
 	}
 
 	// API key must NOT be set on the agent path.
@@ -79,7 +98,7 @@ func TestUploadReportAgentPath(t *testing.T) {
 		t.Errorf("DD-API-KEY should be absent on agent path, got %q", key)
 	}
 
-	assertRFC0013Body(t, capturedBody)
+	assertRFC0013Body(t, decompressBody(t, capturedBody))
 }
 
 func TestUploadReportAgentlessPath(t *testing.T) {
@@ -98,10 +117,10 @@ func TestUploadReportAgentlessPath(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &config{
-		apiKey:     "test-key",
-		site:       "datadoghq.com",
-		agentURL:   srv.URL, // redirect agentless URL to test server
-		httpClient: srv.Client(),
+		apiKey:       "test-key",
+		site:         "datadoghq.com",
+		agentlessURL: srv.URL, // test-only override for the agentless target
+		httpClient:   srv.Client(),
 	}
 
 	if err := uploadReport(cfg, newTestReport()); err != nil {
@@ -122,7 +141,34 @@ func TestUploadReportAgentlessPath(t *testing.T) {
 		t.Errorf("X-Datadog-EVP-Subdomain should be absent on agentless path, got %q", sub)
 	}
 
-	assertRFC0013Body(t, capturedBody)
+	assertRFC0013Body(t, decompressBody(t, capturedBody))
+}
+
+// TestUploadReportAgentURLIgnoredInAgentlessMode verifies the fix for the bug
+// where WithAgentURL was read verbatim as the complete agentless target: a
+// resolved cfg.agentURL (an agent host:port, no path) combined with an API
+// key must not become the agentless request's target URL, which would 404 or
+// otherwise fail to reach the intake path. The computed agentless URL is used
+// instead; only the unexported test seam (agentlessURL) can override it.
+func TestUploadReportAgentURLIgnoredInAgentlessMode(t *testing.T) {
+	cfg := &config{
+		apiKey:   "test-key",
+		site:     "datadoghq.com",
+		agentURL: "http://agent-host:8126", // must be ignored: this is an agent base, not an agentless target
+	}
+
+	req, _, err := buildRequestAndClient(cfg, []byte("{}"))
+	if err != nil {
+		t.Fatalf("buildRequestAndClient returned unexpected error: %v", err)
+	}
+
+	if req.URL.String() == cfg.agentURL {
+		t.Fatalf("target URL = %q, want the computed agentless URL, not the agent URL verbatim", req.URL.String())
+	}
+	wantHost := "error-tracking-intake.datadoghq.com"
+	if req.URL.Host != wantHost {
+		t.Errorf("target host = %q, want %q", req.URL.Host, wantHost)
+	}
 }
 
 func TestUploadReportServerError(t *testing.T) {

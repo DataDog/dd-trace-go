@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // stackFormat is the stack format identifier reported to Error Tracking.
@@ -42,17 +44,12 @@ var (
 	topLevelSignalRe = regexp.MustCompile(`^(SIG[A-Z0-9]+): `)
 )
 
-// signalNumbers maps the signal names the Go runtime reports on a crash to
-// their POSIX signal numbers. Only the signals that surface as fatal crashes
-// are included; unknown signals fall back to 0.
-var signalNumbers = map[string]int{
-	"SIGILL":  4,
-	"SIGTRAP": 5,
-	"SIGABRT": 6,
-	"SIGBUS":  7,
-	"SIGFPE":  8,
-	"SIGSEGV": 11,
-}
+// maxReportThreads bounds how many goroutines a single report includes. A
+// crash dump can contain thousands of goroutines; including all of them
+// amplifies the parsed JSON well past the raw dump size (each frame becomes
+// several JSON fields) with no cap, no compression until upload, and no
+// signal that anything was dropped. The crashed goroutine is always kept.
+const maxReportThreads = 100
 
 // parseCrashDump parses a raw Go crash dump into a Report.
 // The input is the full text written by the Go runtime to the crash output fd.
@@ -60,17 +57,24 @@ func parseCrashDump(dump []byte) *Report {
 	preamble, threads := splitDump(dump)
 
 	sigInfo := parseSignal(preamble)
-	errType := errorType(preamble, threads, sigInfo)
+	errType := errorType(preamble, sigInfo)
 	message := errorMessage(preamble, sigInfo)
 
+	// crashingThread must run before the cap below: it marks the crashed
+	// goroutine and we need that goroutine to survive truncation.
 	crashed := crashingThread(threads)
 	var stack *StackTrace
 	var threadName string
 	if crashed != nil {
+		// error.stack intentionally duplicates the crashed goroutine's frames
+		// already present in error.threads: the errorsintake schema requires
+		// error.stack as a distinct top-level field (see RFC 0011), so this
+		// copy is not redundant to trim away.
 		s := crashed.Stack
 		stack = &s
 		threadName = crashed.Name
 	}
+	threads = capThreads(threads)
 
 	return &Report{
 		Timestamp: time.Now().UnixMilli(),
@@ -259,6 +263,32 @@ func crashingThread(threads []Thread) *Thread {
 	return &threads[idx]
 }
 
+// capThreads bounds the number of goroutines included in a report to
+// maxReportThreads, always keeping the crashed goroutine. The errorsintake
+// schema has no field for "N goroutines omitted"; truncation is instead
+// observable via the monitor's diagnostic log (see runMonitor).
+func capThreads(threads []Thread) []Thread {
+	if len(threads) <= maxReportThreads {
+		return threads
+	}
+	kept := make([]Thread, 0, maxReportThreads)
+	for _, t := range threads {
+		if t.Crashed {
+			kept = append(kept, t)
+		}
+	}
+	for _, t := range threads {
+		if len(kept) >= maxReportThreads {
+			break
+		}
+		if !t.Crashed {
+			kept = append(kept, t)
+		}
+	}
+	log.Warn("crashtracker: report truncated from %d to %d goroutines", len(threads), len(kept))
+	return kept
+}
+
 // parseSignal extracts UNIX signal details from the preamble, or returns nil
 // if the crash was not signal-triggered. It recognises two formats emitted by
 // the Go runtime:
@@ -302,8 +332,11 @@ func parseSignal(preamble []string) *SigInfo {
 }
 
 // errorType classifies the crash into an error.type value following the
-// Crashtracking model.
-func errorType(preamble []string, threads []Thread, sigInfo *SigInfo) string {
+// Crashtracking model. Anything that is not a signal or a recognised
+// "fatal error:" kind is reported as a panic — this includes both
+// explicit "panic:"/"panic(" preamble lines and the default case, since a
+// panic is the only remaining crash kind Go's runtime produces.
+func errorType(preamble []string, sigInfo *SigInfo) string {
 	// A signal-triggered crash is reported as a UNIX signal regardless of the
 	// surrounding panic wrapper the runtime prints.
 	if sigInfo != nil {
@@ -313,17 +346,6 @@ func errorType(preamble []string, threads []Thread, sigInfo *SigInfo) string {
 		if rest, ok := strings.CutPrefix(line, "fatal error:"); ok {
 			return fatalErrorType(strings.TrimSpace(rest))
 		}
-		if strings.HasPrefix(line, "panic:") || strings.HasPrefix(line, "panic(") {
-			return "panic"
-		}
-	}
-	// A "panic(" frame in the crashing goroutine also indicates a panic.
-	if crashed := firstThread(threads); crashed != nil {
-		for _, f := range crashed.Stack.Frames {
-			if f.Function == "panic" {
-				return "panic"
-			}
-		}
 	}
 	return "panic"
 }
@@ -331,12 +353,10 @@ func errorType(preamble []string, threads []Thread, sigInfo *SigInfo) string {
 // fatalErrorType maps a "fatal error: <msg>" message to its Go runtime error
 // kind. Most fatal errors raised via throw surface as runtime.plainError.
 func fatalErrorType(msg string) string {
-	switch msg {
-	case "":
+	if msg == "" {
 		return "runtime.Error"
-	default:
-		return "runtime.plainError"
 	}
+	return "runtime.plainError"
 }
 
 // errorMessage derives the human-readable error message from the preamble.
@@ -385,20 +405,6 @@ func panicValue(line string) string {
 	return strings.TrimSpace(line)
 }
 
-// firstThread returns the crashing goroutine without mutating Crashed flags:
-// the first goroutine in the "running" state, or the first overall.
-func firstThread(threads []Thread) *Thread {
-	if len(threads) == 0 {
-		return nil
-	}
-	for i := range threads {
-		if threads[i].State == "running" {
-			return &threads[i]
-		}
-	}
-	return &threads[0]
-}
-
 // parseIntFlexible parses an integer that may be expressed in hex (0x...) or
 // decimal. Unparseable input yields 0.
 func parseIntFlexible(s string) int {
@@ -416,7 +422,7 @@ func parseIntFlexible(s string) int {
 func osInfo() OSInfo {
 	return OSInfo{
 		Architecture: runtime.GOARCH,
-		Bitness:      "64-bit",
+		Bitness:      strconv.Itoa(strconv.IntSize) + "-bit",
 		OSType:       osType(runtime.GOOS),
 		// Version requires an OS-specific syscall; deferred to a follow-up.
 		Version: "",

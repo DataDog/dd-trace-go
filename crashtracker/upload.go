@@ -7,6 +7,7 @@ package crashtracker
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -36,7 +37,15 @@ func uploadReport(cfg *config, r *Report) error {
 		return fmt.Errorf("crashtracker: marshal report: %w", err)
 	}
 
-	req, client, err := buildRequestAndClient(cfg, body)
+	// The parsed report can be several times larger than the raw crash dump
+	// (each frame becomes multiple JSON fields); gzip before sending so a
+	// large goroutine dump does not turn into an equally large HTTP request.
+	compressed, err := gzipCompress(body)
+	if err != nil {
+		return fmt.Errorf("crashtracker: compress report: %w", err)
+	}
+
+	req, client, err := buildRequestAndClient(cfg, compressed)
 	if err != nil {
 		return fmt.Errorf("crashtracker: build request: %w", err)
 	}
@@ -64,9 +73,11 @@ func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Clien
 	)
 
 	if cfg.apiKey != "" {
-		// Agentless path.
-		// cfg.agentURL acts as a base URL override for testing; in production it is empty.
-		base := cfg.agentURL
+		// Agentless path. cfg.agentlessURL is a test-only override (no public
+		// Option); WithAgentURL always means the agent path below, so setting
+		// both WithAgentURL and WithAPIKey cannot silently drop the report
+		// by treating an agent base URL as a complete agentless target.
+		base := cfg.agentlessURL
 		if base == "" {
 			site := cfg.site
 			if site == "" {
@@ -98,6 +109,7 @@ func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Clien
 		return nil, nil, fmt.Errorf("build HTTP request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
 	if useKey {
 		req.Header.Set("DD-API-KEY", cfg.apiKey)
 	} else {
@@ -114,4 +126,17 @@ func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Clien
 		client = internal.DefaultHTTPClient(uploadTimeout, false)
 	}
 	return req, client, nil
+}
+
+// gzipCompress compresses body for upload.
+func gzipCompress(body []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	if _, err := w.Write(body); err != nil {
+		return nil, fmt.Errorf("write gzip stream: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return nil, fmt.Errorf("close gzip stream: %w", err)
+	}
+	return buf.Bytes(), nil
 }
