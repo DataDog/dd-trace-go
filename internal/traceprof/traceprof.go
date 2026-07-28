@@ -8,9 +8,8 @@ package traceprof
 
 // pprof labels applied by the tracer to show up in the profiler's profiles.
 const (
-	SpanID          = "span id"
-	LocalRootSpanID = "local root span id"
-	TraceEndpoint   = "trace endpoint"
+	SpanID        = "span id"
+	TraceEndpoint = "trace endpoint"
 )
 
 // env variables used to control cross-cutting tracer/profiling features.
