@@ -285,21 +285,29 @@ func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
 	if _, ok := report["timestamp"].(float64); !ok {
 		t.Errorf("timestamp type = %T, want number", report["timestamp"])
 	}
-	if ddtags, _ := report["ddtags"].(string); ddtags == "" {
+	ddtags, _ := report["ddtags"].(string)
+	if ddtags == "" {
 		t.Error("ddtags is empty")
 	}
-	// Asserted against the libdatadog crashtracker schema version directly
-	// (not the package's internal constant): this is a black-box check of the
+	// data_schema_version, incomplete, is_crash, and uuid travel as ddtags
+	// entries, not top-level fields: libdatadog's own wire payload
+	// (ErrorsIntakePayload in errors_intake.rs) has no such top-level fields
+	// either, folding them into ddtags via build_crash_info_tags instead.
+	// Asserted against the schema version literal directly (not the
+	// package's internal constant), since this is a black-box check of the
 	// wire contract, not of the implementation.
 	const wantSchemaVersion = "1.8"
-	if got := report["data_schema_version"]; got != wantSchemaVersion {
-		t.Errorf("data_schema_version = %v, want %q", got, wantSchemaVersion)
+	if !strings.Contains(ddtags, "data_schema_version:"+wantSchemaVersion) {
+		t.Errorf("ddtags = %q, want it to contain %q", ddtags, "data_schema_version:"+wantSchemaVersion)
 	}
-	if id, _ := report["uuid"].(string); id == "" {
-		t.Error("uuid is empty")
+	if !strings.Contains(ddtags, "uuid:") {
+		t.Errorf("ddtags = %q, want a uuid entry", ddtags)
 	}
-	if _, ok := report["incomplete"].(bool); !ok {
-		t.Errorf("incomplete type = %T, want bool", report["incomplete"])
+	if !strings.Contains(ddtags, "incomplete:") {
+		t.Errorf("ddtags = %q, want an incomplete entry", ddtags)
+	}
+	if !strings.Contains(ddtags, "is_crash:true") {
+		t.Errorf("ddtags = %q, want it to contain %q", ddtags, "is_crash:true")
 	}
 
 	errObj, ok := report["error"].(map[string]any)

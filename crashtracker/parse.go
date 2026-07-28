@@ -66,7 +66,6 @@ func parseCrashDump(dump []byte) *Report {
 	crashed := crashingThread(threads)
 	var stack *StackTrace
 	var threadName string
-	incomplete := false
 	if crashed != nil {
 		// error.stack intentionally duplicates the crashed goroutine's frames
 		// already present in error.threads: the errorsintake schema requires
@@ -75,20 +74,12 @@ func parseCrashDump(dump []byte) *Report {
 		s := crashed.Stack
 		stack = &s
 		threadName = crashed.Name
-		// The report as a whole is incomplete if the crashed goroutine's own
-		// stack — the one Error Tracking groups and displays on — is; a
-		// truncated bystander goroutine elsewhere in the dump does not make
-		// the report itself incomplete.
-		incomplete = crashed.Stack.Incomplete
 	}
 	threads = capThreads(threads)
 
 	return &Report{
-		DataSchemaVersion: dataSchemaVersion,
-		UUID:              newUUID(),
-		Timestamp:         time.Now().UnixMilli(),
-		DDSource:          ddSource,
-		Incomplete:        incomplete,
+		Timestamp: time.Now().UnixMilli(),
+		DDSource:  ddSource,
 		Error: Error{
 			Type:       errType,
 			Message:    message,

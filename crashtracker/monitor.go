@@ -94,7 +94,7 @@ func runMonitor(cfg *config) {
 	}
 
 	report := parseCrashDump(data)
-	report.DDTags = buildDDTags(cfg)
+	report.DDTags = buildDDTags(cfg, report)
 	if err := uploadReport(cfg, report); err != nil {
 		// Emit one line so operators know a crash report was attempted but
 		// failed — without this, the failure is invisible. Routed through the
