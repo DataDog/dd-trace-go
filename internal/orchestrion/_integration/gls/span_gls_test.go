@@ -213,13 +213,31 @@ func TestSpanGLSFinishedParentOnlyHonoredViaExplicitContext(t *testing.T) {
 	})
 }
 
-// TestSpanGLSSequentialRequestsStayIndependent covers the publisher half, and is
-// the shape that produced the reported 9,780-span trace. Each iteration is one
-// request on a reused keep-alive goroutine: a publish span finishes on another
-// goroutine and lands above the request's own span, so the request's own finish
-// pops that stray instead (the pop matches position, not identity) and leaves its
-// own finished span behind. Every request must still get its own trace_id; without
-// the guard request N+1 adopts request N and the whole run collapses into one.
+// TestSpanGLSSequentialRequestsStayIndependent is the APMS-20132 reproduction: the
+// shape that produced a reported 9,780-span trace spanning 50+ unrelated endpoints.
+//
+// Stranding an entry does not need a second goroutine. [contextStack.Pop] removes
+// the top of the stack rather than the span that finished, so any non-LIFO finish
+// strands something:
+//
+//	[srv]                  the request's own span
+//	[srv, child]           a child span
+//	srv.Finish()           pops the top, which is child, leaving [srv(finished)]
+//
+// The request's span outlives its own finish and stays on the stack. The next
+// request on that goroutine has no span in its context, so the GLS is its only
+// parent source, and it adopts the finished predecessor and inherits its trace.
+// Then the request after that inherits from it, and the whole connection collapses
+// into one trace_id.
+//
+// A child outliving its parent is ordinary: any span whose finish is tied to a
+// resource close or an async continuation rather than to a lexical scope. In a
+// request that emits ~89 spans it only has to happen once. A cross-goroutine finish
+// (covered by TestSpanGLSNoTraceMergeAfterCrossGoroutineFinish) is just one other
+// way to reach the same state.
+//
+// This runs on a single goroutine, which is what net/http gives a keep-alive
+// connection when it serves requests sequentially.
 func TestSpanGLSSequentialRequestsStayIndependent(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("GLS only exists in orchestrion builds")
@@ -231,21 +249,18 @@ func TestSpanGLSSequentialRequestsStayIndependent(t *testing.T) {
 
 	const requests = 20
 	seenTraceIDs := make(map[string]struct{}, requests)
+	outliving := make([]*tracer.Span, 0, requests)
 
 	for range requests {
-		span, _ := tracer.StartSpanFromContext(context.Background(), "http.request")
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "http.request")
+		child, _ := tracer.StartSpanFromContext(ctx, "async.work")
+		outliving = append(outliving, child)
 
-		var stray *tracer.Span
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			stray = tracer.StartSpan("kafka.publish")
-			stray.Finish()
-		})
-		wg.Wait()
-		_ = tracer.ContextWithSpan(context.Background(), stray)
-
-		span.Finish() // pops the stray, leaving this request's finished span behind
+		span.Finish() // pops child's slot, so this request's own span is left behind
 		seenTraceIDs[span.Context().TraceID()] = struct{}{}
+	}
+	for _, child := range outliving {
+		child.Finish()
 	}
 
 	require.Lenf(t, seenTraceIDs, requests,
