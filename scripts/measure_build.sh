@@ -161,12 +161,19 @@ do_build() {
   local start_time
   start_time=$(date +%s.%N 2> /dev/null || date +%s)
 
+  local build_status=0
   if [[ "$MODE" == "standard" ]]; then
-    go test -c -o "$bin_path" "./$SAMPLE" || die "Build failed (standard)"
+    go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
   elif [[ "$MODE" == "orchestrion" ]]; then
-    go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || die "Build failed (orchestrion)"
-  elif [[ "$MODE" == "otelc" ]]; then
-    otelc -rules="$REPO_ROOT" go test -c -o "$bin_path" "./$SAMPLE" || die "Build failed (otelc)"
+    go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || build_status=$?
+  else
+    otelc -rules="$REPO_ROOT" go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
+  fi
+
+  if [[ "$build_status" -ne 0 ]]; then
+    message "  Build failed ($MODE, exit $build_status); recording null metrics for this run"
+    echo "null null"
+    return 1
   fi
 
   local end_time
@@ -176,7 +183,11 @@ do_build() {
 
   # Binary size
   local size
-  size=$(stat -c %s "$bin_path" 2> /dev/null || stat -f %z "$bin_path" 2> /dev/null) || die "Failed to stat binary"
+  if ! size=$(stat -c %s "$bin_path" 2> /dev/null || stat -f %z "$bin_path" 2> /dev/null); then
+    message "  Failed to stat binary; recording null size for this run"
+    echo "$duration null"
+    return 1
+  fi
 
   message "  Duration: ${duration}s"
   message "  Size: $size bytes"
@@ -184,21 +195,28 @@ do_build() {
   echo "$duration $size"
 }
 
-# Perform builds — collect all duration samples; use last build's binary size
+# A failed build/stat is not a fatal error: do_build reports it as "null null"
+# which we record as null in the output
 message "Performing $REPEATS builds..."
 durations=()
 size=""
+failures=0
 for i in $(seq 1 "$REPEATS"); do
   message "Build $i/$REPEATS:"
-  read -r d s <<< "$(do_build)"
+  build_output="$(do_build)" || failures=$((failures + 1))
+  read -r d s <<< "$build_output"
   durations+=("$d")
   size="$s"
 done
 message "Durations: ${durations[*]}, size: $size bytes"
+if [[ "$failures" -gt 0 ]]; then
+  message "WARNING: $failures/$REPEATS build(s) failed; recorded as null in output"
+fi
 
-# Build JSON output — durations as array, size as single value
+# Build JSON output — durations as array, size as single value.
+# Duration entries and size are either a number or the literal string "null"
 message "Generating JSON output..."
-DURATION_ARRAY=$(printf '%s\n' "${durations[@]}" | jq -R 'tonumber' | jq -s '.')
+DURATION_ARRAY=$(printf '%s\n' "${durations[@]}" | jq -R 'if . == "null" then null else tonumber end' | jq -s '.')
 JSON=$(jq -n \
   --arg sample "$SAMPLE" \
   --arg mode "$MODE" \
