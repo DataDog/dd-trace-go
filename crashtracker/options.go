@@ -7,7 +7,6 @@ package crashtracker
 
 import (
 	"net/http"
-	"os"
 )
 
 // Option is a functional option for configuring the crashtracker.
@@ -23,10 +22,11 @@ type config struct {
 	site       string
 	enabled    bool
 
-	// pipeWriteEnd is the write end of the crash pipe registered with
-	// runtime/debug.SetCrashOutput. It is stored so Stop can close it; it is
-	// nil until the monitor child has been spawned.
-	pipeWriteEnd *os.File
+	// agentlessURL is a test-only override for the agentless upload target.
+	// There is no public option for it: WithAgentURL always means the agent,
+	// so combining WithAgentURL and WithAPIKey cannot silently drop the report
+	// by pointing the agentless path at a pathless host (see upload.go).
+	agentlessURL string
 }
 
 // WithService sets the service name tag on crash reports.

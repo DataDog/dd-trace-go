@@ -6,25 +6,16 @@
 package crashtracker
 
 import (
-	"os"
-	"runtime/debug"
 	"sync"
-	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 )
 
 var (
 	startOnce sync.Once
 	startErr  error // preserved from the first Start call; returned on subsequent calls
-
-	// activePipe holds the write end of the crash pipe registered with
-	// runtime/debug.SetCrashOutput. It is set when the monitor is spawned and
-	// released by Stop.
-	activePipe atomic.Pointer[os.File]
 )
 
 // init intercepts the monitor child process as early as possible — before any
@@ -32,20 +23,29 @@ var (
 // (DB connections, gRPC dials, signal handlers) from running in the lightweight
 // monitor. When the crashtracker package is imported (e.g. via orchestrion's
 // injected import), this init fires before the user's package inits.
+//
+// The monitor's configuration comes from monitorConfigFromEnv, which reads the
+// internal DD_CRASHTRACKING_MONITOR_* variables set by spawnMonitor: this is how
+// options passed to Start in the application process (WithService, WithAPIKey,
+// etc.) reach the monitor, which is a separate process and cannot see them
+// directly. Because init always wins this race, start's own monitor-role branch
+// is unreachable and intentionally does not exist.
 func init() {
 	if isMonitorProcess() {
-		runMonitor(defaultConfig()) // never returns; calls os.Exit
+		runMonitor(monitorConfigFromEnv()) // never returns; calls os.Exit
 	}
 }
 
 // Start initialises the crashtracker. It must be called as early as possible in main().
 //
-// In the monitor child process (identified by the DD_CRASHTRACKING_IS_MONITOR_PROCESS
-// environment variable), Start hijacks control: it reads the crash pipe, processes the
-// report, and calls os.Exit. It never returns in that case.
-//
-// In the application process, Start spawns the monitor child, wires SetCrashOutput, and
-// returns so the application continues normally.
+// Start spawns a monitor child process, registers the crash pipe via
+// runtime/debug.SetCrashOutput, and returns so the application continues normally.
+// There is no corresponding Stop: process exit alone closes the pipe, which is
+// all the cleanup the monitor needs (it reads EOF and exits without a report).
+// An explicit unregister-and-close step is unnecessary and actively harmful if
+// deferred, since deferred functions run during panic unwinding — before the
+// runtime writes the crash dump — which would disable reporting for the most
+// common crash: an unrecovered panic. See the package doc for the full example.
 //
 // Start is idempotent: subsequent calls after the first are no-ops.
 func Start(opts ...Option) error {
@@ -53,27 +53,10 @@ func Start(opts ...Option) error {
 	return startErr
 }
 
-// Stop disables crash output capture. It is a best-effort call and may be deferred
-// from main() to ensure the monitor is released on clean exit.
-func Stop() {
-	if err := debug.SetCrashOutput(nil, debug.CrashOptions{}); err != nil {
-		log.Warn("crashtracker: failed to unregister crash output: %v", err.Error())
-	}
-	if f := activePipe.Swap(nil); f != nil {
-		if err := f.Close(); err != nil {
-			log.Warn("crashtracker: failed to close crash pipe: %v", err.Error())
-		}
-	}
-}
-
 func start(opts ...Option) error {
 	cfg := defaultConfig()
 	for _, o := range opts {
 		o(cfg)
-	}
-
-	if isMonitorProcess() {
-		runMonitor(cfg) // never returns
 	}
 
 	if !cfg.enabled {

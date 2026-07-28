@@ -18,15 +18,13 @@ import (
 // Every Start call below therefore passes WithEnabled(false): the enabled gate
 // short-circuits before spawnMonitor, so no monitor child is ever launched no
 // matter which test happens to win the Once. The remaining behaviour under test
-// is the option plumbing, the enabled gate, and idempotency. Stop is exercised
-// independently of the Once.
+// is the option plumbing, the enabled gate, and idempotency.
 
 func TestStartRespectsDisabled(t *testing.T) {
 	// A disabled crashtracker must return nil without spawning a monitor.
 	if err := crashtracker.Start(crashtracker.WithEnabled(false)); err != nil {
 		t.Fatalf("Start(WithEnabled(false)) = %v, want nil", err)
 	}
-	t.Cleanup(crashtracker.Stop)
 }
 
 func TestStartIdempotent(t *testing.T) {
@@ -38,7 +36,6 @@ func TestStartIdempotent(t *testing.T) {
 	if err := crashtracker.Start(crashtracker.WithEnabled(false)); err != nil {
 		t.Fatalf("Start (second call) = %v, want nil", err)
 	}
-	t.Cleanup(crashtracker.Stop)
 }
 
 func TestStartWithOptions(t *testing.T) {
@@ -53,17 +50,4 @@ func TestStartWithOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start(WithService, WithEnv, WithVersion, WithEnabled(false)) = %v, want nil", err)
 	}
-	t.Cleanup(crashtracker.Stop)
-}
-
-func TestStopWithoutStart(t *testing.T) {
-	// Stop must be safe to call when Start was never invoked (or won by another
-	// test): it unregisters crash output and releases the pipe if present.
-	crashtracker.Stop()
-}
-
-func TestStopIsIdempotent(t *testing.T) {
-	// Repeated Stop calls must not panic.
-	crashtracker.Stop()
-	crashtracker.Stop()
 }

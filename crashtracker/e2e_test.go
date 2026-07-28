@@ -7,15 +7,21 @@
 // package. The tests exercise the full chain: crash victim process →
 // monitor child → mock Error Tracking intake.
 //
-// Two subprocess roles are driven by the _CRASHTRACKER_E2E env var:
+// Subprocess roles are driven by the _CRASHTRACKER_E2E env var:
 //
-//   - "panic": calls Start(), then panics — the monitor uploads the report.
-//   - "clean": calls Start() + Stop() and exits cleanly — no report expected.
+//   - "panic": calls Start() via DD_* env config, then panics — the monitor
+//     uploads the report using the env-resolved config.
+//   - "panic-with-options": calls Start(opts...) with only programmatic
+//     options (no DD_TRACE_AGENT_URL etc. in the environment), then panics —
+//     proves options cross the process boundary to the monitor.
+//   - "clean": calls Start() and exits cleanly — no report expected. There is
+//     no Stop to call: process exit alone closes the crash pipe.
 //
 // TestMain intercepts these roles before any test function runs.
 package crashtracker_test
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -47,13 +53,29 @@ func TestMain(m *testing.M) {
 		}
 		panic("e2e test crash")
 
+	case "panic-with-options":
+		// Crash victim: start with only programmatic options, no DD_TRACE_AGENT_URL
+		// in the environment. If options are not forwarded to the monitor, the
+		// monitor falls back to the default agent URL and the mock server never
+		// receives a report, timing out the test.
+		if err := crashtracker.Start(
+			crashtracker.WithService("e2e-options-svc"),
+			crashtracker.WithEnv("e2e-options-env"),
+			crashtracker.WithVersion("9.9.9"),
+			crashtracker.WithAgentURL(os.Getenv("_CRASHTRACKER_E2E_AGENT_URL")),
+		); err != nil {
+			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
+			os.Exit(1)
+		}
+		panic("e2e options crash")
+
 	case "clean":
-		// Clean exit: start and immediately stop. The monitor should see EOF on
-		// the pipe with no data and exit without uploading.
+		// Clean exit: start, then exit without a crash. The monitor should see
+		// EOF on the pipe with no data and exit without uploading. Process exit
+		// closes the pipe; there is no Stop to call.
 		if err := crashtracker.Start(); err != nil {
 			os.Exit(1)
 		}
-		crashtracker.Stop()
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
@@ -69,7 +91,7 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	received := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertCanonicalAgentRequest(t, r)
-		body, _ := io.ReadAll(r.Body)
+		body := decompressGzipBody(t, r)
 		select {
 		case received <- body:
 		default:
@@ -102,6 +124,60 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 
 	case <-time.After(15 * time.Second):
 		t.Fatal("timeout waiting for crash report from monitor")
+	}
+}
+
+// TestE2ECrashReport_PanicWithOptions verifies that options passed to Start
+// (not DD_* env vars) reach the monitor process and control its upload
+// destination and tags. This is the end-to-end proof that config forwarding
+// across the process boundary works.
+func TestE2ECrashReport_PanicWithOptions(t *testing.T) {
+	t.Parallel()
+
+	received := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertCanonicalAgentRequest(t, r)
+		body := decompressGzipBody(t, r)
+		select {
+		case received <- body:
+		default:
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	// Deliberately do NOT set DD_TRACE_AGENT_URL: the subprocess role passes
+	// the mock server URL via WithAgentURL instead, through a side-channel env
+	// var the test controls (not a crashtracker-recognised variable).
+	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
+	cmd.Env = append(filterE2EEnv(os.Environ()),
+		e2eRoleEnv+"=panic-with-options",
+		"_CRASHTRACKER_E2E_AGENT_URL="+srv.URL,
+		"DD_CRASHTRACKING_ENABLED=true",
+	)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawn crash victim: %v", err)
+	}
+	_ = cmd.Wait()
+
+	select {
+	case body := <-received:
+		report := assertRFC0013Body(t, body)
+		errObj := report["error"].(map[string]any)
+		if got, _ := errObj["message"].(string); !strings.Contains(got, "e2e options crash") {
+			t.Errorf("error.message = %q, want it to contain %q", got, "e2e options crash")
+		}
+		ddtags, _ := report["ddtags"].(string)
+		for _, want := range []string{"service:e2e-options-svc", "env:e2e-options-env", "version:9.9.9"} {
+			if !strings.Contains(ddtags, want) {
+				t.Errorf("ddtags = %q, want it to contain %q", ddtags, want)
+			}
+		}
+
+	case <-time.After(15 * time.Second):
+		t.Fatal("timeout waiting for crash report; options may not be forwarded to the monitor")
 	}
 }
 
@@ -149,6 +225,24 @@ func assertCanonicalAgentRequest(t *testing.T, r *http.Request) {
 	if got := r.Header.Get("X-Datadog-EVP-Subdomain"); got != "error-tracking-intake" {
 		t.Errorf("EVP subdomain = %q, want error-tracking-intake", got)
 	}
+	if got := r.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Errorf("Content-Encoding = %q, want gzip", got)
+	}
+}
+
+// decompressGzipBody reads and gunzips the request body.
+func decompressGzipBody(t *testing.T, r *http.Request) []byte {
+	t.Helper()
+	gz, err := gzip.NewReader(r.Body)
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	defer gz.Close()
+	body, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatalf("read gzip stream: %v", err)
+	}
+	return body
 }
 
 // assertCrashReport validates the structure and key fields of an errorsintake
@@ -251,6 +345,7 @@ func filterE2EEnv(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
 		if strings.HasPrefix(kv, e2eRoleEnv+"=") ||
+			strings.HasPrefix(kv, "_CRASHTRACKER_E2E_AGENT_URL=") ||
 			strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
 			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_TRACE_ENABLED=") ||
