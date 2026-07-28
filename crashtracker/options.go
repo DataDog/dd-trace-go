@@ -54,7 +54,11 @@ func WithHTTPClient(c *http.Client) Option {
 	return func(cfg *config) { cfg.httpClient = c }
 }
 
-// WithAPIKey sets the Datadog API key for agentless upload.
+// WithAPIKey sets the Datadog API key for agentless upload. The key reaches
+// the monitor child process through its environment (like every other option;
+// see buildChildEnv), so choosing WithAPIKey over DD_API_KEY does not keep the
+// key out of a process environment — it only keeps it out of the
+// application's own.
 func WithAPIKey(apiKey string) Option {
 	return func(c *config) { c.apiKey = apiKey }
 }
