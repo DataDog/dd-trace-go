@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 )
 
 // stackFormat is the stack format identifier reported to Error Tracking.
@@ -65,6 +66,7 @@ func parseCrashDump(dump []byte) *Report {
 	crashed := crashingThread(threads)
 	var stack *StackTrace
 	var threadName string
+	incomplete := false
 	if crashed != nil {
 		// error.stack intentionally duplicates the crashed goroutine's frames
 		// already present in error.threads: the errorsintake schema requires
@@ -73,12 +75,20 @@ func parseCrashDump(dump []byte) *Report {
 		s := crashed.Stack
 		stack = &s
 		threadName = crashed.Name
+		// The report as a whole is incomplete if the crashed goroutine's own
+		// stack — the one Error Tracking groups and displays on — is; a
+		// truncated bystander goroutine elsewhere in the dump does not make
+		// the report itself incomplete.
+		incomplete = crashed.Stack.Incomplete
 	}
 	threads = capThreads(threads)
 
 	return &Report{
-		Timestamp: time.Now().UnixMilli(),
-		DDSource:  ddSource,
+		DataSchemaVersion: dataSchemaVersion,
+		UUID:              newUUID(),
+		Timestamp:         time.Now().UnixMilli(),
+		DDSource:          ddSource,
+		Incomplete:        incomplete,
 		Error: Error{
 			Type:       errType,
 			Message:    message,
@@ -337,10 +347,11 @@ func parseSignal(preamble []string) *SigInfo {
 // explicit "panic:"/"panic(" preamble lines and the default case, since a
 // panic is the only remaining crash kind Go's runtime produces.
 func errorType(preamble []string, sigInfo *SigInfo) string {
-	// A signal-triggered crash is reported as a UNIX signal regardless of the
-	// surrounding panic wrapper the runtime prints.
+	// A signal-triggered crash reports the specific signal name (e.g.
+	// "SIGSEGV"), not the generic "UnixSignal" kind label, so Error Tracking
+	// groups by the actual signal rather than lumping every signal together.
 	if sigInfo != nil {
-		return "UnixSignal"
+		return sigInfo.SiSignoHuman
 	}
 	for _, line := range preamble {
 		if rest, ok := strings.CutPrefix(line, "fatal error:"); ok {
@@ -424,8 +435,7 @@ func osInfo() OSInfo {
 		Architecture: runtime.GOARCH,
 		Bitness:      strconv.Itoa(strconv.IntSize) + "-bit",
 		OSType:       osType(runtime.GOOS),
-		// Version requires an OS-specific syscall; deferred to a follow-up.
-		Version: "",
+		Version:      osinfo.OSVersion(),
 	}
 }
 

@@ -9,19 +9,28 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/google/uuid"
+
 	internal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
+// dataSchemaVersion is the libdatadog crashtracker schema version this report
+// conforms to.
+const dataSchemaVersion = "1.8"
+
 // Report is the errorsintake payload sent to Datadog Error Tracking on a crash.
 type Report struct {
-	Timestamp int64    `json:"timestamp"` // unix ms at crash time
-	DDSource  string   `json:"ddsource"`  // "crashtracker"
-	DDTags    string   `json:"ddtags"`    // service,env,version,language:go,...
-	Error     Error    `json:"error"`
-	OSInfo    OSInfo   `json:"os_info"`
-	SigInfo   *SigInfo `json:"sig_info,omitempty"`
-	TraceID   string   `json:"trace_id,omitempty"`
+	DataSchemaVersion string   `json:"data_schema_version"`
+	UUID              string   `json:"uuid"`
+	Timestamp         int64    `json:"timestamp"` // unix ms at crash time
+	DDSource          string   `json:"ddsource"`  // "crashtracker"
+	DDTags            string   `json:"ddtags"`    // service,env,version,language_name:go,...
+	Incomplete        bool     `json:"incomplete"`
+	Error             Error    `json:"error"`
+	OSInfo            OSInfo   `json:"os_info"`
+	SigInfo           *SigInfo `json:"sig_info,omitempty"`
+	TraceID           string   `json:"trace_id,omitempty"`
 }
 
 // Error holds error details in the errorsintake model.
@@ -75,8 +84,9 @@ type SigInfo struct {
 }
 
 // buildDDTags constructs the comma-separated ddtags string for a crash report.
-// It always includes the language, Go version, and library version, then the
-// configured service/env/version when set, followed by any git metadata tags.
+// Key names (language_name, language_version, tracer_version) match the
+// libdatadog crashtracker schema other Datadog tracers emit, not this
+// package's own Go-flavored naming.
 func buildDDTags(cfg *config) string {
 	var b strings.Builder
 
@@ -92,9 +102,9 @@ func buildDDTags(cfg *config) string {
 		b.WriteString(value)
 	}
 
-	writeTag("language", "go")
-	writeTag("go.version", runtime.Version())
-	writeTag("library_version", version.Tag)
+	writeTag("language_name", "go")
+	writeTag("language_version", runtime.Version())
+	writeTag("tracer_version", version.Tag)
 	if cfg != nil {
 		writeTag("service", cfg.service)
 		writeTag("env", cfg.env)
@@ -105,4 +115,9 @@ func buildDDTags(cfg *config) string {
 	}
 
 	return b.String()
+}
+
+// newUUID returns a random UUID for the report's required uuid field.
+func newUUID() string {
+	return uuid.NewString()
 }
