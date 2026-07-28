@@ -44,9 +44,11 @@ func TestSpanPoolActivationConfig(t *testing.T) {
 		{name: "last option wins", opts: []StartOption{WithSpanPool(true), WithSpanPool(false)}, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name != "unset" {
-				t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", tc.env)
-			}
+			// Always set (never skip): the invoking environment may already have
+			// this var set, and tc.env's zero value ("") is itself the "unset"
+			// case per the provider's semantics, so an unconditional Setenv keeps
+			// every case deterministic regardless of the ambient shell/CI env.
+			t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", tc.env)
 			cfg, err := newTestConfig(tc.opts...)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, cfg.internalConfig.SpanPoolEnabled())
@@ -77,6 +79,10 @@ func latestConfig(t *testing.T, cfgs []telemetry.Configuration, name string) tel
 // but the option's entry must be the one with the highest SeqID.
 func TestSpanPoolConfigTelemetry(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
+		// Force the var unset regardless of the invoking environment: an
+		// inherited "true" would report OriginEnvVar instead of OriginDefault
+		// and break this assertion.
+		t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "")
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()
 
@@ -103,6 +109,10 @@ func TestSpanPoolConfigTelemetry(t *testing.T) {
 	})
 
 	t.Run("option", func(t *testing.T) {
+		// Unset too: the option wins over any env value regardless (proven by
+		// the "contradicting" case below), but pinning the starting state keeps
+		// this subtest from silently depending on that fact.
+		t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "")
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()
 
@@ -196,9 +206,9 @@ func TestSpanPoolActivationReachesHotPath(t *testing.T) {
 		{name: "option false overrides env true", env: "true", opts: []StartOption{WithSpanPool(false)}, wantPooled: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.env != "" {
-				t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", tc.env)
-			}
+			// Always set, same reasoning as TestSpanPoolActivationConfig: an
+			// inherited ambient value must not leak into the "disabled" case.
+			t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", tc.env)
 			tr, transport, flush, stop, err := startTestTracer(t, tc.opts...)
 			require.NoError(t, err)
 			defer stop()
@@ -271,6 +281,10 @@ func TestSpanPoolNotUsedWhenTracingDisabled(t *testing.T) {
 // WithSpanPool(true) passed to one tracer.Start does not leak into a later
 // Start that omits it.
 func TestSpanPoolProgrammaticOverrideNotInheritedByNextStart(t *testing.T) {
+	// cfg2 asserts a hardcoded false below, so the env var must be pinned
+	// unset regardless of the invoking environment.
+	t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "")
+
 	cfg1, err := newTestConfig(WithSpanPool(true))
 	require.NoError(t, err)
 	assert.True(t, cfg1.internalConfig.SpanPoolEnabled())
