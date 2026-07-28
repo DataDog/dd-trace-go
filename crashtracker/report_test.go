@@ -10,6 +10,17 @@ import (
 	"testing"
 )
 
+// newTestCompleteReport returns a Report with a non-incomplete crashed stack,
+// as buildDDTags would see after a normal (non-truncated) parse.
+func newTestCompleteReport() *Report {
+	return &Report{
+		Error: Error{
+			Stack:   &StackTrace{Format: stackFormat, Incomplete: false},
+			IsCrash: true,
+		},
+	}
+}
+
 func TestBuildDDTags(t *testing.T) {
 	cfg := &config{
 		service: "mysvc",
@@ -17,7 +28,7 @@ func TestBuildDDTags(t *testing.T) {
 		version: "v1.0",
 	}
 
-	tags := buildDDTags(cfg)
+	tags := buildDDTags(cfg, newTestCompleteReport())
 
 	wantContains := []string{
 		"language_name:go",
@@ -26,11 +37,19 @@ func TestBuildDDTags(t *testing.T) {
 		"service:mysvc",
 		"env:prod",
 		"version:v1.0",
+		"data_schema_version:" + dataSchemaVersion,
+		"incomplete:false",
+		"is_crash:true",
 	}
 	for _, want := range wantContains {
 		if !strings.Contains(tags, want) {
 			t.Errorf("buildDDTags() = %q, want it to contain %q", tags, want)
 		}
+	}
+
+	// uuid must be present and well-formed.
+	if !strings.Contains(tags, "uuid:") {
+		t.Errorf("buildDDTags() = %q, want a uuid tag", tags)
 	}
 
 	// Every element must be a well-formed "key:value" pair: a non-empty key
@@ -57,7 +76,7 @@ func TestBuildDDTagsOmitsUnsetConfig(t *testing.T) {
 	// With an empty config, the service/env/version tags must be absent, but
 	// the always-present language/version tags must remain. Check on parsed
 	// keys so that "language_version"/"tracer_version" don't false-match "version".
-	tags := buildDDTags(&config{})
+	tags := buildDDTags(&config{}, newTestCompleteReport())
 
 	if !strings.Contains(tags, "language_name:go") {
 		t.Errorf("buildDDTags() = %q, want it to contain %q", tags, "language_name:go")
@@ -78,8 +97,42 @@ func TestBuildDDTagsOmitsUnsetConfig(t *testing.T) {
 
 func TestBuildDDTagsNilConfig(t *testing.T) {
 	// A nil config must not panic and must still emit the base tags.
-	tags := buildDDTags(nil)
+	tags := buildDDTags(nil, newTestCompleteReport())
 	if !strings.Contains(tags, "language_name:go") {
 		t.Errorf("buildDDTags(nil) = %q, want it to contain %q", tags, "language_name:go")
+	}
+}
+
+func TestBuildDDTagsIncomplete(t *testing.T) {
+	r := newTestCompleteReport()
+	r.Error.Stack.Incomplete = true
+	tags := buildDDTags(&config{}, r)
+	if !strings.Contains(tags, "incomplete:true") {
+		t.Errorf("buildDDTags() = %q, want it to contain %q", tags, "incomplete:true")
+	}
+}
+
+func TestBuildDDTagsSignalTags(t *testing.T) {
+	r := newTestCompleteReport()
+	r.SigInfo = &SigInfo{
+		SiAddr:       "0x0",
+		SiCode:       1,
+		SiCodeHuman:  "SEGV_MAPERR",
+		SiSigno:      11,
+		SiSignoHuman: "SIGSEGV",
+	}
+	tags := buildDDTags(&config{}, r)
+
+	wantContains := []string{
+		"si_addr:0x0",
+		"si_code:1",
+		"si_code_human_readable:SEGV_MAPERR",
+		"si_signo:11",
+		"si_signo_human_readable:SIGSEGV",
+	}
+	for _, want := range wantContains {
+		if !strings.Contains(tags, want) {
+			t.Errorf("buildDDTags() = %q, want it to contain %q", tags, want)
+		}
 	}
 }
