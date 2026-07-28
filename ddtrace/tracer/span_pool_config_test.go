@@ -218,6 +218,39 @@ func TestSpanPoolActivationReachesHotPath(t *testing.T) {
 	}
 }
 
+// TestSpanPoolUnaffectedByStatsComputationAndDataStreams is a regression
+// guard for a reported production symptom: a service set
+// DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true alongside
+// DD_TRACE_STATS_COMPUTATION_ENABLED=false and DD_DATA_STREAMS_ENABLED=true,
+// and observed the trace protocol downgrade to v0.4 — a real, intentional
+// consequence of disabling stats computation (see newConfig: "v1 is not
+// compatible without CSS") — and suspected the span pool was disabled too.
+// It wasn't, and can't be by this config: SetSpanPoolEnabled has exactly two
+// call sites in the whole repo (the env-var load in internal/config and the
+// WithSpanPool/Orchestrion-gate pair in this package's newConfig), and
+// neither references stats computation, trace protocol, or DSM. The one
+// documented mechanism that does force pooling off is the Orchestrion gate
+// (TestSpanPoolOrchestrionGateWiring above; the on-branch requires a woven
+// build, see internal/orchestrion/_integration/gls/span_pool_gate_test.go).
+func TestSpanPoolUnaffectedByStatsComputationAndDataStreams(t *testing.T) {
+	t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "true")
+	t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+
+	tr, transport, flush, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	require.True(t, tr.config.internalConfig.SpanPoolEnabled())
+	assert.False(t, tr.config.canComputeStats(), "sanity check: stats computation must actually be off")
+
+	s := tr.StartSpan("op", ServiceName("svc"), ResourceName("/r"), Tag(ext.ManualKeep, true))
+	s.Finish()
+	flush(1)
+	require.Len(t, transport.Traces(), 1)
+	assert.Empty(t, s.name, "span pool must recycle spans regardless of stats computation / DSM config")
+}
+
 // TestSpanPoolNotUsedWhenTracingDisabled confirms DD_TRACE_ENABLED=false short
 // circuits StartSpan before the pool is ever touched, even if the pool env
 // var resolves to true.
