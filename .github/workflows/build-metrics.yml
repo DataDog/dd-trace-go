@@ -114,7 +114,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
           cache: false  # Cold build cache for accurate measurements
@@ -137,7 +137,7 @@ jobs:
         id: dd-sts
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
         continue-on-error: true
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
 

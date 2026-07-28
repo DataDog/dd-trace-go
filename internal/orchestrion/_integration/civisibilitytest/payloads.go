@@ -337,7 +337,11 @@ func drainRequestBody(r *http.Request) error {
 func (p *Payloads) Events() Events {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	var events Events
+	total := 0
+	for _, payload := range p.payloads {
+		total += len(payload.Events)
+	}
+	events := make(Events, 0, total)
 	for _, payload := range p.payloads {
 		events = append(events, payload.Events...)
 	}

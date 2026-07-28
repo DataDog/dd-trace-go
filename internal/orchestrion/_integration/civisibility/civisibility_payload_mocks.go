@@ -56,7 +56,11 @@ type (
 )
 
 func (m *mockPayloads) GetEvents() mockEvents {
-	var events mockEvents
+	total := 0
+	for _, p := range *m {
+		total += len(p.Events)
+	}
+	events := make(mockEvents, 0, total)
 	for _, payload := range *m {
 		events = append(events, payload.Events...)
 	}

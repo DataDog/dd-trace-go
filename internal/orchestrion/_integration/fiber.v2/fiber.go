@@ -62,31 +62,20 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 			},
 			Children: trace.Traces{
 				{
-					// fasthttp server span (intermediate — fiber uses fasthttp internally)
+					// Single Fiber server span. The intermediate valyala/fasthttp span is
+					// suppressed by the gofiber orchestrion.yml aspect, which marks
+					// app.Server().DD_Instrumented at construction so the FastHTTP Serve
+					// aspect skips wrapping Fiber's internal fasthttp server.
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "GET /ping",
-						"service":  "fasthttp",
+						"service":  "fiber",
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"component": "valyala/fasthttp",
+						"http.url":  "/ping", // This is implemented incorrectly in the fiber.v2 dd-trace-go integration.
+						"component": "gofiber/fiber.v2",
 						"span.kind": "server",
-					},
-					Children: trace.Traces{
-						{
-							Tags: map[string]any{
-								"name":     "http.request",
-								"resource": "GET /ping",
-								"service":  "fiber",
-								"type":     "web",
-							},
-							Meta: map[string]string{
-								"http.url":  "/ping", // This is implemented incorrectly in the fiber.v2 dd-trace-go integration.
-								"component": "gofiber/fiber.v2",
-								"span.kind": "server",
-							},
-						},
 					},
 				},
 			},

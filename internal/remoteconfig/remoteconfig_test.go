@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -463,7 +464,7 @@ func TestAsync(t *testing.T) {
 
 	for range iterations {
 		// Subscriptions
-		product := fmt.Sprintf("%d", rand.Int()%10)
+		product := strconv.Itoa(rand.Int() % 10)
 		capability := Capability(rand.Uint32() % 10)
 		startSync.Add(1)
 		wg.Go(func() {
@@ -480,7 +481,7 @@ func TestAsync(t *testing.T) {
 			startSync.Done()
 			startSync.Wait()
 			defer wg.Done()
-			RegisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+			RegisterProduct(strconv.Itoa(rand.Int() % 10))
 		}()
 		startSync.Add(1)
 		wg.Add(1)
@@ -488,7 +489,7 @@ func TestAsync(t *testing.T) {
 			startSync.Done()
 			startSync.Wait()
 			defer wg.Done()
-			UnregisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+			UnregisterProduct(strconv.Itoa(rand.Int() % 10))
 		}()
 
 		// Capabilities

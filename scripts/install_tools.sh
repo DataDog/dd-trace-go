@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "${SCRIPT_DIR}/../.github/workflows/apps/go-retry.sh"
+
 # message: Prints a message to the console with a timestamp and prefix.
 message() {
   local msg="$1"
@@ -94,11 +98,25 @@ BIN_DIR_ABS=$(cd "$BIN_DIR" && pwd 2> /dev/null || echo "$(pwd)/$BIN_DIR")
 
 # Download dependencies
 message "Downloading tool dependencies..."
-run "cd \"$TOOLS_DIR_ABS\" && GOWORK=$GOWORK go mod download"
+download_tool_deps() {
+  cd "$TOOLS_DIR_ABS" && GOWORK=$GOWORK go mod download
+}
+if ! retry_on_corruption download_tool_deps; then
+  message "Command failed: go mod download"
+  exit 1
+fi
+message "Command ran successfully: go mod download"
 
 # Install tools
 message "Installing tools to $BIN_DIR_ABS..."
-run "cd \"$TOOLS_DIR_ABS\" && GOWORK=$GOWORK GOBIN=\"$BIN_DIR_ABS\" go install -v \$(grep -E '^[[:space:]]*_[[:space:]]+\".*\"' tools.go | awk -F'\"' '{print \$2}')"
+install_tool_bins() {
+  cd "$TOOLS_DIR_ABS" && GOWORK=$GOWORK GOBIN="$BIN_DIR_ABS" go install -v $(grep -E '^[[:space:]]*_[[:space:]]+".*"' tools.go | awk -F'"' '{print $2}')
+}
+if ! retry_on_corruption install_tool_bins; then
+  message "Command failed: go install tools"
+  exit 1
+fi
+message "Command ran successfully: go install tools"
 
 message "Tools installation completed successfully"
 message "Installed tools are available in: $BIN_DIR"

@@ -6,7 +6,7 @@
 package impactedtests
 
 import (
-	"fmt"
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -109,7 +109,7 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 		currentCommitSha = ciTags[constants.GitCommitSHA]
 	}
 	if currentCommitSha == "" {
-		return nil, fmt.Errorf("civisibility.ImpactedTests: current commit is empty")
+		return nil, errors.New("civisibility.ImpactedTests: current commit is empty")
 	}
 
 	// Get the base commit SHA
