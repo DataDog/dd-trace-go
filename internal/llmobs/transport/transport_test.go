@@ -30,7 +30,7 @@ func TestExportPostDrainsBodyForConnReuse(t *testing.T) {
 	// stays reusable. Without the drain the second call dials a new connection.
 	respBody := bytes.Repeat([]byte("x"), (1<<20)+(1<<19))
 
-	var newConns int32
+	var newConns atomic.Int32
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
@@ -38,7 +38,7 @@ func TestExportPostDrainsBodyForConnReuse(t *testing.T) {
 	}))
 	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
 		if state == http.StateNew {
-			atomic.AddInt32(&newConns, 1)
+			newConns.Add(1)
 		}
 	}
 	srv.Start()
@@ -58,7 +58,7 @@ func TestExportPostDrainsBodyForConnReuse(t *testing.T) {
 		assert.Len(t, res.Body, 1<<20) // response truncated to the 1MiB read cap
 	}
 
-	assert.Equal(t, int32(1), atomic.LoadInt32(&newConns),
+	assert.Equal(t, int32(1), newConns.Load(),
 		"expected the keep-alive connection to be reused across ExportPost calls")
 }
 
@@ -123,13 +123,26 @@ func TestParseExportRetryAfter(t *testing.T) {
 
 	// An HTTP-date in the future yields a positive, roughly-correct delay.
 	future := time.Now().Add(10 * time.Second).UTC().Format(http.TimeFormat)
-	if got := parseExportRetryAfter(mkHeader("Retry-After", future)); got <= 0 || got > 11*time.Second {
-		t.Errorf("HTTP-date Retry-After: got %v, want in (0, 11s]", got)
+	if got := parseExportRetryAfter(mkHeader("Retry-After", future)); got < minExportRetryAfter || got > 11*time.Second {
+		t.Errorf("HTTP-date Retry-After: got %v, want in [%v, 11s]", got, minExportRetryAfter)
 	}
 	// A far-future HTTP-date is clamped too; time.Until would otherwise be honored
 	// uncapped.
 	far := time.Now().Add(24 * time.Hour).UTC().Format(http.TimeFormat)
 	if got := parseExportRetryAfter(mkHeader("Retry-After", far)); got != maxExportRetryAfter {
 		t.Errorf("far-future HTTP-date Retry-After: got %v, want %v", got, maxExportRetryAfter)
+	}
+
+	// The floor matters because backoff.RetryAfter takes WHOLE seconds. HTTP dates
+	// have 1-second granularity, so a date ~1s out leaves a sub-second remainder
+	// that would truncate to 0 — which backoff/v5 treats as "retry now" AND resets
+	// the exponential backoff, hammering the very intake that asked us to wait.
+	soon := time.Now().Add(400 * time.Millisecond).UTC().Format(http.TimeFormat)
+	got := parseExportRetryAfter(mkHeader("Retry-After", soon))
+	if got < minExportRetryAfter {
+		t.Errorf("near-future HTTP-date Retry-After: got %v, want >= %v", got, minExportRetryAfter)
+	}
+	if int(got.Seconds()) == 0 {
+		t.Errorf("delay %v truncates to 0 whole seconds, defeating the honored Retry-After", got)
 	}
 }

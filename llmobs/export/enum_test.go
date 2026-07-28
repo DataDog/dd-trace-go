@@ -7,11 +7,13 @@ package export_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/export"
 )
@@ -28,6 +30,7 @@ func TestEnumWireValues(t *testing.T) {
 	assert.Equal(t, "tool", string(export.KindTool))
 	assert.Equal(t, "embedding", string(export.KindEmbedding))
 	assert.Equal(t, "retrieval", string(export.KindRetrieval))
+	assert.Equal(t, "experiment", string(export.KindExperiment))
 
 	assert.Equal(t, "ok", string(export.StatusOK))
 	assert.Equal(t, "error", string(export.StatusError))
@@ -52,6 +55,37 @@ func TestEnumTypesAreSharedWithLLMObs(t *testing.T) {
 	assert.Equal(t, export.MetricTypeScore, m)
 }
 
+// TestSubmitSpans_AcceptsEveryLiveKind: validation must accept every kind the live
+// tracer can emit on this intake — "experiment" included, which the live
+// experiment API produces. Rejecting one would make an offline backfill of that
+// population return err==nil with every row dropped, so an outbox caller checking
+// only err would mark the batch handled and lose it permanently.
+func TestSubmitSpans_AcceptsEveryLiveKind(t *testing.T) {
+	kinds := []export.Kind{
+		export.KindLLM, export.KindAgent, export.KindWorkflow, export.KindTask,
+		export.KindTool, export.KindEmbedding, export.KindRetrieval, export.KindExperiment,
+	}
+	// Cross-check against the internal enum the live tracer emits from, so a kind
+	// added there fails here instead of being silently dropped at export time.
+	live := []illmobs.SpanKind{
+		illmobs.SpanKindLLM, illmobs.SpanKindAgent, illmobs.SpanKindWorkflow, illmobs.SpanKindTask,
+		illmobs.SpanKindTool, illmobs.SpanKindEmbedding, illmobs.SpanKindRetrieval, illmobs.SpanKindExperiment,
+	}
+	require.Len(t, kinds, len(live), "export's kind set must cover every live SpanKind")
+
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	events := make([]export.SpanEvent, 0, len(kinds))
+	for i, k := range kinds {
+		events = append(events, export.SpanEvent{TraceID: "t", SpanID: strconv.Itoa(i), Kind: k})
+	}
+	res, err := c.SubmitSpans(context.Background(), events)
+	require.NoError(t, err)
+	assert.Empty(t, res.ValidationErrors)
+	assert.Equal(t, len(kinds), res.Sent)
+}
+
 // TestSubmitSpans_RejectsUnknownKindAndStatus: an unrecognized Kind or Status
 // POSTs cleanly but lands in a facet nothing queries, so it is a reported
 // row-level drop rather than a silent data-quality problem at intake.
@@ -68,9 +102,9 @@ func TestSubmitSpans_RejectsUnknownKindAndStatus(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 2)
 	assert.Equal(t, 1, res.ValidationErrors[0].Index)
-	assert.Equal(t, export.ErrInvalidKind, res.ValidationErrors[0].Code)
+	assert.Equal(t, export.CodeInvalidKind, res.ValidationErrors[0].Code)
 	assert.Equal(t, 2, res.ValidationErrors[1].Index)
-	assert.Equal(t, export.ErrInvalidStatus, res.ValidationErrors[1].Code)
+	assert.Equal(t, export.CodeInvalidStatus, res.ValidationErrors[1].Code)
 	assert.Equal(t, 2, res.Sent)
 	assert.Equal(t, 4, res.Sent+res.Failed+res.Dropped)
 }
@@ -87,8 +121,8 @@ func TestValidationErrorCodes(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, spanRes.ValidationErrors, 2)
-	assert.Equal(t, export.ErrMissingID, spanRes.ValidationErrors[0].Code)
-	assert.Equal(t, export.ErrMissingKind, spanRes.ValidationErrors[1].Code)
+	assert.Equal(t, export.CodeMissingID, spanRes.ValidationErrors[0].Code)
+	assert.Equal(t, export.CodeMissingKind, spanRes.ValidationErrors[1].Code)
 
 	evalRes, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
 		{SpanID: "s", TraceID: "t", ScoreValue: ptr(1.0)},                                           // no label
@@ -98,10 +132,10 @@ func TestValidationErrorCodes(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, evalRes.ValidationErrors, 4)
-	assert.Equal(t, export.ErrMissingLabel, evalRes.ValidationErrors[0].Code)
-	assert.Equal(t, export.ErrInvalidJoin, evalRes.ValidationErrors[1].Code)
-	assert.Equal(t, export.ErrInvalidValue, evalRes.ValidationErrors[2].Code)
-	assert.Equal(t, export.ErrTypeMismatch, evalRes.ValidationErrors[3].Code)
+	assert.Equal(t, export.CodeMissingLabel, evalRes.ValidationErrors[0].Code)
+	assert.Equal(t, export.CodeInvalidJoin, evalRes.ValidationErrors[1].Code)
+	assert.Equal(t, export.CodeInvalidValue, evalRes.ValidationErrors[2].Code)
+	assert.Equal(t, export.CodeTypeMismatch, evalRes.ValidationErrors[3].Code)
 
 	// ValidationError is an error, so a caller can return one directly.
 	var e error = evalRes.ValidationErrors[0]

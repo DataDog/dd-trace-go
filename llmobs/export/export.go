@@ -29,7 +29,7 @@ func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...Su
 	}
 	for start := 0; start < len(events); start += size {
 		if err := ctx.Err(); err != nil {
-			return res, cancel(res, len(events)-start, err)
+			return res, res.recordCancel(len(events)-start, err)
 		}
 		end := min(start+size, len(events))
 		batch := make([]spanRow, 0, end-start)
@@ -53,26 +53,14 @@ func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...Su
 	}
 	failed := res.finalize()
 	// A cancellation inside the final window's bisection stops sendSpanBatch
-	// between halves, after the loop guard above has run for the last time.
-	if err := ctx.Err(); err != nil {
-		return res, fmt.Errorf("llmobs/export: export canceled: %w", err)
+	// between halves, after the loop guard above has run for the last time. Keying
+	// off the recorded abandonment rather than ctx.Err() keeps the documented
+	// contract: a cancel that lands after the last row was already delivered is
+	// not a failure, and must not make an outbox caller re-send an accepted batch.
+	if err := res.canceledErr(); err != nil {
+		return res, err
 	}
 	return res, exportutil.Aggregate(failed, len(res.Requests), "llmobs/export")
-}
-
-// cancel records the rows a canceled call never validated or sent as one not-sent
-// request, so Sent+Dropped+Failed still covers the whole input (see ExportResult),
-// and returns the error the call reports.
-func cancel(res *ExportResult, remaining int, err error) error {
-	if remaining > 0 {
-		res.Requests = append(res.Requests, RequestResult{
-			Index: len(res.Requests),
-			Count: remaining,
-			Err:   fmt.Errorf("llmobs/export: batch not sent, export canceled: %w", err),
-		})
-	}
-	res.finalize()
-	return fmt.Errorf("llmobs/export: export canceled: %w", err)
 }
 
 // spanRow is a validated span and its original input index, for row-level error
@@ -89,15 +77,15 @@ type spanRow struct {
 func validateSpan(e SpanEvent) *ValidationError {
 	switch {
 	case e.SpanID == "" || e.TraceID == "":
-		return &ValidationError{Code: ErrMissingID, Reason: "missing span_id or trace_id"}
+		return &ValidationError{Code: CodeMissingID, Reason: "missing span_id or trace_id"}
 	case e.Kind == "":
-		return &ValidationError{Code: ErrMissingKind, Reason: "missing kind"}
+		return &ValidationError{Code: CodeMissingKind, Reason: "missing kind"}
 	}
 	if _, ok := validKinds[e.Kind]; !ok {
-		return &ValidationError{Code: ErrInvalidKind, Reason: fmt.Sprintf("invalid Kind %q", e.Kind)}
+		return &ValidationError{Code: CodeInvalidKind, Reason: fmt.Sprintf("invalid Kind %q", e.Kind)}
 	}
 	if _, ok := validStatuses[e.Status]; e.Status != "" && !ok {
-		return &ValidationError{Code: ErrInvalidStatus, Reason: fmt.Sprintf("invalid Status %q", e.Status)}
+		return &ValidationError{Code: CodeInvalidStatus, Reason: fmt.Sprintf("invalid Status %q", e.Status)}
 	}
 	return nil
 }
@@ -115,7 +103,7 @@ func (c *Client) SubmitEvaluations(ctx context.Context, evals []EvaluationMetric
 	}
 	for start := 0; start < len(evals); start += size {
 		if err := ctx.Err(); err != nil {
-			return res, cancel(res, len(evals)-start, err)
+			return res, res.recordCancel(len(evals)-start, err)
 		}
 		end := min(start+size, len(evals))
 		batch := make([]evalRow, 0, end-start)
@@ -130,8 +118,8 @@ func (c *Client) SubmitEvaluations(ctx context.Context, evals []EvaluationMetric
 		c.sendEvalBatch(ctx, batch, res)
 	}
 	failed := res.finalize()
-	if err := ctx.Err(); err != nil {
-		return res, fmt.Errorf("llmobs/export: export canceled: %w", err)
+	if err := res.canceledErr(); err != nil {
+		return res, err
 	}
 	return res, exportutil.Aggregate(failed, len(res.Requests), "llmobs/export")
 }
@@ -185,7 +173,7 @@ func dropUnencodableEvals(batch []evalRow, res *ExportResult) []evalRow {
 		if _, err := transport.MarshalJSON(r.metric); err != nil {
 			res.ValidationErrors = append(res.ValidationErrors, ValidationError{
 				Index:  r.index,
-				Code:   ErrNotEncodable,
+				Code:   CodeNotEncodable,
 				Reason: "evaluation is not JSON-encodable: " + err.Error(),
 			})
 			continue
@@ -226,7 +214,7 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Export
 		mid := len(batch) / 2
 		c.sendSpanBatch(ctx, batch[:mid], res)
 		if err := ctx.Err(); err != nil {
-			_ = cancel(res, len(batch[mid:]), err)
+			_ = res.recordCancel(len(batch[mid:]), err)
 			return
 		}
 		c.sendSpanBatch(ctx, batch[mid:], res)
@@ -264,7 +252,7 @@ func dropUnencodableSpans(batch []spanRow, res *ExportResult) []spanRow {
 		if _, err := transport.MarshalJSON(r.span); err != nil {
 			res.ValidationErrors = append(res.ValidationErrors, ValidationError{
 				Index:  r.index,
-				Code:   ErrNotEncodable,
+				Code:   CodeNotEncodable,
 				Reason: "span is not JSON-encodable: " + err.Error(),
 			})
 			continue

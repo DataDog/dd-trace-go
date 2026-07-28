@@ -432,31 +432,42 @@ func hasRetryAfterHeader(h http.Header) bool {
 	return h.Get(headerRetryAfter) != "" || h.Get(headerRateLimitReset) != ""
 }
 
-// maxExportRetryAfter bounds the delay ExportPost honors from a server-advertised
-// Retry-After. A single hostile or misconfigured header would otherwise park an
-// export inside one Submit call for as long as the server asks, and an offline
-// caller driving its own outbox is better served by a prompt retriable failure.
-const maxExportRetryAfter = 30 * time.Second
+const (
+	// maxExportRetryAfter bounds the delay ExportPost honors from a
+	// server-advertised Retry-After. A single hostile or misconfigured header would
+	// otherwise park an export inside one Submit call for as long as the server
+	// asks, and an offline caller driving its own outbox is better served by a
+	// prompt retriable failure.
+	maxExportRetryAfter = 30 * time.Second
+	// minExportRetryAfter is a floor, because backoff.RetryAfter takes WHOLE
+	// seconds: a sub-second delay would truncate to 0, which backoff/v5 treats as
+	// "retry now" and also resets the exponential backoff — so an HTTP-date one
+	// second in the future would make ExportPost hammer a throttling intake instead
+	// of waiting.
+	minExportRetryAfter = 1 * time.Second
+)
 
 // parseExportRetryAfter is parseRetryAfter plus the standard Retry-After header
-// (delta-seconds or HTTP-date), clamped to maxExportRetryAfter.
+// (delta-seconds or HTTP-date), clamped to [minExportRetryAfter,
+// maxExportRetryAfter].
 //
 // It is deliberately export-only: the live flush passes context.Background() on
 // the paths tracer.Stop() waits for, so honoring an unbounded server delay in
 // parseRetryAfter would let a 429 stall shutdown.
 func parseExportRetryAfter(h http.Header) time.Duration {
+	d := parseRetryAfter(h)
 	if ra := strings.TrimSpace(h.Get(headerRetryAfter)); ra != "" {
 		if secs, err := strconv.ParseInt(ra, 10, 64); err == nil {
 			if secs > 0 {
-				return min(time.Duration(secs)*time.Second, maxExportRetryAfter)
+				d = time.Duration(secs) * time.Second
 			}
 		} else if t, err := http.ParseTime(ra); err == nil {
-			if d := time.Until(t); d > 0 {
-				return min(d, maxExportRetryAfter)
+			if until := time.Until(t); until > 0 {
+				d = until
 			}
 		}
 	}
-	return min(parseRetryAfter(h), maxExportRetryAfter)
+	return min(max(d, minExportRetryAfter), maxExportRetryAfter)
 }
 
 // parseRetryAfter reports how long the live path waits before retrying a

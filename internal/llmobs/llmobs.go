@@ -142,23 +142,35 @@ const (
 const (
 	MetaKeyModelName     = "model_name"
 	MetaKeyModelProvider = "model_provider"
-	MetaKeyErrorMessage  = "error.message"
-	MetaKeyErrorStack    = "error.stack"
-	MetaKeyErrorType     = "error.type"
+)
+
+const (
+	metaKeyErrorMessage = "error.message"
+	metaKeyErrorStack   = "error.stack"
+	metaKeyErrorType    = "error.type"
 )
 
 // modelUnknown fills in a model_name or model_provider a span reports only one of.
 const modelUnknown = "custom"
 
-// NormalizeModel reports the model_name/model_provider meta values for a span of
-// the given kind. A missing name or provider falls back to "custom", and the
-// provider is lower-cased so the same vendor spelled "OpenAI" and "openai" cannot
-// fragment into two facets. ok is false when the span carries no model
-// information at all and both keys must be omitted.
+// NormalizeModel reports the model_name/model_provider meta values the LIVE span
+// builder emits for a span of the given kind, or ok=false when it emits neither.
+//
+// Note the gate is asymmetric: a provider alone is emitted on any kind, a name
+// alone only on llm/embedding spans. Callers that must not discard a
+// caller-supplied field apply their own gate and call NormalizeModelValues.
 func NormalizeModel(kind SpanKind, modelName, modelProvider string) (name, provider string, ok bool) {
 	if !((kind == SpanKindLLM || kind == SpanKindEmbedding) && modelName != "" || modelProvider != "") {
 		return "", "", false
 	}
+	name, provider = NormalizeModelValues(modelName, modelProvider)
+	return name, provider, true
+}
+
+// NormalizeModelValues fills a missing model_name or model_provider with "custom"
+// and lower-cases the provider, so the same vendor spelled "OpenAI" and "openai"
+// cannot fragment into two facets.
+func NormalizeModelValues(modelName, modelProvider string) (name, provider string) {
 	name = modelName
 	if name == "" {
 		name = modelUnknown
@@ -167,19 +179,21 @@ func NormalizeModel(kind SpanKind, modelName, modelProvider string) (name, provi
 	if provider == "" {
 		provider = modelUnknown
 	}
-	return name, provider, true
+	return name, provider
 }
 
 // SetErrorMeta writes the error.message/error.stack/error.type meta keys from an
-// error payload. All three are written whenever msg is non-nil, even when empty,
-// so an errored span carries the same key set on the live and offline paths.
+// error payload. All three are written whenever msg is non-nil, even when
+// individually empty, so an errored span carries the same key set on the live and
+// offline paths. Callers with nothing to report pass nil rather than an empty
+// payload, which would put empty-string values into those facets.
 func SetErrorMeta(meta map[string]any, msg *transport.ErrorMessage) {
 	if msg == nil {
 		return
 	}
-	meta[MetaKeyErrorMessage] = msg.Message
-	meta[MetaKeyErrorStack] = msg.Stack
-	meta[MetaKeyErrorType] = msg.Type
+	meta[metaKeyErrorMessage] = msg.Message
+	meta[metaKeyErrorStack] = msg.Stack
+	meta[metaKeyErrorType] = msg.Type
 }
 
 // See: https://docs.datadoghq.com/getting_started/site/#access-the-datadog-site
