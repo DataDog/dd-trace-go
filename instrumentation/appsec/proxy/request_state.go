@@ -43,10 +43,29 @@ type RequestState struct {
 // newRequestState creates a new request state
 func newRequestState(request *http.Request, bodyLimit int, framework string, options ...tracer.StartSpanOption) (RequestState, bool) {
 	fakeResponseWriter := newFakeResponseWriter()
+	spanOptions := append(options, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+	if clientIP, authoritative := httpsec.ClientIPOverrideFromContext(request.Context()); authoritative {
+		spanOptions = append(spanOptions, func(config *tracer.StartSpanConfig) {
+			if config.Tags == nil {
+				return
+			}
+			if !clientIP.IsValid() {
+				delete(config.Tags, ext.NetworkClientIP)
+				delete(config.Tags, ext.HTTPClientIP)
+				return
+			}
+			if _, collected := config.Tags[ext.NetworkClientIP]; !collected {
+				return
+			}
+			ip := clientIP.String()
+			config.Tags[ext.NetworkClientIP] = ip
+			config.Tags[ext.HTTPClientIP] = ip
+		})
+	}
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
 		Resource:  request.Method + " " + path.Clean(request.URL.Path),
-		SpanOpts:  append(options, tracer.Tag(ext.SpanKind, ext.SpanKindServer)),
+		SpanOpts:  spanOptions,
 	}, fakeResponseWriter, request)
 
 	var requestBuffer *bodyBuffer

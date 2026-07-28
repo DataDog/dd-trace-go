@@ -19,7 +19,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	emitterhttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
 	listenerhttpsec "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -69,8 +68,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ip, set := emitterhttpsec.ClientIPOverrideFromContext(r.Context())
-		ipTags, _ = listenerhttpsec.ClientIPTagsWithOverride(r.Header, true, r.RemoteAddr, ip, set)
+		ipTags, _ = listenerhttpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
 
 	var inferredProxySpan *tracer.Span

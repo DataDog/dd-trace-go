@@ -49,9 +49,6 @@ type (
 		method string
 		// route is the HTTP route for the current handler operation (or the URL if no route is available).
 		route string
-		// clientIPOverride is an optional authoritative client IP resolution result.
-		clientIPOverride    netip.Addr
-		clientIPOverrideSet bool
 
 		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
 		downstreamRequestBodyAnalysis atomic.Int32
@@ -70,16 +67,18 @@ type (
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
-		Framework    string // Optional: name of the framework or library being used
-		Method       string
-		RequestURI   string
-		RequestRoute string
-		Host         string
-		RemoteAddr   string
-		Headers      map[string][]string
-		Cookies      map[string][]string
-		QueryParams  map[string][]string
-		PathParams   map[string]string
+		Framework           string // Optional: name of the framework or library being used
+		Method              string
+		RequestURI          string
+		RequestRoute        string
+		Host                string
+		RemoteAddr          string
+		Headers             map[string][]string
+		Cookies             map[string][]string
+		QueryParams         map[string][]string
+		PathParams          map[string]string
+		ClientIPOverride    netip.Addr
+		ClientIPOverrideSet bool
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -94,48 +93,33 @@ type (
 
 type clientIPOverrideContextKey struct{}
 
-type clientIPOverrideContextValue struct {
-	ip  netip.Addr
-	set bool
-}
-
 // ContextWithClientIPOverride returns a context carrying an authoritative client IP resolution result.
-// The set value distinguishes an absent override from a present but invalid IP.
-func ContextWithClientIPOverride(ctx context.Context, ip netip.Addr, set bool) context.Context {
-	if !set {
-		return ctx
-	}
-	return context.WithValue(ctx, clientIPOverrideContextKey{}, clientIPOverrideContextValue{ip: ip, set: set})
+func ContextWithClientIPOverride(ctx context.Context, ip netip.Addr) context.Context {
+	return context.WithValue(ctx, clientIPOverrideContextKey{}, ip)
 }
 
 // ClientIPOverrideFromContext returns the authoritative client IP resolution result carried by ctx.
 func ClientIPOverrideFromContext(ctx context.Context) (netip.Addr, bool) {
-	value, ok := ctx.Value(clientIPOverrideContextKey{}).(clientIPOverrideContextValue)
-	if !ok {
-		return netip.Addr{}, false
-	}
-	return value.ip, value.set
+	ip, ok := ctx.Value(clientIPOverrideContextKey{}).(netip.Addr)
+	return ip, ok
 }
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
 func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.TagSetter) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
-	clientIPOverride, clientIPOverrideSet := ClientIPOverrideFromContext(ctx)
 	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
 	if !found {
 		wafOp, ctx = waf.StartContextOperation(ctx, span)
 	}
 
 	op := &HandlerOperation{
-		Operation:           dyngo.NewOperation(wafOp),
-		ContextOperation:    wafOp,
-		wafContextOwner:     !found, // If we started the parent operation, we finish it, otherwise we don't
-		framework:           args.Framework,
-		method:              args.Method,
-		route:               args.RequestRoute,
-		clientIPOverride:    clientIPOverride,
-		clientIPOverrideSet: clientIPOverrideSet,
+		Operation:        dyngo.NewOperation(wafOp),
+		ContextOperation: wafOp,
+		wafContextOwner:  !found, // If we started the parent operation, we finish it, otherwise we don't
+		framework:        args.Framework,
+		method:           args.Method,
+		route:            args.RequestRoute,
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
@@ -170,11 +154,6 @@ func (op *HandlerOperation) Method() string {
 // Route returns the HTTP route for the current handler operation.
 func (op *HandlerOperation) Route() string {
 	return op.route
-}
-
-// ClientIPOverride returns the authoritative client IP resolution result for this operation.
-func (op *HandlerOperation) ClientIPOverride() (netip.Addr, bool) {
-	return op.clientIPOverride, op.clientIPOverrideSet
 }
 
 // DownstreamRequestBodyAnalysis returns the number of times a call to a downstream request body monitoring function was made.
@@ -310,17 +289,20 @@ func BeforeHandle(
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
 
+	clientIPOverride, clientIPOverrideSet := ClientIPOverrideFromContext(r.Context())
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
-		Framework:    opts.Framework,
-		Method:       r.Method,
-		RequestURI:   r.RequestURI,
-		RequestRoute: opts.Route,
-		Host:         r.Host,
-		RemoteAddr:   r.RemoteAddr,
-		Headers:      r.Header,
-		Cookies:      makeCookies(r.Cookies()),
-		QueryParams:  r.URL.Query(),
-		PathParams:   opts.RouteParams,
+		Framework:           opts.Framework,
+		Method:              r.Method,
+		RequestURI:          r.RequestURI,
+		RequestRoute:        opts.Route,
+		Host:                r.Host,
+		RemoteAddr:          r.RemoteAddr,
+		Headers:             r.Header,
+		Cookies:             makeCookies(r.Cookies()),
+		QueryParams:         r.URL.Query(),
+		PathParams:          opts.RouteParams,
+		ClientIPOverride:    clientIPOverride,
+		ClientIPOverrideSet: clientIPOverrideSet,
 	}, span)
 	tr := r.WithContext(ctx)
 
