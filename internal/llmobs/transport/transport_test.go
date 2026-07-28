@@ -133,11 +133,17 @@ func TestParseExportRetryAfter(t *testing.T) {
 		t.Errorf("far-future HTTP-date Retry-After: got %v, want %v", got, maxExportRetryAfter)
 	}
 
-	// The floor matters because backoff.RetryAfter takes WHOLE seconds. HTTP dates
-	// have 1-second granularity, so a date ~1s out leaves a sub-second remainder
-	// that would truncate to 0 — which backoff/v5 treats as "retry now" AND resets
-	// the exponential backoff, hammering the very intake that asked us to wait.
-	soon := time.Now().Add(400 * time.Millisecond).UTC().Format(http.TimeFormat)
+	// The floor matters because ExportPost passes whole seconds to
+	// backoff.RetryAfter. http.TimeFormat has no sub-second field, so a date one
+	// second ahead formats down to the next second boundary and time.Until returns
+	// a remainder in (0s, 1s] — which truncates to 0, and backoff/v5 reads 0 as
+	// "retry now" AND resets the exponential backoff, hammering the very intake that
+	// asked us to wait.
+	//
+	// One second ahead is the deterministic trigger: a smaller offset usually
+	// formats into the PAST, where the branch is skipped and the 1s default applies,
+	// so the assertion would pass without exercising anything.
+	soon := time.Now().Add(1 * time.Second).UTC().Format(http.TimeFormat)
 	got := parseExportRetryAfter(mkHeader("Retry-After", soon))
 	if got < minExportRetryAfter {
 		t.Errorf("near-future HTTP-date Retry-After: got %v, want >= %v", got, minExportRetryAfter)

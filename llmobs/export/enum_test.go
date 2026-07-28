@@ -30,7 +30,6 @@ func TestEnumWireValues(t *testing.T) {
 	assert.Equal(t, "tool", string(export.KindTool))
 	assert.Equal(t, "embedding", string(export.KindEmbedding))
 	assert.Equal(t, "retrieval", string(export.KindRetrieval))
-	assert.Equal(t, "experiment", string(export.KindExperiment))
 
 	assert.Equal(t, "ok", string(export.StatusOK))
 	assert.Equal(t, "error", string(export.StatusError))
@@ -55,24 +54,13 @@ func TestEnumTypesAreSharedWithLLMObs(t *testing.T) {
 	assert.Equal(t, export.MetricTypeScore, m)
 }
 
-// TestSubmitSpans_AcceptsEveryLiveKind: validation must accept every kind the live
-// tracer can emit on this intake — "experiment" included, which the live
-// experiment API produces. Rejecting one would make an offline backfill of that
-// population return err==nil with every row dropped, so an outbox caller checking
-// only err would mark the batch handled and lose it permanently.
-func TestSubmitSpans_AcceptsEveryLiveKind(t *testing.T) {
+// TestSubmitSpans_AcceptsEveryExportableKind: every kind the public API documents
+// must survive validation.
+func TestSubmitSpans_AcceptsEveryExportableKind(t *testing.T) {
 	kinds := []export.Kind{
 		export.KindLLM, export.KindAgent, export.KindWorkflow, export.KindTask,
-		export.KindTool, export.KindEmbedding, export.KindRetrieval, export.KindExperiment,
+		export.KindTool, export.KindEmbedding, export.KindRetrieval,
 	}
-	// Cross-check against the internal enum the live tracer emits from, so a kind
-	// added there fails here instead of being silently dropped at export time.
-	live := []illmobs.SpanKind{
-		illmobs.SpanKindLLM, illmobs.SpanKindAgent, illmobs.SpanKindWorkflow, illmobs.SpanKindTask,
-		illmobs.SpanKindTool, illmobs.SpanKindEmbedding, illmobs.SpanKindRetrieval, illmobs.SpanKindExperiment,
-	}
-	require.Len(t, kinds, len(live), "export's kind set must cover every live SpanKind")
-
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
@@ -84,6 +72,31 @@ func TestSubmitSpans_AcceptsEveryLiveKind(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, res.ValidationErrors)
 	assert.Equal(t, len(kinds), res.Sent)
+}
+
+// TestSubmitSpans_RejectsExperimentKind pins a deliberate restriction, so that
+// "experiment" is never added to validKinds without also giving this package a way
+// to set the scope.
+//
+// An experiment span's identity on this intake is the per-envelope _dd.scope
+// ("experiments") plus the experiment/run/project IDs llmobs/experiment mints
+// against the DNE API. Export sets DDAttributes.Scope nowhere — it has no field or
+// option for it — and NewPushSpanEventsRequests only copies _dd.scope from there,
+// so accepting the kind would post an experiment-shaped span into the default
+// scope. A reported, typed drop is strictly more visible than that orphan.
+func TestSubmitSpans_RejectsExperimentKind(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t", SpanID: "s", Kind: export.Kind(illmobs.SpanKindExperiment)},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.ValidationErrors, 1)
+	assert.Equal(t, export.CodeInvalidKind, res.ValidationErrors[0].Code)
+	assert.Empty(t, fake.captured())
+	assert.Equal(t, 1, res.Dropped)
+	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
 }
 
 // TestSubmitSpans_RejectsUnknownKindAndStatus: an unrecognized Kind or Status

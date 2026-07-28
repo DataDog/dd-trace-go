@@ -153,24 +153,18 @@ const (
 // modelUnknown fills in a model_name or model_provider a span reports only one of.
 const modelUnknown = "custom"
 
-// NormalizeModel reports the model_name/model_provider meta values the LIVE span
-// builder emits for a span of the given kind, or ok=false when it emits neither.
+// NormalizeModel reports the model_name/model_provider meta values for a span of
+// the given kind, or ok=false when neither key is emitted. A missing name or
+// provider falls back to "custom", and the provider is lower-cased so the same
+// vendor spelled "OpenAI" and "openai" cannot fragment into two facets.
 //
-// Note the gate is asymmetric: a provider alone is emitted on any kind, a name
-// alone only on llm/embedding spans. Callers that must not discard a
-// caller-supplied field apply their own gate and call NormalizeModelValues.
+// The gate is asymmetric — a provider alone is emitted on any kind, a name alone
+// only on llm/embedding spans — and both the live and the offline builder inherit
+// it, so neither writes a model key the other would not.
 func NormalizeModel(kind SpanKind, modelName, modelProvider string) (name, provider string, ok bool) {
 	if !((kind == SpanKindLLM || kind == SpanKindEmbedding) && modelName != "" || modelProvider != "") {
 		return "", "", false
 	}
-	name, provider = NormalizeModelValues(modelName, modelProvider)
-	return name, provider, true
-}
-
-// NormalizeModelValues fills a missing model_name or model_provider with "custom"
-// and lower-cases the provider, so the same vendor spelled "OpenAI" and "openai"
-// cannot fragment into two facets.
-func NormalizeModelValues(modelName, modelProvider string) (name, provider string) {
 	name = modelName
 	if name == "" {
 		name = modelUnknown
@@ -179,7 +173,7 @@ func NormalizeModelValues(modelName, modelProvider string) (name, provider strin
 	if provider == "" {
 		provider = modelUnknown
 	}
-	return name, provider
+	return name, provider, true
 }
 
 // SetErrorMeta writes the error.message/error.stack/error.type meta keys from an
