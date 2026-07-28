@@ -248,7 +248,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 
 	configData, err := os.ReadFile(filepath.Join(fixtureDir, "ufc-config.json"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read canonical FFE fixtures: %v (initialize them with `git submodule update --init --recursive`)", err)
 	}
 	var cfg universalFlagsConfiguration
 	if err := json.Unmarshal(configData, &cfg); err != nil {
@@ -260,7 +260,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(files) == 0 {
-		t.Fatal("no evaluation-case fixture files found")
+		t.Fatal("no canonical FFE evaluation-case fixtures found (initialize them with `git submodule update --init --recursive`)")
 	}
 
 	for _, file := range files {
