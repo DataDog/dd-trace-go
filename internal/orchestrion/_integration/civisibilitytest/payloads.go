@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"sync"
 
 	"github.com/tinylib/msgp/msgp"
@@ -509,11 +510,11 @@ func applyEnvUpdates(updates []envUpdate) func() {
 		_ = os.Setenv(update.key, update.value)
 	}
 	return func() {
-		for i := len(snapshots) - 1; i >= 0; i-- {
-			if snapshots[i].had {
-				_ = os.Setenv(snapshots[i].key, snapshots[i].value)
+		for _, s := range slices.Backward(snapshots) {
+			if s.had {
+				_ = os.Setenv(s.key, s.value)
 			} else {
-				_ = os.Unsetenv(snapshots[i].key)
+				_ = os.Unsetenv(s.key)
 			}
 		}
 	}
