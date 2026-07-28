@@ -183,10 +183,6 @@ const (
 	SpanKindEmbedding SpanKind = illmobs.SpanKindEmbedding
 	// SpanKindRetrieval ("retrieval") retrieves documents.
 	SpanKindRetrieval SpanKind = illmobs.SpanKindRetrieval
-	// SpanKindExperiment ("experiment") is an experiment run. Spans of this kind
-	// are created by the llmobs/experiment package, not by the StartSpan helpers
-	// here.
-	SpanKindExperiment SpanKind = illmobs.SpanKindExperiment
 )
 
 // The terminal LLM Obs span statuses.

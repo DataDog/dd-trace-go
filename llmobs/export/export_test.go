@@ -436,37 +436,42 @@ func TestSubmitSpans_ModelNormalizationMatchesLive(t *testing.T) {
 	assert.NotContains(t, metaOf(3), "model_provider")
 }
 
-// TestSubmitSpans_ModelNameKeptOnNonLLMKinds: the live gate emits a name-only
-// model on llm/embedding kinds only, so routing export through it silently
-// discarded ModelName on a workflow/task/tool/agent/retrieval span — no error, no
-// validation entry. Export normalizes like live but keeps the caller's field.
-func TestSubmitSpans_ModelNameKeptOnNonLLMKinds(t *testing.T) {
-	for _, kind := range []export.Kind{
-		export.KindWorkflow, export.KindTask, export.KindTool,
-		export.KindAgent, export.KindRetrieval,
-	} {
-		t.Run(string(kind), func(t *testing.T) {
-			fake := &fakeTransport{}
-			c := newClient(t, fake, "test-app")
+// TestSubmitSpans_ModelGateMatchesLive pins the live gate's asymmetry rather than
+// "fixing" it: on a kind other than llm/embedding a provider is still emitted but
+// a name on its own is not. Emitting it here would make exported spans carry a meta
+// key the live tracer never writes for that kind — re-forking the two producers on
+// one intake, which is what this PR was asked to stop doing.
+func TestSubmitSpans_ModelGateMatchesLive(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
 
-			_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-				{TraceID: "t", SpanID: "s", Kind: kind, ModelName: "claude-sonnet-4"},
-			})
-			require.NoError(t, err)
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t", SpanID: "s1", Kind: export.KindWorkflow, ModelName: "gpt-4o"},
+		{TraceID: "t", SpanID: "s2", Kind: export.KindWorkflow, ModelProvider: "OpenAI"},
+		{TraceID: "t", SpanID: "s3", Kind: export.KindEmbedding, ModelName: "text-embed-3"},
+	})
+	require.NoError(t, err)
 
-			meta := allSpans(t, fake.captured()[0].body)[0]["meta"].(map[string]any)
-			assert.Equal(t, "claude-sonnet-4", meta["model_name"], "caller-supplied ModelName must not be dropped")
-			assert.Equal(t, "custom", meta["model_provider"])
-		})
-	}
+	spans := allSpans(t, fake.captured()[0].body)
+	require.Len(t, spans, 3)
+	metaOf := func(i int) map[string]any { return spans[i]["meta"].(map[string]any) }
+
+	// Name alone on a non-llm/embedding kind: omitted, exactly as live omits it.
+	assert.NotContains(t, metaOf(0), "model_name")
+	assert.NotContains(t, metaOf(0), "model_provider")
+	// Provider alone: emitted on any kind, and normalized.
+	assert.Equal(t, "custom", metaOf(1)["model_name"])
+	assert.Equal(t, "openai", metaOf(1)["model_provider"])
+	// Name alone on an embedding kind: emitted.
+	assert.Equal(t, "text-embed-3", metaOf(2)["model_name"])
+	assert.Equal(t, "custom", metaOf(2)["model_provider"])
 }
 
-// TestSubmitSpans_ErrorSpanWithNoDetailOmitsErrorMeta: SetErrorMeta writes all
-// three keys whenever it is called, so passing it an empty payload would put
-// empty-string values into error.message/type/stack — values the live path, which
-// always builds from a real error, can never produce. status and the error tag
-// already mark the span.
-func TestSubmitSpans_ErrorSpanWithNoDetailOmitsErrorMeta(t *testing.T) {
+// TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive: an errored span with no detail
+// writes all three error.* keys empty. That is live parity, not a bug — the live
+// path emits error.stack:"" for any error that is not an errortrace.TracerError,
+// and error.message:"" for an error whose Error() is empty.
+func TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
@@ -477,9 +482,9 @@ func TestSubmitSpans_ErrorSpanWithNoDetailOmitsErrorMeta(t *testing.T) {
 
 	span := allSpans(t, fake.captured()[0].body)[0]
 	meta := span["meta"].(map[string]any)
-	assert.NotContains(t, meta, "error.message")
-	assert.NotContains(t, meta, "error.type")
-	assert.NotContains(t, meta, "error.stack")
+	assert.Equal(t, "", meta["error.message"])
+	assert.Equal(t, "", meta["error.type"])
+	assert.Equal(t, "", meta["error.stack"])
 	assert.Equal(t, "error", span["status"])
 	assert.Contains(t, tagsOf(t, span), "error:1")
 }

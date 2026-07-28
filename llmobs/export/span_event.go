@@ -21,9 +21,16 @@ const defaultParentID = "undefined"
 // live and offline paths name a kind with the same type and values.
 type Kind = llmobs.SpanKind
 
-// The span kinds recognized by LLM Obs; the parenthesized value is what reaches
-// the intake. This is the complete set the intake accepts — a span carrying
-// anything else is dropped as a validation error.
+// The span kinds an offline export may carry; the parenthesized value is what
+// reaches the intake. A span carrying anything else is dropped as a validation
+// error.
+//
+// This is the full set [llmobs.SpanKind] documents. The live tracer also emits an
+// "experiment" kind, which is deliberately not exportable: an experiment span's
+// identity is the per-envelope _dd.scope plus the experiment/run/project IDs that
+// llmobs/experiment mints against the DNE API, none of which this package can set.
+// Accepting the kind would post a span with an experiment shape into the default
+// scope, so it is rejected loudly instead.
 const (
 	// KindLLM ("llm") is a call to a large language model.
 	KindLLM Kind = llmobs.SpanKindLLM
@@ -39,9 +46,6 @@ const (
 	KindEmbedding Kind = llmobs.SpanKindEmbedding
 	// KindRetrieval ("retrieval") retrieves documents.
 	KindRetrieval Kind = llmobs.SpanKindRetrieval
-	// KindExperiment ("experiment") is an experiment run, the kind the live
-	// experiment API emits on this same intake.
-	KindExperiment Kind = llmobs.SpanKindExperiment
 )
 
 // Status is the terminal status of a span. It is an alias for
@@ -58,12 +62,10 @@ const (
 
 // validKinds and validStatuses bound the values a submitted span may carry, so a
 // typo is a reported row-level drop rather than an unqueryable facet at intake.
-// They must cover every kind the live tracer can emit on this intake, or an
-// offline backfill of that population would be silently dropped.
 var (
 	validKinds = map[Kind]struct{}{
 		KindLLM: {}, KindAgent: {}, KindWorkflow: {}, KindTask: {},
-		KindTool: {}, KindEmbedding: {}, KindRetrieval: {}, KindExperiment: {},
+		KindTool: {}, KindEmbedding: {}, KindRetrieval: {},
 	}
 	validStatuses = map[Status]struct{}{StatusOK: {}, StatusError: {}}
 )
@@ -108,9 +110,14 @@ type SpanEvent struct {
 	// Kind is the LLM Obs span kind (e.g. KindLLM, KindWorkflow).
 	Kind Kind
 	// ModelName and ModelProvider describe the model behind an LLM or embedding
-	// span. ModelProvider is lower-cased on the wire, and a span reporting only
-	// one of the two gets "custom" for the other — matching the live path, so the
-	// same model does not fragment across the two sources.
+	// span. ModelProvider is lower-cased on the wire and a span reporting only one
+	// of the two gets "custom" for the other, matching the live path so the same
+	// model does not fragment across the two sources.
+	//
+	// The live gate is inherited exactly, including its asymmetry: on a kind other
+	// than KindLLM or KindEmbedding, a ModelProvider is still emitted but a
+	// ModelName on its own is not. Deviating would make exported spans carry a meta
+	// key the live tracer never writes for that kind.
 	ModelName     string
 	ModelProvider string
 	// Input and Output are the raw string input/output values.
@@ -250,13 +257,7 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 	if e.Kind != "" {
 		meta["span.kind"] = string(e.Kind)
 	}
-	// Emit the model pair whenever the caller supplied either half, normalized the
-	// way the live path normalizes it. The live gate additionally drops a name-only
-	// model on a non-LLM/embedding kind; export deliberately does not, because
-	// silently discarding a field the caller explicitly set is worse than carrying
-	// a model facet on a workflow span.
-	if e.ModelName != "" || e.ModelProvider != "" {
-		name, provider := illmobs.NormalizeModelValues(e.ModelName, e.ModelProvider)
+	if name, provider, ok := illmobs.NormalizeModel(e.Kind, e.ModelName, e.ModelProvider); ok {
 		meta[illmobs.MetaKeyModelName] = name
 		meta[illmobs.MetaKeyModelProvider] = provider
 	}
@@ -312,13 +313,13 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 }
 
 // errorMessage builds the error payload for an errored span, or nil when the span
-// did not fail or reported no detail. ErrorMessage falls back to StatusMessage so
-// a caller that only filled the status still gets an error.message.
+// did not fail. ErrorMessage falls back to StatusMessage so a caller that only
+// filled the status still gets an error.message.
 //
-// A span marked StatusError with no detail at all yields nil rather than an empty
-// payload: status:"error" and the error:1 tag already mark it, whereas three
-// empty-valued error.* keys would put values into facets the live path — which
-// always builds its payload from a real error — can never produce.
+// An errored span with no detail still yields a payload, so all three error.* keys
+// are written empty. That is live parity, not an accident: the live path emits
+// error.stack:"" for any error that is not an errortrace.TracerError, and
+// error.message:"" for an error whose Error() is empty.
 func (e SpanEvent) errorMessage(status Status) *transport.ErrorMessage {
 	if status != StatusError {
 		return nil
@@ -326,9 +327,6 @@ func (e SpanEvent) errorMessage(status Status) *transport.ErrorMessage {
 	msg := e.ErrorMessage
 	if msg == "" {
 		msg = e.StatusMessage
-	}
-	if msg == "" && e.ErrorType == "" && e.ErrorStack == "" {
-		return nil
 	}
 	return &transport.ErrorMessage{Message: msg, Type: e.ErrorType, Stack: e.ErrorStack}
 }
