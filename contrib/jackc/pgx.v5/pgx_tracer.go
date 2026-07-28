@@ -7,6 +7,7 @@ package pgx
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -80,10 +81,13 @@ var (
 	_ allPgxTracers = (*pgxTracer)(nil)
 )
 
-func wrapPgxTracer(prev pgx.QueryTracer, opts ...Option) *pgxTracer {
+func wrapPgxTracer(prev pgx.QueryTracer, connConfig *pgx.ConnConfig, opts ...Option) *pgxTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
+	}
+	if cfg.poolName == "" && connConfig != nil {
+		cfg.poolName = defaultPoolName(connConfig)
 	}
 	cfg.checkStatsdRequired()
 	tr := &pgxTracer{cfg: cfg}
@@ -107,6 +111,20 @@ func wrapPgxTracer(prev pgx.QueryTracer, opts ...Option) *pgxTracer {
 	}
 
 	return tr
+}
+
+func defaultPoolName(connConfig *pgx.ConnConfig) string {
+	name := ""
+	if connConfig.Host != "" {
+		name = connConfig.Host
+	}
+	if connConfig.Port != 0 {
+		name = name + ":" + strconv.FormatInt(int64(connConfig.Port), 10)
+	}
+	if connConfig.Database != "" {
+		name = name + "/" + connConfig.Database
+	}
+	return name
 }
 
 func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
@@ -290,6 +308,9 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 		tracer.Tag(ext.Component, instrumentation.PackageJackcPGXV5),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(tagOperation, string(op)),
+	}
+	if t.cfg.poolName != "" {
+		opts = append(opts, tracer.Tag(ext.DBClientConnectionPoolName, t.cfg.poolName))
 	}
 	opts = append(opts, extraOpts...)
 	if sqlStatement != "" {

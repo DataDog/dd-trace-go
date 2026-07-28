@@ -220,18 +220,18 @@ func protobufToText(pprofData []byte) string {
 // without adding it to enabledProfileTypes as well.
 func TestProfileTypeSoundness(t *testing.T) {
 	t.Run("enabledProfileTypes", func(t *testing.T) {
-		var allProfileTypes []ProfileType
+		allProfileTypes := make([]ProfileType, 0, len(profileTypes))
 		for pt := range profileTypes {
 			allProfileTypes = append(allProfileTypes, pt)
 		}
-		p, err := unstartedProfiler(WithProfileTypes(allProfileTypes...))
+		p, err := newProfiler(WithProfileTypes(allProfileTypes...))
 		require.NoError(t, err)
 		types := p.enabledProfileTypes()
-		require.Equal(t, len(allProfileTypes), len(types))
+		require.ElementsMatch(t, types, allProfileTypes)
 	})
 
 	t.Run("profileTypes", func(t *testing.T) {
-		_, err := unstartedProfiler(WithProfileTypes(ProfileType(-1)))
+		err := Start(WithProfileTypes(ProfileType(-1)))
 		require.EqualError(t, err, "unknown profile type: -1")
 	})
 }

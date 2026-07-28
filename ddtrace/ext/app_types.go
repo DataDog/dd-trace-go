@@ -79,4 +79,7 @@ const (
 
 	// SpanTypeLLM marks a span as an LLM operation.
 	SpanTypeLLM = "llm"
+
+	// SpanTypeAerospike marks a span as an Aerospike operation.
+	SpanTypeAerospike = "aerospike"
 )

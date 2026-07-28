@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -955,26 +955,27 @@ func TestWafEventsInMetaStruct(t *testing.T) {
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
-	builder, err := libddwaf.NewBuilder(config.DefaultObfuscatorKeyRegex, config.DefaultObfuscatorValueRegex)
+	builder, err := libddwaf.NewBuilder()
 	require.NoError(b, err)
 	defer builder.Close()
 
 	_, err = builder.AddDefaultRecommendedRuleset()
 	require.NoError(b, err)
 
-	handle := builder.Build()
+	handle, err := builder.Build()
+	require.NoError(b, err)
 	require.NotNil(b, handle)
 
 	for b.Loop() {
-		ctx, err := handle.NewContext(timer.WithBudget(time.Second))
+		ctx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second), timer.WithComponents(addresses.Scopes[:]...))
 		if err != nil || ctx == nil {
 			b.Fatal("nil context")
 		}
 
 		// Request WAF Run
-		_, err = ctx.Run(
-			libddwaf.RunAddressData{
-				Persistent: map[string]any{
+		_, err = ctx.Run(context.Background(),
+			addresses.RunAddressData{
+				Data: map[string]any{
 					addresses.ClientIPAddr:            "1.1.1.1",
 					addresses.ServerRequestMethodAddr: "GET",
 					addresses.ServerRequestRawURIAddr: "/",
@@ -996,6 +997,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 						"param": "value",
 					},
 				},
+				TimerKey: addresses.WAFScope,
 			})
 
 		if err != nil {
@@ -1003,9 +1005,9 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		}
 
 		// Response WAF Run
-		_, err = ctx.Run(
-			libddwaf.RunAddressData{
-				Persistent: map[string]any{
+		_, err = ctx.Run(context.Background(),
+			addresses.RunAddressData{
+				Data: map[string]any{
 					addresses.ServerResponseHeadersNoCookiesAddr: map[string][]string{
 						"content-type":   {"application/json"},
 						"content-length": {"0"},
@@ -1013,6 +1015,99 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 					},
 					addresses.ServerResponseStatusAddr: 200,
 				},
+				TimerKey: addresses.WAFScope,
+			})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		ctx.Close()
+	}
+}
+
+// BenchmarkSampleWAFSubContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
+// This is a basic sample of what could happen in a real-world scenario.
+func BenchmarkSampleWAFSubContext(b *testing.B) {
+	builder, err := libddwaf.NewBuilder()
+	require.NoError(b, err)
+	defer builder.Close()
+
+	_, err = builder.AddDefaultRecommendedRuleset()
+	require.NoError(b, err)
+
+	handle, err := builder.Build()
+	require.NoError(b, err)
+	require.NotNil(b, handle)
+
+	for b.Loop() {
+		ctx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second), timer.WithComponents(addresses.Scopes[:]...))
+		if err != nil || ctx == nil {
+			b.Fatal("nil context")
+		}
+
+		// Request WAF Run
+		_, err = ctx.Run(context.Background(),
+			addresses.RunAddressData{
+				Data: map[string]any{
+					addresses.ClientIPAddr:            "1.1.1.1",
+					addresses.ServerRequestMethodAddr: "GET",
+					addresses.ServerRequestRawURIAddr: "/",
+					addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+						"host":            {"example.com"},
+						"content-length":  {"0"},
+						"Accept":          {"application/json"},
+						"User-Agent":      {"curl/7.64.1"},
+						"Accept-Encoding": {"gzip"},
+						"Connection":      {"close"},
+					},
+					addresses.ServerRequestCookiesAddr: map[string][]string{
+						"cookie": {"session=1234"},
+					},
+					addresses.ServerRequestQueryAddr: map[string][]string{
+						"query": {"value"},
+					},
+					addresses.ServerRequestPathParamsAddr: map[string]string{
+						"param": "value",
+					},
+				},
+				TimerKey: addresses.WAFScope,
+			})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		// RASP Call
+		sub, err := ctx.NewSubcontext(context.Background())
+		if err != nil {
+			b.Fatalf("error creating subcontext: %v", err)
+		}
+
+		_, err = sub.Run(context.Background(), libddwaf.RunAddressData{
+			Data: map[string]any{
+				addresses.ServerIOFSFileAddr: "/etc/passwd",
+			},
+		})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		sub.Close()
+
+		// Response WAF Run
+		_, err = ctx.Run(context.Background(),
+			addresses.RunAddressData{
+				Data: map[string]any{
+					addresses.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+						"content-type":   {"application/json"},
+						"content-length": {"0"},
+						"Connection":     {"close"},
+					},
+					addresses.ServerResponseStatusAddr: 200,
+				},
+				TimerKey: addresses.WAFScope,
 			})
 
 		if err != nil {
@@ -1100,7 +1195,7 @@ func TestAPI10ResponseBody(t *testing.T) {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
 
-	builder, err := libddwaf.NewBuilder("", "")
+	builder, err := libddwaf.NewBuilder()
 	require.NoError(t, err)
 
 	var ruleset any
@@ -1116,12 +1211,13 @@ func TestAPI10ResponseBody(t *testing.T) {
 	builder.AddOrUpdateConfig("/custom", ruleset)
 	defer builder.Close()
 
-	handle := builder.Build()
+	handle, err := builder.Build()
+	require.NoError(t, err)
 	require.NotNil(t, handle)
 
 	defer handle.Close()
 
-	ctx, err := handle.NewContext(timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
+	ctx, err := handle.NewContext(context.Background(), timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
 	require.NoError(t, err)
 
 	defer ctx.Close()
@@ -1131,8 +1227,8 @@ func TestAPI10ResponseBody(t *testing.T) {
 	encodable, err := body.NewEncodable("application/json", &reader, 999999)
 	require.NoError(t, err)
 
-	result, err := ctx.Run(libddwaf.RunAddressData{
-		Ephemeral: map[string]any{
+	result, err := ctx.Run(context.Background(), addresses.RunAddressData{
+		Data: map[string]any{
 			addresses.ServerIONetResponseBodyAddr: encodable,
 		},
 	})

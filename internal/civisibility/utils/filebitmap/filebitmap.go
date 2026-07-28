@@ -117,6 +117,20 @@ func (fb *FileBitmap) IntersectsWith(other *FileBitmap) bool {
 	return false
 }
 
+// IntersectsLineRange returns true when any bit in the inclusive 1-indexed
+// line range is active. Out-of-bounds lines are treated as inactive.
+func (fb *FileBitmap) IntersectsLineRange(fromLine, toLine int) bool {
+	if fb == nil || fromLine <= 0 || toLine < fromLine {
+		return false
+	}
+	for line := fromLine; line <= toLine; line++ {
+		if fb.Get(line) {
+			return true
+		}
+	}
+	return false
+}
+
 // Or performs a bitwise OR operation between two FileBitmaps.
 // If reuseBuffer is true, the result is stored in bitmap 'a'; otherwise, a new FileBitmap is allocated.
 func Or(a, b *FileBitmap, reuseBuffer bool) *FileBitmap {

@@ -24,6 +24,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -261,21 +262,21 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 	for _, tc := range testcases {
 		name := fmt.Sprintf("retries=%d/fails=%d", tc.configRetries, tc.failCount)
 		t.Run(name, func(t *testing.T) {
-			var totalRequests int32
+			var totalRequests atomic.Int32
 			srv := newTestOTLPServer()
 			atomic.StoreInt32(&srv.failCount, int32(tc.failCount))
 			defer srv.Close()
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				atomic.AddInt32(&totalRequests, 1)
+				totalRequests.Add(1)
 				srv.Server.Config.Handler.ServeHTTP(w, r)
 			})
 			countingSrv := httptest.NewServer(mux)
 			defer countingSrv.Close()
 
 			w := newTestOTLPWriter(t, srv, func(c *config) {
-				c.sendRetries = tc.configRetries
+				c.internalConfig.SetSendRetries(tc.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(time.Millisecond, internalconfig.OriginCode)
 			})
 			w.transport = newOTLPTransport(countingSrv.Client(), countingSrv.URL, nil)
@@ -284,7 +285,7 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 			w.flush()
 			w.wg.Wait()
 
-			assert.Equal(t, int32(tc.expAttempts), atomic.LoadInt32(&totalRequests))
+			assert.Equal(t, int32(tc.expAttempts), totalRequests.Load())
 			assert.Equal(t, tc.tracesSent, len(srv.getPayloads()) > 0)
 		})
 	}
@@ -313,14 +314,14 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 
-	var spansAdded int32
+	var spansAdded atomic.Int32
 
 	for range numAdders {
 		wg.Go(func() {
 			<-start
 			for range spansPerAdder {
 				w.add([]*Span{newSpan("op", "svc", "res", randUint64(), randUint64(), 0)})
-				atomic.AddInt32(&spansAdded, 1)
+				spansAdded.Add(1)
 			}
 		})
 	}
@@ -339,7 +340,7 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 
 	w.stop()
 
-	assert.Equal(t, int32(numAdders*spansPerAdder), atomic.LoadInt32(&spansAdded))
+	assert.Equal(t, int32(numAdders*spansPerAdder), spansAdded.Load())
 
 	// Verify all sent payloads are valid protobuf
 	totalSpans := 0
@@ -447,4 +448,35 @@ func TestOTLPWriterDoesNotReuseAgentHTTPClient(t *testing.T) {
 	w.stop()
 
 	assert.Equal(t, 1, srv.requestCount(), "OTLP writer should reach TCP server, not the UDS agent socket")
+}
+
+// TestOTLPWriterProcessTagsDisabled verifies that _dd.tags.process does not
+// appear in OTLP output when the feature is disabled. End-to-end coverage for
+// the enabled path (via setTraceTagsLocked → span.meta → convertSpanAttributes)
+// lives in TestOTLPExportModeProcessTags.
+func TestOTLPWriterProcessTagsDisabled(t *testing.T) {
+	t.Cleanup(processtags.Reload)
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
+
+	srv := newTestOTLPServer()
+	defer srv.Close()
+	w := newTestOTLPWriter(t, srv)
+
+	w.add([]*Span{newSpan("op1", "svc", "res", 1, 1, 0), newSpan("op2", "svc", "res", 2, 1, 1)})
+	w.stop()
+
+	for _, data := range srv.getPayloads() {
+		var td otlptrace.TracesData
+		require.NoError(t, proto.Unmarshal(data, &td))
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				for i, s := range ss.Spans {
+					for _, attr := range s.Attributes {
+						assert.NotEqual(t, keyProcessTags, attr.Key, "span %d must not carry process tags when disabled", i)
+					}
+				}
+			}
+		}
+	}
 }

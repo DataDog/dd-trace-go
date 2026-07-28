@@ -218,7 +218,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 	// 3) Read header
 	header, err := r.Read()
 	if err == io.EOF || (err == nil && len(header) == 0) {
-		return nil, fmt.Errorf("CSV file appears to be empty or header is missing")
+		return nil, errors.New("CSV file appears to be empty or header is missing")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read header: %w", err)
@@ -324,7 +324,7 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
 
-	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name, project.ID)
+	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name, project.ID, cfg.version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}
@@ -339,12 +339,19 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 			version:        rec.Version,
 		})
 	}
+	// When pulling a specific historical version, report that version so that
+	// experiment.Run registers the run against the correct dataset snapshot
+	// rather than the latest current_version returned by GetDatasetByName.
+	dsVersion := dsResp.CurrentVersion
+	if cfg.version != nil {
+		dsVersion = *cfg.version
+	}
 	ds := &Dataset{
 		id:          dsResp.ID,
 		name:        dsResp.Name,
 		description: dsResp.Description,
 		records:     records,
-		version:     dsResp.CurrentVersion,
+		version:     dsVersion,
 	}
 	return ds, nil
 }

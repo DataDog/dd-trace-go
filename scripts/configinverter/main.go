@@ -67,6 +67,10 @@ type configurationImplementation struct {
 	Type           string   `json:"type"`
 	Default        *string  `json:"default"`
 	Aliases        []string `json:"aliases,omitempty"`
+	// Sensitive marks a configuration whose value must not be reported in
+	// configuration telemetry. When set on any implementation of a key, that key
+	// is emitted in the generated SensitiveConfigurations set.
+	Sensitive bool `json:"sensitive,omitempty"`
 }
 
 // generate generates the supported configurations map from the supported configurations
@@ -97,32 +101,32 @@ func generate(input, output string) error {
 	})
 	f.Line()
 
-	// Get aliases keys and sort them
-	// so we can generate the map in a deterministic way
-	aliases := make(map[string][]string)
-	keysWithAliases := make([]string, 0)
-	for k := range cfg.SupportedConfigurations {
-		cfgAliases := []string{}
-		// Iterate over the configuration implementations and collect the aliases
-		for _, impl := range cfg.SupportedConfigurations[k] {
-			if impl.Aliases != nil && len(impl.Aliases) > 0 {
-				cfgAliases = append(cfgAliases, impl.Aliases...)
-			}
-		}
+	// Collect keys marked sensitive in any of their implementations.
+	sensitiveKeys := sensitiveConfigurationKeys(cfg)
 
-		if len(cfgAliases) > 0 {
-			keysWithAliases = append(keysWithAliases, k)
-			aliases[k] = cfgAliases
+	f.Comment("SensitiveConfigurations is the set of configuration keys whose value must not be")
+	f.Comment("reported in configuration telemetry. It is seeded from entries marked \"sensitive\": true")
+	f.Comment("in supported_configurations.json.")
+	f.Var().Id("SensitiveConfigurations").Op("=").Map(jen.String()).Struct().ValuesFunc(func(g *jen.Group) {
+		for _, v := range sensitiveKeys {
+			g.Add(jen.Line(), jen.Lit(v), jen.Op(":"), jen.Values())
 		}
+		g.Line()
+	})
+	f.Line()
+
+	aliases := collectAliasMap(cfg)
+	keysWithAliases := make([]string, 0, len(aliases))
+	for k := range aliases {
+		keysWithAliases = append(keysWithAliases, k)
 	}
-
 	if len(keysWithAliases) > 0 {
 		slog.Info("keys with aliases", "count", len(keysWithAliases), "keys", keysWithAliases)
 		sort.Strings(keysWithAliases)
 	}
 
-	f.Comment("keyAliases maps aliases to supported configuration keys.")
-	f.Var().Id("keyAliases").Op("=").Map(jen.String()).Index().String().ValuesFunc(func(g *jen.Group) {
+	f.Comment("KeyAliases maps canonical configuration keys to their known aliases.")
+	f.Var().Id("KeyAliases").Op("=").Map(jen.String()).Index().String().ValuesFunc(func(g *jen.Group) {
 		for _, v := range keysWithAliases {
 			g.Add(jen.Line(), jen.Lit(v), jen.Op(":"), jen.ValuesFunc(func(g *jen.Group) {
 				for _, v := range aliases[v] {
@@ -141,32 +145,122 @@ func generate(input, output string) error {
 }
 
 // check verifies that there is no difference between the supported configurations
-// JSON file and generated Go code map.
+// JSON file and the generated Go code. It validates four things:
+//   - SupportedConfigurations: exact key-set match (no missing, no extra)
+//   - SensitiveConfigurations: exact key-set match (no missing, no extra)
+//   - keyAliases: exact alias-set match per key (no missing, no extra)
+//   - JSON sort order: the JSON file must be byte-identical to its canonical form
 func check(input string) error {
-	keys, err := getSupportedConfigurationsKeys(input)
+	rawJSON, err := os.ReadFile(input)
+	if err != nil {
+		return fmt.Errorf("error reading JSON file: %w", err)
+	}
+
+	cfg, err := getSupportedConfigurations(input)
 	if err != nil {
 		return fmt.Errorf("error getting supported configuration keys: %w", err)
 	}
 
-	slog.Info("supported configuration keys in JSON file", "count", len(keys))
-	slog.Info("supported configuration keys in generated map", "count", len(env.SupportedConfigurations))
+	var failures []string
 
-	missingKeys := []string{}
-	for _, k := range keys {
+	// --- SupportedConfigurations: JSON ↔ generated ---
+	jsonKeys := sortSupportedConfigurationsKeys(cfg)
+	jsonKeySet := make(map[string]struct{}, len(jsonKeys))
+	for _, k := range jsonKeys {
+		jsonKeySet[k] = struct{}{}
+	}
+	for _, k := range jsonKeys {
 		if _, ok := env.SupportedConfigurations[k]; !ok {
-			slog.Error("supported configuration key not found in generated map", "key", k)
-			missingKeys = append(missingKeys, k)
+			failures = append(failures, fmt.Sprintf("SupportedConfigurations: %q present in JSON but missing from generated", k))
+		}
+	}
+	for k := range env.SupportedConfigurations {
+		if _, ok := jsonKeySet[k]; !ok {
+			failures = append(failures, fmt.Sprintf("SupportedConfigurations: %q present in generated but missing from JSON", k))
 		}
 	}
 
-	if len(missingKeys) > 0 {
-		slog.Error("supported configuration keys missing in generated map", "count", len(missingKeys), "keys", missingKeys)
-		slog.Info("run `go run ./scripts/configinverter/main.go generate` to re-generate the supported configurations map with the missing keys")
-		return fmt.Errorf("supported configuration keys missing in generated map, please re-run the generate command")
+	// --- SensitiveConfigurations: JSON ↔ generated ---
+	sensitiveKeys := sensitiveConfigurationKeys(cfg)
+	sensitiveKeySet := make(map[string]struct{}, len(sensitiveKeys))
+	for _, k := range sensitiveKeys {
+		sensitiveKeySet[k] = struct{}{}
+	}
+	for _, k := range sensitiveKeys {
+		if _, ok := env.SensitiveConfigurations[k]; !ok {
+			failures = append(failures, fmt.Sprintf("SensitiveConfigurations: %q is sensitive in JSON but missing from generated", k))
+		}
+	}
+	for k := range env.SensitiveConfigurations {
+		if _, ok := sensitiveKeySet[k]; !ok {
+			failures = append(failures, fmt.Sprintf("SensitiveConfigurations: %q is in generated but not marked sensitive in JSON", k))
+		}
+	}
+
+	// --- keyAliases: JSON ↔ generated ---
+	jsonAliases := collectAliasMap(cfg)
+	genAliases := env.KeyAliases
+	for k, jsonList := range jsonAliases {
+		genList, ok := genAliases[k]
+		if !ok {
+			failures = append(failures, fmt.Sprintf("keyAliases: %q has aliases in JSON but no entry in generated", k))
+			continue
+		}
+		genSet := make(map[string]struct{}, len(genList))
+		for _, a := range genList {
+			genSet[a] = struct{}{}
+		}
+		for _, a := range jsonList {
+			if _, ok := genSet[a]; !ok {
+				failures = append(failures, fmt.Sprintf("keyAliases: alias %q for key %q present in JSON but missing from generated", a, k))
+			}
+		}
+	}
+	for k, genList := range genAliases {
+		jsonList, ok := jsonAliases[k]
+		if !ok {
+			failures = append(failures, fmt.Sprintf("keyAliases: %q has aliases in generated but no aliases in JSON", k))
+			continue
+		}
+		jsonSet := make(map[string]struct{}, len(jsonList))
+		for _, a := range jsonList {
+			jsonSet[a] = struct{}{}
+		}
+		for _, a := range genList {
+			if _, ok := jsonSet[a]; !ok {
+				failures = append(failures, fmt.Sprintf("keyAliases: alias %q for key %q present in generated but missing from JSON", a, k))
+			}
+		}
+	}
+
+	// --- JSON sort and format ---
+	// Re-encode the parsed config with the canonical settings used by generate/add.
+	// If the file was not sorted or was otherwise modified by hand, the bytes will differ.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(cfg); err != nil {
+		return fmt.Errorf("error re-encoding JSON for sort check: %w", err)
+	}
+	normalized := bytes.TrimRight(buf.Bytes(), "\n")
+	// Normalize CRLF to LF before comparing: on Windows the file may be checked out
+	// with CRLF line endings (git core.autocrlf), but the canonical encoding always
+	// uses LF. We validate content and sort order, not platform-specific line endings.
+	rawNormalized := bytes.ReplaceAll(rawJSON, []byte("\r\n"), []byte("\n"))
+	if !bytes.Equal(bytes.TrimRight(rawNormalized, "\n"), normalized) {
+		failures = append(failures, "JSON is not sorted or not in canonical format; run `go run ./scripts/configinverter/main.go generate` to fix")
+	}
+
+	if len(failures) > 0 {
+		for _, f := range failures {
+			slog.Error(f)
+		}
+		slog.Info("run `go run ./scripts/configinverter/main.go generate` to re-generate the supported configurations")
+		return fmt.Errorf("%d discrepancy(ies) found between JSON and generated code", len(failures))
 	}
 
 	slog.Info("supported configurations JSON file and generated map are in sync")
-
 	return nil
 }
 
@@ -230,6 +324,38 @@ func sortSupportedConfigurationsKeys(cfg *supportedConfiguration) []string {
 	keys := []string{}
 	for k := range cfg.SupportedConfigurations {
 		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// collectAliasMap returns a map from configuration key to the union of all aliases
+// defined across its implementations.
+func collectAliasMap(cfg *supportedConfiguration) map[string][]string {
+	result := make(map[string][]string)
+	for k, impls := range cfg.SupportedConfigurations {
+		var aliases []string
+		for _, impl := range impls {
+			aliases = append(aliases, impl.Aliases...)
+		}
+		if len(aliases) > 0 {
+			result[k] = aliases
+		}
+	}
+	return result
+}
+
+// sensitiveConfigurationKeys returns the sorted list of configuration keys that have
+// at least one implementation marked "sensitive": true.
+func sensitiveConfigurationKeys(cfg *supportedConfiguration) []string {
+	keys := []string{}
+	for k, impls := range cfg.SupportedConfigurations {
+		for _, impl := range impls {
+			if impl.Sensitive {
+				keys = append(keys, k)
+				break
+			}
+		}
 	}
 	sort.Strings(keys)
 	return keys

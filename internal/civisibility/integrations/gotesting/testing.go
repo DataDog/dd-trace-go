@@ -154,27 +154,7 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 	// Get the settings response for this session
 	settings := integrations.GetSettings()
-
-	// Check if the test is going to be skipped by ITR
-	if settings.ItrEnabled {
-		coverageEnabled := settings.CodeCoverage && coverage.CanCollect()
-		session.SetTag(constants.CodeCoverageEnabled, strconv.FormatBool(coverageEnabled))
-		testsSkippingEnabled := strconv.FormatBool(settings.TestsSkipping)
-		session.SetTag(constants.ITRTestsSkippingEnabled, testsSkippingEnabled)
-		utils.AddCITagsMap(map[string]string{constants.ITRTestsSkippingEnabled: testsSkippingEnabled})
-
-		if settings.TestsSkipping {
-			session.SetTag(constants.ITRTestsSkippingType, "test")
-
-			// Check if the test is going to be skipped by ITR
-			skippableTests := integrations.GetSkippableTests()
-			if skippableTests != nil {
-				if len(skippableTests) > 0 {
-					session.SetTag(constants.ITRTestsSkipped, "false")
-				}
-			}
-		}
-	}
+	itrState := newITRState(settings)
 
 	// Extract info from internal tests
 	testInfos = make([]*testingTInfo, len(*internalTests))
@@ -199,6 +179,25 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 		testInfos[idx] = testInfo
 	}
+	itrState.validateCoverageBackfillScope(testInfos)
+
+	// Check if the test is going to be skipped by ITR
+	if settings != nil && settings.ItrEnabled {
+		coverageEnabled := coverage.CanCollectPerTestCoverage()
+		session.SetTag(constants.CodeCoverageEnabled, strconv.FormatBool(coverageEnabled))
+		testsSkippingEnabled := strconv.FormatBool(itrState.testsSkippingEnabled())
+		session.SetTag(constants.ITRTestsSkippingEnabled, testsSkippingEnabled)
+		utils.AddCITagsMap(map[string]string{constants.ITRTestsSkippingEnabled: testsSkippingEnabled})
+
+		if itrState.testsSkippingEnabled() {
+			session.SetTag(constants.ITRTestsSkippingType, "test")
+
+			// Check if the test is going to be skipped by ITR
+			if itrState.hasSkippableTests() {
+				session.SetTag(constants.ITRTestsSkipped, "false")
+			}
+		}
+	}
 
 	// Create new instrumented internal tests
 	newTestArray := make([]testing.InternalTest, len(*internalTests))
@@ -217,22 +216,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 
 	// Get the settings response for this session
 	settings := integrations.GetSettings()
-	coverageEnabled := settings.CodeCoverage
-	testSkippedByITR := false
+	coverageEnabled := coverage.CanCollectPerTestCoverage()
 	testIsNew := true
-
-	// Check if the test is going to be skipped by ITR
-	if settings.ItrEnabled && settings.TestsSkipping {
-		// Check if the test is going to be skipped by ITR
-		skippableTests := integrations.GetSkippableTests()
-		if skippableTests != nil {
-			if suitesMap, ok := skippableTests[testInfo.suiteName]; ok {
-				if _, ok := suitesMap[testInfo.testName]; ok {
-					testSkippedByITR = true
-				}
-			}
-		}
-	}
 
 	// Check if the test is known
 	if settings.KnownTestsEnabled {
@@ -276,21 +261,25 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			return
 		}
 
-		// Check if the test needs to be skipped by ITR (attempt to fix is excluded)
-		if testSkippedByITR && !execMeta.isAttemptToFix && !execMeta.isAModifiedTest {
-			// check if the test was marked as unskippable
-			if test.Context().Value(constants.TestUnskippable) != true {
-				test.SetTag(constants.TestSkippedByITR, "true")
-				// ITR skip is always a final execution, set the final status
-				test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
-				test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.SkippedByITRReason))
-				telemetry.ITRSkipped(telemetry.TestEventType)
-				session.SetTag(constants.ITRTestsSkipped, "true")
-				session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
+		// Check if the test needs to be skipped by ITR after all execution
+		// metadata has been attached, but before coverage and user code run.
+		itrDecision := currentITRState().decisionFor(testInfo, execMeta, test.Context().Value(constants.TestUnskippable) == true)
+		if itrDecision.skip {
+			test.SetTag(constants.TestSkippedByITR, "true")
+			// ITR skip is always a final execution, set the final status
+			test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
+			test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.SkippedByITRReason))
+			telemetry.ITRSkipped(telemetry.TestEventType)
+			currentITRState().markActualSkip()
+			session.SetTag(constants.ITRTestsSkipped, "true")
+			session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
+			if !execMeta.hasAdditionalFeatureWrapper {
 				checkModuleAndSuite(module, suite)
-				t.Skip(constants.SkippedByITRReason)
-				return
 			}
+			t.Skip(constants.SkippedByITRReason)
+			return
+		}
+		if itrDecision.forcedRun {
 			test.SetTag(constants.TestForcedToRun, "true")
 			telemetry.ITRForcedRun(telemetry.TestEventType)
 		}
@@ -469,11 +458,6 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
-
-	// If the test is going to be skipped by ITR then we don't apply the additional features
-	if testSkippedByITR {
-		return instrumentedFunc
-	}
 
 	// Get the additional feature wrapper
 	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo, nil)

@@ -91,6 +91,8 @@ func annotate(data []byte) ([]byte, error) {
 	enc := xml.NewEncoder(&buf)
 	enc.Indent("", "\t")
 
+	var currentSuiteName string
+
 	for {
 		tok, err := dec.Token()
 		if err != nil {
@@ -106,8 +108,17 @@ func annotate(data []byte) ([]byte, error) {
 				continue
 			}
 		case xml.StartElement:
+			if t.Name.Local == "testsuite" {
+				currentSuiteName = attrValue(t.Attr, "name")
+			}
 			if t.Name.Local == "testcase" && !hasAttr(t.Attr, "file") {
-				if path := relativePathFromPackageName(attrValue(t.Attr, "classname")); path != "" {
+				path := relativePathFromPackageName(attrValue(t.Attr, "classname"))
+				if path == "" {
+					// Fallback for TestMain failures where gotestsum emits no classname:
+					// derive the path from the enclosing <testsuite> name instead.
+					path = relativePathFromPackageName(currentSuiteName)
+				}
+				if path != "" {
 					t.Attr = append(t.Attr, xml.Attr{
 						Name:  xml.Name{Local: "file"},
 						Value: path,

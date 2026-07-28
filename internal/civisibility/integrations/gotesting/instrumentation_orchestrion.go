@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -56,7 +58,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	if settings != nil {
 		if settings.CodeCoverage {
 			// Initialize the runtime coverage if enabled.
-			coverage.InitializeCoverage(m)
+			coverage.InitializeCoverage(m, true)
 			coverageInitialized = true
 		}
 		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
@@ -67,7 +69,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 	// Check if the coverage was enabled by not initialized
 	if !coverageInitialized && testing.CoverMode() != "" {
-		coverage.InitializeCoverage(m)
+		coverage.InitializeCoverage(m, false)
 	}
 
 	ddm := (*M)(m)
@@ -89,8 +91,18 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			// let's try first with our coverage package
-			cov := coverage.GetCoverage()
+			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
+			uploadFinalCoverageReport(settings)
+			if !publishCoverage {
+				session.Close(exitCode)
+				coverage.CleanupRuntimeCoverageSnapshot()
+				integrations.ExitCiVisibility()
+				return
+			}
+			if !corrected {
+				// let's try first with our coverage package
+				cov = coverage.GetCoverage()
+			}
 			if cov == 0 {
 				// if not we try we the default testing package
 				cov = testing.Coverage()
@@ -102,9 +114,44 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 		// Close the session and return the exit code.
 		session.Close(exitCode)
+		coverage.CleanupRuntimeCoverageSnapshot()
 
 		// Finalize CI Visibility
 		integrations.ExitCiVisibility()
+	}
+}
+
+func uploadFinalCoverageReport(settings *civisibilitynet.SettingsResponseData) {
+	if settings == nil {
+		log.Debug("instrumentTestingM: coverage report upload skipped because settings are unavailable")
+		return
+	}
+	if !settings.CoverageReportUploadEnabled {
+		log.Debug("instrumentTestingM: coverage report upload disabled by settings")
+		return
+	}
+
+	var report bytes.Buffer
+	if err := coverage.WriteLCOVReport(&report); err != nil {
+		log.Debug("instrumentTestingM: failed to create LCOV coverage report: %s", err.Error())
+		return
+	}
+	if report.Len() == 0 {
+		log.Debug("instrumentTestingM: LCOV coverage report is empty; skipping upload")
+		return
+	}
+	log.Debug("instrumentTestingM: uploading LCOV coverage report [report_bytes:%d]", report.Len())
+
+	client := civisibilitynet.NewClientForCoverageReportUpload()
+	if client == nil {
+		log.Debug("instrumentTestingM: coverage report upload client is unavailable")
+		return
+	}
+	if closer, ok := client.(interface{ CloseIdleConnections() }); ok {
+		defer closer.CloseIdleConnections()
+	}
+	if err := client.SendCoverageReport(&report, civisibilitynet.FormatLCOV); err != nil {
+		log.Debug("instrumentTestingM: failed to upload coverage report: %s", err.Error())
 	}
 }
 

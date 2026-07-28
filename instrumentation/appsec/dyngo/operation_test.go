@@ -511,6 +511,24 @@ func TestOperationData(t *testing.T) {
 			require.Equal(t, 20, data)
 		})
 	})
+
+	t.Run("finished-parent-listener", func(t *testing.T) {
+		data := 0
+		op1 := startOperation(MyOperationArgs{}, nil)
+		dyngo.OnData(op1, func(data *int) {
+			*data++
+		})
+		op2 := startOperation(MyOperation2Args{}, op1)
+
+		dyngo.FinishOperation(op1, MyOperationRes{})
+
+		for range 10 {
+			dyngo.EmitData(op2, &data)
+		}
+
+		dyngo.FinishOperation(op2, MyOperation2Res{})
+		require.Equal(t, 0, data)
+	})
 }
 
 func TestOperationEvents(t *testing.T) {

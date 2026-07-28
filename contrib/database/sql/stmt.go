@@ -18,8 +18,9 @@ var _ driver.Stmt = (*tracedStmt)(nil)
 type tracedStmt struct {
 	driver.Stmt
 	*traceParams
-	ctx   context.Context
-	query string
+	ctx      context.Context
+	query    string
+	baseHash string
 }
 
 // Close sends a span before closing a statement
@@ -39,7 +40,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
 		res, err := stmtExecContext.ExecContext(ctx, args)
-		s.tryTrace(ctx, QueryTypeExec, s.query, start, err)
+		s.tryTrace(ctx, QueryTypeExec, s.query, start, err, withDBMPropagatedHashTag(s.baseHash)...)
 		return res, err
 	}
 	dargs, err := namedValueToValue(args)
@@ -54,7 +55,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 	ctx, end := startTraceTask(ctx, QueryTypeExec)
 	defer end()
 	res, err = s.Exec(dargs)
-	s.tryTrace(ctx, QueryTypeExec, s.query, start, err)
+	s.tryTrace(ctx, QueryTypeExec, s.query, start, err, withDBMPropagatedHashTag(s.baseHash)...)
 	return res, err
 }
 
@@ -65,7 +66,7 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
 		rows, err := stmtQueryContext.QueryContext(ctx, args)
-		s.tryTrace(ctx, QueryTypeQuery, s.query, start, err)
+		s.tryTrace(ctx, QueryTypeQuery, s.query, start, err, withDBMPropagatedHashTag(s.baseHash)...)
 		return rows, err
 	}
 	dargs, err := namedValueToValue(args)
@@ -80,7 +81,7 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 	ctx, end := startTraceTask(ctx, QueryTypeQuery)
 	defer end()
 	rows, err = s.Query(dargs)
-	s.tryTrace(ctx, QueryTypeQuery, s.query, start, err)
+	s.tryTrace(ctx, QueryTypeQuery, s.query, start, err, withDBMPropagatedHashTag(s.baseHash)...)
 	return rows, err
 }
 

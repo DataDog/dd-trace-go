@@ -34,6 +34,7 @@ func resetCIVisibilityStateForTesting() {
 	ciVisibilityKnownTests = net.KnownTestsResponseData{}
 	ciVisibilityFlakyRetriesSettings = FlakyRetriesSetting{}
 	ciVisibilitySkippables = nil
+	ciVisibilitySkippablesResponse = nil
 	ciVisibilityTestManagementTests = net.TestManagementTestsResponseDataModules{}
 	ciVisibilityImpactedTestsAnalyzer = nil
 	sourceFileMetadataCache = sync.Map{}

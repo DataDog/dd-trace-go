@@ -1,3 +1,7 @@
+# The configinverter check compares this file byte-for-byte against its canonical
+# (LF) encoding; force LF so Windows checkouts don't introduce CRLF and fail the check.
+internal/env/supported_configurations.json text eol=lf
+
 # Mark go.sum files as generated so they're hidden by default in GitHub diffs
 # https://docs.github.com/en/repositories/working-with-files/managing-files/customizing-how-changed-files-appear-on-github
 **/go.sum linguist-generated

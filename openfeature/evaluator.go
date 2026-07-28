@@ -34,9 +34,21 @@ type evaluationResult struct {
 	Metadata map[string]any
 }
 
-// evaluateFlag evaluates a feature flag with the given context.
+const (
+	metadataAllocationKey = "dd.allocation.key"
+	metadataDoLogKey      = "dd.doLog"
+	metadataSerialIDKey   = "dd.serialId"
+	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
+	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time.
+	metadataEvalTimeKey = "dd.eval.timestamp_ms"
+)
+
+// evaluateFlag evaluates a feature flag with the given context. The caller supplies the
+// evaluation time (now) so a single timestamp is shared between the allocation time-window
+// checks here and the EVP eval-time metadata stamped by DatadogProvider.evaluate — avoiding a
+// second time.Now() on the evaluation path.
 // It returns the variant value, reason, and any error that occurred.
-func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluationResult {
+func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time) evaluationResult {
 	if flag == nil {
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
@@ -48,8 +60,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 		}
 	}
 
-	// Evaluate allocations in order - first match wins
-	now := time.Now()
+	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
 		split, matched, err := evaluateAllocation(allocation, context, now)
 		if err != nil {
@@ -80,7 +91,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 			}
 
 			// Build metadata for exposure tracking
-			metadata := make(map[string]any)
+			metadata := make(map[string]any, 3)
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)
@@ -89,6 +100,10 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 				doLog = *allocation.DoLog
 			}
 			metadata[metadataDoLogKey] = doLog
+
+			if split.SerialID != nil {
+				metadata[metadataSerialIDKey] = *split.SerialID
+			}
 
 			// Determine reason:
 			//   rules matched           → TARGETING_MATCH

@@ -13,23 +13,33 @@ import (
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 // config holds the configuration for the MeterProvider
 type config struct {
-	resourceOptions     []resource.Option
-	httpExporterOptions []otlpmetrichttp.Option
-	grpcExporterOptions []otlpmetricgrpc.Option
-	exportInterval      time.Duration
-	exportTimeout       time.Duration
-	temporalitySelector metric.TemporalitySelector
+	resourceOptions        []resource.Option
+	httpExporterOptions    []otlpmetrichttp.Option
+	grpcExporterOptions    []otlpmetricgrpc.Option
+	exportInterval         time.Duration
+	exportTimeout          time.Duration
+	temporalitySelector    metric.TemporalitySelector
+	producers              []metric.Producer
+	disableRuntimeProducer bool
+	ddConfig               *internalconfig.Config
 }
 
-// newConfig creates a default configuration
+// newConfig creates a default configuration. The export interval and timeout
+// honor the OTel SDK env vars OTEL_METRIC_EXPORT_INTERVAL and
+// OTEL_METRIC_EXPORT_TIMEOUT (in milliseconds) when set, otherwise fall back
+// to the package defaults.
 func newConfig() *config {
+	intervalMs := getMillisecondsConfig(envOtelMetricExportInterval, defaultExportIntervalMs)
+	timeoutMs := getMillisecondsConfig(envOtelMetricExportTimeout, defaultExportTimeoutMs)
 	return &config{
-		exportInterval: 60 * time.Second,
-		exportTimeout:  30 * time.Second,
+		exportInterval: time.Duration(intervalMs.value) * time.Millisecond,
+		exportTimeout:  time.Duration(timeoutMs.value) * time.Millisecond,
 	}
 }
 
@@ -126,3 +136,22 @@ func WithView(view View) Option {
 
 // Scope provides a namespace for instruments
 type Scope = instrumentation.Scope
+
+// WithProducer registers an additional sdkmetric.Producer on the reader.
+// The default RuntimeProducer (emitting go.schedule.duration) is registered
+// automatically; use WithoutRuntimeProducer to suppress it.
+func WithProducer(p metric.Producer) Option {
+	return optionFunc(func(c *config) {
+		if !c.disableRuntimeProducer {
+			c.producers = append(c.producers, p)
+		}
+	})
+}
+
+// WithoutRuntimeProducer suppresses the auto-registered RuntimeProducer in InstallGlobal.
+// Use this if you are registering your own runtime metrics producer.
+func WithoutRuntimeProducer() Option {
+	return optionFunc(func(c *config) {
+		c.disableRuntimeProducer = true
+	})
+}

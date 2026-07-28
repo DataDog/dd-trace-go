@@ -31,9 +31,28 @@ func appendTracingHooks(hooks *server.Hooks) {
 	hooks.AddOnError(tracingHooks.onError)
 }
 
+// redactToolOutputKey is the context key set by redactToolOutputMiddleware
+// to flag the request's tool output as needing redaction in the LLMObs span.
+type redactToolOutputKey struct{}
+
+// redactToolOutputMiddleware is registered when TracingConfig.RedactToolOutput
+// is true; it tags the request context so toolHandlerMiddleware redacts the
+// tool output it later annotates onto the LLMObs span.
+var redactToolOutputMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return next(context.WithValue(ctx, redactToolOutputKey{}, struct{}{}), request)
+	}
+}
+
 var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
+		startOpts := []llmobs.StartSpanOption{
+			llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)),
+		}
+		if session := server.ClientSessionFromContext(ctx); session != nil {
+			startOpts = append(startOpts, llmobs.WithSessionID(session.SessionID()))
+		}
+		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, startOpts...)
 
 		var result *mcp.CallToolResult
 		var err error
@@ -45,11 +64,15 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 			}
 			var outputText string
 			if result != nil {
-				resultJSON, marshalErr := json.Marshal(result)
-				if marshalErr != nil {
-					instr.Logger().Warn("mcp-go: failed to marshal tool result: %v", marshalErr)
+				if _, redact := ctx.Value(redactToolOutputKey{}).(struct{}); redact {
+					outputText = "[REDACTED]"
+				} else {
+					resultJSON, marshalErr := json.Marshal(result)
+					if marshalErr != nil {
+						instr.Logger().Warn("mcp-go: failed to marshal tool result: %v", marshalErr)
+					}
+					outputText = string(resultJSON)
 				}
-				outputText = string(resultJSON)
 			}
 
 			toolSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{

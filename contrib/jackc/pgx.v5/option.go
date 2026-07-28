@@ -19,6 +19,7 @@ type config struct {
 	traceConnect  bool
 	traceAcquire  bool
 	poolStats     bool
+	poolName      string
 	errCheck      func(error) bool
 	statsdClient  instrumentation.StatsdClient
 }
@@ -109,6 +110,14 @@ func WithTraceConnect(enabled bool) Option {
 func WithPoolStats() Option {
 	return func(cfg *config) {
 		cfg.poolStats = true
+	}
+}
+
+// WithPoolName sets the pool name tag on all spans and pool stats metrics.
+// This allows distinguishing between multiple pgx connection pools in the same service.
+func WithPoolName(name string) Option {
+	return func(c *config) {
+		c.poolName = name
 	}
 }
 

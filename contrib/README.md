@@ -36,7 +36,14 @@ Third, some guidelines to follow on naming functions:
 
 * Use `WithService` instead of `WithServiceName` when setting the service name.
 
-Each integration comes with a thorough documentation and usage examples. A good overview can be seen on our [godoc](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib) page.
+All integrations are housed in this directory as a submodule. Each submodule should include the following information:
+
+1. A central file with the name `<integration_name>.go`.
+2. A testing file with the name `<integration_name>_test.go`.
+3. `example_test.go` that serves as public godoc documentation with an example of how to initialize and use the integration for godocs. A good overview can be seen on our [godoc](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib) page.
+4. [OPTIONAL] `orchestrion.yml` file to define auto-instrumentation behavior where supported.
+
+Any code that might be shared across multiple contribs lives in [instrumentation](../instrumentation/).
 
 ### Tests
 

@@ -22,7 +22,7 @@ import (
 // Prepare sets up a table with the given name in both the MySQL and Postgres databases and returns
 // a teardown function which will drop it.
 func Prepare(tableName string) func() {
-	queryDrop := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
+	queryDrop := "DROP TABLE IF EXISTS " + tableName
 	queryCreate := fmt.Sprintf("CREATE TABLE %s (id integer NOT NULL DEFAULT '0', name text)", tableName)
 	mysql, err := sql.Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
 	defer mysql.Close()
@@ -123,7 +123,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 	case "postgres", "pgx", "mysql":
 		query = fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", cfg.TableName)
 	case "sqlserver":
-		query = fmt.Sprintf("SELECT TOP 5 id, name FROM %s", cfg.TableName)
+		query = "SELECT TOP 5 id, name FROM " + cfg.TableName
 	}
 	return func(t *testing.T) {
 		cfg.mockTracer.Reset()

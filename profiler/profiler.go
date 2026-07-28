@@ -102,13 +102,12 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg             *config           // profile configuration
-	out             chan batch        // upload queue
-	uploadFunc      func(batch) error // defaults to (*profiler).upload; replaced in tests
-	exit            chan struct{}     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
-	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
-	met             *metrics          // metric collector state
+	cfg             *config        // profile configuration
+	out             chan batch     // upload queue
+	exit            chan struct{}  // exit signals the profiler to stop; it is closed after stopping
+	stopOnce        sync.Once      // stopOnce ensures the profiler is stopped exactly once.
+	wg              sync.WaitGroup // wg waits for all goroutines to exit when stopping.
+	met             *metrics       // metric collector state
 	deltas          map[ProfileType]*fastDeltaProfiler
 	compressors     map[ProfileType]compressor
 	seq             uint64         // seq is the value of the profile_seq tag
@@ -262,7 +261,6 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			p.deltas[pt] = newFastDeltaProfiler(compressor, profileTypes[pt].DeltaValues...)
 		}
 	}
-	p.uploadFunc = p.upload
 	return &p, nil
 }
 
@@ -505,7 +503,7 @@ func (p *profiler) send() {
 			if err := p.outputDir(bat); err != nil {
 				log.Error("Failed to output profile to dir: %s", err.Error())
 			}
-			if err := p.uploadFunc(bat); err != nil {
+			if err := p.upload(bat); err != nil {
 				log.Error("Failed to upload profile: %s", err.Error())
 			}
 		}

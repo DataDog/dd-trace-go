@@ -20,6 +20,9 @@ const (
 	DBStatement = "db.statement"
 	// DBSystem indicates the database management system (DBMS) product being used.
 	DBSystem = "db.system"
+	// DBClientConnectionPoolName indicates the name of the database connection pool,
+	// unique within the instrumented application.
+	DBClientConnectionPoolName = "db.client.connection.pool.name"
 )
 
 // Available values for db.system.
@@ -38,6 +41,7 @@ const (
 	DBSystemConsulKV      = "consul"
 	DBSystemLevelDB       = "leveldb"
 	DBSystemBuntDB        = "buntdb"
+	DBSystemAerospike     = "aerospike"
 )
 
 // MicrosoftSQLServer tags.

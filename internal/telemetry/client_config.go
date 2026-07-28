@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -36,7 +37,8 @@ type ClientConfig struct {
 	LogsEnabled bool
 
 	// AgentlessURL is the full URL to the agentless telemetry endpoint. (optional)
-	// Defaults to https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
+	// Defaults to https://instrumentation-telemetry-intake.<DD_SITE>/api/v2/apmtelemetry,
+	// where <DD_SITE> is the configured Datadog site (DD_SITE), defaulting to datadoghq.com.
 	AgentlessURL string
 
 	// AgentURL is the url of the agent to send telemetry to. (optional)
@@ -86,9 +88,10 @@ type ClientConfig struct {
 }
 
 var (
-	// agentlessURL is the endpoint used to send telemetry in an agentless environment. It is
-	// also the default URL in case connecting to the agent URL fails.
-	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
+	// agentlessURLTemplate is the endpoint used to send telemetry in an agentless environment.
+	// The verb is replaced by the configured Datadog site (DD_SITE, defaulting to datadoghq.com).
+	// It is also the default URL in case connecting to the agent URL fails.
+	agentlessURLTemplate = "https://instrumentation-telemetry-intake.%s/api/v2/apmtelemetry"
 
 	// defaultHeartbeatInterval is the default interval at which the agent sends a heartbeat.
 	defaultHeartbeatInterval = time.Minute
@@ -165,7 +168,11 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	config.Debug = config.Debug || globalinternal.BoolEnv("DD_TELEMETRY_DEBUG", false)
 
 	if config.AgentlessURL == "" {
-		config.AgentlessURL = agentlessURL
+		site := "datadoghq.com"
+		if v := env.Get("DD_SITE"); v != "" {
+			site = v
+		}
+		config.AgentlessURL = fmt.Sprintf(agentlessURLTemplate, site)
 	}
 
 	if config.APIKey == "" {
@@ -279,7 +286,7 @@ func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (i
 	}
 
 	if len(endpoints) == 0 && !bazel.IsPayloadFilesModeEnabled() {
-		return internal.WriterConfig{}, fmt.Errorf("telemetry: could not build any endpoint, please provide an AgentURL or an APIKey with an optional AgentlessURL")
+		return internal.WriterConfig{}, errors.New("telemetry: could not build any endpoint, please provide an AgentURL or an APIKey with an optional AgentlessURL")
 	}
 
 	return internal.WriterConfig{

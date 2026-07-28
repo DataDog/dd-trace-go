@@ -93,6 +93,7 @@ Targets:
   apidiff/incompatible Show only breaking (incompatible) API changes for ddtrace/tracer
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
+  config-audit         Report which DD_* configs are migrated to internal/config
 ```
 
 **Direct Script Usage**:

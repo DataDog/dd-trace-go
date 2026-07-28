@@ -63,32 +63,35 @@ func (c *ciVisibilityCommon) SetError(options ...ErrorOption) {
 	// if there is an error, set the span with the error
 	if defaults.err != nil {
 		c.span.SetTag(ext.Error, defaults.err)
+		setCIVisibilitySpanTag(c.span, ext.ErrorMsg, defaults.err.Error())
 		return
 	}
 
 	// if there is no error, set the span with error the error info
 
 	// set the span with error:1
-	c.span.SetTag(ext.Error, true)
+	setCIVisibilitySpanTag(c.span, ext.Error, true)
 
 	// set the error type
 	if defaults.errType != "" {
-		c.span.SetTag(ext.ErrorType, defaults.errType)
+		setCIVisibilitySpanTag(c.span, ext.ErrorType, defaults.errType)
 	}
 
 	// set the error message
 	if defaults.message != "" {
-		c.span.SetTag(ext.ErrorMsg, defaults.message)
+		setCIVisibilitySpanTag(c.span, ext.ErrorMsg, defaults.message)
 	}
 
 	// set the error stacktrace
 	if defaults.callstack != "" {
-		c.span.SetTag(ext.ErrorStack, defaults.callstack)
+		setCIVisibilitySpanTag(c.span, ext.ErrorStack, defaults.callstack)
 	}
 }
 
 // SetTag sets a tag on the event.
-func (c *ciVisibilityCommon) SetTag(key string, value any) { c.span.SetTag(key, value) }
+func (c *ciVisibilityCommon) SetTag(key string, value any) {
+	setCIVisibilitySpanTag(c.span, key, value)
+}
 
 // GetTag retrieves a tag from the event.
 func (c *ciVisibilityCommon) GetTag(key string) (any, bool) {
@@ -111,8 +114,8 @@ func (c *ciVisibilityCommon) GetTag(key string) (any, bool) {
 // fillCommonTags adds common tags to the span options for CI visibility.
 func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
 	opts = append(opts, []tracer.StartSpanOption{
-		tracer.Tag(constants.Origin, constants.CIAppTestOrigin),
-		tracer.Tag(ext.ManualKeep, true),
+		ciVisibilityTag(constants.Origin, constants.CIAppTestOrigin),
+		ciVisibilityTag(ext.ManualKeep, true),
 	}...)
 
 	skipCIGitOSRuntimeTags := bazel.IsPayloadFilesModeEnabled()
@@ -132,12 +135,12 @@ func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
 				continue
 			}
 		}
-		opts = append(opts, tracer.Tag(k, v))
+		opts = append(opts, ciVisibilityTag(k, v))
 	}
 
 	// Apply CI metrics
 	for k, v := range utils.GetCIMetrics() {
-		opts = append(opts, tracer.Tag(k, v))
+		opts = append(opts, ciVisibilityTag(k, v))
 	}
 
 	return opts

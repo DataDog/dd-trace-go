@@ -80,6 +80,13 @@ func defaults(cfg *config) {
 		"x-datadog-trace-id":          {},
 		"x-datadog-parent-id":         {},
 		"x-datadog-sampling-priority": {},
+		// Credential-bearing headers
+		"authorization":       {},
+		"proxy-authorization": {},
+		"cookie":              {},
+		"set-cookie":          {},
+		"x-api-key":           {},
+		"x-auth-token":        {},
 	}
 }
 

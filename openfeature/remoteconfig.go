@@ -34,7 +34,7 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	}
 	if !attachProvider(provider) {
 		// This shouldn't happen since SubscribeProvider just told us tracer subscribed.
-		return nil, fmt.Errorf("failed to attach to tracer's RC subscription")
+		return nil, errors.New("failed to attach to tracer's RC subscription")
 	}
 	log.Debug("openfeature: attached to tracer's RC subscription")
 	return provider, nil
@@ -99,7 +99,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 // validateConfiguration performs basic validation on a serverConfiguration.
 func validateConfiguration(config *universalFlagsConfiguration) error {
 	if config == nil {
-		return fmt.Errorf("configuration is nil")
+		return errors.New("configuration is nil")
 	}
 
 	if config.Format != "SERVER" {

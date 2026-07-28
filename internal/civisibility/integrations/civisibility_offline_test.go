@@ -203,11 +203,12 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 				"id":   "settings-id",
 				"type": "ci_app_test_service_libraries_settings",
 				"attributes": map[string]any{
-					"require_git":                false,
-					"flaky_test_retries_enabled": true,
-					"impacted_tests_enabled":     true,
-					"known_tests_enabled":        false,
-					"tests_skipping":             false,
+					"require_git":                    false,
+					"coverage_report_upload_enabled": true,
+					"flaky_test_retries_enabled":     true,
+					"impacted_tests_enabled":         true,
+					"known_tests_enabled":            false,
+					"tests_skipping":                 false,
 					"test_management": map[string]any{
 						"enabled":                true,
 						"attempt_to_fix_retries": 2,
@@ -228,6 +229,7 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
 	t.Setenv("DD_GIT_BRANCH", "refs/heads/main")
 	t.Setenv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, "false")
+	t.Setenv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, "false")
 	t.Setenv(constants.CIVisibilityImpactedTestsDetectionEnabled, "false")
 	t.Setenv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, "false")
 	t.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "7")
@@ -249,6 +251,7 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 	}
 
 	assert.False(t, ciVisibilitySettings.FlakyTestRetriesEnabled)
+	assert.False(t, ciVisibilitySettings.CoverageReportUploadEnabled)
 	assert.False(t, ciVisibilitySettings.ImpactedTestsEnabled)
 	assert.False(t, ciVisibilitySettings.TestManagement.Enabled)
 	assert.False(t, ciVisibilitySettings.EarlyFlakeDetection.Enabled)

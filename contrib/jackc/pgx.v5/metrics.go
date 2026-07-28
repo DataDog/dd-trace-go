@@ -28,29 +28,42 @@ const (
 	NewConnsCount           = tracerPrefix + "pgx.pool.connections.new_conns"
 	MaxLifetimeDestroyCount = tracerPrefix + "pgx.pool.connections.max_lifetime_destroy"
 	MaxIdleDestroyCount     = tracerPrefix + "pgx.pool.connections.max_idle_destroy"
+	MaxConnLifetime         = tracerPrefix + "pgx.pool.connections.max_lifetime"
+	MaxConnIdleTime         = tracerPrefix + "pgx.pool.connections.max_idle_time"
+	MinConns                = tracerPrefix + "pgx.pool.connections.min_conns"
+	MinIdleConns            = tracerPrefix + "pgx.pool.connections.min_idle_conns"
+	HealthCheckPeriod       = tracerPrefix + "pgx.pool.connections.health_check_period"
+	EmptyAcquireWaitTime    = tracerPrefix + "pgx.pool.connections.empty_acquire_wait_time"
 )
 
 var interval = 10 * time.Second
 
 // pollPoolStats calls (*pgxpool).Stats on the pool at a predetermined interval. It pushes the pool Stats off to the statsd client.
-func pollPoolStats(statsd instrumentation.StatsdClient, pool *pgxpool.Pool) {
+func pollPoolStats(statsd instrumentation.StatsdClient, pool *pgxpool.Pool, tags []string) {
 	// TODO: Create stop condition for pgx on db.Close
 	instr.Logger().Debug("contrib/jackc/pgx.v5: Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
+	cfg := pool.Config()
 	for range time.NewTicker(interval).C {
 		instr.Logger().Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
 		stat := pool.Stat()
-		statsd.Gauge(AcquireCount, float64(stat.AcquireCount()), []string{}, 1)
-		statsd.Timing(AcquireDuration, stat.AcquireDuration(), []string{}, 1)
-		statsd.Gauge(AcquiredConns, float64(stat.AcquiredConns()), []string{}, 1)
-		statsd.Gauge(CanceledAcquireCount, float64(stat.CanceledAcquireCount()), []string{}, 1)
-		statsd.Gauge(ConstructingConns, float64(stat.ConstructingConns()), []string{}, 1)
-		statsd.Gauge(EmptyAcquireCount, float64(stat.EmptyAcquireCount()), []string{}, 1)
-		statsd.Gauge(IdleConns, float64(stat.IdleConns()), []string{}, 1)
-		statsd.Gauge(MaxConns, float64(stat.MaxConns()), []string{}, 1)
-		statsd.Gauge(TotalConns, float64(stat.TotalConns()), []string{}, 1)
-		statsd.Gauge(NewConnsCount, float64(stat.NewConnsCount()), []string{}, 1)
-		statsd.Gauge(MaxLifetimeDestroyCount, float64(stat.MaxLifetimeDestroyCount()), []string{}, 1)
-		statsd.Gauge(MaxIdleDestroyCount, float64(stat.MaxIdleDestroyCount()), []string{}, 1)
+		statsd.Gauge(AcquireCount, float64(stat.AcquireCount()), tags, 1)
+		statsd.Timing(AcquireDuration, stat.AcquireDuration(), tags, 1)
+		statsd.Gauge(AcquiredConns, float64(stat.AcquiredConns()), tags, 1)
+		statsd.Gauge(CanceledAcquireCount, float64(stat.CanceledAcquireCount()), tags, 1)
+		statsd.Gauge(ConstructingConns, float64(stat.ConstructingConns()), tags, 1)
+		statsd.Gauge(EmptyAcquireCount, float64(stat.EmptyAcquireCount()), tags, 1)
+		statsd.Gauge(IdleConns, float64(stat.IdleConns()), tags, 1)
+		statsd.Gauge(MaxConns, float64(stat.MaxConns()), tags, 1)
+		statsd.Gauge(TotalConns, float64(stat.TotalConns()), tags, 1)
+		statsd.Gauge(NewConnsCount, float64(stat.NewConnsCount()), tags, 1)
+		statsd.Gauge(MaxLifetimeDestroyCount, float64(stat.MaxLifetimeDestroyCount()), tags, 1)
+		statsd.Gauge(MaxIdleDestroyCount, float64(stat.MaxIdleDestroyCount()), tags, 1)
+		statsd.Timing(EmptyAcquireWaitTime, stat.EmptyAcquireWaitTime(), tags, 1)
+		statsd.Gauge(MaxConnLifetime, float64(cfg.MaxConnLifetime.Seconds()), tags, 1)
+		statsd.Gauge(MaxConnIdleTime, float64(cfg.MaxConnIdleTime.Seconds()), tags, 1)
+		statsd.Gauge(MinConns, float64(cfg.MinConns), tags, 1)
+		statsd.Gauge(MinIdleConns, float64(cfg.MinIdleConns), tags, 1)
+		statsd.Gauge(HealthCheckPeriod, float64(cfg.HealthCheckPeriod.Seconds()), tags, 1)
 	}
 }
 
@@ -58,6 +71,9 @@ func statsTags(c *config) []string {
 	tags := []string{}
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
+	}
+	if c.poolName != "" {
+		tags = append(tags, "pool_name:"+c.poolName)
 	}
 	return tags
 }
