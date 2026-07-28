@@ -120,7 +120,11 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 // was placed in ctx by [ContextWithSpan], it is used as the parent of the resulting span even if
 // the ChildOf option is passed. An active span discovered any other way — notably through
 // Orchestrion's goroutine-local storage fallback — is only used as the parent when the caller
-// did not pass ChildOf.
+// did not pass a non-nil ChildOf.
+//
+// ChildOf(nil) counts as unset rather than as a request for a root span, because
+// [StartSpanConfig.Parent] gives nil that meaning already and integrations pass the nil that
+// [Extract] returns when propagation is disabled. Such a call still gets the discovered parent.
 // +checklocksignore — Initialization time, span just created by StartSpan, not yet shared.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
 	// copy opts in case the caller reuses the slice in parallel
