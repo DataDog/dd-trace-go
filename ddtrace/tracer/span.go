@@ -843,6 +843,11 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 	if s.metaStruct == nil {
 		s.metaStruct = make(metaStructMap, 1)
 	}
+	if key == stacktrace.SpanKey {
+		if merged, ok := stacktrace.MergeSpanValues(s.metaStruct[key], v); ok {
+			v = merged
+		}
+	}
 	s.metaStruct[key] = v
 }
 

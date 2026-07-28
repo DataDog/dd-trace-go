@@ -290,7 +290,7 @@ When possible, prioritize creating or using internal implementations for repetit
 
 ### Recording security stack traces
 
-External Datadog instrumentation can use `(*instrumentation.Instrumentation).CaptureStackTrace` and `RecordStackTraces` to capture vulnerability stack traces and record them in a span's `_dd.stack` `meta_struct` entry. Callers must collect all stack traces associated with a span and record them together because each call replaces the previous `_dd.stack` value. This key is shared with AppSec stack traces, so writes from either producer can replace the other. Capture returns an invalid value when collection is disabled, the ID is empty, or no frames remain; recording also requires an unfinished local root span.
+External Datadog instrumentation can use `(*instrumentation.Instrumentation).CaptureStackTrace` and `RecordStackTraces` to capture vulnerability stack traces and record them in a span's `_dd.stack` `meta_struct` entry. The caller must apply its product-specific enablement configuration; the instrumentation API deliberately ignores AppSec stack-trace enablement. Repeated calls and calls from different producers are aggregated by event category and encoded when the span is serialized. Capture returns an invalid value when the ID is empty or no frames remain; recording also requires an unfinished local root span.
 
 ### Favor string concatenation and string builders over fmt.Sprintf and its variants
 

@@ -168,7 +168,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	op.SetSerializableTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {
-		op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(stacks...))
+		stacktrace.AddToSpan(op, stacks...)
 	}
 }
 

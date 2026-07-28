@@ -297,9 +297,10 @@ func (s StackTrace) Valid() bool {
 // CaptureStackTrace captures a vulnerability stack trace identified by id.
 // skip is the number of leading frames to omit after the internal stack-trace
 // filtering and depth limit have been applied. It returns the zero value when
-// stack-trace collection is disabled, id is empty, or no frames remain.
+// id is empty or no frames remain. The caller is responsible for applying its
+// product-specific stack-trace enablement configuration.
 func (i *Instrumentation) CaptureStackTrace(id string, skip int) StackTrace {
-	if !stacktrace.Enabled() || id == "" {
+	if id == "" {
 		return StackTrace{}
 	}
 
@@ -313,14 +314,13 @@ func (i *Instrumentation) CaptureStackTrace(id string, skip int) StackTrace {
 	return StackTrace{event: event}
 }
 
-// RecordStackTraces records traces in the unfinished local root span's
-// _dd.stack meta_struct entry. It replaces any value previously recorded under
-// that key, so all traces associated with the span must be supplied in one
-// call. The key is shared with AppSec stack traces; a later write by either
-// producer also replaces the earlier value. Zero-value traces, a nil span, and
-// disabled collection are ignored.
+// RecordStackTraces adds traces to the unfinished local root span's _dd.stack
+// meta_struct entry. Calls from IAST, AppSec, and other producers are aggregated
+// by event category and encoded when the span is serialized. Zero-value traces
+// and a nil span are ignored. The caller is responsible for product-specific
+// enablement.
 func (i *Instrumentation) RecordStackTraces(span *tracer.Span, traces ...StackTrace) {
-	if span == nil || !stacktrace.Enabled() {
+	if span == nil {
 		return
 	}
 
@@ -338,5 +338,5 @@ func (i *Instrumentation) RecordStackTraces(span *tracer.Span, traces ...StackTr
 	if root == nil {
 		return
 	}
-	stacktrace.AddToSpan(root, events...)
+	stacktrace.AddToSpanUnconditionally(root, events...)
 }

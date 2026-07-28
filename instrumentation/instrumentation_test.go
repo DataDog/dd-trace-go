@@ -9,6 +9,8 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -53,18 +55,47 @@ func TestInstrumentationRecordStackTraces(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, []*stacktrace.Event{first.event, second.event}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
 
+	exploit := stacktrace.NewEvent(stacktrace.ExploitEvent, stacktrace.WithID("exploit"))
+	stacktrace.AddToSpanUnconditionally(root, exploit)
 	third := instr.CaptureStackTrace("third", 0)
 	instr.RecordStackTraces(child, third)
+
 	eventsByCategory = root.AsMap()[stacktrace.SpanKey].(map[string][]*stacktrace.Event)
-	require.Equal(t, []*stacktrace.Event{third.event}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
+	require.Equal(t, []*stacktrace.Event{first.event, second.event, third.event}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
+	require.Equal(t, []*stacktrace.Event{exploit}, eventsByCategory[string(stacktrace.ExploitEvent)])
 }
 
-func TestInstrumentationStackTraceDisabled(t *testing.T) {
+func TestInstrumentationRecordStackTracesConcurrent(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	instr := &Instrumentation{}
+	span := tracer.StartSpan("span")
+	const count = 32
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			instr.RecordStackTraces(span, StackTrace{event: &stacktrace.Event{
+				Category: stacktrace.VulnerabilityEvent,
+				ID:       strconv.Itoa(i),
+			}})
+		}()
+	}
+	wg.Wait()
+
+	eventsByCategory := span.AsMap()[stacktrace.SpanKey].(map[string][]*stacktrace.Event)
+	require.Len(t, eventsByCategory[string(stacktrace.VulnerabilityEvent)], count)
+}
+
+func TestInstrumentationStackTraceIgnoresAppSecDisablement(t *testing.T) {
 	if os.Getenv("DD_TEST_SUBPROCESS") != "1" {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestInstrumentationStackTraceDisabled$")
+		cmd := exec.Command(os.Args[0], "-test.run=^TestInstrumentationStackTraceIgnoresAppSecDisablement$")
 		cmd.Env = append(os.Environ(),
 			"DD_TEST_SUBPROCESS=1",
 			"DD_APPSEC_STACK_TRACE_ENABLED=false",
+			"DD_APPSEC_MAX_STACK_TRACE_DEPTH=16",
 		)
 		output, err := cmd.CombinedOutput()
 		require.NoError(t, err, string(output))
@@ -78,11 +109,14 @@ func TestInstrumentationStackTraceDisabled(t *testing.T) {
 	instr := &Instrumentation{}
 	span := tracer.StartSpan("span")
 	captured := instr.CaptureStackTrace("stack-id", 0)
-	instr.RecordStackTraces(span, StackTrace{event: &stacktrace.Event{}})
+	instr.RecordStackTraces(span, captured)
 
-	require.False(t, captured.Valid())
-	require.Nil(t, captured.event)
-	require.NotContains(t, span.AsMap(), stacktrace.SpanKey)
+	require.True(t, captured.Valid())
+	value, ok := span.AsMap()[stacktrace.SpanKey]
+	require.True(t, ok)
+	eventsByCategory, ok := value.(map[string][]*stacktrace.Event)
+	require.True(t, ok)
+	require.Equal(t, []*stacktrace.Event{captured.event}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
 }
 
 func TestInstrumentationRecordStackTracesIgnoresEmptyInput(t *testing.T) {

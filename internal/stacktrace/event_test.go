@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
@@ -41,6 +42,42 @@ func TestEventToSpan(t *testing.T) {
 	require.Len(t, eventsCat, 1)
 
 	require.Equal(t, *event2, *eventsCat[0])
+}
+
+func TestAddToSpanUnconditionally(t *testing.T) {
+	wasEnabled := enabled
+	enabled = false
+	t.Cleanup(func() { enabled = wasEnabled })
+
+	event := NewEvent(VulnerabilityEvent, WithID("id"))
+	span := trace.TestTagSetter{}
+	AddToSpan(span, event)
+	require.Empty(t, span)
+	AddToSpanUnconditionally(span)
+	require.Empty(t, span)
+
+	AddToSpanUnconditionally(span, event)
+	value, ok := span[SpanKey].(internal.MetaStructValue)
+	require.True(t, ok)
+	require.Equal(t, map[string][]*Event{"vulnerability": {event}}, value.Value)
+}
+
+func TestMergeSpanValues(t *testing.T) {
+	existing := NewEvent(VulnerabilityEvent, WithID("existing"))
+	additional := NewEvent(VulnerabilityEvent, WithID("additional"))
+	exploit := NewEvent(ExploitEvent, WithID("exploit"))
+	current := getSpanValue(existing).Value
+	next := getSpanValue(additional, exploit).Value
+
+	merged, ok := MergeSpanValues(current, next)
+	require.True(t, ok)
+	require.Equal(t, map[string][]*Event{
+		"vulnerability": {existing, additional},
+		"exploit":       {exploit},
+	}, merged)
+
+	_, ok = MergeSpanValues(current, "invalid")
+	require.False(t, ok)
 }
 
 func TestMsgPackSerialization(t *testing.T) {

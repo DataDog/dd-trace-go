@@ -89,7 +89,53 @@ func GetSpanValue(events ...*Event) any {
 	if !Enabled() {
 		return nil
 	}
+	return getSpanValue(events...)
+}
 
+// AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
+func AddToSpan(span trace.TagSetter, events ...*Event) {
+	if !Enabled() {
+		return
+	}
+	AddToSpanUnconditionally(span, events...)
+}
+
+// AddToSpanUnconditionally adds the events to the given span's root span
+// without consulting the AppSec stack-trace configuration. The caller is
+// responsible for applying its product-specific enablement configuration.
+func AddToSpanUnconditionally(span trace.TagSetter, events ...*Event) {
+	if len(events) == 0 {
+		return
+	}
+	value := getSpanValue(events...)
+	type rooter interface {
+		Root() trace.TagSetter
+	}
+	if lrs, ok := span.(rooter); ok {
+		span = lrs.Root()
+	}
+	span.SetTag(SpanKey, value)
+}
+
+// MergeSpanValues combines two _dd.stack meta_struct values. It returns false
+// when either value does not have the stack-trace event map representation.
+// The caller must synchronize access to current.
+func MergeSpanValues(current, next any) (any, bool) {
+	currentEvents, ok := current.(map[string][]*Event)
+	if !ok {
+		return nil, false
+	}
+	nextEvents, ok := next.(map[string][]*Event)
+	if !ok {
+		return nil, false
+	}
+	for category, events := range nextEvents {
+		currentEvents[category] = append(currentEvents[category], events...)
+	}
+	return currentEvents, true
+}
+
+func getSpanValue(events ...*Event) internal.MetaStructValue {
 	groupByCategory := make(map[string][]*Event, 3)
 	for _, event := range events {
 		if _, ok := groupByCategory[string(event.Category)]; !ok {
@@ -98,18 +144,5 @@ func GetSpanValue(events ...*Event) any {
 		}
 		groupByCategory[string(event.Category)] = append(groupByCategory[string(event.Category)], event)
 	}
-
 	return internal.MetaStructValue{Value: groupByCategory}
-}
-
-// AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
-func AddToSpan(span trace.TagSetter, events ...*Event) {
-	value := GetSpanValue(events...)
-	type rooter interface {
-		Root() trace.TagSetter
-	}
-	if lrs, ok := span.(rooter); ok {
-		span = lrs.Root()
-	}
-	span.SetTag(SpanKey, value)
 }
