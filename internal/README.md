@@ -59,6 +59,7 @@ The `telemetry/log` subpackage also provides an explicit, opt-in API for surfaci
 
 * **`ReportError(msg, err, opts...)`**: for swallowed-error sites that want the error reported.
 * **`ReportPanic(msg, recovered)`**: for `recover()` sites that want the panic reported.
-* **`constantlogmsg` analyzer** (`telemetry/log/analyzer/`): `go vet`-compatible pass that rejects non-constant message arguments on all protected log functions (`ReportError`/`ReportPanic`, `telemetrylog.Debug/Warn/Error`, and `internal/log.Error/Warn` for their own local dedup-key hygiene), enforcing the dedup-key and PII guarantees.
+* **`LogAndReportError(msg, err, opts...)`** / **`LogAndReportPanic(msg, recovered)`**: like `ReportError`/`ReportPanic`, but also log `msg` locally via `internal/log.Error` — for call sites that want both a local log line and a report without duplicating the message.
+* **`constantlogmsg` analyzer** (`telemetry/log/analyzer/`): `go vet`-compatible pass that rejects non-constant message arguments on all protected log functions (`ReportError`/`ReportPanic`, `LogAndReportError`/`LogAndReportPanic`, `telemetrylog.Debug/Warn/Error`, and `internal/log.Error/Warn` for their own local dedup-key hygiene), enforcing the dedup-key and PII guarantees.
 
 Adopting this in an existing `log.Error` call site means calling `ReportError`/`ReportPanic` alongside it, one call site at a time — there's no table or hook that changes behavior repo-wide.

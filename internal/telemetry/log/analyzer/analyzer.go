@@ -17,15 +17,18 @@
 //   - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.(*Logger).Error
 //   - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportError
 //   - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportPanic
+//   - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.LogAndReportError
+//   - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.LogAndReportPanic
 //
 // The internal/log entries and the internal/telemetry/log entries are checked
 // for different reasons: internal/log.Error/Warn never reach telemetry — the
 // constant-message requirement there only protects internal/log's own local
 // rate-limiting/aggregation dedup key. The internal/telemetry/log entries
-// (including ReportError/ReportPanic, the only way an SDK error reaches Error
-// Tracking — there is no automatic forwarding from internal/log) additionally
-// use the constant message as telemetry's own dedup key, where a non-constant
-// value also risks leaking PII.
+// (including ReportError/ReportPanic and their LogAndReport* counterparts,
+// the only ways an SDK error reaches Error Tracking — there is no automatic
+// forwarding from internal/log) additionally use the constant message as
+// telemetry's own dedup key, where a non-constant value also risks leaking
+// PII.
 //
 // Because the package-level functions (Debug/Warn/Error) and their Logger
 // method counterparts share the same name and package path, a single FuncSpec
@@ -57,10 +60,12 @@ import (
 const doc = `constantlogmsg enforces that the message argument of SDK logging functions is a constant string.
 
 The message argument of log.Error, log.Warn, telemetrylog.Debug/Warn/Error
-(package-level and Logger methods), telemetrylog.ReportError, and
-telemetrylog.ReportPanic must be a compile-time constant string literal. Using
-a non-constant first argument (fmt.Sprintf result, variable, err.Error() call,
-etc.) breaks telemetry dedup and risks leaking PII to Error Tracking.
+(package-level and Logger methods), telemetrylog.ReportError,
+telemetrylog.ReportPanic, telemetrylog.LogAndReportError, and
+telemetrylog.LogAndReportPanic must be a compile-time constant string literal.
+Using a non-constant first argument (fmt.Sprintf result, variable,
+err.Error() call, etc.) breaks telemetry dedup and risks leaking PII to Error
+Tracking.
 
 This check is equivalent to the telemetryLogConstantMessage ruleguard rule in
 rules/telemetry_rules.go, extended to cover internal/log and the helper
@@ -86,6 +91,10 @@ var DefaultFuncs = []FuncSpec{
 	// internal/telemetry/log — explicit helpers for non-log.Error call sites.
 	{PkgPath: telemetryLogPkg, FuncName: "ReportError", MsgArgIndex: 0},
 	{PkgPath: telemetryLogPkg, FuncName: "ReportPanic", MsgArgIndex: 0}, // func(msg, recovered)
+
+	// internal/telemetry/log — combined local-log + report helpers.
+	{PkgPath: telemetryLogPkg, FuncName: "LogAndReportError", MsgArgIndex: 0},
+	{PkgPath: telemetryLogPkg, FuncName: "LogAndReportPanic", MsgArgIndex: 0}, // func(msg, recovered)
 }
 
 // DefaultSkipPkgs is the set of package paths skipped by the default Analyzer.

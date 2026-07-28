@@ -18,7 +18,11 @@
 // error or panic surfaced in Error Tracking should call
 // [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportError] or
 // [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportPanic]
-// explicitly at that call site.
+// explicitly at that call site. A call site that wants both a local log line
+// and a report, without duplicating the message, should use
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.LogAndReportError]
+// or [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.LogAndReportPanic]
+// instead.
 package log
 
 import (

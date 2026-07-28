@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -98,6 +99,122 @@ func TestReportPanic_NonErrorRecovered(t *testing.T) {
 		return true
 	})
 	assert.True(t, found, "recovered_type attribute must be present")
+}
+
+func TestLogAndReportError_BasicFlow(t *testing.T) {
+	var captured telemetry.Record
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	LogAndReportError("sdk error: initialization failed", errors.New("sensitive detail"))
+	internallog.Flush()
+
+	// Telemetry side matches ReportError's existing behavior.
+	assert.Equal(t, "sdk error: initialization failed", captured.Message)
+	found := false
+	captured.Attrs(func(a slog.Attr) bool {
+		if a.Key == "error" {
+			found = true
+			assert.NotContains(t, a.Value.String(), "sensitive detail")
+		}
+		return true
+	})
+	assert.True(t, found, "error attribute must be present")
+
+	// Local log side got the same constant message, with full error detail.
+	logs := recorder.Logs()
+	assert.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "sdk error: initialization failed: sensitive detail")
+}
+
+func TestLogAndReportError_NilError(t *testing.T) {
+	var captured telemetry.Record
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	LogAndReportError("sdk defect with no error", nil)
+	internallog.Flush()
+
+	assert.Equal(t, "sdk defect with no error", captured.Message)
+
+	logs := recorder.Logs()
+	assert.Len(t, logs, 1)
+	// The format string stays msg+": %s" regardless of err's nil-ness, so the
+	// local dedup key doesn't fragment based on a runtime nil check.
+	assert.Contains(t, logs[0], "sdk defect with no error: <nil>")
+}
+
+func TestLogAndReportPanic_ErrorRecovered(t *testing.T) {
+	var captured telemetry.Record
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	panicErr := errors.New("nil pointer deref in secret handler")
+	LogAndReportPanic("unexpected panic in goroutine", panicErr)
+	internallog.Flush()
+
+	assert.Equal(t, "unexpected panic in goroutine", captured.Message)
+	found := false
+	captured.Attrs(func(a slog.Attr) bool {
+		if a.Key == "error" {
+			found = true
+			assert.NotContains(t, a.Value.String(), "secret")
+		}
+		return true
+	})
+	assert.True(t, found)
+
+	logs := recorder.Logs()
+	assert.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "unexpected panic in goroutine: nil pointer deref in secret handler")
+}
+
+func TestLogAndReportPanic_NonErrorRecovered(t *testing.T) {
+	var captured telemetry.Record
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	LogAndReportPanic("unexpected panic in goroutine", "a string panic value")
+	internallog.Flush()
+
+	assert.Equal(t, "unexpected panic in goroutine", captured.Message)
+	found := false
+	captured.Attrs(func(a slog.Attr) bool {
+		if a.Key == "recovered_type" {
+			found = true
+			assert.Equal(t, "string", a.Value.String())
+		}
+		return true
+	})
+	assert.True(t, found, "recovered_type attribute must be present")
+
+	logs := recorder.Logs()
+	assert.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "unexpected panic in goroutine: a string panic value")
 }
 
 // BenchmarkReportError measures the cost of the explicit ReportError helper,
