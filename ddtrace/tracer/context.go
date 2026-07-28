@@ -157,6 +157,10 @@ func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
 	if sessionID := s.context.trace.propagatingTag(keyPropagatedLLMObsSessionID); sessionID != "" {
 		propagatedLLMObs.SessionID = sessionID
 	}
+	if pagentID := s.context.trace.propagatingTag(keyPropagatedLLMObsPAgentSpanID); pagentID != "" {
+		propagatedLLMObs.ParentAgentSpanID = pagentID
+		propagatedLLMObs.ParentAgentName = s.context.trace.propagatingTag(keyPropagatedLLMObsPAgentName)
+	}
 	return propagatedLLMObs
 }
 
