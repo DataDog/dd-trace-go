@@ -4,6 +4,21 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package log provides logging utilities for the tracer.
+//
+// # Constant message convention
+//
+// [Error] aggregates messages by their format string (used as the dedup key)
+// and flushes them periodically. For this aggregation to behave predictably,
+// the first argument to [Error] and [Warn] MUST be a compile-time constant
+// string — dynamic detail belongs in the variadic args, not the format string
+// itself. The `constantlogmsg` analyzer (internal/telemetry/log/analyzer)
+// enforces this.
+//
+// This package does not report to telemetry itself. SDK code that wants an
+// error or panic surfaced in Error Tracking should call
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportError] or
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportPanic]
+// explicitly at that call site.
 package log
 
 import (
