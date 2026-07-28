@@ -141,7 +141,7 @@ jobs: {
                     {
                         name: "Get Datadog credentials",
                         id: "dd-sts",
-                        uses: "DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75",
+                        uses: "DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2",
                         with: {
                             policy: "dd-trace-go",
                         },
@@ -156,7 +156,7 @@ jobs: {
                     },
                     {
                         name: "Setup Go"
-                        uses: "actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16", // v6.5.0
+                        uses: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e", // v7.0.0
                         with: {
                             "go-version": "stable",
                             "check-latest": true,
