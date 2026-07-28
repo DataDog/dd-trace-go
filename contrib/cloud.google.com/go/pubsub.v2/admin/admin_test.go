@@ -3,23 +3,23 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-package pubsubtrace
+package admin
 
 import (
 	"testing"
 
-	pubsubpb "cloud.google.com/go/pubsub/apiv1/pubsubpb"
+	"cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestResolveAdminResourceV1(t *testing.T) {
+func TestResolveAdminResource(t *testing.T) {
 	tests := []struct {
 		name string
 		req  any
 		want string
 		ok   bool
 	}{
-		// PublisherClient (topics)
+		// TopicAdminClient
 		{"Topic", &pubsubpb.Topic{Name: "projects/p/topics/t"}, "projects/p/topics/t", true},
 		{"UpdateTopic", &pubsubpb.UpdateTopicRequest{Topic: &pubsubpb.Topic{Name: "projects/p/topics/t"}}, "projects/p/topics/t", true},
 		{"GetTopic", &pubsubpb.GetTopicRequest{Topic: "projects/p/topics/t"}, "projects/p/topics/t", true},
@@ -29,7 +29,7 @@ func TestResolveAdminResourceV1(t *testing.T) {
 		{"DeleteTopic", &pubsubpb.DeleteTopicRequest{Topic: "projects/p/topics/t"}, "projects/p/topics/t", true},
 		{"DetachSubscription", &pubsubpb.DetachSubscriptionRequest{Subscription: "projects/p/subscriptions/s"}, "projects/p/subscriptions/s", true},
 
-		// SubscriberClient (subscriptions + snapshots)
+		// SubscriptionAdminClient
 		{"Subscription", &pubsubpb.Subscription{Name: "projects/p/subscriptions/s"}, "projects/p/subscriptions/s", true},
 		{"GetSubscription", &pubsubpb.GetSubscriptionRequest{Subscription: "projects/p/subscriptions/s"}, "projects/p/subscriptions/s", true},
 		{"UpdateSubscription", &pubsubpb.UpdateSubscriptionRequest{Subscription: &pubsubpb.Subscription{Name: "projects/p/subscriptions/s"}}, "projects/p/subscriptions/s", true},
@@ -63,9 +63,14 @@ func TestResolveAdminResourceV1(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := resolveAdminResourceV1(tt.req)
+			got, ok := resolveAdminResource(tt.req)
 			assert.Equal(t, tt.ok, ok)
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestAdminMethodName(t *testing.T) {
+	assert.Equal(t, "CreateTopic", adminMethodName("/google.pubsub.v1.Publisher/CreateTopic"))
+	assert.Equal(t, "CreateTopic", adminMethodName("CreateTopic"))
 }

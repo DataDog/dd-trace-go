@@ -21,7 +21,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace"
+	"github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/admin"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 )
@@ -42,7 +43,7 @@ func setupAdmin(t *testing.T) (context.Context, mocktracer.Tracer, *vkit.Publish
 	// installing the interceptor here traces their admin operations.
 	conn, err := grpc.NewClient(srv.Addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(pubsubtrace.UnaryAdminInterceptorV1()),
+		grpc.WithChainUnaryInterceptor(admin.UnaryAdminInterceptor()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, conn.Close()) })
@@ -272,7 +273,7 @@ func TestTraceAdminWithService(t *testing.T) {
 
 	conn, err := grpc.NewClient(srv.Addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(pubsubtrace.UnaryAdminInterceptorV1(WithService("my-admin-service"))),
+		grpc.WithChainUnaryInterceptor(admin.UnaryAdminInterceptor(WithService("my-admin-service"))),
 	)
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, conn.Close()) }()

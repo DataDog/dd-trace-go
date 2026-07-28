@@ -3,47 +3,68 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-// v1 admin request→resource mapping. Uses cloud.google.com/go/pubsub/apiv1/pubsubpb,
-// which is distinct from v2's pubsubpb (see admin.go).
-
-package pubsubtrace
+// Package admin provides a gRPC unary client interceptor that traces Google
+// Cloud Pub/Sub v1 admin operations.
+package admin
 
 import (
+	"context"
+	"strings"
 	"sync"
 
 	pubsubpb "cloud.google.com/go/pubsub/apiv1/pubsubpb"
 	"google.golang.org/grpc"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-// UnaryAdminInterceptorV1 returns a grpc.UnaryClientInterceptor that traces the admin
-// operations of the cloud.google.com/go/pubsub (v1) GAPIC clients (PublisherClient,
-// SubscriberClient, SchemaClient).
+var (
+	tracerOnce sync.Once
+	pstrace    *pubsubtrace.Tracer
+)
+
+func defaultTracer() *pubsubtrace.Tracer {
+	tracerOnce.Do(func() {
+		component := instrumentation.PackageGCPPubsub
+		pstrace = pubsubtrace.NewTracer(instrumentation.Load(component), component)
+	})
+	return pstrace
+}
+
+// UnaryAdminInterceptor returns a grpc.UnaryClientInterceptor that traces the
+// admin operations of the cloud.google.com/go/pubsub (v1) GAPIC clients
+// (PublisherClient, SubscriberClient, SchemaClient).
 //
 // When constructing admin clients with option.WithGRPCConn, install this
 // interceptor on the dial that creates the connection (WithGRPCDialOption on
 // the client constructor is ignored in that case).
-func UnaryAdminInterceptorV1(opts ...Option) grpc.UnaryClientInterceptor {
-	return defaultTracerV1().unaryAdminInterceptor(resolveAdminResourceV1, opts...)
+func UnaryAdminInterceptor(opts ...pubsubtrace.Option) grpc.UnaryClientInterceptor {
+	tr := defaultTracer()
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, callOpts ...grpc.CallOption) error {
+		resourcePath, ok := resolveAdminResource(req)
+		if !ok {
+			return invoker(ctx, method, req, reply, cc, callOpts...)
+		}
+		ctx, finish := tr.TraceAdmin(ctx, adminMethodName(method), resourcePath, opts...)
+		err := invoker(ctx, method, req, reply, cc, callOpts...)
+		finish(err)
+		return err
+	}
 }
 
-var (
-	v1TracerOnce sync.Once
-	v1Tracer     *Tracer
-)
-
-func defaultTracerV1() *Tracer {
-	v1TracerOnce.Do(func() {
-		component := instrumentation.PackageGCPPubsub
-		v1Tracer = NewTracer(instrumentation.Load(component), component)
-	})
-	return v1Tracer
+// adminMethodName returns the RPC method name from a gRPC full-method string, e.g.
+// "/google.pubsub.v1.Publisher/CreateTopic" -> "CreateTopic".
+func adminMethodName(fullMethod string) string {
+	if i := strings.LastIndex(fullMethod, "/"); i >= 0 {
+		return fullMethod[i+1:]
+	}
+	return fullMethod
 }
 
-// resolveAdminResourceV1 maps a v1 admin request to its resource path.
+// resolveAdminResource maps a v1 admin request to its resource path.
 // ok is false for non-admin requests (Publish, Pull, Acknowledge, ModifyAckDeadline, IAM, ...).
-func resolveAdminResourceV1(req any) (resourcePath string, ok bool) {
+func resolveAdminResource(req any) (resourcePath string, ok bool) {
 	switch r := req.(type) {
 	// PublisherClient (topics)
 	case *pubsubpb.Topic:

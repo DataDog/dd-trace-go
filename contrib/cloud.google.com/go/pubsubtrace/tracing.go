@@ -179,8 +179,8 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 }
 
 // TraceAdmin starts a span for a Pub/Sub admin operation (e.g. CreateTopic, ListSubscriptions, DeleteSchema).
-// It is driven by the unary client interceptor in admin.go / admin_v1.go, which is the single source of
-// truth for the (method, resourcePath) mapping across both the manual and orchestrion instrumentation.
+// Version-specific unary client interceptors in the pubsub.v1 and pubsub.v2 contrib modules call this
+// after mapping the request to a resource path.
 func (tr *Tracer) TraceAdmin(ctx context.Context, method string, resourcePath string, opts ...Option) (context.Context, func(err error)) {
 	cfg := tr.defaultConfig()
 	for _, opt := range opts {
