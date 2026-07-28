@@ -11,10 +11,53 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 )
+
+type clientIPState uint8
+
+const (
+	clientIPAbsent clientIPState = iota
+	clientIPValid
+	clientIPInvalid
+)
+
+// ClientIPResolution is an authoritative client IP result. Its zero value means absent.
+type ClientIPResolution struct {
+	addr  netip.Addr
+	state clientIPState
+}
+
+// NewClientIPResolution returns an authoritative valid client IP result.
+func NewClientIPResolution(addr netip.Addr) ClientIPResolution {
+	if !addr.IsValid() || addr.Zone() != "" {
+		return InvalidClientIPResolution()
+	}
+	return ClientIPResolution{addr: addr.Unmap(), state: clientIPValid}
+}
+
+// InvalidClientIPResolution returns an authoritative invalid client IP result.
+func InvalidClientIPResolution() ClientIPResolution {
+	return ClientIPResolution{state: clientIPInvalid}
+}
+
+func (ip ClientIPResolution) value() (netip.Addr, bool) {
+	switch ip.state {
+	case clientIPAbsent:
+		return netip.Addr{}, false
+	case clientIPValid:
+		return ip.addr, true
+	case clientIPInvalid:
+		return netip.Addr{}, true
+	default:
+		return netip.Addr{}, false
+	}
+}
 
 // PseudoRequest represents the pseudo headers of an HTTP request.
 type PseudoRequest struct {
@@ -24,6 +67,7 @@ type PseudoRequest struct {
 	Method     string
 	RemoteAddr string
 	Headers    map[string][]string
+	ClientIP   ClientIPResolution
 }
 
 func (pr PseudoRequest) toNetHTTP(ctx context.Context) (*http.Request, error) {
@@ -35,6 +79,11 @@ func (pr PseudoRequest) toNetHTTP(ctx context.Context) (*http.Request, error) {
 	var tlsState *tls.ConnectionState
 	if pr.Scheme == "https" {
 		tlsState = &tls.ConnectionState{}
+	}
+
+	clientIP, authoritative := pr.ClientIP.value()
+	if authoritative {
+		ctx = httpsec.ContextWithClientIPOverride(ctx, clientIP)
 	}
 
 	return (&http.Request{
