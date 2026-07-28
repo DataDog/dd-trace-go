@@ -11,6 +11,8 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/export"
 )
 
@@ -130,13 +133,59 @@ func decode(t *testing.T, b []byte) map[string]any {
 }
 
 // firstReq decodes a span request body — a JSON array of push-span-events
-// requests — and returns its first element.
+// envelopes, one per span — and returns its first element.
 func firstReq(t *testing.T, b []byte) map[string]any {
 	t.Helper()
 	var arr []map[string]any
 	require.NoError(t, json.Unmarshal(b, &arr))
 	require.NotEmpty(t, arr)
 	return arr[0]
+}
+
+// allSpans flattens every span across a request body's envelopes, in order. Each
+// envelope carries exactly one span (see transport.NewPushSpanEventsRequests), so
+// this is the per-request span list.
+func allSpans(t *testing.T, b []byte) []map[string]any {
+	t.Helper()
+	var arr []map[string]any
+	require.NoError(t, json.Unmarshal(b, &arr))
+	spans := make([]map[string]any, 0, len(arr))
+	for _, env := range arr {
+		for _, s := range env["spans"].([]any) {
+			spans = append(spans, s.(map[string]any))
+		}
+	}
+	return spans
+}
+
+// allMetrics returns the eval metrics in an eval-metric request body, in order.
+func allMetrics(t *testing.T, b []byte) []map[string]any {
+	t.Helper()
+	raw := decode(t, b)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, m := range raw {
+		out = append(out, m.(map[string]any))
+	}
+	return out
+}
+
+func firstMetric(t *testing.T, b []byte) map[string]any {
+	t.Helper()
+	metrics := allMetrics(t, b)
+	require.NotEmpty(t, metrics)
+	return metrics[0]
+}
+
+// tagsOf returns a span's tags as a string slice.
+func tagsOf(t *testing.T, span map[string]any) []string {
+	t.Helper()
+	raw, ok := span["tags"].([]any)
+	require.True(t, ok, "span has no tags")
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		out = append(out, v.(string))
+	}
+	return out
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -170,7 +219,7 @@ func TestSpanWireShape_Contract(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	span := allSpans(t, fake.captured()[0].body)[0]
 	assert.ElementsMatch(t, []string{
 		"trace_id", "span_id", "parent_id", "session_id", "name", "service",
 		"start_ns", "duration", "status", "meta", "metrics", "tags", "span_links", "_dd",
@@ -254,10 +303,20 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	assert.Equal(t, "ok", span["status"])
 
 	meta := span["meta"].(map[string]any)
-	assert.Equal(t, "llm", meta["span"].(map[string]any)["kind"])         // nested meta.span.kind (Trajectory + intake schema)
-	assert.Equal(t, "llm", meta["span.kind"])                             // flat key (live-tracer parity)
-	assert.Equal(t, "hello <b>", meta["input"].(map[string]any)["value"]) // not HTML-escaped
+	assert.Equal(t, "llm", meta["span"].(map[string]any)["kind"]) // nested meta.span.kind (Trajectory + intake schema)
+	assert.Equal(t, "llm", meta["span.kind"])                     // flat key (live-tracer parity)
+	assert.Equal(t, "hello <b>", meta["input"].(map[string]any)["value"])
 	assert.Equal(t, "hi", meta["output"].(map[string]any)["value"])
+
+	// Assert non-escaping on the raw bytes, not the decoded value: json.Unmarshal
+	// reverses the escaping, so the assertions above pass whether or not
+	// SetEscapeHTML was flipped back on. json.Marshal escapes HTML by default, so
+	// its output is exactly the form the body must not contain.
+	raw := string(reqs[0].body)
+	assert.Contains(t, raw, `"value":"hello <b>"`, "input must reach the wire unescaped")
+	escaped, err := json.Marshal("hello <b>")
+	require.NoError(t, err)
+	assert.NotContains(t, raw, string(escaped), "HTML escaping must stay off")
 
 	dd := span["_dd"].(map[string]any)
 	assert.Equal(t, "222", dd["span_id"])
@@ -268,11 +327,143 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	assert.Equal(t, "999", link["span_id"]) // string span-link IDs
 	assert.Equal(t, "888", link["trace_id"])
 
-	tags := span["tags"].([]any)
+	tags := tagsOf(t, span)
 	assert.Contains(t, tags, "ml_app:myapp")
 	assert.Contains(t, tags, "env:prod")
 	assert.Contains(t, tags, "version:1.2.3")
 	assert.Contains(t, tags, "service:svc") // service carried as a tag (intake reads it there)
+	// Facets the live path stamps on every span; without them a group-by mixing
+	// live and exported spans splits into a tagged and an untagged bucket.
+	assert.Contains(t, tags, "source:integration")
+	assert.Contains(t, tags, "language:go")
+	assert.Contains(t, tags, "error:0")
+	assert.True(t, slices.ContainsFunc(tags, func(s string) bool {
+		return strings.HasPrefix(s, "ddtrace.version:") && s != "ddtrace.version:"
+	}), "expected a non-empty ddtrace.version tag, got %v", tags)
+}
+
+// TestSubmitSpans_ErrorSpanShapeMatchesLive locks the meta and tags an errored
+// exported span carries. The live path emits the error.message/type/stack triple
+// and an error:1 tag alongside error_type; an exported error span that carried
+// only status:"error" would be invisible to every error-rate query built on the
+// live shape.
+func TestSubmitSpans_ErrorSpanShapeMatchesLive(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
+		Status:       export.StatusError,
+		ErrorMessage: "upstream refused",
+		ErrorType:    "*errors.errorString",
+		ErrorStack:   "goroutine 1 [running]",
+	}})
+	require.NoError(t, err)
+
+	span := allSpans(t, fake.captured()[0].body)[0]
+	assert.Equal(t, "error", span["status"])
+	meta := span["meta"].(map[string]any)
+	assert.Equal(t, "upstream refused", meta["error.message"])
+	assert.Equal(t, "*errors.errorString", meta["error.type"])
+	assert.Equal(t, "goroutine 1 [running]", meta["error.stack"])
+
+	tags := tagsOf(t, span)
+	assert.Contains(t, tags, "error:1")
+	assert.Contains(t, tags, "error_type:*errors.errorString")
+}
+
+// TestSubmitSpans_ErrorMessageFallsBackToStatusMessage: a caller that only filled
+// StatusMessage still gets an error.message rather than an empty one.
+func TestSubmitSpans_ErrorMessageFallsBackToStatusMessage(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
+		Status: export.StatusError, StatusMessage: "boom",
+	}})
+	require.NoError(t, err)
+
+	span := allSpans(t, fake.captured()[0].body)[0]
+	assert.Equal(t, "boom", span["meta"].(map[string]any)["error.message"])
+}
+
+// TestSubmitSpans_OKSpanHasNoErrorMeta: the error triple is error-only, so an ok
+// span must not gain three empty meta keys.
+func TestSubmitSpans_OKSpanHasNoErrorMeta(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", Kind: export.KindLLM, ErrorMessage: "ignored",
+	}})
+	require.NoError(t, err)
+
+	meta := allSpans(t, fake.captured()[0].body)[0]["meta"].(map[string]any)
+	assert.NotContains(t, meta, "error.message")
+	assert.NotContains(t, meta, "error.type")
+	assert.NotContains(t, meta, "error.stack")
+	assert.Contains(t, tagsOf(t, allSpans(t, fake.captured()[0].body)[0]), "error:0")
+}
+
+// TestSubmitSpans_ModelNormalizationMatchesLive: the live path lower-cases
+// model_provider and fills the missing half of the pair with "custom". Exported
+// spans must do the same or "OpenAI" and "openai" become two facets on one intake.
+func TestSubmitSpans_ModelNormalizationMatchesLive(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, ModelName: "gpt-4o", ModelProvider: "OpenAI"},
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, ModelName: "gpt-4o"},
+		{TraceID: "t3", SpanID: "s3", Kind: export.KindLLM, ModelProvider: "Anthropic"},
+		{TraceID: "t4", SpanID: "s4", Kind: export.KindWorkflow},
+	})
+	require.NoError(t, err)
+
+	spans := allSpans(t, fake.captured()[0].body)
+	require.Len(t, spans, 4)
+	metaOf := func(i int) map[string]any { return spans[i]["meta"].(map[string]any) }
+
+	assert.Equal(t, "gpt-4o", metaOf(0)["model_name"])
+	assert.Equal(t, "openai", metaOf(0)["model_provider"], "provider must be lower-cased")
+	assert.Equal(t, "gpt-4o", metaOf(1)["model_name"])
+	assert.Equal(t, "custom", metaOf(1)["model_provider"], "missing provider defaults to custom")
+	assert.Equal(t, "custom", metaOf(2)["model_name"], "missing name defaults to custom")
+	assert.Equal(t, "anthropic", metaOf(2)["model_provider"])
+	// A span with no model information at all omits both keys.
+	assert.NotContains(t, metaOf(3), "model_name")
+	assert.NotContains(t, metaOf(3), "model_provider")
+}
+
+// TestSubmitSpans_OneEnvelopePerSpan locks the /api/v2/llmobs body shape against
+// the only form known to work in production: PushSpanEvents (the live path) posts
+// an array of single-span envelopes, because _dd.scope is a per-envelope field
+// derived from each span. Packing N spans into one envelope risks intake reading
+// only the first, silently losing the rest of every batch.
+func TestSubmitSpans_OneEnvelopePerSpan(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	events := make([]export.SpanEvent, 4)
+	for i := range events {
+		events[i] = export.SpanEvent{TraceID: "t", SpanID: strconv.Itoa(i), Kind: export.KindLLM}
+	}
+	res, err := c.SubmitSpans(context.Background(), events)
+	require.NoError(t, err)
+	require.Len(t, res.Requests, 1) // one POST...
+
+	var envelopes []map[string]any
+	require.NoError(t, json.Unmarshal(fake.captured()[0].body, &envelopes))
+	require.Len(t, envelopes, 4) // ...carrying one envelope per span
+	for i, env := range envelopes {
+		assert.Equal(t, "raw", env["_dd.stage"])
+		assert.Equal(t, "span", env["event_type"])
+		assert.NotEmpty(t, env["_dd.tracer_version"])
+		spans := env["spans"].([]any)
+		require.Len(t, spans, 1, "envelope %d must carry exactly one span", i)
+		assert.Equal(t, strconv.Itoa(i), spans[0].(map[string]any)["span_id"], "span order preserved")
+	}
 }
 
 func TestSubmitSpans_Chunking(t *testing.T) {
@@ -338,7 +529,7 @@ func TestSubmitSpans_ValidationDropsInvalidRows(t *testing.T) {
 
 	reqs := fake.captured()
 	require.Len(t, reqs, 1)
-	spans := firstReq(t, reqs[0].body)["spans"].([]any)
+	spans := allSpans(t, reqs[0].body)
 	assert.Len(t, spans, 1) // only the valid row was sent
 }
 
@@ -354,11 +545,34 @@ func TestSubmitSpans_SizeGuardTruncatesIO(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res.Requests, 1)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	// The sentinel text and collection error come from the live path's
+	// DropSpanEventIO, so a truncated exported span is indistinguishable from a
+	// truncated live one.
+	span := allSpans(t, fake.captured()[0].body)[0]
 	meta := span["meta"].(map[string]any)
-	assert.Equal(t, "[dropped: payload too large]", meta["input"].(map[string]any)["value"])
-	assert.Equal(t, "[dropped: payload too large]", meta["output"].(map[string]any)["value"])
-	assert.Contains(t, span["collection_errors"].([]any), "dropped_io")
+	assert.Equal(t, illmobs.DroppedValueText, meta["input"].(map[string]any)["value"])
+	assert.Equal(t, illmobs.DroppedValueText, meta["output"].(map[string]any)["value"])
+	assert.Contains(t, span["collection_errors"].([]any), illmobs.CollectionErrorDroppedIO)
+}
+
+// TestDefaultSizeGuardMatchesLiveLimit: the default guard is the live path's
+// per-event limit, not a separate 5 MiB constant. The 242,880-byte gap between
+// 5<<20 and 5_000_000 used to let a single span through at a size the SDK's own
+// constant says intake rejects.
+func TestDefaultSizeGuardMatchesLiveLimit(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	// A span just over the live limit must be truncated by the default guard.
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
+		Input: strings.Repeat("x", illmobs.SizeLimitEVPEvent+1),
+	}})
+	require.NoError(t, err)
+	require.Len(t, res.Requests, 1)
+
+	span := allSpans(t, fake.captured()[0].body)[0]
+	assert.Equal(t, illmobs.DroppedValueText, span["meta"].(map[string]any)["input"].(map[string]any)["value"])
 }
 
 func TestSubmitSpans_SplitsOversizedBatchInsteadOfDroppingIO(t *testing.T) {
@@ -377,7 +591,7 @@ func TestSubmitSpans_SplitsOversizedBatchInsteadOfDroppingIO(t *testing.T) {
 	assert.Equal(t, 1, res.Requests[1].Count)
 
 	for _, req := range fake.captured() {
-		span := firstReq(t, req.body)["spans"].([]any)[0].(map[string]any)
+		span := allSpans(t, req.body)[0]
 		assert.NotContains(t, span, "collection_errors") // I/O preserved, not dropped
 		assert.NotEmpty(t, span["meta"].(map[string]any)["input"])
 	}
@@ -394,15 +608,15 @@ func TestSubmitSpans_StampsMLAppFromClient(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	spans := firstReq(t, fake.captured()[0].body)["spans"].([]any)
-	tagsOf := func(i int) []any { return spans[i].(map[string]any)["tags"].([]any) }
-	assert.Contains(t, tagsOf(0), "ml_app:my-app")
-	assert.Contains(t, tagsOf(1), "ml_app:override")
-	assert.NotContains(t, tagsOf(1), "ml_app:my-app")
+	spans := allSpans(t, fake.captured()[0].body)
+	require.Len(t, spans, 3)
+	assert.Contains(t, tagsOf(t, spans[0]), "ml_app:my-app")
+	assert.Contains(t, tagsOf(t, spans[1]), "ml_app:override")
+	assert.NotContains(t, tagsOf(t, spans[1]), "ml_app:my-app")
 	// An empty "ml_app:" tag must not suppress the required default: it is dropped
 	// and replaced with the configured value, leaving no bare empty tag behind.
-	assert.Contains(t, tagsOf(2), "ml_app:my-app")
-	assert.NotContains(t, tagsOf(2), "ml_app:")
+	assert.Contains(t, tagsOf(t, spans[2]), "ml_app:my-app")
+	assert.NotContains(t, tagsOf(t, spans[2]), "ml_app:")
 }
 
 func TestSubmitSpans_AgentRoute(t *testing.T) {
@@ -429,7 +643,7 @@ func TestSubmitSpans_WithCallServiceOverride(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	span := allSpans(t, fake.captured()[0].body)[0]
 	assert.Equal(t, "call-svc", span["service"]) // per-call override wins over the client default
 	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
@@ -510,6 +724,57 @@ func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
 	tagJoin := m4["join_on"].(map[string]any)["tag"].(map[string]any)
 	assert.Equal(t, "session_id", tagJoin["key"])
 	assert.Equal(t, "abc", tagJoin["value"])
+}
+
+// TestSubmitEvaluations_NarrativeFieldsReachTheWire covers assessment, reasoning
+// and metadata — three fields this PR adds to a wire struct the live eval path
+// shares, and which nothing else asserts.
+func TestSubmitEvaluations_NarrativeFieldsReachTheWire(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
+		SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.75),
+		Assessment: "mostly correct",
+		Reasoning:  "cited two of three sources",
+		Metadata:   map[string]any{"judge": "gpt-4o", "rubric_version": float64(3)},
+	}})
+	require.NoError(t, err)
+
+	m := firstMetric(t, fake.captured()[0].body)
+	assert.Equal(t, "mostly correct", m["assessment"])
+	assert.Equal(t, "cited two of three sources", m["reasoning"])
+	assert.Equal(t, map[string]any{"judge": "gpt-4o", "rubric_version": float64(3)}, m["metadata"])
+
+	// All three are omitempty: a metric that sets none must not emit empty keys.
+	fake2 := &fakeTransport{}
+	c2 := newClient(t, fake2, "test-app")
+	_, err = c2.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
+		SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.75),
+	}})
+	require.NoError(t, err)
+	bare := firstMetric(t, fake2.captured()[0].body)
+	assert.NotContains(t, bare, "assessment")
+	assert.NotContains(t, bare, "reasoning")
+	assert.NotContains(t, bare, "metadata")
+}
+
+// TestSubmitEvaluations_WithCallMLApp: the per-call override applies, and a
+// per-metric MLApp still wins over it.
+func TestSubmitEvaluations_WithCallMLApp(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "client-app")
+
+	_, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
+		{SpanID: "s1", TraceID: "t", Label: "q", ScoreValue: ptr(1.0)},
+		{SpanID: "s2", TraceID: "t", Label: "q", ScoreValue: ptr(1.0), MLApp: "row-app"},
+	}, export.WithCallMLApp("call-app"))
+	require.NoError(t, err)
+
+	metrics := allMetrics(t, fake.captured()[0].body)
+	require.Len(t, metrics, 2)
+	assert.Equal(t, "call-app", metrics[0]["ml_app"])
+	assert.Equal(t, "row-app", metrics[1]["ml_app"])
 }
 
 func TestSubmitEvaluations_StampsTracerVersion(t *testing.T) {
@@ -639,10 +904,88 @@ func TestSubmitSpans_ContextCanceledStopsPromptly(t *testing.T) {
 	res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
-	// A canceled context stops the export before POSTing, so it neither sends nor
-	// accumulates artificial request failures.
-	assert.Empty(t, res.Requests)
+	// Nothing is POSTed: the guard runs before the batch is even validated.
 	assert.Empty(t, fake.captured())
+	// The rows it never sent are still accounted, so an outbox caller cannot read
+	// the result as "delivered" (see the ExportResult accounting invariant).
+	require.Len(t, res.Requests, 1)
+	assert.ErrorIs(t, res.Requests[0].Err, context.Canceled)
+	assert.Equal(t, 0, res.Sent)
+	assert.Equal(t, 1, res.Failed)
+	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
+}
+
+// TestSubmitEvaluations_ContextCanceledStopsPromptly mirrors the SubmitSpans
+// cancellation guard onto the eval path, which the coverage profile showed was
+// never executed despite a comment claiming parity.
+func TestSubmitEvaluations_ContextCanceledStopsPromptly(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := c.SubmitEvaluations(ctx, []export.EvaluationMetric{
+		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.9)},
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, fake.captured())
+	require.Len(t, res.Requests, 1)
+	assert.ErrorIs(t, res.Requests[0].Err, context.Canceled)
+	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
+}
+
+// TestSubmitEvaluations_MidFlightCancelNotRetriable is the eval analogue of
+// TestSubmitSpans_MidFlightCancelNotRetriable: a cancel that lands while a
+// request is in flight must not be reported as a transient failure, or an outbox
+// caller re-enqueues work the caller explicitly abandoned.
+func TestSubmitEvaluations_MidFlightCancelNotRetriable(t *testing.T) {
+	block := &blockingTransport{entered: make(chan struct{})}
+	c, err := export.NewClient("test-app",
+		export.WithHTTPClient(&http.Client{Transport: block}),
+		export.WithDatadogIntake("datadoghq.com", "test-key"),
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-block.entered
+		cancel()
+	}()
+
+	res, err := c.SubmitEvaluations(ctx, []export.EvaluationMetric{
+		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.9)},
+	})
+	require.Error(t, err)
+	require.Len(t, res.Requests, 1)
+	assert.False(t, res.Requests[0].Retriable, "a caller cancellation is not a transient failure")
+	assert.Equal(t, 1, res.Failed)
+	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
+}
+
+// TestSubmitSpans_AccountingCoversWholeInputOnCancel locks the ExportResult
+// invariant at a batch boundary: the rows in windows the cancel skipped are
+// reported as Failed rather than vanishing from the totals.
+func TestSubmitSpans_AccountingCoversWholeInputOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var once sync.Once
+	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
+		once.Do(cancel) // cancel after the first window's POST is recorded
+		return 202, "{}"
+	}}
+	c := newClient(t, fake, "test-app", export.WithSpanBatchSize(2))
+
+	events := make([]export.SpanEvent, 6)
+	for i := range events {
+		events[i] = export.SpanEvent{TraceID: "t", SpanID: strconv.Itoa(i), Kind: export.KindLLM}
+	}
+	res, err := c.SubmitSpans(ctx, events)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Len(t, fake.captured(), 1) // only the first window went out
+	assert.Equal(t, 2, res.Sent)
+	assert.Equal(t, 4, res.Failed) // the 4 rows in the skipped windows
+	assert.Equal(t, len(events), res.Sent+res.Failed+res.Dropped)
 }
 
 func TestNewClient_RejectsBadAgentURLScheme(t *testing.T) {
@@ -680,7 +1023,7 @@ func TestSubmitSpans_StampsSessionIDTag(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	span := allSpans(t, fake.captured()[0].body)[0]
 	assert.Contains(t, span["tags"].([]any), "session_id:sess-1") // tag-join parity with the live path
 	assert.Equal(t, "sess-1", span["session_id"])                 // top-level still set
 }
@@ -697,7 +1040,7 @@ func TestSubmitSpans_DropsMissingKind(t *testing.T) {
 	require.Len(t, res.ValidationErrors, 1)
 	assert.Equal(t, 1, res.ValidationErrors[0].Index)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)
+	span := allSpans(t, fake.captured()[0].body)
 	require.Len(t, span, 1) // only the valid span was sent
 }
 
@@ -713,7 +1056,7 @@ func TestSubmitSpans_RejectsNonFiniteMetric(t *testing.T) {
 	require.Len(t, res.ValidationErrors, 1) // the non-finite cost row is dropped, not fatal
 	assert.Equal(t, 0, res.ValidationErrors[0].Index)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)
+	span := allSpans(t, fake.captured()[0].body)
 	require.Len(t, span, 1) // the valid span still went out
 }
 
@@ -727,7 +1070,7 @@ func TestSubmitSpans_SessionIDOverridesStaleTag(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	span := allSpans(t, fake.captured()[0].body)[0]
 	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
@@ -748,7 +1091,7 @@ func TestSubmitSpans_ServiceTagReplacesStale(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	span := allSpans(t, fake.captured()[0].body)[0]
 	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
@@ -777,7 +1120,7 @@ func TestSubmitSpans_MetricsPreservesExtraAndStandardKeys(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	m := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)["metrics"].(map[string]any)
+	m := allSpans(t, fake.captured()[0].body)[0]["metrics"].(map[string]any)
 	assert.Equal(t, float64(10), m["input_tokens"])             // named field wins over Extra
 	assert.Equal(t, float64(42), m["billable_character_count"]) // newly-added standard key carried
 	assert.Equal(t, 0.25, m["time_to_first_token"])
@@ -861,7 +1204,7 @@ func TestSubmitSpans_ZeroStartAndDurationOmitFields(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	span := allSpans(t, fake.captured()[0].body)[0]
 	assert.NotContains(t, span, "start_ns")
 	assert.NotContains(t, span, "duration")
 }
@@ -878,7 +1221,7 @@ func TestSubmitSpans_ParentIDPreservedVerbatim(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	span := allSpans(t, fake.captured()[0].body)[0]
 	assert.Equal(t, "p123", span["parent_id"])
 }
 
@@ -1056,13 +1399,11 @@ func TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue(t *testing.T) {
 	assert.Empty(t, fake.captured())
 }
 
-// TestSubmitSpans_SplitStopsOnCancelBetweenHalves guards that a cancellation
-// during the oversized-batch bisection is never reported as a silent success: if
-// the caller cancels while the left half is posting, the right half is not POSTed,
-// but its spans are still accounted (as a not-sent request) and SubmitSpans
-// returns a context.Canceled error. Returning err==nil here — the pre-fix
-// behavior, when this is the final window — would let an outbox caller treat the
-// abandoned right-half span as delivered and drop it, i.e. permanent silent loss.
+// TestSubmitSpans_SplitStopsOnCancelBetweenHalves covers a cancel landing inside
+// the oversized-batch bisection, the one place the loop guard in SubmitSpans
+// cannot see. The right half must not be POSTed, must still be accounted, and the
+// call must return an error — an err==nil return here would let an outbox caller
+// treat the abandoned span as delivered and drop it permanently.
 func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var once sync.Once

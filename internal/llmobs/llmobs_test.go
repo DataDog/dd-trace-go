@@ -2555,7 +2555,7 @@ func assertAPMTraceID(t *testing.T, apmSpan agenttest.Span, llmSpan llmobstransp
 // the backend's size limit.
 //
 // The fix (PR #4524) adds size-based flushing: before appending a new event to the buffer, if the
-// cumulative size would exceed sizeLimitEVPEvent (5MB), the current buffer is flushed first.
+// cumulative size would exceed SizeLimitEVPEvent (5MB), the current buffer is flushed first.
 func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
 
@@ -2589,7 +2589,7 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 // to exceed the backend's size limit.
 //
 // The fix adds size-based flushing for eval metrics, mirroring PR #4524 for span events: before
-// appending a new metric to the buffer, if the cumulative size would exceed sizeLimitEVPEvent
+// appending a new metric to the buffer, if the cumulative size would exceed SizeLimitEVPEvent
 // (5MB), the current buffer is flushed first.
 func TestEvalMetricsSizeBasedFlushing(t *testing.T) {
 	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))

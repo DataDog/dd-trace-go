@@ -3,9 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-// Package exportutil holds small helpers shared by the offline export clients
-// (llmobs/export and otlp/export): bounded response-body snippets and
-// per-request failure aggregation.
+// Package exportutil holds small helpers shared by the offline export clients:
+// bounded response-body snippets and per-request failure aggregation.
 package exportutil
 
 import (

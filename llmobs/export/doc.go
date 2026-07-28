@@ -25,6 +25,19 @@
 // payload-size options). Spans are submitted with [Client.SubmitSpans] and
 // evaluations with [Client.SubmitEvaluations].
 //
+// Routing is always explicit, but the direct route's values are not: an empty
+// site or API key passed to [WithDatadogIntake] falls back to DD_SITE and
+// DD_API_KEY. No other DD_* variable is read — service, env, version, ML app and
+// the Agent URL come from the options, so an offline tool can export on behalf of
+// a service whose environment it does not share.
+//
+// Exported spans are shaped to match what the live tracer emits on the same
+// intake: model_provider is lower-cased, a half-specified model pair is filled
+// with "custom", errored spans carry the error.message/type/stack meta and an
+// error tag, and every span is stamped with source, language and ddtrace.version.
+// A group-by that mixes live and exported spans therefore sees one population,
+// not two.
+//
 // Multi-destination routing is modeled as one isolated [Client] per destination:
 // construct N clients, each with its own site, API key, service and defaults.
 // The client does not deduplicate, spool, or durably retry — callers retain

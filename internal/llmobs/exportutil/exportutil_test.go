@@ -28,14 +28,18 @@ func TestSnippet(t *testing.T) {
 	got := Snippet([]byte(big))
 	assert.Len(t, got, SnippetMaxBytes)
 
-	// An oversized body whose cut point lands mid-rune backs off to a rune
-	// boundary so the snippet stays valid UTF-8 (never a partial multi-byte rune).
-	// "é" is 2 bytes; fill so byte SnippetMaxBytes falls inside a rune.
-	multibyte := strings.Repeat("é", SnippetMaxBytes) // 2*512 bytes
+	// An oversized body whose cut point lands mid-rune backs off to a rune boundary
+	// so the snippet stays valid UTF-8 (never a partial multi-byte rune).
+	//
+	// The single leading ASCII byte is what makes this exercise the loop: "é" is 2
+	// bytes, so without it byte SnippetMaxBytes (even) would land exactly on a lead
+	// byte and the back-off would never run. With it, the cut lands inside a rune
+	// and the snippet must come back one byte short.
+	multibyte := "a" + strings.Repeat("é", SnippetMaxBytes)
 	got = Snippet([]byte(multibyte))
 	assert.True(t, utf8.ValidString(got), "snippet must be valid UTF-8")
-	assert.LessOrEqual(t, len(got), SnippetMaxBytes)
-	assert.NotEmpty(t, got)
+	assert.Len(t, got, SnippetMaxBytes-1, "cut must back off one byte to the rune boundary")
+	assert.Equal(t, multibyte[:SnippetMaxBytes-1], got)
 
 	// A short body with invalid UTF-8 bytes is sanitized (dropped), not returned raw.
 	invalid := Snippet([]byte{'o', 'k', 0xff, 0xfe})
