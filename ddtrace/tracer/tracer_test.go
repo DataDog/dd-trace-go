@@ -315,7 +315,7 @@ func TestTracerStartSpan(t *testing.T) {
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
 		}, span.metrics[keySamplingPriority])
-		assert.Equal("-1", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal("-1", span.context.trace.propagatingTag(keyDecisionMaker))
 		// A span is not measured unless made so specifically
 		_, ok := span.meta.Get(keyMeasured)
 		assert.False(ok)
@@ -330,7 +330,7 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.NoError(t, err)
 		span := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 		assert.Equal(t, float64(ext.PriorityUserKeep), span.metrics[keySamplingPriority])
-		assert.Equal(t, "-4", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-4", span.context.trace.propagatingTag(keyDecisionMaker))
 	})
 
 	t.Run("name", func(t *testing.T) {
@@ -413,7 +413,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoKeep), span.metrics[keySamplingPriority])
-		assert.Equal(t, "-1", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-1", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -432,7 +432,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -449,7 +449,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
 	})
 
@@ -491,7 +491,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		// this trace won't be sent to the agent,
 		// therefore not necessary to populate keyDecisionMaker
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
 
@@ -602,7 +602,7 @@ func TestSamplingDecision(t *testing.T) {
 			nowTime = func() time.Time { return time.Now() }
 		}()
 		defer stop()
-		var spans []*Span
+		spans := make([]*Span, 0, 1000)
 		for i := range 100 {
 			s := tracer.StartSpan(fmt.Sprintf("name_%d", i))
 			for j := range 9 {
@@ -640,7 +640,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		defer stop()
-		spans := []*Span{}
+		spans := make([]*Span, 0, 1000)
 		for range 100 {
 			s := tracer.StartSpan("name_1")
 			for range 9 {
@@ -674,7 +674,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		defer stop()
-		spans := []*Span{}
+		spans := make([]*Span, 0, 1000)
 		for range 100 {
 			s := tracer.StartSpan("name_1")
 			for range 9 {
@@ -894,8 +894,8 @@ func TestTracerBaggagePropagation(t *testing.T) {
 }
 
 func TestStartSpanOrigin(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()
@@ -928,8 +928,8 @@ func TestStartSpanOrigin(t *testing.T) {
 }
 
 func TestPropagationDefaults(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()
@@ -1021,7 +1021,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 }
 
 func TestPropagationStyleOnlyBaggage(t *testing.T) {
-	t.Setenv(headerPropagationStyle, "baggage")
+	t.Setenv(envPropagationStyle, "baggage")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()
@@ -1055,7 +1055,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	root := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 	child := tracer.StartSpan("db.query", ChildOf(root.Context()))
 	assert.EqualValues(2, root.metrics[keySamplingPriority])
-	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-4", root.context.trace.propagatingTag(keyDecisionMaker))
 	assert.EqualValues(2, child.metrics[keySamplingPriority])
 	assert.EqualValues(2., *root.context.trace.priority.Load())
 	assert.EqualValues(2., *child.context.trace.priority.Load())
@@ -1074,7 +1074,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	}
 	child := tracer.StartSpan("db.query", ChildOf(spanCtx))
 	assert.EqualValues(1, child.metrics[keySamplingPriority])
-	assert.Equal("-1", child.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-1", child.context.trace.propagatingTag(keyDecisionMaker))
 }
 
 func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
@@ -1092,7 +1092,7 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	grandChild := tracer.StartSpan("db.query", ChildOf(child.Context()))
 	grandChild.SetTag(ext.ManualDrop, true)
 	grandChild.SetTag(ext.ManualKeep, true)
-	assert.Equal("-4", grandChild.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-4", grandChild.context.trace.propagatingTag(keyDecisionMaker))
 }
 
 func TestTracerBaggageImmutability(t *testing.T) {
@@ -1123,7 +1123,7 @@ func TestTracerInjectConcurrency(t *testing.T) {
 		i := i
 		go func(val int) {
 			defer wg.Done()
-			span.SetBaggageItem("val", fmt.Sprintf("%d", val))
+			span.SetBaggageItem("val", strconv.Itoa(val))
 
 			traceContext := map[string]string{}
 			_ = tracer.Inject(span.Context(), TextMapCarrier(traceContext))
@@ -1353,7 +1353,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	s := newEnvSpan(tr, "pylons", "")
 	assert.Equal(1., s.metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.metrics[keySamplingPriority])
-	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-1", s.context.trace.propagatingTag(keyDecisionMaker))
 	p, ok := s.context.SamplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.metrics[keySamplingPriority])
@@ -1387,9 +1387,9 @@ func TestTracerPrioritySampler(t *testing.T) {
 		assert.Equal(tt.rate, s.metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.metrics[keySamplingPriority]
 		if prio > 0 {
-			assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
+			assert.Equal("-1", s.context.trace.propagatingTag(keyDecisionMaker))
 		} else {
-			assert.Equal("", s.context.trace.propagatingTags[keyDecisionMaker])
+			assert.Equal("", s.context.trace.propagatingTag(keyDecisionMaker))
 		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
@@ -1631,6 +1631,109 @@ func TestOTLPExportModeProcessTags(t *testing.T) {
 				"span must not carry %s when process tags are disabled", keyProcessTags)
 		}
 	})
+}
+
+func TestOTLPExportModeSpanEvents(t *testing.T) {
+	// OTLP mode must mark spans supportsEvents so serializeSpanEvents doesn't
+	// string-tag events into a "events" meta tag (which convertEvents can't read).
+	assert := assert.New(t)
+	tr, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+	assert.NoError(err)
+	defer tr.Stop()
+
+	s := tr.StartSpan("op")
+	assert.True(s.supportsEvents, "spans must support native events in OTLP export mode")
+	s.AddEvent("exception", WithSpanEventAttributes(map[string]any{
+		"exception.type":    "*errors.errorString",
+		"exception.message": "boom",
+	}))
+	s.Finish()
+
+	// Events are preserved on the span (not string-tagged away).
+	assert.NotEmpty(s.spanEvents, "span events should be preserved for native OTLP export")
+	_, hasEventsTag := s.meta.Get("events")
+	assert.False(hasEventsTag, "span events must not be string-tagged in OTLP export mode")
+
+	// convertSpan emits a native OTLP event carrying its attributes.
+	otlp := convertSpan(s, "svc", false)
+	assert.Len(otlp.Events, 1)
+	assert.Equal("exception", otlp.Events[0].Name)
+	assert.NotEmpty(otlp.Events[0].Attributes)
+}
+
+// TestOTLPExportModeSpanEventsWriterGating verifies supportsEvents follows the actual
+// selected writer, not OTEL_TRACES_EXPORTER. LogToStdout is selected before the OTLP
+// writer, and the log writer doesn't serialize spanEvents, so events must stay
+// string-tagged (supportsEvents=false) there to avoid being silently dropped.
+func TestOTLPExportModeSpanEventsWriterGating(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		configure  func(*config)
+		wantNative bool
+	}{
+		{
+			name:       "otlp writer enables native events",
+			configure:  func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) },
+			wantNative: true,
+		},
+		{
+			name: "log-to-stdout keeps events string-tagged",
+			configure: func(c *config) {
+				c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+				c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode)
+			},
+			wantNative: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr, err := newUnstartedTracer(tc.configure)
+			require.NoError(t, err)
+			defer tr.Stop()
+			assert.Equal(t, tc.wantNative, tr.StartSpan("op").supportsEvents)
+		})
+	}
+}
+
+// TestOTLPExportModeSpanEventsRoundTrip verifies a span event survives the full OTLP
+// encode → send → unmarshal cycle as a native event, not a string "events" meta tag.
+func TestOTLPExportModeSpanEventsRoundTrip(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+
+	trc, err := newTracer(func(c *config) {
+		c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+		c.ddTransport = newDummyTransport()
+	})
+	require.NoError(t, err)
+	w := trc.traceWriter.(*otlpTraceWriter)
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+	setGlobalTracer(trc)
+	t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+
+	s := trc.newRootSpan("op", "test-svc", "/")
+	s.AddEvent("exception", WithSpanEventAttributes(map[string]any{
+		"exception.type":    "*errors.errorString",
+		"exception.message": "boom",
+	}))
+	s.Finish()
+	trc.Stop()
+
+	var spans []*otlptrace.Span
+	for _, p := range srv.getPayloads() {
+		var td otlptrace.TracesData
+		require.NoError(t, proto.Unmarshal(p, &td))
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				spans = append(spans, ss.Spans...)
+			}
+		}
+	}
+	require.Len(t, spans, 1)
+	require.Len(t, spans[0].Events, 1, "exception event must survive as a native OTLP event")
+	assert.Equal(t, "exception", spans[0].Events[0].Name)
+	for _, kv := range spans[0].Attributes {
+		assert.NotEqual(t, "events", kv.Key, "events must not be string-tagged into a meta attribute")
+	}
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -2039,7 +2142,7 @@ func TestTracerReportsHostname(t *testing.T) {
 	testReportHostnameEnabled := func(t *testing.T, name string, withComputeStats bool) {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
-			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			t.Setenv("DD_TRACE_COMPUTE_STATS", strconv.FormatBool(withComputeStats))
 
 			tracer, _, _, stop, err := startTestTracer(t)
 			assert.Nil(t, err)
@@ -2066,7 +2169,7 @@ func TestTracerReportsHostname(t *testing.T) {
 
 	testReportHostnameDisabled := func(t *testing.T, name string, withComputeStats bool) {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			t.Setenv("DD_TRACE_COMPUTE_STATS", strconv.FormatBool(withComputeStats))
 			tracer, _, _, stop, err := startTestTracer(t)
 			assert.Nil(t, err)
 			defer stop()
@@ -2858,7 +2961,7 @@ func TestUserMonitoring(t *testing.T) {
 		v, _ := s.meta.Get(keyUserID)
 		assert.Equal(t, id, v)
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
-		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
+		assert.Equal(t, encoded, s.context.trace.propagatingTag(keyPropagatedUserID))
 		v, _ = s.meta.Get(keyPropagatedUserID)
 		assert.Equal(t, encoded, v)
 	})
@@ -2871,8 +2974,7 @@ func TestUserMonitoring(t *testing.T) {
 		assert.True(t, ok)
 		_, ok = s.meta.Get(keyPropagatedUserID)
 		assert.False(t, ok)
-		_, ok = s.context.trace.propagatingTags[keyPropagatedUserID]
-		assert.False(t, ok)
+		assert.False(t, s.context.trace.hasPropagatingTag(keyPropagatedUserID))
 	})
 
 	// This tests data races for trace.propagatingTags reads/writes through public API.

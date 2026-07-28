@@ -66,8 +66,8 @@
 /internal/civisibility          @DataDog/ci-app-libraries
 
 # llm observability
-/llmobs                                    @DataDog/ml-observability @DataDog/apm-idm-go
-/internal/llmobs                           @DataDog/ml-observability @DataDog/apm-idm-go
+/llmobs                                    @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
+/internal/llmobs                           @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
 /contrib/mark3labs/mcp-go                  @DataDog/ml-observability @DataDog/apm-idm-go
 /contrib/modelcontextprotocol/go-sdk       @DataDog/ml-observability @DataDog/apm-idm-go
 
@@ -97,6 +97,8 @@ contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @Da
 # team and can be reviewed by anybody with the appropriate permissions. This is
 # meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
 # changes one of these files.
+/internal/env/supported_configurations.gen.go
+/internal/env/supported_configurations.json
 **/go.mod
 **/go.sum
 go.work

@@ -7,6 +7,7 @@ package coverage
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -56,7 +57,7 @@ func parseOrderedCoverProfile(filename string) (*orderedCoverProfile, error) {
 		trimmed := strings.TrimSpace(line)
 		if lineNumber == 1 {
 			if !validCoverageProfileHeader(trimmed) {
-				return nil, fmt.Errorf("invalid coverage profile header")
+				return nil, errors.New("invalid coverage profile header")
 			}
 			headerSeen = true
 			profile.lines = append(profile.lines, profileLine)
@@ -81,7 +82,7 @@ func parseOrderedCoverProfile(filename string) (*orderedCoverProfile, error) {
 		return nil, err
 	}
 	if !headerSeen {
-		return nil, fmt.Errorf("missing coverage profile header")
+		return nil, errors.New("missing coverage profile header")
 	}
 	return profile, nil
 }
@@ -102,18 +103,18 @@ func parseCoverageLine(line string) (coverageBlock, string, error) {
 	}
 	infoParts := strings.Fields(blockInfo)
 	if len(infoParts) != 3 {
-		return coverageBlock{}, "", fmt.Errorf("expected three block fields")
+		return coverageBlock{}, "", errors.New("expected three block fields")
 	}
 
 	startEnd := strings.Split(infoParts[0], ",")
 	if len(startEnd) != 2 {
-		return coverageBlock{}, "", fmt.Errorf("invalid block range")
+		return coverageBlock{}, "", errors.New("invalid block range")
 	}
 
 	startPos := strings.Split(startEnd[0], ".")
 	endPos := strings.Split(startEnd[1], ".")
 	if len(startPos) != 2 || len(endPos) != 2 {
-		return coverageBlock{}, "", fmt.Errorf("invalid block position")
+		return coverageBlock{}, "", errors.New("invalid block position")
 	}
 
 	startLine, err1 := strconv.Atoi(startPos[0])
@@ -123,13 +124,13 @@ func parseCoverageLine(line string) (coverageBlock, string, error) {
 	numStmt, err5 := strconv.Atoi(infoParts[1])
 	count, err6 := strconv.Atoi(infoParts[2])
 	if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil || err6 != nil {
-		return coverageBlock{}, "", fmt.Errorf("invalid block number")
+		return coverageBlock{}, "", errors.New("invalid block number")
 	}
 	if startLine <= 0 || startCol <= 0 || endLine <= 0 || endCol <= 0 || numStmt < 0 || count < 0 {
-		return coverageBlock{}, "", fmt.Errorf("invalid negative or non-positive block value")
+		return coverageBlock{}, "", errors.New("invalid negative or non-positive block value")
 	}
 	if endLine < startLine || (endLine == startLine && endCol < startCol) {
-		return coverageBlock{}, "", fmt.Errorf("invalid block ordering")
+		return coverageBlock{}, "", errors.New("invalid block ordering")
 	}
 
 	return coverageBlock{
@@ -145,7 +146,7 @@ func parseCoverageLine(line string) (coverageBlock, string, error) {
 func splitCoverageProfileLine(line string) (string, string, error) {
 	separator := strings.LastIndex(line, ":")
 	if separator <= 0 || strings.TrimSpace(line[:separator]) == "" {
-		return "", "", fmt.Errorf("missing file name")
+		return "", "", errors.New("missing file name")
 	}
 	return line[:separator], line[separator+1:], nil
 }

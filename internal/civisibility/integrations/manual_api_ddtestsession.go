@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,7 +84,7 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	sessionID := span.Context().SpanID()
-	setCIVisibilitySpanTag(span, constants.TestSessionIDTag, fmt.Sprint(sessionID))
+	setCIVisibilitySpanTag(span, constants.TestSessionIDTag, strconv.FormatUint(sessionID, 10))
 
 	s := &tslvTestSession{
 		sessionID:        sessionID,

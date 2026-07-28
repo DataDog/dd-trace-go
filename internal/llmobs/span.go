@@ -283,6 +283,11 @@ func (s *Span) MLApp() string {
 	return s.mlApp
 }
 
+// SessionID returns the resolved session ID for this span.
+func (s *Span) SessionID() string {
+	return s.sessionID
+}
+
 // AddLink adds a span link to this span.
 func (s *Span) AddLink(link SpanLink) {
 	s.mu.Lock()
@@ -526,6 +531,11 @@ func (s *Span) propagatedSessionID() string {
 		}
 		curSpan = curSpan.parent
 		usingParent = true
+	}
+
+	if s.propagated != nil && s.propagated.SessionID != "" {
+		log.Debug("llmobs: using session_id from propagated span: %s", s.propagated.SessionID)
+		return s.propagated.SessionID
 	}
 	return ""
 }

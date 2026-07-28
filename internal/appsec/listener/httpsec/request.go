@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/netip"
+	"net/textproto"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -75,9 +76,10 @@ var (
 	// These headers are tagged separately from defaultCollectedHeaders because
 	// they are collected even when AppSec is disabled.
 	securityTestingHeaders = [...]struct {
-		Header      string
-		HeaderBytes []byte
-		Tag         string
+		Header          string
+		HeaderCanonical string // net/http MIME-canonical form; filled at init
+		HeaderBytes     []byte
+		Tag             string
 	}{
 		{Header: securityTestingEndpointScanHeader, HeaderBytes: []byte(securityTestingEndpointScanHeader), Tag: securityTestingEndpointScanTag},
 		{Header: securityTestingHeader, HeaderBytes: []byte(securityTestingHeader), Tag: securityTestingTag},
@@ -147,7 +149,7 @@ func SecurityTestingHeaderTagValues(headers http.Header) ([2]string, [2]string, 
 	var tagValues [2]string
 	var count int
 	for _, h := range securityTestingHeaders {
-		values, ok := securityTestingHeaderValues(headers, h.Header)
+		values, ok := securityTestingHeaderValues(headers, h.HeaderCanonical)
 		if !ok {
 			continue
 		}
@@ -185,13 +187,16 @@ func SecurityTestingHeaderByteTagValues(visit func(func(key, value []byte))) ([2
 	return tagNames, tagValues, count
 }
 
-func securityTestingHeaderValues(headers http.Header, header string) ([]string, bool) {
-	for name, values := range headers {
-		if strings.EqualFold(name, header) {
-			return values, true
-		}
+// securityTestingHeaderValues looks up a header value by its MIME-canonical key.
+// Callers pass net/http-canonical header maps (StartRequestSpan, twirp, fiber's
+// http.Header.Add), so a direct map index is exact and avoids a full
+// case-insensitive scan of every header on the request hot path.
+func securityTestingHeaderValues(headers http.Header, canonicalHeader string) ([]string, bool) {
+	v := headers[canonicalHeader]
+	if len(v) == 0 {
+		return nil, false
 	}
-	return nil, false
+	return v, true
 }
 
 // Remove cookies from the request headers and return the map of headers
@@ -227,6 +232,13 @@ func normalizeHTTPHeaderValue(values []string) string {
 func init() {
 	makeCollectedHTTPHeadersLookupMap()
 	readMonitoredClientIPHeadersConfig()
+	makeSecurityTestingHeadersCanonical()
+}
+
+func makeSecurityTestingHeadersCanonical() {
+	for i := range securityTestingHeaders {
+		securityTestingHeaders[i].HeaderCanonical = textproto.CanonicalMIMEHeaderKey(securityTestingHeaders[i].Header)
+	}
 }
 
 func makeCollectedHTTPHeadersLookupMap() {

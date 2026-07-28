@@ -105,6 +105,10 @@ var _ Tracer = (*tracer)(nil)
 type tracer struct {
 	config *config
 
+	// otlpExportMode caches whether traces export via OTLP (vs the agent), resolved
+	// once at startup; OTLP carries span events natively (see serializeSpanEvents).
+	otlpExportMode bool
+
 	// stats specifies the concentrator used to compute statistics, when client-side
 	// stats are enabled. In OTLP export mode this is a noopConcentrator.
 	stats statsConcentrator
@@ -356,7 +360,7 @@ func (t *tracer) startAppSec() {
 // level tracing context.
 func storeConfig(c *config) {
 	uuid, _ := uuid.NewRandom()
-	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
+	name := "datadog-tracer-info-" + uuid.String()[0:8]
 
 	metadata := Metadata{
 		SchemaVersion:      2,
@@ -479,6 +483,11 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		}
 	}()
 	var writer traceWriter
+	// otlpExportMode tracks whether the OTLP writer is actually selected below.
+	// It cannot be derived from internalConfig.OTLPExportMode() alone: CI Visibility
+	// and log-to-stdout are selected ahead of OTLP, and those writers do not serialize
+	// native span events, so they must keep events string-tagged.
+	var otlpExportMode bool
 	ps := newPrioritySampler()
 	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
@@ -488,6 +497,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	} else if c.internalConfig.OTLPExportMode() {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
+		otlpExportMode = true
 	} else {
 		writer = newAgentTraceWriter(c, ps, statsd)
 	}
@@ -510,6 +520,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	}
 	t = &tracer{
 		config:           c,
+		otlpExportMode:   otlpExportMode,
 		traceWriter:      writer,
 		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
@@ -715,12 +726,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			spansToRelease := trace.releasableSpans()
-			t.sampleChunk(trace)
-			if len(trace.spans) > 0 {
-				t.traceWriter.add(trace.spans)
-			}
-			releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+			t.processOutChunk(trace)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -735,12 +741,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					spansToRelease := trace.releasableSpans()
-					t.sampleChunk(trace)
-					if len(trace.spans) > 0 {
-						t.traceWriter.add(trace.spans)
-					}
-					releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+					t.processOutChunk(trace)
 				default:
 					break loop
 				}
@@ -774,6 +775,7 @@ type chunk struct {
 	spans          []*Span
 	willSend       bool // willSend indicates whether the trace will be sent to the agent.
 	spansToRelease []*Span
+	filterRejected bool
 }
 
 func (c *chunk) releasableSpans() []*Span {
@@ -781,6 +783,19 @@ func (c *chunk) releasableSpans() []*Span {
 		return c.spansToRelease
 	}
 	return c.spans
+}
+
+func (t *tracer) processOutChunk(trace *chunk) {
+	spansToRelease := trace.releasableSpans()
+	if trace.filterRejected {
+		releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+		return
+	}
+	t.sampleChunk(trace)
+	if len(trace.spans) > 0 {
+		t.traceWriter.add(trace.spans)
+	}
+	releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -978,7 +993,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if cSnap.Hostname != "" && cSnap.ReportHostname {
 		span.setMetaInit(keyHostname, cSnap.Hostname)
 	}
-	span.supportsEvents = t.config.agent.load().spanEventsAvailable
+	span.supportsEvents = t.config.agent.load().spanEventsAvailable || t.otlpExportMode
 
 	// add global tags
 	span.setTags(cSnap.GlobalTags)
@@ -1217,19 +1232,36 @@ func (t *tracer) TracerConf() TracerConf {
 	}
 }
 
-func (t *tracer) submit(s *Span) {
-	if !t.config.internalConfig.TracingEnabled() {
+// +checklocks:span.mu
+// +checklocks:trace.mu
+func (t *tracer) computeSpanStats(trace *trace, span *Span) {
+	agentFeatures := t.config.agent.load()
+	span.statSpan = nil
+	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
+		if span == trace.root {
+			trace.filterReject = false
+		}
 		return
 	}
-	// we have an active tracer
-	if !t.config.canDropP0s() {
+	span.statSpan, _ = t.stats.newTracerStatSpan(span, t.obfuscator)
+	if span == trace.root {
+		trace.filterReject = agentFeatures.traceFilters != nil && agentFeatures.traceFilters.reject(span)
+	}
+}
+
+// +checklocks:span.mu
+func (t *tracer) computeOversizedSpanStats(span *Span) {
+	agentFeatures := t.config.agent.load()
+	span.statSpan = nil
+	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
 		return
 	}
-	statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
-	if !shouldCalc {
-		return
+	// The oversized-trace path sends the stat span immediately and never
+	// assembles a chunk, so there is no need to retain it on the span.
+	statSpan, _ := t.stats.newTracerStatSpan(span, t.obfuscator)
+	if statSpan != nil {
+		t.stats.trySendSpan(statSpan)
 	}
-	t.stats.trySendSpan(statSpan)
 }
 
 func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
@@ -1241,8 +1273,29 @@ func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
 	}
 }
 
+// +checklocksignore — Post-finish: reads finished spans' statSpan during chunk assembly.
 func (t *tracer) submitChunk(c *chunk) {
+	if c.filterRejected {
+		t.emitFilterDrop(len(c.spans))
+	} else {
+		stats := make([]*tracerStatSpan, 0, len(c.spans))
+		for _, span := range c.spans {
+			if span != nil && span.statSpan != nil {
+				stats = append(stats, span.statSpan)
+			}
+		}
+		if len(stats) > 0 {
+			t.stats.trySendSpans(stats)
+		}
+	}
 	t.pushChunk(c)
+}
+
+func (t *tracer) emitFilterDrop(spans int) {
+	t.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:trace_filter"}, 1)
+	t.statsd.Count("datadog.tracer.spans_dropped", int64(spans), []string{"reason:trace_filter"}, 1)
+	telemetry.Count(telemetry.NamespaceTracers, "trace_filter.traces_dropped", []string{"reason:trace_filter"}).Submit(1)
+	telemetry.Count(telemetry.NamespaceTracers, "trace_filter.spans_dropped", []string{"reason:trace_filter"}).Submit(float64(spans))
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.

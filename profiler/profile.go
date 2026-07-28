@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strconv"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/fastdelta"
@@ -216,7 +217,7 @@ var profileTypes = map[ProfileType]profileType{
 // situation.
 func traceLogCPUProfileRate(cpuProfileRate int) {
 	if cpuProfileRate != 0 {
-		trace.Log(context.Background(), "cpuProfileRate", fmt.Sprintf("%d", cpuProfileRate))
+		trace.Log(context.Background(), "cpuProfileRate", strconv.Itoa(cpuProfileRate))
 	}
 }
 
@@ -279,7 +280,7 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 
 		start := time.Now()
 		delta, err := dp.Delta(buf.Bytes())
-		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
+		tags := append(p.cfg.tags.Slice(), "profile_type:"+name)
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
 			return nil, fmt.Errorf("delta profile error: %s", err.Error())

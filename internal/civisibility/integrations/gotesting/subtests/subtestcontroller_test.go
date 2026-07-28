@@ -8,6 +8,7 @@ package subtests
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"testing"
@@ -330,7 +332,7 @@ func subAttemptFixParallelScenario() *matrixScenario {
 				// Focus validations on a single subtest resource at a time.
 				resource := fmt.Sprintf("%s/%s", parentResource, child)
 				childSpans := spansByResource(testSpans, resource)
-				requireSpanCount(childSpans, 3, fmt.Sprintf("%s attempt-to-fix parallel span count", child))
+				requireSpanCount(childSpans, 3, child+" attempt-to-fix parallel span count")
 				sort.Slice(childSpans, func(i, j int) bool {
 					// Sort to match retry order regardless of goroutine scheduling.
 					return childSpans[i].StartTime().Before(childSpans[j].StartTime())
@@ -340,10 +342,10 @@ func subAttemptFixParallelScenario() *matrixScenario {
 					assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("%s attempt-to-fix parallel tag span %d", child, idx))
 				}
 				final := childSpans[len(childSpans)-1]
-				assertTagEquals(final, constants.TestAttemptToFixPassed, "true", fmt.Sprintf("%s attempt-to-fix parallel success", child))
-				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, fmt.Sprintf("%s attempt-to-fix parallel status", child))
-				assertTagCount(childSpans, constants.TestIsRetry, "true", 2, fmt.Sprintf("%s attempt-to-fix parallel retry tag count", child))
-				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, fmt.Sprintf("%s attempt-to-fix parallel retry reason count", child))
+				assertTagEquals(final, constants.TestAttemptToFixPassed, "true", child+" attempt-to-fix parallel success")
+				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, child+" attempt-to-fix parallel status")
+				assertTagCount(childSpans, constants.TestIsRetry, "true", 2, child+" attempt-to-fix parallel retry tag count")
+				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, child+" attempt-to-fix parallel retry reason count")
 			}
 
 			checkParallelChild("SubAttemptFix")
@@ -739,7 +741,7 @@ func assertTagCount(spans []*mocktracer.Span, key string, value string, expected
 // assertTagEquals verifies that a span tag matches the desired value and fails fast otherwise.
 func assertTagEquals(span *mocktracer.Span, key string, want string, label string) {
 	if span == nil {
-		panic(fmt.Sprintf("%s: span is nil", label))
+		panic(label + ": span is nil")
 	}
 	if value, _ := span.Tag(key).(string); value != want {
 		panic(fmt.Sprintf("%s: expected tag %s=%q, got %q", label, key, want, value))
@@ -788,8 +790,8 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 		envSnapshots = append(envSnapshots, setEnv(key, value))
 	}
 	defer func() {
-		for i := len(envSnapshots) - 1; i >= 0; i-- {
-			envSnapshots[i].restore()
+		for _, s := range slices.Backward(envSnapshots) {
+			s.restore()
 		}
 	}()
 
@@ -842,10 +844,10 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 func verifyScenarioInit(scenario string, ctx *scenarioContext) error {
 	settings := integrations.GetSettings()
 	if settings == nil {
-		return fmt.Errorf("GetSettings returned nil")
+		return errors.New("GetSettings returned nil")
 	}
 	if !settings.TestManagement.Enabled {
-		return fmt.Errorf("TestManagement.Enabled=false after init (settings fetch may have failed)")
+		return errors.New("TestManagement.Enabled=false after init (settings fetch may have failed)")
 	}
 
 	// Only validate management data when the scenario actually configures directives.
@@ -1115,8 +1117,8 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 	}
 
 	cleanup := func() {
-		for i := len(snapshots) - 1; i >= 0; i-- {
-			snapshots[i].restore()
+		for _, s := range slices.Backward(snapshots) {
+			s.restore()
 		}
 		server.Close()
 	}

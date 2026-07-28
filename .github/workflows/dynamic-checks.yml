@@ -35,7 +35,7 @@ jobs:
     name: Dynamic Analysis with Debug Detection
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
-      go-version: stable
+      go-version: "1.26.4"
       build_tags: "debug"
     secrets: inherit
 
@@ -43,7 +43,7 @@ jobs:
     name: Dynamic Analysis with Deadlock Detection
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
-      go-version: stable
+      go-version: "1.26.4"
       build_tags: "deadlock"
     secrets: inherit
 
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["oldstable", "stable"]
+        go-version: ["oldstable", "1.26.4"]
         build_tags: ["debug", "debug,deadlock"]
       fail-fast: false
     env:
@@ -63,7 +63,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
 
