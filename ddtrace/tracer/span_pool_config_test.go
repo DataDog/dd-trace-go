@@ -17,8 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const envSpanPoolEnabled = "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED"
-
 // TestSpanPoolActivationConfig pins the env var / StartOption precedence for
 // the experimental span pool. span_pool_test.go only ever turns pooling on
 // via WithSpanPool(true); this covers how the flag resolves before any of
@@ -47,7 +45,7 @@ func TestSpanPoolActivationConfig(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.name != "unset" {
-				t.Setenv(envSpanPoolEnabled, tc.env)
+				t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", tc.env)
 			}
 			cfg, err := newTestConfig(tc.opts...)
 			require.NoError(t, err)
@@ -73,7 +71,10 @@ func latestConfig(t *testing.T, cfgs []telemetry.Configuration, name string) tel
 
 // TestSpanPoolConfigTelemetry asserts not just that a value is reported, but
 // which source won: the default, the raw env var string, or the StartOption
-// (as a bool, via SetSpanPoolEnabled).
+// (as a bool, via SetSpanPoolEnabled). The "contradicting" case additionally
+// covers env and option disagreeing at the same time: both reports must
+// exist (the losing source is still recorded, per configtelemetry's design),
+// but the option's entry must be the one with the highest SeqID.
 func TestSpanPoolConfigTelemetry(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.RecordClient)
@@ -82,7 +83,7 @@ func TestSpanPoolConfigTelemetry(t *testing.T) {
 		_, err := newTestConfig()
 		require.NoError(t, err)
 
-		got := latestConfig(t, telemetryClient.Configuration, envSpanPoolEnabled)
+		got := latestConfig(t, telemetryClient.Configuration, "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED")
 		assert.Equal(t, telemetry.OriginDefault, got.Origin)
 		assert.Equal(t, false, got.Value)
 	})
@@ -90,12 +91,12 @@ func TestSpanPoolConfigTelemetry(t *testing.T) {
 	t.Run("env var", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()
-		t.Setenv(envSpanPoolEnabled, "true")
+		t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "true")
 
 		_, err := newTestConfig()
 		require.NoError(t, err)
 
-		got := latestConfig(t, telemetryClient.Configuration, envSpanPoolEnabled)
+		got := latestConfig(t, telemetryClient.Configuration, "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED")
 		assert.Equal(t, telemetry.OriginEnvVar, got.Origin)
 		// The provider reports the raw string value, not the parsed bool.
 		assert.Equal(t, "true", got.Value)
@@ -108,7 +109,23 @@ func TestSpanPoolConfigTelemetry(t *testing.T) {
 		_, err := newTestConfig(WithSpanPool(true))
 		require.NoError(t, err)
 
-		got := latestConfig(t, telemetryClient.Configuration, envSpanPoolEnabled)
+		got := latestConfig(t, telemetryClient.Configuration, "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED")
+		assert.Equal(t, telemetry.OriginCode, got.Origin)
+		assert.Equal(t, true, got.Value)
+	})
+
+	t.Run("contradicting env and option, option wins", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+		t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "false")
+
+		_, err := newTestConfig(WithSpanPool(true))
+		require.NoError(t, err)
+
+		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "false")
+		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", true)
+
+		got := latestConfig(t, telemetryClient.Configuration, "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED")
 		assert.Equal(t, telemetry.OriginCode, got.Origin)
 		assert.Equal(t, true, got.Value)
 	})
@@ -161,7 +178,10 @@ func TestSpanPoolOrchestrionGateWiring(t *testing.T) {
 // resolved flag actually reaches acquireSpan/releaseSpans, not just that the
 // config value is correct. releaseSpans is the only caller of Span.clear(),
 // so a finished span left un-cleared after a completed flush means the flag
-// never reached the release path.
+// never reached the release path. The "contradicting" cases go one step
+// further than TestSpanPoolActivationConfig: it is not enough for
+// SpanPoolEnabled() to resolve to the option's value when env and option
+// disagree — the actual pooling behavior must follow it too.
 func TestSpanPoolActivationReachesHotPath(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -172,10 +192,12 @@ func TestSpanPoolActivationReachesHotPath(t *testing.T) {
 		{name: "env only", env: "true", wantPooled: true},
 		{name: "option only", opts: []StartOption{WithSpanPool(true)}, wantPooled: true},
 		{name: "disabled", wantPooled: false},
+		{name: "option true overrides env false", env: "false", opts: []StartOption{WithSpanPool(true)}, wantPooled: true},
+		{name: "option false overrides env true", env: "true", opts: []StartOption{WithSpanPool(false)}, wantPooled: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.env != "" {
-				t.Setenv(envSpanPoolEnabled, tc.env)
+				t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", tc.env)
 			}
 			tr, transport, flush, stop, err := startTestTracer(t, tc.opts...)
 			require.NoError(t, err)
@@ -201,7 +223,7 @@ func TestSpanPoolActivationReachesHotPath(t *testing.T) {
 // var resolves to true.
 func TestSpanPoolNotUsedWhenTracingDisabled(t *testing.T) {
 	t.Setenv("DD_TRACE_ENABLED", "false")
-	t.Setenv(envSpanPoolEnabled, "true")
+	t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "true")
 
 	tr, _, _, stop, err := startTestTracer(t)
 	require.NoError(t, err)
