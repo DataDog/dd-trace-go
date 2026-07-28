@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -280,4 +281,62 @@ func (i *Instrumentation) HTTPHeadersAsTags() HeaderTags {
 
 func (i *Instrumentation) ActiveSpanKey() any {
 	return internal.ActiveSpanKey
+}
+
+// StackTrace is an opaque stack trace captured by an [Instrumentation].
+// Its zero value is ignored by [Instrumentation.RecordStackTraces].
+type StackTrace struct {
+	event *stacktrace.Event
+}
+
+// Valid reports whether the stack trace was captured and can be recorded.
+func (s StackTrace) Valid() bool {
+	return s.event != nil
+}
+
+// CaptureStackTrace captures a vulnerability stack trace identified by id.
+// skip is the number of leading frames to omit after the internal stack-trace
+// filtering and depth limit have been applied. It returns the zero value when
+// stack-trace collection is disabled, id is empty, or no frames remain.
+func (i *Instrumentation) CaptureStackTrace(id string, skip int) StackTrace {
+	if !stacktrace.Enabled() || id == "" {
+		return StackTrace{}
+	}
+
+	event := stacktrace.NewEvent(stacktrace.VulnerabilityEvent, stacktrace.WithID(id))
+	if skip > 0 {
+		event.Frames = event.Frames[min(skip, len(event.Frames)):]
+	}
+	if len(event.Frames) == 0 {
+		return StackTrace{}
+	}
+	return StackTrace{event: event}
+}
+
+// RecordStackTraces records traces in the unfinished local root span's
+// _dd.stack meta_struct entry. It replaces any value previously recorded under
+// that key, so all traces associated with the span must be supplied in one
+// call. The key is shared with AppSec stack traces; a later write by either
+// producer also replaces the earlier value. Zero-value traces, a nil span, and
+// disabled collection are ignored.
+func (i *Instrumentation) RecordStackTraces(span *tracer.Span, traces ...StackTrace) {
+	if span == nil || !stacktrace.Enabled() {
+		return
+	}
+
+	events := make([]*stacktrace.Event, 0, len(traces))
+	for _, trace := range traces {
+		if trace.event != nil {
+			events = append(events, trace.event)
+		}
+	}
+	if len(events) == 0 {
+		return
+	}
+
+	root := span.Root()
+	if root == nil {
+		return
+	}
+	stacktrace.AddToSpan(root, events...)
 }
