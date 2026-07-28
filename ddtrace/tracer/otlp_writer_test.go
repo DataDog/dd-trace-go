@@ -91,6 +91,7 @@ func newTestOTLPWriter(t *testing.T, srv *testOTLPServer, opts ...StartOption) *
 		spans:     make([]*otlptrace.Span, 0),
 		buffSize:  baseSize,
 		baseSize:  baseSize,
+		climit:    make(chan struct{}, concurrentConnectionLimit),
 	}
 }
 
@@ -148,6 +149,7 @@ func TestOTLPWriterFlush(t *testing.T) {
 		newSpan("op2", "svc", "res", 2, 1, 0),
 	})
 	w.flush()
+	w.wait()
 
 	payloads := srv.getPayloads()
 	require.Equal(t, 1, len(payloads))
@@ -179,9 +181,11 @@ func TestOTLPWriterFlushClearsSpans(t *testing.T) {
 	w.mu.Lock()
 	assert.Equal(t, 0, len(w.spans))
 	w.mu.Unlock()
+	w.wait()
 
 	// Second flush should be a no-op
 	w.flush()
+	w.wait()
 	assert.Equal(t, 1, srv.requestCount())
 }
 
@@ -194,6 +198,7 @@ func TestOTLPWriterFlushOnSize(t *testing.T) {
 		bigSpan := newSpan("op", "svc", "res", 1, 1, 0)
 		bigSpan.meta.Set("big", strings.Repeat("X", payloadSizeLimit+1))
 		w.add([]*Span{bigSpan})
+		w.wait()
 
 		assert.GreaterOrEqual(t, srv.requestCount(), 1)
 		w.mu.Lock()
@@ -214,6 +219,7 @@ func TestOTLPWriterFlushOnSize(t *testing.T) {
 			s.meta.Set("data", strings.Repeat("X", spanSize))
 			w.add([]*Span{s})
 		}
+		w.wait()
 
 		assert.GreaterOrEqual(t, srv.requestCount(), 1)
 	})
@@ -276,6 +282,7 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 
 			w.add([]*Span{newSpan("op", "svc", "res", 1, 1, 0)})
 			w.flush()
+			w.wait()
 
 			assert.Equal(t, int32(tc.expAttempts), totalRequests.Load())
 			assert.Equal(t, tc.tracesSent, len(srv.getPayloads()) > 0)
@@ -349,6 +356,44 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 	assert.Equal(t, numAdders*spansPerAdder, totalSpans)
 }
 
+// TestOTLPWriterConcurrentAddAndWait regression-tests the specific hazard that
+// motivated removing async dispatch from flush() in the first place: add()'s
+// size-triggered flush() call runs wg.Add on one goroutine while wait()/stop()
+// runs wg.Wait() on another. Without wgMu serializing the two, sync.WaitGroup
+// panics with "Add called concurrently with Wait" once a Wait call observes a
+// zero counter at the same instant a new flush starts one.
+func TestOTLPWriterConcurrentAddAndWait(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+	w := newTestOTLPWriter(t, srv)
+
+	const numAdders = 20
+	stop := make(chan struct{})
+	var adders sync.WaitGroup
+	for range numAdders {
+		adders.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				bigSpan := newSpan("op", "svc", "res", randUint64(), randUint64(), 0)
+				bigSpan.meta.Set("big", strings.Repeat("X", payloadSizeLimit/4))
+				w.add([]*Span{bigSpan})
+			}
+		})
+	}
+
+	for range 200 {
+		w.wait()
+	}
+
+	close(stop)
+	adders.Wait()
+	w.stop()
+}
+
 func TestOTLPWriterBuffSizeTracking(t *testing.T) {
 	srv := newTestOTLPServer()
 	defer srv.Close()
@@ -379,6 +424,7 @@ func TestOTLPWriterBuffSizeTracking(t *testing.T) {
 		w.mu.Lock()
 		assert.Equal(t, w.baseSize, w.buffSize)
 		w.mu.Unlock()
+		w.wait()
 	})
 
 	t.Run("buffSize approximates actual marshal size", func(t *testing.T) {
@@ -411,6 +457,7 @@ func TestOTLPWriterBuffSizeTracking(t *testing.T) {
 			"estimated %d should be within 5%% of actual %d", estimated, actual)
 
 		w.flush()
+		w.wait()
 	})
 }
 
