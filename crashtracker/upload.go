@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	internal "github.com/DataDog/dd-trace-go/v2/internal"
@@ -87,7 +88,8 @@ func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Clien
 			socketPath = u.Path
 			targetURL = "http://localhost" + agentEVPPath
 		} else {
-			targetURL = base + agentEVPPath
+			// Trim any trailing slash to avoid double-slash in the path.
+			targetURL = strings.TrimRight(base, "/") + agentEVPPath
 		}
 	}
 

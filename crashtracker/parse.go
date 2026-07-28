@@ -34,6 +34,12 @@ var (
 	signalNameRe = regexp.MustCompile(`signal (SIG[A-Z0-9]+)`)
 	signalCodeRe = regexp.MustCompile(`code=(0x[0-9a-fA-F]+|\d+)`)
 	signalAddrRe = regexp.MustCompile(`addr=(0x[0-9a-fA-F]+)`)
+
+	// topLevelSignalRe matches the Go runtime's top-level signal crash header,
+	// e.g. "SIGABRT: abort" or "SIGSEGV: segmentation violation".
+	// This format appears when the process is killed directly by a signal (not
+	// wrapped in a panic), in contrast to the bracketed "[signal SIG…]" form.
+	topLevelSignalRe = regexp.MustCompile(`^(SIG[A-Z0-9]+): `)
 )
 
 // signalNumbers maps the signal names the Go runtime reports on a crash to
@@ -87,7 +93,9 @@ func parseCrashDump(dump []byte) *Report {
 // stack blocks. The split point is the first goroutine header line.
 func splitDump(dump []byte) (preamble []string, threads []Thread) {
 	sc := bufio.NewScanner(bytes.NewReader(dump))
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// Raise the per-token limit to the dump cap so an oversized panic message
+	// does not prevent the scanner from reaching the goroutine stacks below it.
+	sc.Buffer(make([]byte, 0, 64*1024), maxCrashDumpSize)
 
 	// Preallocate: rough estimate of 80 bytes per line for typical Go stack frames.
 	lines := make([]string, 0, len(dump)/80)
@@ -252,28 +260,43 @@ func crashingThread(threads []Thread) *Thread {
 }
 
 // parseSignal extracts UNIX signal details from the preamble, or returns nil
-// if the crash was not signal-triggered.
+// if the crash was not signal-triggered. It recognises two formats emitted by
+// the Go runtime:
+//
+//   - Bracketed panic signal: "[signal SIGSEGV: segmentation violation code=… addr=… pc=…]"
+//     — appears when a signal interrupts a running goroutine.
+//   - Top-level fatal signal: "SIGABRT: abort" or "SIGSEGV: segmentation violation"
+//     — appears when the process is killed directly by a signal with no
+//     surrounding panic context.
 func parseSignal(preamble []string) *SigInfo {
 	for _, line := range preamble {
-		if !strings.Contains(line, "signal SIG") {
-			continue
+		// Bracketed form: "[signal SIG…]"
+		if strings.Contains(line, "signal SIG") {
+			nameMatch := signalNameRe.FindStringSubmatch(line)
+			if nameMatch == nil {
+				continue
+			}
+			name := nameMatch[1]
+			info := &SigInfo{
+				SiSignoHuman: name,
+				SiSigno:      signalNumbers[name],
+			}
+			if m := signalCodeRe.FindStringSubmatch(line); m != nil {
+				info.SiCode = parseIntFlexible(m[1])
+			}
+			if m := signalAddrRe.FindStringSubmatch(line); m != nil {
+				info.SiAddr = m[1]
+			}
+			return info
 		}
-		nameMatch := signalNameRe.FindStringSubmatch(line)
-		if nameMatch == nil {
-			continue
+		// Top-level form: "SIGABRT: abort"
+		if m := topLevelSignalRe.FindStringSubmatch(line); m != nil {
+			name := m[1]
+			return &SigInfo{
+				SiSignoHuman: name,
+				SiSigno:      signalNumbers[name],
+			}
 		}
-		name := nameMatch[1]
-		info := &SigInfo{
-			SiSignoHuman: name,
-			SiSigno:      signalNumbers[name],
-		}
-		if m := signalCodeRe.FindStringSubmatch(line); m != nil {
-			info.SiCode = parseIntFlexible(m[1])
-		}
-		if m := signalAddrRe.FindStringSubmatch(line); m != nil {
-			info.SiAddr = m[1]
-		}
-		return info
 	}
 	return nil
 }
