@@ -106,17 +106,80 @@ const (
 )
 
 const (
-	sizeLimitEVPEvent        = 5_000_000 // 5MB
-	collectionErrorDroppedIO = "dropped_io"
-	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
+	// SizeLimitEVPEvent is the EVP event size limit a span or metric event must
+	// stay under. It is exported so the offline export client (llmobs/export)
+	// guards against the same number instead of declaring its own.
+	SizeLimitEVPEvent = 5_000_000 // 5MB
+	// CollectionErrorDroppedIO is the collection_errors entry marking a span whose
+	// input/output was dropped to fit SizeLimitEVPEvent.
+	CollectionErrorDroppedIO = "dropped_io"
+	// DroppedValueText replaces an input/output value dropped by DropSpanEventIO.
+	DroppedValueText = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
 
 	// evalMetricsEnvelopeSize is a conservative estimate of the fixed JSON overhead added by the
 	// transport.PushMetricsRequest wrapper that encloses buffered eval metrics when sent, i.e.
 	// {"data":{"type":"evaluation_metric","attributes":{"metrics":[...]}}}. The actual wrapper is
-	// ~65 bytes; we reserve more to keep the serialized body safely under sizeLimitEVPEvent even if
+	// ~65 bytes; we reserve more to keep the serialized body safely under SizeLimitEVPEvent even if
 	// the envelope grows. The per-metric array separator (",") is accounted for separately.
 	evalMetricsEnvelopeSize = 256
 )
+
+// Tag keys and values that the live and offline span builders must emit
+// identically: a divergence here fragments one datum into two facets at intake.
+const (
+	TagKeySource        = "source"
+	TagKeyLanguage      = "language"
+	TagKeyTracerVersion = "ddtrace.version"
+	TagKeyError         = "error"
+	TagKeyErrorType     = "error_type"
+
+	TagValueSource   = "integration"
+	TagValueLanguage = "go"
+)
+
+// Meta keys shared by the live and offline span builders.
+const (
+	MetaKeyModelName     = "model_name"
+	MetaKeyModelProvider = "model_provider"
+	MetaKeyErrorMessage  = "error.message"
+	MetaKeyErrorStack    = "error.stack"
+	MetaKeyErrorType     = "error.type"
+)
+
+// modelUnknown fills in a model_name or model_provider a span reports only one of.
+const modelUnknown = "custom"
+
+// NormalizeModel reports the model_name/model_provider meta values for a span of
+// the given kind. A missing name or provider falls back to "custom", and the
+// provider is lower-cased so the same vendor spelled "OpenAI" and "openai" cannot
+// fragment into two facets. ok is false when the span carries no model
+// information at all and both keys must be omitted.
+func NormalizeModel(kind SpanKind, modelName, modelProvider string) (name, provider string, ok bool) {
+	if !((kind == SpanKindLLM || kind == SpanKindEmbedding) && modelName != "" || modelProvider != "") {
+		return "", "", false
+	}
+	name = modelName
+	if name == "" {
+		name = modelUnknown
+	}
+	provider = strings.ToLower(modelProvider)
+	if provider == "" {
+		provider = modelUnknown
+	}
+	return name, provider, true
+}
+
+// SetErrorMeta writes the error.message/error.stack/error.type meta keys from an
+// error payload. All three are written whenever msg is non-nil, even when empty,
+// so an errored span carries the same key set on the live and offline paths.
+func SetErrorMeta(meta map[string]any, msg *transport.ErrorMessage) {
+	if msg == nil {
+		return
+	}
+	meta[MetaKeyErrorMessage] = msg.Message
+	meta[MetaKeyErrorStack] = msg.Stack
+	meta[MetaKeyErrorType] = msg.Type
+}
 
 // See: https://docs.datadoghq.com/getting_started/site/#access-the-datadog-site
 var ddSitesNeedingAppSubdomain = []string{"datadoghq.com", "datadoghq.eu", "ddog-gov.com"}
@@ -316,7 +379,7 @@ func (l *LLMObs) Run() {
 			select {
 			case ev := <-l.spanEventsCh:
 				evSize := jsonSize(ev)
-				if l.bufSpanEventsSize+evSize > sizeLimitEVPEvent {
+				if l.bufSpanEventsSize+evSize > SizeLimitEVPEvent {
 					log.Debug("llmobs: span events buffer size limit reached, flushing before adding new event")
 					l.sendAsync(l.clearBuffersNonLocked())
 				}
@@ -328,7 +391,7 @@ func (l *LLMObs) Run() {
 				// the request body; combined with evalMetricsEnvelopeSize it makes the buffered size
 				// reflect the actual serialized PushMetricsRequest body rather than the bare metric.
 				mSize := jsonSize(evalMetric) + 1
-				if l.bufEvalMetricsSize+mSize+evalMetricsEnvelopeSize > sizeLimitEVPEvent {
+				if l.bufEvalMetricsSize+mSize+evalMetricsEnvelopeSize > SizeLimitEVPEvent {
 					log.Debug("llmobs: eval metrics buffer size limit reached, flushing before adding new metric")
 					l.sendAsync(l.clearBuffersNonLocked())
 				}
@@ -535,17 +598,9 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	spanKind := span.spanKind
 	meta["span.kind"] = string(spanKind)
 
-	if (spanKind == SpanKindLLM || spanKind == SpanKindEmbedding) && span.llmCtx.modelName != "" || span.llmCtx.modelProvider != "" {
-		modelName := span.llmCtx.modelName
-		if modelName == "" {
-			modelName = "custom"
-		}
-		modelProvider := strings.ToLower(span.llmCtx.modelProvider)
-		if modelProvider == "" {
-			modelProvider = "custom"
-		}
-		meta["model_name"] = modelName
-		meta["model_provider"] = modelProvider
+	if modelName, modelProvider, ok := NormalizeModel(spanKind, span.llmCtx.modelName, span.llmCtx.modelProvider); ok {
+		meta[MetaKeyModelName] = modelName
+		meta[MetaKeyModelProvider] = modelProvider
 	}
 
 	metadata := span.llmCtx.metadata
@@ -624,9 +679,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	if span.error != nil {
 		spanStatus = string(SpanStatusError)
 		errMsg = transport.NewErrorMessage(span.error)
-		meta["error.message"] = errMsg.Message
-		meta["error.stack"] = errMsg.Stack
-		meta["error.type"] = errMsg.Type
+		SetErrorMeta(meta, errMsg)
 	}
 
 	if len(input) > 0 {
@@ -667,10 +720,10 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	tags["version"] = l.Config.TracerConfig.Version
 	tags["env"] = l.Config.TracerConfig.Env
 	tags["service"] = l.Config.TracerConfig.Service
-	tags["source"] = "integration"
+	tags[TagKeySource] = TagValueSource
 	tags["ml_app"] = span.mlApp
-	tags["ddtrace.version"] = version.Tag
-	tags["language"] = "go"
+	tags[TagKeyTracerVersion] = version.Tag
+	tags[TagKeyLanguage] = TagValueLanguage
 
 	sessionID := span.propagatedSessionID()
 	if sessionID != "" {
@@ -681,10 +734,10 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	if span.error != nil {
 		errTag = "1"
 	}
-	tags["error"] = errTag
+	tags[TagKeyError] = errTag
 
 	if errMsg != nil {
-		tags["error_type"] = errMsg.Type
+		tags[TagKeyErrorType] = errMsg.Type
 	}
 	if span.integration != "" {
 		tags["integration"] = span.integration
@@ -733,12 +786,12 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		trackSpanEventRawSize(ev, rawSize)
 
 		truncated := false
-		if rawSize > sizeLimitEVPEvent {
+		if rawSize > SizeLimitEVPEvent {
 			log.Warn(
 				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the event size limit (5MB)",
 				readableBytes(rawSize),
 			)
-			truncated = dropSpanEventIO(ev)
+			truncated = DropSpanEventIO(ev)
 			if !truncated {
 				log.Debug("llmobs: attempted to drop span event IO but it was not present")
 			}
@@ -824,21 +877,25 @@ func setMetadataCostTags(metadata map[string]any, costTags []string) {
 	metadata["_dd"] = ddMetadata
 }
 
-func dropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
+// DropSpanEventIO replaces ev's input/output meta values with DroppedValueText
+// and marks CollectionErrorDroppedIO, reporting whether anything was dropped. It
+// mutates ev in place and is shared with the offline export client so both paths
+// emit the same sentinel and collection error.
+func DropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
 	if ev == nil {
 		return false
 	}
 	droppedIO := false
 	if _, ok := ev.Meta["input"]; ok {
-		ev.Meta["input"] = map[string]any{"value": droppedValueText}
+		ev.Meta["input"] = map[string]any{"value": DroppedValueText}
 		droppedIO = true
 	}
 	if _, ok := ev.Meta["output"]; ok {
-		ev.Meta["output"] = map[string]any{"value": droppedValueText}
+		ev.Meta["output"] = map[string]any{"value": DroppedValueText}
 		droppedIO = true
 	}
 	if droppedIO {
-		ev.CollectionErrors = []string{collectionErrorDroppedIO}
+		ev.CollectionErrors = []string{CollectionErrorDroppedIO}
 	} else {
 		log.Debug("llmobs: attempted to drop span event IO but it was not present")
 	}
