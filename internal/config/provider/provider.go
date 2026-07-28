@@ -8,6 +8,7 @@
 package provider
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,8 +62,7 @@ func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T 
 func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T, bool)) (T, telemetry.Origin) {
 	var final *T
 	var winningOrigin telemetry.Origin
-	for i := len(p.sources) - 1; i >= 0; i-- {
-		source := p.sources[i]
+	for _, source := range slices.Backward(p.sources) {
 		v := source.get(key)
 		if v != "" {
 			var id string

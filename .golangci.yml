@@ -32,6 +32,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      - \.claude
     rules:
       - path: "internal/(env|log|locking)/"
         linters:

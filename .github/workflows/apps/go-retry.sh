@@ -10,15 +10,16 @@
 # signature and so is never retried. Shared by smoke-tests.yml and govulncheck*.{yml,sh}.
 #
 # The build cache is always rebuildable offline, so it is dropped on every retry to discard
-# partial artifacts a crashed compiler left behind. The module cache is also wiped on every
-# retry: a crash (SIGSEGV/ICE/fatal fault) can silently corrupt an on-disk module archive during
-# extraction, with the tell-tale "zip: checksum error" only appearing on a *later* attempt once
-# something finally tries to read the already-corrupted file — so gating the wipe on the current
-# attempt's log missed that case. Archive-corruption signatures always trigger a wipe
-# (self-limiting: a clean re-download stops the errors, so it never accumulates against the
-# budget below). Any other corruption signature (SIGSEGV/ICE/fatal fault) also wipes the module
-# cache defensively, but is charged against GO_RETRY_MAX_MODCACHE_WIPES, since most such crashes
-# never touch GOMODCACHE and a false alarm shouldn't be free to trigger unbounded re-downloads.
+# partial artifacts a crashed compiler left behind. The module cache is wiped more selectively,
+# because refetching it needs the network: a crash (SIGSEGV/ICE/fatal fault) can silently corrupt
+# an on-disk module archive during extraction, with the tell-tale "zip: checksum error" only
+# appearing on a *later* attempt once something finally tries to read the already-corrupted file —
+# so gating the wipe purely on the current attempt's log would miss that case. Archive-corruption
+# signatures always trigger a modcache wipe (self-limiting: a clean re-download stops the errors,
+# so it never accumulates against the budget below). Any other corruption signature
+# (SIGSEGV/ICE/fatal fault) also wipes the module cache defensively, but only up to
+# GO_RETRY_MAX_MODCACHE_WIPES times per run, since most such crashes never touch GOMODCACHE and a
+# false alarm shouldn't be free to trigger unbounded re-downloads.
 #
 # Both functions are re-entrancy-safe: if a caller wraps a function that itself calls
 # retry_on_corruption/retry_on_corruption_to_file (directly or a few frames down), the inner call

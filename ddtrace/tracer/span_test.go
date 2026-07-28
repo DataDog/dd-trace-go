@@ -593,6 +593,67 @@ func (t *testMsgpStruct) MarshalMsg(_ []byte) ([]byte, error) {
 	return nil, nil
 }
 
+func TestSpanSetMetaStruct(t *testing.T) {
+	t.Run("nil span", func(t *testing.T) {
+		var span *Span
+		assert.False(t, span.SetMetaStruct("key", &testMsgpStruct{}))
+	})
+
+	t.Run("no tracer", func(t *testing.T) {
+		previousTracer := getGlobalTracer()
+		setGlobalTracer(&NoopTracer{})
+		defer setGlobalTracer(previousTracer)
+
+		span := newBasicSpan("web.request")
+		assert.False(t, span.SetMetaStruct("key", &testMsgpStruct{}))
+		assert.NotContains(t, span.metaStruct, "key")
+	})
+
+	for _, supported := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unsupported", true: "supported"}[supported], func(t *testing.T) {
+			tracer, _, _, stop, err := startTestTracer(t)
+			require.NoError(t, err)
+			defer stop()
+
+			agentFeatures := tracer.config.agent.load()
+			agentFeatures.metaStructAvailable = supported
+			tracer.config.agent.store(agentFeatures)
+
+			span := newBasicSpan("web.request")
+			value := &testMsgpStruct{A: "test"}
+			assert.Equal(t, supported, span.SetMetaStruct("key", value))
+			if supported {
+				assert.Equal(t, value, span.metaStruct["key"])
+			} else {
+				assert.NotContains(t, span.metaStruct, "key")
+			}
+		})
+	}
+
+	t.Run("concurrent", func(t *testing.T) {
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.NoError(t, err)
+		defer stop()
+
+		agentFeatures := tracer.config.agent.load()
+		agentFeatures.metaStructAvailable = true
+		tracer.config.agent.store(agentFeatures)
+
+		span := newBasicSpan("web.request")
+		const count = 100
+		var wg sync.WaitGroup
+		wg.Add(count)
+		for i := range count {
+			go func() {
+				defer wg.Done()
+				span.SetMetaStruct(strconv.Itoa(i), &testMsgpStruct{A: "test"})
+			}()
+		}
+		wg.Wait()
+		assert.Len(t, span.metaStruct, count)
+	})
+}
+
 func TestSpanSetTagError(t *testing.T) {
 
 	t.Run("off", func(t *testing.T) {
@@ -1874,6 +1935,111 @@ func TestStatsAfterFinish(t *testing.T) {
 		assert.Equal(t, 1, len(stats))
 		peerTags := stats[0].Stats[0].Stats[0].PeerTags
 		assert.Empty(t, peerTags)
+	})
+}
+
+func TestStatsAdditionalMetricTags(t *testing.T) {
+	t.Run("tags-present", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+			WithStatsAdditionalTags([]string{"region", "tenant_id"}),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		sp.SetTag("region", "us-east-1")
+		sp.SetTag("tenant_id", "acme-corp")
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Contains(t, additionalTags, "region:us-east-1")
+		assert.Contains(t, additionalTags, "tenant_id:acme-corp")
+	})
+	t.Run("tags-missing", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+			WithStatsAdditionalTags([]string{"region"}),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		// no "region" tag set on the span
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Empty(t, additionalTags)
+	})
+	t.Run("no-config", func(t *testing.T) {
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		sp.SetTag("region", "us-east-1")
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Empty(t, additionalTags)
 	})
 }
 

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,20 @@ const (
 
 	// DefaultMaxTagsHeaderLen is the default value for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	DefaultMaxTagsHeaderLen = 512
+	// defaultStatsAdditionalTagsCardinalityLimit is the default per-bucket cap for additional metric tag cardinality.
+	defaultStatsAdditionalTagsCardinalityLimit = 100
+	// maxAdditionalTagKeys is the maximum number of configured additional metric tag keys.
+	maxAdditionalTagKeys = 6
+	// defaultStatsWholeKeyCardinalityLimit is the default whole-key cardinality cap per bucket.
+	defaultStatsWholeKeyCardinalityLimit = 2048
+	// defaultStatsResourceCardinalityLimit is the default per-field cap for resource cardinality.
+	defaultStatsResourceCardinalityLimit = 1024
+	// defaultStatsHTTPEndpointCardinalityLimit is the default per-field cap for http_endpoint cardinality.
+	defaultStatsHTTPEndpointCardinalityLimit = 512
+	// defaultStatsPeerTagsCardinalityLimit is the default per-field cap for peer_tags cardinality.
+	defaultStatsPeerTagsCardinalityLimit = 512
+	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
+	defaultStatsOriginCardinalityLimit = 20
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a
@@ -102,6 +117,32 @@ func validateSendRetries(retries int) bool {
 		return false
 	}
 	return true
+}
+
+func capAdditionalTagKeys(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(tags))
+	unique := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		unique = append(unique, tag)
+	}
+	if len(unique) > maxAdditionalTagKeys {
+		dropped := unique[maxAdditionalTagKeys:]
+		log.Warn("DD_TRACE_STATS_ADDITIONAL_TAGS is limited to %d keys; dropping configured tag keys: %s", maxAdditionalTagKeys, strings.Join(dropped, ","))
+		unique = unique[:maxAdditionalTagKeys]
+	}
+	slices.Sort(unique)
+	return unique
 }
 
 // parseSpanAttributeSchema parses the DD_TRACE_SPAN_ATTRIBUTE_SCHEMA value.

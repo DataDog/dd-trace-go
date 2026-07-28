@@ -84,9 +84,9 @@ jobs:
           echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> "$GITHUB_OUTPUT"
           echo "path=go_pkg_mod_cache" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version: "1.26.4"
           cache: false
 
       - name: Cache Go modules
@@ -115,7 +115,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
-        go-version: [ "1.26", "1.25" ]
+        go-version: [ "1.26.4", "1.25" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -130,9 +130,11 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: false # we manage the caching ourselves
@@ -203,7 +205,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
@@ -233,7 +235,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
 
@@ -244,11 +246,13 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version: "1.26.4"
           cache: false # we manage the caching ourselves
 
       - run: go env -w GOMODCACHE="${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}"
@@ -310,7 +314,7 @@ jobs:
       - go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.26", "1.25" ]
+        go-version: [ "1.26.4", "1.25" ]
         distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 
@@ -328,7 +332,9 @@ jobs:
           key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
-          fail-on-cache-miss: true
+          # Transient cache-service miss/timeout: fall back to a cold rebuild
+          # (modules re-fetched per go.sum) instead of hard-failing the job.
+          fail-on-cache-miss: false
 
       # Docker is not present on early-access ARM runners
       - name: Prepare ARM Runner
@@ -449,7 +455,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
