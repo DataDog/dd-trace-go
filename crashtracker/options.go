@@ -5,7 +5,9 @@
 
 package crashtracker
 
-import "net/http"
+import (
+	"net/http"
+)
 
 // Option is a functional option for configuring the crashtracker.
 type Option func(*config)
@@ -19,6 +21,12 @@ type config struct {
 	apiKey     string
 	site       string
 	enabled    bool
+
+	// agentlessURL is a test-only override for the agentless upload target.
+	// There is no public option for it: WithAgentURL always means the agent,
+	// so combining WithAgentURL and WithAPIKey cannot silently drop the report
+	// by pointing the agentless path at a pathless host (see upload.go).
+	agentlessURL string
 }
 
 // WithService sets the service name tag on crash reports.
@@ -54,4 +62,11 @@ func WithAPIKey(apiKey string) Option {
 // WithSite sets the Datadog site for agentless intake (e.g. "datadoghq.com").
 func WithSite(site string) Option {
 	return func(c *config) { c.site = site }
+}
+
+// WithEnabled explicitly enables or disables the crashtracker, overriding the
+// DD_CRASHTRACKING_ENABLED environment gate. When disabled, Start does not spawn
+// the monitor process and returns nil.
+func WithEnabled(enabled bool) Option {
+	return func(c *config) { c.enabled = enabled }
 }

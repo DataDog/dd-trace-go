@@ -13,21 +13,27 @@
 // the crash dump to that pipe and the monitor child parses and uploads a structured
 // report to the Error Tracking intake.
 //
-// Requires Go 1.23 or later (SetCrashOutput was added in Go 1.23).
+// Requires runtime/debug.SetCrashOutput, added in Go 1.23; see this repository's
+// go.mod for the minimum Go version this module actually builds with.
 //
 // # Lifecycle
 //
-// Call Start as early as possible in main, before any goroutines are created, and
-// defer Stop to ensure the monitor is released on clean exit:
+// Call Start as early as possible in main, before any goroutines are created:
 //
 //	func main() {
 //	    if err := crashtracker.Start(); err != nil {
 //	        log.Printf("crashtracker.Start: %v", err)
 //	    }
-//	    defer crashtracker.Stop()
 //
 //	    // ... application code
 //	}
+//
+// There is no corresponding Stop. Process exit alone closes the crash pipe,
+// which is all the cleanup the monitor needs: it reads EOF and exits without
+// filing a report. Do not add a deferred unregister step — deferred functions
+// run during panic unwinding, before the runtime writes the crash dump, so a
+// defer here would disable reporting for the most common crash: an
+// unrecovered panic.
 //
 // Start is idempotent: subsequent calls after the first are no-ops. With
 // orchestrion enabled, the crashtracker aspect injects Start as the first
@@ -38,12 +44,13 @@
 // # Configuration
 //
 // The monitor process inherits all environment variables except GOMEMLIMIT and
-// GOGC. Programmatic options passed to Start (e.g. WithAPIKey, WithAgentURL)
-// are applied in the application process and are NOT forwarded to the monitor
-// child because they cannot cross process boundaries. Use the corresponding
-// DD_* environment variables (DD_API_KEY, DD_TRACE_AGENT_URL, DD_SITE) to
-// configure the monitor's upload destination when env-var-free programmatic
-// options are required.
+// GOGC (the monitor sets its own memory ceiling instead of inheriting the
+// application's). Options passed to Start (WithService, WithEnv, WithVersion,
+// WithAPIKey, WithAgentURL, WithSite) are resolved in the application process
+// and then forwarded to the monitor child across the process boundary, so they
+// take effect end to end. WithHTTPClient is the one exception: an *http.Client
+// cannot cross a process boundary, so it only affects direct calls to the
+// package's internal upload path and has no effect via Start.
 //
 // # Goroutine stack completeness
 //
