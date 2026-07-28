@@ -17,7 +17,6 @@ runs:
       with:
         go-version: ${{ inputs.go-version }}
         cache: true
-        check-latest: true
 
     - name: Cache tools
       id: cache-tools
