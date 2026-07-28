@@ -26,18 +26,80 @@ net-server:
         after: AfterServeHTTP
         path: github.com/DataDog/dd-trace-go/contrib/net/http/v2/otelc
 
-# Doesn't work, I think
-get-head-post-postform:
-  target: net/http
+# Unlike Orchestrion, otelc does not yet support `.AST.Fun.Name`, so we instead create four
+# different rules for each of the four functions required (GET, HEAD, POST, and POSTFORM).
+get:
+  target: "$root"
   where:
-    one-of:
-      - function_call: Get
-      - function_call: Head
-      - function_call: Post
-      - function_call: PostForm
-    signature_contains:
-      args: [context.Context, *net/http.Request]
+    function_call: net/http.Get
   do:
     - wrap_call:
-        replace: "{{ FuncName }}({{ . }})" # Issue
-        path: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+        replace: |-
+            {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+            {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              ddhttpclient.Get({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else if $req -}}
+              ddhttpclient.Get({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+  imports:
+    ddhttpclient: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+head:
+  target: "$root"
+  where:
+    function_call: net/http.Head
+  do:
+    - wrap_call:
+        replace: |-
+            {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+            {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              ddhttpclient.Head({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else if $req -}}
+              ddhttpclient.Head({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+  imports:
+    ddhttpclient: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+post:
+  target: "$root"
+  where:
+    function_call: net/http.Post
+  do:
+    - wrap_call:
+        replace: |-
+            {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+            {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              ddhttpclient.Post({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else if $req -}}
+              ddhttpclient.Post({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+  imports:
+    ddhttpclient: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+postform:
+  target: "$root"
+  where:
+    function_call: net/http.PostForm
+  do:
+    - wrap_call:
+        replace: |-
+            {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+            {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              ddhttpclient.PostForm({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else if $req -}}
+              ddhttpclient.PostForm({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+  imports:
+    ddhttpclient: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
