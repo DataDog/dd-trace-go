@@ -6,7 +6,7 @@
 package mocktracer
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -283,7 +283,7 @@ func TestTracerInject(t *testing.T) {
 		err := (&mocktracer{}).Inject(sp.Context(), tracer.TextMapCarrier(carrier))
 
 		assert.Nil(err)
-		assert.Equal(fmt.Sprintf("%d", sp.Context().TraceIDLower()), carrier[traceHeader])
+		assert.Equal(strconv.FormatUint(sp.Context().TraceIDLower(), 10), carrier[traceHeader])
 		assert.Equal("2", carrier[spanHeader])
 		assert.Equal("-1", carrier[priorityHeader])
 		assert.Equal("B", carrier[baggagePrefix+"A"])

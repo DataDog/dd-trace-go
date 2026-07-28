@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"sync"
 
 	"github.com/tinylib/msgp/msgp"
@@ -337,7 +338,11 @@ func drainRequestBody(r *http.Request) error {
 func (p *Payloads) Events() Events {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	var events Events
+	total := 0
+	for _, payload := range p.payloads {
+		total += len(payload.Events)
+	}
+	events := make(Events, 0, total)
 	for _, payload := range p.payloads {
 		events = append(events, payload.Events...)
 	}
@@ -505,11 +510,11 @@ func applyEnvUpdates(updates []envUpdate) func() {
 		_ = os.Setenv(update.key, update.value)
 	}
 	return func() {
-		for i := len(snapshots) - 1; i >= 0; i-- {
-			if snapshots[i].had {
-				_ = os.Setenv(snapshots[i].key, snapshots[i].value)
+		for _, s := range slices.Backward(snapshots) {
+			if s.had {
+				_ = os.Setenv(s.key, s.value)
 			} else {
-				_ = os.Unsetenv(snapshots[i].key)
+				_ = os.Unsetenv(s.key)
 			}
 		}
 	}

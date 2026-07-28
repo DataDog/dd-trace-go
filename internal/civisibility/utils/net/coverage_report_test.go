@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	coretelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -45,7 +48,7 @@ func TestCoverageReportApiRequest(t *testing.T) {
 		require.Equal(t, ContentTypeJSON, event.contentType)
 		require.Equal(t, "event.json", event.fileName)
 
-		var eventPayload map[string]string
+		var eventPayload map[string]any
 		require.NoError(t, json.Unmarshal(event.body, &eventPayload))
 		require.Equal(t, "coverage_report", eventPayload["type"])
 		require.Equal(t, FormatLCOV, eventPayload["format"])
@@ -54,6 +57,7 @@ func TestCoverageReportApiRequest(t *testing.T) {
 		require.Equal(t, "main", eventPayload[constants.GitBranch])
 		require.Equal(t, "/ci/workspace", eventPayload[constants.CIWorkspacePath])
 		require.Equal(t, "42", eventPayload[constants.PrNumber])
+		require.Equal(t, []any{"type:unit-tests", "jvm-21", "type:unit-tests"}, eventPayload["report.flags"])
 		require.NotContains(t, eventPayload, constants.TestSessionName)
 
 		coverage := parts["coverage"]
@@ -70,6 +74,7 @@ func TestCoverageReportApiRequest(t *testing.T) {
 	defer restoreEnv(origEnv)
 
 	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CodeCoverageFlagsEnvironmentVariable, "type:unit-tests,jvm-21,type:unit-tests")
 	civisibilityutils.AddCITagsMap(map[string]string{
 		constants.CIWorkspacePath: "/ci/workspace",
 		constants.PrNumber:        "42",
@@ -112,6 +117,116 @@ func TestCoverageReportApiRequest(t *testing.T) {
 		Tags:      "rq_compressed:true",
 		Kind:      "distribution",
 	})
+}
+
+func TestParseCoverageReportFlags(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{name: "unset", want: nil},
+		{name: "empty", raw: "", want: nil},
+		{name: "comma and whitespace only", raw: " , , ", want: nil},
+		{name: "preserves order", raw: "type:unit-tests,jvm-21", want: []string{"type:unit-tests", "jvm-21"}},
+		{name: "trims and removes empty entries", raw: " type:unit-tests, , jvm-21 ", want: []string{"type:unit-tests", "jvm-21"}},
+		{name: "preserves duplicates", raw: "unit,unit", want: []string{"unit", "unit"}},
+		{name: "accepts maximum", raw: makeCoverageReportFlags(maxCoverageReportFlags), want: makeCoverageReportFlagSlice(maxCoverageReportFlags)},
+		{name: "rejects over maximum", raw: makeCoverageReportFlags(maxCoverageReportFlags + 1), want: nil},
+		{name: "accepts maximum after removing empty entries", raw: " , " + makeCoverageReportFlags(maxCoverageReportFlags) + ", , ", want: makeCoverageReportFlagSlice(maxCoverageReportFlags)},
+		{name: "rejects over maximum after removing empty entries", raw: " , " + makeCoverageReportFlags(maxCoverageReportFlags+1) + ", , ", want: nil},
+	}
+
+	defer log.UseLogger(log.DiscardLogger{})()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, parseCoverageReportFlags(test.raw))
+		})
+	}
+}
+
+func TestParseCoverageReportFlagsWarnsOnOverflow(t *testing.T) {
+	recordLogger := new(log.RecordLogger)
+	defer log.UseLogger(recordLogger)()
+
+	require.Nil(t, parseCoverageReportFlags(makeCoverageReportFlags(maxCoverageReportFlags+1)))
+
+	logs := recordLogger.Logs()
+	require.Len(t, logs, 1)
+	require.Contains(t, logs[0], constants.CodeCoverageFlagsEnvironmentVariable)
+	require.Contains(t, logs[0], "33")
+	require.Contains(t, logs[0], "32")
+}
+
+func TestCoverageReportApiRequestOmitsInvalidFlags(t *testing.T) {
+	tests := []struct {
+		name  string
+		value *string
+	}{
+		{name: "unset"},
+		{name: "empty", value: stringPointer(" , , ")},
+		{name: "over maximum", value: stringPointer(makeCoverageReportFlags(maxCoverageReportFlags + 1))},
+	}
+
+	defer log.UseLogger(log.DiscardLogger{})()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var requestReceived bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requestReceived = true
+				parts := readCoverageReportMultipartParts(t, r)
+				var eventPayload map[string]any
+				require.NoError(t, json.Unmarshal(parts["event"].body, &eventPayload))
+				require.NotContains(t, eventPayload, "report.flags")
+				w.WriteHeader(http.StatusAccepted)
+			}))
+			defer server.Close()
+
+			origEnv := saveEnv()
+			path := os.Getenv("PATH")
+			defer restoreEnv(origEnv)
+
+			setCiVisibilityEnv(path, server.URL)
+			if test.value != nil {
+				os.Setenv(constants.CodeCoverageFlagsEnvironmentVariable, *test.value)
+			}
+
+			client := NewClientForCoverageReportUpload()
+			require.NotNil(t, client)
+			require.NoError(t, client.SendCoverageReport(bytes.NewReader([]byte("report")), FormatLCOV))
+			require.True(t, requestReceived)
+		})
+	}
+}
+
+func TestCoverageReportFlagsAreSnapshotted(t *testing.T) {
+	var receivedFlags []any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := readCoverageReportMultipartParts(t, r)
+		var eventPayload map[string]any
+		require.NoError(t, json.Unmarshal(parts["event"].body, &eventPayload))
+		receivedFlags = append(receivedFlags, eventPayload["report.flags"])
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CodeCoverageFlagsEnvironmentVariable, "first,second")
+	client := NewClientForCoverageReportUpload()
+	require.NotNil(t, client)
+	os.Setenv(constants.CodeCoverageFlagsEnvironmentVariable, "later")
+
+	require.NoError(t, client.SendCoverageReport(bytes.NewReader([]byte("first report")), FormatLCOV))
+	os.Unsetenv(constants.CodeCoverageFlagsEnvironmentVariable)
+	require.NoError(t, client.SendCoverageReport(bytes.NewReader([]byte("second report")), FormatLCOV))
+	require.Equal(t, []any{
+		[]any{"first", "second"},
+		[]any{"first", "second"},
+	}, receivedFlags)
 }
 
 func TestCoverageReportApiRequestDoesNotPersistMultipartContentTypeHeader(t *testing.T) {
@@ -280,4 +395,20 @@ func gunzipCoverageReportPart(t *testing.T, body []byte) string {
 	uncompressed, err := io.ReadAll(reader)
 	require.NoError(t, err)
 	return string(uncompressed)
+}
+
+func makeCoverageReportFlags(count int) string {
+	return strings.Join(makeCoverageReportFlagSlice(count), ",")
+}
+
+func makeCoverageReportFlagSlice(count int) []string {
+	flags := make([]string, count)
+	for i := range flags {
+		flags[i] = "flag-" + strconv.Itoa(i)
+	}
+	return flags
+}
+
+func stringPointer(value string) *string {
+	return &value
 }

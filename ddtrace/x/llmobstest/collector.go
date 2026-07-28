@@ -55,11 +55,12 @@ type LLMObsMetric = llmobstransport.LLMObsMetric
 type Collector struct {
 	mux *http.ServeMux
 
-	mu         sync.Mutex
-	spans      []LLMObsSpan
-	metrics    []LLMObsMetric
-	batchSizes []int         // raw body byte-lengths, one entry per span batch HTTP request
-	spanDelay  time.Duration // artificial delay applied before responding to span batches
+	mu               sync.Mutex
+	spans            []LLMObsSpan
+	metrics          []LLMObsMetric
+	spanBatchSizes   []int         // raw body byte-lengths, one entry per span batch HTTP request
+	metricBatchSizes []int         // raw body byte-lengths, one entry per eval-metric batch HTTP request
+	spanDelay        time.Duration // artificial delay applied before responding to span batches
 }
 
 // New creates a Collector that routes LLMObs requests via an in-process
@@ -152,8 +153,21 @@ func (c *Collector) SpanCount() int {
 func (c *Collector) SpanBatchSizes() []int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make([]int, len(c.batchSizes))
-	copy(out, c.batchSizes)
+	out := make([]int, len(c.spanBatchSizes))
+	copy(out, c.spanBatchSizes)
+	return out
+}
+
+// MetricBatchSizes returns the raw body byte-length of each eval-metric batch
+// HTTP request received so far, in order. Each entry corresponds to one call to
+// the /api/intake/llm-obs/v2/eval-metric endpoint. Use this to verify
+// size-based flushing behaviour: with correct flushing, no single entry should
+// exceed 5 MB.
+func (c *Collector) MetricBatchSizes() []int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]int, len(c.metricBatchSizes))
+	copy(out, c.metricBatchSizes)
 	return out
 }
 
@@ -216,7 +230,7 @@ func (c *Collector) handleSpans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.mu.Lock()
-	c.batchSizes = append(c.batchSizes, len(body))
+	c.spanBatchSizes = append(c.spanBatchSizes, len(body))
 	for _, p := range payload {
 		for _, span := range p.Spans {
 			if span != nil {
@@ -240,6 +254,7 @@ func (c *Collector) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.mu.Lock()
+	c.metricBatchSizes = append(c.metricBatchSizes, len(body))
 	for _, m := range payload.Data.Attributes.Metrics {
 		if m != nil {
 			c.metrics = append(c.metrics, *m)

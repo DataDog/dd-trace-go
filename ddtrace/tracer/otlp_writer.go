@@ -71,10 +71,11 @@ func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 
 func (w *otlpTraceWriter) add(spanList []*Span) {
 	defaultServiceName := w.config.internalConfig.ServiceName()
+	otelSemantics := w.config.internalConfig.OTelSemanticsEnabled()
 	w.mu.Lock()
 	w.spans = slices.Grow(w.spans, len(spanList))
 	for _, span := range spanList {
-		if otlpSpan := convertSpan(span, defaultServiceName); otlpSpan != nil {
+		if otlpSpan := convertSpan(span, defaultServiceName, otelSemantics); otlpSpan != nil {
 			w.spans = append(w.spans, otlpSpan)
 			w.buffSize += proto.Size(otlpSpan)
 		}
@@ -130,7 +131,7 @@ func (w *otlpTraceWriter) flush() {
 		retryInterval := w.config.internalConfig.RetryInterval()
 		for attempt := 0; attempt <= sendRetries; attempt++ {
 			log.Debug("OTLP: attempt %d to send payload: %d bytes, %d spans", attempt+1, len(b), spanCount)
-			sendErr = w.transport.send(b)
+			sendErr = w.transport.send(b, otlpContentTypeProto)
 			if sendErr == nil {
 				log.Debug("OTLP: sent traces after %d attempts", attempt+1)
 				return

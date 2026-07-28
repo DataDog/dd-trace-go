@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
@@ -34,6 +35,7 @@ const (
 	PackageGlobalsignMgo        Package = "globalsign/mgo"
 	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
 	PackageMongoDriverV2        Package = "go.mongodb.org/mongo-driver.v2"
+	PackageGoUberOrgZap         Package = "go.uber.org/zap"
 	PackageChi                  Package = "go-chi/chi"
 	PackageChiV5                Package = "go-chi/chi.v5"
 	PackageGoPGV10              Package = "go-pg/pg.v10"
@@ -125,6 +127,7 @@ type PackageInfo struct {
 	naming map[Component]componentNames
 }
 
+var packagesMu sync.RWMutex
 var packages = map[Package]PackageInfo{
 	Package99DesignsGQLGen: {
 		TracedPackage: "github.com/99designs/gqlgen",
@@ -296,13 +299,13 @@ var packages = map[Package]PackageInfo{
 					if svc := opCtx["registerService"]; svc != "" {
 						return svc
 					}
-					return fmt.Sprintf("%s.db", opCtx["driverName"])
+					return opCtx["driverName"] + ".db"
 				},
 				buildOpNameV0: func(opCtx OperationContext) string {
-					return fmt.Sprintf("%s.query", opCtx["driverName"])
+					return opCtx["driverName"] + ".query"
 				},
 				buildOpNameV1: func(opCtx OperationContext) string {
-					return fmt.Sprintf("%s.query", opCtx[ext.DBSystem])
+					return opCtx[ext.DBSystem] + ".query"
 				},
 			},
 		},
@@ -584,7 +587,7 @@ var packages = map[Package]PackageInfo{
 					if rpcService == "" || !ok {
 						return "twirp.service"
 					}
-					return fmt.Sprintf("twirp.%s", rpcService)
+					return "twirp." + rpcService
 				},
 				buildOpNameV1: staticName("twirp.server.request"),
 			},
@@ -627,6 +630,10 @@ var packages = map[Package]PackageInfo{
 	PackageRsZerolog: {
 		TracedPackage: "github.com/rs/zerolog",
 		EnvVarPrefix:  "ZEROLOG",
+	},
+	PackageGoUberOrgZap: {
+		TracedPackage: "go.uber.org/zap",
+		EnvVarPrefix:  "ZAP",
 	},
 	PackageShopifySarama: {
 		TracedPackage: "github.com/Shopify/sarama",
@@ -1018,6 +1025,9 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 
 // GetPackages returns a map of Package to the corresponding instrumented module.
 func GetPackages() map[Package]PackageInfo {
+	packagesMu.RLock()
+	defer packagesMu.RUnlock()
+
 	cp := make(map[Package]PackageInfo)
 	maps.Copy(cp, packages)
 	return cp

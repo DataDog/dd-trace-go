@@ -114,7 +114,7 @@ func TestSpanPoolRecycledSpanNoStaleData(t *testing.T) {
 		Tag("keyA", "valA"),
 		Tag("metricA", 1.0),
 	)
-	spanA.SetTag(ext.Error, fmt.Errorf("span A error"))
+	spanA.SetTag(ext.Error, errors.New("span A error"))
 	spanA.Finish()
 	flush(1)
 	transport.Traces() // drain
@@ -239,7 +239,7 @@ func TestSpanPoolSpanTypeAndErrorReset(t *testing.T) {
 		Tag(ext.ManualKeep, true),
 		SpanType("web"),
 	)
-	spanA.SetTag(ext.Error, fmt.Errorf("A error"))
+	spanA.SetTag(ext.Error, errors.New("A error"))
 	spanA.Finish()
 	flush(1)
 	transport.Traces() // drain
@@ -264,7 +264,7 @@ func TestSpanPoolSpanTypeAndErrorReset(t *testing.T) {
 		Tag(ext.ManualKeep, true),
 		SpanType("cache"),
 	)
-	spanC.SetTag(ext.Error, fmt.Errorf("C error"))
+	spanC.SetTag(ext.Error, errors.New("C error"))
 	spanC.Finish()
 	flush(1)
 
@@ -961,7 +961,7 @@ func BenchmarkSpanPoolEndToEnd(b *testing.B) {
 		b.Run(pm.name+"/errored", func(b *testing.B) {
 			agent := startTestAgent(b)
 			tr := newTracerTest(b, agent, WithSpanPool(pm.enabled))
-			benchErr := fmt.Errorf("benchmark error")
+			benchErr := errors.New("benchmark error")
 
 			b.ResetTimer()
 			for range b.N {

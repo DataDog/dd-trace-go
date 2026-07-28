@@ -33,13 +33,20 @@ headersLoop:
 		}
 
 		// Assuming a list of comma-separated IP addresses, split them and build
-		// the list of values to try to parse as IP addresses
-		var ips []string
+		// the list of values to try to parse as IP addresses.
+		// isForwarded is computed once per header, not per value.
+		isForwarded := strings.EqualFold(headerName, "forwarded")
+		ips := make([]string, 0, len(headerValues))
 		for _, headerValue := range headerValues {
-			if strings.ToLower(headerName) == "forwarded" {
+			if isForwarded {
 				ips = append(ips, parseForwardedHeader(headerValue)...)
 			} else {
-				ips = append(ips, strings.Split(headerValue, ",")...)
+				// Scan comma-separated IPs without allocating a []string via Split.
+				for headerValue != "" {
+					var ip string
+					ip, headerValue, _ = strings.Cut(headerValue, ",")
+					ips = append(ips, ip)
+				}
 			}
 		}
 

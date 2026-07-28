@@ -7,6 +7,7 @@ package hostname
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -186,7 +187,7 @@ func fromFargate(ctx context.Context, _ string) (string, error) {
 
 func fargate(ctx context.Context) (string, error) {
 	if _, ok := env.Lookup("ECS_CONTAINER_METADATA_URI_V4"); !ok {
-		return "", fmt.Errorf("not running in fargate")
+		return "", errors.New("not running in fargate")
 	}
 	launchType, err := ecs.GetLaunchType(ctx)
 	if err != nil {
@@ -196,7 +197,7 @@ func fargate(ctx context.Context) (string, error) {
 		// If we're running on fargate we strip the hostname
 		return "", nil
 	}
-	return "", fmt.Errorf("not running in fargate")
+	return "", errors.New("not running in fargate")
 }
 
 func fromGce(ctx context.Context, _ string) (string, error) {
@@ -220,13 +221,13 @@ func fromOS(_ context.Context, currentHostname string) (string, error) {
 	if currentHostname == "" {
 		return os.Hostname()
 	}
-	return "", fmt.Errorf("skipping OS hostname as a previous provider found a valid hostname")
+	return "", errors.New("skipping OS hostname as a previous provider found a valid hostname")
 }
 
 func fromContainer(_ context.Context, _ string) (string, error) {
 	// This provider is not implemented as most customers do not provide access to kube-api server, kubelet, or docker socket
 	// on their application containers. Providing this access is almost always a not-good idea and could be burdensome for customers.
-	return "", fmt.Errorf("container hostname detection not implemented")
+	return "", errors.New("container hostname detection not implemented")
 }
 
 func fromEC2(ctx context.Context, currentHostname string) (string, error) {
@@ -242,5 +243,5 @@ func fromEC2(ctx context.Context, currentHostname string) (string, error) {
 		}
 		return instanceID, nil
 	}
-	return "", fmt.Errorf("not retrieving hostname from AWS: the host is not an ECS instance and other providers already retrieve non-default hostnames")
+	return "", errors.New("not retrieving hostname from AWS: the host is not an ECS instance and other providers already retrieve non-default hostnames")
 }
