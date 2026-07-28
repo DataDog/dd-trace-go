@@ -69,7 +69,7 @@ require (
 	go.mongodb.org/mongo-driver/v2 v2.3.0
 	go.uber.org/zap v1.28.0
 	google.golang.org/api v0.273.1
-	google.golang.org/grpc v1.82.0
+	google.golang.org/grpc v1.82.1
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
