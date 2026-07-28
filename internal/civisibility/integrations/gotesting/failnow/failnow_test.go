@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -580,11 +581,11 @@ func setEnv(values map[string]string) func() {
 		_ = os.Setenv(key, value)
 	}
 	return func() {
-		for i := len(snapshots) - 1; i >= 0; i-- {
-			if snapshots[i].had {
-				_ = os.Setenv(snapshots[i].key, snapshots[i].value)
+		for _, s := range slices.Backward(snapshots) {
+			if s.had {
+				_ = os.Setenv(s.key, s.value)
 			} else {
-				_ = os.Unsetenv(snapshots[i].key)
+				_ = os.Unsetenv(s.key)
 			}
 		}
 	}
