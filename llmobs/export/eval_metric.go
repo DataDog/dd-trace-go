@@ -24,11 +24,11 @@ type MetricType = llmobs.EvalMetricType
 // The evaluation metric types; the parenthesized value is what reaches the intake.
 const (
 	// MetricTypeCategorical ("categorical") pairs with CategoricalValue.
-	MetricTypeCategorical = llmobs.EvalMetricTypeCategorical
+	MetricTypeCategorical MetricType = llmobs.EvalMetricTypeCategorical
 	// MetricTypeScore ("score") pairs with ScoreValue.
-	MetricTypeScore = llmobs.EvalMetricTypeScore
+	MetricTypeScore MetricType = llmobs.EvalMetricTypeScore
 	// MetricTypeBoolean ("boolean") pairs with BooleanValue.
-	MetricTypeBoolean = llmobs.EvalMetricTypeBoolean
+	MetricTypeBoolean MetricType = llmobs.EvalMetricTypeBoolean
 	// MetricTypeJSON ("json") is a structured metric whose value is a json_value
 	// object (e.g. Trajectory's range/segment markers). It must be paired with
 	// JSONValue. It is offline-export-only; the live tracer has no equivalent.
@@ -76,12 +76,12 @@ type EvaluationMetric struct {
 // a non-nil ValidationError when the metric is invalid (and must not be sent).
 func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, *ValidationError) {
 	if m.Label == "" {
-		return nil, &ValidationError{Code: ErrMissingLabel, Reason: "missing label"}
+		return nil, &ValidationError{Code: CodeMissingLabel, Reason: "missing label"}
 	}
 
 	joinOn, err := illmobs.BuildEvaluationJoin(m.SpanID, m.TraceID, m.TagKey, m.TagValue)
 	if err != nil {
-		return nil, &ValidationError{Code: ErrInvalidJoin, Reason: err.Error()}
+		return nil, &ValidationError{Code: CodeInvalidJoin, Reason: err.Error()}
 	}
 
 	values := 0
@@ -98,18 +98,18 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, *
 		values++
 	}
 	if values != 1 {
-		return nil, &ValidationError{Code: ErrInvalidValue, Reason: "exactly one of categorical, score, boolean, or json value must be set"}
+		return nil, &ValidationError{Code: CodeInvalidValue, Reason: "exactly one of categorical, score, boolean, or json value must be set"}
 	}
 	if m.JSONValue != nil && len(m.JSONValue) == 0 {
 		// An empty map counts as "set" above, but json:omitempty drops json_value
 		// from the wire, sending a value-less metric that the intake rejects for the
 		// whole chunk. Reject it here as a row-level error instead.
-		return nil, &ValidationError{Code: ErrInvalidValue, Reason: "json_value must not be empty"}
+		return nil, &ValidationError{Code: CodeInvalidValue, Reason: "json_value must not be empty"}
 	}
 	if m.ScoreValue != nil && (math.IsNaN(*m.ScoreValue) || math.IsInf(*m.ScoreValue, 0)) {
 		// encoding/json cannot marshal NaN/Inf; reject this row so it does not fail
 		// the whole chunk's marshal.
-		return nil, &ValidationError{Code: ErrInvalidValue, Reason: "score value must be a finite number"}
+		return nil, &ValidationError{Code: CodeInvalidValue, Reason: "score value must be a finite number"}
 	}
 
 	// valueType is the metric type implied by the value kind. Exactly one value is
@@ -134,12 +134,12 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, *
 		metricType = valueType
 	case metricType != MetricTypeCategorical && metricType != MetricTypeScore && metricType != MetricTypeBoolean && metricType != MetricTypeJSON:
 		return nil, &ValidationError{
-			Code:   ErrTypeMismatch,
+			Code:   CodeTypeMismatch,
 			Reason: fmt.Sprintf("invalid MetricType %q (want categorical, score, boolean, or json)", metricType),
 		}
 	case metricType != valueType:
 		return nil, &ValidationError{
-			Code:   ErrTypeMismatch,
+			Code:   CodeTypeMismatch,
 			Reason: fmt.Sprintf("MetricType %q does not match the %s value provided", metricType, valueType),
 		}
 	}
