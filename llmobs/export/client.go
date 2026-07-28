@@ -137,11 +137,16 @@ type Client struct {
 	maxSpanBytes int
 }
 
-// NewClient builds a Client for the ML app mlApp (required; the live client
-// rejects an empty ml_app, and requiring it here means every exported
-// span/evaluation carries an ml_app, stamped from this default or overridden per
-// span/metric). Exactly one routing option (WithDatadogIntake or WithAgentURL)
-// must be supplied.
+// NewClient builds a Client for the ML app mlApp, which is required: the live
+// client rejects an empty ml_app, and requiring it here means every exported span
+// and evaluation carries one.
+//
+// mlApp is a default. A span overrides it with an "ml_app:<value>" entry in
+// [SpanEvent.Tags]; an evaluation overrides it with [EvaluationMetric.MLApp], or
+// per call with [WithCallMLApp].
+//
+// Exactly one routing option ([WithDatadogIntake] or [WithAgentURL]) must be
+// supplied.
 func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 	if mlApp == "" {
 		return nil, errors.New("llmobs/export: mlApp is required")
@@ -289,7 +294,9 @@ func orDefault(v, def int) int {
 	return v
 }
 
-// tracerVersion is the value stamped into _dd.tracer_version.
+// tracerVersion is the value stamped into the ddtrace.version tag on every
+// exported span and evaluation metric. The envelope's _dd.tracer_version comes
+// from the shared transport builder, not from here.
 func tracerVersion() string {
 	return version.Tag
 }

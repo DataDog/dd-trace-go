@@ -32,7 +32,33 @@ type ExportResult struct {
 	Dropped int
 	// Failed is the number of events in requests that failed to send.
 	Failed int
+
+	// cancelErr is set only when a cancellation actually abandoned rows. A cancel
+	// that lands after the last row was delivered leaves it nil, so the call still
+	// reports success.
+	cancelErr error
 }
+
+// recordCancel accounts the rows a canceled call never validated or sent as one
+// not-sent request, keeping the Sent/Dropped/Failed invariant above, and returns
+// the error the call reports.
+func (r *ExportResult) recordCancel(remaining int, err error) error {
+	if remaining > 0 {
+		r.Requests = append(r.Requests, RequestResult{
+			Index: len(r.Requests),
+			Count: remaining,
+			Err:   fmt.Errorf("llmobs/export: batch not sent, export canceled: %w", err),
+		})
+	}
+	if r.cancelErr == nil {
+		r.cancelErr = fmt.Errorf("llmobs/export: export canceled: %w", err)
+	}
+	r.finalize()
+	return r.cancelErr
+}
+
+// canceledErr reports the cancellation error when rows were abandoned, else nil.
+func (r *ExportResult) canceledErr() error { return r.cancelErr }
 
 // finalize populates Sent, Dropped and Failed from the accumulated per-request
 // outcomes and validation errors, and returns the number of failed requests
@@ -78,27 +104,27 @@ type ErrorCode string
 
 // The reasons a row is dropped before sending.
 const (
-	// ErrMissingID: the span has no span_id or no trace_id.
-	ErrMissingID ErrorCode = "missing_id"
-	// ErrMissingKind: the span has no Kind.
-	ErrMissingKind ErrorCode = "missing_kind"
-	// ErrInvalidKind: the span's Kind is not one of the recognized kinds.
-	ErrInvalidKind ErrorCode = "invalid_kind"
-	// ErrInvalidStatus: the span's Status is neither StatusOK nor StatusError.
-	ErrInvalidStatus ErrorCode = "invalid_status"
-	// ErrMissingLabel: the evaluation metric has no Label.
-	ErrMissingLabel ErrorCode = "missing_label"
-	// ErrInvalidJoin: the evaluation metric does not specify exactly one complete
+	// CodeMissingID: the span has no span_id or no trace_id.
+	CodeMissingID ErrorCode = "missing_id"
+	// CodeMissingKind: the span has no Kind.
+	CodeMissingKind ErrorCode = "missing_kind"
+	// CodeInvalidKind: the span's Kind is not one of the recognized kinds.
+	CodeInvalidKind ErrorCode = "invalid_kind"
+	// CodeInvalidStatus: the span's Status is neither StatusOK nor StatusError.
+	CodeInvalidStatus ErrorCode = "invalid_status"
+	// CodeMissingLabel: the evaluation metric has no Label.
+	CodeMissingLabel ErrorCode = "missing_label"
+	// CodeInvalidJoin: the evaluation metric does not specify exactly one complete
 	// join family (span ID or tag).
-	ErrInvalidJoin ErrorCode = "invalid_join"
-	// ErrInvalidValue: the evaluation metric's value set is empty, ambiguous, or
+	CodeInvalidJoin ErrorCode = "invalid_join"
+	// CodeInvalidValue: the evaluation metric's value set is empty, ambiguous, or
 	// not representable (e.g. a non-finite score, an empty json_value).
-	ErrInvalidValue ErrorCode = "invalid_value"
-	// ErrTypeMismatch: the evaluation metric's MetricType disagrees with the value
+	CodeInvalidValue ErrorCode = "invalid_value"
+	// CodeTypeMismatch: the evaluation metric's MetricType disagrees with the value
 	// it carries, or names an unknown type.
-	ErrTypeMismatch ErrorCode = "type_mismatch"
-	// ErrNotEncodable: the row holds a value encoding/json cannot marshal.
-	ErrNotEncodable ErrorCode = "not_encodable"
+	CodeTypeMismatch ErrorCode = "type_mismatch"
+	// CodeNotEncodable: the row holds a value encoding/json cannot marshal.
+	CodeNotEncodable ErrorCode = "not_encodable"
 )
 
 // ValidationError describes an input row that failed validation and was not sent.

@@ -436,6 +436,139 @@ func TestSubmitSpans_ModelNormalizationMatchesLive(t *testing.T) {
 	assert.NotContains(t, metaOf(3), "model_provider")
 }
 
+// TestSubmitSpans_ModelNameKeptOnNonLLMKinds: the live gate emits a name-only
+// model on llm/embedding kinds only, so routing export through it silently
+// discarded ModelName on a workflow/task/tool/agent/retrieval span — no error, no
+// validation entry. Export normalizes like live but keeps the caller's field.
+func TestSubmitSpans_ModelNameKeptOnNonLLMKinds(t *testing.T) {
+	for _, kind := range []export.Kind{
+		export.KindWorkflow, export.KindTask, export.KindTool,
+		export.KindAgent, export.KindRetrieval,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			fake := &fakeTransport{}
+			c := newClient(t, fake, "test-app")
+
+			_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+				{TraceID: "t", SpanID: "s", Kind: kind, ModelName: "claude-sonnet-4"},
+			})
+			require.NoError(t, err)
+
+			meta := allSpans(t, fake.captured()[0].body)[0]["meta"].(map[string]any)
+			assert.Equal(t, "claude-sonnet-4", meta["model_name"], "caller-supplied ModelName must not be dropped")
+			assert.Equal(t, "custom", meta["model_provider"])
+		})
+	}
+}
+
+// TestSubmitSpans_ErrorSpanWithNoDetailOmitsErrorMeta: SetErrorMeta writes all
+// three keys whenever it is called, so passing it an empty payload would put
+// empty-string values into error.message/type/stack — values the live path, which
+// always builds from a real error, can never produce. status and the error tag
+// already mark the span.
+func TestSubmitSpans_ErrorSpanWithNoDetailOmitsErrorMeta(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t", SpanID: "s", Kind: export.KindLLM, Status: export.StatusError},
+	})
+	require.NoError(t, err)
+
+	span := allSpans(t, fake.captured()[0].body)[0]
+	meta := span["meta"].(map[string]any)
+	assert.NotContains(t, meta, "error.message")
+	assert.NotContains(t, meta, "error.type")
+	assert.NotContains(t, meta, "error.stack")
+	assert.Equal(t, "error", span["status"])
+	assert.Contains(t, tagsOf(t, span), "error:1")
+}
+
+// TestSubmitSpans_CancelAfterLastPOSTIsNotAnError: a deadline landing just after
+// the final 202 abandoned nothing, so the call must report success. Returning an
+// error here would make an outbox caller re-send a batch the intake already
+// accepted, duplicating every span in it.
+func TestSubmitSpans_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
+		cancel() // the context dies while the (successful) response is handed back
+		return 202, "{}"
+	}}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+	require.NoError(t, err, "every row was delivered; a late cancel is not a failure")
+	assert.Equal(t, 1, res.Sent)
+	assert.Equal(t, 0, res.Failed)
+	require.Len(t, res.Requests, 1)
+	assert.NoError(t, res.Requests[0].Err)
+}
+
+// TestSubmitEvaluations_CancelAfterLastPOSTIsNotAnError is the eval twin.
+func TestSubmitEvaluations_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
+		cancel()
+		return 202, "{}"
+	}}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitEvaluations(ctx, []export.EvaluationMetric{
+		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.9)},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Sent)
+	assert.Equal(t, 0, res.Failed)
+}
+
+// TestNewClient_FallsBackToEnv covers the DD_SITE/DD_API_KEY fallback: without
+// this, a refactor that reordered resolution (or dropped a fallback) would leave
+// every test green and only break a user's agentless deployment.
+func TestNewClient_FallsBackToEnv(t *testing.T) {
+	t.Run("both from env", func(t *testing.T) {
+		t.Setenv("DD_SITE", "datadoghq.eu")
+		t.Setenv("DD_API_KEY", "env-key")
+
+		fake := &fakeTransport{}
+		c, err := export.NewClient("app",
+			export.WithHTTPClient(&http.Client{Transport: fake}),
+			export.WithDatadogIntake("", ""),
+		)
+		require.NoError(t, err)
+		_, err = c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+		require.NoError(t, err)
+
+		req := fake.captured()[0]
+		assert.Equal(t, "https://llmobs-intake.datadoghq.eu/api/v2/llmobs", req.url)
+		assert.Equal(t, "env-key", req.headers.Get("DD-API-KEY"))
+	})
+
+	t.Run("explicit arguments win over env", func(t *testing.T) {
+		t.Setenv("DD_SITE", "datadoghq.eu")
+		t.Setenv("DD_API_KEY", "env-key")
+
+		fake := &fakeTransport{}
+		c, err := export.NewClient("app",
+			export.WithHTTPClient(&http.Client{Transport: fake}),
+			export.WithDatadogIntake("us3.datadoghq.com", "explicit-key"),
+		)
+		require.NoError(t, err)
+		_, err = c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+		require.NoError(t, err)
+
+		req := fake.captured()[0]
+		assert.Equal(t, "https://llmobs-intake.us3.datadoghq.com/api/v2/llmobs", req.url)
+		assert.Equal(t, "explicit-key", req.headers.Get("DD-API-KEY"))
+	})
+
+	t.Run("no key anywhere is still an error", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", "")
+		_, err := export.NewClient("app", export.WithDatadogIntake("datadoghq.com", ""))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "DD_API_KEY")
+	})
+}
+
 // TestSubmitSpans_OneEnvelopePerSpan locks the /api/v2/llmobs body shape against
 // the only form known to work in production: PushSpanEvents (the live path) posts
 // an array of single-span envelopes, because _dd.scope is a per-envelope field

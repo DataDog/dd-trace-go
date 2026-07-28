@@ -22,22 +22,26 @@ const defaultParentID = "undefined"
 type Kind = llmobs.SpanKind
 
 // The span kinds recognized by LLM Obs; the parenthesized value is what reaches
-// the intake. See [llmobs.SpanKind] for the full set.
+// the intake. This is the complete set the intake accepts — a span carrying
+// anything else is dropped as a validation error.
 const (
 	// KindLLM ("llm") is a call to a large language model.
-	KindLLM = llmobs.SpanKindLLM
+	KindLLM Kind = llmobs.SpanKindLLM
 	// KindAgent ("agent") is an autonomous agent invocation.
-	KindAgent = llmobs.SpanKindAgent
+	KindAgent Kind = llmobs.SpanKindAgent
 	// KindWorkflow ("workflow") orchestrates multiple operations.
-	KindWorkflow = llmobs.SpanKindWorkflow
+	KindWorkflow Kind = llmobs.SpanKindWorkflow
 	// KindTask ("task") is a general task.
-	KindTask = llmobs.SpanKindTask
+	KindTask Kind = llmobs.SpanKindTask
 	// KindTool ("tool") is a tool or function call.
-	KindTool = llmobs.SpanKindTool
+	KindTool Kind = llmobs.SpanKindTool
 	// KindEmbedding ("embedding") generates embeddings.
-	KindEmbedding = llmobs.SpanKindEmbedding
+	KindEmbedding Kind = llmobs.SpanKindEmbedding
 	// KindRetrieval ("retrieval") retrieves documents.
-	KindRetrieval = llmobs.SpanKindRetrieval
+	KindRetrieval Kind = llmobs.SpanKindRetrieval
+	// KindExperiment ("experiment") is an experiment run, the kind the live
+	// experiment API emits on this same intake.
+	KindExperiment Kind = llmobs.SpanKindExperiment
 )
 
 // Status is the terminal status of a span. It is an alias for
@@ -47,17 +51,19 @@ type Status = llmobs.SpanStatus
 // The span statuses recognized by LLM Obs.
 const (
 	// StatusOK ("ok") marks a span that completed without error.
-	StatusOK = llmobs.SpanStatusOK
+	StatusOK Status = llmobs.SpanStatusOK
 	// StatusError ("error") marks a span that ended in error.
-	StatusError = llmobs.SpanStatusError
+	StatusError Status = llmobs.SpanStatusError
 )
 
 // validKinds and validStatuses bound the values a submitted span may carry, so a
 // typo is a reported row-level drop rather than an unqueryable facet at intake.
+// They must cover every kind the live tracer can emit on this intake, or an
+// offline backfill of that population would be silently dropped.
 var (
 	validKinds = map[Kind]struct{}{
 		KindLLM: {}, KindAgent: {}, KindWorkflow: {}, KindTask: {},
-		KindTool: {}, KindEmbedding: {}, KindRetrieval: {},
+		KindTool: {}, KindEmbedding: {}, KindRetrieval: {}, KindExperiment: {},
 	}
 	validStatuses = map[Status]struct{}{StatusOK: {}, StatusError: {}}
 )
@@ -116,7 +122,9 @@ type SpanEvent struct {
 
 	// Metrics holds optional token/cost metrics.
 	Metrics *SpanMetrics
-	// Tags are free-form "key:value" tags.
+	// Tags are free-form "key:value" tags. A non-empty value for a key the client
+	// would otherwise default (env, version, ml_app, source, language) wins, so an
+	// "ml_app:other-app" entry here overrides the client's ML app for this span.
 	Tags []string
 	// SpanLinks are links to other spans, by opaque string IDs.
 	SpanLinks []SpanLink
@@ -242,7 +250,13 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 	if e.Kind != "" {
 		meta["span.kind"] = string(e.Kind)
 	}
-	if name, provider, ok := illmobs.NormalizeModel(e.Kind, e.ModelName, e.ModelProvider); ok {
+	// Emit the model pair whenever the caller supplied either half, normalized the
+	// way the live path normalizes it. The live gate additionally drops a name-only
+	// model on a non-LLM/embedding kind; export deliberately does not, because
+	// silently discarding a field the caller explicitly set is worse than carrying
+	// a model facet on a workflow span.
+	if e.ModelName != "" || e.ModelProvider != "" {
+		name, provider := illmobs.NormalizeModelValues(e.ModelName, e.ModelProvider)
 		meta[illmobs.MetaKeyModelName] = name
 		meta[illmobs.MetaKeyModelProvider] = provider
 	}
@@ -298,8 +312,13 @@ func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 }
 
 // errorMessage builds the error payload for an errored span, or nil when the span
-// did not fail. ErrorMessage falls back to StatusMessage so a caller that only
-// filled the status still gets an error.message.
+// did not fail or reported no detail. ErrorMessage falls back to StatusMessage so
+// a caller that only filled the status still gets an error.message.
+//
+// A span marked StatusError with no detail at all yields nil rather than an empty
+// payload: status:"error" and the error:1 tag already mark it, whereas three
+// empty-valued error.* keys would put values into facets the live path — which
+// always builds its payload from a real error — can never produce.
 func (e SpanEvent) errorMessage(status Status) *transport.ErrorMessage {
 	if status != StatusError {
 		return nil
@@ -307,6 +326,9 @@ func (e SpanEvent) errorMessage(status Status) *transport.ErrorMessage {
 	msg := e.ErrorMessage
 	if msg == "" {
 		msg = e.StatusMessage
+	}
+	if msg == "" && e.ErrorType == "" && e.ErrorStack == "" {
+		return nil
 	}
 	return &transport.ErrorMessage{Message: msg, Type: e.ErrorType, Stack: e.ErrorStack}
 }
