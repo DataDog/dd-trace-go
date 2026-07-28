@@ -42,7 +42,7 @@ func TestParseCrashDump(t *testing.T) {
 		{
 			name:        "sigsegv",
 			fixture:     "sigsegv.txt",
-			wantType:    "UnixSignal",
+			wantType:    "SIGSEGV",
 			wantThreads: 3,
 			wantSignal:  true,
 			wantSigName: "SIGSEGV",
@@ -103,6 +103,15 @@ func TestParseCrashDump(t *testing.T) {
 			}
 			if !r.Error.IsCrash {
 				t.Error("Error.IsCrash = false, want true")
+			}
+			if r.DataSchemaVersion != dataSchemaVersion {
+				t.Errorf("DataSchemaVersion = %q, want %q", r.DataSchemaVersion, dataSchemaVersion)
+			}
+			if r.UUID == "" {
+				t.Error("UUID is empty")
+			}
+			if r.OSInfo.Version == "" {
+				t.Error("OSInfo.Version is empty")
 			}
 
 			if r.Error.Type != tt.wantType {

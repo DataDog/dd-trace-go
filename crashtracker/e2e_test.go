@@ -267,8 +267,8 @@ func assertCrashReport(t *testing.T, body []byte, wantType, wantMsgSubstr string
 	}
 
 	ddtags, _ := report["ddtags"].(string)
-	if !strings.Contains(ddtags, "language:go") {
-		t.Errorf("ddtags = %q, want it to contain \"language:go\"", ddtags)
+	if !strings.Contains(ddtags, "language_name:go") {
+		t.Errorf("ddtags = %q, want it to contain \"language_name:go\"", ddtags)
 	}
 }
 
@@ -287,6 +287,19 @@ func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
 	}
 	if ddtags, _ := report["ddtags"].(string); ddtags == "" {
 		t.Error("ddtags is empty")
+	}
+	// Asserted against the libdatadog crashtracker schema version directly
+	// (not the package's internal constant): this is a black-box check of the
+	// wire contract, not of the implementation.
+	const wantSchemaVersion = "1.8"
+	if got := report["data_schema_version"]; got != wantSchemaVersion {
+		t.Errorf("data_schema_version = %v, want %q", got, wantSchemaVersion)
+	}
+	if id, _ := report["uuid"].(string); id == "" {
+		t.Error("uuid is empty")
+	}
+	if _, ok := report["incomplete"].(bool); !ok {
+		t.Errorf("incomplete type = %T, want bool", report["incomplete"])
 	}
 
 	errObj, ok := report["error"].(map[string]any)
@@ -334,8 +347,13 @@ func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
 	osInfo, ok := report["os_info"].(map[string]any)
 	if !ok {
 		t.Error("os_info missing")
-	} else if architecture, _ := osInfo["architecture"].(string); architecture == "" {
-		t.Error("os_info.architecture is empty")
+	} else {
+		if architecture, _ := osInfo["architecture"].(string); architecture == "" {
+			t.Error("os_info.architecture is empty")
+		}
+		if version, _ := osInfo["version"].(string); version == "" {
+			t.Error("os_info.version is empty")
+		}
 	}
 	return report
 }

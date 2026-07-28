@@ -20,9 +20,9 @@ func TestBuildDDTags(t *testing.T) {
 	tags := buildDDTags(cfg)
 
 	wantContains := []string{
-		"language:go",
-		"go.version:",
-		"library_version:",
+		"language_name:go",
+		"language_version:",
+		"tracer_version:",
 		"service:mysvc",
 		"env:prod",
 		"version:v1.0",
@@ -56,11 +56,11 @@ func TestBuildDDTags(t *testing.T) {
 func TestBuildDDTagsOmitsUnsetConfig(t *testing.T) {
 	// With an empty config, the service/env/version tags must be absent, but
 	// the always-present language/version tags must remain. Check on parsed
-	// keys so that "go.version"/"library_version" don't false-match "version".
+	// keys so that "language_version"/"tracer_version" don't false-match "version".
 	tags := buildDDTags(&config{})
 
-	if !strings.Contains(tags, "language:go") {
-		t.Errorf("buildDDTags() = %q, want it to contain %q", tags, "language:go")
+	if !strings.Contains(tags, "language_name:go") {
+		t.Errorf("buildDDTags() = %q, want it to contain %q", tags, "language_name:go")
 	}
 
 	keys := make(map[string]bool)
@@ -79,7 +79,7 @@ func TestBuildDDTagsOmitsUnsetConfig(t *testing.T) {
 func TestBuildDDTagsNilConfig(t *testing.T) {
 	// A nil config must not panic and must still emit the base tags.
 	tags := buildDDTags(nil)
-	if !strings.Contains(tags, "language:go") {
-		t.Errorf("buildDDTags(nil) = %q, want it to contain %q", tags, "language:go")
+	if !strings.Contains(tags, "language_name:go") {
+		t.Errorf("buildDDTags(nil) = %q, want it to contain %q", tags, "language_name:go")
 	}
 }

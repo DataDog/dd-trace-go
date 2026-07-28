@@ -70,10 +70,25 @@ func defaultConfig() *config {
 	enabled, _, _ := stableconfig.Bool("DD_CRASHTRACKING_ENABLED", true)
 	return &config{
 		enabled: enabled,
-		service: globalconfig.ServiceName(),
+		service: resolveService(),
 		env:     env.Get("DD_ENV"),
 		version: env.Get("DD_VERSION"),
 		site:    env.Get("DD_SITE"),
 		apiKey:  env.Get("DD_API_KEY"),
 	}
+}
+
+// resolveService resolves the service name when Start runs before the tracer
+// does. globalconfig.ServiceName only returns a value the tracer previously
+// stored via SetServiceName; it never reads DD_SERVICE itself, so a
+// crashtracker.Start call in main before tracer.Start would otherwise drop
+// the service tag entirely on every report.
+func resolveService() string {
+	if s := globalconfig.ServiceName(); s != "" {
+		return s
+	}
+	if s := env.Get("DD_SERVICE"); s != "" {
+		return s
+	}
+	return "unknown"
 }
