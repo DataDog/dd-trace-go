@@ -24,6 +24,8 @@
 // optional defaults ([WithService], [WithEnv], [WithVersion], batch-size and
 // payload-size options). Spans are submitted with [Client.SubmitSpans] and
 // evaluations with [Client.SubmitEvaluations].
+// The event types are aliases of the manual-construction models in the main
+// llmobs package, so validation and wire lowering are shared.
 //
 // Routing is always explicit, but the direct route's values are not: an empty
 // site or API key passed to [WithDatadogIntake] falls back to DD_SITE and

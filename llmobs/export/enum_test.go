@@ -18,10 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/llmobs/export"
 )
 
-// TestEnumWireValues pins the literal each exported enum constant carries. The
-// constants are single-sourced from llmobs (which single-sources them from
-// internal/llmobs), so godoc renders them as opaque aliases and the values
-// documented alongside them could otherwise drift from what reaches the intake.
 func TestEnumWireValues(t *testing.T) {
 	assert.Equal(t, "llm", string(export.KindLLM))
 	assert.Equal(t, "agent", string(export.KindAgent))
@@ -40,9 +36,6 @@ func TestEnumWireValues(t *testing.T) {
 	assert.Equal(t, "json", string(export.MetricTypeJSON))
 }
 
-// TestEnumTypesAreSharedWithLLMObs: the export enums are aliases, not parallel
-// copies, so a value from the live package is usable here without conversion. If
-// these become distinct defined types the assignments below stop compiling.
 func TestEnumTypesAreSharedWithLLMObs(t *testing.T) {
 	var (
 		k export.Kind       = llmobs.SpanKindWorkflow
@@ -54,8 +47,43 @@ func TestEnumTypesAreSharedWithLLMObs(t *testing.T) {
 	assert.Equal(t, export.MetricTypeScore, m)
 }
 
-// TestSubmitSpans_AcceptsEveryExportableKind: every kind the public API documents
-// must survive validation.
+func TestManualModelsAreSharedWithLLMObs(t *testing.T) {
+	var (
+		span export.SpanEvent = llmobs.SpanEvent{
+			TraceID: "trace",
+			SpanID:  "span",
+			Kind:    llmobs.SpanKindLLM,
+			SpanLinks: []llmobs.SpanEventLink{{
+				TraceID: "linked-trace",
+				SpanID:  "linked-span",
+			}},
+		}
+		evaluation export.EvaluationMetric = llmobs.EvaluationMetric{
+			SpanID:     "span",
+			TraceID:    "trace",
+			Label:      "quality",
+			MetricType: llmobs.EvalMetricTypeScore,
+			ScoreValue: ptr(1.0),
+		}
+	)
+	assert.Equal(t, export.SpanEvent{
+		TraceID: "trace",
+		SpanID:  "span",
+		Kind:    export.KindLLM,
+		SpanLinks: []export.SpanLink{{
+			TraceID: "linked-trace",
+			SpanID:  "linked-span",
+		}},
+	}, span)
+	assert.Equal(t, export.EvaluationMetric{
+		SpanID:     "span",
+		TraceID:    "trace",
+		Label:      "quality",
+		MetricType: export.MetricTypeScore,
+		ScoreValue: ptr(1.0),
+	}, evaluation)
+}
+
 func TestSubmitSpans_AcceptsEveryExportableKind(t *testing.T) {
 	kinds := []export.Kind{
 		export.KindLLM, export.KindAgent, export.KindWorkflow, export.KindTask,
@@ -74,16 +102,6 @@ func TestSubmitSpans_AcceptsEveryExportableKind(t *testing.T) {
 	assert.Equal(t, len(kinds), res.Sent)
 }
 
-// TestSubmitSpans_RejectsExperimentKind pins a deliberate restriction, so that
-// "experiment" is never added to validKinds without also giving this package a way
-// to set the scope.
-//
-// An experiment span's identity on this intake is the per-envelope _dd.scope
-// ("experiments") plus the experiment/run/project IDs llmobs/experiment mints
-// against the DNE API. Export sets DDAttributes.Scope nowhere — it has no field or
-// option for it — and NewPushSpanEventsRequests only copies _dd.scope from there,
-// so accepting the kind would post an experiment-shaped span into the default
-// scope. A reported, typed drop is strictly more visible than that orphan.
 func TestSubmitSpans_RejectsExperimentKind(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -99,9 +117,6 @@ func TestSubmitSpans_RejectsExperimentKind(t *testing.T) {
 	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
 }
 
-// TestSubmitSpans_RejectsUnknownKindAndStatus: an unrecognized Kind or Status
-// POSTs cleanly but lands in a facet nothing queries, so it is a reported
-// row-level drop rather than a silent data-quality problem at intake.
 func TestSubmitSpans_RejectsUnknownKindAndStatus(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -122,8 +137,6 @@ func TestSubmitSpans_RejectsUnknownKindAndStatus(t *testing.T) {
 	assert.Equal(t, 4, res.Sent+res.Failed+res.Dropped)
 }
 
-// TestValidationErrorCodes: callers classify a drop from Code, never by matching
-// on the free-form Reason text.
 func TestValidationErrorCodes(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -150,7 +163,6 @@ func TestValidationErrorCodes(t *testing.T) {
 	assert.Equal(t, export.CodeInvalidValue, evalRes.ValidationErrors[2].Code)
 	assert.Equal(t, export.CodeTypeMismatch, evalRes.ValidationErrors[3].Code)
 
-	// ValidationError is an error, so a caller can return one directly.
 	var e error = evalRes.ValidationErrors[0]
 	assert.Contains(t, e.Error(), "row 0 rejected (missing_label)")
 }

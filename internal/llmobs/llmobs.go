@@ -99,6 +99,8 @@ const (
 	EvalMetricTypeScore EvalMetricType = "score"
 	// EvalMetricTypeBoolean is a boolean-valued metric.
 	EvalMetricTypeBoolean EvalMetricType = "boolean"
+	// EvalMetricTypeJSON is a structured JSON-valued metric.
+	EvalMetricTypeJSON EvalMetricType = "json"
 )
 
 const (
@@ -1067,64 +1069,31 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 		trackSubmitEvaluationMetric(metric, err)
 	}()
 
-	if cfg.Label == "" {
-		return errInvalidMetricLabel
-	}
-	joinOn, err := BuildEvaluationJoin(cfg.SpanID, cfg.TraceID, cfg.TagKey, cfg.TagValue)
-	if err != nil {
-		return err
-	}
-
-	numValues := 0
-	if cfg.CategoricalValue != nil {
-		numValues++
-	}
-	if cfg.ScoreValue != nil {
-		numValues++
-	}
-	if cfg.BooleanValue != nil {
-		numValues++
-	}
-	if numValues != 1 {
-		return errors.New("exactly one metric value (categorical, score, or boolean) must be provided")
-	}
-
-	mlApp := cfg.MLApp
-	if mlApp == "" {
-		mlApp = l.Config.MLApp
-	}
 	timestampMS := cfg.TimestampMS
 	if timestampMS == 0 {
 		timestampMS = time.Now().UnixMilli()
 	}
-
-	tags := make([]string, 0, len(cfg.Tags)+1)
-	for _, tag := range cfg.Tags {
-		if !strings.HasPrefix(tag, "ddtrace.version:") {
-			tags = append(tags, tag)
+	metric, validation := buildExportEvaluation(ExportEvaluationMetric{
+		SpanID:           cfg.SpanID,
+		TraceID:          cfg.TraceID,
+		TagKey:           cfg.TagKey,
+		TagValue:         cfg.TagValue,
+		Label:            cfg.Label,
+		CategoricalValue: cfg.CategoricalValue,
+		ScoreValue:       cfg.ScoreValue,
+		BooleanValue:     cfg.BooleanValue,
+		Timestamp:        time.UnixMilli(timestampMS),
+		MLApp:            cfg.MLApp,
+		Tags:             cfg.Tags,
+	}, l.Config.MLApp, false)
+	if validation != nil {
+		if cause := validation.Unwrap(); cause != nil {
+			return cause
 		}
-	}
-	tags = append(tags, "ddtrace.version:"+version.Tag)
-
-	metric = &transport.LLMObsMetric{
-		JoinOn:      joinOn,
-		Label:       cfg.Label,
-		MLApp:       mlApp,
-		TimestampMS: timestampMS,
-		Tags:        tags,
-	}
-
-	if cfg.CategoricalValue != nil {
-		metric.CategoricalValue = cfg.CategoricalValue
-		metric.MetricType = string(EvalMetricTypeCategorical)
-	} else if cfg.ScoreValue != nil {
-		metric.ScoreValue = cfg.ScoreValue
-		metric.MetricType = string(EvalMetricTypeScore)
-	} else if cfg.BooleanValue != nil {
-		metric.BooleanValue = cfg.BooleanValue
-		metric.MetricType = string(EvalMetricTypeBoolean)
-	} else {
-		return errors.New("a metric value (categorical, score, or boolean) is required for evaluation metrics")
+		if validation.Code == ExportCodeInvalidValue {
+			return errors.New("exactly one metric value (categorical, score, or boolean) must be provided")
+		}
+		return validation
 	}
 
 	l.evalMetricsCh <- metric

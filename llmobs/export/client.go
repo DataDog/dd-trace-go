@@ -16,7 +16,6 @@ import (
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	llmconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
-	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 const (
@@ -292,11 +291,4 @@ func orDefault(v, def int) int {
 		return def
 	}
 	return v
-}
-
-// tracerVersion is the value stamped into the ddtrace.version tag on every
-// exported span and evaluation metric. The envelope's _dd.tracer_version comes
-// from the shared transport builder, not from here.
-func tracerVersion() string {
-	return version.Tag
 }

@@ -14,10 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
-// TestBuildEvaluationJoin locks the sentinel returned for each join input. The
-// exact sentinel matters because SubmitEvaluation's telemetry buckets the error
-// by identity (telemetryErrorTypes): a partially-specified family must report
-// its own error even when the other family is also present, not "both present".
 func TestBuildEvaluationJoin(t *testing.T) {
 	cases := []struct {
 		name                            string
@@ -32,8 +28,6 @@ func TestBuildEvaluationJoin(t *testing.T) {
 		{name: "partial span", spanID: "s", wantErr: errInvalidSpanJoin},
 		{name: "partial tag", tagKey: "k", wantErr: errInvalidTagJoin},
 		{name: "both full", spanID: "s", traceID: "t", tagKey: "k", tagVal: "v", wantErr: errEvalJoinBothPresent},
-		// A partial family alongside the other family reports the partial family's
-		// own sentinel (its telemetry error_type), not errEvalJoinBothPresent.
 		{name: "partial span + full tag", spanID: "s", tagKey: "k", tagVal: "v", wantErr: errInvalidSpanJoin},
 		{name: "full span + partial tag", spanID: "s", traceID: "t", tagKey: "k", wantErr: errInvalidTagJoin},
 	}

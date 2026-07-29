@@ -47,17 +47,14 @@ Keep these invariants when changing this package:
 - **Caller-assigned IDs are payload fields only.** `trace_id`/`span_id`/`parent_id`
   are opaque, caller-owned strings preserved verbatim on the wire; they are never
   routed into APM span/trace IDs or sampling.
-- **Reuse the internal wire structs and builders.** Lower the public types into
-  [`internal/llmobs/transport`](../../internal/llmobs/transport) and build the
-  payload with its shared helpers (`NewPushSpanEventsRequests`, `MarshalJSON`,
-  `llmobs.NormalizeModel`, `llmobs.SetErrorMeta`, `llmobs.DropSpanEventIO`)
-  rather than reimplementing them, so an exported span cannot drift in shape from
-  a live one on the same intake.
+- **Use the main LLMObs models.** `SpanEvent`, `SpanMetrics`, `SpanLink`, and
+  `EvaluationMetric` are aliases of the manual-construction types in
+  [`llmobs`](..). Their validation and lowering stay in the main LLMObs
+  implementation so other exporters do not need parallel models.
+- **Use the shared transport.** Offline requests go through the same request,
+  routing, auth, retry, encoding, envelope, and size helpers as live LLMObs.
 - **Row-level validation, batch-safe.** Invalid rows are dropped and reported in
   the result, never failing a whole batch. Every input row is accounted for in
   exactly one of `Sent`/`Dropped`/`Failed`, cancellation included.
-- **Don't change live behavior to serve export.** Anything export needs from a
-  shared helper is added export-side (e.g. `parseExportRetryAfter`) unless the
-  live path provably wants it too.
 - **One client per destination.** Multi-destination export is modeled as N
   isolated clients, each with its own route and defaults.

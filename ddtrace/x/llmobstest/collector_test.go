@@ -13,15 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLLMObsSpanAliasSurface pins the JSON contract of the span-event type this
-// package re-exports. LLMObsSpan is an alias for an internal wire struct, so its
-// json tags are part of this package's public behaviour even though the diff that
-// changes them touches no file here: renaming a tag still compiles everywhere and
-// would silently leave every downstream assertion reading a zero value.
-//
-// Field TYPE changes are not caught here — assert.Equal takes any, and the module
-// stops building on its own because those types are load-bearing across
-// internal/llmobs. This test's job is the tags and the decoded shape.
 func TestLLMObsSpanAliasSurface(t *testing.T) {
 	raw := []byte(`{
 		"span_id": "222",
@@ -62,8 +53,6 @@ func TestLLMObsSpanAliasSurface(t *testing.T) {
 	assert.Equal(t, []string{"dropped_io"}, span.CollectionErrors)
 
 	require.Len(t, span.SpanLinks, 1)
-	// Span-link IDs are decimal strings on the wire, for both the live tracer and
-	// the offline export path.
 	assert.Equal(t, "888", span.SpanLinks[0].TraceID)
 	assert.Equal(t, "999", span.SpanLinks[0].SpanID)
 	assert.Equal(t, "1", span.SpanLinks[0].TraceIDHigh)
