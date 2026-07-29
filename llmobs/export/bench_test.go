@@ -40,7 +40,7 @@ func benchSpans(n int) []export.SpanEvent {
 			ModelProvider: "openai",
 			Input:         strings.Repeat("prompt tokens ", 40),
 			Output:        strings.Repeat("completion tokens ", 40),
-			Metrics:       &export.SpanMetrics{InputTokens: ptr(int64(120)), OutputTokens: ptr(int64(80)), TotalTokens: ptr(int64(200))},
+			Metrics:       map[string]float64{"input_tokens": 120, "output_tokens": 80, "total_tokens": 200},
 			Tags:          []string{"team:ml"},
 		}
 	}

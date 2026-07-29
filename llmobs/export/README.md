@@ -47,10 +47,10 @@ Keep these invariants when changing this package:
 - **Caller-assigned IDs are payload fields only.** `trace_id`/`span_id`/`parent_id`
   are opaque, caller-owned strings preserved verbatim on the wire; they are never
   routed into APM span/trace IDs or sampling.
-- **Use the main LLMObs models.** `SpanEvent`, `SpanMetrics`, `SpanLink`, and
-  `EvaluationMetric` are aliases of the manual-construction types in
-  [`llmobs`](..). Their validation and lowering stay in the main LLMObs
-  implementation so other exporters do not need parallel models.
+- **Reuse the existing LLM Obs models.** `SpanEvent` and `SpanLink` alias the
+  transport models used by live LLM Obs, including the existing
+  `map[string]float64` metrics representation. `EvaluationMetric` aliases the
+  live evaluation configuration with the offline-only fields added to it.
 - **Use the shared transport.** Offline requests go through the same request,
   routing, auth, retry, encoding, envelope, and size helpers as live LLMObs.
 - **Row-level validation, batch-safe.** Invalid rows are dropped and reported in

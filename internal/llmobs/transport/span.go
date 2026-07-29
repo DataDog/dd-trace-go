@@ -9,8 +9,23 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
+)
+
+// SpanKind identifies the kind of an LLM Obs span.
+type SpanKind string
+
+const (
+	SpanKindExperiment SpanKind = "experiment"
+	SpanKindWorkflow   SpanKind = "workflow"
+	SpanKindLLM        SpanKind = "llm"
+	SpanKindEmbedding  SpanKind = "embedding"
+	SpanKindAgent      SpanKind = "agent"
+	SpanKindRetrieval  SpanKind = "retrieval"
+	SpanKindTask       SpanKind = "task"
+	SpanKindTool       SpanKind = "tool"
 )
 
 // SpanLink links a span to another span. Its trace/span IDs are opaque decimal
@@ -33,6 +48,21 @@ type DDAttributes struct {
 }
 
 type LLMObsSpanEvent struct {
+	// The fields without JSON tags are construction inputs for callers that build
+	// completed spans offline. BuildExportSpan lowers them into the existing wire
+	// fields below before submission.
+	Kind          SpanKind       `json:"-"`
+	ModelName     string         `json:"-"`
+	ModelProvider string         `json:"-"`
+	Input         string         `json:"-"`
+	Output        string         `json:"-"`
+	Metadata      map[string]any `json:"-"`
+	Start         time.Time      `json:"-"`
+	APMTraceID    string         `json:"-"`
+	ErrorMessage  string         `json:"-"`
+	ErrorType     string         `json:"-"`
+	ErrorStack    string         `json:"-"`
+
 	SpanID           string             `json:"span_id,omitempty"`
 	TraceID          string             `json:"trace_id,omitempty"`
 	ParentID         string             `json:"parent_id,omitempty"`

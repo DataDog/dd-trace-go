@@ -5,7 +5,10 @@
 
 package export
 
-import "github.com/DataDog/dd-trace-go/v2/llmobs"
+import (
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+	"github.com/DataDog/dd-trace-go/v2/llmobs"
+)
 
 // Kind is the LLM Obs span kind.
 type Kind = llmobs.SpanKind
@@ -21,18 +24,20 @@ const (
 )
 
 // Status is the terminal status of a span.
-type Status = llmobs.SpanStatus
+type Status = string
 
 const (
-	StatusOK    Status = llmobs.SpanStatusOK
-	StatusError Status = llmobs.SpanStatusError
+	StatusOK    Status = "ok"
+	StatusError Status = "error"
 )
 
-// SpanEvent is a caller-built LLM Obs span.
-type SpanEvent = llmobs.SpanEvent
+// SpanEvent is the LLM Obs span representation used by live and offline
+// submission.
+type SpanEvent = transport.LLMObsSpanEvent
 
-// SpanMetrics contains optional metrics for a manually constructed span.
-type SpanMetrics = llmobs.SpanMetrics
+// SpanLink is the LLM Obs span-link representation used by live and offline
+// submission.
+type SpanLink = transport.SpanLink
 
-// SpanLink links a manually constructed span to another span.
-type SpanLink = llmobs.SpanEventLink
+// DDAttributes contains Datadog correlation attributes for a span.
+type DDAttributes = transport.DDAttributes

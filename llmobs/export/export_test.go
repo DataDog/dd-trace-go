@@ -212,7 +212,7 @@ func TestSpanWireShape_Contract(t *testing.T) {
 		SessionID: "sess", Service: "svc", Start: time.Unix(0, 1), Duration: 2, Status: export.StatusOK,
 		ModelName: "gpt", ModelProvider: "openai", Input: "in", Output: "out",
 		Metadata:   map[string]any{"k": "v"},
-		Metrics:    &export.SpanMetrics{InputTokens: ptr(int64(1))},
+		Metrics:    map[string]float64{"input_tokens": 1},
 		APMTraceID: "apm-1",
 		SpanLinks:  []export.SpanLink{{SpanID: "ls", TraceID: "lt", Attributes: map[string]string{"a": "b"}}},
 		Tags:       []string{"x:y"},
@@ -262,7 +262,7 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 		Duration:   500,
 		Input:      "hello <b>",
 		Output:     "hi",
-		Metrics:    &export.SpanMetrics{InputTokens: ptr(int64(10))},
+		Metrics:    map[string]float64{"input_tokens": 10},
 		Tags:       []string{"ml_app:myapp"},
 		SpanLinks:  []export.SpanLink{{SpanID: "999", TraceID: "888"}},
 		APMTraceID: "aabbccdd",
@@ -340,6 +340,47 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	assert.True(t, slices.ContainsFunc(tags, func(s string) bool {
 		return strings.HasPrefix(s, "ddtrace.version:") && s != "ddtrace.version:"
 	}), "expected a non-empty ddtrace.version tag, got %v", tags)
+}
+
+func TestSubmitSpans_AcceptsExistingSpanRepresentation(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID:  "trace",
+		SpanID:   "span",
+		ParentID: "parent",
+		Name:     "already-built",
+		StartNS:  123,
+		Duration: 456,
+		Status:   export.StatusError,
+		Meta: map[string]any{
+			"span.kind":     string(export.KindLLM),
+			"input":         map[string]any{"value": "existing input"},
+			"error.message": "existing error",
+			"error.type":    "existing.type",
+			"error.stack":   "existing stack",
+		},
+		Metrics: map[string]float64{"input_tokens": 3},
+		DDAttributes: export.DDAttributes{
+			APMTraceID: "apm",
+		},
+		SpanLinks: []export.SpanLink{{
+			TraceID: "linked-trace",
+			SpanID:  "linked-span",
+		}},
+	}})
+	require.NoError(t, err)
+
+	span := allSpans(t, fake.captured()[0].body)[0]
+	assert.Equal(t, float64(123), span["start_ns"])
+	assert.Equal(t, float64(456), span["duration"])
+	assert.Equal(t, "existing input", span["meta"].(map[string]any)["input"].(map[string]any)["value"])
+	assert.Equal(t, "existing error", span["meta"].(map[string]any)["error.message"])
+	assert.Equal(t, "existing.type", span["meta"].(map[string]any)["error.type"])
+	assert.Equal(t, float64(3), span["metrics"].(map[string]any)["input_tokens"])
+	assert.Equal(t, "apm", span["_dd"].(map[string]any)["apm_trace_id"])
+	assert.Equal(t, "linked-span", span["span_links"].([]any)[0].(map[string]any)["span_id"])
 }
 
 // TestSubmitSpans_ErrorSpanShapeMatchesLive locks the meta and tags an errored
@@ -1184,7 +1225,7 @@ func TestSubmitSpans_RejectsNonFiniteMetric(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Metrics: &export.SpanMetrics{EstimatedTotalCost: ptr(math.Inf(1))}},
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Metrics: map[string]float64{"estimated_total_cost": math.Inf(1)}},
 		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM}, // valid
 	})
 	require.NoError(t, err)
@@ -1237,29 +1278,26 @@ func TestSubmitSpans_ServiceTagReplacesStale(t *testing.T) {
 	assert.Equal(t, "svc", span["service"])      // top-level field agrees with the tag
 }
 
-func TestSubmitSpans_MetricsPreservesExtraAndStandardKeys(t *testing.T) {
+func TestSubmitSpans_UsesExistingMetricsMap(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
 		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
-		Metrics: &export.SpanMetrics{
-			InputTokens:            ptr(int64(10)),
-			BillableCharacterCount: ptr(int64(42)),
-			TimeToFirstToken:       ptr(0.25),
-			Extra: map[string]float64{
-				"custom_metric": 7,
-				"input_tokens":  999, // collides with the named field -> named wins
-			},
+		Metrics: map[string]float64{
+			"input_tokens":             10,
+			"billable_character_count": 42,
+			"time_to_first_token":      0.25,
+			"custom_metric":            7,
 		},
 	}})
 	require.NoError(t, err)
 
 	m := allSpans(t, fake.captured()[0].body)[0]["metrics"].(map[string]any)
-	assert.Equal(t, float64(10), m["input_tokens"])             // named field wins over Extra
-	assert.Equal(t, float64(42), m["billable_character_count"]) // newly-added standard key carried
+	assert.Equal(t, float64(10), m["input_tokens"])
+	assert.Equal(t, float64(42), m["billable_character_count"])
 	assert.Equal(t, 0.25, m["time_to_first_token"])
-	assert.Equal(t, float64(7), m["custom_metric"]) // arbitrary reconstructed key not dropped
+	assert.Equal(t, float64(7), m["custom_metric"])
 }
 
 // TestSubmitEvaluations_RejectsUnmarshalableJSON drives the sendEvalBatch encode

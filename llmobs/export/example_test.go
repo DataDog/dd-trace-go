@@ -26,22 +26,18 @@ func ExampleClient_SubmitSpans() {
 		log.Fatal(err)
 	}
 
-	inputTokens, outputTokens := int64(12), int64(8)
 	res, err := client.SubmitSpans(context.Background(), []export.SpanEvent{{
 		TraceID:       "1234567890",
 		SpanID:        "2345678901",
 		Kind:          export.KindLLM,
 		Name:          "chat",
 		Start:         time.Now().Add(-2 * time.Second),
-		Duration:      1500 * time.Millisecond,
+		Duration:      int64(1500 * time.Millisecond),
 		ModelName:     "gpt-4o",
 		ModelProvider: "openai",
 		Input:         "hello",
 		Output:        "hi there",
-		Metrics: &export.SpanMetrics{
-			InputTokens:  &inputTokens,
-			OutputTokens: &outputTokens,
-		},
+		Metrics:       map[string]float64{"input_tokens": 12, "output_tokens": 8},
 	}})
 	if err != nil {
 		// err is non-nil if any request failed; res still carries per-row detail.
