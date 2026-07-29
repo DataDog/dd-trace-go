@@ -39,7 +39,13 @@ func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...Su
 				res.ValidationErrors = append(res.ValidationErrors, *reason)
 				continue
 			}
-			ws := illmobs.BuildExportSpan(e, sc.service, c.env, c.version, c.mlApp)
+			ws := illmobs.BuildExportSpan(
+				e,
+				sc.service,
+				c.config.TracerConfig.Env,
+				c.config.TracerConfig.Version,
+				c.config.MLApp,
+			)
 			batch = append(batch, spanRow{index: i, span: ws})
 		}
 		c.sendSpanBatch(ctx, batch, res)
