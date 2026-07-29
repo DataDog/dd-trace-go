@@ -216,6 +216,8 @@ type Config struct {
 	otlpMetricsHeaders map[string]string
 	// otlpMetricsFlushInterval is the span metrics flush cadence (default 10s).
 	otlpMetricsFlushInterval time.Duration
+	// otlpMetricsProtocol is the OTLP export protocol for metrics: "http/json" or "http/protobuf".
+	otlpMetricsProtocol string
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
 	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
@@ -410,7 +412,14 @@ func loadConfig() *Config {
 		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
 	)
-	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL"))
+	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
+	otlpProtocolFallback := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL") {
+		otlpProtocolFallback = "http/protobuf"
+	}
+	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
+		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
+	})
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -1637,6 +1646,13 @@ func (c *Config) OTLPMetricsFlushInterval() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpMetricsFlushInterval
+}
+
+// OTLPMetricsProtocol returns the OTLP export protocol for metrics ("http/json" or "http/protobuf").
+func (c *Config) OTLPMetricsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpMetricsProtocol
 }
 
 func (c *Config) TraceID128BitEnabled() bool {
