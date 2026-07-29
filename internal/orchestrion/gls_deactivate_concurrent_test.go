@@ -22,7 +22,7 @@ func TestGLSDeactivateConcurrentFinishRaces(t *testing.T) {
 	const iterations = 1000
 
 	for range iterations {
-		var reclaimable atomic.Bool
+		var done GLSDoneCell
 		var pop GLSPopperCell
 		fn := GLSPopper(func() {})
 		pop.ptr.Store(&glsExit{pop: fn})
@@ -35,7 +35,7 @@ func TestGLSDeactivateConcurrentFinishRaces(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				GLSDeactivate(&reclaimable, &pop)
+				GLSDeactivate(&done, &pop)
 			}()
 		}
 
@@ -55,7 +55,7 @@ func TestGLSDeactivateConcurrentDoubleRunsPopper(t *testing.T) {
 
 	var total atomic.Int64
 	for range iterations {
-		var reclaimable atomic.Bool
+		var done GLSDoneCell
 		var pop GLSPopperCell
 		fn := GLSPopper(func() { total.Add(1) })
 		pop.ptr.Store(&glsExit{pop: fn})
@@ -68,7 +68,7 @@ func TestGLSDeactivateConcurrentDoubleRunsPopper(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				GLSDeactivate(&reclaimable, &pop)
+				GLSDeactivate(&done, &pop)
 			}()
 		}
 
