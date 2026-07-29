@@ -151,8 +151,12 @@ aspects:
   # WrapContext) so the injected templates stay thin and unit-testable.
 
   # Add the GLS bookkeeping fields to Span, and expose GLSReclaimable so
-  # internal/orchestrion.contextStack.Push can drop finished entries that a
-  # cross-goroutine finish left behind (its popper is a no-op off-goroutine).
+  # internal/orchestrion.contextStack can recognise finished entries that were
+  # left behind because the pop did not match the span that finished: Pop takes
+  # the top of the stack, so a non-LIFO finish strands an entry (a cross-goroutine
+  # finish is one way, since its popper is a no-op off-goroutine). Push drops such
+  # entries and Peek refuses to hand them out as the active span, so the flag has
+  # to stay accurate for the lifetime of the entry, not just until the next push.
   - id: Span GLS fields
     tracer-internal: true
     join-point:
@@ -166,10 +170,13 @@ aspects:
           type: sync/atomic.Bool
       - inject-declarations:
           template: |-
-            // GLSReclaimable reports whether this span is finished and may be
-            // dropped from an orchestrion GLS stack. Injected by orchestrion.
+            // GLSReclaimable reports whether this span has stopped representing
+            // a live scope, so an orchestrion GLS stack may drop it and must not
+            // hand it out as the active span. A nil span is never a live scope,
+            // hence true: reporting false would shadow every entry beneath it.
+            // Injected by orchestrion.
             func (s *Span) GLSReclaimable() bool {
-              return s != nil && s.__dd_glsReclaimable.Load()
+              return s == nil || s.__dd_glsReclaimable.Load()
             }
 
   # On ContextWithSpan: push the span onto this goroutine's GLS stack and capture
