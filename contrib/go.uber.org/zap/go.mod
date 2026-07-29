@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.28.0
 )
