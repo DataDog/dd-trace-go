@@ -416,21 +416,14 @@ jobs:
   check-orchestrion-all-resolves:
     # Verify that orchestrion/all/v2, and every dd-trace-go module it requires, can be
     # resolved from the module proxy by an external consumer.
-    #
-    # No other job can catch this. In-repo, go.work and the `replace` directives in
-    # orchestrion/all/go.mod point every sibling module at a local path, and `replace`
-    # in a dependency's go.mod is ignored by whoever depends on it. So a nested module
-    # whose tag is missing builds perfectly here while being unresolvable for everyone
-    # else. That is why this job deliberately does not check out the repository: it has
-    # to see dd-trace-go only through the proxy, exactly as a user does.
     name: 'Check orchestrion/all resolves from the module proxy'
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # needs a commit pushed to the public repo
     env:
       REF: ${{ inputs.ref || github.sha }}
-      # This job asserts resolvability, not supply chain integrity, which the other jobs
-      # already cover. Skipping the checksum database avoids a spurious failure when it
-      # has not yet caught up with a just-pushed commit.
+      # This job checks that modules can be downloaded, not that their checksums match,
+      # which the other jobs already cover. Skipping the checksum database avoids a false
+      # failure when it has not yet caught up with a just-pushed commit.
       GOSUMDB: "off"
     steps:
       - name: Setup Go
