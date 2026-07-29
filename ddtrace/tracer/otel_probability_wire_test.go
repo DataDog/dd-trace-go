@@ -56,7 +56,7 @@ func TestOtelPrecisionBoundaryClamp(t *testing.T) {
 	drop := &SpanContext{traceID: traceIDFrom64Bits(5401449561355763072), spanID: 1}
 	drop.trace = newTrace()
 	drop.trace.setOtelProbability(5401449561355763072, 0.05)
-	rv, th := drop.trace.otelTracestate()
+	rv, th, _ := drop.trace.otelTracestate()
 	assert.NotNil(t, rv)
 	assert.NotNil(t, th)
 	assert.Equal(t, uint64(0xf333333333332f), *rv)
@@ -110,12 +110,12 @@ func TestOtelInheritedForwardedUnchanged(t *testing.T) {
 	sctx, err := tr.Extract(headers)
 	assert.NoError(t, err)
 
-	rv, th := sctx.trace.otelTracestate()
+	rv, th, _ := sctx.trace.otelTracestate()
 	assert.NotNil(t, rv)
 	assert.NotNil(t, th)
 	assert.Equal(t, uint64(0xef284ace7a91e1), *rv)
 	assert.Equal(t, uint64(0xe6666666666668), *th)
-	assert.True(t, sctx.trace.otel.inherited)
+	assert.True(t, sctx.trace.otel.hasUpstreamDecision)
 
 	ts := injectTracestate(t, sctx)
 	assert.Contains(t, ts, "ot=rv:ef284ace7a91e1;th:e6666666666668")
@@ -166,6 +166,25 @@ func TestOtelForceKeepErasesThKeepsInheritedRv(t *testing.T) {
 	assert.NotContains(t, ts, "th:")
 }
 
+// An inbound ot= carrying only unknown sub-keys (no rv/th) is not a sampling
+// decision: DD still derives its own (rv, th) locally and forwards them alongside
+// the unknown sub-key, rather than treating the trace as already decided.
+func TestOtelUnknownOnlyStillDerivesLocalDecision(t *testing.T) {
+	const tid = uint64(0xfff972474538efff)
+	ctx := &SpanContext{traceID: traceIDFrom64Bits(tid), spanID: 1}
+	ctx.trace = newTrace()
+	// Simulate parsing an inbound `ot=vd:foo` (unknown-only, no rv/th).
+	ctx.trace.setOtelUpstream(0, false, 0, false, "vd:foo")
+	assert.False(t, ctx.trace.otel.hasUpstreamDecision, "unknown-only ot= must not count as an upstream decision")
+
+	// DD makes its own probability decision; it must derive rv/th, not be suppressed.
+	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+	ctx.trace.setOtelProbability(tid, 0.1)
+
+	ts := injectTracestate(t, ctx)
+	assert.Contains(t, ts, "ot=rv:ef284ace7a91e1;th:e6666666666668;vd:foo")
+}
+
 // A malformed ot= is treated as absent: no inherited values, trace not rejected,
 // dd= and other vendors preserved.
 func TestOtelMalformedTreatedAsAbsent(t *testing.T) {
@@ -181,7 +200,7 @@ func TestOtelMalformedTreatedAsAbsent(t *testing.T) {
 	sctx, err := tr.Extract(headers)
 	assert.NoError(t, err)
 
-	rv, th := sctx.trace.otelTracestate()
+	rv, th, _ := sctx.trace.otelTracestate()
 	assert.Nil(t, rv)
 	assert.Nil(t, th)
 	assert.Nil(t, sctx.trace.otel)

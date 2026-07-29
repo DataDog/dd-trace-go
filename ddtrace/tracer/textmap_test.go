@@ -3117,7 +3117,7 @@ func TestComposeTracestateDropsManagedMembersWithOWS(t *testing.T) {
 	ctx.traceID = traceIDFrom64Bits(1)
 	ctx.spanID = 1
 	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
-	ctx.trace.setOtelInherited(0x1234567890abcd, true, 0, false, "")
+	ctx.trace.setOtelUpstream(0x1234567890abcd, true, 0, false, "")
 
 	// OWS after each comma, with the managed members not first in the list.
 	oldState := "vendorA=x, ot=rv:aabbccddeeff00, dd=s:9, vendorB=y"

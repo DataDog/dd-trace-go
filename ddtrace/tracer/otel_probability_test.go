@@ -20,21 +20,21 @@ func TestSetOtelProbabilityRateZero(t *testing.T) {
 	t.Run("clears locally-derived pair", func(t *testing.T) {
 		tr := newTrace()
 		tr.setOtelProbability(0xfff972474538efff, 0.1)
-		rv, th := tr.otelTracestate()
+		rv, th, _ := tr.otelTracestate()
 		require.NotNil(t, rv)
 		require.NotNil(t, th)
 
 		tr.setOtelProbability(0xfff972474538efff, 0)
-		rv, th = tr.otelTracestate()
+		rv, th, _ = tr.otelTracestate()
 		assert.Nil(t, rv)
 		assert.Nil(t, th)
 	})
 
 	t.Run("preserves inherited pair", func(t *testing.T) {
 		tr := newTrace()
-		tr.setOtelInherited(0x1234567890abcd, true, 0xe6666666666668, true, "")
+		tr.setOtelUpstream(0x1234567890abcd, true, 0xe6666666666668, true, "")
 		tr.setOtelProbability(1, 0)
-		rv, th := tr.otelTracestate()
+		rv, th, _ := tr.otelTracestate()
 		require.NotNil(t, rv)
 		require.NotNil(t, th)
 		assert.Equal(t, uint64(0x1234567890abcd), *rv)

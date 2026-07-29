@@ -571,8 +571,8 @@ func (p *propagatorW3c) propagateTracestate(ctx *SpanContext, w3cCtx *SpanContex
 	// inbound OTel sampling decision was parsed onto the W3C context. Carry it
 	// over so composeTracestate re-emits it; otherwise it strips the inbound ot=
 	// from the raw tracestate and the threshold is lost.
-	if crv, cth := ctx.trace.otelTracestate(); crv == nil && cth == nil {
-		wrv, wth := w3cCtx.trace.otelTracestate()
+	if crv, cth, _ := ctx.trace.otelTracestate(); crv == nil && cth == nil {
+		wrv, wth, wunknown := w3cCtx.trace.otelTracestate()
 		var rv, th uint64
 		if wrv != nil {
 			rv = *wrv
@@ -580,7 +580,7 @@ func (p *propagatorW3c) propagateTracestate(ctx *SpanContext, w3cCtx *SpanContex
 		if wth != nil {
 			th = *wth
 		}
-		ctx.trace.setOtelInherited(rv, wrv != nil, th, wth != nil, w3cCtx.trace.otelUnknownTracestate())
+		ctx.trace.setOtelUpstream(rv, wrv != nil, th, wth != nil, wunknown)
 	}
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
@@ -1390,8 +1390,8 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	// after `dd=`), keeping both DD-managed members at the front so a crowded
 	// tracestate can't truncate them. An inherited value may be rv-only or
 	// th-only; a DD-generated one is always the rv+th pair.
-	rv, th := ctx.trace.otelTracestate()
-	if unknown := ctx.trace.otelUnknownTracestate(); rv != nil || th != nil || unknown != "" {
+	rv, th, unknown := ctx.trace.otelTracestate()
+	if rv != nil || th != nil || unknown != "" {
 		b.WriteString(",ot=")
 		appendOtelValue(&b, rv, th, unknown)
 		listLength++
@@ -1611,7 +1611,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 				if ctx.trace == nil {
 					ctx.trace = newTrace()
 				}
-				ctx.trace.setOtelInherited(rv, rvOK, th, thOK, unknown)
+				ctx.trace.setOtelUpstream(rv, rvOK, th, thOK, unknown)
 			}
 			continue
 		}
