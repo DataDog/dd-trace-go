@@ -135,7 +135,7 @@ jobs:
           persist-credentials: false
           path: ${{ github.workspace }}/otelc
           repository: hannahkm/opentelemetry-go-compile-instrumentation
-          ref: 'template-variables-argument_of_type' # TODO: replace with actual version once v1 is released
+          ref: 'testing-239a41c' # TODO: replace with actual version once v1 is released
 
       - name: Setup Go
         id: setup-go
