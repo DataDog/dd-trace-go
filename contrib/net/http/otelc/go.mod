@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
-	github.com/open-telemetry/opentelemetry-go-compile-instrumentation/pkg v0.0.0-20260624035708-73e5988252df
+	go.opentelemetry.io/otelc/pkg v0.0.0-20260714124312-3b9beed7a120
 )
 
 require (
