@@ -79,28 +79,22 @@ const (
 	SpanKindTool SpanKind = transport.SpanKindTool
 )
 
-// SpanStatus is the terminal status of a span on the wire.
+// SpanStatus is the terminal status of a span.
 type SpanStatus string
 
 const (
-	// SpanStatusOK marks a span that completed without error.
-	SpanStatusOK SpanStatus = "ok"
-	// SpanStatusError marks a span that ended in error.
+	SpanStatusOK    SpanStatus = "ok"
 	SpanStatusError SpanStatus = "error"
 )
 
-// EvalMetricType is the type of an evaluation metric value on the wire.
+// EvalMetricType identifies an evaluation metric's value type.
 type EvalMetricType string
 
 const (
-	// EvalMetricTypeCategorical is a categorical (string-valued) metric.
 	EvalMetricTypeCategorical EvalMetricType = "categorical"
-	// EvalMetricTypeScore is a numeric-scored metric.
-	EvalMetricTypeScore EvalMetricType = "score"
-	// EvalMetricTypeBoolean is a boolean-valued metric.
-	EvalMetricTypeBoolean EvalMetricType = "boolean"
-	// EvalMetricTypeJSON is a structured JSON-valued metric.
-	EvalMetricTypeJSON EvalMetricType = "json"
+	EvalMetricTypeScore       EvalMetricType = "score"
+	EvalMetricTypeBoolean     EvalMetricType = "boolean"
+	EvalMetricTypeJSON        EvalMetricType = "json"
 )
 
 const (
@@ -108,15 +102,10 @@ const (
 )
 
 const (
-	// SizeLimitEVPEvent is the EVP event size limit a span or metric event must
-	// stay under. It is exported so the offline export client (llmobs/export)
-	// guards against the same number instead of declaring its own.
-	SizeLimitEVPEvent = 5_000_000 // 5MB
-	// CollectionErrorDroppedIO is the collection_errors entry marking a span whose
-	// input/output was dropped to fit SizeLimitEVPEvent.
+	// SizeLimitEVPEvent is the EVP event size limit.
+	SizeLimitEVPEvent        = 5_000_000 // 5MB
 	CollectionErrorDroppedIO = "dropped_io"
-	// DroppedValueText replaces an input/output value dropped by DropSpanEventIO.
-	DroppedValueText = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
+	DroppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
 
 	// evalMetricsEnvelopeSize is a conservative estimate of the fixed JSON overhead added by the
 	// transport.PushMetricsRequest wrapper that encloses buffered eval metrics when sent, i.e.
@@ -126,8 +115,6 @@ const (
 	evalMetricsEnvelopeSize = 256
 )
 
-// Tag keys and values that the live and offline span builders must emit
-// identically: a divergence here fragments one datum into two facets at intake.
 const (
 	TagKeySource        = "source"
 	TagKeyLanguage      = "language"
@@ -139,7 +126,6 @@ const (
 	TagValueLanguage = "go"
 )
 
-// Meta keys shared by the live and offline span builders.
 const (
 	MetaKeyModelName     = "model_name"
 	MetaKeyModelProvider = "model_provider"
@@ -151,17 +137,9 @@ const (
 	metaKeyErrorType    = "error.type"
 )
 
-// modelUnknown fills in a model_name or model_provider a span reports only one of.
 const modelUnknown = "custom"
 
-// NormalizeModel reports the model_name/model_provider meta values for a span of
-// the given kind, or ok=false when neither key is emitted. A missing name or
-// provider falls back to "custom", and the provider is lower-cased so the same
-// vendor spelled "OpenAI" and "openai" cannot fragment into two facets.
-//
-// The gate is asymmetric — a provider alone is emitted on any kind, a name alone
-// only on llm/embedding spans — and both the live and the offline builder inherit
-// it, so neither writes a model key the other would not.
+// NormalizeModel returns the model fields emitted for kind.
 func NormalizeModel(kind SpanKind, modelName, modelProvider string) (name, provider string, ok bool) {
 	if !((kind == SpanKindLLM || kind == SpanKindEmbedding) && modelName != "" || modelProvider != "") {
 		return "", "", false
@@ -177,11 +155,7 @@ func NormalizeModel(kind SpanKind, modelName, modelProvider string) (name, provi
 	return name, provider, true
 }
 
-// SetErrorMeta writes the error.message/error.stack/error.type meta keys from an
-// error payload. All three are written whenever msg is non-nil, even when
-// individually empty, so an errored span carries the same key set on the live and
-// offline paths. Callers with nothing to report pass nil rather than an empty
-// payload, which would put empty-string values into those facets.
+// SetErrorMeta adds error fields to meta.
 func SetErrorMeta(meta map[string]any, msg *transport.ErrorMessage) {
 	if msg == nil {
 		return
@@ -805,9 +779,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	return ev
 }
 
-// toTransportSpanLinks lowers the tracer's numeric span links to the transport
-// wire shape, formatting the uint64 IDs as decimal strings. TraceIDHigh keeps
-// its omitempty behavior: a zero high-word is left unset rather than emitted.
+// toTransportSpanLinks formats live trace and span IDs as decimal strings.
 func toTransportSpanLinks(links []SpanLink) []transport.SpanLink {
 	if len(links) == 0 {
 		return nil
@@ -875,10 +847,7 @@ func setMetadataCostTags(metadata map[string]any, costTags []string) {
 	metadata["_dd"] = ddMetadata
 }
 
-// DropSpanEventIO replaces ev's input/output meta values with DroppedValueText
-// and marks CollectionErrorDroppedIO, reporting whether anything was dropped. It
-// mutates ev in place and is shared with the offline export client so both paths
-// emit the same sentinel and collection error.
+// DropSpanEventIO drops input and output values from ev.
 func DropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
 	if ev == nil {
 		return false
@@ -1027,15 +996,8 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, params Ex
 	return span, ctx
 }
 
-// BuildEvaluationJoin validates that exactly one join family is fully specified —
-// span (span_id + trace_id) or tag (key + value) — and returns the transport join
-// condition. It is the single join validator shared by the live SubmitEvaluation
-// path and the offline llmobs/export path.
+// BuildEvaluationJoin validates and builds an evaluation join.
 func BuildEvaluationJoin(spanID, traceID, tagKey, tagValue string) (transport.EvaluationJoinOn, error) {
-	// Precedence matters: a partially-specified family is reported as that
-	// family's own error (invalid_span / invalid_tag_join) before the "both
-	// present" check, preserving the exact sentinel — and thus telemetry
-	// error_type — each input produced before this was a shared validator.
 	var hasSpanJoin, hasTagJoin bool
 	if spanID != "" || traceID != "" {
 		if spanID == "" || traceID == "" {

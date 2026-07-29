@@ -16,8 +16,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/llmobs/export"
 )
 
-// discardTransport accepts every request and retains nothing, so benchmarks
-// measure the client's encode/assemble cost without network or bookkeeping noise.
 type discardTransport struct{}
 
 func (discardTransport) RoundTrip(req *http.Request) (*http.Response, error) {

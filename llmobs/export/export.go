@@ -14,11 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
-// SubmitSpans exports LLM Obs spans. Rows that fail validation are dropped and
-// reported in ExportResult.ValidationErrors. The input is scanned in windows of
-// the client's span batch size and each window is POSTed once, so peak memory is
-// bounded by one batch rather than the whole input. The returned error is
-// non-nil if any request failed; per-request detail is in the result.
+// SubmitSpans exports completed LLM Obs spans.
 func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...SubmitSpansOption) (*ExportResult, error) {
 	sc := c.resolveSubmitSpans(opts)
 	res := &ExportResult{}
@@ -51,28 +47,19 @@ func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...Su
 		c.sendSpanBatch(ctx, batch, res)
 	}
 	failed := res.finalize()
-	// A cancellation inside the final window's bisection stops sendSpanBatch
-	// between halves, after the loop guard above has run for the last time. Keying
-	// off the recorded abandonment rather than ctx.Err() keeps the documented
-	// contract: a cancel that lands after the last row was already delivered is
-	// not a failure, and must not make an outbox caller re-send an accepted batch.
+	// Only report cancellation when rows were abandoned.
 	if err := res.canceledErr(); err != nil {
 		return res, err
 	}
 	return res, exportutil.Aggregate(failed, len(res.Requests), "llmobs/export")
 }
 
-// spanRow is a validated span and its original input index, for row-level error
-// attribution.
 type spanRow struct {
 	index int
 	span  *transport.LLMObsSpanEvent
 }
 
-// SubmitEvaluations exports LLM Obs evaluation metrics. Invalid rows (bad join,
-// wrong value count, missing label) are dropped and reported in
-// ExportResult.ValidationErrors. The input is scanned in windows of the client's
-// evaluation batch size and each window is POSTed once.
+// SubmitEvaluations exports LLM Obs evaluation metrics.
 func (c *Client) SubmitEvaluations(ctx context.Context, evals []EvaluationMetric, opts ...SubmitEvaluationsOption) (*ExportResult, error) {
 	sc := c.resolveSubmitEvaluations(opts)
 	res := &ExportResult{}
@@ -104,15 +91,11 @@ func (c *Client) SubmitEvaluations(ctx context.Context, evals []EvaluationMetric
 	return res, exportutil.Aggregate(failed, len(res.Requests), "llmobs/export")
 }
 
-// evalRow is a validated (lowered) metric and its original input index.
 type evalRow struct {
 	index  int
 	metric *transport.LLMObsMetric
 }
 
-// sendEvalBatch encodes a batch of lowered metrics and POSTs it once. A metric
-// that fails to encode (unmarshalable JSONValue/Metadata) is dropped as a
-// row-level error and the rest are retried, so one bad row cannot fail the batch.
 func (c *Client) sendEvalBatch(ctx context.Context, batch []evalRow, res *ExportResult) {
 	if len(batch) == 0 {
 		return
@@ -145,8 +128,6 @@ func (c *Client) sendEvalBatch(ctx context.Context, batch []evalRow, res *Export
 	res.Requests = append(res.Requests, rr)
 }
 
-// dropUnencodableEvals marks metrics that fail to encode as row-level errors and
-// returns the ones that encode cleanly.
 func dropUnencodableEvals(batch []evalRow, res *ExportResult) []evalRow {
 	good := make([]evalRow, 0, len(batch))
 	for _, r := range batch {
@@ -163,15 +144,6 @@ func dropUnencodableEvals(batch []evalRow, res *ExportResult) []evalRow {
 	return good
 }
 
-// sendSpanBatch encodes and POSTs a batch, appending one RequestResult per POST.
-// Spans arrive validated and stamped (see SubmitSpans). A span holding a
-// non-encodable value (e.g. a non-finite metric cost) is dropped as a row-level
-// error and the rest retried, so one bad row cannot fail the batch.
-//
-// If the encoded body exceeds the size limit and the batch has more than one
-// span, the batch is bisected and recursed so individually-acceptable spans are
-// not penalized for being grouped together; only a single span that is still too
-// large has its input/output truncated (marking dropped_io) as a last resort.
 func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *ExportResult) {
 	if len(batch) == 0 {
 		return
@@ -180,8 +152,6 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Export
 	if err != nil {
 		good := dropUnencodableSpans(batch, res)
 		if len(good) == len(batch) {
-			// Every row encodes alone yet the batch failed: should be impossible;
-			// surface as a request error rather than silently dropping the batch.
 			res.Requests = append(res.Requests, RequestResult{Index: len(res.Requests), Count: len(batch), Err: fmt.Errorf("llmobs/export: encode span payload: %w", err)})
 			return
 		}
@@ -221,15 +191,10 @@ func spanEvents(batch []spanRow) []*transport.LLMObsSpanEvent {
 	return spans
 }
 
-// marshalSpanPayload encodes a batch as the /api/v2/llmobs body: the JSON array
-// of per-span envelopes that transport.NewPushSpanEventsRequests builds for the
-// live path too.
 func marshalSpanPayload(batch []spanRow) ([]byte, error) {
 	return transport.MarshalJSON(transport.NewPushSpanEventsRequests(spanEvents(batch)))
 }
 
-// dropUnencodableSpans marks spans that fail to encode as row-level errors and
-// returns the ones that encode cleanly.
 func dropUnencodableSpans(batch []spanRow, res *ExportResult) []spanRow {
 	good := make([]spanRow, 0, len(batch))
 	for _, r := range batch {
@@ -246,12 +211,6 @@ func dropUnencodableSpans(batch []spanRow, res *ExportResult) []spanRow {
 	return good
 }
 
-// dropSpanIO truncates every span's input/output via the live path's
-// illmobs.DropSpanEventIO — so the sentinel text and dropped_io collection error
-// match — and re-encodes. Last resort when a single span still exceeds the size
-// limit; only input/output shrink, so a span dominated by other fields may still
-// be rejected by intake. The spans are export-owned copies built by toWire, so
-// mutating them in place cannot touch the caller's input.
 func dropSpanIO(batch []spanRow) ([]byte, error) {
 	for _, r := range batch {
 		illmobs.DropSpanEventIO(r.span)
