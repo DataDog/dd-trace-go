@@ -151,12 +151,13 @@ aspects:
   # WrapContext) so the injected templates stay thin and unit-testable.
 
   # Add the GLS bookkeeping fields to Span, and expose GLSReclaimable so
-  # internal/orchestrion.contextStack can recognise finished entries that were
-  # left behind because the pop did not match the span that finished: Pop takes
-  # the top of the stack, so a non-LIFO finish strands an entry (a cross-goroutine
-  # finish is one way, since its popper is a no-op off-goroutine). Push drops such
-  # entries and Peek refuses to hand them out as the active span, so the flag has
-  # to stay accurate for the lifetime of the entry, not just until the next push.
+  # internal/orchestrion.contextStack can recognise entries left behind by a
+  # cross-goroutine finish. Scope exit is identity-matched, so a finish on the
+  # pushing goroutine always removes its own entry; a finish elsewhere cannot,
+  # because the popper is a no-op off-goroutine and a foreign stack must not be
+  # touched. Push drops such entries and Peek refuses to hand them out as the
+  # active span, so the flag has to stay accurate for the lifetime of the entry,
+  # not just until the next push.
   - id: Span GLS fields
     tracer-internal: true
     join-point:
