@@ -13,10 +13,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
-	"github.com/stretchr/testify/require"
 )
 
 func TestInstrumentationStackTrace(t *testing.T) {
@@ -74,14 +75,12 @@ func TestInstrumentationRecordStackTracesConcurrent(t *testing.T) {
 	const count = 32
 	var wg sync.WaitGroup
 	for i := range count {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			instr.RecordStackTraces(span, StackTrace{event: &stacktrace.Event{
 				Category: stacktrace.VulnerabilityEvent,
 				ID:       strconv.Itoa(i),
 			}})
-		}()
+		})
 	}
 	wg.Wait()
 
