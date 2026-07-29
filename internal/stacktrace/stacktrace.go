@@ -9,21 +9,13 @@
 package stacktrace
 
 import (
-	"errors"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var (
-	enabled              = true
-	defaultTopFrameDepth = 8
-	defaultMaxDepth      = 32
-
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
 		"github.com/DataDog/dd-trace-go/v2",
@@ -55,9 +47,7 @@ type frameType string
 
 const (
 	defaultCallerSkip = 4
-
-	envStackTraceDepth   = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
-	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLED"
+	defaultMaxDepth   = 32
 
 	frameTypeDatadog    frameType = "datadog"
 	frameTypeRuntime    frameType = "runtime"
@@ -68,37 +58,11 @@ const (
 )
 
 func init() {
-	if env := env.Get(envStackTraceEnabled); env != "" {
-		if e, err := strconv.ParseBool(env); err == nil {
-			enabled = e
-		} else {
-			log.Error("Failed to parse %s env var as boolean: (using default value: %t) %v", envStackTraceEnabled, enabled, err.Error())
-		}
-	}
-
-	if env := env.Get(envStackTraceDepth); env != "" {
-		if depth, err := strconv.Atoi(env); err == nil {
-			defaultMaxDepth = depth
-		} else {
-			if depth <= 0 {
-				err = errors.New("value is not a strictly positive integer")
-			}
-			log.Error("Failed to parse %s env var as a positive integer: (using default value: %d) %v", envStackTraceDepth, defaultMaxDepth, err.Error())
-		}
-	}
-
-	defaultTopFrameDepth = defaultMaxDepth / 4
-
 	thirdPartyTrie = newSegmentPrefixTrie()
 	thirdPartyTrie.InsertAll(slices.Concat(knownThirdPartyLibraries, []string{"golang.org/"}))
 
 	internalPrefixTrie = newSegmentPrefixTrie()
 	internalPrefixTrie.InsertAll(internalSymbolPrefixes)
-}
-
-// Enabled returns whether stacktrace should be collected
-func Enabled() bool {
-	return enabled
 }
 
 type (
@@ -249,7 +213,17 @@ func Capture() StackTrace {
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	return iterator(skip, defaultMaxDepth, frameOptions{
+	return SkipAndCaptureWithDepth(skip, defaultMaxDepth)
+}
+
+// SkipAndCaptureWithDepth creates a new stack trace from the current call stack,
+// skipping the first skip frames and capturing at most depth frames. A
+// non-positive depth uses the default depth.
+func SkipAndCaptureWithDepth(skip, depth int) StackTrace {
+	if depth <= 0 {
+		depth = defaultMaxDepth
+	}
+	return iterator(skip, depth, frameOptions{
 		skipInternalFrames:      true,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: internalSymbolPrefixes,

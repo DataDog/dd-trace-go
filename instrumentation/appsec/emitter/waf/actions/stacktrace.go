@@ -15,7 +15,9 @@ func init() {
 	registerActionHandler("generate_stack", NewStackTraceAction)
 }
 
-// StackTraceAction are actions that generate a stacktrace
+// StackTraceAction requests stack-trace generation. Event carries only the
+// category and correlation metadata; the AppSec listener captures its frames
+// according to the active AppSec configuration.
 type StackTraceAction struct {
 	Event *stacktrace.Event
 }
@@ -37,8 +39,9 @@ func NewStackTraceAction(params map[string]any) []Action {
 	}
 
 	return []Action{
-		&StackTraceAction{
-			stacktrace.NewEvent(stacktrace.ExploitEvent, stacktrace.WithID(strID)),
-		},
+		&StackTraceAction{Event: &stacktrace.Event{
+			Category: stacktrace.ExploitEvent,
+			ID:       strID,
+		}},
 	}
 }

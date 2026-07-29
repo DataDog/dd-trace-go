@@ -7,8 +7,6 @@ package instrumentation
 
 import (
 	"math"
-	"os"
-	"os/exec"
 	"strconv"
 	"sync"
 	"testing"
@@ -63,7 +61,7 @@ func TestInstrumentationRecordStackTrace(t *testing.T) {
 	require.Equal(t, []*stacktrace.Event{first, second}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
 
 	exploit := stacktrace.NewEvent(stacktrace.ExploitEvent, stacktrace.WithID("exploit"))
-	stacktrace.AddToSpanUnconditionally(root, exploit)
+	stacktrace.AddToSpan(root, exploit)
 	third := instr.CaptureStackTrace(StackTraceCategoryVulnerability, "third", 0)
 	instr.RecordStackTrace(child, third)
 
@@ -93,36 +91,6 @@ func TestInstrumentationRecordStackTraceConcurrent(t *testing.T) {
 
 	eventsByCategory := span.AsMap()[stacktrace.SpanKey].(map[string][]*stacktrace.Event)
 	require.Len(t, eventsByCategory[string(stacktrace.VulnerabilityEvent)], count)
-}
-
-func TestInstrumentationStackTraceIgnoresAppSecDisablement(t *testing.T) {
-	if os.Getenv("DD_TEST_SUBPROCESS") != "1" {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestInstrumentationStackTraceIgnoresAppSecDisablement$")
-		cmd.Env = append(os.Environ(),
-			"DD_TEST_SUBPROCESS=1",
-			"DD_APPSEC_STACK_TRACE_ENABLED=false",
-			"DD_APPSEC_MAX_STACK_TRACE_DEPTH=16",
-		)
-		output, err := cmd.CombinedOutput()
-		require.NoError(t, err, string(output))
-		return
-	}
-	require.False(t, stacktrace.Enabled())
-
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	instr := &Instrumentation{}
-	span := tracer.StartSpan("span")
-	captured := instr.CaptureStackTrace(StackTraceCategoryVulnerability, "stack-id", 0)
-	instr.RecordStackTrace(span, captured)
-
-	require.NotNil(t, captured)
-	value, ok := span.AsMap()[stacktrace.SpanKey]
-	require.True(t, ok)
-	eventsByCategory, ok := value.(map[string][]*stacktrace.Event)
-	require.True(t, ok)
-	require.Equal(t, []*stacktrace.Event{captured}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
 }
 
 func TestInstrumentationRecordStackTraceIgnoresEmptyInput(t *testing.T) {

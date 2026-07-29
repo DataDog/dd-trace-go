@@ -330,5 +330,5 @@ func (i *Instrumentation) RecordStackTrace(span *tracer.Span, trace *StackTrace)
 	if root == nil {
 		return
 	}
-	stacktrace.AddToSpanUnconditionally(root, trace)
+	stacktrace.AddToSpan(root, trace)
 }

@@ -34,6 +34,13 @@ func TestNewEventWithSkip(t *testing.T) {
 	require.Empty(t, event.Frames)
 }
 
+func TestNewEventWithDepth(t *testing.T) {
+	event := NewEventWithDepth(1, ExploitEvent, WithID("id"))
+	require.Equal(t, ExploitEvent, event.Category)
+	require.Equal(t, "id", event.ID)
+	require.Len(t, event.Frames, 1)
+}
+
 func TestEventToSpan(t *testing.T) {
 	event1 := NewEvent(ExceptionEvent, WithMessage("message1"))
 	event2 := NewEvent(ExploitEvent, WithMessage("message2"))
@@ -53,19 +60,13 @@ func TestEventToSpan(t *testing.T) {
 	require.Equal(t, *event2, *eventsCat[0])
 }
 
-func TestAddToSpanUnconditionally(t *testing.T) {
-	wasEnabled := enabled
-	enabled = false
-	t.Cleanup(func() { enabled = wasEnabled })
-
+func TestAddToSpan(t *testing.T) {
 	event := NewEvent(VulnerabilityEvent, WithID("id"))
 	span := trace.TestTagSetter{}
-	AddToSpan(span, event)
-	require.Empty(t, span)
-	AddToSpanUnconditionally(span)
+	AddToSpan(span)
 	require.Empty(t, span)
 
-	AddToSpanUnconditionally(span, event)
+	AddToSpan(span, event)
 	value, ok := span[SpanKey].(internal.MetaStructValue)
 	require.True(t, ok)
 	require.Equal(t, map[string][]*Event{"vulnerability": {event}}, value.Value)

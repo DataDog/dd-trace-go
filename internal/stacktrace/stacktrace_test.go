@@ -231,7 +231,6 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 	// b.Loop() makes this benchmark to fail with "B.Loop called with timer stopped" error.
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(strconv.Itoa(depth), func(b *testing.B) {
-			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
 			for range b.N {
 				runtime.KeepAlive(recursiveBench(depth, depth, b))
 			}
@@ -242,13 +241,9 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 func BenchmarkCaptureWithRedaction(b *testing.B) {
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(fmt.Sprintf("depth_%d", depth), func(b *testing.B) {
-			originalMaxDepth := defaultMaxDepth
-			defaultMaxDepth = depth * 2 // Ensure we capture the full stack
-			b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
-
 			b.ResetTimer()
 			for b.Loop() {
-				stack := recursiveBenchRedaction(depth, b)
+				stack := recursiveBenchRedaction(depth, depth*2, b)
 				runtime.KeepAlive(stack)
 			}
 		})
@@ -257,14 +252,11 @@ func BenchmarkCaptureWithRedaction(b *testing.B) {
 
 func BenchmarkStacktraceComparison(b *testing.B) {
 	const depth = 50
-	originalMaxDepth := defaultMaxDepth
-	defaultMaxDepth = depth * 2
-	b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
 
 	b.Run("SkipAndCapture", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			stack := recursiveBenchSkip(depth, b)
+			stack := recursiveBenchSkip(depth, depth*2, b)
 			runtime.KeepAlive(stack)
 		}
 	})
@@ -272,7 +264,7 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 	b.Run("CaptureWithRedaction", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			stack := recursiveBenchRedaction(depth, b)
+			stack := recursiveBenchRedaction(depth, depth*2, b)
 			runtime.KeepAlive(stack)
 		}
 	})
@@ -292,18 +284,24 @@ func recursiveBench(i int, depth int, b *testing.B) StackTrace {
 	return recursiveBench(i-1, depth, b)
 }
 
-func recursiveBenchRedaction(i int, b *testing.B) StackTrace {
+// recursiveBenchRedaction mirrors CaptureWithRedaction with an explicit depth
+// so the benchmark can cover stacks deeper than the production default.
+func recursiveBenchRedaction(i, depth int, b *testing.B) StackTrace {
 	if i == 0 {
-		return CaptureWithRedaction(defaultCallerSkip)
+		return iterator(defaultCallerSkip, depth, frameOptions{
+			skipInternalFrames:      false,
+			redactCustomerFrames:    true,
+			internalPackagePrefixes: internalSymbolPrefixes,
+		}).capture()
 	}
-	return recursiveBenchRedaction(i-1, b)
+	return recursiveBenchRedaction(i-1, depth, b)
 }
 
-func recursiveBenchSkip(i int, b *testing.B) StackTrace {
+func recursiveBenchSkip(i, depth int, b *testing.B) StackTrace {
 	if i == 0 {
-		return SkipAndCapture(defaultCallerSkip)
+		return SkipAndCaptureWithDepth(defaultCallerSkip, depth)
 	}
-	return recursiveBenchSkip(i-1, b)
+	return recursiveBenchSkip(i-1, depth, b)
 }
 
 func TestShouldRedactSymbol_DatadogFrames(t *testing.T) {

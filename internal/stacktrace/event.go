@@ -47,28 +47,28 @@ type Event struct {
 	Frames StackTrace `msg:"frames"`
 }
 
-// NewEvent creates a new stacktrace event with the given category, type and message
+// NewEvent creates a new stacktrace event with the given category, type and message.
 func NewEvent(eventCat EventCategory, options ...Options) *Event {
-	event := &Event{
-		Category: eventCat,
-		Language: "go",
-		Frames:   SkipAndCapture(defaultCallerSkip),
-	}
-
-	for _, opt := range options {
-		opt(event)
-	}
-
-	return event
+	return newEvent(0, defaultMaxDepth, eventCat, options...)
 }
 
 // NewEventWithSkip creates a new stacktrace event with the given category, type and message,
 // skipping the given number of frames (on top of the default caller skip).
 func NewEventWithSkip(skip int, eventCat EventCategory, options ...Options) *Event {
+	return newEvent(skip, defaultMaxDepth, eventCat, options...)
+}
+
+// NewEventWithDepth creates a new stacktrace event with the given category,
+// type, message, and maximum frame depth.
+func NewEventWithDepth(depth int, eventCat EventCategory, options ...Options) *Event {
+	return newEvent(0, depth, eventCat, options...)
+}
+
+func newEvent(skip, depth int, eventCat EventCategory, options ...Options) *Event {
 	event := &Event{
 		Category: eventCat,
 		Language: "go",
-		Frames:   SkipAndCapture(skip + defaultCallerSkip),
+		Frames:   SkipAndCaptureWithDepth(skip+defaultCallerSkip, depth),
 	}
 
 	for _, opt := range options {
@@ -102,26 +102,13 @@ func WithID(id string) Options {
 	}
 }
 
-// GetSpanValue returns the value to be set as a tag on a span for the given stacktrace events
+// GetSpanValue returns the value to be set as a tag on a span for the given stacktrace events.
 func GetSpanValue(events ...*Event) any {
-	if !Enabled() {
-		return nil
-	}
 	return getSpanValue(events...)
 }
 
-// AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
+// AddToSpan adds the events to the given span's root span as a tag.
 func AddToSpan(span trace.TagSetter, events ...*Event) {
-	if !Enabled() {
-		return
-	}
-	AddToSpanUnconditionally(span, events...)
-}
-
-// AddToSpanUnconditionally adds the events to the given span's root span
-// without consulting the AppSec stack-trace configuration. The caller is
-// responsible for applying its product-specific enablement configuration.
-func AddToSpanUnconditionally(span trace.TagSetter, events ...*Event) {
 	if len(events) == 0 {
 		return
 	}
