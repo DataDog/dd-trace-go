@@ -3,6 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
+// Package export submits completed LLM Observability data without starting a tracer.
+//
+// EXPERIMENTAL: This package may change or be removed without notice.
 package export
 
 import (
@@ -13,170 +16,130 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	llmconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
 const (
-	defaultSite          = "datadoghq.com"
 	defaultSpanBatchSize = 50
 	defaultEvalBatchSize = 1000
-	defaultMaxSpanBytes  = illmobs.SizeLimitEVPEvent
 )
 
+type clientConfig = llmconfig.Config
+
 // ClientOption configures a [Client] built by [NewClient].
-type ClientOption func(*Client) error
+type ClientOption func(*clientConfig) error
 
 // WithDatadogIntake selects direct intake routing. Empty values use DD_SITE and
 // DD_API_KEY.
 func WithDatadogIntake(site, apiKey string) ClientOption {
-	return func(c *Client) error {
-		if err := setAgentless(c.config, true); err != nil {
+	return func(cfg *clientConfig) error {
+		if err := setAgentless(cfg, true); err != nil {
 			return err
 		}
-		c.config.TracerConfig.Site = site
-		c.config.TracerConfig.APIKey = apiKey
+		cfg.TracerConfig.Site = site
+		cfg.TracerConfig.APIKey = apiKey
 		return nil
 	}
 }
 
 // WithAgentURL selects Agent EVP proxy routing.
 func WithAgentURL(agentURL string) ClientOption {
-	return func(c *Client) error {
-		if err := setAgentless(c.config, false); err != nil {
+	return func(cfg *clientConfig) error {
+		if err := setAgentless(cfg, false); err != nil {
 			return err
 		}
 		u, err := parseAgentURL(agentURL)
 		if err != nil {
 			return err
 		}
-		c.config.TracerConfig.AgentURL = u
+		cfg.TracerConfig.AgentURL = u
 		return nil
 	}
 }
 
 // WithService sets the default service.
 func WithService(service string) ClientOption {
-	return func(c *Client) error {
-		c.config.TracerConfig.Service = service
+	return func(cfg *clientConfig) error {
+		cfg.TracerConfig.Service = service
 		return nil
 	}
 }
 
 // WithEnv sets the default environment.
 func WithEnv(env string) ClientOption {
-	return func(c *Client) error {
-		c.config.TracerConfig.Env = env
+	return func(cfg *clientConfig) error {
+		cfg.TracerConfig.Env = env
 		return nil
 	}
 }
 
 // WithVersion sets the default version.
 func WithVersion(version string) ClientOption {
-	return func(c *Client) error {
-		c.config.TracerConfig.Version = version
+	return func(cfg *clientConfig) error {
+		cfg.TracerConfig.Version = version
 		return nil
 	}
 }
 
 // WithHTTPClient overrides the default HTTP client.
 func WithHTTPClient(hc *http.Client) ClientOption {
-	return func(c *Client) error {
-		c.config.TracerConfig.HTTPClient = hc
+	return func(cfg *clientConfig) error {
+		cfg.TracerConfig.HTTPClient = hc
 		return nil
 	}
 }
 
-// WithSpanBatchSize sets the maximum spans per request.
-func WithSpanBatchSize(n int) ClientOption {
-	return func(c *Client) error {
-		c.spanBatch = n
-		return nil
-	}
-}
-
-// WithEvalBatchSize sets the maximum evaluations per request.
-func WithEvalBatchSize(n int) ClientOption {
-	return func(c *Client) error {
-		c.evalBatch = n
-		return nil
-	}
-}
-
-// WithMaxSpanPayloadBytes sets the maximum encoded span request size.
-func WithMaxSpanPayloadBytes(n int) ClientOption {
-	return func(c *Client) error {
-		c.maxSpanBytes = n
-		return nil
-	}
-}
-
-// Client exports completed LLM Obs spans and evaluations without starting a tracer.
+// Client submits completed LLM Obs spans and evaluations without starting a tracer.
 type Client struct {
 	transport *transport.Transport
 	config    *llmconfig.Config
-
-	spanBatch    int
-	evalBatch    int
-	maxSpanBytes int
 }
 
-// NewClient creates an exporter. Exactly one routing option is required.
+// NewClient creates a client. Exactly one routing option is required.
 func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 	if mlApp == "" {
 		return nil, errors.New("llmobs/export: mlApp is required")
 	}
 
-	c := &Client{
-		config: &llmconfig.Config{
-			MLApp: mlApp,
-		},
-		spanBatch:    defaultSpanBatchSize,
-		evalBatch:    defaultEvalBatchSize,
-		maxSpanBytes: defaultMaxSpanBytes,
-	}
+	cfg := &clientConfig{MLApp: mlApp}
 	for _, opt := range opts {
-		if err := opt(c); err != nil {
+		if err := opt(cfg); err != nil {
 			return nil, err
 		}
 	}
 
-	if c.config.AgentlessEnabled == nil {
+	if cfg.AgentlessEnabled == nil {
 		return nil, errors.New("llmobs/export: a route is required: set WithDatadogIntake (direct) or WithAgentURL (via the Agent)")
 	}
 
-	tc := &c.config.TracerConfig
+	tc := &cfg.TracerConfig
 	if tc.Site == "" {
 		tc.Site = env.Get("DD_SITE")
-	}
-	if tc.Site == "" {
-		tc.Site = defaultSite
 	}
 
 	if tc.APIKey == "" {
 		tc.APIKey = env.Get("DD_API_KEY")
 	}
 
-	c.config.ResolvedAgentlessEnabled = *c.config.AgentlessEnabled
-	if c.config.ResolvedAgentlessEnabled {
-		if tc.APIKey == "" {
-			return nil, errors.New("llmobs/export: WithDatadogIntake requires an API key (argument or DD_API_KEY); use WithAgentURL to route via the Agent")
+	cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
+	if cfg.ResolvedAgentlessEnabled {
+		if !llmconfig.IsAPIKeyValid(tc.APIKey) {
+			return nil, errors.New("llmobs/export: WithDatadogIntake requires a valid API key (argument or DD_API_KEY); use WithAgentURL to route via the Agent")
 		}
 	}
 
 	if tc.HTTPClient == nil {
-		tc.HTTPClient = c.config.DefaultHTTPClient()
+		tc.HTTPClient = cfg.DefaultHTTPClient()
 	}
 
-	c.transport = transport.New(c.config)
-	c.spanBatch = orDefault(c.spanBatch, defaultSpanBatchSize)
-	c.evalBatch = orDefault(c.evalBatch, defaultEvalBatchSize)
-	c.maxSpanBytes = orDefault(c.maxSpanBytes, defaultMaxSpanBytes)
-	return c, nil
+	return &Client{
+		transport: transport.New(cfg),
+		config:    cfg,
+	}, nil
 }
 
-func setAgentless(cfg *llmconfig.Config, enabled bool) error {
+func setAgentless(cfg *clientConfig, enabled bool) error {
 	if cfg.AgentlessEnabled != nil && *cfg.AgentlessEnabled != enabled {
 		return errors.New("llmobs/export: set exactly one route: WithDatadogIntake or WithAgentURL, not both")
 	}
@@ -233,10 +196,12 @@ type submitEvaluationsConfig struct {
 	mlApp string
 }
 
-// WithCallMLApp overrides the default ML app for one submission.
+// WithCallMLApp sets a non-empty ML app override for one submission.
 func WithCallMLApp(mlApp string) SubmitEvaluationsOption {
 	return func(sc *submitEvaluationsConfig) {
-		sc.mlApp = mlApp
+		if mlApp != "" {
+			sc.mlApp = mlApp
+		}
 	}
 }
 
@@ -246,11 +211,4 @@ func (c *Client) resolveSubmitEvaluations(opts []SubmitEvaluationsOption) submit
 		opt(&sc)
 	}
 	return sc
-}
-
-func orDefault(v, def int) int {
-	if v <= 0 {
-		return def
-	}
-	return v
 }

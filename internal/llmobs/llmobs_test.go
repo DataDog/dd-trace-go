@@ -406,7 +406,7 @@ func TestStartSpan(t *testing.T) {
 		l0 := coll.RequireSpan(t, "llm")
 		assert.Equal(t, "llm", l0.Name)
 		assert.Equal(t, customStartTime.UnixNano(), l0.StartNS)
-		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), l0.Duration)
+		assert.Equal(t, customFinishTime.Sub(customStartTime), l0.Duration)
 	})
 	t.Run("distributed-context-propagation-agent-attribution", func(t *testing.T) {
 		_, coll, ll := testTracer(t)
@@ -1936,12 +1936,12 @@ func TestSubmitEvaluation(t *testing.T) {
 		{
 			name: "span-join-score",
 			config: llmobs.EvaluationConfig{
-				SpanID:      "test-span-id",
-				TraceID:     "test-trace-id",
-				Label:       "rating",
-				ScoreValue:  ptrFromVal(0.85),
-				MLApp:       "test-app",
-				TimestampMS: 1234567890,
+				SpanID:     "test-span-id",
+				TraceID:    "test-trace-id",
+				Label:      "rating",
+				ScoreValue: ptrFromVal(0.85),
+				MLApp:      "test-app",
+				Timestamp:  time.UnixMilli(1234567890),
 			},
 			wantMetric: func() llmobstransport.LLMObsMetric {
 				return llmobstransport.LLMObsMetric{
@@ -2033,6 +2033,46 @@ func TestSubmitEvaluation(t *testing.T) {
 				CategoricalValue: ptrFromVal("value"),
 			},
 			wantError: "provide either span/trace IDs or tag key/value, not both",
+		},
+		{
+			name: "partial-span-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "both span and trace IDs are required for span-based joining",
+		},
+		{
+			name: "partial-tag-join",
+			config: llmobs.EvaluationConfig{
+				TagKey:           "session_id",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "both tag key and value are required for tag-based joining",
+		},
+		{
+			name: "partial-span-with-full-tag-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TagKey:           "session_id",
+				TagValue:         "session-123",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "both span and trace IDs are required for span-based joining",
+		},
+		{
+			name: "full-span-with-partial-tag-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TraceID:          "test-trace-id",
+				TagKey:           "session_id",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "both tag key and value are required for tag-based joining",
 		},
 		{
 			name: "no-value-provided",

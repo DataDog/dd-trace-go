@@ -17,6 +17,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,8 @@ import (
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/export"
 )
+
+const testAPIKey = "0123456789abcdef0123456789abcdef"
 
 type fakeTransport struct {
 	mu         sync.Mutex
@@ -94,7 +97,7 @@ func newClient(t *testing.T, fake *fakeTransport, mlApp string, opts ...export.C
 	t.Helper()
 	all := append([]export.ClientOption{
 		export.WithHTTPClient(&http.Client{Transport: fake}),
-		export.WithDatadogIntake("datadoghq.com", "test-key"),
+		export.WithDatadogIntake("datadoghq.com", testAPIKey),
 	}, opts...)
 	c, err := export.NewClient(mlApp, all...)
 	require.NoError(t, err)
@@ -189,23 +192,23 @@ func TestSpanWireShape_Contract(t *testing.T) {
 		Metadata:   map[string]any{"k": "v"},
 		Metrics:    map[string]float64{"input_tokens": 1},
 		APMTraceID: "apm-1",
-		SpanLinks:  []export.SpanLink{{SpanID: "ls", TraceID: "lt", Attributes: map[string]string{"a": "b"}}},
+		SpanLinks:  []export.SpanLink{{SpanID: "22", TraceID: "11", Attributes: map[string]string{"a": "b"}}},
 		Tags:       []string{"x:y"},
 	}})
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
 	assert.ElementsMatch(t, []string{
-		"trace_id", "span_id", "parent_id", "session_id", "name", "service",
+		"trace_id", "span_id", "parent_id", "session_id", "name",
 		"start_ns", "duration", "status", "meta", "metrics", "tags", "span_links", "_dd",
 	}, keysOf(span), "top-level span wire keys drifted")
 
 	meta := span["meta"].(map[string]any)
 	assert.ElementsMatch(t, []string{
-		"span", "span.kind", "model_name", "model_provider", "input", "output", "metadata",
+		"span.kind", "model_name", "model_provider", "input", "output", "metadata",
 	}, keysOf(meta), "meta wire keys drifted")
-	assert.Equal(t, "llm", meta["span"].(map[string]any)["kind"], "nested meta.span.kind (Trajectory + storage schema)")
-	assert.Equal(t, "llm", meta["span.kind"], `flat meta."span.kind" (live-tracer parity)`)
+	assert.Equal(t, "llm", meta["span.kind"])
+	assert.NotContains(t, span, "service")
 
 	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
@@ -245,12 +248,12 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	require.Len(t, res.Requests, 1)
 	assert.Equal(t, 202, res.Requests[0].StatusCode)
 	assert.Equal(t, 1, res.Requests[0].Attempts)
-	assert.Equal(t, 1, res.Requests[0].Count)
+	assert.Equal(t, []int{0}, res.Requests[0].InputIndices)
 
 	reqs := fake.captured()
 	require.Len(t, reqs, 1)
 	assert.Equal(t, "https://llmobs-intake.datadoghq.com/api/v2/llmobs", reqs[0].url)
-	assert.Equal(t, "test-key", reqs[0].headers.Get("DD-API-KEY"))
+	assert.Equal(t, testAPIKey, reqs[0].headers.Get("DD-API-KEY"))
 	assert.Equal(t, "application/json", reqs[0].headers.Get("Content-Type"))
 	assert.Empty(t, reqs[0].headers.Get("X-Datadog-EVP-Subdomain"))
 
@@ -267,18 +270,17 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	span := spans[0].(map[string]any)
 	assert.Equal(t, "111", span["trace_id"])
 	assert.Equal(t, "222", span["span_id"])
-	assert.Equal(t, "undefined", span["parent_id"]) // empty normalized
-	assert.Equal(t, "svc", span["service"])
+	assert.Equal(t, "undefined", span["parent_id"])
+	assert.NotContains(t, span, "service")
 	assert.Equal(t, "chat", span["name"])
 	assert.Equal(t, "ok", span["status"])
 
 	meta := span["meta"].(map[string]any)
-	assert.Equal(t, "llm", meta["span"].(map[string]any)["kind"]) // nested meta.span.kind (Trajectory + intake schema)
-	assert.Equal(t, "llm", meta["span.kind"])                     // flat key (live-tracer parity)
+	assert.Equal(t, "llm", meta["span.kind"])
 	assert.Equal(t, "hello <b>", meta["input"].(map[string]any)["value"])
 	assert.Equal(t, "hi", meta["output"].(map[string]any)["value"])
 
-	// Check raw bytes because unmarshaling reverses HTML escaping.
+	// JSON decoding hides HTML escaping, so inspect the raw request.
 	raw := string(reqs[0].body)
 	assert.Contains(t, raw, `"value":"hello <b>"`, "input must reach the wire unescaped")
 	escaped, err := json.Marshal("hello <b>")
@@ -291,14 +293,14 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	assert.Equal(t, "aabbccdd", dd["apm_trace_id"])
 
 	link := span["span_links"].([]any)[0].(map[string]any)
-	assert.Equal(t, "999", link["span_id"]) // string span-link IDs
+	assert.Equal(t, "999", link["span_id"])
 	assert.Equal(t, "888", link["trace_id"])
 
 	tags := tagsOf(t, span)
 	assert.Contains(t, tags, "ml_app:myapp")
 	assert.Contains(t, tags, "env:prod")
 	assert.Contains(t, tags, "version:1.2.3")
-	assert.Contains(t, tags, "service:svc") // service carried as a tag (intake reads it there)
+	assert.Contains(t, tags, "service:svc")
 	assert.Contains(t, tags, "source:integration")
 	assert.Contains(t, tags, "language:go")
 	assert.Contains(t, tags, "error:0")
@@ -331,8 +333,8 @@ func TestSubmitSpans_AcceptsExistingSpanRepresentation(t *testing.T) {
 			APMTraceID: "apm",
 		},
 		SpanLinks: []export.SpanLink{{
-			TraceID: "linked-trace",
-			SpanID:  "linked-span",
+			TraceID: "123",
+			SpanID:  "456",
 		}},
 	}})
 	require.NoError(t, err)
@@ -345,7 +347,7 @@ func TestSubmitSpans_AcceptsExistingSpanRepresentation(t *testing.T) {
 	assert.Equal(t, "existing.type", span["meta"].(map[string]any)["error.type"])
 	assert.Equal(t, float64(3), span["metrics"].(map[string]any)["input_tokens"])
 	assert.Equal(t, "apm", span["_dd"].(map[string]any)["apm_trace_id"])
-	assert.Equal(t, "linked-span", span["span_links"].([]any)[0].(map[string]any)["span_id"])
+	assert.Equal(t, "456", span["span_links"].([]any)[0].(map[string]any)["span_id"])
 }
 
 func TestSubmitSpans_ErrorSpanShapeMatchesLive(t *testing.T) {
@@ -473,7 +475,7 @@ func TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive(t *testing.T) {
 func TestSubmitSpans_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
-		cancel() // the context dies while the (successful) response is handed back
+		cancel()
 		return 202, "{}"
 	}}
 	c := newClient(t, fake, "test-app")
@@ -505,7 +507,7 @@ func TestSubmitEvaluations_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 func TestNewClient_FallsBackToEnv(t *testing.T) {
 	t.Run("both from env", func(t *testing.T) {
 		t.Setenv("DD_SITE", "datadoghq.eu")
-		t.Setenv("DD_API_KEY", "env-key")
+		t.Setenv("DD_API_KEY", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 		fake := &fakeTransport{}
 		c, err := export.NewClient("app",
@@ -518,17 +520,17 @@ func TestNewClient_FallsBackToEnv(t *testing.T) {
 
 		req := fake.captured()[0]
 		assert.Equal(t, "https://llmobs-intake.datadoghq.eu/api/v2/llmobs", req.url)
-		assert.Equal(t, "env-key", req.headers.Get("DD-API-KEY"))
+		assert.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", req.headers.Get("DD-API-KEY"))
 	})
 
 	t.Run("explicit arguments win over env", func(t *testing.T) {
 		t.Setenv("DD_SITE", "datadoghq.eu")
-		t.Setenv("DD_API_KEY", "env-key")
+		t.Setenv("DD_API_KEY", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 		fake := &fakeTransport{}
 		c, err := export.NewClient("app",
 			export.WithHTTPClient(&http.Client{Transport: fake}),
-			export.WithDatadogIntake("us3.datadoghq.com", "explicit-key"),
+			export.WithDatadogIntake("us3.datadoghq.com", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
 		)
 		require.NoError(t, err)
 		_, err = c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
@@ -536,7 +538,7 @@ func TestNewClient_FallsBackToEnv(t *testing.T) {
 
 		req := fake.captured()[0]
 		assert.Equal(t, "https://llmobs-intake.us3.datadoghq.com/api/v2/llmobs", req.url)
-		assert.Equal(t, "explicit-key", req.headers.Get("DD-API-KEY"))
+		assert.Equal(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", req.headers.Get("DD-API-KEY"))
 	})
 
 	t.Run("no key anywhere is still an error", func(t *testing.T) {
@@ -557,11 +559,11 @@ func TestSubmitSpans_OneEnvelopePerSpan(t *testing.T) {
 	}
 	res, err := c.SubmitSpans(context.Background(), events)
 	require.NoError(t, err)
-	require.Len(t, res.Requests, 1) // one POST...
+	require.Len(t, res.Requests, 1)
 
 	var envelopes []map[string]any
 	require.NoError(t, json.Unmarshal(fake.captured()[0].body, &envelopes))
-	require.Len(t, envelopes, 4) // ...carrying one envelope per span
+	require.Len(t, envelopes, 4)
 	for i, env := range envelopes {
 		assert.Equal(t, "raw", env["_dd.stage"])
 		assert.Equal(t, "span", env["event_type"])
@@ -574,7 +576,7 @@ func TestSubmitSpans_OneEnvelopePerSpan(t *testing.T) {
 
 func TestSubmitSpans_Chunking(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, "test-app", export.WithSpanBatchSize(50))
+	c := newClient(t, fake, "test-app")
 
 	events := make([]export.SpanEvent, 120)
 	for i := range events {
@@ -583,32 +585,93 @@ func TestSubmitSpans_Chunking(t *testing.T) {
 	res, err := c.SubmitSpans(context.Background(), events)
 	require.NoError(t, err)
 	require.Len(t, res.Requests, 3)
-	assert.Equal(t, 50, res.Requests[0].Count)
-	assert.Equal(t, 50, res.Requests[1].Count)
-	assert.Equal(t, 20, res.Requests[2].Count)
+	assert.Len(t, res.Requests[0].InputIndices, 50)
+	assert.Len(t, res.Requests[1].InputIndices, 50)
+	assert.Len(t, res.Requests[2].InputIndices, 20)
+	assert.Equal(t, 0, res.Requests[0].InputIndices[0])
+	assert.Equal(t, 119, res.Requests[2].InputIndices[19])
 	assert.Equal(t, 120, res.Sent)
 	assert.Len(t, fake.captured(), 3)
 }
 
 func TestSubmitEvaluations_Chunking(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, "test-app", export.WithEvalBatchSize(50))
+	c := newClient(t, fake, "test-app")
 
-	evals := make([]export.EvaluationMetric, 120)
+	evals := make([]export.EvaluationMetric, 2020)
 	for i := range evals {
 		evals[i] = export.EvaluationMetric{SpanID: "s", TraceID: "t", Label: "ok", ScoreValue: ptr(0.5)}
 	}
 	res, err := c.SubmitEvaluations(context.Background(), evals)
 	require.NoError(t, err)
 	require.Len(t, res.Requests, 3)
-	assert.Equal(t, 50, res.Requests[0].Count)
-	assert.Equal(t, 50, res.Requests[1].Count)
-	assert.Equal(t, 20, res.Requests[2].Count)
-	assert.Equal(t, 0, res.Requests[0].Index)
-	assert.Equal(t, 1, res.Requests[1].Index)
-	assert.Equal(t, 2, res.Requests[2].Index)
-	assert.Equal(t, 120, res.Sent)
+	assert.Len(t, res.Requests[0].InputIndices, 1000)
+	assert.Len(t, res.Requests[1].InputIndices, 1000)
+	assert.Len(t, res.Requests[2].InputIndices, 20)
+	assert.Equal(t, 0, res.Requests[0].InputIndices[0])
+	assert.Equal(t, 2019, res.Requests[2].InputIndices[19])
+	assert.Equal(t, 2020, res.Sent)
 	assert.Len(t, fake.captured(), 3)
+}
+
+func TestSubmitEvaluations_SplitsOversizedBatch(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+	value := strings.Repeat("x", illmobs.SizeLimitEVPEvent/2)
+
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
+		{SpanID: "s1", TraceID: "t1", Label: "one", JSONValue: map[string]any{"value": value}},
+		{SpanID: "s2", TraceID: "t2", Label: "two", JSONValue: map[string]any{"value": value}},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Requests, 2)
+	assert.Equal(t, []int{0}, res.Requests[0].InputIndices)
+	assert.Equal(t, []int{1}, res.Requests[1].InputIndices)
+	assert.Equal(t, 2, res.Sent)
+}
+
+func TestSubmitEvaluations_DropsOversizedRow(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
+		SpanID:     "s",
+		TraceID:    "t",
+		Label:      "large",
+		ScoreValue: ptr(1.0),
+		Metadata:   map[string]any{"value": strings.Repeat("x", illmobs.SizeLimitEVPEvent)},
+	}})
+	require.NoError(t, err)
+	require.Len(t, res.ValidationErrors, 1)
+	assert.Equal(t, export.CodeTooLarge, res.ValidationErrors[0].Code)
+	assert.Empty(t, fake.captured())
+}
+
+func TestSubmitSpans_AcceptsEveryExportableKind(t *testing.T) {
+	kinds := []export.Kind{
+		export.KindLLM,
+		export.KindAgent,
+		export.KindWorkflow,
+		export.KindTask,
+		export.KindTool,
+		export.KindEmbedding,
+		export.KindRetrieval,
+	}
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+	events := make([]export.SpanEvent, 0, len(kinds))
+	for i, kind := range kinds {
+		events = append(events, export.SpanEvent{
+			TraceID: "t",
+			SpanID:  strconv.Itoa(i),
+			Kind:    kind,
+		})
+	}
+
+	res, err := c.SubmitSpans(context.Background(), events)
+	require.NoError(t, err)
+	assert.Empty(t, res.ValidationErrors)
+	assert.Equal(t, len(kinds), res.Sent)
 }
 
 func TestSubmitSpans_ValidationDropsInvalidRows(t *testing.T) {
@@ -617,39 +680,64 @@ func TestSubmitSpans_ValidationDropsInvalidRows(t *testing.T) {
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
 		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},
-		{TraceID: "", SpanID: "s2", Kind: export.KindLLM}, // missing trace_id
-		{TraceID: "t3", SpanID: "", Kind: export.KindLLM}, // missing span_id
+		{SpanID: "s2", Kind: export.KindLLM},
+		{TraceID: "t3", Kind: export.KindLLM},
+		{TraceID: "t4", SpanID: "s4", Kind: "banana"},
+		{TraceID: "t5", SpanID: "s5", Kind: export.KindLLM, Status: "kinda-ok"},
+		{TraceID: "t6", SpanID: "s6", Kind: export.Kind(illmobs.SpanKindExperiment)},
 	})
 	require.NoError(t, err)
-	require.Len(t, res.ValidationErrors, 2)
-	assert.Equal(t, 2, res.Dropped)
+	require.Len(t, res.ValidationErrors, 5)
+	assert.Equal(t, 5, res.Dropped)
 	assert.Equal(t, 1, res.Sent)
-	assert.Equal(t, 1, res.ValidationErrors[0].Index)
-	assert.Equal(t, 2, res.ValidationErrors[1].Index)
+	assert.Equal(t, []export.ErrorCode{
+		export.CodeMissingID,
+		export.CodeMissingID,
+		export.CodeInvalidKind,
+		export.CodeInvalidStatus,
+		export.CodeInvalidKind,
+	}, []export.ErrorCode{
+		res.ValidationErrors[0].Code,
+		res.ValidationErrors[1].Code,
+		res.ValidationErrors[2].Code,
+		res.ValidationErrors[3].Code,
+		res.ValidationErrors[4].Code,
+	})
 
 	reqs := fake.captured()
 	require.Len(t, reqs, 1)
 	spans := allSpans(t, reqs[0].body)
-	assert.Len(t, spans, 1) // only the valid row was sent
+	assert.Len(t, spans, 1)
 }
 
-func TestSubmitSpans_SizeGuardTruncatesIO(t *testing.T) {
+func TestSubmitSpans_ValidatesCanonicalSpanLinkIDs(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(256))
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
-		Input:  strings.Repeat("x", 10000),
-		Output: strings.Repeat("y", 10000),
-	}})
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{
+			TraceID: "t0",
+			SpanID:  "s0",
+			Kind:    export.KindLLM,
+			SpanLinks: []export.SpanLink{{
+				TraceID:     "18446744073709551615",
+				TraceIDHigh: "0",
+				SpanID:      "42",
+			}},
+		},
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{TraceID: "01", SpanID: "2"}}},
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{TraceID: "1", SpanID: "+2"}}},
+		{TraceID: "t3", SpanID: "s3", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{TraceID: "1", SpanID: "2", TraceIDHigh: "18446744073709551616"}}},
+		{TraceID: "t4", SpanID: "s4", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{SpanID: "2"}}},
+		{TraceID: "t5", SpanID: "s5", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{TraceID: "1"}}},
+	})
 	require.NoError(t, err)
-	require.Len(t, res.Requests, 1)
-
-	span := allSpans(t, fake.captured()[0].body)[0]
-	meta := span["meta"].(map[string]any)
-	assert.Equal(t, illmobs.DroppedValueText, meta["input"].(map[string]any)["value"])
-	assert.Equal(t, illmobs.DroppedValueText, meta["output"].(map[string]any)["value"])
-	assert.Contains(t, span["collection_errors"].([]any), illmobs.CollectionErrorDroppedIO)
+	require.Len(t, res.ValidationErrors, 5)
+	assert.Equal(t, 1, res.Sent)
+	assert.Equal(t, 5, res.Dropped)
+	for _, validation := range res.ValidationErrors {
+		assert.Equal(t, export.CodeInvalidLink, validation.Code)
+	}
 }
 
 func TestDefaultSizeGuardMatchesLiveLimit(t *testing.T) {
@@ -664,25 +752,44 @@ func TestDefaultSizeGuardMatchesLiveLimit(t *testing.T) {
 	require.Len(t, res.Requests, 1)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
-	assert.Equal(t, illmobs.DroppedValueText, span["meta"].(map[string]any)["input"].(map[string]any)["value"])
+	assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", span["meta"].(map[string]any)["input"].(map[string]any)["value"])
+}
+
+func TestSubmitSpans_DropsOversizedSpanWithoutIO(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t",
+		SpanID:  "s",
+		Kind:    export.KindLLM,
+		Metadata: map[string]any{
+			"value": strings.Repeat("x", illmobs.SizeLimitEVPEvent),
+		},
+	}})
+	require.NoError(t, err)
+	require.Len(t, res.ValidationErrors, 1)
+	assert.Equal(t, export.CodeTooLarge, res.ValidationErrors[0].Code)
+	assert.Empty(t, fake.captured())
 }
 
 func TestSubmitSpans_SplitsOversizedBatchInsteadOfDroppingIO(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(3000))
+	c := newClient(t, fake, "test-app")
+	value := strings.Repeat("x", illmobs.SizeLimitEVPEvent/2)
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: strings.Repeat("x", 1500)},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: strings.Repeat("y", 1500)},
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: value},
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: value},
 	})
 	require.NoError(t, err)
-	require.Len(t, res.Requests, 2) // bisected: one span per request
-	assert.Equal(t, 1, res.Requests[0].Count)
-	assert.Equal(t, 1, res.Requests[1].Count)
+	require.Len(t, res.Requests, 2)
+	assert.Equal(t, []int{0}, res.Requests[0].InputIndices)
+	assert.Equal(t, []int{1}, res.Requests[1].InputIndices)
 
 	for _, req := range fake.captured() {
 		span := allSpans(t, req.body)[0]
-		assert.NotContains(t, span, "collection_errors") // I/O preserved, not dropped
+		assert.NotContains(t, span, "collection_errors")
 		assert.NotEmpty(t, span["meta"].(map[string]any)["input"])
 	}
 }
@@ -692,9 +799,9 @@ func TestSubmitSpans_StampsMLAppFromClient(t *testing.T) {
 	c := newClient(t, fake, "my-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},                                    // no ml_app tag -> stamped
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Tags: []string{"ml_app:override"}}, // caller wins
-		{TraceID: "t3", SpanID: "s3", Kind: export.KindLLM, Tags: []string{"ml_app:"}},         // empty tag -> treated as absent
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Tags: []string{"ml_app:override"}},
+		{TraceID: "t3", SpanID: "s3", Kind: export.KindLLM, Tags: []string{"ml_app:"}},
 	})
 	require.NoError(t, err)
 
@@ -718,7 +825,7 @@ func TestSubmitSpans_AgentRoute(t *testing.T) {
 	require.Len(t, reqs, 1)
 	assert.Equal(t, "http://localhost:8126/evp_proxy/v2/api/v2/llmobs", reqs[0].url)
 	assert.Equal(t, "llmobs-intake", reqs[0].headers.Get("X-Datadog-EVP-Subdomain"))
-	assert.Empty(t, reqs[0].headers.Get("DD-API-KEY")) // no Datadog auth on agent route
+	assert.Empty(t, reqs[0].headers.Get("DD-API-KEY"))
 }
 
 func TestSubmitSpans_WithCallServiceOverride(t *testing.T) {
@@ -732,7 +839,7 @@ func TestSubmitSpans_WithCallServiceOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
-	assert.Equal(t, "call-svc", span["service"]) // per-call override wins over the client default
+	assert.NotContains(t, span, "service")
 	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
@@ -747,14 +854,15 @@ func TestSubmitSpans_RetryTransient(t *testing.T) {
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.Error(t, err)
-	require.Equal(t, 1, res.Failed) // the one event's request failed
+	require.Equal(t, 1, res.Failed)
 	require.Zero(t, res.Sent)
 	require.Len(t, res.Requests, 1)
-	assert.Greater(t, res.Requests[0].Attempts, 1) // retried
+	assert.Greater(t, res.Requests[0].Attempts, 1)
 	assert.True(t, res.Requests[0].Retriable)
 	assert.Equal(t, 500, res.Requests[0].StatusCode)
 	assert.Equal(t, "boom", res.Requests[0].ResponseSnippet)
 	assert.Error(t, res.Requests[0].Err)
+	assert.ErrorIs(t, err, res.Requests[0].Err)
 }
 
 func TestSubmitSpans_PermanentError(t *testing.T) {
@@ -764,10 +872,55 @@ func TestSubmitSpans_PermanentError(t *testing.T) {
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
-	assert.Equal(t, 1, res.Requests[0].Attempts) // not retried
+	assert.Equal(t, 1, res.Requests[0].Attempts)
 	assert.False(t, res.Requests[0].Retriable)
 	assert.Equal(t, 400, res.Requests[0].StatusCode)
 	assert.Equal(t, "bad", res.Requests[0].ResponseSnippet)
+	assert.ErrorIs(t, err, res.Requests[0].Err)
+}
+
+func TestSubmitSpans_ResponseSnippetIsBoundedUTF8(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		want     string
+		wantSize int
+	}{
+		{
+			name: "invalid bytes",
+			body: string([]byte{' ', 'o', 'k', 0xff, ' '}),
+			want: "ok",
+		},
+		{
+			name:     "multibyte boundary",
+			body:     "a" + strings.Repeat("é", 300),
+			wantSize: 511,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
+				return http.StatusBadRequest, test.body
+			}}
+			c := newClient(t, fake, "test-app")
+
+			res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+				TraceID: "t",
+				SpanID:  "s",
+				Kind:    export.KindLLM,
+			}})
+			require.Error(t, err)
+			require.Len(t, res.Requests, 1)
+			snippet := res.Requests[0].ResponseSnippet
+			assert.True(t, utf8.ValidString(snippet))
+			if test.want != "" {
+				assert.Equal(t, test.want, snippet)
+			}
+			if test.wantSize != 0 {
+				assert.Len(t, snippet, test.wantSize)
+			}
+		})
+	}
 }
 
 func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
@@ -799,7 +952,7 @@ func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
 	m0 := metrics[0].(map[string]any)
 	assert.Equal(t, "categorical", m0["metric_type"])
 	assert.Equal(t, "good", m0["categorical_value"])
-	assert.Equal(t, "defaultapp", m0["ml_app"]) // default applied
+	assert.Equal(t, "defaultapp", m0["ml_app"])
 	assert.Equal(t, float64(123), m0["timestamp_ms"])
 	join := m0["join_on"].(map[string]any)["span"].(map[string]any)
 	assert.Equal(t, "s1", join["span_id"])
@@ -807,8 +960,9 @@ func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
 
 	m1 := metrics[1].(map[string]any)
 	assert.Equal(t, "score", m1["metric_type"])
+	assert.Greater(t, m1["timestamp_ms"].(float64), float64(0))
 	m3 := metrics[3].(map[string]any)
-	assert.Equal(t, "json", m3["metric_type"]) // a structured json_value pairs with metric_type json
+	assert.Equal(t, "json", m3["metric_type"])
 	assert.NotNil(t, m3["json_value"])
 	m4 := metrics[4].(map[string]any)
 	tagJoin := m4["join_on"].(map[string]any)["tag"].(map[string]any)
@@ -831,7 +985,7 @@ func TestSubmitEvaluations_NarrativeFieldsReachTheWire(t *testing.T) {
 	m := firstMetric(t, fake.captured()[0].body)
 	assert.Equal(t, "mostly correct", m["assessment"])
 	assert.Equal(t, "cited two of three sources", m["reasoning"])
-	assert.Equal(t, map[string]any{"judge": "gpt-4o", "rubric_version": float64(3)}, m["metadata"])
+	assert.Equal(t, map[string]any{"judge": "gpt-4o", "rubric_version": float64(3)}, m["eval_metric_metadata"])
 
 	fake2 := &fakeTransport{}
 	c2 := newClient(t, fake2, "test-app")
@@ -842,7 +996,7 @@ func TestSubmitEvaluations_NarrativeFieldsReachTheWire(t *testing.T) {
 	bare := firstMetric(t, fake2.captured()[0].body)
 	assert.NotContains(t, bare, "assessment")
 	assert.NotContains(t, bare, "reasoning")
-	assert.NotContains(t, bare, "metadata")
+	assert.NotContains(t, bare, "eval_metric_metadata")
 }
 
 func TestSubmitEvaluations_WithCallMLApp(t *testing.T) {
@@ -876,8 +1030,8 @@ func TestSubmitEvaluations_StampsTracerVersion(t *testing.T) {
 	for _, x := range m["tags"].([]any) {
 		tags = append(tags, x.(string))
 	}
-	assert.Contains(t, tags, "team:ml")                  // caller tag preserved
-	assert.NotContains(t, tags, "ddtrace.version:bogus") // stale value stripped
+	assert.Contains(t, tags, "team:ml")
+	assert.NotContains(t, tags, "ddtrace.version:bogus")
 	hasVer := false
 	for _, tg := range tags {
 		if strings.HasPrefix(tg, "ddtrace.version:") {
@@ -892,20 +1046,45 @@ func TestSubmitEvaluations_Validation(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
-		{Label: "no-join", ScoreValue: ptr(1.0)},                                                                                                // missing join
-		{SpanID: "s", TraceID: "t", TagKey: "k", TagValue: "v", Label: "both", ScoreValue: ptr(1.0)},                                            // both joins
-		{SpanID: "s", TraceID: "t", Label: "novalue"},                                                                                           // zero values
-		{SpanID: "s", TraceID: "t", Label: "twovalues", ScoreValue: ptr(1.0), BooleanValue: ptr(true)},                                          // two values
-		{SpanID: "s", TraceID: "t", Label: "jsonscalarmismatch", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{"k": "v"}}, // json_value with a scalar metric type
-		{SpanID: "s", TraceID: "", Label: "partial", ScoreValue: ptr(1.0)},                                                                      // incomplete span join
-		{SpanID: "s", TraceID: "t", Label: "badtype", MetricType: export.MetricType("scores"), ScoreValue: ptr(1.0)},                            // invalid metric type (typo)
-		{SpanID: "s", TraceID: "t", Label: "mismatch", MetricType: export.MetricTypeScore, CategoricalValue: ptr("x")},                          // type/value mismatch
-		{SpanID: "s", TraceID: "t", Label: "emptyjson", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{}},                  // empty json value
+		{SpanID: "s", TraceID: "t", ScoreValue: ptr(1.0)},
+		{Label: "no-join", ScoreValue: ptr(1.0)},
+		{SpanID: "s", TraceID: "t", TagKey: "k", TagValue: "v", Label: "both", ScoreValue: ptr(1.0)},
+		{SpanID: "s", TraceID: "t", Label: "novalue"},
+		{SpanID: "s", TraceID: "t", Label: "twovalues", ScoreValue: ptr(1.0), BooleanValue: ptr(true)},
+		{SpanID: "s", TraceID: "t", Label: "jsonscalarmismatch", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{"k": "v"}},
+		{SpanID: "s", Label: "partial", ScoreValue: ptr(1.0)},
+		{SpanID: "s", TraceID: "t", Label: "badtype", MetricType: export.MetricType("scores"), ScoreValue: ptr(1.0)},
+		{SpanID: "s", TraceID: "t", Label: "mismatch", MetricType: export.MetricTypeScore, CategoricalValue: ptr("x")},
+		{SpanID: "s", TraceID: "t", Label: "emptyjson", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{}},
 	})
 	require.NoError(t, err)
-	assert.Len(t, res.ValidationErrors, 9)
-	assert.Equal(t, 9, res.Dropped)
-	assert.Empty(t, fake.captured()) // nothing valid was sent
+	require.Len(t, res.ValidationErrors, 10)
+	assert.Equal(t, 10, res.Dropped)
+	assert.Equal(t, []export.ErrorCode{
+		export.CodeMissingLabel,
+		export.CodeInvalidJoin,
+		export.CodeInvalidJoin,
+		export.CodeInvalidValue,
+		export.CodeInvalidValue,
+		export.CodeTypeMismatch,
+		export.CodeInvalidJoin,
+		export.CodeTypeMismatch,
+		export.CodeTypeMismatch,
+		export.CodeInvalidValue,
+	}, []export.ErrorCode{
+		res.ValidationErrors[0].Code,
+		res.ValidationErrors[1].Code,
+		res.ValidationErrors[2].Code,
+		res.ValidationErrors[3].Code,
+		res.ValidationErrors[4].Code,
+		res.ValidationErrors[5].Code,
+		res.ValidationErrors[6].Code,
+		res.ValidationErrors[7].Code,
+		res.ValidationErrors[8].Code,
+		res.ValidationErrors[9].Code,
+	})
+	assert.Contains(t, res.ValidationErrors[0].Error(), "row 0 rejected (missing_label)")
+	assert.Empty(t, fake.captured())
 }
 
 func TestSubmit_EmptyInput(t *testing.T) {
@@ -923,13 +1102,17 @@ func TestSubmit_EmptyInput(t *testing.T) {
 }
 
 func TestNewClient_RequiresAPIKeyForDirectRoute(t *testing.T) {
+	t.Setenv("DD_API_KEY", "")
 	_, err := export.NewClient("app", export.WithDatadogIntake("datadoghq.com", ""))
+	assert.Error(t, err)
+
+	_, err = export.NewClient("app", export.WithDatadogIntake("datadoghq.com", "invalid"))
 	assert.Error(t, err)
 }
 
 func TestNewClient_RequiresMLApp(t *testing.T) {
-	_, err := export.NewClient("", export.WithDatadogIntake("datadoghq.com", "k"))
-	assert.Error(t, err) // ml_app is required for LLM Obs data
+	_, err := export.NewClient("", export.WithDatadogIntake("datadoghq.com", testAPIKey))
+	assert.Error(t, err)
 }
 
 func TestNewClient_RequiresExactlyOneRoute(t *testing.T) {
@@ -937,7 +1120,7 @@ func TestNewClient_RequiresExactlyOneRoute(t *testing.T) {
 	assert.Error(t, err)
 
 	_, err = export.NewClient("app",
-		export.WithDatadogIntake("datadoghq.com", "k"),
+		export.WithDatadogIntake("datadoghq.com", testAPIKey),
 		export.WithAgentURL("http://localhost:8126"),
 	)
 	assert.Error(t, err)
@@ -984,6 +1167,8 @@ func TestSubmitSpans_ContextCanceledStopsPromptly(t *testing.T) {
 	assert.Empty(t, fake.captured())
 	require.Len(t, res.Requests, 1)
 	assert.ErrorIs(t, res.Requests[0].Err, context.Canceled)
+	assert.Equal(t, []int{0}, res.Requests[0].InputIndices)
+	assert.True(t, res.Requests[0].Retriable)
 	assert.Equal(t, 0, res.Sent)
 	assert.Equal(t, 1, res.Failed)
 	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
@@ -1003,6 +1188,8 @@ func TestSubmitEvaluations_ContextCanceledStopsPromptly(t *testing.T) {
 	assert.Empty(t, fake.captured())
 	require.Len(t, res.Requests, 1)
 	assert.ErrorIs(t, res.Requests[0].Err, context.Canceled)
+	assert.Equal(t, []int{0}, res.Requests[0].InputIndices)
+	assert.True(t, res.Requests[0].Retriable)
 	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
 }
 
@@ -1010,7 +1197,7 @@ func TestSubmitEvaluations_MidFlightCancelNotRetriable(t *testing.T) {
 	block := &blockingTransport{entered: make(chan struct{})}
 	c, err := export.NewClient("test-app",
 		export.WithHTTPClient(&http.Client{Transport: block}),
-		export.WithDatadogIntake("datadoghq.com", "test-key"),
+		export.WithDatadogIntake("datadoghq.com", testAPIKey),
 	)
 	require.NoError(t, err)
 
@@ -1034,21 +1221,23 @@ func TestSubmitSpans_AccountingCoversWholeInputOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var once sync.Once
 	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
-		once.Do(cancel) // cancel after the first window's POST is recorded
+		once.Do(cancel)
 		return 202, "{}"
 	}}
-	c := newClient(t, fake, "test-app", export.WithSpanBatchSize(2))
+	c := newClient(t, fake, "test-app")
 
-	events := make([]export.SpanEvent, 6)
+	events := make([]export.SpanEvent, 51)
 	for i := range events {
 		events[i] = export.SpanEvent{TraceID: "t", SpanID: strconv.Itoa(i), Kind: export.KindLLM}
 	}
 	res, err := c.SubmitSpans(ctx, events)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
-	assert.Len(t, fake.captured(), 1) // only the first window went out
-	assert.Equal(t, 2, res.Sent)
-	assert.Equal(t, 4, res.Failed) // the 4 rows in the skipped windows
+	assert.Len(t, fake.captured(), 1)
+	require.Len(t, res.Requests, 2)
+	assert.Equal(t, 50, res.Sent)
+	assert.Equal(t, 1, res.Failed)
+	assert.Equal(t, []int{50}, res.Requests[1].InputIndices)
 	assert.Equal(t, len(events), res.Sent+res.Failed+res.Dropped)
 }
 
@@ -1069,7 +1258,7 @@ func TestSubmitEvaluations_RejectsNonFiniteScore(t *testing.T) {
 		{SpanID: "s3", TraceID: "t3", Label: "ok", ScoreValue: ptr(0.5)},
 	})
 	require.NoError(t, err)
-	require.Len(t, res.ValidationErrors, 2) // NaN and Inf rejected as rows
+	require.Len(t, res.ValidationErrors, 2)
 	assert.Equal(t, 0, res.ValidationErrors[0].Index)
 	assert.Equal(t, 1, res.ValidationErrors[1].Index)
 
@@ -1087,8 +1276,8 @@ func TestSubmitSpans_StampsSessionIDTag(t *testing.T) {
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
-	assert.Contains(t, span["tags"].([]any), "session_id:sess-1") // tag-join parity with the live path
-	assert.Equal(t, "sess-1", span["session_id"])                 // top-level still set
+	assert.Contains(t, span["tags"].([]any), "session_id:sess-1")
+	assert.Equal(t, "sess-1", span["session_id"])
 }
 
 func TestSubmitSpans_DropsMissingKind(t *testing.T) {
@@ -1096,15 +1285,15 @@ func TestSubmitSpans_DropsMissingKind(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM}, // valid
-		{TraceID: "t2", SpanID: "s2"},                       // missing kind -> dropped
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},
+		{TraceID: "t2", SpanID: "s2"},
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 1)
 	assert.Equal(t, 1, res.ValidationErrors[0].Index)
 
 	span := allSpans(t, fake.captured()[0].body)
-	require.Len(t, span, 1) // only the valid span was sent
+	require.Len(t, span, 1)
 }
 
 func TestSubmitSpans_RejectsNonFiniteMetric(t *testing.T) {
@@ -1113,14 +1302,14 @@ func TestSubmitSpans_RejectsNonFiniteMetric(t *testing.T) {
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
 		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Metrics: map[string]float64{"estimated_total_cost": math.Inf(1)}},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM}, // valid
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM},
 	})
 	require.NoError(t, err)
-	require.Len(t, res.ValidationErrors, 1) // the non-finite cost row is dropped, not fatal
+	require.Len(t, res.ValidationErrors, 1)
 	assert.Equal(t, 0, res.ValidationErrors[0].Index)
 
 	span := allSpans(t, fake.captured()[0].body)
-	require.Len(t, span, 1) // the valid span still went out
+	require.Len(t, span, 1)
 }
 
 func TestSubmitSpans_SessionIDOverridesStaleTag(t *testing.T) {
@@ -1138,10 +1327,10 @@ func TestSubmitSpans_SessionIDOverridesStaleTag(t *testing.T) {
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
 	}
-	assert.Contains(t, tags, "session_id:new")    // structured SessionID is source of truth
-	assert.NotContains(t, tags, "session_id:old") // stale caller tag replaced
-	assert.Contains(t, tags, "team:ml")           // unrelated tag preserved
-	assert.Equal(t, "new", span["session_id"])    // top-level agrees with the tag
+	assert.Contains(t, tags, "session_id:new")
+	assert.NotContains(t, tags, "session_id:old")
+	assert.Contains(t, tags, "team:ml")
+	assert.Equal(t, "new", span["session_id"])
 }
 
 func TestSubmitSpans_ServiceTagReplacesStale(t *testing.T) {
@@ -1159,10 +1348,10 @@ func TestSubmitSpans_ServiceTagReplacesStale(t *testing.T) {
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
 	}
-	assert.Contains(t, tags, "service:svc")      // resolved service is authoritative
-	assert.NotContains(t, tags, "service:stale") // stale caller tag replaced
-	assert.Contains(t, tags, "team:ml")          // unrelated tag preserved
-	assert.Equal(t, "svc", span["service"])      // top-level field agrees with the tag
+	assert.Contains(t, tags, "service:svc")
+	assert.NotContains(t, tags, "service:stale")
+	assert.Contains(t, tags, "team:ml")
+	assert.NotContains(t, span, "service")
 }
 
 func TestSubmitSpans_UsesExistingMetricsMap(t *testing.T) {
@@ -1196,16 +1385,16 @@ func TestSubmitEvaluations_RejectsUnmarshalableJSON(t *testing.T) {
 		{SpanID: "s2", TraceID: "t2", Label: "ok", ScoreValue: ptr(0.5)},
 	})
 	require.NoError(t, err)
-	require.Len(t, res.ValidationErrors, 1) // unencodable json_value dropped as a row
+	require.Len(t, res.ValidationErrors, 1)
 	assert.Equal(t, 0, res.ValidationErrors[0].Index)
 	assert.Contains(t, res.ValidationErrors[0].Reason, "not JSON-encodable")
 	assert.Equal(t, 1, res.Dropped)
 	assert.Equal(t, 1, res.Sent)
 	assert.Zero(t, res.Failed)
 
-	require.Len(t, fake.captured(), 1) // only the valid row was re-sent
+	require.Len(t, fake.captured(), 1)
 	metrics := decode(t, fake.captured()[0].body)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)
-	require.Len(t, metrics, 1) // the valid metric still went out
+	require.Len(t, metrics, 1)
 }
 
 func TestSubmitEvaluations_DropsAllUnencodableJSON(t *testing.T) {
@@ -1216,12 +1405,12 @@ func TestSubmitEvaluations_DropsAllUnencodableJSON(t *testing.T) {
 		{SpanID: "s1", TraceID: "t1", Label: "bad1", MetricType: export.MetricTypeJSON, JSONValue: map[string]any{"x": math.Inf(1)}},
 		{SpanID: "s2", TraceID: "t2", Label: "bad2", MetricType: export.MetricTypeJSON, JSONValue: map[string]any{"y": math.Inf(-1)}},
 	})
-	require.NoError(t, err) // dropped rows are not request failures
+	require.NoError(t, err)
 	assert.Len(t, res.ValidationErrors, 2)
 	assert.Equal(t, 2, res.Dropped)
 	assert.Zero(t, res.Sent)
 	assert.Zero(t, res.Failed)
-	assert.Empty(t, res.Requests) // no good rows left → nothing POSTed
+	assert.Empty(t, res.Requests)
 	assert.Empty(t, fake.captured())
 }
 
@@ -1236,7 +1425,7 @@ func TestSubmitEvaluations_RejectsTypeValueMismatch(t *testing.T) {
 	require.Len(t, res.ValidationErrors, 1)
 	assert.Equal(t, 0, res.ValidationErrors[0].Index)
 	assert.Contains(t, res.ValidationErrors[0].Reason, "does not match")
-	assert.Empty(t, fake.captured()) // rejected in lower(), never POSTed
+	assert.Empty(t, fake.captured())
 }
 
 func TestSubmitSpans_ZeroStartAndDurationOmitFields(t *testing.T) {
@@ -1244,7 +1433,7 @@ func TestSubmitSpans_ZeroStartAndDurationOmitFields(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t", SpanID: "s", Kind: export.KindLLM}, // zero Start, zero Duration
+		{TraceID: "t", SpanID: "s", Kind: export.KindLLM},
 	})
 	require.NoError(t, err)
 
@@ -1307,13 +1496,13 @@ func TestSubmitSpans_MidFlightCancelNotRetriable(t *testing.T) {
 	bt := &blockingTransport{entered: make(chan struct{})}
 	c, err := export.NewClient("test-app",
 		export.WithHTTPClient(&http.Client{Transport: bt}),
-		export.WithDatadogIntake("datadoghq.com", "test-key"),
+		export.WithDatadogIntake("datadoghq.com", testAPIKey),
 	)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	type outcome struct {
-		res *export.ExportResult
+		res *export.Result
 		err error
 	}
 	done := make(chan outcome, 1)
@@ -1323,7 +1512,7 @@ func TestSubmitSpans_MidFlightCancelNotRetriable(t *testing.T) {
 	}()
 
 	select {
-	case <-bt.entered: // the POST is in flight; cancel mid-request, not pre-flight
+	case <-bt.entered:
 	case <-time.After(10 * time.Second):
 		t.Fatal("RoundTrip was never entered")
 	}
@@ -1354,7 +1543,7 @@ func TestSubmitSpans_RetriableStatusThenCancelNotRetriable(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	type outcome struct {
-		res *export.ExportResult
+		res *export.Result
 		err error
 	}
 	done := make(chan outcome, 1)
@@ -1364,7 +1553,7 @@ func TestSubmitSpans_RetriableStatusThenCancelNotRetriable(t *testing.T) {
 	}()
 
 	select {
-	case <-responded: // a retriable 503 was recorded; cancel during the Retry-After backoff
+	case <-responded:
 	case <-time.After(10 * time.Second):
 		t.Fatal("transport was never called")
 	}
@@ -1375,7 +1564,7 @@ func TestSubmitSpans_RetriableStatusThenCancelNotRetriable(t *testing.T) {
 		require.Error(t, got.err)
 		require.Len(t, got.res.Requests, 1)
 		assert.Equal(t, 503, got.res.Requests[0].StatusCode)
-		assert.False(t, got.res.Requests[0].Retriable) // override cleared the retriable status
+		assert.False(t, got.res.Requests[0].Retriable)
 	case <-time.After(10 * time.Second):
 		t.Fatal("SubmitSpans did not return after cancellation during backoff")
 	}
@@ -1418,14 +1607,15 @@ func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var once sync.Once
 	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
-		once.Do(cancel) // cancel once the first (left-half) POST has been recorded
+		once.Do(cancel)
 		return 202, "{}"
 	}}
-	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(3000))
+	c := newClient(t, fake, "test-app")
+	value := strings.Repeat("x", illmobs.SizeLimitEVPEvent/2)
 
 	res, err := c.SubmitSpans(ctx, []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: strings.Repeat("x", 1500)},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: strings.Repeat("y", 1500)},
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: value},
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: value},
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
@@ -1434,6 +1624,7 @@ func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 	assert.Equal(t, 202, res.Requests[0].StatusCode)
 	assert.NoError(t, res.Requests[0].Err)
 	assert.ErrorIs(t, res.Requests[1].Err, context.Canceled)
+	assert.Equal(t, []int{1}, res.Requests[1].InputIndices)
 	assert.Equal(t, 2, res.Sent+res.Failed+res.Dropped)
 	assert.Equal(t, 1, res.Sent)
 	assert.Equal(t, 1, res.Failed)

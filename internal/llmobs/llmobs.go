@@ -19,7 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
@@ -79,22 +78,22 @@ const (
 	SpanKindTool SpanKind = transport.SpanKindTool
 )
 
-// SpanStatus is the terminal status of a span.
-type SpanStatus string
+// SpanStatus represents the terminal status of an LLM Obs span.
+type SpanStatus = transport.SpanStatus
 
 const (
-	SpanStatusOK    SpanStatus = "ok"
-	SpanStatusError SpanStatus = "error"
+	SpanStatusOK    SpanStatus = transport.SpanStatusOK
+	SpanStatusError SpanStatus = transport.SpanStatusError
 )
 
-// EvalMetricType identifies an evaluation metric's value type.
-type EvalMetricType string
+// EvalMetricType represents an evaluation metric value type.
+type EvalMetricType = transport.EvalMetricType
 
 const (
-	EvalMetricTypeCategorical EvalMetricType = "categorical"
-	EvalMetricTypeScore       EvalMetricType = "score"
-	EvalMetricTypeBoolean     EvalMetricType = "boolean"
-	EvalMetricTypeJSON        EvalMetricType = "json"
+	EvalMetricTypeCategorical EvalMetricType = transport.EvalMetricTypeCategorical
+	EvalMetricTypeScore       EvalMetricType = transport.EvalMetricTypeScore
+	EvalMetricTypeBoolean     EvalMetricType = transport.EvalMetricTypeBoolean
+	EvalMetricTypeJSON        EvalMetricType = transport.EvalMetricTypeJSON
 )
 
 const (
@@ -104,8 +103,8 @@ const (
 const (
 	// SizeLimitEVPEvent is the EVP event size limit.
 	SizeLimitEVPEvent        = 5_000_000 // 5MB
-	CollectionErrorDroppedIO = "dropped_io"
-	DroppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
+	collectionErrorDroppedIO = "dropped_io"
+	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
 
 	// evalMetricsEnvelopeSize is a conservative estimate of the fixed JSON overhead added by the
 	// transport.PushMetricsRequest wrapper that encloses buffered eval metrics when sent, i.e.
@@ -116,19 +115,19 @@ const (
 )
 
 const (
-	TagKeySource        = "source"
-	TagKeyLanguage      = "language"
-	TagKeyTracerVersion = "ddtrace.version"
-	TagKeyError         = "error"
-	TagKeyErrorType     = "error_type"
+	tagKeySource        = "source"
+	tagKeyLanguage      = "language"
+	tagKeyTracerVersion = "ddtrace.version"
+	tagKeyError         = "error"
+	tagKeyErrorType     = "error_type"
 
-	TagValueSource   = "integration"
-	TagValueLanguage = "go"
+	tagValueSource   = "integration"
+	tagValueLanguage = "go"
 )
 
 const (
-	MetaKeyModelName     = "model_name"
-	MetaKeyModelProvider = "model_provider"
+	metaKeyModelName     = "model_name"
+	metaKeyModelProvider = "model_provider"
 )
 
 const (
@@ -139,8 +138,34 @@ const (
 
 const modelUnknown = "custom"
 
-// NormalizeModel returns the model fields emitted for kind.
-func NormalizeModel(kind SpanKind, modelName, modelProvider string) (name, provider string, ok bool) {
+func standardSpanEventTags(cfg *config.Config, mlApp, service, sessionID string, status SpanStatus, errorType, integration string) map[string]string {
+	errorValue := "0"
+	if status == SpanStatusError {
+		errorValue = "1"
+	}
+	tags := map[string]string{
+		"version":           cfg.TracerConfig.Version,
+		"env":               cfg.TracerConfig.Env,
+		"service":           service,
+		tagKeySource:        tagValueSource,
+		"ml_app":            mlApp,
+		tagKeyTracerVersion: version.Tag,
+		tagKeyLanguage:      tagValueLanguage,
+		tagKeyError:         errorValue,
+	}
+	if sessionID != "" {
+		tags["session_id"] = sessionID
+	}
+	if errorType != "" {
+		tags[tagKeyErrorType] = errorType
+	}
+	if integration != "" {
+		tags["integration"] = integration
+	}
+	return tags
+}
+
+func normalizeModel(kind SpanKind, modelName, modelProvider string) (name, provider string, ok bool) {
 	if !((kind == SpanKindLLM || kind == SpanKindEmbedding) && modelName != "" || modelProvider != "") {
 		return "", "", false
 	}
@@ -155,8 +180,7 @@ func NormalizeModel(kind SpanKind, modelName, modelProvider string) (name, provi
 	return name, provider, true
 }
 
-// SetErrorMeta adds error fields to meta.
-func SetErrorMeta(meta map[string]any, msg *transport.ErrorMessage) {
+func setErrorMeta(meta map[string]any, msg *transport.ErrorMessage) {
 	if msg == nil {
 		return
 	}
@@ -582,9 +606,9 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	spanKind := span.spanKind
 	meta["span.kind"] = string(spanKind)
 
-	if modelName, modelProvider, ok := NormalizeModel(spanKind, span.llmCtx.modelName, span.llmCtx.modelProvider); ok {
-		meta[MetaKeyModelName] = modelName
-		meta[MetaKeyModelProvider] = modelProvider
+	if modelName, modelProvider, ok := normalizeModel(spanKind, span.llmCtx.modelName, span.llmCtx.modelProvider); ok {
+		meta[metaKeyModelName] = modelName
+		meta[metaKeyModelProvider] = modelProvider
 	}
 
 	metadata := span.llmCtx.metadata
@@ -658,12 +682,12 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		meta["tool.version"] = toolVersion
 	}
 
-	spanStatus := string(SpanStatusOK)
+	spanStatus := SpanStatusOK
 	var errMsg *transport.ErrorMessage
 	if span.error != nil {
-		spanStatus = string(SpanStatusError)
+		spanStatus = SpanStatusError
 		errMsg = transport.NewErrorMessage(span.error)
-		SetErrorMeta(meta, errMsg)
+		setErrorMeta(meta, errMsg)
 	}
 
 	if len(input) > 0 {
@@ -701,31 +725,20 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	for k, v := range l.Config.TracerConfig.DDTags {
 		tags[k] = fmt.Sprintf("%v", v)
 	}
-	tags["version"] = l.Config.TracerConfig.Version
-	tags["env"] = l.Config.TracerConfig.Env
-	tags["service"] = l.Config.TracerConfig.Service
-	tags[TagKeySource] = TagValueSource
-	tags["ml_app"] = span.mlApp
-	tags[TagKeyTracerVersion] = version.Tag
-	tags[TagKeyLanguage] = TagValueLanguage
-
 	sessionID := span.propagatedSessionID()
-	if sessionID != "" {
-		tags["session_id"] = sessionID
-	}
-
-	errTag := "0"
-	if span.error != nil {
-		errTag = "1"
-	}
-	tags[TagKeyError] = errTag
-
+	errorType := ""
 	if errMsg != nil {
-		tags[TagKeyErrorType] = errMsg.Type
+		errorType = errMsg.Type
 	}
-	if span.integration != "" {
-		tags["integration"] = span.integration
-	}
+	maps.Copy(tags, standardSpanEventTags(
+		l.Config,
+		span.mlApp,
+		l.Config.TracerConfig.Service,
+		sessionID,
+		spanStatus,
+		errorType,
+		span.integration,
+	))
 
 	maps.Copy(tags, span.llmCtx.tags)
 
@@ -756,7 +769,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		Tags:             tagsSlice,
 		Name:             span.name,
 		StartNS:          span.startTime.UnixNano(),
-		Duration:         span.finishTime.Sub(span.startTime).Nanoseconds(),
+		Duration:         span.finishTime.Sub(span.startTime),
 		Status:           spanStatus,
 		StatusMessage:    "",
 		Meta:             meta,
@@ -791,7 +804,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	return ev
 }
 
-// toTransportSpanLinks formats live trace and span IDs as decimal strings.
 func toTransportSpanLinks(links []SpanLink) []transport.SpanLink {
 	if len(links) == 0 {
 		return nil
@@ -866,15 +878,15 @@ func DropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
 	}
 	droppedIO := false
 	if _, ok := ev.Meta["input"]; ok {
-		ev.Meta["input"] = map[string]any{"value": DroppedValueText}
+		ev.Meta["input"] = map[string]any{"value": droppedValueText}
 		droppedIO = true
 	}
 	if _, ok := ev.Meta["output"]; ok {
-		ev.Meta["output"] = map[string]any{"value": DroppedValueText}
+		ev.Meta["output"] = map[string]any{"value": droppedValueText}
 		droppedIO = true
 	}
 	if droppedIO {
-		ev.CollectionErrors = []string{CollectionErrorDroppedIO}
+		ev.CollectionErrors = []string{collectionErrorDroppedIO}
 	} else {
 		log.Debug("llmobs: attempted to drop span event IO but it was not present")
 	}
@@ -1033,8 +1045,7 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, params Ex
 	return span, ctx
 }
 
-// BuildEvaluationJoin validates and builds an evaluation join.
-func BuildEvaluationJoin(spanID, traceID, tagKey, tagValue string) (transport.EvaluationJoinOn, error) {
+func buildEvaluationJoin(spanID, traceID, tagKey, tagValue string) (transport.EvaluationJoinOn, error) {
 	var hasSpanJoin, hasTagJoin bool
 	if spanID != "" || traceID != "" {
 		if spanID == "" || traceID == "" {
@@ -1068,11 +1079,9 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 		trackSubmitEvaluationMetric(metric, err)
 	}()
 
-	timestampMS := cfg.TimestampMS
-	if timestampMS == 0 {
-		timestampMS = time.Now().UnixMilli()
+	if cfg.TimestampMS == 0 && cfg.Timestamp.IsZero() {
+		cfg.TimestampMS = time.Now().UnixMilli()
 	}
-	cfg.TimestampMS = timestampMS
 	metric, validation := buildEvaluation(cfg, l.Config.MLApp, false)
 	if validation != nil {
 		if cause := validation.Unwrap(); cause != nil {
@@ -1132,19 +1141,6 @@ func jsonSize(v any) int {
 		return 0
 	}
 	return len(b)
-}
-
-// isAPIKeyValid reports whether the given string is a structurally valid API key
-func isAPIKeyValid(key string) bool {
-	if len(key) != 32 {
-		return false
-	}
-	for _, c := range key {
-		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
-			return false
-		}
-	}
-	return true
 }
 
 func readableBytes(s int) string {

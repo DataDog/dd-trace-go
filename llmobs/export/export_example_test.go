@@ -16,7 +16,7 @@ import (
 
 func ExampleClient_SubmitSpans() {
 	client, err := export.NewClient("my-ml-app",
-		export.WithDatadogIntake("datadoghq.com", "<api-key>"),
+		export.WithDatadogIntake("datadoghq.com", "testtesttesttesttesttesttesttest"),
 		export.WithService("my-service"),
 		export.WithEnv("prod"),
 	)
@@ -30,7 +30,7 @@ func ExampleClient_SubmitSpans() {
 		Kind:          export.KindLLM,
 		Name:          "chat",
 		Start:         time.Now().Add(-2 * time.Second),
-		Duration:      int64(1500 * time.Millisecond),
+		Duration:      1500 * time.Millisecond,
 		ModelName:     "gpt-4o",
 		ModelProvider: "openai",
 		Input:         "hello",
@@ -38,7 +38,7 @@ func ExampleClient_SubmitSpans() {
 		Metrics:       map[string]float64{"input_tokens": 12, "output_tokens": 8},
 	}})
 	if err != nil {
-		log.Print(err)
+		log.Printf("submit spans: %v", err)
 	}
 
 	fmt.Println(res.Sent, res.Dropped, res.Failed)
@@ -65,7 +65,7 @@ func ExampleClient_SubmitEvaluations() {
 		Reasoning:  "cited two of three sources",
 	}})
 	if err != nil {
-		log.Print(err)
+		log.Printf("submit evaluations: %v", err)
 	}
 
 	fmt.Println(res.Sent, res.Dropped, res.Failed)
