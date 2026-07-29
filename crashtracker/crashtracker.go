@@ -6,6 +6,8 @@
 package crashtracker
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -18,18 +20,17 @@ var (
 	startErr  error // preserved from the first Start call; returned on subsequent calls
 )
 
-// init intercepts the monitor child process as early as possible — before any
-// user package init() functions execute. This prevents app-level side-effects
-// (DB connections, gRPC dials, signal handlers) from running in the lightweight
-// monitor. When the crashtracker package is imported (e.g. via orchestrion's
-// injected import), this init fires before the user's package inits.
+// init intercepts the monitor child process as early as package initialization
+// allows. It runs before main and therefore before Start, but Go does not
+// guarantee it runs before init functions in independently imported packages.
+// See the package documentation for that limitation.
 //
 // The monitor's configuration comes from monitorConfigFromEnv, which reads the
 // internal DD_CRASHTRACKING_MONITOR_* variables set by spawnMonitor: this is how
 // options passed to Start in the application process (WithService, WithAPIKey,
 // etc.) reach the monitor, which is a separate process and cannot see them
-// directly. Because init always wins this race, start's own monitor-role branch
-// is unreachable and intentionally does not exist.
+// directly. Because package initialization completes before main begins, Start's
+// own monitor-role branch is unreachable and intentionally does not exist.
 func init() {
 	if isMonitorProcess() {
 		runMonitor(monitorConfigFromEnv()) // never returns; calls os.Exit
@@ -83,6 +84,12 @@ func defaultConfig() *config {
 // stored via SetServiceName; it never reads DD_SERVICE itself, so a
 // crashtracker.Start call in main before tracer.Start would otherwise drop
 // the service tag entirely on every report.
+//
+// The final fallback matches tracer.Start's own default (ddtrace/tracer/option.go)
+// rather than a literal "unknown": under the documented lifecycle, crashtracker.Start
+// runs before tracer.Start sets that default, so without this the two would
+// independently pick different values for the same process and crash reports
+// would fail to correlate with that service's traces.
 func resolveService() string {
 	if s := globalconfig.ServiceName(); s != "" {
 		return s
@@ -90,5 +97,5 @@ func resolveService() string {
 	if s := env.Get("DD_SERVICE"); s != "" {
 		return s
 	}
-	return "unknown"
+	return filepath.Base(os.Args[0])
 }

@@ -390,12 +390,12 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 			}
 		}
 	}
-	for _, line := range preamble {
+	for i, line := range preamble {
 		if rest, ok := strings.CutPrefix(line, "fatal error:"); ok {
 			return strings.TrimSpace(rest)
 		}
-		if rest, ok := strings.CutPrefix(line, "panic:"); ok {
-			return strings.TrimSpace(rest)
+		if strings.HasPrefix(line, "panic:") {
+			return collectPanicMessage(preamble, i)
 		}
 		if strings.HasPrefix(line, "panic(") {
 			return panicValue(line)
@@ -408,6 +408,27 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 		}
 	}
 	return ""
+}
+
+// collectPanicMessage returns a "panic:" line's message extended with any
+// subsequent preamble lines up to the next blank line. A single "panic:" line
+// is not always the whole message: a panic value containing an embedded
+// newline prints as multiple physical lines, and a panic recovered and
+// re-raised during deferred cleanup prints as an indented
+// "panic: ... [recovered]" line followed by the final panic on its own line.
+// Returning only the first line loses that continuation — including, in the
+// recovered case, the panic that actually terminated the process.
+func collectPanicMessage(preamble []string, start int) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(strings.TrimPrefix(preamble[start], "panic:")))
+	for _, line := range preamble[start+1:] {
+		if strings.TrimSpace(line) == "" {
+			break
+		}
+		b.WriteByte('\n')
+		b.WriteString(strings.TrimSpace(line))
+	}
+	return b.String()
 }
 
 // panicValue extracts a simple string argument from a "panic(...)" frame line,
