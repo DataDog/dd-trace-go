@@ -31,12 +31,10 @@ const (
 	StatusError Status = "error"
 )
 
-// SpanEvent is the LLM Obs span representation used by live and offline
-// submission.
+// SpanEvent is a completed LLM Obs span.
 type SpanEvent = transport.LLMObsSpanEvent
 
-// SpanLink is the LLM Obs span-link representation used by live and offline
-// submission.
+// SpanLink links an LLM Obs span.
 type SpanLink = transport.SpanLink
 
 // DDAttributes contains Datadog correlation attributes for a span.

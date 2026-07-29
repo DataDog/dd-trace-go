@@ -154,55 +154,36 @@ type (
 	// ToolResult represents the result of a tool call within an LLM message.
 	ToolResult = illmobs.ToolResult
 
-	// SpanKind is the kind of an LLM Obs span, emitted in the span's
-	// meta."span.kind". [Span.Kind] returns the same value as an untyped string;
-	// convert it (SpanKind(s.Kind())) to compare against the constants below.
+	// SpanKind identifies an LLM Obs span kind.
 	SpanKind = illmobs.SpanKind
 
-	// SpanStatus is the terminal status of an LLM Obs span.
+	// SpanStatus identifies an LLM Obs span status.
 	SpanStatus = illmobs.SpanStatus
 
-	// EvalMetricType is the type of an evaluation metric's value.
+	// EvalMetricType identifies an evaluation metric value type.
 	EvalMetricType = illmobs.EvalMetricType
 )
 
-// The LLM Obs span kinds. The parenthesized value is the string emitted on the
-// wire and returned by [Span.Kind].
 const (
-	// SpanKindLLM ("llm") is a call to a large language model.
-	SpanKindLLM SpanKind = illmobs.SpanKindLLM
-	// SpanKindAgent ("agent") is an autonomous agent invocation.
-	SpanKindAgent SpanKind = illmobs.SpanKindAgent
-	// SpanKindWorkflow ("workflow") orchestrates multiple operations.
-	SpanKindWorkflow SpanKind = illmobs.SpanKindWorkflow
-	// SpanKindTask ("task") is a general task.
-	SpanKindTask SpanKind = illmobs.SpanKindTask
-	// SpanKindTool ("tool") is a tool or function call.
-	SpanKindTool SpanKind = illmobs.SpanKindTool
-	// SpanKindEmbedding ("embedding") generates embeddings.
+	SpanKindLLM       SpanKind = illmobs.SpanKindLLM
+	SpanKindAgent     SpanKind = illmobs.SpanKindAgent
+	SpanKindWorkflow  SpanKind = illmobs.SpanKindWorkflow
+	SpanKindTask      SpanKind = illmobs.SpanKindTask
+	SpanKindTool      SpanKind = illmobs.SpanKindTool
 	SpanKindEmbedding SpanKind = illmobs.SpanKindEmbedding
-	// SpanKindRetrieval ("retrieval") retrieves documents.
 	SpanKindRetrieval SpanKind = illmobs.SpanKindRetrieval
 )
 
-// The terminal LLM Obs span statuses.
 const (
-	// SpanStatusOK ("ok") marks a span that completed without error.
-	SpanStatusOK SpanStatus = illmobs.SpanStatusOK
-	// SpanStatusError ("error") marks a span that ended in error.
+	SpanStatusOK    SpanStatus = illmobs.SpanStatusOK
 	SpanStatusError SpanStatus = illmobs.SpanStatusError
 )
 
-// The evaluation metric types.
 const (
-	// EvalMetricTypeCategorical ("categorical") is a string-valued metric.
 	EvalMetricTypeCategorical EvalMetricType = illmobs.EvalMetricTypeCategorical
-	// EvalMetricTypeScore ("score") is a numeric-valued metric.
-	EvalMetricTypeScore EvalMetricType = illmobs.EvalMetricTypeScore
-	// EvalMetricTypeBoolean ("boolean") is a boolean-valued metric.
-	EvalMetricTypeBoolean EvalMetricType = illmobs.EvalMetricTypeBoolean
-	// EvalMetricTypeJSON ("json") is a structured JSON-valued metric.
-	EvalMetricTypeJSON EvalMetricType = illmobs.EvalMetricTypeJSON
+	EvalMetricTypeScore       EvalMetricType = illmobs.EvalMetricTypeScore
+	EvalMetricTypeBoolean     EvalMetricType = illmobs.EvalMetricTypeBoolean
+	EvalMetricTypeJSON        EvalMetricType = illmobs.EvalMetricTypeJSON
 )
 
 // Span represents a generic LLMObs span that can be converted to specific span types.
