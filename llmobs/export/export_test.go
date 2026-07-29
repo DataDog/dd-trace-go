@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/export"
 )
@@ -179,6 +180,76 @@ func keysOf(m map[string]any) []string {
 		ks = append(ks, k)
 	}
 	return ks
+}
+
+func TestNewClient_GlobalDefaultsAndAPIOverrides(t *testing.T) {
+	global := internalconfig.Get()
+	service, env, version := global.ServiceName(), global.Env(), global.Version()
+	t.Cleanup(func() {
+		global.SetServiceName(service, internalconfig.OriginCode)
+		global.SetEnv(env, internalconfig.OriginCode)
+		global.SetVersion(version, internalconfig.OriginCode)
+	})
+	global.SetServiceName("global-service", internalconfig.OriginCode)
+	global.SetEnv("global-env", internalconfig.OriginCode)
+	global.SetVersion("global-version", internalconfig.OriginCode)
+
+	tests := []struct {
+		name       string
+		options    []export.ClientOption
+		wantTags   []string
+		unwantTags []string
+		noTagKeys  []string
+	}{
+		{
+			name:     "global defaults",
+			wantTags: []string{"service:global-service", "env:global-env", "version:global-version"},
+		},
+		{
+			name: "API overrides",
+			options: []export.ClientOption{
+				export.WithService("api-service"),
+				export.WithEnv("api-env"),
+				export.WithVersion("api-version"),
+			},
+			wantTags:   []string{"service:api-service", "env:api-env", "version:api-version"},
+			unwantTags: []string{"service:global-service", "env:global-env", "version:global-version"},
+		},
+		{
+			name: "explicit empty API values",
+			options: []export.ClientOption{
+				export.WithService(""),
+				export.WithEnv(""),
+				export.WithVersion(""),
+			},
+			noTagKeys: []string{"service:", "env:", "version:"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeTransport{}
+			client := newClient(t, fake, "test-app", tt.options...)
+
+			_, err := client.SubmitSpans(context.Background(), []export.SpanEvent{{
+				TraceID: "t", SpanID: "s", Kind: export.KindLLM,
+			}})
+			require.NoError(t, err)
+
+			tags := tagsOf(t, allSpans(t, fake.captured()[0].body)[0])
+			for _, tag := range tt.wantTags {
+				assert.Contains(t, tags, tag)
+			}
+			for _, tag := range tt.unwantTags {
+				assert.NotContains(t, tags, tag)
+			}
+			for _, key := range tt.noTagKeys {
+				assert.False(t, slices.ContainsFunc(tags, func(tag string) bool {
+					return strings.HasPrefix(tag, key)
+				}))
+			}
+		})
+	}
 }
 
 func TestSpanWireShape_Contract(t *testing.T) {
