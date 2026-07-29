@@ -228,6 +228,35 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 	}
 }
 
+// On the dual-header path (Datadog and W3C headers, same trace ID) the Datadog
+// context wins extraction, so the inbound ot= sampling decision parsed onto the
+// throwaway W3C context must be carried over. Otherwise re-composition strips it
+// and the OTel threshold is lost across the hop.
+func TestTextMapExtractDualHeaderPreservesOtel(t *testing.T) {
+	t.Setenv(envPropagationStyle, "datadog,tracecontext")
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	assert.NoError(err)
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		traceparentHeader:     "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:      "dd=s:1;p:2222222222222222,ot=rv:ef284ace7a91e1;th:e6666666666668,othervendor=t61rcWkgMzE",
+	})
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+	assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
+
+	// Inject into a fresh carrier and confirm the inbound ot= survives the hop.
+	out := TextMapCarrier(map[string]string{})
+	assert.NoError(tracer.Inject(sctx, out))
+	assert.Contains(out[tracestateHeader], "ot=rv:ef284ace7a91e1;th:e6666666666668")
+	assert.Contains(out[tracestateHeader], "othervendor=t61rcWkgMzE")
+}
+
 func TestTextMapPropagatorErrors(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)

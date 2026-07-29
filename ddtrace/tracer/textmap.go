@@ -566,6 +566,22 @@ func (p *propagatorW3c) propagateTracestate(ctx *SpanContext, w3cCtx *SpanContex
 	// Note: Other trace context fields like sampling priority, propagated tags,
 	// and origin will remain unchanged.
 	ts := w3cCtx.trace.propagatingTag(tracestateHeader)
+	// On the dual-header path (both Datadog and W3C headers, same trace ID) the
+	// Datadog context wins extraction and carries no ot= of its own, while the
+	// inbound OTel sampling decision was parsed onto the W3C context. Carry it
+	// over so composeTracestate re-emits it; otherwise it strips the inbound ot=
+	// from the raw tracestate and the threshold is lost.
+	if crv, cth := ctx.trace.otelTracestate(); crv == nil && cth == nil {
+		wrv, wth := w3cCtx.trace.otelTracestate()
+		var rv, th uint64
+		if wrv != nil {
+			rv = *wrv
+		}
+		if wth != nil {
+			th = *wth
+		}
+		ctx.trace.setOtelInherited(rv, wrv != nil, th, wth != nil)
+	}
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
 	ctx.isRemote = (w3cCtx.isRemote)
