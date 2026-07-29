@@ -25,7 +25,7 @@ span_directive:
         template: |-
           var __dd_span *tracer.Span
           __dd_span_ctx := context.TODO()
-          __dd_span, __dd_span_ctx = tracer.StartSpanFromContext(__dd_span_ctx, "{{FuncName}}")
+          __dd_span, __dd_span_ctx = tracer.StartSpanFromContext(__dd_span_ctx, "{{.FuncName}}")
           defer __dd_span.Finish()
   imports:
     tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer    
