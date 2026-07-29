@@ -135,10 +135,10 @@ func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
 			return
 		}
 		log.Debug("appsec: registering stack trace for security purposes")
-		op.AddStackTraces(stacktrace.NewEventWithDepth(
-			f.stackTrace.MaxDepth,
+		op.AddStackTraces(stacktrace.NewEvent(
 			action.Event.Category,
 			stacktrace.WithID(action.Event.ID),
+			stacktrace.WithDepth(f.stackTrace.MaxDepth),
 		))
 	})
 

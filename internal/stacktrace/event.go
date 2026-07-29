@@ -47,58 +47,73 @@ type Event struct {
 	Frames StackTrace `msg:"frames"`
 }
 
-// NewEvent creates a new stacktrace event with the given category, type and message.
-func NewEvent(eventCat EventCategory, options ...Options) *Event {
-	return newEvent(0, defaultMaxDepth, eventCat, options...)
-}
-
-// NewEventWithSkip creates a new stacktrace event with the given category, type and message,
-// skipping the given number of frames (on top of the default caller skip).
-func NewEventWithSkip(skip int, eventCat EventCategory, options ...Options) *Event {
-	return newEvent(skip, defaultMaxDepth, eventCat, options...)
-}
-
-// NewEventWithDepth creates a new stacktrace event with the given category,
-// type, message, and maximum frame depth.
-func NewEventWithDepth(depth int, eventCat EventCategory, options ...Options) *Event {
-	return newEvent(0, depth, eventCat, options...)
-}
-
-func newEvent(skip, depth int, eventCat EventCategory, options ...Options) *Event {
+// NewEvent creates a new stacktrace event with the given category and options.
+func NewEvent(eventCat EventCategory, options ...Option) *Event {
 	event := &Event{
 		Category: eventCat,
 		Language: "go",
-		Frames:   SkipAndCaptureWithDepth(skip+defaultCallerSkip, depth),
 	}
-
+	cfg := eventConfig{
+		event: event,
+		depth: defaultMaxDepth,
+	}
 	for _, opt := range options {
-		opt(event)
+		if opt != nil {
+			opt(&cfg)
+		}
 	}
-
+	event.Frames = captureEventFrames(cfg.skip, cfg.depth)
 	return event
 }
 
-// Options is a function type to set optional parameters for the event
-type Options func(*Event)
+func captureEventFrames(skip, depth int) StackTrace {
+	return SkipAndCaptureWithDepth(skip+defaultCallerSkip, depth)
+}
 
-// WithType sets the type of the event
-func WithType(eventType string) Options {
-	return func(event *Event) {
-		event.Type = eventType
+type eventConfig struct {
+	event *Event
+	skip  int
+	depth int
+}
+
+// Option configures a stacktrace event.
+type Option func(*eventConfig)
+
+// WithType sets the type of the event.
+func WithType(eventType string) Option {
+	return func(cfg *eventConfig) {
+		cfg.event.Type = eventType
 	}
 }
 
-// WithMessage sets the message of the event
-func WithMessage(message string) Options {
-	return func(event *Event) {
-		event.Message = message
+// WithMessage sets the message of the event.
+func WithMessage(message string) Option {
+	return func(cfg *eventConfig) {
+		cfg.event.Message = message
 	}
 }
 
-// WithID sets the id of the event
-func WithID(id string) Options {
-	return func(event *Event) {
-		event.ID = id
+// WithID sets the ID of the event.
+func WithID(id string) Option {
+	return func(cfg *eventConfig) {
+		cfg.event.ID = id
+	}
+}
+
+// WithSkip sets the number of runtime frames to skip on top of the default
+// caller skip, before internal stack-trace frames are filtered. Negative values
+// are treated as zero.
+func WithSkip(skip int) Option {
+	return func(cfg *eventConfig) {
+		cfg.skip = max(0, skip)
+	}
+}
+
+// WithDepth sets the maximum number of frames to capture. A non-positive depth
+// uses the default depth.
+func WithDepth(depth int) Option {
+	return func(cfg *eventConfig) {
+		cfg.depth = depth
 	}
 }
 

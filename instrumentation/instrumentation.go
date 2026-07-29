@@ -299,17 +299,44 @@ const (
 	StackTraceCategoryExploit StackTraceCategory = stacktrace.ExploitEvent
 )
 
-// CaptureStackTrace captures a stack trace for an event in category. id
-// correlates the stack trace with its event and is required for vulnerability
-// and exploit categories. skip is the number of additional runtime caller
-// frames omitted before internal stack-trace frames are filtered. It returns
-// nil when id is required but empty or when no frames are captured. The caller
-// is responsible for applying its product-specific enablement configuration.
-func (i *Instrumentation) CaptureStackTrace(category StackTraceCategory, id string, skip int) *StackTrace {
-	if id == "" && category != StackTraceCategoryException {
-		return nil
-	}
-	event := stacktrace.NewEventWithSkip(skip, category, stacktrace.WithID(id))
+// StackTraceOption configures a captured stack-trace event. Values are created
+// by the WithStackTrace functions in this package.
+type StackTraceOption = stacktrace.Option
+
+// WithStackTraceType sets the event type.
+func WithStackTraceType(eventType string) StackTraceOption {
+	return stacktrace.WithType(eventType)
+}
+
+// WithStackTraceMessage sets the event message.
+func WithStackTraceMessage(message string) StackTraceOption {
+	return stacktrace.WithMessage(message)
+}
+
+// WithStackTraceID sets the event correlation ID.
+func WithStackTraceID(id string) StackTraceOption {
+	return stacktrace.WithID(id)
+}
+
+// WithStackTraceSkip sets the number of runtime frames to skip on top of the
+// default caller skip, before internal stack-trace frames are filtered.
+// Negative values are treated as zero.
+func WithStackTraceSkip(skip int) StackTraceOption {
+	return stacktrace.WithSkip(skip)
+}
+
+// WithStackTraceDepth sets the maximum number of frames to capture. A
+// non-positive depth uses the default depth.
+func WithStackTraceDepth(depth int) StackTraceOption {
+	return stacktrace.WithDepth(depth)
+}
+
+// CaptureStackTrace captures a stack trace for an event in category. Callers
+// must provide a correlation ID for vulnerability and exploit categories. It
+// returns nil when no frames are captured. The caller is responsible for
+// applying its product-specific enablement configuration.
+func (i *Instrumentation) CaptureStackTrace(category StackTraceCategory, options ...StackTraceOption) *StackTrace {
+	event := stacktrace.NewEvent(category, options...)
 	if len(event.Frames) == 0 {
 		return nil
 	}

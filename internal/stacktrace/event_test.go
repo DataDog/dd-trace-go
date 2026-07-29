@@ -16,7 +16,16 @@ import (
 )
 
 func TestNewEvent(t *testing.T) {
-	event := NewEvent(ExceptionEvent, WithMessage("message"), WithType("type"), WithID("id"))
+	event := NewEvent(
+		ExceptionEvent,
+		nil,
+		WithMessage("first"),
+		WithMessage("message"),
+		WithType("type"),
+		WithID("id"),
+		WithSkip(-1),
+		WithDepth(0),
+	)
 	require.Equal(t, ExceptionEvent, event.Category)
 	require.Equal(t, "go", event.Language)
 	require.Equal(t, "message", event.Message)
@@ -25,8 +34,8 @@ func TestNewEvent(t *testing.T) {
 	require.GreaterOrEqual(t, len(event.Frames), 2)
 }
 
-func TestNewEventWithSkip(t *testing.T) {
-	event := NewEventWithSkip(1_000, ExploitEvent, WithMessage("message"), WithID("id"))
+func TestNewEventWithSkipOption(t *testing.T) {
+	event := NewEvent(ExploitEvent, WithSkip(1_000), WithMessage("message"), WithID("id"))
 	require.Equal(t, ExploitEvent, event.Category)
 	require.Equal(t, "go", event.Language)
 	require.Equal(t, "message", event.Message)
@@ -34,8 +43,8 @@ func TestNewEventWithSkip(t *testing.T) {
 	require.Empty(t, event.Frames)
 }
 
-func TestNewEventWithDepth(t *testing.T) {
-	event := NewEventWithDepth(1, ExploitEvent, WithID("id"))
+func TestNewEventWithDepthOption(t *testing.T) {
+	event := NewEvent(ExploitEvent, WithDepth(1), WithID("id"))
 	require.Equal(t, ExploitEvent, event.Category)
 	require.Equal(t, "id", event.ID)
 	require.Len(t, event.Frames, 1)
