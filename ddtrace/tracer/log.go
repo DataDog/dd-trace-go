@@ -78,14 +78,15 @@ type startupInfo struct {
 	PartialFlushMinSpans        int                          `json:"partial_flush_min_spans"`        // The min number of spans to trigger a partial flush
 	Orchestrion                 orchestrionConfig            `json:"orchestrion"`                    // Orchestrion (auto-instrumentation) configuration.
 	FeatureFlags                []string                     `json:"feature_flags"`
-	PropagationStyleInject      string                       `json:"propagation_style_inject"`    // Propagation style for inject
-	PropagationStyleExtract     string                       `json:"propagation_style_extract"`   // Propagation style for extract
-	TracingAsTransport          bool                         `json:"tracing_as_transport"`        // Whether the tracer is disabled and other products are using it as a transport
-	DogstatsdAddr               string                       `json:"dogstatsd_address"`           // Destination of statsd payloads
-	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`        // Whether Data Streams is enabled
-	OTLPTracesExportEnabled     bool                         `json:"otlp_traces_export_enabled"`  // Whether traces are exported over OTLP
-	OTLPMetricsExportEnabled    bool                         `json:"otlp_metrics_export_enabled"` // Whether metrics are exported over OTLP
-	OTLPLogsExportEnabled       bool                         `json:"otlp_logs_export_enabled"`    // Whether logs are exported over OTLP
+	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
+	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
+	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
+	DogstatsdAddr               string                       `json:"dogstatsd_address"`         // Destination of statsd payloads
+	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`      // Whether Data Streams is enabled
+
+	OTLPTracesExportEnabled  bool `json:"otlp_traces_export_enabled"`  // Whether traces are exported over OTLP
+	OTLPMetricsExportEnabled bool `json:"otlp_metrics_export_enabled"` // Whether metrics are exported over OTLP
+	OTLPLogsExportEnabled    bool `json:"otlp_logs_export_enabled"`    // Whether logs are exported over OTLP
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -191,13 +192,8 @@ func logStartup(t *tracer) {
 		DogstatsdAddr:               t.config.internalConfig.DogstatsdAddr(),
 		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
 		OTLPTracesExportEnabled:     t.otlpExportMode,
-		// Reports the tracer's resolved decision to start OTel runtime metrics over
-		// OTLP: the same gate the tracer uses (config enabled and opentelemetry/metric
-		// imported, so StartHook != nil), not a config-only guess.
-		OTLPMetricsExportEnabled: t.config.otelRuntimeMetricsShouldBeEnabled,
-		// The user starts the OTel logs integration (opentelemetry/log.Start) after
-		// this log is emitted, so no started-state is knowable here; report config intent.
-		OTLPLogsExportEnabled: t.config.internalConfig.LogsOTelEnabled(),
+		OTLPMetricsExportEnabled:    t.config.otelRuntimeMetricsShouldBeEnabled,
+		OTLPLogsExportEnabled:       t.config.internalConfig.LogsOTelEnabled(),
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)

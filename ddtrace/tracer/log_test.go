@@ -26,11 +26,6 @@ const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-((rc|beta)\.[0-
 var commonLogIgnore = []string{"appsec: ", "telemetry", "Runtime metrics v2 enabled"}
 
 func TestStartupLog(t *testing.T) {
-	// Make the OTLP export fields deterministic regardless of any OTEL_*/DD_*
-	// env pollution in the dev/CI shell. Empty values are treated as unset by
-	// the config provider, so each field falls back to its default of false:
-	// traces export to the agent, the OTel metrics signal is off, and logs are
-	// off. This matches the golden output in the sub-tests below.
 	t.Setenv("OTEL_TRACES_EXPORTER", "")
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "")
 	t.Setenv("DD_LOGS_OTEL_ENABLED", "")
@@ -154,9 +149,6 @@ func TestStartupLog(t *testing.T) {
 	t.Run("otlp_metrics_export", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		// otlp_metrics_export_enabled tracks otelRuntimeMetricsShouldBeEnabled, whose
-		// gate includes StartHook != nil (normally set when opentelemetry/metric is
-		// imported). withTestHooks stands in for that import so the pipeline is active.
 		withTestHooks(t)
 		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 		t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
@@ -175,9 +167,6 @@ func TestStartupLog(t *testing.T) {
 	t.Run("otlp_metrics_export_config_without_pipeline", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		// Config intent is present but opentelemetry/metric is not imported, so
-		// StartHook is nil and the pipeline never starts: the field must report false
-		// rather than over-reporting from config alone.
 		require.Nil(t, otelmetricsinstall.StartHook, "test binary must not have the metric package imported")
 		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 		t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
