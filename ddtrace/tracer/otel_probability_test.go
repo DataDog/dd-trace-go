@@ -11,7 +11,35 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// A rate-0 re-sample must clear a previously derived local (rv, th) so a stale
+// threshold is not injected, while inherited values are left untouched.
+func TestSetOtelProbabilityRateZero(t *testing.T) {
+	t.Run("clears locally-derived pair", func(t *testing.T) {
+		tr := newTrace()
+		tr.setOtelProbability(0xfff972474538efff, 0.1)
+		rv, th := tr.otelTracestate()
+		require.NotNil(t, rv)
+		require.NotNil(t, th)
+
+		tr.setOtelProbability(0xfff972474538efff, 0)
+		rv, th = tr.otelTracestate()
+		assert.Nil(t, rv)
+		assert.Nil(t, th)
+	})
+
+	t.Run("preserves inherited pair", func(t *testing.T) {
+		tr := newTrace()
+		tr.setOtelInherited(0x1234567890abcd, true, 0xe6666666666668, true)
+		tr.setOtelProbability(1, 0)
+		rv, th := tr.otelTracestate()
+		require.NotNil(t, rv)
+		require.NotNil(t, th)
+		assert.Equal(t, uint64(0x1234567890abcd), *rv)
+	})
+}
 
 // Golden vectors shared across dd-trace-* SDKs (see the OTel th/rv RFC). These
 // pin the derivation so a given (trace ID, rate) yields an identical (rv, th)

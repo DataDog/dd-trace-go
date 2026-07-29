@@ -693,6 +693,11 @@ func (t *trace) setOtelInherited(rv uint64, rvOK bool, th uint64, thOK bool) {
 // no representable threshold, so nothing is emitted).
 func (t *trace) setOtelProbability(traceIDLower uint64, rate float64) {
 	if rate <= 0 {
+		// A rate-0 decision is a drop with no representable threshold. Clear any
+		// previously derived local (rv, th) so a re-sample (e.g. a trace rule with
+		// sample_rate:0 applied after an earlier agent-rate decision) can't leave a
+		// stale threshold to be injected. Inherited values are preserved.
+		t.clearOtelProbability()
 		return
 	}
 	t.mu.Lock()
