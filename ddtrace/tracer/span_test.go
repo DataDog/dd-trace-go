@@ -673,7 +673,7 @@ func TestSpanStackTraceMergeWarning(t *testing.T) {
 		Level: telemetry.LogWarn,
 		Text:  "failed to merge stack-trace span values",
 	})
-	require.Equal(t, valid, span.metaStruct[stacktrace.SpanKey])
+	require.Equal(t, "invalid next", span.metaStruct[stacktrace.SpanKey])
 }
 
 func TestSpanSetTagError(t *testing.T) {

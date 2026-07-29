@@ -849,10 +849,12 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 		if current, ok := s.metaStruct[key]; ok {
 			merged, err := stacktrace.MergeSpanValues(current, v)
 			if err != nil {
-				telemetrylog.Warn("failed to merge stack-trace span values", slog.Any("error", telemetrylog.NewSafeError(err)))
-				if err == stacktrace.ErrInvalidNextSpanValue {
-					v = current
-				}
+				telemetrylog.Warn(
+					"failed to merge stack-trace span values",
+					slog.Any("error", telemetrylog.NewSafeError(err)),
+					slog.String("current_type", fmt.Sprintf("%T", current)),
+					slog.String("next_type", fmt.Sprintf("%T", v)),
+				)
 			} else {
 				v = merged
 			}

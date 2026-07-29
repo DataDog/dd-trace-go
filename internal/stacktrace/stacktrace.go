@@ -76,9 +76,7 @@ func init() {
 	}
 
 	if env := env.Get(envStackTraceDepth); env != "" {
-		if !enabled {
-			log.Warn("Ignoring %s because stacktrace generation is disabled", envStackTraceDepth)
-		} else if depth, err := strconv.Atoi(env); err == nil {
+		if depth, err := strconv.Atoi(env); err == nil {
 			defaultMaxDepth = depth
 		} else {
 			if depth <= 0 {

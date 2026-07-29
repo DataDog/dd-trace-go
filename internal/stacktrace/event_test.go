@@ -86,9 +86,9 @@ func TestMergeSpanValues(t *testing.T) {
 	}, merged)
 
 	_, err = MergeSpanValues("invalid", next)
-	require.ErrorIs(t, err, ErrInvalidCurrentSpanValue)
+	require.EqualError(t, err, "current span value has type string, expected map[string][]*stacktrace.Event")
 	_, err = MergeSpanValues(current, "invalid")
-	require.ErrorIs(t, err, ErrInvalidNextSpanValue)
+	require.EqualError(t, err, "next span value has type string, expected map[string][]*stacktrace.Event")
 }
 
 func TestMsgPackSerialization(t *testing.T) {

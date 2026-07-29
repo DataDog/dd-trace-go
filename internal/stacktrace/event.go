@@ -8,6 +8,8 @@
 package stacktrace
 
 import (
+	"fmt"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 
@@ -15,27 +17,6 @@ import (
 )
 
 var _ msgp.Marshaler = (*Event)(nil)
-
-type invalidCurrentSpanValueError struct{}
-
-func (invalidCurrentSpanValueError) Error() string {
-	return "current span value is not a stack-trace event map"
-}
-
-type invalidNextSpanValueError struct{}
-
-func (invalidNextSpanValueError) Error() string {
-	return "next span value is not a stack-trace event map"
-}
-
-var (
-	// ErrInvalidCurrentSpanValue indicates that an existing _dd.stack value has
-	// an unexpected representation.
-	ErrInvalidCurrentSpanValue error = invalidCurrentSpanValueError{}
-	// ErrInvalidNextSpanValue indicates that a new _dd.stack value has an
-	// unexpected representation.
-	ErrInvalidNextSpanValue error = invalidNextSpanValueError{}
-)
 
 type EventCategory string
 
@@ -159,11 +140,11 @@ func AddToSpanUnconditionally(span trace.TagSetter, events ...*Event) {
 func MergeSpanValues(current, next any) (any, error) {
 	currentEvents, ok := current.(map[string][]*Event)
 	if !ok {
-		return nil, ErrInvalidCurrentSpanValue
+		return nil, fmt.Errorf("current span value has type %T, expected map[string][]*stacktrace.Event", current)
 	}
 	nextEvents, ok := next.(map[string][]*Event)
 	if !ok {
-		return nil, ErrInvalidNextSpanValue
+		return nil, fmt.Errorf("next span value has type %T, expected map[string][]*stacktrace.Event", next)
 	}
 	for category, events := range nextEvents {
 		currentEvents[category] = append(currentEvents[category], events...)
