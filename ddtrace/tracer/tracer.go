@@ -1250,8 +1250,8 @@ func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 		}
 		return
 	}
-	// Submit to the concentrator when native stats (canDropP0s) or OTLP span metrics are enabled.
-	if !t.config.canDropP0s() && !t.config.internalConfig.OTLPSpanMetricsEnabled() {
+	// Submit to the concentrator when native stats or OTLP span metrics are enabled.
+	if !t.config.shouldComputeStats() {
 		if span == trace.root {
 			trace.filterReject = false
 		}
@@ -1270,8 +1270,8 @@ func (t *tracer) computeOversizedSpanStats(span *Span) {
 	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
 		return
 	}
-	// Submit to the concentrator when native stats (canDropP0s) or OTLP span metrics are enabled.
-	if !t.config.canDropP0s() && !t.config.internalConfig.OTLPSpanMetricsEnabled() {
+	// Submit to the concentrator when native stats or OTLP span metrics are enabled.
+	if !t.config.shouldComputeStats() {
 		return
 	}
 	// The oversized-trace path sends the stat span immediately and never

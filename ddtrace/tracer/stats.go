@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -194,7 +193,7 @@ func (c *concentrator) runIngester() {
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
 	agentInfo := c.cfg.agent.load()
 	resource := s.resource
-	if obfuscatingVersion := agentInfo.obfuscationVersion; obfuscatingVersion > 0 && obfuscatingVersion <= tracerObfuscationVersion {
+	if c.shouldObfuscate() {
 		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
 		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
 	} else {
@@ -210,24 +209,10 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	peerTags := c.cfg.agent.load().peerTags
 	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
 	if c.otlpPeerTags != nil {
+		// Custom OTLP peer tags aren't implemented yet (spec: "Out of scope for
+		// SDK implementation"); suppress agent-advertised peer tags instead of
+		// leaving stale DD-agent state on an OTLP-routed concentrator.
 		peerTags = c.otlpPeerTags
-		// matchingPeerTags requires span.kind "client/producer/consumer"; DD spans lack it.
-		// Inject span.kind=client only when a peer-tag value is present to avoid unwanted stats eligibility.
-		if _, hasKind := spanMeta[ext.SpanKind]; !hasKind {
-			hasPeerTag := false
-			for _, k := range c.otlpPeerTags {
-				if _, ok := spanMeta[k]; ok {
-					hasPeerTag = true
-					break
-				}
-			}
-			if hasPeerTag {
-				orig := spanMeta
-				spanMeta = make(map[string]string, len(orig)+1)
-				maps.Copy(spanMeta, orig)
-				spanMeta[ext.SpanKind] = ext.SpanKindClient
-			}
-		}
 	}
 	statSpan, ok := c.spanConcentrator.NewStatSpanWithConfig(stats.StatSpanConfig{
 		Service:                 s.service,
@@ -258,6 +243,11 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 }
 
 func (c *concentrator) shouldObfuscate() bool {
+	if c.otlpExporter != nil {
+		// There is no Datadog Agent downstream of an OTLP concentrator to
+		// apply obfuscation, so the tracer must always obfuscate locally.
+		return true
+	}
 	// Obfuscate if agent reports an obfuscation version AND our version is at least as new
 	agentObfVersion := c.cfg.agent.load().obfuscationVersion
 	return agentObfVersion > 0 && agentObfVersion <= tracerObfuscationVersion
@@ -279,7 +269,13 @@ func (c *concentrator) Stop() {
 	}
 	close(c.stop)
 	c.wg.Wait()
-drain:
+	c.drainIn()
+	c.flushAndSend(time.Now(), withCurrentBucket)
+}
+
+// drainIn synchronously processes any spans already queued on c.In without
+// blocking for further additions.
+func (c *concentrator) drainIn() {
 	for {
 		select {
 		case spans := <-c.In:
@@ -288,10 +284,9 @@ drain:
 				c.add(s)
 			}
 		default:
-			break drain
+			return
 		}
 	}
-	c.flushAndSend(time.Now(), withCurrentBucket)
 }
 
 const (
@@ -319,18 +314,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	// that have been sent to c.In but not yet processed by runIngester so they
 	// are included in the flush rather than silently dropped.
 	if includeCurrent {
-	drain:
-		for {
-			select {
-			case spans := <-c.In:
-				_ = c.statsd().Count("datadog.tracer.stats.spans_in", int64(len(spans)), nil, 1)
-				for _, s := range spans {
-					c.add(s)
-				}
-			default:
-				break drain
-			}
-		}
+		c.drainIn()
 	}
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
 	bc := c.spanConcentrator.DrainBlockCounts()
@@ -376,8 +360,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 
 // newOTLPMetricsConcentrator creates a concentrator that exports to the OTLP metrics endpoint.
 func newOTLPMetricsConcentrator(c *config, statsdClient internal.StatsdClient) *concentrator {
-	bucketSize := c.internalConfig.OTLPMetricsFlushInterval().Nanoseconds()
-	conc := newConcentrator(c, bucketSize, statsdClient)
+	conc := newConcentrator(c, c.internalConfig.OTLPMetricsFlushInterval().Nanoseconds(), statsdClient)
 	conc.otlpExporter = newOTLPMetricsExporter(c.internalConfig)
 	// Peer tags are out of scope for OTLP span metrics (spec: "Out of scope for SDK implementation").
 	// Set to empty (non-nil) to suppress agent-advertised peer tags on this concentrator.
