@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	llmconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
@@ -58,7 +59,7 @@ func WithAgentURL(agentURL string) ClientOption {
 	}
 }
 
-// WithService sets the default service.
+// WithService overrides the global default service.
 func WithService(service string) ClientOption {
 	return func(cfg *clientConfig) error {
 		cfg.TracerConfig.Service = service
@@ -66,7 +67,7 @@ func WithService(service string) ClientOption {
 	}
 }
 
-// WithEnv sets the default environment.
+// WithEnv overrides the global default environment.
 func WithEnv(env string) ClientOption {
 	return func(cfg *clientConfig) error {
 		cfg.TracerConfig.Env = env
@@ -74,7 +75,7 @@ func WithEnv(env string) ClientOption {
 	}
 }
 
-// WithVersion sets the default version.
+// WithVersion overrides the global default version.
 func WithVersion(version string) ClientOption {
 	return func(cfg *clientConfig) error {
 		cfg.TracerConfig.Version = version
@@ -96,13 +97,22 @@ type Client struct {
 	config    *llmconfig.Config
 }
 
-// NewClient creates a client. Exactly one routing option is required.
+// NewClient creates a client using global service, environment, and version
+// defaults. Exactly one routing option is required.
 func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 	if mlApp == "" {
 		return nil, errors.New("llmobs/export: mlApp is required")
 	}
 
-	cfg := &clientConfig{MLApp: mlApp}
+	global := internalconfig.Get()
+	cfg := &clientConfig{
+		MLApp: mlApp,
+		TracerConfig: llmconfig.TracerConfig{
+			Env:     global.Env(),
+			Service: global.ServiceName(),
+			Version: global.Version(),
+		},
+	}
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
 			return nil, err
