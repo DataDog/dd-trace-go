@@ -25,8 +25,9 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	// ddtrace/tracer/orchestrion.yml extend the span's GLS lifecycle:
 	//   - "Span GLS fields": adds two woven fields to Span — __dd_glsPop
 	//     (GLSPopperCell, an atomic pointer to the goroutine-scoped popper) and
-	//     __dd_glsReclaimable (atomic.Bool, set on finish so cross-goroutine GLS
-	//     entries can be lazily reclaimed on the next push).
+	//     __dd_glsReclaimable (atomic.Bool, set on finish so a cross-goroutine
+	//     GLS entry is never handed out as the active span and is dropped by the
+	//     next push).
 	//   - "Span ContextWithSpan GLS push": prepends before this line:
 	//       orchestrion.GLSActivate(nil, ActiveSpanKey, s, &s.__dd_glsPop)
 	//     which pushes s onto the goroutine-local stack and records a goroutine-
