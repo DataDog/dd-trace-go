@@ -5,24 +5,49 @@
 
 package orchestrion
 
-import "slices"
+import (
+	"slices"
+	"sync/atomic"
+)
 
-// entry is one pushed value together with the token identifying its scope.
+// entry is one pushed value together with the token identifying its scope and
+// the cell reporting whether that scope is still live.
 //
 // A token is what makes scope exit possible. A position cannot identify a scope:
 // push, pop, push again lands the new value at the same index, so an index
 // captured at push time can name an entirely different scope by the time the
 // exit runs. Tokens are handed out by a counter that only ever increases, so a
 // stale one matches nothing.
+//
+// done is the liveness cell, captured at push time and owned by the activation
+// rather than by the value. That separation is the point: the value is
+// recyclable. A *tracer.Span goes back to the tracer's sync.Pool once finished,
+// and a bit read off the span itself gets reset out from under an entry that
+// still holds it — flipping a scope that ended back to live, so the drain stops
+// dropping it and a read can surface a recycled span as a parent. The cell is
+// not reachable from the pool, so its true value outlives the object it
+// described.
 type entry struct {
 	val   any
 	token uint64
+	done  *atomic.Bool
 	// pop is the cell holding the exit captured for this value, so that removing
 	// the entry can invalidate it. Without that, a value swept away by an
 	// enclosing scope keeps an exit naming a token that no longer exists: its
 	// next activation sees a non-nil cell, keeps the stale exit under first-wins,
 	// and the entry that activation pushes is never closed by anything.
 	pop *GLSPopperCell
+}
+
+// isDone reports whether this entry's scope has ended, so [contextStack.Push]
+// may drop it and [contextStack.Peek] must not hand it out as the active scope.
+//
+// A nil cell means the value does not participate in the liveness protocol —
+// it carries no finished state (e.g. the bool stored under executionTracedKey,
+// or a dyngo operation, which is always registered and finished on one
+// goroutine) — and is therefore always live: never drained, never skipped.
+func (e entry) isDone() bool {
+	return e.done != nil && e.done.Load()
 }
 
 // contextStack is stored in the GLS slot of runtime.g inserted by orchestrion.
@@ -41,36 +66,6 @@ type contextStack struct {
 	// token is 1 and 0 is free to mean "no scope" — what Push returns when it
 	// pushed nothing, and a value PopScope never matches.
 	next uint64
-}
-
-// reclaimable is implemented by GLS values that can signal they no longer
-// represent a live scope. It is used to bound GLS growth when a value is pushed
-// on one goroutine but its lifecycle ends on another, so the matching pop never
-// runs on the pushing goroutine (e.g. a *tracer.Span pushed via ContextWithSpan
-// and finished elsewhere). The orchestrion package intentionally does not import
-// the tracer; values opt in by implementing this single method.
-//
-// Reporting true has two consequences: Push may drop the entry, and Peek will
-// never return it as the active scope. Implementations must therefore only
-// report true once the value can no longer legitimately parent new work, and
-// must not flip back to false while the entry is still reachable from a stack.
-//
-// A pointer implementation must report true for a nil receiver. Reporting false
-// would mark a nil value live, which shadows every entry beneath it in Peek and
-// stops Push's drain dead.
-type reclaimable interface {
-	// GLSReclaimable reports whether this value has stopped representing a live
-	// scope. Implementations must be safe to call from any goroutine.
-	GLSReclaimable() bool
-}
-
-// isReclaimable reports whether v has opted into [reclaimable] and currently
-// reports itself dead. Values that do not implement the interface carry no
-// finished state (e.g. the bool stored under executionTracedKey) and so are
-// always treated as live.
-func isReclaimable(v any) bool {
-	r, ok := v.(reclaimable)
-	return ok && r.GLSReclaimable()
 }
 
 // getDDContextStack is a main way to access the GLS slot of runtime.g inserted by orchestrion. This function should not be
@@ -179,26 +174,26 @@ func (s *contextStack) truncate(key any, stack []entry, i int) {
 
 // Peek returns the innermost live context from the stack without removing it.
 //
-// Entries reporting themselves reclaimable (see [reclaimable]) are skipped: they
-// are finished scopes whose matching pop ran on another goroutine. The GLS is
-// only consulted when the explicit context chain carries nothing (see
-// [glsContext.Value]), so it must surface a live scope or none at all —
-// returning a finished span would let StartSpanFromContext adopt it as a parent
-// and collapse unrelated requests into one trace.
+// Entries whose done cell reads true are skipped: they are finished scopes whose
+// matching pop ran on another goroutine. The GLS is only consulted when the
+// explicit context chain carries nothing (see [glsContext.Value]), so it must
+// surface a live scope or none at all — returning a finished span would let
+// StartSpanFromContext adopt it as a parent and collapse unrelated requests into
+// one trace.
 //
 // Peek therefore no longer returns the same element as Pop: Pop takes the top
 // unconditionally, Peek takes the innermost live entry. Callers that need the
 // literal top must not use Peek.
 //
 // The walk stops at the first live entry, so its cost is the length of the
-// trailing run of reclaimable entries. Push drains that run, so it does not
+// trailing run of finished entries. Push drains that run, so it does not
 // accumulate across pushes, but nothing drains it between them — a read-heavy
 // stretch pays the whole run on every read. See BenchmarkPeekSkipReclaimed for
 // the measured cost. Interleaved live and finished entries do not degrade the
 // walk: it stops at the first live one from the top.
 //
-// Peek does not mutate the stack. Values that do not implement [reclaimable] are
-// returned as-is.
+// Peek does not mutate the stack. Entries carrying no done cell are always live
+// and returned as-is (see [entry.isDone]).
 //
 // This addresses a finished entry being surfaced as a parent. It is not what
 // keeps a live entry from outliving the scope beneath it — that is [PopScope]'s
@@ -210,7 +205,7 @@ func (s *contextStack) Peek(key any) any {
 	}
 
 	for _, e := range slices.Backward(s.stacks[key]) {
-		if !isReclaimable(e.val) {
+		if !e.isDone() {
 			return e.val
 		}
 	}
@@ -218,20 +213,24 @@ func (s *contextStack) Peek(key any) any {
 	return nil
 }
 
-// Push adds a context to the stack and returns the token identifying the scope
-// it just opened. Pass that token to [PopScope] to close the scope; a zero
-// return means nothing was pushed and there is nothing to close.
+// Push adds a context to the stack under key, records done as the liveness cell
+// for the scope it opens, and returns the token identifying that scope. Pass the
+// token to [PopScope] to close the scope; a zero return means nothing was pushed
+// and there is nothing to close. done may be nil for values that never report
+// themselves finished (see [entry.isDone]).
 //
-// Before appending, Push drops any trailing entries that report themselves
-// reclaimable (see [reclaimable]). This bounds GLS growth when values are
-// pushed on one goroutine but their lifecycle ends on another, so the pop
-// never runs on this goroutine. Reads only ever surface a live entry (Peek
-// skips reclaimable ones), and buried entries exist solely to be restored
-// after a Pop; a reclaimable (e.g. finished) entry can never be a meaningful
-// restore target, so dropping it preserves stack semantics. Entries whose type
-// does not implement [reclaimable] (e.g. the bool stored under
-// executionTracedKey) are never dropped.
-func (s *contextStack) Push(key, val any, pop *GLSPopperCell) uint64 {
+// Before appending, Push drops any trailing entries whose done cell reads true.
+// This bounds GLS growth when values are pushed on one goroutine but their
+// lifecycle ends on another, so the pop never runs on this goroutine. Reads only
+// ever surface a live entry (Peek skips finished ones), and buried entries exist
+// solely to be restored after a Pop; a finished entry can never be a meaningful
+// restore target, so dropping it preserves stack semantics.
+//
+// The drain reads the cell the entry captured at push time, never anything off
+// val. That is what makes it safe for pooled values: the object may since have
+// been recycled into an unrelated scope, but the cell still describes the scope
+// this entry actually opened.
+func (s *contextStack) Push(key, val any, done *atomic.Bool, pop *GLSPopperCell) uint64 {
 	if s == nil {
 		return 0
 	}
@@ -240,13 +239,13 @@ func (s *contextStack) Push(key, val any, pop *GLSPopperCell) uint64 {
 	}
 
 	stack := s.stacks[key]
-	for len(stack) > 0 && isReclaimable(stack[len(stack)-1].val) {
-		stack[len(stack)-1] = entry{} // drop reference so GC can collect the value
+	for len(stack) > 0 && stack[len(stack)-1].isDone() {
+		stack[len(stack)-1] = entry{} // drop references so GC can collect the value and the cell
 		stack = stack[:len(stack)-1]
 	}
 
 	s.next++
-	s.stacks[key] = append(stack, entry{val: val, token: s.next, pop: pop})
+	s.stacks[key] = append(stack, entry{val: val, token: s.next, done: done, pop: pop})
 	return s.next
 }
 
