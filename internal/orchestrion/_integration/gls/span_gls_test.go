@@ -216,9 +216,9 @@ func TestSpanGLSFinishedParentOnlyHonoredViaExplicitContext(t *testing.T) {
 // TestSpanGLSSequentialRequestsStayIndependent is the APMS-20132 reproduction: the
 // shape that produced a reported 9,780-span trace spanning 50+ unrelated endpoints.
 //
-// Stranding an entry does not need a second goroutine. [contextStack.Pop] removes
-// the top of the stack rather than the span that finished, so any non-LIFO finish
-// strands something:
+// Stranding an entry does not need a second goroutine. An exit that matches
+// position removes the top of the stack rather than the scope that ended, so any
+// non-LIFO finish strands something:
 //
 //	[srv]                  the request's own span
 //	[srv, child]           a child span
@@ -266,6 +266,62 @@ func TestSpanGLSSequentialRequestsStayIndependent(t *testing.T) {
 	require.Lenf(t, seenTraceIDs, requests,
 		"expected %d distinct trace_ids, got %d: requests were chained into a shared trace",
 		requests, len(seenTraceIDs))
+}
+
+// TestSpanGLSLiveSurvivorDoesNotParentNextRequest is the half of APMS-20132 that
+// survives the Peek guard, and the reason the exit has to be by scope rather than
+// by position.
+//
+// TestSpanGLSSequentialRequestsStayIndependent above strands the request's own
+// span, which is FINISHED — Peek skips it. Stranding a LIVE span takes one more
+// level of nesting and nothing else:
+//
+//	[srv]                the request's own span
+//	[srv, child]         a child that outlives the request
+//	[srv, child, leaf]   a child of that child
+//	srv.Finish()         a top-pop takes leaf, leaving [srv(finished), child(live)]
+//
+// Peek walks down, skips the finished srv, and stops at child — which is live, so
+// there is nothing about it for a read-side guard to reject. The next request on
+// this goroutine carries no span in its context, so the GLS is its only parent
+// source, and it joins child's trace. The request after that joins that one, and
+// the connection collapses into a single trace_id.
+//
+// Exiting srv's scope removes srv along with everything opened inside it, so the
+// next request finds an empty stack. This runs on a single goroutine, which is
+// what net/http gives a keep-alive connection serving requests sequentially.
+func TestSpanGLSLiveSurvivorDoesNotParentNextRequest(t *testing.T) {
+	if !orchestrionEnabled {
+		t.Skip("GLS only exists in orchestrion builds")
+	}
+	require.True(t, built.WithOrchestrion)
+
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	defer tracer.Stop()
+
+	const requests = 20
+	seenTraceIDs := make(map[string]struct{}, requests)
+	outliving := make([]*tracer.Span, 0, 2*requests)
+
+	for range requests {
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "http.request")
+		child, childCtx := tracer.StartSpanFromContext(ctx, "async.work")
+		leaf, _ := tracer.StartSpanFromContext(childCtx, "async.work.step")
+		outliving = append(outliving, child, leaf)
+
+		// The non-LIFO finish. A position-matched exit would take leaf's slot
+		// here and leave child live on the stack after the scope that opened it
+		// has ended; the scope exit takes child and leaf along with srv.
+		span.Finish()
+		seenTraceIDs[span.Context().TraceID()] = struct{}{}
+	}
+	for _, span := range outliving {
+		span.Finish()
+	}
+
+	require.Lenf(t, seenTraceIDs, requests,
+		"expected %d distinct trace_ids, got %d: a live span outlived its request's scope "+
+			"and parented the next request", requests, len(seenTraceIDs))
 }
 
 // TestSpanGLSDoubleFinishSameGoroutine verifies the injected pop both restores
