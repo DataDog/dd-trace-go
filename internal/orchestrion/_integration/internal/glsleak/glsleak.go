@@ -34,11 +34,19 @@ type Result struct {
 }
 
 // MaxRetainedEntries is the ceiling on GLS entries a worker may still hold after
-// a [MeasureLeakLiveInject] run. Reclaim is lazy by design: an entry is dropped
-// by the next Push under the same key, so the last record's entry can legitimately
-// still be there, and the trailing run is bounded by one. A leak instead grows
-// with the record count.
-const MaxRetainedEntries = 8
+// a [MeasureLeakLiveInject] run.
+//
+// One, not a margin. Reclaim is lazy, but the workload is strictly ordered: each
+// record pushes, then its owner finishes, so by the time the next push runs the
+// previous entry is already done and that push drains it. The stack therefore
+// never exceeds one entry, and the one left at the end is the final record's,
+// finished but with nothing after it to trigger the drain. Measured at exactly 1
+// over five consecutive 200k-record runs.
+//
+// A looser bound would be worse than useless here: a leak grows with the record
+// count, so anything a real regression produces is orders of magnitude above this,
+// while slack only buys room for a handful of stray entries to pass unnoticed.
+const MaxRetainedEntries = 1
 
 // MaxRetainedObjectsPerRecord is the per-record retained-heap-object ceiling the
 // GLS-leak gates assert on Result.PerRecord. With the reclaim fix the workload

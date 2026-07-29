@@ -58,23 +58,26 @@ func TestGLSFinishResetConcurrentRaces(t *testing.T) {
 // exercises GLSActivate concurrently with the other two, so this covers the
 // remaining unsynchronised-access surface on both woven fields under -race.
 //
-// It also pins the invariant that makes the retry in GLSActivate necessary: an
-// activation given a non-nil GLSDoneCell must never push an entry without a
-// liveness cell. entry.isDone treats a nil cell as permanently live, so such an
-// entry is never drained by Push and never skipped by Peek — a finished,
+// It also pins the invariant that GLSActivate's three-way resolution exists to
+// guarantee: an activation given a non-nil GLSDoneCell must never push an entry
+// without a liveness cell. entry.isDone treats a nil cell as permanently live, so
+// such an entry is never drained by Push and never skipped by Peek — a finished,
 // recycled span would stay on this stack and get handed out as the parent of
-// unrelated work, which is the trace merge this whole line of work exists to
-// stop. Reaching it needs a GLSReset to land between GLSActivate's failed
-// CompareAndSwap and its following load, so the counter below is the guard: if
-// scheduling ever hits that window, this fails instead of silently producing an
-// immortal entry.
+// unrelated work, which is the trace merge this whole line of work exists to stop.
 //
-// Scope, stated plainly: the interleaving is not forced, so a clean run is not
-// proof that the window cannot be hit — only that it was not hit here. The same
-// caveat applies to the checked load on GLSDeactivate's create-a-marked-cell
-// path, where removing the check does not fail this test. Both stay because the
-// alternatives are an immortal GLS entry and a nil *atomic.Bool dereference
-// inside Span.Finish, and neither is worth trading for three lines.
+// The three branches are: win the CompareAndSwap and use the fresh cell; lose to a
+// cell that is still installed and adopt it; or lose and then find nil, which
+// proves a GLSReset raced and so the lifecycle has already ended, in which case the
+// entry takes the shared already-done cell and is drain-eligible on arrival. None
+// of them can yield nil, so the counter below checks that construction rather than
+// being what prevents the problem: if it ever trips, the reasoning above is wrong.
+//
+// Scope, stated plainly: the third branch needs a GLSReset to land between the
+// failed CompareAndSwap and the following load, and the interleaving is not forced,
+// so a clean run says only that the window was not hit here. The same caveat
+// applies to the checked load on GLSDeactivate's create-a-marked-cell path, where
+// removing the check does not fail this test. Both stay because the alternatives
+// are an immortal GLS entry and a nil *atomic.Bool dereference inside Span.Finish.
 func TestGLSActivateFinishResetConcurrentRaces(t *testing.T) {
 	t.Cleanup(MockGLSPerGoroutine())
 
