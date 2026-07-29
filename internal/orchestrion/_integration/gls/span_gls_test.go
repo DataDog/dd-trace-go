@@ -144,7 +144,16 @@ func TestSpanGLSNoTraceMergeAfterCrossGoroutineFinish(t *testing.T) {
 	}
 	require.True(t, built.WithOrchestrion)
 
-	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	// WithSpanPool(false) is explicit rather than assumed. This test keeps a
+	// *tracer.Span past its Finish and reads it afterwards, which is what the
+	// span pool forbids ("avoid inspecting the spans by calling any function"),
+	// because the pool may already have recycled it into unrelated work. Now that
+	// the Orchestrion gate is gone, an inherited
+	// DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true would make that read racy and
+	// the assertion meaningless. GLS reclaim is the subject here; the pooled path
+	// is covered by TestSpanPoolEnabledUnderOrchestrion and, behaviourally, by
+	// TestGLSNoHeapLeakWithSpanPool, whose workload respects the contract.
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(false)))
 	defer tracer.Stop()
 
 	var kafkaSpan *tracer.Span
@@ -192,7 +201,16 @@ func TestSpanGLSFinishedParentOnlyHonoredViaExplicitContext(t *testing.T) {
 	}
 	require.True(t, built.WithOrchestrion)
 
-	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	// WithSpanPool(false) is explicit rather than assumed. This test keeps a
+	// *tracer.Span past its Finish and reads it afterwards, which is what the
+	// span pool forbids ("avoid inspecting the spans by calling any function"),
+	// because the pool may already have recycled it into unrelated work. Now that
+	// the Orchestrion gate is gone, an inherited
+	// DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true would make that read racy and
+	// the assertion meaningless. GLS reclaim is the subject here; the pooled path
+	// is covered by TestSpanPoolEnabledUnderOrchestrion and, behaviourally, by
+	// TestGLSNoHeapLeakWithSpanPool, whose workload respects the contract.
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(false)))
 	defer tracer.Stop()
 
 	var finished *tracer.Span
@@ -265,7 +283,16 @@ func TestSpanGLSSequentialRequestsStayIndependent(t *testing.T) {
 	}
 	require.True(t, built.WithOrchestrion)
 
-	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	// WithSpanPool(false) is explicit rather than assumed. This test keeps a
+	// *tracer.Span past its Finish and reads it afterwards, which is what the
+	// span pool forbids ("avoid inspecting the spans by calling any function"),
+	// because the pool may already have recycled it into unrelated work. Now that
+	// the Orchestrion gate is gone, an inherited
+	// DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true would make that read racy and
+	// the assertion meaningless. GLS reclaim is the subject here; the pooled path
+	// is covered by TestSpanPoolEnabledUnderOrchestrion and, behaviourally, by
+	// TestGLSNoHeapLeakWithSpanPool, whose workload respects the contract.
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(false)))
 	defer tracer.Stop()
 
 	const requests = 20
@@ -317,7 +344,16 @@ func TestSpanGLSLiveSurvivorDoesNotParentNextRequest(t *testing.T) {
 	}
 	require.True(t, built.WithOrchestrion)
 
-	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	// WithSpanPool(false) is explicit rather than assumed. This test keeps a
+	// *tracer.Span past its Finish and reads it afterwards, which is what the
+	// span pool forbids ("avoid inspecting the spans by calling any function"),
+	// because the pool may already have recycled it into unrelated work. Now that
+	// the Orchestrion gate is gone, an inherited
+	// DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true would make that read racy and
+	// the assertion meaningless. GLS reclaim is the subject here; the pooled path
+	// is covered by TestSpanPoolEnabledUnderOrchestrion and, behaviourally, by
+	// TestGLSNoHeapLeakWithSpanPool, whose workload respects the contract.
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(false)))
 	defer tracer.Stop()
 
 	const requests = 20
