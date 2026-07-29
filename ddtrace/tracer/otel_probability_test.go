@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -30,6 +31,18 @@ func TestDeriveOtelGoldenVectors(t *testing.T) {
 	rvKeep := deriveOtelRV(0xfff972474538efff)
 	assert.Equal(t, uint64(0xef284ace7a91e1), rvKeep)
 	assert.GreaterOrEqual(t, rvKeep, deriveOtelTH(0.1))
+}
+
+// Extremely small rates must not wrap to th:0 (keep-all); they clamp to the
+// 56-bit maximum threshold instead.
+func TestDeriveOtelTHClampsTinyRates(t *testing.T) {
+	maxTH := uint64(1)<<56 - 1
+	for _, rate := range []float64{math.Ldexp(1, -56), math.Ldexp(1, -54), 1e-18} {
+		th := deriveOtelTH(rate)
+		assert.Equal(t, maxTH, th, "rate %g should clamp to 56-bit max, got %#x", rate, th)
+	}
+	// A representable small rate is unaffected by the clamp.
+	assert.Less(t, deriveOtelTH(1e-6), maxTH)
 }
 
 // The derived (rv, th) pair must reproduce DD's native keep/drop decision.

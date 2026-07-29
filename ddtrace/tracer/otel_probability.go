@@ -37,7 +37,15 @@ func deriveOtelRV(traceIDLower uint64) uint64 {
 // The caller must only pass a rate in (0, 1]; a rate of 0 has no representable
 // threshold (see setOtelProbability).
 func deriveOtelTH(rate float64) uint64 {
-	return uint64(math.Round((1 - rate) * float64(uint64(1)<<56)))
+	th := uint64(math.Round((1 - rate) * float64(uint64(1)<<56)))
+	// For extremely small rates, (1 - rate) rounds to 1.0 in float64 and th
+	// overflows to 1<<56. Since th carries only 56 bits, that would truncate to
+	// th:0 and read downstream as keep-all, the inverse of the intent. Clamp to
+	// the 56-bit maximum, which means keep-almost-nothing.
+	if maxTH := uint64(1)<<56 - 1; th > maxTH {
+		th = maxTH
+	}
+	return th
 }
 
 // parseOtelTracestate parses the value of an `ot=` list-member (the part after
