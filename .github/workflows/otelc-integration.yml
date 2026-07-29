@@ -217,6 +217,7 @@ jobs:
           PREFIX="github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/"
           export PACKAGE_NAMES="github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/otelc"
           while IFS= read -r pkg; do
+            [[ "$dir" == "$PWD" ]] && continue
             rel="${pkg#"$PREFIX"}"
             integration="${rel%%/*}"
             contrib_path="${integration//_//}"
