@@ -35,11 +35,12 @@
 // defer here would disable reporting for the most common crash: an
 // unrecovered panic.
 //
-// Start is idempotent: subsequent calls after the first are no-ops. With
-// orchestrion enabled, the crashtracker aspect injects Start as the first
-// statement of main using DD_* environment configuration. A later programmatic
-// Start call with options in main is therefore a no-op; build without the
-// crashtracker aspect when programmatic options must control startup.
+// Start is idempotent: subsequent calls after the first are no-ops. A
+// companion Orchestrion integration (not part of this package) can inject a
+// Start call as the first statement of main using DD_* environment
+// configuration; where that integration is built in, a later programmatic
+// Start call with options in main is a no-op, so programmatic options should
+// not be relied on to control startup in that build.
 //
 // # Configuration
 //

@@ -56,7 +56,11 @@ func uploadReport(cfg *config, r *Report) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	// Anything outside 2xx is a failed upload, not just 4xx/5xx: a 3xx that
+	// client.Do did not (or could not) follow means the report was never
+	// actually accepted by the intake, and this is the only check standing
+	// between that and silently treating the upload as successful.
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("crashtracker: intake returned %d", resp.StatusCode)
 	}
 	return nil

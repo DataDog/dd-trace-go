@@ -376,10 +376,49 @@ func filterE2EEnv(env []string) []string {
 			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_TRACE_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_INSTRUMENTATION_TELEMETRY_ENABLED=") ||
-			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") {
+			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") ||
+			// An ambient DD_API_KEY (set in a developer's shell or a CI
+			// environment that dogfoods its own tracer) would otherwise make
+			// defaultConfig resolve the crash-victim subprocess into agentless
+			// mode, which takes precedence over the test's WithAgentURL/
+			// DD_TRACE_AGENT_URL (see buildRequestAndClient). The subprocess
+			// would then try to upload its synthetic crash to the real
+			// configured site instead of the test's mock server, and the test
+			// would hang waiting on a report that never arrives. DD_SITE
+			// shapes that same agentless target, so it is stripped alongside it.
+			strings.HasPrefix(kv, "DD_API_KEY=") ||
+			strings.HasPrefix(kv, "DD_SITE=") {
 			continue
 		}
 		filtered = append(filtered, kv)
 	}
 	return filtered
+}
+
+// TestFilterE2EEnvStripsAPIKeyAndSite proves the fix for the bug where an
+// ambient DD_API_KEY survived filtering and forced a crash-victim subprocess
+// into agentless mode, bypassing the test's mock intake entirely.
+func TestFilterE2EEnvStripsAPIKeyAndSite(t *testing.T) {
+	in := []string{
+		"PATH=/usr/bin",
+		"DD_API_KEY=some-real-key",
+		"DD_SITE=datadoghq.com",
+		"DD_ENV=prod",
+	}
+	out := filterE2EEnv(in)
+
+	for _, kv := range out {
+		if strings.HasPrefix(kv, "DD_API_KEY=") || strings.HasPrefix(kv, "DD_SITE=") {
+			t.Errorf("filterE2EEnv(%v) = %v, want DD_API_KEY/DD_SITE stripped", in, out)
+		}
+	}
+	found := false
+	for _, kv := range out {
+		if kv == "DD_ENV=prod" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("filterE2EEnv(%v) = %v, want DD_ENV to survive (only DD_API_KEY/DD_SITE are stripped)", in, out)
+	}
 }

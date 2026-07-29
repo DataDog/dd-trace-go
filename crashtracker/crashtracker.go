@@ -6,6 +6,8 @@
 package crashtracker
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -82,6 +84,12 @@ func defaultConfig() *config {
 // stored via SetServiceName; it never reads DD_SERVICE itself, so a
 // crashtracker.Start call in main before tracer.Start would otherwise drop
 // the service tag entirely on every report.
+//
+// The final fallback matches tracer.Start's own default (ddtrace/tracer/option.go)
+// rather than a literal "unknown": under the documented lifecycle, crashtracker.Start
+// runs before tracer.Start sets that default, so without this the two would
+// independently pick different values for the same process and crash reports
+// would fail to correlate with that service's traces.
 func resolveService() string {
 	if s := globalconfig.ServiceName(); s != "" {
 		return s
@@ -89,5 +97,5 @@ func resolveService() string {
 	if s := env.Get("DD_SERVICE"); s != "" {
 		return s
 	}
-	return "unknown"
+	return filepath.Base(os.Args[0])
 }

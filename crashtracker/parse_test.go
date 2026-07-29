@@ -230,6 +230,43 @@ func TestParseCrashDumpCrashingGoroutineFrames(t *testing.T) {
 	}
 }
 
+func TestErrorMessageMultilinePanic(t *testing.T) {
+	// panic("first\nsecond") prints the panic value verbatim, so an embedded
+	// newline in the panic value becomes a second physical preamble line
+	// before the blank line that separates the preamble from the goroutine
+	// stacks.
+	preamble := []string{"panic: first", "second", ""}
+	got := errorMessage(preamble, nil)
+	want := "first\nsecond"
+	if got != want {
+		t.Errorf("errorMessage() = %q, want %q", got, want)
+	}
+}
+
+func TestErrorMessageRecoveredNestedPanic(t *testing.T) {
+	// A panic recovered and re-raised during deferred cleanup prints the
+	// original panic, then the final one that actually terminated the
+	// process, as additional preamble lines before the blank separator.
+	// collectPanicMessage does not special-case this shape — it just
+	// continues to the blank line — so this proves the final panic is no
+	// longer silently dropped.
+	preamble := []string{"panic: first", "\tpanic: second [recovered]", ""}
+	got := errorMessage(preamble, nil)
+	if !strings.Contains(got, "second") {
+		t.Errorf("errorMessage() = %q, want it to contain the recovered panic %q", got, "second")
+	}
+}
+
+func TestErrorMessageSingleLinePanicUnaffected(t *testing.T) {
+	// A single-line panic followed directly by the goroutine stacks (no
+	// intervening blank preamble line) must still return just that line.
+	preamble := []string{"panic: boom"}
+	got := errorMessage(preamble, nil)
+	if got != "boom" {
+		t.Errorf("errorMessage() = %q, want %q", got, "boom")
+	}
+}
+
 func TestParseFramesCapsDeepStack(t *testing.T) {
 	// Synthesize a goroutine stack far deeper than maxFramesPerThread, the
 	// shape a real stack-overflow crash produces: one goroutine, thousands of

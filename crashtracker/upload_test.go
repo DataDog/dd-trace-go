@@ -190,3 +190,29 @@ func TestUploadReportServerError(t *testing.T) {
 		t.Errorf("error %q does not mention status code 500", err.Error())
 	}
 }
+
+// TestUploadReportRejects3xx verifies the fix for the bug where any status
+// below 400 — including a 3xx client.Do did not or could not follow — was
+// treated as a successful upload. 304 is a clean case to test: it is not in
+// net/http's default set of client-followed redirect codes, so client.Do
+// returns it as-is with err == nil, exactly the shape a misbehaving proxy or
+// agent could produce.
+func TestUploadReportRejects3xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	defer srv.Close()
+
+	cfg := &config{
+		agentURL:   srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	err := uploadReport(cfg, newTestReport())
+	if err == nil {
+		t.Fatal("expected error for 304 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "304") {
+		t.Errorf("error %q does not mention status code 304", err.Error())
+	}
+}
