@@ -20,9 +20,9 @@ func TestPopNilsBackingArrayElement(t *testing.T) {
 
 	// Push two values so popping one keeps the map entry alive (len > 0).
 	// This lets us inspect the backing array for the cleared slot.
-	s.Push(stackTestKey{}, "filler")
+	s.Push(stackTestKey{}, "filler", nil)
 	large := make([]byte, 1<<20) // 1 MiB
-	s.Push(stackTestKey{}, large)
+	s.Push(stackTestKey{}, large, nil)
 
 	popped := s.Pop(stackTestKey{})
 	require.NotNil(t, popped)
@@ -38,7 +38,7 @@ func TestPopNilsBackingArrayElement(t *testing.T) {
 func TestPopCleansUpEmptyMapEntry(t *testing.T) {
 	var s contextStack
 
-	s.Push(stackTestKey{}, "value")
+	s.Push(stackTestKey{}, "value", nil)
 	s.Pop(stackTestKey{})
 
 	_, exists := s.stacks[stackTestKey{}]
@@ -61,14 +61,14 @@ func TestPushReclaimsFinishedTopEntry(t *testing.T) {
 	var s contextStack
 
 	first := &fakeReclaimable{id: 1}
-	s.Push(stackTestKey{}, first)
+	s.Push(stackTestKey{}, first, nil)
 	require.Equal(t, 1, s.Depth(), "first push lands")
 
 	// Mark the top entry reclaimable, as a finished span would be. The next
 	// push must drop it instead of stacking on top, keeping depth at 1.
 	first.reclaimed = true
 	second := &fakeReclaimable{id: 2}
-	s.Push(stackTestKey{}, second)
+	s.Push(stackTestKey{}, second, nil)
 
 	assert.Equal(t, 1, s.Depth(), "reclaimable top entry should be dropped on push")
 	assert.Same(t, second, s.Peek(stackTestKey{}), "new value should be on top")
@@ -82,7 +82,7 @@ func TestPushDrainsMultipleReclaimableEntries(t *testing.T) {
 	entries := make([]*fakeReclaimable, 5)
 	for i := range entries {
 		entries[i] = &fakeReclaimable{id: i}
-		s.Push(stackTestKey{}, entries[i])
+		s.Push(stackTestKey{}, entries[i], nil)
 	}
 	require.Equal(t, 5, s.Depth(), "five live entries pushed")
 
@@ -93,7 +93,7 @@ func TestPushDrainsMultipleReclaimableEntries(t *testing.T) {
 
 	// The next push must drain ALL trailing reclaimable entries, not just the top.
 	live := &fakeReclaimable{id: 99}
-	s.Push(stackTestKey{}, live)
+	s.Push(stackTestKey{}, live, nil)
 
 	assert.Equal(t, 1, s.Depth(), "all trailing reclaimable entries should be drained")
 	assert.Same(t, live, s.Peek(stackTestKey{}))
@@ -105,9 +105,9 @@ func TestPushKeepsLiveEntries(t *testing.T) {
 	// A live (non-reclaimable) entry on top must never be dropped — this is
 	// the legitimate same-goroutine nesting case (parent still active).
 	parent := &fakeReclaimable{id: 1, reclaimed: false}
-	s.Push(stackTestKey{}, parent)
+	s.Push(stackTestKey{}, parent, nil)
 	child := &fakeReclaimable{id: 2, reclaimed: false}
-	s.Push(stackTestKey{}, child)
+	s.Push(stackTestKey{}, child, nil)
 
 	assert.Equal(t, 2, s.Depth(), "live entries must be preserved (nesting)")
 	assert.Same(t, child, s.Peek(stackTestKey{}))
@@ -118,16 +118,16 @@ func TestPushDoesNotReclaimBuriedEntryUnderLiveTop(t *testing.T) {
 
 	// Build [buried, liveTop] with both live, so neither is dropped at push.
 	buried := &fakeReclaimable{id: 1, reclaimed: false}
-	s.Push(stackTestKey{}, buried)
+	s.Push(stackTestKey{}, buried, nil)
 	liveTop := &fakeReclaimable{id: 2, reclaimed: false}
-	s.Push(stackTestKey{}, liveTop)
+	s.Push(stackTestKey{}, liveTop, nil)
 	require.Equal(t, 2, s.Depth())
 
 	// buried becomes reclaimable, but liveTop (still live) sits above it.
 	buried.reclaimed = true
 
 	next := &fakeReclaimable{id: 3, reclaimed: false}
-	s.Push(stackTestKey{}, next)
+	s.Push(stackTestKey{}, next, nil)
 
 	// The drain stops at liveTop (not reclaimable), so buried is preserved.
 	// This is the invariant that protects legitimate nesting: a reclaimable
@@ -140,9 +140,9 @@ func TestPushDoesNotDrainNonReclaimableValues(t *testing.T) {
 
 	// Values that don't implement reclaimable (e.g. the bool stored under
 	// executionTracedKey) must never be drained, even if they pile up.
-	s.Push(stackTestKey{}, true)
-	s.Push(stackTestKey{}, false)
-	s.Push(stackTestKey{}, true)
+	s.Push(stackTestKey{}, true, nil)
+	s.Push(stackTestKey{}, false, nil)
+	s.Push(stackTestKey{}, true, nil)
 
 	assert.Equal(t, 3, s.Depth(), "non-reclaimable values are never dropped")
 }
@@ -216,7 +216,7 @@ func TestPeekSkipsReclaimableEntries(t *testing.T) {
 			entries := make([]*fakeReclaimable, len(tt.finished))
 			for i := range entries {
 				entries[i] = &fakeReclaimable{id: i}
-				s.Push(stackTestKey{}, entries[i])
+				s.Push(stackTestKey{}, entries[i], nil)
 			}
 			require.Equal(t, len(tt.finished), s.Depth(), "stack must reach the intended depth")
 
@@ -250,10 +250,10 @@ func TestPeekBreaksStaleParentChain(t *testing.T) {
 
 	for i := range 10 {
 		req := &fakeReclaimable{id: i}
-		s.Push(k, req)
+		s.Push(k, req, nil)
 
 		stray := &fakeReclaimable{id: 1000 + i}
-		s.Push(k, stray)
+		s.Push(k, stray, nil)
 		stray.reclaimed = true
 
 		req.reclaimed = true
@@ -276,8 +276,8 @@ func TestPeekSkipsNilReclaimableEntry(t *testing.T) {
 	var s contextStack
 
 	live := &fakeReclaimable{id: 1}
-	s.Push(stackTestKey{}, live)
-	s.Push(stackTestKey{}, (*fakeReclaimable)(nil))
+	s.Push(stackTestKey{}, live, nil)
+	s.Push(stackTestKey{}, (*fakeReclaimable)(nil), nil)
 	require.Equal(t, 2, s.Depth(), "the nil entry is pushed on top of the live one")
 
 	assert.Same(t, live, s.Peek(stackTestKey{}),
@@ -290,8 +290,8 @@ func TestPeekSkipsNilReclaimableEntry(t *testing.T) {
 func TestPeekReturnsNonReclaimableValues(t *testing.T) {
 	var s contextStack
 
-	s.Push(stackTestKey{}, false)
-	s.Push(stackTestKey{}, true)
+	s.Push(stackTestKey{}, false, nil)
+	s.Push(stackTestKey{}, true, nil)
 
 	assert.Equal(t, true, s.Peek(stackTestKey{}), "non-reclaimable top value must be returned as-is")
 }
@@ -314,11 +314,11 @@ func TestPopScopeRemovesTargetAndEverythingAbove(t *testing.T) {
 	k := stackTestKey{}
 
 	a := &fakeReclaimable{id: 1}
-	tokenA := s.Push(k, a)
+	tokenA := s.Push(k, a, nil)
 	b := &fakeReclaimable{id: 2}
-	s.Push(k, b)
+	s.Push(k, b, nil)
 	c := &fakeReclaimable{id: 3}
-	s.Push(k, c)
+	s.Push(k, c, nil)
 	require.Equal(t, 3, s.Depth())
 
 	// A finishes while it is not the top: the non-LIFO exit.
@@ -343,11 +343,11 @@ func TestPopScopeKeepsEntriesBelow(t *testing.T) {
 	k := stackTestKey{}
 
 	outer := &fakeReclaimable{id: 1}
-	s.Push(k, outer)
+	s.Push(k, outer, nil)
 	inner := &fakeReclaimable{id: 2}
-	tokenInner := s.Push(k, inner)
+	tokenInner := s.Push(k, inner, nil)
 	leaf := &fakeReclaimable{id: 3}
-	s.Push(k, leaf)
+	s.Push(k, leaf, nil)
 
 	inner.reclaimed = true
 	require.True(t, s.PopScope(k, tokenInner))
@@ -373,7 +373,7 @@ func TestPopScopeOnRemovedTokenDoesNothing(t *testing.T) {
 	k := stackTestKey{}
 
 	gone := &fakeReclaimable{id: 1}
-	token := s.Push(k, gone)
+	token := s.Push(k, gone, nil)
 	require.True(t, s.PopScope(k, token), "the first exit closes the scope")
 
 	assert.False(t, s.PopScope(k, token), "a second exit finds nothing to close")
@@ -381,7 +381,7 @@ func TestPopScopeOnRemovedTokenDoesNothing(t *testing.T) {
 
 	// The same holds with an unrelated scope open: the stale exit must not take it.
 	live := &fakeReclaimable{id: 2}
-	s.Push(k, live)
+	s.Push(k, live, nil)
 
 	assert.False(t, s.PopScope(k, token), "the stale token still matches nothing")
 	assert.Equal(t, 1, s.Depth(), "the unrelated scope must survive the stale exit")
@@ -401,12 +401,12 @@ func TestPopScopeIgnoresStaleTokenAfterIndexReuse(t *testing.T) {
 	k := stackTestKey{}
 
 	first := &fakeReclaimable{id: 1}
-	stale := s.Push(k, first)
+	stale := s.Push(k, first, nil)
 	require.True(t, s.PopScope(k, stale))
 	require.Equal(t, 0, s.Depth(), "the key is now empty, so the next push starts at index 0 again")
 
 	second := &fakeReclaimable{id: 2}
-	fresh := s.Push(k, second)
+	fresh := s.Push(k, second, nil)
 	require.Same(t, second, s.stacks[k][0].val, "the second scope reuses the first scope's index")
 	require.NotEqual(t, stale, fresh, "a reused index must not come with a reused token")
 
@@ -426,13 +426,13 @@ func BenchmarkPeekSkipReclaimed(b *testing.B) {
 			var s contextStack
 
 			// A live entry at the bottom is what Peek must find.
-			s.Push(k, &fakeReclaimable{id: -1})
+			s.Push(k, &fakeReclaimable{id: -1}, nil)
 			// Pushed live so the stack reaches depth N, then marked finished —
 			// pushing them reclaimable would let Push drain each one immediately.
 			entries := make([]*fakeReclaimable, stale)
 			for i := range entries {
 				entries[i] = &fakeReclaimable{id: i}
-				s.Push(k, entries[i])
+				s.Push(k, entries[i], nil)
 			}
 			for _, e := range entries {
 				e.reclaimed = true
@@ -471,7 +471,7 @@ func BenchmarkPushDrainReclaimed(b *testing.B) {
 				entries := make([]*fakeReclaimable, stale)
 				for i := range entries {
 					entries[i] = &fakeReclaimable{id: i}
-					s.Push(k, entries[i]) // pushed live so the stack reaches depth N
+					s.Push(k, entries[i], nil) // pushed live so the stack reaches depth N
 				}
 				for _, e := range entries {
 					e.reclaimed = true // now finished cross-goroutine (pop never ran here)
@@ -479,8 +479,73 @@ func BenchmarkPushDrainReclaimed(b *testing.B) {
 				b.StartTimer()
 
 				// This single Push must drain all `stale` reclaimable entries.
-				s.Push(k, &fakeReclaimable{id: stale})
+				s.Push(k, &fakeReclaimable{id: stale}, nil)
 			}
 		})
 	}
+}
+
+// TestPopEntryRemovesOnlyItsOwnEntry pins the difference from PopScope. Sweeping
+// entries above the target is right for nested scopes, and wrong for a key whose
+// entries are independent scopes holding their own exits: removing one does not
+// cancel its exit, so that exit runs anyway against a stack it no longer owns.
+func TestPopEntryRemovesOnlyItsOwnEntry(t *testing.T) {
+	var s contextStack
+	k := stackTestKey{}
+
+	a := &fakeReclaimable{id: 1}
+	s.Push(k, a, nil)
+	b := &fakeReclaimable{id: 2}
+	tokenB := s.Push(k, b, nil)
+	c := &fakeReclaimable{id: 3}
+	s.Push(k, c, nil)
+
+	require.True(t, s.PopEntry(k, tokenB), "PopEntry must find the entry its token opened")
+
+	assert.Equal(t, 2, s.Depth(), "only B is gone; A below and C above both stay")
+	assert.Same(t, c, s.Peek(k), "C was never inside B's scope, so it is still the active one")
+}
+
+// TestPopEntryLeavesAPositionalPopIntact is the reason PopEntry exists.
+// internal.executionTracedKey carries bools whose exit is PopExecutionTraced, a
+// positional pop. If closing the scope-exact override also swept the marker above
+// it, that marker's own pop would still run and take an unrelated entry further
+// down — silently flipping IsExecutionTraced for everything after it.
+func TestPopEntryLeavesAPositionalPopIntact(t *testing.T) {
+	var s contextStack
+	k := stackTestKey{}
+
+	a := &fakeReclaimable{id: 1} // an unrelated marker nobody here will pop
+	s.Push(k, a, nil)
+	b := &fakeReclaimable{id: 2} // the scope-exact override
+	tokenB := s.Push(k, b, nil)
+	c := &fakeReclaimable{id: 3} // owns a positional pop
+	s.Push(k, c, nil)
+
+	require.True(t, s.PopEntry(k, tokenB))
+	s.Pop(k) // C's positional exit, running after its neighbour closed
+
+	assert.Equal(t, 1, s.Depth(), "C's pop must take C, not reach past it")
+	assert.Same(t, a, s.Peek(k), "the unrelated marker below must survive")
+}
+
+// TestPopEntryIgnoresAStaleToken covers a repeated or late exit. Tokens only ever
+// ascend, so a token already removed matches nothing and the walk stops early
+// rather than destroying whatever now occupies that position.
+func TestPopEntryIgnoresAStaleToken(t *testing.T) {
+	var s contextStack
+	k := stackTestKey{}
+
+	a := &fakeReclaimable{id: 1}
+	tokenA := s.Push(k, a, nil)
+	require.True(t, s.PopEntry(k, tokenA))
+	require.Equal(t, 0, s.Depth())
+
+	later := &fakeReclaimable{id: 2}
+	s.Push(k, later, nil)
+
+	assert.False(t, s.PopEntry(k, tokenA), "a token that is already gone must match nothing")
+	assert.Equal(t, 1, s.Depth(), "the unrelated scope that reused the position must survive")
+	assert.Same(t, later, s.Peek(k))
+	assert.False(t, s.PopEntry(k, 0), "a zero token means no scope and must never match")
 }

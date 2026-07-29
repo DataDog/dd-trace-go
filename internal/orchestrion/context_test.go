@@ -49,7 +49,7 @@ func TestGLSPopFunc(t *testing.T) {
 	t.Run("same goroutine pops value", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
-		token := getDDContextStack().Push(key("k"), "v")
+		token := getDDContextStack().Push(key("k"), "v", nil)
 		popFn := GLSPopFunc(key("k"), token)
 
 		require.Equal(t, "v", getDDContextStack().Peek(key("k")))
@@ -62,7 +62,7 @@ func TestGLSPopFunc(t *testing.T) {
 	t.Run("different goroutine is no-op", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
-		token := getDDContextStack().Push(key("k"), "v")
+		token := getDDContextStack().Push(key("k"), "v", nil)
 		popFn := GLSPopFunc(key("k"), token)
 
 		// Simulate a different goroutine by swapping the GLS to a new stack.
@@ -283,7 +283,7 @@ func BenchmarkContextStackPushPop(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		getDDContextStack().Push(k, true)
+		getDDContextStack().Push(k, true, nil)
 		getDDContextStack().Pop(k)
 	}
 	if depth := GLSStackDepth(); depth != 0 {
@@ -299,7 +299,7 @@ func BenchmarkContextStackPushOnly(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		getDDContextStack().Push(k, true)
+		getDDContextStack().Push(k, true, nil)
 	}
 	b.StopTimer()
 	depth := GLSStackDepth()
@@ -356,7 +356,7 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 			k := key("bench")
 			// Pre-fill the stack to simulate leaked entries.
 			for range depth {
-				getDDContextStack().Push(k, true)
+				getDDContextStack().Push(k, true, nil)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -365,4 +365,46 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 			}
 		})
 	}
+}
+
+// TestGLSReactivationAfterSweepStrandsACellessEntry covers the exit-invalidation
+// this change adds. PopScope removes its target and everything above it, so a
+// value swept that way keeps an exit naming a token that no longer exists: its
+// next activation sees a non-nil popper cell, keeps the stale exit under
+// first-wins, and the entry that activation pushes is closed by nothing.
+//
+// The shape here is dyngo's: a popper and a value that does not report itself
+// reclaimable, because AppSec operations are registered and finished on one
+// goroutine and carry no reclaim flag. That is what makes it matter — with
+// nothing to mark, the stranded entry is never drained by Push and never skipped
+// by Peek, so a finished operation keeps answering as the active one. A span in
+// the same position recovers on its own, since GLSDeactivate sets its reclaim
+// flag and the stranded entry becomes collectable.
+func TestGLSReactivationAfterSweepStrandsACellessEntry(t *testing.T) {
+	t.Cleanup(MockGLS())
+	k := key("celless")
+
+	var popA, popB GLSPopperCell
+	GLSActivate(nil, k, "A", &popA)
+	GLSActivate(nil, k, "B", &popB)
+	require.Equal(t, 2, GLSStackDepth())
+
+	// A exits while B is still live: the non-LIFO case PopScope exists for. It
+	// removes A and sweeps B along with it.
+	GLSDeactivate(nil, &popA)
+	require.Equal(t, 0, GLSStackDepth(), "A's scope exit removes A and what was opened inside it")
+
+	// B is activated again on the same goroutine. first-wins would keep the
+	// popper captured the first time, which names the token just swept away.
+	GLSActivate(nil, k, "B", &popB)
+	require.Equal(t, 1, GLSStackDepth())
+
+	// B finishes. Without invalidation its exit targets the stale token and
+	// matches nothing.
+	GLSDeactivate(nil, &popB)
+
+	assert.Equal(t, 0, GLSStackDepth(),
+		"B's entry outlived B: its popper still named the token PopScope swept, so the exit "+
+			"removed nothing. With no reclaim flag the entry is permanently live, so Peek keeps "+
+			"handing it out and Push never drains it")
 }

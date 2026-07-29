@@ -38,7 +38,7 @@ func CtxWithValue(parent context.Context, key, val any) context.Context {
 		return context.WithValue(parent, key, val)
 	}
 
-	getDDContextStack().Push(key, val)
+	getDDContextStack().Push(key, val, nil)
 	return context.WithValue(WrapContext(parent), key, val)
 }
 
@@ -62,8 +62,8 @@ func CtxWithScopedValue(parent context.Context, key, val any) (context.Context, 
 		return context.WithValue(parent, key, val), glsNoop
 	}
 
-	token := getDDContextStack().Push(key, val)
-	return context.WithValue(WrapContext(parent), key, val), GLSPopFunc(key, token)
+	token := getDDContextStack().Push(key, val, nil)
+	return context.WithValue(WrapContext(parent), key, val), GLSPopEntryFunc(key, token)
 }
 
 // GLSPopValue pops the value from the GLS slot of orchestrion and returns it. Using context.Context values usually does
@@ -126,7 +126,7 @@ func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell) {
 	if ctxp != nil {
 		*ctxp = WrapContext(*ctxp)
 	}
-	token := getDDContextStack().Push(key, val)
+	token := getDDContextStack().Push(key, val, pop)
 	if pop != nil && pop.ptr.Load() == nil {
 		// Capture the popper only on the first activation (first-wins) so
 		// re-activating the same span/operation does not overwrite the popper
@@ -200,6 +200,23 @@ func GLSPopFunc(key any, token uint64) func() {
 	return func() {
 		if gls := getDDGLS(); gls != nil && gls.(*contextStack) == pushStack {
 			pushStack.PopScope(key, token)
+		}
+	}
+}
+
+// GLSPopEntryFunc is [GLSPopFunc] for a key whose entries are independent scopes
+// rather than nested ones: it removes only the entry it opened, leaving anything
+// pushed above it to be closed by whatever owns it. Use this whenever the key is
+// shared with a positional [GLSPopValue] exit, which would otherwise reach past
+// its own scope once its entry had been swept. See [contextStack.PopEntry].
+func GLSPopEntryFunc(key any, token uint64) func() {
+	if !Enabled() {
+		return glsNoop
+	}
+	pushStack := getDDContextStack()
+	return func() {
+		if gls := getDDGLS(); gls != nil && gls.(*contextStack) == pushStack {
+			pushStack.PopEntry(key, token)
 		}
 	}
 }

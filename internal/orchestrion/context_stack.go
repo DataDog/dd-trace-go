@@ -17,6 +17,12 @@ import "slices"
 type entry struct {
 	val   any
 	token uint64
+	// pop is the cell holding the exit captured for this value, so that removing
+	// the entry can invalidate it. Without that, a value swept away by an
+	// enclosing scope keeps an exit naming a token that no longer exists: its
+	// next activation sees a non-nil cell, keeps the stale exit under first-wins,
+	// and the entry that activation pushes is never closed by anything.
+	pop *GLSPopperCell
 }
 
 // contextStack is stored in the GLS slot of runtime.g inserted by orchestrion.
@@ -79,12 +85,80 @@ func getDDContextStack() *contextStack {
 	return newStack
 }
 
+// PopEntry removes exactly the entry token opened under key, leaving anything
+// pushed above it in place, and reports whether it found one.
+//
+// This is the counterpart to [contextStack.PopScope] for a key whose entries are
+// not nested scopes. PopScope also drops everything above its target, which is
+// right when those entries were opened inside the scope now ending and so cannot
+// outlive it. It is wrong when they are independent scopes owning their own
+// exits: sweeping one away does not cancel its exit, and if that exit is
+// positional ([contextStack.Pop]) it then removes an unrelated entry further
+// down the stack.
+//
+// internal.executionTracedKey is exactly that case. It holds plain bools pushed
+// by WithExecutionTraced, whose paired PopExecutionTraced takes the top of the
+// stack, sharing the key with the scope-exact override from
+// ScopedExecutionNotTraced. Removing only our own entry keeps the two exits from
+// colliding while still fixing what PopScope was introduced for here: the
+// override is removed by identity, so a non-LIFO exit can no longer strand it
+// and leave the stack claiming "not traced" for everything after it.
+func (s *contextStack) PopEntry(key any, token uint64) bool {
+	if s == nil || s.stacks == nil || token == 0 {
+		return false
+	}
+
+	stack := s.stacks[key]
+	for i, e := range slices.Backward(stack) {
+		if e.token == token {
+			s.remove(key, stack, i)
+			return true
+		}
+		if e.token < token {
+			return false
+		}
+	}
+
+	return false
+}
+
+// remove deletes the single entry at i. Deleting from the middle keeps tokens
+// ascending, so [contextStack.PopScope]'s and [contextStack.PopEntry]'s early
+// exit stays valid; slices.Delete zeroes the vacated tail so a dropped value is
+// not retained.
+func (s *contextStack) remove(key any, stack []entry, i int) {
+	invalidatePoppers(stack[i : i+1])
+	stack = slices.Delete(stack, i, i+1)
+
+	if len(stack) == 0 {
+		delete(s.stacks, key)
+		return
+	}
+	s.stacks[key] = stack
+}
+
+// invalidatePoppers clears the captured exit of every entry being removed, so a
+// value activated again later captures a fresh one for its new token instead of
+// keeping an exit that names a scope already gone.
+//
+// Clearing is safe for an entry whose owner has not finished yet: its entry is
+// being removed here, so there is nothing left for its exit to do, and
+// GLSDeactivate's Swap simply finds nil and runs nothing.
+func invalidatePoppers(removed []entry) {
+	for _, e := range removed {
+		if e.pop != nil {
+			e.pop.ptr.Store(nil)
+		}
+	}
+}
+
 // truncate drops stack[i:] from key's slice. The removed elements are zeroed so
 // the GC can collect the values they held, and the key is deleted outright once
 // nothing remains under it, keeping the map from retaining empty slices.
 //
 // stack is passed in rather than re-read because every caller already holds it.
 func (s *contextStack) truncate(key any, stack []entry, i int) {
+	invalidatePoppers(stack[i:])
 	clear(stack[i:])
 	stack = stack[:i]
 
@@ -149,7 +223,7 @@ func (s *contextStack) Peek(key any) any {
 // restore target, so dropping it preserves stack semantics. Entries whose type
 // does not implement [reclaimable] (e.g. the bool stored under
 // executionTracedKey) are never dropped.
-func (s *contextStack) Push(key, val any) uint64 {
+func (s *contextStack) Push(key, val any, pop *GLSPopperCell) uint64 {
 	if s == nil {
 		return 0
 	}
@@ -164,7 +238,7 @@ func (s *contextStack) Push(key, val any) uint64 {
 	}
 
 	s.next++
-	s.stacks[key] = append(stack, entry{val: val, token: s.next})
+	s.stacks[key] = append(stack, entry{val: val, token: s.next, pop: pop})
 	return s.next
 }
 
