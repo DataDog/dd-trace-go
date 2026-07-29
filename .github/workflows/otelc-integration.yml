@@ -238,7 +238,16 @@ jobs:
           set -o pipefail
           rc=0
           for pkg in $PACKAGE_NAMES; do
-            otelc -rules="${{ github.workspace }}/dd-trace-go" go test -v -shuffle=on "$pkg" 2>&1 | go tool test2json -t -p "$pkg" || rc=1
+            raw_log="${RUNNER_TEMP}/otelc-raw-$(echo "$pkg" | tr '/' '_').log"
+            otelc -rules="${{ github.workspace }}/dd-trace-go" go test -v -shuffle=on "$pkg" > "$raw_log" 2>&1
+            status=$?
+            go tool test2json -t -p "$pkg" < "$raw_log"
+            if [[ "$status" -ne 0 ]]; then
+              echo "::group::Raw output for $pkg (exit $status)" >&2
+              cat "$raw_log" >&2
+              echo "::endgroup::" >&2
+              rc=1
+            fi
           done
           exit "$rc"
           EOF
