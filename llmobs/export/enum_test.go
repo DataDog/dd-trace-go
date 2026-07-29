@@ -37,51 +37,10 @@ func TestEnumWireValues(t *testing.T) {
 }
 
 func TestEnumTypesAreSharedWithLLMObs(t *testing.T) {
-	var (
-		k export.Kind       = llmobs.SpanKindWorkflow
-		s export.Status     = llmobs.SpanStatusError
-		m export.MetricType = llmobs.EvalMetricTypeScore
-	)
-	assert.Equal(t, export.KindWorkflow, k)
-	assert.Equal(t, export.StatusError, s)
+	var m export.MetricType = llmobs.EvalMetricTypeScore
+	assert.Equal(t, export.KindWorkflow, llmobs.SpanKindWorkflow)
+	assert.Equal(t, export.StatusError, string(llmobs.SpanStatusError))
 	assert.Equal(t, export.MetricTypeScore, m)
-}
-
-func TestManualModelsAreSharedWithLLMObs(t *testing.T) {
-	var (
-		span export.SpanEvent = llmobs.SpanEvent{
-			TraceID: "trace",
-			SpanID:  "span",
-			Kind:    llmobs.SpanKindLLM,
-			SpanLinks: []llmobs.SpanEventLink{{
-				TraceID: "linked-trace",
-				SpanID:  "linked-span",
-			}},
-		}
-		evaluation export.EvaluationMetric = llmobs.EvaluationMetric{
-			SpanID:     "span",
-			TraceID:    "trace",
-			Label:      "quality",
-			MetricType: llmobs.EvalMetricTypeScore,
-			ScoreValue: ptr(1.0),
-		}
-	)
-	assert.Equal(t, export.SpanEvent{
-		TraceID: "trace",
-		SpanID:  "span",
-		Kind:    export.KindLLM,
-		SpanLinks: []export.SpanLink{{
-			TraceID: "linked-trace",
-			SpanID:  "linked-span",
-		}},
-	}, span)
-	assert.Equal(t, export.EvaluationMetric{
-		SpanID:     "span",
-		TraceID:    "trace",
-		Label:      "quality",
-		MetricType: export.MetricTypeScore,
-		ScoreValue: ptr(1.0),
-	}, evaluation)
 }
 
 func TestSubmitSpans_AcceptsEveryExportableKind(t *testing.T) {

@@ -5,7 +5,10 @@
 
 package export
 
-import "github.com/DataDog/dd-trace-go/v2/llmobs"
+import (
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/llmobs"
+)
 
 // MetricType is the type of an evaluation metric value.
 type MetricType = llmobs.EvalMetricType
@@ -18,4 +21,4 @@ const (
 )
 
 // EvaluationMetric is a caller-built LLM Obs evaluation metric.
-type EvaluationMetric = llmobs.EvaluationMetric
+type EvaluationMetric = illmobs.EvaluationConfig

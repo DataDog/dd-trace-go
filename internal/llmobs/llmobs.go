@@ -58,25 +58,25 @@ const (
 )
 
 // SpanKind represents the type of an LLMObs span.
-type SpanKind string
+type SpanKind = transport.SpanKind
 
 const (
 	// SpanKindExperiment represents an experiment span for testing and evaluation.
-	SpanKindExperiment SpanKind = "experiment"
+	SpanKindExperiment SpanKind = transport.SpanKindExperiment
 	// SpanKindWorkflow represents a workflow span that orchestrates multiple operations.
-	SpanKindWorkflow SpanKind = "workflow"
+	SpanKindWorkflow SpanKind = transport.SpanKindWorkflow
 	// SpanKindLLM represents a span for Large Language Model operations.
-	SpanKindLLM SpanKind = "llm"
+	SpanKindLLM SpanKind = transport.SpanKindLLM
 	// SpanKindEmbedding represents a span for embedding generation operations.
-	SpanKindEmbedding SpanKind = "embedding"
+	SpanKindEmbedding SpanKind = transport.SpanKindEmbedding
 	// SpanKindAgent represents a span for AI agent operations.
-	SpanKindAgent SpanKind = "agent"
+	SpanKindAgent SpanKind = transport.SpanKindAgent
 	// SpanKindRetrieval represents a span for document retrieval operations.
-	SpanKindRetrieval SpanKind = "retrieval"
+	SpanKindRetrieval SpanKind = transport.SpanKindRetrieval
 	// SpanKindTask represents a span for general task operations.
-	SpanKindTask SpanKind = "task"
+	SpanKindTask SpanKind = transport.SpanKindTask
 	// SpanKindTool represents a span for tool usage operations.
-	SpanKindTool SpanKind = "tool"
+	SpanKindTool SpanKind = transport.SpanKindTool
 )
 
 // SpanStatus is the terminal status of a span on the wire.
@@ -1110,19 +1110,8 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 	if timestampMS == 0 {
 		timestampMS = time.Now().UnixMilli()
 	}
-	metric, validation := buildExportEvaluation(ExportEvaluationMetric{
-		SpanID:           cfg.SpanID,
-		TraceID:          cfg.TraceID,
-		TagKey:           cfg.TagKey,
-		TagValue:         cfg.TagValue,
-		Label:            cfg.Label,
-		CategoricalValue: cfg.CategoricalValue,
-		ScoreValue:       cfg.ScoreValue,
-		BooleanValue:     cfg.BooleanValue,
-		Timestamp:        time.UnixMilli(timestampMS),
-		MLApp:            cfg.MLApp,
-		Tags:             cfg.Tags,
-	}, l.Config.MLApp, false)
+	cfg.TimestampMS = timestampMS
+	metric, validation := buildEvaluation(cfg, l.Config.MLApp, false)
 	if validation != nil {
 		if cause := validation.Unwrap(); cause != nil {
 			return cause
