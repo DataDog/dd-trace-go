@@ -21,8 +21,8 @@ import (
 // These tests are the regression facility for orchestrion#782. The GLS
 // over-pop and cross-goroutine reclaim fix is woven into ddtrace/tracer at
 // build time by orchestrion (see ddtrace/tracer/orchestrion.yml: the
-// `tracer-internal: true` aspects that add a finished flag, a GLSReclaimable
-// method, and an identity-match pop into Span.Finish). The tracer SOURCE has
+// `tracer-internal: true` aspects that add the liveness cell, the popper field,
+// and an identity-match pop into Span.Finish). The tracer SOURCE has
 // no GLS pop/reclaim code, so a plain `go build`/`go test` cannot exercise it
 // — and, crucially, if the injection ever silently stops applying (a renamed
 // Span.Finish, a changed join-point selector, a dropped `tracer-internal`
@@ -37,18 +37,29 @@ import (
 // shape that leaks in production: a span is re-injected into a context on one
 // goroutine (push) while it is created and finished on another (so the
 // goroutine-scoped pop never runs on the pushing goroutine). The pushing
-// goroutine's GLS stack must stay bounded because Span.Finish marks the span
-// reclaimable and contextStack.Push drops finished entries on the next push.
+// goroutine's GLS stack must stay bounded because Span.Finish marks the span's
+// liveness cell and contextStack.Push drops finished entries on the next push.
 //
 // Without the injected fix this goroutine's GLS grows by one entry per record
 // (an unbounded leak proportional to the record count); with it, depth stays ~1.
+//
+// This finishes the span BEFORE re-injecting it, which is a deliberate
+// use-after-Finish, so it is not run with the experimental span pool — the pool
+// may legitimately have recycled the object by then. Pooled coexistence is covered
+// by the live-inject TestGLSNoHeapLeakWithSpanPool in the gls-leak package.
 func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("GLS only exists in orchestrion builds")
 	}
 	require.True(t, built.WithOrchestrion)
 
-	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	// WithSpanPool(false) is explicit rather than assumed. This test finishes the
+	// span before handing it to the worker, which is a deliberate use-after-Finish
+	// that the pool would legitimately recycle. Now that the Orchestrion gate is
+	// gone, an inherited DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true would turn
+	// pooling on here and make this exercise that unsupported path instead of the
+	// non-pooled reclaim it is written for.
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(false)))
 	defer tracer.Stop()
 
 	const iterations = 5000
@@ -96,13 +107,23 @@ func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
 // additionally catches a regression that still pushes but stops reclaiming in a
 // way the bounded-depth check might not. The runnable gls-leak command exercises
 // the same helper.
+//
+// Like TestSpanGLSNoLeakCrossGoroutine, this uses the finish-then-inject order and
+// so is not run under the experimental span pool; TestGLSNoHeapLeakWithSpanPool
+// covers the pooled, live-inject path.
 func TestSpanGLSNoHeapLeakCrossGoroutine(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("GLS only exists in orchestrion builds")
 	}
 	require.True(t, built.WithOrchestrion)
 
-	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
+	// WithSpanPool(false) is explicit rather than assumed. This test finishes the
+	// span before handing it to the worker, which is a deliberate use-after-Finish
+	// that the pool would legitimately recycle. Now that the Orchestrion gate is
+	// gone, an inherited DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true would turn
+	// pooling on here and make this exercise that unsupported path instead of the
+	// non-pooled reclaim it is written for.
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(false)))
 	defer tracer.Stop()
 
 	r := glsleak.MeasureLeak(100_000)
