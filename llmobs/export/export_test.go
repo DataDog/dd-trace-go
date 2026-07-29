@@ -436,11 +436,8 @@ func TestSubmitSpans_ModelNormalizationMatchesLive(t *testing.T) {
 	assert.NotContains(t, metaOf(3), "model_provider")
 }
 
-// TestSubmitSpans_ModelGateMatchesLive pins the live gate's asymmetry rather than
-// "fixing" it: on a kind other than llm/embedding a provider is still emitted but
-// a name on its own is not. Emitting it here would make exported spans carry a meta
-// key the live tracer never writes for that kind — re-forking the two producers on
-// one intake, which is what this PR was asked to stop doing.
+// TestSubmitSpans_ModelGateMatchesLive pins the live gate's asymmetry: on a kind
+// other than llm/embedding a provider is emitted, but a name alone is not.
 func TestSubmitSpans_ModelGateMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -467,10 +464,8 @@ func TestSubmitSpans_ModelGateMatchesLive(t *testing.T) {
 	assert.Equal(t, "custom", metaOf(2)["model_provider"])
 }
 
-// TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive: an errored span with no detail
-// writes all three error.* keys empty. That is live parity, not a bug — the live
-// path emits error.stack:"" for any error that is not an errortrace.TracerError,
-// and error.message:"" for an error whose Error() is empty.
+// TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive verifies that a detail-less
+// error emits the same empty error fields as the live path.
 func TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -803,6 +798,7 @@ func TestSubmitSpans_RetryTransient(t *testing.T) {
 	assert.Greater(t, res.Requests[0].Attempts, 1) // retried
 	assert.True(t, res.Requests[0].Retriable)
 	assert.Equal(t, 500, res.Requests[0].StatusCode)
+	assert.Equal(t, "boom", res.Requests[0].ResponseSnippet)
 	assert.Error(t, res.Requests[0].Err)
 }
 
@@ -816,6 +812,7 @@ func TestSubmitSpans_PermanentError(t *testing.T) {
 	assert.Equal(t, 1, res.Requests[0].Attempts) // not retried
 	assert.False(t, res.Requests[0].Retriable)
 	assert.Equal(t, 400, res.Requests[0].StatusCode)
+	assert.Equal(t, "bad", res.Requests[0].ResponseSnippet)
 }
 
 func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
