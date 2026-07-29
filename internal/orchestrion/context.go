@@ -110,10 +110,12 @@ func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell) {
 }
 
 // GLSDeactivate releases a span's GLS entry on finish. It marks the span
-// reclaimable (so a cross-goroutine finish, whose popper is a no-op here, is
-// still cleaned up by contextStack.Push on its next push) and invokes the
-// captured popper exactly once, clearing it so a repeated finish does not pop
-// again. reclaimable and pop are the fields orchestrion injects onto the span;
+// reclaimable and invokes the captured popper exactly once, clearing it so a
+// repeated finish does not pop again. The reclaim flag covers the case the
+// popper cannot: after a cross-goroutine finish the popper is a no-op here, so
+// the entry stays on the pushing goroutine's stack, where contextStack.Peek
+// refuses to hand it out as the active span and the next contextStack.Push drops
+// it. reclaimable and pop are the fields orchestrion injects onto the span;
 // passing them by pointer lets injected span-finish advice deactivate in one
 // call.
 func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopperCell) {

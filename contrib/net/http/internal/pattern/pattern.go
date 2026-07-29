@@ -13,7 +13,7 @@ import (
 	"unicode"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 // Route returns the route part of a go1.22 style ServeMux pattern. I.e.
@@ -42,10 +42,10 @@ func PathParameters(pattern string, request *http.Request) map[string]string {
 	return res
 }
 
-var patternSegmentsCache = xsync.NewMapOf[string, []string]()
+var patternSegmentsCache = xsync.NewMap[string, []string]()
 
 func patternNames(pattern string) []string {
-	v, _ := patternSegmentsCache.LoadOrCompute(pattern, func() []string {
+	v, _ := patternSegmentsCache.LoadOrCompute(pattern, func() ([]string, bool) {
 		segments, err := parsePatternNames(pattern)
 		if err != nil {
 			// Ignore the error: Something as gone wrong, but we are not eager to find out why.
@@ -53,7 +53,7 @@ func patternNames(pattern string) []string {
 			internal.Instrumentation.Logger().Warn("instrumentation/net/http/pattern: failed to parse mux path pattern %q: %s", pattern, err.Error())
 			// here we fallthrough instead of returning to load a nil value into the cache to avoid reparsing the pattern.
 		}
-		return segments
+		return segments, false
 	})
 	return v
 }

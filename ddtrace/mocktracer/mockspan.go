@@ -167,7 +167,7 @@ func (s *Span) SetUser(id string, opts ...tracer.UserMonitoringOption) {
 	root.SetTag("usr.session_id", cfg.SessionID)
 
 	for k, v := range cfg.Metadata {
-		root.SetTag(fmt.Sprintf("usr.%s", k), v)
+		root.SetTag("usr."+k, v)
 	}
 }
 

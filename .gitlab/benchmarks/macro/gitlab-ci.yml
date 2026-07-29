@@ -236,6 +236,7 @@ go-stable-profile-trace-asm:
 check-slo-breaches:
   extends: .check-slo-breaches
   stage: gates
+  image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
   needs: [
     "go-oldstable-baseline",
     "go-oldstable-only-trace",
