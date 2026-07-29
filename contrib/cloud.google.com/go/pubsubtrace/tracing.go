@@ -178,43 +178,47 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 	}
 }
 
-// TraceAdmin starts a span for a Pub/Sub admin operation (e.g. CreateTopic, ListSubscriptions, DeleteSchema).
-// Version-specific unary client interceptors in the pubsub.v1 and pubsub.v2 contrib modules call this
-// after mapping the request to a resource path.
-func (tr *Tracer) TraceAdmin(ctx context.Context, method string, resourcePath string, opts ...Option) (context.Context, func(err error)) {
+// TraceAdmin returns a function that starts a span for a Pub/Sub admin operation
+// (e.g. CreateTopic, ListSubscriptions, DeleteSchema).
+// Version-specific unary client interceptors in the pubsub.v1 and pubsub.v2
+// contrib modules call the returned function after mapping the request to a
+// resource path.
+func (tr *Tracer) TraceAdmin(opts ...Option) func(ctx context.Context, method, resourcePath string) (context.Context, func(err error)) {
 	cfg := tr.defaultConfig()
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	resource := method
-	if resourcePath != "" {
-		resource = method + " " + resourcePath
-	}
-	spanOpts := []tracer.StartSpanOption{
-		tracer.ResourceName(resource),
-		tracer.SpanType(ext.SpanTypeWorker),
-		tracer.Tag(ext.Component, tr.component),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
-		tracer.Tag("pubsub.method", method),
-		tracer.Measured(),
-	}
-	if projectID := projectIDFromResourceName(resourcePath); projectID != "" {
-		spanOpts = append(spanOpts, tracer.Tag(ext.GCPProjectID, projectID))
-	}
-	if cfg.serviceName != "" {
-		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
-	}
+	return func(ctx context.Context, method, resourcePath string) (context.Context, func(err error)) {
+		resource := method
+		if resourcePath != "" {
+			resource = method + " " + resourcePath
+		}
+		spanOpts := []tracer.StartSpanOption{
+			tracer.ResourceName(resource),
+			tracer.SpanType(ext.SpanTypeWorker),
+			tracer.Tag(ext.Component, tr.component),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+			tracer.Tag("pubsub.method", method),
+			tracer.Measured(),
+		}
+		if projectID := projectIDFromResourceName(resourcePath); projectID != "" {
+			spanOpts = append(spanOpts, tracer.Tag(ext.GCPProjectID, projectID))
+		}
+		if cfg.serviceName != "" {
+			spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
+		}
 
-	span, ctx := tracer.StartSpanFromContext(ctx, cfg.requestSpanName, spanOpts...)
+		span, ctx := tracer.StartSpanFromContext(ctx, cfg.requestSpanName, spanOpts...)
 
-	var once sync.Once
-	finish := func(err error) {
-		once.Do(func() {
-			span.Finish(tracer.WithError(err))
-		})
+		var once sync.Once
+		finish := func(err error) {
+			once.Do(func() {
+				span.Finish(tracer.WithError(err))
+			})
+		}
+		return ctx, finish
 	}
-	return ctx, finish
 }
 
 // extracts the GCP project ID from a Pubsub resource name starting with

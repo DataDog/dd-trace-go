@@ -40,13 +40,13 @@ func defaultTracer() *pubsubtrace.Tracer {
 // interceptor on the dial that creates the connection (WithGRPCDialOption on
 // the client constructor is ignored in that case).
 func UnaryAdminInterceptor(opts ...pubsubtrace.Option) grpc.UnaryClientInterceptor {
-	tr := defaultTracer()
+	traceAdmin := defaultTracer().TraceAdmin(opts...)
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, callOpts ...grpc.CallOption) error {
 		resourcePath, ok := resolveAdminResource(req)
 		if !ok {
 			return invoker(ctx, method, req, reply, cc, callOpts...)
 		}
-		ctx, finish := tr.TraceAdmin(ctx, adminMethodName(method), resourcePath, opts...)
+		ctx, finish := traceAdmin(ctx, adminMethodName(method), resourcePath)
 		err := invoker(ctx, method, req, reply, cc, callOpts...)
 		finish(err)
 		return err
