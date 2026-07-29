@@ -16,6 +16,27 @@ import (
 
 var _ msgp.Marshaler = (*Event)(nil)
 
+type invalidCurrentSpanValueError struct{}
+
+func (invalidCurrentSpanValueError) Error() string {
+	return "current span value is not a stack-trace event map"
+}
+
+type invalidNextSpanValueError struct{}
+
+func (invalidNextSpanValueError) Error() string {
+	return "next span value is not a stack-trace event map"
+}
+
+var (
+	// ErrInvalidCurrentSpanValue indicates that an existing _dd.stack value has
+	// an unexpected representation.
+	ErrInvalidCurrentSpanValue error = invalidCurrentSpanValueError{}
+	// ErrInvalidNextSpanValue indicates that a new _dd.stack value has an
+	// unexpected representation.
+	ErrInvalidNextSpanValue error = invalidNextSpanValueError{}
+)
+
 type EventCategory string
 
 const (
@@ -51,6 +72,22 @@ func NewEvent(eventCat EventCategory, options ...Options) *Event {
 		Category: eventCat,
 		Language: "go",
 		Frames:   SkipAndCapture(defaultCallerSkip),
+	}
+
+	for _, opt := range options {
+		opt(event)
+	}
+
+	return event
+}
+
+// NewEventWithSkip creates a new stacktrace event with the given category, type and message,
+// skipping the given number of frames (on top of the default caller skip).
+func NewEventWithSkip(skip int, eventCat EventCategory, options ...Options) *Event {
+	event := &Event{
+		Category: eventCat,
+		Language: "go",
+		Frames:   SkipAndCapture(skip + defaultCallerSkip),
 	}
 
 	for _, opt := range options {
@@ -117,22 +154,21 @@ func AddToSpanUnconditionally(span trace.TagSetter, events ...*Event) {
 	span.SetTag(SpanKey, value)
 }
 
-// MergeSpanValues combines two _dd.stack meta_struct values. It returns false
-// when either value does not have the stack-trace event map representation.
-// The caller must synchronize access to current.
-func MergeSpanValues(current, next any) (any, bool) {
+// MergeSpanValues combines two _dd.stack meta_struct values. The caller must
+// synchronize access to current.
+func MergeSpanValues(current, next any) (any, error) {
 	currentEvents, ok := current.(map[string][]*Event)
 	if !ok {
-		return nil, false
+		return nil, ErrInvalidCurrentSpanValue
 	}
 	nextEvents, ok := next.(map[string][]*Event)
 	if !ok {
-		return nil, false
+		return nil, ErrInvalidNextSpanValue
 	}
 	for category, events := range nextEvents {
 		currentEvents[category] = append(currentEvents[category], events...)
 	}
-	return currentEvents, true
+	return currentEvents, nil
 }
 
 func getSpanValue(events ...*Event) internal.MetaStructValue {

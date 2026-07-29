@@ -23,6 +23,7 @@ import (
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -652,6 +653,27 @@ func TestSpanSetMetaStruct(t *testing.T) {
 		wg.Wait()
 		assert.Len(t, span.metaStruct, count)
 	})
+}
+
+func TestSpanStackTraceMergeWarning(t *testing.T) {
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
+
+	span := newBasicSpan("web.request")
+	span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: "invalid current"})
+	event := &stacktrace.Event{Category: stacktrace.VulnerabilityEvent}
+	valid := map[string][]*stacktrace.Event{
+		string(stacktrace.VulnerabilityEvent): {event},
+	}
+	span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: valid})
+	span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: "invalid next"})
+
+	require.Len(t, telemetryClient.Logs, 2)
+	require.Contains(t, telemetryClient.Logs, telemetrytest.LogLine{
+		Level: telemetry.LogWarn,
+		Text:  "failed to merge stack-trace span values",
+	})
+	require.Equal(t, valid, span.metaStruct[stacktrace.SpanKey])
 }
 
 func TestSpanSetTagError(t *testing.T) {

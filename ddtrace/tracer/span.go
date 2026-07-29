@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"math"
 	"reflect"
@@ -39,6 +40,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
@@ -844,8 +846,16 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 		s.metaStruct = make(metaStructMap, 1)
 	}
 	if key == stacktrace.SpanKey {
-		if merged, ok := stacktrace.MergeSpanValues(s.metaStruct[key], v); ok {
-			v = merged
+		if current, ok := s.metaStruct[key]; ok {
+			merged, err := stacktrace.MergeSpanValues(current, v)
+			if err != nil {
+				telemetrylog.Warn("failed to merge stack-trace span values", slog.Any("error", telemetrylog.NewSafeError(err)))
+				if err == stacktrace.ErrInvalidNextSpanValue {
+					v = current
+				}
+			} else {
+				v = merged
+			}
 		}
 	}
 	s.metaStruct[key] = v

@@ -283,54 +283,46 @@ func (i *Instrumentation) ActiveSpanKey() any {
 	return internal.ActiveSpanKey
 }
 
-// StackTrace is an opaque stack trace captured by an [Instrumentation].
-// Its zero value is ignored by [Instrumentation.RecordStackTraces].
-type StackTrace struct {
-	event *stacktrace.Event
-}
+// StackTrace is a stack-trace event captured by an [Instrumentation]. Its
+// fields must not be mutated after passing it to [Instrumentation.RecordStackTrace].
+type StackTrace = stacktrace.Event
 
-// Valid reports whether the stack trace was captured and can be recorded.
-func (s StackTrace) Valid() bool {
-	return s.event != nil
-}
+// StackTraceCategory identifies the kind of event associated with a stack trace.
+type StackTraceCategory = stacktrace.EventCategory
 
-// CaptureStackTrace captures a vulnerability stack trace identified by id.
-// skip is the number of leading frames to omit after the internal stack-trace
-// filtering and depth limit have been applied. It returns the zero value when
-// id is empty or no frames remain. The caller is responsible for applying its
-// product-specific stack-trace enablement configuration.
-func (i *Instrumentation) CaptureStackTrace(id string, skip int) StackTrace {
-	if id == "" {
-		return StackTrace{}
+const (
+	// StackTraceCategoryException identifies an exception stack trace.
+	StackTraceCategoryException StackTraceCategory = stacktrace.ExceptionEvent
+	// StackTraceCategoryVulnerability identifies a vulnerability stack trace.
+	StackTraceCategoryVulnerability StackTraceCategory = stacktrace.VulnerabilityEvent
+	// StackTraceCategoryExploit identifies an exploit stack trace.
+	StackTraceCategoryExploit StackTraceCategory = stacktrace.ExploitEvent
+)
+
+// CaptureStackTrace captures a stack trace for an event in category. id
+// correlates the stack trace with its event and is required for vulnerability
+// and exploit categories. skip is the number of additional runtime caller
+// frames omitted before internal stack-trace frames are filtered. It returns
+// nil when id is required but empty or when no frames are captured. The caller
+// is responsible for applying its product-specific enablement configuration.
+func (i *Instrumentation) CaptureStackTrace(category StackTraceCategory, id string, skip int) *StackTrace {
+	if id == "" && category != StackTraceCategoryException {
+		return nil
 	}
-
-	event := stacktrace.NewEvent(stacktrace.VulnerabilityEvent, stacktrace.WithID(id))
-	if skip > 0 {
-		event.Frames = event.Frames[min(skip, len(event.Frames)):]
-	}
+	event := stacktrace.NewEventWithSkip(skip, category, stacktrace.WithID(id))
 	if len(event.Frames) == 0 {
-		return StackTrace{}
+		return nil
 	}
-	return StackTrace{event: event}
+	return event
 }
 
-// RecordStackTraces adds traces to the unfinished local root span's _dd.stack
+// RecordStackTrace adds trace to the unfinished local root span's _dd.stack
 // meta_struct entry. Calls from IAST, AppSec, and other producers are aggregated
-// by event category and encoded when the span is serialized. Zero-value traces
-// and a nil span are ignored. The caller is responsible for product-specific
-// enablement.
-func (i *Instrumentation) RecordStackTraces(span *tracer.Span, traces ...StackTrace) {
-	if span == nil {
-		return
-	}
-
-	events := make([]*stacktrace.Event, 0, len(traces))
-	for _, trace := range traces {
-		if trace.event != nil {
-			events = append(events, trace.event)
-		}
-	}
-	if len(events) == 0 {
+// by event category and encoded when the span is serialized. A nil trace, a
+// trace without frames, and a nil span are ignored. The caller is responsible
+// for product-specific enablement.
+func (i *Instrumentation) RecordStackTrace(span *tracer.Span, trace *StackTrace) {
+	if span == nil || trace == nil || len(trace.Frames) == 0 {
 		return
 	}
 
@@ -338,5 +330,5 @@ func (i *Instrumentation) RecordStackTraces(span *tracer.Span, traces ...StackTr
 	if root == nil {
 		return
 	}
-	stacktrace.AddToSpanUnconditionally(root, events...)
+	stacktrace.AddToSpanUnconditionally(root, trace)
 }

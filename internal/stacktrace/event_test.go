@@ -25,6 +25,15 @@ func TestNewEvent(t *testing.T) {
 	require.GreaterOrEqual(t, len(event.Frames), 2)
 }
 
+func TestNewEventWithSkip(t *testing.T) {
+	event := NewEventWithSkip(1_000, ExploitEvent, WithMessage("message"), WithID("id"))
+	require.Equal(t, ExploitEvent, event.Category)
+	require.Equal(t, "go", event.Language)
+	require.Equal(t, "message", event.Message)
+	require.Equal(t, "id", event.ID)
+	require.Empty(t, event.Frames)
+}
+
 func TestEventToSpan(t *testing.T) {
 	event1 := NewEvent(ExceptionEvent, WithMessage("message1"))
 	event2 := NewEvent(ExploitEvent, WithMessage("message2"))
@@ -69,15 +78,17 @@ func TestMergeSpanValues(t *testing.T) {
 	current := getSpanValue(existing).Value
 	next := getSpanValue(additional, exploit).Value
 
-	merged, ok := MergeSpanValues(current, next)
-	require.True(t, ok)
+	merged, err := MergeSpanValues(current, next)
+	require.NoError(t, err)
 	require.Equal(t, map[string][]*Event{
 		"vulnerability": {existing, additional},
 		"exploit":       {exploit},
 	}, merged)
 
-	_, ok = MergeSpanValues(current, "invalid")
-	require.False(t, ok)
+	_, err = MergeSpanValues("invalid", next)
+	require.ErrorIs(t, err, ErrInvalidCurrentSpanValue)
+	_, err = MergeSpanValues(current, "invalid")
+	require.ErrorIs(t, err, ErrInvalidNextSpanValue)
 }
 
 func TestMsgPackSerialization(t *testing.T) {

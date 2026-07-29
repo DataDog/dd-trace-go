@@ -23,21 +23,26 @@ import (
 func TestInstrumentationStackTrace(t *testing.T) {
 	instr := &Instrumentation{}
 
-	captured := instr.CaptureStackTrace("stack-id", 0)
-	require.True(t, captured.Valid())
-	require.NotNil(t, captured.event)
-	require.Equal(t, stacktrace.VulnerabilityEvent, captured.event.Category)
-	require.Equal(t, "stack-id", captured.event.ID)
-	require.Equal(t, "go", captured.event.Language)
-	require.NotEmpty(t, captured.event.Frames)
+	for _, category := range []StackTraceCategory{
+		StackTraceCategoryException,
+		StackTraceCategoryVulnerability,
+		StackTraceCategoryExploit,
+	} {
+		captured := instr.CaptureStackTrace(category, "stack-id", 0)
+		require.NotNil(t, captured)
+		require.Equal(t, category, captured.Category)
+		require.Equal(t, "stack-id", captured.ID)
+		require.Equal(t, "go", captured.Language)
+		require.NotEmpty(t, captured.Frames)
+	}
 
-	skipped := instr.CaptureStackTrace("stack-id", len(captured.event.Frames)+1)
-	require.False(t, skipped.Valid())
-	require.Nil(t, skipped.event)
-	require.False(t, instr.CaptureStackTrace("", 0).Valid())
+	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryException, "", 0))
+	require.Nil(t, instr.CaptureStackTrace(StackTraceCategoryVulnerability, "", 0))
+	require.Nil(t, instr.CaptureStackTrace(StackTraceCategoryExploit, "", 0))
+	require.Nil(t, instr.CaptureStackTrace(StackTraceCategoryException, "", 1_000))
 }
 
-func TestInstrumentationRecordStackTraces(t *testing.T) {
+func TestInstrumentationRecordStackTrace(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -45,28 +50,29 @@ func TestInstrumentationRecordStackTraces(t *testing.T) {
 	root := tracer.StartSpan("root")
 	child := tracer.StartSpan("child", tracer.ChildOf(root.Context()))
 
-	first := instr.CaptureStackTrace("first", 0)
-	second := instr.CaptureStackTrace("second", 0)
-	instr.RecordStackTraces(child, StackTrace{}, first, second)
+	first := instr.CaptureStackTrace(StackTraceCategoryVulnerability, "first", 0)
+	second := instr.CaptureStackTrace(StackTraceCategoryVulnerability, "second", 0)
+	instr.RecordStackTrace(child, first)
+	instr.RecordStackTrace(child, second)
 
 	require.NotContains(t, child.AsMap(), stacktrace.SpanKey)
 	value, ok := root.AsMap()[stacktrace.SpanKey]
 	require.True(t, ok)
 	eventsByCategory, ok := value.(map[string][]*stacktrace.Event)
 	require.True(t, ok)
-	require.Equal(t, []*stacktrace.Event{first.event, second.event}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
+	require.Equal(t, []*stacktrace.Event{first, second}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
 
 	exploit := stacktrace.NewEvent(stacktrace.ExploitEvent, stacktrace.WithID("exploit"))
 	stacktrace.AddToSpanUnconditionally(root, exploit)
-	third := instr.CaptureStackTrace("third", 0)
-	instr.RecordStackTraces(child, third)
+	third := instr.CaptureStackTrace(StackTraceCategoryVulnerability, "third", 0)
+	instr.RecordStackTrace(child, third)
 
 	eventsByCategory = root.AsMap()[stacktrace.SpanKey].(map[string][]*stacktrace.Event)
-	require.Equal(t, []*stacktrace.Event{first.event, second.event, third.event}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
+	require.Equal(t, []*stacktrace.Event{first, second, third}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
 	require.Equal(t, []*stacktrace.Event{exploit}, eventsByCategory[string(stacktrace.ExploitEvent)])
 }
 
-func TestInstrumentationRecordStackTracesConcurrent(t *testing.T) {
+func TestInstrumentationRecordStackTraceConcurrent(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -76,10 +82,11 @@ func TestInstrumentationRecordStackTracesConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range count {
 		wg.Go(func() {
-			instr.RecordStackTraces(span, StackTrace{event: &stacktrace.Event{
-				Category: stacktrace.VulnerabilityEvent,
+			instr.RecordStackTrace(span, &StackTrace{
+				Category: StackTraceCategoryVulnerability,
 				ID:       strconv.Itoa(i),
-			}})
+				Frames:   stacktrace.StackTrace{{}},
+			})
 		})
 	}
 	wg.Wait()
@@ -107,27 +114,27 @@ func TestInstrumentationStackTraceIgnoresAppSecDisablement(t *testing.T) {
 
 	instr := &Instrumentation{}
 	span := tracer.StartSpan("span")
-	captured := instr.CaptureStackTrace("stack-id", 0)
-	instr.RecordStackTraces(span, captured)
+	captured := instr.CaptureStackTrace(StackTraceCategoryVulnerability, "stack-id", 0)
+	instr.RecordStackTrace(span, captured)
 
-	require.True(t, captured.Valid())
+	require.NotNil(t, captured)
 	value, ok := span.AsMap()[stacktrace.SpanKey]
 	require.True(t, ok)
 	eventsByCategory, ok := value.(map[string][]*stacktrace.Event)
 	require.True(t, ok)
-	require.Equal(t, []*stacktrace.Event{captured.event}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
+	require.Equal(t, []*stacktrace.Event{captured}, eventsByCategory[string(stacktrace.VulnerabilityEvent)])
 }
 
-func TestInstrumentationRecordStackTracesIgnoresEmptyInput(t *testing.T) {
+func TestInstrumentationRecordStackTraceIgnoresEmptyInput(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	instr := &Instrumentation{}
 	span := tracer.StartSpan("span")
 
-	instr.RecordStackTraces(nil, instr.CaptureStackTrace("unused", 0))
-	instr.RecordStackTraces(span)
-	instr.RecordStackTraces(span, StackTrace{})
+	instr.RecordStackTrace(nil, instr.CaptureStackTrace(StackTraceCategoryException, "unused", 0))
+	instr.RecordStackTrace(span, nil)
+	instr.RecordStackTrace(span, &StackTrace{})
 
 	require.NotContains(t, span.AsMap(), stacktrace.SpanKey)
 }
