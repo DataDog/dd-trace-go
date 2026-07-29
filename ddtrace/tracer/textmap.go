@@ -1384,6 +1384,12 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		return b.String()
 	}
 	for s := range strings.SplitSeq(strings.Trim(oldState, " \t"), ",") {
+		// The W3C spec allows optional whitespace (OWS) around the commas
+		// separating list-members, so an entry may arrive as " dd=..." or
+		// " ot=...". Trim before the prefix check: filtering on the raw entry
+		// would miss OWS-prefixed managed members and re-emit them here,
+		// producing duplicate dd=/ot= list-members and an invalid tracestate.
+		s = strings.Trim(s, " \t")
 		// dd= and ot= are DD-managed and re-emitted above; drop any inbound copy.
 		if strings.HasPrefix(s, "dd=") || strings.HasPrefix(s, "ot=") {
 			continue
@@ -1395,7 +1401,7 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 			break
 		}
 		b.WriteString(",")
-		b.WriteString(strings.Trim(s, " \t"))
+		b.WriteString(s)
 	}
 	return b.String()
 }

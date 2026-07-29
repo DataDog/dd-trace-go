@@ -3055,6 +3055,28 @@ func TestMalformedTID(t *testing.T) {
 	})
 }
 
+// Inbound tracestate members may carry optional whitespace (OWS) after the
+// commas per the W3C spec. composeTracestate must strip the DD-managed dd= and
+// ot= members regardless of that whitespace, otherwise it re-emits them and
+// produces duplicate list-members (invalid tracestate).
+func TestComposeTracestateDropsManagedMembersWithOWS(t *testing.T) {
+	ctx := new(SpanContext)
+	ctx.trace = newTrace()
+	ctx.traceID = traceIDFrom64Bits(1)
+	ctx.spanID = 1
+	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+	ctx.trace.setOtelInherited(0x1234567890abcd, true, 0, false)
+
+	// OWS after each comma, with the managed members not first in the list.
+	oldState := "vendorA=x, ot=rv:aabbccddeeff00, dd=s:9, vendorB=y"
+	got := composeTracestate(ctx, 1, oldState)
+
+	assert.Equal(t, 1, strings.Count(got, "dd="), "exactly one dd= member: %q", got)
+	assert.Equal(t, 1, strings.Count(got, "ot="), "exactly one ot= member: %q", got)
+	assert.Contains(t, got, "vendorA=x")
+	assert.Contains(t, got, "vendorB=y")
+}
+
 func BenchmarkComposeTracestate(b *testing.B) {
 	ctx := new(SpanContext)
 	ctx.trace = newTrace()
