@@ -214,16 +214,17 @@ jobs:
           # Only run OTelc tests for integrations that have an otelc.yaml file.
           # TODO: remove this once all integrations are supported.
           CONTRIB_DIR="${{ github.workspace }}/dd-trace-go/contrib"
+          PREFIX="github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/"
           export PACKAGE_NAMES="github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/otelc"
-          while IFS=$'\t' read -r pkg dir; do
+          while IFS= read -r pkg; do
             [[ "$dir" == "$PWD" ]] && continue
-            rel="${dir#"$PWD"/}"
+            rel="${pkg#"$PREFIX"}"
             integration="${rel%%/*}"
             contrib_path="${integration//_//}"
             if [[ -d "${CONTRIB_DIR}/${contrib_path}" ]] && [[ -n "$(find "${CONTRIB_DIR}/${contrib_path}" -type f -name otelc.yaml -print -quit)" ]]; then
               PACKAGE_NAMES="${PACKAGE_NAMES} ${pkg}"
             fi
-          done < <(go list -f '{{.ImportPath}}'$'\t''{{.Dir}}' ./... | grep -v /civisibility)
+          done < <(go list -f '{{.ImportPath}}' ./... | grep -v /civisibility)
 
           if [[ -z "${PACKAGE_NAMES// /}" ]]; then
             echo "No integrations with an otelc.yaml file found; skipping otelc test run."
