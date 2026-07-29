@@ -28,6 +28,14 @@ const (
 	SpanKindTool       SpanKind = "tool"
 )
 
+// SpanStatus identifies an LLM Obs span status.
+type SpanStatus string
+
+const (
+	SpanStatusOK    SpanStatus = "ok"
+	SpanStatusError SpanStatus = "error"
+)
+
 // SpanLink links a span using decimal-string IDs.
 type SpanLink struct {
 	TraceID     string            `json:"trace_id"`
@@ -41,7 +49,7 @@ type SpanLink struct {
 type DDAttributes struct {
 	SpanID     string `json:"span_id"`
 	TraceID    string `json:"trace_id"`
-	APMTraceID string `json:"apm_trace_id,omitempty"`
+	APMTraceID string `json:"apm_trace_id"`
 	Scope      string `json:"scope,omitempty"`
 }
 
@@ -53,6 +61,7 @@ type LLMObsSpanEvent struct {
 	Output        string         `json:"-"`
 	Metadata      map[string]any `json:"-"`
 	Start         time.Time      `json:"-"`
+	Service       string         `json:"-"`
 	APMTraceID    string         `json:"-"`
 	ErrorMessage  string         `json:"-"`
 	ErrorType     string         `json:"-"`
@@ -64,10 +73,9 @@ type LLMObsSpanEvent struct {
 	SessionID        string             `json:"session_id,omitempty"`
 	Tags             []string           `json:"tags,omitempty"`
 	Name             string             `json:"name,omitempty"`
-	Service          string             `json:"service,omitempty"`
 	StartNS          int64              `json:"start_ns,omitempty"`
-	Duration         int64              `json:"duration,omitempty"`
-	Status           string             `json:"status,omitempty"`
+	Duration         time.Duration      `json:"duration,omitempty"`
+	Status           SpanStatus         `json:"status,omitempty"`
 	StatusMessage    string             `json:"status_message,omitempty"`
 	Meta             map[string]any     `json:"meta,omitempty"`
 	Metrics          map[string]float64 `json:"metrics,omitempty"`
@@ -119,11 +127,11 @@ func (c *Transport) PushSpanEventsWithResult(
 	if len(events) == 0 {
 		return RequestResult{}, nil
 	}
-	path := EndpointLLMSpan
+	path := endpointLLMSpan
 	method := http.MethodPost
 	body := NewPushSpanEventsRequests(events)
 
-	result, err := c.jsonRequest(ctx, method, path, SubdomainLLMSpan, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultTimeout)
 	if err != nil {
 		return summarizeRequest(result), err
 	}

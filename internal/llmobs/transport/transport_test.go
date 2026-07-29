@@ -57,6 +57,38 @@ func TestPushSpanEventsWithResult(t *testing.T) {
 		"expected the keep-alive connection to be reused across requests")
 }
 
+func TestRequestDrainsLargeErrorResponse(t *testing.T) {
+	respBody := bytes.Repeat([]byte("x"), 3<<20)
+	var newConns atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(respBody)
+	}))
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	tr := &Transport{
+		httpClient:  srv.Client(),
+		testBaseURL: srv.URL,
+		agentless:   true,
+	}
+	for range 2 {
+		res, err := tr.PushSpanEventsWithResult(context.Background(), []*LLMObsSpanEvent{{
+			TraceID: "trace",
+			SpanID:  "span",
+		}})
+		assert.Error(t, err)
+		assert.Len(t, res.Body, 1<<20)
+	}
+	assert.Equal(t, int32(1), newConns.Load())
+}
+
 func mkHeader(kv ...string) http.Header {
 	h := http.Header{}
 	for i := 0; i+1 < len(kv); i += 2 {
@@ -65,20 +97,20 @@ func mkHeader(kv ...string) http.Header {
 	return h
 }
 
-func TestParseRetryAfterIgnoresRetryAfterHeader(t *testing.T) {
+func TestParseRetryAfter(t *testing.T) {
 	cases := []struct {
 		name string
 		h    http.Header
 		want time.Duration
 	}{
-		{"Retry-After is ignored", mkHeader("Retry-After", "890"), time.Second},
-		{"x-ratelimit-reset still honored", mkHeader("x-ratelimit-reset", "4"), 4 * time.Second},
-		{"Retry-After does not override x-ratelimit-reset", mkHeader("Retry-After", "890", "x-ratelimit-reset", "3"), 3 * time.Second},
-		{"default 1s when no header", http.Header{}, time.Second},
+		{name: "ignores Retry-After", h: mkHeader("Retry-After", "890"), want: time.Second},
+		{name: "uses x-ratelimit-reset", h: mkHeader("x-ratelimit-reset", "4"), want: 4 * time.Second},
+		{name: "x-ratelimit-reset takes precedence", h: mkHeader("Retry-After", "890", "x-ratelimit-reset", "3"), want: 3 * time.Second},
+		{name: "defaults to one second", h: http.Header{}, want: time.Second},
 	}
 	for _, tc := range cases {
-		if got := parseRetryAfter(tc.h); got != tc.want {
-			t.Errorf("%s: parseRetryAfter = %v, want %v", tc.name, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, parseRetryAfter(tc.h))
+		})
 	}
 }

@@ -34,16 +34,15 @@ const (
 )
 
 const (
-	// LLM Obs intake paths and EVP subdomains.
-	EndpointEvalMetric = "/api/intake/llm-obs/v2/eval-metric"
-	EndpointLLMSpan    = "/api/v2/llmobs"
+	endpointEvalMetric = "/api/intake/llm-obs/v2/eval-metric"
+	endpointLLMSpan    = "/api/v2/llmobs"
 
 	endpointPrefixEVPProxy  = "/evp_proxy/v2"
 	endpointPrefixDNE       = "/api/unstable/llm-obs/v1"
 	endpointPrefixDNEStable = "/api/v2/llm-obs/v1"
 
-	SubdomainLLMSpan    = "llmobs-intake"
-	SubdomainEvalMetric = "api"
+	subdomainLLMSpan    = "llmobs-intake"
+	subdomainEvalMetric = "api"
 	subdomainDNE        = "api"
 )
 
@@ -164,7 +163,6 @@ func (c *Transport) baseURL(subdomain string) string {
 	return u
 }
 
-// encodeJSON encodes v without HTML escaping.
 func encodeJSON(v any) (*bytes.Buffer, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -358,12 +356,10 @@ func readResponseBody(body io.Reader) []byte {
 		return nil
 	}
 	response, _ := io.ReadAll(io.LimitReader(body, 1<<20))
-	_, _ = io.Copy(io.Discard, io.LimitReader(body, 1<<20))
+	_, _ = io.Copy(io.Discard, body)
 	return response
 }
 
-// parseRetryAfter reports how long to wait before retrying a rate-limited
-// request, from the Datadog-specific x-ratelimit-reset header.
 func parseRetryAfter(h http.Header) time.Duration {
 	rateLimitReset := h.Get(headerRateLimitReset)
 	waitSeconds := int64(1)

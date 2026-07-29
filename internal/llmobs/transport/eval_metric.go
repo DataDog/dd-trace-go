@@ -11,6 +11,16 @@ import (
 	"net/http"
 )
 
+// EvalMetricType identifies an evaluation metric value type.
+type EvalMetricType string
+
+const (
+	EvalMetricTypeCategorical EvalMetricType = "categorical"
+	EvalMetricTypeScore       EvalMetricType = "score"
+	EvalMetricTypeBoolean     EvalMetricType = "boolean"
+	EvalMetricTypeJSON        EvalMetricType = "json"
+)
+
 // EvaluationJoinOn represents how to join evaluation metrics to spans.
 // Exactly one of Span or Tag should be provided.
 type EvaluationJoinOn struct {
@@ -38,19 +48,19 @@ type EvaluationTagJoin struct {
 
 // LLMObsMetric represents an evaluation metric for LLMObs spans.
 type LLMObsMetric struct {
-	JoinOn           EvaluationJoinOn `json:"join_on"`
-	MetricType       string           `json:"metric_type,omitempty"`
-	Label            string           `json:"label,omitempty"`
-	CategoricalValue *string          `json:"categorical_value,omitempty"`
-	ScoreValue       *float64         `json:"score_value,omitempty"`
-	BooleanValue     *bool            `json:"boolean_value,omitempty"`
-	JSONValue        map[string]any   `json:"json_value,omitempty"`
-	MLApp            string           `json:"ml_app,omitempty"`
-	TimestampMS      int64            `json:"timestamp_ms,omitempty"`
-	Tags             []string         `json:"tags,omitempty"`
-	Assessment       string           `json:"assessment,omitempty"`
-	Reasoning        string           `json:"reasoning,omitempty"`
-	Metadata         map[string]any   `json:"metadata,omitempty"`
+	JoinOn             EvaluationJoinOn `json:"join_on"`
+	MetricType         EvalMetricType   `json:"metric_type,omitempty"`
+	Label              string           `json:"label,omitempty"`
+	CategoricalValue   *string          `json:"categorical_value,omitempty"`
+	ScoreValue         *float64         `json:"score_value,omitempty"`
+	BooleanValue       *bool            `json:"boolean_value,omitempty"`
+	JSONValue          map[string]any   `json:"json_value,omitempty"`
+	MLApp              string           `json:"ml_app,omitempty"`
+	TimestampMS        int64            `json:"timestamp_ms,omitempty"`
+	Tags               []string         `json:"tags,omitempty"`
+	Assessment         string           `json:"assessment,omitempty"`
+	Reasoning          string           `json:"reasoning,omitempty"`
+	EvalMetricMetadata map[string]any   `json:"eval_metric_metadata,omitempty"`
 }
 
 type PushMetricsRequest struct {
@@ -64,6 +74,18 @@ type PushMetricsRequestData struct {
 
 type PushMetricsRequestDataAttributes struct {
 	Metrics []*LLMObsMetric `json:"metrics"`
+}
+
+// NewPushMetricsRequest builds an evaluation metric envelope.
+func NewPushMetricsRequest(metrics []*LLMObsMetric) *PushMetricsRequest {
+	return &PushMetricsRequest{
+		Data: PushMetricsRequestData{
+			Type: "evaluation_metric",
+			Attributes: PushMetricsRequestDataAttributes{
+				Metrics: metrics,
+			},
+		},
+	}
 }
 
 func (c *Transport) PushEvalMetrics(
@@ -82,18 +104,11 @@ func (c *Transport) PushEvalMetricsWithResult(
 	if len(metrics) == 0 {
 		return RequestResult{}, nil
 	}
-	path := EndpointEvalMetric
+	path := endpointEvalMetric
 	method := http.MethodPost
-	body := &PushMetricsRequest{
-		Data: PushMetricsRequestData{
-			Type: "evaluation_metric",
-			Attributes: PushMetricsRequestDataAttributes{
-				Metrics: metrics,
-			},
-		},
-	}
+	body := NewPushMetricsRequest(metrics)
 
-	result, err := c.jsonRequest(ctx, method, path, SubdomainEvalMetric, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
 	if err != nil {
 		return summarizeRequest(result), err
 	}

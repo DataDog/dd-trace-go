@@ -172,7 +172,7 @@ func trackSubmitEvaluationMetric(metric *transport.LLMObsMetric, err error) {
 	metricType := "other"
 	hasTag := false
 	if metric != nil {
-		metricType = metric.MetricType
+		metricType = string(metric.MetricType)
 		hasTag = metric.JoinOn.Tag != nil
 	}
 
@@ -225,7 +225,7 @@ func spanEventTags(event *transport.LLMObsSpanEvent) []string {
 	integration := findTagValue(event.Tags, "integration:")
 	mlApp := findTagValue(event.Tags, "ml_app:")
 	autoInstrumented := integration != ""
-	hasError := event.Status == string(SpanStatusError)
+	hasError := event.Status == SpanStatusError
 
 	return []string{
 		"span_kind:" + spanKind,
