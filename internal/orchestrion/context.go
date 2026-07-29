@@ -96,7 +96,23 @@ type GLSPopper func()
 // most once. The zero value is ready to use; a nil inner pointer means no
 // popper is currently captured.
 type GLSPopperCell struct {
-	ptr atomic.Pointer[GLSPopper]
+	ptr atomic.Pointer[glsExit]
+}
+
+// glsExit is what a [GLSPopperCell] actually holds: the captured exit together
+// with the token of the entry it closes.
+//
+// The token is here so that removing an entry can tell whether the exit it is
+// about to discard is that entry's, or a different and still-live activation's.
+// One value activated more than once shares a single cell, and first-wins means
+// the exit names the FIRST activation. Activate B, then A, then B again: closing
+// A sweeps A and the upper B, but the cell those entries point at is the lower
+// B's only way out, so clearing it unconditionally strands the lower B. Pairing
+// the two in one struct keeps them consistent under a single atomic load, which
+// two separate fields could not do.
+type glsExit struct {
+	pop   GLSPopper
+	token uint64
 }
 
 // GLSActivate is woven into span/operation activation (the tracer's
@@ -135,8 +151,7 @@ func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell) {
 		// on re-activation). CompareAndSwap keeps this race-free when two
 		// goroutines activate concurrently: only one CAS wins; the other's
 		// closure is discarded, preserving first-wins semantics.
-		fn := GLSPopper(GLSPopFunc(key, token))
-		pop.ptr.CompareAndSwap(nil, &fn)
+		pop.ptr.CompareAndSwap(nil, &glsExit{pop: GLSPopFunc(key, token), token: token})
 	}
 }
 
@@ -158,8 +173,8 @@ func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopperCell) {
 	}
 	// Atomically read and clear the popper so a repeated or concurrent finish
 	// invokes it at most once.
-	if fn := pop.ptr.Swap(nil); fn != nil {
-		(*fn)()
+	if e := pop.ptr.Swap(nil); e != nil {
+		e.pop()
 	}
 }
 

@@ -146,8 +146,16 @@ func (s *contextStack) remove(key any, stack []entry, i int) {
 // GLSDeactivate's Swap simply finds nil and runs nothing.
 func invalidatePoppers(removed []entry) {
 	for _, e := range removed {
-		if e.pop != nil {
-			e.pop.ptr.Store(nil)
+		if e.pop == nil {
+			continue
+		}
+		// Only discard the exit if it is this entry's. A value activated more than
+		// once shares one cell whose exit names the first activation, so an entry
+		// removed from above must leave it alone — it is the surviving lower
+		// entry's only way out. CompareAndSwap rather than Store so an exit
+		// captured between the load and here is not clobbered.
+		if cur := e.pop.ptr.Load(); cur != nil && cur.token == e.token {
+			e.pop.ptr.CompareAndSwap(cur, nil)
 		}
 	}
 }

@@ -100,7 +100,7 @@ func TestGLSActivate(t *testing.T) {
 		fn := pop.ptr.Load()
 		require.NotNil(t, fn, "popper should be captured")
 
-		(*fn)()
+		fn.pop()
 		require.Nil(t, getDDContextStack().Peek(key("k")), "popper should remove the value")
 	})
 
@@ -145,7 +145,7 @@ func TestGLSReset(t *testing.T) {
 		ran := 0
 		var pop GLSPopperCell
 		fn := GLSPopper(func() { ran++ })
-		pop.ptr.Store(&fn)
+		pop.ptr.Store(&glsExit{pop: fn})
 
 		GLSReset(&reclaimable, &pop)
 		require.False(t, reclaimable.Load(), "reclaimable must be reset to false")
@@ -156,7 +156,7 @@ func TestGLSReset(t *testing.T) {
 	t.Run("tolerates nil reclaimable (dyngo operations)", func(t *testing.T) {
 		var pop GLSPopperCell
 		fn := GLSPopper(func() {})
-		pop.ptr.Store(&fn)
+		pop.ptr.Store(&glsExit{pop: fn})
 		GLSReset(nil, &pop) // must not panic
 		require.Nil(t, pop.ptr.Load())
 	})
@@ -168,7 +168,7 @@ func TestGLSDeactivate(t *testing.T) {
 		popped := 0
 		var pop GLSPopperCell
 		fn := GLSPopper(func() { popped++ })
-		pop.ptr.Store(&fn)
+		pop.ptr.Store(&glsExit{pop: fn})
 
 		GLSDeactivate(&reclaimable, &pop)
 		require.True(t, reclaimable.Load(), "span should be marked reclaimable")
@@ -407,4 +407,31 @@ func TestGLSReactivationAfterSweepStrandsACellessEntry(t *testing.T) {
 		"B's entry outlived B: its popper still named the token PopScope swept, so the exit "+
 			"removed nothing. With no reclaim flag the entry is permanently live, so Peek keeps "+
 			"handing it out and Push never drains it")
+}
+
+// TestGLSSweepKeepsASurvivingEntrysExit covers the case where invalidating a
+// removed entry's exit would discard one that still has work to do.
+//
+// Activate B, then A, then B again. Both B entries share one GLSPopperCell, and
+// first-wins means the exit it holds names the LOWER B. Closing A sweeps A and the
+// upper B, so the upper B's entry is removed — but the cell it points at is still
+// the lower B's only way out. Clearing it unconditionally strands that entry, and
+// with no reclaim flag (dyngo's shape) it stays permanently active.
+func TestGLSSweepKeepsASurvivingEntrysExit(t *testing.T) {
+	t.Cleanup(MockGLS())
+	k := key("celless")
+
+	var popA, popB GLSPopperCell
+	GLSActivate(nil, k, "B", &popB) // lower B: popB's exit names this token
+	GLSActivate(nil, k, "A", &popA)
+	GLSActivate(nil, k, "B", &popB) // upper B: first-wins keeps the lower token
+	require.Equal(t, 3, GLSStackDepth())
+
+	GLSDeactivate(nil, &popA) // sweeps A and the upper B; the lower B survives
+	require.Equal(t, 1, GLSStackDepth(), "A's scope exit removes A and what was opened inside it")
+
+	GLSDeactivate(nil, &popB) // must still close the surviving lower B
+	assert.Equal(t, 0, GLSStackDepth(),
+		"the lower B outlived its own exit: sweeping the upper B cleared the cell whose exit "+
+			"named the lower one, so B's finish removed nothing")
 }
