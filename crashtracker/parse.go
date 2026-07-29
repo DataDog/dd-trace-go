@@ -43,6 +43,22 @@ var (
 	// This format appears when the process is killed directly by a signal (not
 	// wrapped in a panic), in contrast to the bracketed "[signal SIG…]" form.
 	topLevelSignalRe = regexp.MustCompile(`^(SIG[A-Z0-9]+): `)
+
+	// windowsExceptionRe matches the Go runtime's crash header for an
+	// unhandled Windows structured exception, e.g.
+	// "Exception 0xc0000005 0x0 0x18 0x7ff6a2345678" — runtime/signal_windows.go's
+	// winthrow prints ExceptionCode, ExceptionInformation[0],
+	// ExceptionInformation[1], then the faulting PC as four hex fields.
+	// There is no Unix-style signal number here, so this crash kind is
+	// classified without populating SigInfo, which is inherently POSIX-shaped.
+	windowsExceptionRe = regexp.MustCompile(`^Exception (0x[0-9a-fA-F]+)`)
+
+	// framesElidedRe matches the Go runtime's frame-elision marker for a very
+	// deep stack, e.g. "...16777082 frames elided..." — the runtime prints
+	// the innermost and outermost 50 logical frames of a goroutine's stack
+	// and elides the middle (runtime/traceback.go). It is not a frame itself:
+	// it has no source location line following it.
+	framesElidedRe = regexp.MustCompile(`^\.\.\.\d+ frames elided\.\.\.$`)
 )
 
 // maxReportThreads bounds how many goroutines a single report includes. A
@@ -196,6 +212,17 @@ func parseFrames(lines []string) (frames []Frame, incomplete bool, consumed int)
 			if consumed < len(lines) && isLocationLine(lines[consumed]) {
 				consumed++
 			}
+			continue
+		}
+
+		// The elision marker has no location line of its own, so treating it
+		// as a function line would see the following line as malformed and
+		// break out of the whole stack, discarding every frame the runtime
+		// resumed printing after it — commonly main and the original call
+		// site. Note the gap and continue instead.
+		if framesElidedRe.MatchString(line) {
+			incomplete = true
+			consumed++
 			continue
 		}
 
@@ -366,6 +393,13 @@ func errorType(preamble []string, sigInfo *SigInfo) string {
 	for _, line := range preamble {
 		if rest, ok := strings.CutPrefix(line, "fatal error:"); ok {
 			return fatalErrorType(strings.TrimSpace(rest))
+		}
+		if windowsExceptionRe.MatchString(line) {
+			// A native Windows exception (access violation, breakpoint, ...)
+			// matches neither the Unix signal parser nor "fatal error:"; without
+			// this it would reach the panic default below and misclassify
+			// every native crash on Windows as a Go-level panic.
+			return "WindowsException"
 		}
 	}
 	return "panic"

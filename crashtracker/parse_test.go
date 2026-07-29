@@ -267,6 +267,24 @@ func TestErrorMessageSingleLinePanicUnaffected(t *testing.T) {
 	}
 }
 
+func TestErrorTypeWindowsException(t *testing.T) {
+	// Exact header format from runtime/signal_windows.go's winthrow, verified
+	// against Go's own test suite (crash_test.go, signal_windows_test.go,
+	// syscall_windows_test.go pin "Exception 0x80000003"/"0x2a"/"0xbad").
+	tests := []string{
+		"Exception 0xc0000005 0x0 0x18 0x7ff6a2345678",
+		"Exception 0x80000003 0x0 0x0 0x7ff6a1b2c3d4",
+		"Exception 0x2a 0x0 0x0 0x140001234",
+	}
+	for _, preambleLine := range tests {
+		preamble := []string{preambleLine, "PC=0x7ff6a2345678"}
+		got := errorType(preamble, nil)
+		if got != "WindowsException" {
+			t.Errorf("errorType(%q) = %q, want %q", preambleLine, got, "WindowsException")
+		}
+	}
+}
+
 func TestParseFramesCapsDeepStack(t *testing.T) {
 	// Synthesize a goroutine stack far deeper than maxFramesPerThread, the
 	// shape a real stack-overflow crash produces: one goroutine, thousands of
@@ -291,6 +309,45 @@ func TestParseFramesCapsDeepStack(t *testing.T) {
 	}
 	if consumed != len(lines) {
 		t.Errorf("consumed = %d, want %d (all input lines, even past the cap)", consumed, len(lines))
+	}
+}
+
+func TestParseFramesContinuesPastElisionMarker(t *testing.T) {
+	// Shape of a real captured stack-overflow dump (runtime/traceback.go
+	// prints the innermost 50 and outermost 50 logical frames and elides the
+	// middle): a few inner frames, the elision marker, then the resumed
+	// outer frames down to main.main/runtime.main. Trimmed to a handful of
+	// frames on each side rather than the real dump's 16-million-frame gap.
+	lines := []string{
+		"main.recurse(0x0?)",
+		"\t/tmp/main.go:10 +0x34",
+		"main.recurse(0x0?)",
+		"\t/tmp/main.go:10 +0x34",
+		"...16777082 frames elided...",
+		"main.recurse(0x20?)",
+		"\t/tmp/main.go:10 +0x34",
+		"main.main()",
+		"\t/tmp/main.go:14 +0x24",
+		"runtime.main()",
+		"\t/usr/local/go/src/runtime/proc.go:290 +0x2b4",
+	}
+
+	frames, incomplete, consumed := parseFrames(lines)
+
+	if !incomplete {
+		t.Error("incomplete = false, want true: frames were elided")
+	}
+	if consumed != len(lines) {
+		t.Errorf("consumed = %d, want %d (all lines, including those after the marker)", consumed, len(lines))
+	}
+	// 2 frames before the marker + 3 after (recurse, main.main, runtime.main):
+	// the marker itself contributes no frame.
+	if len(frames) != 5 {
+		t.Fatalf("len(frames) = %d, want 5", len(frames))
+	}
+	last := frames[len(frames)-1]
+	if last.Function != "runtime.main" {
+		t.Errorf("last frame = %+v, want the resumed runtime.main frame to survive", last)
 	}
 }
 
