@@ -40,11 +40,15 @@ jobs:
           policy: self.code-freeze-start
 
       - name: Log code freeze trigger
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MILESTONE_TITLE: ${{ github.event.inputs.milestone_title }}
+          MILESTONE_TITLE: ${{ github.event.milestone.title }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "🥶 Code freeze triggered manually for milestone: ${{ github.event.inputs.milestone_title }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "🥶 Code freeze triggered manually for milestone: $INPUT_MILESTONE_TITLE"
           else
-            echo "🥶 Code freeze triggered by milestone: ${{ github.event.milestone.title }}"
+            echo "🥶 Code freeze triggered by milestone: $MILESTONE_TITLE"
           fi
 
       - name: Checkout repository
