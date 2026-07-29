@@ -24,7 +24,7 @@ func TestGLSFinishResetConcurrentRaces(t *testing.T) {
 		var reclaimable atomic.Bool
 		var pop GLSPopperCell
 		fn := GLSPopper(func() {})
-		pop.ptr.Store(&fn)
+		pop.ptr.Store(&glsExit{pop: fn})
 
 		start := make(chan struct{})
 		var wg sync.WaitGroup
