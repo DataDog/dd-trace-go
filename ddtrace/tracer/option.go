@@ -118,6 +118,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
 	"github.com/valkey-io/valkey-go":                {"Valkey", false},
+	"go.uber.org/zap":                               {"Zap", false},
 }
 
 // Supported trace protocols.
@@ -235,6 +236,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Orchestrion that span may still be referenced from a goroutine-local
 	// storage (GLS) stack whose stale entry has not been drained, so reusing it
 	// can resurface a recycled span or leak the entry (see orchestrion#782).
+	// Recycling also clears the reclaim flag, and that flag now decides which
+	// entry the GLS hands out as a parent, so a pooled span reachable from a
+	// buried entry could parent unrelated work (see contextStack.Peek).
 	// Until the reclaim signal is decoupled from the pooled span, disable
 	// pooling when Orchestrion is active and warn once. Checked after the option
 	// loop so an explicit WithSpanPool(true) is gated too.
@@ -483,6 +487,9 @@ type agentFeatures struct {
 	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
 	peerTags []string
 
+	// traceFilters contains compiled filters advertised by the trace-agent.
+	traceFilters *traceFilters
+
 	// defaultEnv is the trace-agent's default env, used for stats calculation if no env override is present
 	defaultEnv string
 
@@ -599,7 +606,16 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 		SpanMetaStruct     bool     `json:"span_meta_structs"`
 		ObfuscationVersion int      `json:"obfuscation_version"`
 		SpanEvents         bool     `json:"span_events"`
-		Config             struct {
+		FilterTags         struct {
+			Require []string `json:"require"`
+			Reject  []string `json:"reject"`
+		} `json:"filter_tags"`
+		FilterTagsRegex struct {
+			Require []string `json:"require"`
+			Reject  []string `json:"reject"`
+		} `json:"filter_tags_regex"`
+		IgnoreResources []string `json:"ignore_resources"`
+		Config          struct {
 			StatsdPort int    `json:"statsd_port"`
 			DefaultEnv string `json:"default_env"`
 		} `json:"config"`
@@ -616,6 +632,13 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	features.peerTags = info.PeerTags
 	features.obfuscationVersion = info.ObfuscationVersion
 	features.spanEventsAvailable = info.SpanEvents
+	features.traceFilters = newTraceFilters(
+		info.FilterTags.Require,
+		info.FilterTags.Reject,
+		info.FilterTagsRegex.Require,
+		info.FilterTagsRegex.Reject,
+		info.IgnoreResources,
+	)
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
@@ -697,6 +720,10 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 // - Stats Computation is enabled on the tracer (or has 'discovery' FF)
 func (c *config) canComputeStats() bool {
 	a := c.agent.load()
+	return c.canComputeStatsWithAgent(a)
+}
+
+func (c *config) canComputeStatsWithAgent(a agentFeatures) bool {
 	return a.Stats && a.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
 
@@ -1283,6 +1310,29 @@ func WithSpanID(id uint64) StartSpanOption {
 func ChildOf(ctx *SpanContext) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		cfg.Parent = ctx
+	}
+}
+
+// childOfIfUnset is [ChildOf] for a parent that was inferred rather than named
+// by the caller: it yields to any parent an earlier option already set.
+//
+// [StartSpanFromContext] uses it for the parent it derives from an *implicit*
+// active span, which under Orchestrion may come from goroutine-local storage
+// rather than from the context chain. That inference is a guess about which
+// scope we are in, so it must not silently discard the parent a caller passed
+// explicitly — messaging and RPC integrations extract a parent from the wire
+// and pass it as [ChildOf], and losing it splices unrelated traces together.
+// The parent snapshotted by [ContextWithSpan] is not inferred and keeps using
+// [ChildOf], preserving the long-standing "context wins" contract.
+//
+// A nil cfg.Parent counts as unset: [ChildOf] cannot express "make this a root"
+// (see [StartSpanConfig.Parent]), and integrations do pass ChildOf(nil) when
+// extraction is a no-op, e.g. under DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=ignore.
+func childOfIfUnset(ctx *SpanContext) StartSpanOption {
+	return func(cfg *StartSpanConfig) {
+		if cfg.Parent == nil {
+			cfg.Parent = ctx
+		}
 	}
 }
 

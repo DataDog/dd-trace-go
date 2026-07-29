@@ -49,8 +49,8 @@ func TestGLSPopFunc(t *testing.T) {
 	t.Run("same goroutine pops value", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
-		CtxWithValue(context.Background(), key("k"), "v")
-		popFn := GLSPopFunc(key("k"))
+		token := getDDContextStack().Push(key("k"), "v", nil)
+		popFn := GLSPopFunc(key("k"), token)
 
 		require.Equal(t, "v", getDDContextStack().Peek(key("k")))
 
@@ -62,14 +62,14 @@ func TestGLSPopFunc(t *testing.T) {
 	t.Run("different goroutine is no-op", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
-		CtxWithValue(context.Background(), key("k"), "v")
-		popFn := GLSPopFunc(key("k"))
+		token := getDDContextStack().Push(key("k"), "v", nil)
+		popFn := GLSPopFunc(key("k"), token)
 
 		// Simulate a different goroutine by swapping the GLS to a new stack.
 		// In production, each goroutine has its own contextStack pointer in
 		// runtime.g, so getDDContextStack() returns different pointers.
 		originalStack := getDDGLS()
-		differentStack := contextStack(make(map[any][]any))
+		var differentStack contextStack
 		setDDGLS(&differentStack)
 		t.Cleanup(func() { setDDGLS(originalStack) })
 
@@ -85,7 +85,7 @@ func TestGLSPopFunc(t *testing.T) {
 		t.Cleanup(MockGLS())
 		enabled = false // Override MockGLS's enabled=true to test disabled path
 
-		popFn := GLSPopFunc(key("k"))
+		popFn := GLSPopFunc(key("k"), 0)
 		popFn() // must not panic
 	})
 }
@@ -100,7 +100,7 @@ func TestGLSActivate(t *testing.T) {
 		fn := pop.ptr.Load()
 		require.NotNil(t, fn, "popper should be captured")
 
-		(*fn)()
+		fn.pop()
 		require.Nil(t, getDDContextStack().Peek(key("k")), "popper should remove the value")
 	})
 
@@ -145,7 +145,7 @@ func TestGLSReset(t *testing.T) {
 		ran := 0
 		var pop GLSPopperCell
 		fn := GLSPopper(func() { ran++ })
-		pop.ptr.Store(&fn)
+		pop.ptr.Store(&glsExit{pop: fn})
 
 		GLSReset(&reclaimable, &pop)
 		require.False(t, reclaimable.Load(), "reclaimable must be reset to false")
@@ -156,7 +156,7 @@ func TestGLSReset(t *testing.T) {
 	t.Run("tolerates nil reclaimable (dyngo operations)", func(t *testing.T) {
 		var pop GLSPopperCell
 		fn := GLSPopper(func() {})
-		pop.ptr.Store(&fn)
+		pop.ptr.Store(&glsExit{pop: fn})
 		GLSReset(nil, &pop) // must not panic
 		require.Nil(t, pop.ptr.Load())
 	})
@@ -168,7 +168,7 @@ func TestGLSDeactivate(t *testing.T) {
 		popped := 0
 		var pop GLSPopperCell
 		fn := GLSPopper(func() { popped++ })
-		pop.ptr.Store(&fn)
+		pop.ptr.Store(&glsExit{pop: fn})
 
 		GLSDeactivate(&reclaimable, &pop)
 		require.True(t, reclaimable.Load(), "span should be marked reclaimable")
@@ -226,8 +226,7 @@ func TestGLSPopFuncCrossGoroutine(t *testing.T) {
 	t.Cleanup(MockGLSPerGoroutine())
 
 	// Push a value and capture the pop function on the main goroutine.
-	CtxWithValue(context.Background(), key("k"), "main-val")
-	popFn := GLSPopFunc(key("k"))
+	_, popFn := CtxWithScopedValue(context.Background(), key("k"), "main-val")
 
 	require.Equal(t, "main-val", getDDContextStack().Peek(key("k")),
 		"main goroutine should see its pushed value")
@@ -284,7 +283,7 @@ func BenchmarkContextStackPushPop(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		getDDContextStack().Push(k, true)
+		getDDContextStack().Push(k, true, nil)
 		getDDContextStack().Pop(k)
 	}
 	if depth := GLSStackDepth(); depth != 0 {
@@ -300,7 +299,7 @@ func BenchmarkContextStackPushOnly(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		getDDContextStack().Push(k, true)
+		getDDContextStack().Push(k, true, nil)
 	}
 	b.StopTimer()
 	depth := GLSStackDepth()
@@ -318,8 +317,7 @@ func BenchmarkGLSPopFuncSameGoroutine(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		CtxWithValue(context.Background(), k, true)
-		popFn := GLSPopFunc(k)
+		_, popFn := CtxWithScopedValue(context.Background(), k, true)
 		popFn()
 	}
 	if depth := GLSStackDepth(); depth != 0 {
@@ -335,8 +333,7 @@ func BenchmarkGLSPopFuncCrossGoroutine(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		CtxWithValue(context.Background(), k, true)
-		popFn := GLSPopFunc(k)
+		_, popFn := CtxWithScopedValue(context.Background(), k, true)
 		done := make(chan struct{})
 		go func() { defer close(done); popFn() }()
 		<-done
@@ -359,7 +356,7 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 			k := key("bench")
 			// Pre-fill the stack to simulate leaked entries.
 			for range depth {
-				getDDContextStack().Push(k, true)
+				getDDContextStack().Push(k, true, nil)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -368,4 +365,73 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 			}
 		})
 	}
+}
+
+// TestGLSReactivationAfterSweepStrandsACellessEntry covers the exit-invalidation
+// this change adds. PopScope removes its target and everything above it, so a
+// value swept that way keeps an exit naming a token that no longer exists: its
+// next activation sees a non-nil popper cell, keeps the stale exit under
+// first-wins, and the entry that activation pushes is closed by nothing.
+//
+// The shape here is dyngo's: a popper and a value that does not report itself
+// reclaimable, because AppSec operations are registered and finished on one
+// goroutine and carry no reclaim flag. That is what makes it matter — with
+// nothing to mark, the stranded entry is never drained by Push and never skipped
+// by Peek, so a finished operation keeps answering as the active one. A span in
+// the same position recovers on its own, since GLSDeactivate sets its reclaim
+// flag and the stranded entry becomes collectable.
+func TestGLSReactivationAfterSweepStrandsACellessEntry(t *testing.T) {
+	t.Cleanup(MockGLS())
+	k := key("celless")
+
+	var popA, popB GLSPopperCell
+	GLSActivate(nil, k, "A", &popA)
+	GLSActivate(nil, k, "B", &popB)
+	require.Equal(t, 2, GLSStackDepth())
+
+	// A exits while B is still live: the non-LIFO case PopScope exists for. It
+	// removes A and sweeps B along with it.
+	GLSDeactivate(nil, &popA)
+	require.Equal(t, 0, GLSStackDepth(), "A's scope exit removes A and what was opened inside it")
+
+	// B is activated again on the same goroutine. first-wins would keep the
+	// popper captured the first time, which names the token just swept away.
+	GLSActivate(nil, k, "B", &popB)
+	require.Equal(t, 1, GLSStackDepth())
+
+	// B finishes. Without invalidation its exit targets the stale token and
+	// matches nothing.
+	GLSDeactivate(nil, &popB)
+
+	assert.Equal(t, 0, GLSStackDepth(),
+		"B's entry outlived B: its popper still named the token PopScope swept, so the exit "+
+			"removed nothing. With no reclaim flag the entry is permanently live, so Peek keeps "+
+			"handing it out and Push never drains it")
+}
+
+// TestGLSSweepKeepsASurvivingEntrysExit covers the case where invalidating a
+// removed entry's exit would discard one that still has work to do.
+//
+// Activate B, then A, then B again. Both B entries share one GLSPopperCell, and
+// first-wins means the exit it holds names the LOWER B. Closing A sweeps A and the
+// upper B, so the upper B's entry is removed — but the cell it points at is still
+// the lower B's only way out. Clearing it unconditionally strands that entry, and
+// with no reclaim flag (dyngo's shape) it stays permanently active.
+func TestGLSSweepKeepsASurvivingEntrysExit(t *testing.T) {
+	t.Cleanup(MockGLS())
+	k := key("celless")
+
+	var popA, popB GLSPopperCell
+	GLSActivate(nil, k, "B", &popB) // lower B: popB's exit names this token
+	GLSActivate(nil, k, "A", &popA)
+	GLSActivate(nil, k, "B", &popB) // upper B: first-wins keeps the lower token
+	require.Equal(t, 3, GLSStackDepth())
+
+	GLSDeactivate(nil, &popA) // sweeps A and the upper B; the lower B survives
+	require.Equal(t, 1, GLSStackDepth(), "A's scope exit removes A and what was opened inside it")
+
+	GLSDeactivate(nil, &popB) // must still close the surviving lower B
+	assert.Equal(t, 0, GLSStackDepth(),
+		"the lower B outlived its own exit: sweeping the upper B cleared the cell whose exit "+
+			"named the lower one, so B's finish removed nothing")
 }
