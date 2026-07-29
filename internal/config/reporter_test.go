@@ -11,12 +11,14 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config/bootstrap"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/schema"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -79,6 +81,15 @@ func configEvent(value any, policy TelemetryPolicy, cadence ReportCadence) Confi
 		ReportValue:   true,
 		SourceOrdinal: 1,
 	}
+}
+
+func largeBackingSubstring(value string) string {
+	backing := strings.Repeat("x", 16<<20) + value
+	return backing[len(backing)-len(value):]
+}
+
+func stringDataPointer(value string) uintptr {
+	return uintptr(unsafe.Pointer(unsafe.StringData(value)))
 }
 
 func TestZeroValueReporterIndexesAcceptedBindingsLazily(t *testing.T) {
@@ -173,6 +184,74 @@ func TestZeroValueReporterRejectsAdversarialEventsWithoutState(t *testing.T) {
 	}
 }
 
+func TestZeroValueReporterValidatesMetadataBeforeTransforming(t *testing.T) {
+	r, rec := newZeroValueTestReporter(t)
+	logger := new(log.RecordLogger)
+	defer log.UseLogger(logger)()
+
+	unknown := configEvent(new(int), TelemetryReport, ReportOncePerGeneration)
+	unknown.BindingID = "unknown.binding"
+	mismatched := configEvent(new(int), TelemetryReport, ReportOnChange)
+
+	r.Report([]ConfigEvent{unknown, mismatched}, 1)
+
+	require.Empty(t, logger.Logs(),
+		"rejected metadata must not reach value transformation or warning paths")
+	require.Empty(t, rec.Configuration)
+	require.Empty(t, r.bindings)
+	require.Empty(t, r.generation)
+	require.Empty(t, r.once)
+	require.Empty(t, r.changes)
+}
+
+func TestZeroValueReporterCanonicalizesCallerBackedStrings(t *testing.T) {
+	r, rec := newZeroValueTestReporter(t)
+	canonicalBindingID := definitionsRegistry.bindings[0].ID
+	canonicalName := definitionsRegistry.bindings[0].Keys[0]
+	for _, binding := range definitionsRegistry.bindings {
+		if binding.ID == "tracer.DD_SERVICE" {
+			canonicalBindingID = binding.ID
+			canonicalName = binding.Keys[0]
+			break
+		}
+	}
+
+	event := configEvent("service", TelemetryReport, ReportOncePerGeneration)
+	event.BindingID = largeBackingSubstring(canonicalBindingID)
+	event.Name = largeBackingSubstring(canonicalName)
+	event.Origin = telemetry.Origin(largeBackingSubstring(string(telemetry.OriginManagedStableConfig)))
+	event.ConfigID = largeBackingSubstring("config-123")
+	require.NotEqual(t, stringDataPointer(canonicalBindingID), stringDataPointer(event.BindingID))
+	require.NotEqual(t, stringDataPointer(canonicalName), stringDataPointer(event.Name))
+	require.NotEqual(t, stringDataPointer(string(telemetry.OriginManagedStableConfig)), stringDataPointer(string(event.Origin)))
+
+	r.Report([]ConfigEvent{event}, 1)
+
+	require.Len(t, rec.Configuration, 1)
+	require.Equal(t, canonicalName, rec.Configuration[0].Name)
+	require.Equal(t, telemetry.OriginManagedStableConfig, rec.Configuration[0].Origin)
+	require.Equal(t, "config-123", rec.Configuration[0].ID)
+	require.Equal(t, stringDataPointer(canonicalName), stringDataPointer(rec.Configuration[0].Name),
+		"the buffered action must use the registry-owned name")
+	require.Equal(t,
+		stringDataPointer(string(telemetry.OriginManagedStableConfig)),
+		stringDataPointer(string(rec.Configuration[0].Origin)),
+		"the buffered action must use the canonical origin constant",
+	)
+	require.NotEqual(t, stringDataPointer(event.ConfigID), stringDataPointer(rec.Configuration[0].ID),
+		"the buffered action must detach a small config ID from its large caller backing")
+
+	require.Len(t, r.generation, 1)
+	for bindingID := range r.generation {
+		require.Equal(t, stringDataPointer(canonicalBindingID), stringDataPointer(bindingID))
+	}
+	require.Len(t, r.once, 1)
+	for key := range r.once {
+		require.Equal(t, stringDataPointer(canonicalBindingID), stringDataPointer(key.bindingID))
+		require.Equal(t, stringDataPointer(canonicalName), stringDataPointer(key.name))
+	}
+}
+
 func TestZeroValueReporterPreservesGenerationAndOnChange(t *testing.T) {
 	r, rec := newZeroValueTestReporter(t)
 	service := configEvent("first", TelemetryReport, ReportOncePerGeneration)
@@ -209,30 +288,75 @@ func TestZeroValueReporterConcurrentFirstUse(t *testing.T) {
 	version := configEvent("version", TelemetryReport, ReportOncePerGeneration)
 	version.BindingID = "tracer.DD_VERSION"
 	version.Name = "DD_VERSION"
+	hostname := configEvent("host", TelemetryReport, ReportOnChange)
+	hostname.BindingID = "system.hostname"
+	hostname.Name = "DD_HOSTNAME"
 
-	const goroutines = 64
+	const goroutines = 96
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := 0; i < goroutines; i++ {
-		event := service
-		if i%2 != 0 {
+		event, generation := service, uint64(2)
+		switch i % 3 {
+		case 1:
 			event = version
+			generation = 1
+		case 2:
+			event = hostname
+			generation = 3
 		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			<-start
-			r.Report([]ConfigEvent{event}, 1)
+			r.Report([]ConfigEvent{event}, generation)
 		}()
 	}
 	close(start)
 	wg.Wait()
 
-	require.Len(t, rec.Configuration, 2)
-	require.Len(t, r.bindings, 2)
-	require.Len(t, r.generation, 2)
+	require.Len(t, rec.Configuration, 3)
+	require.Len(t, r.bindings, 3)
+	require.Len(t, r.generation, 3)
 	require.Len(t, r.once, 2)
-	require.Empty(t, r.changes)
+	require.Len(t, r.changes, 1)
+
+	currentService := service
+	currentService.Value = "current-service"
+	r.Report([]ConfigEvent{currentService}, 10)
+	currentHostname := hostname
+	currentHostname.Value = "current-host"
+	r.Report([]ConfigEvent{currentHostname}, 10)
+	require.Len(t, rec.Configuration, 5)
+
+	start = make(chan struct{})
+	for i := 0; i < goroutines; i++ {
+		event, generation := currentService, uint64(10)
+		switch i % 4 {
+		case 1:
+			event.Value = "stale-service"
+			generation = 9
+		case 2:
+			event = currentHostname
+		case 3:
+			event = currentHostname
+			event.Value = "stale-host"
+			generation = 9
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			r.Report([]ConfigEvent{event}, generation)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	require.Len(t, rec.Configuration, 5,
+		"concurrent duplicate and stale generations must not reopen once/change state")
+	require.Equal(t, uint64(10), r.generation[service.BindingID])
+	require.Equal(t, uint64(10), r.generation[hostname.BindingID])
 }
 
 func TestZeroValueReporterReportsPackageInitEventImmediatelyOnce(t *testing.T) {
@@ -748,7 +872,7 @@ func TestReporterDoesNotHoldLockWhileCallingSink(t *testing.T) {
 	bootstrap.ResetForTesting()
 	t.Cleanup(bootstrap.ResetForTesting)
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
-	r := newReporter()
+	r := new(Reporter)
 	reentered := configEvent("reentered", TelemetryReport, ReportOncePerGeneration)
 	reentered.BindingID = "tracer.DD_VERSION"
 	reentered.Name = "DD_VERSION"
@@ -776,7 +900,7 @@ func TestReporterSequenceFollowsAcceptedGenerationWhenSinkArrivalInverts(t *test
 	bootstrap.ResetForTesting()
 	t.Cleanup(bootstrap.ResetForTesting)
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
-	r := newReporter()
+	r := new(Reporter)
 	second := configEvent("second", TelemetryReport, ReportOncePerGeneration)
 	client := &reentrantOrderingClient{RecordClient: new(telemetrytest.RecordClient)}
 	client.onFirst = func() {

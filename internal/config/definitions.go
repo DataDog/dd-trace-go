@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config/schema"
 )
@@ -54,6 +56,10 @@ const (
 type registry struct {
 	raw      []RawDefinition
 	bindings []ConsumerBinding
+
+	freezeOnce sync.Once
+	freezeErr  error
+	frozen     atomic.Bool
 }
 
 func newRegistry() *registry {
@@ -61,12 +67,32 @@ func newRegistry() *registry {
 }
 
 func (r *registry) addRaw(def RawDefinition) {
+	if r.frozen.Load() {
+		panic("config registry is frozen")
+	}
 	r.raw = append(r.raw, def)
 }
 
 func (r *registry) addBinding(binding ConsumerBinding) {
+	if r.frozen.Load() {
+		panic("config registry is frozen")
+	}
 	binding.Keys = append([]string(nil), binding.Keys...)
 	r.bindings = append(r.bindings, binding)
+}
+
+func (r *registry) validateAndFreeze() error {
+	r.freezeOnce.Do(func() {
+		r.frozen.Store(true)
+		r.freezeErr = r.validate()
+	})
+	return r.freezeErr
+}
+
+func (r *registry) mustValidateAndFreeze() {
+	if err := r.validateAndFreeze(); err != nil {
+		panic("config registry: " + err.Error())
+	}
 }
 
 func (r *registry) validate() error {
@@ -122,6 +148,7 @@ func (r *registry) validate() error {
 }
 
 func (r *registry) definitions() ([]RawDefinition, []ConsumerBinding) {
+	r.mustValidateAndFreeze()
 	raw := append([]RawDefinition(nil), r.raw...)
 	bindings := make([]ConsumerBinding, len(r.bindings))
 	for i, binding := range r.bindings {
@@ -138,6 +165,11 @@ func (r *registry) definitions() ([]RawDefinition, []ConsumerBinding) {
 }
 
 func (r *registry) rawDefinition(key string) (RawDefinition, bool) {
+	r.mustValidateAndFreeze()
+	return r.rawDefinitionFrozen(key)
+}
+
+func (r *registry) rawDefinitionFrozen(key string) (RawDefinition, bool) {
 	for _, definition := range r.raw {
 		if definition.Key == key {
 			return definition, true
@@ -147,6 +179,7 @@ func (r *registry) rawDefinition(key string) (RawDefinition, bool) {
 }
 
 func (r *registry) reporterMetadata(bindingID, key string) (ConsumerBinding, RawDefinition, bool) {
+	r.mustValidateAndFreeze()
 	var found ConsumerBinding
 	for _, binding := range r.bindings {
 		if binding.ID == bindingID {
@@ -167,22 +200,27 @@ func (r *registry) reporterMetadata(bindingID, key string) (ConsumerBinding, Raw
 	if !matches {
 		return ConsumerBinding{}, RawDefinition{}, false
 	}
-	definition, ok := r.rawDefinition(key)
+	definition, ok := r.rawDefinitionFrozen(key)
 	return found, definition, ok
 }
 
 func (r *registry) reporterBinding(binding ConsumerBinding) (reporterBinding, bool) {
-	policies := make(map[string]TelemetryPolicy, len(binding.Keys))
+	r.mustValidateAndFreeze()
+	definitions := make(map[string]reporterDefinition, len(binding.Keys))
 	for _, key := range binding.Keys {
-		definition, ok := r.rawDefinition(key)
+		definition, ok := r.rawDefinitionFrozen(key)
 		if !ok {
 			return reporterBinding{}, false
 		}
-		policies[key] = definition.Telemetry
+		definitions[definition.Key] = reporterDefinition{
+			name:   definition.Key,
+			policy: definition.Telemetry,
+		}
 	}
 	return reporterBinding{
-		policies: policies,
-		cadence:  reportCadence(binding),
+		id:          binding.ID,
+		definitions: definitions,
+		cadence:     reportCadence(binding),
 	}, true
 }
 
@@ -206,9 +244,6 @@ func registerBinding(binding ConsumerBinding) {
 // RegisteredDefinitions returns sorted defensive copies of the runtime
 // configuration registry.
 func RegisteredDefinitions() ([]RawDefinition, []ConsumerBinding) {
-	if err := definitionsRegistry.validate(); err != nil {
-		panic("config registry: " + err.Error())
-	}
 	return definitionsRegistry.definitions()
 }
 

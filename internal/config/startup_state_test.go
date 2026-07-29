@@ -7,7 +7,9 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,9 +19,13 @@ var configPackageInitState struct {
 	reporterBindings []string
 	rawIndexBefore   bool
 	rawIndexAfter    bool
+	registryFrozen   bool
+	registryError    error
 	definition       RawDefinition
 	unknownPanic     any
 }
+
+const configStartupStateChild = "DD_CONFIG_STARTUP_STATE_CHILD"
 
 func TestMain(m *testing.M) {
 	instrumentationReporter.mu.Lock()
@@ -30,6 +36,8 @@ func TestMain(m *testing.M) {
 	instrumentationReporter.mu.Unlock()
 	sort.Strings(bindings)
 	rawIndexBefore := instrumentationRawIndex.byKey != nil
+	registryFrozen := definitionsRegistry.frozen.Load()
+	registryError := definitionsRegistry.freezeErr
 	definition := registeredDefinitionForInit("DD_SERVICE")
 	var unknownPanic any
 	func() {
@@ -42,12 +50,16 @@ func TestMain(m *testing.M) {
 		reporterBindings []string
 		rawIndexBefore   bool
 		rawIndexAfter    bool
+		registryFrozen   bool
+		registryError    error
 		definition       RawDefinition
 		unknownPanic     any
 	}{
 		reporterBindings: bindings,
 		rawIndexBefore:   rawIndexBefore,
 		rawIndexAfter:    instrumentationRawIndex.byKey != nil,
+		registryFrozen:   registryFrozen,
+		registryError:    registryError,
 		definition:       definition,
 		unknownPanic:     unknownPanic,
 	}
@@ -55,19 +67,25 @@ func TestMain(m *testing.M) {
 }
 
 func TestConfigPackageInitRetainsOnlyAcceptedBindings(t *testing.T) {
-	allowed := map[string]struct{}{
-		"appsec.stacktrace-init": {},
-		"system.app-endpoints":   {},
-		"system.logging-rate":    {},
-		"system.process-tags":    {},
+	if os.Getenv(configStartupStateChild) != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestConfigPackageInitRetainsOnlyAcceptedBindings$", "-test.count=1")
+		cmd.Env = sanitizedConfigStartupEnvironment(os.Environ())
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+		return
 	}
-	for _, id := range configPackageInitState.reporterBindings {
-		_, ok := allowed[id]
-		require.Truef(t, ok, "package initialization retained unrelated binding %q", id)
-	}
-	require.LessOrEqual(t, len(configPackageInitState.reporterBindings), len(allowed))
+
+	require.Equal(t, []string{
+		"appsec.stacktrace-init",
+		"system.app-endpoints",
+		"system.logging-rate",
+		"system.process-tags",
+	}, configPackageInitState.reporterBindings)
 	require.False(t, configPackageInitState.rawIndexBefore,
 		"package initialization must not build the normal raw-definition index")
+	require.True(t, configPackageInitState.registryFrozen,
+		"the complete registry must be validated and frozen during package initialization")
+	require.NoError(t, configPackageInitState.registryError)
 }
 
 func TestInitScopedDefinitionLookupDoesNotBuildRuntimeIndex(t *testing.T) {
@@ -84,4 +102,36 @@ func TestInitScopedDefinitionLookupDoesNotBuildRuntimeIndex(t *testing.T) {
 	require.Zero(t, testing.AllocsPerRun(100, func() {
 		_ = registeredDefinitionForInit("DD_SERVICE")
 	}))
+}
+
+func TestDownstreamTracerPackageInitFixture(t *testing.T) {
+	cmd := exec.Command(
+		"go", "test",
+		"-tags=config_startup_fixture",
+		"./testdata/tracerinit",
+		"-count=1",
+	)
+	cmd.Env = append(sanitizedConfigStartupEnvironment(os.Environ()),
+		"DD_APPSEC_SCA_ENABLED=true",
+		"DD_APPSEC_AGENTIC_ONBOARDING=fixture",
+		"DD_TRACE_DEBUG_SEELOG_WORKAROUND=false",
+		"DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED=false",
+	)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+}
+
+func sanitizedConfigStartupEnvironment(environment []string) []string {
+	sanitized := make([]string, 0, len(environment)+2)
+	for _, variable := range environment {
+		name, _, _ := strings.Cut(variable, "=")
+		if strings.HasPrefix(name, "DD_") || strings.HasPrefix(name, "OTEL_") {
+			continue
+		}
+		sanitized = append(sanitized, variable)
+	}
+	return append(sanitized,
+		configStartupStateChild+"=1",
+		"DD_INSTRUMENTATION_TELEMETRY_ENABLED=true",
+	)
 }

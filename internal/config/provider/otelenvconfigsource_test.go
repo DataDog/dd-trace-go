@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +20,36 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+func providerLargeBackingSubstring(value string) string {
+	backing := strings.Repeat("x", 8<<20) + value
+	return backing[len(backing)-len(value):]
+}
+
+func providerStringDataPointer(value string) uintptr {
+	return uintptr(unsafe.Pointer(unsafe.StringData(value)))
+}
+
+func TestCanonicalOTelMappingReturnsRegistryOwnedStrings(t *testing.T) {
+	callerDD := providerLargeBackingSubstring("DD_SERVICE")
+	callerOTel := providerLargeBackingSubstring("OTEL_SERVICE_NAME")
+
+	canonicalDD, canonicalOTel, ok := CanonicalOTelMapping(callerDD, callerOTel)
+
+	require.True(t, ok)
+	require.Equal(t, "DD_SERVICE", canonicalDD)
+	require.Equal(t, "OTEL_SERVICE_NAME", canonicalOTel)
+	require.NotEqual(t, providerStringDataPointer(callerDD), providerStringDataPointer(canonicalDD))
+	require.NotEqual(t, providerStringDataPointer(callerOTel), providerStringDataPointer(canonicalOTel))
+	for registeredDD, entry := range otelConfigs {
+		if registeredDD == canonicalDD {
+			require.Equal(t, providerStringDataPointer(registeredDD), providerStringDataPointer(canonicalDD))
+			require.Equal(t, providerStringDataPointer(entry.ot), providerStringDataPointer(canonicalOTel))
+			return
+		}
+	}
+	t.Fatal("canonical mapping was not registry-owned")
+}
 
 func TestOtelEnvConfigSourceSamplerArgumentLookup(t *testing.T) {
 	const key = "OTEL_TRACES_SAMPLER_ARG"

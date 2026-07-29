@@ -124,6 +124,87 @@ func TestRegistryRegisteredDefinitionsValidate(t *testing.T) {
 	require.Len(t, bindings, 178)
 }
 
+func TestRegistryFirstReadValidatesCompleteRegistryAndFreezesOnFailure(t *testing.T) {
+	r := newRegistry()
+	r.addRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport})
+	r.addRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceEnvironment, Telemetry: TelemetryReport})
+	r.addBinding(ConsumerBinding{
+		ID: "tracer.service", Consumer: "tracer",
+		Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction,
+	})
+
+	require.PanicsWithValue(t, `config registry: duplicate raw key "DD_SERVICE"`, func() {
+		_, _ = r.rawDefinition("DD_SERVICE")
+	})
+	rawCount := len(r.raw)
+	require.PanicsWithValue(t, "config registry is frozen", func() {
+		r.addRaw(RawDefinition{Key: "DD_VERSION"})
+	})
+	require.Len(t, r.raw, rawCount, "registration must panic before mutating a frozen registry")
+}
+
+func TestRegistryEveryFirstReadValidatesFinalRegistry(t *testing.T) {
+	tests := []struct {
+		name string
+		read func(*registry)
+	}{
+		{name: "definitions", read: func(r *registry) { _, _ = r.definitions() }},
+		{name: "raw definition", read: func(r *registry) { _, _ = r.rawDefinition("DD_SERVICE") }},
+		{name: "reporter metadata", read: func(r *registry) {
+			_, _, _ = r.reporterMetadata("tracer.service", "DD_SERVICE")
+		}},
+		{name: "reporter binding", read: func(r *registry) {
+			_, _ = r.reporterBinding(ConsumerBinding{
+				ID: "tracer.service", Consumer: "tracer",
+				Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction,
+			})
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r := newRegistry()
+			r.addRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport})
+			r.addRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceEnvironment, Telemetry: TelemetryReport})
+			r.addBinding(ConsumerBinding{
+				ID: "tracer.service", Consumer: "tracer",
+				Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction,
+			})
+
+			for range 2 {
+				require.PanicsWithValue(t, `config registry: duplicate raw key "DD_SERVICE"`, func() {
+					test.read(r)
+				}, "a failed final validation must remain sticky")
+			}
+		})
+	}
+}
+
+func TestRegistryPrefixValidationDoesNotFreezeFinalRegistrations(t *testing.T) {
+	r := newRegistry()
+	r.addRaw(RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport})
+	r.addBinding(ConsumerBinding{
+		ID: "tracer.service", Consumer: "tracer",
+		Keys: []string{"DD_SERVICE"}, Sampling: SampleTracerConstruction,
+	})
+	require.NoError(t, r.validate(), "the definitions.go prefix check remains non-freezing")
+
+	r.addRaw(RawDefinition{Key: "DD_VERSION", Sources: SourceStable, Telemetry: TelemetryReport})
+	r.addBinding(ConsumerBinding{
+		ID: "tracer.version", Consumer: "tracer",
+		Keys: []string{"DD_VERSION"}, Sampling: SampleTracerConstruction,
+	})
+	definition, ok := r.rawDefinition("DD_VERSION")
+	require.True(t, ok)
+	require.Equal(t, "DD_VERSION", definition.Key)
+
+	rawCount, bindingCount := len(r.raw), len(r.bindings)
+	require.PanicsWithValue(t, "config registry is frozen", func() {
+		r.addBinding(ConsumerBinding{ID: "late.binding"})
+	})
+	require.Len(t, r.raw, rawCount)
+	require.Len(t, r.bindings, bindingCount, "registration must panic before mutating a frozen registry")
+}
+
 func TestRegistryRejectsInvalidDefinitions(t *testing.T) {
 	validRaw := RawDefinition{Key: "DD_SERVICE", Sources: SourceStable, Telemetry: TelemetryReport}
 	validBinding := ConsumerBinding{

@@ -103,14 +103,30 @@ func reportOTelMetric(metric, ddKey, otelKey string) {
 	telemetry.Count(telemetry.NamespaceTracers, metric, telemetryTags).Submit(1)
 }
 
+// CanonicalOTelMapping returns the registry-owned names when otelKey is the
+// registered OTel compatibility source for ddKey.
+func CanonicalOTelMapping(ddKey, otelKey string) (string, string, bool) {
+	if !strings.HasPrefix(otelKey, "OTEL_") {
+		return "", "", false
+	}
+	normalized := normalizeKey(ddKey)
+	entry := otelConfigs[normalized]
+	if entry == nil || entry.ot != otelKey {
+		return "", "", false
+	}
+	for canonicalDD, registered := range otelConfigs {
+		if registered == entry {
+			return canonicalDD, entry.ot, true
+		}
+	}
+	return "", "", false
+}
+
 // IsKnownOTelMapping reports whether otelKey is the registered OTel
 // compatibility source for ddKey.
 func IsKnownOTelMapping(ddKey, otelKey string) bool {
-	if !strings.HasPrefix(otelKey, "OTEL_") {
-		return false
-	}
-	entry := otelConfigs[normalizeKey(ddKey)]
-	return entry != nil && entry.ot == otelKey
+	_, _, ok := CanonicalOTelMapping(ddKey, otelKey)
+	return ok
 }
 
 type otelDDEnv struct {
