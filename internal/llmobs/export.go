@@ -10,8 +10,11 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
@@ -24,11 +27,13 @@ const (
 	ExportCodeMissingKind   ExportValidationCode = "missing_kind"
 	ExportCodeInvalidKind   ExportValidationCode = "invalid_kind"
 	ExportCodeInvalidStatus ExportValidationCode = "invalid_status"
+	ExportCodeInvalidLink   ExportValidationCode = "invalid_link"
 	ExportCodeMissingLabel  ExportValidationCode = "missing_label"
 	ExportCodeInvalidJoin   ExportValidationCode = "invalid_join"
 	ExportCodeInvalidValue  ExportValidationCode = "invalid_value"
 	ExportCodeTypeMismatch  ExportValidationCode = "type_mismatch"
 	ExportCodeNotEncodable  ExportValidationCode = "not_encodable"
+	ExportCodeTooLarge      ExportValidationCode = "too_large"
 )
 
 // ExportValidationError describes an offline input row that was not sent.
@@ -69,15 +74,33 @@ func ValidateExportSpan(event transport.LLMObsSpanEvent) *ExportValidationError 
 	if _, ok := validExportSpanKinds[kind]; !ok {
 		return &ExportValidationError{Code: ExportCodeInvalidKind, Reason: fmt.Sprintf("invalid span kind %q", kind)}
 	}
-	status := SpanStatus(event.Status)
-	if _, ok := validExportSpanStatuses[status]; event.Status != "" && !ok {
+	if _, ok := validExportSpanStatuses[event.Status]; event.Status != "" && !ok {
 		return &ExportValidationError{Code: ExportCodeInvalidStatus, Reason: fmt.Sprintf("invalid status %q", event.Status)}
+	}
+	for i, link := range event.SpanLinks {
+		switch {
+		case !canonicalDecimalID(link.TraceID):
+			return &ExportValidationError{
+				Code:   ExportCodeInvalidLink,
+				Reason: fmt.Sprintf("span_links[%d].trace_id must be a canonical decimal uint64", i),
+			}
+		case !canonicalDecimalID(link.SpanID):
+			return &ExportValidationError{
+				Code:   ExportCodeInvalidLink,
+				Reason: fmt.Sprintf("span_links[%d].span_id must be a canonical decimal uint64", i),
+			}
+		case link.TraceIDHigh != "" && !canonicalDecimalID(link.TraceIDHigh):
+			return &ExportValidationError{
+				Code:   ExportCodeInvalidLink,
+				Reason: fmt.Sprintf("span_links[%d].trace_id_high must be a canonical decimal uint64", i),
+			}
+		}
 	}
 	return nil
 }
 
 // BuildExportSpan clones a validated transport span and applies client defaults.
-func BuildExportSpan(event transport.LLMObsSpanEvent, service, env, spanVersion, mlApp string) *transport.LLMObsSpanEvent {
+func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, service string) *transport.LLMObsSpanEvent {
 	span := event
 	span.Tags = slices.Clone(event.Tags)
 	span.Meta = maps.Clone(event.Meta)
@@ -89,11 +112,10 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, service, env, spanVersion,
 		span.Meta = make(map[string]any)
 	}
 	kind := exportSpanKind(span)
-	span.Meta["span"] = map[string]any{"kind": string(kind)}
 	span.Meta["span.kind"] = string(kind)
-	if modelName, modelProvider, ok := NormalizeModel(kind, span.ModelName, span.ModelProvider); ok {
-		span.Meta[MetaKeyModelName] = modelName
-		span.Meta[MetaKeyModelProvider] = modelProvider
+	if modelName, modelProvider, ok := normalizeModel(kind, span.ModelName, span.ModelProvider); ok {
+		span.Meta[metaKeyModelName] = modelName
+		span.Meta[metaKeyModelProvider] = modelProvider
 	}
 	if span.Input != "" {
 		span.Meta["input"] = map[string]any{"value": span.Input}
@@ -114,7 +136,7 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, service, env, spanVersion,
 		span.Name = string(kind)
 	}
 	if span.Status == "" {
-		span.Status = string(SpanStatusOK)
+		span.Status = SpanStatusOK
 	}
 	if span.Service == "" {
 		span.Service = service
@@ -130,7 +152,7 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, service, env, spanVersion,
 	}
 
 	var errMsg *transport.ErrorMessage
-	if SpanStatus(span.Status) == SpanStatusError {
+	if span.Status == SpanStatusError {
 		message := span.ErrorMessage
 		if message == "" {
 			message = span.StatusMessage
@@ -152,14 +174,19 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, service, env, spanVersion,
 			Stack:   errorStack,
 		}
 	}
-	SetErrorMeta(span.Meta, errMsg)
+	setErrorMeta(span.Meta, errMsg)
 
-	span.Tags = stampExportTags(span.Tags, env, spanVersion, mlApp)
-	span.Tags = replaceExportTag(span.Tags, "service", span.Service)
-	span.Tags = replaceExportTag(span.Tags, "session_id", span.SessionID)
-	span.Tags = stampExportTag(span.Tags, TagKeyError, exportErrorTag(SpanStatus(span.Status)))
+	errorType := ""
 	if errMsg != nil {
-		span.Tags = stampExportTag(span.Tags, TagKeyErrorType, errMsg.Type)
+		errorType = errMsg.Type
+	}
+	for key, value := range standardSpanEventTags(cfg, cfg.MLApp, span.Service, span.SessionID, span.Status, errorType, "") {
+		switch key {
+		case "service", "session_id":
+			span.Tags = replaceExportTag(span.Tags, key, value)
+		default:
+			span.Tags = stampExportTag(span.Tags, key, value)
+		}
 	}
 	return &span
 }
@@ -176,7 +203,7 @@ func buildEvaluation(metric EvaluationConfig, defaultMLApp string, rejectNonFini
 		}
 	}
 
-	joinOn, err := BuildEvaluationJoin(metric.SpanID, metric.TraceID, metric.TagKey, metric.TagValue)
+	joinOn, err := buildEvaluationJoin(metric.SpanID, metric.TraceID, metric.TagKey, metric.TagValue)
 	if err != nil {
 		return nil, &ExportValidationError{
 			Code: ExportCodeInvalidJoin, Reason: err.Error(), cause: err,
@@ -238,19 +265,19 @@ func buildEvaluation(metric EvaluationConfig, defaultMLApp string, rejectNonFini
 	}
 
 	return &transport.LLMObsMetric{
-		JoinOn:           joinOn,
-		Label:            metric.Label,
-		MetricType:       string(metricType),
-		TimestampMS:      evaluationTimestamp(metric),
-		MLApp:            mlApp,
-		Tags:             exportEvaluationTags(metric.Tags),
-		Assessment:       metric.Assessment,
-		Reasoning:        metric.Reasoning,
-		Metadata:         metric.Metadata,
-		CategoricalValue: metric.CategoricalValue,
-		ScoreValue:       metric.ScoreValue,
-		BooleanValue:     metric.BooleanValue,
-		JSONValue:        metric.JSONValue,
+		JoinOn:             joinOn,
+		Label:              metric.Label,
+		MetricType:         metricType,
+		TimestampMS:        evaluationTimestamp(metric),
+		MLApp:              mlApp,
+		Tags:               exportEvaluationTags(metric.Tags),
+		Assessment:         metric.Assessment,
+		Reasoning:          metric.Reasoning,
+		EvalMetricMetadata: metric.Metadata,
+		CategoricalValue:   metric.CategoricalValue,
+		ScoreValue:         metric.ScoreValue,
+		BooleanValue:       metric.BooleanValue,
+		JSONValue:          metric.JSONValue,
 	}, nil
 }
 
@@ -262,20 +289,9 @@ func exportSpanKind(event transport.LLMObsSpanEvent) SpanKind {
 	return SpanKind(kind)
 }
 
-func exportErrorTag(status SpanStatus) string {
-	if status == SpanStatusError {
-		return "1"
-	}
-	return "0"
-}
-
-func stampExportTags(tags []string, env, spanVersion, mlApp string) []string {
-	tags = stampExportTag(tags, "env", env)
-	tags = stampExportTag(tags, "version", spanVersion)
-	tags = stampExportTag(tags, "ml_app", mlApp)
-	tags = stampExportTag(tags, TagKeySource, TagValueSource)
-	tags = stampExportTag(tags, TagKeyLanguage, TagValueLanguage)
-	return stampExportTag(tags, TagKeyTracerVersion, version.Tag)
+func canonicalDecimalID(id string) bool {
+	n, err := strconv.ParseUint(id, 10, 64)
+	return err == nil && strconv.FormatUint(n, 10) == id
 }
 
 func stampExportTag(tags []string, key, value string) []string {
@@ -331,11 +347,11 @@ func evaluationTimestamp(metric EvaluationConfig) int64 {
 	if !metric.Timestamp.IsZero() {
 		return metric.Timestamp.UnixMilli()
 	}
-	return 0
+	return time.Now().UnixMilli()
 }
 
 func exportEvaluationTags(tags []string) []string {
-	prefix := TagKeyTracerVersion + ":"
+	prefix := tagKeyTracerVersion + ":"
 	out := make([]string, 0, len(tags)+1)
 	for _, tag := range tags {
 		if !strings.HasPrefix(tag, prefix) {

@@ -6,14 +6,20 @@
 package export
 
 import (
+	"errors"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
-// ExportResult reports a submission outcome.
-type ExportResult struct {
-	// Requests contains one result per HTTP request.
+const responseSnippetMaxBytes = 512
+
+// Result reports a submission outcome.
+type Result struct {
+	// Requests contains one result per sent or abandoned batch.
 	Requests []RequestResult
 	// ValidationErrors contains rows rejected before sending.
 	ValidationErrors []ValidationError
@@ -26,12 +32,12 @@ type ExportResult struct {
 	cancelErr error
 }
 
-func (r *ExportResult) recordCancel(remaining int, err error) error {
-	if remaining > 0 {
+func (r *Result) recordCancel(indices []int, err error) error {
+	if len(indices) > 0 {
 		r.Requests = append(r.Requests, RequestResult{
-			Index: len(r.Requests),
-			Count: remaining,
-			Err:   fmt.Errorf("llmobs/export: batch not sent, export canceled: %w", err),
+			InputIndices: indices,
+			Retriable:    true,
+			Err:          fmt.Errorf("llmobs/export: batch not sent, export canceled: %w", err),
 		})
 	}
 	if r.cancelErr == nil {
@@ -41,27 +47,24 @@ func (r *ExportResult) recordCancel(remaining int, err error) error {
 	return r.cancelErr
 }
 
-func (r *ExportResult) canceledErr() error { return r.cancelErr }
+func (r *Result) canceledErr() error { return r.cancelErr }
 
-func (r *ExportResult) finalize() int {
+func (r *Result) finalize() {
 	r.Sent, r.Failed = 0, 0
-	failedReqs := 0
 	for _, req := range r.Requests {
 		if req.Err != nil {
-			failedReqs++
-			r.Failed += req.Count
+			r.Failed += len(req.InputIndices)
 			continue
 		}
-		r.Sent += req.Count
+		r.Sent += len(req.InputIndices)
 	}
 	r.Dropped = len(r.ValidationErrors)
-	return failedReqs
 }
 
-// RequestResult reports one HTTP request.
+// RequestResult reports one sent or abandoned batch.
 type RequestResult struct {
-	Index           int
-	Count           int
+	// InputIndices identifies the input rows represented by this result.
+	InputIndices    []int
 	StatusCode      int
 	Attempts        int
 	Retriable       bool
@@ -77,12 +80,60 @@ const (
 	CodeMissingKind   ErrorCode = illmobs.ExportCodeMissingKind
 	CodeInvalidKind   ErrorCode = illmobs.ExportCodeInvalidKind
 	CodeInvalidStatus ErrorCode = illmobs.ExportCodeInvalidStatus
+	CodeInvalidLink   ErrorCode = illmobs.ExportCodeInvalidLink
 	CodeMissingLabel  ErrorCode = illmobs.ExportCodeMissingLabel
 	CodeInvalidJoin   ErrorCode = illmobs.ExportCodeInvalidJoin
 	CodeInvalidValue  ErrorCode = illmobs.ExportCodeInvalidValue
 	CodeTypeMismatch  ErrorCode = illmobs.ExportCodeTypeMismatch
 	CodeNotEncodable  ErrorCode = illmobs.ExportCodeNotEncodable
+	CodeTooLarge      ErrorCode = illmobs.ExportCodeTooLarge
 )
 
 // ValidationError describes an input row that was not sent.
 type ValidationError = illmobs.ExportValidationError
+
+func applyResult(rr *RequestResult, result transport.RequestResult, err error) {
+	rr.StatusCode = result.StatusCode
+	rr.Attempts = result.Attempts
+	rr.Retriable = result.Retriable
+	rr.ResponseSnippet = responseSnippet(result.Body)
+	rr.Err = err
+}
+
+func responseSnippet(body []byte) string {
+	s := strings.ToValidUTF8(strings.TrimSpace(string(body)), "")
+	if len(s) <= responseSnippetMaxBytes {
+		return s
+	}
+	cut := responseSnippetMaxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+func aggregateFailures(result *Result) error {
+	var requestErrors []error
+	for _, request := range result.Requests {
+		if request.Err != nil {
+			requestErrors = append(requestErrors, request.Err)
+		}
+	}
+	if len(requestErrors) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"llmobs/export: %d of %d batch(es) failed: %w",
+		len(requestErrors),
+		len(result.Requests),
+		errors.Join(requestErrors...),
+	)
+}
+
+func inputIndices(start, end int) []int {
+	indices := make([]int, end-start)
+	for i := range indices {
+		indices[i] = start + i
+	}
+	return indices
+}
