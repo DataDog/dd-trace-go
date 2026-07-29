@@ -29,29 +29,8 @@ const (
 	defaultMaxSpanBytes = illmobs.SizeLimitEVPEvent
 )
 
-// config is the resolved, private client configuration built from ClientOptions.
-type config struct {
-	// routing: exactly one of the two must be selected.
-	datadogSet bool
-	site       string
-	apiKey     string
-
-	agentSet bool
-	agentURL string
-
-	service string
-	env     string
-	version string
-
-	httpClient *http.Client
-
-	spanBatch    int
-	evalBatch    int
-	maxSpanBytes int
-}
-
 // ClientOption configures a [Client] built by [NewClient].
-type ClientOption func(*config)
+type ClientOption func(*Client) error
 
 // WithDatadogIntake routes export directly to the Datadog LLM Obs intake for
 // site using apiKey in the DD-API-KEY header (agentless). Exactly one of
@@ -61,10 +40,13 @@ type ClientOption func(*config)
 // falls back to DD_API_KEY, so a process already configured for the rest of the
 // SDK does not have to read the environment itself.
 func WithDatadogIntake(site, apiKey string) ClientOption {
-	return func(c *config) {
-		c.datadogSet = true
-		c.site = site
-		c.apiKey = apiKey
+	return func(c *Client) error {
+		if err := setAgentless(c.config, true); err != nil {
+			return err
+		}
+		c.config.TracerConfig.Site = site
+		c.config.TracerConfig.APIKey = apiKey
+		return nil
 	}
 }
 
@@ -73,41 +55,66 @@ func WithDatadogIntake(site, apiKey string) ClientOption {
 // Datadog auth is injected. Exactly one of WithDatadogIntake or WithAgentURL
 // must be set.
 func WithAgentURL(agentURL string) ClientOption {
-	return func(c *config) {
-		c.agentSet = true
-		c.agentURL = agentURL
+	return func(c *Client) error {
+		if err := setAgentless(c.config, false); err != nil {
+			return err
+		}
+		u, err := parseAgentURL(agentURL)
+		if err != nil {
+			return err
+		}
+		c.config.TracerConfig.AgentURL = u
+		return nil
 	}
 }
 
 // WithService sets the default service stamped onto spans that don't carry one
 // (as the top-level service field and a service: tag).
 func WithService(service string) ClientOption {
-	return func(c *config) { c.service = service }
+	return func(c *Client) error {
+		c.config.TracerConfig.Service = service
+		return nil
+	}
 }
 
 // WithEnv sets the default env: tag stamped onto spans that don't carry one.
 func WithEnv(env string) ClientOption {
-	return func(c *config) { c.env = env }
+	return func(c *Client) error {
+		c.config.TracerConfig.Env = env
+		return nil
+	}
 }
 
 // WithVersion sets the default version: tag stamped onto spans that don't carry one.
 func WithVersion(version string) ClientOption {
-	return func(c *config) { c.version = version }
+	return func(c *Client) error {
+		c.config.TracerConfig.Version = version
+		return nil
+	}
 }
 
 // WithHTTPClient overrides the default HTTP client.
 func WithHTTPClient(hc *http.Client) ClientOption {
-	return func(c *config) { c.httpClient = hc }
+	return func(c *Client) error {
+		c.config.TracerConfig.HTTPClient = hc
+		return nil
+	}
 }
 
 // WithSpanBatchSize sets the max spans per request (default 50).
 func WithSpanBatchSize(n int) ClientOption {
-	return func(c *config) { c.spanBatch = n }
+	return func(c *Client) error {
+		c.spanBatch = n
+		return nil
+	}
 }
 
 // WithEvalBatchSize sets the max evaluations per request (default 1000).
 func WithEvalBatchSize(n int) ClientOption {
-	return func(c *config) { c.evalBatch = n }
+	return func(c *Client) error {
+		c.evalBatch = n
+		return nil
+	}
 }
 
 // WithMaxSpanPayloadBytes sets the max encoded span-request size before an
@@ -117,7 +124,10 @@ func WithEvalBatchSize(n int) ClientOption {
 // Truncation is best-effort: only input/output are shrunk, so payloads dominated
 // by other fields may still exceed the limit.
 func WithMaxSpanPayloadBytes(n int) ClientOption {
-	return func(c *config) { c.maxSpanBytes = n }
+	return func(c *Client) error {
+		c.maxSpanBytes = n
+		return nil
+	}
 }
 
 // Client is an offline exporter for LLM Obs spans and evaluations. It targets
@@ -125,11 +135,7 @@ func WithMaxSpanPayloadBytes(n int) ClientOption {
 // It is safe for concurrent use.
 type Client struct {
 	transport *transport.Transport
-
-	service string
-	env     string
-	version string
-	mlApp   string
+	config    *llmconfig.Config
 
 	spanBatch    int
 	evalBatch    int
@@ -151,91 +157,84 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 		return nil, errors.New("llmobs/export: mlApp is required")
 	}
 
-	cfg := &config{
+	c := &Client{
+		config: &llmconfig.Config{
+			MLApp: mlApp,
+		},
 		spanBatch:    defaultSpanBatchSize,
 		evalBatch:    defaultEvalBatchSize,
 		maxSpanBytes: defaultMaxSpanBytes,
 	}
 	for _, opt := range opts {
-		opt(cfg)
+		if err := opt(c); err != nil {
+			return nil, err
+		}
 	}
 
-	switch {
-	case cfg.datadogSet && cfg.agentSet:
-		return nil, errors.New("llmobs/export: set exactly one route: WithDatadogIntake or WithAgentURL, not both")
-	case !cfg.datadogSet && !cfg.agentSet:
+	if c.config.AgentlessEnabled == nil {
 		return nil, errors.New("llmobs/export: a route is required: set WithDatadogIntake (direct) or WithAgentURL (via the Agent)")
 	}
 
-	site := cfg.site
-	if site == "" {
-		site = env.Get("DD_SITE")
+	tc := &c.config.TracerConfig
+	if tc.Site == "" {
+		tc.Site = env.Get("DD_SITE")
 	}
-	if site == "" {
-		site = defaultSite
-	}
-
-	apiKey := cfg.apiKey
-	if apiKey == "" {
-		apiKey = env.Get("DD_API_KEY")
+	if tc.Site == "" {
+		tc.Site = defaultSite
 	}
 
-	var agentURL *url.URL
-	if cfg.datadogSet {
-		if apiKey == "" {
+	if tc.APIKey == "" {
+		tc.APIKey = env.Get("DD_API_KEY")
+	}
+
+	c.config.ResolvedAgentlessEnabled = *c.config.AgentlessEnabled
+	if c.config.ResolvedAgentlessEnabled {
+		if tc.APIKey == "" {
 			return nil, errors.New("llmobs/export: WithDatadogIntake requires an API key (argument or DD_API_KEY); use WithAgentURL to route via the Agent")
 		}
-	} else {
-		// Trim a trailing slash so the EVP proxy path is not doubled.
-		u, err := url.Parse(strings.TrimRight(cfg.agentURL, "/"))
-		if err != nil {
-			return nil, fmt.Errorf("llmobs/export: invalid agent URL: %w", err)
-		}
-		// Require a supported scheme with a host (or unix socket path). Otherwise a
-		// value like "localhost:8126" or a typo like "htt://host" parses but every
-		// export fails later in Post with "unsupported protocol scheme".
-		switch u.Scheme {
-		case "http", "https":
-			if u.Host == "" {
-				return nil, fmt.Errorf("llmobs/export: invalid agent URL %q: missing host", cfg.agentURL)
-			}
-		case "unix":
-			if u.Path == "" {
-				return nil, fmt.Errorf("llmobs/export: invalid agent URL %q: missing unix socket path", cfg.agentURL)
-			}
-		default:
-			return nil, fmt.Errorf("llmobs/export: invalid agent URL %q: scheme must be http, https, or unix", cfg.agentURL)
-		}
-		agentURL = u
 	}
 
-	icfg := &llmconfig.Config{
-		ResolvedAgentlessEnabled: cfg.datadogSet,
-		TracerConfig: llmconfig.TracerConfig{
-			Site:       site,
-			APIKey:     apiKey,
-			AgentURL:   agentURL,
-			HTTPClient: cfg.httpClient,
-			Service:    cfg.service,
-			Env:        cfg.env,
-			Version:    cfg.version,
-		},
-	}
-	if icfg.TracerConfig.HTTPClient == nil {
-		icfg.TracerConfig.HTTPClient = icfg.DefaultHTTPClient()
+	if tc.HTTPClient == nil {
+		tc.HTTPClient = c.config.DefaultHTTPClient()
 	}
 
-	c := &Client{
-		transport:    transport.New(icfg),
-		service:      cfg.service,
-		env:          cfg.env,
-		version:      cfg.version,
-		mlApp:        mlApp,
-		spanBatch:    orDefault(cfg.spanBatch, defaultSpanBatchSize),
-		evalBatch:    orDefault(cfg.evalBatch, defaultEvalBatchSize),
-		maxSpanBytes: orDefault(cfg.maxSpanBytes, defaultMaxSpanBytes),
-	}
+	c.transport = transport.New(c.config)
+	c.spanBatch = orDefault(c.spanBatch, defaultSpanBatchSize)
+	c.evalBatch = orDefault(c.evalBatch, defaultEvalBatchSize)
+	c.maxSpanBytes = orDefault(c.maxSpanBytes, defaultMaxSpanBytes)
 	return c, nil
+}
+
+func setAgentless(cfg *llmconfig.Config, enabled bool) error {
+	if cfg.AgentlessEnabled != nil && *cfg.AgentlessEnabled != enabled {
+		return errors.New("llmobs/export: set exactly one route: WithDatadogIntake or WithAgentURL, not both")
+	}
+	cfg.AgentlessEnabled = &enabled
+	return nil
+}
+
+func parseAgentURL(agentURL string) (*url.URL, error) {
+	// Trim a trailing slash so the EVP proxy path is not doubled.
+	u, err := url.Parse(strings.TrimRight(agentURL, "/"))
+	if err != nil {
+		return nil, fmt.Errorf("llmobs/export: invalid agent URL: %w", err)
+	}
+	// Require a supported scheme with a host (or unix socket path). Otherwise a
+	// value like "localhost:8126" or a typo like "htt://host" parses but every
+	// export fails later in Post with "unsupported protocol scheme".
+	switch u.Scheme {
+	case "http", "https":
+		if u.Host == "" {
+			return nil, fmt.Errorf("llmobs/export: invalid agent URL %q: missing host", agentURL)
+		}
+	case "unix":
+		if u.Path == "" {
+			return nil, fmt.Errorf("llmobs/export: invalid agent URL %q: missing unix socket path", agentURL)
+		}
+	default:
+		return nil, fmt.Errorf("llmobs/export: invalid agent URL %q: scheme must be http, https, or unix", agentURL)
+	}
+	return u, nil
 }
 
 // SubmitSpansOption customizes a single [Client.SubmitSpans] call.
@@ -254,7 +253,7 @@ func WithCallService(service string) SubmitSpansOption {
 }
 
 func (c *Client) resolveSubmitSpans(opts []SubmitSpansOption) submitSpansConfig {
-	sc := submitSpansConfig{service: c.service}
+	sc := submitSpansConfig{service: c.config.TracerConfig.Service}
 	for _, opt := range opts {
 		opt(&sc)
 	}
@@ -279,7 +278,7 @@ func WithCallMLApp(mlApp string) SubmitEvaluationsOption {
 }
 
 func (c *Client) resolveSubmitEvaluations(opts []SubmitEvaluationsOption) submitEvaluationsConfig {
-	sc := submitEvaluationsConfig{mlApp: c.mlApp}
+	sc := submitEvaluationsConfig{mlApp: c.config.MLApp}
 	for _, opt := range opts {
 		opt(&sc)
 	}
