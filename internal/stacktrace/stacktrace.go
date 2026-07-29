@@ -32,6 +32,7 @@ var (
 		"github.com/DataDog/datadog-agent",
 		"github.com/datadog/orchestrion",
 		"github.com/DataDog/orchestrion",
+		"github.com/DataDog/dd-iast-go",
 	}
 
 	// knownThirdPartyLibraries contains third-party library patterns for stack frame classification.
