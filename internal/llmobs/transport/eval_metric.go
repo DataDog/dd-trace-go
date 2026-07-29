@@ -70,8 +70,17 @@ func (c *Transport) PushEvalMetrics(
 	ctx context.Context,
 	metrics []*LLMObsMetric,
 ) error {
+	_, err := c.PushEvalMetricsWithResult(ctx, metrics)
+	return err
+}
+
+// PushEvalMetricsWithResult sends evaluation metrics and returns request details.
+func (c *Transport) PushEvalMetricsWithResult(
+	ctx context.Context,
+	metrics []*LLMObsMetric,
+) (RequestResult, error) {
 	if len(metrics) == 0 {
-		return nil
+		return RequestResult{}, nil
 	}
 	path := EndpointEvalMetric
 	method := http.MethodPost
@@ -86,10 +95,10 @@ func (c *Transport) PushEvalMetrics(
 
 	result, err := c.jsonRequest(ctx, method, path, SubdomainEvalMetric, body, defaultTimeout)
 	if err != nil {
-		return err
+		return summarizeRequest(result), err
 	}
 	if result.statusCode != http.StatusOK && result.statusCode != http.StatusAccepted {
-		return fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+		return summarizeRequest(result), fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
-	return nil
+	return summarizeRequest(result), nil
 }

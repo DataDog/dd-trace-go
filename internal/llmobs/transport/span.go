@@ -85,8 +85,17 @@ func (c *Transport) PushSpanEvents(
 	ctx context.Context,
 	events []*LLMObsSpanEvent,
 ) error {
+	_, err := c.PushSpanEventsWithResult(ctx, events)
+	return err
+}
+
+// PushSpanEventsWithResult sends span events and returns request details.
+func (c *Transport) PushSpanEventsWithResult(
+	ctx context.Context,
+	events []*LLMObsSpanEvent,
+) (RequestResult, error) {
 	if len(events) == 0 {
-		return nil
+		return RequestResult{}, nil
 	}
 	path := EndpointLLMSpan
 	method := http.MethodPost
@@ -94,10 +103,10 @@ func (c *Transport) PushSpanEvents(
 
 	result, err := c.jsonRequest(ctx, method, path, SubdomainLLMSpan, body, defaultTimeout)
 	if err != nil {
-		return err
+		return summarizeRequest(result), err
 	}
 	if result.statusCode != http.StatusOK && result.statusCode != http.StatusAccepted {
-		return fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+		return summarizeRequest(result), fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
-	return nil
+	return summarizeRequest(result), nil
 }

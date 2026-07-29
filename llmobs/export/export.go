@@ -8,7 +8,6 @@ package export
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/exportutil"
@@ -35,18 +34,17 @@ func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...Su
 		batch := make([]spanRow, 0, end-start)
 		for i := start; i < end; i++ {
 			e := events[i]
-			if reason := validateSpan(e); reason != nil {
-				res.ValidationErrors = append(res.ValidationErrors, ValidationError{Index: i, Code: reason.Code, Reason: reason.Reason})
+			if reason := illmobs.ValidateExportSpan(e); reason != nil {
+				reason.Index = i
+				res.ValidationErrors = append(res.ValidationErrors, *reason)
 				continue
 			}
-			ws := e.toWire(sc.service)
-			ws.Tags = stampTags(ws.Tags, c.env, c.version, c.mlApp)
-			// The intake reads service from the tag, not the top-level field, and
-			// SessionID is the source of truth for the tag evaluations tag-join on. Both
-			// replace rather than default, so a stale caller tag cannot disagree with
-			// the structured field.
-			ws.Tags = replaceTag(ws.Tags, "service", ws.Service)
-			ws.Tags = replaceTag(ws.Tags, "session_id", e.SessionID)
+			ws := illmobs.BuildExportSpan(e, illmobs.ExportSpanDefaults{
+				Service: sc.service,
+				Env:     c.env,
+				Version: c.version,
+				MLApp:   c.mlApp,
+			})
 			batch = append(batch, spanRow{index: i, span: ws})
 		}
 		c.sendSpanBatch(ctx, batch, res)
@@ -70,26 +68,6 @@ type spanRow struct {
 	span  *transport.LLMObsSpanEvent
 }
 
-// validateSpan reports why a span must be dropped, or nil when it is valid. Kind
-// and Status are checked against their known sets: an unrecognized value posts
-// cleanly but lands in an unqueryable facet, so it is a row-level drop here
-// rather than a silent data-quality problem at intake.
-func validateSpan(e SpanEvent) *ValidationError {
-	switch {
-	case e.SpanID == "" || e.TraceID == "":
-		return &ValidationError{Code: CodeMissingID, Reason: "missing span_id or trace_id"}
-	case e.Kind == "":
-		return &ValidationError{Code: CodeMissingKind, Reason: "missing kind"}
-	}
-	if _, ok := validKinds[e.Kind]; !ok {
-		return &ValidationError{Code: CodeInvalidKind, Reason: fmt.Sprintf("invalid Kind %q", e.Kind)}
-	}
-	if _, ok := validStatuses[e.Status]; e.Status != "" && !ok {
-		return &ValidationError{Code: CodeInvalidStatus, Reason: fmt.Sprintf("invalid Status %q", e.Status)}
-	}
-	return nil
-}
-
 // SubmitEvaluations exports LLM Obs evaluation metrics. Invalid rows (bad join,
 // wrong value count, missing label) are dropped and reported in
 // ExportResult.ValidationErrors. The input is scanned in windows of the client's
@@ -108,9 +86,10 @@ func (c *Client) SubmitEvaluations(ctx context.Context, evals []EvaluationMetric
 		end := min(start+size, len(evals))
 		batch := make([]evalRow, 0, end-start)
 		for i := start; i < end; i++ {
-			w, reason := evals[i].lower(sc.mlApp)
+			w, reason := illmobs.BuildExportEvaluation(evals[i], sc.mlApp)
 			if reason != nil {
-				res.ValidationErrors = append(res.ValidationErrors, ValidationError{Index: i, Code: reason.Code, Reason: reason.Reason})
+				reason.Index = i
+				res.ValidationErrors = append(res.ValidationErrors, *reason)
 				continue
 			}
 			batch = append(batch, evalRow{index: i, metric: w})
@@ -147,7 +126,7 @@ func (c *Client) sendEvalBatch(ctx context.Context, batch []evalRow, res *Export
 			Attributes: transport.PushMetricsRequestDataAttributes{Metrics: metrics},
 		},
 	}
-	body, err := transport.MarshalJSON(payload)
+	_, err := transport.MarshalJSON(payload)
 	if err != nil {
 		good := dropUnencodableEvals(batch, res)
 		if len(good) == len(batch) {
@@ -160,7 +139,7 @@ func (c *Client) sendEvalBatch(ctx context.Context, batch []evalRow, res *Export
 		return
 	}
 	rr := RequestResult{Index: len(res.Requests), Count: len(batch)}
-	r, perr := c.transport.ExportPost(ctx, transport.EndpointEvalMetric, transport.SubdomainEvalMetric, "application/json", body)
+	r, perr := c.transport.PushEvalMetricsWithResult(ctx, metrics)
 	applyResult(&rr, r, perr)
 	res.Requests = append(res.Requests, rr)
 }
@@ -228,20 +207,24 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Export
 			return
 		}
 	}
-	r, perr := c.transport.ExportPost(ctx, transport.EndpointLLMSpan, transport.SubdomainLLMSpan, "application/json", body)
+	r, perr := c.transport.PushSpanEventsWithResult(ctx, spanEvents(batch))
 	applyResult(&rr, r, perr)
 	res.Requests = append(res.Requests, rr)
+}
+
+func spanEvents(batch []spanRow) []*transport.LLMObsSpanEvent {
+	spans := make([]*transport.LLMObsSpanEvent, len(batch))
+	for i := range batch {
+		spans[i] = batch[i].span
+	}
+	return spans
 }
 
 // marshalSpanPayload encodes a batch as the /api/v2/llmobs body: the JSON array
 // of per-span envelopes that transport.NewPushSpanEventsRequests builds for the
 // live path too.
 func marshalSpanPayload(batch []spanRow) ([]byte, error) {
-	spans := make([]*transport.LLMObsSpanEvent, len(batch))
-	for i := range batch {
-		spans[i] = batch[i].span
-	}
-	return transport.MarshalJSON(transport.NewPushSpanEventsRequests(spans))
+	return transport.MarshalJSON(transport.NewPushSpanEventsRequests(spanEvents(batch)))
 }
 
 // dropUnencodableSpans marks spans that fail to encode as row-level errors and
@@ -275,65 +258,7 @@ func dropSpanIO(batch []spanRow) ([]byte, error) {
 	return marshalSpanPayload(batch)
 }
 
-// ---- helpers ----
-
-// stampTags fills in the tags the live path puts on every span, so a group-by
-// mixing the two sources sees one population rather than a tagged and an untagged
-// bucket. source carries the live value for the same reason; a caller wanting a
-// different provenance sets the tag itself, which wins (see stampTag).
-func stampTags(tags []string, env, version, mlApp string) []string {
-	tags = stampTag(tags, "env", env)
-	tags = stampTag(tags, "version", version)
-	tags = stampTag(tags, "ml_app", mlApp)
-	tags = stampTag(tags, illmobs.TagKeySource, illmobs.TagValueSource)
-	tags = stampTag(tags, illmobs.TagKeyLanguage, illmobs.TagValueLanguage)
-	tags = stampTag(tags, illmobs.TagKeyTracerVersion, tracerVersion())
-	return tags
-}
-
-// stampTag ensures tags carries a non-empty key:val default. A caller-supplied
-// NON-empty value for key wins and is left untouched; an empty-valued "key:" tag
-// is treated as absent (dropped) so it cannot shadow a required default such as
-// ml_app. It never mutates the input's backing array.
-func stampTag(tags []string, key, val string) []string {
-	prefix := key + ":"
-	for _, t := range tags {
-		if strings.HasPrefix(t, prefix) && t != prefix {
-			return tags // caller already set a non-empty value; it wins
-		}
-	}
-	if val == "" {
-		return tags // nothing to stamp
-	}
-	// No non-empty value present: drop any empty "key:" placeholder, then stamp val.
-	out := make([]string, 0, len(tags)+1)
-	for _, t := range tags {
-		if t != prefix {
-			out = append(out, t)
-		}
-	}
-	return append(out, prefix+val)
-}
-
-// replaceTag sets key:val, dropping any existing tag with the same key first. A
-// blank val leaves tags untouched. Used where a structured field is the source
-// of truth (e.g. session_id) and must win over a stale caller-supplied tag. It
-// never mutates the input's backing array.
-func replaceTag(tags []string, key, val string) []string {
-	if val == "" {
-		return tags
-	}
-	prefix := key + ":"
-	out := make([]string, 0, len(tags)+1)
-	for _, t := range tags {
-		if !strings.HasPrefix(t, prefix) {
-			out = append(out, t)
-		}
-	}
-	return append(out, key+":"+val)
-}
-
-func applyResult(rr *RequestResult, r transport.PostResult, err error) {
+func applyResult(rr *RequestResult, r transport.RequestResult, err error) {
 	rr.StatusCode = r.StatusCode
 	rr.Attempts = r.Attempts
 	rr.Retriable = r.Retriable

@@ -2750,9 +2750,6 @@ func TestFlushSync(t *testing.T) {
 	})
 }
 
-// TestSpanLinkJSONTags guards the public wire shape of llmobs.SpanLink: callers
-// that persist/replay links via encoding/json must keep getting snake_case
-// trace_id/span_id (with a zero trace_id_high omitted), not the Go field names.
 func TestSpanLinkJSONTags(t *testing.T) {
 	b, err := json.Marshal(llmobs.SpanLink{TraceID: 111, SpanID: 222})
 	require.NoError(t, err)
@@ -2766,12 +2763,6 @@ func TestSpanLinkJSONTags(t *testing.T) {
 	assert.JSONEq(t, `{"trace_id":111,"trace_id_high":333,"span_id":222,"attributes":{"a":"b"},"tracestate":"ts","flags":1}`, string(b))
 }
 
-// TestSpanLinkWire locks the live-tracer span-link wire end to end: links added to
-// an LLM span are emitted with their uint64 trace/span IDs formatted as decimal
-// strings, and a zero high word is omitted rather than serialized. It drives the
-// toTransportSpanLinks conversion through the real emit path, so a refactor that
-// stopped string-formatting the IDs or dropped the TraceIDHigh guard cannot flip
-// the wire with every test still green.
 func TestSpanLinkWire(t *testing.T) {
 	_, coll, ll := testTracer(t)
 

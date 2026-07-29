@@ -5,7 +5,11 @@
 
 package export
 
-import "fmt"
+import (
+	"fmt"
+
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+)
 
 // ExportResult reports the outcome of a SubmitSpans or SubmitEvaluations call.
 //
@@ -98,46 +102,20 @@ type RequestResult struct {
 	Err error
 }
 
-// ErrorCode classifies why a row was rejected, so callers can branch on the
-// cause without matching on [ValidationError.Reason] text.
-type ErrorCode string
+// ErrorCode classifies why a row was rejected.
+type ErrorCode = illmobs.ExportValidationCode
 
-// The reasons a row is dropped before sending.
 const (
-	// CodeMissingID: the span has no span_id or no trace_id.
-	CodeMissingID ErrorCode = "missing_id"
-	// CodeMissingKind: the span has no Kind.
-	CodeMissingKind ErrorCode = "missing_kind"
-	// CodeInvalidKind: the span's Kind is not one of the recognized kinds.
-	CodeInvalidKind ErrorCode = "invalid_kind"
-	// CodeInvalidStatus: the span's Status is neither StatusOK nor StatusError.
-	CodeInvalidStatus ErrorCode = "invalid_status"
-	// CodeMissingLabel: the evaluation metric has no Label.
-	CodeMissingLabel ErrorCode = "missing_label"
-	// CodeInvalidJoin: the evaluation metric does not specify exactly one complete
-	// join family (span ID or tag).
-	CodeInvalidJoin ErrorCode = "invalid_join"
-	// CodeInvalidValue: the evaluation metric's value set is empty, ambiguous, or
-	// not representable (e.g. a non-finite score, an empty json_value).
-	CodeInvalidValue ErrorCode = "invalid_value"
-	// CodeTypeMismatch: the evaluation metric's MetricType disagrees with the value
-	// it carries, or names an unknown type.
-	CodeTypeMismatch ErrorCode = "type_mismatch"
-	// CodeNotEncodable: the row holds a value encoding/json cannot marshal.
-	CodeNotEncodable ErrorCode = "not_encodable"
+	CodeMissingID     ErrorCode = illmobs.ExportCodeMissingID
+	CodeMissingKind   ErrorCode = illmobs.ExportCodeMissingKind
+	CodeInvalidKind   ErrorCode = illmobs.ExportCodeInvalidKind
+	CodeInvalidStatus ErrorCode = illmobs.ExportCodeInvalidStatus
+	CodeMissingLabel  ErrorCode = illmobs.ExportCodeMissingLabel
+	CodeInvalidJoin   ErrorCode = illmobs.ExportCodeInvalidJoin
+	CodeInvalidValue  ErrorCode = illmobs.ExportCodeInvalidValue
+	CodeTypeMismatch  ErrorCode = illmobs.ExportCodeTypeMismatch
+	CodeNotEncodable  ErrorCode = illmobs.ExportCodeNotEncodable
 )
 
-// ValidationError describes an input row that failed validation and was not sent.
-// It implements error so a caller can return one directly.
-type ValidationError struct {
-	// Index is the zero-based position of the offending row in the input slice.
-	Index int
-	// Code classifies the rejection.
-	Code ErrorCode
-	// Reason is a human-readable explanation of why the row was rejected.
-	Reason string
-}
-
-func (e ValidationError) Error() string {
-	return fmt.Sprintf("llmobs/export: row %d rejected (%s): %s", e.Index, e.Code, e.Reason)
-}
+// ValidationError describes an input row that was not sent.
+type ValidationError = illmobs.ExportValidationError

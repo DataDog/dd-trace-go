@@ -31,7 +31,6 @@ import (
 const (
 	headerEVPSubdomain   = "X-Datadog-EVP-Subdomain"
 	headerRateLimitReset = "x-ratelimit-reset"
-	headerRetryAfter     = "Retry-After"
 )
 
 const (
@@ -182,8 +181,8 @@ func encodeJSON(v any) (*bytes.Buffer, error) {
 	return &buf, nil
 }
 
-// MarshalJSON is encodeJSON without the trailing newline, for callers that hand
-// the exact bytes to a size guard or to ExportPost.
+// MarshalJSON is encodeJSON without the trailing newline, for callers that need
+// the exact encoded size.
 func MarshalJSON(v any) ([]byte, error) {
 	buf, err := encodeJSON(v)
 	if err != nil {
@@ -206,14 +205,13 @@ func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain str
 
 type requestResult struct {
 	statusCode int
+	attempts   int
 	body       []byte
+	retriable  bool
 }
 
 // newRequest builds an HTTP request to url under subdomain with the transport's
 // content type, default headers, and (in Agent mode) the EVP subdomain header.
-// It is the shared request-construction step for both request and ExportPost;
-// endpoint-specific headers (e.g. the datasets/experiments app-key headers in
-// request) are layered on by the caller.
 func (c *Transport) newRequest(ctx context.Context, method, url, subdomain, contentType string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
@@ -235,8 +233,11 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 	}
 	urlStr := c.baseURL(subdomain) + path
 	backoffStrat := defaultBackoffStrategy()
+	var attempts int
+	var last requestResult
 
 	doRequest := func() (result requestResult, err error) {
+		attempts++
 		log.Debug("llmobs: sending request (method: %s | url: %s)", method, urlStr)
 		defer func() {
 			if err != nil {
@@ -276,6 +277,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			last = requestResult{attempts: attempts, retriable: ctx.Err() == nil}
 			return requestResult{}, err
 		}
 		defer resp.Body.Close()
@@ -286,193 +288,91 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			if readErr != nil {
 				return requestResult{}, fmt.Errorf("failed to read response body: %w", readErr)
 			}
-			return requestResult{statusCode: code, body: b}, nil
+			last = requestResult{statusCode: code, attempts: attempts, body: b}
+			return last, nil
 		}
 		if isRetriableStatus(code) {
+			body := readResponseBody(resp.Body)
+			last = requestResult{
+				statusCode: code,
+				attempts:   attempts,
+				body:       body,
+				retriable:  true,
+			}
 			errMsg := fmt.Sprintf("request failed with transient http status code: %d", code)
-			if body := readErrorBody(resp); body != "" {
-				errMsg = fmt.Sprintf("%s: %s", errMsg, body)
+			if message := errorBodyMessage(resp.Header, body); message != "" {
+				errMsg = fmt.Sprintf("%s: %s", errMsg, message)
 			}
 			return requestResult{}, fmt.Errorf("%s", errMsg)
 		}
 		if code == http.StatusTooManyRequests {
+			last = requestResult{
+				statusCode: code,
+				attempts:   attempts,
+				body:       readResponseBody(resp.Body),
+				retriable:  true,
+			}
 			wait := parseRetryAfter(resp.Header)
 			log.Debug("llmobs: status code 429, waiting %s before retry...", wait.String())
-			drainAndClose(resp.Body)
 			return requestResult{}, backoff.RetryAfter(int(wait.Seconds()))
 		}
+		body := readResponseBody(resp.Body)
+		last = requestResult{statusCode: code, attempts: attempts, body: body}
 		errMsg := fmt.Sprintf("request failed with http status code: %d", resp.StatusCode)
-		if body := readErrorBody(resp); body != "" {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, body)
+		if message := errorBodyMessage(resp.Header, body); message != "" {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, message)
 		}
-		drainAndClose(resp.Body)
 		return requestResult{}, backoff.Permanent(fmt.Errorf("%s", errMsg))
 	}
 
-	return backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
+	result, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
+	if err != nil {
+		last.attempts = attempts
+		if ctx.Err() != nil {
+			last.retriable = false
+		}
+		return last, err
+	}
+	result.attempts = attempts
+	return result, nil
 }
 
-// PostResult reports the outcome of a single ExportPost performed by an offline
-// export client. It surfaces the final HTTP status, the number of attempts made,
-// the (bounded) response body, and whether the failure class was retriable.
-type PostResult struct {
+// RequestResult reports the outcome of an LLM Obs transport request.
+type RequestResult struct {
 	StatusCode int
 	Attempts   int
 	Body       []byte
 	Retriable  bool
 }
 
-// ExportPost sends an already-encoded body to path under the given EVP subdomain
-// using the transport's routing (agentless direct intake vs. Agent EVP proxy),
-// auth headers, and bounded retry policy, and reports a structured PostResult.
-//
-// It is intended for offline export clients (llmobs/export) that build their own
-// payloads and need per-request outcomes. Retry classification matches the rest
-// of the transport (5xx/408/425/429 retriable, other 4xx permanent); callers
-// must not layer additional retry on top of it.
-//
-// Unlike request, it captures a bounded response body on every response —
-// including errors — and reports the attempt count and retriable class, which an
-// export caller drives its own outbox from.
-func (c *Transport) ExportPost(ctx context.Context, path, subdomain, contentType string, body []byte) (PostResult, error) {
-	urlStr := c.baseURL(subdomain) + path
-	backoffStrat := defaultBackoffStrategy()
-
-	var attempts int
-	var last PostResult
-
-	op := func() (PostResult, error) {
-		attempts++
-		req, err := c.newRequest(ctx, http.MethodPost, urlStr, subdomain, contentType, bytes.NewReader(body))
-		if err != nil {
-			return PostResult{}, backoff.Permanent(err)
-		}
-
-		timeoutCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
-		defer cancel()
-		req = req.WithContext(timeoutCtx)
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			// Network/transport error is retriable, but a caller-cancelled or
-			// expired parent context is not a transient server condition.
-			last = PostResult{Retriable: ctx.Err() == nil}
-			return PostResult{}, err
-		}
-		defer resp.Body.Close()
-
-		code := resp.StatusCode
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		// The read above is capped at 1MiB; drain any remainder (also bounded) so
-		// the deferred Close can return the keep-alive connection to the pool for
-		// the next chunk instead of discarding it on an unread body.
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-		if code >= 200 && code <= 299 {
-			last = PostResult{StatusCode: code, Body: respBody}
-			return last, nil
-		}
-		if isRetriableStatus(code) || code == http.StatusTooManyRequests {
-			last = PostResult{StatusCode: code, Body: respBody, Retriable: true}
-			// Honor a server-advertised delay when present (always for 429; for a
-			// retriable 5xx/408 only when the response actually carries the header,
-			// e.g. a 503 during throttling/maintenance) instead of the short
-			// exponential backoff; otherwise fall back to exponential backoff.
-			if code == http.StatusTooManyRequests || hasRetryAfterHeader(resp.Header) {
-				return PostResult{}, backoff.RetryAfter(int(parseExportRetryAfter(resp.Header).Seconds()))
-			}
-			return PostResult{}, fmt.Errorf("request failed with transient http status code: %d", code)
-		}
-		last = PostResult{StatusCode: code, Body: respBody}
-		return PostResult{}, backoff.Permanent(fmt.Errorf("request failed with http status code: %d", code))
+func summarizeRequest(result requestResult) RequestResult {
+	return RequestResult{
+		StatusCode: result.statusCode,
+		Attempts:   result.attempts,
+		Body:       result.body,
+		Retriable:  result.retriable,
 	}
-
-	res, err := backoff.Retry(ctx, op, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
-	if err != nil {
-		last.Attempts = attempts
-		// A caller-cancelled or expired context is not a transient failure, even if
-		// the last recorded response was retriable: clear Retriable so callers using
-		// it for outbox/retry decisions don't re-enqueue on a cancellation.
-		if ctx.Err() != nil {
-			last.Retriable = false
-		}
-		return last, err
-	}
-	res.Attempts = attempts
-	return res, nil
 }
 
-func readErrorBody(resp *http.Response) string {
-	if resp == nil || resp.Body == nil {
-		return ""
-	}
-	// Only read the body if it's JSON
-	contentType := resp.Header.Get("Content-Type")
+func errorBodyMessage(header http.Header, body []byte) string {
+	contentType := header.Get("Content-Type")
 	if !strings.Contains(contentType, "application/json") {
-		return ""
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(body))
 }
 
-func drainAndClose(b io.ReadCloser) {
-	if b == nil {
-		return
+func readResponseBody(body io.Reader) []byte {
+	if body == nil {
+		return nil
 	}
-	io.Copy(io.Discard, io.LimitReader(b, 1<<20)) // drain up to 1MB to reuse conn
-	_ = b.Close()
+	response, _ := io.ReadAll(io.LimitReader(body, 1<<20))
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, 1<<20))
+	return response
 }
 
-// hasRetryAfterHeader reports whether the response advertises a retry delay via
-// the standard Retry-After header or the Datadog-specific x-ratelimit-reset.
-// Export-only, like parseExportRetryAfter.
-func hasRetryAfterHeader(h http.Header) bool {
-	return h.Get(headerRetryAfter) != "" || h.Get(headerRateLimitReset) != ""
-}
-
-const (
-	// maxExportRetryAfter bounds the delay ExportPost honors from a
-	// server-advertised Retry-After. A single hostile or misconfigured header would
-	// otherwise park an export inside one Submit call for as long as the server
-	// asks, and an offline caller driving its own outbox is better served by a
-	// prompt retriable failure.
-	maxExportRetryAfter = 30 * time.Second
-	// minExportRetryAfter is a floor, because backoff.RetryAfter takes WHOLE
-	// seconds: a sub-second delay would truncate to 0, which backoff/v5 treats as
-	// "retry now" and also resets the exponential backoff — so an HTTP-date one
-	// second in the future would make ExportPost hammer a throttling intake instead
-	// of waiting.
-	minExportRetryAfter = 1 * time.Second
-)
-
-// parseExportRetryAfter is parseRetryAfter plus the standard Retry-After header
-// (delta-seconds or HTTP-date), clamped to [minExportRetryAfter,
-// maxExportRetryAfter].
-//
-// It is deliberately export-only: the live flush passes context.Background() on
-// the paths tracer.Stop() waits for, so honoring an unbounded server delay in
-// parseRetryAfter would let a 429 stall shutdown.
-func parseExportRetryAfter(h http.Header) time.Duration {
-	d := parseRetryAfter(h)
-	if ra := strings.TrimSpace(h.Get(headerRetryAfter)); ra != "" {
-		if secs, err := strconv.ParseInt(ra, 10, 64); err == nil {
-			if secs > 0 {
-				d = time.Duration(secs) * time.Second
-			}
-		} else if t, err := http.ParseTime(ra); err == nil {
-			if until := time.Until(t); until > 0 {
-				d = until
-			}
-		}
-	}
-	return min(max(d, minExportRetryAfter), maxExportRetryAfter)
-}
-
-// parseRetryAfter reports how long the live path waits before retrying a
-// rate-limited request, from the Datadog-specific x-ratelimit-reset header,
-// defaulting to 1s.
+// parseRetryAfter reports how long to wait before retrying a rate-limited
+// request, from the Datadog-specific x-ratelimit-reset header.
 func parseRetryAfter(h http.Header) time.Duration {
 	rateLimitReset := h.Get(headerRateLimitReset)
 	waitSeconds := int64(1)

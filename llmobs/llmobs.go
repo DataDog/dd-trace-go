@@ -164,6 +164,18 @@ type (
 
 	// EvalMetricType is the type of an evaluation metric's value.
 	EvalMetricType = illmobs.EvalMetricType
+
+	// SpanEvent is a manually constructed LLM Obs span for offline export.
+	SpanEvent = illmobs.ExportSpanEvent
+
+	// SpanMetrics contains optional metrics for a manually constructed span.
+	SpanMetrics = illmobs.ExportSpanMetrics
+
+	// SpanEventLink links a manually constructed span to another span.
+	SpanEventLink = illmobs.ExportSpanLink
+
+	// EvaluationMetric is a manually constructed LLM Obs evaluation metric.
+	EvaluationMetric = illmobs.ExportEvaluationMetric
 )
 
 // The LLM Obs span kinds. The parenthesized value is the string emitted on the
@@ -201,6 +213,8 @@ const (
 	EvalMetricTypeScore EvalMetricType = illmobs.EvalMetricTypeScore
 	// EvalMetricTypeBoolean ("boolean") is a boolean-valued metric.
 	EvalMetricTypeBoolean EvalMetricType = illmobs.EvalMetricTypeBoolean
+	// EvalMetricTypeJSON ("json") is a structured JSON-valued metric.
+	EvalMetricTypeJSON EvalMetricType = illmobs.EvalMetricTypeJSON
 )
 
 // Span represents a generic LLMObs span that can be converted to specific span types.

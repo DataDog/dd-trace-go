@@ -13,10 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSpanLinkWireShape locks the span-link wire shape: trace/span IDs are always
-// JSON strings (the live tracer formats its uint64 IDs as decimal strings; the
-// offline export path passes opaque caller IDs through). TraceIDHigh is omitted
-// unless set.
 func TestSpanLinkWireShape(t *testing.T) {
 	cases := []struct {
 		name string
@@ -52,8 +48,6 @@ func TestSpanLinkWireShape(t *testing.T) {
 	}
 }
 
-// TestSpanLinkRoundTrip guards decoding: the in-process test collector decodes
-// transport.SpanLink, so the string wire shape must round-trip unchanged.
 func TestSpanLinkRoundTrip(t *testing.T) {
 	for _, wire := range []string{
 		`{"trace_id":"111","trace_id_high":"333","span_id":"222"}`,

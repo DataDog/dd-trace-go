@@ -48,11 +48,7 @@ type APMSpan interface {
 	BaggageItem(key string) string
 }
 
-// SpanLink represents a link between spans. Its IDs are the tracer's native
-// numeric IDs; they are formatted as decimal strings on the transport wire (see
-// toTransportSpanLinks). The snake-case json tags are part of the public
-// llmobs.SpanLink alias's contract — callers persist and replay links via
-// encoding/json — so they must not be renamed or dropped.
+// SpanLink represents a link between spans.
 type SpanLink struct {
 	TraceID     uint64            `json:"trace_id"`
 	TraceIDHigh uint64            `json:"trace_id_high,omitempty"`
