@@ -663,14 +663,19 @@ type trace struct {
 // decision arrives. inherited marks values read from an inbound `ot=`, which are
 // forwarded verbatim and never re-derived locally.
 type otelTraceState struct {
-	rv, th    *uint64
+	rv, th *uint64
+	// unknown holds inbound `ot=` sub-keys other than rv/th (';'-joined), forwarded
+	// verbatim so DD stays transparent to sub-keys OTel may add later. Only ever set
+	// on the inherited path.
+	unknown   string
 	inherited bool
 }
 
-// setOtelInherited records rv/th parsed from an inbound `ot=` member. The values
-// are forwarded unchanged on inject and never re-derived locally.
-func (t *trace) setOtelInherited(rv uint64, rvOK bool, th uint64, thOK bool) {
-	if !rvOK && !thOK {
+// setOtelInherited records rv/th (and any unknown sub-keys) parsed from an
+// inbound `ot=` member. The values are forwarded unchanged on inject and never
+// re-derived locally.
+func (t *trace) setOtelInherited(rv uint64, rvOK bool, th uint64, thOK bool, unknown string) {
+	if !rvOK && !thOK && unknown == "" {
 		return
 	}
 	t.mu.Lock()
@@ -684,6 +689,7 @@ func (t *trace) setOtelInherited(rv uint64, rvOK bool, th uint64, thOK bool) {
 	if thOK {
 		t.otel.th = &th
 	}
+	t.otel.unknown = unknown
 	t.otel.inherited = true
 }
 
@@ -746,6 +752,17 @@ func (t *trace) otelTracestate() (rv, th *uint64) {
 		return nil, nil
 	}
 	return t.otel.rv, t.otel.th
+}
+
+// otelUnknownTracestate returns inherited `ot=` sub-keys other than rv/th, to be
+// re-emitted verbatim on inject. Empty when none were inherited.
+func (t *trace) otelUnknownTracestate() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.otel == nil {
+		return ""
+	}
+	return t.otel.unknown
 }
 
 var (

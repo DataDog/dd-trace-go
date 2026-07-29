@@ -257,6 +257,29 @@ func TestTextMapExtractDualHeaderPreservesOtel(t *testing.T) {
 	assert.Contains(out[tracestateHeader], "othervendor=t61rcWkgMzE")
 }
 
+// OTel defines only rv/th in the `ot=` member today but reserves room for more
+// sub-keys. An inherited unknown sub-key must be forwarded verbatim rather than
+// dropped, so DD stays transparent to future additions.
+func TestTextMapForwardsUnknownOtelSubkeys(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	assert.NoError(err)
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1;p:2222222222222222,ot=rv:ef284ace7a91e1;th:e6666666666668;foo:bar",
+	})
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+
+	out := TextMapCarrier(map[string]string{})
+	assert.NoError(tracer.Inject(sctx, out))
+	assert.Contains(out[tracestateHeader], "ot=rv:ef284ace7a91e1;th:e6666666666668;foo:bar")
+}
+
 func TestTextMapPropagatorErrors(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
@@ -3094,7 +3117,7 @@ func TestComposeTracestateDropsManagedMembersWithOWS(t *testing.T) {
 	ctx.traceID = traceIDFrom64Bits(1)
 	ctx.spanID = 1
 	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
-	ctx.trace.setOtelInherited(0x1234567890abcd, true, 0, false)
+	ctx.trace.setOtelInherited(0x1234567890abcd, true, 0, false, "")
 
 	// OWS after each comma, with the managed members not first in the list.
 	oldState := "vendorA=x, ot=rv:aabbccddeeff00, dd=s:9, vendorB=y"

@@ -52,7 +52,13 @@ func deriveOtelTH(rate float64) uint64 {
 // "ot="), reading the rv and th sub-keys. A malformed or absent sub-key is
 // reported as not-OK so callers can treat it as absent, per the spec-consistent
 // robustness rule: never reject the trace over a bad `ot=`.
-func parseOtelTracestate(value string) (rv uint64, rvOK bool, th uint64, thOK bool) {
+//
+// Sub-keys other than rv/th are returned verbatim in unknown (';'-joined, in
+// arrival order). OTel currently defines only rv and th, but the spec reserves
+// room for more; forwarding them unchanged keeps DD transparent to future
+// sub-keys instead of silently dropping them from an inherited decision.
+func parseOtelTracestate(value string) (rv uint64, rvOK bool, th uint64, thOK bool, unknown string) {
+	var unk strings.Builder
 	for member := range strings.SplitSeq(value, ";") {
 		k, v, ok := strings.Cut(member, ":")
 		if !ok {
@@ -75,26 +81,35 @@ func parseOtelTracestate(value string) (rv uint64, rvOK bool, th uint64, thOK bo
 					th, thOK = n, true
 				}
 			}
+		default:
+			if unk.Len() > 0 {
+				unk.WriteByte(';')
+			}
+			unk.WriteString(member)
 		}
 	}
-	return rv, rvOK, th, thOK
+	return rv, rvOK, th, thOK, unk.String()
 }
 
 // appendOtelValue writes the value of the `ot=` list-member (without the "ot="
 // prefix) to b: rv as 14 hex digits and/or th with trailing zero nibbles
-// trimmed. A nil rv or th is omitted (rv is written first when both are
-// present). The pairing invariant (never emit th without rv) is enforced by
-// callers on the generation path; an inherited value is forwarded exactly as it
-// arrived, which may legitimately be th-only or rv-only.
-func appendOtelValue(b *strings.Builder, rv, th *uint64) {
+// trimmed, followed by any inherited unknown sub-keys. A nil rv or th is omitted
+// (rv is written first when both are present). The pairing invariant (never emit
+// th without rv) is enforced by callers on the generation path; an inherited
+// value is forwarded exactly as it arrived, which may legitimately be th-only or
+// rv-only. unknown holds ';'-joined sub-keys other than rv/th, forwarded verbatim
+// when inherited and empty on the generation path.
+func appendOtelValue(b *strings.Builder, rv, th *uint64, unknown string) {
 	var buf [otelRVHexLen]byte
+	wrote := false
 	if rv != nil {
 		b.WriteString("rv:")
 		hexEncode14(&buf, *rv)
 		b.Write(buf[:])
+		wrote = true
 	}
 	if th != nil {
-		if rv != nil {
+		if wrote {
 			b.WriteByte(';')
 		}
 		b.WriteString("th:")
@@ -105,6 +120,13 @@ func appendOtelValue(b *strings.Builder, rv, th *uint64) {
 			end--
 		}
 		b.Write(buf[:end])
+		wrote = true
+	}
+	if unknown != "" {
+		if wrote {
+			b.WriteByte(';')
+		}
+		b.WriteString(unknown)
 	}
 }
 

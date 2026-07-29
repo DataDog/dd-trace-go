@@ -32,7 +32,7 @@ func TestSetOtelProbabilityRateZero(t *testing.T) {
 
 	t.Run("preserves inherited pair", func(t *testing.T) {
 		tr := newTrace()
-		tr.setOtelInherited(0x1234567890abcd, true, 0xe6666666666668, true)
+		tr.setOtelInherited(0x1234567890abcd, true, 0xe6666666666668, true, "")
 		tr.setOtelProbability(1, 0)
 		rv, th := tr.otelTracestate()
 		require.NotNil(t, rv)
@@ -91,7 +91,7 @@ func TestDeriveOtelMatchesSampledByRate(t *testing.T) {
 func TestFormatOtelValue(t *testing.T) {
 	format := func(rv, th *uint64) string {
 		var b strings.Builder
-		appendOtelValue(&b, rv, th)
+		appendOtelValue(&b, rv, th, "")
 		return b.String()
 	}
 	ptr := func(v uint64) *uint64 { return &v }
@@ -103,37 +103,52 @@ func TestFormatOtelValue(t *testing.T) {
 	assert.Equal(t, "rv:0000000000000a", format(ptr(0xa), nil))
 	// th-only (inherited OTel default-sampling decision).
 	assert.Equal(t, "th:e6666666666668", format(nil, ptr(0xe6666666666668)))
+
+	// Inherited unknown sub-keys are appended after rv/th (and stand alone when
+	// rv/th are absent).
+	var b strings.Builder
+	appendOtelValue(&b, ptr(0xa), ptr(0xe6666666666668), "foo:1;bar:2")
+	assert.Equal(t, "rv:0000000000000a;th:e6666666666668;foo:1;bar:2", b.String())
+	b.Reset()
+	appendOtelValue(&b, nil, nil, "foo:1")
+	assert.Equal(t, "foo:1", b.String())
 }
 
 func TestParseOtelTracestate(t *testing.T) {
-	rv, rvOK, th, thOK := parseOtelTracestate("rv:ef284ace7a91e1;th:e6666666666668")
+	rv, rvOK, th, thOK, unknown := parseOtelTracestate("rv:ef284ace7a91e1;th:e6666666666668")
 	assert.True(t, rvOK)
 	assert.True(t, thOK)
 	assert.Equal(t, uint64(0xef284ace7a91e1), rv)
 	assert.Equal(t, uint64(0xe6666666666668), th)
+	assert.Empty(t, unknown)
 
 	// th trailing zeros are restored on parse (round-trips with append).
-	_, _, th, thOK = parseOtelTracestate("th:e6666666666668")
+	_, _, th, thOK, _ = parseOtelTracestate("th:e6666666666668")
 	assert.True(t, thOK)
 	assert.Equal(t, uint64(0xe6666666666668), th)
 
 	// "th:0" is a valid zero threshold.
-	_, _, th, thOK = parseOtelTracestate("rv:00000000000001;th:0")
+	_, _, th, thOK, _ = parseOtelTracestate("rv:00000000000001;th:0")
 	assert.True(t, thOK)
 	assert.Equal(t, uint64(0), th)
+
+	// Sub-keys other than rv/th are captured verbatim, in arrival order, for
+	// forwarding.
+	_, _, _, _, unknown = parseOtelTracestate("rv:ef284ace7a91e1;foo:1;th:e6666666666668;bar:2")
+	assert.Equal(t, "foo:1;bar:2", unknown)
 }
 
 func TestParseOtelTracestateMalformed(t *testing.T) {
 	// rv must be exactly 14 hex digits.
-	_, rvOK, _, _ := parseOtelTracestate("rv:abc")
+	_, rvOK, _, _, _ := parseOtelTracestate("rv:abc")
 	assert.False(t, rvOK)
-	_, rvOK, _, _ = parseOtelTracestate("rv:ef284ace7a91e1ff")
+	_, rvOK, _, _, _ = parseOtelTracestate("rv:ef284ace7a91e1ff")
 	assert.False(t, rvOK)
 	// non-hex is rejected.
-	_, _, _, thOK := parseOtelTracestate("th:zzzz")
+	_, _, _, thOK, _ := parseOtelTracestate("th:zzzz")
 	assert.False(t, thOK)
 	// a bad rv doesn't poison a good th and vice versa.
-	rv, rvOK, th, thOK := parseOtelTracestate("rv:nothex;th:e6666666666668")
+	rv, rvOK, th, thOK, _ := parseOtelTracestate("rv:nothex;th:e6666666666668")
 	assert.False(t, rvOK)
 	assert.Zero(t, rv)
 	assert.True(t, thOK)
