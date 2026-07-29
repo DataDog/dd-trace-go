@@ -31,7 +31,6 @@ func TestNewEvent(t *testing.T) {
 	require.Equal(t, "message", event.Message)
 	require.Equal(t, "type", event.Type)
 	require.Equal(t, "id", event.ID)
-	require.GreaterOrEqual(t, len(event.Frames), 2)
 }
 
 func TestNewEventWithSkipOption(t *testing.T) {

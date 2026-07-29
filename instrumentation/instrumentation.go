@@ -331,10 +331,9 @@ func WithStackTraceDepth(depth int) StackTraceOption {
 	return stacktrace.WithDepth(depth)
 }
 
-// CaptureStackTrace captures a stack trace for an event in category. Callers
-// must provide a correlation ID for vulnerability and exploit categories. It
-// returns nil when no frames are captured. The caller is responsible for
-// applying its product-specific enablement configuration.
+// CaptureStackTrace captures a stack trace for an event in category. It returns
+// nil when no frames are captured. The caller is responsible for applying its
+// product-specific enablement configuration.
 func (i *Instrumentation) CaptureStackTrace(category StackTraceCategory, options ...StackTraceOption) *StackTrace {
 	event := stacktrace.NewEvent(category, options...)
 	if len(event.Frames) == 0 {

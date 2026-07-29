@@ -19,31 +19,25 @@ import (
 )
 
 func TestSetupActionHandlersStackTrace(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "disabled", true: "enabled"}[enabled], func(t *testing.T) {
-			op, _ := emitterwaf.StartContextOperation(context.Background(), trace.TestTagSetter{})
-			feature := Feature{stackTrace: config.StackTraceConfig{
-				Disabled: !enabled,
-				MaxDepth: 1,
-			}}
-			feature.SetupActionHandlers(op)
+	op, _ := emitterwaf.StartContextOperation(context.Background(), trace.TestTagSetter{})
+	feature := Feature{stackTrace: config.StackTraceConfig{MaxDepth: 1}}
+	feature.SetupActionHandlers(op)
 
-			(&actions.StackTraceAction{}).EmitData(op)
-			require.Empty(t, op.StackTraces())
-			(&actions.StackTraceAction{Event: &stacktrace.Event{
-				Category: stacktrace.ExploitEvent,
-				ID:       "stack-id",
-			}}).EmitData(op)
+	(&actions.StackTraceAction{}).EmitData(op)
+	require.Empty(t, op.StackTraces())
 
-			stacks := op.StackTraces()
-			if !enabled {
-				require.Empty(t, stacks)
-				return
-			}
-			require.Len(t, stacks, 1)
-			require.Equal(t, stacktrace.ExploitEvent, stacks[0].Category)
-			require.Equal(t, "stack-id", stacks[0].ID)
-			require.Len(t, stacks[0].Frames, 1)
-		})
-	}
+	event := stacktrace.NewEvent(
+		stacktrace.ExploitEvent,
+		stacktrace.WithID("stack-id"),
+		stacktrace.WithDepth(1),
+	)
+	(&actions.StackTraceAction{Event: event}).EmitData(op)
+
+	require.Equal(t, []*stacktrace.Event{event}, op.StackTraces())
+
+	disabledOp, _ := emitterwaf.StartContextOperation(context.Background(), trace.TestTagSetter{})
+	disabledFeature := Feature{stackTrace: config.StackTraceConfig{Disabled: true}}
+	disabledFeature.SetupActionHandlers(disabledOp)
+	(&actions.StackTraceAction{Event: event}).EmitData(disabledOp)
+	require.Empty(t, disabledOp.StackTraces())
 }

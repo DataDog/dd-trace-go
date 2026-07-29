@@ -123,6 +123,8 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 }
 
 func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
+	op.SetStackTraceConfig(f.stackTrace)
+
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
 		log.Debug("appsec: blocking event detected")
 		op.SetTag(blockedRequestTag, true)
@@ -135,11 +137,7 @@ func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
 			return
 		}
 		log.Debug("appsec: registering stack trace for security purposes")
-		op.AddStackTraces(stacktrace.NewEvent(
-			action.Event.Category,
-			stacktrace.WithID(action.Event.ID),
-			stacktrace.WithDepth(f.stackTrace.MaxDepth),
-		))
+		op.AddStackTraces(action.Event)
 	})
 
 	dyngo.OnData(op, func(*waf.SecurityEvent) {

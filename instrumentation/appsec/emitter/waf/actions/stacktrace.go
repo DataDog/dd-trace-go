@@ -12,20 +12,26 @@ import (
 )
 
 func init() {
-	registerActionHandler("generate_stack", NewStackTraceAction)
+	registerActionHandler("generate_stack", newStackTraceAction)
 }
 
-// StackTraceAction requests stack-trace generation. Event carries only the
-// category and correlation metadata; the AppSec listener captures its frames
-// according to the active AppSec configuration.
+// StackTraceAction contains a generated stack-trace event.
 type StackTraceAction struct {
 	Event *stacktrace.Event
 }
 
 func (a *StackTraceAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) }
 
-// NewStackTraceAction creates an action for the "stacktrace" action type
+// NewStackTraceAction immediately captures a stack trace for a generate_stack
+// action using the default capture depth.
 func NewStackTraceAction(params map[string]any) []Action {
+	return newStackTraceAction(params, Config{})
+}
+
+func newStackTraceAction(params map[string]any, cfg Config) []Action {
+	if cfg.StackTraceDisabled {
+		return nil
+	}
 	id, ok := params["stack_id"]
 	if !ok {
 		log.Debug("appsec: could not read stack_id parameter for generate_stack action")
@@ -39,9 +45,10 @@ func NewStackTraceAction(params map[string]any) []Action {
 	}
 
 	return []Action{
-		&StackTraceAction{Event: &stacktrace.Event{
-			Category: stacktrace.ExploitEvent,
-			ID:       strID,
-		}},
+		&StackTraceAction{Event: stacktrace.NewEvent(
+			stacktrace.ExploitEvent,
+			stacktrace.WithID(strID),
+			stacktrace.WithDepth(cfg.StackTraceDepth),
+		)},
 	}
 }
