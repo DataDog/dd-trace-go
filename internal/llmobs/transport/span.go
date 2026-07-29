@@ -28,9 +28,7 @@ const (
 	SpanKindTool       SpanKind = "tool"
 )
 
-// SpanLink links a span to another span. Its trace/span IDs are opaque decimal
-// strings: the live tracer formats its uint64 IDs as decimal strings and the
-// offline export path passes caller-assigned string IDs through verbatim.
+// SpanLink links a span using decimal-string IDs.
 type SpanLink struct {
 	TraceID     string            `json:"trace_id"`
 	TraceIDHigh string            `json:"trace_id_high,omitempty"`
@@ -48,9 +46,6 @@ type DDAttributes struct {
 }
 
 type LLMObsSpanEvent struct {
-	// The fields without JSON tags are construction inputs for callers that build
-	// completed spans offline. BuildExportSpan lowers them into the existing wire
-	// fields below before submission.
 	Kind          SpanKind       `json:"-"`
 	ModelName     string         `json:"-"`
 	ModelProvider string         `json:"-"`
@@ -89,11 +84,8 @@ type PushSpanEventsRequest struct {
 	Spans         []*LLMObsSpanEvent `json:"spans,omitempty"`
 }
 
-// NewPushSpanEventsRequests builds the /api/v2/llmobs request envelopes for
-// events: one envelope per span, because _dd.scope is a per-envelope field taken
-// from the span's own _dd.scope, so spans with differing scopes cannot share one.
-// Shared by the live flush and the offline export client so both emit the same
-// envelope shape.
+// NewPushSpanEventsRequests creates one envelope per span because scope belongs
+// to the envelope.
 func NewPushSpanEventsRequests(events []*LLMObsSpanEvent) []*PushSpanEventsRequest {
 	body := make([]*PushSpanEventsRequest, 0, len(events))
 	for _, ev := range events {

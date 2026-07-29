@@ -60,8 +60,7 @@ type EvaluationConfig struct {
 
 	// Required fields
 	// Label is the name of the evaluation metric.
-	Label string
-	// MetricType is inferred from the value when empty.
+	Label      string
 	MetricType EvalMetricType
 
 	// Value fields (exactly one must be provided)
@@ -71,8 +70,7 @@ type EvaluationConfig struct {
 	ScoreValue *float64
 	// BooleanValue is the boolean value of the evaluation metric.
 	BooleanValue *bool
-	// JSONValue is a structured evaluation value.
-	JSONValue map[string]any
+	JSONValue    map[string]any
 
 	// Optional fields
 	// Tags are optional string key-value pairs to tag the evaluation metric.
@@ -81,15 +79,10 @@ type EvaluationConfig struct {
 	MLApp string
 	// TimestampMS is the timestamp in milliseconds. If zero, uses current time.
 	TimestampMS int64
-	// Timestamp is converted to TimestampMS for offline submission when
-	// TimestampMS is zero.
-	Timestamp time.Time
-	// Assessment is an optional assessment associated with the value.
-	Assessment string
-	// Reasoning explains the evaluation result.
-	Reasoning string
-	// Metadata contains arbitrary evaluation metadata.
-	Metadata map[string]any
+	Timestamp   time.Time
+	Assessment  string
+	Reasoning   string
+	Metadata    map[string]any
 }
 
 // Prompt represents a prompt template used with LLM spans.

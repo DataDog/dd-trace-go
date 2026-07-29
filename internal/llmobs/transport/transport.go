@@ -34,11 +34,7 @@ const (
 )
 
 const (
-	// EndpointEvalMetric and EndpointLLMSpan (with their EVP subdomains
-	// SubdomainEvalMetric and SubdomainLLMSpan) are the LLM Obs evaluation-metric
-	// and span intake paths. They are exported so the offline export clients (see
-	// llmobs/export) can reuse this package's routing instead of re-declaring the
-	// paths; the live tracer paths above use them directly.
+	// LLM Obs intake paths and EVP subdomains.
 	EndpointEvalMetric = "/api/intake/llm-obs/v2/eval-metric"
 	EndpointLLMSpan    = "/api/v2/llmobs"
 
@@ -168,9 +164,7 @@ func (c *Transport) baseURL(subdomain string) string {
 	return u
 }
 
-// encodeJSON encodes v with HTML escaping disabled, so LLM input/output content
-// reaches the intake unmangled, and returns the encoder's buffer (which ends in
-// the newline json.Encoder appends).
+// encodeJSON encodes v without HTML escaping.
 func encodeJSON(v any) (*bytes.Buffer, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -181,8 +175,7 @@ func encodeJSON(v any) (*bytes.Buffer, error) {
 	return &buf, nil
 }
 
-// MarshalJSON is encodeJSON without the trailing newline, for callers that need
-// the exact encoded size.
+// MarshalJSON encodes v without HTML escaping or a trailing newline.
 func MarshalJSON(v any) ([]byte, error) {
 	buf, err := encodeJSON(v)
 	if err != nil {
@@ -210,8 +203,6 @@ type requestResult struct {
 	retriable  bool
 }
 
-// newRequest builds an HTTP request to url under subdomain with the transport's
-// content type, default headers, and (in Agent mode) the EVP subdomain header.
 func (c *Transport) newRequest(ctx context.Context, method, url, subdomain, contentType string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
@@ -337,7 +328,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 	return result, nil
 }
 
-// RequestResult reports the outcome of an LLM Obs transport request.
+// RequestResult reports an LLM Obs transport request.
 type RequestResult struct {
 	StatusCode int
 	Attempts   int

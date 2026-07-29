@@ -25,15 +25,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/llmobs/export"
 )
 
-// fakeTransport records outgoing requests and returns canned responses without
-// touching the network, so tests can assert the derived URL, headers and body.
 type fakeTransport struct {
-	mu        sync.Mutex
-	requests  []capturedRequest
-	responder func(attempt int, req *http.Request) (int, string)
-	// respHeader, when set, adds headers to every response (e.g. Retry-After) on
-	// top of the default Content-Type. Used to drive the transport's retry-delay
-	// branches; nil leaves responses with just Content-Type.
+	mu         sync.Mutex
+	requests   []capturedRequest
+	responder  func(attempt int, req *http.Request) (int, string)
 	respHeader http.Header
 }
 
@@ -45,7 +40,7 @@ type capturedRequest struct {
 
 func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := req.Context().Err(); err != nil {
-		return nil, err // honor context cancellation like a real transport
+		return nil, err
 	}
 	f.mu.Lock()
 	attempt := len(f.requests)
@@ -78,11 +73,6 @@ func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-// blockingTransport blocks each request until its context is done, then returns
-// that context's error — modeling a server that never responds, so a mid-flight
-// caller cancellation (as opposed to a pre-flight one) drives the transport's
-// "cancelled context is not retriable" path. entered is closed once the request
-// is in flight, so a test can cancel deterministically without sleeping.
 type blockingTransport struct {
 	once    sync.Once
 	entered chan struct{}
@@ -100,8 +90,6 @@ func (f *fakeTransport) captured() []capturedRequest {
 	return f.requests
 }
 
-// newClient builds a Datadog-route client wired to fake, defaulting site and API
-// key. Extra options are appended after the routing/HTTP defaults.
 func newClient(t *testing.T, fake *fakeTransport, mlApp string, opts ...export.ClientOption) *export.Client {
 	t.Helper()
 	all := append([]export.ClientOption{
@@ -113,7 +101,6 @@ func newClient(t *testing.T, fake *fakeTransport, mlApp string, opts ...export.C
 	return c
 }
 
-// newAgentClient builds an Agent-route (EVP proxy) client wired to fake.
 func newAgentClient(t *testing.T, fake *fakeTransport, agentURL, mlApp string, opts ...export.ClientOption) *export.Client {
 	t.Helper()
 	all := append([]export.ClientOption{
@@ -132,8 +119,6 @@ func decode(t *testing.T, b []byte) map[string]any {
 	return m
 }
 
-// firstReq decodes a span request body — a JSON array of push-span-events
-// envelopes, one per span — and returns its first element.
 func firstReq(t *testing.T, b []byte) map[string]any {
 	t.Helper()
 	var arr []map[string]any
@@ -142,9 +127,6 @@ func firstReq(t *testing.T, b []byte) map[string]any {
 	return arr[0]
 }
 
-// allSpans flattens every span across a request body's envelopes, in order. Each
-// envelope carries exactly one span (see transport.NewPushSpanEventsRequests), so
-// this is the per-request span list.
 func allSpans(t *testing.T, b []byte) []map[string]any {
 	t.Helper()
 	var arr []map[string]any
@@ -158,7 +140,6 @@ func allSpans(t *testing.T, b []byte) []map[string]any {
 	return spans
 }
 
-// allMetrics returns the eval metrics in an eval-metric request body, in order.
 func allMetrics(t *testing.T, b []byte) []map[string]any {
 	t.Helper()
 	raw := decode(t, b)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)
@@ -176,7 +157,6 @@ func firstMetric(t *testing.T, b []byte) map[string]any {
 	return metrics[0]
 }
 
-// tagsOf returns a span's tags as a string slice.
 func tagsOf(t *testing.T, span map[string]any) []string {
 	t.Helper()
 	raw, ok := span["tags"].([]any)
@@ -198,11 +178,6 @@ func keysOf(m map[string]any) []string {
 	return ks
 }
 
-// TestSpanWireShape_Contract locks the exact JSON keys the LLM Obs intake
-// depends on. Because SpanEvent maps to this shape nearly 1:1, an accidental
-// rename/add/remove of a wire key would silently break external callers; this
-// test fails on any such drift. (A live-intake contract test belongs in an
-// integration suite; this guards the shape the SDK emits.)
 func TestSpanWireShape_Contract(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app", export.WithEnv("prod"), export.WithVersion("1.2.3"))
@@ -232,8 +207,6 @@ func TestSpanWireShape_Contract(t *testing.T) {
 	assert.Equal(t, "llm", meta["span"].(map[string]any)["kind"], "nested meta.span.kind (Trajectory + storage schema)")
 	assert.Equal(t, "llm", meta["span.kind"], `flat meta."span.kind" (live-tracer parity)`)
 
-	// service is carried both as the top-level field and a service: tag (the intake
-	// reads the tag; the storage schema has no top-level service field).
 	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
@@ -243,7 +216,6 @@ func TestSpanWireShape_Contract(t *testing.T) {
 	dd := span["_dd"].(map[string]any)
 	assert.ElementsMatch(t, []string{"span_id", "trace_id", "apm_trace_id"}, keysOf(dd), "_dd wire keys drifted")
 
-	// The intake envelope itself.
 	env := firstReq(t, fake.captured()[0].body)
 	assert.ElementsMatch(t, []string{"_dd.stage", "_dd.tracer_version", "event_type", "spans"}, keysOf(env), "envelope wire keys drifted")
 }
@@ -282,7 +254,6 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	assert.Equal(t, "application/json", reqs[0].headers.Get("Content-Type"))
 	assert.Empty(t, reqs[0].headers.Get("X-Datadog-EVP-Subdomain"))
 
-	// The /api/v2/llmobs body must be a JSON array of push-span-events requests.
 	var reqArr []map[string]any
 	require.NoError(t, json.Unmarshal(reqs[0].body, &reqArr))
 	require.Len(t, reqArr, 1)
@@ -294,7 +265,6 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	spans := body["spans"].([]any)
 	require.Len(t, spans, 1)
 	span := spans[0].(map[string]any)
-	// IDs are strings, preserved verbatim.
 	assert.Equal(t, "111", span["trace_id"])
 	assert.Equal(t, "222", span["span_id"])
 	assert.Equal(t, "undefined", span["parent_id"]) // empty normalized
@@ -308,10 +278,7 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	assert.Equal(t, "hello <b>", meta["input"].(map[string]any)["value"])
 	assert.Equal(t, "hi", meta["output"].(map[string]any)["value"])
 
-	// Assert non-escaping on the raw bytes, not the decoded value: json.Unmarshal
-	// reverses the escaping, so the assertions above pass whether or not
-	// SetEscapeHTML was flipped back on. json.Marshal escapes HTML by default, so
-	// its output is exactly the form the body must not contain.
+	// Check raw bytes because unmarshaling reverses HTML escaping.
 	raw := string(reqs[0].body)
 	assert.Contains(t, raw, `"value":"hello <b>"`, "input must reach the wire unescaped")
 	escaped, err := json.Marshal("hello <b>")
@@ -332,8 +299,6 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	assert.Contains(t, tags, "env:prod")
 	assert.Contains(t, tags, "version:1.2.3")
 	assert.Contains(t, tags, "service:svc") // service carried as a tag (intake reads it there)
-	// Facets the live path stamps on every span; without them a group-by mixing
-	// live and exported spans splits into a tagged and an untagged bucket.
 	assert.Contains(t, tags, "source:integration")
 	assert.Contains(t, tags, "language:go")
 	assert.Contains(t, tags, "error:0")
@@ -383,11 +348,6 @@ func TestSubmitSpans_AcceptsExistingSpanRepresentation(t *testing.T) {
 	assert.Equal(t, "linked-span", span["span_links"].([]any)[0].(map[string]any)["span_id"])
 }
 
-// TestSubmitSpans_ErrorSpanShapeMatchesLive locks the meta and tags an errored
-// exported span carries. The live path emits the error.message/type/stack triple
-// and an error:1 tag alongside error_type; an exported error span that carried
-// only status:"error" would be invisible to every error-rate query built on the
-// live shape.
 func TestSubmitSpans_ErrorSpanShapeMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -413,8 +373,6 @@ func TestSubmitSpans_ErrorSpanShapeMatchesLive(t *testing.T) {
 	assert.Contains(t, tags, "error_type:*errors.errorString")
 }
 
-// TestSubmitSpans_ErrorMessageFallsBackToStatusMessage: a caller that only filled
-// StatusMessage still gets an error.message rather than an empty one.
 func TestSubmitSpans_ErrorMessageFallsBackToStatusMessage(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -429,8 +387,6 @@ func TestSubmitSpans_ErrorMessageFallsBackToStatusMessage(t *testing.T) {
 	assert.Equal(t, "boom", span["meta"].(map[string]any)["error.message"])
 }
 
-// TestSubmitSpans_OKSpanHasNoErrorMeta: the error triple is error-only, so an ok
-// span must not gain three empty meta keys.
 func TestSubmitSpans_OKSpanHasNoErrorMeta(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -447,9 +403,6 @@ func TestSubmitSpans_OKSpanHasNoErrorMeta(t *testing.T) {
 	assert.Contains(t, tagsOf(t, allSpans(t, fake.captured()[0].body)[0]), "error:0")
 }
 
-// TestSubmitSpans_ModelNormalizationMatchesLive: the live path lower-cases
-// model_provider and fills the missing half of the pair with "custom". Exported
-// spans must do the same or "OpenAI" and "openai" become two facets on one intake.
 func TestSubmitSpans_ModelNormalizationMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -472,13 +425,10 @@ func TestSubmitSpans_ModelNormalizationMatchesLive(t *testing.T) {
 	assert.Equal(t, "custom", metaOf(1)["model_provider"], "missing provider defaults to custom")
 	assert.Equal(t, "custom", metaOf(2)["model_name"], "missing name defaults to custom")
 	assert.Equal(t, "anthropic", metaOf(2)["model_provider"])
-	// A span with no model information at all omits both keys.
 	assert.NotContains(t, metaOf(3), "model_name")
 	assert.NotContains(t, metaOf(3), "model_provider")
 }
 
-// TestSubmitSpans_ModelGateMatchesLive pins the live gate's asymmetry: on a kind
-// other than llm/embedding a provider is emitted, but a name alone is not.
 func TestSubmitSpans_ModelGateMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -494,19 +444,14 @@ func TestSubmitSpans_ModelGateMatchesLive(t *testing.T) {
 	require.Len(t, spans, 3)
 	metaOf := func(i int) map[string]any { return spans[i]["meta"].(map[string]any) }
 
-	// Name alone on a non-llm/embedding kind: omitted, exactly as live omits it.
 	assert.NotContains(t, metaOf(0), "model_name")
 	assert.NotContains(t, metaOf(0), "model_provider")
-	// Provider alone: emitted on any kind, and normalized.
 	assert.Equal(t, "custom", metaOf(1)["model_name"])
 	assert.Equal(t, "openai", metaOf(1)["model_provider"])
-	// Name alone on an embedding kind: emitted.
 	assert.Equal(t, "text-embed-3", metaOf(2)["model_name"])
 	assert.Equal(t, "custom", metaOf(2)["model_provider"])
 }
 
-// TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive verifies that a detail-less
-// error emits the same empty error fields as the live path.
 func TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -525,10 +470,6 @@ func TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive(t *testing.T) {
 	assert.Contains(t, tagsOf(t, span), "error:1")
 }
 
-// TestSubmitSpans_CancelAfterLastPOSTIsNotAnError: a deadline landing just after
-// the final 202 abandoned nothing, so the call must report success. Returning an
-// error here would make an outbox caller re-send a batch the intake already
-// accepted, duplicating every span in it.
 func TestSubmitSpans_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
@@ -545,7 +486,6 @@ func TestSubmitSpans_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 	assert.NoError(t, res.Requests[0].Err)
 }
 
-// TestSubmitEvaluations_CancelAfterLastPOSTIsNotAnError is the eval twin.
 func TestSubmitEvaluations_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
@@ -562,9 +502,6 @@ func TestSubmitEvaluations_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 	assert.Equal(t, 0, res.Failed)
 }
 
-// TestNewClient_FallsBackToEnv covers the DD_SITE/DD_API_KEY fallback: without
-// this, a refactor that reordered resolution (or dropped a fallback) would leave
-// every test green and only break a user's agentless deployment.
 func TestNewClient_FallsBackToEnv(t *testing.T) {
 	t.Run("both from env", func(t *testing.T) {
 		t.Setenv("DD_SITE", "datadoghq.eu")
@@ -610,11 +547,6 @@ func TestNewClient_FallsBackToEnv(t *testing.T) {
 	})
 }
 
-// TestSubmitSpans_OneEnvelopePerSpan locks the /api/v2/llmobs body shape against
-// the only form known to work in production: PushSpanEvents (the live path) posts
-// an array of single-span envelopes, because _dd.scope is a per-envelope field
-// derived from each span. Packing N spans into one envelope risks intake reading
-// only the first, silently losing the rest of every batch.
 func TestSubmitSpans_OneEnvelopePerSpan(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -658,11 +590,6 @@ func TestSubmitSpans_Chunking(t *testing.T) {
 	assert.Len(t, fake.captured(), 3)
 }
 
-// TestSubmitEvaluations_Chunking is the eval analogue of TestSubmitSpans_Chunking:
-// it exercises the SubmitEvaluations chunk loop and the public WithEvalBatchSize
-// option (which is otherwise only ever run as a single default-sized batch). 120
-// evals at a batch size of 50 must produce three requests (50/50/20) with correct
-// per-chunk Count and monotonic Index, and Sent must total the whole input.
 func TestSubmitEvaluations_Chunking(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app", export.WithEvalBatchSize(50))
@@ -677,7 +604,6 @@ func TestSubmitEvaluations_Chunking(t *testing.T) {
 	assert.Equal(t, 50, res.Requests[0].Count)
 	assert.Equal(t, 50, res.Requests[1].Count)
 	assert.Equal(t, 20, res.Requests[2].Count)
-	// Index is monotonic and zero-based across the chunks of one call.
 	assert.Equal(t, 0, res.Requests[0].Index)
 	assert.Equal(t, 1, res.Requests[1].Index)
 	assert.Equal(t, 2, res.Requests[2].Index)
@@ -719,9 +645,6 @@ func TestSubmitSpans_SizeGuardTruncatesIO(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res.Requests, 1)
 
-	// The sentinel text and collection error come from the live path's
-	// DropSpanEventIO, so a truncated exported span is indistinguishable from a
-	// truncated live one.
 	span := allSpans(t, fake.captured()[0].body)[0]
 	meta := span["meta"].(map[string]any)
 	assert.Equal(t, illmobs.DroppedValueText, meta["input"].(map[string]any)["value"])
@@ -729,15 +652,10 @@ func TestSubmitSpans_SizeGuardTruncatesIO(t *testing.T) {
 	assert.Contains(t, span["collection_errors"].([]any), illmobs.CollectionErrorDroppedIO)
 }
 
-// TestDefaultSizeGuardMatchesLiveLimit: the default guard is the live path's
-// per-event limit, not a separate 5 MiB constant. The 242,880-byte gap between
-// 5<<20 and 5_000_000 used to let a single span through at a size the SDK's own
-// constant says intake rejects.
 func TestDefaultSizeGuardMatchesLiveLimit(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	// A span just over the live limit must be truncated by the default guard.
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
 		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
 		Input: strings.Repeat("x", illmobs.SizeLimitEVPEvent+1),
@@ -751,8 +669,6 @@ func TestDefaultSizeGuardMatchesLiveLimit(t *testing.T) {
 
 func TestSubmitSpans_SplitsOversizedBatchInsteadOfDroppingIO(t *testing.T) {
 	fake := &fakeTransport{}
-	// Two spans that each fit but together exceed the limit: the batch must be
-	// split into two requests with input/output preserved (no dropped_io).
 	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(3000))
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
@@ -787,8 +703,6 @@ func TestSubmitSpans_StampsMLAppFromClient(t *testing.T) {
 	assert.Contains(t, tagsOf(t, spans[0]), "ml_app:my-app")
 	assert.Contains(t, tagsOf(t, spans[1]), "ml_app:override")
 	assert.NotContains(t, tagsOf(t, spans[1]), "ml_app:my-app")
-	// An empty "ml_app:" tag must not suppress the required default: it is dropped
-	// and replaced with the configured value, leaving no bare empty tag behind.
 	assert.Contains(t, tagsOf(t, spans[2]), "ml_app:my-app")
 	assert.NotContains(t, tagsOf(t, spans[2]), "ml_app:")
 }
@@ -902,9 +816,6 @@ func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
 	assert.Equal(t, "abc", tagJoin["value"])
 }
 
-// TestSubmitEvaluations_NarrativeFieldsReachTheWire covers assessment, reasoning
-// and metadata — three fields this PR adds to a wire struct the live eval path
-// shares, and which nothing else asserts.
 func TestSubmitEvaluations_NarrativeFieldsReachTheWire(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -922,7 +833,6 @@ func TestSubmitEvaluations_NarrativeFieldsReachTheWire(t *testing.T) {
 	assert.Equal(t, "cited two of three sources", m["reasoning"])
 	assert.Equal(t, map[string]any{"judge": "gpt-4o", "rubric_version": float64(3)}, m["metadata"])
 
-	// All three are omitempty: a metric that sets none must not emit empty keys.
 	fake2 := &fakeTransport{}
 	c2 := newClient(t, fake2, "test-app")
 	_, err = c2.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
@@ -935,8 +845,6 @@ func TestSubmitEvaluations_NarrativeFieldsReachTheWire(t *testing.T) {
 	assert.NotContains(t, bare, "metadata")
 }
 
-// TestSubmitEvaluations_WithCallMLApp: the per-call override applies, and a
-// per-metric MLApp still wins over it.
 func TestSubmitEvaluations_WithCallMLApp(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "client-app")
@@ -1025,11 +933,9 @@ func TestNewClient_RequiresMLApp(t *testing.T) {
 }
 
 func TestNewClient_RequiresExactlyOneRoute(t *testing.T) {
-	// No route selected.
 	_, err := export.NewClient("app")
 	assert.Error(t, err)
 
-	// Both routes selected.
 	_, err = export.NewClient("app",
 		export.WithDatadogIntake("datadoghq.com", "k"),
 		export.WithAgentURL("http://localhost:8126"),
@@ -1037,14 +943,10 @@ func TestNewClient_RequiresExactlyOneRoute(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestSubmitSpans_ConcurrentDoesNotMutateCaller guards against the client
-// mutating the caller's Tags backing array (and racing) while stamping env/version.
-// Run with -race.
 func TestSubmitSpans_ConcurrentDoesNotMutateCaller(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app", export.WithEnv("prod"), export.WithVersion("1.0"))
 
-	// Spare-capacity slice shared across the exported events.
 	shared := make([]string, 1, 8)
 	shared[0] = "ml_app:x"
 	ev := export.SpanEvent{TraceID: "t", SpanID: "s", Kind: export.KindLLM, Tags: shared}
@@ -1058,7 +960,6 @@ func TestSubmitSpans_ConcurrentDoesNotMutateCaller(t *testing.T) {
 	}
 	wg.Wait()
 
-	// The caller's slice must be untouched (still just its one tag).
 	assert.Equal(t, []string{"ml_app:x"}, shared)
 }
 
@@ -1080,10 +981,7 @@ func TestSubmitSpans_ContextCanceledStopsPromptly(t *testing.T) {
 	res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
-	// Nothing is POSTed: the guard runs before the batch is even validated.
 	assert.Empty(t, fake.captured())
-	// The rows it never sent are still accounted, so an outbox caller cannot read
-	// the result as "delivered" (see the ExportResult accounting invariant).
 	require.Len(t, res.Requests, 1)
 	assert.ErrorIs(t, res.Requests[0].Err, context.Canceled)
 	assert.Equal(t, 0, res.Sent)
@@ -1091,9 +989,6 @@ func TestSubmitSpans_ContextCanceledStopsPromptly(t *testing.T) {
 	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
 }
 
-// TestSubmitEvaluations_ContextCanceledStopsPromptly mirrors the SubmitSpans
-// cancellation guard onto the eval path, which the coverage profile showed was
-// never executed despite a comment claiming parity.
 func TestSubmitEvaluations_ContextCanceledStopsPromptly(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -1111,10 +1006,6 @@ func TestSubmitEvaluations_ContextCanceledStopsPromptly(t *testing.T) {
 	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
 }
 
-// TestSubmitEvaluations_MidFlightCancelNotRetriable is the eval analogue of
-// TestSubmitSpans_MidFlightCancelNotRetriable: a cancel that lands while a
-// request is in flight must not be reported as a transient failure, or an outbox
-// caller re-enqueues work the caller explicitly abandoned.
 func TestSubmitEvaluations_MidFlightCancelNotRetriable(t *testing.T) {
 	block := &blockingTransport{entered: make(chan struct{})}
 	c, err := export.NewClient("test-app",
@@ -1139,9 +1030,6 @@ func TestSubmitEvaluations_MidFlightCancelNotRetriable(t *testing.T) {
 	assert.Equal(t, 1, res.Sent+res.Failed+res.Dropped)
 }
 
-// TestSubmitSpans_AccountingCoversWholeInputOnCancel locks the ExportResult
-// invariant at a batch boundary: the rows in windows the cancel skipped are
-// reported as Failed rather than vanishing from the totals.
 func TestSubmitSpans_AccountingCoversWholeInputOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var once sync.Once
@@ -1185,7 +1073,6 @@ func TestSubmitEvaluations_RejectsNonFiniteScore(t *testing.T) {
 	assert.Equal(t, 0, res.ValidationErrors[0].Index)
 	assert.Equal(t, 1, res.ValidationErrors[1].Index)
 
-	// The one valid metric was still sent (a bad row does not poison the chunk).
 	metrics := decode(t, fake.captured()[0].body)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)
 	require.Len(t, metrics, 1)
 }
@@ -1300,12 +1187,6 @@ func TestSubmitSpans_UsesExistingMetricsMap(t *testing.T) {
 	assert.Equal(t, float64(7), m["custom_metric"])
 }
 
-// TestSubmitEvaluations_RejectsUnmarshalableJSON drives the sendEvalBatch encode
-// fallback: a metric_type:"json" row whose json_value is not JSON-encodable
-// (math.Inf) passes lower() (json value ⟺ json type) and only fails at marshal,
-// so it is dropped via dropUnencodableEvals while the batch's other, valid row is
-// re-encoded and POSTed. This is the path a type-mismatch row can never reach
-// (lower() rejects that earlier — see TestSubmitEvaluations_RejectsTypeValueMismatch).
 func TestSubmitEvaluations_RejectsUnmarshalableJSON(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -1327,9 +1208,6 @@ func TestSubmitEvaluations_RejectsUnmarshalableJSON(t *testing.T) {
 	require.Len(t, metrics, 1) // the valid metric still went out
 }
 
-// TestSubmitEvaluations_DropsAllUnencodableJSON covers the branch where every row
-// in a batch fails to encode: all are dropped via dropUnencodableEvals and no
-// request is issued at all (the batch collapses to zero good rows).
 func TestSubmitEvaluations_DropsAllUnencodableJSON(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -1347,10 +1225,6 @@ func TestSubmitEvaluations_DropsAllUnencodableJSON(t *testing.T) {
 	assert.Empty(t, fake.captured())
 }
 
-// TestSubmitEvaluations_RejectsTypeValueMismatch keeps coverage of the lower()
-// type-vs-value mismatch guard: a scalar MetricType paired with a JSONValue is
-// rejected before any marshal (never reaching dropUnencodableEvals), so it is a
-// row-level validation error and nothing is sent.
 func TestSubmitEvaluations_RejectsTypeValueMismatch(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -1365,9 +1239,6 @@ func TestSubmitEvaluations_RejectsTypeValueMismatch(t *testing.T) {
 	assert.Empty(t, fake.captured()) // rejected in lower(), never POSTed
 }
 
-// TestSubmitSpans_ZeroStartAndDurationOmitFields locks the doc↔wire contract on
-// SpanEvent.Start/Duration: both map to omitempty wire fields, so a zero value is
-// omitted from the payload, never emitted as a literal 0.
 func TestSubmitSpans_ZeroStartAndDurationOmitFields(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -1382,9 +1253,6 @@ func TestSubmitSpans_ZeroStartAndDurationOmitFields(t *testing.T) {
 	assert.NotContains(t, span, "duration")
 }
 
-// TestSubmitSpans_ParentIDPreservedVerbatim guards the caller-assigned-ID
-// contract: a non-empty ParentID must reach the wire unchanged (only an empty
-// ParentID is normalized to "undefined").
 func TestSubmitSpans_ParentIDPreservedVerbatim(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -1398,12 +1266,6 @@ func TestSubmitSpans_ParentIDPreservedVerbatim(t *testing.T) {
 	assert.Equal(t, "p123", span["parent_id"])
 }
 
-// TestSubmitSpans_RetryClassification drives the transport's retry classification
-// end-to-end through SubmitSpans: 429 (via the dedicated TooManyRequests clause),
-// 408 and 425 (via isRetriableStatus), and a 503 carrying Retry-After (the
-// server-advertised-delay branch) are all retried and reported Retriable; other
-// 4xx are permanent. Guards against folding the checks together and dropping the
-// 429 clause, which would turn a rate-limited backfill into a permanent failure.
 func TestSubmitSpans_RetryClassification(t *testing.T) {
 	cases := []struct {
 		name          string
@@ -1441,11 +1303,6 @@ func TestSubmitSpans_RetryClassification(t *testing.T) {
 	}
 }
 
-// TestSubmitSpans_MidFlightCancelNotRetriable guards the "cancelled context is not
-// retriable" contract in the transport: a caller cancellation that lands while a
-// request is in flight (past SubmitSpans' pre-loop ctx guard, so Post actually
-// runs) must report Retriable=false and surface context.Canceled, so an outbox
-// caller does not re-enqueue cancelled work.
 func TestSubmitSpans_MidFlightCancelNotRetriable(t *testing.T) {
 	bt := &blockingTransport{entered: make(chan struct{})}
 	c, err := export.NewClient("test-app",
@@ -1483,14 +1340,6 @@ func TestSubmitSpans_MidFlightCancelNotRetriable(t *testing.T) {
 	}
 }
 
-// TestSubmitSpans_RetriableStatusThenCancelNotRetriable complements the network-
-// error case above by covering the transport's post-retry override: a retriable
-// 503 is recorded (Retriable=true) and then the caller cancels while the request
-// is backing off before the next attempt. The recorded status is retriable, so
-// only the "cancelled context is not retriable" override can flip Retriable back
-// to false — guarding an outbox caller against re-enqueuing work cancelled
-// mid-backoff. The 503 carries a Retry-After so the backoff wait is long enough
-// that the cancellation is observed during the wait, not on a fresh attempt.
 func TestSubmitSpans_RetriableStatusThenCancelNotRetriable(t *testing.T) {
 	var once sync.Once
 	responded := make(chan struct{})
@@ -1532,10 +1381,6 @@ func TestSubmitSpans_RetriableStatusThenCancelNotRetriable(t *testing.T) {
 	}
 }
 
-// TestSubmitEvaluations_JSONMetricType reproduces Trajectory's range/segment
-// markers, which ship metric_type:"json" alongside a json_value object. The
-// export API must emit that exact wire shape verbatim (not reject it or relabel
-// it as categorical/score/boolean).
 func TestSubmitEvaluations_JSONMetricType(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -1557,9 +1402,6 @@ func TestSubmitEvaluations_JSONMetricType(t *testing.T) {
 	assert.Equal(t, "ok", jv["outcome"])
 }
 
-// TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue guards that metric_type
-// json paired with a scalar value (no json_value) is dropped as a row-level
-// error rather than emitting a value-less json metric.
 func TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
@@ -1572,11 +1414,6 @@ func TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue(t *testing.T) {
 	assert.Empty(t, fake.captured())
 }
 
-// TestSubmitSpans_SplitStopsOnCancelBetweenHalves covers a cancel landing inside
-// the oversized-batch bisection, the one place the loop guard in SubmitSpans
-// cannot see. The right half must not be POSTed, must still be accounted, and the
-// call must return an error — an err==nil return here would let an outbox caller
-// treat the abandoned span as delivered and drop it permanently.
 func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var once sync.Once
@@ -1584,21 +1421,15 @@ func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 		once.Do(cancel) // cancel once the first (left-half) POST has been recorded
 		return 202, "{}"
 	}}
-	// Two spans that each fit but together exceed the limit → the batch bisects
-	// into one request per span; the cancel lands between the two halves.
 	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(3000))
 
 	res, err := c.SubmitSpans(ctx, []export.SpanEvent{
 		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: strings.Repeat("x", 1500)},
 		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: strings.Repeat("y", 1500)},
 	})
-	// A canceled export is an error, not a success.
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
-	// Only the left half reached the transport; the right half was abandoned.
 	assert.Len(t, fake.captured(), 1)
-	// The abandoned right-half span is still accounted, so the result covers both
-	// inputs and never silently loses s2: the left half sent, the right failed.
 	require.Len(t, res.Requests, 2)
 	assert.Equal(t, 202, res.Requests[0].StatusCode)
 	assert.NoError(t, res.Requests[0].Err)
