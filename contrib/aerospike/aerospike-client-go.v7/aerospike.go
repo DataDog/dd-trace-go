@@ -5,22 +5,14 @@
 
 // Package aerospike provides functions to trace the aerospike/aerospike-client-go package (https://github.com/aerospike/aerospike-client-go).
 //
-// `WrapClient` wraps an aerospike `Client` and returns a new struct with all the
-// same methods, so it is seamless for existing applications. It also has a
-// `WithContext` method which connects the spans it creates to an existing trace:
+// WrapClient wraps an aerospike Client with one that traces every request. Use
+// WithContext to link the spans to an existing trace:
 //
 //	ac := aerospike.WrapClient(client)
 //	ac.WithContext(ctx).Put(nil, key, bins)
 //
-// When using Orchestrion for automatic instrumentation, a method-call aspect
-// rewrites calls to the aerospike `Client` methods so they go through this
-// wrapper. For example `client.Put(policy, key, bins)` becomes
-// `aerospike.WrapClient(client).WithContext(ctx).Put(policy, key, bins)` when a
-// context.Context is in scope on the enclosing function, or
-// `aerospike.WrapClient(client).Put(...)` when it is not. In the latter case
-// the span is still created and the tracer's goroutine-local storage parents it
-// to any active span on the same goroutine. See orchestrion.yml for the exact
-// join points and rewrite templates.
+// Under Orchestrion, calls to the aerospike Client are rewritten to go through
+// this wrapper automatically; see orchestrion.yml.
 package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"
 
 import (

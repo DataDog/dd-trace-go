@@ -9,40 +9,14 @@ meta:
   description: Aerospike client for Go.
 
 aspects:
-  # Instrument call sites of the aerospike Client methods. Aerospike's methods
-  # take no context.Context, so instead of injecting anything into the aerospike
-  # library we rewrite the call expression to go through the contrib wrapper:
+  # Rewrite aerospike Client method calls to go through the contrib wrapper,
+  # threading a context.Context from the enclosing function when one is in scope:
+  #   client.Put(...)  ->  __dd_aerospike.WrapClient(client).WithContext(ctx).Put(...)
   #
-  #     client.Put(policy, key, bins)
-  #
-  # becomes, when a context.Context is in scope on the enclosing function:
-  #
-  #     __dd_aerospike.WrapClient(client).WithContext(ctx).Put(policy, key, bins)
-  #
-  # or, when no context is available:
-  #
-  #     __dd_aerospike.WrapClient(client).Put(policy, key, bins)
-  #
-  # The wrapper starts/finishes the span using only its public API. When a ctx
-  # is threaded in (the common HTTP/gRPC handler pattern, including calls that
-  # run in a spawned goroutine that received ctx as an argument), the span is a
-  # child of the span carried by that ctx. When no ctx is in scope, the span is
-  # still created and the tracer's goroutine-local storage parents it to any
-  # active span on the same goroutine.
-  #
-  # The join point is guarded so the rewrite is NEVER applied in two places:
-  #
-  #   1. The contrib module itself. The wrapper's methods call the raw client
-  #      (c.Client.Put(...)); rewriting those would wrap the wrapper again and
-  #      recurse forever.
-  #
-  #   2. The aerospike library itself. Injecting a reference to the contrib into
-  #      the aerospike package would create an import cycle
-  #      (aerospike -> contrib -> aerospike) and would also rewrite the library's
-  #      internal method delegations (e.g. Query -> QueryPartitions), producing
-  #      duplicate spans. Because the wrapper delegates to the raw client, that
-  #      internal delegation is never instrumented and each user call yields
-  #      exactly one span.
+  # The rewrite must not fire inside the contrib (the wrapper calls the raw
+  # client, which would wrap recursively) nor inside the aerospike library (that
+  # would create an aerospike -> contrib -> aerospike import cycle and double the
+  # spans of internal delegations such as Query -> QueryPartitions).
   - id: Client
     join-point:
       all-of:
@@ -85,10 +59,8 @@ aspects:
             - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanNode, match: pointer-only}
             - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Truncate, match: pointer-only}
             - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryAggregate, match: pointer-only}
-            # Reflection-based Object API (aerospike-client-go's client_reflect.go,
-            # //go:build !as_performance). Under -tags as_performance these methods
-            # do not exist, so there are no call sites to match and these entries
-            # are silent no-ops.
+            # Object API (client_reflect.go, //go:build !as_performance): absent
+            # under -tags as_performance, so these simply never match.
             - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PutObject, match: pointer-only}
             - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: GetObject, match: pointer-only}
             - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetObjects, match: pointer-only}
