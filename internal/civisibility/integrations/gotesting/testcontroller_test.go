@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -89,7 +90,7 @@ func TestMain(m *testing.M) {
 				cmd.Stderr = &b
 			}
 			cmd.Env = append(cmd.Env, os.Environ()...)
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=true", v))
+			cmd.Env = append(cmd.Env, v+"=true")
 			fmt.Printf("\n**** [RUNNING SCENARIO: %s]\n", v)
 			err := cmd.Run()
 			fmt.Printf("\n**** [SCENARIO %s IS DONE]\n\n", v)
@@ -150,7 +151,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 0 {
-		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+		panic("expected the exit code to be 0. Got exit code: " + strconv.Itoa(exitCode))
 	}
 
 	// get all finished spans
@@ -198,10 +199,10 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	fmt.Println(st03.StartTime())
 
 	if st01EndTime.Before(st02.StartTime()) {
-		panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_1' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' starts"))
+		panic("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_1' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' starts")
 	}
 	if st02EndTime.Before(st03.StartTime()) {
-		panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_3' starts"))
+		panic("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_3' starts")
 	}
 
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
@@ -215,7 +216,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// check that testify span has the correct source file
 	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
-		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+		panic("source file should be testify_test.go, got " + testifySub01.Tag("test.source.file").(string))
 	}
 
 	// check spans by tag
@@ -349,7 +350,7 @@ func runFlakyTestRetriesWithTransientSettingsFailureTests(m *testing.M) {
 	// execute the tests; the suite must not crash even though the settings fetch failed once
 	exitCode := RunM(m)
 	if exitCode != 0 {
-		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+		panic("expected the exit code to be 0. Got exit code: " + strconv.Itoa(exitCode))
 	}
 
 	// the transient failure must actually have been exercised
@@ -399,7 +400,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 0 {
-		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+		panic("expected the exit code to be 0. Got exit code: " + strconv.Itoa(exitCode))
 	}
 
 	// get all finished spans
@@ -446,7 +447,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// check that testify span has the correct source file
 	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
-		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+		panic("source file should be testify_test.go, got " + testifySub01.Tag("test.source.file").(string))
 	}
 
 	// check spans by tag
@@ -538,7 +539,7 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 0 {
-		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+		panic("expected the exit code to be 0. Got exit code: " + strconv.Itoa(exitCode))
 	}
 
 	// get all finished spans
@@ -679,7 +680,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 0 {
-		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+		panic("expected the exit code to be 0. Got exit code: " + strconv.Itoa(exitCode))
 	}
 
 	// get all finished spans
@@ -739,7 +740,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 
 	// check that testify span has the correct source file
 	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
-		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+		panic("source file should be testify_test.go, got " + testifySub01.Tag("test.source.file").(string))
 	}
 
 	// check capabilities tags
@@ -889,7 +890,7 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 
 	// check that testify span has the correct source file
 	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
-		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+		panic("source file should be testify_test.go, got " + testifySub01.Tag("test.source.file").(string))
 	}
 
 	checkIntelligentTestRunnerSkipTags(finishedSpans)
@@ -1007,7 +1008,7 @@ func checkIntelligentTestRunnerWithMissingBackendCoverage(finishedSpans []*mockt
 	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01", 1)
 
 	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
-		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+		panic("source file should be testify_test.go, got " + testifySub01.Tag("test.source.file").(string))
 	}
 
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 0)
@@ -1120,7 +1121,7 @@ func runTestManagementTests(m *testing.M) {
 	testRetryWithPanicRunNumber.Store(-10) // this makes TestRetryWithPanic to always fail (required by this test)
 	exitCode := RunM(m)
 	if exitCode != 0 {
-		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+		panic("expected the exit code to be 0. Got exit code: " + strconv.Itoa(exitCode))
 	}
 
 	// get all finished spans

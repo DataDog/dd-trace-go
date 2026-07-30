@@ -986,11 +986,11 @@ func createTestTask() experiment.Task {
 	return experiment.NewTask("test-task", func(ctx context.Context, rec dataset.Record, experimentCfg map[string]any) (any, error) {
 		inputMap, ok := rec.Input.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("input is not a map")
+			return nil, errors.New("input is not a map")
 		}
 		question, ok := inputMap["question"].(string)
 		if !ok {
-			return nil, fmt.Errorf("question not found in input")
+			return nil, errors.New("question not found in input")
 		}
 
 		switch question {

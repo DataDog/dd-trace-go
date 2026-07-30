@@ -7,6 +7,7 @@ package net
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -88,7 +89,7 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 	}
 
 	if c.repositoryURL == "" || c.commitSha == "" {
-		return nil, fmt.Errorf("civisibility.GetSettings: repository URL and commit SHA are required")
+		return nil, errors.New("civisibility.GetSettings: repository URL and commit SHA are required")
 	}
 
 	body := settingsRequest{

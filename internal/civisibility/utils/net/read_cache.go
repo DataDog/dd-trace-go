@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -228,7 +229,7 @@ func newReadCacheScopeIdentity(ciTags map[string]string) readCacheScopeIdentity 
 		return newReadCacheScopeIdentityFromValues(readCacheScopeCIWeak, 5*time.Minute, values)
 	}
 
-	values := []readCacheIdentityValue{{Name: "parent_pid", Value: fmt.Sprint(readCacheParentPID())}}
+	values := []readCacheIdentityValue{{Name: "parent_pid", Value: strconv.Itoa(readCacheParentPID())}}
 	return newReadCacheScopeIdentityFromValues(readCacheScopeLocal, time.Minute, values)
 }
 

@@ -160,6 +160,8 @@ type Span struct {
 	spanLinks []SpanLink `msg:"span_links,omitempty"` // links to other spans
 	// +checklocks:mu
 	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
+	// +checklocks:mu
+	statSpan *tracerStatSpan `msg:"-"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -209,6 +211,7 @@ func (s *Span) clear() {
 	s.error = 0
 	s.spanLinks = nil
 	s.spanEvents = nil
+	s.statSpan = nil
 	s.goExecTraced = false
 	s.noDebugStack = false
 	s.finished = false
@@ -429,6 +432,27 @@ func (s *Span) SetTag(key string, value any) {
 	s.setTagLocked(key, value)
 }
 
+// SetMetaStruct adds a tag with the given key and value to the `meta_struct`
+// field of the span if the agent supports it and returns true. If the
+// `meta_struct` feature is not supported by the agent or the receiver is nil,
+// nothing is stored in the span and false is returned.
+func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
+	if s == nil {
+		return false
+	}
+
+	tracer, hasTracer := getGlobalTracer().(*tracer)
+	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
+		return false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.setMetaStructLocked(key, value)
+	return true
+}
+
 // setTags sets multiple tags on the span during initialization. It acquires
 // the span lock internally and returns early without locking if tags is empty.
 func (s *Span) setTags(tags map[string]any) {
@@ -640,7 +664,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 		keyUserSessionID: cfg.SessionID,
 	}
 	for k, v := range cfg.Metadata {
-		usrData[fmt.Sprintf("usr.%s", k)] = v
+		usrData["usr."+k] = v
 	}
 	for k, v := range usrData {
 		if v != "" {
@@ -1138,11 +1162,6 @@ func (s *Span) finish(finishTime int64) {
 	// Lock ordering is span.mu -> trace.mu.
 	s.context.finish(s)
 
-	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
-	if hasTracer {
-		tracer.submit(s)
-	}
-
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
 		// point are attributed correctly.
@@ -1218,17 +1237,17 @@ func (s *Span) String() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	lines := []string{
-		fmt.Sprintf("Name: %s", s.name),
-		fmt.Sprintf("Service: %s", s.service),
-		fmt.Sprintf("Resource: %s", s.resource),
+		"Name: " + s.name,
+		"Service: " + s.service,
+		"Resource: " + s.resource,
 		fmt.Sprintf("TraceID: %d", s.traceID),
-		fmt.Sprintf("TraceID128: %s", s.context.TraceID()),
+		"TraceID128: " + s.context.TraceID(),
 		fmt.Sprintf("SpanID: %d", s.spanID),
 		fmt.Sprintf("ParentID: %d", s.parentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.start)),
 		fmt.Sprintf("Duration: %s", time.Duration(s.duration)),
 		fmt.Sprintf("Error: %d", s.error),
-		fmt.Sprintf("Type: %s", s.spanType),
+		"Type: " + s.spanType,
 		"Tags:",
 	}
 	for k, v := range s.meta.All() {
@@ -1270,7 +1289,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true) && s.context.traceID.HasUpper() {
 			traceID = s.context.TraceID()
 		} else {
-			traceID = fmt.Sprintf("%d", s.traceID)
+			traceID = strconv.FormatUint(s.traceID, 10)
 		}
 		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
 		fmt.Fprintf(f, `dd.span_id="%d" `, s.spanID)
