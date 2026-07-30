@@ -263,7 +263,9 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
 	if httpEndpoint == "" {
-		// OTel spans set http.route; DD spans use http.endpoint — both map to HTTPEndpoint.
+		// http.endpoint (net/http, mux, httptreemux, httprouter) and http.route
+		// (chi, fiber, gin, echo, go-restful) are set by disjoint sets of
+		// contribs, so this never overrides an explicit http.endpoint value.
 		httpEndpoint, _ = s.meta.Get(ext.HTTPRoute)
 	}
 
