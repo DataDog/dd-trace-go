@@ -134,7 +134,7 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 
 	cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
 	if cfg.ResolvedAgentlessEnabled {
-		if !llmconfig.IsAPIKeyValid(tc.APIKey) {
+		if !internalconfig.IsAPIKeyValid(tc.APIKey) {
 			return nil, errors.New("llmobs/export: WithDatadogIntake requires a valid API key (argument or DD_API_KEY); use WithAgentURL to route via the Agent")
 		}
 	}
