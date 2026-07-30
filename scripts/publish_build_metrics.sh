@@ -64,7 +64,7 @@ if [[ -n "$OTELC_VERSION" ]]; then
   message "  Otelc version: $OTELC_VERSION"
 fi
 
-# Publish measures to CI Visibility — one indexed measure per duration sample, 
+# Publish measures to CI Visibility — one indexed measure per duration sample,
 # one size sample, skipping any null entries
 message "Publishing measures to Datadog CI Visibility..."
 MEASURE_ARGS=()
