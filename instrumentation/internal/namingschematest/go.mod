@@ -100,7 +100,7 @@ require (
 	github.com/urfave/negroni v1.0.0
 	github.com/valkey-io/valkey-go v1.0.74
 	github.com/valyala/fasthttp v1.58.0
-	go.mongodb.org/mongo-driver v1.17.1
+	go.mongodb.org/mongo-driver v1.17.7
 	google.golang.org/api v0.273.1
 	google.golang.org/grpc v1.82.1
 	gopkg.in/olivere/elastic.v5 v5.0.84

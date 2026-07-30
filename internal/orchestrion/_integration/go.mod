@@ -65,7 +65,7 @@ require (
 	github.com/valyala/fasthttp v1.58.0
 	github.com/vektah/gqlparser/v2 v2.5.35
 	github.com/xlab/treeprint v1.2.0
-	go.mongodb.org/mongo-driver v1.17.1
+	go.mongodb.org/mongo-driver v1.17.7
 	go.mongodb.org/mongo-driver/v2 v2.4.2
 	go.uber.org/zap v1.28.0
 	google.golang.org/api v0.273.1
