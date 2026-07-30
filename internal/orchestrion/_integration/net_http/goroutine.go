@@ -33,25 +33,37 @@ func (tc *TestCaseClientGoroutine) Setup(ctx context.Context, t *testing.T) {
 	tc.base.Setup(ctx, t)
 }
 
+// clientResult carries the outcome of the client call back to the test
+// goroutine, so the fatal assertions run there and not on the worker goroutine.
+type clientResult struct {
+	status int
+	err    error
+}
+
 func (tc *TestCaseClientGoroutine) Run(ctx context.Context, t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
 
-	done := make(chan struct{})
-	go getInGoroutine(ctx, t, "http://"+tc.srv.Addr+"/hit", done)
-	<-done
+	res := make(chan clientResult, 1)
+	go getInGoroutine(ctx, "http://"+tc.srv.Addr+"/hit", res)
+	got := <-res
+	require.NoError(t, got.err)
+	require.Equal(t, http.StatusOK, got.status)
 }
 
 // getInGoroutine calls http.Get with a context.Context in scope so the
 // instrumentation injects it into the request. It runs on a goroutine that does
 // not hold the parent span in its GLS, so correct parenting proves the context
-// propagated through the surrounding scope rather than GLS.
-func getInGoroutine(ctx context.Context, t *testing.T, url string, done chan<- struct{}) {
-	defer close(done)
+// propagated through the surrounding scope rather than GLS. The result is sent
+// back to the test goroutine, which performs the fatal assertions.
+func getInGoroutine(ctx context.Context, url string, res chan<- clientResult) {
 	resp, err := http.Get(url)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	if err != nil {
+		res <- clientResult{err: err}
+		return
+	}
+	resp.Body.Close()
+	res <- clientResult{status: resp.StatusCode}
 }
 
 func (tc *TestCaseClientGoroutine) ExpectedTraces() trace.Traces {
