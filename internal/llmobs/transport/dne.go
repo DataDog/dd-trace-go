@@ -333,7 +333,7 @@ func (c *Transport) BatchUpdateDataset(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, batchUpdateLimits)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
 		return -1, nil, err
 	}
@@ -523,7 +523,9 @@ func (c *Transport) CreateExperiment(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
+	// The response echoes back the config supplied above, so it can be as large
+	// as the request was.
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
 		return nil, err
 	}

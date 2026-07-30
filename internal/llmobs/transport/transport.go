@@ -61,10 +61,10 @@ const (
 	// ackResponseSize fits endpoints that reply with an acknowledgement or a
 	// single resource.
 	ackResponseSize = 1 << 20 // 1MiB
-	// recordsResponseSize fits endpoints that reply with dataset records, whose
-	// contents come from the caller. Dataset writes are chunked well below this,
-	// so it leaves ample headroom.
-	recordsResponseSize = 64 << 20 // 64MiB
+	// payloadResponseSize fits endpoints whose reply echoes back a payload the
+	// caller supplied, such as dataset records or an experiment config. Dataset
+	// writes are chunked well below this, so it leaves ample headroom.
+	payloadResponseSize = 64 << 20 // 64MiB
 	// errorBodySize caps how much of a failed response is kept to build the
 	// returned error message.
 	errorBodySize = 32 << 10 // 32KiB
@@ -89,12 +89,12 @@ var (
 	// defaultLimits suits endpoints replying with an acknowledgement or a single
 	// resource.
 	defaultLimits = requestLimits{timeout: defaultTimeout, maxResponseSize: ackResponseSize}
-	// batchUpdateLimits suits the dataset batch-update endpoint, which echoes
-	// back the records it wrote.
-	batchUpdateLimits = requestLimits{timeout: defaultTimeout, maxResponseSize: recordsResponseSize}
+	// payloadLimits suits endpoints that echo back a payload the caller sent, so
+	// the reply can be as large as the request was.
+	payloadLimits = requestLimits{timeout: defaultTimeout, maxResponseSize: payloadResponseSize}
 	// datasetRecordsLimits suits the dataset records endpoint, which returns a
 	// page of records.
-	datasetRecordsLimits = requestLimits{timeout: getDatasetRecordsTimeout, maxResponseSize: recordsResponseSize}
+	datasetRecordsLimits = requestLimits{timeout: getDatasetRecordsTimeout, maxResponseSize: payloadResponseSize}
 	// bulkUploadLimits suits the CSV upload endpoint, where the request is large
 	// but the response is only an acknowledgement.
 	bulkUploadLimits = requestLimits{timeout: bulkUploadTimeout, maxResponseSize: ackResponseSize}

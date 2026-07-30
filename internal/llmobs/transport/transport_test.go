@@ -8,9 +8,11 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -112,6 +114,31 @@ func TestResponseBodySizeLimit(t *testing.T) {
 		require.Error(t, err)
 		assert.Less(t, len(err.Error()), 2*errorBodySize,
 			"only a bounded prefix of the response should reach the error message")
+	})
+
+	// Endpoints that echo back a payload the caller sent need room for it, so
+	// they must not be held to the acknowledgement-sized limit.
+	t.Run("experiment creation accepts its echoed config", func(t *testing.T) {
+		cfg := map[string]any{"prompt": strings.Repeat("a", 2*ackResponseSize)}
+		body, err := json.Marshal(CreateExperimentResponse{
+			Data: ResponseData[ExperimentView]{
+				ID:         "exp-1",
+				Attributes: ExperimentView{Name: "exp-name", Config: cfg},
+			},
+		})
+		require.NoError(t, err)
+		require.Greater(t, len(body), ackResponseSize)
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(body)
+		}))
+		t.Cleanup(srv.Close)
+		c := newTestTransport(t, srv.URL)
+
+		exp, err := c.CreateExperiment(context.Background(), "exp-name", "ds-1", "proj-1", 1, cfg, nil, "", 1)
+		require.NoError(t, err)
+		assert.Equal(t, "exp-1", exp.ID)
 	})
 
 	// The subtests above inject their own limit; this one goes through a real
