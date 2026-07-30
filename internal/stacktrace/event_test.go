@@ -49,6 +49,12 @@ func TestNewEventWithDepthOption(t *testing.T) {
 	require.Len(t, event.Frames, 1)
 }
 
+func TestNewEventWithNegativeDepthUsesDefault(t *testing.T) {
+	event := NewEvent(ExploitEvent, WithDepth(-1))
+	require.NotEmpty(t, event.Frames)
+	require.LessOrEqual(t, len(event.Frames), defaultMaxDepth)
+}
+
 func TestEventToSpan(t *testing.T) {
 	event1 := NewEvent(ExceptionEvent, WithMessage("message1"))
 	event2 := NewEvent(ExploitEvent, WithMessage("message2"))

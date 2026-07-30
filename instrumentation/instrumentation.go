@@ -319,9 +319,8 @@ func WithStackTraceID(id string) StackTraceOption {
 	return stacktrace.WithID(id)
 }
 
-// WithStackTraceSkip sets the number of runtime frames to skip on top of the
-// default caller skip, before internal stack-trace frames are filtered.
-// Negative values are treated as zero.
+// WithStackTraceSkip sets the number of caller frames to skip after the
+// stacktrace capture machinery. Negative values are treated as zero.
 func WithStackTraceSkip(skip int) StackTraceOption {
 	return stacktrace.WithSkip(skip)
 }

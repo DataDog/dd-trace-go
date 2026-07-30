@@ -46,6 +46,7 @@ func TestInstrumentationStackTrace(t *testing.T) {
 	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryException))
 	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryVulnerability))
 	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryExploit))
+	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryExploit, WithStackTraceDepth(-1)))
 	require.Nil(t, instr.CaptureStackTrace(StackTraceCategoryException, WithStackTraceSkip(1_000)))
 }
 

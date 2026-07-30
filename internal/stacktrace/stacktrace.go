@@ -218,7 +218,7 @@ func SkipAndCapture(skip int) StackTrace {
 // skipping the first skip frames and capturing at most depth frames. A
 // non-positive depth uses the default depth.
 func SkipAndCaptureWithDepth(depth, skip int) StackTrace {
-	if depth == 0 {
+	if depth <= 0 {
 		depth = defaultMaxDepth
 	}
 	return iterator(skip+1, depth, frameOptions{
@@ -232,7 +232,7 @@ func SkipAndCaptureWithDepth(depth, skip int) StackTrace {
 // This is useful for tracer span error stacktraces where we want to capture all frames.
 func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 	// Use default depth if not specified
-	if depth == 0 {
+	if depth <= 0 {
 		depth = defaultMaxDepth
 	}
 	return iterator(skip+1, depth, frameOptions{
@@ -244,11 +244,11 @@ func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 
 // CaptureRaw captures only program counters without symbolication.
 // This is significantly faster than full capture as it avoids runtime.CallersFrames
-// and symbol parsing. The skip parameter determines how many frames to skip from
-// the top of the stack (similar to runtime.Callers).
+// and symbol parsing. The skip parameter determines how many caller frames to skip
+// after the stacktrace capture machinery.
 func CaptureRaw(skip int) RawStackTrace {
 	pcs := make([]uintptr, defaultMaxDepth)
-	n := runtime.Callers(skip, pcs)
+	n := runtime.Callers(skip+2, pcs)
 	return RawStackTrace{
 		PCs: pcs[:n],
 	}

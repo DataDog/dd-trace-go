@@ -16,6 +16,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//go:noinline
+func captureRawForTest(skip int) RawStackTrace {
+	return CaptureRaw(skip)
+}
+
+//go:noinline
+func captureInternalFramesForTest(skip int) StackTrace {
+	return SkipAndCaptureWithInternalFrames(4, skip)
+}
+
+func TestCaptureSkipsStacktraceMachinery(t *testing.T) {
+	raw := captureRawForTest(0)
+	require.NotEmpty(t, raw.PCs)
+	frame, _ := runtime.CallersFrames(raw.PCs).Next()
+	require.Contains(t, frame.Function, "captureRawForTest")
+
+	stack := captureInternalFramesForTest(0)
+	require.NotEmpty(t, stack)
+	require.Contains(t, stack[0].Function, "captureInternalFramesForTest")
+}
+
 func TestNewStackTrace(t *testing.T) {
 	stack := CaptureWithRedaction(0)
 	if len(stack) == 0 {
@@ -533,7 +554,7 @@ func TestCaptureWithOptions(t *testing.T) {
 	require.Greater(t, n, 0, "Should capture at least one PC")
 
 	t.Run("default options", func(t *testing.T) {
-		stack := CaptureWithRedaction(1)
+		stack := CaptureWithRedaction(0)
 		require.NotEmpty(t, stack, "Should return non-empty stack")
 
 		// Default should include redaction
@@ -542,7 +563,7 @@ func TestCaptureWithOptions(t *testing.T) {
 	})
 
 	t.Run("with redaction disabled", func(t *testing.T) {
-		stack := SkipAndCapture(1) // Use SkipAndCapture without redaction
+		stack := SkipAndCapture(0) // Use SkipAndCapture without redaction
 		require.NotEmpty(t, stack, "Should return non-empty stack")
 
 		// Without redaction, all frames should have their original info
@@ -554,7 +575,7 @@ func TestCaptureWithOptions(t *testing.T) {
 
 	t.Run("with custom max depth", func(t *testing.T) {
 		maxDepth := 5
-		stack := SkipAndCapture(1) // Note: max depth test simplified
+		stack := SkipAndCapture(0) // Note: max depth test simplified
 		t.Logf("Requested maxDepth: %d, got stack length: %d", maxDepth, len(stack))
 		for i, frame := range stack {
 			t.Logf("Frame %d: %s.%s at %s:%d", i, frame.Namespace, frame.Function, frame.File, frame.Line)
@@ -564,8 +585,8 @@ func TestCaptureWithOptions(t *testing.T) {
 
 	t.Run("with skip frames", func(t *testing.T) {
 		skipFrames := 2
-		stackNoSkip := SkipAndCapture(1)
-		stackWithSkip := SkipAndCapture(1 + skipFrames)
+		stackNoSkip := SkipAndCapture(0)
+		stackWithSkip := SkipAndCapture(skipFrames)
 
 		require.NotEmpty(t, stackNoSkip, "Base stack should not be empty")
 		require.NotEmpty(t, stackWithSkip, "Stack with skip should not be empty")
@@ -574,7 +595,7 @@ func TestCaptureWithOptions(t *testing.T) {
 	})
 
 	t.Run("with internal frames disabled", func(t *testing.T) {
-		stack := SkipAndCapture(1) // Note: internal frames test simplified
+		stack := SkipAndCapture(0) // Note: internal frames test simplified
 		require.NotEmpty(t, stack, "Should return non-empty stack")
 
 		// Check that no internal DD frames are present
@@ -646,7 +667,7 @@ func TestFormat(t *testing.T) {
 // Capture both stack traces from the exact same line to ensure identical line numbers.
 func stackTrace() ([]uintptr, int, RawStackTrace) {
 	pcs := make([]uintptr, 10)
-	return pcs, runtime.Callers(1, pcs), CaptureRaw(2)
+	return pcs, runtime.Callers(1, pcs), CaptureRaw(0)
 }
 
 // TestFormatMatchesRuntime ensures Format() output matches Go's standard runtime.CallersFrames format
@@ -706,7 +727,7 @@ func TestFormatMatchesRuntime(t *testing.T) {
 // TestStackTraceCapture provides regression testing for stacktrace capture behavior
 func TestStackTraceCapture(t *testing.T) {
 	t.Run("SkipAndCapture basic functionality", func(t *testing.T) {
-		stack := SkipAndCapture(1) // Skip this function
+		stack := SkipAndCapture(0)
 		require.NotEmpty(t, stack, "Should capture stack frames")
 
 		// Verify frame structure
@@ -724,7 +745,7 @@ func TestStackTraceCapture(t *testing.T) {
 	})
 
 	t.Run("CaptureWithRedaction basic functionality", func(t *testing.T) {
-		stack := CaptureWithRedaction(1) // Skip this function
+		stack := CaptureWithRedaction(0)
 		require.NotEmpty(t, stack, "Should capture stack frames with redaction")
 
 		// Verify frame structure
@@ -745,8 +766,8 @@ func TestStackTraceCapture(t *testing.T) {
 	})
 
 	t.Run("frame filtering comparison", func(t *testing.T) {
-		skipStack := SkipAndCapture(1)            // Filters internal frames
-		redactionStack := CaptureWithRedaction(1) // Keeps internal frames
+		skipStack := SkipAndCapture(0)            // Filters internal frames
+		redactionStack := CaptureWithRedaction(0) // Keeps internal frames
 
 		require.NotEmpty(t, skipStack, "SkipAndCapture should return frames")
 		require.NotEmpty(t, redactionStack, "CaptureWithRedaction should return frames")
@@ -858,8 +879,7 @@ func TestStackTraceRealCapture(t *testing.T) {
 	t.Run("verify telemetry integration stack trace", func(t *testing.T) {
 		// Test the actual usage pattern from telemetry backend
 		telemetryStack := func() StackTrace {
-			// Simulate the call from telemetry backend
-			return CaptureWithRedaction(4) // Skip: CaptureWithRedaction, capture, loggerBackend.add, loggerBackend.Add
+			return CaptureWithRedaction(1)
 		}
 
 		stack := telemetryStack()

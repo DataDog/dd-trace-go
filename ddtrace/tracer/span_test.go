@@ -396,8 +396,8 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", errMsg)
 	assert.Equal("*errors.errorString", errType)
-	// With SkipAndCaptureWithInternalFrames, we now see DD internal stacktrace frames for better visibility
-	assert.Contains(errStack, "stacktrace.SkipAndCaptureWithInternalFrames")
+	assert.NotContains(errStack, "stacktrace.SkipAndCaptureWithInternalFrames")
+	assert.NotContains(errStack, "tracer.takeStacktrace")
 	assert.NotEmpty(errStack)
 	assert.Equal(2, strings.Count(errStack, "\n\t"))
 }

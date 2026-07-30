@@ -790,11 +790,9 @@ func takeStacktrace(depth uint, skip uint) string {
 		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
 	}()
 
-	// This is necessary for span error stacktraces where we want complete visibility.
-	// Skip +4: The old implementation used runtime.Callers(2+skip, ...) which skipped runtime.Callers
-	// and takeStacktrace. The internal/stacktrace package auto-filters its own frames, but we still
-	// need to account for: runtime.Callers(1) + takeStacktrace(1) + setTagError(1) + additional frame(1)
-	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+4)
+	// Keep Datadog frames in span error stack traces, but omit this wrapper on top
+	// of the stacktrace package's own machinery.
+	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+1)
 	return stacktrace.Format(stack)
 }
 
