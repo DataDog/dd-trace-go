@@ -11,10 +11,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -139,7 +138,7 @@ func TestEnrichOperation(t *testing.T) {
 			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
 			span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
-			EnrichOperation(spanCtx, span, tt.input, tt.operation)
+			EnrichOperation(spanCtx, span, tt.input, tt.operation, true)
 
 			if tt.check != nil {
 				tt.check(t, tt.input, span, spanCtx)
@@ -187,7 +186,7 @@ func TestInjectTraceContext(t *testing.T) {
 				}
 			}
 
-			traceContext, err := getTraceContext(spanCtx, span, "test-queue", 42)
+			traceContext, err := getTraceContext(spanCtx, span, "test-queue", 42, true)
 			assert.NoError(t, err)
 			injectTraceContext(traceContext, messageAttributes)
 
@@ -212,6 +211,132 @@ func TestInjectTraceContext(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReceiveMessageEnsuresDatadogAttribute(t *testing.T) {
+	tests := []struct {
+		name      string
+		initial   []string
+		wantNames []string
+	}{
+		{
+			name:      "empty",
+			initial:   nil,
+			wantNames: []string{datadogKey},
+		},
+		{
+			name:      "preserves existing",
+			initial:   []string{"foo"},
+			wantNames: []string{"foo", datadogKey},
+		},
+		{
+			name:      "no-op when _datadog already present",
+			initial:   []string{datadogKey},
+			wantNames: []string{datadogKey},
+		},
+		{
+			name:      "no-op when All present",
+			initial:   []string{"All"},
+			wantNames: []string{"All"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			input := middleware.InitializeInput{
+				Parameters: &sqs.ReceiveMessageInput{
+					QueueUrl:              aws.String("https://sqs.us-east-1.amazonaws.com/1234567890/q"),
+					MessageAttributeNames: tt.initial,
+				},
+			}
+			span, ctx := tracer.StartSpanFromContext(context.Background(), "test-span")
+			EnrichOperation(ctx, span, input, "ReceiveMessage", true)
+			params := input.Parameters.(*sqs.ReceiveMessageInput)
+			assert.Equal(t, tt.wantNames, params.MessageAttributeNames)
+		})
+	}
+}
+
+func TestReceiveMessageNoDSMNoMutation(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	input := middleware.InitializeInput{
+		Parameters: &sqs.ReceiveMessageInput{
+			QueueUrl: aws.String("https://sqs.us-east-1.amazonaws.com/1234567890/q"),
+		},
+	}
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "test-span")
+	EnrichOperation(ctx, span, input, "ReceiveMessage", false)
+	params := input.Parameters.(*sqs.ReceiveMessageInput)
+	assert.Empty(t, params.MessageAttributeNames)
+}
+
+func TestEnrichOperationOutputConsumeCheckpoint(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	queueName := "consume-queue"
+
+	// Build a message whose _datadog attribute carries a producer pathway.
+	producerCtx, ok := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+queueName, "type:sqs")
+	require.True(t, ok)
+	producerCarrier := tracer.TextMapCarrier{}
+	datastreams.InjectToBase64Carrier(producerCtx, producerCarrier)
+	producerJSON, err := json.Marshal(producerCarrier)
+	require.NoError(t, err)
+
+	out := middleware.InitializeOutput{
+		Result: &sqs.ReceiveMessageOutput{
+			Messages: []types.Message{
+				{
+					Body: aws.String("payload"),
+					MessageAttributes: map[string]types.MessageAttributeValue{
+						datadogKey: {
+							DataType:    aws.String("String"),
+							StringValue: aws.String(string(producerJSON)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	EnrichOperationOutput(out, "ReceiveMessage", true, queueName)
+
+	resp := out.Result.(*sqs.ReceiveMessageOutput)
+	require.Len(t, resp.Messages, 1)
+	require.Contains(t, resp.Messages[0].MessageAttributes, datadogKey)
+
+	consumeCarrier := tracer.TextMapCarrier{}
+	require.NoError(t, json.Unmarshal([]byte(*resp.Messages[0].MessageAttributes[datadogKey].StringValue), &consumeCarrier))
+
+	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), consumeCarrier))
+	require.True(t, ok)
+
+	wantCtx, _ := tracer.SetDataStreamsCheckpoint(producerCtx, "direction:in", "topic:"+queueName, "type:sqs")
+	want, _ := datastreams.PathwayFromContext(wantCtx)
+	assert.NotZero(t, want.GetHash())
+	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
+func TestEnrichOperationOutputDisabled(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	out := middleware.InitializeOutput{
+		Result: &sqs.ReceiveMessageOutput{
+			Messages: []types.Message{
+				{Body: aws.String("payload")},
+			},
+		},
+	}
+	EnrichOperationOutput(out, "ReceiveMessage", false, "q")
+	resp := out.Result.(*sqs.ReceiveMessageOutput)
+	assert.Nil(t, resp.Messages[0].MessageAttributes)
 }
 
 func assertInjectedPathway(t *testing.T, raw string, expected datastreams.Pathway, span *tracer.Span) {
