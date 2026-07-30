@@ -268,7 +268,7 @@ require (
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.mongodb.org/mongo-driver v1.17.1 // indirect
-	go.mongodb.org/mongo-driver/v2 v2.2.2 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.4.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector/component v1.61.0 // indirect
