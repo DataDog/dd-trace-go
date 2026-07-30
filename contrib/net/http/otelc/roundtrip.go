@@ -49,6 +49,10 @@ func BeforeRoundTrip(ictx hook.HookContext, _ *http.Transport, req *http.Request
 	}
 	newReq, after, err := wrap.ObserveRoundTrip(defaultRoundTripperConfig(), req)
 	if err != nil {
+		// AppSec RASP blocked the request: skip the real RoundTrip and
+		// forward err as-is
+		ictx.SetSkipCall(true)
+		ictx.SetData(err)
 		return
 	}
 	ictx.SetParam(1, newReq)
@@ -58,13 +62,15 @@ func BeforeRoundTrip(ictx hook.HookContext, _ *http.Transport, req *http.Request
 // AfterRoundTrip finishes the client span started by BeforeRoundTrip, applying
 // any response/error mutation the after-hook performs.
 func AfterRoundTrip(ictx hook.HookContext, resp *http.Response, err error) {
-	after, ok := ictx.GetData().(wrap.AfterRoundTrip)
-	if !ok || after == nil {
-		return
+	switch data := ictx.GetData().(type) {
+	case wrap.AfterRoundTrip:
+		resp, err = data(resp, err)
+		ictx.SetReturnVal(0, resp)
+		ictx.SetReturnVal(1, err)
+	case error:
+		ictx.SetReturnVal(0, (*http.Response)(nil))
+		ictx.SetReturnVal(1, data)
 	}
-	resp, err = after(resp, err)
-	ictx.SetReturnVal(0, resp)
-	ictx.SetReturnVal(1, err)
 }
 
 var (
