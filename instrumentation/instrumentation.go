@@ -346,15 +346,16 @@ func (i *Instrumentation) CaptureStackTrace(category StackTraceCategory, options
 // meta_struct entry. Calls from IAST, AppSec, and other producers are aggregated
 // by event category and encoded when the span is serialized. A nil trace, a
 // trace without frames, and a nil span are ignored. The caller is responsible
-// for product-specific enablement.
-func (i *Instrumentation) RecordStackTrace(span *tracer.Span, trace *StackTrace) {
+// for product-specific enablement. Returns true if the stack trace was actually
+// recorded.
+func (i *Instrumentation) RecordStackTrace(span *tracer.Span, trace *StackTrace) bool {
 	if span == nil || trace == nil || len(trace.Frames) == 0 {
-		return
+		return false
 	}
 
 	root := span.Root()
 	if root == nil {
-		return
+		return false
 	}
-	stacktrace.AddToSpan(root, trace)
+	return stacktrace.AddToSpan(root, trace)
 }

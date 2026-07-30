@@ -122,19 +122,15 @@ func GetSpanValue(events ...*Event) any {
 	return getSpanValue(events...)
 }
 
-// AddToSpan adds the events to the given span's root span as a tag.
-func AddToSpan(span trace.TagSetter, events ...*Event) {
+// AddToSpan adds the events to the given span's root span as a tag. Returns true if the stack trace
+// was actually added.
+func AddToSpan(span trace.TagSetter, events ...*Event) bool {
 	if len(events) == 0 {
-		return
+		return false
 	}
 	value := getSpanValue(events...)
-	type rooter interface {
-		Root() trace.TagSetter
-	}
-	if lrs, ok := span.(rooter); ok {
-		span = lrs.Root()
-	}
 	span.SetTag(SpanKey, value)
+	return true
 }
 
 // MergeSpanValues combines two _dd.stack meta_struct values. The caller must
