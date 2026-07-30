@@ -240,18 +240,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
-	// The experimental span pool and Orchestrion's GLS weave are mutually
-	// exclusive. Span pooling recycles a finished span via sync.Pool; under
-	// Orchestrion that span may still be referenced from a goroutine-local
-	// storage (GLS) stack whose stale entry has not been drained, so reusing it
-	// can resurface a recycled span or leak the entry (see orchestrion#782).
-	// Until the reclaim signal is decoupled from the pooled span, disable
-	// pooling when Orchestrion is active and warn once. Checked after the option
-	// loop so an explicit WithSpanPool(true) is gated too.
-	if shouldDisableSpanPool(c.spanPoolEnabled, orchestrion.Enabled()) {
-		c.spanPoolEnabled = false
-		log.Warn("the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED / WithSpanPool) is incompatible with Orchestrion and has been disabled")
-	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
@@ -390,16 +378,6 @@ func computeOtelRuntimeMetricsShouldBeEnabled(c *config) bool {
 		c.internalConfig.RuntimeMetricsOtelEnabled() &&
 		c.internalConfig.OTLPExportMetricsMode() &&
 		(c.internalConfig.RuntimeMetricsV2Enabled() || c.internalConfig.RuntimeMetricsEnabled())
-}
-
-// shouldDisableSpanPool reports whether the experimental span pool must be
-// turned off because Orchestrion's GLS weave is active. The two are mutually
-// exclusive: pooling can recycle a finished span whose stale GLS entry has not
-// yet been drained, which the GLS reclaim path does not yet tolerate
-// (orchestrion#782). It is a pure helper so the gate is unit-testable without an
-// Orchestrion build (orchestrion.Enabled() is a build-time constant).
-func shouldDisableSpanPool(spanPoolEnabled, orchestrionEnabled bool) bool {
-	return spanPoolEnabled && orchestrionEnabled
 }
 
 func llmobsAgentlessEnabledFromEnv() *bool {
@@ -1215,6 +1193,29 @@ func WithSpanID(id uint64) StartSpanOption {
 func ChildOf(ctx *SpanContext) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		cfg.Parent = ctx
+	}
+}
+
+// childOfIfUnset is [ChildOf] for a parent that was inferred rather than named
+// by the caller: it yields to any parent an earlier option already set.
+//
+// [StartSpanFromContext] uses it for the parent it derives from an *implicit*
+// active span, which under Orchestrion may come from goroutine-local storage
+// rather than from the context chain. That inference is a guess about which
+// scope we are in, so it must not silently discard the parent a caller passed
+// explicitly — messaging and RPC integrations extract a parent from the wire
+// and pass it as [ChildOf], and losing it splices unrelated traces together.
+// The parent snapshotted by [ContextWithSpan] is not inferred and keeps using
+// [ChildOf], preserving the long-standing "context wins" contract.
+//
+// A nil cfg.Parent counts as unset: [ChildOf] cannot express "make this a root"
+// (see [StartSpanConfig.Parent]), and integrations do pass ChildOf(nil) when
+// extraction is a no-op, e.g. under DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=ignore.
+func childOfIfUnset(ctx *SpanContext) StartSpanOption {
+	return func(cfg *StartSpanConfig) {
+		if cfg.Parent == nil {
+			cfg.Parent = ctx
+		}
 	}
 }
 
