@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -66,11 +67,70 @@ type concentrator struct {
 	cfg          *config               // tracer startup configuration
 	statsdClient internal.StatsdClient // statsd client for sending metrics.
 
-	// otlpExporter, when non-nil, routes flushed stats to the OTLP metrics endpoint.
-	otlpExporter *otlpMetricsExporter
+	// sender determines where flushed stats go (the Datadog Agent or an OTLP
+	// metrics endpoint) and the destination-specific policy that comes with it.
+	sender statsSender
+}
 
-	// otlpPeerTags, when non-nil, overrides agent-advertised peer tags for OTLP span metrics.
-	otlpPeerTags []string
+// statsSender abstracts a concentrator's stats destination: how a flushed
+// payload is sent, and the obfuscation/peer-tags policy for that destination.
+type statsSender interface {
+	send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error
+	shouldObfuscate() bool
+	// peerTags returns the peer tags to use for a stat span, given the
+	// agent-advertised peer tags.
+	peerTags(agentPeerTags []string) []string
+}
+
+// ddStatsSender sends stats to the Datadog Agent's /v0.6/stats path.
+type ddStatsSender struct {
+	cfg *config
+}
+
+func (s *ddStatsSender) shouldObfuscate() bool {
+	// Obfuscate if agent reports an obfuscation version AND our version is at least as new.
+	agentObfVersion := s.cfg.agent.load().obfuscationVersion
+	return agentObfVersion > 0 && agentObfVersion <= tracerObfuscationVersion
+}
+
+func (s *ddStatsSender) peerTags(agentPeerTags []string) []string {
+	return agentPeerTags
+}
+
+func (s *ddStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
+	obfVersion := 0
+	if s.shouldObfuscate() {
+		obfVersion = tracerObfuscationVersion
+	} else {
+		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, s.cfg.agent.load().obfuscationVersion)
+	}
+	return sendWithRetry(retries, interval, func() error {
+		return s.cfg.ddTransport.sendStats(csp, obfVersion)
+	})
+}
+
+// otlpStatsSender routes flushed stats to the OTLP metrics endpoint.
+type otlpStatsSender struct {
+	exporter *otlpMetricsExporter
+}
+
+func (s *otlpStatsSender) shouldObfuscate() bool {
+	// There is no Datadog Agent downstream of an OTLP concentrator to apply
+	// obfuscation, so the tracer must always obfuscate locally.
+	return true
+}
+
+func (s *otlpStatsSender) peerTags(_ []string) []string {
+	// Custom OTLP peer tags aren't implemented yet (spec: "Out of scope for
+	// SDK implementation"); suppress agent-advertised peer tags instead of
+	// leaving stale DD-agent state on an OTLP-routed concentrator.
+	return []string{}
+}
+
+func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
+	return sendWithRetry(retries, interval, func() error {
+		return s.exporter.export(csp)
+	})
 }
 
 type tracerStatSpan struct {
@@ -127,6 +187,7 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		aggregationKey:   aggKey,
 		spanConcentrator: spanConcentrator,
 		statsdClient:     statsdClient,
+		sender:           &ddStatsSender{cfg: c},
 	}
 }
 
@@ -193,7 +254,7 @@ func (c *concentrator) runIngester() {
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
 	agentInfo := c.cfg.agent.load()
 	resource := s.resource
-	if c.shouldObfuscate() {
+	if c.sender.shouldObfuscate() {
 		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
 		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
 	} else {
@@ -206,14 +267,8 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		httpEndpoint, _ = s.meta.Get(ext.HTTPRoute)
 	}
 
-	peerTags := c.cfg.agent.load().peerTags
+	peerTags := c.sender.peerTags(agentInfo.peerTags)
 	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
-	if c.otlpPeerTags != nil {
-		// Custom OTLP peer tags aren't implemented yet (spec: "Out of scope for
-		// SDK implementation"); suppress agent-advertised peer tags instead of
-		// leaving stale DD-agent state on an OTLP-routed concentrator.
-		peerTags = c.otlpPeerTags
-	}
 	statSpan, ok := c.spanConcentrator.NewStatSpanWithConfig(stats.StatSpanConfig{
 		Service:                 s.service,
 		Resource:                resource,
@@ -240,17 +295,6 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		origin:   origin,
 		version:  version,
 	}, true
-}
-
-func (c *concentrator) shouldObfuscate() bool {
-	if c.otlpExporter != nil {
-		// There is no Datadog Agent downstream of an OTLP concentrator to
-		// apply obfuscation, so the tracer must always obfuscate locally.
-		return true
-	}
-	// Obfuscate if agent reports an obfuscation version AND our version is at least as new
-	agentObfVersion := c.cfg.agent.load().obfuscationVersion
-	return agentObfVersion > 0 && agentObfVersion <= tracerObfuscationVersion
 }
 
 // add s into the concentrator's internal stats buckets.
@@ -334,22 +378,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		csp.Service = c.cfg.internalConfig.ServiceName()
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
-		var err error
-		if c.otlpExporter != nil {
-			err = sendWithRetry(sendRetries, retryInterval, func() error {
-				return c.otlpExporter.export(csp)
-			})
-		} else {
-			obfVersion := 0
-			if c.shouldObfuscate() {
-				obfVersion = tracerObfuscationVersion
-			} else {
-				log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.load().obfuscationVersion)
-			}
-			err = sendWithRetry(sendRetries, retryInterval, func() error {
-				return c.cfg.ddTransport.sendStats(csp, obfVersion)
-			})
-		}
+		err := c.sender.send(csp, sendRetries, retryInterval)
 		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 			log.Error("Error sending stats payload: %s", err.Error())
@@ -361,10 +390,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 // newOTLPMetricsConcentrator creates a concentrator that exports to the OTLP metrics endpoint.
 func newOTLPMetricsConcentrator(c *config, statsdClient internal.StatsdClient) *concentrator {
 	conc := newConcentrator(c, c.internalConfig.OTLPMetricsFlushInterval().Nanoseconds(), statsdClient)
-	conc.otlpExporter = newOTLPMetricsExporter(c.internalConfig)
-	// Peer tags are out of scope for OTLP span metrics (spec: "Out of scope for SDK implementation").
-	// Set to empty (non-nil) to suppress agent-advertised peer tags on this concentrator.
-	conc.otlpPeerTags = []string{}
+	conc.sender = &otlpStatsSender{exporter: newOTLPMetricsExporter(c.internalConfig)}
 	return conc
 }
 

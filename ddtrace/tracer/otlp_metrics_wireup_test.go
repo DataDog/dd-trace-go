@@ -52,7 +52,7 @@ func (cs *captureMetricsServer) receivedBodies() [][]byte {
 }
 
 // TestOTLPMetricsConcentratorRoutesToExporter verifies that a concentrator wired
-// with an otlpMetricsExporter routes flushed stats to the OTLP endpoint and does
+// with an otlpStatsSender routes flushed stats to the OTLP endpoint and does
 // not use the agent's native /v0.6/stats path.
 func TestOTLPMetricsConcentratorRoutesToExporter(t *testing.T) {
 	otlpSrv := newCaptureMetricsServer(t)
@@ -66,11 +66,11 @@ func TestOTLPMetricsConcentratorRoutesToExporter(t *testing.T) {
 
 	bucketSize := int64(500_000)
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
-	c.otlpExporter = &otlpMetricsExporter{
+	c.sender = &otlpStatsSender{exporter: &otlpMetricsExporter{
 		transport: newOTLPTransport(otlpSrv.Server.Client(), otlpSrv.URL+"/v1/metrics", nil),
 		protocol:  "http/json",
 		cfg:       cfg.internalConfig,
-	}
+	}}
 
 	s := &Span{
 		name:     "http.request",
@@ -100,7 +100,7 @@ func TestOTLPMetricsConcentratorRoutesToExporter(t *testing.T) {
 	require.NotEmpty(t, rm)
 
 	// The native /v0.6/stats path must not have been used.
-	assert.Empty(t, dt.Stats(), "native stats path must not be used when otlpExporter is set")
+	assert.Empty(t, dt.Stats(), "native stats path must not be used when an otlpStatsSender is set")
 }
 
 // TestOTLPSpanMetricsHeaderOnNativeTraces verifies that when OTLP span metrics are
@@ -150,12 +150,11 @@ func TestOTLPConcentratorHTTPRouteAttribute(t *testing.T) {
 
 	bucketSize := int64(500_000)
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
-	c.otlpExporter = &otlpMetricsExporter{
+	c.sender = &otlpStatsSender{exporter: &otlpMetricsExporter{
 		transport: newOTLPTransport(otlpSrv.Server.Client(), otlpSrv.URL+"/v1/metrics", nil),
 		protocol:  "http/json",
 		cfg:       cfg.internalConfig,
-	}
-	c.otlpPeerTags = []string{}
+	}}
 
 	s := &Span{
 		name:     "web.request",
