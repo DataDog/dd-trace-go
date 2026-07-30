@@ -63,7 +63,7 @@ jobs:
         # go get -u executes dependency code from the network. Keep those
         # changes inside the gVisor sandbox; this setup job only needs to prove
         # the updated dependency graph still compiles.
-        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
+        uses: geomys/sandboxed-step@a6bfc174e532cea4f378e3427bcde8b714c2e810 # v1.2.2
         with:
           env: |
             GOPROXY=${{ env.GOPROXY }}
@@ -145,7 +145,7 @@ jobs:
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
         # The smoke script runs go get -u inside each contrib module, so run it
         # in gVisor and persist only the generated reports/coverage for uploads.
-        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
+        uses: geomys/sandboxed-step@a6bfc174e532cea4f378e3427bcde8b714c2e810 # v1.2.2
         with:
           persist-workspace-changes: 'true'
           env: |
@@ -413,20 +413,80 @@ jobs:
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
 
+  check-orchestrion-all-resolves:
+    # Verify that orchestrion/all/v2, and every dd-trace-go module it requires, can be
+    # resolved from the module proxy by an external consumer.
+    name: 'Check orchestrion/all resolves from the module proxy'
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'DataDog' # needs a commit pushed to the public repo
+    env:
+      REF: ${{ inputs.ref || github.sha }}
+      # This job checks that modules can be downloaded, not that their checksums match,
+      # which the other jobs already cover. Skipping the checksum database avoids a false
+      # failure when it has not yet caught up with a just-pushed commit.
+      GOSUMDB: "off"
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.25" # lowest supported version, so this checks the floor
+      - name: Resolve orchestrion/all as an external consumer would
+        id: resolve
+        run: |-
+          set -euo pipefail
+          module=github.com/DataDog/dd-trace-go/orchestrion/all/v2
+
+          # Build the throwaway consumer outside the workspace, so no go.work or replace
+          # directive above it can influence resolution.
+          work=$(mktemp -d)
+          cd "$work"
+          go mod init ci.local/orchestrion-all-resolve-check
+
+          # orchestrion/all only pulls the contrib modules in under the `tools` build
+          # tag, which is how `orchestrion pin` wires it into a user's project. A plain
+          # `go get` prunes them away and passes even when a tag is missing, so the tool
+          # file plus `go mod tidy`, which considers every build tag, is what actually
+          # forces each contrib module to resolve.
+          printf '//go:build tools\n\npackage tools\n\nimport _ "%s"\n' "$module" > orchestrion.tool.go
+
+          echo "::group::go get $module@$REF"
+          go get "$module@$REF"
+          echo "::endgroup::"
+
+          echo "::group::go mod tidy"
+          go mod tidy
+          echo "::endgroup::"
+      - name: Explain how to fix this
+        if: failure() && steps.resolve.outcome == 'failure'
+        run: |-
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## `orchestrion/all` is not resolvable from the module proxy
+
+          A new nested module was most likely added without a published tag, so external
+          consumers cannot use `orchestrion/all/v2@main` even though this repository builds
+          fine. Please run the following to cut a new dev release:
+
+          ```sh
+          git checkout -b dev-vX.Y.x origin/main
+          go run ./scripts/autoreleasetagger --version vX.Y.0-dev.N --root .
+          ```
+          EOF
+
   smoke-tests-done:
     name: Smoke Tests
-    needs: 
+    needs:
       - setup-requirements-linux
       - smoke-test-tracer
       - go-get-u
+      - check-orchestrion-all-resolves
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.setup-requirements-linux.result == 'success' && needs.smoke-test-tracer.result == 'success' && needs.go-get-u.result == 'success'
+        if: needs.setup-requirements-linux.result == 'success' && needs.smoke-test-tracer.result == 'success' && needs.go-get-u.result == 'success' && needs.check-orchestrion-all-resolves.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.setup-requirements-linux.result != 'success' || needs.smoke-test-tracer.result != 'success' || needs.go-get-u.result != 'success'
+        if: needs.setup-requirements-linux.result != 'success' || needs.smoke-test-tracer.result != 'success' || needs.go-get-u.result != 'success' || needs.check-orchestrion-all-resolves.result != 'success'
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           webhook-type: incoming-webhook
@@ -436,6 +496,7 @@ jobs:
               "linux_result": "${{ needs.setup-requirements-linux.result }}",
               "core_result": "${{ needs.smoke-test-tracer.result }}",
               "contrib_result": "${{ needs.go-get-u.result }}",
+              "proxy_resolution_result": "${{ needs.check-orchestrion-all-resolves.result }}",
               "blocks": [
                 {
                   "type": "header",
@@ -471,6 +532,10 @@ jobs:
                       "type": "mrkdwn",
                       "text": "*Contrib Test Result:*\n${{ needs.go-get-u.result }}"
                     },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Proxy Resolution Result:*\n${{ needs.check-orchestrion-all-resolves.result }}"
+                    }
                   ]
                 }
               ]
