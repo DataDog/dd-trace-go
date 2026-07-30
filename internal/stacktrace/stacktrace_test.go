@@ -17,14 +17,14 @@ import (
 )
 
 func TestNewStackTrace(t *testing.T) {
-	stack := CaptureWithRedaction(defaultCallerSkip)
+	stack := CaptureWithRedaction(0)
 	if len(stack) == 0 {
 		t.Error("stacktrace should not be empty")
 	}
 }
 
 func TestStackTraceCurrentFrame(t *testing.T) {
-	stack := CaptureWithRedaction(defaultCallerSkip)
+	stack := CaptureWithRedaction(0)
 	require.Greater(t, len(stack), 0)
 
 	frame := stack[0]
@@ -37,7 +37,7 @@ func TestStackTraceCurrentFrame(t *testing.T) {
 type Test struct{}
 
 func (t *Test) Method() StackTrace {
-	return CaptureWithRedaction(defaultCallerSkip)
+	return CaptureWithRedaction(0)
 }
 
 func TestStackMethodReceiver(t *testing.T) {
@@ -54,7 +54,7 @@ func TestStackMethodReceiver(t *testing.T) {
 
 func recursive(i int) StackTrace {
 	if i == 0 {
-		return CaptureWithRedaction(defaultCallerSkip)
+		return CaptureWithRedaction(0)
 	}
 
 	return recursive(i - 1)
@@ -273,7 +273,7 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 func recursiveBench(i int, depth int, b *testing.B) StackTrace {
 	if i == 0 {
 		b.StartTimer()
-		stack := iterator(defaultCallerSkip, depth*2, frameOptions{
+		stack := iterator(0, depth*2, frameOptions{
 			skipInternalFrames:      true,
 			redactCustomerFrames:    false,
 			internalPackagePrefixes: nil,
@@ -288,7 +288,7 @@ func recursiveBench(i int, depth int, b *testing.B) StackTrace {
 // so the benchmark can cover stacks deeper than the production default.
 func recursiveBenchRedaction(i, depth int, b *testing.B) StackTrace {
 	if i == 0 {
-		return iterator(defaultCallerSkip, depth, frameOptions{
+		return iterator(0, depth, frameOptions{
 			skipInternalFrames:      false,
 			redactCustomerFrames:    true,
 			internalPackagePrefixes: internalSymbolPrefixes,
@@ -299,7 +299,7 @@ func recursiveBenchRedaction(i, depth int, b *testing.B) StackTrace {
 
 func recursiveBenchSkip(i, depth int, b *testing.B) StackTrace {
 	if i == 0 {
-		return SkipAndCaptureWithDepth(defaultCallerSkip, depth)
+		return SkipAndCaptureWithDepth(depth, 0)
 	}
 	return recursiveBenchSkip(i-1, depth, b)
 }

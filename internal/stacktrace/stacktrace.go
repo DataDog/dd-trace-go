@@ -24,7 +24,6 @@ var (
 		"github.com/DataDog/datadog-agent",
 		"github.com/datadog/orchestrion",
 		"github.com/DataDog/orchestrion",
-		"github.com/DataDog/dd-iast-go",
 	}
 
 	// knownThirdPartyLibraries contains third-party library patterns for stack frame classification.
@@ -46,8 +45,7 @@ var (
 type frameType string
 
 const (
-	defaultCallerSkip = 4
-	defaultMaxDepth   = 32
+	defaultMaxDepth = 32
 
 	frameTypeDatadog    frameType = "datadog"
 	frameTypeRuntime    frameType = "runtime"
@@ -208,22 +206,22 @@ func parseSymbol(name string) symbol {
 
 // Capture create a new stack trace from the current call stack
 func Capture() StackTrace {
-	return SkipAndCapture(defaultCallerSkip)
+	return SkipAndCaptureWithDepth(defaultMaxDepth, 1)
 }
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	return SkipAndCaptureWithDepth(skip, defaultMaxDepth)
+	return SkipAndCaptureWithDepth(defaultMaxDepth, skip+1)
 }
 
 // SkipAndCaptureWithDepth creates a new stack trace from the current call stack,
 // skipping the first skip frames and capturing at most depth frames. A
 // non-positive depth uses the default depth.
-func SkipAndCaptureWithDepth(skip, depth int) StackTrace {
-	if depth <= 0 {
+func SkipAndCaptureWithDepth(depth, skip int) StackTrace {
+	if depth == 0 {
 		depth = defaultMaxDepth
 	}
-	return iterator(skip, depth, frameOptions{
+	return iterator(skip+1, depth, frameOptions{
 		skipInternalFrames:      true,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: internalSymbolPrefixes,
@@ -237,7 +235,7 @@ func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 	if depth == 0 {
 		depth = defaultMaxDepth
 	}
-	return iterator(skip, depth, frameOptions{
+	return iterator(skip+1, depth, frameOptions{
 		skipInternalFrames:      false,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: nil,
@@ -358,12 +356,19 @@ type framesIterator struct {
 
 func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
 	topFrameDepth := max(maxDepth/4, 1)
+
+	// We want to always skip frames belonging to the internal machinery of the
+	// stacktrace collection. Concretely, this means hiding the following call
+	// frames from the chain:
+	// [*framesIterator.capture] -> [*framesIterator.Next] -> [*framesIterator.next] -> [*framesIterator.prepareNextBatch] -> [runtime.Callers]
+	const internalMachinerySkip = 5
+
 	return &framesIterator{
 		frameOpts:     opts,
 		frames:        newQueue[runtime.Frame](maxDepth + 4),
 		cache:         make([]uintptr, maxDepth),
 		cacheSize:     maxDepth,
-		cacheDepth:    skip,
+		cacheDepth:    skip + internalMachinerySkip,
 		currDepth:     0,
 		maxDepth:      maxDepth,
 		topFrameDepth: topFrameDepth,
@@ -406,7 +411,7 @@ func (it *framesIterator) prepareNextBatch() []uintptr {
 		return pcs
 	}
 
-	// Live mode: call runtime.Callers.
+	// Live mode: call [runtime.Callers].
 	n := runtime.Callers(it.cacheDepth, it.cache)
 	if n == 0 {
 		return nil

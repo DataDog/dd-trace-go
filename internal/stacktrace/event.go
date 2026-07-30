@@ -62,12 +62,8 @@ func NewEvent(eventCat EventCategory, options ...Option) *Event {
 			opt(&cfg)
 		}
 	}
-	event.Frames = captureEventFrames(cfg.skip, cfg.depth)
+	event.Frames = SkipAndCaptureWithInternalFrames(cfg.depth, cfg.skip+1)
 	return event
-}
-
-func captureEventFrames(skip, depth int) StackTrace {
-	return SkipAndCaptureWithDepth(skip+defaultCallerSkip, depth)
 }
 
 type eventConfig struct {
@@ -100,12 +96,23 @@ func WithID(id string) Option {
 	}
 }
 
-// WithSkip sets the number of runtime frames to skip on top of the default
-// caller skip, before internal stack-trace frames are filtered. Negative values
+// WithSkip sets the number of runtime frames to skip on top of the stacktrace
+// machinery, before internal stack-trace frames are filtered. Negative values
 // are treated as zero.
 func WithSkip(skip int) Option {
 	return func(cfg *eventConfig) {
 		cfg.skip = max(0, skip)
+	}
+}
+
+// WithAdditionalSkip adds the given number of frames to skip to the existing
+// skip value. Negative values are treated as zero.
+func WithAdditionalSkip(skip int) Option {
+	return func(cfg *eventConfig) {
+		if skip <= 0 {
+			return
+		}
+		cfg.skip += skip
 	}
 }
 

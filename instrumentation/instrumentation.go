@@ -286,6 +286,7 @@ func (i *Instrumentation) ActiveSpanKey() any {
 // StackTrace is a stack-trace event captured by an [Instrumentation]. Its
 // fields must not be mutated after passing it to [Instrumentation.RecordStackTrace].
 type StackTrace = stacktrace.Event
+type StackFrame = stacktrace.StackFrame
 
 // StackTraceCategory identifies the kind of event associated with a stack trace.
 type StackTraceCategory = stacktrace.EventCategory
@@ -335,6 +336,8 @@ func WithStackTraceDepth(depth int) StackTraceOption {
 // nil when no frames are captured. The caller is responsible for applying its
 // product-specific enablement configuration.
 func (i *Instrumentation) CaptureStackTrace(category StackTraceCategory, options ...StackTraceOption) *StackTrace {
+	// We need to skip the frame for the call to [*Instrumentation.CaptureStackTrace] itself.
+	options = append(options, stacktrace.WithAdditionalSkip(1))
 	event := stacktrace.NewEvent(category, options...)
 	if len(event.Frames) == 0 {
 		return nil
