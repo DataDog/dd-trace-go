@@ -32,11 +32,14 @@ jobs:
           policy: self.code-freeze-end
 
       - name: Log code freeze end
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MILESTONE_TITLE: ${{ github.event.milestone.title }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "🌡️ Code freeze ended manually"
           else
-            echo "🌡️ Code freeze ended by closing milestone: ${{ github.event.milestone.title }}"
+            echo "🌡️ Code freeze ended by closing milestone: $MILESTONE_TITLE"
           fi
 
       - name: Checkout repository

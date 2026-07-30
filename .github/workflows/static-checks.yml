@@ -30,7 +30,7 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
-  GOLANGCI_LINT_VERSION: v2.9.0 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
+  GOLANGCI_LINT_VERSION: v2.12.2 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
 
 permissions:
   contents: read
@@ -190,7 +190,7 @@ jobs:
         with:
           github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review
-          fail_level: error
+          fail_level: warning
           path: ./scripts
           pattern: "**/*.sh"
           filter_mode: nofilter
@@ -203,7 +203,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
           cache: false
@@ -228,3 +228,18 @@ jobs:
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/checklocks.sh
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ inputs.go-version || 'stable' }}
+          cache: false
+      - name: Cross-compile all first-class Go ports
+        run: ./scripts/cross_build.sh

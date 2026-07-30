@@ -86,7 +86,7 @@ func waitForPayload(payloads chan traces) (traces, error) {
 	case p := <-payloads:
 		return p, nil
 	case <-time.After(10 * time.Second):
-		return nil, fmt.Errorf("Timed out waiting for traces")
+		return nil, errors.New("Timed out waiting for traces")
 	}
 }
 

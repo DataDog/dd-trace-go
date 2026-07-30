@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -28,7 +29,7 @@ func parseUint64(str string) (uint64, error) {
 
 func isValidPropagatableTag(k, v string) error {
 	if len(k) == 0 {
-		return fmt.Errorf("key length must be greater than zero")
+		return errors.New("key length must be greater than zero")
 	}
 	for _, ch := range k {
 		if ch < 32 || ch > 126 || ch == ' ' || ch == '=' || ch == ',' {
@@ -36,7 +37,7 @@ func isValidPropagatableTag(k, v string) error {
 		}
 	}
 	if len(v) == 0 {
-		return fmt.Errorf("value length must be greater than zero")
+		return errors.New("value length must be greater than zero")
 	}
 	for _, ch := range v {
 		if ch < 32 || ch > 126 || ch == ',' {
@@ -58,21 +59,21 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 		case '=':
 			if searchingKey {
 				if i-start == 0 {
-					return nil, fmt.Errorf("invalid format")
+					return nil, errors.New("invalid format")
 				}
 				key = s[start:i]
 				searchingKey, start = false, i+1
 			}
 		case ',':
 			if searchingKey || i-start == 0 {
-				return nil, fmt.Errorf("invalid format")
+				return nil, errors.New("invalid format")
 			}
 			tags[key] = s[start:i]
 			searchingKey, start = true, i+1
 		}
 	}
 	if searchingKey || len(s)-start == 0 {
-		return nil, fmt.Errorf("invalid format")
+		return nil, errors.New("invalid format")
 	}
 	tags[key] = s[start:]
 	return tags, nil

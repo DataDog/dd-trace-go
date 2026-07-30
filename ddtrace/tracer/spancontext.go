@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -257,10 +258,15 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	if sc.trace == nil {
 		sc.trace = newTrace()
 	}
-	sc.trace.tags = ctx.Tags()                                    // +checklocksignore - Initialization time, not shared yet.
-	sc.trace.propagatingTags = ctx.PropagatingTags()              // +checklocksignore - Initialization time, not shared yet.
-	if dm, ok := sc.trace.propagatingTags[keyDecisionMaker]; ok { // +checklocksignore - Initialization time, not shared yet.
-		sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.tags = ctx.Tags()                    // +checklocksignore - Initialization time, not shared yet.
+	if pt := ctx.PropagatingTags(); len(pt) > 0 { // +checklocksignore - Initialization time, not shared yet.
+		// Clone the map so that the atomic.Value snapshot is immutable and
+		// independent of whatever the adapter holds internally.
+		cp := maps.Clone(pt)
+		sc.trace.propagatingTags.Store(cp)
+		if dm, ok := cp[keyDecisionMaker]; ok {
+			sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+		}
 	}
 	sc.traceID.cacheHex()
 	return &sc
@@ -604,8 +610,8 @@ type trace struct {
 	// +checklocks:mu
 	tags map[string]string
 	// trace level tags that will be propagated across service boundaries
-	// +checklocks:mu
-	propagatingTags map[string]string
+	// holds map[string]string; readers are lock-free (atomic.Value); writers hold mu and use copy-on-write
+	propagatingTags atomic.Value
 	// the number of finished spans
 	// +checklocks:mu
 	finished int
@@ -638,6 +644,11 @@ type trace struct {
 	// still refer to it through trace.root.
 	// +checklocks:mu
 	rootFlushed bool
+
+	// filterReject is set when the local root finishes and is consumed when a
+	// chunk containing that root is assembled.
+	// +checklocks:mu
+	filterReject bool
 }
 
 var (
@@ -750,7 +761,8 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	updatedPriority := old == nil || *old != float64(p)
 
 	t.priority.Store(samplingPriorityPtr(p)) // +checklocksignore
-	curDM, existed := t.propagatingTags[keyDecisionMaker]
+	curDM := t.propagatingTag(keyDecisionMaker)
+	existed := curDM != ""
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
@@ -821,7 +833,7 @@ func (t *trace) push(sp *Span) {
 }
 
 // setTraceTagsLocked sets all "trace level" tags on the provided span
-// t must already be locked.
+// t must already be read-locked (t.mu.RLock held by caller).
 // +checklocksread:t.mu
 // +checklocks:s.mu
 func (t *trace) setTraceTagsLocked(s *Span) {
@@ -830,7 +842,7 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	for k, v := range t.tags {
 		s.setMetaLocked(k, v)
 	}
-	for k, v := range t.propagatingTags {
+	for k, v := range t.loadPropagatingTags() {
 		s.setMetaLocked(k, v)
 	}
 	updateTracerGitMetadataTags(s)
@@ -875,6 +887,9 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// to a race condition where spans can be modified while flushing.
 		//
 		// TODO(partialFlush): should we do a partial flush in this scenario?
+		if tr, ok := getGlobalTracer().(*tracer); ok {
+			tr.computeOversizedSpanStats(s)
+		}
 		t.mu.Unlock()
 		return
 	}
@@ -914,6 +929,11 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// in the chunk there.
 		t.setTraceTagsLocked(s)
 	}
+	if realTracer, ok := tr.(*tracer); ok {
+		realTracer.computeSpanStats(t, s)
+	} else {
+		s.statSpan = nil
+	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
 	// We need to track when any single span is finished.
@@ -930,10 +950,13 @@ func (t *trace) finishedOneLocked(s *Span) {
 			t.rootFlushed = false
 		}
 		willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
+		// t.filterReject is guarded by t.mu, so capture it before unlocking below.
+		// The root has finished by full flush, so its decision is set.
+		filterRejected := t.filterReject
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 		t.mu.Unlock()
-		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease})
+		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 		return
 	}
 
@@ -983,6 +1006,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 			}
 		}
 	}
+	// t.filterReject stays false until the root finishes, so this passes pre-root
+	// partial-flush chunks through unfiltered and applies the root's decision once
+	// it is known — same as the full-flush path above.
+	filterRejected := t.filterReject
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
 	// Clear the tail so the GC can collect the flushed spans; without this the
@@ -1016,13 +1043,17 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RLock()
 		t.setTraceTagsLocked(fSpan)
 		t.mu.RUnlock()
+		// recompute stats after trace tags propagation
+		if realTracer, ok := tr.(*tracer); ok && fSpan.statSpan != nil {
+			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpan(fSpan, realTracer.obfuscator)
+		}
 	}
 	if !finishingSpanIsFirstInChunk {
 		fSpan.mu.Unlock()
 		s.mu.Lock()
 	}
 
-	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease})
+	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 }
 
 // submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.

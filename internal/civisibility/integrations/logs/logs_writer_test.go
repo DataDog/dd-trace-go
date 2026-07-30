@@ -7,6 +7,7 @@ package logs
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -67,7 +68,7 @@ func TestLogsWriterConcurrentFlush(t *testing.T) {
 func TestLogsWriterFlushError(t *testing.T) {
 	writer := newLogsWriter()
 	writer.client = &MockClient{SendLogsFunc: func(_ io.Reader) error {
-		return fmt.Errorf("mock error")
+		return errors.New("mock error")
 	},
 	}
 	entry := &logEntry{}

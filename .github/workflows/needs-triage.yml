@@ -104,7 +104,7 @@ jobs:
 
     steps:
       - name: Notify about ${{ matrix.number }}
-        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           webhook: ${{ secrets.NEEDS_TRIAGE_SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook

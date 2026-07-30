@@ -6,8 +6,9 @@
 package tracer
 
 import (
-	"fmt"
+	"errors"
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,7 +24,7 @@ func TestParseUint64(t *testing.T) {
 	})
 
 	t.Run("positive", func(t *testing.T) {
-		id, err := parseUint64(fmt.Sprintf("%d", uint64(math.MaxUint64)))
+		id, err := parseUint64(strconv.FormatUint(uint64(math.MaxUint64), 10))
 		assert.NoError(t, err)
 		assert.Equal(t, uint64(math.MaxUint64), id)
 	})
@@ -42,13 +43,13 @@ func TestIsValidPropagatableTraceTag(t *testing.T) {
 	}{
 		{"hello", "world", nil},
 		{"hello", "world=", nil},
-		{"hello=", "world", fmt.Errorf("key contains an invalid character 61")},
-		{"", "world", fmt.Errorf("key length must be greater than zero")},
-		{"hello", "", fmt.Errorf("value length must be greater than zero")},
-		{"こんにちは", "world", fmt.Errorf("key contains an invalid character 12371")},
-		{"hello", "世界", fmt.Errorf("value contains an invalid character 19990")},
+		{"hello=", "world", errors.New("key contains an invalid character 61")},
+		{"", "world", errors.New("key length must be greater than zero")},
+		{"hello", "", errors.New("value length must be greater than zero")},
+		{"こんにちは", "world", errors.New("key contains an invalid character 12371")},
+		{"hello", "世界", errors.New("value contains an invalid character 19990")},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			assert.Equal(t, tt.err, isValidPropagatableTag(tt.key, tt.value))
 		})
 	}
@@ -64,14 +65,14 @@ func TestParsePropagatableTraceTags(t *testing.T) {
 		{" hello = world ", map[string]string{" hello ": " world "}, nil},
 		{"hello=world,service=account", map[string]string{"hello": "world", "service": "account"}, nil},
 		{"hello=wor=ld====,service=account,tag1=val=ue1", map[string]string{"hello": "wor=ld====", "service": "account", "tag1": "val=ue1"}, nil},
-		{"hello", nil, fmt.Errorf("invalid format")},
-		{"hello=world,service=", nil, fmt.Errorf("invalid format")},
-		{"hello=world,", nil, fmt.Errorf("invalid format")},
-		{"=world", nil, fmt.Errorf("invalid format")},
-		{"hello=,tag1=value1", nil, fmt.Errorf("invalid format")},
-		{",hello=world", nil, fmt.Errorf("invalid format")},
+		{"hello", nil, errors.New("invalid format")},
+		{"hello=world,service=", nil, errors.New("invalid format")},
+		{"hello=world,", nil, errors.New("invalid format")},
+		{"=world", nil, errors.New("invalid format")},
+		{"hello=,tag1=value1", nil, errors.New("invalid format")},
+		{",hello=world", nil, errors.New("invalid format")},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			output, err := parsePropagatableTraceTags(tt.input)
 			assert.Equal(t, tt.output, output)
 			assert.Equal(t, tt.err, err)
@@ -115,7 +116,7 @@ func TestDereference(t *testing.T) {
 		{(*samplernames.SamplerName)(nil), samplernames.Unknown},
 		{newSpan("test", "service", "resource", 1, 2, 0), "itself"}, // This test uses a value which type is not supported by dereference.
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			actual := dereference(tt.value)
 			// This is a special case where we want to compare the value itself
 			// because the dereference function returns the given value.
