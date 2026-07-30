@@ -36,8 +36,8 @@ concurrency:
 jobs:
   generate:
     name: Verify generated files are up-to-date
-    # Don't run in workflow_call or workflow_dispatch
-    if: github.event_name == 'workflow_dispatch'
+    # Don't run in workflow_call
+    if: github.event_name == 'workflow_dispatch' || inputs.otelc-version == ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -318,12 +318,16 @@ jobs:
       - generate
       - integration-test
     runs-on: ubuntu-latest
-    if: success() || failure()
+    if: '!cancelled()'
     steps:
       - name: Success
-        if: needs.integration-test.result == 'success' && needs.generate.result == 'success'
+        if: >-
+          needs.integration-test.result == 'success' &&
+          needs.generate.result != 'failure' && needs.generate.result != 'cancelled'
         run: echo "Success!"
       - name: Failure
-        if: needs.integration-test.result != 'success' || needs.generate.result != 'success'
+        if: >-
+          needs.integration-test.result != 'success' ||
+          needs.generate.result == 'failure' || needs.generate.result == 'cancelled'
         run: echo "Failure!" && exit 1
 
