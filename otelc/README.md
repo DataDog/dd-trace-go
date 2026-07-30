@@ -5,11 +5,14 @@
 dd-trace-go support of `otelc` lives in several directories:
 
 1. `./otelc` -- This directory
-2. [../contrib](../contrib/) -- 
+2. [../contrib](../contrib/) -- Implementations for specific integrations
+3. [../internal/otelc](../internal/otelc) -- Internal only implementations required for OTelc instrumentation to work, such as GLS.
 
 ## Contributing
 
 To learn about which rules are supported and to contribute to the upstream project, check the [otelc project documentation](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/tree/main/docs).
+
+When instrumenting a new contrib with `otelc`, no OpenTelemetry imports should be introduced to customer code as it would introduce bloat. Only add imports when strictly necessary, and only to `otelc` modules. 
 
 ### Template variables
 
@@ -28,3 +31,15 @@ Rules that use `expand_directive` (e.g. `span_directive` in [../ddtrace/tracer/o
 For more information, refer to the [otelc documentation on rules](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/blob/main/docs/rules.md).
 
 ## Testing
+
+Testing `otelc` is supported by the same test cases and harness as done for [Orchestrion](../internal/orchestrion/_integration/). Both `otelc` and `orchestrion` are expected to produce the same spans and traces.
+
+### Running locally
+
+From the root of a checkout of the [otelc project](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation), install the `otelc` binary (`make install`), then from `internal/orchestrion/_integration` in this repo run:
+
+```console
+$ otelc -rules="$(pwd)/../../.." go test ./...
+```
+
+Run a single package the same way Orchestrion tests are run individually, e.g. `otelc -rules=... go test ./gorilla_mux/...`.
