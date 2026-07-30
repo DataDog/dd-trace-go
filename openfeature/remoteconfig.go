@@ -152,10 +152,20 @@ func validateFlag(flagKey string, flag *flag) error {
 			}
 
 			for _, shard := range split.Shards {
-				if shard.TotalShards < 0 {
-					return fmt.Errorf("flag %q allocation %d split %d has shard with non-positive TotalShards %d",
+				if shard.TotalShards <= 0 || uint64(shard.TotalShards) > uint64(^uint32(0)) {
+					return fmt.Errorf("flag %q allocation %d split %d has shard with invalid TotalShards %d",
 						flagKey, i, j, shard.TotalShards)
 				}
+				for _, shardRange := range shard.Ranges {
+					if shardRange.Start < 0 || shardRange.End < 0 {
+						return fmt.Errorf("flag %q allocation %d split %d has shard with negative range bounds",
+							flagKey, i, j)
+					}
+				}
+			}
+
+			if split.Shards == nil {
+				return fmt.Errorf("flag %q allocation %d split %d is missing shards", flagKey, i, j)
 			}
 
 			if _, exists := flag.Variations[split.VariationKey]; !exists {
@@ -172,6 +182,15 @@ func validateFlag(flagKey string, flag *flag) error {
 			for _, condition := range rule.Conditions {
 				if condition == nil {
 					return fmt.Errorf("flag %q allocation %d rule has nil condition", flagKey, i)
+				}
+
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE,
+					operatorMatches, operatorNotMatches,
+					operatorOneOf, operatorNotOneOf, operatorIsNull:
+				default:
+					return fmt.Errorf("flag %q allocation %d rule has unknown operator %q",
+						flagKey, i, condition.Operator)
 				}
 
 				if condition.Operator == operatorMatches || condition.Operator == operatorNotMatches {
