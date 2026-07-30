@@ -267,7 +267,7 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, op
 	if cfg.projectName == "" {
 		return nil, errRequiresProjectName
 	}
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 

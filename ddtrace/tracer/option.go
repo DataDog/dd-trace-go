@@ -33,9 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
@@ -47,10 +45,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
-)
-
-const (
-	envSpanPoolEnabled        = "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED"
 )
 
 var contribIntegrations = map[string]struct {
@@ -166,10 +160,14 @@ type config struct {
 	// (e.g. tracertest) should set this field.
 	agentTransport http.RoundTripper
 
-	// llmobsHTTPClient overrides c.llmobs.TracerConfig.HTTPClient after newConfig
-	// builds it (so it is not clobbered by the agentTransport-based c.httpClient).
+	// llmobsHTTPClient overrides the llmobsconfig.Config.TracerConfig.HTTPClient
+	// that tracer.Start builds when starting LLMObs (so it is not clobbered by the agentTransport-based c.httpClient).
 	// For test use only (via ddtrace/x/llmobstest).
 	llmobsHTTPClient *http.Client
+
+	// llmobsTestBaseURL overrides the transport base URL and bypasses
+	// agent-mode/agentless-mode selection. For use in tests only.
+	llmobsTestBaseURL string
 
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
@@ -185,9 +183,6 @@ type config struct {
 
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
-
-	// llmobs contains the LLM Observability config
-	llmobs llmobsconfig.Config
 
 	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
 	// should be started instead of the DD statsd runtime metrics paths.
@@ -215,20 +210,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	namingschema.LoadFromEnv()
 
-	c.spanPoolEnabled = internal.BoolEnv(envSpanPoolEnabled, false)
-
 	for _, fn := range opts {
 		if fn == nil {
 			continue
 		}
 		fn(c)
-	}
-	// LLM Observability config
-	c.llmobs = llmobsconfig.Config{
-		Enabled:          c.internalConfig.LLMObsEnabled(),
-		MLApp:            c.internalConfig.LLMObsMLApp(),
-		AgentlessEnabled: c.internalConfig.LLMObsAgentlessEnabled(),
-		ProjectName:      c.internalConfig.LLMObsProjectName(),
 	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
@@ -355,24 +341,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
-	}
-	// Update the llmobs config with stuff needed from the tracer.
-	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
-		DDTags:     c.internalConfig.GlobalTags(),
-		Env:        c.internalConfig.Env(),
-		Service:    c.internalConfig.ServiceName(),
-		Version:    c.internalConfig.Version(),
-		AgentURL:   c.internalConfig.AgentURL(),
-		APIKey:     c.internalConfig.APIKey(),
-		APPKey:     c.internalConfig.AppKey(),
-		HTTPClient: c.httpClient,
-		Site:       c.internalConfig.Site(),
-	}
-	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
-		EVPProxyV2: af.evpProxyV2,
-	}
-	if c.llmobsHTTPClient != nil {
-		c.llmobs.TracerConfig.HTTPClient = c.llmobsHTTPClient
 	}
 	// Set global 128-bits trace ID generation variable
 	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
@@ -1440,7 +1408,7 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 // Linked with go:linkname from ddtrace/x/llmobstest.
 func withLLMObsInProcessTransport(testBaseURL string, rt http.RoundTripper) StartOption {
 	return func(c *config) {
-		c.llmobs.TestBaseURL = testBaseURL
+		c.llmobsTestBaseURL = testBaseURL
 		c.llmobsHTTPClient = &http.Client{Transport: rt}
 	}
 }

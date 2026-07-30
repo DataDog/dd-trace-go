@@ -30,13 +30,12 @@ type AgentFeatures struct {
 }
 
 type Config struct {
-	Enabled                  bool
-	MLApp                    string
-	AgentlessEnabled         *bool
-	ResolvedAgentlessEnabled bool
-	ProjectName              string
-	TracerConfig             TracerConfig
-	AgentFeatures            AgentFeatures
+	Enabled          bool
+	MLApp            string
+	AgentlessEnabled bool
+	ProjectName      string
+	TracerConfig     TracerConfig
+	AgentFeatures    AgentFeatures
 	// TestBaseURL, when non-empty, overrides the transport base URL and bypasses
 	// agent-mode/agentless-mode selection. For use in tests only.
 	TestBaseURL string
@@ -66,7 +65,7 @@ func newHTTPClient() *http.Client {
 
 func (c *Config) DefaultHTTPClient() *http.Client {
 	var cl *http.Client
-	if c.ResolvedAgentlessEnabled || c.TracerConfig.AgentURL.Scheme != "unix" {
+	if c.AgentlessEnabled || c.TracerConfig.AgentURL.Scheme != "unix" {
 		cl = newHTTPClient()
 	} else {
 		dialer := &net.Dialer{

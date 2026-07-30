@@ -1842,6 +1842,7 @@ func (c *Config) SetSpanPoolEnabled(enabled bool, origin telemetry.Origin, produ
 	}
 	c.spanPoolEnabled = enabled
 	configtelemetry.Report("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", enabled, origin)
+}
 
 // LLMObsEnabled returns DD_LLMOBS_ENABLED.
 func (c *Config) LLMObsEnabled() bool {
@@ -1907,5 +1908,4 @@ func (c *Config) SetLLMObsAgentlessEnabled(v *bool, origin telemetry.Origin, pro
 	}
 	c.llmObsAgentlessEnabled = v
 	configtelemetry.Report("DD_LLMOBS_AGENTLESS_ENABLED", v, origin)
->>>>>>> 73ce0f30f (refactor(config): migrate llmobs to internal config)
 }
