@@ -6,10 +6,10 @@
 package gls
 
 import (
+	"context"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
@@ -25,27 +25,53 @@ import (
 // on the stack entry, out of reach of recycling, so an explicitly requested
 // pool has to survive a woven build.
 //
-// This asserts a config outcome, not pooling behavior, so it is deliberately a
-// narrow test: what it catches is the gate being re-introduced. It only means
-// anything in a build actually woven by orchestrion, because orchestrion.Enabled()
-// is a build-time constant that plain `go test` always sees as false.
+// This module has no access to the tracer's internal config, so pooling is
+// observed the same way it is elsewhere in this suite: by *Span pointer reuse
+// across rounds. What this catches is the gate being re-introduced, not
+// pooling correctness. It only means anything in a build actually woven by
+// orchestrion, because orchestrion.Enabled() is a build-time constant that
+// plain `go test` always sees as false.
 func TestSpanPoolEnabledUnderOrchestrion(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("pooling under a woven build is the whole subject of this test")
 	}
 	require.True(t, built.WithOrchestrion)
 
+	const rounds = 500
+
+	assertSpanPoolReuses := func(t *testing.T) {
+		base := context.Background()
+		seen := make(map[*tracer.Span]struct{}, rounds)
+		for range rounds {
+			s := tracer.StartSpan("gls.pool")
+			_ = tracer.ContextWithSpan(base, s)
+			s.Finish()
+			seen[s] = struct{}{}
+		}
+
+		var reused int
+		for range rounds {
+			s := tracer.StartSpan("gls.pool")
+			_ = tracer.ContextWithSpan(base, s)
+			s.Finish()
+			if _, ok := seen[s]; ok {
+				reused++
+			}
+		}
+		require.NotZero(t, reused,
+			"the span pool is no longer gated on Orchestrion: the GLS liveness bit moved off the span onto the stack entry")
+	}
+
 	t.Run("env var", func(t *testing.T) {
 		t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "true")
 		require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
 		defer tracer.Stop()
-		require.True(t, internalconfig.Get().SpanPoolEnabled(),
-			"the span pool is no longer gated on Orchestrion: the GLS liveness bit moved off the span onto the stack entry")
+		assertSpanPoolReuses(t)
 	})
 
 	t.Run("explicit option", func(t *testing.T) {
 		require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(true)))
 		defer tracer.Stop()
-		require.True(t, internalconfig.Get().SpanPoolEnabled())
+		assertSpanPoolReuses(t)
 	})
 }
