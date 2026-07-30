@@ -68,9 +68,8 @@ func aerospikeChild(resource string) *trace.Trace {
 	}
 }
 
-// TestCase exercises the common pattern where a context.Context is in scope on
-// the function performing the Aerospike calls. Orchestrion rewrites each call
-// to propagate ctx, so the Put and Get spans are children of test.root.
+// TestCase covers the common case: a context in scope on the calling function,
+// so Orchestrion parents the Put and Get spans under test.root.
 type TestCase struct {
 	client *as.Client
 }
@@ -103,28 +102,18 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 	}
 }
 
-// TestCaseGoroutine verifies realistic cross-goroutine context propagation
-// using only the normal aerospike API. A span is started, and its context is
-// passed to a worker function that runs on a separate goroutine and performs a
-// Put. Because the worker receives ctx as an argument, Orchestrion's
-// method-call rewrite threads it into the span, so the Put is parented under
-// test.root even though it runs on a different goroutine — where the tracer's
-// goroutine-local storage alone could not recover the parent.
+// TestCaseGoroutine verifies context propagation when the aerospike call happens
+// on a goroutine that received a context.Context as a parameter. This
+// distinguishes call-site context injection (which works across goroutines) from
+// GLS-based propagation (which does not cross goroutine boundaries): the parent
+// span is started on the test goroutine, so it is absent from the spawned
+// goroutine's GLS, and correct parenting can only come from the injected context.
 type TestCaseGoroutine struct {
 	client *as.Client
 }
 
 func (tc *TestCaseGoroutine) Setup(_ context.Context, t *testing.T) {
 	tc.client = newClient(t)
-}
-
-// putRecord runs on its own goroutine and receives ctx as a parameter. The
-// client.Put call below is what Orchestrion rewrites to propagate ctx.
-func putRecord(ctx context.Context, client *as.Client, key *as.Key) as.Error {
-	// ctx is consumed by the Orchestrion-rewritten call below; the blank
-	// assignment keeps the source compiling cleanly without Orchestrion too.
-	_ = ctx
-	return client.Put(nil, key, as.BinMap{"value": "hello"})
 }
 
 func (tc *TestCaseGoroutine) Run(ctx context.Context, t *testing.T) {
@@ -134,9 +123,18 @@ func (tc *TestCaseGoroutine) Run(ctx context.Context, t *testing.T) {
 	key, err := as.NewKey("test", "testset", "orchestrion-goroutine-key")
 	require.NoError(t, err)
 
-	errCh := make(chan as.Error, 1)
-	go func() { errCh <- putRecord(ctx, tc.client, key) }()
-	require.NoError(t, <-errCh)
+	done := make(chan struct{})
+	go putInGoroutine(ctx, t, tc.client, key, done)
+	<-done
+}
+
+// putInGoroutine calls client.Put with a context.Context in scope so the
+// instrumentation threads it into the span. It runs on a goroutine that does not
+// hold the parent span in its GLS, so correct parenting proves the context
+// propagated through the surrounding scope rather than GLS.
+func putInGoroutine(ctx context.Context, t *testing.T, client *as.Client, key *as.Key, done chan<- struct{}) {
+	defer close(done)
+	require.NoError(t, client.Put(nil, key, as.BinMap{"value": "hello"}))
 }
 
 func (tc *TestCaseGoroutine) ExpectedTraces() trace.Traces {
@@ -148,10 +146,8 @@ func (tc *TestCaseGoroutine) ExpectedTraces() trace.Traces {
 	}
 }
 
-// TestCaseScanAll verifies that a direct ScanAll call produces exactly one span
-// named "ScanAll". ScanAll delegates internally to ScanPartitions, but that
-// delegation happens on the raw *as.Client that the wrapper calls into, which
-// Orchestrion does not instrument — so only the outer "ScanAll" span appears.
+// TestCaseScanAll checks that ScanAll yields exactly one span: its internal
+// delegation to ScanPartitions runs on the raw client, which is not instrumented.
 type TestCaseScanAll struct {
 	client *as.Client
 }
@@ -180,9 +176,8 @@ func (tc *TestCaseScanAll) ExpectedTraces() trace.Traces {
 	}
 }
 
-// TestCaseQuery verifies that a direct Query call produces exactly one span
-// named "Query". Query delegates internally to QueryPartitions on the raw
-// *as.Client, which is not instrumented, so only the outer "Query" span appears.
+// TestCaseQuery checks that Query yields exactly one span: its internal
+// delegation to QueryPartitions runs on the raw client, which is not instrumented.
 type TestCaseQuery struct {
 	client *as.Client
 }
