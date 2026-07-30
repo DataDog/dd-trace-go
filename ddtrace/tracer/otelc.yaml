@@ -23,10 +23,38 @@ span_directive:
   do:
     - expand_directive:
         template: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- $opName := .DirectiveArg "span.name" -}}
+          {{- if eq $opName "" -}}
+            {{- $opName = .FuncName -}}
+          {{- end }}
           var __dd_span *tracer.Span
           __dd_span_ctx := context.TODO()
-          __dd_span, __dd_span_ctx = tracer.StartSpanFromContext(__dd_span_ctx, "{{.FuncName}}")
+          {{- if ne $ctx "" }}
+          __dd_span_ctx = {{ $ctx }}
+          {{- else if ne $req "" }}
+          __dd_span_ctx = {{ $req }}.Context()
+          {{- end }}
+          __dd_span, __dd_span_ctx = tracer.StartSpanFromContext(__dd_span_ctx, {{ printf "%q" $opName }},
+            tracer.Tag("function-name", {{ printf "%q" .FuncName }}),
+            {{- range .DirectiveArgs }}
+            {{- if ne .Key "span.name" }}
+            tracer.Tag({{ printf "%q" .Key }}, {{ printf "%q" .Value }}),
+            {{- end }}
+            {{- end }}
+          )
+          {{- with $req }}
+          {{ . }} = {{ . }}.WithContext(__dd_span_ctx)
+          {{- end }}
+          {{- $errRet := .FuncReturnOfType "error" }}
+          {{- if ne $errRet "" }}
+          defer func() {
+            __dd_span.Finish(tracer.WithError({{ $errRet }}))
+          }()
+          {{- else }}
           defer __dd_span.Finish()
+          {{- end -}}
   imports:
-    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer    
+    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
     context: context
