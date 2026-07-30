@@ -36,6 +36,11 @@ var (
 // since the last recorded call, by any product. Call it once near the top of a
 // product's Start function (tracer.Start, profiler.Start, etc.), regardless of
 // whether that product's own configuration is backed by internal/config yet.
+//
+// Known limitation: this can't distinguish a customer/dependency-driven env change
+// from dd-trace-go's own code mutating env vars as part of a product's bootstrap
+// (e.g. CI Visibility setting DD_CIVISIBILITY_ENABLED before calling tracer.Start),
+// so recorded diffs are an upper bound on real cross-product blast radius.
 func RecordProductStart(product Product) {
 	hash := envSnapshotHash()
 

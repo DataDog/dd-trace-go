@@ -108,6 +108,9 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		parentOnly := enabledMode == envconfig.EnabledModeParent
 
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
+		// Note: this runs right before tracer.Start below, so config.RecordProductStart's
+		// env-diff telemetry can misattribute this self-mutation to a cross-product change
+		// if another product's Start already ran in this process.
 		_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 
 		// Avoid sampling rate warning (in CI Visibility mode we send all data)
