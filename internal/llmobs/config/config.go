@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"time"
-	"unicode"
 )
 
 type TracerConfig struct {
@@ -35,19 +34,6 @@ type Config struct {
 	// TestBaseURL, when non-empty, overrides the transport base URL and bypasses
 	// agent-mode/agentless-mode selection. For use in tests only.
 	TestBaseURL string
-}
-
-// IsAPIKeyValid reports whether key has the expected Datadog API key shape.
-func IsAPIKeyValid(key string) bool {
-	if len(key) != 32 {
-		return false
-	}
-	for _, c := range key {
-		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
-			return false
-		}
-	}
-	return true
 }
 
 // We copy the transport to avoid using the default one, as it might be
