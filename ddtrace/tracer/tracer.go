@@ -1244,14 +1244,10 @@ func (t *tracer) TracerConf() TracerConf {
 func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 	agentFeatures := t.config.agent.load()
 	span.statSpan = nil
-	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
-		if span == trace.root {
-			trace.filterReject = false
-		}
-		return
-	}
-	// Submit to the concentrator when native stats or OTLP span metrics are enabled.
-	if !t.config.shouldComputeStats() {
+	// A capable agent and OTLP span metrics are independent paths to stats
+	// computation: don't let the agent-capability check gate out OTLP-only mode.
+	if !t.config.internalConfig.TracingEnabled() ||
+		(!t.config.internalConfig.OTLPSpanMetricsEnabled() && !t.config.canComputeStatsWithAgent(agentFeatures)) {
 		if span == trace.root {
 			trace.filterReject = false
 		}
@@ -1267,11 +1263,10 @@ func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 func (t *tracer) computeOversizedSpanStats(span *Span) {
 	agentFeatures := t.config.agent.load()
 	span.statSpan = nil
-	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
-		return
-	}
-	// Submit to the concentrator when native stats or OTLP span metrics are enabled.
-	if !t.config.shouldComputeStats() {
+	// A capable agent and OTLP span metrics are independent paths to stats
+	// computation: don't let the agent-capability check gate out OTLP-only mode.
+	if !t.config.internalConfig.TracingEnabled() ||
+		(!t.config.internalConfig.OTLPSpanMetricsEnabled() && !t.config.canComputeStatsWithAgent(agentFeatures)) {
 		return
 	}
 	// The oversized-trace path sends the stat span immediately and never

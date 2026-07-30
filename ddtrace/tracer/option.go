@@ -747,12 +747,6 @@ func (c *config) canDropP0s() bool {
 	return c.canComputeStats()
 }
 
-// shouldComputeStats determines whether spans must be submitted to the stats
-// concentrator, either for native Client-Side Stats or for OTLP span metrics.
-func (c *config) shouldComputeStats() bool {
-	return c.canDropP0s() || c.internalConfig.OTLPSpanMetricsEnabled()
-}
-
 func statsTags(c *config) []string {
 	tags := []string{
 		"lang:go",
