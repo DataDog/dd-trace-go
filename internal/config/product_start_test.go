@@ -6,11 +6,16 @@
 package config
 
 import (
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func resetProductStartState() {
@@ -101,12 +106,27 @@ func TestEnvSnapshotHash(t *testing.T) {
 	})
 }
 
-// TODO: config.repeat_start_env_diff isn't registered in dd-go's golang_metrics.json
-// yet, so telemetrytest.MockClient/RecordClient panic on it (see
-// internal/telemetry/internal/knownmetrics). Once it's registered there and the
-// generator has been re-run to pick it up, replace this with a real test asserting
-// RecordProductStart's telemetry.Count("config.repeat_start_env_diff", ...).Submit(1)
-// call via telemetry.MockClient, following the pattern in TestSetFeatureFlagsReportsFullList.
 func TestRecordProductStart_ReportsMetric(t *testing.T) {
-	t.Skip("pending config.repeat_start_env_diff registration in dd-go's golang_metrics.json")
+	resetProductStartState()
+	defer resetProductStartState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	RecordProductStart(ProductTracer)
+
+	t.Setenv("DD_SERVICE", "changed-service")
+	RecordProductStart(ProductProfiler)
+
+	tags := []string{"trigger_product:profiler", "previous_product:tracer"}
+	sort.Strings(tags)
+	key := telemetrytest.MetricKey{
+		Namespace: telemetry.NamespaceGeneral,
+		Name:      "config.repeat_start_env_diff",
+		Tags:      strings.Join(tags, ","),
+		Kind:      "count",
+	}
+	handle, ok := rec.Metrics[key]
+	require.True(t, ok, "expected config.repeat_start_env_diff to be recorded")
+	assert.Equal(t, float64(1), handle.Get())
 }
