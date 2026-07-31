@@ -725,114 +725,78 @@ func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		testName    string
-		wantExitErr bool
-		assert      func(*testing.T, retryProcessChildResult, []byte)
+		name             string
+		testName         string
+		wantExitErr      bool
+		want             retryProcessChildResult
+		wantAnyErrorType bool
+		wantStack        bool
 	}{
 		{
-			name:        "error",
-			testName:    "TestOrchestrionRetryProcessErrorChild",
-			wantExitErr: true,
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "fail" || !result.Failed || result.Panic || result.ErrorType == "" ||
-					result.ErrorMessage != "orchestrion error sentinel" || result.ErrorStack == "" {
-					t.Fatalf("unexpected orchestrion error result: %+v\n%s", result, output)
-				}
-			},
+			name:             "error",
+			testName:         "TestOrchestrionRetryProcessErrorChild",
+			wantExitErr:      true,
+			want:             retryProcessChildResult{Status: "fail", Failed: true, ErrorMessage: "orchestrion error sentinel"},
+			wantAnyErrorType: true,
+			wantStack:        true,
 		},
 		{
 			name:        "errorf",
 			testName:    "TestOrchestrionRetryProcessErrorfChild",
 			wantExitErr: true,
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "fail" || !result.Failed || result.Panic || result.ErrorType != "Errorf" ||
-					result.ErrorMessage != "orchestrion errorf sentinel" || result.ErrorStack == "" {
-					t.Fatalf("unexpected orchestrion errorf result: %+v\n%s", result, output)
-				}
-			},
+			want:        retryProcessChildResult{Status: "fail", Failed: true, ErrorType: "Errorf", ErrorMessage: "orchestrion errorf sentinel"},
+			wantStack:   true,
 		},
 		{
 			name:        "fatal",
 			testName:    "TestOrchestrionRetryProcessFatalChild",
 			wantExitErr: true,
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "fail" || !result.Failed || result.Panic || result.ErrorType != "Fatal" ||
-					result.ErrorMessage != "orchestrion fatal sentinel" || result.ErrorStack == "" {
-					t.Fatalf("unexpected orchestrion fatal result: %+v\n%s", result, output)
-				}
-			},
+			want:        retryProcessChildResult{Status: "fail", Failed: true, ErrorType: "Fatal", ErrorMessage: "orchestrion fatal sentinel"},
+			wantStack:   true,
 		},
 		{
 			name:        "fatalf",
 			testName:    "TestOrchestrionRetryProcessFatalfChild",
 			wantExitErr: true,
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "fail" || !result.Failed || result.Panic || result.ErrorType != "Fatalf" ||
-					result.ErrorMessage != "orchestrion fatalf sentinel" || result.ErrorStack == "" {
-					t.Fatalf("unexpected orchestrion fatalf result: %+v\n%s", result, output)
-				}
-			},
+			want:        retryProcessChildResult{Status: "fail", Failed: true, ErrorType: "Fatalf", ErrorMessage: "orchestrion fatalf sentinel"},
+			wantStack:   true,
 		},
 		{
 			name:     "skip",
 			testName: "TestOrchestrionRetryProcessSkipChild",
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "skip" || result.Failed || !result.Skipped || result.SkipReason != "orchestrion skip sentinel" {
-					t.Fatalf("unexpected orchestrion skip result: %+v\n%s", result, output)
-				}
-			},
+			want:     retryProcessChildResult{Status: "skip", Skipped: true, SkipReason: "orchestrion skip sentinel"},
 		},
 		{
 			name:     "skipf",
 			testName: "TestOrchestrionRetryProcessSkipfChild",
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "skip" || result.Failed || !result.Skipped || result.SkipReason != "orchestrion skipf sentinel" {
-					t.Fatalf("unexpected orchestrion skipf result: %+v\n%s", result, output)
-				}
-			},
+			want:     retryProcessChildResult{Status: "skip", Skipped: true, SkipReason: "orchestrion skipf sentinel"},
 		},
 		{
 			name:     "subtest then top-level skip",
 			testName: "TestOrchestrionRetryProcessSubtestThenTopLevelSkipChild",
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "skip" || result.Failed || !result.Skipped || result.SkipReason != "orchestrion top-level skip sentinel" {
-					t.Fatalf("unexpected orchestrion top-level skip result: %+v\n%s", result, output)
-				}
-			},
+			want:     retryProcessChildResult{Status: "skip", Skipped: true, SkipReason: "orchestrion top-level skip sentinel"},
 		},
 		{
-			name:        "subtest error",
-			testName:    "TestOrchestrionRetryProcessSubtestErrorChild",
-			wantExitErr: true,
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "fail" || !result.Failed || result.Panic || result.ErrorType == "" ||
-					result.ErrorMessage != "orchestrion subtest error sentinel" || result.ErrorStack == "" {
-					t.Fatalf("unexpected orchestrion subtest error result: %+v\n%s", result, output)
-				}
-			},
+			name:             "subtest error",
+			testName:         "TestOrchestrionRetryProcessSubtestErrorChild",
+			wantExitErr:      true,
+			want:             retryProcessChildResult{Status: "fail", Failed: true, ErrorMessage: "orchestrion subtest error sentinel"},
+			wantAnyErrorType: true,
+			wantStack:        true,
 		},
 		{
 			name:        "subtest panic",
 			testName:    "TestOrchestrionRetryProcessSubtestPanicChild",
 			wantExitErr: true,
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "controlled_panic_ready" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
-					result.ErrorMessage != "orchestrion subtest panic sentinel" || result.ErrorStack == "" {
-					t.Fatalf("unexpected orchestrion subtest panic result: %+v\n%s", result, output)
-				}
-			},
+			want:        retryProcessChildResult{Status: "controlled_panic_ready", Failed: true, Panic: true, ErrorType: "panic", ErrorMessage: "orchestrion subtest panic sentinel"},
+			wantStack:   true,
 		},
 		{
 			name:        "parallel subtest panic",
 			testName:    "TestOrchestrionRetryProcessParallelSubtestPanicChild",
 			wantExitErr: true,
-			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
-				if result.Status != "controlled_panic_ready" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
-					result.ErrorMessage != "orchestrion parallel subtest panic sentinel" || result.ErrorStack == "" {
-					t.Fatalf("unexpected orchestrion parallel subtest panic result: %+v\n%s", result, output)
-				}
-			},
+			want:        retryProcessChildResult{Status: "controlled_panic_ready", Failed: true, Panic: true, ErrorType: "panic", ErrorMessage: "orchestrion parallel subtest panic sentinel"},
+			wantStack:   true,
 		},
 	}
 	for _, tt := range tests {
@@ -849,7 +813,22 @@ func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 			if tt.wantExitErr == (err == nil) {
 				t.Fatalf("unexpected orchestrion child exit: %v\n%s", err, output)
 			}
-			tt.assert(t, result, output)
+			if result.Status != tt.want.Status || result.Failed != tt.want.Failed || result.Panic != tt.want.Panic || result.ErrorMessage != tt.want.ErrorMessage {
+				t.Fatalf("unexpected Orchestrion child result: %+v\n%s", result, output)
+			}
+			if tt.want.Status == "skip" && (result.Skipped != tt.want.Skipped || result.SkipReason != tt.want.SkipReason) {
+				t.Fatalf("unexpected Orchestrion child skip result: %+v\n%s", result, output)
+			}
+			if tt.wantAnyErrorType {
+				if result.ErrorType == "" {
+					t.Fatalf("Orchestrion child result is missing its error type: %+v\n%s", result, output)
+				}
+			} else if result.ErrorType != tt.want.ErrorType {
+				t.Fatalf("unexpected Orchestrion child error type: %+v\n%s", result, output)
+			}
+			if tt.wantStack && result.ErrorStack == "" {
+				t.Fatalf("Orchestrion child result is missing its error stack: %+v\n%s", result, output)
+			}
 			if tt.testName == "TestOrchestrionRetryProcessSubtestPanicChild" {
 				continuedPath := filepath.Join(tempDir, "subtest-panic-continued")
 				if _, err := os.Stat(continuedPath); err == nil {

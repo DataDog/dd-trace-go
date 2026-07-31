@@ -1122,7 +1122,7 @@ func TestProcessRetryChildBypassesOrchestrionInstrumentation(t *testing.T) {
 func TestProcessRetryChildSubtestErrorForwardsWithoutOverwritingTopLevelSkip(t *testing.T) {
 	enableProcessRetryChildForTesting(t)
 
-	spy := &processRetrySpyTest{name: t.Name(), ctx: context.Background()}
+	spy := newProcessRetrySpyTestForTesting(t.Name(), context.Background())
 	owner := createTestMetadata(t, nil)
 	owner.test = spy
 	defer deleteTestMetadata(t)
@@ -1151,7 +1151,7 @@ func TestProcessRetryChildSubtestErrorForwardsWithoutOverwritingTopLevelSkip(t *
 func TestProcessRetryChildCapturesMetadataWithoutSpanOwnership(t *testing.T) {
 	enableProcessRetryChildForTesting(t)
 
-	spy := &processRetrySpyTest{name: t.Name(), ctx: context.WithValue(context.Background(), processRetrySpyContextKey{}, "metadata")}
+	spy := newProcessRetrySpyTestForTesting(t.Name(), context.WithValue(context.Background(), processRetrySpyContextKey{}, "metadata"))
 	meta := createTestMetadata(t, nil)
 	meta.test = spy
 	defer deleteTestMetadata(t)
@@ -1163,7 +1163,7 @@ func TestProcessRetryChildCapturesMetadataWithoutSpanOwnership(t *testing.T) {
 
 	require.Equal(t, int32(0), spy.setErrorCalls.Load())
 	require.Equal(t, int32(0), spy.setTagCalls.Load())
-	require.Equal(t, int32(0), spy.closeCalls.Load())
+	require.Zero(t, spy.closeCalls.Load())
 	errorInfo := meta.processRetryError.Load()
 	require.NotNil(t, errorInfo)
 	require.Equal(t, "Error", errorInfo.Type)
@@ -1652,9 +1652,7 @@ func TestProcessRetryChildResultStatuses(t *testing.T) {
 		exitOK           bool
 		status           processRetryStatus
 		failed           bool
-		checkSkipped     bool
 		skipped          bool
-		checkPanic       bool
 		panicked         bool
 		errorType        string
 		errorMessage     string
@@ -1663,25 +1661,24 @@ func TestProcessRetryChildResultStatuses(t *testing.T) {
 		outputContains   []string
 		skipReason       string
 		requireStack     bool
-		resultMissing    bool
 	}{
-		{name: "pass", scenario: "pass", exitOK: true, status: processRetryStatusPass, checkSkipped: true},
-		{name: "fail", scenario: "fail", status: processRetryStatusFail, failed: true, checkSkipped: true, checkPanic: true, errorType: "Error", errorMessage: "fixture failure", requireStack: true},
-		{name: "instrumented error hook", scenario: "instrument_error_only", status: processRetryStatusFail, failed: true, checkSkipped: true, checkPanic: true, errorType: "assertion", errorMessage: "instrumented error sentinel", requireStack: true},
-		{name: "skip", scenario: "skip", exitOK: true, status: processRetryStatusSkip, checkSkipped: true, skipped: true, skipReason: "fixture skip"},
-		{name: "panic", scenario: "panic", status: processRetryStatusControlledPanicReady, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "body panic sentinel", requireStack: true},
-		{name: "runtime Goexit", scenario: "goexit", status: processRetryStatusControlledUnexpectedGoexitReady, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
-		{name: "failed runtime Goexit", scenario: "failed_goexit", status: processRetryStatusControlledUnexpectedGoexitReady, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
-		{name: "subtest runtime Goexit", scenario: "subtest_goexit", status: processRetryStatusControlledPanicReady, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
-		{name: "parallel subtest runtime Goexit", scenario: "parallel_subtest_goexit", status: processRetryStatusControlledPanicReady, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
-		{name: "subtest parent FailNow", scenario: "subtest_parent_failnow", status: processRetryStatusFail, failed: true, checkPanic: true},
-		{name: "cleanup panic", scenario: "cleanup_panic", status: processRetryStatusControlledPanicReady, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "cleanup panic sentinel", requireStack: true},
-		{name: "cleanup skip", scenario: "cleanup_skip", exitOK: true, status: processRetryStatusSkip, checkSkipped: true, skipped: true},
+		{name: "pass", scenario: "pass", exitOK: true, status: processRetryStatusPass},
+		{name: "fail", scenario: "fail", status: processRetryStatusFail, failed: true, errorType: "Error", errorMessage: "fixture failure", requireStack: true},
+		{name: "instrumented error hook", scenario: "instrument_error_only", status: processRetryStatusFail, failed: true, errorType: "assertion", errorMessage: "instrumented error sentinel", requireStack: true},
+		{name: "skip", scenario: "skip", exitOK: true, status: processRetryStatusSkip, skipped: true, skipReason: "fixture skip"},
+		{name: "panic", scenario: "panic", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "body panic sentinel", requireStack: true},
+		{name: "runtime Goexit", scenario: "goexit", status: processRetryStatusControlledUnexpectedGoexitReady, failed: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "failed runtime Goexit", scenario: "failed_goexit", status: processRetryStatusControlledUnexpectedGoexitReady, failed: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "subtest runtime Goexit", scenario: "subtest_goexit", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "parallel subtest runtime Goexit", scenario: "parallel_subtest_goexit", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "subtest parent FailNow", scenario: "subtest_parent_failnow", status: processRetryStatusFail, failed: true},
+		{name: "cleanup panic", scenario: "cleanup_panic", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "cleanup panic sentinel", requireStack: true},
+		{name: "cleanup skip", scenario: "cleanup_skip", exitOK: true, status: processRetryStatusSkip, skipped: true},
 		{name: "cleanup FailNow", scenario: "cleanup_failnow", status: processRetryStatusFail, failed: true},
-		{name: "cleanup panic replaces body panic", scenario: "body_and_cleanup_panic", status: processRetryStatusControlledPanicReady, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "cleanup panic sentinel", errorNotContains: "body panic sentinel", outputContains: []string{"body panic sentinel", "cleanup panic sentinel"}, requireStack: true},
+		{name: "cleanup panic replaces body panic", scenario: "body_and_cleanup_panic", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "cleanup panic sentinel", errorNotContains: "body panic sentinel", outputContains: []string{"body panic sentinel", "cleanup panic sentinel"}, requireStack: true},
 		{name: "parallel subtest failure", scenario: "parallel_subtest_fail", status: processRetryStatusFail, failed: true},
 		{name: "top-level parallel subtest failure", scenario: "parallel_top_level_subtest_fail", status: processRetryStatusFail, failed: true},
-		{name: "top-level parallel", scenario: "parallel_top_level", exitOK: true, status: processRetryStatusPass, checkSkipped: true},
+		{name: "top-level parallel", scenario: "parallel_top_level", exitOK: true, status: processRetryStatusPass},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1691,22 +1688,13 @@ func TestProcessRetryChildResultStatuses(t *testing.T) {
 			} else {
 				require.NotEqual(t, 0, exitCode, output)
 			}
-			if tt.resultMissing {
-				require.Empty(t, result.Status)
-				require.Contains(t, output, tt.errorContains)
-				return
-			}
 			for _, expected := range tt.outputContains {
 				require.Contains(t, output, expected)
 			}
 			require.Equal(t, tt.status, result.Status)
 			require.Equal(t, tt.failed, result.Failed)
-			if tt.checkSkipped {
-				require.Equal(t, tt.skipped, result.Skipped)
-			}
-			if tt.checkPanic {
-				require.Equal(t, tt.panicked, result.Panic)
-			}
+			require.Equal(t, tt.skipped, result.Skipped)
+			require.Equal(t, tt.panicked, result.Panic)
 			if tt.errorType != "" {
 				require.Equal(t, tt.errorType, result.ErrorType)
 			}
@@ -9273,6 +9261,16 @@ func (t *processRetryRecordingTest) Close(status integrations.TestResultStatus, 
 	}
 }
 
+func newProcessRetryRecordingTestForTesting(name string) *processRetryRecordingTest {
+	session := &processRetryRecordingSession{}
+	module := &processRetryRecordingModule{session: session}
+	suite := &processRetryRecordingSuite{module: module}
+	return &processRetryRecordingTest{
+		suite: suite,
+		name:  name,
+	}
+}
+
 func processRetryOptionStringField(option any, fieldName string) string {
 	fn := reflect.ValueOf(option)
 	if !fn.IsValid() || fn.Kind() != reflect.Func || fn.Type().NumIn() != 1 || fn.Type().In(0).Kind() != reflect.Pointer {
@@ -9337,14 +9335,19 @@ func newProcessRetryControlPairForTesting(t testing.TB, cfg processRetryChildCon
 
 type processRetrySpyContextKey struct{}
 
-var _ integrations.Test = (*processRetrySpyTest)(nil)
-
 type processRetrySpyTest struct {
-	name          string
+	*processRetryRecordingTest
 	ctx           context.Context
 	setErrorCalls atomic.Int32
 	setTagCalls   atomic.Int32
 	closeCalls    atomic.Int32
+}
+
+func newProcessRetrySpyTestForTesting(name string, ctx context.Context) *processRetrySpyTest {
+	return &processRetrySpyTest{
+		processRetryRecordingTest: newProcessRetryRecordingTestForTesting(name),
+		ctx:                       ctx,
+	}
 }
 
 func (t *processRetrySpyTest) Context() context.Context {
@@ -9354,8 +9357,6 @@ func (t *processRetrySpyTest) Context() context.Context {
 	return context.Background()
 }
 
-func (t *processRetrySpyTest) StartTime() time.Time { return time.Time{} }
-
 func (t *processRetrySpyTest) SetError(...integrations.ErrorOption) {
 	t.setErrorCalls.Add(1)
 }
@@ -9364,76 +9365,8 @@ func (t *processRetrySpyTest) SetTag(string, any) {
 	t.setTagCalls.Add(1)
 }
 
-func (t *processRetrySpyTest) GetTag(string) (any, bool) { return nil, false }
-func (t *processRetrySpyTest) TestID() uint64            { return 0 }
-func (t *processRetrySpyTest) Name() string              { return t.name }
-
-func (t *processRetrySpyTest) Suite() integrations.TestSuite {
-	return &processRetrySpySuite{}
-}
-
 func (t *processRetrySpyTest) Close(integrations.TestResultStatus, ...integrations.TestCloseOption) {
 	t.closeCalls.Add(1)
-}
-
-func (t *processRetrySpyTest) SetTestFunc(*runtime.Func)               {}
-func (t *processRetrySpyTest) SetBenchmarkData(string, map[string]any) {}
-func (t *processRetrySpyTest) Log(string, string)                      {}
-
-var _ integrations.TestSuite = (*processRetrySpySuite)(nil)
-
-type processRetrySpySuite struct{}
-
-func (s *processRetrySpySuite) Context() context.Context                   { return context.Background() }
-func (s *processRetrySpySuite) StartTime() time.Time                       { return time.Time{} }
-func (s *processRetrySpySuite) SetError(...integrations.ErrorOption)       {}
-func (s *processRetrySpySuite) SetTag(string, any)                         {}
-func (s *processRetrySpySuite) GetTag(string) (any, bool)                  { return nil, false }
-func (s *processRetrySpySuite) SuiteID() uint64                            { return 0 }
-func (s *processRetrySpySuite) Module() integrations.TestModule            { return &processRetrySpyModule{} }
-func (s *processRetrySpySuite) Name() string                               { return "" }
-func (s *processRetrySpySuite) Close(...integrations.TestSuiteCloseOption) {}
-
-func (s *processRetrySpySuite) CreateTest(name string, _ ...integrations.TestStartOption) integrations.Test {
-	return &processRetrySpyTest{name: name}
-}
-
-var _ integrations.TestModule = (*processRetrySpyModule)(nil)
-
-type processRetrySpyModule struct{}
-
-func (m *processRetrySpyModule) Context() context.Context                    { return context.Background() }
-func (m *processRetrySpyModule) StartTime() time.Time                        { return time.Time{} }
-func (m *processRetrySpyModule) SetError(...integrations.ErrorOption)        {}
-func (m *processRetrySpyModule) SetTag(string, any)                          {}
-func (m *processRetrySpyModule) GetTag(string) (any, bool)                   { return nil, false }
-func (m *processRetrySpyModule) ModuleID() uint64                            { return 0 }
-func (m *processRetrySpyModule) Session() integrations.TestSession           { return &processRetrySpySession{} }
-func (m *processRetrySpyModule) Framework() string                           { return "" }
-func (m *processRetrySpyModule) Name() string                                { return "" }
-func (m *processRetrySpyModule) Close(...integrations.TestModuleCloseOption) {}
-
-func (m *processRetrySpyModule) GetOrCreateSuite(name string, _ ...integrations.TestSuiteStartOption) integrations.TestSuite {
-	return &processRetrySpySuite{}
-}
-
-var _ integrations.TestSession = (*processRetrySpySession)(nil)
-
-type processRetrySpySession struct{}
-
-func (s *processRetrySpySession) Context() context.Context                          { return context.Background() }
-func (s *processRetrySpySession) StartTime() time.Time                              { return time.Time{} }
-func (s *processRetrySpySession) SetError(...integrations.ErrorOption)              {}
-func (s *processRetrySpySession) SetTag(string, any)                                {}
-func (s *processRetrySpySession) GetTag(string) (any, bool)                         { return nil, false }
-func (s *processRetrySpySession) SessionID() uint64                                 { return 0 }
-func (s *processRetrySpySession) Command() string                                   { return "" }
-func (s *processRetrySpySession) Framework() string                                 { return "" }
-func (s *processRetrySpySession) WorkingDirectory() string                          { return "" }
-func (s *processRetrySpySession) Close(int, ...integrations.TestSessionCloseOption) {}
-
-func (s *processRetrySpySession) GetOrCreateModule(name string, _ ...integrations.TestModuleStartOption) integrations.TestModule {
-	return &processRetrySpyModule{}
 }
 
 func TestProcessRetryRootParallelTransfersOriginalSchedulerLease(t *testing.T) {
