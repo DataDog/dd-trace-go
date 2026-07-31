@@ -101,6 +101,28 @@ func TestReportPanic_NonErrorRecovered(t *testing.T) {
 	assert.True(t, found, "recovered_type attribute must be present")
 }
 
+func TestReportPanic_UnnamedTypeRecovered(t *testing.T) {
+	var captured telemetry.Record
+
+	orig := sendLog
+	defer func() { sendLog = orig }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	ReportPanic("unexpected panic in goroutine", map[string]string{"secret": "leak me not"})
+
+	assert.Equal(t, "unexpected panic in goroutine", captured.Message)
+	found := false
+	captured.Attrs(func(a slog.Attr) bool {
+		if a.Key == "recovered_type" {
+			found = true
+			assert.NotEmpty(t, a.Value.String())
+			assert.NotContains(t, a.Value.String(), "leak me not")
+		}
+		return true
+	})
+	assert.True(t, found, "recovered_type attribute must be present")
+}
+
 func TestLogAndReportError_BasicFlow(t *testing.T) {
 	var captured telemetry.Record
 
@@ -215,6 +237,109 @@ func TestLogAndReportPanic_NonErrorRecovered(t *testing.T) {
 	logs := recorder.Logs()
 	assert.Len(t, logs, 1)
 	assert.Contains(t, logs[0], "unexpected panic in goroutine: a string panic value")
+}
+
+// nilDerefError's Error method dereferences its receiver, mirroring a common
+// real-world bug: a typed-nil *nilDerefError stored in an error interface is
+// non-nil (err != nil), but calling Error() panics.
+type nilDerefError struct{ msg *string }
+
+func (e *nilDerefError) Error() string { return *e.msg }
+
+// panickyError's Error method panics outright, regardless of receiver state.
+type panickyError struct{}
+
+func (panickyError) Error() string { panic("boom") }
+
+func TestLogAndReportError_TypedNilError(t *testing.T) {
+	var captured telemetry.Record
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	var typedNil *nilDerefError
+	var err error = typedNil
+	assert.NotPanics(t, func() {
+		LogAndReportError("sdk defect with typed-nil error", err)
+	})
+	internallog.Flush()
+
+	assert.Equal(t, "sdk defect with typed-nil error", captured.Message)
+	logs := recorder.Logs()
+	assert.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "sdk defect with typed-nil error: <nil>")
+}
+
+func TestLogAndReportError_PanickyError(t *testing.T) {
+	var captured telemetry.Record
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	assert.NotPanics(t, func() {
+		LogAndReportError("sdk defect with panicky error", panickyError{})
+	})
+	internallog.Flush()
+
+	assert.Equal(t, "sdk defect with panicky error", captured.Message)
+	logs := recorder.Logs()
+	assert.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "sdk defect with panicky error: ")
+}
+
+func TestLogAndReportPanic_TypedNilError(t *testing.T) {
+	var captured telemetry.Record
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	var typedNil *nilDerefError
+	assert.NotPanics(t, func() {
+		LogAndReportPanic("unexpected panic in goroutine", typedNil)
+	})
+	internallog.Flush()
+
+	assert.Equal(t, "unexpected panic in goroutine", captured.Message)
+	logs := recorder.Logs()
+	assert.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "unexpected panic in goroutine: <nil>")
+}
+
+func TestLogAndReportPanic_PanickyError(t *testing.T) {
+	var captured telemetry.Record
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	assert.NotPanics(t, func() {
+		LogAndReportPanic("unexpected panic in goroutine", panickyError{})
+	})
+	internallog.Flush()
+
+	assert.Equal(t, "unexpected panic in goroutine", captured.Message)
+	logs := recorder.Logs()
+	assert.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "unexpected panic in goroutine: ")
 }
 
 // BenchmarkReportError measures the cost of the explicit ReportError helper,
