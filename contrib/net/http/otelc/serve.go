@@ -11,46 +11,45 @@ import (
 
 	"go.opentelemetry.io/otelc/pkg/hook"
 
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
-// afterHandleKey stashes the afterHandle func returned by httptrace.BeforeHandle
-// so AfterServeHTTP can run it.
-const afterHandleKey = "dd.afterHandle"
+// BeforeServe ensures srv.Handler is wrapped with contrib/net/http tracing
+// before the server starts accepting connections. It is injected at the top
+// of (*http.Server).Serve; the receiver is parameter 0.
+func BeforeServe(_ hook.HookContext, srv *http.Server) {
+	handler := srv.Handler
+	if handler == nil {
+		handler = http.DefaultServeMux
+	}
+	srv.Handler = wrapHandler(handler)
+}
 
-// BeforeServeHTTP starts a server span for the incoming request and swaps in the
-// traced response writer and request. It is injected at the top of
-// (serverHandler).ServeHTTP; the (unexported) receiver is parameter 0, the
-// http.ResponseWriter is parameter 1 and the *http.Request is parameter 2.
-func BeforeServeHTTP(ictx hook.HookContext, _ any, w http.ResponseWriter, r *http.Request) {
-	tw, tr, afterHandle, handled := httptrace.BeforeHandle(defaultServeConfig(r), w, r)
-	ictx.SetParam(1, tw)
-	ictx.SetParam(2, tr)
-	ictx.SetKeyData(afterHandleKey, afterHandle)
-	if handled {
-		// AppSec short-circuited the request (e.g. blocked); skip the handler.
-		ictx.SetSkipCall(true)
+// wrapHandler mirrors contrib/net/http/v2/internal/orchestrion.WrapHandler
+func wrapHandler(handler http.Handler) http.Handler {
+	switch handler := handler.(type) {
+	case *wrap.ServeMux, wrap.WrappedHandler:
+		return handler
+	case *http.ServeMux:
+		tracedMux := wrap.NewServeMux()
+		tracedMux.ServeMux = handler
+		return tracedMux
+	default:
+		if options.GetBoolEnv("DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE", false) {
+			return wrap.Handler(handler, "", "", config.WithResourceNamer(quantizeResourceNamer))
+		}
+		return wrap.Handler(handler, "", "", config.WithResourceNamer(resourceNamer))
 	}
 }
 
-// AfterServeHTTP finishes the server span started by BeforeServeHTTP.
-func AfterServeHTTP(ictx hook.HookContext) {
-	if afterHandle, ok := ictx.GetKeyData(afterHandleKey).(func()); ok && afterHandle != nil {
-		afterHandle()
-	}
+func resourceNamer(r *http.Request) string {
+	return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 }
 
-// defaultServeConfig builds the server tracing configuration, mirroring the
-// resource naming used by contrib/net/http/v2/internal/orchestrion's handler
-// wrapper. A nil IsStatusError lets httptrace apply its own default derived from
-// DD_TRACE_HTTP_SERVER_ERROR_STATUSES.
-func defaultServeConfig(r *http.Request) *httptrace.ServeConfig {
-	resource := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
-	if options.GetBoolEnv("DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE", false) {
-		resource = fmt.Sprintf("%s %s", r.Method, httptrace.QuantizeURL(r.URL.Path))
-	}
-	return &httptrace.ServeConfig{
-		Resource: resource,
-	}
+func quantizeResourceNamer(r *http.Request) string {
+	return fmt.Sprintf("%s %s", r.Method, httptrace.QuantizeURL(r.URL.Path))
 }

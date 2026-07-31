@@ -18,12 +18,11 @@ net-client:
 net-server:
   target: net/http
   where:
-    func: ServeHTTP
-    recv: serverHandler
+    func: Serve
+    recv: "*Server"
   do:
     - inject_hooks:
-        before: BeforeServeHTTP
-        after: AfterServeHTTP
+        before: BeforeServe
         path: github.com/DataDog/dd-trace-go/contrib/net/http/v2/otelc
 
 # Unlike Orchestrion, otelc does not yet support `.AST.Fun.Name`, so we instead create four
