@@ -23,9 +23,12 @@ import (
 
 const telemetrySafetyDoc = `telemetrysafety enforces PII-safety rules on internal/telemetry/log calls:
 
-  - slog.Any(key, value): value must implement slog.LogValuer (e.g. SafeError,
-    SafeSlice) or be a nil literal. A value that merely implements error is
-    called out specifically: wrap it with NewSafeError first.
+  - slog.Any(key, value): value's exact type must implement slog.LogValuer
+    (e.g. SafeError, SafeSlice) or be a nil literal — a pointer-receiver
+    LogValue on T does not exempt a non-pointer T, since slog.Any boxes the
+    value as-is and cannot reach a pointer method. A value that merely
+    implements error is called out specifically: wrap it with NewSafeError
+    first.
   - slog.String(key, err.Error()): forbidden when err implements error — the
     raw error message bypasses redaction. Use slog.Any(key, NewSafeError(err)).
 
@@ -80,6 +83,14 @@ func (r *telemetrySafetyRunner) run(pass *analysis.Pass) (any, error) {
 
 		// Args[0] is the message; only structured attrs (slog.Any/slog.String
 		// calls passed directly as arguments) are inspected.
+		//
+		// Known limitation: a slog.Any/slog.String call assigned to a local
+		// variable first and passed by that variable is invisible here —
+		// this pass does no dataflow analysis. That gap let a raw recover()
+		// value reach telemetry via `var errAttr slog.Attr; errAttr =
+		// slog.Any(...)` at two openfeature call sites (fixed directly at
+		// those call sites; teaching this pass to follow local slog.Attr
+		// variables is a separate, larger change).
 		for _, arg := range call.Args[1:] {
 			inner, ok := arg.(*ast.CallExpr)
 			if !ok {
@@ -109,7 +120,13 @@ func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, value ast.Expr
 	if t == nil {
 		return
 	}
-	if logValuerIface != nil && (types.Implements(t, logValuerIface) || types.Implements(types.NewPointer(t), logValuerIface)) {
+	// Only the exact type passed is exempted — NOT types.NewPointer(t). A
+	// pointer-receiver LogValue on T is unreachable when a non-pointer T is
+	// boxed into the any that slog.Any takes: slog reflects over the value
+	// instead, which is exactly what this check exists to prevent. Callers
+	// with pointer-receiver LogValuer implementations must pass a pointer
+	// explicitly (slog.Any(key, &v)).
+	if logValuerIface != nil && types.Implements(t, logValuerIface) {
 		return // already safe: SafeError, SafeSlice, or a caller-provided LogValuer
 	}
 	if errIface != nil && types.Implements(t, errIface) {
