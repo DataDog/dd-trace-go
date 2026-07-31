@@ -396,7 +396,7 @@ func loadConfig() *Config {
 		// DD_TRACE_STATS_COMPUTATION_ENABLED was not explicitly configured,
 		// disable native stats too: the user has signalled they want no SDK-side
 		// span metrics, and the Datadog-Client-Computed-Stats header should
-		// therefore be absent (FR15).
+		// therefore be absent.
 		if !v {
 			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
 				cfg.statsComputationEnabled = false
@@ -1554,6 +1554,15 @@ func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, 
 func (c *Config) TraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	// OTLP span metrics use their own concentrator and are not native CSS, so the trace
+	// transport must stay on v0.4 where the Datadog Agent can see the
+	// Datadog-Client-Computed-Stats header. Inline OTLPSpanMetricsEnabled logic to avoid
+	// a deadlock on c.mu.
+	otlpSpanMetrics := (c.otlpSpanMetricsEnabled != nil && *c.otlpSpanMetricsEnabled) ||
+		(c.otlpSpanMetricsEnabled == nil && c.otlpExportMode && c.runtimeMetricsOtel)
+	if otlpSpanMetrics {
+		return TraceProtocolV04
+	}
 	return c.traceProtocol
 }
 
@@ -1627,6 +1636,17 @@ func (c *Config) OTLPSpanMetricsEnabled() bool {
 		return *c.otlpSpanMetricsEnabled
 	}
 	return c.otlpExportMode && c.runtimeMetricsOtel
+}
+
+func (c *Config) SetOTLPSpanMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("OTEL_TRACES_SPAN_METRICS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	v := enabled
+	c.otlpSpanMetricsEnabled = &v
+	configtelemetry.Report("OTEL_TRACES_SPAN_METRICS_ENABLED", enabled, origin)
 }
 
 func (c *Config) OTLPMetricsURL() string {
