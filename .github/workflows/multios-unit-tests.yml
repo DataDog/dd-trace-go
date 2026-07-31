@@ -57,6 +57,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
