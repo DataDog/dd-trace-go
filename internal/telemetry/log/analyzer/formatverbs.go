@@ -108,7 +108,15 @@ func (r *formatVerbsRunner) run(pass *analysis.Pass) (any, error) {
 		lastType := pass.TypesInfo.TypeOf(lastArg)
 		lastIsError := errIface != nil && lastType != nil && types.Implements(lastType, errIface)
 		switch {
-		case finalVerb != 'v':
+		case finalVerb != 'v' || vFamilyCount > 1:
+			// vFamilyCount > 1 alongside a final %v means at least one OTHER
+			// %v-family verb precedes it — necessarily non-final, and
+			// forbidden regardless of ITS OWN argument's type (position
+			// matters per policy, not just the final argument's type). Report
+			// this before considering whether the final argument is an error:
+			// suggesting err.Error() for the final verb alone would still
+			// leave the earlier verb unflagged, surfacing as a second,
+			// different diagnostic on the next run instead of fixing anything.
 			pass.Reportf(call.Pos(), "%s.%s: %%v/%%+v/%%#v must be the last format verb; use a specific verb like %%s, %%d, or %%q for earlier arguments", pkg, fn)
 		case !lastIsError:
 			pass.Reportf(call.Pos(), "%s.%s: %%v/%%+v/%%#v exposes uncontrolled data via reflection; use a specific verb like %%s, %%d, or %%q", pkg, fn)
@@ -150,11 +158,12 @@ func constStringValue(pass *analysis.Pass, expr ast.Expr) (string, bool) {
 	return constant.StringVal(tv.Value), true
 }
 
-// lastVerb walks format the way fmt's own parser does — skipping %% escapes
-// and any flag/width/precision modifiers ([-+# 0], digits, '.', '*') — and
-// reports the final verb byte found (0 if none) and how many %v-family
-// verbs (i.e. verb == 'v', regardless of the +/# flags) appear in total.
-// %+v and %#v count as the 'v' family; the flags are just modifiers on it.
+// lastVerb walks format the way fmt's own parser does — skipping %% escapes,
+// explicit argument-index brackets ([n], e.g. %[1]v), and any flag/width/
+// precision modifiers ([-+# 0], digits, '.', '*') — and reports the final
+// verb byte found (0 if none) and how many %v-family verbs (i.e. verb ==
+// 'v', regardless of the +/# flags) appear in total. %+v and %#v count as
+// the 'v' family; the flags are just modifiers on it.
 func lastVerb(format string) (verb byte, vFamilyCount int) {
 	i := 0
 	for i < len(format) {
@@ -173,6 +182,7 @@ func lastVerb(format string) (verb byte, vFamilyCount int) {
 		for i < len(format) && strings.IndexByte("-+# 0", format[i]) >= 0 {
 			i++ // flags
 		}
+		i = skipArgIndex(format, i) // %[n]v: explicit index before width/verb
 		if i < len(format) && format[i] == '*' {
 			i++ // width via argument
 		} else {
@@ -182,6 +192,7 @@ func lastVerb(format string) (verb byte, vFamilyCount int) {
 		}
 		if i < len(format) && format[i] == '.' {
 			i++
+			i = skipArgIndex(format, i) // %.[n]*v: explicit index before precision
 			if i < len(format) && format[i] == '*' {
 				i++ // precision via argument
 			} else {
@@ -190,6 +201,7 @@ func lastVerb(format string) (verb byte, vFamilyCount int) {
 				}
 			}
 		}
+		i = skipArgIndex(format, i) // %d[n]v-style index right before the verb
 		if i >= len(format) {
 			break
 		}
@@ -200,6 +212,26 @@ func lastVerb(format string) (verb byte, vFamilyCount int) {
 		i++
 	}
 	return verb, vFamilyCount
+}
+
+// skipArgIndex advances past a well-formed %[n] explicit-argument-index
+// bracket starting at i, or returns i unchanged if there isn't one there.
+// Go's fmt accepts [n] before a verb, a width, or a precision, to select
+// which operand it applies to (see the fmt package doc's "Explicit argument
+// indexes" section) — without this, lastVerb would treat the '[' itself as
+// the verb and silently drop the real one that follows.
+func skipArgIndex(format string, i int) int {
+	if i >= len(format) || format[i] != '[' {
+		return i
+	}
+	j := i + 1
+	for j < len(format) && format[j] >= '0' && format[j] <= '9' {
+		j++
+	}
+	if j > i+1 && j < len(format) && format[j] == ']' {
+		return j + 1
+	}
+	return i // not well-formed — leave it; the caller's verb read handles the stray '[' safely
 }
 
 // isErrorDotErrorCall reports whether expr is a call to a method literally
