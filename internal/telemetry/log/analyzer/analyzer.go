@@ -207,6 +207,14 @@ func (r *runner) run(pass *analysis.Pass) (any, error) {
 // Both package-level calls (telemetrylog.Error(...)) and method calls
 // (logger.Error(...)) are handled: in both cases pass.TypesInfo.Uses[sel.Sel]
 // returns the *types.Func with the defining package and unqualified name.
+//
+// Known limitation: a method EXPRESSION call — (*telemetrylog.Logger).Error(logger,
+// "msg") — still resolves to the Error method here, but argument zero is the
+// explicit receiver, not the message; every FuncSpec's MsgArgIndex assumes a
+// normal method call and would check the receiver instead. There are no such
+// call sites in the repo today (the retired ruleguard rule's own pattern had
+// the identical blind spot), so this is left undetected rather than adding a
+// TypesInfo.Selections branch for a case nothing exercises.
 func resolveFunc(pass *analysis.Pass, call *ast.CallExpr) (fnName, pkgPath string) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
