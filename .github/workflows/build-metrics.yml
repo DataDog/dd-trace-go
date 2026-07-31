@@ -10,6 +10,9 @@ name: Build Metrics
 # Key features:
 # - Cold cache measurement: cleans build cache before each measurement to capture full compilation cost
 # - Warm module cache: runs go mod download (untimed) so measurement reflects compilation, not network
+# - Dependency attribution (standard mode only): go-size-analyzer breaks the binary down by
+#   vendor package, published as go.build.dependency_size_bytes.<dependency>, so a size
+#   regression can be traced to which dependency grew instead of just the binary total
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
 # - Runs on: Pull requests (when this file, scripts/*, orchestrion.yml, or any go.mod changes) and pushes to main
 # - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
@@ -119,6 +122,14 @@ jobs:
           go-version: stable
           cache: false  # Cold build cache for accurate measurements
           check-latest: true
+
+      - name: Install go-size-analyzer
+        if: matrix.mode == 'standard'
+        run: |
+          curl -L --fail "https://github.com/Zxilly/go-size-analyzer/releases/download/v1.13.0/go-size-analyzer_1.13.0_linux_amd64.tar.gz" -o gsa.tar.gz
+          tar -xzf gsa.tar.gz gsa
+          chmod +x gsa
+          echo "${{ github.workspace }}" >> "$GITHUB_PATH"
 
       - name: Measure build
         id: measure

@@ -50,21 +50,31 @@ ORCHESTRION_VERSION=$(jq -r '.orchestrion_version // empty' "$METRICS_FILE")
 # Read all duration samples into a bash array
 mapfile -t DURATIONS < <(jq -r '.metrics.build_duration_samples[]' "$METRICS_FILE")
 
+# Read dependency size attribution (standard mode only; empty otherwise)
+mapfile -t DEP_KEYS < <(jq -r '.metrics.dependency_sizes[]?.metric_key' "$METRICS_FILE")
+mapfile -t DEP_SIZES < <(jq -r '.metrics.dependency_sizes[]?.size_bytes' "$METRICS_FILE")
+
 message "Parsed metrics:"
 message "  Sample: $SAMPLE"
 message "  Mode: $MODE"
 message "  Durations: ${DURATIONS[*]}s"
 message "  Size: $SIZE bytes"
+message "  Dependencies attributed: ${#DEP_KEYS[@]}"
 message "  Go version: $GO_VERSION"
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
   message "  Orchestrion version: $ORCHESTRION_VERSION"
 fi
 
-# Publish measures to CI Visibility — one indexed measure per duration sample, one size sample
+# Publish measures to CI Visibility — one indexed measure per duration sample,
+# one size sample, and (standard mode only) one indexed measure per dependency
+# attributed by gsa, following the same duration_seconds.<i> naming convention
 message "Publishing measures to Datadog CI Visibility..."
 MEASURE_ARGS=(--measures "go.build.binary_size_bytes:${SIZE}")
 for i in "${!DURATIONS[@]}"; do
   MEASURE_ARGS+=(--measures "go.build.duration_seconds.${i}:${DURATIONS[$i]}")
+done
+for i in "${!DEP_KEYS[@]}"; do
+  MEASURE_ARGS+=(--measures "go.build.dependency_size_bytes.${DEP_KEYS[$i]}:${DEP_SIZES[$i]}")
 done
 
 DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
