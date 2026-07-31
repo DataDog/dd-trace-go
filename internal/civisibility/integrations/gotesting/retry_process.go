@@ -535,23 +535,25 @@ func (w *processRetryBoundedOutput) appendTailLocked(p []byte) {
 func (w *processRetryBoundedOutput) appendGrowingTailLocked(p []byte) {
 	oldLen := len(w.tail)
 	maxBytes := int(w.maxBytes)
-	appendLen := len(p)
-	if remaining := maxBytes - oldLen; appendLen > remaining {
-		appendLen = remaining
+	if remaining := maxBytes - oldLen; len(p) > remaining {
+		p = p[:remaining]
 	}
-	newLen := oldLen + appendLen
-	if newLen > cap(w.tail) {
-		currentCap := cap(w.tail)
-		growth := max(currentCap, 1)
-		growth = min(growth, maxBytes-currentCap)
-		newCap := max(newLen, currentCap+growth)
-		grown := make([]byte, newLen, newCap)
+	if len(p) > cap(w.tail)-oldLen {
+		newCap := maxBytes
+		for _, candidate := range [...]int{64, 256, 1024, 4096, 16 * 1024} {
+			if candidate > maxBytes {
+				break
+			}
+			if len(p) <= candidate-oldLen {
+				newCap = candidate
+				break
+			}
+		}
+		grown := make([]byte, oldLen, newCap)
 		copy(grown, w.tail)
 		w.tail = grown
-	} else {
-		w.tail = w.tail[:newLen]
 	}
-	copy(w.tail[oldLen:], p[:appendLen])
+	w.tail = append(w.tail, p...)
 }
 
 func (w *processRetryBoundedOutput) Tail() (string, bool) {
