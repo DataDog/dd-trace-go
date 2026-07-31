@@ -14,6 +14,13 @@ import (
 
 type plainStruct struct{ Field string }
 
+// pointerLogValuer implements slog.LogValuer only on the pointer receiver —
+// slog.Any boxes whatever type is passed as-is, so a non-pointer value of
+// this type is unreachable via the pointer method and must still be flagged.
+type pointerLogValuer struct{ Field string }
+
+func (p *pointerLogValuer) LogValue() slog.Value { return slog.StringValue(p.Field) }
+
 // ── Good: safe slog.Any / slog.String usage ─────────────────────────────────
 
 func goodSafeError(err error) {
@@ -35,6 +42,11 @@ func goodNilValue() {
 
 func goodStringNotFromError() {
 	telemetrylog.Error("event", slog.String("key", "a plain constant value"))
+}
+
+func goodPointerReceiverLogValuerPassedByPointer() {
+	v := pointerLogValuer{Field: "safe"}
+	telemetrylog.Debug("event", slog.Any("data", &v))
 }
 
 // ── Bad: unsafe slog.Any / slog.String usage ────────────────────────────────
@@ -59,6 +71,11 @@ func badStringWithErrorCall(err error) {
 func badStringWithErrorCallViaMethod(err error) {
 	logger := telemetrylog.With()
 	logger.Warn("failed", slog.String("error", err.Error())) // want "slog.String with err.Error"
+}
+
+func badPointerReceiverLogValuerPassedByValue() {
+	v := pointerLogValuer{Field: "unsafe"}
+	telemetrylog.Debug("event", slog.Any("data", v)) // want "does not implement slog.LogValuer"
 }
 
 func badShadowedNilIsNotExempt() {

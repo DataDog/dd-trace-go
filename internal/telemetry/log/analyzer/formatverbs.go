@@ -14,7 +14,6 @@ import (
 	"go/constant"
 	"go/types"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -33,7 +32,10 @@ more of a value than intended.
   - %v/%+v/%#v as the final verb with an error-typed last argument is allowed
     but reported as a suggestion to call err.Error() explicitly instead —
     equally safe, but clearer about intent.
-  - err.Error() as the last argument is always allowed outright.
+  - err.Error() as the last argument is allowed outright ONLY when it is the
+    sole %v-family verb in the format and that verb is the final one. A
+    format with an earlier %v (over a non-error value) is still reported,
+    even if the last argument happens to be err.Error().
 
 This replaces the ruleguard rules in the retired rules/logging_rules.go
 (internalLogFormatVerbs, stdLogFormatVerbs, internalLogSuggestErrorString,
@@ -41,8 +43,6 @@ internalLogSuggestErrorStringMulti).`
 
 var internalLogFuncNames = map[string]bool{"Debug": true, "Info": true, "Warn": true, "Error": true}
 var stdLogFuncNames = map[string]bool{"Printf": true, "Fatalf": true, "Panicf": true}
-
-var vVerbPattern = regexp.MustCompile(`%[+#]?v`)
 
 // FormatVerbsAnalyzer is the production analyzer, scoped to internal/log and,
 // in allow-listed files, the standard library log package.
@@ -88,13 +88,18 @@ func (r *formatVerbsRunner) run(pass *analysis.Pass) (any, error) {
 		}
 
 		format, ok := constStringValue(pass, call.Args[0])
-		if !ok || !vVerbPattern.MatchString(format) {
-			return // non-constant or no %v-family verb: nothing for this check
+		if !ok {
+			return // non-constant format: constantlogmsg's problem, not this one
+		}
+		finalVerb, vFamilyCount := lastVerb(format)
+		if vFamilyCount == 0 {
+			return // no %v-family verb: nothing for this check
 		}
 
 		lastArg := call.Args[len(call.Args)-1]
-		if isErrorDotErrorCall(pass, lastArg) {
-			return // err.Error() is always allowed
+		lastArgIsErrorDotError := isErrorDotErrorCall(pass, lastArg)
+		if lastArgIsErrorDotError && vFamilyCount == 1 && finalVerb == 'v' {
+			return // sole %v-family verb, in final position, backed by err.Error()
 		}
 		if nolintSuppressed(pass, call.Pos(), "gocritic", "logformatverbs") {
 			return
@@ -103,7 +108,7 @@ func (r *formatVerbsRunner) run(pass *analysis.Pass) (any, error) {
 		lastType := pass.TypesInfo.TypeOf(lastArg)
 		lastIsError := errIface != nil && lastType != nil && types.Implements(lastType, errIface)
 		switch {
-		case !verbAtEnd(format):
+		case finalVerb != 'v':
 			pass.Reportf(call.Pos(), "%s.%s: %%v/%%+v/%%#v must be the last format verb; use a specific verb like %%s, %%d, or %%q for earlier arguments", pkg, fn)
 		case !lastIsError:
 			pass.Reportf(call.Pos(), "%s.%s: %%v/%%+v/%%#v exposes uncontrolled data via reflection; use a specific verb like %%s, %%d, or %%q", pkg, fn)
@@ -145,16 +150,56 @@ func constStringValue(pass *analysis.Pass, expr ast.Expr) (string, bool) {
 	return constant.StringVal(tv.Value), true
 }
 
-// verbAtEnd reports whether the last '%' in format begins a %v/%+v/%#v verb —
-// i.e. no other verb follows it, though trailing plain characters (like \n)
-// are fine.
-func verbAtEnd(format string) bool {
-	i := strings.LastIndex(format, "%")
-	if i == -1 {
-		return false
+// lastVerb walks format the way fmt's own parser does — skipping %% escapes
+// and any flag/width/precision modifiers ([-+# 0], digits, '.', '*') — and
+// reports the final verb byte found (0 if none) and how many %v-family
+// verbs (i.e. verb == 'v', regardless of the +/# flags) appear in total.
+// %+v and %#v count as the 'v' family; the flags are just modifiers on it.
+func lastVerb(format string) (verb byte, vFamilyCount int) {
+	i := 0
+	for i < len(format) {
+		if format[i] != '%' {
+			i++
+			continue
+		}
+		i++ // consume '%'
+		if i >= len(format) {
+			break
+		}
+		if format[i] == '%' {
+			i++ // %% escape: a literal percent, not a verb
+			continue
+		}
+		for i < len(format) && strings.IndexByte("-+# 0", format[i]) >= 0 {
+			i++ // flags
+		}
+		if i < len(format) && format[i] == '*' {
+			i++ // width via argument
+		} else {
+			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+				i++ // width
+			}
+		}
+		if i < len(format) && format[i] == '.' {
+			i++
+			if i < len(format) && format[i] == '*' {
+				i++ // precision via argument
+			} else {
+				for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+					i++ // precision
+				}
+			}
+		}
+		if i >= len(format) {
+			break
+		}
+		verb = format[i]
+		if verb == 'v' {
+			vFamilyCount++
+		}
+		i++
 	}
-	rest := format[i:]
-	return strings.HasPrefix(rest, "%v") || strings.HasPrefix(rest, "%+v") || strings.HasPrefix(rest, "%#v")
+	return verb, vFamilyCount
 }
 
 // isErrorDotErrorCall reports whether expr is a call to a method literally
