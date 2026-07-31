@@ -1,7 +1,6 @@
 stages:
   - ci-image
   - docker-images-reliability-env
-  - config-validation
   - shared-pipeline
   - generate
   - microbenchmarks
@@ -28,17 +27,13 @@ workflow:
 # previously hand-copied .gitlab/configuration-central-validation.yml. Image/scripts come from the
 # template's base-packaging-job so they stay in sync with the pinned release.
 validate_supported_configurations_v2_local_file:
-  stage: config-validation
   tags: ["runner:apm-k8s-tweaked-metal"]
-  rules:
-    - when: on_success
   extends: .validate_supported_configurations_v2_local_file
   variables:
     LOCAL_JSON_PATH: internal/env/supported_configurations.json
     BACKFILLED: "true"
 
 update_central_configurations_version_range_v2:
-  stage: config-validation
   tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .update_central_configurations_version_range_v2
   variables:
