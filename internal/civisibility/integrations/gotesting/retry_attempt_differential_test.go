@@ -100,7 +100,11 @@ func TestProcessRetryParityDifferentialNativeAndFreshLifecycle(t *testing.T) {
 
 			var freshTrace retryParityTrace
 			var freshTempDir string
-			attempt, freshResult, reason := runFreshRetryAttempt(t, func(fresh *testing.T) {
+			group, reason := newRetryAttemptGroup(t)
+			require.Empty(t, reason)
+			group.observeNativeOutput = true
+			defer group.retire()
+			attempt, freshResult, reason := runFreshRetryAttemptInGroup(group, func(fresh *testing.T) {
 				tc.target(fresh, &freshTrace, &freshTempDir)
 			})
 			require.Empty(t, reason)

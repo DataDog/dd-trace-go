@@ -112,6 +112,8 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
 		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
 		os.Exit(runProcessRetryChild(m))
+	} else if testControllerBenchmarkSelected(os.Args[1:]) {
+		os.Exit(m.Run())
 	} else if internal.BoolEnv("Bypass", false) {
 		os.Exit(m.Run())
 	} else {
@@ -122,6 +124,7 @@ func TestMain(m *testing.M) {
 		}
 		_, layoutReason := getRetryAttemptLayout()
 		layoutAvailable := layoutReason == ""
+		runTestControllerSubprocess("AdditionalFeatureAllocationUnitTests", "^TestAdditionalFeatureSelectorDoesNotAllocate$", "Bypass=true", "-test.parallel=1")
 		runTestControllerSubprocess("RetryParityUnitTests", buildRetryParityUnitRunFilter(*tests, layoutAvailable), "Bypass=true", "-test.parallel=1")
 		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
 		if layoutAvailable {
@@ -506,6 +509,84 @@ func buildTestControllerSubprocessArgs(originalArgs []string, runFilter string, 
 	args = append(args, "-test.run="+runFilter)
 	args = append(args, boundary...)
 	return args
+}
+
+func testControllerBenchmarkSelected(args []string) bool {
+	selected := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" || !processRetryIsFlagToken(arg) {
+			break
+		}
+		name, value, hasValue := processRetrySplitFlag(arg)
+		registeredName := strings.TrimPrefix(name, "-")
+		registered := flag.CommandLine.Lookup(registeredName)
+		if registered == nil && !strings.HasPrefix(registeredName, "test.") {
+			registered = flag.CommandLine.Lookup("test." + registeredName)
+		}
+		if registered == nil {
+			break
+		}
+		if !hasValue {
+			if boolFlag, ok := registered.Value.(processRetryBoolFlag); !ok || !boolFlag.IsBoolFlag() {
+				if i+1 >= len(args) {
+					break
+				}
+				i++
+				value = args[i]
+			}
+		}
+		if name == "-test.bench" || name == "-bench" {
+			selected = value != ""
+		}
+	}
+	return selected
+}
+
+func TestProcessRetryBenchmarkSelection(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "not selected", args: []string{"-test.run=^Test"}},
+		{name: "inline", args: []string{"-test.bench=BenchmarkHotPath"}, want: true},
+		{name: "split after run", args: []string{"-test.run", "^$", "-test.bench", "BenchmarkHotPath"}, want: true},
+		{name: "alias", args: []string{"-bench=BenchmarkHotPath"}, want: true},
+		{name: "last value clears selection", args: []string{"-test.bench=BenchmarkHotPath", "-test.bench="}},
+		{name: "after boundary", args: []string{"--", "-test.bench=BenchmarkHotPath"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := testControllerBenchmarkSelected(tt.args); got != tt.want {
+				t.Fatalf("testControllerBenchmarkSelected(%q) = %t, want %t", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProcessRetryBenchmarkModeRunsSelectedBenchmark(t *testing.T) {
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^$",
+		"-test.bench=^BenchmarkSelectAdditionalFeaturePath$",
+		"-test.benchtime=1x",
+		"-test.count=1",
+		"-test.timeout=30s",
+	)
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(name, "Bypass") {
+			continue
+		}
+		cmd.Env = append(cmd.Env, entry)
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("benchmark subprocess failed: %v\n%s", err, output)
+	}
+	if !bytes.Contains(output, []byte("BenchmarkSelectAdditionalFeaturePath")) {
+		t.Fatalf("benchmark subprocess did not execute the selected benchmark:\n%s", output)
+	}
 }
 
 func runEarlyFlakyTestDetectionTests(m *testing.M) {

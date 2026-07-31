@@ -77,16 +77,19 @@ func resetProcessRetryLaunchGateForTesting(t testing.TB) func() {
 	oldLaunching := processRetryLaunchGate.launching
 	oldActiveGroups := processRetryLaunchGate.activeGroups
 	oldActiveChildren := processRetryLaunchGate.activeChildren
-	oldShuttingDown := processRetryLaunchGate.shuttingDown
+	oldShuttingDown := processRetryLaunchGate.shuttingDown.Load()
 	oldShutdown := processRetryLaunchGate.shutdown
+	oldChanged := processRetryLaunchGate.changed
+	oldWaiters := processRetryLaunchGate.waiters
 	processRetryLaunchGate.disabled.Store(false)
 	processRetryLaunchGate.reaping = 0
 	processRetryLaunchGate.launching = 0
 	processRetryLaunchGate.activeGroups = 0
 	processRetryLaunchGate.activeChildren = 0
-	processRetryLaunchGate.shuttingDown = false
+	processRetryLaunchGate.shuttingDown.Store(false)
 	processRetryLaunchGate.shutdown = make(chan struct{})
-	processRetryLaunchGate.notifyLocked()
+	processRetryLaunchGate.changed = make(chan struct{})
+	processRetryLaunchGate.waiters = 0
 	processRetryLaunchGate.mu.Unlock()
 	return func() {
 		processRetryLaunchGate.mu.Lock()
@@ -95,9 +98,10 @@ func resetProcessRetryLaunchGateForTesting(t testing.TB) func() {
 		processRetryLaunchGate.launching = oldLaunching
 		processRetryLaunchGate.activeGroups = oldActiveGroups
 		processRetryLaunchGate.activeChildren = oldActiveChildren
-		processRetryLaunchGate.shuttingDown = oldShuttingDown
+		processRetryLaunchGate.shuttingDown.Store(oldShuttingDown)
 		processRetryLaunchGate.shutdown = oldShutdown
-		processRetryLaunchGate.notifyLocked()
+		processRetryLaunchGate.changed = oldChanged
+		processRetryLaunchGate.waiters = oldWaiters
 		processRetryLaunchGate.mu.Unlock()
 	}
 }
@@ -108,6 +112,64 @@ func resetProcessRetryLimiterForTesting(t testing.TB) {
 	t.Cleanup(func() {
 		globalProcessRetryLimiter.Store(old)
 	})
+}
+
+func processRetryLimiterActiveForTesting(t testing.TB, limiter *processRetryLimiter) int {
+	t.Helper()
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	return limiter.active
+}
+
+func TestProcessRetryLaunchGateNotifiesOnlyRegisteredWaiters(t *testing.T) {
+	gate := &processRetryLaunchGateState{changed: make(chan struct{})}
+	original := gate.changed
+
+	gate.mu.Lock()
+	gate.notifyLocked()
+	gate.notifyLocked()
+	gate.mu.Unlock()
+	require.Equal(t, original, gate.changed)
+	requireProcessRetryChannelOpen(t, original)
+
+	gate.mu.Lock()
+	gate.waiters = 1
+	gate.notifyLocked()
+	gate.mu.Unlock()
+	require.NotEqual(t, original, gate.changed)
+	requireProcessRetryChannelClosed(t, original)
+	requireProcessRetryChannelOpen(t, gate.changed)
+}
+
+func BenchmarkProcessRetryLaunchGateNotifyWithoutWaiters(b *testing.B) {
+	gate := &processRetryLaunchGateState{changed: make(chan struct{})}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		gate.mu.Lock()
+		gate.notifyLocked()
+		gate.mu.Unlock()
+	}
+}
+
+func TestProcessRetryLifecycleStateSnapshots(t *testing.T) {
+	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
+	defer restoreLaunchGate()
+
+	processRetryActiveChildren.mu.Lock()
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
+	processRetryActiveChildren.closeActionRegistered.Store(true)
+	processRetryActiveChildren.mu.Unlock()
+	t.Cleanup(func() {
+		processRetryActiveChildren.closeActionRegistered.Store(oldRegistered)
+	})
+
+	var _ *atomic.Bool = &processRetryLaunchGate.shuttingDown
+	var _ *atomic.Bool = &processRetryActiveChildren.closeActionRegistered
+	require.True(t, processRetryShutdownActionRegistered())
+	require.False(t, processRetryShuttingDown())
+	processRetryLaunchGate.shuttingDown.Store(true)
+	require.True(t, processRetryShuttingDown())
 }
 
 func TestRetryExecutionModeFromEnv(t *testing.T) {
@@ -130,6 +192,113 @@ func TestRetryExecutionModeFromEnv(t *testing.T) {
 			}
 			require.Equal(t, tt.want, retryExecutionModeFromEnv())
 		})
+	}
+}
+
+func TestProcessRetryWrapperOptionsSnapshotOnlyEnablesProcessSetupForProcessMode(t *testing.T) {
+	t.Run("in process", func(t *testing.T) {
+		t.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "in_process")
+		t.Setenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, "true")
+		options := processRetryWrapperOptions()
+
+		require.False(t, snapshotProcessRetryWrapperOptions(&options))
+		require.True(t, options.processRetryModeSet)
+		require.Equal(t, retryExecutionModeInProcess, options.processRetryMode)
+		require.True(t, options.parallelEFDAllowed)
+		require.Nil(t, options.mRunInvocations)
+	})
+
+	t.Run("process", func(t *testing.T) {
+		t.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+		options := processRetryWrapperOptions()
+
+		require.True(t, snapshotProcessRetryWrapperOptions(&options))
+		require.True(t, options.processRetryModeSet)
+		require.Equal(t, retryExecutionModeProcess, options.processRetryMode)
+		require.NotZero(t, options.mRunEpoch)
+		require.NotNil(t, options.mRunInvocations)
+		require.Zero(t, options.mRunInvocations.Load(), "passing tests must not reserve process invocation ordinals")
+	})
+
+	t.Run("unsupported entrypoint", func(t *testing.T) {
+		t.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+		options := additionalFeatureWrapperOptions{}
+
+		require.False(t, snapshotProcessRetryWrapperOptions(&options))
+		require.False(t, options.processRetryModeSet)
+	})
+}
+
+func TestProcessRetryInvocationOrdinalIsReservedOnFirstProcessAttempt(t *testing.T) {
+	counter := &atomic.Uint64{}
+	options := &runTestWithRetryOptions{processRetryInvocationCounter: counter}
+
+	require.Zero(t, options.processRetryInvocationOrdinal)
+	require.Zero(t, counter.Load())
+	require.Equal(t, uint64(1), ensureProcessRetryInvocationOrdinal(options))
+	require.Equal(t, uint64(1), ensureProcessRetryInvocationOrdinal(options))
+	require.Equal(t, uint64(1), counter.Load(), "one retry group must reserve one ordinal")
+
+	preassigned := &runTestWithRetryOptions{
+		processRetryInvocationOrdinal: 7,
+		processRetryInvocationCounter: counter,
+	}
+	require.Equal(t, uint64(7), ensureProcessRetryInvocationOrdinal(preassigned))
+	require.Equal(t, uint64(1), counter.Load(), "preassigned child identity must not consume another ordinal")
+}
+
+func TestProcessRetryPreparationUsesSnapshottedInProcessMode(t *testing.T) {
+	t.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+	var executableCalls atomic.Int32
+	resetProcessRetryRunnerHooksForTesting(t, processRetryRunnerHooks{
+		executable: func() (string, error) {
+			executableCalls.Add(1)
+			return os.Args[0], nil
+		},
+	})
+	options := &runTestWithRetryOptions{
+		processRetryAllowed: true,
+		processRetryMode:    retryExecutionModeInProcess,
+		processRetryModeSet: true,
+	}
+	execOpts := &executionOptions{}
+
+	prepareProcessRetryExecution(options, execOpts)
+
+	require.Equal(t, retryExecutionModeInProcess, options.processRetryMode)
+	require.Nil(t, execOpts.processRetryLaunchBaseline)
+	require.Zero(t, executableCalls.Load())
+}
+
+func TestProcessRetryFuzzGuardSnapshotEvaluatesOnceAcrossTests(t *testing.T) {
+	var evaluations atomic.Int32
+	guard := &processRetryFuzzGuardSnapshot{evaluate: func() bool {
+		evaluations.Add(1)
+		return true
+	}}
+
+	for range 3 {
+		options := &runTestWithRetryOptions{
+			processRetryAllowed:   true,
+			processRetryMode:      retryExecutionModeProcess,
+			processRetryModeSet:   true,
+			processRetryFuzzGuard: guard,
+		}
+		prepareProcessRetryExecution(options, &executionOptions{})
+		require.True(t, options.processRetryFuzzGuardSet)
+		require.True(t, options.processRetryFuzzActive)
+	}
+
+	require.Equal(t, int32(1), evaluations.Load())
+}
+
+func BenchmarkProcessRetryFuzzGuardSnapshotCached(b *testing.B) {
+	guard := &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }}
+	guard.resolve()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		guard.resolve()
 	}
 }
 
@@ -198,30 +367,217 @@ func TestProcessRetryMaxConcurrencyFromEnv(t *testing.T) {
 	}
 }
 
-func TestProcessRetryLimiterDefaultCapacity(t *testing.T) {
+func TestProcessRetryLimiterEffectiveCapacity(t *testing.T) {
+	parallelDefault := min(max(runtime.GOMAXPROCS(0), 1), int(internalParallelEFDMaxConcurrency))
 	tests := []struct {
 		name        string
 		parallelEFD bool
 		explicitMax string
+		currentCPU  int
 		want        int
 	}{
 		{name: "sequential default", want: 1},
-		{name: "parallel EFD default", parallelEFD: true, want: int(internalParallelEFDMaxConcurrency)},
-		{name: "parallel EFD explicit override", parallelEFD: true, explicitMax: "2", want: 2},
-		{name: "parallel EFD invalid override", parallelEFD: true, explicitMax: "invalid", want: int(internalParallelEFDMaxConcurrency)},
+		{name: "parallel EFD default", parallelEFD: true, want: parallelDefault},
+		{name: "parallel EFD explicit override", parallelEFD: true, explicitMax: "2", currentCPU: 1, want: 2},
+		{name: "parallel EFD invalid override", parallelEFD: true, explicitMax: "invalid", want: parallelDefault},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resetProcessRetryLimiterForTesting(t)
 			t.Setenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, strconv.FormatBool(tt.parallelEFD))
 			t.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, tt.explicitMax)
 
-			limiter := getProcessRetryLimiter()
-			limiter.init()
-			require.Equal(t, tt.want, cap(limiter.ch))
+			currentCPU := tt.currentCPU
+			if currentCPU == 0 {
+				currentCPU = runtime.GOMAXPROCS(0)
+			}
+			baseline := &processRetryLaunchBaseline{currentCPU: currentCPU}
+			baseline.maxConcurrency, baseline.maxConcurrencySet = processRetryConfiguredMaxConcurrencyFromEnv()
+			require.Equal(t, tt.want, processRetryMaxConcurrencyForBaseline(baseline, baseline.currentCPU))
 		})
 	}
+}
+
+func TestProcessRetryLimiterAdjustsCapacityBetweenCPUEpochs(t *testing.T) {
+	limiter := &processRetryLimiter{}
+	first := limiter.acquireWithShutdownLimit(context.Background(), nil, nil, 1)
+	require.Equal(t, processRetryLimiterAcquired, first.Cause)
+	require.Equal(t, 1, processRetryLimiterActiveForTesting(t, limiter))
+
+	second := limiter.acquireWithShutdownLimit(context.Background(), nil, nil, 2)
+	require.Equal(t, processRetryLimiterAcquired, second.Cause)
+	require.Equal(t, 2, processRetryLimiterActiveForTesting(t, limiter))
+
+	cancelledContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	blocked := limiter.acquireWithShutdownLimit(cancelledContext, nil, nil, 2)
+	require.Equal(t, processRetryLimiterExternalCancel, blocked.Cause)
+	require.Equal(t, 2, processRetryLimiterActiveForTesting(t, limiter))
+
+	first.Release()
+	second.Release()
+	require.Equal(t, 0, processRetryLimiterActiveForTesting(t, limiter))
+
+	nextEpoch := limiter.acquireWithShutdownLimit(context.Background(), nil, nil, 1)
+	require.Equal(t, processRetryLimiterAcquired, nextEpoch.Cause)
+	nextEpoch.Release()
+}
+
+func TestProcessRetryLimiterHandsOffOneSlotToOneWaiter(t *testing.T) {
+	limiter := &processRetryLimiter{}
+	acquired, _ := limiter.tryAcquireOrQueue(1)
+	require.True(t, acquired)
+
+	_, first := limiter.tryAcquireOrQueue(1)
+	_, second := limiter.tryAcquireOrQueue(1)
+	_, third := limiter.tryAcquireOrQueue(1)
+	require.False(t, first.granted)
+	require.False(t, second.granted)
+	require.False(t, third.granted)
+
+	limiter.release()
+	require.True(t, first.granted)
+	require.False(t, second.granted)
+	require.False(t, third.granted)
+	requireProcessRetryChannelClosed(t, first.ready)
+	requireProcessRetryChannelOpen(t, second.ready)
+	requireProcessRetryChannelOpen(t, third.ready)
+
+	limiter.mu.Lock()
+	require.Equal(t, 1, limiter.active)
+	require.Same(t, second, limiter.waiterHead)
+	require.Same(t, third, limiter.waiterTail)
+	limiter.mu.Unlock()
+
+	limiter.release()
+	require.True(t, second.granted)
+	require.False(t, third.granted)
+	limiter.release()
+	require.True(t, third.granted)
+	limiter.release()
+	require.Zero(t, processRetryLimiterActiveForTesting(t, limiter))
+}
+
+func TestProcessRetryLimiterSkipsWaitersFromLowerCapacityEpoch(t *testing.T) {
+	limiter := &processRetryLimiter{}
+	acquired, _ := limiter.tryAcquireOrQueue(1)
+	require.True(t, acquired)
+
+	_, lowerCapacity := limiter.tryAcquireOrQueue(1)
+	higherAcquired, higherCapacity := limiter.tryAcquireOrQueue(2)
+	require.True(t, higherAcquired)
+	require.True(t, higherCapacity.granted)
+	require.False(t, lowerCapacity.granted)
+	requireProcessRetryChannelClosed(t, higherCapacity.ready)
+	requireProcessRetryChannelOpen(t, lowerCapacity.ready)
+
+	limiter.release()
+	require.False(t, lowerCapacity.granted)
+	limiter.release()
+	require.True(t, lowerCapacity.granted)
+	limiter.release()
+}
+
+func TestProcessRetryLimiterCancellationRemovesOnlySelectedWaiter(t *testing.T) {
+	limiter := &processRetryLimiter{}
+	acquired, _ := limiter.tryAcquireOrQueue(1)
+	require.True(t, acquired)
+
+	_, cancelled := limiter.tryAcquireOrQueue(1)
+	_, remaining := limiter.tryAcquireOrQueue(1)
+	limiter.cancelWaiter(cancelled)
+
+	require.False(t, cancelled.granted)
+	limiter.mu.Lock()
+	require.Same(t, remaining, limiter.waiterHead)
+	limiter.mu.Unlock()
+	requireProcessRetryChannelOpen(t, remaining.ready)
+	limiter.release()
+	require.True(t, remaining.granted)
+	limiter.release()
+}
+
+func BenchmarkProcessRetryLimiterHandoff(b *testing.B) {
+	limiter := &processRetryLimiter{}
+	acquired, _ := limiter.tryAcquireOrQueue(1)
+	if !acquired {
+		b.Fatal("initial limiter slot was not acquired")
+	}
+	for range 64 {
+		if acquired, _ := limiter.tryAcquireOrQueue(1); acquired {
+			b.Fatal("contended limiter acquire unexpectedly succeeded")
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		limiter.release()
+		if acquired, _ := limiter.tryAcquireOrQueue(1); acquired {
+			b.Fatal("contended limiter acquire unexpectedly succeeded")
+		}
+	}
+}
+
+func BenchmarkProcessRetryLimiterUncontended(b *testing.B) {
+	limiter := &processRetryLimiter{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if acquired, _ := limiter.tryAcquireOrQueue(1); !acquired {
+			b.Fatal("uncontended limiter acquire did not succeed")
+		}
+		limiter.release()
+	}
+}
+
+func requireProcessRetryChannelClosed(t testing.TB, channel <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-channel:
+	default:
+		t.Fatal("channel is open, want closed")
+	}
+}
+
+func requireProcessRetryChannelOpen(t testing.TB, channel <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-channel:
+		t.Fatal("channel is closed, want open")
+	default:
+	}
+}
+
+func TestProcessRetryDefaultMaxConcurrencyRespectsAvailableCPU(t *testing.T) {
+	t.Setenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, "true")
+	for _, tt := range []struct {
+		name       string
+		currentCPU int
+		want       int
+	}{
+		{name: "invalid CPU", currentCPU: 0, want: 1},
+		{name: "one CPU", currentCPU: 1, want: 1},
+		{name: "two CPUs", currentCPU: 2, want: 2},
+		{name: "above scheduler cap", currentCPU: 8, want: int(internalParallelEFDMaxConcurrency)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, processRetryDefaultMaxConcurrencyForCPU(tt.currentCPU))
+		})
+	}
+}
+
+func TestProcessRetryParallelMaxConcurrencyHonorsExplicitOverrideAboveDefaultCap(t *testing.T) {
+	t.Setenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, "true")
+	baseline := &processRetryLaunchBaseline{
+		currentCPU:        16,
+		maxConcurrency:    8,
+		maxConcurrencySet: true,
+	}
+	require.Equal(t, int64(8), processRetryParallelMaxConcurrencyForBaseline(baseline))
+
+	baseline.maxConcurrencySet = false
+	require.Equal(t, internalParallelEFDMaxConcurrency, processRetryParallelMaxConcurrencyForBaseline(baseline))
 }
 
 func TestProcessRetryTimeoutFromEnv(t *testing.T) {
@@ -1591,7 +1947,8 @@ func TestBuildProcessRetryEnvPreservesPublicEnabled(t *testing.T) {
 		constants.CIVisibilityInternalRetryProcessReason + "=stale",
 	}
 
-	got := buildProcessRetryEnv(base, cfg)
+	sanitized := sanitizeProcessRetryBaseEnv(base)
+	got := buildProcessRetryEnv(sanitized, cfg)
 	envMap := envSliceToMap(got)
 	require.Equal(t, "parent", envMap[constants.CIVisibilityEnabledEnvironmentVariable])
 	require.Equal(t, "secret", envMap["DD_API_KEY"])
@@ -1620,7 +1977,8 @@ func TestBuildProcessRetryEnvRemovesInternalKeysCaseInsensitively(t *testing.T) 
 		"gocoverdir=C:/stale-coverdir",
 	}
 
-	got := buildProcessRetryEnv(base, cfg)
+	sanitized := sanitizeProcessRetryBaseEnv(base)
+	got := buildProcessRetryEnv(sanitized, cfg)
 	require.Len(t, envValuesForKey(got, constants.CIVisibilityInternalRetryProcessChild, true), 1)
 	require.Len(t, envValuesForKey(got, constants.CIVisibilityInternalRetryProcessResultPath, true), 1)
 	envMap := envSliceToMap(got)
@@ -2314,12 +2672,11 @@ func TestProcessRetryLimiter(t *testing.T) {
 	t.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
 
 	limiter := getProcessRetryLimiter()
-	limiter.init()
-	require.Equal(t, 1, cap(limiter.ch))
 	first := limiter.acquire(context.Background(), nil)
 	require.Equal(t, processRetryLimiterAcquired, first.Cause)
 	require.NoError(t, first.Err)
 	require.NotNil(t, first.Release)
+	require.Equal(t, 1, processRetryLimiterActiveForTesting(t, limiter))
 
 	parentDeadline := make(chan time.Time)
 	close(parentDeadline)
@@ -2613,14 +2970,14 @@ func TestProcessRetrySuccessfulStartRegistersActiveChildBeforeReturning(t *testi
 	defer restoreLaunchGate()
 	processRetryActiveChildren.mu.Lock()
 	oldChildren := processRetryActiveChildren.children
-	oldRegistered := processRetryActiveChildren.closeActionRegistered
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
 	processRetryActiveChildren.children = make(map[*exec.Cmd]processRetryActiveChild)
-	processRetryActiveChildren.closeActionRegistered = true
+	processRetryActiveChildren.closeActionRegistered.Store(true)
 	processRetryActiveChildren.mu.Unlock()
 	t.Cleanup(func() {
 		processRetryActiveChildren.mu.Lock()
 		processRetryActiveChildren.children = oldChildren
-		processRetryActiveChildren.closeActionRegistered = oldRegistered
+		processRetryActiveChildren.closeActionRegistered.Store(oldRegistered)
 		processRetryActiveChildren.mu.Unlock()
 	})
 
@@ -2635,7 +2992,7 @@ func TestProcessRetrySuccessfulStartRegistersActiveChildBeforeReturning(t *testi
 	require.Equal(t, (<-chan error)(waitCh), gotWaitCh)
 	processRetryActiveChildren.mu.Lock()
 	_, registered := processRetryActiveChildren.children[cmd]
-	shutdownRegistered := processRetryActiveChildren.closeActionRegistered
+	shutdownRegistered := processRetryActiveChildren.closeActionRegistered.Load()
 	processRetryActiveChildren.mu.Unlock()
 	require.True(t, registered)
 	require.True(t, shutdownRegistered)
@@ -2755,12 +3112,12 @@ func TestRunProcessRetryAttemptStopsActiveChildOnShutdown(t *testing.T) {
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
 	processRetryActiveChildren.mu.Lock()
-	oldRegistered := processRetryActiveChildren.closeActionRegistered
-	processRetryActiveChildren.closeActionRegistered = true
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
+	processRetryActiveChildren.closeActionRegistered.Store(true)
 	processRetryActiveChildren.mu.Unlock()
 	t.Cleanup(func() {
 		processRetryActiveChildren.mu.Lock()
-		processRetryActiveChildren.closeActionRegistered = oldRegistered
+		processRetryActiveChildren.closeActionRegistered.Store(oldRegistered)
 		processRetryActiveChildren.mu.Unlock()
 	})
 
@@ -2813,12 +3170,12 @@ func TestProcessRetryStartErrorRechecksExpiredDeadline(t *testing.T) {
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
 	processRetryActiveChildren.mu.Lock()
-	oldRegistered := processRetryActiveChildren.closeActionRegistered
-	processRetryActiveChildren.closeActionRegistered = true
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
+	processRetryActiveChildren.closeActionRegistered.Store(true)
 	processRetryActiveChildren.mu.Unlock()
 	t.Cleanup(func() {
 		processRetryActiveChildren.mu.Lock()
-		processRetryActiveChildren.closeActionRegistered = oldRegistered
+		processRetryActiveChildren.closeActionRegistered.Store(oldRegistered)
 		processRetryActiveChildren.mu.Unlock()
 	})
 
@@ -2840,12 +3197,12 @@ func TestRunProcessRetryAttemptStartErrorAfterTimeoutIsTerminal(t *testing.T) {
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
 	processRetryActiveChildren.mu.Lock()
-	oldRegistered := processRetryActiveChildren.closeActionRegistered
-	processRetryActiveChildren.closeActionRegistered = true
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
+	processRetryActiveChildren.closeActionRegistered.Store(true)
 	processRetryActiveChildren.mu.Unlock()
 	t.Cleanup(func() {
 		processRetryActiveChildren.mu.Lock()
-		processRetryActiveChildren.closeActionRegistered = oldRegistered
+		processRetryActiveChildren.closeActionRegistered.Store(oldRegistered)
 		processRetryActiveChildren.mu.Unlock()
 	})
 
@@ -2880,12 +3237,12 @@ func TestProcessRetryCleanupFailureLogDoesNotExposePathOrError(t *testing.T) {
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
 	processRetryActiveChildren.mu.Lock()
-	oldRegistered := processRetryActiveChildren.closeActionRegistered
-	processRetryActiveChildren.closeActionRegistered = true
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
+	processRetryActiveChildren.closeActionRegistered.Store(true)
 	processRetryActiveChildren.mu.Unlock()
 	t.Cleanup(func() {
 		processRetryActiveChildren.mu.Lock()
-		processRetryActiveChildren.closeActionRegistered = oldRegistered
+		processRetryActiveChildren.closeActionRegistered.Store(oldRegistered)
 		processRetryActiveChildren.mu.Unlock()
 	})
 
@@ -2976,14 +3333,14 @@ func TestProcessRetryStopActiveChildrenStartsShutdownAndKillsOnce(t *testing.T) 
 	defer restoreLaunchGate()
 	processRetryActiveChildren.mu.Lock()
 	oldChildren := processRetryActiveChildren.children
-	oldRegistered := processRetryActiveChildren.closeActionRegistered
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
 	processRetryActiveChildren.children = make(map[*exec.Cmd]processRetryActiveChild)
-	processRetryActiveChildren.closeActionRegistered = false
+	processRetryActiveChildren.closeActionRegistered.Store(false)
 	processRetryActiveChildren.mu.Unlock()
 	t.Cleanup(func() {
 		processRetryActiveChildren.mu.Lock()
 		processRetryActiveChildren.children = oldChildren
-		processRetryActiveChildren.closeActionRegistered = oldRegistered
+		processRetryActiveChildren.closeActionRegistered.Store(oldRegistered)
 		processRetryActiveChildren.mu.Unlock()
 	})
 
@@ -3021,14 +3378,14 @@ func TestProcessRetryUnreapedChildRetainsShutdownOwnershipUntilWaitCompletes(t *
 	defer restoreLaunchGate()
 	processRetryActiveChildren.mu.Lock()
 	oldChildren := processRetryActiveChildren.children
-	oldRegistered := processRetryActiveChildren.closeActionRegistered
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
 	processRetryActiveChildren.children = make(map[*exec.Cmd]processRetryActiveChild)
-	processRetryActiveChildren.closeActionRegistered = true
+	processRetryActiveChildren.closeActionRegistered.Store(true)
 	processRetryActiveChildren.mu.Unlock()
 	t.Cleanup(func() {
 		processRetryActiveChildren.mu.Lock()
 		processRetryActiveChildren.children = oldChildren
-		processRetryActiveChildren.closeActionRegistered = oldRegistered
+		processRetryActiveChildren.closeActionRegistered.Store(oldRegistered)
 		processRetryActiveChildren.mu.Unlock()
 	})
 
@@ -3167,17 +3524,15 @@ func TestRunProcessRetryAttemptRechecksParentDeadlineHardCapAfterLaunchGateWait(
 	parentDeadlineHardCap := make(chan time.Time, 1)
 	neverParentDeadline := make(chan time.Time)
 	timerCalls := atomic.Int32{}
-	conditionTriggered := make(chan struct{})
-	waitingContext := &processRetryNthDoneContext{
-		Context: context.Background(),
-		entered: conditionTriggered,
-		target:  2,
-	}
+	prepared := make(chan struct{})
 	startCalls := atomic.Int32{}
 	baseline := &processRetryLaunchBaseline{
 		hooks: processRetryRunnerHooks{
-			command:     exec.Command,
-			prepareTree: func(*exec.Cmd) error { return nil },
+			command: exec.Command,
+			prepareTree: func(*exec.Cmd) error {
+				close(prepared)
+				return nil
+			},
 			startAndWait: func(*exec.Cmd) (<-chan error, error) {
 				startCalls.Add(1)
 				return nil, nil
@@ -3198,14 +3553,14 @@ func TestRunProcessRetryAttemptRechecksParentDeadlineHardCapAfterLaunchGateWait(
 	}
 	attemptResult := make(chan processRetryAttemptResult, 1)
 	go func() {
-		attemptResult <- runProcessRetryAttemptWithBaseline(waitingContext, processRetryChildConfig{
+		attemptResult <- runProcessRetryAttemptWithBaseline(context.Background(), processRetryChildConfig{
 			TestName:    "TestParentDeadlineAfterLaunchGateWait",
 			Attempt:     1,
 			RetryReason: constants.AutoTestRetriesRetryReason,
 		}, parentDeadline, true, baseline)
 	}()
 
-	<-conditionTriggered
+	<-prepared
 	parentDeadlineHardCap <- base
 	releaseGate()
 
@@ -3344,8 +3699,7 @@ func TestRunProcessRetryAttemptHonorsConcurrencyCap(t *testing.T) {
 	}()
 	require.Equal(t, "TestProcessRetryConcurrentOne", <-started)
 	limiter := getProcessRetryLimiter()
-	require.Equal(t, 1, cap(limiter.ch))
-	require.Equal(t, 1, len(limiter.ch))
+	require.Equal(t, 1, processRetryLimiterActiveForTesting(t, limiter))
 
 	secondBaseContext, cancelSecond := context.WithCancel(context.Background())
 	secondAcquireEntered := make(chan struct{})
@@ -3365,7 +3719,7 @@ func TestRunProcessRetryAttemptHonorsConcurrencyCap(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("second process retry did not reach the limiter")
 	}
-	require.Equal(t, 1, len(limiter.ch))
+	require.Equal(t, 1, processRetryLimiterActiveForTesting(t, limiter))
 	require.Len(t, started, 0)
 	cancelSecond()
 	var second processRetryAttemptResult
@@ -3379,7 +3733,7 @@ func TestRunProcessRetryAttemptHonorsConcurrencyCap(t *testing.T) {
 		t.Fatal("second process retry did not stop after cancellation")
 	}
 	require.ErrorIs(t, second.Err, context.Canceled)
-	require.Equal(t, 1, len(limiter.ch))
+	require.Equal(t, 1, processRetryLimiterActiveForTesting(t, limiter))
 	require.Len(t, started, 0)
 
 	thirdAcquireEntered := make(chan struct{})
@@ -3400,7 +3754,7 @@ func TestRunProcessRetryAttemptHonorsConcurrencyCap(t *testing.T) {
 		close(releaseChildren)
 		t.Fatal("third process retry did not reach the limiter")
 	}
-	require.Equal(t, 1, len(limiter.ch))
+	require.Equal(t, 1, processRetryLimiterActiveForTesting(t, limiter))
 	require.Len(t, started, 0)
 
 	close(releaseChildren)
@@ -3425,14 +3779,135 @@ func TestRunProcessRetryAttemptHonorsConcurrencyCap(t *testing.T) {
 }
 
 func TestProcessRetryBoundedOutput(t *testing.T) {
-	sink := newProcessRetryBoundedOutput(4)
-	n, err := sink.Write([]byte("abcdef"))
-	require.NoError(t, err)
-	require.Equal(t, 6, n)
+	tests := []struct {
+		name          string
+		maxBytes      int64
+		writes        []string
+		wantTail      string
+		wantStart     int
+		wantTruncated bool
+	}{
+		{name: "below limit", maxBytes: 4, writes: []string{"ab", "cd"}, wantTail: "abcd"},
+		{name: "wraps repeatedly", maxBytes: 4, writes: []string{"ab", "cd", "e", "f"}, wantTail: "cdef", wantStart: 2, wantTruncated: true},
+		{name: "wraps across boundary", maxBytes: 5, writes: []string{"abcd", "efg"}, wantTail: "cdefg", wantStart: 2, wantTruncated: true},
+		{name: "oversized write", maxBytes: 4, writes: []string{"abcdef"}, wantTail: "cdef", wantTruncated: true},
+		{name: "zero limit", maxBytes: 0, writes: []string{"abcdef"}, wantTruncated: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sink := newProcessRetryBoundedOutput(tt.maxBytes)
+			require.Zero(t, cap(sink.tail), "bounded output must not allocate until the child writes")
+			for _, write := range tt.writes {
+				n, err := sink.Write([]byte(write))
+				require.NoError(t, err)
+				require.Equal(t, len(write), n)
+			}
 
-	tail, truncated := sink.Tail()
-	require.True(t, truncated)
-	require.Equal(t, "cdef", tail)
+			tail, truncated := sink.Tail()
+			require.Equal(t, tt.wantTruncated, truncated)
+			require.Equal(t, tt.wantTail, tail)
+			require.Equal(t, tt.wantStart, sink.start)
+			require.LessOrEqual(t, cap(sink.tail), int(tt.maxBytes))
+		})
+	}
+}
+
+func BenchmarkProcessRetryBoundedOutputSaturated(b *testing.B) {
+	for _, writeSize := range []int{32, 64, 256} {
+		b.Run(strconv.Itoa(writeSize)+"B", func(b *testing.B) {
+			sink := newProcessRetryBoundedOutput(processRetryStreamMaxBytes)
+			payload := bytes.Repeat([]byte("x"), writeSize)
+			_, _ = sink.Write(bytes.Repeat([]byte("w"), processRetryStreamMaxBytes))
+			b.SetBytes(int64(writeSize))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				_, _ = sink.Write(payload)
+			}
+			b.StopTimer()
+			tail, truncated := sink.Tail()
+			require.True(b, truncated)
+			require.Len(b, tail, processRetryStreamMaxBytes)
+		})
+	}
+}
+
+func TestProcessRetryPendingIterationCleanupTransfersOwnershipOnce(t *testing.T) {
+	var cleanupCalls atomic.Int32
+	pending := &processRetryPendingIteration{attempt: processRetryAttemptResult{
+		Cleanup: func() { cleanupCalls.Add(1) },
+	}}
+
+	pending.cleanup()
+	pending.cleanup()
+
+	require.Equal(t, int32(1), cleanupCalls.Load())
+	require.Nil(t, pending.attempt.Cleanup)
+}
+
+func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
+	resetProcessRetryLimiterForTesting(t)
+	var executableCalls, argsCalls, workingDirectoryCalls, environCalls atomic.Int32
+	resetProcessRetryRunnerHooksForTesting(t, processRetryRunnerHooks{
+		executable: func() (string, error) {
+			executableCalls.Add(1)
+			return "/tmp/retry.test", nil
+		},
+		args: func() []string {
+			argsCalls.Add(1)
+			return []string{"retry.test", "-test.run=TestTarget"}
+		},
+		workingDirectory: func() (string, error) {
+			call := workingDirectoryCalls.Add(1)
+			return fmt.Sprintf("/tmp/work-%d", call), nil
+		},
+		environ: func() []string {
+			call := environCalls.Add(1)
+			return []string{fmt.Sprintf("ATTEMPT=%d", call)}
+		},
+	})
+
+	template := captureProcessRetryLaunchTemplate()
+	require.NoError(t, template.err)
+	require.Equal(t, int32(1), executableCalls.Load())
+	require.Equal(t, int32(1), argsCalls.Load())
+	require.Zero(t, workingDirectoryCalls.Load())
+	require.Zero(t, environCalls.Load())
+
+	first := captureProcessRetryLaunchBaselineFromTemplate(template)
+	second := captureProcessRetryLaunchBaselineFromTemplate(template)
+	require.NoError(t, first.err)
+	require.NoError(t, second.err)
+	require.Equal(t, int32(1), executableCalls.Load())
+	require.Equal(t, int32(1), argsCalls.Load())
+	require.Equal(t, int32(2), workingDirectoryCalls.Load())
+	require.Equal(t, int32(2), environCalls.Load())
+	require.Equal(t, "/tmp/work-1", first.workingDirectory)
+	require.Equal(t, "/tmp/work-2", second.workingDirectory)
+	require.Equal(t, []string{"ATTEMPT=1"}, first.environment)
+	require.Equal(t, []string{"ATTEMPT=2"}, second.environment)
+}
+
+func TestProcessRetryChildControlConfigUsesBootstrapSnapshot(t *testing.T) {
+	want := processRetryControlConfig{Version: processRetryControlVersion, TestName: "TestTarget"}
+	reads := 0
+	read := func(string, processRetryChildConfig) (processRetryControlConfig, error) {
+		reads++
+		return want, nil
+	}
+
+	got, err := resolveProcessRetryChildControlConfig(processRetryChildConfig{
+		controlConfig:       want,
+		controlConfigLoaded: true,
+	}, read)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Zero(t, reads)
+
+	got, err = resolveProcessRetryChildControlConfig(processRetryChildConfig{ResultPath: "/tmp/result"}, read)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, 1, reads)
 }
 
 func TestCombineProcessRetryOutputTailsMarksPerStreamTruncation(t *testing.T) {
@@ -3445,6 +3920,56 @@ func TestCombineProcessRetryOutputTailsMarksPerStreamTruncation(t *testing.T) {
 	require.True(t, truncated)
 	require.Equal(t, 1, strings.Count(combined, processRetryOutputTruncationMarker))
 	require.Equal(t, processRetryOutputTruncationMarker+"tail", combined)
+}
+
+func TestCombineProcessRetryOutputTailsKeepsBoundedCombinedSuffix(t *testing.T) {
+	capture := func(t *testing.T, value string) *processRetryOutputCapture {
+		t.Helper()
+		sink := newProcessRetryBoundedOutput(int64(len(value) + 1))
+		_, err := sink.Write([]byte(value))
+		require.NoError(t, err)
+		return &processRetryOutputCapture{sink: sink}
+	}
+
+	tests := []struct {
+		name      string
+		stdout    string
+		stderr    string
+		maxBytes  int64
+		want      string
+		truncated bool
+	}{
+		{name: "both streams fit", stdout: "stdout", stderr: "stderr", maxBytes: 16, want: "stdout\nstderr"},
+		{name: "suffix entirely in stderr", stdout: "stdout", stderr: "stderr", maxBytes: 3, want: processRetryOutputTruncationMarker + "err", truncated: true},
+		{name: "suffix includes separator", stdout: "abcd", stderr: "xy", maxBytes: 4, want: processRetryOutputTruncationMarker + "d\nxy", truncated: true},
+		{name: "suffix is separator and stderr", stdout: "abcd", stderr: "xy", maxBytes: 3, want: processRetryOutputTruncationMarker + "\nxy", truncated: true},
+		{name: "stdout only", stdout: "abcdef", maxBytes: 3, want: processRetryOutputTruncationMarker + "def", truncated: true},
+		{name: "zero limit", stdout: "stdout", stderr: "stderr", maxBytes: 0, want: processRetryOutputTruncationMarker, truncated: true},
+		{name: "unbounded", stdout: "stdout", stderr: "stderr", maxBytes: -1, want: "stdout\nstderr"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			combined, truncated, err := combineProcessRetryOutputTails(capture(t, tt.stdout), capture(t, tt.stderr), tt.maxBytes)
+			require.NoError(t, err)
+			require.Equal(t, tt.truncated, truncated)
+			require.Equal(t, tt.want, combined)
+		})
+	}
+}
+
+func BenchmarkCombineProcessRetryOutputTailsSaturated(b *testing.B) {
+	newCapture := func(value byte) *processRetryOutputCapture {
+		sink := newProcessRetryBoundedOutput(processRetryStreamMaxBytes)
+		_, _ = sink.Write(bytes.Repeat([]byte{value}, processRetryStreamMaxBytes))
+		return &processRetryOutputCapture{sink: sink}
+	}
+	stdout := newCapture('o')
+	stderr := newCapture('e')
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		_, _, _ = combineProcessRetryOutputTails(stdout, stderr, processRetryOutputMaxBytes)
+	}
 }
 
 func TestProcessRetryOutputCaptureAbortIsIdempotent(t *testing.T) {
@@ -4790,6 +5315,9 @@ func TestRunTestWithRetryProcessModeRunsParallelEFDInChildren(t *testing.T) {
 	launches := make(chan launchResult, retryCount)
 	releaseChildren := make(chan struct{})
 	coordinationDone := make(chan coordinationResult, 1)
+	var cleanupMu sync.Mutex
+	attemptByTempDir := make(map[string]int)
+	cleanedAttempts := make(map[int]bool)
 	go func() {
 		observed := make([]launchResult, 0, retryCount)
 		for range retryCount {
@@ -4812,9 +5340,20 @@ func TestRunTestWithRetryProcessModeRunsParallelEFDInChildren(t *testing.T) {
 	}()
 
 	hooks := processRetrySuccessfulAttemptHooks(t, func(*exec.Cmd) error { return nil })
+	hooks.removeAll = func(path string) error {
+		cleanupMu.Lock()
+		if attempt, ok := attemptByTempDir[path]; ok {
+			cleanedAttempts[attempt] = true
+		}
+		cleanupMu.Unlock()
+		return os.RemoveAll(path)
+	}
 	hooks.startAndWait = func(cmd *exec.Cmd) (<-chan error, error) {
 		cfg, err := parseProcessRetryChildConfigFromCommandEnv(cmd.Env)
 		if err == nil {
+			cleanupMu.Lock()
+			attemptByTempDir[filepath.Dir(cfg.ResultPath)] = cfg.Attempt
+			cleanupMu.Unlock()
 			now := time.Now()
 			status := processRetryStatusPass
 			if cfg.Attempt == retryCount {
@@ -4865,6 +5404,15 @@ func TestRunTestWithRetryProcessModeRunsParallelEFDInChildren(t *testing.T) {
 	options.preProcessRetryMetaAdjust = adjust
 	options.parallelEFDAllowed = true
 	options.postAdjustRetryCount = func(*testExecutionMetadata, time.Duration) int64 { return retryCount }
+	options.postPerExecution = func(_ *testing.T, _ *testExecutionMetadata, executionIndex int, _ time.Duration) {
+		if executionIndex == 0 {
+			return
+		}
+		cleanupMu.Lock()
+		cleaned := cleanedAttempts[executionIndex]
+		cleanupMu.Unlock()
+		require.True(t, cleaned, "attempt %d resources must be released before event finalization", executionIndex)
+	}
 
 	runTestWithRetry(options)
 
@@ -4885,6 +5433,10 @@ func TestRunTestWithRetryProcessModeRunsParallelEFDInChildren(t *testing.T) {
 		require.Equal(t, constants.EarlyFlakeDetectionRetryReason, processTest.tags[constants.TestRetryReason])
 		require.NotContains(t, processTest.tags, constants.TestFinalStatus)
 	}
+	cleanupMu.Lock()
+	cleanedCount := len(cleanedAttempts)
+	cleanupMu.Unlock()
+	require.Equal(t, retryCount, cleanedCount)
 	require.Equal(t, processRetryStatusPass, recorder.tests[0].status)
 	require.Equal(t, processRetryStatusFail, recorder.tests[1].status)
 }
@@ -5342,7 +5894,12 @@ func TestRunTestWithRetryUsesPreFirstAttemptLaunchBaseline(t *testing.T) {
 	fs := useIsolatedProcessRetryFlagSet(t)
 	fs.String("custom", "", "baseline value flag")
 	args := []string{"-custom", "baseline"}
-	environment := []string{"BASELINE_ENV=1"}
+	environment := []string{
+		"BASELINE_ENV=1",
+		processRetryCoverageDirectoryEnvironmentVariable + "=/tmp/parent-coverage",
+		constants.CIVisibilityInternalRetryProcessChild + "=false",
+		constants.CIVisibilityInternalRetryProcessResultPath + "=/tmp/stale.json",
+	}
 	baselineCPU := runtime.GOMAXPROCS(0)
 	contaminatedCPU := 1
 	if baselineCPU == contaminatedCPU {
@@ -5354,6 +5911,9 @@ func TestRunTestWithRetryUsesPreFirstAttemptLaunchBaseline(t *testing.T) {
 	workingDirectoryCalls := atomic.Int32{}
 	argsCalls := atomic.Int32{}
 	environmentCalls := atomic.Int32{}
+	commandCalls := atomic.Int32{}
+	now := time.Unix(1_700_000_000, 0)
+	never := make(chan time.Time)
 
 	resetProcessRetryRunnerHooksForTesting(t, processRetryRunnerHooks{
 		executable: func() (string, error) {
@@ -5372,8 +5932,15 @@ func TestRunTestWithRetryUsesPreFirstAttemptLaunchBaseline(t *testing.T) {
 			environmentCalls.Add(1)
 			return environment
 		},
-		command:     exec.Command,
-		prepareTree: func(*exec.Cmd) error { return nil },
+		command: func(executable string, args ...string) *exec.Cmd {
+			commandCalls.Add(1)
+			require.Empty(t, args, "child arguments must be materialized only after launch preparation")
+			return exec.Command(executable, args...)
+		},
+		prepareTree: func(cmd *exec.Cmd) error {
+			require.Equal(t, []string{"baseline-executable"}, cmd.Args)
+			return nil
+		},
 		startAndWait: func(cmd *exec.Cmd) (<-chan error, error) {
 			require.Equal(t, "baseline-executable", cmd.Path)
 			require.Equal(t, "baseline-directory", cmd.Dir)
@@ -5381,13 +5948,15 @@ func TestRunTestWithRetryUsesPreFirstAttemptLaunchBaseline(t *testing.T) {
 			require.Contains(t, cmd.Args, "baseline")
 			require.Contains(t, cmd.Args, "-test.cpu="+strconv.Itoa(baselineCPU))
 			require.NotContains(t, cmd.Args, "contaminated")
-			require.Equal(t, 1, cap(getProcessRetryLimiter().ch))
+			require.Equal(t, 1, processRetryLimiterActiveForTesting(t, getProcessRetryLimiter()))
 			envMap := envSliceToMap(cmd.Env)
 			require.Equal(t, "1", envMap["BASELINE_ENV"])
 			require.NotContains(t, envMap, "CONTAMINATED_ENV")
+			require.NotContains(t, envMap, processRetryCoverageDirectoryEnvironmentVariable)
+			require.Len(t, envValuesForKey(cmd.Env, constants.CIVisibilityInternalRetryProcessChild, true), 1)
+			require.Len(t, envValuesForKey(cmd.Env, constants.CIVisibilityInternalRetryProcessResultPath, true), 1)
 
 			cfg := processRetryChildConfigFromCommandEnv(t, cmd.Env)
-			now := time.Now()
 			writeProcessRetryResultForTesting(t, cfg.ResultPath, processRetryResult{
 				Version:        1,
 				TestName:       cfg.TestName,
@@ -5414,9 +5983,10 @@ func TestRunTestWithRetryUsesPreFirstAttemptLaunchBaseline(t *testing.T) {
 		killTree:      func(*exec.Cmd) error { return nil },
 		killDirect:    func(*exec.Cmd) error { return nil },
 		releaseTree:   func(*exec.Cmd) error { return nil },
-		after:         time.After,
-		newTimer: func(d time.Duration) processRetryTimer {
-			return &processRetryRealTimer{timer: time.NewTimer(d)}
+		now:           func() time.Time { return now },
+		after:         func(time.Duration) <-chan time.Time { return never },
+		newTimer: func(time.Duration) processRetryTimer {
+			return &processRetryStaticTimer{ch: never}
 		},
 	})
 
@@ -5448,6 +6018,7 @@ func TestRunTestWithRetryUsesPreFirstAttemptLaunchBaseline(t *testing.T) {
 	require.Equal(t, int32(1), workingDirectoryCalls.Load())
 	require.Equal(t, int32(1), argsCalls.Load())
 	require.Equal(t, int32(1), environmentCalls.Load())
+	require.Equal(t, int32(1), commandCalls.Load())
 }
 
 func TestRunTestWithRetryProcessTagParityWithInProcessRetry(t *testing.T) {
@@ -6812,6 +7383,16 @@ func TestProcessRetryReservesFlakyRetryBudgetBeforeAdmission(t *testing.T) {
 	require.Zero(t, atomic.LoadInt64(&settings.RemainingTotalRetryCount))
 }
 
+func TestProcessRetryFlakyRetryBudgetSnapshotTracksLiveValue(t *testing.T) {
+	settings := &integrations.FlakyRetriesSetting{}
+	atomic.StoreInt64(&settings.RemainingTotalRetryCount, 2)
+	require.Equal(t, int64(2), flakyRetryBudgetRemaining(settings))
+
+	atomic.StoreInt64(&settings.RemainingTotalRetryCount, 0)
+	require.Zero(t, flakyRetryBudgetRemaining(settings))
+	require.Zero(t, flakyRetryBudgetRemaining(nil))
+}
+
 func TestProcessRetryFinalStatusDoesNotReserveFlakyRetryBudget(t *testing.T) {
 	settings := integrations.GetFlakyRetriesSettings()
 	oldRetryCount := settings.RetryCount
@@ -7514,6 +8095,35 @@ func TestWriteProcessRetryResultAtomically(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestProcessRetryControlConfigWritePreservesPrivateFileContract(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "result.json.control.json")
+	cfg := processRetryControlConfig{
+		Version:            processRetryControlVersion,
+		Transport:          processRetryControlTransportUnixPipes,
+		ReadEndpoint:       3,
+		WriteEndpoint:      4,
+		TestName:           "TestControlConfig",
+		Attempt:            2,
+		RetryReason:        constants.AutoTestRetriesRetryReason,
+		ObservedGOMAXPROCS: 1,
+	}
+
+	require.NoError(t, writeProcessRetryControlConfig(path, cfg))
+	requireProcessRetryFileMode(t, path, 0o600)
+	leftovers, err := filepath.Glob(filepath.Join(dir, ".process-retry-control-*.tmp"))
+	require.NoError(t, err)
+	require.Empty(t, leftovers)
+
+	got, err := readProcessRetryControlConfig(path, processRetryChildConfig{
+		TestName:    cfg.TestName,
+		Attempt:     cfg.Attempt,
+		RetryReason: cfg.RetryReason,
+	})
+	require.NoError(t, err)
+	require.Equal(t, cfg, got)
+}
+
 func TestProcessRetryControlAdmissionParallelAndTerminalCommit(t *testing.T) {
 	cfg := processRetryChildConfig{
 		ResultPath:        filepath.Join(t.TempDir(), "result.json"),
@@ -7556,15 +8166,177 @@ func TestProcessRetryControlAdmissionParallelAndTerminalCommit(t *testing.T) {
 		ErrorStack:        "controlled stack",
 	}))
 	require.NoError(t, child.childControlledTerminal(processRetryStatusControlledPanicReady))
-	require.NoError(t, child.Close())
 
-	state := parent.controlledTerminalState()
+	state, timedOut, err := parent.controlledTerminalState(context.Background(), nil, nil)
+	require.NoError(t, err)
+	require.False(t, timedOut)
 	require.Equal(t, processRetryStatusControlledPanicReady, state.status)
 	require.True(t, state.ready)
 	require.True(t, state.committed)
 	for err := range serveErrors {
 		require.NoError(t, err)
 	}
+}
+
+func TestProcessRetryControlCancellationClosesAndJoinsWorkers(t *testing.T) {
+	t.Run("admission", func(t *testing.T) {
+		cfg := processRetryChildConfig{
+			TestName:    "TestControlledAttempt",
+			Attempt:     1,
+			RetryReason: constants.AutoTestRetriesRetryReason,
+		}
+		parent, _ := newProcessRetryControlPairForTesting(t, cfg)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		admitted, childExited, waitErr, controlErr := parent.parentAdmission(ctx, nil, nil, nil)
+		require.False(t, admitted)
+		require.False(t, childExited)
+		require.NoError(t, waitErr)
+		require.ErrorIs(t, controlErr, context.Canceled)
+		require.Error(t, parent.Send(processRetryControlAbort, "closed"))
+	})
+
+	t.Run("terminal service", func(t *testing.T) {
+		cfg := processRetryChildConfig{
+			TestName:    "TestControlledAttempt",
+			Attempt:     1,
+			RetryReason: constants.AutoTestRetriesRetryReason,
+		}
+		parent, _ := newProcessRetryControlPairForTesting(t, cfg)
+		serveErrors := parent.serveParent(nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		state, timedOut, err := parent.controlledTerminalState(ctx, nil, nil)
+		require.ErrorIs(t, err, context.Canceled)
+		require.False(t, timedOut)
+		require.False(t, state.ready)
+		for serveErr := range serveErrors {
+			require.NoError(t, serveErr)
+		}
+	})
+}
+
+func TestProcessRetryControlCompletedTerminalWinsConcurrentCancellation(t *testing.T) {
+	done := make(chan struct{})
+	close(done)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	observedDone := make(chan struct{})
+	observedCtx := &processRetryObservedDoneContext{Context: ctx, entered: observedDone}
+	shutdown := make(chan struct{})
+	close(shutdown)
+	timeout := make(chan time.Time, 1)
+	timeout <- time.Time{}
+	want := processRetryControlledTerminalState{
+		status:    processRetryStatusControlledPanicReady,
+		ready:     true,
+		committed: true,
+	}
+	control := &processRetryControl{serveDone: done, terminal: want}
+
+	got, timedOut, err := control.controlledTerminalState(observedCtx, shutdown, timeout)
+	require.NoError(t, err)
+	require.False(t, timedOut)
+	require.Equal(t, want, got)
+	select {
+	case <-observedDone:
+		t.Fatal("completed terminal state must not evaluate cancellation")
+	default:
+	}
+}
+
+func TestProcessRetryControlTerminalCommittedDuringJoinWinsAbort(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	shutdown := make(chan struct{})
+	close(shutdown)
+	timeout := make(chan time.Time, 1)
+	timeout <- time.Time{}
+	tests := []struct {
+		name     string
+		ctx      context.Context
+		shutdown <-chan struct{}
+		timeout  <-chan time.Time
+	}{
+		{name: "cancellation", ctx: canceled},
+		{name: "shutdown", ctx: context.Background(), shutdown: shutdown},
+		{name: "timeout", ctx: context.Background(), timeout: timeout},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader, writer, err := os.Pipe()
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_ = reader.Close()
+				_ = writer.Close()
+			})
+
+			done := make(chan struct{})
+			want := processRetryControlledTerminalState{
+				status:    processRetryStatusControlledPanicReady,
+				ready:     true,
+				committed: true,
+			}
+			control := &processRetryControl{read: reader, serveDone: done}
+			workerDone := make(chan error, 1)
+			go func() {
+				var buffer [1]byte
+				_, readErr := reader.Read(buffer[:])
+				control.stateMu.Lock()
+				control.terminal = want
+				control.stateMu.Unlock()
+				close(done)
+				workerDone <- readErr
+			}()
+
+			got, timedOut, terminalErr := control.controlledTerminalState(tt.ctx, tt.shutdown, tt.timeout)
+			require.NoError(t, terminalErr)
+			require.False(t, timedOut)
+			require.Equal(t, want, got)
+			require.ErrorIs(t, <-workerDone, os.ErrClosed)
+
+			attempt := processRetryAttemptResult{Result: processRetryResult{
+				Status:    want.status,
+				Failed:    true,
+				Panic:     true,
+				ErrorType: "panic",
+			}}
+			applyProcessRetryControlledTerminalState(&attempt, got, timedOut, terminalErr)
+			require.NoError(t, attempt.Err)
+			require.True(t, attempt.ControlledTerminalCommitted)
+			require.Equal(t, "test_panic", effectiveProcessRetryStatus(attempt, false).FailureKind)
+		})
+	}
+}
+
+func TestProcessRetryControlTerminalTimeoutIsReported(t *testing.T) {
+	cfg := processRetryChildConfig{
+		TestName:    "TestControlledAttempt",
+		Attempt:     1,
+		RetryReason: constants.AutoTestRetriesRetryReason,
+	}
+	parent, _ := newProcessRetryControlPairForTesting(t, cfg)
+	serveErrors := parent.serveParent(nil)
+	timeout := make(chan time.Time, 1)
+	timeout <- time.Time{}
+
+	state, timedOut, err := parent.controlledTerminalState(context.Background(), nil, timeout)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.True(t, timedOut)
+	require.False(t, state.ready)
+	for serveErr := range serveErrors {
+		require.NoError(t, serveErr)
+	}
+
+	attempt := processRetryAttemptResult{Result: processRetryResult{Status: processRetryStatusControlledPanicReady}}
+	applyProcessRetryControlledTerminalState(&attempt, state, timedOut, err)
+	require.True(t, attempt.TimedOut)
+	require.ErrorIs(t, attempt.Err, errProcessRetryControlInvalid)
+	require.ErrorIs(t, attempt.Err, context.DeadlineExceeded)
+	require.Equal(t, "timeout", effectiveProcessRetryStatus(attempt, false).FailureKind)
 }
 
 func TestProcessRetryControlRejectsUnknownConfigFieldsAndFrameSequence(t *testing.T) {
@@ -8027,23 +8799,8 @@ type processRetryObservedDoneContext struct {
 	once    sync.Once
 }
 
-type processRetryNthDoneContext struct {
-	context.Context
-	entered chan struct{}
-	target  int32
-	calls   atomic.Int32
-	once    sync.Once
-}
-
 func (c *processRetryObservedDoneContext) Done() <-chan struct{} {
 	c.once.Do(func() { close(c.entered) })
-	return c.Context.Done()
-}
-
-func (c *processRetryNthDoneContext) Done() <-chan struct{} {
-	if c.calls.Add(1) >= c.target {
-		c.once.Do(func() { close(c.entered) })
-	}
 	return c.Context.Done()
 }
 
@@ -8176,6 +8933,7 @@ func setProcessRetryBudgetForTesting(retryCount, remaining int64) func() {
 }
 
 func configureProcessRetryBudgetCallbacksForTesting(options *runTestWithRetryOptions, identity *testIdentity, retryCount int64) {
+	flakyRetriesSettings := integrations.GetFlakyRetriesSettings()
 	var allAttemptsPassed int32 = 1
 	var allRetriesFailed int32 = 1
 	var anyExecutionPassed atomic.Int32
@@ -8192,7 +8950,7 @@ func configureProcessRetryBudgetCallbacksForTesting(options *runTestWithRetryOpt
 	options.preProcessRetryMetaAdjust = adjust
 	options.preIsLastRetry = func(execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
 		if execMeta.isFlakyTestRetriesEnabled {
-			return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 0
+			return remainingRetries == 1 || flakyRetryBudgetRemaining(flakyRetriesSettings) == 0
 		}
 		return false
 	}
@@ -8221,7 +8979,7 @@ func configureProcessRetryBudgetCallbacksForTesting(options *runTestWithRetryOpt
 			ptrToLocalT.Skipped(),
 			execMeta,
 			remainingRetries,
-			atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount),
+			flakyRetryBudgetRemaining(flakyRetriesSettings),
 		)
 	}
 }

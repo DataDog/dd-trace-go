@@ -704,6 +704,21 @@ func createNewTest() *testing.T {
 // createNewTestFast initializes a testing.T using cached offsets for the
 // private fields that need non-zero values before the cloned test runs.
 func createNewTestFast(layout *testingInternalsLayout) *testing.T {
+	nT := createNewTestFastWithoutContext(layout)
+	commonBase := commonBaseForTest(nT, layout)
+	if commonBase == nil {
+		return nT
+	}
+
+	initializeNewTestContextFast(commonBase, layout)
+	runtime.KeepAlive(nT)
+	return nT
+}
+
+// createNewTestFastWithoutContext initializes the non-context state shared by
+// normal clones and retry attempts. Retry attempts install their only context
+// while resetting the rest of the attempt-local lifecycle state.
+func createNewTestFastWithoutContext(layout *testingInternalsLayout) *testing.T {
 	nT := &testing.T{}
 	commonBase := commonBaseForTest(nT, layout)
 	if commonBase == nil {
@@ -712,6 +727,11 @@ func createNewTestFast(layout *testingInternalsLayout) *testing.T {
 
 	*fieldPtr[chan bool](commonBase, layout.common.barrier) = make(chan bool)
 	*fieldPtr[chan bool](commonBase, layout.common.signal) = make(chan bool, 1)
+	runtime.KeepAlive(nT)
+	return nT
+}
+
+func initializeNewTestContextFast(commonBase unsafe.Pointer, layout *testingInternalsLayout) {
 	if layout.common.ctx.available {
 		ctxPtr := fieldPtr[context.Context](commonBase, layout.common.ctx)
 		*ctxPtr = context.Background()
@@ -721,8 +741,6 @@ func createNewTestFast(layout *testingInternalsLayout) *testing.T {
 			*fieldPtr[context.CancelFunc](commonBase, layout.common.cancelCtx) = cancelCtx
 		}
 	}
-	runtime.KeepAlive(nT)
-	return nT
 }
 
 // createNewTestReflect is the original string-reflection implementation.
@@ -1040,14 +1058,15 @@ func (cw *customWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// GetOutput retrieves the output for a specific test name from the customWriter.
-func (cw *customWriter) GetOutput(name string) string {
+// TakeOutput transfers the buffered output for one test name to the caller.
+func (cw *customWriter) TakeOutput(name string) []byte {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	if buf, ok := cw.outputs[name]; ok {
-		return buf.String()
+		delete(cw.outputs, name)
+		return buf.Bytes()
 	}
-	return ""
+	return nil
 }
 
 type threadSafeWriter struct {

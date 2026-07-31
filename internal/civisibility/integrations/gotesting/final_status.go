@@ -177,3 +177,10 @@ func tryReserveFlakyRetryBudget() bool {
 		}
 	}
 }
+
+func flakyRetryBudgetRemaining(settings *integrations.FlakyRetriesSetting) int64 {
+	if settings == nil {
+		return 0
+	}
+	return atomic.LoadInt64(&settings.RemainingTotalRetryCount)
+}

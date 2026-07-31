@@ -17,8 +17,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
@@ -86,26 +84,30 @@ type (
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
 	runTestWithRetryOptions struct {
-		targetFunc                     func(t *testing.T) // target function to retry
-		t                              *testing.T         // test to be executed
-		parallelEFDAllowed             bool               // allows the internal parallel EFD scheduler when the effective execution qualifies
-		testInfo                       *commonInfo
-		processRetryAllowed            bool
-		processRetryMode               retryExecutionMode
-		processRetryModeSet            bool
-		processRetryIdentity           *testIdentity
-		processRetryMRunEpoch          uint64
-		processRetryInvocationOrdinal  uint64
-		processRetryObservedGOMAXPROCS int
-		fuzzActive                     func() bool
-		processRetryContext            func() context.Context
-		processRetryGuardsSnapshotted  bool
-		processRetryFuzzGuardSet       bool
-		processRetryFuzzActive         bool
-		retryAttemptGroupFactory       func(*testing.T) (*retryAttemptGroup, string)
-		retryAttemptMaskingFallback    bool
-		failfastEnabled                func() bool
-		nativeFailfastObserved         func() bool
+		targetFunc                    func(t *testing.T) // target function to retry
+		t                             *testing.T         // test to be executed
+		parallelEFDAllowed            bool               // allows the internal parallel EFD scheduler when the effective execution qualifies
+		testInfo                      *commonInfo
+		processRetryAllowed           bool
+		processRetryMode              retryExecutionMode
+		processRetryModeSet           bool
+		processRetryIdentity          *testIdentity
+		processRetryMRunEpoch         uint64
+		processRetryInvocationOrdinal uint64
+		processRetryInvocationCounter *atomic.Uint64
+		fuzzActive                    func() bool
+		processRetryContext           func() context.Context
+		processRetryGuardsSnapshotted bool
+		processRetryFuzzGuardSet      bool
+		processRetryFuzzActive        bool
+		processRetryFuzzGuard         *processRetryFuzzGuardSnapshot
+		processRetryLaunchTemplate    *processRetryLaunchBaseline
+		retryAttemptGroupFactory      func(*testing.T) (*retryAttemptGroup, string)
+		retryAttemptObserveOutput     bool
+		retryAttemptObserveOutputSet  bool
+		retryAttemptMaskingFallback   bool
+		failfastEnabled               func() bool
+		nativeFailfastObserved        func() bool
 
 		// function to modify the execution metadata before each execution (first callback executed). It's also called before postOnRetryEnd to do a final sync
 		preExecMetaAdjust func(execMeta *testExecutionMetadata, executionIndex int)
@@ -130,10 +132,16 @@ type (
 	}
 
 	additionalFeatureWrapperOptions struct {
-		processRetryAllowed bool
-		fuzzActive          func() bool
-		mRunEpoch           uint64
-		mRunInvocations     *atomic.Uint64
+		processRetryAllowed        bool
+		processRetryMode           retryExecutionMode
+		processRetryModeSet        bool
+		parallelEFDAllowed         bool
+		fuzzActive                 func() bool
+		processRetryFuzzGuard      *processRetryFuzzGuardSnapshot
+		mRunEpoch                  uint64
+		mRunInvocations            *atomic.Uint64
+		processRetryLaunchTemplate *processRetryLaunchBaseline
+		retryAttemptObserveOutput  bool
 	}
 
 	// executionOptions holds the execution options for the test
@@ -208,9 +216,23 @@ type (
 
 	// additionalFeatureSelection records the selected path and the effective reasons used to choose it.
 	additionalFeatureSelection struct {
-		path    additionalFeaturePath // selected additional-feature execution path
-		reasons []string              // debug-friendly reasons derived from the same metadata snapshot as the path
+		path    additionalFeaturePath    // selected additional-feature execution path
+		reasons additionalFeatureReasons // allocation-free reasons derived from the same metadata snapshot as the path
 	}
+
+	additionalFeatureReasons uint16
+)
+
+const (
+	additionalFeatureReasonTestManagementDisabled additionalFeatureReasons = 1 << iota
+	additionalFeatureReasonTestManagementQuarantined
+	additionalFeatureReasonAttemptToFixZeroRetries
+	additionalFeatureReasonAttemptToFix
+	additionalFeatureReasonInheritedSubtestState
+	additionalFeatureReasonEFDNewTest
+	additionalFeatureReasonEFDModifiedTest
+	additionalFeatureReasonEFDZeroRetries
+	additionalFeatureReasonFlakyRetry
 )
 
 const unexpectedTestTerminationMessage = "test executed panic(nil) or runtime.Goexit"
@@ -345,7 +367,6 @@ func checkIfCIVisibilityExitIsRequiredByPanic() bool {
 // selectAdditionalFeaturePath chooses the lightest execution path that still preserves the effective feature behavior.
 func selectAdditionalFeaturePath(
 	meta *additionalFeatureMetadata,
-	impactedTestsEnabled bool,
 	flakyRetryCount, remainingFlakyRetryBudget int64,
 	attemptToFixRetryCount int,
 	efdRetryPossible bool,
@@ -356,61 +377,61 @@ func selectAdditionalFeaturePath(
 	}
 
 	if meta.isDisabled && !meta.isAttemptToFix {
-		reasons := []string{"test_management_disabled"}
+		reasons := additionalFeatureReasonTestManagementDisabled
 		if meta.isQuarantined {
-			reasons = append(reasons, "test_management_quarantined")
+			reasons |= additionalFeatureReasonTestManagementQuarantined
 		}
 		return additionalFeatureSelection{path: additionalFeaturePathDisabledFast, reasons: reasons}
 	}
 
 	if meta.isAttemptToFix && meta.shouldOrchestrateAttemptToFix {
 		if attemptToFixRetryCount <= 0 && !meta.isDisabled && !meta.isQuarantined {
-			return additionalFeatureSelection{path: additionalFeaturePathMetadataOnly, reasons: []string{"attempt_to_fix_zero_retries"}}
+			return additionalFeatureSelection{path: additionalFeaturePathMetadataOnly, reasons: additionalFeatureReasonAttemptToFixZeroRetries}
 		}
-		return additionalFeatureSelection{path: additionalFeaturePathRetryWrapper, reasons: []string{"attempt_to_fix"}}
+		return additionalFeatureSelection{path: additionalFeaturePathRetryWrapper, reasons: additionalFeatureReasonAttemptToFix}
 	}
 
 	if meta.isDisabled {
-		reasons := []string{"test_management_disabled"}
+		reasons := additionalFeatureReasonTestManagementDisabled
 		if meta.isAttemptToFix {
-			reasons = append(reasons, "attempt_to_fix")
+			reasons |= additionalFeatureReasonAttemptToFix
 		}
 		return additionalFeatureSelection{path: additionalFeaturePathRetryWrapper, reasons: reasons}
 	}
 
 	if meta.isQuarantined {
-		reasons := []string{"test_management_quarantined"}
+		reasons := additionalFeatureReasonTestManagementQuarantined
 		if meta.isAttemptToFix {
-			reasons = append(reasons, "attempt_to_fix")
+			reasons |= additionalFeatureReasonAttemptToFix
 		}
 		return additionalFeatureSelection{path: additionalFeaturePathRetryWrapper, reasons: reasons}
 	}
 
 	if needsMetadataOnly {
-		return additionalFeatureSelection{path: additionalFeaturePathMetadataOnly, reasons: []string{"inherited_subtest_state"}}
+		return additionalFeatureSelection{path: additionalFeaturePathMetadataOnly, reasons: additionalFeatureReasonInheritedSubtestState}
 	}
 
-	reasons := make([]string, 0, 3)
+	var reasons additionalFeatureReasons
 	efdCandidate := false
 	if meta.isEarlyFlakeDetectionEnabled {
 		if meta.isNew {
 			efdCandidate = true
 			if efdRetryPossible {
-				reasons = append(reasons, "efd_new_test")
+				reasons |= additionalFeatureReasonEFDNewTest
 			}
-		} else if impactedTestsEnabled {
+		} else if meta.isModified {
 			efdCandidate = true
 			if efdRetryPossible {
-				reasons = append(reasons, "efd_modified_candidate")
+				reasons |= additionalFeatureReasonEFDModifiedTest
 			}
 		}
 	}
 	if meta.isFlakyTestRetriesEnabled && flakyRetryCount > 0 && remainingFlakyRetryBudget > 0 {
-		reasons = append(reasons, "flaky_retry")
+		reasons |= additionalFeatureReasonFlakyRetry
 	}
-	if len(reasons) == 0 {
+	if reasons == 0 {
 		if efdCandidate {
-			return additionalFeatureSelection{path: additionalFeaturePathMetadataOnly, reasons: []string{"efd_zero_retries"}}
+			return additionalFeatureSelection{path: additionalFeaturePathMetadataOnly, reasons: additionalFeatureReasonEFDZeroRetries}
 		}
 		return additionalFeatureSelection{path: additionalFeaturePathNone}
 	}
@@ -419,14 +440,42 @@ func selectAdditionalFeaturePath(
 
 // logAdditionalFeatureSelection writes the selected non-default path with the same effective reasons used by the selector.
 func logAdditionalFeatureSelection(meta *additionalFeatureMetadata, selection additionalFeatureSelection) {
-	if meta == nil || selection.path == additionalFeaturePathNone {
+	if meta == nil || selection.path == additionalFeaturePathNone || !log.DebugEnabled() {
 		return
 	}
 	name := "<unknown>"
 	if meta.identity != nil {
 		name = meta.identity.FullName
 	}
-	log.Debug("gotesting: additional feature path test=%s path=%s reasons=[%s]", name, selection.path.String(), strings.Join(selection.reasons, " "))
+	log.Debug("gotesting: additional feature path test=%s path=%s reasons=[%s]", name, selection.path.String(), selection.reasons.String())
+}
+
+func (reasons additionalFeatureReasons) String() string {
+	ordered := [...]struct {
+		value additionalFeatureReasons
+		name  string
+	}{
+		{additionalFeatureReasonTestManagementDisabled, "test_management_disabled"},
+		{additionalFeatureReasonTestManagementQuarantined, "test_management_quarantined"},
+		{additionalFeatureReasonAttemptToFixZeroRetries, "attempt_to_fix_zero_retries"},
+		{additionalFeatureReasonAttemptToFix, "attempt_to_fix"},
+		{additionalFeatureReasonInheritedSubtestState, "inherited_subtest_state"},
+		{additionalFeatureReasonEFDNewTest, "efd_new_test"},
+		{additionalFeatureReasonEFDModifiedTest, "efd_modified_candidate"},
+		{additionalFeatureReasonEFDZeroRetries, "efd_zero_retries"},
+		{additionalFeatureReasonFlakyRetry, "flaky_retry"},
+	}
+	var builder strings.Builder
+	for _, reason := range ordered {
+		if reasons&reason.value == 0 {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte(' ')
+		}
+		builder.WriteString(reason.name)
+	}
+	return builder.String()
 }
 
 // applyAdditionalFeatureMetadataToExecution copies effective feature metadata into one concrete test execution.
@@ -618,14 +667,18 @@ func applyAdditionalFeaturesToTestFunc(
 		// Record whether the test is new so we can surface it in spans later.
 		isKnown, hasKnownData := isKnownTest(testInfo)
 		meta.isNew = hasKnownData && !isKnown
+		if !meta.isNew && settings.ImpactedTestsEnabled {
+			meta.isModified = integrations.IsTestFuncModified(testInfo.testName, testInfo.sourceFunc)
+		}
 	}
 
 	var flakyRetryCount int64
 	var remainingFlakyRetryBudget int64
+	var flakyRetriesSettings *integrations.FlakyRetriesSetting
 	if meta.isFlakyTestRetriesEnabled {
-		flakyRetriesSettings := integrations.GetFlakyRetriesSettings()
+		flakyRetriesSettings = integrations.GetFlakyRetriesSettings()
 		flakyRetryCount = flakyRetriesSettings.RetryCount
-		remainingFlakyRetryBudget = atomic.LoadInt64(&flakyRetriesSettings.RemainingTotalRetryCount)
+		remainingFlakyRetryBudget = flakyRetryBudgetRemaining(flakyRetriesSettings)
 	}
 
 	parentAttemptToFixActive := parentExecMeta != nil && parentExecMeta.isAttemptToFix
@@ -637,7 +690,6 @@ func applyAdditionalFeaturesToTestFunc(
 		!meta.isQuarantined
 	selection := selectAdditionalFeaturePath(
 		&meta,
-		settings.ImpactedTestsEnabled,
 		flakyRetryCount,
 		remainingFlakyRetryBudget,
 		settings.TestManagement.AttemptToFixRetries,
@@ -662,10 +714,6 @@ func applyAdditionalFeaturesToTestFunc(
 	wrapper := func(t *testing.T) {
 		t.Helper()
 		originalExecMeta := getTestMetadata(t)
-		invocationOrdinal := uint64(0)
-		if wrapperOpts.mRunInvocations != nil {
-			invocationOrdinal = wrapperOpts.mRunInvocations.Add(1)
-		}
 
 		// For Early Flake Detection: counters used to collect test results.
 		var testPassCount, testSkipCount, testFailCount int
@@ -677,17 +725,22 @@ func applyAdditionalFeaturesToTestFunc(
 		var anyExecutionFailed atomic.Int32
 
 		runTestWithRetry(&runTestWithRetryOptions{
-			targetFunc:                     f,
-			t:                              t,
-			parallelEFDAllowed:             internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false),
-			testInfo:                       testInfo,
-			processRetryAllowed:            wrapperOpts.processRetryAllowed && len(identity.Segments) == 1,
-			processRetryIdentity:           identity,
-			processRetryMRunEpoch:          wrapperOpts.mRunEpoch,
-			processRetryInvocationOrdinal:  invocationOrdinal,
-			processRetryObservedGOMAXPROCS: runtime.GOMAXPROCS(0),
-			fuzzActive:                     wrapperOpts.fuzzActive,
-			retryAttemptMaskingFallback:    ptrMeta.isDisabled || ptrMeta.isQuarantined,
+			targetFunc:                    f,
+			t:                             t,
+			parallelEFDAllowed:            wrapperOpts.parallelEFDAllowed,
+			testInfo:                      testInfo,
+			processRetryAllowed:           wrapperOpts.processRetryAllowed && len(identity.Segments) == 1,
+			processRetryMode:              wrapperOpts.processRetryMode,
+			processRetryModeSet:           wrapperOpts.processRetryModeSet,
+			processRetryIdentity:          identity,
+			processRetryMRunEpoch:         wrapperOpts.mRunEpoch,
+			processRetryInvocationCounter: wrapperOpts.mRunInvocations,
+			processRetryLaunchTemplate:    wrapperOpts.processRetryLaunchTemplate,
+			processRetryFuzzGuard:         wrapperOpts.processRetryFuzzGuard,
+			retryAttemptObserveOutput:     wrapperOpts.retryAttemptObserveOutput,
+			retryAttemptObserveOutputSet:  true,
+			fuzzActive:                    wrapperOpts.fuzzActive,
+			retryAttemptMaskingFallback:   ptrMeta.isDisabled || ptrMeta.isQuarantined,
 			preExecMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
 				// Synchronize the test execution metadata with the original test execution metadata.
 
@@ -731,7 +784,7 @@ func applyAdditionalFeaturesToTestFunc(
 
 				// FlakyTestRetries also considers the global remaining retry count.
 				if execMeta.isFlakyTestRetriesEnabled {
-					return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 0
+					return remainingRetries == 1 || flakyRetryBudgetRemaining(flakyRetriesSettings) == 0
 				}
 
 				return false
@@ -824,7 +877,7 @@ func applyAdditionalFeaturesToTestFunc(
 						ptrToLocalT.Skipped(),
 						execMeta,
 						remainingRetries,
-						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount),
+						flakyRetryBudgetRemaining(flakyRetriesSettings),
 					)
 				}
 
@@ -949,10 +1002,16 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	}
 	prepareProcessRetryExecution(options, execOpts)
 	groupFactory := options.retryAttemptGroupFactory
-	if groupFactory == nil {
-		groupFactory = newRetryAttemptGroup
+	var group *retryAttemptGroup
+	var reason string
+	if groupFactory != nil {
+		group, reason = groupFactory(options.t)
+	} else if options.retryAttemptObserveOutputSet {
+		group, reason = newRetryAttemptGroupWithOutputObservation(options.t, options.retryAttemptObserveOutput)
+	} else {
+		group, reason = newRetryAttemptGroup(options.t)
 	}
-	if group, reason := groupFactory(options.t); reason == "" {
+	if reason == "" {
 		execOpts.retryAttemptGroup = group
 		defer group.retire()
 	} else {

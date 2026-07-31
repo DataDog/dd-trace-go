@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 	"unsafe"
@@ -151,9 +152,11 @@ func TestProcessRetryParityFreshAttemptHasNoMutableAliases(t *testing.T) {
 	require.NotNil(t, layout)
 	originalBase := commonBaseForTest(t, layout)
 	firstBase := commonBaseForTest(first.test, layout)
+	firstParentBase := commonBaseForTest(first.parent, layout)
 	secondBase := commonBaseForTest(second.test, layout)
 	require.NotNil(t, originalBase)
 	require.NotNil(t, firstBase)
+	require.NotNil(t, firstParentBase)
 	require.NotNil(t, secondBase)
 
 	require.Equal(t, t.Name(), first.test.Name())
@@ -177,6 +180,8 @@ func TestProcessRetryParityFreshAttemptHasNoMutableAliases(t *testing.T) {
 		require.NotEqual(t, originalChatty, pointerWord(firstBase, layout.common.chatty))
 		require.NotEqual(t, pointerWord(firstBase, layout.common.chatty), pointerWord(secondBase, layout.common.chatty))
 	}
+	require.Empty(t, *fieldPtr[map[uintptr]struct{}](firstParentBase, layout.common.helperPCs))
+	require.Nil(t, pointerWord(firstParentBase, layout.common.chatty))
 
 	originalOutput := append([]byte(nil), (*fieldPtr[[]byte](originalBase, layout.common.output))...)
 	originalCleanups := len(*fieldPtr[[]func()](originalBase, layout.common.cleanups))
@@ -216,6 +221,11 @@ func TestProcessRetryParityFreshAttemptSnapshotsHelpersUnderNativeLock(t *testin
 	started := make(chan struct{})
 	stop := make(chan struct{})
 	var worker sync.WaitGroup
+	var stopWorker sync.Once
+	cleanupWorker := func() {
+		stopWorker.Do(func() { close(stop) })
+		worker.Wait()
+	}
 	worker.Go(func() {
 		close(started)
 		for {
@@ -227,6 +237,7 @@ func TestProcessRetryParityFreshAttemptSnapshotsHelpersUnderNativeLock(t *testin
 			}
 		}
 	})
+	t.Cleanup(cleanupWorker)
 	<-started
 
 	for range 100 {
@@ -235,8 +246,7 @@ func TestProcessRetryParityFreshAttemptSnapshotsHelpersUnderNativeLock(t *testin
 		require.NotNil(t, attempt)
 		attempt.cancelContexts()
 	}
-	close(stop)
-	worker.Wait()
+	cleanupWorker()
 }
 
 func TestProcessRetryParityFreshAttemptContextCancellationIsLocal(t *testing.T) {
@@ -268,5 +278,86 @@ func TestProcessRetryParityFreshStateCancelsReplacedContext(t *testing.T) {
 	require.ErrorIs(t, replaced.Err(), context.Canceled)
 	if cancel := *fieldPtr[context.CancelFunc](base, layout.common.cancelCtx); cancel != nil {
 		cancel()
+	}
+}
+
+func TestProcessRetryParityAttemptConstructorDefersContextInitialization(t *testing.T) {
+	layout, reason := getRetryAttemptLayout()
+	require.Empty(t, reason)
+
+	local := createNewTestFastWithoutContext(layout)
+	base := commonBaseForTest(local, layout)
+	require.NotNil(t, base)
+	require.NotNil(t, *fieldPtr[chan bool](base, layout.common.barrier))
+	require.NotNil(t, *fieldPtr[chan bool](base, layout.common.signal))
+	if layout.common.ctx.available {
+		require.Nil(t, *fieldPtr[context.Context](base, layout.common.ctx))
+	}
+	if layout.common.cancelCtx.available {
+		require.Nil(t, *fieldPtr[context.CancelFunc](base, layout.common.cancelCtx))
+	}
+
+	initializeRetryAttemptFreshState(base, layout, retryAttemptRaceErrors())
+	if layout.common.ctx.available {
+		require.NotNil(t, *fieldPtr[context.Context](base, layout.common.ctx))
+	}
+	if layout.common.cancelCtx.available {
+		cancel := *fieldPtr[context.CancelFunc](base, layout.common.cancelCtx)
+		require.NotNil(t, cancel)
+		cancel()
+	}
+}
+
+func TestProcessRetryParitySyntheticParentSkipsAttemptOnlyMetadata(t *testing.T) {
+	layout, reason := getRetryAttemptLayout()
+	require.Empty(t, reason)
+
+	source := createNewTestFast(layout)
+	target := createNewTestFastWithoutContext(layout)
+	sourceBase := commonBaseForTest(source, layout)
+	targetBase := commonBaseForTest(target, layout)
+	require.NotNil(t, sourceBase)
+	require.NotNil(t, targetBase)
+	const helperPC = uintptr(1)
+	*fieldPtr[map[uintptr]struct{}](sourceBase, layout.common.helperPCs) = map[uintptr]struct{}{helperPC: {}}
+	chattyValue := reflect.New(layout.common.chatty.typ.Elem())
+	setPrivatePointerField(
+		layout.common.chatty.typ,
+		fieldRawPtr(sourceBase, layout.common.chatty.unsafeField),
+		unsafe.Pointer(chattyValue.Pointer()),
+	)
+
+	require.True(t, copyRetryAttemptStableParentCommon(sourceBase, targetBase, layout))
+	require.Empty(t, *fieldPtr[map[uintptr]struct{}](targetBase, layout.common.helperPCs))
+	require.Nil(t, pointerWord(targetBase, layout.common.chatty))
+
+	if layout.common.cancelCtx.available {
+		if cancel := *fieldPtr[context.CancelFunc](sourceBase, layout.common.cancelCtx); cancel != nil {
+			cancel()
+		}
+	}
+	runtime.KeepAlive(chattyValue)
+}
+
+func BenchmarkProcessRetryParityFreshAttemptStateInitialization(b *testing.B) {
+	layout, reason := getRetryAttemptLayout()
+	if reason != "" {
+		b.Skip(reason)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		root := createNewTestFastWithoutContext(layout)
+		parent := createNewTestFastWithoutContext(layout)
+		rootBase := commonBaseForTest(root, layout)
+		parentBase := commonBaseForTest(parent, layout)
+		initializeRetryAttemptFreshState(rootBase, layout, retryAttemptRaceErrors())
+		initializeRetryAttemptFreshState(parentBase, layout, retryAttemptRaceErrors())
+		if layout.common.cancelCtx.available {
+			(*fieldPtr[context.CancelFunc](rootBase, layout.common.cancelCtx))()
+			(*fieldPtr[context.CancelFunc](parentBase, layout.common.cancelCtx))()
+		}
+		runtime.KeepAlive(root)
+		runtime.KeepAlive(parent)
 	}
 }

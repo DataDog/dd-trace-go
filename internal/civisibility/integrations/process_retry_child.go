@@ -33,6 +33,8 @@ var processRetryChildTransportKeys = [...]string{
 	constants.CIVisibilityInternalRetryProcessReason,
 }
 
+const processRetryChildTransportKeyPrefix = "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_"
+
 var processRetryChildTransport = initializeProcessRetryChildTransport()
 
 // IsProcessRetryChild reports whether this process is executing a retry child.
@@ -41,19 +43,17 @@ var processRetryChildTransport = initializeProcessRetryChildTransport()
 // test bodies, and descendants started from them observe a scrubbed environment
 // while these APIs continue to read the private snapshot.
 func IsProcessRetryChild() bool {
-	value, ok := LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessChild)
-	if !ok {
-		return false
-	}
-	enabled, err := strconv.ParseBool(value)
-	return err == nil && enabled
+	return processRetryChildTransport.active
 }
 
 // LookupProcessRetryChildTransport returns a private retry-process transport
 // value from the immutable startup snapshot.
 func LookupProcessRetryChildTransport(name string) (string, bool) {
+	if !processRetryChildTransport.active {
+		return "", false
+	}
 	key, ok := processRetryChildTransportKey(name)
-	if !ok || !processRetryChildTransport.active {
+	if !ok {
 		return "", false
 	}
 	value, ok := processRetryChildTransport.values[key]
@@ -74,6 +74,10 @@ func IsProcessRetryChildTransportKey(name string) bool {
 }
 
 func processRetryChildTransportKey(name string) (string, bool) {
+	if len(name) < len(processRetryChildTransportKeyPrefix) ||
+		!strings.EqualFold(name[:len(processRetryChildTransportKeyPrefix)], processRetryChildTransportKeyPrefix) {
+		return "", false
+	}
 	for _, key := range processRetryChildTransportKeys {
 		if strings.EqualFold(name, key) {
 			return key, true

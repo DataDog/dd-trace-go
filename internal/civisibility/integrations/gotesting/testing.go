@@ -285,21 +285,23 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	if wrapperOpts.mRunEpoch == 0 {
 		wrapperOpts.mRunEpoch = testingMRunEpochCounter.Add(1)
 	}
-	if wrapperOpts.mRunInvocations == nil {
-		wrapperOpts.mRunInvocations = &atomic.Uint64{}
-	}
 	releaseHookEpoch := activateTestingMHookEpoch(wrapperOpts.mRunEpoch)
 
 	log.Debug("instrumentTestingM: initializing CI Visibility for testing.M")
 
 	// Initialize CI Visibility
 	integrations.EnsureCiVisibilityInitialization()
+	wrapperOpts.retryAttemptObserveOutput = logs.IsEnabled()
 
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
-	if wrapperOpts.processRetryAllowed && !registerProcessRetryShutdownAction() {
+	processModeEnabled := snapshotProcessRetryWrapperOptions(&wrapperOpts)
+	if processModeEnabled && !registerProcessRetryShutdownAction() {
 		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
 		wrapperOpts.processRetryAllowed = false
+	}
+	if processModeEnabled && wrapperOpts.processRetryAllowed {
+		wrapperOpts.processRetryLaunchTemplate = captureProcessRetryLaunchTemplate()
 	}
 
 	coverageInitialized := false
@@ -446,6 +448,28 @@ func processRetryWrapperOptions() additionalFeatureWrapperOptions {
 		processRetryAllowed: true,
 		fuzzActive:          processRetryFuzzActive,
 	}
+}
+
+func snapshotProcessRetryWrapperOptions(options *additionalFeatureWrapperOptions) bool {
+	if options == nil || !options.processRetryAllowed {
+		return false
+	}
+	options.processRetryMode = retryExecutionModeFromEnv()
+	options.processRetryModeSet = true
+	options.parallelEFDAllowed = internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false)
+	if options.processRetryMode != retryExecutionModeProcess {
+		return false
+	}
+	if options.mRunEpoch == 0 {
+		options.mRunEpoch = testingMRunEpochCounter.Add(1)
+	}
+	if options.mRunInvocations == nil {
+		options.mRunInvocations = &atomic.Uint64{}
+	}
+	if options.processRetryFuzzGuard == nil && options.fuzzActive != nil {
+		options.processRetryFuzzGuard = &processRetryFuzzGuardSnapshot{evaluate: options.fuzzActive}
+	}
+	return true
 }
 
 // instrumentInternalTests instruments the internal tests for CI visibility.
@@ -1151,9 +1175,9 @@ func collectAndWriteLogs(t *testing.T, test integrations.Test, attemptOutput []b
 
 	if chatty != nil && chatty.w != nil && *chatty.w != nil {
 		if writer, ok := (*chatty.w).(*customWriter); ok {
-			strOutput := writer.GetOutput(test.Name())
-			if len(strOutput) > 0 {
-				sc := bufio.NewScanner(strings.NewReader(strOutput))
+			chattyOutput := writer.TakeOutput(test.Name())
+			if len(attemptOutput) == 0 && len(chattyOutput) > 0 {
+				sc := bufio.NewScanner(bytes.NewReader(chattyOutput))
 				for sc.Scan() {
 					test.Log(sc.Text(), "")
 				}
@@ -1170,7 +1194,7 @@ func collectAndWriteLogs(t *testing.T, test integrations.Test, attemptOutput []b
 		}
 	}
 	if len(attemptOutput) > 0 {
-		sc := bufio.NewScanner(strings.NewReader(string(attemptOutput)))
+		sc := bufio.NewScanner(bytes.NewReader(attemptOutput))
 		for sc.Scan() {
 			test.Log(sc.Text(), "")
 		}

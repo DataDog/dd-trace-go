@@ -359,8 +359,18 @@ func TestProcessRetryChildTransportKeyAllowlist(t *testing.T) {
 		constants.CIVisibilityInternalRetryProcessReason,
 	} {
 		require.True(t, IsProcessRetryChildTransportKey(key))
+		require.True(t, IsProcessRetryChildTransportKey(strings.ToLower(key)))
 	}
+	require.False(t, IsProcessRetryChildTransportKey("DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_"))
 	require.False(t, IsProcessRetryChildTransportKey("DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_UNKNOWN"))
+	require.False(t, IsProcessRetryChildTransportKey("DD_CIVISIBILITY_RETRY_PROCESS_CHILD"))
+}
+
+func BenchmarkProcessRetryChildTransportKeyUnrelated(b *testing.B) {
+	b.ReportAllocs()
+	for range b.N {
+		IsProcessRetryChildTransportKey("DD_TRACE_SAMPLE_RATE")
+	}
 }
 
 func TestProcessRetryChildTransportIgnoresLiveEnvironment(t *testing.T) {
@@ -372,6 +382,22 @@ func TestProcessRetryChildTransportIgnoresLiveEnvironment(t *testing.T) {
 	require.False(t, IsProcessRetryChild())
 	_, ok := LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessChild)
 	require.False(t, ok)
+}
+
+func TestProcessRetryChildUsesImmutableStartupClassification(t *testing.T) {
+	previous := processRetryChildTransport
+	t.Cleanup(func() { processRetryChildTransport = previous })
+
+	processRetryChildTransport = &processRetryChildTransportState{
+		active: true,
+		values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "not-reparsed"},
+	}
+	require.True(t, IsProcessRetryChild())
+
+	processRetryChildTransport = &processRetryChildTransportState{
+		values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "true"},
+	}
+	require.False(t, IsProcessRetryChild())
 }
 
 func TestProcessRetryChildFeatureGettersHideCachedParentState(t *testing.T) {

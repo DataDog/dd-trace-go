@@ -12,6 +12,7 @@ import (
 	"maps"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -24,23 +25,29 @@ import (
 )
 
 type retryAttemptGroup struct {
-	mu                    locking.Mutex
-	executionMu           locking.Mutex
-	original              *testing.T
-	originalParentBarrier <-chan bool
-	rootParallelObserved  bool
-	originalTransitioned  bool
-	originalParallelReady chan struct{}
-	rootParallelBridge    func() error
-	matcher               *retryAttemptMatcherTransaction
-	attempts              []*retryAttemptRoot
-	retired               bool
+	mu                     locking.Mutex
+	executionMu            locking.Mutex
+	original               *testing.T
+	layout                 *testingInternalsLayout
+	originalParentBase     unsafe.Pointer
+	originalParentBarrier  <-chan bool
+	rootParallelObserved   bool
+	originalTransitioned   bool
+	originalParallelReady  chan struct{}
+	originalParallelLocked func()
+	rootParallelBridge     func() error
+	matcher                *retryAttemptMatcherTransaction
+	attempts               []*retryAttemptRoot
+	observeOutput          bool
+	observeNativeOutput    bool
+	retired                bool
 }
 
 type retryAttemptMatcherTransaction struct {
 	matcher  *contextMatcher
 	prefix   string
 	baseline map[string]int32
+	attempts int
 }
 
 // retryAttemptRoot contains the fresh testing state for one local attempt.
@@ -60,6 +67,7 @@ type retryAttemptRoot struct {
 	generationFailed      atomic.Bool
 	terminalMu            locking.Mutex
 	terminalTrace         []retryAttemptTerminal
+	stackCapture          func() []byte
 	outputCapture         retryAttemptOutputCapture
 	metadata              *testExecutionMetadata
 }
@@ -87,6 +95,14 @@ func (c *retryAttemptOutputCapture) snapshot() []byte {
 	return append([]byte(nil), c.output...)
 }
 
+func (c *retryAttemptOutputCapture) take() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	output := c.output
+	c.output = nil
+	return output
+}
+
 func newRetryAttemptRoot(original *testing.T) (*retryAttemptRoot, string) {
 	group, reason := newRetryAttemptGroup(original)
 	if reason != "" {
@@ -96,6 +112,10 @@ func newRetryAttemptRoot(original *testing.T) (*retryAttemptRoot, string) {
 }
 
 func newRetryAttemptGroup(original *testing.T) (*retryAttemptGroup, string) {
+	return newRetryAttemptGroupWithOutputObservation(original, true)
+}
+
+func newRetryAttemptGroupWithOutputObservation(original *testing.T, observeOutput bool) (*retryAttemptGroup, string) {
 	layout, reason := getRetryAttemptLayout()
 	if reason != "" {
 		return nil, reason
@@ -124,7 +144,10 @@ func newRetryAttemptGroup(original *testing.T) (*retryAttemptGroup, string) {
 	}
 	group := &retryAttemptGroup{
 		original:              original,
+		layout:                layout,
+		originalParentBase:    originalParentBase,
 		originalParentBarrier: *fieldPtr[chan bool](originalParentBase, layout.common.barrier),
+		observeOutput:         observeOutput,
 	}
 	name := *fieldPtr[string](originalBase, layout.common.name)
 	matcher := getTestContextMatcherPrivateFields(original)
@@ -136,22 +159,46 @@ func newRetryAttemptGroup(original *testing.T) (*retryAttemptGroup, string) {
 }
 
 func newRetryAttemptMatcherTransaction(matcher *contextMatcher, prefix string) *retryAttemptMatcherTransaction {
-	tx := &retryAttemptMatcherTransaction{matcher: matcher, prefix: prefix, baseline: make(map[string]int32)}
-	matcher.mu.Lock()
-	defer matcher.mu.Unlock()
-	if matcher.subNames == nil || *matcher.subNames == nil {
-		return tx
+	return &retryAttemptMatcherTransaction{matcher: matcher, prefix: prefix}
+}
+
+func (tx *retryAttemptMatcherTransaction) beginAttempt() {
+	if tx == nil {
+		return
 	}
-	for name, count := range *matcher.subNames {
-		if strings.HasPrefix(name, prefix) {
-			tx.baseline[name] = count
+	if tx.attempts == 0 {
+		tx.attempts = 1
+		return
+	}
+	if tx.matcher == nil || tx.matcher.mu == nil || tx.matcher.subNames == nil {
+		tx.attempts++
+		return
+	}
+
+	tx.matcher.mu.Lock()
+	defer tx.matcher.mu.Unlock()
+	if *tx.matcher.subNames == nil {
+		tx.attempts++
+		return
+	}
+	if tx.attempts == 1 {
+		tx.baseline = make(map[string]int32)
+		for name, count := range *tx.matcher.subNames {
+			if strings.HasPrefix(name, tx.prefix) {
+				tx.baseline[name] = count
+			}
 		}
 	}
-	return tx
+	for name := range *tx.matcher.subNames {
+		if strings.HasPrefix(name, tx.prefix) {
+			delete(*tx.matcher.subNames, name)
+		}
+	}
+	tx.attempts++
 }
 
 func (tx *retryAttemptMatcherTransaction) restore() {
-	if tx == nil || tx.matcher == nil || tx.matcher.mu == nil || tx.matcher.subNames == nil {
+	if tx == nil || tx.attempts <= 1 || tx.matcher == nil || tx.matcher.mu == nil || tx.matcher.subNames == nil {
 		return
 	}
 	tx.matcher.mu.Lock()
@@ -168,12 +215,12 @@ func (tx *retryAttemptMatcherTransaction) restore() {
 }
 
 func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, string) {
-	layout, reason := getRetryAttemptLayout()
-	if reason != "" {
-		return nil, reason
-	}
 	if group == nil || group.original == nil {
 		return nil, "missing_retry_attempt_group"
+	}
+	layout := group.layout
+	if layout == nil {
+		return nil, "testing_t_layout_unsupported"
 	}
 	original := group.original
 
@@ -182,24 +229,13 @@ func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, st
 	if originalBase == nil {
 		return nil, "testing_t_layout_unsupported"
 	}
-	originalParentBase := pointerWord(originalBase, layout.common.parent)
+	originalParentBase := group.originalParentBase
 	if originalParentBase == nil {
 		return nil, "missing_original_parent"
 	}
-	originalMu := fieldPtr[sync.RWMutex](originalBase, layout.common.mu)
-	originalMu.RLock()
-	inFuzzFn := *fieldPtr[bool](originalBase, layout.common.inFuzzFn)
-	isSynctest := layout.common.isSynctest.available && *fieldPtr[bool](originalBase, layout.common.isSynctest)
-	originalMu.RUnlock()
-	if inFuzzFn {
-		return nil, "fuzz_active"
-	}
-	if isSynctest {
-		return nil, "synctest_unsupported"
-	}
 
-	root := createNewTestFast(layout)
-	parent := createNewTestFast(layout)
+	root := createNewTestFastWithoutContext(layout)
+	parent := createNewTestFastWithoutContext(layout)
 	rootBase := commonBaseForTest(root, layout)
 	parentBase := commonBaseForTest(parent, layout)
 	if rootBase == nil || parentBase == nil {
@@ -209,7 +245,7 @@ func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, st
 	if !copyRetryAttemptStableCommon(originalBase, rootBase, layout) {
 		return nil, "testing_t_layout_unsupported"
 	}
-	if !copyRetryAttemptStableCommon(originalParentBase, parentBase, layout) {
+	if !copyRetryAttemptStableParentCommon(originalParentBase, parentBase, layout) {
 		return nil, "testing_t_parent_layout_unsupported"
 	}
 
@@ -221,7 +257,15 @@ func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, st
 	copyWordField(unsafe.Pointer(original), unsafe.Pointer(root), layout.tstate)
 	initializeRetryAttemptFreshState(rootBase, layout, raceBaseline)
 	initializeRetryAttemptFreshState(parentBase, layout, raceBaseline)
-	attempt := &retryAttemptRoot{original: original, group: group, test: root, parent: parent, layout: layout, raceBaseline: raceBaseline}
+	attempt := &retryAttemptRoot{
+		original:     original,
+		group:        group,
+		test:         root,
+		parent:       parent,
+		layout:       layout,
+		raceBaseline: raceBaseline,
+		stackCapture: debug.Stack,
+	}
 	group.mu.Lock()
 	if group.retired {
 		group.mu.Unlock()
@@ -230,8 +274,9 @@ func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, st
 	}
 	group.attempts = append(group.attempts, attempt)
 	group.mu.Unlock()
-	attachRetryAttemptChattyCapture(rootBase, layout, &attempt.outputCapture)
-	attachRetryAttemptChattyCapture(parentBase, layout, &attempt.outputCapture)
+	if group.observeOutput {
+		attachRetryAttemptChattyCapture(rootBase, layout, &attempt.outputCapture)
+	}
 	initializeRetryAttemptWriter(originalBase, rootBase, layout, true)
 	initializeRetryAttemptWriter(originalParentBase, parentBase, layout, false)
 	copyTypedField[bool](unsafe.Pointer(original), unsafe.Pointer(root), layout.denyParallel)
@@ -259,7 +304,6 @@ func (g *retryAttemptGroup) retire() {
 	}
 	g.executionMu.Lock()
 	defer g.executionMu.Unlock()
-	g.matcher.restore()
 
 	g.mu.Lock()
 	if g.retired {
@@ -267,8 +311,10 @@ func (g *retryAttemptGroup) retire() {
 		return
 	}
 	g.retired = true
-	attempts := append([]*retryAttemptRoot(nil), g.attempts...)
+	attempts := g.attempts
+	g.attempts = nil
 	g.mu.Unlock()
+	g.matcher.restore()
 
 	for _, attempt := range attempts {
 		if attempt.metadata != nil {
@@ -291,9 +337,8 @@ func (g *retryAttemptGroup) hasLateFailure() bool {
 		return false
 	}
 	g.mu.Lock()
-	attempts := append([]*retryAttemptRoot(nil), g.attempts...)
-	g.mu.Unlock()
-	for _, attempt := range attempts {
+	defer g.mu.Unlock()
+	for _, attempt := range g.attempts {
 		if attempt == nil || !attempt.generationFrozen.Load() || attempt.generationFailed.Load() {
 			continue
 		}
@@ -348,13 +393,23 @@ func (g *retryAttemptGroup) transitionOriginalToParallel() bool {
 	g.originalTransitioned = true
 	g.originalParallelReady = make(chan struct{})
 	ready := g.originalParallelReady
+	parentMu := fieldPtr[sync.RWMutex](originalParentBase, layout.common.mu)
+	originalMu := fieldPtr[sync.RWMutex](originalBase, layout.common.mu)
+	parentMu.Lock()
+	originalMu.Lock()
+	if g.originalParallelLocked != nil {
+		g.originalParallelLocked()
+	}
 	addRetryAttemptElapsed(originalBase, layout)
 	*fieldPtr[bool](originalBase, layout.common.isParallel) = true
 	*fieldPtr[[]*testing.T](originalParentBase, layout.common.sub) = append(
 		*fieldPtr[[]*testing.T](originalParentBase, layout.common.sub),
 		g.original,
 	)
-	*fieldPtr[chan bool](originalBase, layout.common.signal) <- true
+	signal := *fieldPtr[chan bool](originalBase, layout.common.signal)
+	originalMu.Unlock()
+	parentMu.Unlock()
+	signal <- true
 	g.mu.Unlock()
 
 	<-g.originalParentBarrier
@@ -393,6 +448,14 @@ func (r *retryAttemptRoot) freezeGenerationFailure() {
 }
 
 func copyRetryAttemptStableCommon(sourceBase, targetBase unsafe.Pointer, layout *testingInternalsLayout) bool {
+	return copyRetryAttemptStableCommonFields(sourceBase, targetBase, layout, true)
+}
+
+func copyRetryAttemptStableParentCommon(sourceBase, targetBase unsafe.Pointer, layout *testingInternalsLayout) bool {
+	return copyRetryAttemptStableCommonFields(sourceBase, targetBase, layout, false)
+}
+
+func copyRetryAttemptStableCommonFields(sourceBase, targetBase unsafe.Pointer, layout *testingInternalsLayout, copyAttemptMetadata bool) bool {
 	if sourceBase == nil || targetBase == nil || layout == nil || !layout.retryAttemptOK {
 		return false
 	}
@@ -404,8 +467,13 @@ func copyRetryAttemptStableCommon(sourceBase, targetBase unsafe.Pointer, layout 
 	defer sourceMu.RUnlock()
 
 	copyTypedField[bool](sourceBase, targetBase, layout.common.inFuzzFn)
-	copyRetryAttemptHelperPCs(sourceBase, targetBase, layout)
-	cloneRetryAttemptChatty(sourceBase, targetBase, layout)
+	if copyAttemptMetadata {
+		copyRetryAttemptHelperPCs(sourceBase, targetBase, layout)
+		cloneRetryAttemptChatty(sourceBase, targetBase, layout)
+	} else {
+		*fieldPtr[map[uintptr]struct{}](targetBase, layout.common.helperPCs) = make(map[uintptr]struct{})
+		setPrivatePointerField(layout.common.chatty.typ, fieldRawPtr(targetBase, layout.common.chatty.unsafeField), nil)
+	}
 	copyTypedField[string](sourceBase, targetBase, layout.common.runner)
 	copyTypedField[int](sourceBase, targetBase, layout.common.level)
 	copyConvertedField[[]uintptr](sourceBase, targetBase, layout.common.creator, slices.Clone[[]uintptr])
@@ -493,10 +561,20 @@ func cloneRetryAttemptChatty(sourceBase, targetBase unsafe.Pointer, layout *test
 
 	value := reflect.New(layout.common.chatty.typ.Elem())
 	target := unsafe.Pointer(value.Pointer())
-	copyConvertedField[io.Writer](source, target, layout.chattyPrinter.w, getThreadSafeWriter)
+	copyConvertedField[io.Writer](source, target, layout.chattyPrinter.w, retryAttemptChattyWriter)
 	copyTypedField[bool](source, target, layout.chattyPrinter.json)
 	setPrivatePointerField(layout.common.chatty.typ, fieldRawPtr(targetBase, layout.common.chatty.unsafeField), target)
 	runtime.KeepAlive(value)
+}
+
+func retryAttemptChattyWriter(writer io.Writer) io.Writer {
+	if current, ok := writer.(*customWriter); ok {
+		writer = current.writer
+	}
+	if writer == nil {
+		writer = io.Discard
+	}
+	return getThreadSafeWriter(writer)
 }
 
 func initializeRetryAttemptFreshState(base unsafe.Pointer, layout *testingInternalsLayout, raceBaseline int64) {

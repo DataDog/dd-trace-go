@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -62,6 +63,8 @@ var (
 
 	// additionalFeaturesInitializationMu serializes additional feature initialization with test-only state resets.
 	additionalFeaturesInitializationMu sync.Mutex
+	additionalFeaturesInitialized      atomic.Bool
+	additionalFeaturesResetting        atomic.Bool
 
 	// repositoryUploadHooksMu protects repository upload hooks that tests replace while settings upload work may still be running.
 	repositoryUploadHooksMu sync.RWMutex
@@ -300,8 +303,14 @@ func logSettingsFetchError(err error) {
 
 // ensureAdditionalFeaturesInitialization loads CI Visibility features that depend on the previously fetched settings.
 func ensureAdditionalFeaturesInitialization(_ string) {
+	if additionalFeaturesInitialized.Load() && !additionalFeaturesResetting.Load() {
+		return
+	}
 	additionalFeaturesInitializationMu.Lock()
 	defer additionalFeaturesInitializationMu.Unlock()
+	if additionalFeaturesInitialized.Load() {
+		return
+	}
 
 	additionalFeaturesInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing additional features")
@@ -415,6 +424,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 		// wait for all the additional features to be loaded
 		wg.Wait()
 	})
+	additionalFeaturesInitialized.Store(true)
 }
 
 // GetSettings gets the settings from the backend settings endpoint

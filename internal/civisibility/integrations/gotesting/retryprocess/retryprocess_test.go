@@ -151,7 +151,13 @@ func TestMain(m *testing.M) {
 		runtime.Version(), runtime.GOOS, runtime.GOARCH, processRetryFixtureCommitSHA())
 
 	tracer := integrations.InitializeCIVisibilityMock()
+	runMStart := time.Now()
 	exitCode := gotesting.RunM(m)
+	if path := processRetryFixtureEnv(processRetryBenchmarkMetricsPathEnv); path != "" {
+		if err := writeProcessRetryBenchmarkMetrics(path, time.Since(runMStart)); err != nil {
+			panic(fmt.Sprintf("write process retry benchmark metrics: %v", err))
+		}
+	}
 	if processRetryFixtureFailureScenarioEnabled() {
 		if exitCode == 0 {
 			panic("expected process retry failure scenario to fail before TestMain converts it into controller success")
@@ -264,7 +270,7 @@ func newProcessRetryFixtureServer() *httptest.Server {
 			}{}
 			response.Data.ID = "process-retry-fixture"
 			response.Data.Type = "ci_app_libraries_settings"
-			response.Data.Attributes.FlakyTestRetriesEnabled = true
+			response.Data.Attributes.FlakyTestRetriesEnabled = processRetryFixtureEnv(processRetryBenchmarkRetriesEnabledEnv) != "false"
 			response.Data.Attributes.ItrEnabled = true
 			response.Data.Attributes.TestsSkipping = true
 			if processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" {

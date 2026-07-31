@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -118,8 +117,13 @@ func runFreshRetryAttemptInGroupWithCallbacks(
 	}
 	group.executionMu.Lock()
 	defer group.executionMu.Unlock()
-	group.matcher.restore()
-	defer group.matcher.restore()
+	group.mu.Lock()
+	retired := group.retired
+	group.mu.Unlock()
+	if retired {
+		return nil, retryAttemptResult{}, "retry_attempt_group_retired"
+	}
+	group.matcher.beginAttempt()
 
 	attempt, reason := newRetryAttemptRootInGroup(group)
 	if reason != "" {
@@ -252,7 +256,6 @@ func finalizeFreshRetryAttempt(attempt *retryAttemptRoot, resultCh chan<- retryA
 		attempt.appendTerminal(retryAttemptTerminal{
 			kind:  retryAttemptTerminalSynthesizedGoexit,
 			value: recovered,
-			stack: debug.Stack(),
 		})
 	}
 
@@ -262,29 +265,31 @@ func finalizeFreshRetryAttempt(attempt *retryAttemptRoot, resultCh chan<- retryA
 		}
 		t.Fail()
 		result.panicData = recovered
-		result.panicStack = debug.Stack()
+		result.panicStack = attempt.lastTerminalStack(
+			retryAttemptTerminalCleanupPanic,
+			retryAttemptTerminalCleanupGoexit,
+			retryAttemptTerminalBodyPanic,
+			retryAttemptTerminalBodyGoexit,
+		)
+		if len(result.panicStack) == 0 {
+			result.panicStack = attempt.captureStack()
+		}
 		queuedSubtests := len(*fieldPtr[[]*testing.T](base, layout.common.sub)) > 0
 		result.nativeFatalRequired = queuedSubtests
-		if !queuedSubtests && retryAttemptTerminalTraceRequiresNativeReplay(attempt.terminalTraceSnapshot()) {
+		if !queuedSubtests && attempt.terminalTraceRequiresNativeReplay() {
 			result.nativeFatalRequired = true
 			result.nativeFatalTraceReplay = true
 		}
 		if retryAttemptCleanupObservation(attempt.cleanupObservation.Load()) == retryAttemptCleanupPanicked {
 			result.cleanupPanicData = recovered
-			trace := attempt.terminalTraceSnapshot()
-			for i := len(trace) - 1; i >= 0; i-- {
-				if trace[i].kind == retryAttemptTerminalCleanupPanic {
-					result.cleanupPanicStack = append([]byte(nil), trace[i].stack...)
-					break
-				}
-			}
+			result.cleanupPanicStack = attempt.lastTerminalStack(retryAttemptTerminalCleanupPanic)
 		}
 		if result.completionPhase == retryAttemptCompletionUnknown {
 			result.completionPhase = retryAttemptCompletionPanic
 		}
 		if cleanupPanic := runRetryAttemptCleanup(attempt, t, 1); cleanupPanic != nil {
 			result.cleanupPanicData = cleanupPanic
-			result.cleanupPanicStack = debug.Stack()
+			result.cleanupPanicStack = attempt.lastTerminalStack(retryAttemptTerminalCleanupPanic)
 			if queuedSubtests {
 				t.Logf("cleanup panicked with %v", cleanupPanic)
 			}
@@ -311,7 +316,7 @@ func finalizeFreshRetryAttempt(attempt *retryAttemptRoot, resultCh chan<- retryA
 		if cleanupPanic := runRetryAttemptCleanup(attempt, t, 1); cleanupPanic != nil {
 			t.Fail()
 			result.cleanupPanicData = cleanupPanic
-			result.cleanupPanicStack = debug.Stack()
+			result.cleanupPanicStack = attempt.lastTerminalStack(retryAttemptTerminalCleanupPanic)
 			result.completionPhase = retryAttemptCompletionPanic
 			result.nativeFatalRequired = true
 			if result.failureCheckpointPhase == retryAttemptNotFailed {
@@ -339,7 +344,9 @@ func finalizeFreshRetryAttempt(attempt *retryAttemptRoot, resultCh chan<- retryA
 	}
 
 	flushRetryAttemptPartial(base, layout)
-	result.output = freezeRetryAttemptOutput(attempt, base, layout)
+	if attempt.group.observeOutput {
+		result.output = freezeRetryAttemptOutput(attempt, base, layout)
+	}
 	reportRetryAttempt(base, layout)
 	result.reportExecuted = true
 	*fieldPtr[bool](base, layout.common.done) = true
@@ -411,23 +418,23 @@ func runRetryAttemptCleanup(attempt *retryAttemptRoot, t *testing.T, panicHandli
 		}
 		if recovered := recover(); recovered != nil {
 			attempt.cleanupObservation.Store(uint32(retryAttemptCleanupPanicked))
-			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalCleanupPanic, value: recovered, stack: debug.Stack()})
+			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalCleanupPanic, value: recovered, stack: attempt.captureStack()})
 			panic(recovered)
 		}
 		switch {
 		case !skippedBefore && t.Skipped():
 			attempt.cleanupObservation.Store(uint32(retryAttemptCleanupSkipNowObserved))
-			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalCleanupSkipNow, stack: debug.Stack()})
+			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalCleanupSkipNow})
 		default:
 			attempt.cleanupObservation.Store(uint32(retryAttemptCleanupGoexitAmbiguous))
-			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalCleanupGoexit, stack: debug.Stack()})
+			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalCleanupGoexit, stack: attempt.captureStack()})
 		}
 	}()
 	panicValue = testingTRunCleanup(t, panicHandling)
 	returned = true
 	if panicValue != nil {
 		attempt.cleanupObservation.Store(uint32(retryAttemptCleanupPanicked))
-		attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalCleanupPanic, value: panicValue, stack: debug.Stack()})
+		attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalCleanupPanic, value: panicValue, stack: attempt.captureStack()})
 	} else {
 		attempt.cleanupObservation.Store(uint32(retryAttemptCleanupReturned))
 	}
@@ -441,16 +448,16 @@ func runRetryAttemptBody(attempt *retryAttemptRoot, t *testing.T, target func(*t
 			return
 		}
 		if recovered := recover(); recovered != nil {
-			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalBodyPanic, value: recovered, stack: debug.Stack()})
+			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalBodyPanic, value: recovered, stack: attempt.captureStack()})
 			panic(recovered)
 		}
 		switch {
 		case retryAttemptTestFinished(t, attempt.layout) && t.Skipped():
-			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalBodySkipNow, stack: debug.Stack()})
+			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalBodySkipNow})
 		case retryAttemptTestFinished(t, attempt.layout) && t.Failed():
-			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalBodyFailNow, stack: debug.Stack()})
+			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalBodyFailNow})
 		default:
-			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalBodyGoexit, value: errRetryAttemptNilPanicOrGoexit, stack: debug.Stack()})
+			attempt.appendTerminal(retryAttemptTerminal{kind: retryAttemptTerminalBodyGoexit, value: errRetryAttemptNilPanicOrGoexit, stack: attempt.captureStack()})
 		}
 	}()
 	target(t)
@@ -469,6 +476,38 @@ func (r *retryAttemptRoot) appendTerminal(terminal retryAttemptTerminal) {
 	r.terminalMu.Lock()
 	defer r.terminalMu.Unlock()
 	r.terminalTrace = append(r.terminalTrace, terminal)
+}
+
+func (r *retryAttemptRoot) captureStack() []byte {
+	if r == nil || r.stackCapture == nil {
+		return nil
+	}
+	return r.stackCapture()
+}
+
+func (r *retryAttemptRoot) terminalTraceRequiresNativeReplay() bool {
+	if r == nil {
+		return false
+	}
+	r.terminalMu.Lock()
+	defer r.terminalMu.Unlock()
+	return retryAttemptTerminalTraceRequiresNativeReplay(r.terminalTrace)
+}
+
+func (r *retryAttemptRoot) lastTerminalStack(kinds ...retryAttemptTerminalKind) []byte {
+	if r == nil {
+		return nil
+	}
+	r.terminalMu.Lock()
+	defer r.terminalMu.Unlock()
+	for i := len(r.terminalTrace) - 1; i >= 0; i-- {
+		for _, kind := range kinds {
+			if r.terminalTrace[i].kind == kind {
+				return append([]byte(nil), r.terminalTrace[i].stack...)
+			}
+		}
+	}
+	return nil
 }
 
 func (r *retryAttemptRoot) terminalTraceSnapshot() []retryAttemptTerminal {
@@ -520,6 +559,9 @@ func (r *retryAttemptRoot) beginRootParallelSchedulerTransfer() {
 
 func (r *retryAttemptRoot) finishRootParallelSchedulerTransfer(localDuration time.Duration) {
 	originalBase := commonBaseForTest(r.original, r.layout)
+	originalMu := fieldPtr[sync.RWMutex](originalBase, r.layout.common.mu)
+	originalMu.Lock()
+	defer originalMu.Unlock()
 	if postParallelDuration := localDuration - r.parallelPauseDuration; postParallelDuration > 0 {
 		*fieldPtr[time.Duration](originalBase, r.layout.common.duration) += postParallelDuration
 	}
@@ -631,28 +673,41 @@ func freezeRetryAttemptOutput(attempt *retryAttemptRoot, base unsafe.Pointer, la
 	output := append([]byte(nil), (*fieldPtr[[]byte](base, layout.common.output))...)
 	mu.RUnlock()
 	if attempt != nil {
-		output = append(output, attempt.outputCapture.snapshot()...)
+		captured := attempt.outputCapture.take()
+		if len(output) == 0 {
+			return captured
+		}
+		output = append(output, captured...)
 	}
 	return output
 }
 
 func snapshotRetryAttemptResult(attempt *retryAttemptRoot, base unsafe.Pointer, layout *testingInternalsLayout, result *retryAttemptResult) {
 	mu := fieldPtr[sync.RWMutex](base, layout.common.mu)
-	mu.RLock()
+	mu.Lock()
 	result.failed = *fieldPtr[bool](base, layout.common.failed)
 	result.skipped = *fieldPtr[bool](base, layout.common.skipped)
 	result.finished = *fieldPtr[bool](base, layout.common.finished)
 	result.done = *fieldPtr[bool](base, layout.common.done)
 	result.ran = *fieldPtr[bool](base, layout.common.ran)
 	result.duration = *fieldPtr[time.Duration](base, layout.common.duration)
-	result.nativeOutput = append([]byte(nil), (*fieldPtr[[]byte](base, layout.common.output))...)
-	if result.output == nil {
-		result.output = append([]byte(nil), result.nativeOutput...)
-		if attempt != nil {
-			result.output = append(result.output, attempt.outputCapture.snapshot()...)
+	if attempt.group.observeOutput {
+		currentOutput := *fieldPtr[[]byte](base, layout.common.output)
+		if attempt.group.observeNativeOutput {
+			result.nativeOutput = append([]byte(nil), currentOutput...)
+		}
+		if result.output == nil {
+			result.output = append([]byte(nil), currentOutput...)
+			captured := attempt.outputCapture.take()
+			if len(result.output) == 0 {
+				result.output = captured
+			} else {
+				result.output = append(result.output, captured...)
+			}
 		}
 	}
-	mu.RUnlock()
+	*fieldPtr[[]byte](base, layout.common.output) = nil
+	mu.Unlock()
 	result.terminalTrace = attempt.terminalTraceSnapshot()
 	if result.failureCheckpointPhase == retryAttemptNotFailed && result.failed {
 		result.failureCheckpointPhase = retryAttemptFailurePostCheckpoint

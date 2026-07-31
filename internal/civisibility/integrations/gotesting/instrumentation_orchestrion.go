@@ -201,6 +201,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			suiteName:  suiteName,
 			testName:   subtestIdentity.FullName,
 			identity:   subtestIdentity,
+			sourceFunc: originalFunc,
 		}
 
 		runSubtest := func(currentT *testing.T) {

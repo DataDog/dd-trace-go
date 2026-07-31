@@ -309,6 +309,32 @@ func TestProcessRetryParityFailfastUsesLiveValueAtContinuation(t *testing.T) {
 	})
 }
 
+func TestProcessRetryParitySkipsLateFailureScanWhileFailfastIsDisabled(t *testing.T) {
+	group, reason := newRetryAttemptGroup(t)
+	require.Empty(t, reason)
+	defer group.retire()
+
+	attempt, _, reason := runFreshRetryAttemptInGroup(group, func(*testing.T) {})
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	require.Panics(t, attempt.test.Fail)
+	require.True(t, group.hasLateFailure())
+
+	var failfast atomic.Bool
+	execOpts := &executionOptions{
+		options:           &runTestWithRetryOptions{failfastEnabled: failfast.Load},
+		retryAttemptGroup: group,
+		retryCount:        1,
+	}
+	require.False(t, retryContinuationStoppedLocked(execOpts, nil, nil))
+	require.False(t, execOpts.rawAttemptFailureSeen, "disabled failfast must not scan retained attempts")
+
+	failfast.Store(true)
+	require.True(t, retryContinuationStoppedLocked(execOpts, nil, nil))
+	require.True(t, execOpts.rawAttemptFailureSeen)
+	require.Zero(t, execOpts.retryCount)
+}
+
 func TestProcessRetryParityOrchestrionFinalizesAfterFreshCleanup(t *testing.T) {
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()

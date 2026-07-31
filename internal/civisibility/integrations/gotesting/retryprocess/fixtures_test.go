@@ -6,14 +6,18 @@
 package retryprocess
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,8 +39,11 @@ var outputTimeoutRuns atomic.Int32
 var descendantCleanupRuns atomic.Int32
 var transportIsolationRuns atomic.Int32
 var processRetryBenchmarkRuns atomic.Int32
+var processRetryBenchmarkAggregateRuns atomic.Int32
+var processRetryBenchmarkCPUSink atomic.Uint64
 var parallelEFDRuns atomic.Int32
 var attemptToFixRuns atomic.Int32
+var processRetryBenchmarkChildStart time.Time
 
 var processRetryCoverageProfileBlock = regexp.MustCompile(`^(.+):(\d+)\.\d+,(\d+)\.\d+\s+\d+\s+(\d+)$`)
 
@@ -80,6 +87,11 @@ const (
 	processRetryBenchmarkRetryCountEnv        = "PROCESS_RETRY_BENCHMARK_RETRY_COUNT"
 	processRetryBenchmarkChildStartupDelayEnv = "PROCESS_RETRY_BENCHMARK_CHILD_STARTUP_DELAY"
 	processRetryBenchmarkBodyDelayEnv         = "PROCESS_RETRY_BENCHMARK_BODY_DELAY"
+	processRetryBenchmarkCPUWorkEnv           = "PROCESS_RETRY_BENCHMARK_CPU_WORK"
+	processRetryBenchmarkAggregateEnv         = "PROCESS_RETRY_BENCHMARK_AGGREGATE"
+	processRetryBenchmarkMetricsPathEnv       = "PROCESS_RETRY_BENCHMARK_METRICS_PATH"
+	processRetryBenchmarkPassingEnv           = "PROCESS_RETRY_BENCHMARK_PASSING"
+	processRetryBenchmarkRetriesEnabledEnv    = "PROCESS_RETRY_BENCHMARK_RETRIES_ENABLED"
 	processRetryStartupFixtureEnv             = "PROCESS_RETRY_STARTUP_FIXTURE"
 	processRetryStartupRerunFileEnv           = "PROCESS_RETRY_STARTUP_RERUN_FILE"
 	processRetryStartupConflictFileEnv        = "PROCESS_RETRY_STARTUP_CONFLICT_FILE"
@@ -94,6 +106,7 @@ var (
 
 func init() {
 	if processRetryFixtureChild() && processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) != "" {
+		processRetryBenchmarkChildStart = time.Now()
 		time.Sleep(processRetryBenchmarkDuration(processRetryBenchmarkChildStartupDelayEnv))
 	}
 	if path := processRetryFixtureEnv(processRetryStartupRerunFileEnv); path != "" {
@@ -125,28 +138,454 @@ func processRetryBenchmarkDuration(name string) time.Duration {
 	return delay
 }
 
+func processRetryBenchmarkCPUWork() {
+	value := processRetryFixtureEnv(processRetryBenchmarkCPUWorkEnv)
+	if value == "" {
+		return
+	}
+	iterations, err := strconv.Atoi(value)
+	if err != nil || iterations < 0 {
+		panic(fmt.Sprintf("invalid %s value %q", processRetryBenchmarkCPUWorkEnv, value))
+	}
+	workers := max(runtime.GOMAXPROCS(0), 1)
+	results := make([]uint64, workers)
+	var wg sync.WaitGroup
+	for worker := range workers {
+		wg.Go(func() {
+			start := iterations * worker / workers
+			end := iterations * (worker + 1) / workers
+			result := uint64(worker + 1)
+			for i := start; i < end; i++ {
+				result = result*6364136223846793005 + uint64(i) + 1442695040888963407
+			}
+			results[worker] = result
+		})
+	}
+	wg.Wait()
+	var result uint64
+	for _, workerResult := range results {
+		result ^= workerResult
+	}
+	processRetryBenchmarkCPUSink.Store(result)
+}
+
+func runProcessRetryBenchmarkWork() {
+	child := processRetryFixtureChild()
+	start := time.Now()
+	if child && !processRetryBenchmarkChildStart.IsZero() {
+		start = processRetryBenchmarkChildStart
+	}
+	time.Sleep(processRetryBenchmarkDuration(processRetryBenchmarkBodyDelayEnv))
+	processRetryBenchmarkCPUWork()
+	if processRetryFixtureEnv(processRetryBenchmarkAggregateEnv) == "true" {
+		processRetryBenchmarkAggregateRuns.Add(1)
+		return
+	}
+	observation := processRetryBenchmarkObservation{
+		PID:             os.Getpid(),
+		ProcessIdentity: "parent",
+		Child:           child,
+		GOMAXPROCS:      runtime.GOMAXPROCS(0),
+		StartUnixNano:   start.UnixNano(),
+		FinishUnixNano:  time.Now().UnixNano(),
+	}
+	if child {
+		identity, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
+		if !ok || identity == "" {
+			panic("process retry benchmark child is missing its process identity")
+		}
+		observation.ProcessIdentity = identity
+	}
+	if err := writeProcessRetryBenchmarkObservation(processRetryFixtureEnv(processRetryBenchmarkMetricsPathEnv), observation); err != nil {
+		panic(fmt.Sprintf("write process retry benchmark observation: %v", err))
+	}
+}
+
+type processRetryBenchmarkObservation struct {
+	PID             int    `json:"pid"`
+	ProcessIdentity string `json:"process_identity"`
+	Child           bool   `json:"child"`
+	GOMAXPROCS      int    `json:"gomaxprocs"`
+	StartUnixNano   int64  `json:"start_unix_nano"`
+	FinishUnixNano  int64  `json:"finish_unix_nano"`
+}
+
+type processRetryBenchmarkMetrics struct {
+	RunMDurationNanos int64                              `json:"runm_duration_nanos"`
+	ExecutionCount    int                                `json:"execution_count"`
+	Observations      []processRetryBenchmarkObservation `json:"observations"`
+}
+
+func (m processRetryBenchmarkMetrics) runMDuration() time.Duration {
+	return time.Duration(m.RunMDurationNanos)
+}
+
+func (m processRetryBenchmarkMetrics) retryCount(testCount int) int {
+	return m.ExecutionCount - testCount
+}
+
+func (m processRetryBenchmarkMetrics) childProcessCount() int {
+	identities := make(map[string]struct{})
+	for _, observation := range m.Observations {
+		if observation.Child {
+			identities[observation.ProcessIdentity] = struct{}{}
+		}
+	}
+	return len(identities)
+}
+
+func (m processRetryBenchmarkMetrics) maxChildOverlap() int {
+	type transition struct {
+		at    int64
+		delta int
+	}
+	transitions := make([]transition, 0, len(m.Observations)*2)
+	for _, observation := range m.Observations {
+		if !observation.Child {
+			continue
+		}
+		transitions = append(transitions,
+			transition{at: observation.StartUnixNano, delta: 1},
+			transition{at: observation.FinishUnixNano, delta: -1},
+		)
+	}
+	sort.Slice(transitions, func(i, j int) bool {
+		if transitions[i].at == transitions[j].at {
+			return transitions[i].delta < transitions[j].delta
+		}
+		return transitions[i].at < transitions[j].at
+	})
+	current, maximum := 0, 0
+	for _, transition := range transitions {
+		current += transition.delta
+		maximum = max(maximum, current)
+	}
+	return maximum
+}
+
+func processRetryBenchmarkEventsDir(path string) string {
+	return path + ".events"
+}
+
+func writeProcessRetryBenchmarkObservation(path string, observation processRetryBenchmarkObservation) error {
+	if path == "" {
+		return nil
+	}
+	dir := processRetryBenchmarkEventsDir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(observation)
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(dir, fmt.Sprintf("%d-*.json", observation.PID))
+	if err != nil {
+		return err
+	}
+	name := file.Name()
+	if _, err := file.Write(payload); err != nil {
+		_ = file.Close()
+		_ = os.Remove(name)
+		return err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	return nil
+}
+
+func writeProcessRetryBenchmarkMetrics(path string, duration time.Duration) error {
+	entries, err := os.ReadDir(processRetryBenchmarkEventsDir(path))
+	if err != nil {
+		return err
+	}
+	metrics := processRetryBenchmarkMetrics{RunMDurationNanos: duration.Nanoseconds()}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		payload, err := os.ReadFile(filepath.Join(processRetryBenchmarkEventsDir(path), entry.Name()))
+		if err != nil {
+			return err
+		}
+		var observation processRetryBenchmarkObservation
+		if err := json.Unmarshal(payload, &observation); err != nil {
+			return err
+		}
+		metrics.Observations = append(metrics.Observations, observation)
+	}
+	metrics.ExecutionCount = len(metrics.Observations)
+	if processRetryFixtureEnv(processRetryBenchmarkAggregateEnv) == "true" {
+		metrics.ExecutionCount = int(processRetryBenchmarkAggregateRuns.Load())
+	}
+	payload, err := json.Marshal(metrics)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, payload, 0o600)
+}
+
+func readProcessRetryBenchmarkMetrics(path string) (processRetryBenchmarkMetrics, error) {
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return processRetryBenchmarkMetrics{}, err
+	}
+	var metrics processRetryBenchmarkMetrics
+	if err := json.Unmarshal(payload, &metrics); err != nil {
+		return processRetryBenchmarkMetrics{}, err
+	}
+	if metrics.RunMDurationNanos < 0 {
+		return processRetryBenchmarkMetrics{}, fmt.Errorf("invalid process retry benchmark duration %d", metrics.RunMDurationNanos)
+	}
+	if metrics.ExecutionCount < 0 {
+		return processRetryBenchmarkMetrics{}, fmt.Errorf("invalid process retry benchmark execution count %d", metrics.ExecutionCount)
+	}
+	return metrics, nil
+}
+
+func TestProcessRetryBenchmarkMetricsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metrics.json")
+	if err := os.Mkdir(processRetryBenchmarkEventsDir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	wantObservation := processRetryBenchmarkObservation{
+		PID: 42, ProcessIdentity: "child-1", Child: true, GOMAXPROCS: 2,
+		StartUnixNano: 100, FinishUnixNano: 200,
+	}
+	if err := writeProcessRetryBenchmarkObservation(path, wantObservation); err != nil {
+		t.Fatal(err)
+	}
+	wantDuration := 123456789 * time.Nanosecond
+	if err := writeProcessRetryBenchmarkMetrics(path, wantDuration); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readProcessRetryBenchmarkMetrics(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.runMDuration() != wantDuration {
+		t.Fatalf("benchmark RunM duration = %s, want %s", got.runMDuration(), wantDuration)
+	}
+	if len(got.Observations) != 1 || got.Observations[0] != wantObservation {
+		t.Fatalf("benchmark observations = %+v, want %+v", got.Observations, wantObservation)
+	}
+	if got.ExecutionCount != 1 {
+		t.Fatalf("benchmark execution count = %d, want 1", got.ExecutionCount)
+	}
+}
+
+func TestProcessRetryBenchmarkMetricsUseObservedProcessesAndOverlap(t *testing.T) {
+	metrics := processRetryBenchmarkMetrics{ExecutionCount: 3, Observations: []processRetryBenchmarkObservation{
+		{PID: 1, ProcessIdentity: "parent", GOMAXPROCS: 2, StartUnixNano: 100, FinishUnixNano: 300},
+		{PID: 2, ProcessIdentity: "child-1", Child: true, GOMAXPROCS: 2, StartUnixNano: 120, FinishUnixNano: 220},
+		{PID: 3, ProcessIdentity: "child-2", Child: true, GOMAXPROCS: 2, StartUnixNano: 180, FinishUnixNano: 260},
+	}}
+
+	if got := metrics.retryCount(1); got != 2 {
+		t.Fatalf("benchmark retries = %d, want 2", got)
+	}
+	if got := metrics.childProcessCount(); got != 2 {
+		t.Fatalf("benchmark child processes = %d, want 2", got)
+	}
+	if got := metrics.maxChildOverlap(); got != 2 {
+		t.Fatalf("benchmark maximum child overlap = %d, want 2", got)
+	}
+}
+
+func runProcessRetryBenchmarkFixture(tb testing.TB, env []string, metricsPath string, cpu, testCount int) processRetryBenchmarkMetrics {
+	tb.Helper()
+	if err := os.Mkdir(processRetryBenchmarkEventsDir(metricsPath), 0o700); err != nil {
+		tb.Fatal(err)
+	}
+	args := []string{"-test.run=^TestProcessRetryBenchmarkFixture$", "-test.count=" + strconv.Itoa(testCount)}
+	if cpu > 0 {
+		args = append(args, "-test.cpu="+strconv.Itoa(cpu))
+	}
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = append(env, processRetryBenchmarkMetricsPathEnv+"="+metricsPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		tb.Fatalf("retry benchmark subprocess failed: %v\n%s", err, output)
+	}
+	metrics, err := readProcessRetryBenchmarkMetrics(metricsPath)
+	if err != nil {
+		tb.Fatalf("read retry benchmark metrics: %v\n%s", err, output)
+	}
+	return metrics
+}
+
+func validateProcessRetryBenchmarkMetrics(tb testing.TB, metrics processRetryBenchmarkMetrics, testCount, retryCount, childProcesses, gomaxprocs int) {
+	tb.Helper()
+	wantObservations := testCount + retryCount
+	if metrics.ExecutionCount != wantObservations {
+		tb.Fatalf("benchmark executions = %d, want %d", metrics.ExecutionCount, wantObservations)
+	}
+	if len(metrics.Observations) != wantObservations {
+		tb.Fatalf("benchmark observations = %d, want %d: %+v", len(metrics.Observations), wantObservations, metrics.Observations)
+	}
+	if got := metrics.retryCount(testCount); got != retryCount {
+		tb.Fatalf("benchmark retries = %d, want %d", got, retryCount)
+	}
+	if got := metrics.childProcessCount(); got != childProcesses {
+		tb.Fatalf("benchmark child processes = %d, want %d: %+v", got, childProcesses, metrics.Observations)
+	}
+	childObservations := 0
+	for _, observation := range metrics.Observations {
+		if observation.PID <= 0 || observation.ProcessIdentity == "" || observation.GOMAXPROCS <= 0 || observation.FinishUnixNano < observation.StartUnixNano {
+			tb.Fatalf("invalid benchmark observation: %+v", observation)
+		}
+		if observation.Child {
+			childObservations++
+		}
+		if gomaxprocs > 0 && observation.GOMAXPROCS != gomaxprocs {
+			tb.Fatalf("benchmark GOMAXPROCS = %d, want %d: %+v", observation.GOMAXPROCS, gomaxprocs, observation)
+		}
+	}
+	if childObservations != childProcesses {
+		tb.Fatalf("benchmark child observations = %d, want %d", childObservations, childProcesses)
+	}
+}
+
+func validateProcessRetryBenchmarkAggregateMetrics(tb testing.TB, metrics processRetryBenchmarkMetrics, testCount int) {
+	tb.Helper()
+	if metrics.ExecutionCount != testCount {
+		tb.Fatalf("benchmark executions = %d, want %d", metrics.ExecutionCount, testCount)
+	}
+	if len(metrics.Observations) != 0 {
+		tb.Fatalf("aggregate benchmark wrote %d per-test observations, want none", len(metrics.Observations))
+	}
+}
+
+func TestProcessRetryBenchmarkFixturePreservesTestCPU(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "benchmark CPU propagation")
+	for _, cpu := range []int{1, 2} {
+		t.Run("gomaxprocs="+strconv.Itoa(cpu), func(t *testing.T) {
+			metrics := runProcessRetryBenchmarkFixture(
+				t,
+				processRetryScenarioEnvironment(processRetryBenchmarkExecutionModeEnv+"=process"),
+				filepath.Join(t.TempDir(), "metrics.json"),
+				cpu,
+				1,
+			)
+			validateProcessRetryBenchmarkMetrics(t, metrics, 1, 1, 1, cpu)
+		})
+	}
+}
+
+func TestProcessRetryBenchmarkPassingFixtureDoesNotRetry(t *testing.T) {
+	for _, mode := range []string{"in_process", "process"} {
+		t.Run(mode, func(t *testing.T) {
+			if mode == "process" {
+				skipProcessRetryFixtureChildLaunchIneligible(t, "passing benchmark fixture")
+			}
+			metrics := runProcessRetryBenchmarkFixture(
+				t,
+				processRetryScenarioEnvironment(
+					processRetryBenchmarkExecutionModeEnv+"="+mode,
+					processRetryBenchmarkPassingEnv+"=true",
+					processRetryBenchmarkRetriesEnabledEnv+"=true",
+				),
+				filepath.Join(t.TempDir(), "metrics.json"),
+				0,
+				3,
+			)
+			validateProcessRetryBenchmarkMetrics(t, metrics, 3, 0, 0, 0)
+		})
+	}
+}
+
+func TestProcessRetryBenchmarkAggregateFixtureAvoidsPerTestObservationIO(t *testing.T) {
+	metricsPath := filepath.Join(t.TempDir(), "metrics.json")
+	metrics := runProcessRetryBenchmarkFixture(
+		t,
+		processRetryScenarioEnvironment(
+			processRetryBenchmarkExecutionModeEnv+"=process",
+			processRetryBenchmarkPassingEnv+"=true",
+			processRetryBenchmarkRetriesEnabledEnv+"=true",
+			processRetryBenchmarkAggregateEnv+"=true",
+		),
+		metricsPath,
+		0,
+		3,
+	)
+	validateProcessRetryBenchmarkAggregateMetrics(t, metrics, 3)
+	entries, err := os.ReadDir(processRetryBenchmarkEventsDir(metricsPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("aggregate benchmark wrote %d per-test observations, want none", len(entries))
+	}
+}
+
+// Subprocess benchmark allocations belong to the controller process. Use the
+// observed runm and child-process metrics for comparisons across retry modes.
 func BenchmarkProcessRetryExecutionMode(b *testing.B) {
 	for _, mode := range []string{"in_process", "process"} {
 		b.Run(mode, func(b *testing.B) {
 			if mode == "process" && !gotesting.ProcessRetryContainmentSupported() {
 				b.Skip("process retry benchmark requires process-tree containment")
 			}
+			metricsDir := b.TempDir()
+			env := processRetryScenarioEnvironment(processRetryBenchmarkExecutionModeEnv + "=" + mode)
+			warmup := runProcessRetryBenchmarkFixture(b, env, filepath.Join(metricsDir, "warmup"), 0, 1)
+			childProcesses := 0
+			if mode == "process" {
+				childProcesses = 1
+			}
+			validateProcessRetryBenchmarkMetrics(b, warmup, 1, 1, childProcesses, 0)
+			var runMTotal time.Duration
+			var retryTotal, childProcessTotal int
 			b.ResetTimer()
-			for range b.N {
-				cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryBenchmarkFixture$", "-test.count=1")
-				cmd.Env = processRetryScenarioEnvironment(processRetryBenchmarkExecutionModeEnv + "=" + mode)
-				output, err := cmd.CombinedOutput()
-				if err != nil {
-					b.Fatalf("%s retry benchmark subprocess failed: %v\n%s", mode, err, output)
-				}
+			for i := range b.N {
+				metrics := runProcessRetryBenchmarkFixture(b, env, filepath.Join(metricsDir, strconv.Itoa(i)), 0, 1)
+				validateProcessRetryBenchmarkMetrics(b, metrics, 1, 1, childProcesses, 0)
+				runMTotal += metrics.runMDuration()
+				retryTotal += metrics.retryCount(1)
+				childProcessTotal += metrics.childProcessCount()
 			}
 			b.StopTimer()
-			b.ReportMetric(1, "retries/op")
-			if mode == "process" {
-				b.ReportMetric(1, "retry-child-processes/op")
-			} else {
-				b.ReportMetric(0, "retry-child-processes/op")
+			b.ReportMetric(float64(retryTotal)/float64(b.N), "retries/op")
+			b.ReportMetric(float64(runMTotal)/float64(b.N)/float64(time.Millisecond), "runm-ms/op")
+			b.ReportMetric(float64(childProcessTotal)/float64(b.N), "retry-child-processes/op")
+		})
+	}
+}
+
+func BenchmarkProcessRetryNoRetryHotPath(b *testing.B) {
+	const testsPerProcess = 100
+	cases := []struct {
+		name           string
+		mode           string
+		retriesEnabled bool
+	}{
+		{name: "ci_visibility", mode: "in_process"},
+		{name: "in_process", mode: "in_process", retriesEnabled: true},
+		{name: "process", mode: "process", retriesEnabled: true},
+	}
+	for _, benchmarkCase := range cases {
+		b.Run(benchmarkCase.name, func(b *testing.B) {
+			metricsDir := b.TempDir()
+			env := processRetryScenarioEnvironment(
+				processRetryBenchmarkExecutionModeEnv+"="+benchmarkCase.mode,
+				processRetryBenchmarkPassingEnv+"=true",
+				processRetryBenchmarkRetriesEnabledEnv+"="+strconv.FormatBool(benchmarkCase.retriesEnabled),
+				processRetryBenchmarkAggregateEnv+"=true",
+			)
+			warmup := runProcessRetryBenchmarkFixture(b, env, filepath.Join(metricsDir, "warmup"), 0, 1)
+			validateProcessRetryBenchmarkAggregateMetrics(b, warmup, 1)
+			var runMTotal time.Duration
+			b.ResetTimer()
+			for i := range b.N {
+				metrics := runProcessRetryBenchmarkFixture(b, env, filepath.Join(metricsDir, strconv.Itoa(i)), 0, testsPerProcess)
+				validateProcessRetryBenchmarkAggregateMetrics(b, metrics, testsPerProcess)
+				runMTotal += metrics.runMDuration()
 			}
+			b.StopTimer()
+			b.ReportMetric(float64(runMTotal)/float64(b.N*testsPerProcess), "runm-ns/test")
+			b.ReportMetric(0, "retry-child-processes/op")
 		})
 	}
 }
@@ -170,6 +609,7 @@ func BenchmarkProcessRetryEFD(b *testing.B) {
 		{name: "in_process/parallel", mode: "in_process", parallel: true, processConcurrency: 1},
 		{name: "process/sequential", mode: "process", processConcurrency: 1},
 		{name: "process/parallel/concurrency=2", mode: "process", parallel: true, processConcurrency: 2},
+		{name: "process/parallel/concurrency=8", mode: "process", parallel: true, processConcurrency: 8},
 		{name: "process/parallel/default", mode: "process", parallel: true, processConcurrency: 4},
 	}
 
@@ -182,40 +622,106 @@ func BenchmarkProcessRetryEFD(b *testing.B) {
 							if benchmarkCase.mode == "process" && !gotesting.ProcessRetryContainmentSupported() {
 								b.Skip("process retry benchmark requires process-tree containment")
 							}
+							metricsDir := b.TempDir()
+							maxConcurrency := strconv.Itoa(benchmarkCase.processConcurrency)
+							if benchmarkCase.name == "process/parallel/default" {
+								maxConcurrency = ""
+							}
+							env := processRetryScenarioEnvironment(
+								processRetryBenchmarkExecutionModeEnv+"="+benchmarkCase.mode,
+								processRetryParallelEFDEnv+"=true",
+								processRetryBenchmarkRetryCountEnv+"="+strconv.Itoa(retryCount),
+								processRetryBenchmarkChildStartupDelayEnv+"="+profile.startupDelay.String(),
+								processRetryBenchmarkBodyDelayEnv+"="+profile.bodyDelay.String(),
+								constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled+"="+strconv.FormatBool(benchmarkCase.parallel),
+								constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable+"="+maxConcurrency,
+							)
+							childProcesses := 0
+							if benchmarkCase.mode == "process" {
+								childProcesses = retryCount
+							}
+							warmup := runProcessRetryBenchmarkFixture(b, env, filepath.Join(metricsDir, "warmup"), 0, 1)
+							validateProcessRetryBenchmarkMetrics(b, warmup, 1, retryCount, childProcesses, 0)
+							var runMTotal time.Duration
+							var retryTotal, childProcessTotal, maximumOverlap int
 							b.ResetTimer()
-							for range b.N {
-								maxConcurrency := strconv.Itoa(benchmarkCase.processConcurrency)
-								if benchmarkCase.name == "process/parallel/default" {
-									maxConcurrency = ""
-								}
-								cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryBenchmarkFixture$", "-test.count=1")
-								cmd.Env = processRetryScenarioEnvironment(
-									processRetryBenchmarkExecutionModeEnv+"="+benchmarkCase.mode,
-									processRetryParallelEFDEnv+"=true",
-									processRetryBenchmarkRetryCountEnv+"="+strconv.Itoa(retryCount),
-									processRetryBenchmarkChildStartupDelayEnv+"="+profile.startupDelay.String(),
-									processRetryBenchmarkBodyDelayEnv+"="+profile.bodyDelay.String(),
-									constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled+"="+strconv.FormatBool(benchmarkCase.parallel),
-									constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable+"="+maxConcurrency,
-								)
-								output, err := cmd.CombinedOutput()
-								if err != nil {
-									b.Fatalf("EFD benchmark subprocess failed: %v\n%s", err, output)
-								}
+							for i := range b.N {
+								metrics := runProcessRetryBenchmarkFixture(b, env, filepath.Join(metricsDir, strconv.Itoa(i)), 0, 1)
+								validateProcessRetryBenchmarkMetrics(b, metrics, 1, retryCount, childProcesses, 0)
+								runMTotal += metrics.runMDuration()
+								retryTotal += metrics.retryCount(1)
+								childProcessTotal += metrics.childProcessCount()
+								maximumOverlap = max(maximumOverlap, metrics.maxChildOverlap())
 							}
 							b.StopTimer()
-							b.ReportMetric(float64(retryCount), "retries/op")
+							b.ReportMetric(float64(retryTotal)/float64(b.N), "retries/op")
+							b.ReportMetric(float64(runMTotal)/float64(b.N)/float64(time.Millisecond), "runm-ms/op")
 							b.ReportMetric(float64(profile.startupDelay.Milliseconds()), "configured-child-startup-ms/retry")
 							b.ReportMetric(float64(profile.bodyDelay.Milliseconds()), "configured-body-ms/execution")
-							if benchmarkCase.mode == "process" {
-								b.ReportMetric(float64(benchmarkCase.processConcurrency), "max-process-concurrency")
-								b.ReportMetric(float64(retryCount), "retry-child-processes/op")
-							} else {
-								b.ReportMetric(0, "max-process-concurrency")
-								b.ReportMetric(0, "retry-child-processes/op")
-							}
+							b.ReportMetric(float64(maximumOverlap), "observed-max-process-concurrency")
+							b.ReportMetric(float64(childProcessTotal)/float64(b.N), "retry-child-processes/op")
 						})
 					}
+				})
+			}
+		})
+	}
+}
+
+func BenchmarkProcessRetryParallelEFDCPU(b *testing.B) {
+	const (
+		retryCount = 4
+		cpuWork    = 500_000_000
+	)
+	cases := []struct {
+		name               string
+		mode               string
+		parallel           bool
+		processConcurrency string
+	}{
+		{name: "in_process/sequential", mode: "in_process", processConcurrency: "1"},
+		{name: "process/sequential", mode: "process", processConcurrency: "1"},
+		{name: "process/parallel/default", mode: "process", parallel: true},
+	}
+	for _, cpu := range []int{1, 2, 4} {
+		b.Run("gomaxprocs="+strconv.Itoa(cpu), func(b *testing.B) {
+			for _, benchmarkCase := range cases {
+				b.Run(benchmarkCase.name, func(b *testing.B) {
+					if benchmarkCase.mode == "process" && !gotesting.ProcessRetryContainmentSupported() {
+						b.Skip("process retry benchmark requires process-tree containment")
+					}
+					metricsDir := b.TempDir()
+					env := processRetryScenarioEnvironment(
+						processRetryBenchmarkExecutionModeEnv+"="+benchmarkCase.mode,
+						processRetryParallelEFDEnv+"=true",
+						processRetryBenchmarkRetryCountEnv+"="+strconv.Itoa(retryCount),
+						processRetryBenchmarkCPUWorkEnv+"="+strconv.Itoa(cpuWork),
+						constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled+"="+strconv.FormatBool(benchmarkCase.parallel),
+						constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable+"="+benchmarkCase.processConcurrency,
+					)
+					childProcesses := 0
+					if benchmarkCase.mode == "process" {
+						childProcesses = retryCount
+					}
+					warmup := runProcessRetryBenchmarkFixture(b, env, filepath.Join(metricsDir, "warmup"), cpu, 1)
+					validateProcessRetryBenchmarkMetrics(b, warmup, 1, retryCount, childProcesses, cpu)
+					var runMTotal time.Duration
+					var retryTotal, childProcessTotal, maximumOverlap int
+					b.ResetTimer()
+					for i := range b.N {
+						metrics := runProcessRetryBenchmarkFixture(b, env, filepath.Join(metricsDir, strconv.Itoa(i)), cpu, 1)
+						validateProcessRetryBenchmarkMetrics(b, metrics, 1, retryCount, childProcesses, cpu)
+						runMTotal += metrics.runMDuration()
+						retryTotal += metrics.retryCount(1)
+						childProcessTotal += metrics.childProcessCount()
+						maximumOverlap = max(maximumOverlap, metrics.maxChildOverlap())
+					}
+					b.StopTimer()
+					b.ReportMetric(float64(runMTotal)/float64(b.N)/float64(time.Millisecond), "runm-ms/op")
+					b.ReportMetric(float64(retryTotal)/float64(b.N), "retries/op")
+					b.ReportMetric(float64(cpu), "observed-gomaxprocs")
+					b.ReportMetric(float64(maximumOverlap), "observed-max-process-concurrency")
+					b.ReportMetric(float64(childProcessTotal)/float64(b.N), "retry-child-processes/op")
 				})
 			}
 		})
@@ -231,11 +737,14 @@ func TestProcessRetryBenchmarkFixture(t *testing.T) {
 		if mode != "process" {
 			t.Fatalf("%s retry unexpectedly launched a child process", mode)
 		}
-		time.Sleep(processRetryBenchmarkDuration(processRetryBenchmarkBodyDelayEnv))
+		runProcessRetryBenchmarkWork()
 		return
 	}
 
-	time.Sleep(processRetryBenchmarkDuration(processRetryBenchmarkBodyDelayEnv))
+	runProcessRetryBenchmarkWork()
+	if processRetryFixtureEnv(processRetryBenchmarkPassingEnv) == "true" {
+		return
+	}
 	run := processRetryBenchmarkRuns.Add(1)
 	if run == 1 {
 		t.Fail()

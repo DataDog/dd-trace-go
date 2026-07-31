@@ -143,7 +143,7 @@ func newParentProcessRetryControl(cmd *exec.Cmd, cfg processRetryChildConfig) (*
 }
 
 func newChildProcessRetryControl(cfg processRetryChildConfig) (*processRetryControl, error) {
-	controlCfg, err := readProcessRetryControlConfig(processRetryControlConfigPath(cfg.ResultPath), cfg)
+	controlCfg, err := resolveProcessRetryChildControlConfig(cfg, readProcessRetryControlConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -159,6 +159,16 @@ func newChildProcessRetryControl(cfg processRetryChildConfig) (*processRetryCont
 		reader: bufio.NewReaderSize(read, processRetryControlFrameMaxBytes),
 		wire:   controlCfg,
 	}, nil
+}
+
+func resolveProcessRetryChildControlConfig(
+	cfg processRetryChildConfig,
+	read func(string, processRetryChildConfig) (processRetryControlConfig, error),
+) (processRetryControlConfig, error) {
+	if cfg.controlConfigLoaded {
+		return cfg.controlConfig, nil
+	}
+	return read(processRetryControlConfigPath(cfg.ResultPath), cfg)
 }
 
 func (c *processRetryControl) CloseChildEndpoints() error {
@@ -183,10 +193,6 @@ func (c *processRetryControl) Close() error {
 			closeProcessRetryControlFile(c.read),
 			closeProcessRetryControlFile(c.write),
 		)
-		c.childIn = nil
-		c.childOut = nil
-		c.read = nil
-		c.write = nil
 	})
 	return err
 }
@@ -324,6 +330,10 @@ func (c *processRetryControl) parentAdmission(
 		}
 		done <- admissionResult{admitted: true, err: c.Send(processRetryControlRunBody, "")}
 	}()
+	abortAndJoin := func() {
+		_ = c.Close()
+		<-done
+	}
 	select {
 	case result := <-done:
 		if errors.Is(result.err, io.EOF) {
@@ -340,12 +350,16 @@ func (c *processRetryControl) parentAdmission(
 		}
 		return result.admitted, false, nil, result.err
 	case err := <-waitCh:
+		abortAndJoin()
 		return false, true, err, nil
 	case <-ctx.Done():
+		abortAndJoin()
 		return false, false, nil, ctx.Err()
 	case <-shutdown:
+		abortAndJoin()
 		return false, false, nil, errProcessRetryShutdown
 	case <-timeout:
+		abortAndJoin()
 		return false, false, nil, context.DeadlineExceeded
 	}
 }
@@ -407,6 +421,7 @@ func (c *processRetryControl) serveParent(group *retryAttemptGroup) <-chan error
 				c.stateMu.Lock()
 				c.terminal.committed = true
 				c.stateMu.Unlock()
+				return
 			case processRetryControlAbort:
 				if frame.Reason == "testmain_multiple_m_run" {
 					errorsCh <- errProcessRetryMultipleMRun
@@ -466,19 +481,67 @@ func (c *processRetryControl) childControlledTerminal(status processRetryStatus)
 	return c.Send(processRetryControlTerminalCommitted, reason)
 }
 
-func (c *processRetryControl) controlledTerminalState() processRetryControlledTerminalState {
+func (c *processRetryControl) controlledTerminalState(
+	ctx context.Context,
+	shutdown <-chan struct{},
+	timeout <-chan time.Time,
+) (processRetryControlledTerminalState, bool, error) {
 	if c == nil {
-		return processRetryControlledTerminalState{}
+		return processRetryControlledTerminalState{}, false, nil
 	}
 	c.stateMu.Lock()
 	done := c.serveDone
 	c.stateMu.Unlock()
 	if done != nil {
-		<-done
+		var waitErr error
+		timedOut := false
+		if !processRetryControlServiceDone(done) {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				waitErr = ctx.Err()
+			case <-shutdown:
+				waitErr = errProcessRetryShutdown
+			case <-timeout:
+				waitErr = context.DeadlineExceeded
+				timedOut = true
+			}
+			// A completed terminal commit owns the result even if cancellation
+			// became observable in the same scheduling window.
+			if waitErr != nil && processRetryControlServiceDone(done) {
+				waitErr = nil
+				timedOut = false
+			}
+		}
+		if waitErr != nil {
+			_ = c.Close()
+			<-done
+		}
+		c.stateMu.Lock()
+		defer c.stateMu.Unlock()
+		// The terminal commit may complete while Close joins the service.
+		// Once committed, it owns the result over a concurrently observed abort.
+		if c.terminal.committed {
+			waitErr = nil
+			timedOut = false
+		}
+		return c.terminal, timedOut, waitErr
 	}
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
-	return c.terminal
+	return c.terminal, false, nil
+}
+
+func processRetryControlServiceDone(done <-chan struct{}) bool {
+	if done == nil {
+		return false
+	}
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
 }
 
 func validProcessRetryControlKind(kind string) bool {
@@ -516,31 +579,7 @@ func writeProcessRetryControlConfig(path string, cfg processRetryControlConfig) 
 	if len(payload) > processRetryResultMaxBytes {
 		return errProcessRetryControlTooLarge
 	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".process-retry-control-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	closed := false
-	defer func() {
-		if !closed {
-			_ = tmp.Close()
-		}
-		_ = os.Remove(tmpName)
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		return err
-	}
-	if _, err := tmp.Write(payload); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		closed = true
-		return err
-	}
-	closed = true
-	return os.Rename(tmpName, path)
+	return os.WriteFile(path, payload, 0o600)
 }
 
 func readProcessRetryControlConfig(path string, expected processRetryChildConfig) (processRetryControlConfig, error) {

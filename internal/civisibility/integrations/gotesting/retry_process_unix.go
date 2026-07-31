@@ -61,6 +61,8 @@ func openProcessRetryChildControlTransport(cfg processRetryControlConfig) (*os.F
 		_ = closeProcessRetryControlFile(write)
 		return nil, nil, errProcessRetryControlInvalid
 	}
+	syscall.CloseOnExec(int(read.Fd()))
+	syscall.CloseOnExec(int(write.Fd()))
 	return read, write, nil
 }
 

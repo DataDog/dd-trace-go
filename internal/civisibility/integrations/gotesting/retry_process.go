@@ -62,28 +62,49 @@ func processRetryMaxConcurrencyFromEnv(defaultValue int) int {
 	if defaultValue < 1 {
 		defaultValue = 1
 	}
+	if configured, ok := processRetryConfiguredMaxConcurrencyFromEnv(); ok {
+		return configured
+	}
+	return defaultValue
+}
+
+func processRetryConfiguredMaxConcurrencyFromEnv() (int, bool) {
 	raw := strings.TrimSpace(env.Get(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable))
 	if raw == "" {
-		return defaultValue
+		return 0, false
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 1 {
-		log.Debug("civisibility: unsupported retry process max concurrency, using %d", defaultValue)
-		return defaultValue
+		log.Debug("civisibility: unsupported retry process max concurrency, using the effective default")
+		return 0, false
 	}
-	return n
+	return n, true
 }
 
 func processRetryDefaultMaxConcurrency() int {
+	return processRetryDefaultMaxConcurrencyForCPU(runtime.GOMAXPROCS(0))
+}
+
+func processRetryDefaultMaxConcurrencyForCPU(currentCPU int) int {
 	if internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false) {
-		return int(internalParallelEFDMaxConcurrency)
+		return min(max(currentCPU, 1), int(internalParallelEFDMaxConcurrency))
 	}
 	return 1
 }
 
-func processRetryParallelMaxConcurrency() int64 {
-	configured := int64(processRetryMaxConcurrencyFromEnv(processRetryDefaultMaxConcurrency()))
-	return min(configured, internalParallelEFDMaxConcurrency)
+func processRetryMaxConcurrencyForBaseline(baseline *processRetryLaunchBaseline, currentCPU int) int {
+	if baseline != nil && baseline.maxConcurrencySet {
+		return baseline.maxConcurrency
+	}
+	return processRetryDefaultMaxConcurrencyForCPU(currentCPU)
+}
+
+func processRetryParallelMaxConcurrencyForBaseline(baseline *processRetryLaunchBaseline) int64 {
+	currentCPU := processRetryCurrentCPU()
+	if baseline != nil && baseline.currentCPU > 0 {
+		currentCPU = baseline.currentCPU
+	}
+	return int64(processRetryMaxConcurrencyForBaseline(baseline, currentCPU))
 }
 
 func processRetryTimeoutFromEnv() (time.Duration, bool) {
@@ -109,6 +130,8 @@ type processRetryChildConfig struct {
 	ParentDeadlineUnixNano int64
 	ParentDeadlineOK       bool
 	ObservedGOMAXPROCS     int
+	controlConfig          processRetryControlConfig
+	controlConfigLoaded    bool
 }
 
 type processRetryStatus string
@@ -241,6 +264,8 @@ func bootstrapProcessRetryChild() (processRetryChildConfig, error) {
 	}
 	if wire, readErr := readProcessRetryControlConfig(processRetryControlConfigPath(cfg.ResultPath), cfg); readErr == nil {
 		cfg = enrichProcessRetryChildConfig(cfg, wire)
+		cfg.controlConfig = wire
+		cfg.controlConfigLoaded = true
 	}
 	if integrations.ProcessRetryChildTransportError() != nil {
 		return cfg, errors.New("retry child transport cleanup failed")
@@ -291,6 +316,22 @@ func processRetryFuzzActive() bool {
 		}
 	})
 	return active
+}
+
+type processRetryFuzzGuardSnapshot struct {
+	once     sync.Once
+	evaluate func() bool
+	active   bool
+}
+
+func (s *processRetryFuzzGuardSnapshot) resolve() (bool, bool) {
+	if s == nil || s.evaluate == nil {
+		return false, false
+	}
+	s.once.Do(func() {
+		s.active = s.evaluate()
+	})
+	return s.active, true
 }
 
 type processRetrySupportHooks struct {
@@ -347,8 +388,8 @@ func processRetryTestingMWorkloadsSupportedDefault() bool {
 // Go propagates GOCOVERDIR to subprocesses; retry children must not merge their counters into the parent's profile.
 const processRetryCoverageDirectoryEnvironmentVariable = "GOCOVERDIR"
 
-func buildProcessRetryEnv(base []string, cfg processRetryChildConfig) []string {
-	result := make([]string, 0, len(base)+5)
+func sanitizeProcessRetryBaseEnv(base []string) []string {
+	result := make([]string, 0, len(base))
 	for _, entry := range base {
 		key, _, ok := strings.Cut(entry, "=")
 		if !ok {
@@ -360,6 +401,12 @@ func buildProcessRetryEnv(base []string, cfg processRetryChildConfig) []string {
 		}
 		result = append(result, entry)
 	}
+	return result
+}
+
+func buildProcessRetryEnv(base []string, cfg processRetryChildConfig) []string {
+	result := make([]string, 0, len(base)+5)
+	result = append(result, base...)
 	result = append(result,
 		constants.CIVisibilityInternalRetryProcessChild+"=true",
 		constants.CIVisibilityInternalRetryProcessResultPath+"="+cfg.ResultPath,
@@ -423,6 +470,7 @@ type processRetryBoundedOutput struct {
 	maxBytes  int64
 	total     int64
 	tail      []byte
+	start     int
 	truncated bool
 }
 
@@ -432,7 +480,6 @@ func newProcessRetryBoundedOutput(maxBytes int64) *processRetryBoundedOutput {
 	}
 	return &processRetryBoundedOutput{
 		maxBytes: maxBytes,
-		tail:     make([]byte, 0, int(maxBytes)),
 	}
 }
 
@@ -455,17 +502,47 @@ func (w *processRetryBoundedOutput) appendTailLocked(p []byte) {
 		return
 	}
 	if int64(len(p)) >= w.maxBytes {
-		w.tail = append(w.tail[:0], p[len(p)-int(w.maxBytes):]...)
+		limit := int(w.maxBytes)
+		if cap(w.tail) < limit {
+			w.tail = make([]byte, limit)
+		} else {
+			w.tail = w.tail[:limit]
+		}
+		copy(w.tail, p[len(p)-limit:])
+		w.start = 0
 		w.truncated = true
 		return
 	}
-	w.tail = append(w.tail, p...)
-	if int64(len(w.tail)) > w.maxBytes {
-		drop := len(w.tail) - int(w.maxBytes)
-		copy(w.tail, w.tail[drop:])
-		w.tail = w.tail[:int(w.maxBytes)]
+	space := int(w.maxBytes) - len(w.tail)
+	if len(p) <= space {
+		w.appendGrowingTailLocked(p)
+		return
+	}
+	if space > 0 {
+		w.appendGrowingTailLocked(p[:space])
+		p = p[space:]
+	}
+	if len(p) > 0 {
+		written := copy(w.tail[w.start:], p)
+		copy(w.tail, p[written:])
+		w.start = (w.start + len(p)) % len(w.tail)
 		w.truncated = true
 	}
+}
+
+func (w *processRetryBoundedOutput) appendGrowingTailLocked(p []byte) {
+	oldLen := len(w.tail)
+	newLen := oldLen + len(p)
+	if newLen > cap(w.tail) {
+		newCap := max(newLen, max(cap(w.tail)*2, 1))
+		newCap = min(newCap, int(w.maxBytes))
+		grown := make([]byte, newLen, newCap)
+		copy(grown, w.tail)
+		w.tail = grown
+	} else {
+		w.tail = w.tail[:newLen]
+	}
+	copy(w.tail[oldLen:], p)
 }
 
 func (w *processRetryBoundedOutput) Tail() (string, bool) {
@@ -474,7 +551,15 @@ func (w *processRetryBoundedOutput) Tail() (string, bool) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return string(w.tail), w.truncated || w.total > int64(len(w.tail))
+	truncated := w.truncated || w.total > int64(len(w.tail))
+	if len(w.tail) == 0 || w.start == 0 {
+		return string(w.tail), truncated
+	}
+	var tail strings.Builder
+	tail.Grow(len(w.tail))
+	_, _ = tail.Write(w.tail[w.start:])
+	_, _ = tail.Write(w.tail[:w.start])
+	return tail.String(), truncated
 }
 
 type processRetryOutputCapture struct {
@@ -694,22 +779,58 @@ func (c *processRetryOutputCapture) Tail() (string, bool, error) {
 func combineProcessRetryOutputTails(stdout, stderr *processRetryOutputCapture, maxBytes int64) (string, bool, error) {
 	stdoutTail, stdoutTruncated, stdoutErr := stdout.Tail()
 	stderrTail, stderrTruncated, stderrErr := stderr.Tail()
-	combined := stdoutTail
-	if stderrTail != "" {
-		if combined != "" {
-			combined += "\n"
-		}
-		combined += stderrTail
-	}
+	separator := stdoutTail != "" && stderrTail != ""
 	truncated := stdoutTruncated || stderrTruncated
-	if maxBytes >= 0 && int64(len(combined)) > maxBytes {
-		combined = combined[len(combined)-int(maxBytes):]
+	combinedBytes := len(stdoutTail) + len(stderrTail)
+	if separator {
+		combinedBytes++
+	}
+	if maxBytes >= 0 && int64(combinedBytes) > maxBytes {
 		truncated = true
+		budget := int(maxBytes)
+		switch {
+		case budget == 0:
+			stdoutTail = ""
+			stderrTail = ""
+			separator = false
+		case stderrTail == "":
+			stdoutTail = stdoutTail[len(stdoutTail)-budget:]
+		case len(stderrTail) >= budget:
+			stderrTail = stderrTail[len(stderrTail)-budget:]
+			stdoutTail = ""
+			separator = false
+		default:
+			budget -= len(stderrTail) + 1
+			if len(stdoutTail) > budget {
+				stdoutTail = stdoutTail[len(stdoutTail)-budget:]
+			}
+		}
+	}
+
+	if !truncated && !separator {
+		if stdoutTail != "" {
+			return stdoutTail, false, errors.Join(stdoutErr, stderrErr)
+		}
+		return stderrTail, false, errors.Join(stdoutErr, stderrErr)
+	}
+	combinedBytes = len(stdoutTail) + len(stderrTail)
+	if separator {
+		combinedBytes++
 	}
 	if truncated {
-		combined = processRetryOutputTruncationMarker + combined
+		combinedBytes += len(processRetryOutputTruncationMarker)
 	}
-	return combined, truncated, errors.Join(stdoutErr, stderrErr)
+	var combined strings.Builder
+	combined.Grow(combinedBytes)
+	if truncated {
+		combined.WriteString(processRetryOutputTruncationMarker)
+	}
+	combined.WriteString(stdoutTail)
+	if separator {
+		combined.WriteByte('\n')
+	}
+	combined.WriteString(stderrTail)
+	return combined.String(), truncated, errors.Join(stdoutErr, stderrErr)
 }
 
 type processRetryAttemptResult struct {
@@ -761,16 +882,18 @@ type processRetryMetadataSnapshot struct {
 }
 
 type processRetryLaunchBaseline struct {
-	hooks            processRetryRunnerHooks
-	executable       string
-	workingDirectory string
-	args             []string
-	argsSnapshot     processRetryArgsSnapshot
-	environment      []string
-	currentCPU       int
-	timeout          time.Duration
-	timeoutSet       bool
-	err              error
+	hooks             processRetryRunnerHooks
+	executable        string
+	workingDirectory  string
+	args              []string
+	argsSnapshot      processRetryArgsSnapshot
+	environment       []string
+	currentCPU        int
+	maxConcurrency    int
+	maxConcurrencySet bool
+	timeout           time.Duration
+	timeoutSet        bool
+	err               error
 }
 
 type processRetryArgsSnapshot struct {
@@ -840,8 +963,17 @@ func (t *processRetryRealTimer) C() <-chan time.Time { return t.timer.C }
 func (t *processRetryRealTimer) Stop() bool          { return t.timer.Stop() }
 
 type processRetryLimiter struct {
-	once sync.Once
-	ch   chan struct{}
+	mu         locking.Mutex
+	active     int
+	waiterHead *processRetryLimiterWaiter
+	waiterTail *processRetryLimiterWaiter
+}
+
+type processRetryLimiterWaiter struct {
+	maxConcurrency int
+	ready          chan struct{}
+	next           *processRetryLimiterWaiter
+	granted        bool
 }
 
 type processRetryLimiterAcquireCause string
@@ -868,9 +1000,10 @@ type processRetryLaunchGateState struct {
 	launching      int
 	activeGroups   int
 	activeChildren int
-	shuttingDown   bool
+	shuttingDown   atomic.Bool
 	shutdown       chan struct{}
 	changed        chan struct{}
+	waiters        int
 }
 
 type processRetryReapPhase struct {
@@ -894,7 +1027,7 @@ var processRetryLaunchGate = processRetryLaunchGateState{
 var processRetryActiveChildren = struct {
 	mu                     locking.Mutex
 	children               map[*exec.Cmd]processRetryActiveChild
-	closeActionRegistered  bool
+	closeActionRegistered  atomic.Bool
 	closeActionRegistering bool
 	closeActionChanged     chan struct{}
 }{children: make(map[*exec.Cmd]processRetryActiveChild)}
@@ -999,24 +1132,39 @@ func killDirectChild(cmd *exec.Cmd) error {
 	return err
 }
 
-func captureProcessRetryLaunchBaseline() *processRetryLaunchBaseline {
+func captureProcessRetryLaunchTemplate() *processRetryLaunchBaseline {
 	hooks := currentProcessRetryRunnerHooks()
 	baseline := &processRetryLaunchBaseline{hooks: hooks}
 	baseline.executable, baseline.err = hooks.executable()
 	if baseline.err != nil {
 		return baseline
 	}
-	baseline.workingDirectory, baseline.err = hooks.workingDirectory()
-	if baseline.err != nil {
-		return baseline
-	}
 	baseline.args = append([]string(nil), hooks.args()...)
 	baseline.argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
-	baseline.environment = append([]string(nil), hooks.environ()...)
-	baseline.currentCPU = processRetryCurrentCPU()
 	baseline.timeout, baseline.timeoutSet = processRetryTimeoutFromEnv()
-	getProcessRetryLimiter().init()
+	baseline.maxConcurrency, baseline.maxConcurrencySet = processRetryConfiguredMaxConcurrencyFromEnv()
 	return baseline
+}
+
+func captureProcessRetryLaunchBaseline() *processRetryLaunchBaseline {
+	return captureProcessRetryLaunchBaselineFromTemplate(nil)
+}
+
+func captureProcessRetryLaunchBaselineFromTemplate(template *processRetryLaunchBaseline) *processRetryLaunchBaseline {
+	if template == nil {
+		template = captureProcessRetryLaunchTemplate()
+	}
+	baseline := *template
+	if baseline.err != nil {
+		return &baseline
+	}
+	baseline.workingDirectory, baseline.err = baseline.hooks.workingDirectory()
+	if baseline.err != nil {
+		return &baseline
+	}
+	baseline.environment = sanitizeProcessRetryBaseEnv(baseline.hooks.environ())
+	baseline.currentCPU = processRetryCurrentCPU()
+	return &baseline
 }
 
 func processRetryLaunchesDisabled() bool {
@@ -1024,9 +1172,7 @@ func processRetryLaunchesDisabled() bool {
 }
 
 func processRetryShuttingDown() bool {
-	processRetryLaunchGate.mu.Lock()
-	defer processRetryLaunchGate.mu.Unlock()
-	return processRetryLaunchGate.shuttingDown
+	return processRetryLaunchGate.shuttingDown.Load()
 }
 
 func disableProcessRetryLaunches() {
@@ -1043,7 +1189,7 @@ func beginProcessRetryGroup() (<-chan struct{}, func(), error) {
 	processRetryLaunchGate.mu.Lock()
 	defer processRetryLaunchGate.mu.Unlock()
 	processRetryLaunchGate.ensureChannelsLocked()
-	if processRetryLaunchGate.shuttingDown {
+	if processRetryLaunchGate.shuttingDown.Load() {
 		return processRetryLaunchGate.shutdown, nil, errProcessRetryShutdown
 	}
 	if processRetryLaunchGate.disabled.Load() {
@@ -1080,11 +1226,16 @@ func waitForProcessRetryShutdownQuiescence(timeout time.Duration) bool {
 			processRetryLaunchGate.mu.Unlock()
 			return true
 		}
-		changed := processRetryLaunchGate.changed
+		changed := processRetryLaunchGate.beginWaitLocked()
 		processRetryLaunchGate.mu.Unlock()
+		timedOut := false
 		select {
 		case <-changed:
 		case <-timer.C:
+			timedOut = true
+		}
+		processRetryLaunchGate.endWait()
+		if timedOut {
 			return false
 		}
 	}
@@ -1101,8 +1252,8 @@ func (g *processRetryLaunchGateState) ensureChannelsLocked() {
 
 func (g *processRetryLaunchGateState) beginShutdownLocked() {
 	g.ensureChannelsLocked()
-	if !g.shuttingDown {
-		g.shuttingDown = true
+	if !g.shuttingDown.Load() {
+		g.shuttingDown.Store(true)
 		close(g.shutdown)
 	}
 	g.notifyLocked()
@@ -1137,15 +1288,13 @@ func (p *processRetryReapPhase) finish(containmentLost bool) {
 }
 
 func processRetryShutdownActionRegistered() bool {
-	processRetryActiveChildren.mu.Lock()
-	defer processRetryActiveChildren.mu.Unlock()
-	return processRetryActiveChildren.closeActionRegistered
+	return processRetryActiveChildren.closeActionRegistered.Load()
 }
 
 func registerProcessRetryShutdownAction() bool {
 	for {
 		processRetryActiveChildren.mu.Lock()
-		if processRetryActiveChildren.closeActionRegistered {
+		if processRetryActiveChildren.closeActionRegistered.Load() {
 			processRetryActiveChildren.mu.Unlock()
 			return true
 		}
@@ -1162,7 +1311,7 @@ func registerProcessRetryShutdownAction() bool {
 
 		registered := integrations.TryPushCiVisibilityPreCloseAction(stopActiveProcessRetryChildren)
 		processRetryActiveChildren.mu.Lock()
-		processRetryActiveChildren.closeActionRegistered = registered
+		processRetryActiveChildren.closeActionRegistered.Store(registered)
 		processRetryActiveChildren.closeActionRegistering = false
 		close(changed)
 		processRetryActiveChildren.closeActionChanged = nil
@@ -1219,7 +1368,7 @@ func stopActiveProcessRetryChildren() {
 			processRetryActiveChildren.children[cmd] = child
 		}
 	}
-	processRetryActiveChildren.closeActionRegistered = false
+	processRetryActiveChildren.closeActionRegistered.Store(false)
 	processRetryActiveChildren.mu.Unlock()
 	for _, child := range children {
 		if err := errors.Join(child.killTree(child.cmd), child.killDirect(child.cmd)); err != nil {
@@ -1246,7 +1395,7 @@ func startProcessRetryChild(
 		}
 
 		processRetryLaunchGate.mu.Lock()
-		if processRetryLaunchGate.shuttingDown {
+		if processRetryLaunchGate.shuttingDown.Load() {
 			processRetryLaunchGate.mu.Unlock()
 			return nil, errProcessRetryShutdown
 		}
@@ -1281,7 +1430,7 @@ func startProcessRetryChild(
 			}
 			resultErr := startErr
 			switch {
-			case processRetryLaunchGate.shuttingDown:
+			case processRetryLaunchGate.shuttingDown.Load():
 				resultErr = errors.Join(errProcessRetryShutdown, startErr)
 			case processRetryLaunchGate.disabled.Load():
 				resultErr = errors.Join(errProcessRetryLaunchDisabled, startErr)
@@ -1298,15 +1447,18 @@ func startProcessRetryChild(
 			processRetryLaunchGate.mu.Unlock()
 			return waitCh, resultErr
 		}
-		changed := processRetryLaunchGate.changed
+		changed := processRetryLaunchGate.beginWaitLocked()
 		processRetryLaunchGate.mu.Unlock()
 
 		select {
 		case <-changed:
+			processRetryLaunchGate.endWait()
 			continue
 		case <-ctx.Done():
+			processRetryLaunchGate.endWait()
 			return nil, errors.Join(errProcessRetryLaunchCanceled, ctx.Err())
 		case <-parentDeadlineHardCap:
+			processRetryLaunchGate.endWait()
 			if err := ctx.Err(); err != nil {
 				return nil, errors.Join(errProcessRetryLaunchCanceled, err)
 			}
@@ -1315,7 +1467,22 @@ func startProcessRetryChild(
 	}
 }
 
+func (g *processRetryLaunchGateState) beginWaitLocked() <-chan struct{} {
+	g.ensureChannelsLocked()
+	g.waiters++
+	return g.changed
+}
+
+func (g *processRetryLaunchGateState) endWait() {
+	g.mu.Lock()
+	g.waiters--
+	g.mu.Unlock()
+}
+
 func (g *processRetryLaunchGateState) notifyLocked() {
+	if g.waiters == 0 {
+		return
+	}
 	g.ensureChannelsLocked()
 	close(g.changed)
 	g.changed = make(chan struct{})
@@ -1332,16 +1499,13 @@ func getProcessRetryLimiter() *processRetryLimiter {
 	return globalProcessRetryLimiter.Load()
 }
 
-func (l *processRetryLimiter) init() {
-	l.once.Do(func() {
-		capacity := processRetryMaxConcurrencyFromEnv(processRetryDefaultMaxConcurrency())
-		l.ch = make(chan struct{}, capacity)
-		log.Debug("civisibility: process retry child concurrency limiter initialized with capacity %d", capacity)
-	})
-}
-
 func (l *processRetryLimiter) acquire(ctx context.Context, parentDeadlineHardCap <-chan time.Time) processRetryLimiterAcquireResult {
-	return l.acquireWithShutdown(ctx, parentDeadlineHardCap, nil)
+	return l.acquireWithShutdownLimit(
+		ctx,
+		parentDeadlineHardCap,
+		nil,
+		processRetryMaxConcurrencyFromEnv(processRetryDefaultMaxConcurrency()),
+	)
 }
 
 func (l *processRetryLimiter) acquireWithShutdown(
@@ -1349,43 +1513,147 @@ func (l *processRetryLimiter) acquireWithShutdown(
 	parentDeadlineHardCap <-chan time.Time,
 	shutdown <-chan struct{},
 ) processRetryLimiterAcquireResult {
+	return l.acquireWithShutdownLimit(
+		ctx,
+		parentDeadlineHardCap,
+		shutdown,
+		processRetryMaxConcurrencyFromEnv(processRetryDefaultMaxConcurrency()),
+	)
+}
+
+func (l *processRetryLimiter) acquireWithShutdownLimit(
+	ctx context.Context,
+	parentDeadlineHardCap <-chan time.Time,
+	shutdown <-chan struct{},
+	maxConcurrency int,
+) processRetryLimiterAcquireResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	l.init()
+	maxConcurrency = max(maxConcurrency, 1)
 	if processRetryShutdownRequested(shutdown) {
 		return processRetryLimiterAcquireResult{Cause: processRetryLimiterShutdown, Err: errProcessRetryShutdown}
 	}
 	if err := ctx.Err(); err != nil {
 		return processRetryLimiterAcquireResult{Cause: processRetryLimiterExternalCancel, Err: err}
 	}
-	select {
-	case l.ch <- struct{}{}:
-		var releaseOnce sync.Once
-		release := func() {
-			releaseOnce.Do(func() {
-				<-l.ch
-			})
-		}
-		if err := ctx.Err(); err != nil {
-			release()
-			return processRetryLimiterAcquireResult{Cause: processRetryLimiterExternalCancel, Err: err}
-		}
-		if processRetryShutdownRequested(shutdown) {
-			release()
+
+	acquired, waiter := l.tryAcquireOrQueue(maxConcurrency)
+	if !acquired {
+		select {
+		case <-waiter.ready:
+		case <-ctx.Done():
+			l.cancelWaiter(waiter)
+			return processRetryLimiterAcquireResult{Cause: processRetryLimiterExternalCancel, Err: ctx.Err()}
+		case <-shutdown:
+			l.cancelWaiter(waiter)
 			return processRetryLimiterAcquireResult{Cause: processRetryLimiterShutdown, Err: errProcessRetryShutdown}
+		case <-parentDeadlineHardCap:
+			l.cancelWaiter(waiter)
+			if err := ctx.Err(); err != nil {
+				return processRetryLimiterAcquireResult{Cause: processRetryLimiterExternalCancel, Err: err}
+			}
+			return processRetryLimiterAcquireResult{Cause: processRetryLimiterParentDeadline, Err: context.DeadlineExceeded}
 		}
-		return processRetryLimiterAcquireResult{Cause: processRetryLimiterAcquired, Release: release}
-	case <-ctx.Done():
-		return processRetryLimiterAcquireResult{Cause: processRetryLimiterExternalCancel, Err: ctx.Err()}
-	case <-shutdown:
-		return processRetryLimiterAcquireResult{Cause: processRetryLimiterShutdown, Err: errProcessRetryShutdown}
-	case <-parentDeadlineHardCap:
-		if err := ctx.Err(); err != nil {
-			return processRetryLimiterAcquireResult{Cause: processRetryLimiterExternalCancel, Err: err}
-		}
-		return processRetryLimiterAcquireResult{Cause: processRetryLimiterParentDeadline, Err: context.DeadlineExceeded}
 	}
+
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(l.release)
+	}
+	if err := ctx.Err(); err != nil {
+		release()
+		return processRetryLimiterAcquireResult{Cause: processRetryLimiterExternalCancel, Err: err}
+	}
+	if processRetryShutdownRequested(shutdown) {
+		release()
+		return processRetryLimiterAcquireResult{Cause: processRetryLimiterShutdown, Err: errProcessRetryShutdown}
+	}
+	return processRetryLimiterAcquireResult{Cause: processRetryLimiterAcquired, Release: release}
+}
+
+func (l *processRetryLimiter) tryAcquireOrQueue(maxConcurrency int) (bool, *processRetryLimiterWaiter) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.waiterHead == nil && l.active < maxConcurrency {
+		l.active++
+		return true, nil
+	}
+
+	waiter := &processRetryLimiterWaiter{
+		maxConcurrency: maxConcurrency,
+		ready:          make(chan struct{}),
+	}
+	if l.waiterTail == nil {
+		l.waiterHead = waiter
+	} else {
+		l.waiterTail.next = waiter
+	}
+	l.waiterTail = waiter
+	l.grantWaitersLocked()
+	return waiter.granted, waiter
+}
+
+func (l *processRetryLimiter) release() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.releaseLocked()
+}
+
+func (l *processRetryLimiter) releaseLocked() {
+	if l.active == 0 {
+		return
+	}
+	l.active--
+	l.grantWaitersLocked()
+}
+
+func (l *processRetryLimiter) cancelWaiter(waiter *processRetryLimiterWaiter) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if waiter.granted {
+		l.releaseLocked()
+		return
+	}
+	var previous *processRetryLimiterWaiter
+	for current := l.waiterHead; current != nil; current = current.next {
+		if current == waiter {
+			l.removeWaiterLocked(previous, current)
+			return
+		}
+		previous = current
+	}
+}
+
+func (l *processRetryLimiter) grantWaitersLocked() {
+	for {
+		var previous *processRetryLimiterWaiter
+		waiter := l.waiterHead
+		for waiter != nil && l.active >= waiter.maxConcurrency {
+			previous = waiter
+			waiter = waiter.next
+		}
+		if waiter == nil {
+			return
+		}
+
+		l.removeWaiterLocked(previous, waiter)
+		waiter.granted = true
+		l.active++
+		close(waiter.ready)
+	}
+}
+
+func (l *processRetryLimiter) removeWaiterLocked(previous, waiter *processRetryLimiterWaiter) {
+	if previous == nil {
+		l.waiterHead = waiter.next
+	} else {
+		previous.next = waiter.next
+	}
+	if l.waiterTail == waiter {
+		l.waiterTail = previous
+	}
+	waiter.next = nil
 }
 
 func processRetryShutdownRequested(shutdown <-chan struct{}) bool {
@@ -1484,10 +1752,6 @@ func runProcessRetryAttemptWithCoordinator(
 	if selectedTimeout <= 0 {
 		return finishSetupFailure(context.DeadlineExceeded, true, true)
 	}
-	preliminaryChildTestingTimeout := selectedTimeout + processRetryParentDeadlineReserve()
-	if _, ok, reason := buildProcessRetryArgsFromSnapshot(argsSnapshot, cfg.TestName, currentCPU, preliminaryChildTestingTimeout); !ok {
-		return finishSetupFailure(errors.New(reason), true, false)
-	}
 	if err := ctx.Err(); err != nil {
 		return finishSetupFailure(err, false, false)
 	}
@@ -1502,7 +1766,12 @@ func runProcessRetryAttemptWithCoordinator(
 		parentDeadlineHardCap = parentDeadlineTimer.C()
 		defer parentDeadlineTimer.Stop()
 	}
-	limiterResult := getProcessRetryLimiter().acquireWithShutdown(ctx, parentDeadlineHardCap, shutdown)
+	limiterResult := getProcessRetryLimiter().acquireWithShutdownLimit(
+		ctx,
+		parentDeadlineHardCap,
+		shutdown,
+		processRetryMaxConcurrencyForBaseline(baseline, currentCPU),
+	)
 	if limiterResult.Cause != processRetryLimiterAcquired {
 		fallbackAllowed := limiterResult.Cause == processRetryLimiterParentDeadline
 		return finishSetupFailure(limiterResult.Err, fallbackAllowed, fallbackAllowed)
@@ -1548,7 +1817,6 @@ func runProcessRetryAttemptWithCoordinator(
 	if err != nil {
 		return finishSetupFailure(err, true, false)
 	}
-	_ = os.Chmod(tempDir, 0o700)
 	attempt.TempDir = tempDir
 	var cleanupOnce sync.Once
 	attempt.Cleanup = func() {
@@ -1589,14 +1857,8 @@ func runProcessRetryAttemptWithCoordinator(
 		closeCapturesForSetupFailure()
 		return finishSetupFailure(context.DeadlineExceeded, true, true)
 	}
-	childTestingTimeout := selectedTimeout + processRetryParentDeadlineReserve()
-	filteredArgs, ok, reason := buildProcessRetryArgsFromSnapshot(argsSnapshot, cfg.TestName, currentCPU, childTestingTimeout)
-	if !ok {
-		closeCapturesForSetupFailure()
-		return finishSetupFailure(errors.New(reason), true, false)
-	}
 
-	cmd := hooks.command(executable, filteredArgs...)
+	cmd := hooks.command(executable)
 	cmd.Env = buildProcessRetryEnv(baseline.environment, childCfg)
 	cmd.Dir = workingDir
 	cmd.Stdin = nil
@@ -1632,16 +1894,14 @@ func runProcessRetryAttemptWithCoordinator(
 		closeCapturesForSetupFailure()
 		return finishSetupFailure(errors.Join(context.DeadlineExceeded, releaseTree()), true, true)
 	}
-	if latestTimeout < selectedTimeout {
-		selectedTimeout = latestTimeout
-		childTestingTimeout = selectedTimeout + processRetryParentDeadlineReserve()
-		filteredArgs, ok, reason = buildProcessRetryArgsFromSnapshot(argsSnapshot, cfg.TestName, currentCPU, childTestingTimeout)
-		if !ok {
-			closeCapturesForSetupFailure()
-			return finishSetupFailure(errors.Join(errors.New(reason), releaseTree()), true, false)
-		}
-		cmd.Args = append([]string{executable}, filteredArgs...)
+	selectedTimeout = latestTimeout
+	childTestingTimeout := selectedTimeout + processRetryParentDeadlineReserve()
+	filteredArgs, ok, reason := buildProcessRetryArgsFromSnapshot(argsSnapshot, cfg.TestName, currentCPU, childTestingTimeout)
+	if !ok {
+		closeCapturesForSetupFailure()
+		return finishSetupFailure(errors.Join(errors.New(reason), releaseTree()), true, false)
 	}
+	cmd.Args = append([]string{executable}, filteredArgs...)
 
 	stdoutCapture.StartCopy()
 	stderrCapture.StartCopy()
@@ -1783,8 +2043,8 @@ func runProcessRetryAttemptWithCoordinator(
 	} else {
 		attempt.Result = result
 		if isProcessRetryControlledTerminalStatus(result.Status) && control != nil {
-			terminal := control.controlledTerminalState()
-			attempt.ControlledTerminalCommitted = terminal.committed && terminal.status == result.Status
+			terminal, terminalTimedOut, terminalErr := control.controlledTerminalState(ctx, shutdown, attemptTimer.C())
+			applyProcessRetryControlledTerminalState(&attempt, terminal, terminalTimedOut, terminalErr)
 		}
 		if timingOK {
 			attempt.StartTime = time.Unix(0, result.StartUnixNano)
@@ -1805,6 +2065,22 @@ func runProcessRetryAttemptWithCoordinator(
 		unregisterActiveProcessRetryChild(cmd)
 	}
 	return attempt
+}
+
+func applyProcessRetryControlledTerminalState(
+	attempt *processRetryAttemptResult,
+	terminal processRetryControlledTerminalState,
+	timedOut bool,
+	err error,
+) {
+	if attempt == nil {
+		return
+	}
+	attempt.TimedOut = attempt.TimedOut || timedOut
+	if err != nil {
+		attempt.Err = errors.Join(attempt.Err, errProcessRetryControlInvalid, err)
+	}
+	attempt.ControlledTerminalCommitted = terminal.committed && terminal.status == attempt.Result.Status
 }
 
 func finalizeProcessRetryOutputCaptures(
@@ -2167,17 +2443,33 @@ func applyProcessRetryMetadataSnapshot(execMeta *testExecutionMetadata, snapshot
 }
 
 func prepareProcessRetryExecution(options *runTestWithRetryOptions, execOpts *executionOptions) {
-	options.processRetryMode = retryExecutionModeFromEnv()
-	options.processRetryModeSet = true
+	if !options.processRetryModeSet {
+		options.processRetryMode = retryExecutionModeFromEnv()
+		options.processRetryModeSet = true
+	}
 	if options.processRetryMode != retryExecutionModeProcess || !options.processRetryAllowed {
 		return
 	}
 	options.processRetryGuardsSnapshotted = true
-	options.processRetryFuzzGuardSet = options.fuzzActive != nil
-	if options.processRetryFuzzGuardSet {
+	if options.processRetryFuzzGuard != nil {
+		options.processRetryFuzzActive, options.processRetryFuzzGuardSet = options.processRetryFuzzGuard.resolve()
+	} else {
+		options.processRetryFuzzGuardSet = options.fuzzActive != nil
+	}
+	if options.processRetryFuzzGuardSet && options.processRetryFuzzGuard == nil {
 		options.processRetryFuzzActive = options.fuzzActive()
 	}
-	execOpts.processRetryLaunchBaseline = captureProcessRetryLaunchBaseline()
+	execOpts.processRetryLaunchBaseline = captureProcessRetryLaunchBaselineFromTemplate(options.processRetryLaunchTemplate)
+}
+
+func ensureProcessRetryInvocationOrdinal(options *runTestWithRetryOptions) uint64 {
+	if options == nil {
+		return 0
+	}
+	if options.processRetryInvocationOrdinal == 0 && options.processRetryInvocationCounter != nil {
+		options.processRetryInvocationOrdinal = options.processRetryInvocationCounter.Add(1)
+	}
+	return options.processRetryInvocationOrdinal
 }
 
 func runProcessRetriesIfEligible(
@@ -2196,7 +2488,7 @@ func runProcessRetriesIfEligible(
 		}
 		return false, reason
 	}
-	parallelMaxConcurrency := processRetryParallelMaxConcurrency()
+	parallelMaxConcurrency := processRetryParallelMaxConcurrencyForBaseline(execOpts.processRetryLaunchBaseline)
 	parallelEFD := shouldUseParallelEFD(
 		execOpts.options,
 		execOpts.executionMetadata,
@@ -2365,12 +2657,11 @@ func prepareProcessRetryIteration(execOpts *executionOptions) (*processRetryPend
 
 	parentDeadline, parentDeadlineOK := execOpts.options.t.Deadline()
 	childCfg := processRetryChildConfig{
-		TestName:           execOpts.options.processRetryIdentity.FullName,
-		Attempt:            currentIndex,
-		RetryReason:        retryReason,
-		MRunEpoch:          execOpts.options.processRetryMRunEpoch,
-		InvocationOrdinal:  execOpts.options.processRetryInvocationOrdinal,
-		ObservedGOMAXPROCS: execOpts.options.processRetryObservedGOMAXPROCS,
+		TestName:          execOpts.options.processRetryIdentity.FullName,
+		Attempt:           currentIndex,
+		RetryReason:       retryReason,
+		MRunEpoch:         execOpts.options.processRetryMRunEpoch,
+		InvocationOrdinal: ensureProcessRetryInvocationOrdinal(execOpts.options),
 	}
 	ctx := execOpts.processRetryPolicyContext
 	if ctx == nil {
@@ -2404,7 +2695,9 @@ func prepareProcessRetryIteration(execOpts *executionOptions) (*processRetryPend
 
 func (p *processRetryPendingIteration) cleanup() {
 	if p != nil && p.attempt.Cleanup != nil {
-		p.attempt.Cleanup()
+		cleanup := p.attempt.Cleanup
+		p.attempt.Cleanup = nil
+		cleanup()
 	}
 }
 
@@ -2536,6 +2829,9 @@ func runBoundedParallelProcessRetryIterations(execOpts *executionOptions, attemp
 			default:
 			}
 			pending, outcome := prepareProcessRetryIteration(execOpts)
+			if pending != nil {
+				pending.cleanup()
+			}
 			prepared <- preparedIteration{pending: pending, outcome: outcome, releaseSlot: true}
 		})
 	}
@@ -3339,7 +3635,7 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		observation.test = t
 		observation.startTime = start
 
-		group, reason := newRetryAttemptGroup(t)
+		group, reason := newRetryAttemptGroupWithOutputObservation(t, false)
 		if reason != "" {
 			writer.Write(processRetryNotRunResult(cfg, "testing_t_reflection_drift"))
 			t.Fail()
@@ -3705,9 +4001,6 @@ func writeProcessRetryResultAtomically(resultPath string, result processRetryRes
 		}
 		_ = os.Remove(tmpName)
 	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		return err
-	}
 	if _, err := tmp.Write(payload); err != nil {
 		return err
 	}

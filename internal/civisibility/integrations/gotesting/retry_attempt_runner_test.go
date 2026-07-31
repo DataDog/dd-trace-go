@@ -758,6 +758,26 @@ func TestProcessRetryParityFreshRunnerSharesRootParallelLeaseAcrossSequentialAtt
 			group, reason := newRetryAttemptGroup(original)
 			require.Empty(original, reason)
 			defer group.retire()
+			layout, layoutReason := getRetryAttemptLayout()
+			require.Empty(original, layoutReason)
+			originalBase := commonBaseForTest(original, layout)
+			parentBase := pointerWord(originalBase, layout.common.parent)
+			originalMu := fieldPtr[sync.RWMutex](originalBase, layout.common.mu)
+			parentMu := fieldPtr[sync.RWMutex](parentBase, layout.common.mu)
+			var transitionLockChecks atomic.Int32
+			group.originalParallelLocked = func() {
+				originalLocked := !originalMu.TryRLock()
+				if !originalLocked {
+					originalMu.RUnlock()
+				}
+				parentLocked := !parentMu.TryRLock()
+				if !parentLocked {
+					parentMu.RUnlock()
+				}
+				if originalLocked && parentLocked {
+					transitionLockChecks.Add(1)
+				}
+			}
 
 			first, firstResult, reason := runFreshRetryAttemptInGroup(group, func(local *testing.T) {
 				local.Parallel()
@@ -766,6 +786,7 @@ func TestProcessRetryParityFreshRunnerSharesRootParallelLeaseAcrossSequentialAtt
 			require.NotNil(original, first)
 			defer first.cancelContexts()
 			require.False(original, firstResult.failed)
+			require.Equal(original, int32(1), transitionLockChecks.Load())
 
 			second, secondResult, reason := runFreshRetryAttemptInGroup(group, func(local *testing.T) {
 				local.Parallel()
@@ -785,10 +806,6 @@ func TestProcessRetryParityFreshRunnerSharesRootParallelLeaseAcrossSequentialAtt
 			require.Equal(original, retryAttemptCompletionPanic, thirdResult.completionPhase)
 			requireRetryAttemptParallelConflict(original, thirdResult.panicData)
 
-			layout, layoutReason := getRetryAttemptLayout()
-			require.Empty(original, layoutReason)
-			originalBase := commonBaseForTest(original, layout)
-			parentBase := pointerWord(originalBase, layout.common.parent)
 			occurrences := 0
 			for _, sub := range *fieldPtr[[]*testing.T](parentBase, layout.common.sub) {
 				if sub == original {
@@ -831,7 +848,35 @@ func TestProcessRetryParityFreshRunnerSerializesAttemptsInOneGroup(t *testing.T)
 	group.executionMu.Unlock()
 }
 
-func TestProcessRetryParityMatcherTransactionRestoresOnlyTopLevelDescendants(t *testing.T) {
+func TestProcessRetryParityMatcherTransactionDefersSnapshotUntilRetry(t *testing.T) {
+	mu := &sync.Mutex{}
+	names := map[string]int32{
+		"TestRoot/existing":  1,
+		"TestOther/existing": 2,
+	}
+	tx := newRetryAttemptMatcherTransaction(&contextMatcher{mu: mu, subNames: &names}, "TestRoot/")
+
+	tx.beginAttempt()
+	require.Equal(t, 1, tx.attempts)
+	require.Nil(t, tx.baseline)
+	require.Equal(t, int32(1), names["TestRoot/existing"])
+
+	names["TestRoot/first-attempt"] = 3
+	tx.beginAttempt()
+	require.Equal(t, 2, tx.attempts)
+	require.NotContains(t, names, "TestRoot/existing")
+	require.NotContains(t, names, "TestRoot/first-attempt")
+	require.Equal(t, int32(2), names["TestOther/existing"])
+
+	names["TestRoot/retry"] = 4
+	tx.restore()
+	require.Equal(t, int32(1), names["TestRoot/existing"])
+	require.Equal(t, int32(3), names["TestRoot/first-attempt"])
+	require.NotContains(t, names, "TestRoot/retry")
+	require.Equal(t, int32(2), names["TestOther/existing"])
+}
+
+func TestProcessRetryParityMatcherTransactionPreservesFirstAttemptNames(t *testing.T) {
 	group, reason := newRetryAttemptGroup(t)
 	require.Empty(t, reason)
 	defer group.retire()
@@ -856,7 +901,153 @@ func TestProcessRetryParityMatcherTransactionRestoresOnlyTopLevelDescendants(t *
 
 	var nativeName string
 	require.True(t, t.Run("duplicate", func(child *testing.T) { nativeName = child.Name() }))
-	require.Equal(t, t.Name()+"/duplicate", nativeName)
+	require.Equal(t, t.Name()+"/duplicate#02", nativeName)
+}
+
+func TestProcessRetryParitySkipsOutputObservationWhenLogsAreDisabled(t *testing.T) {
+	group, reason := newRetryAttemptGroupWithOutputObservation(t, false)
+	require.Empty(t, reason)
+	defer group.retire()
+
+	attempt, result, reason := runFreshRetryAttemptInGroup(group, func(local *testing.T) {
+		local.Log("process child output is captured by the parent pipes")
+		_, _ = local.Output().Write([]byte("partial output"))
+	})
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	require.Empty(t, result.output)
+	require.Empty(t, result.nativeOutput)
+	require.Empty(t, attempt.outputCapture.snapshot())
+	require.Nil(t, *fieldPtr[[]byte](commonBaseForTest(attempt.test, attempt.layout), attempt.layout.common.output))
+}
+
+func TestProcessRetryParityDefaultAttemptGroupObservesOutput(t *testing.T) {
+	group, reason := newRetryAttemptGroup(t)
+	require.Empty(t, reason)
+	defer group.retire()
+
+	require.True(t, group.observeOutput)
+	require.False(t, group.observeNativeOutput)
+}
+
+func TestProcessRetryParityObservesOutputWhenLogsAreEnabled(t *testing.T) {
+	group, reason := newRetryAttemptGroupWithOutputObservation(t, true)
+	require.Empty(t, reason)
+	defer group.retire()
+
+	attempt, result, reason := runFreshRetryAttemptInGroup(group, func(local *testing.T) {
+		local.Log("captured log output")
+	})
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	require.Contains(t, string(result.output), "captured log output")
+	require.Empty(t, result.nativeOutput)
+	require.Empty(t, attempt.outputCapture.snapshot())
+	require.Nil(t, *fieldPtr[[]byte](commonBaseForTest(attempt.test, attempt.layout), attempt.layout.common.output))
+}
+
+func TestProcessRetryParityNativeOutputObservationIsExplicit(t *testing.T) {
+	group, reason := newRetryAttemptGroupWithOutputObservation(t, true)
+	require.Empty(t, reason)
+	group.observeNativeOutput = true
+	defer group.retire()
+
+	attempt, result, reason := runFreshRetryAttemptInGroup(group, func(local *testing.T) {
+		local.Log("native output oracle")
+	})
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	require.Contains(t, string(result.output), "native output oracle")
+	require.Contains(t, string(result.nativeOutput), "native output oracle")
+	require.Nil(t, *fieldPtr[[]byte](commonBaseForTest(attempt.test, attempt.layout), attempt.layout.common.output))
+}
+
+func TestProcessRetryParityGroupReusesValidatedLayout(t *testing.T) {
+	group, reason := newRetryAttemptGroup(t)
+	require.Empty(t, reason)
+	defer group.retire()
+
+	require.Same(t, getTestingInternalsLayout(), group.layout)
+	require.NotNil(t, group.originalParentBase)
+	attempt, reason := newRetryAttemptRootInGroup(group)
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	require.Same(t, group.layout, attempt.layout)
+	require.Equal(t, group.originalParentBase, pointerWord(commonBaseForTest(t, group.layout), group.layout.common.parent))
+}
+
+func TestProcessRetryParityCapturesEachTerminalStackOnce(t *testing.T) {
+	tests := []struct {
+		name       string
+		target     func(*testing.T)
+		wantStacks int32
+	}{
+		{name: "panic", target: func(*testing.T) { panic("boom") }, wantStacks: 1},
+		{name: "fail now", target: func(local *testing.T) { local.FailNow() }},
+		{name: "skip now", target: func(local *testing.T) { local.SkipNow() }},
+		{name: "cleanup panic", target: func(local *testing.T) {
+			local.Cleanup(func() { panic("cleanup boom") })
+		}, wantStacks: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			group, reason := newRetryAttemptGroupWithOutputObservation(t, false)
+			require.Empty(t, reason)
+			defer group.retire()
+			var captures atomic.Int32
+			attempt, result, reason := runFreshRetryAttemptInGroupWithCallbacks(
+				group,
+				func(attempt *retryAttemptRoot) string {
+					attempt.stackCapture = func() []byte {
+						captures.Add(1)
+						return []byte("canonical stack")
+					}
+					return ""
+				},
+				tt.target,
+				nil,
+			)
+			require.Empty(t, reason)
+			require.NotNil(t, attempt)
+			require.Equal(t, tt.wantStacks, captures.Load())
+			if tt.wantStacks > 0 {
+				stack := result.panicStack
+				if result.cleanupPanicData != nil {
+					stack = result.cleanupPanicStack
+				}
+				require.Equal(t, "canonical stack", string(stack))
+			}
+		})
+	}
+}
+
+func TestProcessRetryParityOutputCaptureTransfersOwnership(t *testing.T) {
+	capture := &retryAttemptOutputCapture{output: []byte("attempt output")}
+
+	output := capture.take()
+	require.Equal(t, []byte("attempt output"), output)
+	require.Empty(t, capture.snapshot())
+}
+
+func TestProcessRetryParityChattyWriterBypassesGlobalCapture(t *testing.T) {
+	var destination bytes.Buffer
+	global := &customWriter{writer: &destination}
+	writer := retryAttemptChattyWriter(global)
+
+	_, err := writer.Write([]byte("attempt output"))
+	require.NoError(t, err)
+	require.Equal(t, "attempt output", destination.String())
+	require.Empty(t, global.TakeOutput(t.Name()))
+}
+
+func TestProcessRetryParityCustomWriterTakeOutputDoesNotAccumulateAttempts(t *testing.T) {
+	writer := &customWriter{}
+	writer.internalWrite(t.Name(), []byte("first"))
+	require.Equal(t, []byte("first"), writer.TakeOutput(t.Name()))
+	require.Empty(t, writer.TakeOutput(t.Name()))
+
+	writer.internalWrite(t.Name(), []byte("second"))
+	require.Equal(t, []byte("second"), writer.TakeOutput(t.Name()))
 }
 
 func TestProcessRetryParityFreshRunnerRetiresLateMethodDestinations(t *testing.T) {
@@ -879,6 +1070,12 @@ func TestProcessRetryParityFreshRunnerRetiresLateMethodDestinations(t *testing.T
 	require.Panics(t, local.Fail)
 	require.True(t, group.hasLateFailure())
 	group.retire()
+	group.mu.Lock()
+	retired := group.retired
+	remainingAttempts := len(group.attempts)
+	group.mu.Unlock()
+	require.True(t, retired)
+	require.Zero(t, remainingAttempts)
 
 	require.Panics(t, func() { local.Log("late after logical group retirement") })
 	require.Panics(t, func() { _, _ = writer.Write([]byte("late writer after retirement\n")) })

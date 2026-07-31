@@ -24,17 +24,17 @@ func retryContinuationStoppedLocked(execOpts *executionOptions, completed *testi
 	if execOpts == nil || execOpts.options == nil {
 		return false
 	}
-	if (completed != nil && completed.Failed()) ||
-		(execMeta != nil && execMeta.panicData != nil) ||
-		(execOpts.retryAttemptGroup != nil && execOpts.retryAttemptGroup.hasLateFailure()) {
-		execOpts.rawAttemptFailureSeen = true
-	}
 	failfastEnabled := execOpts.options.failfastEnabled
 	if failfastEnabled == nil {
 		failfastEnabled = retryAttemptFailfastEnabled
 	}
 	if !failfastEnabled() {
 		return false
+	}
+	if (completed != nil && completed.Failed()) ||
+		(execMeta != nil && execMeta.panicData != nil) ||
+		(execOpts.retryAttemptGroup != nil && execOpts.retryAttemptGroup.hasLateFailure()) {
+		execOpts.rawAttemptFailureSeen = true
 	}
 	if execOpts.rawAttemptFailureSeen {
 		execOpts.failfastRawFailure = true

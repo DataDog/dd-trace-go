@@ -74,13 +74,15 @@ func TestGetCodeOwnersCachesMissingDiscovery(t *testing.T) {
 	t.Chdir(workingDir)
 	resetCodeOwnersTestState(t, workspaceDir)
 
-	assert.Nil(t, GetCodeOwners())
+	codeOwners, complete := GetCodeOwnersWithStatus()
+	assert.Nil(t, codeOwners)
+	assert.True(t, complete)
 
 	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), "/cached/miss @owner\n")
 	assert.Nil(t, GetCodeOwners())
 
 	ResetCodeOwnersForTesting()
-	codeOwners := GetCodeOwners()
+	codeOwners = GetCodeOwners()
 	require.NotNil(t, codeOwners)
 
 	match, ok := codeOwners.Match("/cached/miss")
@@ -119,11 +121,14 @@ func TestGetCodeOwnersDoesNotCacheMalformedFileAsMissing(t *testing.T) {
 
 	codeOwnersPath := filepath.Join(workspaceDir, "CODEOWNERS")
 	writeCodeOwnersFile(t, codeOwnersPath, strings.Repeat("x", 70*1024))
-	assert.Nil(t, GetCodeOwners())
+	codeOwners, complete := GetCodeOwnersWithStatus()
+	assert.Nil(t, codeOwners)
+	assert.False(t, complete)
 
 	writeCodeOwnersFile(t, codeOwnersPath, "/fixed @owner\n")
-	codeOwners := GetCodeOwners()
+	codeOwners, complete = GetCodeOwnersWithStatus()
 	require.NotNil(t, codeOwners)
+	require.True(t, complete)
 
 	match, ok := codeOwners.Match("/fixed")
 	require.True(t, ok)
