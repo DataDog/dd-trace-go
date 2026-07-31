@@ -46,8 +46,8 @@ type otlpTraceWriter struct {
 
 func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 	resource := buildResource(c.internalConfig)
-	// FR15: signal to the backend that the SDK has computed stats so it does
-	// not recompute them from the trace spans.
+	// Signal to the backend that the SDK has computed stats so it does not
+	// recompute them from the trace spans.
 	if c.internalConfig.OTLPSpanMetricsEnabled() {
 		resource.Attributes = append(resource.Attributes,
 			otlpKeyValue("_dd.stats_computed", otlpStringValue("true")),
@@ -166,7 +166,7 @@ func (w *otlpTraceWriter) flush() {
 }
 
 // stop flushes any buffered spans and blocks until every in-flight send
-// (including this one) completes, satisfying FR15_3.
+// (including this one) completes.
 func (w *otlpTraceWriter) stop() {
 	w.flush()
 	w.wgMu.Lock()

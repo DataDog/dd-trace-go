@@ -80,6 +80,12 @@ type statsSender interface {
 	// peerTags returns the peer tags to use for a stat span, given the
 	// agent-advertised peer tags.
 	peerTags(agentPeerTags []string) []string
+	// httpRouteFallback reports whether the OTel http.route tag should be used
+	// as a fallback for the HTTPEndpoint stats dimension when http.endpoint is
+	// unset. This OTel-attribute mapping only applies to OTLP-routed stats;
+	// native /v0.6/stats payloads must keep their existing semantics for spans
+	// that never set ext.HTTPEndpoint.
+	httpRouteFallback() bool
 }
 
 // ddStatsSender sends stats to the Datadog Agent's /v0.6/stats path.
@@ -95,6 +101,10 @@ func (s *ddStatsSender) shouldObfuscate() bool {
 
 func (s *ddStatsSender) peerTags(agentPeerTags []string) []string {
 	return agentPeerTags
+}
+
+func (s *ddStatsSender) httpRouteFallback() bool {
+	return false
 }
 
 func (s *ddStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
@@ -125,6 +135,10 @@ func (s *otlpStatsSender) peerTags(_ []string) []string {
 	// SDK implementation"); suppress agent-advertised peer tags instead of
 	// leaving stale DD-agent state on an OTLP-routed concentrator.
 	return []string{}
+}
+
+func (s *otlpStatsSender) httpRouteFallback() bool {
+	return true
 }
 
 func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
@@ -262,10 +276,12 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
-	if httpEndpoint == "" {
+	if httpEndpoint == "" && c.sender.httpRouteFallback() {
 		// http.endpoint (net/http, mux, httptreemux, httprouter) and http.route
 		// (chi, fiber, gin, echo, go-restful) are set by disjoint sets of
 		// contribs, so this never overrides an explicit http.endpoint value.
+		// Only OTLP-routed stats map http.route this way; native /v0.6/stats
+		// payloads keep their existing empty-httpEndpoint behavior.
 		httpEndpoint, _ = s.meta.Get(ext.HTTPRoute)
 	}
 

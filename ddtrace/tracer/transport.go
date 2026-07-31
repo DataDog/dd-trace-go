@@ -209,10 +209,16 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	if t := getGlobalTracer(); t != nil {
 		tc := t.TracerConf()
 		if tc.TracingAsTransport || tc.CanComputeStats || tc.OTLPSpanMetricsEnabled {
-			// "yes" is the spec-correct value (FR15). Previously "t" was used for the
+			// "yes" is the spec-correct value. Previously "t" was used for the
 			// TracingAsTransport and CanComputeStats paths; both values are accepted by
 			// the Agent, but "yes" is canonical going forward.
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
+		} else {
+			// Once a global tracer exists, live TracerConf() is authoritative and must
+			// override any "yes" baked into the static header map at startup (see
+			// traceTransportHeaders) — otherwise disabling OTLPSpanMetricsEnabled at
+			// runtime would never clear a header set before that config existed.
+			req.Header.Del("Datadog-Client-Computed-Stats")
 		}
 		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
 		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))

@@ -396,7 +396,7 @@ func loadConfig() *Config {
 		// DD_TRACE_STATS_COMPUTATION_ENABLED was not explicitly configured,
 		// disable native stats too: the user has signalled they want no SDK-side
 		// span metrics, and the Datadog-Client-Computed-Stats header should
-		// therefore be absent (FR15).
+		// therefore be absent.
 		if !v {
 			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
 				cfg.statsComputationEnabled = false

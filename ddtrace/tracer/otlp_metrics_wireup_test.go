@@ -139,7 +139,7 @@ func TestOTLPSpanMetricsHeaderOnNativeTraces(t *testing.T) {
 
 // TestOTLPConcentratorHTTPRouteAttribute verifies that a span carrying the OTel
 // http.route tag (ext.HTTPRoute) produces a data-point with http.route as a
-// first-class attribute (FR06). This exercises the ext.HTTPRoute fallback path
+// first-class attribute. This exercises the ext.HTTPRoute fallback path
 // in newTracerStatSpan, which populates ClientGroupedStats.HTTPEndpoint so that
 // buildDataPointAttributes emits it — without relying on the peer-tags path.
 func TestOTLPConcentratorHTTPRouteAttribute(t *testing.T) {
@@ -178,8 +178,50 @@ func TestOTLPConcentratorHTTPRouteAttribute(t *testing.T) {
 	assert.Contains(t, body, `/users/{id}`, "http.route value must appear in the payload")
 }
 
+// TestNativeConcentratorIgnoresHTTPRoute verifies that the ext.HTTPRoute
+// fallback is scoped to OTLP-routed stats only. A concentrator using
+// the native ddStatsSender (the default, used for the Agent's /v0.6/stats
+// path) must leave HTTPEndpoint empty for a span that only sets http.route,
+// preserving pre-existing behavior for DD-native client-side stats users
+// (e.g. chi, fiber, gin, echo, go-restful) who never set ext.HTTPEndpoint.
+func TestNativeConcentratorIgnoresHTTPRoute(t *testing.T) {
+	dt := newDummyTransport()
+	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
+		c.ddTransport = dt
+		c.internalConfig.SetEnv("prod", internalconfig.OriginCode)
+	})
+	require.NoError(t, err)
+
+	bucketSize := int64(500_000)
+	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
+
+	s := &Span{
+		name:     "web.request",
+		service:  "svc",
+		resource: "web.request",
+		start:    time.Now().UnixNano() - int64(30*time.Second),
+		duration: int64(50 * time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+		meta:     tinternal.NewSpanMetaFromMap(map[string]string{"http.route": "/users/{id}"}),
+	}
+	ss, ok := c.newTracerStatSpan(s, nil)
+	require.True(t, ok)
+	c.add(ss)
+	c.flushAndSend(time.Now(), withCurrentBucket)
+
+	csps := dt.Stats()
+	require.NotEmpty(t, csps, "native stats path must receive a payload")
+	for _, csp := range csps {
+		for _, bucket := range csp.Stats {
+			for _, group := range bucket.Stats {
+				assert.Empty(t, group.HTTPEndpoint, "native stats must not map http.route to HTTPEndpoint")
+			}
+		}
+	}
+}
+
 // TestOTLPTraceWriterStatsComputedResourceAttr verifies that _dd.stats_computed=true
-// is added to the OTLP trace resource when OTLP span metrics are enabled (FR15).
+// is added to the OTLP trace resource when OTLP span metrics are enabled.
 func TestOTLPTraceWriterStatsComputedResourceAttr(t *testing.T) {
 	t.Run("present-when-enabled", func(t *testing.T) {
 		cfg, err := newTestConfig(func(c *config) {
