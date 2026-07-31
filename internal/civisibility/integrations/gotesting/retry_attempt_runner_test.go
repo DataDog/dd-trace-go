@@ -953,6 +953,16 @@ func TestProcessRetryParityNativeOutputObservationIsExplicit(t *testing.T) {
 	defer group.retire()
 
 	attempt, result, reason := runFreshRetryAttemptInGroup(group, func(local *testing.T) {
+		base := commonBaseForTest(local, group.layout)
+		mu := fieldPtr[sync.RWMutex](base, group.layout.common.mu)
+		mu.Lock()
+		// Force Go's buffered output path so the assertion is independent of -test.v.
+		setPrivatePointerField(
+			group.layout.common.chatty.typ,
+			fieldRawPtr(base, group.layout.common.chatty.unsafeField),
+			nil,
+		)
+		mu.Unlock()
 		local.Log("native output oracle")
 	})
 	require.Empty(t, reason)
