@@ -6,7 +6,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
 	github.com/gocql/gocql v1.7.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/mod v0.36.0
+	golang.org/x/mod v0.37.0
 )
 
 require (
