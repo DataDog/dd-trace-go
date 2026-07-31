@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -500,11 +501,9 @@ func (r *retryAttemptRoot) lastTerminalStack(kinds ...retryAttemptTerminalKind) 
 	}
 	r.terminalMu.Lock()
 	defer r.terminalMu.Unlock()
-	for i := len(r.terminalTrace) - 1; i >= 0; i-- {
-		for _, kind := range kinds {
-			if r.terminalTrace[i].kind == kind {
-				return append([]byte(nil), r.terminalTrace[i].stack...)
-			}
+	for _, terminal := range slices.Backward(r.terminalTrace) {
+		if slices.Contains(kinds, terminal.kind) {
+			return append([]byte(nil), terminal.stack...)
 		}
 	}
 	return nil

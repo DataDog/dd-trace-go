@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -8574,11 +8575,11 @@ func setEnvForTesting(t testing.TB, pairs ...string) func() {
 		require.NoError(t, os.Setenv(key, value))
 	}
 	return func() {
-		for i := len(previous) - 1; i >= 0; i-- {
-			if previous[i].ok {
-				_ = os.Setenv(previous[i].key, previous[i].value)
+		for _, item := range slices.Backward(previous) {
+			if item.ok {
+				_ = os.Setenv(item.key, item.value)
 			} else {
-				_ = os.Unsetenv(previous[i].key)
+				_ = os.Unsetenv(item.key)
 			}
 		}
 	}

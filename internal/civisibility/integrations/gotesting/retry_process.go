@@ -3834,8 +3834,8 @@ func markProcessRetryChildFailed(tb testing.TB) {
 		ancestry = append(ancestry, fields)
 		fields = getCommonParentPrivateFields(fields)
 	}
-	for i := len(ancestry) - 1; i >= 0; i-- {
-		ancestry[i].SetFailed(true)
+	for _, fields := range slices.Backward(ancestry) {
+		fields.SetFailed(true)
 	}
 }
 
