@@ -3801,6 +3801,19 @@ func TestProcessRetryBoundedOutput(t *testing.T) {
 	}
 }
 
+func TestProcessRetryBoundedOutputClampsOversizedLimit(t *testing.T) {
+	sink := newProcessRetryBoundedOutput(int64(^uint64(0) >> 1))
+	require.Equal(t, int64(processRetryStreamMaxBytes), sink.maxBytes)
+
+	n, err := sink.Write([]byte("bounded"))
+	require.NoError(t, err)
+	require.Equal(t, len("bounded"), n)
+	tail, truncated := sink.Tail()
+	require.False(t, truncated)
+	require.Equal(t, "bounded", tail)
+	require.LessOrEqual(t, cap(sink.tail), processRetryStreamMaxBytes)
+}
+
 func BenchmarkProcessRetryBoundedOutputSaturated(b *testing.B) {
 	for _, writeSize := range []int{32, 64, 256} {
 		b.Run(strconv.Itoa(writeSize)+"B", func(b *testing.B) {

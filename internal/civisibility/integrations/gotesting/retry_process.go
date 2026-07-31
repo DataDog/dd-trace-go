@@ -477,6 +477,8 @@ type processRetryBoundedOutput struct {
 func newProcessRetryBoundedOutput(maxBytes int64) *processRetryBoundedOutput {
 	if maxBytes < 0 {
 		maxBytes = 0
+	} else if maxBytes > processRetryStreamMaxBytes {
+		maxBytes = processRetryStreamMaxBytes
 	}
 	return &processRetryBoundedOutput{
 		maxBytes: maxBytes,
@@ -532,17 +534,24 @@ func (w *processRetryBoundedOutput) appendTailLocked(p []byte) {
 
 func (w *processRetryBoundedOutput) appendGrowingTailLocked(p []byte) {
 	oldLen := len(w.tail)
-	newLen := oldLen + len(p)
+	maxBytes := int(w.maxBytes)
+	appendLen := len(p)
+	if remaining := maxBytes - oldLen; appendLen > remaining {
+		appendLen = remaining
+	}
+	newLen := oldLen + appendLen
 	if newLen > cap(w.tail) {
-		newCap := max(newLen, max(cap(w.tail)*2, 1))
-		newCap = min(newCap, int(w.maxBytes))
+		currentCap := cap(w.tail)
+		growth := max(currentCap, 1)
+		growth = min(growth, maxBytes-currentCap)
+		newCap := max(newLen, currentCap+growth)
 		grown := make([]byte, newLen, newCap)
 		copy(grown, w.tail)
 		w.tail = grown
 	} else {
 		w.tail = w.tail[:newLen]
 	}
-	copy(w.tail[oldLen:], p)
+	copy(w.tail[oldLen:], p[:appendLen])
 }
 
 func (w *processRetryBoundedOutput) Tail() (string, bool) {
