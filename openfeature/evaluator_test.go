@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
 )

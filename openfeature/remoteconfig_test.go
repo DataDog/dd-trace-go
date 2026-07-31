@@ -497,11 +497,11 @@ func TestProcessConfigUpdate(t *testing.T) {
 		require.NotContains(t, updatedConfig.Flags, "invalid-flag")
 		require.Contains(t, updatedConfig.invalidFlags, "invalid-flag")
 
-		validResult := evaluateConfiguredFlag(updatedConfig, "valid-flag", false, nil, time.Now())
+		validResult := evaluateConfiguredFlag(updatedConfig, "valid-flag", false, nil)
 		require.Equal(t, true, validResult.Value)
 		require.Equal(t, "STATIC", string(validResult.Reason))
 
-		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now())
+		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil)
 		require.Equal(t, false, invalidResult.Value)
 		require.Equal(t, "DEFAULT", string(invalidResult.Reason))
 	})
