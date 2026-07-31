@@ -518,18 +518,8 @@ func (p *DatadogProvider) evaluate(
 		}
 	}
 
-	// Find the flag
-	flag, exists := config.Flags[flagKey]
-	if !exists {
-		return evaluationResult{
-			Value:  defaultValue,
-			Reason: openfeature.ErrorReason,
-			Error:  fmt.Errorf("%w: %q", errFlagNotFound, flagKey),
-		}
-	}
-
 	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateFlag(flag, defaultValue, flatCtx, evalNow)
+	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow)
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.
