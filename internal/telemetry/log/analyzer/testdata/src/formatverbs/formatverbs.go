@@ -28,6 +28,11 @@ func goodErrorDotErrorTrailingText(err *customError) {
 	internallog.Warn("failed with %v\n", err.Error())
 }
 
+func goodErrorDotErrorWithEscapedPercent(err *customError) {
+	// A literal %% after the sole, final %v must not be misread as a second verb.
+	internallog.Warn("failed with %v (100%% complete)", err.Error())
+}
+
 func goodNonConstantFormat(format string, a any) {
 	// Non-constant formats are constantlogmsg's problem, not this analyzer's.
 	internallog.Debug(format, a)
@@ -47,12 +52,26 @@ func badPlusVNotAtEnd(v any) {
 	internallog.Info("value %+v suffix %s", v, "x") // want "must be the last format verb"
 }
 
-// badMultipleVerbsLastIsErrorDotError is the regression case for a real false
-// negative: the final argument being err.Error() must not exempt the whole
-// call when an earlier %v verb reflects over a non-error value - only the
-// format's single final verb position is ever eligible for that exemption.
-func badMultipleVerbsLastIsErrorDotError(config any, err *customError) {
-	internallog.Warn("defaulting to %v; error: %v", config, err.Error()) // want "must be the last format verb"
+func badNonErrorAtEndWithEscapedPercent(name string) {
+	// A literal %% after %v must not hide that %v is a non-error final verb.
+	internallog.Error("value: %v (100%% complete)", name) // want "exposes uncontrolled data"
+}
+
+func badWidthFormNonError(name string) {
+	// A width modifier (%-10v) must not hide the verb from detection.
+	internallog.Error("value: %-10v", name) // want "exposes uncontrolled data"
+}
+
+func badMultipleVerbsWithErrorLast(cfg any, err *customError) {
+	// err.Error() as the last arg no longer blanket-exempts the whole call:
+	// the earlier %v (over cfg, a non-error) is still reported.
+	internallog.Warn("defaulting to %v; error: %v", cfg, err.Error()) // want "exposes uncontrolled data"
+}
+
+func badSingleVerbNotFinalWithErrorLast(cfg any, err *customError) {
+	// Exactly one %v-family verb, but it isn't the final verb — still reported
+	// even though the last argument happens to be err.Error().
+	internallog.Warn("value %v; msg: %s", cfg, err.Error()) // want "must be the last format verb"
 }
 
 // ── Suggestion: allowed, but flagged as a style nudge ───────────────────────

@@ -14,7 +14,6 @@ package analyzer
 
 import (
 	"go/ast"
-	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
@@ -24,29 +23,17 @@ import (
 
 const telemetrySafetyDoc = `telemetrysafety enforces PII-safety rules on internal/telemetry/log calls:
 
-  - slog.Any(key, value): value must implement slog.LogValuer (e.g. SafeError,
-    SafeSlice) or be a nil literal. A value that merely implements error is
-    called out specifically: wrap it with NewSafeError first.
+  - slog.Any(key, value): value's exact type must implement slog.LogValuer
+    (e.g. SafeError, SafeSlice) or be a nil literal — a pointer-receiver
+    LogValue on T does not exempt a non-pointer T, since slog.Any boxes the
+    value as-is and cannot reach a pointer method. A value that merely
+    implements error is called out specifically: wrap it with NewSafeError
+    first.
   - slog.String(key, err.Error()): forbidden when err implements error — the
     raw error message bypasses redaction. Use slog.Any(key, NewSafeError(err)).
 
 These replace the ruleguard rules in the retired rules/telemetry_rules.go
-(telemetryLogSmartSlogAny, telemetryLogStringErrorCall, telemetryLogRawErrorUsage).
-
-An attr is checked whether it's built inline (slog.Any(...) as the log-call
-argument) or hoisted into a variable first, as long as the assignment is in
-the same package as the log call. Not followed, deliberately — the pass does
-no dataflow analysis, so it never guesses which value reaches a log call:
-
-  - attrs returned from a helper function: attr := buildAttr(x)
-  - []slog.Attr slices, including spread calls: log.Error(msg, attrs...)
-  - attrs read from struct fields, map/slice elements, or channels
-  - attrs assigned in a different package from the log call
-  - attrs copied through another variable: b := a; log.Error(msg, b)
-
-Every assignment to a hoisted variable is checked independently, so an if/else
-that only makes one branch unsafe still gets flagged. A //nolint suppressing a
-hoisted attr must sit on the slog.Any/slog.String line, not the log-call line.`
+(telemetryLogSmartSlogAny, telemetryLogStringErrorCall, telemetryLogRawErrorUsage).`
 
 // telemetryLogFuncNames are the message-emitting entry points checked: the
 // package-level functions and the identically-named *Logger methods.
@@ -57,10 +44,8 @@ var telemetryLogFuncNames = map[string]bool{"Debug": true, "Warn": true, "Error"
 var TelemetrySafetyAnalyzer = NewTelemetrySafety(telemetryLogPkg, telemetryLogPkg)
 
 // NewTelemetrySafety returns an analyzer that checks slog.Any/slog.String
-// arguments reaching logPkg's Debug/Warn/Error functions and Logger methods,
-// inline or hoisted into a variable first — see telemetrySafetyDoc for the
-// exact scope and its limitations. skipPkg's own files are not analyzed —
-// internal/telemetry/log's
+// arguments passed directly to logPkg's Debug/Warn/Error functions and Logger
+// methods. skipPkg's own files are not analyzed — internal/telemetry/log's
 // implementation builds these slog.Attr values itself (e.g. forward.go,
 // helpers.go) using NewSafeError directly rather than through logPkg's public
 // entry points, so there is nothing for this analyzer to see there, but the
@@ -80,165 +65,51 @@ type telemetrySafetyRunner struct {
 	skipPkg string
 }
 
-// safetyPass holds the state for a single run over one package. It cannot
-// live on telemetrySafetyRunner: analysis.Analyzer.Run is invoked
-// concurrently across packages by the multichecker driver, and
-// telemetrySafetyRunner is one value shared by every call.
-type safetyPass struct {
-	pass           *analysis.Pass
-	ins            *inspector.Inspector
-	errIface       *types.Interface
-	logValuerIface *types.Interface
-
-	// attrAssigns maps a variable to every log/slog constructor call assigned
-	// to it anywhere in this package. Built lazily by attrAssignments — most
-	// packages never call the telemetry logger, so most never pay for the
-	// extra traversal.
-	attrAssigns map[types.Object][]*ast.CallExpr
-	built       bool
-
-	// checked marks the slog value expressions already inspected, so a
-	// hoisted attr reaching more than one log call is reported once.
-	checked map[ast.Expr]bool
-}
-
 func (r *telemetrySafetyRunner) run(pass *analysis.Pass) (any, error) {
 	if pass.Pkg.Path() == r.skipPkg {
 		return nil, nil
 	}
 
-	sp := &safetyPass{
-		pass:           pass,
-		ins:            pass.ResultOf[inspect.Analyzer].(*inspector.Inspector),
-		errIface:       errorInterface(),
-		logValuerIface: lookupInterface(pass.Pkg, "log/slog", "LogValuer"),
-		checked:        make(map[ast.Expr]bool),
-	}
+	ins := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	errIface := errorInterface()
+	logValuerIface := lookupInterface(pass.Pkg, "log/slog", "LogValuer")
 
-	sp.ins.Preorder([]ast.Node{(*ast.CallExpr)(nil)}, func(n ast.Node) {
+	ins.Preorder([]ast.Node{(*ast.CallExpr)(nil)}, func(n ast.Node) {
 		call := n.(*ast.CallExpr)
 		fn, pkg := resolveFunc(pass, call)
 		if pkg != r.logPkg || !telemetryLogFuncNames[fn] || len(call.Args) < 2 {
 			return
 		}
 
-		// Args[0] is the message; the rest are structured attrs — either an
-		// inline slog.Any/slog.String call, or a variable holding one.
+		// Args[0] is the message; only structured attrs (slog.Any/slog.String
+		// calls passed directly as arguments) are inspected.
+		//
+		// Known limitation: a slog.Any/slog.String call assigned to a local
+		// variable first and passed by that variable is invisible here —
+		// this pass does no dataflow analysis. That gap let a raw recover()
+		// value reach telemetry via `var errAttr slog.Attr; errAttr =
+		// slog.Any(...)` at two openfeature call sites (fixed directly at
+		// those call sites; teaching this pass to follow local slog.Attr
+		// variables is a separate, larger change).
 		for _, arg := range call.Args[1:] {
-			r.checkAttrArg(sp, arg)
+			inner, ok := arg.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			innerFn, innerPkg := resolveFunc(pass, inner)
+			if innerPkg != "log/slog" || len(inner.Args) < 2 {
+				continue
+			}
+			switch innerFn {
+			case "Any":
+				r.checkSlogAny(pass, inner.Args[1], errIface, logValuerIface)
+			case "String":
+				r.checkSlogString(pass, inner.Args[1], errIface)
+			}
 		}
 	})
 
 	return nil, nil
-}
-
-// checkAttrArg inspects one attr argument of a telemetry log call. An inline
-// slog.Any/slog.String call is checked directly; a bare identifier is
-// resolved through this package's assignment index so hoisted attrs are
-// covered too. Anything else (selector expressions, helper-call results,
-// slice spreads) is out of scope — see NewTelemetrySafety's doc comment.
-func (r *telemetrySafetyRunner) checkAttrArg(sp *safetyPass, arg ast.Expr) {
-	switch e := ast.Unparen(arg).(type) {
-	case *ast.CallExpr:
-		r.checkSlogCall(sp, e)
-	case *ast.Ident:
-		obj := sp.pass.TypesInfo.ObjectOf(e)
-		if obj == nil {
-			return
-		}
-		for _, call := range sp.attrAssignments()[obj] {
-			r.checkSlogCall(sp, call)
-		}
-	}
-}
-
-// checkSlogCall applies the slog.Any/slog.String rules to call, which is
-// either an inline log-call argument or the RHS of an assignment to a
-// hoisted attr variable.
-func (r *telemetrySafetyRunner) checkSlogCall(sp *safetyPass, call *ast.CallExpr) {
-	fn, pkg := resolveFunc(sp.pass, call)
-	if pkg != "log/slog" || len(call.Args) < 2 {
-		return
-	}
-	value := call.Args[1]
-	if sp.checked[value] {
-		return // hoisted attr reaching more than one log call: report once
-	}
-	sp.checked[value] = true
-
-	switch fn {
-	case "Any":
-		r.checkSlogAny(sp.pass, value, sp.errIface, sp.logValuerIface)
-	case "String":
-		r.checkSlogString(sp.pass, value, sp.errIface)
-	}
-}
-
-// attrAssignments returns the lazily built index from a variable to every
-// log/slog call assigned to it anywhere in this package.
-//
-// Only assignments whose RHS is literally a slog constructor call are
-// recorded — a deliberately shallow stand-in for dataflow analysis, so the
-// pass can never be wrong about which value reaches a log call. Every
-// assignment is recorded, so both branches of
-//
-//	var errAttr slog.Attr
-//	if err, ok := r.(error); ok {
-//		errAttr = slog.Any("panic", NewSafeError(err))
-//	} else {
-//		errAttr = slog.Any("panic", r)
-//	}
-//
-// are checked independently.
-func (sp *safetyPass) attrAssignments() map[types.Object][]*ast.CallExpr {
-	if sp.built {
-		return sp.attrAssigns
-	}
-	sp.built = true
-	sp.attrAssigns = make(map[types.Object][]*ast.CallExpr)
-
-	record := func(lhs, rhs ast.Expr) {
-		ident, ok := lhs.(*ast.Ident)
-		if !ok || ident.Name == "_" {
-			return
-		}
-		call, ok := ast.Unparen(rhs).(*ast.CallExpr)
-		if !ok {
-			return
-		}
-		if _, pkg := resolveFunc(sp.pass, call); pkg != "log/slog" {
-			return
-		}
-		obj := sp.pass.TypesInfo.ObjectOf(ident)
-		if obj == nil {
-			return
-		}
-		sp.attrAssigns[obj] = append(sp.attrAssigns[obj], call)
-	}
-
-	sp.ins.Preorder([]ast.Node{(*ast.AssignStmt)(nil), (*ast.ValueSpec)(nil)}, func(n ast.Node) {
-		switch node := n.(type) {
-		case *ast.AssignStmt:
-			if node.Tok != token.ASSIGN && node.Tok != token.DEFINE {
-				return // compound assignment (+=, etc.) can't produce an attr
-			}
-			if len(node.Lhs) != len(node.Rhs) {
-				return // multi-value RHS (a, b := f()) has no per-name expression
-			}
-			for i, lhs := range node.Lhs {
-				record(lhs, node.Rhs[i])
-			}
-		case *ast.ValueSpec:
-			if len(node.Names) != len(node.Values) {
-				return // `var x slog.Attr` (no value) or multi-value RHS
-			}
-			for i, name := range node.Names {
-				record(name, node.Values[i])
-			}
-		}
-	})
-
-	return sp.attrAssigns
 }
 
 func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, value ast.Expr, errIface, logValuerIface *types.Interface) {
@@ -249,14 +120,13 @@ func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, value ast.Expr
 	if t == nil {
 		return
 	}
+	// Only the exact type passed is exempted — NOT types.NewPointer(t). A
+	// pointer-receiver LogValue on T is unreachable when a non-pointer T is
+	// boxed into the any that slog.Any takes: slog reflects over the value
+	// instead, which is exactly what this check exists to prevent. Callers
+	// with pointer-receiver LogValuer implementations must pass a pointer
+	// explicitly (slog.Any(key, &v)).
 	if logValuerIface != nil && types.Implements(t, logValuerIface) {
-		// Only exempt when the exact type passed implements LogValuer.
-		// A pointer-receiver LogValue method only satisfies the interface on
-		// *T, not T: slog.Any boxes exactly the type passed, so if the caller
-		// passed a bare T, slog cannot dispatch LogValue at runtime and falls
-		// back to reflecting over the raw value. Checking types.NewPointer(t)
-		// here would wrongly exempt that case just because *T happens to
-		// implement the interface — the caller must pass a pointer explicitly.
 		return // already safe: SafeError, SafeSlice, or a caller-provided LogValuer
 	}
 	if errIface != nil && types.Implements(t, errIface) {
