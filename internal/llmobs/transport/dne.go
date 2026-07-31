@@ -140,18 +140,18 @@ type RequestAttributesExperimentPushEvents struct {
 }
 
 type ExperimentEvalMetricEvent struct {
-	MetricSource     string        `json:"metric_source,omitempty"`
-	SpanID           string        `json:"span_id,omitempty"`
-	TraceID          string        `json:"trace_id,omitempty"`
-	TimestampMS      int64         `json:"timestamp_ms,omitempty"`
-	MetricType       string        `json:"metric_type,omitempty"`
-	Label            string        `json:"label,omitempty"`
-	CategoricalValue *string       `json:"categorical_value,omitempty"`
-	ScoreValue       *float64      `json:"score_value,omitempty"`
-	BooleanValue     *bool         `json:"boolean_value,omitempty"`
-	Error            *ErrorMessage `json:"error,omitempty"`
-	Tags             []string      `json:"tags,omitempty"`
-	ExperimentID     string        `json:"experiment_id,omitempty"`
+	MetricSource     string         `json:"metric_source,omitempty"`
+	SpanID           string         `json:"span_id,omitempty"`
+	TraceID          string         `json:"trace_id,omitempty"`
+	TimestampMS      int64          `json:"timestamp_ms,omitempty"`
+	MetricType       EvalMetricType `json:"metric_type,omitempty"`
+	Label            string         `json:"label,omitempty"`
+	CategoricalValue *string        `json:"categorical_value,omitempty"`
+	ScoreValue       *float64       `json:"score_value,omitempty"`
+	BooleanValue     *bool          `json:"boolean_value,omitempty"`
+	Error            *ErrorMessage  `json:"error,omitempty"`
+	Tags             []string       `json:"tags,omitempty"`
+	ExperimentID     string         `json:"experiment_id,omitempty"`
 
 	// Reasoning is a free-form explanation for the evaluation result
 	// (e.g. an LLM judge's reasoning paragraph).
