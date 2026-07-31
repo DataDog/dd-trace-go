@@ -68,6 +68,13 @@ func TestNewCodeOwners(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestNilCodeOwnersDoesNotMatch(t *testing.T) {
+	var codeOwners *CodeOwners
+	match, ok := codeOwners.Match("/source.go")
+	assert.Nil(t, match)
+	assert.False(t, ok)
+}
+
 func TestGetCodeOwnersCachesMissingDiscovery(t *testing.T) {
 	workspaceDir := t.TempDir()
 	workingDir := t.TempDir()

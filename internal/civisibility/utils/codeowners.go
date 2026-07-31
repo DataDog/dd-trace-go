@@ -263,6 +263,9 @@ func (co *CodeOwners) GetSection(section string) *Section {
 // Match finds the first entry in the CodeOwners that matches the given value.
 // It returns a pointer to the matched entry, or nil if no match is found.
 func (co *CodeOwners) Match(value string) (*Entry, bool) {
+	if co == nil {
+		return nil, false
+	}
 	var matchedEntries []Entry
 
 	for _, section := range co.Sections {
