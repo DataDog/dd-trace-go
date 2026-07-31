@@ -33,6 +33,13 @@ func goodErrorDotErrorWithEscapedPercent(err *customError) {
 	internallog.Warn("failed with %v (100%% complete)", err.Error())
 }
 
+func goodIndexedErrorDotErrorSoleVerb(err *customError) {
+	// %[1]v explicitly selecting the sole argument is exactly equivalent to
+	// a plain %v here — still the sole, final %v-family verb, still backed
+	// by err.Error(), still exempt.
+	internallog.Warn("failed: %[1]v", err.Error())
+}
+
 func goodNonConstantFormat(format string, a any) {
 	// Non-constant formats are constantlogmsg's problem, not this analyzer's.
 	internallog.Debug(format, a)
@@ -64,8 +71,30 @@ func badWidthFormNonError(name string) {
 
 func badMultipleVerbsWithErrorLast(cfg any, err *customError) {
 	// err.Error() as the last arg no longer blanket-exempts the whole call:
-	// the earlier %v (over cfg, a non-error) is still reported.
-	internallog.Warn("defaulting to %v; error: %v", cfg, err.Error()) // want "exposes uncontrolled data"
+	// the earlier %v (over cfg) is a non-final verb, always forbidden by
+	// position regardless of type — reported as such, not as the milder
+	// "exposes uncontrolled data" (which would describe cfg's own type, not
+	// the position violation) or the final-verb "prefer err.Error()"
+	// suggestion (which wouldn't address the earlier verb at all).
+	internallog.Warn("defaulting to %v; error: %v", cfg, err.Error()) // want "must be the last format verb"
+}
+
+func badMultipleVerbsFinalOneIsRawError(cfg any, err *customError) {
+	// The final verb is safe (%v over a raw error, normally just a style
+	// suggestion) but an earlier %v over cfg is still a forbidden non-final
+	// verb — that must be reported instead of the "prefer err.Error()"
+	// suggestion, which only addresses the final verb and would leave this
+	// call re-flagged (with a different message) on the very next run.
+	internallog.Warn("config: %v; error: %v", cfg, err) // want "must be the last format verb"
+}
+
+func badIndexedVerbBypassingNarrowExemption(cfg any, err *customError) {
+	// %[1]v explicitly selects the first argument (cfg) — a %v-family verb
+	// just like a plain %v, not a stray '[' to be ignored. Miscounting it
+	// would leave vFamilyCount at 1 (only the second, plain %v counted),
+	// wrongly satisfying the narrowed err.Error() exemption and hiding the
+	// reflection-unsafe %[1]v over cfg entirely.
+	internallog.Warn("config %[1]v; error %v", cfg, err.Error()) // want "must be the last format verb"
 }
 
 func badSingleVerbNotFinalWithErrorLast(cfg any, err *customError) {
