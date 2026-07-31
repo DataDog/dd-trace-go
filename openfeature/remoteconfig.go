@@ -157,6 +157,9 @@ func validateFlag(flagKey string, flag *flag) error {
 						flagKey, i, j, shard.TotalShards)
 				}
 				for _, shardRange := range shard.Ranges {
+					if shardRange == nil {
+						return fmt.Errorf("flag %q allocation %d split %d has nil shard range", flagKey, i, j)
+					}
 					if shardRange.Start < 0 || shardRange.End < 0 {
 						return fmt.Errorf("flag %q allocation %d split %d has shard with negative range bounds",
 							flagKey, i, j)

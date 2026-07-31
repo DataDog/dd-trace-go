@@ -42,6 +42,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.ref }}
           repository: DataDog/dd-trace-go
+          submodules: recursive
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
