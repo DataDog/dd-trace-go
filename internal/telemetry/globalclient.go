@@ -182,7 +182,14 @@ func Log(record Record, options ...LogOption) {
 	// call requesting a stacktrace, even ones that will end up deduplicated
 	// away; that's an acceptable cost given how rare and low-volume the
 	// pre-StartApp window is.
-	if GlobalClient() == nil && wantsStacktrace(options) {
+	//
+	// Disabled() is checked first: when telemetry is off, StartApp never
+	// installs a client, so GlobalClient() is permanently nil and this
+	// branch would otherwise capture a stack on every single call — on a
+	// hot, repeatedly-invoked path (e.g. AppSec's exception recording) —
+	// only for globalClientCall to discard it a line later via its own
+	// Disabled() check.
+	if !Disabled() && GlobalClient() == nil && wantsStacktrace(options) {
 		raw := stacktrace.CaptureRaw(telemetryQueuedLogStackSkip)
 		options = append(slices.Clone(options), withRawStacktrace(raw))
 	}

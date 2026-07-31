@@ -86,3 +86,45 @@ func TestLog_QueuedBeforeStartApp_CapturesCallSiteStacktrace(t *testing.T) {
 	assert.NotContains(t, stack, "Replay")
 	assert.NotContains(t, stack, "globalClientCall")
 }
+
+// TestLog_DisabledSkipsStacktraceCapture guards against a regression: Log
+// used to capture a stacktrace whenever the caller requested one and no
+// client was installed yet — even when telemetry was fully disabled, in
+// which case globalClientCall discards the call a line later via its own
+// Disabled() check anyway. When telemetry is disabled, StartApp never
+// installs a client, so GlobalClient() is permanently nil: a hot,
+// repeatedly-invoked disabled path (e.g. AppSec's exception recording)
+// would pay for a stack walk and allocation it can never observe.
+//
+// This compares allocations for the same Log(record, WithStacktrace()) call
+// under two states — disabled vs. enabled-but-not-yet-started — holding the
+// call-site argument construction (building the one-element options slice,
+// the WithStacktrace() closure) constant across both. Only the internal
+// capture branch should differ, so the disabled case must allocate less.
+func TestLog_DisabledSkipsStacktraceCapture(t *testing.T) {
+	record := NewRecord(LogError, "should be a no-op when disabled")
+
+	measure := func(disabled bool) float64 {
+		telemetryEnabledOnce = sync.Once{}
+		t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+		if disabled {
+			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+		} else {
+			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+		}
+
+		globalClientRecorder.Clear()
+		t.Cleanup(func() { globalClientRecorder.Clear() })
+		require.Nil(t, GlobalClient())
+
+		return testing.AllocsPerRun(200, func() {
+			Log(record, WithStacktrace())
+		})
+	}
+
+	disabledAllocs := measure(true)
+	enabledNotStartedAllocs := measure(false)
+
+	assert.Less(t, disabledAllocs, enabledNotStartedAllocs,
+		"a disabled Log(..., WithStacktrace()) call must do less work than an enabled-but-not-started one — it must not capture a stacktrace it will immediately discard")
+}
