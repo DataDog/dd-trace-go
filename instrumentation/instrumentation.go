@@ -314,7 +314,8 @@ func WithStackTraceMessage(message string) StackTraceOption {
 	return stacktrace.WithMessage(message)
 }
 
-// WithStackTraceID sets the event correlation ID.
+// WithStackTraceID sets the event correlation ID. Vulnerability and exploit
+// stack traces require a non-empty ID.
 func WithStackTraceID(id string) StackTraceOption {
 	return stacktrace.WithID(id)
 }
@@ -332,26 +333,30 @@ func WithStackTraceDepth(depth int) StackTraceOption {
 }
 
 // CaptureStackTrace captures a stack trace for an event in category. It returns
-// nil when no frames are captured. The caller is responsible for applying its
-// product-specific enablement configuration.
+// nil when no frames are captured or when a vulnerability or exploit event has
+// no correlation ID. The caller is responsible for applying its product-specific
+// enablement configuration.
 func (i *Instrumentation) CaptureStackTrace(category StackTraceCategory, options ...StackTraceOption) *StackTrace {
 	// We need to skip the frame for the call to [*Instrumentation.CaptureStackTrace] itself.
 	options = append(options, stacktrace.WithAdditionalSkip(1))
 	event := stacktrace.NewEvent(category, options...)
-	if len(event.Frames) == 0 {
+	if !validStackTrace(event) {
 		return nil
 	}
 	return event
 }
 
-// RecordStackTrace adds trace to the unfinished local root span's _dd.stack
-// meta_struct entry. Calls from IAST, AppSec, and other producers are aggregated
-// by event category and encoded when the span is serialized. A nil trace, a
-// trace without frames, and a nil span are ignored. The caller is responsible
-// for product-specific enablement. Returns true if the stack trace was actually
-// recorded.
+// RecordStackTrace submits trace to the local root span's _dd.stack meta_struct
+// entry. Calls from IAST, AppSec, and other producers are aggregated by event
+// category and encoded when the span is serialized. Nil traces, traces without
+// frames, and vulnerability or exploit traces without an ID are ignored. The
+// caller is responsible for product-specific enablement.
+//
+// The return value reports whether the trace passed validation and was submitted
+// to the root span. The span API does not report whether a finished root rejected
+// the tag.
 func (i *Instrumentation) RecordStackTrace(span *tracer.Span, trace *StackTrace) bool {
-	if span == nil || trace == nil || len(trace.Frames) == 0 {
+	if span == nil || !validStackTrace(trace) {
 		return false
 	}
 
@@ -360,4 +365,14 @@ func (i *Instrumentation) RecordStackTrace(span *tracer.Span, trace *StackTrace)
 		return false
 	}
 	return stacktrace.AddToSpan(root, trace)
+}
+
+func validStackTrace(trace *StackTrace) bool {
+	if trace == nil || len(trace.Frames) == 0 {
+		return false
+	}
+	if trace.Category == StackTraceCategoryVulnerability || trace.Category == StackTraceCategoryExploit {
+		return trace.ID != ""
+	}
+	return true
 }

@@ -31,6 +31,9 @@ func TestNewEvent(t *testing.T) {
 	require.Equal(t, "message", event.Message)
 	require.Equal(t, "type", event.Type)
 	require.Equal(t, "id", event.ID)
+	for _, frame := range event.Frames {
+		require.NotContains(t, frame.Namespace, "github.com/DataDog/dd-trace-go")
+	}
 }
 
 func TestNewEventWithSkipOption(t *testing.T) {

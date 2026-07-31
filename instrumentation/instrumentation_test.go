@@ -44,9 +44,13 @@ func TestInstrumentationStackTrace(t *testing.T) {
 	}
 
 	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryException))
-	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryVulnerability))
-	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryExploit))
-	require.NotNil(t, instr.CaptureStackTrace(StackTraceCategoryExploit, WithStackTraceDepth(-1)))
+	require.Nil(t, instr.CaptureStackTrace(StackTraceCategoryVulnerability))
+	require.Nil(t, instr.CaptureStackTrace(StackTraceCategoryExploit))
+	require.NotNil(t, instr.CaptureStackTrace(
+		StackTraceCategoryExploit,
+		WithStackTraceID("stack-id"),
+		WithStackTraceDepth(-1),
+	))
 	require.Nil(t, instr.CaptureStackTrace(StackTraceCategoryException, WithStackTraceSkip(1_000)))
 }
 
@@ -103,16 +107,24 @@ func TestInstrumentationRecordStackTraceConcurrent(t *testing.T) {
 	require.Len(t, eventsByCategory[string(stacktrace.VulnerabilityEvent)], count)
 }
 
-func TestInstrumentationRecordStackTraceIgnoresEmptyInput(t *testing.T) {
+func TestInstrumentationRecordStackTraceIgnoresInvalidInput(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	instr := &Instrumentation{}
 	span := tracer.StartSpan("span")
 
-	instr.RecordStackTrace(nil, instr.CaptureStackTrace(StackTraceCategoryException, WithStackTraceID("unused")))
-	instr.RecordStackTrace(span, nil)
-	instr.RecordStackTrace(span, &StackTrace{})
+	require.False(t, instr.RecordStackTrace(nil, instr.CaptureStackTrace(StackTraceCategoryException)))
+	require.False(t, instr.RecordStackTrace(span, nil))
+	require.False(t, instr.RecordStackTrace(span, &StackTrace{}))
+	require.False(t, instr.RecordStackTrace(span, &StackTrace{
+		Category: StackTraceCategoryVulnerability,
+		Frames:   stacktrace.StackTrace{{}},
+	}))
+	require.False(t, instr.RecordStackTrace(span, &StackTrace{
+		Category: StackTraceCategoryExploit,
+		Frames:   stacktrace.StackTrace{{}},
+	}))
 
 	require.NotContains(t, span.AsMap(), stacktrace.SpanKey)
 }

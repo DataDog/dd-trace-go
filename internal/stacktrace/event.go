@@ -62,7 +62,7 @@ func NewEvent(eventCat EventCategory, options ...Option) *Event {
 			opt(&cfg)
 		}
 	}
-	event.Frames = SkipAndCaptureWithInternalFrames(cfg.depth, cfg.skip+1)
+	event.Frames = SkipAndCaptureWithDepth(cfg.depth, cfg.skip+1)
 	return event
 }
 
@@ -128,8 +128,9 @@ func GetSpanValue(events ...*Event) any {
 	return getSpanValue(events...)
 }
 
-// AddToSpan adds the events to the given span's root span as a tag. Returns true if the stack trace
-// was actually added.
+// AddToSpan submits the events to the given span as a tag. It returns true when
+// at least one event was submitted; TagSetter does not report whether it stored
+// the value.
 func AddToSpan(span trace.TagSetter, events ...*Event) bool {
 	if len(events) == 0 {
 		return false
