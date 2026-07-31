@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -13,10 +14,17 @@ import (
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
+
+// telemetryQueuedLogStackSkip skips Log's own frame — landing on Log's
+// caller, the actual site that requested a stacktrace before the global
+// client existed. CaptureRaw already accounts for its own frame and
+// runtime.Callers internally.
+const telemetryQueuedLogStackSkip = 1
 
 var (
 	globalClient atomic.Pointer[Client]
@@ -167,6 +175,18 @@ func Distribution(namespace Namespace, name string, tags []string) MetricHandle 
 }
 
 func Log(record Record, options ...LogOption) {
+	// If the global client isn't installed yet, this call is about to be
+	// queued and replayed later on a different goroutine (see
+	// globalClientCall). A stacktrace captured at replay time would belong
+	// to that goroutine, not this call site — so capture it now, before
+	// queuing, whenever one was requested. This runs on every pre-StartApp
+	// call requesting a stacktrace, even ones that will end up deduplicated
+	// away; that's an acceptable cost given how rare and low-volume the
+	// pre-StartApp window is.
+	if GlobalClient() == nil && wantsStacktrace(options) {
+		raw := stacktrace.CaptureRaw(telemetryQueuedLogStackSkip)
+		options = append(slices.Clone(options), withRawStacktrace(raw))
+	}
 	globalClientCall(func(client Client) {
 		client.Log(record, options...)
 	})
