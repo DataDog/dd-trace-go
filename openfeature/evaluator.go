@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,13 +92,17 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 			metadata[metadataDoLogKey] = doLog
 
 			// Determine reason:
-			//   rules matched           → TARGETING_MATCH
-			//   no rules, shards used   → SPLIT
-			//   no rules, no shards     → STATIC (catch-all; value is same for everyone)
+			//   rules matched                         → TARGETING_MATCH
+			//   temporal allocation with one split   → DEFAULT
+			//   no rules, shards used                 → SPLIT
+			//   no rules, no shards                   → STATIC
 			var reason of.Reason
 			switch {
 			case len(allocation.Rules) > 0:
 				reason = of.TargetingMatchReason
+			case (allocation.StartAt != nil || allocation.EndAt != nil) &&
+				len(allocation.Splits) == 1 && len(split.Shards) == 0:
+				reason = of.DefaultReason
 			case len(split.Shards) > 0:
 				reason = of.SplitReason
 			default:
@@ -117,6 +122,28 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 	return evaluationResult{
 		Value:  defaultValue,
 		Reason: of.DefaultReason,
+	}
+}
+
+// evaluateConfiguredFlag evaluates a flag from a parsed configuration. Invalid
+// flags return the caller default. Missing flags return FLAG_NOT_FOUND.
+func evaluateConfiguredFlag(
+	config *universalFlagsConfiguration,
+	flagKey string,
+	defaultValue any,
+	context map[string]any,
+) evaluationResult {
+	flag, exists := config.Flags[flagKey]
+	if exists {
+		return evaluateFlag(flag, defaultValue, context)
+	}
+	if _, invalid := config.invalidFlags[flagKey]; invalid {
+		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
+	}
+	return evaluationResult{
+		Value:  defaultValue,
+		Reason: of.ErrorReason,
+		Error:  fmt.Errorf("%w: %q", errFlagNotFound, flagKey),
 	}
 }
 
@@ -224,7 +251,9 @@ func loadRegex(pattern string) (*regexp.Regexp, error) {
 	}
 
 	// Not in cache, compile it (we are probably in the remote config goroutine, so this is acceptable)
-	compiled, err := regexp.Compile(pattern)
+	// Go regular expressions are Unicode-aware by default and do not support
+	// the explicit (?u) mode accepted by some other SDK runtimes.
+	compiled, err := regexp.Compile(strings.TrimPrefix(pattern, "(?u)"))
 	if err != nil {
 		return nil, err
 	}

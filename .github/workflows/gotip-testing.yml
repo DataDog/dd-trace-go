@@ -42,6 +42,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.ref }}
           repository: DataDog/dd-trace-go
+          submodules: recursive
 
       - name: Get Gotip
         run: |-
