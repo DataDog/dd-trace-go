@@ -73,7 +73,9 @@ func ReportPanic(msg string, recovered any) {
 func LogAndReportError(msg string, err error, opts ...telemetry.LogOption) {
 	errStr := "<nil>"
 	if err != nil {
-		errStr = err.Error()
+		// fmt.Sprint recovers a panicking Error() method (e.g. a typed-nil
+		// receiver that dereferences itself) instead of letting it escape.
+		errStr = fmt.Sprint(err)
 	}
 	internallog.Error(msg+": %s", errStr)
 	ReportError(msg, err, opts...)
@@ -84,11 +86,9 @@ func LogAndReportError(msg string, err error, opts ...telemetry.LogOption) {
 func LogAndReportPanic(msg string, recovered any) {
 	errStr := "<nil>"
 	if recovered != nil {
-		if err, ok := recovered.(error); ok {
-			errStr = err.Error()
-		} else {
-			errStr = fmt.Sprint(recovered)
-		}
+		// fmt.Sprint recovers a panicking Error() method (e.g. a typed-nil
+		// receiver that dereferences itself) instead of letting it escape.
+		errStr = fmt.Sprint(recovered)
 	}
 	internallog.Error(msg+": %s", errStr)
 	ReportPanic(msg, recovered)

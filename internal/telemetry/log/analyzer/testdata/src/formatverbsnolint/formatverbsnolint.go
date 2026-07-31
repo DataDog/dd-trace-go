@@ -30,3 +30,8 @@ func exceptedByNamedAnalyzerNolint(v any) {
 func notExcepted(v any) {
 	internallog.Error("value: %v", v) // want "exposes uncontrolled data"
 }
+
+func trailingNolintOnUnrelatedPreviousLineDoesNotCarryOver(v any) {
+	other := v //nolint:gocritic // this exception belongs to this line, not the next one
+	internallog.Error("value: %v", other) // want "exposes uncontrolled data"
+}

@@ -102,7 +102,7 @@ func (r *telemetrySafetyRunner) run(pass *analysis.Pass) (any, error) {
 }
 
 func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, value ast.Expr, errIface, logValuerIface *types.Interface) {
-	if isNilLiteral(value) || nolintSuppressed(pass, value.Pos(), "gocritic", "telemetrysafety") {
+	if isNilLiteral(pass, value) || nolintSuppressed(pass, value.Pos(), "gocritic", "telemetrysafety") {
 		return
 	}
 	t := pass.TypesInfo.TypeOf(value)
@@ -141,9 +141,15 @@ func (r *telemetrySafetyRunner) checkSlogString(pass *analysis.Pass, value ast.E
 		"telemetry logging: slog.String with err.Error() exposes the raw error message; use slog.Any(key, NewSafeError(err)) instead")
 }
 
-func isNilLiteral(e ast.Expr) bool {
+// isNilLiteral reports whether e is the predeclared nil identifier — not
+// merely an identifier spelled "nil", which Go permits shadowing (e.g.
+// `nil := customerData`).
+func isNilLiteral(pass *analysis.Pass, e ast.Expr) bool {
 	ident, ok := e.(*ast.Ident)
-	return ok && ident.Name == "nil"
+	if !ok || ident.Name != "nil" {
+		return false
+	}
+	return pass.TypesInfo.Uses[ident] == types.Universe.Lookup("nil")
 }
 
 // errorInterface returns the predeclared "error" interface type.

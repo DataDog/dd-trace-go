@@ -60,3 +60,10 @@ func badStringWithErrorCallViaMethod(err error) {
 	logger := telemetrylog.With()
 	logger.Warn("failed", slog.String("error", err.Error())) // want "slog.String with err.Error"
 }
+
+func badShadowedNilIsNotExempt() {
+	// Shadows the predeclared nil identifier — Go permits this. The value is
+	// not the nil literal and must still be checked like any other type.
+	nil := plainStruct{Field: "shadowed value must still be flagged"}
+	telemetrylog.Error("event", slog.Any("data", nil)) // want "does not implement slog.LogValuer"
+}

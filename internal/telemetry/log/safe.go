@@ -53,6 +53,12 @@ func errorType(v any) string {
 		t = t.Elem()
 	}
 
+	if t.Name() == "" {
+		// Unnamed types (anonymous structs, slices, maps, channels, funcs)
+		// have no Name()/PkgPath(); String() still describes the type
+		// (e.g. "[]string", "struct { X int }") without exposing values.
+		return t.String()
+	}
 	if t.PkgPath() != "" {
 		return t.PkgPath() + "." + t.Name()
 	}

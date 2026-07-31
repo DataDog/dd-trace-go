@@ -41,7 +41,14 @@ func nolintSuppressed(pass *analysis.Pass, pos token.Pos, names ...string) bool 
 	for _, cg := range file.Comments {
 		for _, c := range cg.List {
 			cLine := pass.Fset.Position(c.Pos()).Line
-			if cLine != line && cLine != line-1 {
+			switch {
+			case cLine == line:
+				// Trailing on pos's own line: always counts, same as golangci-lint.
+			case cLine == line-1 && standaloneComment(pass, c):
+				// On the previous line: only counts when nothing but whitespace
+				// precedes it — a directive trailing unrelated code on that
+				// line does not carry over to the next line.
+			default:
 				continue
 			}
 			if nolintMatches(c.Text, names) {
@@ -50,6 +57,30 @@ func nolintSuppressed(pass *analysis.Pass, pos token.Pos, names ...string) bool 
 		}
 	}
 	return false
+}
+
+// standaloneComment reports whether c is the only thing on its source line
+// (aside from leading whitespace). If the source can't be read, it degrades
+// to true (the pre-existing, looser behavior) rather than failing closed.
+func standaloneComment(pass *analysis.Pass, c *ast.Comment) bool {
+	if pass.ReadFile == nil {
+		return true
+	}
+	tokFile := pass.Fset.File(c.Pos())
+	if tokFile == nil {
+		return true
+	}
+	data, err := pass.ReadFile(tokFile.Name())
+	if err != nil {
+		return true
+	}
+	line := pass.Fset.Position(c.Pos()).Line
+	lineStartOffset := tokFile.Offset(tokFile.LineStart(line))
+	commentOffset := tokFile.Offset(c.Pos())
+	if lineStartOffset < 0 || commentOffset > len(data) || lineStartOffset > commentOffset {
+		return true
+	}
+	return len(strings.TrimSpace(string(data[lineStartOffset:commentOffset]))) == 0
 }
 
 func fileForPos(pass *analysis.Pass, pos token.Pos) *ast.File {
