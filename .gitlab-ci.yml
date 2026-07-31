@@ -16,6 +16,8 @@ variables:
   INDEX_FILE: index.txt
   # Only run the config-inversion jobs from one-pipeline; skip all packaging/publish/system-test jobs.
   SKIP_SHARED_PIPELINE: "true"
+  # requirements_json_test / system_tests are gated by this separate flag, NOT by SKIP_SHARED_PIPELINE.
+  DANGEROUSLY_SKIP_SHARED_PIPELINE_TESTS: "true"
 
 workflow:
   auto_cancel:
@@ -44,6 +46,17 @@ update_central_configurations_version_range_v2:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
     LANGUAGE_NAME: "golang"
     SEND_ALIASES: "true"
+
+# These one-pipeline jobs are NOT gated by SKIP_SHARED_PIPELINE and otherwise get created with
+# non-optional `needs:` on the (now-skipped) packaging jobs, which fails pipeline creation.
+# Neutralize them so only the config-registry jobs run.
+publish_dora_metrics:
+  rules:
+    - when: never
+
+deploy_to_reliability_env:
+  rules:
+    - when: never
 
 include:
   - local: ".gitlab/benchmarks/macro/gitlab-ci.yml"
