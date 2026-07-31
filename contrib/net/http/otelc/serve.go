@@ -7,6 +7,7 @@ package otelc
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
 	"go.opentelemetry.io/otelc/pkg/hook"
@@ -20,8 +21,8 @@ import (
 
 // BeforeServe ensures srv.Handler is wrapped with contrib/net/http tracing
 // before the server starts accepting connections. It is injected at the top
-// of (*http.Server).Serve; the receiver is parameter 0.
-func BeforeServe(_ hook.HookContext, srv *http.Server) {
+// of (*http.Server).Serve.
+func BeforeServe(_ hook.HookContext, srv *http.Server, _ net.Listener) {
 	handler := srv.Handler
 	if handler == nil {
 		handler = http.DefaultServeMux

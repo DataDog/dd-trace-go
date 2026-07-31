@@ -26,8 +26,8 @@ import (
 // srv.Handler the way (serverHandler).ServeHTTP would for a real connection.
 func serveHTTP(t *testing.T, srv *http.Server, r *http.Request) *httptest.ResponseRecorder {
 	t.Helper()
-	ictx := hooktest.NewMockHookContext(srv)
-	BeforeServe(ictx, srv)
+	ictx := hooktest.NewMockHookContext(srv, nil)
+	BeforeServe(ictx, srv, nil)
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, r)
 	return w
