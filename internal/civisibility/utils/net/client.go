@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,21 +47,28 @@ type (
 		SendLogs(logsPayload io.Reader) error
 	}
 
+	// coverageClient is an interface for sending coverage reports to the Datadog backend.
+	coverageClient interface {
+		Client
+		SetCoverageFlags([]string)
+	}
+
 	// client is a client for sending requests to the Datadog backend.
 	client struct {
-		id                 string
-		agentless          bool
-		baseURL            string
-		environment        string
-		serviceName        string
-		workingDirectory   string
-		repositoryURL      string
-		commitSha          string
-		commitMessage      string
-		headCommitSha      string
-		headCommitMessage  string
-		branchName         string
-		testConfigurations testConfigurations
+		id                  string
+		agentless           bool
+		baseURL             string
+		environment         string
+		serviceName         string
+		workingDirectory    string
+		repositoryURL       string
+		commitSha           string
+		commitMessage       string
+		headCommitSha       string
+		headCommitMessage   string
+		branchName          string
+		testConfigurations  testConfigurations
+		coverageReportFlags []string
 		// readCacheScopeIdentity stores the short-lived read-cache scope derived from already-resolved CI tags.
 		readCacheScopeIdentity readCacheScopeIdentity
 		headers                map[string]string
@@ -80,7 +88,8 @@ type (
 )
 
 var (
-	_ Client = &client{}
+	_ Client         = &client{}
+	_ coverageClient = &client{}
 
 	// telemetryInit is used to initialize the telemetry client.
 	telemetryInit sync.Once
@@ -179,7 +188,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	}
 
 	// create random id (the backend associate all transactions with the client request)
-	id := fmt.Sprint(rand.Uint64() & math.MaxInt64)
+	id := strconv.FormatUint(rand.Uint64()&math.MaxInt64, 10)
 	defaultHeaders["trace_id"] = id
 	defaultHeaders["parent_id"] = id
 
@@ -293,4 +302,9 @@ func (c *client) getPostRequestConfig(url string, body any) *RequestConfig {
 		MaxRetries: DefaultMaxRetries,
 		Backoff:    DefaultBackoff,
 	}
+}
+
+// SetCoverageFlags sets the coverage report flags to the client
+func (c *client) SetCoverageFlags(flags []string) {
+	c.coverageReportFlags = flags
 }

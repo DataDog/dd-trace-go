@@ -135,7 +135,11 @@ func (s *Server) Events() []Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var events []Event
+	total := 0
+	for _, p := range s.payloads {
+		total += len(p.Events)
+	}
+	events := make([]Event, 0, total)
 	for _, payload := range s.payloads {
 		events = append(events, payload.Events...)
 	}

@@ -51,14 +51,14 @@ func (e *jsonIterEncodable) Encode(enc *libddwaf.Encoder, obj *libddwaf.WAFObjec
 
 	if obj.IsUnusable() {
 		// Do not return an invalid root object
-		return fmt.Errorf("invalid json at root")
+		return errors.New("invalid json at root")
 	}
 
 	head := getIteratorHead(encoder.iter)
 	if head < len(e.data) {
 		// If the iterator head is not at the end of the array, it means that there are still bytes left in the buffer,
 		// thus alerting that a structural parsing error occurred (other than due to truncation)
-		return fmt.Errorf("malformed JSON, expected end of input but found more data")
+		return errors.New("malformed JSON, expected end of input but found more data")
 	}
 
 	return nil

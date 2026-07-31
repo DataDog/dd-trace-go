@@ -6,7 +6,6 @@
 package profiler
 
 import (
-	"fmt"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -85,7 +84,7 @@ func runGoroutineLeakProgram(t *testing.T, withExperiment bool) profileMeta {
 	t.Cleanup(srv.Close)
 
 	cmd := exec.Command(binPath)
-	cmd.Env = []string{fmt.Sprintf("DD_TRACE_AGENT_URL=%s", srv.URL)}
+	cmd.Env = []string{"DD_TRACE_AGENT_URL=" + srv.URL}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting test program: %s", err)
 	}

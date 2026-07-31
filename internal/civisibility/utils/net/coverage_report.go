@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -28,11 +29,17 @@ const (
 	coverageReportSubDomain string = "ci-intake"
 	// coverageReportURLPath is the URL path for the coverage report endpoint.
 	coverageReportURLPath string = "api/v2/cicovreprt"
+	// maxCoverageReportFlags is the maximum number of flags accepted by the coverage report intake.
+	maxCoverageReportFlags = 32
 )
 
 // NewClientForCoverageReportUpload creates a new client for sending code coverage reports.
 func NewClientForCoverageReportUpload() Client {
-	return NewClientWithServiceNameAndSubdomain("", coverageReportSubDomain)
+	client := NewClientWithServiceNameAndSubdomain("", coverageReportSubDomain)
+	if coverageClient, ok := client.(coverageClient); ok {
+		coverageClient.SetCoverageFlags(parseCoverageReportFlags(env.Get(constants.CodeCoverageFlagsEnvironmentVariable)))
+	}
+	return client
 }
 
 // SendCoverageReport sends a code coverage report to the backend.
@@ -71,7 +78,7 @@ func (c *client) SendCoverageReport(report io.Reader, format string) error {
 			FieldName:   "event",
 			ContentType: ContentTypeJSON,
 			FileName:    "event.json",
-			Content:     coverageReportEvent(format),
+			Content:     coverageReportEvent(format, c.coverageReportFlags),
 		},
 		{
 			FieldName:   "coverage",
@@ -130,10 +137,13 @@ func coverageReportHeaders(base map[string]string, contentType string) map[strin
 	return headers
 }
 
-func coverageReportEvent(format string) map[string]string {
-	event := map[string]string{
+func coverageReportEvent(format string, flags []string) map[string]any {
+	event := map[string]any{
 		"type":   "coverage_report",
 		"format": format,
+	}
+	if len(flags) > 0 {
+		event["report.flags"] = flags
 	}
 
 	for key, value := range utils.GetCITags() {
@@ -146,4 +156,28 @@ func coverageReportEvent(format string) map[string]string {
 	}
 
 	return event
+}
+
+func parseCoverageReportFlags(raw string) []string {
+	parts := strings.Split(raw, ",")
+	flags := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if flag := strings.TrimSpace(part); flag != "" {
+			flags = append(flags, flag)
+		}
+	}
+
+	if len(flags) == 0 {
+		return nil
+	}
+	if len(flags) > maxCoverageReportFlags {
+		log.Warn(
+			"civisibility.coverage_report: %s contains %d flags, exceeding the maximum of %d; report flags will be omitted",
+			constants.CodeCoverageFlagsEnvironmentVariable,
+			len(flags),
+			maxCoverageReportFlags,
+		)
+		return nil
+	}
+	return flags
 }

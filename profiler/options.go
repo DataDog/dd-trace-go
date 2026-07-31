@@ -437,11 +437,10 @@ func WithUDS(socketPath string) Option {
 		// The HTTP client needs a valid URL. The host portion of the
 		// url in particular can't just be the socket path, or else that
 		// will be interpreted as part of the request path and the
-		// request will fail.  Clean up the path here so we get
-		// something resembling the desired path in any profiler logs.
-		// TODO(darccio): use internal.UnixDataSocketURL instead
-		cleanPath := fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(socketPath))
-		c.agentURL = "http://" + cleanPath + "/profiling/v1/input"
+		// request will fail.
+		u := internal.UnixDataSocketURL(socketPath)
+		u.Path = "/profiling/v1/input"
+		c.agentURL = u.String()
 		WithHTTPClient(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {

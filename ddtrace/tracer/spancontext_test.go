@@ -303,7 +303,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		var children []*Span
+		children := make([]*Span, 0, 3)
 		for i := range 3 { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			children = append(children, child)
@@ -350,7 +350,7 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		var children []*Span
+		children := make([]*Span, 0, 4)
 		for i := range 4 {
 			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
 		}
@@ -396,7 +396,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		var children []*Span
+		children := make([]*Span, 0, 4)
 		for i := range 4 {
 			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
 		}
@@ -1281,51 +1281,59 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 	}
 }
 
+func TestReplacePropagatingTagsImmutability(t *testing.T) {
+	// Mutating the input map after replacePropagatingTags must not affect the
+	// stored snapshot — lock-free readers rely on the map being immutable.
+	var tr trace
+	tags := map[string]string{"key": "original"}
+	tr.replacePropagatingTags(tags)
+
+	tags["key"] = "mutated"
+	tags["extra"] = "added"
+
+	assert.Equal(t, "original", tr.propagatingTag("key"))
+	assert.Equal(t, "", tr.propagatingTag("extra"))
+}
+
 func TestSetSamplingPriorityLocked(t *testing.T) {
 	t.Run("NoPriorAndP0IsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+		assert.Empty(t, tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
 		tr.mu.Unlock()
-		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+		assert.Empty(t, tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-2", tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
-		}
+		var tr trace
+		tr.propagatingTags.Store(map[string]string{keyDecisionMaker: "-1"})
+		tr.dm = parseDecisionMaker("-1")
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-1", tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
-		}
+		var tr trace
+		tr.propagatingTags.Store(map[string]string{keyDecisionMaker: "-1"})
+		tr.dm = parseDecisionMaker("-1")
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-2", tr.propagatingTag(keyDecisionMaker))
 	})
 }
 

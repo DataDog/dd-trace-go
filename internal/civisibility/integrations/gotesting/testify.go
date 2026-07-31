@@ -64,7 +64,7 @@ func getTestifyTestFromReflectValue(tValue reflect.Value) *TestifyTest {
 
 		// let's find the TestifyTest struct for the current test
 		for _, test := range tests {
-			mName := fmt.Sprintf("/%s", test.methodName)
+			mName := "/" + test.methodName
 			if strings.HasSuffix(tName, mName) {
 				return &test
 			}

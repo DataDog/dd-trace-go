@@ -8,7 +8,6 @@ package appsec
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
@@ -288,14 +287,14 @@ func (a *appsec) stopRC() {
 
 func (a *appsec) registerRCProduct(p string) error {
 	if a.cfg.RC == nil {
-		return fmt.Errorf("no valid remote configuration client")
+		return errors.New("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterProduct(p)
 }
 
 func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
 	if a.cfg.RC == nil {
-		return fmt.Errorf("no valid remote configuration client")
+		return errors.New("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterCapability(c)
 }
