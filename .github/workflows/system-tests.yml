@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
         ref:
-            description: 'System Tests ref/tag/branch'
-            required: true
-            default: main
+            description: 'System Tests ref/tag/branch (defaults to the pinned SYSTEM_TESTS_REF)'
+            required: false
+            default: ''
             type: string
   schedule:
     - cron:  '00 04 * * *'
@@ -32,6 +32,9 @@ permissions:
   id-token: write
   contents: read
   packages: write
+
+env:
+  SYSTEM_TESTS_REF: 9aa3c7d0fc5fdd05ca39a99f614b2e9d8c9b8f20 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   warm-repo-cache:
@@ -44,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || env.SYSTEM_TESTS_REF }}
       - name: Pin exact commit SHA for system-tests
         id: pin
         run: |
@@ -95,7 +98,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.warm-repo-cache.outputs.sha }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -268,7 +271,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.warm-repo-cache.outputs.sha }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -276,7 +279,7 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
-      
+
       # Use the app key policy to obtain DD_APP_KEY
       - name: Get Datadog credentials
         id: dd-sts
@@ -391,7 +394,7 @@ jobs:
 
   tracer-release:
     if: github.event_name == 'schedule'
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@9aa3c7d0fc5fdd05ca39a99f614b2e9d8c9b8f20 # Automated: Updated by .github/workflows/update-system-tests.yml.
     permissions:
       contents: read
       id-token: write
