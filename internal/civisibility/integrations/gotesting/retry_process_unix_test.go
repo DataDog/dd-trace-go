@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestSetProcessGroupForCommandPreservesSysProcAttr(t *testing.T) {
+func TestProcessRetrySetProcessGroupForCommandPreservesSysProcAttr(t *testing.T) {
 	attr := &syscall.SysProcAttr{}
 	cmd := &exec.Cmd{SysProcAttr: attr}
 

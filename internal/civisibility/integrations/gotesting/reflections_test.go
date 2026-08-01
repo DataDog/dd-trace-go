@@ -175,7 +175,7 @@ func TestGetBenchmarkPrivateFields(t *testing.T) {
 	}
 }
 
-func TestShouldCaptureTerminalMessageDegradesGracefully(t *testing.T) {
+func TestProcessRetryParityShouldCaptureTerminalMessageDegradesGracefully(t *testing.T) {
 	var (
 		mu       sync.RWMutex
 		finished bool

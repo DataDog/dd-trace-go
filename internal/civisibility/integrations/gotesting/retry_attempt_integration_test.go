@@ -97,8 +97,8 @@ func TestProcessRetryParityUnsupportedFreshLayoutUsesOneNativeParentExecution(t 
 			require.Same(t, t, local)
 			execMeta := getTestMetadata(local)
 			require.NotNil(t, execMeta)
-			require.True(t, execMeta.suppressCoverageCollection)
-			require.False(t, shouldCollectExecutionCoverage(true, execMeta))
+			require.False(t, execMeta.suppressCoverageCollection)
+			require.True(t, shouldCollectExecutionCoverage(true, execMeta))
 		},
 		postAdjustRetryCount: func(*testExecutionMetadata, time.Duration) int64 {
 			callbackCalls++
@@ -147,6 +147,7 @@ func TestProcessRetryParityMaskedFallbackRunsInstrumentedShellWithoutUserBody(t 
 			shellCalls++
 			execMeta := getTestMetadata(local)
 			require.NotNil(t, execMeta)
+			require.True(t, execMeta.suppressCoverageCollection)
 			if !execMeta.suppressUserTestBody {
 				bodyCalls++
 			}
@@ -174,7 +175,9 @@ func TestProcessRetryParitySelectedSubtestUsesOneNativeExecutionWithoutFreshLayo
 			targetFunc: func(local *testing.T) {
 				bodyCalls++
 				require.Same(t, subtest, local)
-				require.True(t, getTestMetadata(local).isAttemptToFix)
+				execMeta := getTestMetadata(local)
+				require.True(t, execMeta.isAttemptToFix)
+				require.True(t, execMeta.suppressCoverageCollection)
 			},
 			postAdjustRetryCount: func(*testExecutionMetadata, time.Duration) int64 { return 3 },
 			postShouldRetry: func(*testing.T, *testExecutionMetadata, int, int64) bool {

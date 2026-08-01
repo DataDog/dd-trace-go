@@ -1111,7 +1111,8 @@ func runRetryAttemptCapabilityFallback(options *runTestWithRetryOptions, reason 
 	}
 	previousCoverageSuppression := execMeta.suppressCoverageCollection
 	previousBodySuppression := execMeta.suppressUserTestBody
-	execMeta.suppressCoverageCollection = true
+	selectedSubtest := options.processRetryIdentity != nil && len(options.processRetryIdentity.Segments) > 1
+	execMeta.suppressCoverageCollection = previousCoverageSuppression || options.retryAttemptMaskingFallback || selectedSubtest
 	execMeta.suppressUserTestBody = options.retryAttemptMaskingFallback
 	execMeta.retryContinuationDecided = true
 	execMeta.retryContinuationAdmitted = false
