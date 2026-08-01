@@ -1,0 +1,96 @@
+name: Update System Tests
+
+# To run this workflow manually, use the following command:
+#  `gh workflow run "Update System Tests"`
+#
+# with additional arguments:
+#  `gh workflow run "Update System Tests" -f ref=<your-ref>`
+
+on: # yamllint disable-line rule:truthy
+  schedule:
+    - cron: '0 0 * * 0' # Every Sunday at midnight
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Reference to be updated (commit hash, branch, or tag)
+        required: false
+        type: string
+      dry-run:
+        description: Skip PR creation and only show changes
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default permissions for all jobs
+permissions: {}
+
+jobs:
+  update-system-tests:
+    name: "Update System Tests"
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Checkout System Test
+        id: system-test-ref
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: "DataDog/system-tests"
+          path: system-tests
+          persist-credentials: false
+          ref: ${{ github.event.inputs.ref || '' }}
+
+      - run: .github/scripts/update_reference.sh
+        env:
+          TARGET: ".github/workflows/system-tests.yml"
+          PATTERN: '(\s*SYSTEM_TESTS_REF:\s+)(\S+)(\s+# Automated:.*)'
+          REF: ${{ steps.system-test-ref.outputs.commit }}
+
+      - run: .github/scripts/update_reference.sh
+        env:
+          TARGET: ".github/workflows/parametric-tests.yml"
+          PATTERN: '(\s*SYSTEM_TESTS_REF:\s+)(\S+)(\s+# Automated:.*)'
+          REF: ${{ steps.system-test-ref.outputs.commit }}
+
+      - run: .github/scripts/update_reference.sh
+        env:
+          TARGET: ".github/workflows/system-tests.yml"
+          PATTERN: '(system-tests.yml@)(\S+)(\s+# Automated:.*)'
+          REF: ${{ steps.system-test-ref.outputs.commit }}
+
+      - run: git diff --color=always
+
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.update-system-tests.create-pr
+
+      - name: Create Pull Request
+        if: ${{ github.event.inputs.dry-run != 'true' }}
+        id: cpr
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          branch: auto-generate/update-system-tests
+          title: '[🤖] Update System Tests'
+          base: main
+          labels: changelog/no-changelog
+          commit-message: "[🤖] Update System Tests: ${{github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          delete-branch: true
+          sign-commits: true
+          add-paths: |
+            .github/
+          body: |
+            _This is an auto-generated PR from [here](${{github.server_url}}/${{ github.repository }}/blob/main/.github/workflows/update-system-tests.yml)_
+            The PR updates the system tests (Updated to commit: ${{ steps.system-test-ref.outputs.commit }})
+            Please review the changes and merge when ready
