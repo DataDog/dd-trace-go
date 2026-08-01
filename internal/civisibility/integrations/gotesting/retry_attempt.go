@@ -363,6 +363,32 @@ func (g *retryAttemptGroup) observeProcessRootParallel() {
 	g.mu.Unlock()
 }
 
+func (g *retryAttemptGroup) rootParallelWasObserved() bool {
+	if g == nil {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.rootParallelObserved
+}
+
+func retryAttemptNativeMaxParallel(t *testing.T) (int, bool) {
+	layout := getTestingInternalsLayout()
+	state := getTestState(t)
+	if layout == nil || layout.disabled || !layout.testStateOK || state == nil {
+		return 0, false
+	}
+	base := unsafe.Pointer(state)
+	mu := fieldPtr[sync.Mutex](base, layout.testState.mu)
+	mu.Lock()
+	maxParallel := *fieldPtr[int](base, layout.testState.maxParallel)
+	mu.Unlock()
+	if maxParallel < 1 {
+		return 0, false
+	}
+	return maxParallel, true
+}
+
 // transitionOriginalToParallel transfers the logical test's package scheduler
 // lease exactly once. Access to the private scheduler state remains reflection-
 // based because supported Go toolchains reject new linkname access to testing.

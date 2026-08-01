@@ -230,7 +230,17 @@ func TestProcessRetryWrapperOptionsSnapshotOnlyEnablesProcessSetupForProcessMode
 	})
 }
 
-func TestProcessRetryInvocationOrdinalIsReservedOnFirstProcessAttempt(t *testing.T) {
+func TestProcessRetryDeferredOwnershipIsExplicit(t *testing.T) {
+	inline := processRetryWrapperOptions()
+	deferred := processRetryDeferredWrapperOptions()
+
+	require.False(t, inline.processRetryDeferredAllowed)
+	require.True(t, deferred.processRetryDeferredAllowed)
+	require.True(t, inline.processRetryAllowed)
+	require.True(t, deferred.processRetryAllowed)
+}
+
+func TestProcessRetryInvocationOrdinalIsReservedBeforeFirstDeferredAttempt(t *testing.T) {
 	counter := &atomic.Uint64{}
 	options := &runTestWithRetryOptions{processRetryInvocationCounter: counter}
 

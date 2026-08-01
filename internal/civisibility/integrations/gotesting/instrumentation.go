@@ -80,6 +80,7 @@ type (
 		suppressCoverageCollection    bool
 		suppressUserTestBody          bool
 		retryAttemptFinalizer         func(retryAttemptResult)
+		deferredRetryEvent            *deferredProcessRetryEvent
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -95,6 +96,7 @@ type (
 		processRetryMRunEpoch         uint64
 		processRetryInvocationOrdinal uint64
 		processRetryInvocationCounter *atomic.Uint64
+		processRetryPhaseID           uint64
 		fuzzActive                    func() bool
 		processRetryContext           func() context.Context
 		processRetryGuardsSnapshotted bool
@@ -102,6 +104,8 @@ type (
 		processRetryFuzzActive        bool
 		processRetryFuzzGuard         *processRetryFuzzGuardSnapshot
 		processRetryLaunchTemplate    *processRetryLaunchBaseline
+		processRetryCoordinator       *processRetryCoordinator
+		processRetryDeferredAllowed   bool
 		retryAttemptGroupFactory      func(*testing.T) (*retryAttemptGroup, string)
 		retryAttemptObserveOutput     bool
 		retryAttemptObserveOutputSet  bool
@@ -132,16 +136,18 @@ type (
 	}
 
 	additionalFeatureWrapperOptions struct {
-		processRetryAllowed        bool
-		processRetryMode           retryExecutionMode
-		processRetryModeSet        bool
-		parallelEFDAllowed         bool
-		fuzzActive                 func() bool
-		processRetryFuzzGuard      *processRetryFuzzGuardSnapshot
-		mRunEpoch                  uint64
-		mRunInvocations            *atomic.Uint64
-		processRetryLaunchTemplate *processRetryLaunchBaseline
-		retryAttemptObserveOutput  bool
+		processRetryAllowed         bool
+		processRetryMode            retryExecutionMode
+		processRetryModeSet         bool
+		parallelEFDAllowed          bool
+		fuzzActive                  func() bool
+		processRetryFuzzGuard       *processRetryFuzzGuardSnapshot
+		mRunEpoch                   uint64
+		mRunInvocations             *atomic.Uint64
+		processRetryLaunchTemplate  *processRetryLaunchBaseline
+		processRetryCoordinator     *processRetryCoordinator
+		processRetryDeferredAllowed bool
+		retryAttemptObserveOutput   bool
 	}
 
 	// executionOptions holds the execution options for the test
@@ -172,6 +178,8 @@ type (
 		failfastRawFailure           bool
 		nativeFailfastStop           bool
 		capabilityFallbackCompleted  bool
+		lastObservation              retryAttemptObservation
+		deferredQueued               bool
 	}
 
 	flakyRetryBudgetReservation struct {
@@ -736,6 +744,8 @@ func applyAdditionalFeaturesToTestFunc(
 			processRetryMRunEpoch:         wrapperOpts.mRunEpoch,
 			processRetryInvocationCounter: wrapperOpts.mRunInvocations,
 			processRetryLaunchTemplate:    wrapperOpts.processRetryLaunchTemplate,
+			processRetryCoordinator:       wrapperOpts.processRetryCoordinator,
+			processRetryDeferredAllowed:   wrapperOpts.processRetryDeferredAllowed,
 			processRetryFuzzGuard:         wrapperOpts.processRetryFuzzGuard,
 			retryAttemptObserveOutput:     wrapperOpts.retryAttemptObserveOutput,
 			retryAttemptObserveOutputSet:  true,
@@ -1001,6 +1011,9 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		return
 	}
 	prepareProcessRetryExecution(options, execOpts)
+	if options.processRetryMode == retryExecutionModeProcess && options.processRetryDeferredAllowed && options.processRetryCoordinator != nil {
+		prepareDeferredProcessRetryInvocation(execOpts)
+	}
 	groupFactory := options.retryAttemptGroupFactory
 	var group *retryAttemptGroup
 	var reason string
@@ -1023,6 +1036,9 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	// backend for additional attempts only.
 	shouldRetry := executeTestIteration(execOpts)
 	if execOpts.capabilityFallbackCompleted {
+		return
+	}
+	if execOpts.deferredQueued {
 		return
 	}
 	if shouldRetry && !isProcessRetryChild() {

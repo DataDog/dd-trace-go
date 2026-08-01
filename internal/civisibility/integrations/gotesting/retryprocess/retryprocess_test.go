@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -44,6 +45,13 @@ var processRetryFixtureRequests = struct {
 var processRetryFixturePayloads = struct {
 	mu     locking.Mutex
 	values []string
+}{}
+
+const deferredProcessRetryOrderPath = "/deferred-process-retry/order"
+
+var deferredProcessRetryOrder = struct {
+	mu      locking.Mutex
+	entries []string
 }{}
 
 func TestMain(m *testing.M) {
@@ -153,6 +161,9 @@ func TestMain(m *testing.M) {
 	tracer := integrations.InitializeCIVisibilityMock()
 	runMStart := time.Now()
 	exitCode := gotesting.RunM(m)
+	if exitCode == 0 && processRetryFixtureEnv(processRetryDeferredOrderingEnv) == "true" {
+		assertDeferredProcessRetryOrder()
+	}
 	if path := processRetryFixtureEnv(processRetryBenchmarkMetricsPathEnv); path != "" {
 		if err := writeProcessRetryBenchmarkMetrics(path, time.Since(runMStart)); err != nil {
 			panic(fmt.Sprintf("write process retry benchmark metrics: %v", err))
@@ -257,6 +268,10 @@ func processRetryFixtureFailureScenarioLogSentinel() string {
 
 func newProcessRetryFixtureServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == deferredProcessRetryOrderPath {
+			handleDeferredProcessRetryOrder(w, r)
+			return
+		}
 		recordProcessRetryFixtureRequest(r)
 		switch r.URL.Path {
 		case "/api/v2/libraries/tests/services/setting":
@@ -333,6 +348,9 @@ func newProcessRetryFixtureServer() *httptest.Server {
 								"TestProcessRetryAttemptToFixParent": {
 									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
 								},
+								"TestDeferredProcessRetryAttemptToFixFailfastA": {
+									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+								},
 							},
 						},
 					},
@@ -376,6 +394,31 @@ func newProcessRetryFixtureServer() *httptest.Server {
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func handleDeferredProcessRetryOrder(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	entry, err := io.ReadAll(io.LimitReader(r.Body, 128))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	deferredProcessRetryOrder.mu.Lock()
+	deferredProcessRetryOrder.entries = append(deferredProcessRetryOrder.entries, string(entry))
+	deferredProcessRetryOrder.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func assertDeferredProcessRetryOrder() {
+	deferredProcessRetryOrder.mu.Lock()
+	defer deferredProcessRetryOrder.mu.Unlock()
+	want := []string{"A:first", "B:first", "A:retry"}
+	if processRetryFixtureEnv(processRetryDeferredRepeatedOrderingEnv) == "true" {
+		want = []string{"A:first", "B:first", "A:first", "B:first", "A:retry", "A:retry"}
+	}
+	if !slices.Equal(deferredProcessRetryOrder.entries, want) {
+		panic(fmt.Sprintf("deferred process retry order = %v, want %v", deferredProcessRetryOrder.entries, want))
+	}
 }
 
 func recordProcessRetryFixturePayloadsFromLogs(entries []processRetryFixtureLogEntry) {
@@ -624,6 +667,7 @@ func assertProcessRetryParallelEFDSpans(tracer mocktracer.Tracer) {
 		panic(fmt.Sprintf("expected one parent and two parallel EFD retry spans, got %d", len(fixtureSpans)))
 	}
 	processRetrySpans := 0
+	finalProcessRetrySpans := 0
 	for _, span := range fixtureSpans {
 		if span.Tag(constants.TestRetryExecutionMode) != "process" {
 			continue
@@ -635,12 +679,18 @@ func assertProcessRetryParallelEFDSpans(tracer mocktracer.Tracer) {
 		if span.Tag(constants.TestRetryReason) != constants.EarlyFlakeDetectionRetryReason {
 			panic("expected parallel EFD process retry reason " + constants.EarlyFlakeDetectionRetryReason)
 		}
-		if span.Tag(constants.TestFinalStatus) != nil {
-			panic("parallel EFD retry span unexpectedly has test.final_status")
+		if finalStatus := span.Tag(constants.TestFinalStatus); finalStatus != nil {
+			if finalStatus != constants.TestStatusPass {
+				panic(fmt.Sprintf("parallel EFD final retry status = %v, want %s", finalStatus, constants.TestStatusPass))
+			}
+			finalProcessRetrySpans++
 		}
 	}
 	if processRetrySpans != 2 {
 		panic(fmt.Sprintf("expected exactly 2 parallel EFD process retry spans, got %d", processRetrySpans))
+	}
+	if finalProcessRetrySpans != 1 {
+		panic(fmt.Sprintf("expected exactly one final parallel EFD process retry span, got %d", finalProcessRetrySpans))
 	}
 }
 

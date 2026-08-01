@@ -142,6 +142,9 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 		defer execOpts.mutex.Unlock()
 
 		localT := attempt.test
+		observation := observeFreshRetryAttempt(currentIndex, result)
+		observation.rootParallel = attempt.group.rootParallelWasObserved()
+		execOpts.lastObservation = observation
 		logFreshRetryAttemptState("complete", localT, result)
 		if finalize := execMeta.retryAttemptFinalizer; finalize != nil {
 			execMeta.retryAttemptFinalizer = nil
@@ -163,11 +166,11 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 			}
 		}
 
-		if result.panicData != nil {
+		if observation.panicData != nil {
 			localT.Fail()
 			if execMeta.panicData == nil {
-				execMeta.panicData = result.panicData
-				execMeta.panicStacktrace = string(result.panicStack)
+				execMeta.panicData = observation.panicData
+				execMeta.panicStacktrace = string(observation.panicStack)
 			}
 		}
 		if execMeta.panicData != nil && execOpts.panicExecutionMetadata == nil {
@@ -175,21 +178,21 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 		}
 
 		if execOpts.options.postAdjustRetryCount != nil && currentIndex == 0 {
-			execOpts.retryCount = execOpts.options.postAdjustRetryCount(execMeta, result.duration)
+			execOpts.retryCount = execOpts.options.postAdjustRetryCount(execMeta, observation.duration)
 		}
 		execOpts.retryCount--
 		if execOpts.options.postPerExecution != nil {
-			execOpts.options.postPerExecution(localT, execMeta, currentIndex, result.duration)
+			execOpts.options.postPerExecution(localT, execMeta, currentIndex, observation.duration)
 		}
 		execOpts.ptrToLocalT = localT
 		execOpts.executionMetadata = execMeta
-		if result.nativeFatalRequired {
-			execOpts.nativeFatalTrace = cloneRetryAttemptTerminalTrace(result.terminalTrace)
-			execOpts.nativeFatalTraceReplay = result.nativeFatalTraceReplay
-			if result.panicData != nil {
-				execOpts.nativeFatalPanic = result.panicData
-			} else if result.cleanupPanicData != nil {
-				execOpts.nativeFatalPanic = result.cleanupPanicData
+		if observation.nativeFatalRequired {
+			execOpts.nativeFatalTrace = observation.terminalTrace
+			execOpts.nativeFatalTraceReplay = observation.nativeFatalTraceReplay
+			if observation.panicData != nil {
+				execOpts.nativeFatalPanic = observation.panicData
+			} else if observation.cleanupPanicData != nil {
+				execOpts.nativeFatalPanic = observation.cleanupPanicData
 			}
 			execOpts.retryCount = 0
 			shouldRetry = false
@@ -197,7 +200,7 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 			execMeta.retryContinuationAdmitted = false
 			return
 		}
-		if stopRetryGroupAfterRaceLocked(execOpts, result.raceDetected) {
+		if stopRetryGroupAfterRaceLocked(execOpts, observation.raceDetected) {
 			shouldRetry = false
 			execMeta.retryContinuationDecided = true
 			execMeta.retryContinuationAdmitted = false
@@ -206,6 +209,12 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 		shouldRetry = reserveRetryBudgetIfNeeded(execOpts, localT, execMeta, currentIndex)
 		execMeta.retryContinuationDecided = true
 		execMeta.retryContinuationAdmitted = shouldRetry
+		if shouldRetry && currentIndex == 0 && !isProcessRetryChild() {
+			execOpts.deferredQueued = enqueueDeferredProcessRetryGroup(execOpts)
+			if execOpts.deferredQueued && deferredProcessRetryFirstFailureIsIrreversible(execMeta, observation) {
+				execOpts.options.t.Fail()
+			}
+		}
 	}
 
 	_, _, reason := runFreshRetryAttemptInGroupWithCallbacks(
@@ -224,4 +233,8 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 		return false
 	}
 	return shouldRetry
+}
+
+func deferredProcessRetryFirstFailureIsIrreversible(meta *testExecutionMetadata, observation retryAttemptObservation) bool {
+	return meta != nil && observation.failed && meta.isAttemptToFix && !meta.isDisabled && !meta.isQuarantined
 }

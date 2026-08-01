@@ -54,7 +54,7 @@ func finalizeInstrumentedTestExecution(
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
 		}
-		test.Close(integrations.ResultStatusFail)
+		deferOrCloseInstrumentedTestEvent(execMeta, test, integrations.ResultStatusFail, "")
 		return
 	}
 
@@ -82,7 +82,7 @@ func finalizeInstrumentedTestExecution(
 		}
 		suite.SetTag(ext.Error, true)
 		module.SetTag(ext.Error, true)
-		test.Close(integrations.ResultStatusFail)
+		deferOrCloseInstrumentedTestEvent(execMeta, test, integrations.ResultStatusFail, "")
 	case skipped:
 		if finalExec {
 			finalStatus := calculateFinalStatus(execMeta.anyExecutionPassed, execMeta.anyExecutionFailed, true, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
@@ -92,9 +92,9 @@ func finalizeInstrumentedTestExecution(
 			test.SetTag(constants.TestAttemptToFixPassed, "false")
 		}
 		if execMeta.skipReason != "" {
-			test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(execMeta.skipReason))
+			deferOrCloseInstrumentedTestEvent(execMeta, test, integrations.ResultStatusSkip, execMeta.skipReason)
 		} else {
-			test.Close(integrations.ResultStatusSkip)
+			deferOrCloseInstrumentedTestEvent(execMeta, test, integrations.ResultStatusSkip, "")
 		}
 	default:
 		if finalExec {
@@ -108,6 +108,6 @@ func finalizeInstrumentedTestExecution(
 				test.SetTag(constants.TestAttemptToFixPassed, "false")
 			}
 		}
-		test.Close(integrations.ResultStatusPass)
+		deferOrCloseInstrumentedTestEvent(execMeta, test, integrations.ResultStatusPass, "")
 	}
 }

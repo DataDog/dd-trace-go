@@ -1193,31 +1193,44 @@ func disableProcessRetryLaunches() {
 	processRetryLaunchGate.mu.Unlock()
 }
 
-func beginProcessRetryGroup() (<-chan struct{}, func(), error) {
+type processRetryGroupLease struct {
+	shutdown <-chan struct{}
+	released atomic.Bool
+}
+
+func acquireProcessRetryGroupLease() (*processRetryGroupLease, error) {
 	if !processRetryShutdownActionRegistered() {
-		return nil, nil, errProcessRetryShutdown
+		return nil, errProcessRetryShutdown
 	}
 	processRetryLaunchGate.mu.Lock()
 	defer processRetryLaunchGate.mu.Unlock()
 	processRetryLaunchGate.ensureChannelsLocked()
 	if processRetryLaunchGate.shuttingDown.Load() {
-		return processRetryLaunchGate.shutdown, nil, errProcessRetryShutdown
+		return nil, errProcessRetryShutdown
 	}
 	if processRetryLaunchGate.disabled.Load() {
-		return processRetryLaunchGate.shutdown, nil, errProcessRetryLaunchDisabled
+		return nil, errProcessRetryLaunchDisabled
 	}
 	processRetryLaunchGate.activeGroups++
-	shutdown := processRetryLaunchGate.shutdown
-	var once sync.Once
-	finish := func() {
-		once.Do(func() {
-			processRetryLaunchGate.mu.Lock()
-			processRetryLaunchGate.activeGroups--
-			processRetryLaunchGate.notifyLocked()
-			processRetryLaunchGate.mu.Unlock()
-		})
+	return &processRetryGroupLease{shutdown: processRetryLaunchGate.shutdown}, nil
+}
+
+func (l *processRetryGroupLease) release() {
+	if l == nil || !l.released.CompareAndSwap(false, true) {
+		return
 	}
-	return shutdown, finish, nil
+	processRetryLaunchGate.mu.Lock()
+	processRetryLaunchGate.activeGroups--
+	processRetryLaunchGate.notifyLocked()
+	processRetryLaunchGate.mu.Unlock()
+}
+
+func beginProcessRetryGroup() (<-chan struct{}, func(), error) {
+	lease, err := acquireProcessRetryGroupLease()
+	if err != nil {
+		return nil, nil, err
+	}
+	return lease.shutdown, lease.release, nil
 }
 
 func beginProcessRetryShutdown() {
@@ -1370,6 +1383,10 @@ func unregisterActiveProcessRetryChild(cmd *exec.Cmd) {
 
 func stopActiveProcessRetryChildren() {
 	beginProcessRetryShutdown()
+	coordinators := snapshotProcessRetryCoordinators()
+	for _, coordinator := range coordinators {
+		coordinator.requestShutdown()
+	}
 	processRetryActiveChildren.mu.Lock()
 	children := make([]processRetryActiveChild, 0, len(processRetryActiveChildren.children))
 	for cmd, child := range processRetryActiveChildren.children {
@@ -1386,7 +1403,21 @@ func stopActiveProcessRetryChildren() {
 			log.Debug("civisibility: failed to stop active process retry child: %v", err.Error())
 		}
 	}
-	if !waitForProcessRetryShutdownQuiescence(processRetryShutdownWait) {
+	deadline := time.Now().Add(processRetryShutdownWait)
+	for _, coordinator := range coordinators {
+		coordinator.completeShutdown()
+	}
+	for _, coordinator := range coordinators {
+		if !coordinator.awaitCompletion(deadline) {
+			log.Debug("civisibility: timed out waiting for deferred process retry coordinator during shutdown")
+			break
+		}
+	}
+	remaining := time.Until(deadline)
+	if remaining < 0 {
+		remaining = 0
+	}
+	if !waitForProcessRetryShutdownQuiescence(remaining) {
 		log.Debug("civisibility: timed out waiting for process retry groups during shutdown")
 	}
 }
@@ -2944,6 +2975,30 @@ func closeProcessRetryTestEventWithAdmission(
 	attempt processRetryAttemptResult,
 	admitContinuation func(processRetryEffectiveStatus),
 ) processRetryEffectiveStatus {
+	return finishProcessRetryTestEvent(testInfo, execMeta, attempt, admitContinuation, nil)
+}
+
+func deferProcessRetryTestEventWithAdmission(
+	testInfo *commonInfo,
+	execMeta *testExecutionMetadata,
+	attempt processRetryAttemptResult,
+	admitContinuation func(processRetryEffectiveStatus),
+) (processRetryEffectiveStatus, *deferredProcessRetryEvent) {
+	tail := &deferredProcessRetryEvent{}
+	effective := finishProcessRetryTestEvent(testInfo, execMeta, attempt, admitContinuation, tail)
+	if !tail.ready {
+		return effective, nil
+	}
+	return effective, tail
+}
+
+func finishProcessRetryTestEvent(
+	testInfo *commonInfo,
+	execMeta *testExecutionMetadata,
+	attempt processRetryAttemptResult,
+	admitContinuation func(processRetryEffectiveStatus),
+	deferred *deferredProcessRetryEvent,
+) processRetryEffectiveStatus {
 	if testInfo == nil {
 		effective := processRetryEffectiveStatus{Status: processRetryStatusFail, Failed: true, FailureKind: "missing_test_info"}
 		if admitContinuation != nil {
@@ -2970,7 +3025,7 @@ func closeProcessRetryTestEventWithAdmission(
 	}
 	duration := max(attempt.FinishTime.Sub(attempt.StartTime), 0)
 	finalExec := isFinalExecution(effective.Failed, effective.Skipped, execMeta, duration)
-	if finalExec {
+	if finalExec && deferred == nil {
 		if effective.FailureKind == "metadata_cancelled" {
 			test.SetTag(constants.TestFinalStatus, constants.TestStatusFail)
 		} else {
@@ -2990,7 +3045,7 @@ func closeProcessRetryTestEventWithAdmission(
 		}
 	}
 	if effective.Failed {
-		if finalExec && execMeta.allRetriesFailed {
+		if finalExec && deferred == nil && execMeta.allRetriesFailed {
 			test.SetTag(constants.TestHasFailedAllRetries, "true")
 		}
 		if (effective.FailureKind == "test_panic" || effective.FailureKind == "test_fail") && attempt.Result.ErrorType != "" {
@@ -3013,6 +3068,22 @@ func closeProcessRetryTestEventWithAdmission(
 				test.Log(line, "")
 			}
 		}
+	}
+	if deferred != nil {
+		deferred.event = test
+		deferred.finishTime = attempt.FinishTime
+		deferred.failed = effective.Failed
+		deferred.ready = true
+		switch {
+		case effective.Failed:
+			deferred.status = integrations.ResultStatusFail
+		case effective.Skipped:
+			deferred.status = integrations.ResultStatusSkip
+			deferred.skipReason = attempt.Result.SkipReason
+		default:
+			deferred.status = integrations.ResultStatusPass
+		}
+		return effective
 	}
 	closeOpts := []integrations.TestCloseOption{integrations.WithTestFinishTime(attempt.FinishTime)}
 	if effective.Skipped && attempt.Result.SkipReason != "" {
