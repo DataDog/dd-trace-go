@@ -104,7 +104,7 @@ const (
 
 const (
 	// SizeLimitEVPEvent is the EVP event size limit.
-	SizeLimitEVPEvent        = 5_000_000 // 5MB
+	SizeLimitEVPEvent        = 5_000_000
 	collectionErrorDroppedIO = "dropped_io"
 	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
 
