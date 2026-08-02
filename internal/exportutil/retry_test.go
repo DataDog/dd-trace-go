@@ -32,10 +32,10 @@ func TestRetry_StopsAtMaxAttemptsWithDefaultClassifier(t *testing.T) {
 	calls := 0
 	res, err := Retry(context.Background(), RetryOptions{MaxAttempts: 3}, func(context.Context) Attempt {
 		calls++
-		return Attempt{Status: 503, Err: errors.New("unavailable")} // default Retriable retries 5xx
+		return Attempt{Status: 503, Err: errors.New("unavailable")}
 	})
 	require.Error(t, err)
-	assert.Equal(t, 3, calls) // exhausted every attempt
+	assert.Equal(t, 3, calls)
 	assert.Equal(t, 3, res.Attempts)
 	assert.True(t, res.Retriable)
 	assert.Equal(t, 503, res.StatusCode)
@@ -48,7 +48,7 @@ func TestRetry_NonRetriableStopsImmediately(t *testing.T) {
 		return Attempt{Status: 400, Err: errors.New("bad request")}
 	})
 	require.Error(t, err)
-	assert.Equal(t, 1, calls) // 400 is permanent under the default classifier
+	assert.Equal(t, 1, calls)
 	assert.False(t, res.Retriable)
 }
 
@@ -64,7 +64,6 @@ func TestRetry_HonorsRetryAfterOverBackoff(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 2, calls)
-	// The wait must honor RetryAfter (~400ms), not the ~100ms exponential backoff.
 	assert.GreaterOrEqual(t, time.Since(start), 350*time.Millisecond)
 }
 
@@ -79,7 +78,7 @@ func TestRetry_ContextCancelInterruptsWait(t *testing.T) {
 		return Attempt{Status: 503, RetryAfter: 10 * time.Second, Err: errors.New("throttled")}
 	})
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Less(t, time.Since(start), 2*time.Second) // did not sleep the full 10s
+	assert.Less(t, time.Since(start), 2*time.Second)
 }
 
 func TestRetry_CustomRetriablePredicate(t *testing.T) {
@@ -88,7 +87,7 @@ func TestRetry_CustomRetriablePredicate(t *testing.T) {
 	calls := 0
 	_, err := Retry(context.Background(), RetryOptions{MaxAttempts: 3, Retriable: only418}, func(context.Context) Attempt {
 		calls++
-		return Attempt{Status: 500, Err: errors.New("err")} // not retriable under this predicate
+		return Attempt{Status: 500, Err: errors.New("err")}
 	})
 	require.Error(t, err)
 	assert.Equal(t, 1, calls)
@@ -99,5 +98,5 @@ func TestRetry_CustomRetriablePredicate(t *testing.T) {
 		return Attempt{Status: 418, Err: errors.New("teapot")}
 	})
 	require.Error(t, err)
-	assert.Equal(t, 3, calls) // 418 retries under this predicate
+	assert.Equal(t, 3, calls)
 }
