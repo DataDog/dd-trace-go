@@ -14,30 +14,23 @@ import (
 )
 
 func TestSnippet(t *testing.T) {
-	// Short bodies pass through, trimmed.
 	assert.Equal(t, "boom", Snippet([]byte("  boom \n")))
 	assert.Equal(t, "", Snippet(nil))
 	assert.Equal(t, "", Snippet([]byte("   ")))
 
-	// A body under the limit is returned whole.
 	small := strings.Repeat("a", SnippetMaxBytes)
 	assert.Equal(t, small, Snippet([]byte(small)))
 
-	// An oversized ASCII body is truncated to the limit.
 	big := strings.Repeat("a", SnippetMaxBytes+100)
 	got := Snippet([]byte(big))
 	assert.Len(t, got, SnippetMaxBytes)
 
-	// An oversized body whose cut point lands mid-rune backs off to a rune
-	// boundary so the snippet stays valid UTF-8 (never a partial multi-byte rune).
-	// "é" is 2 bytes; fill so byte SnippetMaxBytes falls inside a rune.
-	multibyte := strings.Repeat("é", SnippetMaxBytes) // 2*512 bytes
+	multibyte := strings.Repeat("é", SnippetMaxBytes)
 	got = Snippet([]byte(multibyte))
 	assert.True(t, utf8.ValidString(got), "snippet must be valid UTF-8")
 	assert.LessOrEqual(t, len(got), SnippetMaxBytes)
 	assert.NotEmpty(t, got)
 
-	// A short body with invalid UTF-8 bytes is sanitized (dropped), not returned raw.
 	invalid := Snippet([]byte{'o', 'k', 0xff, 0xfe})
 	assert.True(t, utf8.ValidString(invalid), "snippet must be valid UTF-8 even for garbage bytes")
 	assert.Equal(t, "ok", invalid)

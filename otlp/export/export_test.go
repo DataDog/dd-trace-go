@@ -106,7 +106,6 @@ func TestExportTraces_DatadogRoute(t *testing.T) {
 	assert.Equal(t, "application/x-protobuf", reqs[0].headers.Get("Content-Type"))
 	assert.Empty(t, reqs[0].headers.Get("dd-otel-metric-config"))
 
-	// Body round-trips (IDs preserved).
 	var got tracepb.ExportTraceServiceRequest
 	require.NoError(t, proto.Unmarshal(reqs[0].body, &got))
 	assert.True(t, proto.Equal(req, &got))
@@ -138,14 +137,12 @@ func TestExportMetrics_CollectorRouteNoAuthNoMetricConfig(t *testing.T) {
 	reqs := fake.captured()
 	require.Len(t, reqs, 1)
 	assert.Equal(t, "http://collector:4318/v1/metrics", reqs[0].url)
-	assert.Empty(t, reqs[0].headers.Get("dd-api-key"))            // no Datadog auth on collector route
-	assert.Empty(t, reqs[0].headers.Get("dd-otel-metric-config")) // metric config is Datadog-route only
+	assert.Empty(t, reqs[0].headers.Get("dd-api-key"))
+	assert.Empty(t, reqs[0].headers.Get("dd-otel-metric-config"))
 }
 
 func TestExportMetrics_EndpointOverrideWithAPIKeyNoMetricConfig(t *testing.T) {
 	fake := &fakeTransport{}
-	// Datadog-compatible endpoint override + APIKey: auth is injected, but the
-	// dd-otel-metric-config header must not leak onto a non-derived endpoint.
 	c, err := export.NewMetricClient(export.Config{Endpoint: "http://collector:4318", APIKey: "key", HTTPClient: httpClient(fake)})
 	require.NoError(t, err)
 
@@ -165,7 +162,7 @@ func TestNew_RejectsSchemelessEndpoint(t *testing.T) {
 
 func TestNew_RejectsNonHTTPScheme(t *testing.T) {
 	_, err := export.NewTraceClient(export.Config{Endpoint: "grpc://collector:4317"})
-	assert.Error(t, err) // OTLP/gRPC is not supported by the HTTP transport
+	assert.Error(t, err)
 }
 
 func TestExportTraces_PartialSuccessReportsError(t *testing.T) {
@@ -179,7 +176,7 @@ func TestExportTraces_PartialSuccessReportsError(t *testing.T) {
 	require.NoError(t, err)
 
 	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.Error(t, err) // partial success surfaces as a failed request
+	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
 	assert.Equal(t, 200, res.Requests[0].StatusCode)
 	require.Error(t, res.Requests[0].Err)
@@ -197,7 +194,6 @@ func TestExportLogs_Endpoint(t *testing.T) {
 }
 
 func TestExportTraces_Non200IsFailure(t *testing.T) {
-	// A 202 (or any non-200 2xx) is not the OTLP success contract; report failure.
 	fake := &fakeTransport{responder: func(int) (int, string) { return 202, "" }}
 	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
 	require.NoError(t, err)
@@ -210,9 +206,7 @@ func TestExportTraces_Non200IsFailure(t *testing.T) {
 }
 
 func TestExportTraces_UndecodableBodyIsFailure(t *testing.T) {
-	// A 200 whose body is not a decodable OTLP response (e.g. a proxy/login page)
-	// must be a failed export, not silently counted as zero rejections.
-	fake := &fakeTransport{responder: func(int) (int, string) { return 200, "\x08\xff" }} // malformed protobuf
+	fake := &fakeTransport{responder: func(int) (int, string) { return 200, "\x08\xff" }}
 	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
 	require.NoError(t, err)
 
@@ -224,11 +218,10 @@ func TestExportTraces_UndecodableBodyIsFailure(t *testing.T) {
 }
 
 func TestExportTraces_ForwardCompatibleResponseSucceeds(t *testing.T) {
-	// A 200 whose body carries a field unknown to ExportTraceServiceResponse (a
-	// forward-compatible extension) must still be treated as success: unknown
-	// protobuf fields are ignored, not used to reject the response. Bytes:
-	// tag(field 15, varint)=0x78, value=0x01.
-	fake := &fakeTransport{responder: func(int) (int, string) { return 200, "\x78\x01" }}
+	var response []byte
+	response = protowire.AppendTag(response, 15, protowire.VarintType)
+	response = protowire.AppendVarint(response, 1)
+	fake := &fakeTransport{responder: func(int) (int, string) { return 200, string(response) }}
 	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
 	require.NoError(t, err)
 
@@ -249,7 +242,7 @@ func TestExportMetrics_PartialSuccessReportsError(t *testing.T) {
 	require.NoError(t, err)
 
 	res, err := c.ExportMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
-	require.Error(t, err) // rejected data points surface as a failed request
+	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
 	require.Error(t, res.Requests[0].Err)
 	assert.Contains(t, res.Requests[0].Err.Error(), "partial success")
@@ -266,7 +259,7 @@ func TestExportLogs_PartialSuccessReportsError(t *testing.T) {
 	require.NoError(t, err)
 
 	res, err := c.ExportLogs(context.Background(), []*logspb.ExportLogsServiceRequest{{}})
-	require.Error(t, err) // rejected log records surface as a failed request
+	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
 	require.Error(t, res.Requests[0].Err)
 	assert.Contains(t, res.Requests[0].Err.Error(), "partial success")
@@ -279,7 +272,7 @@ func TestExportTraces_PerRequestRows(t *testing.T) {
 
 	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace(), sampleTrace(), sampleTrace()})
 	require.NoError(t, err)
-	require.Len(t, res.Requests, 3) // one row per request, not flattened spans
+	require.Len(t, res.Requests, 3)
 	assert.Len(t, fake.captured(), 3)
 	for i, rr := range res.Requests {
 		assert.Equal(t, i, rr.Index)
@@ -294,7 +287,7 @@ func TestExportTraces_RetryTransient(t *testing.T) {
 	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
 	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
-	assert.Equal(t, 3, res.Requests[0].Attempts) // total attempts == MaxAttempts
+	assert.Equal(t, 3, res.Requests[0].Attempts)
 	assert.True(t, res.Requests[0].Retriable)
 	assert.Equal(t, 503, res.Requests[0].StatusCode)
 }
@@ -306,27 +299,24 @@ func TestExportTraces_PermanentError(t *testing.T) {
 
 	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
 	require.Error(t, err)
-	assert.Equal(t, 1, res.Requests[0].Attempts) // not retried
+	assert.Equal(t, 1, res.Requests[0].Attempts)
 	assert.False(t, res.Requests[0].Retriable)
 	assert.Equal(t, 400, res.Requests[0].StatusCode)
 }
 
 func TestExportTraces_NonRetryableServerErrorNotRetried(t *testing.T) {
-	// 500 is a 5xx but not in the OTLP retryable set (429/502/503/504); it must
-	// not burn every attempt like the generic classifier would.
 	fake := &fakeTransport{responder: func(int) (int, string) { return 500, "boom" }}
 	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake), MaxAttempts: 3})
 	require.NoError(t, err)
 
 	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
 	require.Error(t, err)
-	assert.Equal(t, 1, res.Requests[0].Attempts) // 500 is permanent under OTLP rules
+	assert.Equal(t, 1, res.Requests[0].Attempts)
 	assert.False(t, res.Requests[0].Retriable)
 	assert.Equal(t, 500, res.Requests[0].StatusCode)
 }
 
 func TestExportTraces_RetriesBadGateway(t *testing.T) {
-	// 502 is in the OTLP retryable set.
 	fake := &fakeTransport{responder: func(int) (int, string) { return 502, "" }}
 	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake), MaxAttempts: 2})
 	require.NoError(t, err)
@@ -338,8 +328,6 @@ func TestExportTraces_RetriesBadGateway(t *testing.T) {
 }
 
 func TestExportTraces_SurfacesDecodedStatusMessage(t *testing.T) {
-	// OTLP/HTTP error bodies are a google.rpc.Status protobuf; the snippet should
-	// show its message, not raw protobuf control bytes.
 	var status []byte
 	status = protowire.AppendTag(status, 1, protowire.VarintType)
 	status = protowire.AppendVarint(status, 3)
@@ -364,7 +352,7 @@ func TestExportTraces_NilRequest(t *testing.T) {
 	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
 	assert.Error(t, res.Requests[0].Err)
-	assert.Empty(t, fake.captured()) // nil request never sent
+	assert.Empty(t, fake.captured())
 }
 
 func TestExportTraces_ContextCancelNotRetriable(t *testing.T) {

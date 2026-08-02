@@ -17,8 +17,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/otlp/export"
 )
 
-// discardTransport accepts every request and retains nothing, so the benchmark
-// measures marshal/POST-assembly cost without network or bookkeeping noise.
 type discardTransport struct{}
 
 func (discardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
