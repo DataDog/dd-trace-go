@@ -158,10 +158,9 @@ func (t *rawTransport) doPost(ctx context.Context, body []byte) exportutil.Attem
 	defer resp.Body.Close()
 
 	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	// Drain the bounded remainder so the deferred Close can return the keep-alive
-	// connection to the idle pool for reuse (Close on an undrained body discards
-	// the connection). Mirrors internal/llmobs/transport's ExportPost.
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	// Drain to EOF so http.Transport can reuse the connection.
+	_, drainErr := io.Copy(io.Discard, resp.Body)
+	readErr = errors.Join(readErr, drainErr)
 	// OTLP/HTTP defines success as exactly 200 OK with a protobuf Export*Response
 	// body. Treat any other 2xx (202/204/206, or a redirect not followed) as a
 	// failed export rather than silently reporting delivery; the body decode is

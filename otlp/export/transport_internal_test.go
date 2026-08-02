@@ -72,12 +72,8 @@ func (c countingReadCloser) Read(p []byte) (int, error) {
 }
 func (countingReadCloser) Close() error { return nil }
 
-func TestDoPost_DrainsResponseRemainderForConnReuse(t *testing.T) {
-	// A 200 body larger than the 1 MiB ReadAll cap. Without draining the
-	// remainder before Close, http.Transport discards the keep-alive connection
-	// instead of returning it to the idle pool, so each sequential export
-	// re-handshakes TCP+TLS. The bounded drain reads what ReadAll left behind.
-	const size = (1 << 20) + 512
+func TestDoPost_DrainsLargeResponseForConnectionReuse(t *testing.T) {
+	const size = (2 << 20) + 512
 	var read int
 	tr := stubTransport(stubRoundTripper{
 		status: 200,
@@ -85,8 +81,6 @@ func TestDoPost_DrainsResponseRemainderForConnReuse(t *testing.T) {
 	})
 	a := tr.doPost(context.Background(), []byte("payload"))
 	require.NoError(t, a.Err)
-	// Capped ReadAll consumes 1 MiB; the drain consumes the remaining 512 bytes.
-	// Without the drain this would stop at exactly 1 MiB, leaving the body unread.
 	assert.Equal(t, size, read, "the full response body must be drained so the connection can be reused")
 }
 
