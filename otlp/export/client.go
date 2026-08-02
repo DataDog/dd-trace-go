@@ -54,5 +54,5 @@ func exportEach[T proto.Message](ctx context.Context, t *rawTransport, reqs []T,
 // would otherwise marshal to an empty body and be silently sent.
 func isNilMessage[T proto.Message](v T) bool {
 	rv := reflect.ValueOf(v)
-	return rv.Kind() == reflect.Ptr && rv.IsNil()
+	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
