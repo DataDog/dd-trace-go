@@ -102,10 +102,9 @@ const (
 	// FIPSModeEnvVar is the environment variable that determines whether to enable FIPS mode.
 	// Defaults to true in GovCloud regions and false otherwise.
 	FIPSModeEnvVar = "DD_LAMBDA_FIPS_MODE"
-	// StripEventBridgeContextEnvVar enables stripping of the _datadog propagation
-	// carrier from EventBridge detail before the user handler is invoked.
-	// Extension listeners still receive the raw payload for trace extraction.
-	StripEventBridgeContextEnvVar = "DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT"
+	// StripInjectedContextEnvVar enables stripping of injected _datadog propagation
+	// carriers from the Lambda payload before the user handler is invoked.
+	StripInjectedContextEnvVar = "DD_TRACE_STRIP_INJECTED_CONTEXT"
 
 	// DefaultSite to send API messages to.
 	DefaultSite = "datadoghq.com"

@@ -298,9 +298,9 @@ func TestWrapHandlerInterfaceWithListeners(t *testing.T) {
 	assert.Equal(t, uint8('5'), response[0])
 }
 
-func TestWrapHandlerWithListeners_stripsEventBridgeContextForHandlerOnly(t *testing.T) {
-	internal.ResetStripEventBridgeContextCacheForTest()
-	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
+func TestWrapHandlerWithListeners_stripsInjectedContextForHandlerOnly(t *testing.T) {
+	internal.ResetStripInjectedContextCacheForTest()
+	t.Setenv("DD_TRACE_STRIP_INJECTED_CONTEXT", "true")
 
 	raw := loadRawJSON(t, "../testdata/eventbridge-with-datadog-object.json")
 	var handlerMsg json.RawMessage
@@ -328,9 +328,9 @@ func TestWrapHandlerWithListeners_stripsEventBridgeContextForHandlerOnly(t *test
 	assert.Contains(t, detail, "foo")
 }
 
-func TestDatadogHandler_Invoke_stripsEventBridgeContextForHandlerOnly(t *testing.T) {
-	internal.ResetStripEventBridgeContextCacheForTest()
-	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
+func TestDatadogHandler_Invoke_stripsInjectedContextForHandlerOnly(t *testing.T) {
+	internal.ResetStripInjectedContextCacheForTest()
+	t.Setenv("DD_TRACE_STRIP_INJECTED_CONTEXT", "true")
 
 	payload, err := os.ReadFile("../testdata/eventbridge-with-datadog-object.json")
 	require.NoError(t, err)
@@ -361,8 +361,8 @@ func (h *rawPayloadHandler) Invoke(_ context.Context, payload []byte) ([]byte, e
 }
 
 func TestDatadogHandler_Invoke_passthroughInvalidJSON(t *testing.T) {
-	internal.ResetStripEventBridgeContextCacheForTest()
-	t.Setenv("DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT", "true")
+	internal.ResetStripInjectedContextCacheForTest()
+	t.Setenv("DD_TRACE_STRIP_INJECTED_CONTEXT", "true")
 
 	invalid := []byte(`{not json`)
 	h := &rawPayloadHandler{}
