@@ -75,6 +75,12 @@ Our CI pipeline includes several automated checks:
 
 - **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
 
+#### System Tests Workflow
+
+- **Pinned reference**: `system-tests.yml` and `parametric-tests.yml` check out [DataDog/system-tests](https://github.com/DataDog/system-tests) at a fixed commit (`SYSTEM_TESTS_REF`) rather than tracking its default branch, so results stay reproducible across runs.
+- **Automated bump**: `update-system-tests.yml` runs weekly and opens a PR bumping `SYSTEM_TESTS_REF` to the latest system-tests commit. Trigger it manually with `gh workflow run "Update System Tests"`, or preview the diff without opening a PR using `gh workflow run "Update System Tests" -f dry-run=true`.
+- **Testing against a newer system-tests commit**: if your PR depends on a system-tests change merged after the current pin, either bump `SYSTEM_TESTS_REF` in your branch or re-run the workflow manually with `-f ref=<commit>`.
+
 ### CI Troubleshooting
 
 Sometimes a pull request's checks will show failures that aren't related to its changes. When this happens, you can try the following steps:
