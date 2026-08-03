@@ -8,12 +8,14 @@ package gocontrolplane
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"sync"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -45,6 +47,21 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	}
 
 	headers["Host"] = append(headers["Host"], pseudoHeaders[":authority"])
+
+	// The load balancer can forward the address of the TCP peer it observed as
+	// the source.ip attribute, which the client cannot forge. Prepend it to
+	// X-Forwarded-For: client IP resolution scans that header from the left and
+	// stops at the first global address, so the trusted value wins over any
+	// entry the client supplied. Client-supplied values are deliberately kept so
+	// the WAF keeps inspecting the header exactly as it was received.
+	if m.component(ctx) == componentNameGCPServiceExtension {
+		if sourceIP, ok := parseExtProcSourceIP(m.ProcessingRequest.GetAttributes()); ok {
+			addr := sourceIP.String()
+			headers["X-Forwarded-For"] = append([]string{addr}, headers["X-Forwarded-For"]...)
+			remoteAddr = addr
+		}
+	}
+
 	return proxy.PseudoRequest{
 		Method:     pseudoHeaders[":method"],
 		Authority:  pseudoHeaders[":authority"],
@@ -53,6 +70,47 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 		Headers:    headers,
 		RemoteAddr: remoteAddr,
 	}, nil
+}
+
+const (
+	// extProcAttributesNamespace is the key of the ProcessingRequest attributes
+	// map under which Envoy publishes the attributes selected by the extension
+	// configuration. Google Cloud Service Extensions spell that selection
+	// forwardAttributes; the resulting wire format is Envoy's.
+	extProcAttributesNamespace = "envoy.filters.http.ext_proc"
+
+	// sourceIPAttribute holds the address of the TCP peer as seen by the load
+	// balancer. Unlike X-Forwarded-For it is set by the infrastructure rather
+	// than the client, so it is authoritative whenever it is present.
+	sourceIPAttribute = "source.ip"
+)
+
+// parseExtProcSourceIP returns the trusted client address published through the
+// ext_proc source.ip attribute. It reports false unless the attribute is present
+// and holds a single unzoned IP address: a value we cannot interpret must leave
+// client IP resolution exactly as it would have been without it, rather than
+// silently substituting a wrong address.
+func parseExtProcSourceIP(attributes map[string]*structpb.Struct) (netip.Addr, bool) {
+	value, found := attributes[extProcAttributesNamespace].GetFields()[sourceIPAttribute]
+	if !found {
+		return netip.Addr{}, false
+	}
+
+	// Anything other than a plain string is not something we know how to read.
+	stringValue, ok := value.GetKind().(*structpb.Value_StringValue)
+	if !ok {
+		return netip.Addr{}, false
+	}
+
+	// source.ip carries a bare address; the port is a separate attribute.
+	sourceIP, err := netip.ParseAddr(stringValue.StringValue)
+	if err != nil || sourceIP.Zone() != "" {
+		return netip.Addr{}, false
+	}
+
+	// Collapse IPv4-mapped IPv6 so the value matches how the address would be
+	// written anywhere else in the trace.
+	return sourceIP.Unmap(), true
 }
 
 func (m messageRequestHeaders) MessageType() proxy.MessageType {
