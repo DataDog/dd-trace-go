@@ -26,6 +26,9 @@ func TestSubtestManagement(t *testing.T) {
 	})
 
 	gt.Run("SubAttemptFix", func(t *testing.T) {
+		if os.Getenv(failSubAttemptToFixEnv) == "1" {
+			t.Fatal("subtest attempt-to-fix failure requested by scenario")
+		}
 	})
 
 	gt.Run("SubAttemptFixParallel", func(t *testing.T) {
