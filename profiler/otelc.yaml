@@ -1,0 +1,45 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+
+
+# TODO: is there a better error reporting mechanism?
+# The tracer and profiler already use the stdlib logger, so
+# we're not adding anything new, but users might be using a
+# different logger.
+start_profiler:
+  target: main
+  where:
+    func: main
+  do:
+    - inject_code:
+        raw: |
+          switch env.Get("DD_PROFILING_ENABLED") {
+          case "1", "true", "auto":
+            // The "auto" value can be set if profiling is enabled via the
+            // Datadog Admission Controller. We always turn on the profiler in
+            // the "auto" case since we only send profiles after at least a
+            // minute, and we assume anything running that long is worth
+            // profiling.
+            err := profiler.Start(
+              profiler.WithProfileTypes(
+                profiler.CPUProfile,
+                profiler.HeapProfile,
+                // Non-default profiles which are highly likely to be useful:
+                profiler.GoroutineProfile,
+                profiler.MutexProfile,
+              ),
+              profiler.WithTags("otelc:true"),
+            )
+            if err != nil {
+              log.Printf("failed to start profiling: %s", err.Error())
+            }
+          }
+          defer profiler.Stop()
+        
+  imports:
+    profiler: github.com/DataDog/dd-trace-go/v2/profiler
+    log: log
+    env: github.com/DataDog/dd-trace-go/v2/instrumentation/env

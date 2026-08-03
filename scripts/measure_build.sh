@@ -11,7 +11,7 @@ set -euo pipefail
 #
 # Options:
 #   --sample NAME         Sample to build (default: net_http)
-#   --mode MODE           Build mode: standard or orchestrion (required)
+#   --mode MODE           Build mode: standard, orchestrion, or otelc (required)
 #   --output PATH         Output JSON file path (default: stdout)
 #   --repeats N           Number of build repeats (default: 3)
 #   -h, --help            Show this help message
@@ -32,7 +32,7 @@ Builds are performed with a cold build cache to measure full compilation cost.
 
 Options:
   --sample NAME         Sample to build (default: net_http)
-  --mode MODE           Build mode: standard or orchestrion (required)
+  --mode MODE           Build mode: standard, orchestrion, or otelc (required)
   --output PATH         Output JSON file path (default: stdout)
   --repeats N           Number of build repeats (default: 3)
   -h, --help            Show this help message
@@ -89,11 +89,11 @@ done
 
 # Validate required arguments
 if [[ -z "$MODE" ]]; then
-  die "--mode is required (standard or orchestrion)"
+  die "--mode is required (standard, orchestrion, otelc)"
 fi
 
-if [[ "$MODE" != "standard" && "$MODE" != "orchestrion" ]]; then
-  die "--mode must be 'standard' or 'orchestrion', got: $MODE"
+if [[ "$MODE" != "standard" && "$MODE" != "orchestrion" && "$MODE" != "otelc" ]]; then
+  die "--mode must be 'standard', 'orchestrion', or 'otelc', got: $MODE"
 fi
 
 # Find repo root
@@ -130,6 +130,20 @@ if [[ "$MODE" == "orchestrion" ]]; then
   message "  Orchestrion version: $ORCHESTRION_VERSION"
 fi
 
+if [[ "$MODE" == "otelc" ]]; then
+  message "Cloning and installing otelc binary..."
+  OTELC_SRC_DIR="$OUT_DIR/otelc-src"
+  OTELC_REF="3b9beed7a1200cf16e59bafa431dd4c4a0601f41" # v1.0.1
+  mkdir -p "$OTELC_SRC_DIR"
+  git -C "$OTELC_SRC_DIR" init -q
+  git -C "$OTELC_SRC_DIR" remote add origin https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation.git
+  git -C "$OTELC_SRC_DIR" fetch --depth 1 origin "$OTELC_REF" || die "Failed to fetch otelc commit $OTELC_REF"
+  git -C "$OTELC_SRC_DIR" checkout -q FETCH_HEAD || die "Failed to checkout otelc commit $OTELC_REF"
+  (cd "$OTELC_SRC_DIR" && make install) || die "Failed to install otelc"
+  OTELC_VERSION="$OTELC_REF"
+  message "  Otelc version: $OTELC_VERSION"
+fi
+
 # Get Go version
 GO_VERSION="$(go version | awk '{print $3}' | sed 's/go//')"
 message "  Go version: $GO_VERSION"
@@ -147,10 +161,19 @@ do_build() {
   local start_time
   start_time=$(date +%s.%N 2> /dev/null || date +%s)
 
+  local build_status=0
   if [[ "$MODE" == "standard" ]]; then
-    go test -c -o "$bin_path" "./$SAMPLE" || die "Build failed (standard)"
+    go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
+  elif [[ "$MODE" == "orchestrion" ]]; then
+    go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || build_status=$?
   else
-    go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || die "Build failed (orchestrion)"
+    otelc -rules="$REPO_ROOT" go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
+  fi
+
+  if [[ "$build_status" -ne 0 ]]; then
+    message "  Build failed ($MODE, exit $build_status); recording null metrics for this run"
+    echo "null null"
+    return 1
   fi
 
   local end_time
@@ -160,7 +183,11 @@ do_build() {
 
   # Binary size
   local size
-  size=$(stat -c %s "$bin_path" 2> /dev/null || stat -f %z "$bin_path" 2> /dev/null) || die "Failed to stat binary"
+  if ! size=$(stat -c %s "$bin_path" 2> /dev/null || stat -f %z "$bin_path" 2> /dev/null); then
+    message "  Failed to stat binary; recording null size for this run"
+    echo "$duration null"
+    return 1
+  fi
 
   message "  Duration: ${duration}s"
   message "  Size: $size bytes"
@@ -168,21 +195,28 @@ do_build() {
   echo "$duration $size"
 }
 
-# Perform builds — collect all duration samples; use last build's binary size
+# A failed build/stat is not a fatal error: do_build reports it as "null null"
+# which we record as null in the output
 message "Performing $REPEATS builds..."
 durations=()
 size=""
+failures=0
 for i in $(seq 1 "$REPEATS"); do
   message "Build $i/$REPEATS:"
-  read -r d s <<< "$(do_build)"
+  build_output="$(do_build)" || failures=$((failures + 1))
+  read -r d s <<< "$build_output"
   durations+=("$d")
   size="$s"
 done
 message "Durations: ${durations[*]}, size: $size bytes"
+if [[ "$failures" -gt 0 ]]; then
+  message "WARNING: $failures/$REPEATS build(s) failed; recorded as null in output"
+fi
 
-# Build JSON output — durations as array, size as single value
+# Build JSON output — durations as array, size as single value.
+# Duration entries and size are either a number or the literal string "null"
 message "Generating JSON output..."
-DURATION_ARRAY=$(printf '%s\n' "${durations[@]}" | jq -R 'tonumber' | jq -s '.')
+DURATION_ARRAY=$(printf '%s\n' "${durations[@]}" | jq -R 'if . == "null" then null else tonumber end' | jq -s '.')
 JSON=$(jq -n \
   --arg sample "$SAMPLE" \
   --arg mode "$MODE" \
@@ -194,6 +228,11 @@ JSON=$(jq -n \
 # Add orchestrion version if in orchestrion mode
 if [[ "$MODE" == "orchestrion" ]]; then
   JSON=$(echo "$JSON" | jq --arg orch_version "$ORCHESTRION_VERSION" '. + {orchestrion_version: $orch_version}')
+fi
+
+# Add otelc version if in otelc mode
+if [[ "$MODE" == "otelc" ]]; then
+  JSON=$(echo "$JSON" | jq --arg otelc_version "$OTELC_VERSION" '. + {otelc_version: $otelc_version}')
 fi
 
 # Output

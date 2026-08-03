@@ -153,22 +153,17 @@ func main() {
 		replacesSet := make(map[string]Replace)
 		for _, im := range imports {
 			// the module name and the import path might be different (when the imported package is a sub-package)
-			importModule := im
-			if strings.HasPrefix(im, "github.com/DataDog/dd-trace-go") {
-				if left, _, ok := strings.Cut(im, "/v2"); ok {
-					importModule = left + "/v2"
-				}
+			importModule, ok := resolveModuleForImport(im, allModules)
+			if !ok {
+				// not a local module (external dependency)
+				continue
 			}
 			if importModule == mod.Module.Path {
 				// exclude self
 				continue
 			}
-			// it's a local module
-			_, ok := allModules[importModule]
-			if ok {
-				rep := getLocalReplace(allModules, modPath, importModule)
-				replacesSet[rep.Old.Path] = rep
-			}
+			rep := getLocalReplace(allModules, modPath, importModule)
+			replacesSet[rep.Old.Path] = rep
 		}
 		for _, require := range mod.Require {
 			// it's a local module
@@ -224,6 +219,25 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+}
+
+// resolveModuleForImport finds which known local module provides the given
+// import path, preferring the longest matching module path. This matters
+// when one module is nested under another's import path prefix (e.g.
+// ".../contrib/net/http/v2/otelc" is its own module, not a subpackage of
+// ".../contrib/net/http/v2"); a shorter, coincidentally-matching prefix must
+// not shadow a more specific nested module.
+func resolveModuleForImport(im string, allModules map[string]GoMod) (string, bool) {
+	best := ""
+	for modPath := range allModules {
+		if modPath != im && !strings.HasPrefix(im, modPath+"/") {
+			continue
+		}
+		if len(modPath) > len(best) {
+			best = modPath
+		}
+	}
+	return best, best != ""
 }
 
 func getLocalReplace(mods map[string]GoMod, mod, require string) Replace {
