@@ -201,6 +201,20 @@ func (t *trace) propagatingTagsLen() int {
 	return len(t.loadPropagatingTags())
 }
 
+// propagatingTagsByteLen returns the byte length of the serialized propagating-tags
+// header value (format: "k1=v1,k2=v2,..."), matching the measurement used by
+// marshalPropagatingTags so callers can pre-check whether a new tag fits in the budget.
+func (t *trace) propagatingTagsByteLen() int {
+	n := 0
+	for k, v := range t.loadPropagatingTags() {
+		if n > 0 {
+			n++ // comma separator
+		}
+		n += len(k) + 1 + len(v) // key=value
+	}
+	return n
+}
+
 // parseDecisionMaker parses the decision maker string (e.g. "-4") into
 // its absolute uint32 form for v1 protocol encoding.
 func parseDecisionMaker(dm string) uint32 {

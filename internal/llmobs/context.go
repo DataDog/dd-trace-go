@@ -56,3 +56,25 @@ func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
 func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
 	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
 }
+
+// AgentNameWireSafe reports whether name can safely be written as a
+// propagating-tag value. The rules match the shared cross-language contract:
+//
+//   - reject any byte outside the printable ASCII range [0x20, 0x7E]
+//   - reject comma (tagset delimiter) and semicolon / tilde (W3C tracestate
+//     characters sanitized by composeTracestate, which would corrupt attribution)
+//
+// The length check is omitted here; callers are responsible for verifying that
+// adding the name tag does not exceed the x-datadog-tags budget.
+func AgentNameWireSafe(name string) bool {
+	for i := 0; i < len(name); i++ {
+		b := name[i]
+		if b < 0x20 || b > 0x7E {
+			return false
+		}
+		if b == ',' || b == ';' || b == '~' {
+			return false
+		}
+	}
+	return true
+}

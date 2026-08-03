@@ -29,6 +29,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -1382,11 +1383,28 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	} else {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
+	// pagent tags are optional and trace-scoped. Unset both when there is no agent ancestor so a
+	// predecessor's values don't leak to downstream services. When there is an ancestor, unset the
+	// name whenever it is absent or wire-unsafe so isValidPropagatableTag can't stamp a propagation
+	// error for an empty value, and so a stale name from a previous sibling can't linger.
 	if pagentID := llmSpan.PropagatedParentAgentSpanID(); pagentID != "" {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentSpanID, pagentID)
-		if name := llmSpan.PropagatedParentAgentName(); illmobs.AgentNameWireSafe(name) {
-			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentName, name)
+		name := llmSpan.PropagatedParentAgentName()
+		if name != "" && illmobs.AgentNameWireSafe(name) {
+			// Only propagate the name if it fits in the remaining x-datadog-tags budget.
+			// This mirrors the len(k)+len(v) measurement used by marshalPropagatingTags.
+			used := spanCtx.trace.propagatingTagsByteLen()
+			if used+len(keyPropagatedLLMObsPAgentName)+len(name) <= internalconfig.DefaultMaxTagsHeaderLen {
+				spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentName, name)
+			} else {
+				spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
+			}
+		} else {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
 		}
+	} else {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentSpanID)
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
 	}
 }
 

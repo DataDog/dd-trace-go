@@ -407,6 +407,192 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, customStartTime.UnixNano(), l0.StartNS)
 		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), l0.Duration)
 	})
+	t.Run("distributed-context-propagation-agent-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		var agentSpanID string
+		genSpans := func() {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client_agent", llmobs.StartSpanConfig{})
+			agentSpanID = agent.SpanID()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+			agent.Finish(llmobs.FinishSpanConfig{})
+		}
+		genSpans()
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "server-side tool must carry agent_attribution from upstream agent")
+		assert.Equal(t, "client_agent", attr["pagent_name"])
+		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
+	})
+	t.Run("distributed-context-propagation-agent-attribution-through-non-agent", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		var agentSpanID string
+		genSpans := func() {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client_agent", llmobs.StartSpanConfig{})
+			agentSpanID = agent.SpanID()
+			// Workflow between the agent and the outbound request: attribution must still forward.
+			_, ctx = ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "client_workflow", llmobs.StartSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+			agent.Finish(llmobs.FinishSpanConfig{})
+		}
+		genSpans()
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "server-side tool must carry agent_attribution forwarded through an intermediate non-agent span")
+		assert.Equal(t, "client_agent", attr["pagent_name"])
+		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
+	})
+	t.Run("distributed-context-propagation-no-agent-omits-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			// Only a workflow upstream — no agent anywhere.
+			_, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "client_workflow", llmobs.StartSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		_, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"]
+		assert.False(t, ok, "server-side tool with no agent anywhere must omit agent_attribution")
+	})
+	t.Run("distributed-context-propagation-clears-stale-agent-attribution", func(t *testing.T) {
+		// Propagating tags are trace-scoped. An agent sibling that publishes pagent tags must not
+		// leave them behind for a later non-agent sibling to carry to downstream services.
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			rootSpan, ctxRoot := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "root", llmobs.StartSpanConfig{})
+			defer rootSpan.Finish(llmobs.FinishSpanConfig{})
+
+			// Agent sibling publishes pagent tags via an APM child span.
+			agentSibling, ctxAgent := ll.StartSpan(ctxRoot, llmobs.SpanKindAgent, "agent_sibling", llmobs.StartSpanConfig{})
+			apmChild, _ := tracer.StartSpanFromContext(ctxAgent, "apm.child")
+			apmChild.Finish()
+			agentSibling.Finish(llmobs.FinishSpanConfig{})
+
+			// Non-agent sibling makes the outbound request. The pagent keys must be cleared
+			// so the downstream tool does not inherit stale attribution from the agent sibling.
+			_, ctxWF := ll.StartSpan(ctxRoot, llmobs.SpanKindWorkflow, "wf_sibling", llmobs.StartSpanConfig{})
+			req, err := http.NewRequestWithContext(ctxWF, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		_, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"]
+		assert.False(t, ok, "server-side tool under a non-agent sibling must not inherit stale agent attribution")
+	})
+	t.Run("distributed-context-propagation-agent-attribution-wire-keys", func(t *testing.T) {
+		// Cross-language compatibility requires the exact tag keys _dd.p.llmobs_pagent_span_id and
+		// _dd.p.llmobs_pagent_name in the x-datadog-tags header.
+		_, _, ll := testTracer(t)
+
+		var capturedTags string
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			capturedTags = req.Header.Get("X-Datadog-Tags")
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client_agent", llmobs.StartSpanConfig{})
+			defer agent.Finish(llmobs.FinishSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		assert.Contains(t, capturedTags, "_dd.p.llmobs_pagent_span_id=")
+		assert.Contains(t, capturedTags, "_dd.p.llmobs_pagent_name=")
+	})
+	t.Run("distributed-context-propagation-id-only-when-name-unsafe", func(t *testing.T) {
+		// When the agent name contains wire-unsafe bytes (e.g. comma), only the span ID is
+		// propagated. The downstream span reports id-only attribution (pagent_name == nil).
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		var agentSpanID string
+		genSpans := func() {
+			// Comma is the tagset delimiter and rejected by AgentNameWireSafe.
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "bad,name", llmobs.StartSpanConfig{})
+			agentSpanID = agent.SpanID()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+			agent.Finish(llmobs.FinishSpanConfig{})
+		}
+		genSpans()
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "server-side tool must have agent_attribution even with an unsafe name (id-only)")
+		assert.Nil(t, attr["pagent_name"], "unsafe name must not propagate; pagent_name must be nil (id-only)")
+		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
+	})
 
 }
 
@@ -2481,7 +2667,7 @@ func TestAgentAttributionSerialization(t *testing.T) {
 		assert.Equal(t, inner.SpanID(), toolAttr["pagent_span_id"])
 	})
 
-	t.Run("propagated-parent-takes-precedence-over-local-when-no-local-agent", func(t *testing.T) {
+	t.Run("propagated-agent-is-inherited-when-no-local-parent", func(t *testing.T) {
 		_, coll, ll := testTracer(t)
 		prop := &llmobs.PropagatedLLMSpan{
 			MLApp:             mlApp,
@@ -2500,137 +2686,6 @@ func TestAgentAttributionSerialization(t *testing.T) {
 		require.True(t, ok, "tool with propagated agent ancestor must have agent_attribution")
 		assert.Equal(t, "remote_agent", attr["pagent_name"])
 		assert.Equal(t, "remote-agent-id", attr["pagent_span_id"])
-	})
-}
-
-func TestAgentAttributionCrossProcess(t *testing.T) {
-	t.Run("agent-upstream-propagates-attribution-downstream", func(t *testing.T) {
-		_, coll, ll := testTracer(t)
-
-		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			ctx := req.Context()
-			spanCtx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
-			require.NoError(t, err)
-
-			apmSpan, ctx := tracer.StartSpanFromContext(ctx, "http.server", tracer.ChildOf(spanCtx))
-			defer apmSpan.Finish()
-
-			tool, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
-			tool.Finish(llmobs.FinishSpanConfig{})
-
-			w.WriteHeader(http.StatusOK)
-		})
-
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			h.ServeHTTP(w, req)
-		}))
-		defer srv.Close()
-
-		agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client_agent", llmobs.StartSpanConfig{})
-		apmSpan, ctx := tracer.StartSpanFromContext(ctx, "http.client")
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
-		require.NoError(t, err)
-		require.NoError(t, tracer.Inject(apmSpan.Context(), tracer.HTTPHeadersCarrier(req.Header)))
-
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		_ = resp.Body.Close()
-
-		apmSpan.Finish()
-		agent.Finish(llmobs.FinishSpanConfig{})
-		tracer.Flush()
-
-		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
-		require.True(t, ok, "server-side tool must carry agent_attribution from upstream agent")
-		assert.Equal(t, "client_agent", attr["pagent_name"])
-		assert.Equal(t, agent.SpanID(), attr["pagent_span_id"])
-	})
-
-	t.Run("non-agent-upstream-forwards-inherited-attribution", func(t *testing.T) {
-		_, coll, ll := testTracer(t)
-
-		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			ctx := req.Context()
-			spanCtx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
-			require.NoError(t, err)
-
-			apmSpan, ctx := tracer.StartSpanFromContext(ctx, "http.server", tracer.ChildOf(spanCtx))
-			defer apmSpan.Finish()
-
-			tool, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
-			tool.Finish(llmobs.FinishSpanConfig{})
-
-			w.WriteHeader(http.StatusOK)
-		})
-
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			h.ServeHTTP(w, req)
-		}))
-		defer srv.Close()
-
-		agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client_agent", llmobs.StartSpanConfig{})
-		// A workflow between the agent and the outbound request: attribution must still be forwarded.
-		_, ctx = ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "client_workflow", llmobs.StartSpanConfig{})
-		apmSpan, ctx := tracer.StartSpanFromContext(ctx, "http.client")
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
-		require.NoError(t, err)
-		require.NoError(t, tracer.Inject(apmSpan.Context(), tracer.HTTPHeadersCarrier(req.Header)))
-
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		_ = resp.Body.Close()
-
-		apmSpan.Finish()
-		agent.Finish(llmobs.FinishSpanConfig{})
-		tracer.Flush()
-
-		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
-		require.True(t, ok, "server-side tool must carry agent_attribution forwarded through workflow")
-		assert.Equal(t, "client_agent", attr["pagent_name"])
-		assert.Equal(t, agent.SpanID(), attr["pagent_span_id"])
-	})
-
-	t.Run("no-agent-upstream-omits-attribution", func(t *testing.T) {
-		_, coll, ll := testTracer(t)
-
-		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			ctx := req.Context()
-			spanCtx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
-			require.NoError(t, err)
-
-			apmSpan, ctx := tracer.StartSpanFromContext(ctx, "http.server", tracer.ChildOf(spanCtx))
-			defer apmSpan.Finish()
-
-			tool, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
-			tool.Finish(llmobs.FinishSpanConfig{})
-
-			w.WriteHeader(http.StatusOK)
-		})
-
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			h.ServeHTTP(w, req)
-		}))
-		defer srv.Close()
-
-		// Only a workflow upstream — no agent anywhere.
-		_, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "client_workflow", llmobs.StartSpanConfig{})
-		apmSpan, ctx := tracer.StartSpanFromContext(ctx, "http.client")
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
-		require.NoError(t, err)
-		require.NoError(t, tracer.Inject(apmSpan.Context(), tracer.HTTPHeadersCarrier(req.Header)))
-
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		_ = resp.Body.Close()
-
-		apmSpan.Finish()
-		tracer.Flush()
-
-		_, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"]
-		assert.False(t, ok, "server-side tool with no agent anywhere must omit agent_attribution")
 	})
 }
 
