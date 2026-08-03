@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,6 +39,8 @@ const (
 	processRetryBurstEventPath          = "/process-retry-burst/event"
 	processRetryBurstMaxPackages        = 8
 )
+
+var processRetryBurstServiceSequence atomic.Uint64
 
 type processRetryBurstProfile struct {
 	startupDelay time.Duration
@@ -468,6 +471,7 @@ func processRetryBurstEnvironment(serverURL string, scenario processRetryBurstSc
 		constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable: "-1",
 		constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled:       strconv.FormatBool(scenario.parallelEFD),
 	}
+	overrides["DD_SERVICE"] = fmt.Sprintf("process-retry-burst-%d", processRetryBurstServiceSequence.Add(1))
 	if scenario.flakyRetries {
 		overrides[constants.CIVisibilityFlakyRetryCountEnvironmentVariable] = strconv.Itoa(scenario.retries)
 		budget := scenario.totalRetryBudget
@@ -511,6 +515,24 @@ func processRetryBurstEnvironment(serverURL string, scenario processRetryBurstSc
 		env = append(env, key+"="+overrides[key])
 	}
 	return env
+}
+
+func TestProcessRetryBurstEnvironmentIsolatesReadCache(t *testing.T) {
+	const serverURL = "http://127.0.0.1:12345"
+	serviceName := func(environment []string) string {
+		for _, entry := range environment {
+			if value, ok := strings.CutPrefix(entry, "DD_SERVICE="); ok {
+				return value
+			}
+		}
+		return ""
+	}
+
+	first := serviceName(processRetryBurstEnvironment(serverURL, processRetryBurstScenario{name: "first"}))
+	second := serviceName(processRetryBurstEnvironment(serverURL, processRetryBurstScenario{name: "second"}))
+	if first == "" || second == "" || first == second {
+		t.Fatalf("isolated service names = %q/%q, want distinct non-empty values", first, second)
+	}
 }
 
 func warmProcessRetryBurstModule(tb testing.TB, moduleDir string, packageCount int) {
