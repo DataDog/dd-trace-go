@@ -3517,21 +3517,18 @@ func TestRunProcessRetryAttemptRechecksParentDeadlineHardCapAfterLaunchGateWait(
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
 	releaseGate := holdProcessRetryLaunchGateForTesting(t)
+	defer releaseGate()
 
 	base := time.Unix(1_700_000_000, 0)
 	parentDeadline := base.Add(processRetryParentDeadlineReserve() + time.Minute)
 	parentDeadlineHardCap := make(chan time.Time, 1)
 	neverParentDeadline := make(chan time.Time)
 	timerCalls := atomic.Int32{}
-	prepared := make(chan struct{})
 	startCalls := atomic.Int32{}
 	baseline := &processRetryLaunchBaseline{
 		hooks: processRetryRunnerHooks{
-			command: exec.Command,
-			prepareTree: func(*exec.Cmd) error {
-				close(prepared)
-				return nil
-			},
+			command:     exec.Command,
+			prepareTree: noopProcessRetryTree,
 			startAndWait: func(*exec.Cmd) (<-chan error, error) {
 				startCalls.Add(1)
 				return nil, nil
@@ -3550,18 +3547,21 @@ func TestRunProcessRetryAttemptRechecksParentDeadlineHardCapAfterLaunchGateWait(
 		timeout:          time.Second,
 		timeoutSet:       true,
 	}
+	startContext := &processRetryObservedDoneContext{
+		Context: context.Background(),
+		entered: make(chan struct{}),
+	}
 	attemptResult := make(chan processRetryAttemptResult, 1)
 	go func() {
-		attemptResult <- runProcessRetryAttemptWithBaseline(context.Background(), processRetryChildConfig{
+		attemptResult <- runProcessRetryAttemptWithBaseline(startContext, processRetryChildConfig{
 			TestName:    "TestParentDeadlineAfterLaunchGateWait",
 			Attempt:     1,
 			RetryReason: constants.AutoTestRetriesRetryReason,
 		}, parentDeadline, true, baseline)
 	}()
 
-	<-prepared
+	<-startContext.entered
 	parentDeadlineHardCap <- base
-	releaseGate()
 
 	attempt := <-attemptResult
 	if attempt.Cleanup != nil {

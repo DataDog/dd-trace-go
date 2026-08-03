@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDeferredProcessRetryFreshObservationIsImmutablePolicyInput(t *testing.T) {

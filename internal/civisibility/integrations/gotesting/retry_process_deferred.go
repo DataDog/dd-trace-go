@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1201,7 +1202,7 @@ func (g *deferredProcessRetryGroup) closeTailEvent(final bool) {
 		g.tailEvent.event.SetTag(constants.TestFinalStatus, finalStatus)
 		if g.metadata.isAttemptToFix {
 			attemptToFixPassed := g.allAttemptsPassed && !g.truncated && !g.terminalFailure
-			g.tailEvent.event.SetTag(constants.TestAttemptToFixPassed, fmt.Sprint(attemptToFixPassed))
+			g.tailEvent.event.SetTag(constants.TestAttemptToFixPassed, strconv.FormatBool(attemptToFixPassed))
 		}
 		if g.tailEvent.failed && g.allRetriesFailed {
 			g.tailEvent.event.SetTag(constants.TestHasFailedAllRetries, "true")

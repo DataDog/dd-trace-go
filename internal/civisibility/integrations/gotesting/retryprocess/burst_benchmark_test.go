@@ -10,17 +10,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/mod/modfile"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
@@ -220,7 +224,7 @@ func (c *processRetryBurstCollector) ServeHTTP(w http.ResponseWriter, r *http.Re
 		response.Data.ID = "process-retry-burst"
 		response.Data.Type = "ci_app_libraries_tests"
 		response.Data.Attributes.Tests = make(civisibilitynet.KnownTestsResponseDataModules, processRetryBurstMaxPackages)
-		for i := 0; i < processRetryBurstMaxPackages; i++ {
+		for i := range processRetryBurstMaxPackages {
 			module := fmt.Sprintf("github.com/DataDog/dd-trace-go/v2/burstfixture/pkg%02d", i)
 			response.Data.Attributes.Tests[module] = civisibilitynet.KnownTestsResponseDataSuites{
 				"burst_test.go": {"TestZFirstPassComplete"},
@@ -243,7 +247,7 @@ func (c *processRetryBurstCollector) ServeHTTP(w http.ResponseWriter, r *http.Re
 		response.Data.ID = "process-retry-burst"
 		response.Data.Type = "ci_app_libraries_tests"
 		response.Data.Attributes.Modules = make(map[string]civisibilitynet.TestManagementTestsResponseDataSuites, processRetryBurstMaxPackages)
-		for i := 0; i < processRetryBurstMaxPackages; i++ {
+		for i := range processRetryBurstMaxPackages {
 			module := fmt.Sprintf("github.com/DataDog/dd-trace-go/v2/burstfixture/pkg%02d", i)
 			response.Data.Attributes.Modules[module] = civisibilitynet.TestManagementTestsResponseDataSuites{
 				Suites: map[string]civisibilitynet.TestManagementTestsResponseDataTests{
@@ -267,7 +271,7 @@ func (c *processRetryBurstCollector) ServeHTTP(w http.ResponseWriter, r *http.Re
 		}
 		w.Header().Set("Content-Type", "application/json")
 		data := make([]map[string]any, 0, processRetryBurstMaxPackages)
-		for i := 0; i < processRetryBurstMaxPackages; i++ {
+		for i := range processRetryBurstMaxPackages {
 			data = append(data, map[string]any{
 				"id":   fmt.Sprintf("process-retry-burst-%d", i),
 				"type": "test",
@@ -366,9 +370,7 @@ func (c *processRetryBurstCollector) requestCounts() map[string]int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	counts := make(map[string]int, len(c.requests))
-	for path, count := range c.requests {
-		counts[path] = count
-	}
+	maps.Copy(counts, c.requests)
 	return counts
 }
 
@@ -380,7 +382,7 @@ func processRetryBurstRepositoryRoot(tb testing.TB) string {
 	}
 	for {
 		payload, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-		if err == nil && strings.HasPrefix(string(payload), "module github.com/DataDog/dd-trace-go/v2\n") {
+		if err == nil && processRetryBurstIsRepositoryModule(payload) {
 			return dir
 		}
 		parent := filepath.Dir(dir)
@@ -389,6 +391,10 @@ func processRetryBurstRepositoryRoot(tb testing.TB) string {
 		}
 		dir = parent
 	}
+}
+
+func processRetryBurstIsRepositoryModule(payload []byte) bool {
+	return modfile.ModulePath(payload) == "github.com/DataDog/dd-trace-go/v2"
 }
 
 func writeProcessRetryBurstModule(tb testing.TB, root string, packageCount int) string {
@@ -412,7 +418,7 @@ replace github.com/DataDog/dd-trace-go/v2 => %s
 	if err := os.WriteFile(filepath.Join(harnessDir, "harness.go"), []byte(processRetryBurstHarnessSource), 0o600); err != nil {
 		tb.Fatal(err)
 	}
-	for i := 0; i < packageCount; i++ {
+	for i := range packageCount {
 		name := fmt.Sprintf("pkg%02d", i)
 		packageDir := filepath.Join(moduleDir, name)
 		if err := os.MkdirAll(packageDir, 0o700); err != nil {
@@ -428,7 +434,7 @@ replace github.com/DataDog/dd-trace-go/v2 => %s
 
 func processRetryBurstPackageArgs(packageCount int) []string {
 	args := make([]string, 0, packageCount)
-	for i := 0; i < packageCount; i++ {
+	for i := range packageCount {
 		args = append(args, fmt.Sprintf("./pkg%02d", i))
 	}
 	return args
@@ -509,7 +515,8 @@ func processRetryBurstEnvironment(serverURL string, scenario processRetryBurstSc
 
 func warmProcessRetryBurstModule(tb testing.TB, moduleDir string, packageCount int) {
 	tb.Helper()
-	args := []string{"test", "-mod=mod", "-run=^$", "-count=1"}
+	args := make([]string, 0, 4+packageCount)
+	args = append(args, "test", "-mod=mod", "-run=^$", "-count=1")
 	args = append(args, processRetryBurstPackageArgs(packageCount)...)
 	cmd := exec.Command("go", args...)
 	cmd.Dir = moduleDir
@@ -650,7 +657,7 @@ func sampleProcessRetryBurstResources(rootPID int) processRetryBurstResourceMetr
 	}
 	processes := make(map[int]process)
 	children := make(map[int][]int)
-	for _, line := range strings.Split(string(output), "\n") {
+	for line := range strings.SplitSeq(string(output), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 4 {
 			continue
@@ -682,6 +689,26 @@ func sampleProcessRetryBurstResources(rootPID int) processRetryBurstResourceMetr
 		queue = append(queue, children[pid]...)
 	}
 	return metrics
+}
+
+func TestProcessRetryBurstRepositoryModuleRecognition(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		want    bool
+	}{
+		{name: "LF", payload: "module github.com/DataDog/dd-trace-go/v2\n\ngo 1.25.0\n", want: true},
+		{name: "CRLF", payload: "module github.com/DataDog/dd-trace-go/v2\r\n\r\ngo 1.25.0\r\n", want: true},
+		{name: "different module", payload: "module example.com/other\n", want: false},
+		{name: "invalid", payload: "not a go.mod", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := processRetryBurstIsRepositoryModule([]byte(tt.payload)); got != tt.want {
+				t.Fatalf("processRetryBurstIsRepositoryModule() = %t, want %t", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestDeferredProcessRetryMultiPackageBurst(t *testing.T) {
@@ -904,7 +931,7 @@ func medianProcessRetryBurstDuration(samples []processRetryBurstMetrics, value f
 	for i, sample := range samples {
 		values[i] = value(sample)
 	}
-	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+	slices.Sort(values)
 	return values[len(values)/2]
 }
 

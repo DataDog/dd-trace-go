@@ -1413,10 +1413,7 @@ func stopActiveProcessRetryChildren() {
 			break
 		}
 	}
-	remaining := time.Until(deadline)
-	if remaining < 0 {
-		remaining = 0
-	}
+	remaining := max(time.Until(deadline), 0)
 	if !waitForProcessRetryShutdownQuiescence(remaining) {
 		log.Debug("civisibility: timed out waiting for process retry groups during shutdown")
 	}
