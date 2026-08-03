@@ -1705,18 +1705,6 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	baseline *processRetryLaunchBaseline,
 	shutdown <-chan struct{},
 ) processRetryAttemptResult {
-	return runProcessRetryAttemptWithCoordinator(ctx, cfg, parentDeadline, parentDeadlineOK, baseline, shutdown, nil)
-}
-
-func runProcessRetryAttemptWithCoordinator(
-	ctx context.Context,
-	cfg processRetryChildConfig,
-	parentDeadline time.Time,
-	parentDeadlineOK bool,
-	baseline *processRetryLaunchBaseline,
-	shutdown <-chan struct{},
-	group *retryAttemptGroup,
-) processRetryAttemptResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -2018,7 +2006,7 @@ func runProcessRetryAttemptWithCoordinator(
 				attempt.Err = errors.Join(attempt.Err, errProcessRetryControlInvalid, err)
 				waitErr = forceKillAndWait(hooks.killTree)
 			} else {
-				controlErrors = control.serveParent(group)
+				controlErrors = control.serveParent()
 			}
 		}
 		if waitErr != nil || (control != nil && !attempt.BodyAdmitted) {

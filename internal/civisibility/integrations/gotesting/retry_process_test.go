@@ -6118,7 +6118,7 @@ func TestProcessRetryControlAdmissionParallelAndTerminalCommit(t *testing.T) {
 	require.False(t, childExited)
 	require.NoError(t, waitErr)
 
-	serveErrors := parent.serveParent(nil)
+	serveErrors := parent.serveParent()
 	require.NoError(t, child.childRootParallelBridge())
 	start := time.Now()
 	finish := start.Add(time.Millisecond)
@@ -6178,7 +6178,7 @@ func TestProcessRetryControlCancellationClosesAndJoinsWorkers(t *testing.T) {
 			RetryReason: constants.AutoTestRetriesRetryReason,
 		}
 		parent, _ := newProcessRetryControlPairForTesting(t, cfg)
-		serveErrors := parent.serveParent(nil)
+		serveErrors := parent.serveParent()
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
@@ -6293,7 +6293,7 @@ func TestProcessRetryControlTerminalTimeoutIsReported(t *testing.T) {
 		RetryReason: constants.AutoTestRetriesRetryReason,
 	}
 	parent, _ := newProcessRetryControlPairForTesting(t, cfg)
-	serveErrors := parent.serveParent(nil)
+	serveErrors := parent.serveParent()
 	timeout := make(chan time.Time, 1)
 	timeout <- time.Time{}
 
@@ -6710,7 +6710,7 @@ func runProcessRetryChildResultFixtureWithEnv(t testing.TB, scenario string, ext
 	_, childExited, observedWaitErr, admissionErr := control.parentAdmission(context.Background(), nil, nil, waitCh)
 	require.NoError(t, admissionErr)
 	if !childExited {
-		_ = control.serveParent(nil)
+		_ = control.serveParent()
 		observedWaitErr = <-waitCh
 	}
 	err = observedWaitErr
@@ -7186,46 +7186,4 @@ func (t *processRetrySpyTest) SetTag(string, any) {
 
 func (t *processRetrySpyTest) Close(integrations.TestResultStatus, ...integrations.TestCloseOption) {
 	t.closeCalls.Add(1)
-}
-
-func TestProcessRetryRootParallelTransfersOriginalSchedulerLease(t *testing.T) {
-	t.Run("root", func(rootT *testing.T) {
-		requireProcessRetryContainmentForTesting(rootT)
-		group, reason := newRetryAttemptGroup(rootT)
-		require.Empty(rootT, reason)
-		defer group.retire()
-
-		baseline := captureProcessRetryLaunchBaseline()
-		require.NoError(rootT, baseline.err)
-		baseline.argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
-		baseline.argsSnapshot.runSelector = ""
-		baseline.argsSnapshot.skipSelector = ""
-		baseline.environment = append(baseline.environment,
-			"Bypass=true",
-			processRetryNativeLifecycleFixtureEnv+"=true",
-			processRetryChildResultScenarioEnv+"=parallel_top_level",
-		)
-		attempt := runProcessRetryAttemptWithCoordinator(context.Background(), processRetryChildConfig{
-			TestName:    "TestProcessRetryChildResultFixture",
-			Attempt:     1,
-			RetryReason: constants.AutoTestRetriesRetryReason,
-		}, time.Time{}, false, baseline, nil, group)
-		if attempt.Cleanup != nil {
-			defer attempt.Cleanup()
-		}
-
-		require.NoError(rootT, attempt.Err)
-		require.True(rootT, attempt.BodyAdmitted)
-		require.Equal(rootT, processRetryStatusPass, attempt.Result.Status)
-		require.True(rootT, attempt.Result.RootParallel)
-		group.mu.Lock()
-		rootParallelObserved := group.rootParallelObserved
-		originalTransitioned := group.originalTransitioned
-		group.mu.Unlock()
-		require.True(rootT, rootParallelObserved)
-		require.True(rootT, originalTransitioned)
-		fields := getTestPrivateFields(rootT)
-		require.NotNil(rootT, fields)
-		require.True(rootT, isParallelTest(rootT, fields))
-	})
 }

@@ -364,7 +364,7 @@ func (c *processRetryControl) parentAdmission(
 	}
 }
 
-func (c *processRetryControl) serveParent(group *retryAttemptGroup) <-chan error {
+func (c *processRetryControl) serveParent() <-chan error {
 	errorsCh := make(chan error, 1)
 	done := make(chan struct{})
 	c.stateMu.Lock()
@@ -383,9 +383,6 @@ func (c *processRetryControl) serveParent(group *retryAttemptGroup) <-chan error
 			}
 			switch frame.Kind {
 			case processRetryControlParallelRequest:
-				if group != nil {
-					group.transitionOriginalToParallel()
-				}
 				if err := c.Send(processRetryControlParallelResume, ""); err != nil {
 					errorsCh <- err
 					return

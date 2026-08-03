@@ -1043,7 +1043,7 @@ func (g *deferredProcessRetryGroup) prepareAttempt() (deferredProcessRetryPrepar
 }
 
 func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
-	return runProcessRetryAttemptWithCoordinator(
+	return runProcessRetryAttemptWithBaselineAndShutdown(
 		ctx,
 		processRetryChildConfig{
 			TestName:          group.identity.FullName,
@@ -1056,7 +1056,6 @@ func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessR
 		group.parentDeadlineOK,
 		group.launchBaseline,
 		group.shutdown(),
-		nil,
 	)
 }
 
