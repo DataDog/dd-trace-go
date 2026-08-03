@@ -334,6 +334,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4.
 	// Also downgrade if CSS is disabled (v1 requires CSS). TraceProtocol() additionally
 	// returns v0.4 when OTLP span metrics are enabled (see internal/config).
+	log.Warn("TRACE PROTOCOL DIAGNOSTIC: protocol=%v agentReachable=%v v1ProtocolAvailable=%v canComputeStats=%v agentURL=%s",
+		c.internalConfig.TraceProtocol(), af.reachable, af.v1ProtocolAvailable, c.canComputeStats(), agentURL.String())
 	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
