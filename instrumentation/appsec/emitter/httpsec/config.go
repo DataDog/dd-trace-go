@@ -7,11 +7,19 @@ package httpsec
 
 import (
 	"net/http"
+	"net/netip"
 )
 
 type Config struct {
 	// Framework is the name of the framework or library being used (optional).
 	Framework string
+	// RemoteIP and ClientIP are the client identity, already resolved by the
+	// caller. They are set by integrations that determine identity themselves
+	// rather than by scanning the request headers. ClientIP is the switch: when
+	// it is invalid the default resolution policy runs and produces both values,
+	// and RemoteIP is ignored.
+	RemoteIP netip.Addr
+	ClientIP netip.Addr
 	// OnBlock is a list of callbacks to be invoked when a block decision is made.
 	OnBlock []func()
 	// ResponseHeaderCopier provides a way to access response headers for reading

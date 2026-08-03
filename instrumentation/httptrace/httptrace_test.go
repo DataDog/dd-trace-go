@@ -310,7 +310,7 @@ func TestTraceClientIPFlag(t *testing.T) {
 
 	// use 0.0.0.0 as ip address of all test cases
 	// more comprehensive ip address testing is done in testing
-	// of ClientIPTags in appsec/dyngo/instrumentation/httpsec
+	// of the resolver in instrumentation/httptrace/clientip
 	validIPAddr := "0.0.0.0"
 
 	type ipTestCase struct {

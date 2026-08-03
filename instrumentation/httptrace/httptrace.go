@@ -20,7 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
-	listenerhttpsec "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -53,9 +53,23 @@ type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.Fi
 // spans that end up with 9+ tags (IP/AppSec/baggage) skip a growth and rehash.
 const requestSpanTagsSizeHint = 9
 
+// resolveClientIP is the default client IP resolution policy, held in a
+// variable so tests can count how many times a single request resolves.
+var resolveClientIP = clientip.Resolve
+
 // StartRequestSpan starts a server-side HTTP request span with the standard list of HTTP request span tags
 // (http.method, http.url, http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
+	var ipTags map[string]string
+	if cfg.traceClientIP {
+		ipTags = clientip.TagsFor(resolveClientIP(r.Header, true, r.RemoteAddr))
+	}
+	return startRequestSpan(r, ipTags, opts...)
+}
+
+// startRequestSpan exists so that callers which resolve the client identity
+// themselves do not trigger a second resolution here.
+func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
@@ -65,11 +79,6 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
 		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
 	})
-
-	var ipTags map[string]string
-	if cfg.traceClientIP {
-		ipTags, _ = listenerhttpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
-	}
 
 	var inferredProxySpan *tracer.Span
 

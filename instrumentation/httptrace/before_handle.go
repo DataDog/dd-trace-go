@@ -7,10 +7,12 @@ package httptrace
 
 import (
 	"net/http"
+	"net/netip"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -36,6 +38,13 @@ type ServeConfig struct {
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
 	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
+	// RemoteIP and ClientIP are the client identity, set by integrations that
+	// determine it themselves instead of letting the default policy scan the
+	// request headers — for example a proxy whose load balancer reports the
+	// peer it observed. ClientIP is the switch: when it is invalid the default
+	// resolver runs and produces both values, and RemoteIP is ignored.
+	RemoteIP netip.Addr
+	ClientIP netip.Addr
 	// FinishOpts specifies any options to be used when finishing the request span.
 	FinishOpts []tracer.FinishOption
 	// SpanOpts specifies any options to be applied to the request starting span.
@@ -48,35 +57,53 @@ type ServeConfig struct {
 // It returns the "traced" http.ResponseWriter and http.Request, an additional afterHandle function
 // that should be executed after the Handler runs, and a handled bool that instructs if the request has been handled
 // or not - in case it was handled, the original handler should not run.
-func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (http.ResponseWriter, *http.Request, func(), bool) {
-	if cfg == nil {
-		cfg = new(ServeConfig)
+func BeforeHandle(serveCfg *ServeConfig, w http.ResponseWriter, r *http.Request) (http.ResponseWriter, *http.Request, func(), bool) {
+	if serveCfg == nil {
+		serveCfg = new(ServeConfig)
 	}
-	opts := options.Expand(cfg.SpanOpts, 2, 3)
+	opts := options.Expand(serveCfg.SpanOpts, 2, 3)
 	// Pre-append span.kind, component and http.route tags to the options so that they can be overridden.
 	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	opts[1] = tracer.Tag(ext.Component, "net/http")
-	if cfg.Service != "" {
-		opts = append(opts, tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: cfg.Service, Source: cfg.ServiceSource}))
+	if serveCfg.Service != "" {
+		opts = append(opts, tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: serveCfg.Service, Source: serveCfg.ServiceSource}))
 	}
-	if cfg.Resource != "" {
-		opts = append(opts, tracer.ResourceName(cfg.Resource))
+	if serveCfg.Resource != "" {
+		opts = append(opts, tracer.ResourceName(serveCfg.Resource))
 	}
-	endpointOpt, endpointFn := handleHTTPEndpoint(cfg, r)
+	endpointOpt, endpointFn := handleHTTPEndpoint(serveCfg, r)
 	opts = append(opts, endpointOpt)
-	span, ctx, finishSpans := StartRequestSpan(r, opts...)
+
+	// Resolve the client identity once, here, and hand the same pair to the span
+	// tags and to AppSec. Nothing downstream resolves it again, so the two views
+	// of who the client is cannot drift apart.
+	appsecEnabled := appsec.Enabled()
+	remoteIP, clientIP := serveCfg.RemoteIP, serveCfg.ClientIP
+	if !clientIP.IsValid() && (cfg.traceClientIP || appsecEnabled) {
+		remoteIP, clientIP = resolveClientIP(r.Header, true, r.RemoteAddr)
+	}
+	// The span carries the IP tags only when client IP tracing is on; AppSec
+	// tags the span itself from the same pair when it is enabled.
+	var ipTags map[string]string
+	if cfg.traceClientIP {
+		ipTags = clientip.TagsFor(remoteIP, clientIP)
+	}
+
+	span, ctx, finishSpans := startRequestSpan(r, ipTags, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
-		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
+		finishSpans(ddrw.status, serveCfg.IsStatusError, serveCfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
 	handled := false
-	if appsec.Enabled() {
+	if appsecEnabled {
 		appsecConfig := &httpsec.Config{
-			Framework:   cfg.Framework,
-			Route:       renamedRoute(cfg.Route, endpointFn(), r.URL.EscapedPath()),
-			RouteParams: cfg.RouteParams,
+			Framework:   serveCfg.Framework,
+			Route:       renamedRoute(serveCfg.Route, endpointFn(), r.URL.EscapedPath()),
+			RouteParams: serveCfg.RouteParams,
+			RemoteIP:    remoteIP,
+			ClientIP:    clientIP,
 		}
 
 		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, appsecConfig)

@@ -17,6 +17,7 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
+	"net/netip"
 	"sync/atomic"
 
 	"github.com/DataDog/go-libddwaf/v5"
@@ -26,6 +27,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -71,11 +73,16 @@ type (
 		RequestURI   string
 		RequestRoute string
 		Host         string
-		RemoteAddr   string
-		Headers      map[string][]string
-		Cookies      map[string][]string
-		QueryParams  map[string][]string
-		PathParams   map[string]string
+		// RemoteIP and ClientIP carry the client identity already resolved by
+		// the producer of this operation. Nothing downstream re-derives them
+		// from the headers, so the span tags and the WAF cannot disagree.
+		// An invalid address means no identity could be determined.
+		RemoteIP    netip.Addr
+		ClientIP    netip.Addr
+		Headers     map[string][]string
+		Cookies     map[string][]string
+		QueryParams map[string][]string
+		PathParams  map[string]string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -90,6 +97,18 @@ type (
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
+
+// clientIdentity returns who the client is, according to the caller when it
+// knows, and to the default policy otherwise.
+//
+// Callers reaching AppSec through instrumentation/httptrace have already
+// resolved this and pass it down; those wrapping a handler directly have not.
+func clientIdentity(opts *Config, r *http.Request) (remoteIP, clientIP netip.Addr) {
+	if opts.ClientIP.IsValid() {
+		return opts.RemoteIP, opts.ClientIP
+	}
+	return clientip.Resolve(r.Header, true, r.RemoteAddr)
+}
 
 func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.TagSetter) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
 	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
@@ -273,13 +292,16 @@ func BeforeHandle(
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
 
+	remoteIP, clientIP := clientIdentity(opts, r)
+
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
 		Framework:    opts.Framework,
 		Method:       r.Method,
 		RequestURI:   r.RequestURI,
 		RequestRoute: opts.Route,
 		Host:         r.Host,
-		RemoteAddr:   r.RemoteAddr,
+		RemoteIP:     remoteIP,
+		ClientIP:     clientIP,
 		Headers:      r.Header,
 		Cookies:      makeCookies(r.Cookies()),
 		QueryParams:  r.URL.Query(),

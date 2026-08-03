@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
@@ -140,15 +141,17 @@ func (*HeaderExtractionFeature) OnResponse(op *httpsec.HandlerOperation, resp ht
 }
 
 func extractRequestHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
-	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
+	// The identity was resolved once by whoever started the operation; the WAF
+	// and the span tags below both read that same pair rather than each running
+	// their own header scan.
+	op.SetStringTags(clientip.TagsFor(args.RemoteIP, args.ClientIP))
 
-	op.SetStringTags(tags)
 	headers := headersRemoveCookies(args.Headers)
 	headers["host"] = []string{args.Host}
 
 	setRequestHeadersTags(op, headers)
 
-	return headers, ip
+	return headers, args.ClientIP
 }
 
 func extractResponseHeaders(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) map[string][]string {

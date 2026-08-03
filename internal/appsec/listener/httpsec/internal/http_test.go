@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	emitter "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	listener "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
@@ -47,13 +48,17 @@ func TestFeature_headerCollection(t *testing.T) {
 	irrelevantRulesWAFManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, irrelevantRules)
 	require.NoError(t, err)
 
+	requestHeaders := map[string][]string{"X-Forwarded": {"127.0.0.1"}, "X-Forwarded-For": {"4.5.6.7", "9.8.7.6"}}
+	remoteIP, clientIP := clientip.Resolve(requestHeaders, true, "1.2.3.4")
+
 	var (
 		request = emitter.HandlerOperationArgs{
 			Method:     http.MethodGet,
 			RequestURI: "https://datadoghq.com/",
 			Host:       "datadoghq.com",
-			RemoteAddr: "1.2.3.4",
-			Headers:    map[string][]string{"X-Forwarded": {"127.0.0.1"}, "X-Forwarded-For": {"4.5.6.7", "9.8.7.6"}},
+			RemoteIP:   remoteIP,
+			ClientIP:   clientIP,
+			Headers:    requestHeaders,
 		}
 		response = emitter.HandlerOperationRes{
 			Headers: map[string][]string{"Content-Type": {"application/json"}, "Content-Length": {"1337"}},
