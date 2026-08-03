@@ -370,7 +370,8 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			}
 			link.Tracestate = trace.propagatingTag(tracestateHeader)
 		}
-		ctx.spanLinks = []SpanLink{link}
+		links := []SpanLink{link}
+		ctx.spanLinks = &links
 
 		// When onlyExtractFirst is set, extractIncomingSpanContext returns after the
 		// first successful non-baggage extractor, so incomingCtx carries no baggage.
@@ -506,7 +507,7 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 
 	if len(links) > 0 {
-		ctx.spanLinks = links // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		ctx.spanLinks = &links // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 	}
 	log.Debug("Extracted span context: %s", ctx.safeDebugString())
 	return ctx, producer, nil
@@ -804,10 +805,10 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 		return
 	}
 	ctx.spanID = w3cCtx.spanID
-	if w3cCtx.reparentID != "" {
+	if w3cCtx.reparentID != 0 {
 		ctx.reparentID = w3cCtx.reparentID
 	} else {
-		ctx.reparentID = spanIDHexEncoded(ddCtx.SpanID(), 16)
+		ctx.reparentID = ddCtx.SpanID()
 	}
 }
 
@@ -1102,7 +1103,7 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
 	if ctx.updated ||
-		(!ctx.isRemote || ctx.isRemote && ctx.trace != nil && ctx.trace.root != nil) ||
+		(!ctx.isRemote || ctx.isRemote && ctx.trace != nil && ctx.trace.root.Load() != nil) ||
 		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
 		ctx.trace.propagatingTagsLen() == 0 {
 		// compose a new value for the tracestate
@@ -1328,9 +1329,9 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	if !ctx.isRemote {
 		b.WriteString(";p:")
 		b.WriteString(spanIDHexEncoded(ctx.SpanID(), 16))
-	} else if ctx.reparentID != "" {
+	} else if ctx.reparentID != 0 {
 		b.WriteString(";p:")
-		b.WriteString(ctx.reparentID)
+		b.WriteString(spanIDHexEncoded(ctx.reparentID, 16))
 	}
 
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
@@ -1593,7 +1594,9 @@ func parseTracestate(ctx *SpanContext, header string) {
 					dropDM = true
 				}
 			} else if key == "p" {
-				ctx.reparentID = val
+				if id, err := strconv.ParseUint(val, 16, 64); err == nil {
+					ctx.reparentID = id
+				}
 			} else if strings.HasPrefix(key, "t.dm") {
 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
 					continue

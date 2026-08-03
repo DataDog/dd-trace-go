@@ -219,7 +219,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			}
 			assert.Equal("synthetics", sctx.origin) // should use x-datadog-origin, not the origin in the tracestate
 			if tc.wantTracestatePropagation {
-				assert.Equal("0000000000000001", sctx.reparentID)
+				assert.Equal(uint64(1), sctx.reparentID)
 				assert.Equal("dd=s:0;o:synthetics;p:0000000000000001,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
 			} else if sctx.trace != nil {
 				assert.False(sctx.trace.hasPropagatingTag(tracestateHeader))
@@ -1691,7 +1691,7 @@ func TestEnvVars(t *testing.T) {
 					ctx.traceID = tc.tid
 					ctx.spanID = tc.sid
 					ctx.trace.propagatingTags = tc.propagatingTags
-					ctx.reparentID = "0123456789abcdef"
+					ctx.reparentID = 0x0123456789abcdef
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
 
@@ -2114,9 +2114,10 @@ func TestSpanLinks(t *testing.T) {
 				}
 
 				assert.Equal(tt.tid.value, sctx.traceID.value)
-				assert.Len(sctx.spanLinks, 2)
-				assert.Contains(sctx.spanLinks, tt.out[0])
-				assert.Contains(sctx.spanLinks, tt.out[1])
+				links := sctx.SpanLinks()
+				assert.Len(links, 2)
+				assert.Contains(links, tt.out[0])
+				assert.Contains(links, tt.out[1])
 			})
 		}
 	})
@@ -2138,7 +2139,7 @@ func TestSpanLinks(t *testing.T) {
 		}
 
 		assert.Equal(traceIDFrom64Bits(1).value, sctx.traceID.value)
-		assert.Len(sctx.spanLinks, 0)
+		assert.Empty(sctx.SpanLinks())
 	})
 }
 
@@ -2202,14 +2203,15 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		defer span.Finish()
 
 		assert.Equal(t, uint64(1), span.traceID)
-		require.Len(t, sctx.spanLinks, 1)
+		links := sctx.SpanLinks()
+		require.Len(t, links, 1)
 		assert.Equal(t, SpanLink{
 			TraceID:    2,
 			SpanID:     2,
 			Tracestate: "dd=s:1",
 			Flags:      1,
 			Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"},
-		}, sctx.spanLinks[0])
+		}, links[0])
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 

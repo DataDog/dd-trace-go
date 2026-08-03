@@ -1097,7 +1097,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.NotNil(ctx.trace)
 		assert.Nil(ctx.trace.priority.Load())
-		assert.Equal(ctx.trace.root, span)
+		assert.Equal(ctx.trace.root.Load(), span)
 		assert.Contains(ctx.trace.spans, span)
 	})
 
@@ -1114,7 +1114,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.Equal(ctx.SpanID(), span.spanID)
 		assert.Equal(*ctx.trace.priority.Load(), 1.)
-		assert.Equal(ctx.trace.root, span)
+		assert.Equal(ctx.trace.root.Load(), span)
 		assert.Contains(ctx.trace.spans, span)
 	})
 
@@ -1134,7 +1134,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.EqualValues(uint64(1), ctx.traceID.Lower())
 		assert.EqualValues(2, ctx.spanID)
 		assert.EqualValues(3, *ctx.trace.priority.Load())
-		assert.Equal(ctx.trace.root, span)
+		assert.Equal(ctx.trace.root.Load(), span)
 	})
 }
 
@@ -1693,9 +1693,9 @@ func TestSpanSnapshotFieldsMirrorSetTag(t *testing.T) {
 	span.SetTag(ext.PeerService, "my-peer")
 
 	spanSnapshot := span.context.getSpanSnapshot()
-	assert.Equal(t, "staging", spanSnapshot.env)
-	assert.Equal(t, "2.0", spanSnapshot.version)
-	assert.Equal(t, "my-peer", spanSnapshot.peerService)
+	assert.Equal(t, "staging", spanSnapshot.env())
+	assert.Equal(t, "2.0", spanSnapshot.version())
+	assert.Equal(t, "my-peer", spanSnapshot.peerService())
 }
 
 // TestSiblingSpansGetFreshSpanSnapshot verifies that each sibling span captures

@@ -890,6 +890,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 			pprofContext = spanSnapshot.pprofCtx
 		}
 	}
+	pprofContextProvided := pprofContext != nil
 	if pprofContext == nil {
 		// For root span's without context, there is no pprofContext, but we need
 		// one to avoid a panic() in pprof.WithLabels(). Using context.Background()
@@ -913,10 +914,15 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.traceID = id
 	span.start = startTime
 	span.integration = "manual"
+	span.pprofContextProvided = pprofContextProvided
 	span.meta.SwapSharedAttrs(sharedAttrs) // COW: shared until a per-span field is set
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
+	isRootSpan := context == nil || context.trace == nil
+	if !isRootSpan {
+		isRootSpan = context.trace.rootSpan() == nil
+	}
 	if context != nil && !context.baggageOnly { // +checklocksignore - Read-only after init.
 		// this is a child span
 		span.traceID = context.traceID.Lower()
@@ -924,18 +930,17 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		if p, ok := context.SamplingPriority(); ok {
 			span.setMetricInit(keySamplingPriority, float64(p))
 		}
-		if (context.trace == nil || context.trace.root == nil) && context.origin != "" { // +checklocksignore - Read-only after init.
+		if isRootSpan && context.origin != "" { // +checklocksignore - Read-only after init.
 			// mark origin
 			span.setMetaInit(keyOrigin, context.origin) // +checklocksignore - Read-only after init.
 		}
-		if context.reparentID != "" {
-			span.setMetaInit(keyReparentID, context.reparentID)
+		if context.reparentID != 0 {
+			span.setMetaInit(keyReparentID, spanIDHexEncoded(context.reparentID, 16))
 		}
 
 	}
 	// Must evaluate isRootSpan before newSpanContext: newSpanContext sets
 	// context.trace.root = span, making the nil check unreliable afterward.
-	isRootSpan := context == nil || context.trace == nil || context.trace.root == nil
 	span.context = newSpanContext(span, context)
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
@@ -1018,11 +1023,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, &span.meta, span.metrics)
 	}
-	if cSnap.ProfilerHotspotsEnabled || cSnap.ProfilerEndpoints {
-		t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
-	} else {
-		span.pprofCtxRestore = nil
-	}
+	t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap, span.pprofContextProvided)
 	if cSnap.DebugAbandonedSpans {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
@@ -1051,24 +1052,38 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 // +checklocksignore — Initialization time, called from StartSpan before span is shared.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot, pprofContextProvided bool) {
+	correlate := snap.ProfilerHotspotsEnabled || appsec.Enabled() && pprofContextProvided
+	localRootSpan := span.Root()
+	span.pprofEndpoints = snap.ProfilerEndpoints
+	if !correlate && !snap.ProfilerEndpoints {
+		span.pprofCtxActive = nil
+		span.pprofCtxRestore = nil
+		return
+	}
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
-	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
-	localRootSpan := span.Root()
-	if snap.ProfilerHotspotsEnabled && localRootSpan != nil {
+	var labels [4 * 2]string
+	labelCount := 0
+	if correlate && localRootSpan != nil {
 		spanID := localRootSpan.getSpanID()
-		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
+		labels[labelCount] = traceprof.LocalRootSpanID
+		labels[labelCount+1] = strconv.FormatUint(spanID, 10)
+		labelCount += 2
 	}
 	if snap.ProfilerHotspotsEnabled {
-		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
+		labels[labelCount] = traceprof.SpanID
+		labels[labelCount+1] = strconv.FormatUint(span.spanID, 10)
+		labelCount += 2
 	}
 	if snap.ProfilerEndpoints && localRootSpan != nil {
 		resource, piiSafe := localRootSpan.getResourceWithPIISafe()
 		if piiSafe {
-			labels = append(labels, traceprof.TraceEndpoint, resource)
+			labels[labelCount] = traceprof.TraceEndpoint
+			labels[labelCount+1] = resource
+			labelCount += 2
 			if span == localRootSpan {
 				// Inform the profiler of endpoint hits. This is used for the unit of
 				// work feature. We can't use APM stats for this since the stats don't
@@ -1077,8 +1092,13 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 			}
 		}
 	}
-	if len(labels) > 0 {
-		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
+	if correlate {
+		labels[labelCount] = traceprof.TraceID
+		labels[labelCount+1] = span.context.trace.traceIDHexString()
+		labelCount += 2
+	}
+	if labelCount > 0 {
+		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels[:labelCount]...))
 		span.pprofCtxRestore = ctx
 		span.pprofCtxActive = pprofActive
 		pprof.SetGoroutineLabels(pprofActive)
@@ -1165,7 +1185,7 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 		return
 	}
 	// without this check some mock spans tests fail
-	if t.rulesSampling == nil || ctx.trace == nil || ctx.trace.root == nil {
+	if t.rulesSampling == nil || ctx.trace == nil || ctx.trace.root.Load() == nil {
 		return
 	}
 	// want to avoid locking the entire trace from a span for long.
@@ -1182,7 +1202,7 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 		return
 	}
 	// if sampling was successful, need to lock the trace to prevent further re-sampling
-	if t.rulesSampling.SampleTrace(ctx.trace.root) {
+	if t.rulesSampling.SampleTrace(ctx.trace.root.Load()) {
 		ctx.trace.setLocked(true)
 	}
 }

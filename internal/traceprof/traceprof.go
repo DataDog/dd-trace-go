@@ -11,6 +11,8 @@ const (
 	SpanID          = "span id"
 	LocalRootSpanID = "local root span id"
 	TraceEndpoint   = "trace endpoint"
+	// TraceID is the full 128-bit trace ID as 32 lowercase hexadecimal characters.
+	TraceID = "trace id"
 )
 
 // env variables used to control cross-cutting tracer/profiling features.

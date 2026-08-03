@@ -107,7 +107,8 @@ func TestStartSpanWithSpanLinks(t *testing.T) {
 	assert.NoError(t, err)
 	defer stop()
 	spanLink := SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
-	ctx := &SpanContext{spanLinks: []SpanLink{spanLink}, spanID: 789, traceID: traceIDFrom64Bits(789)}
+	links := []SpanLink{spanLink}
+	ctx := &SpanContext{spanLinks: &links, spanID: 789, traceID: traceIDFrom64Bits(789)}
 
 	t.Run("create span from spancontext with links", func(t *testing.T) {
 		var s *Span
@@ -121,7 +122,7 @@ func TestStartSpanWithSpanLinks(t *testing.T) {
 		assert.Equal(t, 1, len(s.spanLinks))
 		assert.Equal(t, spanLink, s.spanLinks[0])
 
-		assert.Equal(t, 0, len(s.context.spanLinks)) // ensure that the span links are not added to the parent context
+		assert.Nil(t, s.context.spanLinks) // ensure that the span links are not added to the parent context
 	})
 }
 

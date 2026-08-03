@@ -161,9 +161,11 @@ type Span struct {
 	// +checklocks:mu
 	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
 
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	context      *SpanContext `msg:"-"` // span propagation context
+	goExecTraced         bool         `msg:"-"`
+	noDebugStack         bool         `msg:"-"` // disables debug stack traces
+	pprofEndpoints       bool         `msg:"-"` // enables endpoint label updates when the resource changes
+	pprofContextProvided bool         `msg:"-"`
+	context              *SpanContext `msg:"-"` // span propagation context
 	// +checklocks:mu
 	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
 
@@ -211,6 +213,8 @@ func (s *Span) clear() {
 	s.spanEvents = nil
 	s.goExecTraced = false
 	s.noDebugStack = false
+	s.pprofEndpoints = false
+	s.pprofContextProvided = false
 	s.finished = false
 	s.integration = ""
 	s.supportsEvents = false
@@ -238,12 +242,37 @@ func (s *Span) Context() *SpanContext {
 }
 
 type spanSnapshot struct {
-	env           string
-	version       string
 	service       string
 	serviceSource string
-	peerService   string
 	pprofCtx      context.Context
+	extra         *spanSnapshotExtra
+}
+
+type spanSnapshotExtra struct {
+	env         string
+	version     string
+	peerService string
+}
+
+func (s spanSnapshot) env() string {
+	if s.extra == nil {
+		return ""
+	}
+	return s.extra.env
+}
+
+func (s spanSnapshot) version() string {
+	if s.extra == nil {
+		return ""
+	}
+	return s.extra.version
+}
+
+func (s spanSnapshot) peerService() string {
+	if s.extra == nil {
+		return ""
+	}
+	return s.extra.peerService
 }
 
 // +checklocksignore — Initialization time.
@@ -253,14 +282,15 @@ func (s *Span) spanSnapshot() spanSnapshot {
 		version, _     = s.meta.Version()
 		peerService, _ = s.meta.Get(ext.PeerService)
 	)
-	return spanSnapshot{
-		env:           env,
-		version:       version,
+	snapshot := spanSnapshot{
 		service:       s.service,
 		serviceSource: s.serviceSource,
-		peerService:   peerService,
 		pprofCtx:      s.pprofCtxActive,
 	}
+	if env != "" || version != "" || peerService != "" {
+		snapshot.extra = &spanSnapshotExtra{env: env, version: version, peerService: peerService}
+	}
+	return snapshot
 }
 
 // getSpanID concurrency safe reads the spanID field.
@@ -487,7 +517,7 @@ func (s *Span) setTagLocked(key string, value any) {
 		return
 	}
 	if v, ok := value.(string); ok {
-		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+		if key == ext.ResourceName && s.pprofEndpoints && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
 			// If the user overrides the resource name for the span,
 			// update the endpoint label for the runtime profilers.
 			//
@@ -586,7 +616,7 @@ func (s *Span) Root() *Span {
 	if ctx.trace == nil {
 		return nil
 	}
-	return ctx.trace.root
+	return ctx.trace.root.Load()
 }
 
 // SetUser associates user information to the current trace which the

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -149,7 +150,7 @@ type SpanContext struct {
 	// distributed traces if they were missing their parent span.
 	// Missing parent span could occur when a W3C-compliant tracer
 	// propagated this context, but didn't send any spans to Datadog.
-	reparentID string
+	reparentID uint64
 
 	// the below group should propagate cross-process
 
@@ -169,7 +170,7 @@ type SpanContext struct {
 
 	// links to related spans in separate|external|disconnected traces
 	// +checklocks:mu
-	spanLinks []SpanLink
+	spanLinks *[]SpanLink
 }
 
 // Private interface for span contexts that can propagate sampling decisions.
@@ -306,12 +307,8 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	if context.trace == nil {
 		context.trace = newTrace()
 	}
-	if context.trace.root == nil {
-		// first span in the trace can safely be assumed to be the root
-		context.trace.root = span
-	}
 	// put span in context's trace
-	context.trace.push(span)
+	context.trace.pushWithTraceID(span, &context.traceID)
 	// The span snapshot is populated by tracer.StartSpan after all
 	// env/version/service-mapping mutations, so we skip the intermediate
 	// write here. Direct callers of newSpanContext (tests) do not read
@@ -386,14 +383,19 @@ func (c *SpanContext) setSpanSnapshotMeta(key, value string) {
 // +checklocks:c.mu
 func (c *SpanContext) setSpanSnapshotMetaLocked(key, value string) {
 	assert.RWMutexLocked(&c.mu)
+	extra := new(spanSnapshotExtra)
+	if c.spanSnapshot.extra != nil {
+		*extra = *c.spanSnapshot.extra
+	}
 	switch key {
 	case ext.PeerService:
-		c.spanSnapshot.peerService = value
+		extra.peerService = value
 	case ext.Environment:
-		c.spanSnapshot.env = value
+		extra.env = value
 	case ext.Version:
-		c.spanSnapshot.version = value
+		extra.version = value
 	}
+	c.spanSnapshot.extra = extra
 }
 
 // SpanID implements ddtrace.SpanContext.
@@ -438,8 +440,12 @@ func (c *SpanContext) TraceIDUpper() uint64 {
 
 // SpanLinks implements ddtrace.SpanContext
 func (c *SpanContext) SpanLinks() []SpanLink {
-	cp := make([]SpanLink, len(c.spanLinks)) // +checklocksignore - Read-only after init.
-	copy(cp, c.spanLinks)                    // +checklocksignore - Read-only after init.
+	if c == nil || c.spanLinks == nil {
+		return nil
+	}
+	links := *c.spanLinks              // +checklocksignore - Read-only after init.
+	cp := make([]SpanLink, len(links)) // +checklocksignore - Read-only after init.
+	copy(cp, links)                    // +checklocksignore - Read-only after init.
 	return cp
 }
 
@@ -606,38 +612,50 @@ type trace struct {
 	// trace level tags that will be propagated across service boundaries
 	// +checklocks:mu
 	propagatingTags map[string]string
-	// the number of finished spans
-	// +checklocks:mu
-	finished int
-	// signifies that the span buffer is full
-	// +checklocks:mu
-	full bool
 	// sampling priority — accessed atomically to allow lock-free reads
 	// from the span creation hot path (SamplingPriority).
 	// Writes still happen under mu (because they also touch propagatingTags).
 	// +checkatomic
 	priority atomic.Pointer[float64]
-	// specifies if the sampling priority can be altered
+
+	// root specifies the root of the trace, if known; it is nil when a span
+	// context is extracted from a carrier, at which point there are no spans in
+	// the trace yet.
+	// Write-once during initialization in newSpanContext, read-only afterward.
+	root atomic.Pointer[Span]
+
+	// the number of finished spans; traces are capped well below int32 capacity
 	// +checklocks:mu
-	locked bool
+	finished int32
 	// dm is the numeric form of _dd.p.dm for v1 protocol encoding.
 	// It is the absolute value of the parsed integer (e.g., "-4" → 4).
 	// +checklocks:mu
 	dm uint32
 	// samplingDecision indicates whether to send the trace to the agent.
 	samplingDecision samplingDecision // +checkatomic
-
-	// root specifies the root of the trace, if known; it is nil when a span
-	// context is extracted from a carrier, at which point there are no spans in
-	// the trace yet.
-	// Write-once during initialization in newSpanContext, read-only afterward.
-	root *Span
-
+	// signifies that the span buffer is full
+	// +checklocks:mu
+	full bool
+	// specifies if the sampling priority can be altered
+	// +checklocks:mu
+	locked bool
 	// rootFlushed is set when partial flushing sends the local root before the
 	// trace completes. The root must stay out of the pool while unfinished spans
 	// still refer to it through trace.root.
 	// +checklocks:mu
 	rootFlushed bool
+
+	// traceIDHex is immutable after the local root is initialized. Keeping the
+	// backing bytes on the trace avoids a per-span string allocation for the
+	// profiler label. The fields above are packed so adding this array does not
+	// increase the trace allocation size on 64-bit platforms.
+	traceIDHex [32]byte
+}
+
+// traceIDHexString returns an immutable string view over traceIDHex. The trace
+// outlives every span and pprof context that references this label value.
+func (t *trace) traceIDHexString() string {
+	return unsafe.String(&t.traceIDHex[0], len(t.traceIDHex))
 }
 
 var (
@@ -785,6 +803,10 @@ func (t *trace) isLocked() bool {
 	return t.locked
 }
 
+func (t *trace) rootSpan() *Span {
+	return t.root.Load()
+}
+
 func (t *trace) setLocked(locked bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -795,8 +817,16 @@ func (t *trace) setLocked(locked bool) {
 // a errBufferFull error.
 // +checklocksignore — Reads sp.metrics during initialization; span not yet shared.
 func (t *trace) push(sp *Span) {
+	t.pushWithTraceID(sp, nil)
+}
+
+func (t *trace) pushWithTraceID(sp *Span, traceID *traceID) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if traceID != nil && t.root.Load() == nil {
+		hex.Encode(t.traceIDHex[:], traceID.value[:])
+		t.root.Store(sp)
+	}
 	if t.full {
 		return
 	}
@@ -899,7 +929,8 @@ func (t *trace) finishedOneLocked(s *Span) {
 		s.setMetaLocked(keyBaseService, tc.ServiceTag)
 	}
 	priority := t.priority.Load()
-	if s == t.root && priority != nil {
+	root := t.root.Load()
+	if s == root && priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
@@ -922,11 +953,11 @@ func (t *trace) finishedOneLocked(s *Span) {
 	}
 
 	// Full flush: all spans finished
-	if len(t.spans) == t.finished {
+	if len(t.spans) == int(t.finished) {
 		spans := t.spans
 		spansToRelease := spans
 		if t.rootFlushed {
-			spansToRelease = append(append([]*Span(nil), spans...), t.root)
+			spansToRelease = append(append([]*Span(nil), spans...), root)
 			t.rootFlushed = false
 		}
 		willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
@@ -937,7 +968,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 		return
 	}
 
-	doPartialFlush := tc.PartialFlush && t.finished >= tc.PartialFlushMinSpans
+	doPartialFlush := tc.PartialFlush && int(t.finished) >= tc.PartialFlushMinSpans
 	if !doPartialFlush {
 		t.mu.Unlock()
 		// The trace hasn't completed and partial flushing will not occur
@@ -952,7 +983,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 	// spans are compacted to the front of t.spans. This avoids a separate
 	// leftoverSpans allocation on every partial flush trigger.
 	originalFirst := t.spans[0]
-	finishedSpans := make([]*Span, 0, t.finished)
+	finishedSpans := make([]*Span, 0, int(t.finished))
 	leftIdx := 0
 	for _, s2 := range t.spans {
 		if s2.finished {
@@ -974,9 +1005,9 @@ func (t *trace) finishedOneLocked(s *Span) {
 	needsFirstSpanTags := s != originalFirst
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 	spansToRelease := finishedSpans
-	if t.root != nil {
+	if root != nil {
 		for i, s2 := range finishedSpans {
-			if s2 == t.root {
+			if s2 == root {
 				t.rootFlushed = true
 				spansToRelease = append(append([]*Span(nil), finishedSpans[:i]...), finishedSpans[i+1:]...)
 				break

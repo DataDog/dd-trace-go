@@ -38,6 +38,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	tracertest "github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -697,7 +698,7 @@ func TestSamplingDecision(t *testing.T) {
 			if s.metrics[keySamplingPriority] == ext.PriorityUserKeep {
 				keptTotal++
 				keptTraces[s.traceID] = struct{}{}
-				if s.context.trace.root.spanID != s.spanID {
+				if s.context.trace.root.Load().spanID != s.spanID {
 					keptChildren++
 				}
 			}
@@ -3220,6 +3221,144 @@ func TestPprofLabels(t *testing.T) {
 		span.Finish()
 		wasteC(time.Second)
 	})
+}
+
+func TestApplyPPROFLabelsTraceID(t *testing.T) {
+	tr, err := newTracer(WithAppSecEnabled(false))
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	span := tr.StartSpan("web.request", ResourceName("/things"), SpanType(ext.SpanTypeWeb))
+	defer span.Finish()
+
+	traceID := span.context.TraceID()
+	require.Regexp(t, "^[0-9a-f]{32}$", traceID)
+	localRootID := strconv.FormatUint(span.Root().getSpanID(), 10)
+	spanID := strconv.FormatUint(span.spanID, 10)
+
+	apply := func(snap internalconfig.SpanStartSnapshot) context.Context {
+		span.pprofCtxActive = nil
+		tr.applyPPROFLabels(context.Background(), span, snap, true)
+		return span.pprofCtxActive
+	}
+	assertLabel := func(t *testing.T, ctx context.Context, key, want string) {
+		t.Helper()
+		got, ok := pprof.Label(ctx, key)
+		require.Truef(t, ok, "label %q should be present", key)
+		require.Equal(t, want, got)
+	}
+	assertNoLabel := func(t *testing.T, ctx context.Context, keys ...string) {
+		t.Helper()
+		for _, key := range keys {
+			_, ok := pprof.Label(ctx, key)
+			require.Falsef(t, ok, "label %q should be absent", key)
+		}
+	}
+
+	t.Run("hotspots", func(t *testing.T) {
+		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerHotspotsEnabled: true})
+		require.NotNil(t, ctx)
+		assertLabel(t, ctx, "trace id", traceID)
+		assertLabel(t, ctx, "local root span id", localRootID)
+		assertLabel(t, ctx, "span id", spanID)
+		assertNoLabel(t, ctx, "trace endpoint")
+	})
+	t.Run("endpoints only", func(t *testing.T) {
+		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerEndpoints: true})
+		require.NotNil(t, ctx)
+		assertLabel(t, ctx, "trace endpoint", "/things")
+		assertNoLabel(t, ctx, "trace id", "local root span id", "span id")
+	})
+	t.Run("hotspots and endpoints root", func(t *testing.T) {
+		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerHotspotsEnabled: true, ProfilerEndpoints: true})
+		require.NotNil(t, ctx)
+		assertLabel(t, ctx, "trace id", traceID)
+		assertLabel(t, ctx, "local root span id", localRootID)
+		assertLabel(t, ctx, "span id", spanID)
+		assertLabel(t, ctx, "trace endpoint", "/things")
+	})
+	t.Run("hotspots and endpoints child", func(t *testing.T) {
+		child := tr.StartSpan("child", ChildOf(span.context))
+		defer child.Finish()
+		child.pprofCtxActive = nil
+		tr.applyPPROFLabels(span.pprofCtxActive, child, internalconfig.SpanStartSnapshot{ProfilerHotspotsEnabled: true, ProfilerEndpoints: true}, true)
+		ctx := child.pprofCtxActive
+		require.NotNil(t, ctx)
+		assertLabel(t, ctx, "trace id", traceID)
+		assertLabel(t, ctx, "local root span id", localRootID)
+		assertLabel(t, ctx, "span id", strconv.FormatUint(child.spanID, 10))
+		assertLabel(t, ctx, "trace endpoint", "/things")
+	})
+}
+
+func TestApplyPPROFLabelsTraceIDAppSec(t *testing.T) {
+	require.NoError(t, Start(
+		WithAppSecEnabled(true),
+		WithProfilerCodeHotspots(false),
+		WithProfilerEndpoints(false),
+	))
+	defer Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec is not enabled on this platform")
+	}
+
+	parentCtx := pprof.WithLabels(context.Background(), pprof.Labels("user label", "preserved"))
+	span, _ := StartSpanFromContext(parentCtx, "web.request")
+	require.NotNil(t, span.pprofCtxActive)
+	traceID, ok := pprof.Label(span.pprofCtxActive, "trace id")
+	require.True(t, ok)
+	require.Equal(t, span.context.TraceID(), traceID)
+	_, ok = pprof.Label(span.pprofCtxActive, "local root span id")
+	require.True(t, ok)
+	_, ok = pprof.Label(span.pprofCtxActive, "span id")
+	require.False(t, ok)
+	span.SetTag(ext.ResourceName, "/updated")
+	_, ok = pprof.Label(span.pprofCtxActive, "trace endpoint")
+	require.False(t, ok, "AppSec must not enable endpoint labels")
+	span.Finish()
+
+	spanWithBackground, _ := StartSpanFromContext(context.Background(), "web.request")
+	require.NotNil(t, spanWithBackground.pprofCtxActive)
+	_, ok = pprof.Label(spanWithBackground.pprofCtxActive, "trace id")
+	require.True(t, ok)
+	spanWithBackground.Finish()
+
+	spanWithoutContext := StartSpan("web.request")
+	require.Nil(t, spanWithoutContext.pprofCtxActive)
+	require.Nil(t, spanWithoutContext.pprofCtxRestore)
+	spanWithoutContext.Finish()
+}
+
+func TestApplyPPROFLabelsTraceIDConcurrentExtractedContext(t *testing.T) {
+	tr, err := newTracer(WithProfilerCodeHotspots(true), WithProfilerEndpoints(true))
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	parent, err := tr.Extract(TextMapCarrier{
+		DefaultTraceIDHeader:  "1234",
+		DefaultParentIDHeader: "5678",
+		DefaultPriorityHeader: "1",
+	})
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			span := tr.StartSpan("child", ChildOf(parent))
+			defer span.Finish()
+			traceID, ok := pprof.Label(span.pprofCtxActive, "trace id")
+			if !ok {
+				t.Error("trace id label is missing")
+				return
+			}
+			if want := span.context.TraceID(); traceID != want {
+				t.Errorf("trace id label = %q, want %q", traceID, want)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestNoopTracerStartSpan(t *testing.T) {

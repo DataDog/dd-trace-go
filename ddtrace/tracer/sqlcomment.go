@@ -111,14 +111,14 @@ func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
 func (c *SQLCommentCarrier) injectServiceTags(ctx *SpanContext, tags map[string]string) {
 	if ctx != nil {
 		spanSnapshot := ctx.getSpanSnapshot()
-		if spanSnapshot.env != "" {
-			tags[sqlCommentEnv] = spanSnapshot.env
+		if env := spanSnapshot.env(); env != "" {
+			tags[sqlCommentEnv] = env
 		}
-		if spanSnapshot.version != "" {
-			tags[sqlCommentParentVersion] = spanSnapshot.version
+		if version := spanSnapshot.version(); version != "" {
+			tags[sqlCommentParentVersion] = version
 		}
-		if spanSnapshot.peerService != "" {
-			tags[sqlCommentPeerService] = spanSnapshot.peerService
+		if peerService := spanSnapshot.peerService(); peerService != "" {
+			tags[sqlCommentPeerService] = peerService
 		}
 	}
 	if c.PeerDBName != "" {
