@@ -58,7 +58,16 @@ The Terraform equivalent, on `google_network_services_lb_traffic_extension` or
 forward_attributes = ["source.ip"]
 ```
 
-Without that attribute the client address is taken from forwarding headers such as
+Envoy's own equivalent attribute, `source.address`, is accepted as a fallback and
+carries the same address as `host:port`. `source.ip` is a Google Cloud addition and
+does not exist in stock Envoy, so a self-managed Envoy configures the Envoy name
+instead:
+
+```yaml
+request_attributes: [source.address]
+```
+
+Without either attribute the client address is taken from forwarding headers such as
 `X-Forwarded-For`. A client connecting directly to the load balancer chooses what it
 sends in that header, so it can present an address that is not its own: the load
 balancer [appends the address it observed](https://cloud.google.com/load-balancing/docs/https#x-forwarded-for_header)

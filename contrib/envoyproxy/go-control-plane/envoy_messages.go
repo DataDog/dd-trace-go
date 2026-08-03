@@ -8,6 +8,7 @@ package gocontrolplane
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"strconv"
@@ -86,35 +87,55 @@ const (
 
 	// sourceIPAttribute holds the address of the TCP peer as seen by the load
 	// balancer. Unlike X-Forwarded-For it is set by the infrastructure rather
-	// than the client, so it is authoritative whenever it is present.
+	// than the client, so it is authoritative whenever it is present. Google
+	// Cloud documents it; it is not part of stock Envoy's attribute vocabulary.
 	sourceIPAttribute = "source.ip"
+
+	// sourceAddressAttribute is Envoy's own connection attribute for the same
+	// peer, carrying host:port rather than a bare address. It is checked as a
+	// fallback because it is the one that exists in stock Envoy, so a deployment
+	// that does not publish source.ip can still be identified correctly instead
+	// of silently falling back to client-controlled headers.
+	sourceAddressAttribute = "source.address"
 )
 
-// parseExtProcSourceIP returns the trusted client address published through the
-// ext_proc source.ip attribute. It reports false unless the attribute is present
-// and holds a single unzoned IP address: a value we cannot interpret must leave
-// client IP resolution exactly as it would have been without it, rather than
-// silently substituting a wrong address.
+// parseExtProcSourceIP returns the address of the peer the load balancer observed,
+// as published through the ext_proc attributes. It reports false unless one of the
+// attributes holds an address we can interpret: a value we cannot read must leave
+// client IP resolution exactly as it would have been, rather than silently
+// substituting a wrong address.
 func parseExtProcSourceIP(attributes map[string]*structpb.Struct) (netip.Addr, bool) {
-	value, found := attributes[extProcAttributesNamespace].GetFields()[sourceIPAttribute]
-	if !found {
-		return netip.Addr{}, false
+	fields := attributes[extProcAttributesNamespace].GetFields()
+
+	if sourceIP, ok := parseAttributeAddr(fields[sourceIPAttribute]); ok {
+		return sourceIP, true
 	}
 
+	return parseAttributeAddr(fields[sourceAddressAttribute])
+}
+
+// parseAttributeAddr reads an IP out of an attribute value that may be either a
+// bare address or host:port, accepting both so that the caller does not depend on
+// which of the two spellings a given deployment publishes.
+func parseAttributeAddr(value *structpb.Value) (netip.Addr, bool) {
 	stringValue, ok := value.GetKind().(*structpb.Value_StringValue)
 	if !ok {
 		return netip.Addr{}, false
 	}
 
-	// source.ip carries a bare address; the port is a separate attribute.
-	sourceIP, err := netip.ParseAddr(stringValue.StringValue)
-	if err != nil || sourceIP.Zone() != "" {
+	raw := stringValue.StringValue
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+
+	addr, err := netip.ParseAddr(raw)
+	if err != nil || addr.Zone() != "" {
 		return netip.Addr{}, false
 	}
 
 	// Collapse IPv4-mapped IPv6 so the value matches how the address would be
 	// written anywhere else in the trace.
-	return sourceIP.Unmap(), true
+	return addr.Unmap(), true
 }
 
 func (m messageRequestHeaders) MessageType() proxy.MessageType {

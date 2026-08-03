@@ -24,16 +24,21 @@ import (
 const (
 	testExtProcAttributesNamespace = "envoy.filters.http.ext_proc"
 	testSourceIPAttribute          = "source.ip"
+	testSourceAddressAttribute     = "source.address"
 )
 
 // testSourceIPAttributes builds the ext_proc attributes map carrying source.ip.
 // A nil value produces a namespace whose source.ip field is explicitly nil,
 // which is distinct from the field being absent entirely.
 func testSourceIPAttributes(value *structpb.Value) map[string]*structpb.Struct {
+	return testExtProcAttributes(map[string]*structpb.Value{testSourceIPAttribute: value})
+}
+
+// testExtProcAttributes builds the ext_proc attributes map with arbitrary fields,
+// for the cases that need something other than a lone source.ip.
+func testExtProcAttributes(fields map[string]*structpb.Value) map[string]*structpb.Struct {
 	return map[string]*structpb.Struct{
-		testExtProcAttributesNamespace: {
-			Fields: map[string]*structpb.Value{testSourceIPAttribute: value},
-		},
+		testExtProcAttributesNamespace: {Fields: fields},
 	}
 }
 
@@ -97,6 +102,74 @@ func TestExtractRequestSourceIP(t *testing.T) {
 			requestHeaders: map[string]string{"X-Forwarded-For": "1.1.1.1, 203.0.113.50, 35.191.10.1"},
 			wantXFF:        []string{"203.0.113.50", "1.1.1.1, 203.0.113.50, 35.191.10.1"},
 			wantRemoteAddr: "203.0.113.50",
+		},
+		// source.address is Envoy's own connection attribute and carries host:port.
+		// Unlike source.ip it exists in stock Envoy, so it is the value that
+		// actually arrives when the deployment does not extend the attribute set.
+		{
+			name:        "source.address is used when source.ip is absent",
+			integration: GCPServiceExtensionIntegration,
+			attributes: testExtProcAttributes(map[string]*structpb.Value{
+				testSourceAddressAttribute: structpb.NewStringValue("203.0.113.77:57360"),
+			}),
+			requestHeaders: map[string]string{"X-Forwarded-For": clientXFF},
+			wantXFF:        []string{"203.0.113.77", clientXFF},
+			wantRemoteAddr: "203.0.113.77",
+		},
+		{
+			name:        "bracketed IPv6 source.address is unwrapped",
+			integration: GCPServiceExtensionIntegration,
+			attributes: testExtProcAttributes(map[string]*structpb.Value{
+				testSourceAddressAttribute: structpb.NewStringValue("[2001:db8::1]:443"),
+			}),
+			wantXFF:        []string{"2001:db8::1"},
+			wantRemoteAddr: "2001:db8::1",
+		},
+		{
+			name:        "source.address without a port still works",
+			integration: GCPServiceExtensionIntegration,
+			attributes: testExtProcAttributes(map[string]*structpb.Value{
+				testSourceAddressAttribute: structpb.NewStringValue("203.0.113.77"),
+			}),
+			wantXFF:        []string{"203.0.113.77"},
+			wantRemoteAddr: "203.0.113.77",
+		},
+		{
+			name:        "source.ip takes precedence over source.address",
+			integration: GCPServiceExtensionIntegration,
+			attributes: testExtProcAttributes(map[string]*structpb.Value{
+				testSourceIPAttribute:      structpb.NewStringValue("18.18.18.18"),
+				testSourceAddressAttribute: structpb.NewStringValue("203.0.113.77:57360"),
+			}),
+			wantXFF:        []string{"18.18.18.18"},
+			wantRemoteAddr: "18.18.18.18",
+		},
+		{
+			name:        "malformed source.address changes nothing",
+			integration: GCPServiceExtensionIntegration,
+			attributes: testExtProcAttributes(map[string]*structpb.Value{
+				testSourceAddressAttribute: structpb.NewStringValue("not-an-address"),
+			}),
+			requestHeaders: map[string]string{"X-Forwarded-For": clientXFF},
+			wantXFF:        []string{clientXFF},
+		},
+		{
+			name:        "non-string source.address changes nothing",
+			integration: GCPServiceExtensionIntegration,
+			attributes: testExtProcAttributes(map[string]*structpb.Value{
+				testSourceAddressAttribute: structpb.NewNumberValue(57360),
+			}),
+			requestHeaders: map[string]string{"X-Forwarded-For": clientXFF},
+			wantXFF:        []string{clientXFF},
+		},
+		{
+			name:        "source.address is ignored for a non-GCP effective component",
+			integration: EnvoyIntegration,
+			attributes: testExtProcAttributes(map[string]*structpb.Value{
+				testSourceAddressAttribute: structpb.NewStringValue("203.0.113.77:57360"),
+			}),
+			requestHeaders: map[string]string{"X-Forwarded-For": clientXFF},
+			wantXFF:        []string{clientXFF},
 		},
 		// --- canonicalisation ------------------------------------------------
 		{
