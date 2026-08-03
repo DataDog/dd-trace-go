@@ -1060,7 +1060,21 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 			}
 		}
 
-		processHandled, processReason := runProcessRetriesIfEligible(execOpts, runSequentialRetries)
+		processHandled := false
+		processReason := ""
+		if options.processRetryMode == retryExecutionModeProcess && options.processRetryDeferredAllowed {
+			// A deferred owner must never fall back to the legacy inline process
+			// scheduler. If admission was unavailable before consuming an attempt,
+			// preserve retry behavior with the ordinary in-process backend.
+			processReason = "deferred_process_retry_unavailable"
+			if processRetryShuttingDown() {
+				execOpts.retryCount = 0
+				processHandled = true
+				processReason = "process_shutdown"
+			}
+		} else {
+			processHandled, processReason = runProcessRetriesIfEligible(execOpts, runSequentialRetries)
+		}
 		parallelEFDSelected := shouldUseParallelEFD(options, execOpts.executionMetadata, remainingAttempts, internalParallelEFDMaxConcurrency)
 		switch {
 		case processHandled:

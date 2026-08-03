@@ -200,7 +200,7 @@ func TestProcessRetryWrapperOptionsSnapshotOnlyEnablesProcessSetupForProcessMode
 	t.Run("in process", func(t *testing.T) {
 		t.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "in_process")
 		t.Setenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, "true")
-		options := processRetryWrapperOptions()
+		options := processRetryDeferredWrapperOptions()
 
 		require.False(t, snapshotProcessRetryWrapperOptions(&options))
 		require.True(t, options.processRetryModeSet)
@@ -211,7 +211,7 @@ func TestProcessRetryWrapperOptionsSnapshotOnlyEnablesProcessSetupForProcessMode
 
 	t.Run("process", func(t *testing.T) {
 		t.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
-		options := processRetryWrapperOptions()
+		options := processRetryDeferredWrapperOptions()
 
 		require.True(t, snapshotProcessRetryWrapperOptions(&options))
 		require.True(t, options.processRetryModeSet)
@@ -223,20 +223,24 @@ func TestProcessRetryWrapperOptionsSnapshotOnlyEnablesProcessSetupForProcessMode
 
 	t.Run("unsupported entrypoint", func(t *testing.T) {
 		t.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
-		options := additionalFeatureWrapperOptions{}
+		options := additionalFeatureWrapperOptions{processRetryAllowed: true}
 
 		require.False(t, snapshotProcessRetryWrapperOptions(&options))
-		require.False(t, options.processRetryModeSet)
+		require.False(t, options.processRetryAllowed)
+		require.True(t, options.processRetryModeSet)
+		require.Equal(t, retryExecutionModeInProcess, options.processRetryMode)
 	})
 }
 
 func TestProcessRetryDeferredOwnershipIsExplicit(t *testing.T) {
-	inline := processRetryWrapperOptions()
+	legacy := processRetryLegacyWrapperOptions()
 	deferred := processRetryDeferredWrapperOptions()
 
-	require.False(t, inline.processRetryDeferredAllowed)
+	require.False(t, legacy.processRetryDeferredAllowed)
+	require.False(t, legacy.processRetryAllowed)
+	require.True(t, legacy.processRetryModeSet)
+	require.Equal(t, retryExecutionModeInProcess, legacy.processRetryMode)
 	require.True(t, deferred.processRetryDeferredAllowed)
-	require.True(t, inline.processRetryAllowed)
 	require.True(t, deferred.processRetryAllowed)
 }
 
@@ -5085,6 +5089,40 @@ func TestRunTestWithRetryProcessModeDoesNotStartChildWithoutRetry(t *testing.T) 
 
 	require.Equal(t, int32(1), bodyCalls.Load())
 	require.Equal(t, int32(0), childCalls.Load())
+}
+
+func TestRunTestWithRetryDeferredProcessModeNeverUsesInlineProcessFallback(t *testing.T) {
+	t.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+	restoreBudget := setProcessRetryBudgetForTesting(1, 1)
+	defer restoreBudget()
+	restoreSupport := setProcessRetrySupportHooksForTesting(t, processRetrySupportHooks{
+		childCleanupSupported: func() bool { return true },
+	})
+	defer restoreSupport()
+
+	var bodyCalls atomic.Int32
+	var childCalls atomic.Int32
+	hooks := processRetrySuccessfulAttemptHooks(t, func(*exec.Cmd) error { return nil })
+	hooks.startAndWait = func(*exec.Cmd) (<-chan error, error) {
+		childCalls.Add(1)
+		return nil, errors.New("deferred process mode must not use the inline process scheduler")
+	}
+	resetProcessRetryRunnerHooksForTesting(t, hooks)
+
+	identity := newTestIdentity("module", "suite", "TestDeferredProcessAdmissionFallback")
+	createTestMetadata(t, nil)
+	defer deleteTestMetadata(t)
+	options := processRetryRunOptionsForTesting(t, identity, func(localT *testing.T) {
+		if bodyCalls.Add(1) == 1 {
+			localT.Fail()
+		}
+	})
+	options.processRetryDeferredAllowed = true
+
+	runTestWithRetry(options)
+
+	require.Equal(t, int32(2), bodyCalls.Load())
+	require.Zero(t, childCalls.Load())
 }
 
 func TestRunTestWithRetryUsesProcessBackendForEFDAndAttemptToFix(t *testing.T) {

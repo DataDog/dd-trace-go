@@ -518,21 +518,30 @@ func (ddm *M) Run() (exitCode int) {
 	return
 }
 
-func processRetryWrapperOptions() additionalFeatureWrapperOptions {
+func processRetryLegacyWrapperOptions() additionalFeatureWrapperOptions {
 	return additionalFeatureWrapperOptions{
-		processRetryAllowed: true,
+		processRetryMode:    retryExecutionModeInProcess,
+		processRetryModeSet: true,
 		fuzzActive:          processRetryFuzzActive,
 	}
 }
 
 func processRetryDeferredWrapperOptions() additionalFeatureWrapperOptions {
-	options := processRetryWrapperOptions()
-	options.processRetryDeferredAllowed = true
-	return options
+	return additionalFeatureWrapperOptions{
+		processRetryAllowed:         true,
+		processRetryDeferredAllowed: true,
+		fuzzActive:                  processRetryFuzzActive,
+	}
 }
 
 func snapshotProcessRetryWrapperOptions(options *additionalFeatureWrapperOptions) bool {
 	if options == nil || !options.processRetryAllowed {
+		return false
+	}
+	if !options.processRetryDeferredAllowed {
+		options.processRetryAllowed = false
+		options.processRetryMode = retryExecutionModeInProcess
+		options.processRetryModeSet = true
 		return false
 	}
 	options.processRetryMode = retryExecutionModeFromEnv()

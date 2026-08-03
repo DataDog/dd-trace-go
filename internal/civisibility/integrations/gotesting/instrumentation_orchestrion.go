@@ -94,7 +94,7 @@ func instrumentCaptureFormattedSkip(tb testing.TB, skipType, reason string) stri
 //
 //go:linkname instrumentTestingM
 func instrumentTestingM(m *testing.M) func(exitCode int) {
-	_, finalize := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
+	_, finalize := instrumentTestingMWithOptions(m, processRetryLegacyWrapperOptions())
 	return func(exitCode int) {
 		_ = finalize(exitCode)
 	}
@@ -105,7 +105,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 //
 //go:linkname instrumentTestingMWithControl
 func instrumentTestingMWithControl(m *testing.M) (bool, func(int) int) {
-	proceed, finalize := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
+	proceed, finalize := instrumentTestingMWithOptions(m, processRetryDeferredWrapperOptions())
 	return proceed, finalize
 }
 

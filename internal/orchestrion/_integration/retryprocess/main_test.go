@@ -39,6 +39,8 @@ const orchestrionRetryProcessHybridEnv = "ORCHESTRION_RETRY_PROCESS_HYBRID"
 const orchestrionRetryProcessHybridParentEnv = "ORCHESTRION_RETRY_PROCESS_HYBRID_PARENT"
 const orchestrionRetryProcessPureParentEnv = "ORCHESTRION_RETRY_PROCESS_PURE_PARENT"
 const orchestrionRetryProcessSelectedSubtestA2FEnv = "ORCHESTRION_RETRY_PROCESS_SELECTED_SUBTEST_A2F"
+const orchestrionRetryProcessDeferredOrderingEnv = "ORCHESTRION_RETRY_PROCESS_DEFERRED_ORDERING"
+const orchestrionRetryProcessDeferredOrderingPathEnv = "ORCHESTRION_RETRY_PROCESS_DEFERRED_ORDERING_PATH"
 const orchestrionRetryProcessSequentialMRunEnv = "ORCHESTRION_RETRY_PROCESS_SEQUENTIAL_M_RUN"
 const orchestrionRetryProcessDuplicateChildMRunEnv = "ORCHESTRION_RETRY_PROCESS_DUPLICATE_CHILD_M_RUN"
 const orchestrionRetryProcessCleanupPathEnv = "ORCHESTRION_RETRY_PROCESS_CLEANUP_PATH"
@@ -173,10 +175,12 @@ type orchestrionRetryProcessParentHarness struct {
 	server                     *httptest.Server
 	tracer                     mocktracer.Tracer
 	settingsRequests           atomic.Int32
+	knownTestsRequests         atomic.Int32
 	managementRequests         atomic.Int32
 	childRequests              atomic.Int32
 	unknownRequests            atomic.Int32
 	expectedManagementRequests bool
+	expectedKnownTestsRequests bool
 }
 
 func TestMain(m *testing.M) {
@@ -208,6 +212,12 @@ func TestMain(m *testing.M) {
 	}
 	if orchestrionRetryProcessEnv(orchestrionRetryProcessSelectedSubtestA2FEnv) == "true" {
 		os.Exit(runOrchestrionRetryProcessSelectedSubtestA2F(m))
+	}
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessDeferredOrderingEnv) == "true" {
+		if orchestrionRetryProcessChild() {
+			os.Exit(m.Run())
+		}
+		os.Exit(runOrchestrionRetryProcessDeferredOrdering(m))
 	}
 	if orchestrionRetryProcessEnv(orchestrionRetryProcessSequentialMRunEnv) == "true" {
 		os.Exit(runOrchestrionRetryProcessSequentialMRun(m))
@@ -427,8 +437,81 @@ func runOrchestrionRetryProcessSelectedSubtestA2F(m *testing.M) int {
 	return exitCode
 }
 
+func TestOrchestrionRetryProcessDefersEFDUntilFirstPassCompletesController(t *testing.T) {
+	requireOrchestrionProcessRetryContainmentForTesting(t)
+	if orchestrionRetryProcessChild() {
+		t.Skip("controller runs only in the parent process")
+	}
+
+	orderPath := filepath.Join(t.TempDir(), "attempt-order")
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestOrchestrionRetryProcessDeferredOrdering(A|B)$",
+		"-test.v",
+		"-test.count=1",
+	)
+	cmd.Env = append(os.Environ(),
+		orchestrionRetryProcessDeferredOrderingEnv+"=true",
+		orchestrionRetryProcessDeferredOrderingPathEnv+"="+orderPath,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("deferred Orchestrion EFD subprocess failed: %v\n%s", err, output)
+	}
+}
+
+func runOrchestrionRetryProcessDeferredOrdering(m *testing.M) int {
+	harness := newOrchestrionRetryProcessParentHarnessWithConfig(
+		"orchestrion-deferred-ordering",
+		"orchestrion-deferred-ordering-api-key",
+		orchestrionRetryProcessHarnessConfig{efdRetries: 1},
+	)
+	defer harness.close()
+
+	exitCode := m.Run()
+	if exitCode != 0 {
+		return exitCode
+	}
+	data, err := os.ReadFile(orchestrionRetryProcessEnv(orchestrionRetryProcessDeferredOrderingPathEnv))
+	if err != nil {
+		panic(fmt.Sprintf("read deferred Orchestrion attempt order: %v", err))
+	}
+	entries := strings.Fields(string(data))
+	if len(entries) != 4 || entries[0] != "A:first" || entries[1] != "B:first" {
+		panic(fmt.Sprintf("unexpected deferred Orchestrion attempt order: %q", entries))
+	}
+	retries := map[string]bool{entries[2]: true, entries[3]: true}
+	if !retries["A:retry"] || !retries["B:retry"] {
+		panic(fmt.Sprintf("unexpected deferred Orchestrion retry order: %q", entries[2:]))
+	}
+
+	const resourcePrefix = "main_test.go.TestOrchestrionRetryProcessDeferredOrdering"
+	testSpans := 0
+	processRetrySpans := 0
+	for _, span := range harness.tracer.FinishedSpans() {
+		resource, _ := span.Tag(ext.ResourceName).(string)
+		if resource != resourcePrefix+"A" && resource != resourcePrefix+"B" {
+			continue
+		}
+		testSpans++
+		if span.Tag(constants.TestRetryExecutionMode) == "process" {
+			processRetrySpans++
+		}
+	}
+	if testSpans != 4 || processRetrySpans != 2 {
+		panic(fmt.Sprintf(
+			"unexpected deferred Orchestrion spans: tests=%d process_retries=%d want=4/2",
+			testSpans,
+			processRetrySpans,
+		))
+	}
+	harness.assertRequests("deferred ordering")
+	return 0
+}
+
 type orchestrionRetryProcessHarnessConfig struct {
 	flakyRetries        bool
+	efdRetries          int
 	attemptToFixRetries int
 	managementData      *civisibilitynet.TestManagementTestsResponseDataModules
 }
@@ -445,6 +528,7 @@ func newOrchestrionRetryProcessParentHarnessWithConfig(
 ) *orchestrionRetryProcessParentHarness {
 	harness := &orchestrionRetryProcessParentHarness{
 		expectedManagementRequests: config.managementData != nil,
+		expectedKnownTestsRequests: config.efdRetries > 0,
 	}
 	harness.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("dd-api-key") == orchestrionRetryProcessChildAPIKey {
@@ -464,8 +548,34 @@ func newOrchestrionRetryProcessParentHarnessWithConfig(
 			response.Data.ID = settingsID
 			response.Data.Type = "ci_app_libraries_settings"
 			response.Data.Attributes.FlakyTestRetriesEnabled = config.flakyRetries
+			if config.efdRetries > 0 {
+				response.Data.Attributes.KnownTestsEnabled = true
+				response.Data.Attributes.EarlyFlakeDetection.Enabled = true
+				response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = config.efdRetries
+			}
 			response.Data.Attributes.TestManagement.Enabled = config.managementData != nil
 			response.Data.Attributes.TestManagement.AttemptToFixRetries = config.attemptToFixRetries
+			_ = json.NewEncoder(w).Encode(&response)
+		case "/api/v2/ci/libraries/tests":
+			if config.efdRetries <= 0 {
+				harness.unknownRequests.Add(1)
+				http.NotFound(w, r)
+				return
+			}
+			harness.knownTestsRequests.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			response := struct {
+				Data struct {
+					ID         string                                 `json:"id"`
+					Type       string                                 `json:"type"`
+					Attributes civisibilitynet.KnownTestsResponseData `json:"attributes"`
+				} `json:"data"`
+			}{}
+			response.Data.ID = "known-tests"
+			response.Data.Type = "ci_app_libraries_tests"
+			response.Data.Attributes.Tests = civisibilitynet.KnownTestsResponseDataModules{
+				"known-module": civisibilitynet.KnownTestsResponseDataSuites{},
+			}
 			_ = json.NewEncoder(w).Encode(&response)
 		case "/api/v2/test/libraries/test-management/tests":
 			if config.managementData == nil {
@@ -501,7 +611,13 @@ func newOrchestrionRetryProcessParentHarnessWithConfig(
 	_ = os.Setenv(constants.APIKeyEnvironmentVariable, apiKey)
 	_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "1")
 	_ = os.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+	_ = os.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
+	_ = os.Setenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, "false")
 	_ = os.Setenv(constants.CIVisibilitySubtestFeaturesEnabled, "true")
+	if config.efdRetries > 0 {
+		_ = os.Setenv(constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable, "true")
+		_ = os.Setenv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, strconv.Itoa(config.efdRetries))
+	}
 	if config.attemptToFixRetries > 0 {
 		_ = os.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, strconv.Itoa(config.attemptToFixRetries))
 	}
@@ -529,6 +645,13 @@ func (h *orchestrionRetryProcessParentHarness) assertRequests(name string) {
 	}
 	if got := h.managementRequests.Load(); got != wantManagementRequests {
 		panic(fmt.Sprintf("unexpected %s test-management request count: got=%d want=%d", name, got, wantManagementRequests))
+	}
+	wantKnownTestsRequests := int32(0)
+	if h.expectedKnownTestsRequests {
+		wantKnownTestsRequests = 1
+	}
+	if got := h.knownTestsRequests.Load(); got != wantKnownTestsRequests {
+		panic(fmt.Sprintf("unexpected %s known-tests request count: got=%d want=%d", name, got, wantKnownTestsRequests))
 	}
 }
 
@@ -1260,4 +1383,50 @@ func TestOrchestrionRetryProcessSelectedSubtestAttemptToFixFixture(t *testing.T)
 			t.Fatalf("unexpected selected-subtest attempt %d", attempt)
 		}
 	})
+}
+
+func TestOrchestrionRetryProcessDeferredOrderingA(t *testing.T) {
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessDeferredOrderingEnv) != "true" {
+		t.Skip("deferred ordering fixture runs only from its controller subprocess")
+	}
+	if orchestrionRetryProcessChild() {
+		data, err := os.ReadFile(orchestrionRetryProcessEnv(orchestrionRetryProcessDeferredOrderingPathEnv))
+		if err != nil {
+			t.Fatalf("read first-pass order before retry: %v", err)
+		}
+		if !strings.Contains(string(data), "B:first\n") {
+			t.Fatalf("process retry started before the package first pass completed: %q", data)
+		}
+		recordOrchestrionRetryProcessDeferredOrder(t, "A:retry")
+		return
+	}
+	recordOrchestrionRetryProcessDeferredOrder(t, "A:first")
+	t.Fail()
+}
+
+func TestOrchestrionRetryProcessDeferredOrderingB(t *testing.T) {
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessDeferredOrderingEnv) != "true" {
+		t.Skip("deferred ordering fixture runs only from its controller subprocess")
+	}
+	if orchestrionRetryProcessChild() {
+		recordOrchestrionRetryProcessDeferredOrder(t, "B:retry")
+		return
+	}
+	recordOrchestrionRetryProcessDeferredOrder(t, "B:first")
+}
+
+func recordOrchestrionRetryProcessDeferredOrder(t *testing.T, entry string) {
+	t.Helper()
+	path := orchestrionRetryProcessEnv(orchestrionRetryProcessDeferredOrderingPathEnv)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open deferred Orchestrion order file: %v", err)
+	}
+	if _, err := fmt.Fprintln(file, entry); err != nil {
+		_ = file.Close()
+		t.Fatalf("record deferred Orchestrion order %q: %v", entry, err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close deferred Orchestrion order file: %v", err)
+	}
 }
