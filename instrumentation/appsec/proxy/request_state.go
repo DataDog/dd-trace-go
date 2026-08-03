@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"path"
 	"sync"
 
@@ -40,13 +41,17 @@ type RequestState struct {
 	State MessageType
 }
 
-// newRequestState creates a new request state
-func newRequestState(request *http.Request, bodyLimit int, framework string, options ...tracer.StartSpanOption) (RequestState, bool) {
+// newRequestState creates a new request state. remoteIP and clientIP carry an
+// identity the proxy resolved itself; leaving them invalid defers to the
+// default client IP resolution policy.
+func newRequestState(request *http.Request, remoteIP, clientIP netip.Addr, bodyLimit int, framework string, options ...tracer.StartSpanOption) (RequestState, bool) {
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
 		Resource:  request.Method + " " + path.Clean(request.URL.Path),
 		SpanOpts:  append(options, tracer.Tag(ext.SpanKind, ext.SpanKindServer)),
+		RemoteIP:  remoteIP,
+		ClientIP:  clientIP,
 	}, fakeResponseWriter, request)
 
 	var requestBuffer *bodyBuffer

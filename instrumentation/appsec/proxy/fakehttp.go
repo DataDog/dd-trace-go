@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -24,6 +25,15 @@ type PseudoRequest struct {
 	Method     string
 	RemoteAddr string
 	Headers    map[string][]string
+
+	// RemoteIP and ClientIP let a proxy that knows the trustworthy address —
+	// because its infrastructure reported the peer it observed — state that
+	// identity outright instead of leaving it to be guessed from headers the
+	// client controls. ClientIP is the switch: when it is invalid the default
+	// policy runs against Headers and RemoteAddr as it always has, and RemoteIP
+	// is ignored.
+	RemoteIP netip.Addr
+	ClientIP netip.Addr
 }
 
 func (pr PseudoRequest) toNetHTTP(ctx context.Context) (*http.Request, error) {

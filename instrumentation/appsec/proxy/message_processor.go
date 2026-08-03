@@ -108,6 +108,8 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 
 	reqState, blocked := newRequestState(
 		httpRequest,
+		pseudoRequest.RemoteIP,
+		pseudoRequest.ClientIP,
 		int(mp.computedBodyParsingSizeLimit.Load()),
 		mp.Framework,
 		req.SpanOptions(ctx)...,
