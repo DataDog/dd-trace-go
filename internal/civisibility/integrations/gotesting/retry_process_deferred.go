@@ -33,6 +33,7 @@ type retryAttemptObservation struct {
 	nativeFatalRequired    bool
 	nativeFatalTraceReplay bool
 	panicData              any
+	panicMessage           string
 	panicStack             []byte
 	cleanupPanicData       any
 	terminalTrace          []retryAttemptTerminal
@@ -40,7 +41,7 @@ type retryAttemptObservation struct {
 }
 
 func observeFreshRetryAttempt(executionIndex int, result retryAttemptResult) retryAttemptObservation {
-	return retryAttemptObservation{
+	observation := retryAttemptObservation{
 		executionIndex:         executionIndex,
 		failed:                 result.failed,
 		skipped:                result.skipped,
@@ -54,6 +55,10 @@ func observeFreshRetryAttempt(executionIndex int, result retryAttemptResult) ret
 		terminalTrace:          cloneRetryAttemptTerminalTrace(result.terminalTrace),
 		rootParallel:           result.parallelLeaseHeld,
 	}
+	if result.panicData != nil {
+		observation.panicMessage = fmt.Sprint(result.panicData)
+	}
+	return observation
 }
 
 func (o retryAttemptObservation) stopsRetryContinuation() bool {
@@ -97,7 +102,8 @@ type deferredProcessRetryGroup struct {
 	terminalFailureReason string
 	truncated             bool
 	tailEvent             *deferredProcessRetryEvent
-	panicData             any
+	panicPresent          bool
+	panicMessage          string
 	panicStack            string
 	parallelEFD           bool
 	rootParallel          bool
@@ -142,6 +148,7 @@ type processRetryCoordinator struct {
 	failfastEnabled  func() bool
 	drainGroup       func(*deferredProcessRetryGroup) bool
 	attemptRunner    deferredProcessRetryAttemptRunner
+	startCompletion  func(func())
 }
 
 type deferredProcessRetryPreparedAttempt struct {
@@ -324,7 +331,15 @@ func (c *processRetryCoordinator) completeShutdown() {
 	}
 	c.requestShutdown()
 	if c.completionOwner.CompareAndSwap(0, 2) {
-		c.complete(processRetryFailureExitCode, true)
+		// Completion may need an in-flight first-attempt finalizer to publish or
+		// abort its admission. Do not let that handoff block the pre-close owner;
+		// stopActiveProcessRetryChildren bounds the wait on c.completed.
+		complete := func() { c.complete(processRetryFailureExitCode, true) }
+		if c.startCompletion != nil {
+			c.startCompletion(complete)
+		} else {
+			go complete()
+		}
 	}
 }
 
@@ -412,7 +427,7 @@ func (c *processRetryCoordinator) completeWithDrainHook(queue []*deferredProcess
 		if groupFailed && c.failfastEnabled != nil && c.failfastEnabled() {
 			failfastLatched = true
 		}
-		if groupFailed && group.panicData != nil {
+		if groupFailed && group.panicPresent {
 			terminalPanic = deferredProcessRetryTerminalPanic(group)
 		}
 	}
@@ -574,7 +589,7 @@ func (c *processRetryCoordinator) drainScheduledBatch(
 		if groupFailed && c.failfastEnabled != nil && c.failfastEnabled() {
 			outcome.failfast = true
 		}
-		if groupFailed && state.group.panicData != nil && outcome.terminalPanic == nil {
+		if groupFailed && state.group.panicPresent && outcome.terminalPanic == nil {
 			outcome.terminalPanic = deferredProcessRetryTerminalPanic(state.group)
 		}
 		activeGroups--
@@ -765,7 +780,7 @@ func deferredProcessRetryTerminalPanic(group *deferredProcessRetryGroup) any {
 	return fmt.Sprintf(
 		"test failed and panicked after %d retries.\n%v\n%v",
 		group.executionIndex,
-		group.panicData,
+		group.panicMessage,
 		group.panicStack,
 	)
 }
@@ -926,6 +941,10 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 	}
 	metadataCopy := *metadata
 	testInfo := *options.testInfo
+	panicMessage := execOpts.lastObservation.panicMessage
+	if execOpts.lastObservation.panicData != nil && panicMessage == "" {
+		panicMessage = fmt.Sprint(execOpts.lastObservation.panicData)
+	}
 
 	admission := coordinator.beginAdmission()
 	if admission == nil {
@@ -955,12 +974,20 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 		executionIndex:    execOpts.executionIndex,
 		retryCount:        execOpts.retryCount,
 		reservation:       execOpts.flakyRetryBudgetReservation,
-		latest:            execOpts.lastObservation,
+		latest: retryAttemptObservation{
+			executionIndex: execOpts.lastObservation.executionIndex,
+			failed:         execOpts.lastObservation.failed,
+			skipped:        execOpts.lastObservation.skipped,
+			duration:       execOpts.lastObservation.duration,
+			raceDetected:   execOpts.lastObservation.raceDetected,
+			rootParallel:   execOpts.lastObservation.rootParallel,
+		},
 		allAttemptsPassed: true,
 		allRetriesFailed:  true,
 		module:            execOpts.module,
 		suite:             execOpts.suite,
-		panicData:         execOpts.lastObservation.panicData,
+		panicPresent:      execOpts.lastObservation.panicData != nil,
+		panicMessage:      panicMessage,
 		panicStack:        string(execOpts.lastObservation.panicStack),
 		parallelEFD:       parallelEFD,
 		rootParallel:      execOpts.lastObservation.rootParallel,
@@ -1032,6 +1059,10 @@ func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessR
 func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProcessRetryCompletedAttempt, decideContinuation, continuationAdmitted bool) bool {
 	attempt := completed.result
 	execMeta := completed.prepared.execMeta
+	// Queue admission commits this continuation to the process backend. By the
+	// time a late setup failure is observable, native M.Run and the original
+	// testing.T have completed, so replaying it in-process is neither possible
+	// nor behaviorally valid. Represent the admitted continuation exactly once.
 	if attempt.SetupFailure {
 		attempt.SetupFailureConsumed = true
 	}
@@ -1067,10 +1098,10 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		raceDetected:   attempt.Result.RaceDetected,
 		rootParallel:   attempt.Result.RootParallel,
 	}
-	if attempt.Result.Panic && g.panicData == nil {
-		g.panicData = attempt.Result.ErrorMessage
+	if attempt.Result.Panic && !g.panicPresent {
+		g.panicPresent = true
+		g.panicMessage = attempt.Result.ErrorMessage
 		g.panicStack = attempt.Result.ErrorStack
-		g.latest.panicData = attempt.Result.ErrorMessage
 	}
 	if attempt.Cleanup != nil {
 		attempt.Cleanup()

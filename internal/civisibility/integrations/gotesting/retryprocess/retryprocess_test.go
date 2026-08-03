@@ -194,7 +194,8 @@ func TestMain(m *testing.M) {
 		assertProcessRetryAttemptToFixSpans(tracer)
 	}
 	requireLogs := processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) == "" &&
-		processRetryFixtureEnv(processRetryParallelEFDEnv) != "true"
+		processRetryFixtureEnv(processRetryParallelEFDEnv) != "true" &&
+		processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv) == ""
 	assertProcessRetryFixtureRequests(requireLogs)
 	os.Exit(exitCode)
 }

@@ -21,6 +21,14 @@ func retryContinuationStopped(execOpts *executionOptions) bool {
 }
 
 func retryContinuationStoppedLocked(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata) bool {
+	return retryContinuationStoppedWithDeferredAdmissionLocked(execOpts, completed, execMeta, false)
+}
+
+func retryContinuationStoppedForDeferredAdmissionLocked(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata) bool {
+	return retryContinuationStoppedWithDeferredAdmissionLocked(execOpts, completed, execMeta, true)
+}
+
+func retryContinuationStoppedWithDeferredAdmissionLocked(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata, allowDeferredFirstFailure bool) bool {
 	if execOpts == nil || execOpts.options == nil {
 		return false
 	}
@@ -31,9 +39,13 @@ func retryContinuationStoppedLocked(execOpts *executionOptions, completed *testi
 	if !failfastEnabled() {
 		return false
 	}
-	if (completed != nil && completed.Failed()) ||
+	rawFailureObserved := (completed != nil && completed.Failed()) ||
 		(execMeta != nil && execMeta.panicData != nil) ||
-		(execOpts.retryAttemptGroup != nil && execOpts.retryAttemptGroup.hasLateFailure()) {
+		(execOpts.retryAttemptGroup != nil && execOpts.retryAttemptGroup.hasLateFailure())
+	deferredFirstAttempt := allowDeferredFirstFailure && execOpts.executionIndex == 0 &&
+		execOpts.options.processRetryDeferredAllowed &&
+		execOpts.options.processRetryCoordinator != nil
+	if rawFailureObserved && !deferredFirstAttempt {
 		execOpts.rawAttemptFailureSeen = true
 	}
 	if execOpts.rawAttemptFailureSeen {

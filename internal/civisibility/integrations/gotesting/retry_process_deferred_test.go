@@ -21,6 +21,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 )
 
+type deferredProcessRetryMutablePanic struct {
+	message string
+}
+
+func (p *deferredProcessRetryMutablePanic) String() string {
+	return p.message
+}
+
 func TestDeferredProcessRetryFreshObservationIsImmutablePolicyInput(t *testing.T) {
 	panicStack := []byte("panic-stack")
 	terminalStack := []byte("terminal-stack")
@@ -48,6 +56,7 @@ func TestDeferredProcessRetryFreshObservationIsImmutablePolicyInput(t *testing.T
 	require.False(t, observation.skipped)
 	require.Equal(t, 3*time.Second, observation.duration)
 	require.True(t, observation.stopsRetryContinuation())
+	require.Equal(t, "panic-value", observation.panicMessage)
 	require.Equal(t, "panic-stack", string(observation.panicStack))
 	require.Equal(t, "terminal-value", observation.terminalTrace[0].value)
 	require.Equal(t, "terminal-stack", string(observation.terminalTrace[0].stack))
@@ -515,7 +524,7 @@ func TestDeferredProcessRetryRetiredMRunKeepsStickyFailure(t *testing.T) {
 func TestDeferredProcessRetryCoordinatorSelectsOneTerminalReplay(t *testing.T) {
 	coordinator := newProcessRetryCoordinator()
 	coordinator.failfastEnabled = func() bool { return false }
-	first := &deferredProcessRetryGroup{panicData: "boom", panicStack: "stack"}
+	first := &deferredProcessRetryGroup{panicPresent: true, panicMessage: "boom", panicStack: "stack"}
 	second := &deferredProcessRetryGroup{}
 	require.True(t, coordinator.beginAdmission().commit(first))
 	require.True(t, coordinator.beginAdmission().commit(second))
@@ -555,7 +564,7 @@ func TestDeferredProcessRetryCancellationFinalizesTailEventOnce(t *testing.T) {
 	require.Equal(t, "false", event.tags[constants.TestAttemptToFixPassed])
 }
 
-func TestDeferredProcessRetryShutdownWaitsForInitialEventPublication(t *testing.T) {
+func TestDeferredProcessRetryShutdownStartsCompletionWithoutWaitingForInitialEvent(t *testing.T) {
 	coordinator, execMeta, event, group := newDeferredProcessRetryPendingGroupForTesting(t, retryAttemptObservation{failed: true})
 
 	coordinator.mu.Lock()
@@ -565,21 +574,23 @@ func TestDeferredProcessRetryShutdownWaitsForInitialEventPublication(t *testing.
 	require.Equal(t, 1, inFlight)
 	require.Zero(t, queued)
 
-	stateChanged := coordinator.stateChange()
-	shutdownComplete := make(chan struct{})
-	go func() {
-		coordinator.completeShutdown()
-		close(shutdownComplete)
-	}()
-	<-stateChanged
+	var complete func()
+	coordinator.startCompletion = func(run func()) { complete = run }
+	coordinator.completeShutdown()
 	require.Equal(t, processRetryCoordinatorShuttingDown, coordinator.stateSnapshot())
+	require.NotNil(t, complete, "shutdown must schedule completion instead of waiting for admission publication")
 	select {
-	case <-shutdownComplete:
-		t.Fatal("shutdown completed before the initial event was published")
+	case <-coordinator.completed:
+		t.Fatal("coordinator completed before the scheduled completion owner ran")
 	default:
 	}
 	require.Zero(t, event.closeCount)
 
+	shutdownComplete := make(chan struct{})
+	go func() {
+		complete()
+		close(shutdownComplete)
+	}()
 	deferOrCloseInstrumentedTestEvent(execMeta, event, integrations.ResultStatusFail, "")
 	completeDeferredProcessRetryEvent(execMeta)
 	select {
@@ -591,6 +602,34 @@ func TestDeferredProcessRetryShutdownWaitsForInitialEventPublication(t *testing.
 	require.Equal(t, 1, event.closeCount)
 	require.True(t, group.tailEvent.closed)
 	require.Equal(t, "process_shutdown", group.terminalFailureReason)
+}
+
+func TestDeferredProcessRetryQueuedPanicUsesFrozenMessage(t *testing.T) {
+	panicValue := &deferredProcessRetryMutablePanic{message: "original panic"}
+	observation := observeFreshRetryAttempt(0, retryAttemptResult{
+		failed:     true,
+		panicData:  panicValue,
+		panicStack: []byte("original stack"),
+	})
+	coordinator, execMeta, event, group := newDeferredProcessRetryPendingGroupForTesting(t, observation)
+
+	require.Nil(t, group.latest.panicData, "the deferred queue must not retain the mutable panic value")
+	require.Nil(t, group.latest.cleanupPanicData)
+	require.Nil(t, group.latest.terminalTrace)
+	panicValue.message = "mutated panic"
+	deferOrCloseInstrumentedTestEvent(execMeta, event, integrations.ResultStatusFail, "")
+	completeDeferredProcessRetryEvent(execMeta)
+	coordinator.drainGroup = func(group *deferredProcessRetryGroup) bool {
+		group.latest.failed = true
+		group.finish()
+		return true
+	}
+
+	summary := coordinator.drain(0)
+	terminal := fmt.Sprint(summary.terminalPanic)
+	require.Contains(t, terminal, "original panic")
+	require.NotContains(t, terminal, "mutated panic")
+	require.Contains(t, terminal, "original stack")
 }
 
 func TestDeferredProcessRetryMissingInitialEventAbortsAdmission(t *testing.T) {
@@ -833,6 +872,36 @@ func TestDeferredProcessRetrySchedulerAppliesParallelResultsInExecutionOrder(t *
 		recorder.tests[1].status,
 		recorder.tests[2].status,
 	})
+}
+
+func TestDeferredProcessRetryLateSetupFailureIsOneConsumedProcessAttempt(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	coordinator := newProcessRetryCoordinator()
+	coordinator.failfastEnabled = func() bool { return false }
+	group := newDeferredProcessRetrySchedulerGroup("TestLateSetupFailure", 1, false, false, 1, 1)
+	require.True(t, coordinator.beginAdmission().commit(group))
+
+	starts := 0
+	coordinator.attemptRunner = func(_ context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+		starts++
+		now := time.Unix(0, int64(prepared.index))
+		return processRetryAttemptResult{
+			SetupFailure:         true,
+			SetupFallbackAllowed: true,
+			Err:                  errors.New("late setup failure"),
+			ExitCode:             processRetryExitCodeUnset,
+			StartTime:            now,
+			FinishTime:           now.Add(time.Nanosecond),
+		}
+	}
+
+	summary := coordinator.drain(0)
+	require.Equal(t, 1, starts, "a deferred setup failure must not be replayed without a live native testing.T")
+	require.True(t, summary.packageFailed)
+	require.True(t, summary.deferredFailed)
+	require.Len(t, recorder.tests, 1, "the admitted continuation must produce exactly one retry event")
+	require.Equal(t, processRetryStatusFail, recorder.tests[0].status)
 }
 
 func TestDeferredProcessRetrySchedulerFailfastStartsNoNewAttempts(t *testing.T) {

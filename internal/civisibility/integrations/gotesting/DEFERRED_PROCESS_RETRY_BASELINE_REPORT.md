@@ -277,6 +277,7 @@ same observable contract.
 | A2F ownership | Pass | Pass | Parent-owned retry spans |
 | Parallel EFD | Pass | Pass | Exact process attempt count |
 | A2F failfast | Not present in control | Pass | Aggregate deferred failfast |
+| FTR failfast | Not present in control | Pass | Later native first attempts run; no retry starts after aggregate failure latches |
 | Coverage first attempt | Pass | Pass | `go test -cover`, 100% fixture coverage |
 | Orchestrion retryprocess suite | Pass | Pass | Ownership and process-child paths |
 
@@ -293,6 +294,12 @@ The deterministic family regression additionally covers:
 - disabled/quarantined tests, with and without A2F;
 - ITR forced-run plus FTR; and
 - coverage plus parallel EFD.
+
+Deferred `-failfast` intentionally latches on the aggregate retry result rather
+than a reversible first-attempt failure. Later native first attempts may already
+have run before the deferred drain starts. Once a group becomes an aggregate
+failure, no later queued retry is launched and the final `testing.M` exit code
+remains non-zero.
 
 ## Cases intentionally not timed as throughput
 

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -100,6 +101,7 @@ const (
 	processRetryStartupConflictMarkerEnv      = "PROCESS_RETRY_STARTUP_CONFLICT_MARKER_FILE"
 	processRetryDeferredOrderingEnv           = "PROCESS_RETRY_DEFERRED_ORDERING_FIXTURE"
 	processRetryDeferredRepeatedOrderingEnv   = "PROCESS_RETRY_DEFERRED_REPEATED_ORDERING_FIXTURE"
+	processRetryDeferredFTRFailfastPathEnv    = "PROCESS_RETRY_DEFERRED_FTR_FAILFAST_PATH"
 )
 
 var (
@@ -947,6 +949,57 @@ func TestDeferredProcessRetryAttemptToFixFailfastB(t *testing.T) {
 		t.Skip("deferred A2F failfast fixture runs only from its controller subprocess")
 	}
 	fmt.Println("deferred-a2f-failfast-b-ran")
+}
+
+func TestDeferredProcessRetryFTRFailfastController(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "deferred FTR failfast")
+	path := filepath.Join(t.TempDir(), "attempts")
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestDeferredProcessRetryFTRFailfast(A|B)$",
+		"-test.failfast",
+		"-test.v",
+	)
+	cmd.Env = processRetryScenarioEnvironment(processRetryDeferredFTRFailfastPathEnv + "=" + path)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("deferred FTR failfast subprocess unexpectedly passed:\n%s", output)
+	}
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("read deferred FTR failfast attempts: %v", readErr)
+	}
+	entries := strings.Fields(string(data))
+	want := []string{"A:first", "B:first", "A:retry"}
+	if !slices.Equal(entries, want) {
+		t.Fatalf("deferred FTR failfast attempts = %v, want %v (output: %s)", entries, want, output)
+	}
+}
+
+func TestDeferredProcessRetryFTRFailfastA(t *testing.T) {
+	path := processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv)
+	if path == "" {
+		t.Skip("deferred FTR failfast fixture runs only from its controller subprocess")
+	}
+	if processRetryFixtureChild() {
+		appendStartupFixtureLine(path, "A:retry")
+	} else {
+		appendStartupFixtureLine(path, "A:first")
+	}
+	t.Fail()
+}
+
+func TestDeferredProcessRetryFTRFailfastB(t *testing.T) {
+	path := processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv)
+	if path == "" {
+		t.Skip("deferred FTR failfast fixture runs only from its controller subprocess")
+	}
+	if processRetryFixtureChild() {
+		appendStartupFixtureLine(path, "B:retry")
+	} else {
+		appendStartupFixtureLine(path, "B:first")
+	}
+	t.Fail()
 }
 
 func TestProcessRetryCoverageUsesFirstParentAttempt(t *testing.T) {

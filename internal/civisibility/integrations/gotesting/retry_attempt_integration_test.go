@@ -340,6 +340,48 @@ func TestProcessRetryParitySkipsLateFailureScanWhileFailfastIsDisabled(t *testin
 	require.True(t, retryContinuationStoppedLocked(execOpts, nil, nil))
 	require.True(t, execOpts.rawAttemptFailureSeen)
 	require.Zero(t, execOpts.retryCount)
+
+	withoutCoordinator := &executionOptions{
+		options: &runTestWithRetryOptions{
+			failfastEnabled:             func() bool { return true },
+			processRetryDeferredAllowed: true,
+		},
+		retryAttemptGroup: group,
+		executionIndex:    0,
+		retryCount:        1,
+	}
+	require.True(t, retryContinuationStoppedForDeferredAdmissionLocked(withoutCoordinator, nil, nil))
+	require.Zero(t, withoutCoordinator.retryCount, "an unavailable deferred owner must preserve inline failfast")
+}
+
+func TestProcessRetryParityDefersFirstAttemptFailfastToProcessCoordinator(t *testing.T) {
+	group, reason := newRetryAttemptGroup(t)
+	require.Empty(t, reason)
+	defer group.retire()
+
+	attempt, _, reason := runFreshRetryAttemptInGroup(group, func(*testing.T) {})
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	require.Panics(t, attempt.test.Fail)
+	require.True(t, group.hasLateFailure())
+
+	execOpts := &executionOptions{
+		options: &runTestWithRetryOptions{
+			failfastEnabled:             func() bool { return true },
+			processRetryDeferredAllowed: true,
+			processRetryCoordinator:     newProcessRetryCoordinator(),
+		},
+		retryAttemptGroup: group,
+		executionIndex:    0,
+		retryCount:        1,
+	}
+	require.False(t, retryContinuationStoppedForDeferredAdmissionLocked(execOpts, nil, nil))
+	require.False(t, execOpts.rawAttemptFailureSeen)
+	require.Equal(t, int64(1), execOpts.retryCount)
+
+	require.True(t, retryContinuationStoppedLocked(execOpts, nil, nil))
+	require.True(t, execOpts.rawAttemptFailureSeen)
+	require.Zero(t, execOpts.retryCount)
 }
 
 func TestProcessRetryParityOrchestrionFinalizesAfterFreshCleanup(t *testing.T) {

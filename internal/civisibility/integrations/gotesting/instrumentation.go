@@ -1196,7 +1196,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 }
 
 func reserveRetryBudgetIfNeeded(execOpts *executionOptions, t *testing.T, execMeta *testExecutionMetadata, executionIndex int) bool {
-	if retryContinuationStoppedLocked(execOpts, t, execMeta) {
+	if retryContinuationStoppedForDeferredAdmissionLocked(execOpts, t, execMeta) {
 		return false
 	}
 	if usesFlakyRetryBudget(execMeta) && execMeta.flakyRetryBudgetReservation != nil && execMeta.flakyRetryBudgetReservation.reserved() {
