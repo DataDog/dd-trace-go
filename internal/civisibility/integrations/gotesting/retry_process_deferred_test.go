@@ -564,6 +564,25 @@ func TestDeferredProcessRetryCancellationFinalizesTailEventOnce(t *testing.T) {
 	require.Equal(t, "false", event.tags[constants.TestAttemptToFixPassed])
 }
 
+func TestDeferredProcessRetryTerminalFailureOverridesEarlierEFDPass(t *testing.T) {
+	event := newProcessRetryRecordingTestForTesting("TestDeferredTerminalEFD")
+	group := &deferredProcessRetryGroup{
+		metadata:  processRetryMetadataSnapshot{isEarlyFlakeDetectionEnabled: true, isANewTest: true},
+		anyPassed: true,
+		tailEvent: &deferredProcessRetryEvent{
+			event:  event,
+			status: integrations.ResultStatusPass,
+			ready:  true,
+		},
+	}
+
+	group.cancel("containment_lost", true)
+
+	require.True(t, group.packageFailed())
+	require.Equal(t, 1, event.closeCount)
+	require.Equal(t, constants.TestStatusFail, event.tags[constants.TestFinalStatus])
+}
+
 func TestDeferredProcessRetryShutdownStartsCompletionWithoutWaitingForInitialEvent(t *testing.T) {
 	coordinator, execMeta, event, group := newDeferredProcessRetryPendingGroupForTesting(t, retryAttemptObservation{failed: true})
 

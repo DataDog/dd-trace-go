@@ -6647,13 +6647,14 @@ func TestRunTestWithRetryParentDeadlineWhileQueuedStopsFurtherRetries(t *testing
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
 	childCalls := atomic.Int32{}
-	restoreDeadline := setProcessRetryDeadlineForTesting(t, time.Now().Add(time.Hour))
+	now := time.Unix(1_000_000, 0)
+	restoreDeadline := setProcessRetryDeadlineForTesting(t, now.Add(time.Hour))
 	defer restoreDeadline()
 	hooks := processRetrySuccessfulAttemptHooks(t, func(*exec.Cmd) error { return nil })
+	hooks.now = func() time.Time { return now }
 	hooks.startAndWait = func(cmd *exec.Cmd) (<-chan error, error) {
 		childCalls.Add(1)
 		cfg := processRetryChildConfigFromCommandEnv(t, cmd.Env)
-		now := time.Now()
 		writeProcessRetryResultForTesting(t, cfg.ResultPath, processRetryResult{
 			Version:        1,
 			TestName:       cfg.TestName,
@@ -6670,12 +6671,9 @@ func TestRunTestWithRetryParentDeadlineWhileQueuedStopsFurtherRetries(t *testing
 		waitCh <- nil
 		return waitCh, nil
 	}
-	hooks.newTimer = func(duration time.Duration) processRetryTimer {
-		ch := make(chan time.Time, 1)
-		if duration <= time.Second {
-			ch <- time.Now()
-		}
-		return &processRetryStaticTimer{ch: ch}
+	parentDeadlineReached := make(chan time.Time, 1)
+	hooks.newTimer = func(time.Duration) processRetryTimer {
+		return &processRetryStaticTimer{ch: parentDeadlineReached}
 	}
 	resetProcessRetryRunnerHooksForTesting(t, hooks)
 
@@ -6693,7 +6691,8 @@ func TestRunTestWithRetryParentDeadlineWhileQueuedStopsFurtherRetries(t *testing
 		if executionIndex == 1 {
 			held = getProcessRetryLimiter().acquire(context.Background(), nil)
 			require.Equal(t, processRetryLimiterAcquired, held.Cause)
-			setProcessRetryDeadlineForTesting(t, time.Now().Add(processRetryParentDeadlineReserve()+100*time.Millisecond))
+			setProcessRetryDeadlineForTesting(t, now.Add(processRetryParentDeadlineReserve()+time.Minute))
+			parentDeadlineReached <- now
 		}
 	}
 

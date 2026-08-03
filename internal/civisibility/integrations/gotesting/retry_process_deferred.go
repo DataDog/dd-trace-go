@@ -1238,7 +1238,7 @@ func (g *deferredProcessRetryGroup) closeTailEvent(final bool) {
 	}
 	if final {
 		finalStatus := calculateFinalStatus(
-			g.anyPassed,
+			g.anyPassed && !g.terminalFailure,
 			g.anyFailed || g.terminalFailure,
 			g.latest.skipped,
 			g.metadata.isQuarantined,
