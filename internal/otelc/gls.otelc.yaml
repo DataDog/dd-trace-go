@@ -1,0 +1,45 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Goroutine Local Storage (GLS) storage layer. This is not meant to be used
+# directly by end users: it exists so tracer internals can forward trace context
+# through call sites that have no context.Context to carry it.
+#
+# The otelc port of the runtime aspects in
+# ../orchestrion/gls.orchestrion.yml. Consumed by ../orchestrion/gls.go, which
+# links to the two accessors below and falls back to no-ops when they are absent
+# (a plain, non-instrumented build).
+#
+# Storage alone does nothing. Two more pieces are required: the gate in
+# ../orchestrion (glsActive) and the span lifecycle weaving in
+# ../../ddtrace/tracer/gls.otelc.yaml, which is what actually pushes spans.
+
+gls_runtime_field:
+  target: runtime
+  where:
+    struct: g
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: __dd_gls_v2
+            type: any
+
+gls_runtime_accessors:
+  target: runtime
+  do:
+    - add_file:
+        file: gls_accessors.go
+        path: github.com/DataDog/dd-trace-go/v2/internal/otelc
+
+# Clear the slot when a goroutine finishes, so a recycled g never inherits the
+# previous goroutine's trace context. goexit1 is the runtime function that ends a
+# goroutine: https://github.com/golang/go/blob/f38d42f2c4c6ad0d7cbdad5e1417cac3be2a5dcb/src/runtime/proc.go#L4264
+gls_goexit1_reset:
+  target: runtime
+  where:
+    func: goexit1
+  do:
+    - inject_code:
+        raw: "getg().__dd_gls_v2 = nil"
