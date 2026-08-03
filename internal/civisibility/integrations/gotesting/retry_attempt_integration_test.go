@@ -203,20 +203,16 @@ func TestProcessRetryParityCoverageCollectorBelongsOnlyToParentAttempt(t *testin
 	require.False(t, shouldCollectExecutionCoverage(true, &testExecutionMetadata{suppressCoverageCollection: true}))
 }
 
-func TestProcessRetryParityDetectedRaceStopsEveryRetryBackend(t *testing.T) {
-	cancelCalls := 0
+func TestProcessRetryParityDetectedRaceStopsFreshRetryGroup(t *testing.T) {
 	execOpts := &executionOptions{
-		retryCount:               3,
-		processRetryPolicyCancel: func() { cancelCalls++ },
+		retryCount: 3,
 	}
 
-	require.True(t, stopRetryGroupAfterRaceLocked(execOpts, true))
+	require.True(t, stopRetryGroupAfterRace(execOpts, true))
 	require.Zero(t, execOpts.retryCount)
 	require.True(t, execOpts.rawAttemptFailureSeen)
-	require.Equal(t, 1, cancelCalls)
 
-	require.False(t, stopRetryGroupAfterRaceLocked(execOpts, false))
-	require.Equal(t, 1, cancelCalls)
+	require.False(t, stopRetryGroupAfterRace(execOpts, false))
 }
 
 func TestProcessRetryParityFailfastStopsAfterFirstRawFailure(t *testing.T) {
@@ -335,24 +331,23 @@ func TestProcessRetryParitySkipsLateFailureScanWhileFailfastIsDisabled(t *testin
 		retryAttemptGroup: group,
 		retryCount:        1,
 	}
-	require.False(t, retryContinuationStoppedLocked(execOpts, nil, nil))
+	require.False(t, retryContinuationStoppedAfterAttempt(execOpts, nil, nil))
 	require.False(t, execOpts.rawAttemptFailureSeen, "disabled failfast must not scan retained attempts")
 
 	failfast.Store(true)
-	require.True(t, retryContinuationStoppedLocked(execOpts, nil, nil))
+	require.True(t, retryContinuationStoppedAfterAttempt(execOpts, nil, nil))
 	require.True(t, execOpts.rawAttemptFailureSeen)
 	require.Zero(t, execOpts.retryCount)
 
 	withoutCoordinator := &executionOptions{
 		options: &runTestWithRetryOptions{
-			failfastEnabled:             func() bool { return true },
-			processRetryDeferredAllowed: true,
+			failfastEnabled: func() bool { return true },
 		},
 		retryAttemptGroup: group,
 		executionIndex:    0,
 		retryCount:        1,
 	}
-	require.True(t, retryContinuationStoppedForDeferredAdmissionLocked(withoutCoordinator, nil, nil))
+	require.True(t, retryContinuationStoppedForDeferredAdmission(withoutCoordinator, nil, nil))
 	require.Zero(t, withoutCoordinator.retryCount, "an unavailable deferred owner must preserve inline failfast")
 }
 
@@ -369,19 +364,18 @@ func TestProcessRetryParityDefersFirstAttemptFailfastToProcessCoordinator(t *tes
 
 	execOpts := &executionOptions{
 		options: &runTestWithRetryOptions{
-			failfastEnabled:             func() bool { return true },
-			processRetryDeferredAllowed: true,
-			processRetryCoordinator:     newProcessRetryCoordinator(),
+			failfastEnabled:         func() bool { return true },
+			processRetryCoordinator: newProcessRetryCoordinator(),
 		},
 		retryAttemptGroup: group,
 		executionIndex:    0,
 		retryCount:        1,
 	}
-	require.False(t, retryContinuationStoppedForDeferredAdmissionLocked(execOpts, nil, nil))
+	require.False(t, retryContinuationStoppedForDeferredAdmission(execOpts, nil, nil))
 	require.False(t, execOpts.rawAttemptFailureSeen)
 	require.Equal(t, int64(1), execOpts.retryCount)
 
-	require.True(t, retryContinuationStoppedLocked(execOpts, nil, nil))
+	require.True(t, retryContinuationStoppedAfterAttempt(execOpts, nil, nil))
 	require.True(t, execOpts.rawAttemptFailureSeen)
 	require.Zero(t, execOpts.retryCount)
 }
@@ -395,18 +389,13 @@ func TestProcessRetryParityFailfastStopsWhenDeferredAdmissionFails(t *testing.T)
 	identity := newTestIdentity("module", "suite", "TestDeferredAdmissionFailure")
 	var bodyCalls int
 	runTestWithRetry(&runTestWithRetryOptions{
-		t:                           t,
-		failfastEnabled:             func() bool { return true },
-		nativeFailfastObserved:      func() bool { return false },
-		processRetryMode:            retryExecutionModeProcess,
-		processRetryModeSet:         true,
-		processRetryAllowed:         true,
-		processRetryDeferredAllowed: true,
-		processRetryCoordinator:     newProcessRetryCoordinator(),
-		processRetryIdentity:        identity,
-		processRetryLaunchTemplate:  &processRetryLaunchBaseline{err: errors.New("launch baseline unavailable")},
-		processRetryFuzzGuard:       &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }},
-		preProcessRetryMetaAdjust:   func(*testExecutionMetadata, int) {},
+		t:                          t,
+		failfastEnabled:            func() bool { return true },
+		nativeFailfastObserved:     func() bool { return false },
+		processRetryCoordinator:    newProcessRetryCoordinator(),
+		processRetryIdentity:       identity,
+		processRetryLaunchTemplate: &processRetryLaunchBaseline{err: errors.New("launch baseline unavailable")},
+		processRetryFuzzGuard:      &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }},
 		testInfo: &commonInfo{
 			moduleName: identity.ModuleName,
 			suiteName:  identity.SuiteName,

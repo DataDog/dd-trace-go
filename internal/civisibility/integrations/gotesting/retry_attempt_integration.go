@@ -12,23 +12,18 @@ import (
 )
 
 func retryContinuationStopped(execOpts *executionOptions) bool {
-	if execOpts == nil || execOpts.mutex == nil {
-		return false
-	}
-	execOpts.mutex.Lock()
-	defer execOpts.mutex.Unlock()
-	return retryContinuationStoppedLocked(execOpts, nil, nil)
+	return retryContinuationStoppedWithDeferredAdmission(execOpts, nil, nil, false)
 }
 
-func retryContinuationStoppedLocked(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata) bool {
-	return retryContinuationStoppedWithDeferredAdmissionLocked(execOpts, completed, execMeta, false)
+func retryContinuationStoppedAfterAttempt(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata) bool {
+	return retryContinuationStoppedWithDeferredAdmission(execOpts, completed, execMeta, false)
 }
 
-func retryContinuationStoppedForDeferredAdmissionLocked(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata) bool {
-	return retryContinuationStoppedWithDeferredAdmissionLocked(execOpts, completed, execMeta, true)
+func retryContinuationStoppedForDeferredAdmission(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata) bool {
+	return retryContinuationStoppedWithDeferredAdmission(execOpts, completed, execMeta, true)
 }
 
-func retryContinuationStoppedWithDeferredAdmissionLocked(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata, allowDeferredFirstFailure bool) bool {
+func retryContinuationStoppedWithDeferredAdmission(execOpts *executionOptions, completed *testing.T, execMeta *testExecutionMetadata, allowDeferredFirstFailure bool) bool {
 	if execOpts == nil || execOpts.options == nil {
 		return false
 	}
@@ -43,7 +38,6 @@ func retryContinuationStoppedWithDeferredAdmissionLocked(execOpts *executionOpti
 		(execMeta != nil && execMeta.panicData != nil) ||
 		(execOpts.retryAttemptGroup != nil && execOpts.retryAttemptGroup.hasLateFailure())
 	deferredFirstAttempt := allowDeferredFirstFailure && execOpts.executionIndex == 0 &&
-		execOpts.options.processRetryDeferredAllowed &&
 		execOpts.options.processRetryCoordinator != nil
 	if rawFailureObserved && !deferredFirstAttempt {
 		execOpts.rawAttemptFailureSeen = true
@@ -51,9 +45,6 @@ func retryContinuationStoppedWithDeferredAdmissionLocked(execOpts *executionOpti
 	if execOpts.rawAttemptFailureSeen {
 		execOpts.failfastRawFailure = true
 		execOpts.retryCount = 0
-		if execOpts.processRetryPolicyCancel != nil {
-			execOpts.processRetryPolicyCancel()
-		}
 		return true
 	}
 	nativeFailfastObserved := execOpts.options.nativeFailfastObserved
@@ -65,25 +56,19 @@ func retryContinuationStoppedWithDeferredAdmissionLocked(execOpts *executionOpti
 	if nativeFailfastObserved() {
 		execOpts.nativeFailfastStop = true
 		execOpts.retryCount = 0
-		if execOpts.processRetryPolicyCancel != nil {
-			execOpts.processRetryPolicyCancel()
-		}
 		return true
 	}
 	return false
 }
 
-// stopRetryGroupAfterRaceLocked applies Go's terminal race semantics to every
-// retry backend. The caller must hold execOpts.mutex.
-func stopRetryGroupAfterRaceLocked(execOpts *executionOptions, raceDetected bool) bool {
+// stopRetryGroupAfterRace applies Go's terminal race semantics to a fresh
+// in-process retry group.
+func stopRetryGroupAfterRace(execOpts *executionOptions, raceDetected bool) bool {
 	if execOpts == nil || !raceDetected {
 		return false
 	}
 	execOpts.rawAttemptFailureSeen = true
 	execOpts.retryCount = 0
-	if execOpts.processRetryPolicyCancel != nil {
-		execOpts.processRetryPolicyCancel()
-	}
 	return true
 }
 
@@ -122,9 +107,6 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 	)
 
 	prepare := func(attempt *retryAttemptRoot) string {
-		execOpts.mutex.Lock()
-		defer execOpts.mutex.Unlock()
-
 		execOpts.executionIndex++
 		currentIndex = execOpts.executionIndex
 		if currentIndex > 0 {
@@ -150,9 +132,6 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 	}
 
 	complete := func(attempt *retryAttemptRoot, result retryAttemptResult) {
-		execOpts.mutex.Lock()
-		defer execOpts.mutex.Unlock()
-
 		localT := attempt.test
 		observation := observeFreshRetryAttempt(currentIndex, result)
 		observation.rootParallel = attempt.group.rootParallelWasObserved()
@@ -215,7 +194,7 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 			execMeta.retryContinuationAdmitted = false
 			return
 		}
-		if stopRetryGroupAfterRaceLocked(execOpts, observation.raceDetected) {
+		if stopRetryGroupAfterRace(execOpts, observation.raceDetected) {
 			shouldRetry = false
 			execMeta.retryContinuationDecided = true
 			execMeta.retryContinuationAdmitted = false
@@ -228,7 +207,7 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 			execOpts.deferredQueued = enqueueDeferredProcessRetryGroup(execOpts)
 			if execOpts.deferredQueued && deferredProcessRetryFirstFailureIsIrreversible(execMeta, observation) {
 				execOpts.options.t.Fail()
-			} else if !execOpts.deferredQueued && retryContinuationStoppedLocked(execOpts, localT, execMeta) {
+			} else if !execOpts.deferredQueued && retryContinuationStoppedAfterAttempt(execOpts, localT, execMeta) {
 				shouldRetry = false
 				execMeta.retryContinuationAdmitted = false
 			}

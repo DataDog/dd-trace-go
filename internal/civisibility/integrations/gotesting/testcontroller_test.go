@@ -39,7 +39,6 @@ import (
 var currentM *testing.M
 
 var processRetryUnitTestPrefixes = []string{
-	"TestRetryExecutionModeFromEnv",
 	"TestDisableProcessRetryChildExecution",
 	"TestProcessRetry",
 	"TestRunProcessRetry",
@@ -53,7 +52,6 @@ var processRetryUnitTestPrefixes = []string{
 	"TestWriteProcessRetry",
 	"TestFinalizeProcessRetry",
 	"TestCombineProcessRetry",
-	"TestRecordProcessRetry",
 }
 
 const retryParityUnitTestPrefix = "TestProcessRetryParity"

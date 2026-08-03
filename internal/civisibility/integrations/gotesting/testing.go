@@ -310,8 +310,6 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	}
 	if processModeEnabled && wrapperOpts.processRetryAllowed {
 		wrapperOpts.processRetryLaunchTemplate = captureProcessRetryLaunchTemplate()
-	}
-	if processModeEnabled && wrapperOpts.processRetryAllowed && wrapperOpts.processRetryDeferredAllowed {
 		coordinator := newProcessRetryCoordinator()
 		if registerProcessRetryCoordinator(coordinator) {
 			wrapperOpts.processRetryCoordinator = coordinator
@@ -519,18 +517,12 @@ func (ddm *M) Run() (exitCode int) {
 }
 
 func processRetryLegacyWrapperOptions() additionalFeatureWrapperOptions {
-	return additionalFeatureWrapperOptions{
-		processRetryMode:    retryExecutionModeInProcess,
-		processRetryModeSet: true,
-		fuzzActive:          processRetryFuzzActive,
-	}
+	return additionalFeatureWrapperOptions{}
 }
 
 func processRetryDeferredWrapperOptions() additionalFeatureWrapperOptions {
 	return additionalFeatureWrapperOptions{
-		processRetryAllowed:         true,
-		processRetryDeferredAllowed: true,
-		fuzzActive:                  processRetryFuzzActive,
+		processRetryAllowed: true,
 	}
 }
 
@@ -538,16 +530,8 @@ func snapshotProcessRetryWrapperOptions(options *additionalFeatureWrapperOptions
 	if options == nil || !options.processRetryAllowed {
 		return false
 	}
-	if !options.processRetryDeferredAllowed {
-		options.processRetryAllowed = false
-		options.processRetryMode = retryExecutionModeInProcess
-		options.processRetryModeSet = true
-		return false
-	}
-	options.processRetryMode = retryExecutionModeFromEnv()
-	options.processRetryModeSet = true
 	options.parallelEFDAllowed = internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false)
-	if options.processRetryMode != retryExecutionModeProcess {
+	if !processRetryModeEnabledFromEnv() {
 		return false
 	}
 	if options.mRunEpoch == 0 {
@@ -556,8 +540,8 @@ func snapshotProcessRetryWrapperOptions(options *additionalFeatureWrapperOptions
 	if options.mRunInvocations == nil {
 		options.mRunInvocations = &atomic.Uint64{}
 	}
-	if options.processRetryFuzzGuard == nil && options.fuzzActive != nil {
-		options.processRetryFuzzGuard = &processRetryFuzzGuardSnapshot{evaluate: options.fuzzActive}
+	if options.processRetryFuzzGuard == nil {
+		options.processRetryFuzzGuard = &processRetryFuzzGuardSnapshot{evaluate: processRetryFuzzActive}
 	}
 	return true
 }

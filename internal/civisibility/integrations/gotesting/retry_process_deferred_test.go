@@ -1142,16 +1142,11 @@ func newDeferredProcessRetryPendingGroupForTesting(
 	execMeta.retryAttemptFinalizer = func(retryAttemptResult) {}
 	coordinator := newProcessRetryCoordinator()
 	options := &runTestWithRetryOptions{
-		t:                           t,
-		testInfo:                    &commonInfo{moduleName: identity.ModuleName, suiteName: identity.SuiteName, testName: identity.FullName, identity: identity},
-		processRetryAllowed:         true,
-		processRetryDeferredAllowed: true,
-		processRetryMode:            retryExecutionModeProcess,
-		processRetryModeSet:         true,
-		processRetryCoordinator:     coordinator,
-		processRetryIdentity:        identity,
-		fuzzActive:                  func() bool { return false },
-		preProcessRetryMetaAdjust:   func(*testExecutionMetadata, int) {},
+		t:                       t,
+		testInfo:                &commonInfo{moduleName: identity.ModuleName, suiteName: identity.SuiteName, testName: identity.FullName, identity: identity},
+		processRetryCoordinator: coordinator,
+		processRetryIdentity:    identity,
+		processRetryFuzzGuard:   &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }},
 	}
 	execOpts := &executionOptions{
 		options:                     options,

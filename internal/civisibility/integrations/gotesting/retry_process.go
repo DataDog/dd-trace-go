@@ -7,7 +7,6 @@ package gotesting
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,23 +37,16 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-type retryExecutionMode int
-
-const (
-	retryExecutionModeInProcess retryExecutionMode = iota
-	retryExecutionModeProcess
-)
-
-func retryExecutionModeFromEnv() retryExecutionMode {
+func processRetryModeEnabledFromEnv() bool {
 	raw := strings.ToLower(strings.TrimSpace(env.Get(constants.CIVisibilityRetryExecutionModeEnvironmentVariable)))
 	switch raw {
 	case "", "in_process":
-		return retryExecutionModeInProcess
+		return false
 	case "process":
-		return retryExecutionModeProcess
+		return true
 	default:
 		log.Debug("civisibility: unsupported retry execution mode, using in_process")
-		return retryExecutionModeInProcess
+		return false
 	}
 }
 
@@ -919,23 +911,6 @@ type processRetryArgsSnapshot struct {
 	timeoutSet       bool
 	ok               bool
 	reason           string
-}
-
-type processRetryIterationOutcome int
-
-const (
-	processRetryIterationFallback processRetryIterationOutcome = iota
-	processRetryIterationStop
-	processRetryIterationContinue
-)
-
-type processRetryPendingIteration struct {
-	previousIndex int
-	currentIndex  int
-	ptrToLocalT   *testing.T
-	execMeta      *testExecutionMetadata
-	localAttempt  *retryAttemptRoot
-	attempt       processRetryAttemptResult
 }
 
 type processRetryTimer interface {
@@ -2481,26 +2456,6 @@ func applyProcessRetryMetadataSnapshot(execMeta *testExecutionMetadata, snapshot
 	return true
 }
 
-func prepareProcessRetryExecution(options *runTestWithRetryOptions, execOpts *executionOptions) {
-	if !options.processRetryModeSet {
-		options.processRetryMode = retryExecutionModeFromEnv()
-		options.processRetryModeSet = true
-	}
-	if options.processRetryMode != retryExecutionModeProcess || !options.processRetryAllowed {
-		return
-	}
-	options.processRetryGuardsSnapshotted = true
-	if options.processRetryFuzzGuard != nil {
-		options.processRetryFuzzActive, options.processRetryFuzzGuardSet = options.processRetryFuzzGuard.resolve()
-	} else {
-		options.processRetryFuzzGuardSet = options.fuzzActive != nil
-	}
-	if options.processRetryFuzzGuardSet && options.processRetryFuzzGuard == nil {
-		options.processRetryFuzzActive = options.fuzzActive()
-	}
-	execOpts.processRetryLaunchBaseline = captureProcessRetryLaunchBaselineFromTemplate(options.processRetryLaunchTemplate)
-}
-
 func ensureProcessRetryInvocationOrdinal(options *runTestWithRetryOptions) uint64 {
 	if options == nil {
 		return 0
@@ -2509,86 +2464,6 @@ func ensureProcessRetryInvocationOrdinal(options *runTestWithRetryOptions) uint6
 		options.processRetryInvocationOrdinal = options.processRetryInvocationCounter.Add(1)
 	}
 	return options.processRetryInvocationOrdinal
-}
-
-func runProcessRetriesIfEligible(
-	execOpts *executionOptions,
-	runSequentialRetries func(stopOnProcessShutdown bool),
-) (handled bool, reason string) {
-	if retryContinuationStopped(execOpts) {
-		return true, "failfast"
-	}
-	ok, reason := processRetryEligible(execOpts.executionMetadata, execOpts.options)
-	if !ok {
-		if reason == "process_shutdown" {
-			log.Debug("runTestWithRetry: retries stopped because CI Visibility shutdown started")
-			execOpts.retryCount = 0
-			return true, reason
-		}
-		return false, reason
-	}
-	parallelMaxConcurrency := processRetryParallelMaxConcurrencyForBaseline(execOpts.processRetryLaunchBaseline)
-	parallelEFD := shouldUseParallelEFD(
-		execOpts.options,
-		execOpts.executionMetadata,
-		execOpts.retryCount+1,
-		parallelMaxConcurrency,
-	)
-	execOpts.processRetryMetadataSnapshot = snapshotProcessRetryExecutionMetadata(execOpts.executionMetadata)
-	if execOpts.processRetryMetadataSnapshot == nil {
-		log.Debug("runTestWithRetry: process retry backend ineligible: missing_metadata_snapshot")
-		return false, "missing_metadata_snapshot"
-	}
-	if parallelEFD {
-		if ok, baselineReason := processRetryParallelBaselineReady(execOpts.processRetryLaunchBaseline); !ok {
-			log.Debug("runTestWithRetry: parallel process retry backend unavailable before admission: %s", baselineReason)
-			return false, baselineReason
-		}
-	}
-	shutdown, finishGroup, beginErr := beginProcessRetryGroup()
-	switch {
-	case errors.Is(beginErr, errProcessRetryShutdown):
-		log.Debug("runTestWithRetry: process retry skipped because CI Visibility shutdown started")
-		execOpts.retryCount = 0
-	case beginErr != nil:
-		log.Debug("runTestWithRetry: process retry backend unavailable before admission: %v", beginErr.Error())
-		return false, beginErr.Error()
-	default:
-		execOpts.processRetryShutdown = shutdown
-		defer finishGroup()
-		if parallelEFD {
-			policyBase := context.Background()
-			if execOpts.options.processRetryContext != nil {
-				if injected := execOpts.options.processRetryContext(); injected != nil {
-					policyBase = injected
-				}
-			}
-			policyContext, cancelPolicy := context.WithCancel(policyBase)
-			execOpts.mutex.Lock()
-			execOpts.processRetryPolicyContext = policyContext
-			execOpts.processRetryPolicyCancel = cancelPolicy
-			execOpts.mutex.Unlock()
-			defer func() {
-				cancelPolicy()
-				execOpts.mutex.Lock()
-				execOpts.processRetryPolicyContext = nil
-				execOpts.processRetryPolicyCancel = nil
-				execOpts.mutex.Unlock()
-			}()
-			attempts := execOpts.retryCount + 1
-			log.Debug("runTestWithRetry: executing test with parallel process retry backend, attempts: %d, max concurrency: %d", attempts, parallelMaxConcurrency)
-			execOpts.mutex = newExecutionOptionsMutex()
-			execOpts.effectiveParallelEFDActive = true
-			if runBoundedParallelProcessRetryIterations(execOpts, attempts, parallelMaxConcurrency) {
-				log.Debug("runTestWithRetry: parallel process retry backend unavailable before batch admission")
-				return false, "parallel_setup_failure"
-			}
-		} else if runProcessRetryBackend(execOpts) {
-			log.Debug("runTestWithRetry: process retry backend fallback to in_process")
-			runSequentialRetries(true)
-		}
-	}
-	return true, ""
 }
 
 func processRetryParallelBaselineReady(baseline *processRetryLaunchBaseline) (bool, string) {
@@ -2612,354 +2487,6 @@ func processRetryParallelBaselineReady(baseline *processRetryLaunchBaseline) (bo
 		return false, argsSnapshot.reason
 	}
 	return true, ""
-}
-
-func runProcessRetryBackend(execOpts *executionOptions) bool {
-	firstAttempt := true
-	for {
-		if !firstAttempt && processRetryShutdownRequested(execOpts.processRetryShutdown) {
-			execOpts.retryCount = 0
-			return false
-		}
-		firstAttempt = false
-		switch executeProcessRetryIteration(execOpts) {
-		case processRetryIterationFallback:
-			return true
-		case processRetryIterationStop:
-			return false
-		case processRetryIterationContinue:
-			continue
-		}
-	}
-}
-
-func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterationOutcome {
-	pending, outcome := prepareProcessRetryIteration(execOpts)
-	if pending == nil {
-		return outcome
-	}
-	defer pending.cleanup()
-	return finalizeProcessRetryIteration(execOpts, pending, true)
-}
-
-func prepareProcessRetryIteration(execOpts *executionOptions) (*processRetryPendingIteration, processRetryIterationOutcome) {
-	execOpts.mutex.Lock()
-	if retryContinuationStoppedLocked(execOpts, nil, nil) {
-		execOpts.mutex.Unlock()
-		return nil, processRetryIterationStop
-	}
-	if execOpts.executionIndex < 0 || execOpts.options == nil ||
-		execOpts.options.processRetryIdentity == nil ||
-		execOpts.options.processRetryIdentity.FullName == "" ||
-		len(execOpts.options.processRetryIdentity.Segments) != 1 ||
-		execOpts.options.preProcessRetryMetaAdjust == nil ||
-		execOpts.processRetryMetadataSnapshot == nil {
-		execOpts.mutex.Unlock()
-		return nil, processRetryIterationFallback
-	}
-	if execOpts.retryCount < 0 {
-		execOpts.mutex.Unlock()
-		return nil, processRetryIterationStop
-	}
-	previousIndex := execOpts.executionIndex
-	execOpts.executionIndex++
-	currentIndex := execOpts.executionIndex
-
-	localAttempt, reason := newRetryAttemptRootInGroup(execOpts.retryAttemptGroup)
-	if reason != "" {
-		execOpts.executionIndex = previousIndex
-		execOpts.mutex.Unlock()
-		return nil, processRetryIterationFallback
-	}
-	ptrToLocalT := localAttempt.test
-
-	execMeta := createTestMetadata(ptrToLocalT, execOpts.options.t)
-	localAttempt.metadata = execMeta
-	execMeta.hasAdditionalFeatureWrapper = true
-	execMeta.isARetry = true
-	if !applyProcessRetryMetadataSnapshot(execMeta, execOpts.processRetryMetadataSnapshot) {
-		deleteTestMetadata(ptrToLocalT)
-		execOpts.executionIndex = previousIndex
-		execOpts.mutex.Unlock()
-		return nil, processRetryIterationFallback
-	}
-	execMeta.identity = execOpts.options.processRetryIdentity
-	execMeta.isARetry = true
-	execMeta.hasAdditionalFeatureWrapper = true
-	retryReason, hasRetryReason := processRetryReasonForExecution(execMeta)
-	if !hasRetryReason {
-		deleteTestMetadata(ptrToLocalT)
-		execOpts.executionIndex = previousIndex
-		execOpts.mutex.Unlock()
-		return nil, processRetryIterationFallback
-	}
-
-	parentDeadline, parentDeadlineOK := execOpts.options.t.Deadline()
-	childCfg := processRetryChildConfig{
-		TestName:          execOpts.options.processRetryIdentity.FullName,
-		Attempt:           currentIndex,
-		RetryReason:       retryReason,
-		MRunEpoch:         execOpts.options.processRetryMRunEpoch,
-		InvocationOrdinal: ensureProcessRetryInvocationOrdinal(execOpts.options),
-	}
-	ctx := execOpts.processRetryPolicyContext
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if execOpts.processRetryPolicyContext == nil && execOpts.options.processRetryContext != nil {
-		if injected := execOpts.options.processRetryContext(); injected != nil {
-			ctx = injected
-		}
-	}
-	execOpts.mutex.Unlock()
-
-	attempt := runProcessRetryAttemptWithCoordinator(
-		ctx,
-		childCfg,
-		parentDeadline,
-		parentDeadlineOK,
-		execOpts.processRetryLaunchBaseline,
-		execOpts.processRetryShutdown,
-		execOpts.retryAttemptGroup,
-	)
-	return &processRetryPendingIteration{
-		previousIndex: previousIndex,
-		currentIndex:  currentIndex,
-		ptrToLocalT:   ptrToLocalT,
-		execMeta:      execMeta,
-		localAttempt:  localAttempt,
-		attempt:       attempt,
-	}, processRetryIterationContinue
-}
-
-func (p *processRetryPendingIteration) cleanup() {
-	if p != nil && p.attempt.Cleanup != nil {
-		cleanup := p.attempt.Cleanup
-		p.attempt.Cleanup = nil
-		cleanup()
-	}
-}
-
-func (p *processRetryPendingIteration) setupFallbackEligible() bool {
-	return p != nil && p.attempt.SetupFailure && !p.attempt.TimedOut && p.attempt.SetupFallbackAllowed
-}
-
-func finalizeProcessRetryIteration(execOpts *executionOptions, pending *processRetryPendingIteration, setupFallbackAllowed bool) processRetryIterationOutcome {
-	ptrToLocalT := pending.ptrToLocalT
-	execMeta := pending.execMeta
-	attempt := pending.attempt
-	currentIndex := pending.currentIndex
-
-	execOpts.mutex.Lock()
-	defer execOpts.mutex.Unlock()
-	if setupFallbackAllowed && attempt.SetupFailure && !attempt.TimedOut && !execOpts.processRetryConsumedAttempt && attempt.SetupFallbackAllowed {
-		deleteTestMetadata(ptrToLocalT)
-		if pending.localAttempt != nil {
-			pending.localAttempt.metadata = nil
-		}
-		execOpts.executionIndex = pending.previousIndex
-		return processRetryIterationFallback
-	}
-	if attempt.SetupFailure {
-		attempt.SetupFailureConsumed = true
-	}
-	consumeFlakyRetryBudgetReservation(execOpts)
-	execMeta.flakyRetryBudgetReservation = execOpts.flakyRetryBudgetReservation
-	execOpts.options.preProcessRetryMetaAdjust(execMeta, currentIndex)
-	execMeta.isLastRetry = execOpts.options.preIsLastRetry(execMeta, currentIndex, execOpts.retryCount)
-	execMeta.remainingRetries = execOpts.retryCount
-	execMeta.isEfdInParallel = execOpts.effectiveParallelEFDActive && usesEfdRetrySemantics(execMeta)
-	terminalCancellation := errors.Is(attempt.Err, context.Canceled) || errors.Is(attempt.Err, context.DeadlineExceeded)
-	terminalUnreaped := attempt.Unreaped || errors.Is(attempt.Err, errProcessRetryChildUnreaped)
-	terminalContainmentLost := attempt.ContainmentLost || errors.Is(attempt.Err, errProcessRetryContainmentLost)
-	terminalLaunchDisabled := errors.Is(attempt.Err, errProcessRetryLaunchDisabled)
-	terminalShutdown := processRetryShutdownRequested(execOpts.processRetryShutdown) || errors.Is(attempt.Err, errProcessRetryShutdown)
-	terminalRace := attempt.Result.RaceDetected
-	execOpts.processRetryConsumedAttempt = true
-	terminalAttempt := false
-	shouldRetry := false
-	effective := closeProcessRetryTestEventWithAdmission(execOpts.options.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {
-		terminalAttempt = terminalCancellation || terminalUnreaped || terminalContainmentLost || terminalLaunchDisabled || terminalShutdown || terminalRace ||
-			processRetryFailureStopsContinuation(effective.FailureKind)
-		stopRetryGroupAfterRaceLocked(execOpts, terminalRace)
-		if terminalAttempt {
-			execMeta.isLastRetry = true
-			execMeta.remainingRetries = 0
-			execOpts.retryCount = 0
-		}
-		switch {
-		case effective.Failed:
-			ptrToLocalT.Fail()
-		case effective.Skipped:
-			if fields := getTestPrivateFields(ptrToLocalT); fields != nil {
-				fields.SetSkipped(true)
-			}
-		}
-		execOpts.retryCount--
-		if execOpts.options.postPerExecution != nil {
-			execOpts.options.postPerExecution(ptrToLocalT, execMeta, currentIndex, attempt.FinishTime.Sub(attempt.StartTime))
-		}
-		execOpts.ptrToLocalT = ptrToLocalT
-		execOpts.executionMetadata = execMeta
-		if !terminalAttempt {
-			shouldRetry = reserveRetryBudgetIfNeeded(execOpts, ptrToLocalT, execMeta, currentIndex)
-		}
-		execMeta.retryContinuationDecided = true
-		execMeta.retryContinuationAdmitted = shouldRetry
-	})
-	if attempt.Result.RootParallel && execOpts.retryAttemptGroup != nil {
-		execOpts.retryAttemptGroup.observeProcessRootParallel()
-	}
-	recordProcessRetryPanic(execOpts, execMeta, attempt, effective)
-	if execOpts.originalExecutionMetadata != nil {
-		execOpts.originalExecutionMetadata.test = execMeta.test
-	}
-	if execOpts.suite == nil && execMeta.test != nil {
-		execOpts.suite = execMeta.test.Suite()
-	}
-	if execOpts.module == nil && execOpts.suite != nil {
-		execOpts.module = execOpts.suite.Module()
-	}
-	deleteTestMetadata(ptrToLocalT)
-	if pending.localAttempt != nil {
-		pending.localAttempt.metadata = nil
-	}
-	if terminalAttempt {
-		return processRetryIterationStop
-	}
-	if shouldRetry {
-		return processRetryIterationContinue
-	}
-	return processRetryIterationStop
-}
-
-func runBoundedParallelProcessRetryIterations(execOpts *executionOptions, attempts, maxConcurrency int64) bool {
-	execOpts.mutex.Lock()
-	batchStartIndex := execOpts.executionIndex
-	execOpts.mutex.Unlock()
-
-	type preparedIteration struct {
-		pending     *processRetryPendingIteration
-		outcome     processRetryIterationOutcome
-		releaseSlot bool
-	}
-	prepared := make(chan preparedIteration, attempts)
-	parallelism := max(min(maxConcurrency, attempts), 1)
-	sem := make(chan struct{}, int(parallelism))
-	var wg sync.WaitGroup
-	execOpts.mutex.Lock()
-	policyContext := execOpts.processRetryPolicyContext
-	execOpts.mutex.Unlock()
-	if policyContext == nil {
-		policyContext = context.Background()
-	}
-	for range attempts {
-		wg.Go(func() {
-			select {
-			case sem <- struct{}{}:
-			case <-policyContext.Done():
-				prepared <- preparedIteration{outcome: processRetryIterationStop}
-				return
-			}
-			select {
-			case <-policyContext.Done():
-				prepared <- preparedIteration{outcome: processRetryIterationStop, releaseSlot: true}
-				return
-			default:
-			}
-			pending, outcome := prepareProcessRetryIteration(execOpts)
-			if pending != nil {
-				pending.cleanup()
-			}
-			prepared <- preparedIteration{pending: pending, outcome: outcome, releaseSlot: true}
-		})
-	}
-	go func() {
-		wg.Wait()
-		close(prepared)
-	}()
-
-	iterations := make([]preparedIteration, 0, attempts)
-	fallback := true
-	for iteration := range prepared {
-		iterations = append(iterations, iteration)
-		observeParallelProcessRetryForFailfast(execOpts, iteration.pending)
-		if iteration.releaseSlot {
-			<-sem
-		}
-		if iteration.pending != nil {
-			fallback = fallback && iteration.pending.setupFallbackEligible()
-		} else {
-			fallback = fallback && iteration.outcome == processRetryIterationFallback
-		}
-	}
-	defer func() {
-		for _, iteration := range iterations {
-			iteration.pending.cleanup()
-		}
-	}()
-
-	if fallback {
-		execOpts.mutex.Lock()
-		for _, iteration := range iterations {
-			if iteration.pending != nil {
-				deleteTestMetadata(iteration.pending.ptrToLocalT)
-				if iteration.pending.localAttempt != nil {
-					iteration.pending.localAttempt.metadata = nil
-				}
-			}
-		}
-		execOpts.executionIndex = batchStartIndex
-		execOpts.mutex.Unlock()
-		return true
-	}
-
-	slices.SortFunc(iterations, func(a, b preparedIteration) int {
-		switch {
-		case a.pending == nil && b.pending == nil:
-			return 0
-		case a.pending == nil:
-			return 1
-		case b.pending == nil:
-			return -1
-		default:
-			return cmp.Compare(a.pending.currentIndex, b.pending.currentIndex)
-		}
-	})
-	for _, iteration := range iterations {
-		if iteration.pending == nil {
-			continue
-		}
-		finalizeProcessRetryIteration(execOpts, iteration.pending, false)
-	}
-	return false
-}
-
-func observeParallelProcessRetryForFailfast(execOpts *executionOptions, pending *processRetryPendingIteration) {
-	if execOpts == nil || pending == nil || pending.setupFallbackEligible() {
-		return
-	}
-	if !effectiveProcessRetryStatus(pending.attempt, false).Failed {
-		return
-	}
-	execOpts.mutex.Lock()
-	execOpts.rawAttemptFailureSeen = true
-	if stopRetryGroupAfterRaceLocked(execOpts, pending.attempt.Result.RaceDetected) {
-		execOpts.mutex.Unlock()
-		return
-	}
-	retryContinuationStoppedLocked(execOpts, nil, nil)
-	execOpts.mutex.Unlock()
-}
-
-func recordProcessRetryPanic(execOpts *executionOptions, execMeta *testExecutionMetadata, attempt processRetryAttemptResult, effective processRetryEffectiveStatus) {
-	if execOpts == nil || execMeta == nil || execOpts.panicExecutionMetadata != nil ||
-		effective.FailureKind != "test_panic" || !attempt.Result.Panic {
-		return
-	}
-	execMeta.panicData = attempt.Result.ErrorMessage
-	execMeta.panicStacktrace = attempt.Result.ErrorStack
-	execOpts.panicExecutionMetadata = execMeta
 }
 
 func closeProcessRetryTestEvent(testInfo *commonInfo, execMeta *testExecutionMetadata, attempt processRetryAttemptResult) processRetryEffectiveStatus {
@@ -3364,21 +2891,11 @@ func processRetryReasonForExecution(execMeta *testExecutionMetadata) (string, bo
 }
 
 func processRetryEligible(execMeta *testExecutionMetadata, options *runTestWithRetryOptions) (bool, string) {
-	mode := retryExecutionModeFromEnv()
-	if options != nil && options.processRetryModeSet {
-		mode = options.processRetryMode
-	}
-	if mode != retryExecutionModeProcess {
-		return false, "mode_in_process"
-	}
 	if isProcessRetryChild() {
 		return false, "child_mode"
 	}
 	if options == nil {
 		return false, "missing_options"
-	}
-	if !options.processRetryAllowed {
-		return false, "process_retry_not_allowed"
 	}
 	if processRetryShuttingDown() {
 		return false, "process_shutdown"
@@ -3416,9 +2933,6 @@ func processRetryEligible(execMeta *testExecutionMetadata, options *runTestWithR
 	if len(execMeta.identity.Segments) != 1 {
 		return false, "subtest"
 	}
-	if options.preProcessRetryMetaAdjust == nil {
-		return false, "missing_process_metadata_callback"
-	}
 	retryReason, hasRetryReason := processRetryReasonForExecution(execMeta)
 	if !hasRetryReason {
 		return false, "flaky_retry_disabled"
@@ -3432,16 +2946,7 @@ func processRetryEligible(execMeta *testExecutionMetadata, options *runTestWithR
 	if retryReason != constants.AttemptToFixRetryReason && execMeta.isDisabled {
 		return false, "disabled"
 	}
-	fuzzGuardSet := options.fuzzActive != nil
-	fuzzActive := false
-	if options.processRetryGuardsSnapshotted {
-		fuzzGuardSet = options.processRetryFuzzGuardSet
-		fuzzActive = options.processRetryFuzzActive
-	} else {
-		if fuzzGuardSet {
-			fuzzActive = options.fuzzActive()
-		}
-	}
+	fuzzActive, fuzzGuardSet := options.processRetryFuzzGuard.resolve()
 	if !fuzzGuardSet {
 		return false, "missing_fuzz_guard"
 	}

@@ -354,15 +354,6 @@ func (g *retryAttemptGroup) hasLateFailure() bool {
 	return false
 }
 
-func (g *retryAttemptGroup) observeProcessRootParallel() {
-	if g == nil {
-		return
-	}
-	g.mu.Lock()
-	g.rootParallelObserved = true
-	g.mu.Unlock()
-}
-
 func (g *retryAttemptGroup) rootParallelWasObserved() bool {
 	if g == nil {
 		return false

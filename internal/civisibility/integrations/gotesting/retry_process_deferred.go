@@ -895,9 +895,13 @@ func prepareDeferredProcessRetryInvocation(execOpts *executionOptions) {
 	// Invocation order belongs to the native first pass, so capture it before
 	// execution metadata exists. Retry eligibility is checked later at enqueue.
 	options := execOpts.options
-	if options.processRetryCoordinator == nil {
+	if options.processRetryCoordinator == nil || options.processRetryIdentity == nil || len(options.processRetryIdentity.Segments) != 1 {
 		return
 	}
+	if fuzzActive, fuzzGuardSet := options.processRetryFuzzGuard.resolve(); !fuzzGuardSet || fuzzActive {
+		return
+	}
+	execOpts.processRetryLaunchBaseline = captureProcessRetryLaunchBaselineFromTemplate(options.processRetryLaunchTemplate)
 	if ok, _ := processRetryParallelBaselineReady(execOpts.processRetryLaunchBaseline); !ok {
 		return
 	}
@@ -913,7 +917,7 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 	}
 	options := execOpts.options
 	coordinator := options.processRetryCoordinator
-	if coordinator == nil || !options.processRetryDeferredAllowed || execOpts.lastObservation.stopsRetryContinuation() {
+	if coordinator == nil || execOpts.lastObservation.stopsRetryContinuation() {
 		return false
 	}
 	if ok, _ := processRetryEligible(execOpts.executionMetadata, options); !ok {
