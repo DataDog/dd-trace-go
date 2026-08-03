@@ -151,6 +151,14 @@ const (
 	// operatorGTE checks if attribute >= value (value: number)
 	operatorGTE conditionOperator = "GTE"
 
+	// Semantic version operators compare string attributes to string values.
+	operatorSemverEQ  conditionOperator = "SEMVER_EQ"
+	operatorSemverNEQ conditionOperator = "SEMVER_NEQ"
+	operatorSemverLT  conditionOperator = "SEMVER_LT"
+	operatorSemverLTE conditionOperator = "SEMVER_LTE"
+	operatorSemverGT  conditionOperator = "SEMVER_GT"
+	operatorSemverGTE conditionOperator = "SEMVER_GTE"
+
 	// operatorMatches checks if attribute matches regex pattern (value: string regex)
 	operatorMatches conditionOperator = "MATCHES"
 	// operatorNotMatches checks if attribute doesn't match regex pattern (value: string regex)
@@ -175,6 +183,7 @@ type condition struct {
 	// Value is the value to compare against
 	// Type depends on the operator:
 	// - Numeric operators (LT, LTE, GT, GTE): number (int64 or float64)
+	// - Semantic version operators (SEMVER_EQ, SEMVER_NEQ, SEMVER_LT, SEMVER_LTE, SEMVER_GT, SEMVER_GTE): string
 	// - Regex operators (MATCHES, NOT_MATCHES): string (regex pattern)
 	// - List operators (ONE_OF, NOT_ONE_OF): []any or []string
 	// - Null check (IS_NULL): bool

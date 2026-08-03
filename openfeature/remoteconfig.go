@@ -189,6 +189,8 @@ func validateFlag(flagKey string, flag *flag) error {
 
 				switch condition.Operator {
 				case operatorLT, operatorLTE, operatorGT, operatorGTE,
+					operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE,
 					operatorMatches, operatorNotMatches,
 					operatorOneOf, operatorNotOneOf, operatorIsNull:
 				default:
@@ -206,6 +208,20 @@ func validateFlag(flagKey string, flag *flag) error {
 					if _, err := loadRegex(regex); err != nil {
 						return fmt.Errorf("flag %q allocation %d rule has condition with invalid regex %q: %v",
 							flagKey, i, regex, err)
+					}
+				}
+
+				switch condition.Operator {
+				case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+					comparand, ok := condition.Value.(string)
+					if !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires string value",
+							flagKey, i, condition.Operator)
+					}
+					if _, ok := parseSemver(comparand); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q and invalid semantic version %q",
+							flagKey, i, condition.Operator, comparand)
 					}
 				}
 			}

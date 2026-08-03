@@ -412,6 +412,60 @@ func TestValidateFlag(t *testing.T) {
 	})
 }
 
+func TestValidateFlagSemverConditions(t *testing.T) {
+	newFlag := func(operator conditionOperator, value any) *flag {
+		return &flag{
+			Key:           "test-flag",
+			VariationType: valueTypeBoolean,
+			Variations: map[string]*variant{
+				"on": {Key: "on", Value: true},
+			},
+			Allocations: []*allocation{
+				{
+					Rules: []*rule{
+						{
+							Conditions: []*condition{
+								{Operator: operator, Attribute: "version", Value: value},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	operators := []conditionOperator{
+		operatorSemverEQ,
+		operatorSemverNEQ,
+		operatorSemverLT,
+		operatorSemverLTE,
+		operatorSemverGT,
+		operatorSemverGTE,
+	}
+	for _, operator := range operators {
+		t.Run(string(operator), func(t *testing.T) {
+			require.NoError(t, validateFlag("test-flag", newFlag(operator, "1.2.3-alpha.1+build.5")))
+		})
+	}
+
+	invalidValues := []struct {
+		name  string
+		value any
+	}{
+		{name: "non-string", value: 1.2},
+		{name: "invalid", value: "not-a-version"},
+		{name: "short", value: "1.2"},
+		{name: "v prefix", value: "v1.2.3"},
+		{name: "leading zero", value: "01.2.3"},
+		{name: "overflow", value: "18446744073709551616.0.0"},
+	}
+	for _, tt := range invalidValues {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Error(t, validateFlag("test-flag", newFlag(operatorSemverEQ, tt.value)))
+		})
+	}
+}
+
 func TestProcessConfigUpdate(t *testing.T) {
 	t.Run("valid configuration update", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})

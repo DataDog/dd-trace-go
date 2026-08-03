@@ -16,6 +16,7 @@ import (
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+	"golang.org/x/mod/semver"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -249,6 +250,9 @@ func evaluateCondition(condition *condition, context map[string]any) bool {
 		return !isOneOf(attributeValue, condition.Value)
 	case operatorGT, operatorGTE, operatorLT, operatorLTE:
 		return evaluateNumericCondition(attributeValue, condition.Value, condition.Operator)
+	case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+		operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+		return evaluateSemverCondition(attributeValue, condition.Value, condition.Operator)
 	default:
 		return false
 	}
@@ -400,6 +404,137 @@ func evaluateNumericCondition(attributeValue any, conditionValue any, operator c
 	default:
 		return false
 	}
+}
+
+// evaluateSemverCondition evaluates semantic version comparison operators.
+func evaluateSemverCondition(attributeValue any, conditionValue any, operator conditionOperator) bool {
+	attribute, ok := attributeValue.(string)
+	if !ok {
+		return false
+	}
+	comparand, ok := conditionValue.(string)
+	if !ok {
+		return false
+	}
+
+	ordering, ok := compareSemver(attribute, comparand)
+	if !ok {
+		return false
+	}
+
+	switch operator {
+	case operatorSemverEQ:
+		return ordering == 0
+	case operatorSemverNEQ:
+		return ordering != 0
+	case operatorSemverLT:
+		return ordering < 0
+	case operatorSemverLTE:
+		return ordering <= 0
+	case operatorSemverGT:
+		return ordering > 0
+	case operatorSemverGTE:
+		return ordering >= 0
+	default:
+		return false
+	}
+}
+
+type parsedSemver struct {
+	normalized string
+	build      string
+}
+
+// parseSemver accepts the same version syntax as Rust's semver::Version::parse.
+func parseSemver(version string) (parsedSemver, bool) {
+	normalized := "v" + version
+	if !semver.IsValid(normalized) {
+		return parsedSemver{}, false
+	}
+
+	coreEnd := strings.IndexAny(version, "-+")
+	if coreEnd == -1 {
+		coreEnd = len(version)
+	}
+	core := strings.Split(version[:coreEnd], ".")
+	if len(core) != 3 {
+		return parsedSemver{}, false
+	}
+	for _, part := range core {
+		if _, err := strconv.ParseUint(part, 10, 64); err != nil {
+			return parsedSemver{}, false
+		}
+	}
+
+	return parsedSemver{
+		normalized: normalized,
+		build:      strings.TrimPrefix(semver.Build(normalized), "+"),
+	}, true
+}
+
+// compareSemver mirrors semver::Version::cmp from Rust's semver crate. Unlike
+// semantic version precedence, that total ordering includes build metadata.
+func compareSemver(left, right string) (int, bool) {
+	leftVersion, ok := parseSemver(left)
+	if !ok {
+		return 0, false
+	}
+	rightVersion, ok := parseSemver(right)
+	if !ok {
+		return 0, false
+	}
+
+	if ordering := semver.Compare(leftVersion.normalized, rightVersion.normalized); ordering != 0 {
+		return ordering, true
+	}
+	return compareBuildMetadata(leftVersion.build, rightVersion.build), true
+}
+
+func compareBuildMetadata(left, right string) int {
+	if left == right {
+		return 0
+	}
+
+	leftParts := strings.Split(left, ".")
+	rightParts := strings.Split(right, ".")
+	for i := 0; i < len(leftParts) && i < len(rightParts); i++ {
+		if ordering := compareBuildIdentifier(leftParts[i], rightParts[i]); ordering != 0 {
+			return ordering
+		}
+	}
+	return len(leftParts) - len(rightParts)
+}
+
+func compareBuildIdentifier(left, right string) int {
+	leftNumeric := isASCIIDigits(left)
+	rightNumeric := isASCIIDigits(right)
+	switch {
+	case leftNumeric && rightNumeric:
+		leftValue := strings.TrimLeft(left, "0")
+		rightValue := strings.TrimLeft(right, "0")
+		if ordering := len(leftValue) - len(rightValue); ordering != 0 {
+			return ordering
+		}
+		if ordering := strings.Compare(leftValue, rightValue); ordering != 0 {
+			return ordering
+		}
+		return len(left) - len(right)
+	case leftNumeric:
+		return -1
+	case rightNumeric:
+		return 1
+	default:
+		return strings.Compare(left, right)
+	}
+}
+
+func isASCIIDigits(value string) bool {
+	for i := range len(value) {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // evaluateSplit determines if a split matches by evaluating all its shards.
