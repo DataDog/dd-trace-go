@@ -127,7 +127,7 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 			execMeta.isLastRetry = execOpts.options.preIsLastRetry(execMeta, currentIndex, execOpts.retryCount)
 		}
 		execMeta.remainingRetries = execOpts.retryCount
-		execMeta.isEfdInParallel = execOpts.effectiveParallelEFDActive && usesEfdRetrySemantics(execMeta)
+		execMeta.isEfdInParallel = execOpts.efdBatchMetadataActive && usesEfdRetrySemantics(execMeta)
 		return ""
 	}
 

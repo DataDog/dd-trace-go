@@ -25,6 +25,13 @@ type deferredProcessRetryMutablePanic struct {
 	message string
 }
 
+func processRetryCoordinatorRegisteredForTesting(c *processRetryCoordinator) bool {
+	processRetryCoordinatorRegistry.mu.Lock()
+	defer processRetryCoordinatorRegistry.mu.Unlock()
+	_, ok := processRetryCoordinatorRegistry.values[c]
+	return ok
+}
+
 func (p *deferredProcessRetryMutablePanic) String() string {
 	return p.message
 }
@@ -157,7 +164,7 @@ func TestDeferredProcessRetryInvocationIsCapturedBeforeExecutionMetadata(t *test
 func TestDeferredProcessRetryCoordinatorDrainPublishesOneSummary(t *testing.T) {
 	coordinator := newProcessRetryCoordinator()
 	require.True(t, registerProcessRetryCoordinator(coordinator))
-	require.True(t, processRetryCoordinatorRegistered(coordinator))
+	require.True(t, processRetryCoordinatorRegisteredForTesting(coordinator))
 
 	const callers = 8
 	start := make(chan struct{})
@@ -178,7 +185,7 @@ func TestDeferredProcessRetryCoordinatorDrainPublishesOneSummary(t *testing.T) {
 		require.Equal(t, processRetryCoordinatorSummary{}, <-results)
 	}
 	require.Equal(t, processRetryCoordinatorDrained, coordinator.stateSnapshot())
-	require.False(t, processRetryCoordinatorRegistered(coordinator))
+	require.False(t, processRetryCoordinatorRegisteredForTesting(coordinator))
 }
 
 func TestDeferredProcessRetryCoordinatorShutdownOverridesNormalDrain(t *testing.T) {
@@ -906,12 +913,11 @@ func TestDeferredProcessRetryLateSetupFailureIsOneConsumedProcessAttempt(t *test
 		starts++
 		now := time.Unix(0, int64(prepared.index))
 		return processRetryAttemptResult{
-			SetupFailure:         true,
-			SetupFallbackAllowed: true,
-			Err:                  errors.New("late setup failure"),
-			ExitCode:             processRetryExitCodeUnset,
-			StartTime:            now,
-			FinishTime:           now.Add(time.Nanosecond),
+			SetupFailure: true,
+			Err:          errors.New("late setup failure"),
+			ExitCode:     processRetryExitCodeUnset,
+			StartTime:    now,
+			FinishTime:   now.Add(time.Nanosecond),
 		}
 	}
 

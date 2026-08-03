@@ -120,6 +120,10 @@ func processRetryLimiterActiveForTesting(t testing.TB, limiter *processRetryLimi
 	return limiter.active
 }
 
+func finishProcessRetryTestEventForTesting(testInfo *commonInfo, execMeta *testExecutionMetadata, attempt processRetryAttemptResult) processRetryEffectiveStatus {
+	return finishProcessRetryTestEvent(testInfo, execMeta, attempt, nil, nil)
+}
+
 func TestProcessRetryLaunchGateNotifiesOnlyRegisteredWaiters(t *testing.T) {
 	gate := &processRetryLaunchGateState{changed: make(chan struct{})}
 	original := gate.changed
@@ -2633,18 +2637,18 @@ func TestProcessRetryShutdownWaitsForAdmittedGroups(t *testing.T) {
 	defer restoreLaunchGate()
 	require.True(t, registerProcessRetryShutdownAction())
 
-	shutdown, finish, err := beginProcessRetryGroup()
+	lease, err := acquireProcessRetryGroupLease()
 	require.NoError(t, err)
-	require.NotNil(t, shutdown)
-	require.NotNil(t, finish)
+	require.NotNil(t, lease)
+	require.NotNil(t, lease.shutdown)
 
 	beginProcessRetryShutdown()
-	require.True(t, processRetryShutdownRequested(shutdown))
+	require.True(t, processRetryShutdownRequested(lease.shutdown))
 	require.False(t, processRetryLaunchesDisabled())
 	require.False(t, waitForProcessRetryShutdownQuiescence(time.Millisecond))
 
-	finish()
-	finish()
+	lease.release()
+	lease.release()
 	require.True(t, waitForProcessRetryShutdownQuiescence(time.Second))
 }
 
@@ -3132,7 +3136,6 @@ func TestRunProcessRetryAttemptStartErrorAfterTimeoutIsTerminal(t *testing.T) {
 		defer attempt.Cleanup()
 	}
 	require.True(t, attempt.SetupFailure)
-	require.True(t, attempt.SetupFallbackAllowed)
 	require.True(t, attempt.TimedOut)
 	require.ErrorIs(t, attempt.Err, errProcessRetryLaunchDeadline)
 	require.ErrorIs(t, attempt.Err, context.DeadlineExceeded)
@@ -3413,7 +3416,6 @@ func TestRunProcessRetryAttemptRechecksCancellationAfterLaunchGateWait(t *testin
 		defer attempt.Cleanup()
 	}
 	require.True(t, attempt.SetupFailure)
-	require.False(t, attempt.SetupFallbackAllowed)
 	require.False(t, attempt.TimedOut)
 	require.ErrorIs(t, attempt.Err, errProcessRetryLaunchCanceled)
 	require.ErrorIs(t, attempt.Err, context.Canceled)
@@ -3476,7 +3478,6 @@ func TestRunProcessRetryAttemptRechecksParentDeadlineHardCapAfterLaunchGateWait(
 		defer attempt.Cleanup()
 	}
 	require.True(t, attempt.SetupFailure)
-	require.True(t, attempt.SetupFallbackAllowed)
 	require.True(t, attempt.TimedOut)
 	require.ErrorIs(t, attempt.Err, errProcessRetryLaunchDeadline)
 	require.ErrorIs(t, attempt.Err, context.DeadlineExceeded)
@@ -4256,7 +4257,7 @@ func TestRunProcessRetryAttemptDoesNotInheritStdin(t *testing.T) {
 	require.Equal(t, processRetryStatusPass, attempt.Result.Status)
 }
 
-func TestRunProcessRetryAttemptFallsBackWhenTreeContainmentIsUnavailable(t *testing.T) {
+func TestRunProcessRetryAttemptReportsUnavailableTreeContainmentBeforeStart(t *testing.T) {
 	resetProcessRetryLimiterForTesting(t)
 	startCalls := atomic.Int32{}
 	resetProcessRetryRunnerHooksForTesting(t, processRetryRunnerHooks{
@@ -4288,7 +4289,6 @@ func TestRunProcessRetryAttemptFallsBackWhenTreeContainmentIsUnavailable(t *test
 	}
 
 	require.True(t, attempt.SetupFailure)
-	require.True(t, attempt.SetupFallbackAllowed)
 	require.ErrorIs(t, attempt.Err, errProcessRetryTreeUnsupported)
 	require.Zero(t, startCalls.Load())
 }
@@ -4362,7 +4362,7 @@ func TestRunProcessRetryAttemptAttachesBeforeResumeAndReleasesLast(t *testing.T)
 	require.Equal(t, []string{"prepare", "start", "attach", "resume", "kill", "release"}, phases)
 }
 
-func TestRunProcessRetryAttemptSuspendedAttachFailureFallsBackBeforeConsumption(t *testing.T) {
+func TestRunProcessRetryAttemptSuspendedAttachFailureIsConsumed(t *testing.T) {
 	resetProcessRetryLimiterForTesting(t)
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
@@ -4400,7 +4400,6 @@ func TestRunProcessRetryAttemptSuspendedAttachFailureFallsBackBeforeConsumption(
 	}
 
 	require.True(t, attempt.SetupFailure)
-	require.True(t, attempt.SetupFallbackAllowed)
 	require.False(t, attempt.ContainmentLost)
 	require.ErrorIs(t, attempt.Err, attachErr)
 	require.Equal(t, int32(1), startCalls.Load())
@@ -4445,7 +4444,6 @@ func TestRunProcessRetryAttemptPostStartCancellationKillsSuspendedChildDirectly(
 	}
 
 	require.True(t, attempt.SetupFailure)
-	require.False(t, attempt.SetupFallbackAllowed)
 	require.False(t, attempt.Unreaped)
 	require.False(t, attempt.ContainmentLost)
 	require.ErrorIs(t, attempt.Err, errProcessRetryLaunchCanceled)
@@ -4486,7 +4484,6 @@ func TestRunProcessRetryAttemptRunningAttachFailureIsTerminal(t *testing.T) {
 	}
 
 	require.True(t, attempt.SetupFailure)
-	require.False(t, attempt.SetupFallbackAllowed)
 	require.True(t, attempt.ContainmentLost)
 	require.ErrorIs(t, attempt.Err, attachErr)
 	require.ErrorIs(t, attempt.Err, errProcessRetryContainmentLost)
@@ -4709,7 +4706,6 @@ func TestRunProcessRetryAttemptHonorsParentDeadlineWhileWaitingForLimiter(t *tes
 	deadline <- now
 	attempt := <-attemptResult
 	require.True(t, attempt.SetupFailure)
-	require.True(t, attempt.SetupFallbackAllowed)
 	require.True(t, attempt.TimedOut)
 	require.Empty(t, attempt.TempDir)
 	require.Equal(t, int32(0), startCalls.Load())
@@ -4838,7 +4834,6 @@ func TestRunProcessRetryAttemptChecksCancellationImmediatelyBeforeStart(t *testi
 	defer attempt.Cleanup()
 
 	require.True(t, attempt.SetupFailure)
-	require.False(t, attempt.SetupFallbackAllowed)
 	require.ErrorIs(t, attempt.Err, context.Canceled)
 	require.Equal(t, int32(0), startCalls.Load())
 	require.NotEmpty(t, attempt.TempDir)
@@ -5021,7 +5016,7 @@ func TestRunTestWithRetryFailedRuntimeGoexitUsesPanicSemanticsInProcess(t *testi
 	require.Zero(t, atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount))
 }
 
-func TestCloseProcessRetryTestEventDoesNotChangeAggregateCounters(t *testing.T) {
+func TestFinishProcessRetryTestEventDoesNotChangeAggregateCounters(t *testing.T) {
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
 
@@ -5049,7 +5044,7 @@ func TestCloseProcessRetryTestEventDoesNotChangeAggregateCounters(t *testing.T) 
 		FinishTime: now.Add(time.Millisecond),
 	}
 
-	effective := closeProcessRetryTestEvent(testInfo, execMeta, attempt)
+	effective := finishProcessRetryTestEventForTesting(testInfo, execMeta, attempt)
 
 	require.True(t, effective.Failed)
 	require.Len(t, recorder.modules, 1)
@@ -5073,14 +5068,14 @@ func TestCloseProcessRetryTestEventDoesNotChangeAggregateCounters(t *testing.T) 
 	require.Equal(t, true, module.tags[ext.Error])
 }
 
-func TestCloseProcessRetryTestEventForwardsStructuredResultMetadata(t *testing.T) {
+func TestFinishProcessRetryTestEventForwardsStructuredResultMetadata(t *testing.T) {
 	t.Run("failure", func(t *testing.T) {
 		recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 		defer restoreSession()
 
 		identity := newTestIdentity("module", "suite", "TestProcessRetryStructuredFailure")
 		now := time.Now()
-		effective := closeProcessRetryTestEvent(&commonInfo{
+		effective := finishProcessRetryTestEventForTesting(&commonInfo{
 			moduleName: identity.ModuleName,
 			suiteName:  identity.SuiteName,
 			testName:   identity.FullName,
@@ -5116,7 +5111,7 @@ func TestCloseProcessRetryTestEventForwardsStructuredResultMetadata(t *testing.T
 
 		identity := newTestIdentity("module", "suite", "TestProcessRetryStructuredSkip")
 		now := time.Now()
-		effective := closeProcessRetryTestEvent(&commonInfo{
+		effective := finishProcessRetryTestEventForTesting(&commonInfo{
 			moduleName: identity.ModuleName,
 			suiteName:  identity.SuiteName,
 			testName:   identity.FullName,
@@ -5143,7 +5138,7 @@ func TestCloseProcessRetryTestEventForwardsStructuredResultMetadata(t *testing.T
 	})
 }
 
-func TestCloseProcessRetryTestEventSetsAttemptToFixOutcome(t *testing.T) {
+func TestFinishProcessRetryTestEventSetsAttemptToFixOutcome(t *testing.T) {
 	tests := []struct {
 		name              string
 		result            processRetryResult
@@ -5183,7 +5178,7 @@ func TestCloseProcessRetryTestEventSetsAttemptToFixOutcome(t *testing.T) {
 
 			identity := newTestIdentity("module", "suite", "TestProcessRetryAttemptToFix")
 			now := time.Now()
-			closeProcessRetryTestEvent(&commonInfo{
+			finishProcessRetryTestEventForTesting(&commonInfo{
 				moduleName: identity.ModuleName,
 				suiteName:  identity.SuiteName,
 				testName:   identity.FullName,
@@ -5209,7 +5204,7 @@ func TestCloseProcessRetryTestEventSetsAttemptToFixOutcome(t *testing.T) {
 	}
 }
 
-func TestCloseProcessRetryTestEventPropagatesITRForcedRun(t *testing.T) {
+func TestFinishProcessRetryTestEventPropagatesITRForcedRun(t *testing.T) {
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
 	telemetryRecorder := new(telemetrytest.RecordClient)
@@ -5225,7 +5220,7 @@ func TestCloseProcessRetryTestEventPropagatesITRForcedRun(t *testing.T) {
 	require.True(t, applyProcessRetryMetadataSnapshot(execMeta, snapshot))
 
 	now := time.Now()
-	effective := closeProcessRetryTestEvent(&commonInfo{
+	effective := finishProcessRetryTestEventForTesting(&commonInfo{
 		moduleName: identity.ModuleName,
 		suiteName:  identity.SuiteName,
 		testName:   identity.FullName,
@@ -5250,7 +5245,7 @@ func TestCloseProcessRetryTestEventPropagatesITRForcedRun(t *testing.T) {
 	require.Equal(t, 1.0, telemetryRecorder.Metrics[metric].Get())
 }
 
-func TestCloseProcessRetryTestEventKeepsOutputOutOfSpanMetadata(t *testing.T) {
+func TestFinishProcessRetryTestEventKeepsOutputOutOfSpanMetadata(t *testing.T) {
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
 
@@ -5276,7 +5271,7 @@ func TestCloseProcessRetryTestEventKeepsOutputOutOfSpanMetadata(t *testing.T) {
 	}, "\n")
 
 	now := time.Now()
-	effective := closeProcessRetryTestEvent(testInfo, execMeta, processRetryAttemptResult{
+	effective := finishProcessRetryTestEventForTesting(testInfo, execMeta, processRetryAttemptResult{
 		Result: processRetryResult{
 			Status: processRetryStatusFail,
 			Failed: true,
@@ -5301,7 +5296,7 @@ func TestCloseProcessRetryTestEventKeepsOutputOutOfSpanMetadata(t *testing.T) {
 	}
 }
 
-func TestCloseProcessRetryTestEventForwardsOutputForEffectiveStatuses(t *testing.T) {
+func TestFinishProcessRetryTestEventForwardsOutputForEffectiveStatuses(t *testing.T) {
 	tests := []struct {
 		name    string
 		result  processRetryResult
@@ -5386,7 +5381,7 @@ func TestCloseProcessRetryTestEventForwardsOutputForEffectiveStatuses(t *testing
 				attempt = tt.attempt(attempt)
 			}
 
-			closeProcessRetryTestEvent(testInfo, execMeta, attempt)
+			finishProcessRetryTestEventForTesting(testInfo, execMeta, attempt)
 
 			require.Len(t, recorder.tests, 1)
 			require.Contains(t, recorder.tests[0].logs, attempt.OutputTail)
@@ -5446,7 +5441,7 @@ func TestProcessRetryDiagnosticsKeepSecretPathSentinelsOutOfSpanMetadata(t *test
 		isFlakyTestRetriesEnabled: true,
 		remainingRetries:          0,
 	}
-	effective := closeProcessRetryTestEvent(testInfo, execMeta, processRetryAttemptResult{
+	effective := finishProcessRetryTestEventForTesting(testInfo, execMeta, processRetryAttemptResult{
 		Err:        fmt.Errorf("%w: %s %s", errProcessRetryResultInvalid, secretSentinel, tempPathSentinel),
 		ExitCode:   processRetryExitCodeUnset,
 		StartTime:  time.Now(),
@@ -5464,7 +5459,7 @@ func TestProcessRetryDiagnosticsKeepSecretPathSentinelsOutOfSpanMetadata(t *test
 	}
 }
 
-func TestRunProcessRetryAttemptFallsBackWhenLaunchesAreDisabled(t *testing.T) {
+func TestRunProcessRetryAttemptReportsDisabledLaunchBeforeStart(t *testing.T) {
 	resetProcessRetryLimiterForTesting(t)
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
@@ -5490,7 +5485,6 @@ func TestRunProcessRetryAttemptFallsBackWhenLaunchesAreDisabled(t *testing.T) {
 	}, time.Time{}, false, baseline)
 
 	require.True(t, attempt.SetupFailure)
-	require.True(t, attempt.SetupFallbackAllowed)
 	require.ErrorIs(t, attempt.Err, errProcessRetryLaunchDisabled)
 	require.Zero(t, startCalls.Load())
 	require.Empty(t, attempt.TempDir)
@@ -5890,6 +5884,17 @@ func TestEffectiveProcessRetryStatus(t *testing.T) {
 			wantStatus: processRetryStatusFail,
 			wantFailed: true,
 			wantKind:   "missing_or_not_run",
+		},
+		{
+			name: "admitted setup failure",
+			attempt: processRetryAttemptResult{
+				SetupFailure: true,
+				Err:          errors.New("setup failure sentinel"),
+				ExitCode:     processRetryExitCodeUnset,
+			},
+			wantStatus: processRetryStatusFail,
+			wantFailed: true,
+			wantKind:   "process_setup_failure",
 		},
 		{
 			name: "unset consumed exit code",

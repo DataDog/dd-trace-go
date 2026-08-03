@@ -85,7 +85,7 @@ type (
 	runTestWithRetryOptions struct {
 		targetFunc                    func(t *testing.T) // target function to retry
 		t                             *testing.T         // test to be executed
-		parallelEFDAllowed            bool               // allows the internal parallel EFD scheduler when the effective execution qualifies
+		parallelEFDAllowed            bool               // enables EFD batch semantics and deferred process concurrency when the effective execution qualifies
 		testInfo                      *commonInfo
 		processRetryIdentity          *testIdentity
 		processRetryMRunEpoch         uint64
@@ -146,7 +146,7 @@ type (
 		executionMetadata           *testExecutionMetadata   // current test execution metadata
 		module                      integrations.TestModule  // module associated with the test
 		suite                       integrations.TestSuite   // suite associated with the test
-		effectiveParallelEFDActive  bool                     // true only after runTestWithRetry selects the bounded parallel EFD branch
+		efdBatchMetadataActive      bool                     // preserves configured EFD batch metadata; it does not imply concurrent in-process execution
 		processRetryLaunchBaseline  *processRetryLaunchBaseline
 		flakyRetryBudgetReservation *flakyRetryBudgetReservation
 		retryAttemptGroup           *retryAttemptGroup
@@ -1025,7 +1025,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 				// T.Run can restore one matcher namespace without approximating the native scheduler.
 				// Retain the EFD batch marker because final-status aggregation remains the
 				// same regardless of whether the samples are scheduled concurrently.
-				execOpts.effectiveParallelEFDActive = true
+				execOpts.efdBatchMetadataActive = true
 				if options.processRetryCoordinator != nil {
 					log.Debug("runTestWithRetry: deferred process retry unavailable; falling back to in-process retries")
 				}

@@ -846,13 +846,6 @@ func registerProcessRetryCoordinator(c *processRetryCoordinator) bool {
 	return true
 }
 
-func processRetryCoordinatorRegistered(c *processRetryCoordinator) bool {
-	processRetryCoordinatorRegistry.mu.Lock()
-	defer processRetryCoordinatorRegistry.mu.Unlock()
-	_, ok := processRetryCoordinatorRegistry.values[c]
-	return ok
-}
-
 func unregisterProcessRetryCoordinator(c *processRetryCoordinator) {
 	if c == nil {
 		return
@@ -1064,11 +1057,7 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 	execMeta := completed.prepared.execMeta
 	// Queue admission commits this continuation to the process backend. By the
 	// time a late setup failure is observable, native M.Run and the original
-	// testing.T have completed, so replaying it in-process is neither possible
-	// nor behaviorally valid. Represent the admitted continuation exactly once.
-	if attempt.SetupFailure {
-		attempt.SetupFailureConsumed = true
-	}
+	// testing.T have completed, so represent the admitted continuation exactly once.
 	terminal := deferredProcessRetryAttemptTerminal(attempt)
 	continueGroup := continuationAdmitted && !terminal
 	effective, nextTail := deferProcessRetryTestEventWithAdmission(&g.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {

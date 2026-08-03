@@ -851,8 +851,6 @@ type processRetryAttemptResult struct {
 	Unreaped                    bool
 	ContainmentLost             bool
 	SetupFailure                bool
-	SetupFailureConsumed        bool
-	SetupFallbackAllowed        bool
 	BodyAdmitted                bool
 	ControlledTerminalCommitted bool
 	Cleanup                     func()
@@ -1198,14 +1196,6 @@ func (l *processRetryGroupLease) release() {
 	processRetryLaunchGate.activeGroups--
 	processRetryLaunchGate.notifyLocked()
 	processRetryLaunchGate.mu.Unlock()
-}
-
-func beginProcessRetryGroup() (<-chan struct{}, func(), error) {
-	lease, err := acquireProcessRetryGroupLease()
-	if err != nil {
-		return nil, nil, err
-	}
-	return lease.shutdown, lease.release, nil
 }
 
 func beginProcessRetryShutdown() {
@@ -1713,25 +1703,24 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		ExitCode:  processRetryExitCodeUnset,
 		StartTime: parentStart,
 	}
-	finishSetupFailure := func(err error, fallbackAllowed bool, timedOut bool) processRetryAttemptResult {
+	finishSetupFailure := func(err error, timedOut bool) processRetryAttemptResult {
 		attempt.SetupFailure = true
-		attempt.SetupFallbackAllowed = fallbackAllowed
 		attempt.TimedOut = timedOut
 		attempt.Err = err
 		attempt.FinishTime = time.Now()
 		return attempt
 	}
 	if processRetryShutdownRequested(shutdown) || processRetryShuttingDown() {
-		return finishSetupFailure(errProcessRetryShutdown, false, false)
+		return finishSetupFailure(errProcessRetryShutdown, false)
 	}
 	if processRetryLaunchesDisabled() {
-		return finishSetupFailure(errProcessRetryLaunchDisabled, true, false)
+		return finishSetupFailure(errProcessRetryLaunchDisabled, false)
 	}
 	if baseline == nil {
 		baseline = captureProcessRetryLaunchBaseline()
 	}
 	if baseline.err != nil {
-		return finishSetupFailure(baseline.err, true, false)
+		return finishSetupFailure(baseline.err, false)
 	}
 	hooks := resolveProcessRetryRunnerHooks(baseline.hooks)
 	executable := baseline.executable
@@ -1741,7 +1730,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
 	}
 	if !argsSnapshot.ok {
-		return finishSetupFailure(errors.New(argsSnapshot.reason), true, false)
+		return finishSetupFailure(errors.New(argsSnapshot.reason), false)
 	}
 	currentCPU := cfg.ObservedGOMAXPROCS
 	if currentCPU < 1 {
@@ -1752,17 +1741,17 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	selectedTimeout := selectedProcessRetryTimeout(argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
 	if selectedTimeout <= 0 {
-		return finishSetupFailure(context.DeadlineExceeded, true, true)
+		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
 	if err := ctx.Err(); err != nil {
-		return finishSetupFailure(err, false, false)
+		return finishSetupFailure(err, false)
 	}
 	var parentDeadlineHardCap <-chan time.Time
 	var parentDeadlineTimer processRetryTimer
 	if parentDeadlineOK {
 		parentDeadlineRemaining := parentDeadline.Sub(hooks.now()) - processRetryParentDeadlineReserve()
 		if parentDeadlineRemaining <= 0 {
-			return finishSetupFailure(context.DeadlineExceeded, true, true)
+			return finishSetupFailure(context.DeadlineExceeded, true)
 		}
 		parentDeadlineTimer = hooks.newTimer(parentDeadlineRemaining)
 		parentDeadlineHardCap = parentDeadlineTimer.C()
@@ -1775,22 +1764,21 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		processRetryMaxConcurrencyForBaseline(baseline, currentCPU),
 	)
 	if limiterResult.Cause != processRetryLimiterAcquired {
-		fallbackAllowed := limiterResult.Cause == processRetryLimiterParentDeadline
-		return finishSetupFailure(limiterResult.Err, fallbackAllowed, fallbackAllowed)
+		return finishSetupFailure(limiterResult.Err, limiterResult.Cause == processRetryLimiterParentDeadline)
 	}
 	defer limiterResult.Release()
 	if processRetryShutdownRequested(shutdown) || processRetryShuttingDown() {
-		return finishSetupFailure(errProcessRetryShutdown, false, false)
+		return finishSetupFailure(errProcessRetryShutdown, false)
 	}
 	if processRetryLaunchesDisabled() {
-		return finishSetupFailure(errProcessRetryLaunchDisabled, true, false)
+		return finishSetupFailure(errProcessRetryLaunchDisabled, false)
 	}
 	if err := ctx.Err(); err != nil {
-		return finishSetupFailure(err, false, false)
+		return finishSetupFailure(err, false)
 	}
 	selectedTimeout = selectedProcessRetryTimeout(argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
 	if selectedTimeout <= 0 {
-		return finishSetupFailure(context.DeadlineExceeded, true, true)
+		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
 	if parentDeadlineOK {
 		parentRemaining := parentDeadline.Sub(hooks.now()) - processRetryParentDeadlineReserve()
@@ -1798,7 +1786,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 			selectedTimeout = parentRemaining
 		}
 		if selectedTimeout <= 0 {
-			return finishSetupFailure(context.DeadlineExceeded, true, true)
+			return finishSetupFailure(context.DeadlineExceeded, true)
 		}
 	}
 	attemptDeadline := hooks.now().Add(selectedTimeout)
@@ -1817,7 +1805,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	tempDir, err := os.MkdirTemp("", "dd-process-retry-*")
 	if err != nil {
-		return finishSetupFailure(err, true, false)
+		return finishSetupFailure(err, false)
 	}
 	attempt.TempDir = tempDir
 	var cleanupOnce sync.Once
@@ -1839,12 +1827,12 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	stdoutCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	if err != nil {
-		return finishSetupFailure(err, true, false)
+		return finishSetupFailure(err, false)
 	}
 	stderrCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	if err != nil {
 		_ = stdoutCapture.CloseSetupFailure()
-		return finishSetupFailure(err, true, false)
+		return finishSetupFailure(err, false)
 	}
 	closeCapturesForSetupFailure := func() {
 		_ = stdoutCapture.CloseSetupFailure()
@@ -1852,12 +1840,12 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	if err := ctx.Err(); err != nil {
 		closeCapturesForSetupFailure()
-		return finishSetupFailure(err, false, false)
+		return finishSetupFailure(err, false)
 	}
 	selectedTimeout = remainingAttemptTime()
 	if selectedTimeout <= 0 || attemptDeadlineReached() {
 		closeCapturesForSetupFailure()
-		return finishSetupFailure(context.DeadlineExceeded, true, true)
+		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
 
 	cmd := hooks.command(executable)
@@ -1871,13 +1859,13 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		control, err = newParentProcessRetryControl(cmd, childCfg)
 		if err != nil {
 			closeCapturesForSetupFailure()
-			return finishSetupFailure(err, true, false)
+			return finishSetupFailure(err, false)
 		}
 		defer control.Close()
 	}
 	if err := hooks.prepareTree(cmd); err != nil {
 		closeCapturesForSetupFailure()
-		return finishSetupFailure(err, true, false)
+		return finishSetupFailure(err, false)
 	}
 	treeReleased := false
 	releaseTree := func() error {
@@ -1889,19 +1877,19 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	if err := ctx.Err(); err != nil {
 		closeCapturesForSetupFailure()
-		return finishSetupFailure(errors.Join(err, releaseTree()), false, false)
+		return finishSetupFailure(errors.Join(err, releaseTree()), false)
 	}
 	latestTimeout := remainingAttemptTime()
 	if latestTimeout <= 0 || attemptDeadlineReached() {
 		closeCapturesForSetupFailure()
-		return finishSetupFailure(errors.Join(context.DeadlineExceeded, releaseTree()), true, true)
+		return finishSetupFailure(errors.Join(context.DeadlineExceeded, releaseTree()), true)
 	}
 	selectedTimeout = latestTimeout
 	childTestingTimeout := selectedTimeout + processRetryParentDeadlineReserve()
 	filteredArgs, ok, reason := buildProcessRetryArgsFromSnapshot(argsSnapshot, cfg.TestName, currentCPU, childTestingTimeout)
 	if !ok {
 		closeCapturesForSetupFailure()
-		return finishSetupFailure(errors.Join(errors.New(reason), releaseTree()), true, false)
+		return finishSetupFailure(errors.Join(errors.New(reason), releaseTree()), false)
 	}
 	cmd.Args = append([]string{executable}, filteredArgs...)
 
@@ -1913,10 +1901,8 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	if startErr != nil && waitCh == nil {
 		closeCapturesForSetupFailure()
-		fallbackAllowed := !errors.Is(startErr, errProcessRetryLaunchCanceled) &&
-			!errors.Is(startErr, errProcessRetryShutdown)
 		timedOut := errors.Is(startErr, errProcessRetryLaunchDeadline)
-		return finishSetupFailure(errors.Join(startErr, releaseTree()), fallbackAllowed, timedOut)
+		return finishSetupFailure(errors.Join(startErr, releaseTree()), timedOut)
 	}
 	attempt.StartTime = hooks.now()
 	_ = stdoutCapture.CloseParentWriter()
@@ -1951,7 +1937,6 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	var controlErrors <-chan error
 	if startErr != nil {
 		attempt.SetupFailure = true
-		attempt.SetupFallbackAllowed = false
 		attempt.TimedOut = errors.Is(startErr, errProcessRetryLaunchDeadline)
 		attempt.Err = errors.Join(attempt.Err, startErr)
 		if hooks.startsSuspended {
@@ -1977,7 +1962,6 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		}
 	} else if attachErr := hooks.attachTree(cmd); attachErr != nil {
 		attempt.SetupFailure = true
-		attempt.SetupFallbackAllowed = hooks.startsSuspended
 		attempt.Err = errors.Join(attempt.Err, attachErr)
 		waitErr = forceKillAndWait(hooks.killDirect)
 		if !hooks.startsSuspended {
@@ -1988,7 +1972,6 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		waitErr = forceKillAndWait(hooks.killTree)
 	} else if resumeErr := hooks.resumeTree(cmd); resumeErr != nil {
 		attempt.SetupFailure = true
-		attempt.SetupFallbackAllowed = false
 		attempt.Err = errors.Join(attempt.Err, resumeErr)
 		waitErr = forceKillAndWait(hooks.killTree)
 	} else {
@@ -2001,7 +1984,6 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 				waitErr = observedWaitErr
 			} else if err != nil {
 				attempt.SetupFailure = true
-				attempt.SetupFallbackAllowed = false
 				attempt.TimedOut = errors.Is(err, context.DeadlineExceeded)
 				attempt.Err = errors.Join(attempt.Err, errProcessRetryControlInvalid, err)
 				waitErr = forceKillAndWait(hooks.killTree)
@@ -2035,10 +2017,6 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	if releaseErr := releaseTree(); releaseErr != nil {
 		markContainmentLost(releaseErr)
 	}
-	if containmentLost {
-		attempt.SetupFallbackAllowed = false
-	}
-
 	result, timingOK, resultErr := readProcessRetryResult(resultPath, childCfg)
 	if resultErr != nil {
 		attempt.Err = errors.Join(attempt.Err, resultErr)
@@ -2335,7 +2313,7 @@ func effectiveProcessRetryStatus(attempt processRetryAttemptResult, metadataCanc
 	if errors.Is(attempt.Err, errProcessRetryControlInvalid) {
 		return failed("process_protocol_failure")
 	}
-	if attempt.SetupFailure && attempt.SetupFailureConsumed {
+	if attempt.SetupFailure {
 		return failed("process_setup_failure")
 	}
 	if attempt.Result.Status == "" || attempt.Result.Status == processRetryStatusNotRun ||
@@ -2475,19 +2453,6 @@ func processRetryParallelBaselineReady(baseline *processRetryLaunchBaseline) (bo
 		return false, argsSnapshot.reason
 	}
 	return true, ""
-}
-
-func closeProcessRetryTestEvent(testInfo *commonInfo, execMeta *testExecutionMetadata, attempt processRetryAttemptResult) processRetryEffectiveStatus {
-	return closeProcessRetryTestEventWithAdmission(testInfo, execMeta, attempt, nil)
-}
-
-func closeProcessRetryTestEventWithAdmission(
-	testInfo *commonInfo,
-	execMeta *testExecutionMetadata,
-	attempt processRetryAttemptResult,
-	admitContinuation func(processRetryEffectiveStatus),
-) processRetryEffectiveStatus {
-	return finishProcessRetryTestEvent(testInfo, execMeta, attempt, admitContinuation, nil)
 }
 
 func deferProcessRetryTestEventWithAdmission(

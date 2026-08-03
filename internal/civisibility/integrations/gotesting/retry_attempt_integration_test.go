@@ -348,7 +348,7 @@ func TestProcessRetryParitySkipsLateFailureScanWhileFailfastIsDisabled(t *testin
 		retryCount:        1,
 	}
 	require.True(t, retryContinuationStoppedForDeferredAdmission(withoutCoordinator, nil, nil))
-	require.Zero(t, withoutCoordinator.retryCount, "an unavailable deferred owner must preserve inline failfast")
+	require.Zero(t, withoutCoordinator.retryCount, "an unavailable deferred owner must preserve in-process failfast")
 }
 
 func TestProcessRetryParityDefersFirstAttemptFailfastToProcessCoordinator(t *testing.T) {
