@@ -201,6 +201,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/aws/aws-sdk-go-v2/service/route53",
 		"github.com/aws/aws-sdk-go-v2/service/s3",
 		"github.com/aws/aws-sdk-go-v2/service/sfn",
+		"github.com/aws/aws-sdk-go-v2/service/signin",
 		"github.com/aws/aws-sdk-go-v2/service/sns",
 		"github.com/aws/aws-sdk-go-v2/service/sqs",
 		"github.com/aws/aws-sdk-go-v2/service/sso",
