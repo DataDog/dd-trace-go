@@ -41,6 +41,47 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 | `DD_AGENT_HOST`       | `N/A`         | Host of a running Datadog Agent. |
 | `DD_TRACE_AGENT_PORT` | `8126`        | Port of a running Datadog Agent. |
 
+### Client IP resolution
+
+App & API Protection identifies clients by IP address, both to attribute traces and to
+enforce IP denylists. Configure the extension to forward the `source.ip` attribute so
+that identification uses the address Google Cloud observed on the connection:
+
+```yaml
+forwardAttributes: [source.ip]
+```
+
+The Terraform equivalent, on `google_network_services_lb_traffic_extension` or
+`google_network_services_lb_route_extension`:
+
+```hcl
+forward_attributes = ["source.ip"]
+```
+
+Without that attribute the client address is taken from forwarding headers such as
+`X-Forwarded-For`. A client connecting directly to the load balancer chooses what it
+sends in that header, so it can present an address that is not its own: the load
+balancer [appends the address it observed](https://cloud.google.com/load-balancing/docs/https#x-forwarded-for_header)
+*after* any value the client supplied, while client IP resolution selects the first
+public address in the list. `source.ip` is set by the infrastructure rather than by the
+client, so it cannot be manipulated the same way.
+
+Forwarding the attribute changes nothing for deployments that identify themselves as
+plain Envoy or Istio, and nothing for requests that arrive without it.
+
+Two limitations:
+
+- **A CDN or proxy sits in front of the load balancer.** `source.ip` describes the
+  connection Google Cloud received, which in that topology comes from the CDN rather
+  than from the end user. Recovering the original address then depends on whatever
+  forwarding mechanism that CDN offers, and on trusting it; this integration does not
+  attempt it.
+- **A private `source.ip` combined with a forged public `X-Forwarded-For`.** Client IP
+  resolution prefers a public address over a private one, so a forged public value
+  still wins in that case. This matches the behaviour of earlier releases and mainly
+  concerns internal load balancers, where clients reach the load balancer from inside
+  the VPC.
+
 ### SSL Configuration
 
 The Envoy of GCP is configured to communicate to the Service Extension with TLS.
