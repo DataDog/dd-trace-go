@@ -7,6 +7,7 @@ package gotesting
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 )
 
 func retryParityOrchestrionCleanupFailure(t *testing.T) {
@@ -382,6 +384,51 @@ func TestProcessRetryParityDefersFirstAttemptFailfastToProcessCoordinator(t *tes
 	require.True(t, retryContinuationStoppedLocked(execOpts, nil, nil))
 	require.True(t, execOpts.rawAttemptFailureSeen)
 	require.Zero(t, execOpts.retryCount)
+}
+
+func TestProcessRetryParityFailfastStopsWhenDeferredAdmissionFails(t *testing.T) {
+	restoreBudget := setProcessRetryBudgetForTesting(1, 1)
+	defer restoreBudget()
+	createTestMetadata(t, nil)
+	defer deleteTestMetadata(t)
+
+	identity := newTestIdentity("module", "suite", "TestDeferredAdmissionFailure")
+	var bodyCalls int
+	runTestWithRetry(&runTestWithRetryOptions{
+		t:                           t,
+		failfastEnabled:             func() bool { return true },
+		nativeFailfastObserved:      func() bool { return false },
+		processRetryMode:            retryExecutionModeProcess,
+		processRetryModeSet:         true,
+		processRetryAllowed:         true,
+		processRetryDeferredAllowed: true,
+		processRetryCoordinator:     newProcessRetryCoordinator(),
+		processRetryIdentity:        identity,
+		processRetryLaunchTemplate:  &processRetryLaunchBaseline{err: errors.New("launch baseline unavailable")},
+		processRetryFuzzGuard:       &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }},
+		preProcessRetryMetaAdjust:   func(*testExecutionMetadata, int) {},
+		testInfo: &commonInfo{
+			moduleName: identity.ModuleName,
+			suiteName:  identity.SuiteName,
+			testName:   identity.FullName,
+			identity:   identity,
+		},
+		targetFunc: func(local *testing.T) {
+			bodyCalls++
+			if bodyCalls == 1 {
+				local.Fail()
+			}
+		},
+		preExecMetaAdjust: func(meta *testExecutionMetadata, _ int) {
+			meta.isFlakyTestRetriesEnabled = true
+			meta.identity = identity
+		},
+		postAdjustRetryCount: func(*testExecutionMetadata, time.Duration) int64 { return 1 },
+		postShouldRetry:      func(*testing.T, *testExecutionMetadata, int, int64) bool { return true },
+	})
+
+	require.Equal(t, 1, bodyCalls, "failfast must stop before an in-process fallback retry")
+	require.Equal(t, int64(1), flakyRetryBudgetRemaining(integrations.GetFlakyRetriesSettings()), "failed deferred admission must refund the FTR reservation")
 }
 
 func TestProcessRetryParityOrchestrionFinalizesAfterFreshCleanup(t *testing.T) {

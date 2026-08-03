@@ -228,6 +228,9 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 			execOpts.deferredQueued = enqueueDeferredProcessRetryGroup(execOpts)
 			if execOpts.deferredQueued && deferredProcessRetryFirstFailureIsIrreversible(execMeta, observation) {
 				execOpts.options.t.Fail()
+			} else if !execOpts.deferredQueued && retryContinuationStoppedLocked(execOpts, localT, execMeta) {
+				shouldRetry = false
+				execMeta.retryContinuationAdmitted = false
 			}
 		}
 	}
