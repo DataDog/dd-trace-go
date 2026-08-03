@@ -65,7 +65,7 @@ func TestClientStatsHandler(t *testing.T) {
 }
 
 func newClientStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {
-	return newRigWithInterceptors(
+	return newRigWithOptions(
 		nil,
 		[]grpc.DialOption{
 			grpc.WithInsecure(),
