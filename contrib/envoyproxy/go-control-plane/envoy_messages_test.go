@@ -85,6 +85,19 @@ func TestExtractRequestSourceIP(t *testing.T) {
 			wantXFF:        []string{"192.168.0.9", "1.1.1.1"},
 			wantRemoteAddr: "192.168.0.9",
 		},
+		// Google Cloud sends a single X-Forwarded-For holding
+		// <client-supplied>,<client-ip>,<load-balancer-ip>. The client-supplied
+		// part comes first, which is exactly the entry client IP resolution would
+		// otherwise settle on.
+		// https://cloud.google.com/load-balancing/docs/https#x-forwarded-for_header
+		{
+			name:           "GCLB-shaped X-Forwarded-For keeps its forged leading entry",
+			integration:    GCPServiceExtensionIntegration,
+			attributes:     testSourceIPAttributes(structpb.NewStringValue("203.0.113.50")),
+			requestHeaders: map[string]string{"X-Forwarded-For": "1.1.1.1, 203.0.113.50, 35.191.10.1"},
+			wantXFF:        []string{"203.0.113.50", "1.1.1.1, 203.0.113.50, 35.191.10.1"},
+			wantRemoteAddr: "203.0.113.50",
+		},
 		// --- canonicalisation ------------------------------------------------
 		{
 			name:           "IPv4-mapped IPv6 source.ip is unmapped",

@@ -337,6 +337,31 @@ func TestAppSec(t *testing.T) {
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 
+	t.Run("source-ip-wins-inside-gclb-shaped-x-forwarded-for", func(t *testing.T) {
+		// The real Google Cloud header shape: a single X-Forwarded-For holding
+		// <client-supplied>,<client-ip>,<load-balancer-ip>. Here the
+		// client-supplied entry is a denylisted address, and it comes first, so
+		// without the trusted source.ip it is the one the denylist would be
+		// evaluated against.
+		// https://cloud.google.com/load-balancing/docs/https#x-forwarded-for_header
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{
+				"User-Agent":      "Mistake not...",
+				"X-Forwarded-For": "111.222.111.222, 18.18.18.18, 35.191.10.1",
+			},
+			"GET", "/", "18.18.18.18")
+
+		span := finishUnblockedStream(t, stream, mt)
+		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
+		require.Nil(t, span.Tag("appsec.blocked"))
+	})
+
 	t.Run("source-ip-does-not-hide-headers-from-the-waf", func(t *testing.T) {
 		// Resolving identity from source.ip must not stop the WAF from
 		// inspecting request headers: an attack payload in a header still has to
