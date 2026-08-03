@@ -1,0 +1,92 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# GLS lifecycle for active spans, the otelc port of the `tracer-internal` aspects
+# in orchestrion.yml. Read that file for why each injection is where it is; the
+# reasoning is identical and is not duplicated here.
+#
+# The tracer source stays GLS-agnostic, so a plain build pays nothing. These rules
+# weave the push, the read fallback, the pop, and the liveness cell. Without them
+# the storage layer in ../../internal/otelc/gls.otelc.yaml is inert, because
+# nothing ever puts a span into it.
+#
+# IDENTIFIER COUPLING: otelc's inject_code takes a raw string with no template
+# variables, unlike orchestrion's templates which resolve parameters positionally
+# via `.Function.Argument`. The receiver and parameter names below (`s`, `ctx`)
+# are therefore written literally and must match the tracer source. Renaming one
+# there normally breaks the otelc build, because the injected code then names an
+# identifier that no longer exists; gls_otelc_identifiers_test.go exists to turn
+# that into a plain `go test` failure that points here, rather than a compile
+# error inside an instrumented copy of the tracer.
+
+span_gls_fields:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    struct: Span
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: __dd_glsPop
+            type: orchestrion.GLSPopperCell
+          - name: __dd_glsDone
+            type: orchestrion.GLSDoneCell
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# ContextWithSpan(ctx context.Context, s *Span)
+span_gls_context_with_span:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    func: ContextWithSpan
+  do:
+    - inject_code:
+        raw: |
+          if s != nil {
+            orchestrion.GLSActivate(nil, internal.ActiveSpanKey, s, &s.__dd_glsPop, &s.__dd_glsDone)
+          }
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+    internal: github.com/DataDog/dd-trace-go/v2/internal
+
+# SpanFromContext(ctx context.Context)
+span_gls_span_from_context:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    func: SpanFromContext
+  do:
+    - inject_code:
+        raw: |
+          if ctx != nil {
+            ctx = orchestrion.WrapContext(ctx)
+          }
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# (s *Span) Finish(...)
+span_gls_finish:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    func: Finish
+    recv: "*Span"
+  do:
+    - inject_code:
+        raw: |
+          if s != nil {
+            orchestrion.GLSDeactivate(&s.__dd_glsDone, &s.__dd_glsPop)
+          }
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# (s *Span) clear()
+span_gls_clear:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    func: clear
+    recv: "*Span"
+  do:
+    - inject_code:
+        raw: "orchestrion.GLSReset(&s.__dd_glsDone, &s.__dd_glsPop)"
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
