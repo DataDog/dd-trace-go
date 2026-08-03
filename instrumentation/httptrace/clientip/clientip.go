@@ -1,9 +1,21 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2024 Datadog, Inc.
+// Copyright 2026 Datadog, Inc.
 
-package httpsec
+// Package clientip resolves the identity of an HTTP client from transport data.
+//
+// It owns the default resolution policy — scan the monitored IP headers left to
+// right, prefer the first globally-routable address, fall back to the remote
+// address — and is the only place that policy lives. Integrations that already
+// know the trustworthy address, because their infrastructure told them, resolve
+// it their own way and hand the result across the instrumentation boundary
+// rather than calling in here.
+//
+// This package deliberately imports neither its parent httptrace nor any AppSec
+// emitter or listener package: it sits below all of them so that the tracer, the
+// AppSec listeners, and out-of-tree integrations can all depend on it.
+package clientip
 
 import (
 	"net"
@@ -14,11 +26,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// ClientIP returns the first public IP address found in the given headers. If
+// ResolveWith returns the first public IP address found in the given headers. If
 // none is present, it returns the first valid IP address present, possibly
 // being a local IP address. The remote address, when valid, is used as fallback
 // when no IP address has been found at all.
-func ClientIP(hdrs map[string][]string, hasCanonicalHeaders bool, remoteAddr string, monitoredHeaders []string) (remoteIP, clientIP netip.Addr) {
+//
+// [Resolve] is the entry point callers use; this variant exists so the policy
+// can be exercised against an explicit header list.
+func resolveWith(hdrs map[string][]string, hasCanonicalHeaders bool, remoteAddr string, monitoredHeaders []string) (remoteIP, clientIP netip.Addr) {
 	// Walk IP-related headers
 	var foundIP netip.Addr
 headersLoop:
