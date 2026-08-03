@@ -41,6 +41,66 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 | `DD_AGENT_HOST`       | `N/A`         | Host of a running Datadog Agent. |
 | `DD_TRACE_AGENT_PORT` | `8126`        | Port of a running Datadog Agent. |
 
+### Client IP resolution
+
+App & API Protection identifies clients by IP address, both to attribute traces and to
+enforce IP denylists. This works with no extra configuration: Google Cloud
+[appends the address it observed](https://cloud.google.com/load-balancing/docs/https#x-forwarded-for_header)
+to `X-Forwarded-For`, followed by the forwarding rule address, so the extension reads
+the client from that fixed position rather than trusting whatever the client put in
+front of it.
+
+Forwarding the `source.ip` attribute is recommended but **not required**. It removes
+the dependency on the header shape and is what the extension uses when present:
+
+```yaml
+forwardAttributes: [source.ip]
+```
+
+The Terraform equivalent, on `google_network_services_lb_traffic_extension` or
+`google_network_services_lb_route_extension`:
+
+```hcl
+forward_attributes = ["source.ip"]
+```
+
+> Terraform support for `forward_attributes` needs a recent
+> [`google-beta` provider](https://registry.terraform.io/providers/hashicorp/google-beta/latest/docs/resources/network_services_lb_traffic_extension);
+> older versions reject the argument.
+
+`source.address`, Envoy's own attribute carrying the same address as `host:port`, is
+**not supported**: Google Cloud rejects it at configuration time with
+`Error 400: invalid forward attribute source.address`, so there is nothing for the
+extension to read.
+
+Why this matters: a client connecting to the load balancer chooses what it sends in
+`X-Forwarded-For`, so it can present an address that is not its own. The header the
+load balancer delivers looks like
+
+```text
+X-Forwarded-For: <client-supplied>,<client observed by the load balancer>,<forwarding rule>
+```
+
+and generic resolution, which scans left to right and takes the first public address,
+lands on the forged entry. Neither the positional rule nor `source.ip` is under the
+client's control, so neither can be manipulated that way. The header itself is left
+byte-for-byte intact so that App & API Protection still inspects exactly what was sent.
+
+This applies to GCP Service Extensions only. Deployments that identify themselves as
+plain Envoy, Envoy Gateway or Istio are unaffected, because the positional rule is a
+property of Google Cloud's load balancer rather than of Envoy in general.
+
+Two limitations:
+
+- **A CDN or proxy sits in front of the load balancer.** Both `source.ip` and the
+  observed `X-Forwarded-For` entry describe the connection Google Cloud received, which
+  in that topology comes from the CDN rather than from the end user. Recovering the
+  original address then depends on whatever forwarding mechanism that CDN offers, and
+  on trusting it; this integration does not attempt it.
+- **Fewer than two `X-Forwarded-For` entries, with no `source.ip`.** There is then no
+  load-balancer-appended entry to rely on, so resolution falls back to the generic
+  behaviour of earlier releases.
+
 ### SSL Configuration
 
 The Envoy of GCP is configured to communicate to the Service Extension with TLS.
