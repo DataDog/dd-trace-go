@@ -96,7 +96,6 @@ func parseExtProcSourceIP(attributes map[string]*structpb.Struct) (netip.Addr, b
 		return netip.Addr{}, false
 	}
 
-	// Anything other than a plain string is not something we know how to read.
 	stringValue, ok := value.GetKind().(*structpb.Value_StringValue)
 	if !ok {
 		return netip.Addr{}, false
