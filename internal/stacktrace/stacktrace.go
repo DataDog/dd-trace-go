@@ -9,21 +9,13 @@
 package stacktrace
 
 import (
-	"errors"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var (
-	enabled              = true
-	defaultTopFrameDepth = 8
-	defaultMaxDepth      = 32
-
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
 		"github.com/DataDog/dd-trace-go/v2",
@@ -53,10 +45,7 @@ var (
 type frameType string
 
 const (
-	defaultCallerSkip = 4
-
-	envStackTraceDepth   = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
-	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLED"
+	defaultMaxDepth = 32
 
 	frameTypeDatadog    frameType = "datadog"
 	frameTypeRuntime    frameType = "runtime"
@@ -67,42 +56,11 @@ const (
 )
 
 func init() {
-	if env := env.Get(envStackTraceEnabled); env != "" {
-		if e, err := strconv.ParseBool(env); err == nil {
-			enabled = e
-		} else {
-			log.Error("Failed to parse %s env var as boolean: (using default value: %t) %v", envStackTraceEnabled, enabled, err.Error())
-		}
-	}
-
-	if env := env.Get(envStackTraceDepth); env != "" {
-		if !enabled {
-			log.Warn("Ignoring %s because stacktrace generation is disable", envStackTraceDepth)
-			return
-		}
-
-		if depth, err := strconv.Atoi(env); err == nil {
-			defaultMaxDepth = depth
-		} else {
-			if depth <= 0 {
-				err = errors.New("value is not a strictly positive integer")
-			}
-			log.Error("Failed to parse %s env var as a positive integer: (using default value: %d) %v", envStackTraceDepth, defaultMaxDepth, err.Error())
-		}
-	}
-
-	defaultTopFrameDepth = defaultMaxDepth / 4
-
 	thirdPartyTrie = newSegmentPrefixTrie()
 	thirdPartyTrie.InsertAll(slices.Concat(knownThirdPartyLibraries, []string{"golang.org/"}))
 
 	internalPrefixTrie = newSegmentPrefixTrie()
 	internalPrefixTrie.InsertAll(internalSymbolPrefixes)
-}
-
-// Enabled returns whether stacktrace should be collected
-func Enabled() bool {
-	return enabled
 }
 
 type (
@@ -248,12 +206,22 @@ func parseSymbol(name string) symbol {
 
 // Capture create a new stack trace from the current call stack
 func Capture() StackTrace {
-	return SkipAndCapture(defaultCallerSkip)
+	return SkipAndCaptureWithDepth(defaultMaxDepth, 1)
 }
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	return iterator(skip, defaultMaxDepth, frameOptions{
+	return SkipAndCaptureWithDepth(defaultMaxDepth, skip+1)
+}
+
+// SkipAndCaptureWithDepth creates a new stack trace from the current call stack,
+// skipping the first skip frames and capturing at most depth frames. A
+// non-positive depth uses the default depth.
+func SkipAndCaptureWithDepth(depth, skip int) StackTrace {
+	if depth <= 0 {
+		depth = defaultMaxDepth
+	}
+	return iterator(skip+1, depth, frameOptions{
 		skipInternalFrames:      true,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: internalSymbolPrefixes,
@@ -264,10 +232,10 @@ func SkipAndCapture(skip int) StackTrace {
 // This is useful for tracer span error stacktraces where we want to capture all frames.
 func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 	// Use default depth if not specified
-	if depth == 0 {
+	if depth <= 0 {
 		depth = defaultMaxDepth
 	}
-	return iterator(skip, depth, frameOptions{
+	return iterator(skip+1, depth, frameOptions{
 		skipInternalFrames:      false,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: nil,
@@ -276,11 +244,11 @@ func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 
 // CaptureRaw captures only program counters without symbolication.
 // This is significantly faster than full capture as it avoids runtime.CallersFrames
-// and symbol parsing. The skip parameter determines how many frames to skip from
-// the top of the stack (similar to runtime.Callers).
+// and symbol parsing. The skip parameter determines how many caller frames to skip
+// after the stacktrace capture machinery.
 func CaptureRaw(skip int) RawStackTrace {
 	pcs := make([]uintptr, defaultMaxDepth)
-	n := runtime.Callers(skip, pcs)
+	n := runtime.Callers(skip+2, pcs)
 	return RawStackTrace{
 		PCs: pcs[:n],
 	}
@@ -338,6 +306,9 @@ func (iter *framesIterator) capture() StackTrace {
 	for frame, ok := iter.Next(); ok; frame, ok = iter.Next() {
 		// we reach the top frames: start to use the queue
 		if nbStoredFrames >= iter.maxDepth-iter.topFrameDepth {
+			if iter.topFrameDepth == 0 {
+				break
+			}
 			topFramesQueue.Add(frame)
 			// queue is full, remove the oldest frame
 			if topFramesQueue.Length() > iter.topFrameDepth {
@@ -387,23 +358,37 @@ type framesIterator struct {
 }
 
 func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
-	topFrameDepth := max(maxDepth/4, 1)
+	topFrameDepth := reservedTopFrameDepth(maxDepth)
+
+	// We want to always skip frames belonging to the internal machinery of the
+	// stacktrace collection. Concretely, this means hiding the following call
+	// frames from the chain:
+	// [*framesIterator.capture] -> [*framesIterator.Next] -> [*framesIterator.next] -> [*framesIterator.prepareNextBatch] -> [runtime.Callers]
+	const internalMachinerySkip = 5
+
 	return &framesIterator{
 		frameOpts:     opts,
 		frames:        newQueue[runtime.Frame](maxDepth + 4),
 		cache:         make([]uintptr, maxDepth),
 		cacheSize:     maxDepth,
-		cacheDepth:    skip,
+		cacheDepth:    skip + internalMachinerySkip,
 		currDepth:     0,
 		maxDepth:      maxDepth,
 		topFrameDepth: topFrameDepth,
 	}
 }
 
+func reservedTopFrameDepth(maxDepth int) int {
+	if maxDepth <= 1 {
+		return 0
+	}
+	return min(max(maxDepth/4, 1), maxDepth-1)
+}
+
 // iteratorFromRaw creates an iterator from pre-captured PCs for deferred symbolication
 func iteratorFromRaw(pcs []uintptr, opts frameOptions) *framesIterator {
 	maxDepth := min(len(pcs), defaultMaxDepth)
-	topFrameDepth := max(maxDepth/4, 1)
+	topFrameDepth := reservedTopFrameDepth(maxDepth)
 
 	return &framesIterator{
 		frameOpts:     opts,
@@ -436,7 +421,7 @@ func (it *framesIterator) prepareNextBatch() []uintptr {
 		return pcs
 	}
 
-	// Live mode: call runtime.Callers.
+	// Live mode: call [runtime.Callers].
 	n := runtime.Callers(it.cacheDepth, it.cache)
 	if n == 0 {
 		return nil
