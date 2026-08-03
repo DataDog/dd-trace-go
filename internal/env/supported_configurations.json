@@ -681,7 +681,7 @@
         "default": null
       }
     ],
-    "DD_LAMBDA_STRIP_EVENTBRIDGE_CONTEXT": [
+    "DD_TRACE_STRIP_INJECTED_CONTEXT": [
       {
         "implementation": "A",
         "type": "bool",
