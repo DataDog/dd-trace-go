@@ -33,6 +33,17 @@ trap 'rm -f "$TEMP_FILE"' EXIT
 
 # Read the file and perform the substitution
 if [ -f "$TARGET" ]; then
+    # Fail if the managed marker is missing, so a renamed or deleted reference
+    # cannot silently leave the pin un-updated. An already-current reference
+    # still matches and remains a successful no-op.
+    MATCHES=$(perl -ne "\$count++ while /$CLEAN_PATTERN/g; END { print \$count + 0 }" "$TARGET")
+    if [ "$MATCHES" -eq 0 ]; then
+        echo "Error: pattern did not match anything in $TARGET"
+        echo "The managed '# Automated:' marker may have been renamed or removed."
+        exit 1
+    fi
+    echo "Matched $MATCHES reference(s)"
+
     # Perform the substitution and save to temporary file
     # We use perl here because sed's regex support varies across platforms
     perl -pe "s/$CLEAN_PATTERN/\${1}$REF\${3}/g" "$TARGET" > "$TEMP_FILE"
