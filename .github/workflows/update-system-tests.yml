@@ -69,6 +69,7 @@ jobs:
       - run: git diff --color=always
 
       - name: Get GitHub Token via dd-octo-sts
+        if: ${{ github.event.inputs.dry-run != 'true' }}
         id: generate-token
         uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
         with:
