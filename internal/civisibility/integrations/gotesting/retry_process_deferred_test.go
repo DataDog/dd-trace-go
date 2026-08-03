@@ -138,22 +138,22 @@ func TestDeferredProcessRetryInvocationIsCapturedBeforeExecutionMetadata(t *test
 	}
 	coordinator := newProcessRetryCoordinator()
 	counter := &atomic.Uint64{}
-	baseline := &processRetryLaunchBaseline{
-		argsSnapshot: processRetryArgsSnapshot{captured: true, ok: true},
-	}
+	fuzzGuard := &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }}
 	firstOptions := &runTestWithRetryOptions{
 		processRetryCoordinator:       coordinator,
 		processRetryIdentity:          newTestIdentity("module", "suite", "TestFirst"),
 		processRetryInvocationCounter: counter,
+		processRetryFuzzGuard:         fuzzGuard,
 	}
 	secondOptions := &runTestWithRetryOptions{
 		processRetryCoordinator:       coordinator,
 		processRetryIdentity:          newTestIdentity("module", "suite", "TestSecond"),
 		processRetryInvocationCounter: counter,
+		processRetryFuzzGuard:         fuzzGuard,
 	}
 
-	prepareDeferredProcessRetryInvocation(&executionOptions{options: firstOptions, processRetryLaunchBaseline: baseline})
-	prepareDeferredProcessRetryInvocation(&executionOptions{options: secondOptions, processRetryLaunchBaseline: baseline})
+	prepareDeferredProcessRetryInvocation(&executionOptions{options: firstOptions})
+	prepareDeferredProcessRetryInvocation(&executionOptions{options: secondOptions})
 
 	require.Equal(t, uint64(1), firstOptions.processRetryPhaseID)
 	require.Equal(t, uint64(1), secondOptions.processRetryPhaseID)
@@ -828,6 +828,7 @@ func TestDeferredProcessRetrySchedulerHonorsNativeParallelGroupLimit(t *testing.
 		newDeferredProcessRetrySchedulerGroup("TestNativeLimitB", 0, false, true, 2, 3),
 		newDeferredProcessRetrySchedulerGroup("TestNativeLimitC", 0, false, true, 2, 3),
 	}
+	require.Equal(t, 2, deferredProcessRetryMaxActiveGroups(groups), "the scheduler must use the stricter native parallel limit")
 	for _, group := range groups {
 		require.True(t, coordinator.beginAdmission().commit(group))
 	}

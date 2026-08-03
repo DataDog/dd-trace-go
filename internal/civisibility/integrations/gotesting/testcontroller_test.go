@@ -40,6 +40,7 @@ var currentM *testing.M
 
 var processRetryUnitTestPrefixes = []string{
 	"TestDisableProcessRetryChildExecution",
+	"TestDeferredProcessRetry",
 	"TestProcessRetry",
 	"TestRunProcessRetry",
 	"TestBuildProcessRetry",

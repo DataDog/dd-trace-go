@@ -312,6 +312,7 @@ func BenchmarkProcessRetryFuzzGuardSnapshotCached(b *testing.B) {
 func TestProcessRetryUnitRunFilterUsesExactTopLevelNames(t *testing.T) {
 	tests := []testing.InternalTest{
 		{Name: "TestProcessRetryAllowed"},
+		{Name: "TestDeferredProcessRetryCoordinatorAdmissionSealLinearizes"},
 		{Name: "TestProcessRetryParityFreshRunnerNormalLifecycle"},
 		{Name: "TestFinalizeProcessRetryOutputCapturesKillsTreeWithinSingleDrainBudget"},
 		{Name: "TestRunTestWithRetryProcessModeWithoutDeferredAdmissionFallsBackInProcess"},
@@ -320,6 +321,8 @@ func TestProcessRetryUnitRunFilterUsesExactTopLevelNames(t *testing.T) {
 	filter := regexp.MustCompile(buildProcessRetryUnitRunFilter(tests, true))
 	require.True(t, filter.MatchString("TestProcessRetryAllowed"))
 	require.True(t, filter.MatchString("TestProcessRetryAllowed/subtest"))
+	require.True(t, filter.MatchString("TestDeferredProcessRetryCoordinatorAdmissionSealLinearizes"))
+	require.True(t, filter.MatchString("TestDeferredProcessRetryCoordinatorAdmissionSealLinearizes/subtest"))
 	require.True(t, filter.MatchString("TestFinalizeProcessRetryOutputCapturesKillsTreeWithinSingleDrainBudget"))
 	require.True(t, filter.MatchString("TestRunTestWithRetryProcessModeWithoutDeferredAdmissionFallsBackInProcess"))
 	require.False(t, filter.MatchString("TestProcessRetryParityFreshRunnerNormalLifecycle"))
@@ -328,6 +331,7 @@ func TestProcessRetryUnitRunFilterUsesExactTopLevelNames(t *testing.T) {
 
 	fallbackFilter := regexp.MustCompile(buildProcessRetryUnitRunFilter(tests, false))
 	require.True(t, fallbackFilter.MatchString("TestProcessRetryAllowed"))
+	require.True(t, fallbackFilter.MatchString("TestDeferredProcessRetryCoordinatorAdmissionSealLinearizes"))
 	require.False(t, fallbackFilter.MatchString("TestRunTestWithRetryProcessModeWithoutDeferredAdmissionFallsBackInProcess"))
 }
 
