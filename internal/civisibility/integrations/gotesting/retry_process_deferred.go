@@ -446,7 +446,8 @@ func (c *processRetryCoordinator) drainScheduledGroups(queue []*deferredProcessR
 			outcome.terminalPanic = batch.terminalPanic
 		}
 		if batch.stopReason != "" {
-			cancelDeferredProcessRetryBatches(batches[index+1:], batch.stopReason, true)
+			canceledFailed := cancelDeferredProcessRetryBatches(batches[index+1:], batch.stopReason, true)
+			outcome.deferredFailed = outcome.deferredFailed || canceledFailed
 			break
 		}
 	}
@@ -479,10 +480,15 @@ func deferredProcessRetryScheduleBatches(queue []*deferredProcessRetryGroup) [][
 	return batches
 }
 
-func cancelDeferredProcessRetryBatches(batches [][]*deferredProcessRetryGroup, reason string, failed bool) {
+func cancelDeferredProcessRetryBatches(batches [][]*deferredProcessRetryGroup, reason string, failed bool) bool {
+	packageFailed := false
 	for _, groups := range batches {
 		cancelDeferredProcessRetryGroups(groups, reason, failed)
+		for _, group := range groups {
+			packageFailed = group.packageFailed() || packageFailed
+		}
 	}
+	return packageFailed
 }
 
 func (c *processRetryCoordinator) drainScheduledBatch(

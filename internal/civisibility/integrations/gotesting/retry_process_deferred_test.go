@@ -794,6 +794,52 @@ func TestDeferredProcessRetrySchedulerContainmentLossStopsLaterGroups(t *testing
 	require.True(t, second.terminalFailure)
 }
 
+func TestDeferredProcessRetryGlobalStopCountsCanceledLaterOrdinaryGroup(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*processRetryMetadataSnapshot)
+	}{
+		{name: "disabled", configure: func(metadata *processRetryMetadataSnapshot) { metadata.isDisabled = true }},
+		{name: "quarantined", configure: func(metadata *processRetryMetadataSnapshot) { metadata.isQuarantined = true }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+			defer restoreSession()
+			coordinator := newProcessRetryCoordinator()
+			coordinator.failfastEnabled = func() bool { return false }
+			first := newDeferredProcessRetrySchedulerGroup("TestMaskedContainmentLoss", 0, false, false, 1, 1)
+			tt.configure(&first.metadata)
+			second := newDeferredProcessRetrySchedulerGroup("TestCanceledOrdinaryFTR", 0, false, false, 1, 1)
+			second.metadata.isEarlyFlakeDetectionEnabled = false
+			second.metadata.isANewTest = false
+			for _, group := range []*deferredProcessRetryGroup{first, second} {
+				require.True(t, coordinator.beginAdmission().commit(group))
+			}
+			starts := 0
+			coordinator.attemptRunner = func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+				starts++
+				require.Same(t, first, group)
+				attempt := deferredProcessRetryPassingAttempt(prepared.index)
+				attempt.Result.Status = processRetryStatusFail
+				attempt.ExitCode = processRetryFailureExitCode
+				attempt.ContainmentLost = true
+				attempt.Err = errProcessRetryContainmentLost
+				return attempt
+			}
+
+			summary := coordinator.drain(0)
+
+			require.Equal(t, 1, starts)
+			require.False(t, first.packageFailed(), "the leading directive masks its own failure")
+			require.True(t, second.packageFailed(), "canceling the ordinary FTR group must fail the package")
+			require.True(t, summary.deferredFailed)
+			require.True(t, summary.packageFailed)
+			require.Equal(t, processRetryFailureExitCode, summary.exitCode)
+		})
+	}
+}
+
 func TestDeferredProcessRetryGlobalStopReasons(t *testing.T) {
 	tests := []struct {
 		name    string
