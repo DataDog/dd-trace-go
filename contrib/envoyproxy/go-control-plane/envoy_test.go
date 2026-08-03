@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // findSetHeader searches for a header by key name in a slice of HeaderValueOption,
@@ -258,6 +259,128 @@ func TestAppSec(t *testing.T) {
 		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	// The denylisted address 111.222.111.222 is the one exercised by
+	// "blocking-client-ip" above via a client-supplied X-Forwarded-For. The
+	// subtests below cover the same denylist reached through the trusted
+	// source.ip attribute instead, and the case where the two disagree.
+	t.Run("blocking-client-ip-from-source-ip", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream, map[string]string{"User-Agent": "Mistake not..."}, "GET", "/", "111.222.111.222")
+
+		res, err := stream.Recv()
+		require.NoError(t, err)
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
+		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
+
+		require.NoError(t, stream.CloseSend())
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "blk-001-001": 1})
+
+		span := finished[0]
+		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("source-ip-wins-over-denylisted-x-forwarded-for", func(t *testing.T) {
+		// This is the vulnerability being fixed: the client controls
+		// X-Forwarded-For, so before this change it decided the identity the
+		// denylist was evaluated against. The trusted source.ip must win, which
+		// means the forged denylisted value no longer causes a block.
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222"},
+			"GET", "/", "18.18.18.18")
+
+		span := finishUnblockedStream(t, stream, mt)
+		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
+		require.Nil(t, span.Tag("appsec.blocked"))
+	})
+
+	t.Run("source-ip-blocks-despite-benign-x-forwarded-for", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "18.18.18.18"},
+			"GET", "/", "111.222.111.222")
+
+		res, err := stream.Recv()
+		require.NoError(t, err)
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
+		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
+
+		require.NoError(t, stream.CloseSend())
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		span := finished[0]
+		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("source-ip-does-not-hide-headers-from-the-waf", func(t *testing.T) {
+		// Resolving identity from source.ip must not stop the WAF from
+		// inspecting request headers: an attack payload in a header still has to
+		// be detected while source.ip drives the client IP.
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{"User-Agent": "dd-test-scanner-log", "X-Forwarded-For": "9.9.9.9"},
+			"GET", "/", "18.18.18.18")
+
+		span := finishUnblockedStream(t, stream, mt)
+		checkForAppsecEvent(t, []*mocktracer.Span{span}, map[string]int{"ua0-600-55x": 1})
+		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
+	})
+
+	t.Run("source-ip-ignored-when-downgraded-to-envoy", func(t *testing.T) {
+		// A deployment that identifies itself as plain Envoy keeps the previous
+		// behaviour exactly, including its reliance on X-Forwarded-For.
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(datadogEnvoyIntegrationHeader, "1"))
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222"},
+			"GET", "/", "18.18.18.18")
+
+		res, err := stream.Recv()
+		require.NoError(t, err)
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse(),
+			"the client-supplied X-Forwarded-For must still decide identity for the envoy integration")
+
+		require.NoError(t, stream.CloseSend())
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		require.Equal(t, "111.222.111.222", finished[0].Tag("http.client_ip"))
 	})
 
 	t.Run("no-monitoring-event-on-request-body-parsing-disabled", func(t *testing.T) {
@@ -1311,6 +1434,50 @@ func sendProcessingRequestHeaders(t *testing.T, stream envoyextproc.ExternalProc
 		},
 	})
 	require.NoError(t, err)
+}
+
+// sendProcessingRequestHeadersWithSourceIP sends request headers together with
+// the ext_proc attributes through which a load balancer publishes the address of
+// the TCP peer it observed, as GCP does when configured with
+// forwardAttributes: [source.ip].
+func sendProcessingRequestHeadersWithSourceIP(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, headers map[string]string, method string, path string, sourceIP string) {
+	t.Helper()
+
+	err := stream.Send(&envoyextproc.ProcessingRequest{
+		Attributes: testSourceIPAttributes(structpb.NewStringValue(sourceIP)),
+		Request: &envoyextproc.ProcessingRequest_RequestHeaders{
+			RequestHeaders: &envoyextproc.HttpHeaders{
+				Headers:     makeRequestHeaders(t, headers, method, path),
+				EndOfStream: true,
+			},
+		},
+	})
+	require.NoError(t, err)
+}
+
+// finishUnblockedStream drives a request that was allowed through to completion
+// so that its span is flushed, and returns that span.
+func finishUnblockedStream(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, mt mocktracer.Tracer) *mocktracer.Span {
+	t.Helper()
+
+	res, err := stream.Recv()
+	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_RequestHeaders{}, res.GetResponse(),
+		"the request was blocked but this scenario expects it to be allowed through")
+
+	sendProcessingResponseHeaders(t, stream, nil, "200", false)
+	// Both directions signalled end of stream, so the server is free to close it
+	// here; either a response message or EOF is a correct outcome.
+	if _, err := stream.Recv(); err != nil {
+		require.ErrorIs(t, err, io.EOF)
+	}
+
+	require.NoError(t, stream.CloseSend())
+	_, _ = stream.Recv() // to flush the spans
+
+	finished := mt.FinishedSpans()
+	require.Len(t, finished, 1)
+	return finished[0]
 }
 
 // sendProcessingRequestBodyStreamed sends the request body in chunks to simulate streaming
