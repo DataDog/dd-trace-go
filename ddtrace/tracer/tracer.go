@@ -1053,15 +1053,15 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
-// endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored. Additionally, this func informs the profiler how
-// many times each endpoint is called.
+// endpoint filtering features, and the trace correlation label for AppSec.
+// When span finishes, any pprof labels found in ctx are restored. Additionally,
+// this func informs the profiler how many times each endpoint is called.
 // +checklocksignore — Initialization time, called from StartSpan before span is shared.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
-	// "trace id" is emitted for code hotspots and when AppSec is enabled, so it
-	// can correlate security events with traces/profiles.
-	correlate := snap.ProfilerHotspotsEnabled || appsec.Enabled()
-	if !correlate && !snap.ProfilerEndpoints {
+	// "trace id" is AppSec-only. Profiling features retain their own labels
+	// without adding trace correlation cardinality.
+	appsecCorrelation := appsec.Enabled()
+	if !snap.ProfilerHotspotsEnabled && !snap.ProfilerEndpoints && !appsecCorrelation {
 		// No feature needs pprof labels; nothing to restore when the span finishes.
 		span.pprofCtxRestore = nil
 		return
@@ -1086,7 +1086,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 			}
 		}
 	}
-	if correlate {
+	if appsecCorrelation {
 		// hexEncodedCached memoizes the hex on the (not-yet-shared) context so
 		// child spans reuse it: one hex allocation per trace, not per span.
 		labels = append(labels, traceprof.TraceID, span.context.traceID.hexEncodedCached())

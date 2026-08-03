@@ -3223,10 +3223,9 @@ func TestPprofLabels(t *testing.T) {
 	})
 }
 
-// TestApplyPPROFLabelsTraceID verifies the pprof label gating matrix: the whole
-// 128-bit "trace id" (32-char lowercase hex) is emitted for code hotspots;
-// "span id" stays hotspots-only; "trace endpoint" stays endpoints-only; and
-// nothing is emitted when no feature is enabled.
+// TestApplyPPROFLabelsTraceID verifies that profiling features do not emit the
+// AppSec-only "trace id" label. "span id" stays hotspots-only, "trace endpoint"
+// stays endpoints-only, and nothing is emitted when no feature is enabled.
 func TestApplyPPROFLabelsTraceID(t *testing.T) {
 	// WithAppSecEnabled(false) disables AppSec so the code-hotspots and endpoints
 	// gates can be tested deterministically; assert the global state to be safe.
@@ -3238,8 +3237,6 @@ func TestApplyPPROFLabelsTraceID(t *testing.T) {
 	span := tr.StartSpan("web.request", ResourceName("/things"), SpanType(ext.SpanTypeWeb))
 	defer span.Finish()
 
-	traceID := span.context.TraceID()
-	require.Regexp(t, "^[0-9a-f]{32}$", traceID, "trace id must be the whole 128-bit id as lowercase hex")
 	spanID := strconv.FormatUint(span.spanID, 10)
 
 	// apply resets the label context and (re)applies the labels for snap.
@@ -3265,9 +3262,8 @@ func TestApplyPPROFLabelsTraceID(t *testing.T) {
 	t.Run("hotspots", func(t *testing.T) {
 		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerHotspotsEnabled: true})
 		require.NotNil(t, ctx)
-		present(t, ctx, traceprof.TraceID, traceID)
 		present(t, ctx, traceprof.SpanID, spanID)
-		absent(t, ctx, traceprof.TraceEndpoint)
+		absent(t, ctx, traceprof.TraceID, traceprof.TraceEndpoint)
 	})
 	t.Run("endpoints-only", func(t *testing.T) {
 		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerEndpoints: true})
