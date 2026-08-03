@@ -146,6 +146,23 @@ func (sm *SpanMeta) Version() (string, bool) { return sm.promotedAttrs.Get(AttrV
 // Language returns the value of the "language" promoted attribute.
 func (sm *SpanMeta) Language() (string, bool) { return sm.promotedAttrs.Get(AttrLanguage) }
 
+// SnapshotExtra returns immutable env, version, and peer-service metadata for
+// a span context snapshot. Shared read-only attributes are reused when no
+// peer-service override is present.
+func (sm *SpanMeta) SnapshotExtra(peerService string) *SpanSnapshotExtra {
+	if peerService == "" {
+		if extra := sm.promotedAttrs.SnapshotExtra(); extra != nil {
+			return extra
+		}
+	}
+	env, _ := sm.Env()
+	version, _ := sm.Version()
+	if env == "" && version == "" && peerService == "" {
+		return nil
+	}
+	return &SpanSnapshotExtra{Env: env, Version: version, PeerService: peerService}
+}
+
 // ---------------------------------------------------------------------------
 // Write methods
 // ---------------------------------------------------------------------------

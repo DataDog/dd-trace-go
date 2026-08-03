@@ -40,16 +40,25 @@ var (
 // Zero value = all fields absent.
 // Set(key, "") is distinct from never-Set: the bit is set, the string is "".
 //
-// Layout: setMask + readOnly are packed ahead of the [numAttrs]string array,
-// with no trailing padding. The exact size is architecture-dependent (string
-// width differs between 32- and 64-bit); the assertion below derives it.
+// Layout: setMask + readOnly, the snapshot pointer, and the [numAttrs]string
+// array have no trailing padding. The exact size is architecture-dependent
+// (string width differs between 32- and 64-bit); the assertion below derives it.
 //
 // When readOnly is true, the instance is owned by the tracer and must not be
 // mutated. Callers must Clone before writing (copy-on-write).
 type SpanAttributes struct {
-	setMask  uint8
-	readOnly bool
-	vals     [numAttrs]string
+	setMask       uint8
+	readOnly      bool
+	snapshotExtra *SpanSnapshotExtra
+	vals          [numAttrs]string
+}
+
+// SpanSnapshotExtra holds promoted metadata copied into a span context snapshot.
+// Read-only SpanAttributes cache one immutable instance for reuse across spans.
+type SpanSnapshotExtra struct {
+	Env         string
+	Version     string
+	PeerService string
 }
 
 // Compile-time layout check: SpanAttributes must carry no trailing padding —
@@ -71,6 +80,7 @@ func (a *SpanAttributes) Set(key AttrKey, v string) {
 	}
 	a.vals[key] = v
 	a.setMask |= 1 << key
+	a.snapshotExtra = nil
 }
 
 // Unset clears the attribute for key, making it absent (as if never set). nil-safe.
@@ -80,6 +90,7 @@ func (a *SpanAttributes) Unset(key AttrKey) {
 	}
 	a.vals[key] = ""
 	a.setMask &^= 1 << key
+	a.snapshotExtra = nil
 }
 
 func (a *SpanAttributes) Val(key AttrKey) string {
@@ -108,10 +119,25 @@ func (a *SpanAttributes) Count() int {
 // MarkReadOnly marks this instance as readOnly (read-only). Clone before mutating.
 // The receiver must be non-nil; marking a nil SpanAttributes read-only is a
 // programming error and panics.
-func (a *SpanAttributes) MarkReadOnly() { a.readOnly = true }
+func (a *SpanAttributes) MarkReadOnly() {
+	a.readOnly = true
+	env := a.Val(AttrEnv)
+	version := a.Val(AttrVersion)
+	if env != "" || version != "" {
+		a.snapshotExtra = &SpanSnapshotExtra{Env: env, Version: version}
+	}
+}
 
 // IsReadOnly reports whether this is a readOnly instance requiring COW.
 func (a *SpanAttributes) IsReadOnly() bool { return a != nil && a.readOnly }
+
+// SnapshotExtra returns the immutable cached snapshot metadata, if any.
+func (a *SpanAttributes) SnapshotExtra() *SpanSnapshotExtra {
+	if a == nil {
+		return nil
+	}
+	return a.snapshotExtra
+}
 
 // Reset clears all set attributes, returning the instance to its zero state.
 // It is nil-safe and does not free the underlying memory, making it suitable
@@ -130,6 +156,7 @@ func (a *SpanAttributes) Clone() *SpanAttributes {
 	}
 	cp := *a
 	cp.readOnly = false
+	cp.snapshotExtra = nil
 	return &cp
 }
 

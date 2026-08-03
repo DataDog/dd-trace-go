@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -30,6 +31,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var spanSnapshotSink spanSnapshot
+
 func setupteardown(startSize, maxSize int) func() {
 	oldStartSize := traceStartSize
 	oldMaxSize := traceMaxSize
@@ -39,6 +42,23 @@ func setupteardown(startSize, maxSize int) func() {
 		traceStartSize = oldStartSize
 		traceMaxSize = oldMaxSize
 	}
+}
+
+func TestSpanSnapshotConfiguredMetadataDoesNotAllocate(t *testing.T) {
+	attrs := new(traceinternal.SpanAttributes)
+	attrs.Set(traceinternal.AttrEnv, "test_env")
+	attrs.Set(traceinternal.AttrVersion, "test_version")
+	attrs.Set(traceinternal.AttrLanguage, "go")
+	attrs.MarkReadOnly()
+	span := &Span{
+		service: "test_srv",
+		meta:    traceinternal.NewSpanMeta(attrs),
+	}
+
+	allocs := testing.AllocsPerRun(100, func() {
+		spanSnapshotSink = span.spanSnapshot()
+	})
+	require.Zero(t, allocs)
 }
 
 func TestTraceIDZero(t *testing.T) {

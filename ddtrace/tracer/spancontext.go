@@ -389,11 +389,11 @@ func (c *SpanContext) setSpanSnapshotMetaLocked(key, value string) {
 	}
 	switch key {
 	case ext.PeerService:
-		extra.peerService = value
+		extra.PeerService = value
 	case ext.Environment:
-		extra.env = value
+		extra.Env = value
 	case ext.Version:
-		extra.version = value
+		extra.Version = value
 	}
 	c.spanSnapshot.extra = extra
 }

@@ -248,47 +248,37 @@ type spanSnapshot struct {
 	extra         *spanSnapshotExtra
 }
 
-type spanSnapshotExtra struct {
-	env         string
-	version     string
-	peerService string
-}
+type spanSnapshotExtra = traceinternal.SpanSnapshotExtra
 
 func (s spanSnapshot) env() string {
 	if s.extra == nil {
 		return ""
 	}
-	return s.extra.env
+	return s.extra.Env
 }
 
 func (s spanSnapshot) version() string {
 	if s.extra == nil {
 		return ""
 	}
-	return s.extra.version
+	return s.extra.Version
 }
 
 func (s spanSnapshot) peerService() string {
 	if s.extra == nil {
 		return ""
 	}
-	return s.extra.peerService
+	return s.extra.PeerService
 }
 
 // +checklocksignore — Initialization time.
 func (s *Span) spanSnapshot() spanSnapshot {
-	var (
-		env, _         = s.meta.Env()
-		version, _     = s.meta.Version()
-		peerService, _ = s.meta.Get(ext.PeerService)
-	)
+	peerService, _ := s.meta.Get(ext.PeerService)
 	snapshot := spanSnapshot{
 		service:       s.service,
 		serviceSource: s.serviceSource,
 		pprofCtx:      s.pprofCtxActive,
-	}
-	if env != "" || version != "" || peerService != "" {
-		snapshot.extra = &spanSnapshotExtra{env: env, version: version, peerService: peerService}
+		extra:         s.meta.SnapshotExtra(peerService),
 	}
 	return snapshot
 }
