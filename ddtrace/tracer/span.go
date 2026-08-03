@@ -853,9 +853,9 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 					slog.String("current_type", fmt.Sprintf("%T", current)),
 					slog.String("next_type", fmt.Sprintf("%T", v)),
 				)
-			} else {
-				v = merged
+				return
 			}
+			v = merged
 		}
 	}
 	s.metaStruct[key] = v

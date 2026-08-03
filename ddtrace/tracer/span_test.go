@@ -656,24 +656,45 @@ func TestSpanSetMetaStruct(t *testing.T) {
 }
 
 func TestSpanStackTraceMergeWarning(t *testing.T) {
-	telemetryClient := new(telemetrytest.RecordClient)
-	defer telemetry.MockClient(telemetryClient)()
+	t.Run("invalid current", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
 
-	span := newBasicSpan("web.request")
-	span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: "invalid current"})
-	event := &stacktrace.Event{Category: stacktrace.VulnerabilityEvent}
-	valid := map[string][]*stacktrace.Event{
-		string(stacktrace.VulnerabilityEvent): {event},
-	}
-	span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: valid})
-	span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: "invalid next"})
+		event := &stacktrace.Event{Category: stacktrace.VulnerabilityEvent}
+		valid := map[string][]*stacktrace.Event{
+			string(stacktrace.VulnerabilityEvent): {event},
+		}
+		span := newBasicSpan("web.request")
+		span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: "invalid current"})
+		span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: valid})
 
-	require.Len(t, telemetryClient.Logs, 2)
-	require.Contains(t, telemetryClient.Logs, telemetrytest.LogLine{
-		Level: telemetry.LogWarn,
-		Text:  "failed to merge stack-trace span values",
+		require.Equal(t, []telemetrytest.LogLine{{
+			Level: telemetry.LogWarn,
+			Text:  "failed to merge stack-trace span values",
+		}}, telemetryClient.Logs)
+		require.Equal(t, "invalid current", span.metaStruct[stacktrace.SpanKey])
 	})
-	require.Equal(t, "invalid next", span.metaStruct[stacktrace.SpanKey])
+
+	t.Run("invalid next", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		event := &stacktrace.Event{Category: stacktrace.VulnerabilityEvent}
+		valid := map[string][]*stacktrace.Event{
+			string(stacktrace.VulnerabilityEvent): {event},
+		}
+		span := newBasicSpan("web.request")
+		span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: valid})
+		span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: "invalid next"})
+
+		require.Equal(t, []telemetrytest.LogLine{{
+			Level: telemetry.LogWarn,
+			Text:  "failed to merge stack-trace span values",
+		}}, telemetryClient.Logs)
+		require.Equal(t, map[string][]*stacktrace.Event{
+			string(stacktrace.VulnerabilityEvent): {event},
+		}, span.metaStruct[stacktrace.SpanKey])
+	})
 }
 
 func TestSpanSetTagError(t *testing.T) {

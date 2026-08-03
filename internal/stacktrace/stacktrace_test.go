@@ -22,8 +22,8 @@ func captureRawForTest(skip int) RawStackTrace {
 }
 
 //go:noinline
-func captureInternalFramesForTest(skip int) StackTrace {
-	return SkipAndCaptureWithInternalFrames(4, skip)
+func captureInternalFramesForTest(depth, skip int) StackTrace {
+	return SkipAndCaptureWithInternalFrames(depth, skip)
 }
 
 func TestCaptureSkipsStacktraceMachinery(t *testing.T) {
@@ -32,8 +32,17 @@ func TestCaptureSkipsStacktraceMachinery(t *testing.T) {
 	frame, _ := runtime.CallersFrames(raw.PCs).Next()
 	require.Contains(t, frame.Function, "captureRawForTest")
 
-	stack := captureInternalFramesForTest(0)
+	raw.PCs = raw.PCs[:1]
+	stack := raw.SymbolicateWithRedaction()
+	require.Len(t, stack, 1)
+	require.Contains(t, stack[0].Function, "captureRawForTest")
+
+	stack = captureInternalFramesForTest(4, 0)
 	require.NotEmpty(t, stack)
+	require.Contains(t, stack[0].Function, "captureInternalFramesForTest")
+
+	stack = captureInternalFramesForTest(1, 0)
+	require.Len(t, stack, 1)
 	require.Contains(t, stack[0].Function, "captureInternalFramesForTest")
 }
 

@@ -306,6 +306,9 @@ func (iter *framesIterator) capture() StackTrace {
 	for frame, ok := iter.Next(); ok; frame, ok = iter.Next() {
 		// we reach the top frames: start to use the queue
 		if nbStoredFrames >= iter.maxDepth-iter.topFrameDepth {
+			if iter.topFrameDepth == 0 {
+				break
+			}
 			topFramesQueue.Add(frame)
 			// queue is full, remove the oldest frame
 			if topFramesQueue.Length() > iter.topFrameDepth {
@@ -355,7 +358,7 @@ type framesIterator struct {
 }
 
 func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
-	topFrameDepth := max(maxDepth/4, 1)
+	topFrameDepth := reservedTopFrameDepth(maxDepth)
 
 	// We want to always skip frames belonging to the internal machinery of the
 	// stacktrace collection. Concretely, this means hiding the following call
@@ -375,10 +378,17 @@ func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
 	}
 }
 
+func reservedTopFrameDepth(maxDepth int) int {
+	if maxDepth <= 1 {
+		return 0
+	}
+	return min(max(maxDepth/4, 1), maxDepth-1)
+}
+
 // iteratorFromRaw creates an iterator from pre-captured PCs for deferred symbolication
 func iteratorFromRaw(pcs []uintptr, opts frameOptions) *framesIterator {
 	maxDepth := min(len(pcs), defaultMaxDepth)
-	topFrameDepth := max(maxDepth/4, 1)
+	topFrameDepth := reservedTopFrameDepth(maxDepth)
 
 	return &framesIterator{
 		frameOpts:     opts,

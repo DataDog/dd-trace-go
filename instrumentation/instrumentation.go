@@ -286,6 +286,8 @@ func (i *Instrumentation) ActiveSpanKey() any {
 // StackTrace is a stack-trace event captured by an [Instrumentation]. Its
 // fields must not be mutated after passing it to [Instrumentation.RecordStackTrace].
 type StackTrace = stacktrace.Event
+
+// StackFrame is a single frame of a [StackTrace].
 type StackFrame = stacktrace.StackFrame
 
 // StackTraceCategory identifies the kind of event associated with a stack trace.

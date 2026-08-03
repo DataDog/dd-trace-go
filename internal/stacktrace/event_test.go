@@ -50,6 +50,7 @@ func TestNewEventWithDepthOption(t *testing.T) {
 	require.Equal(t, ExploitEvent, event.Category)
 	require.Equal(t, "id", event.ID)
 	require.Len(t, event.Frames, 1)
+	require.NotEqual(t, "goexit", event.Frames[0].Function)
 }
 
 func TestNewEventWithNegativeDepthUsesDefault(t *testing.T) {
@@ -61,9 +62,9 @@ func TestNewEventWithNegativeDepthUsesDefault(t *testing.T) {
 func TestEventToSpan(t *testing.T) {
 	event1 := NewEvent(ExceptionEvent, WithMessage("message1"))
 	event2 := NewEvent(ExploitEvent, WithMessage("message2"))
-	spanValue := GetSpanValue(event1, event2)
+	spanValue := getSpanValue(event1, event2)
 
-	eventsMap := spanValue.(internal.MetaStructValue).Value.(map[string][]*Event)
+	eventsMap := spanValue.Value.(map[string][]*Event)
 	require.Len(t, eventsMap, 2)
 
 	eventsCat := eventsMap[string(ExceptionEvent)]
@@ -111,9 +112,9 @@ func TestMergeSpanValues(t *testing.T) {
 
 func TestMsgPackSerialization(t *testing.T) {
 	event := NewEvent(ExceptionEvent, WithMessage("message"), WithType("type"), WithID("id"))
-	spanValue := GetSpanValue(event)
+	spanValue := getSpanValue(event)
 
-	eventsMap := spanValue.(internal.MetaStructValue).Value
+	eventsMap := spanValue.Value
 
 	_, err := msgp.AppendIntf(nil, eventsMap)
 	require.NoError(t, err)

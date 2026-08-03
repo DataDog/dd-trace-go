@@ -123,11 +123,6 @@ func WithDepth(depth int) Option {
 	}
 }
 
-// GetSpanValue returns the value to be set as a tag on a span for the given stacktrace events.
-func GetSpanValue(events ...*Event) any {
-	return getSpanValue(events...)
-}
-
 // AddToSpan submits the events to the given span as a tag. It returns true when
 // at least one event was submitted; TagSetter does not report whether it stored
 // the value.
