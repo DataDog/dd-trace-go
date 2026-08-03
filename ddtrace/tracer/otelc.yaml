@@ -1,0 +1,39 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Automatically manage the tracer lifecycle in an instrumented application, the
+# otelc port of the `func main()` aspect in orchestrion.yml.
+#
+# KNOWN PARITY DIFFERENCE: orchestrion starts the tracer from an injected
+# `func init()`, so it is running before any other package's init can emit a span.
+# This rule starts it at the top of main instead, which is after every package
+# init has run, so a span emitted from an init is lost here but captured under
+# orchestrion. Everything after main begins is identical.
+#
+# The faithful version was tried and reverted. Injecting a `func init()` needs
+# add_file, and add_file has no selectors: it applies to the target package as a
+# whole, which under `otelc go test` includes the generated test-main. Two things
+# then go wrong. otelc emits an empty `package` clause into that compile unit, so
+# the build fails outright, and even if it did not, the injected init would start
+# a second tracer underneath the integration harness, which bootstraps its own.
+# `where: file: {is_test: false}` does not help, because file predicates are not
+# honored for add_file. Both are upstream issues; revisit when they are fixed.
+#
+# A point-selector rule like the one below does not have that problem: `target:
+# main` combined with `where.func` does not match a test-main compile unit, so
+# this never fires under `otelc go test`. tracer_autostart_test.go is the
+# regression gate for that, since a silent double start would be hard to spot.
+
+create_tracer:
+  target: main
+  where:
+    func: main
+  do:
+    - inject_code:
+        raw: |
+          _ = tracer.Start()
+          defer tracer.Stop()
+  imports:
+    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
