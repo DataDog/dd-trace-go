@@ -147,8 +147,11 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 		execOpts.lastObservation = observation
 		logFreshRetryAttemptState("complete", localT, result)
 		if finalize := execMeta.retryAttemptFinalizer; finalize != nil {
-			execMeta.retryAttemptFinalizer = nil
-			defer finalize(result)
+			defer func() {
+				execMeta.retryAttemptFinalizer = nil
+				defer completeDeferredProcessRetryEvent(execMeta)
+				finalize(result)
+			}()
 		}
 		if execOpts.originalExecutionMetadata != nil {
 			execOpts.originalExecutionMetadata.test = execMeta.test

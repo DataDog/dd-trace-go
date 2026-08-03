@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -113,6 +114,35 @@ func TestDeferredProcessRetryCoordinatorTracksNativeInvocationPhases(t *testing.
 	require.Equal(t, uint64(2), coordinator.observeInvocationPhase(first))
 	require.Equal(t, uint64(2), coordinator.observeInvocationPhase(second))
 	require.Zero(t, coordinator.observeInvocationPhase(newTestIdentity("module", "suite", "TestFirst/subtest")))
+}
+
+func TestDeferredProcessRetryInvocationIsCapturedBeforeExecutionMetadata(t *testing.T) {
+	if !ProcessRetryContainmentSupported() {
+		t.Skip("process retry containment is unavailable")
+	}
+	coordinator := newProcessRetryCoordinator()
+	counter := &atomic.Uint64{}
+	baseline := &processRetryLaunchBaseline{
+		argsSnapshot: processRetryArgsSnapshot{captured: true, ok: true},
+	}
+	firstOptions := &runTestWithRetryOptions{
+		processRetryCoordinator:       coordinator,
+		processRetryIdentity:          newTestIdentity("module", "suite", "TestFirst"),
+		processRetryInvocationCounter: counter,
+	}
+	secondOptions := &runTestWithRetryOptions{
+		processRetryCoordinator:       coordinator,
+		processRetryIdentity:          newTestIdentity("module", "suite", "TestSecond"),
+		processRetryInvocationCounter: counter,
+	}
+
+	prepareDeferredProcessRetryInvocation(&executionOptions{options: firstOptions, processRetryLaunchBaseline: baseline})
+	prepareDeferredProcessRetryInvocation(&executionOptions{options: secondOptions, processRetryLaunchBaseline: baseline})
+
+	require.Equal(t, uint64(1), firstOptions.processRetryPhaseID)
+	require.Equal(t, uint64(1), secondOptions.processRetryPhaseID)
+	require.Equal(t, uint64(1), firstOptions.processRetryInvocationOrdinal)
+	require.Equal(t, uint64(2), secondOptions.processRetryInvocationOrdinal)
 }
 
 func TestDeferredProcessRetryCoordinatorDrainPublishesOneSummary(t *testing.T) {
@@ -525,6 +555,94 @@ func TestDeferredProcessRetryCancellationFinalizesTailEventOnce(t *testing.T) {
 	require.Equal(t, "false", event.tags[constants.TestAttemptToFixPassed])
 }
 
+func TestDeferredProcessRetryShutdownWaitsForInitialEventPublication(t *testing.T) {
+	coordinator, execMeta, event, group := newDeferredProcessRetryPendingGroupForTesting(t, retryAttemptObservation{failed: true})
+
+	coordinator.mu.Lock()
+	inFlight := coordinator.inFlight
+	queued := len(coordinator.queue)
+	coordinator.mu.Unlock()
+	require.Equal(t, 1, inFlight)
+	require.Zero(t, queued)
+
+	stateChanged := coordinator.stateChange()
+	shutdownComplete := make(chan struct{})
+	go func() {
+		coordinator.completeShutdown()
+		close(shutdownComplete)
+	}()
+	<-stateChanged
+	require.Equal(t, processRetryCoordinatorShuttingDown, coordinator.stateSnapshot())
+	select {
+	case <-shutdownComplete:
+		t.Fatal("shutdown completed before the initial event was published")
+	default:
+	}
+	require.Zero(t, event.closeCount)
+
+	deferOrCloseInstrumentedTestEvent(execMeta, event, integrations.ResultStatusFail, "")
+	completeDeferredProcessRetryEvent(execMeta)
+	select {
+	case <-shutdownComplete:
+	case <-t.Context().Done():
+		t.Fatal("shutdown did not complete after the initial event was published")
+	}
+
+	require.Equal(t, 1, event.closeCount)
+	require.True(t, group.tailEvent.closed)
+	require.Equal(t, "process_shutdown", group.terminalFailureReason)
+}
+
+func TestDeferredProcessRetryMissingInitialEventAbortsAdmission(t *testing.T) {
+	coordinator, execMeta, _, group := newDeferredProcessRetryPendingGroupForTesting(t, retryAttemptObservation{failed: true})
+
+	completeDeferredProcessRetryEvent(execMeta)
+
+	require.Empty(t, coordinator.seal())
+	require.Nil(t, execMeta.deferredRetryEvent)
+	require.Nil(t, group.tailEvent)
+	require.Nil(t, group.lease)
+}
+
+func TestDeferredProcessRetryInitialPanicControlsTerminalReplay(t *testing.T) {
+	panicValue := &struct{ message string }{message: "initial panic"}
+	tests := []struct {
+		name          string
+		retryFailed   bool
+		terminalPanic bool
+	}{
+		{name: "ordinary retry failure", retryFailed: true, terminalPanic: true},
+		{name: "retry pass", retryFailed: false, terminalPanic: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			coordinator, execMeta, event, _ := newDeferredProcessRetryPendingGroupForTesting(t, retryAttemptObservation{
+				failed:     true,
+				panicData:  panicValue,
+				panicStack: []byte("initial stack"),
+			})
+			deferOrCloseInstrumentedTestEvent(execMeta, event, integrations.ResultStatusFail, "")
+			completeDeferredProcessRetryEvent(execMeta)
+			coordinator.drainGroup = func(group *deferredProcessRetryGroup) bool {
+				group.latest = retryAttemptObservation{failed: test.retryFailed}
+				group.observe(test.retryFailed, false)
+				group.finish()
+				return group.packageFailed()
+			}
+
+			summary := coordinator.drain(0)
+			if test.terminalPanic {
+				require.Contains(t, fmt.Sprint(summary.terminalPanic), "initial panic")
+				require.Contains(t, fmt.Sprint(summary.terminalPanic), "initial stack")
+				require.Equal(t, processRetryFailureExitCode, summary.exitCode)
+			} else {
+				require.Nil(t, summary.terminalPanic)
+				require.Zero(t, summary.exitCode)
+			}
+		})
+	}
+}
+
 func TestDeferredProcessRetryChildEventRemainsTailUntilAggregateFinalization(t *testing.T) {
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
@@ -907,6 +1025,59 @@ func newDeferredProcessRetrySchedulerGroup(
 	}
 	group.observe(true, false)
 	return group
+}
+
+func newDeferredProcessRetryPendingGroupForTesting(
+	t *testing.T,
+	observation retryAttemptObservation,
+) (*processRetryCoordinator, *testExecutionMetadata, *processRetryRecordingTest, *deferredProcessRetryGroup) {
+	t.Helper()
+	if !ProcessRetryContainmentSupported() {
+		t.Skip("process retry containment is unavailable")
+	}
+	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
+	t.Cleanup(restoreLaunchGate)
+	require.True(t, registerProcessRetryShutdownAction())
+	restoreSupport := setProcessRetrySupportHooksForTesting(t, processRetrySupportHooks{
+		childCleanupSupported:      func() bool { return true },
+		testingMWorkloadsSupported: func() bool { return true },
+	})
+	t.Cleanup(restoreSupport)
+
+	identity := newTestIdentity("module", "suite", "TestDeferredPending")
+	event := newProcessRetryRecordingTestForTesting(identity.FullName)
+	execMeta := &testExecutionMetadata{
+		identity:                  identity,
+		isFlakyTestRetriesEnabled: true,
+		test:                      event,
+	}
+	execMeta.retryAttemptFinalizer = func(retryAttemptResult) {}
+	coordinator := newProcessRetryCoordinator()
+	options := &runTestWithRetryOptions{
+		t:                           t,
+		testInfo:                    &commonInfo{moduleName: identity.ModuleName, suiteName: identity.SuiteName, testName: identity.FullName, identity: identity},
+		processRetryAllowed:         true,
+		processRetryDeferredAllowed: true,
+		processRetryMode:            retryExecutionModeProcess,
+		processRetryModeSet:         true,
+		processRetryCoordinator:     coordinator,
+		processRetryIdentity:        identity,
+		fuzzActive:                  func() bool { return false },
+		preProcessRetryMetaAdjust:   func(*testExecutionMetadata, int) {},
+	}
+	execOpts := &executionOptions{
+		options:                     options,
+		executionMetadata:           execMeta,
+		executionIndex:              0,
+		retryCount:                  0,
+		lastObservation:             observation,
+		flakyRetryBudgetReservation: &flakyRetryBudgetReservation{},
+		processRetryLaunchBaseline:  &processRetryLaunchBaseline{argsSnapshot: processRetryArgsSnapshot{captured: true, ok: true}, currentCPU: 1, maxConcurrency: 1, maxConcurrencySet: true},
+	}
+	require.True(t, enqueueDeferredProcessRetryGroup(execOpts))
+	require.NotNil(t, execMeta.deferredRetryEvent)
+	require.NotNil(t, execMeta.deferredRetryEvent.group)
+	return coordinator, execMeta, event, execMeta.deferredRetryEvent.group
 }
 
 func deferredProcessRetryPassingAttempt(index int) processRetryAttemptResult {

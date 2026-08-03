@@ -112,6 +112,8 @@ type deferredProcessRetryEvent struct {
 	failed     bool
 	ready      bool
 	closed     bool
+	admission  *processRetryAdmission
+	group      *deferredProcessRetryGroup
 }
 
 type processRetryCoordinatorSummary struct {
@@ -872,11 +874,13 @@ func cloneDeferredTestIdentity(identity *testIdentity) (testIdentity, bool) {
 }
 
 func prepareDeferredProcessRetryInvocation(execOpts *executionOptions) {
-	if execOpts == nil || execOpts.options == nil || execOpts.executionMetadata == nil {
+	if execOpts == nil || execOpts.options == nil {
 		return
 	}
+	// Invocation order belongs to the native first pass, so capture it before
+	// execution metadata exists. Retry eligibility is checked later at enqueue.
 	options := execOpts.options
-	if ok, _ := processRetryEligible(execOpts.executionMetadata, options); !ok {
+	if options.processRetryCoordinator == nil {
 		return
 	}
 	if ok, _ := processRetryParallelBaselineReady(execOpts.processRetryLaunchBaseline); !ok {
@@ -901,6 +905,9 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 		return false
 	}
 	if ok, _ := processRetryParallelBaselineReady(execOpts.processRetryLaunchBaseline); !ok {
+		return false
+	}
+	if execOpts.executionMetadata.retryAttemptFinalizer == nil {
 		return false
 	}
 	parallelEFD := shouldUseParallelEFD(
@@ -953,22 +960,24 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 		allRetriesFailed:  true,
 		module:            execOpts.module,
 		suite:             execOpts.suite,
+		panicData:         execOpts.lastObservation.panicData,
+		panicStack:        string(execOpts.lastObservation.panicStack),
 		parallelEFD:       parallelEFD,
 		rootParallel:      execOpts.lastObservation.rootParallel,
 		nativeMaxParallel: nativeMaxParallel,
 	}
 	group.metadata.identity = &group.identity
 	group.testInfo.identity = &group.identity
-	group.tailEvent = &deferredProcessRetryEvent{event: execOpts.executionMetadata.test}
+	group.tailEvent = &deferredProcessRetryEvent{
+		event:     execOpts.executionMetadata.test,
+		admission: admission,
+		group:     group,
+	}
 	execOpts.executionMetadata.deferredRetryEvent = group.tailEvent
 	group.observe(execOpts.lastObservation.failed, execOpts.lastObservation.skipped)
-	if !admission.commit(group) {
-		execOpts.executionMetadata.deferredRetryEvent = nil
-		group.tailEvent = nil
-		lease.release()
-		return false
-	}
-	// The queue now owns any FTR reservation admitted after the first attempt.
+	// The pending admission owns any FTR reservation admitted after the first
+	// attempt. It becomes visible to the coordinator only after the first event
+	// finalizer publishes its immutable close disposition.
 	execOpts.flakyRetryBudgetReservation = &flakyRetryBudgetReservation{}
 	return true
 }
@@ -1245,6 +1254,36 @@ func deferOrCloseInstrumentedTestEvent(
 		return
 	}
 	test.Close(status)
+}
+
+func completeDeferredProcessRetryEvent(execMeta *testExecutionMetadata) {
+	if execMeta == nil || execMeta.deferredRetryEvent == nil {
+		return
+	}
+	event := execMeta.deferredRetryEvent
+	admission := event.admission
+	if admission == nil {
+		return
+	}
+	group := event.group
+	event.admission = nil
+	event.group = nil
+	if event.ready && admission.commit(group) {
+		return
+	}
+	admission.abort()
+	if group != nil {
+		if group.reservation != nil {
+			group.reservation.refund()
+			group.reservation = nil
+		}
+		if group.lease != nil {
+			group.lease.release()
+			group.lease = nil
+		}
+		group.tailEvent = nil
+	}
+	execMeta.deferredRetryEvent = nil
 }
 
 func (g *deferredProcessRetryGroup) printSummary() {
