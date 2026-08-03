@@ -97,7 +97,9 @@ func WithID(id string) Option {
 }
 
 // WithSkip sets the number of caller frames to skip after the stacktrace
-// capture machinery. Negative values are treated as zero.
+// capture machinery, replacing any previously configured skip. Negative values
+// are treated as zero. When combining it with [WithAdditionalSkip], apply
+// WithAdditionalSkip last so the addition is not overwritten.
 func WithSkip(skip int) Option {
 	return func(cfg *eventConfig) {
 		cfg.skip = max(0, skip)
