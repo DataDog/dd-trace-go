@@ -28,19 +28,19 @@ func TestSimple(t *testing.T) {
 	set(expected)
 	actual := get()
 
-	if orchestrionEnabled {
-		t.Log("Orchestrion IS enabled")
+	if glsWoven {
+		t.Log("the GLS IS woven in")
 		require.Equal(t, expected, actual)
 	} else {
-		t.Log("Orchestrion IS NOT enabled")
+		t.Log("the GLS is NOT woven in")
 		require.Nil(t, actual)
 	}
 }
 
 // TestCGO tests that the GLS is correctly set even when the code comes from a cgo callback.
 func TestCGO(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("Orchestrion is not enabled")
+	if !glsWoven {
+		t.Skip("the GLS is not woven into this build")
 	}
 
 	expected := "I am inside a cgo callback"
@@ -50,8 +50,8 @@ func TestCGO(t *testing.T) {
 }
 
 func TestConcurrency(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("Orchestrion is not enabled")
+	if !glsWoven {
+		t.Skip("the GLS is not woven into this build")
 	}
 
 	nbSets := 5000
@@ -74,8 +74,8 @@ func TestConcurrency(t *testing.T) {
 }
 
 func BenchmarkGLS(b *testing.B) {
-	if !orchestrionEnabled {
-		b.Skip("Orchestrion is not enabled")
+	if !glsWoven {
+		b.Skip("the GLS is not woven into this build")
 	}
 
 	b.Run("Set", func(b *testing.B) {
