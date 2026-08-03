@@ -56,7 +56,7 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 			ctx = listener.HandlerStarted(ctx, msg)
 		}
 		CurrentContext = ctx
-		stripMsg := internal.StripEventBridgeContext(msg) // Strip _datadog context from the message
+		stripMsg := internal.StripInjectedContext(msg) // Strip _datadog context from the message
 		result, err := callHandler(ctx, stripMsg, handler)
 		for _, listener := range listeners {
 			ctx = context.WithValue(ctx, extension.DdLambdaResponse, result)
@@ -85,7 +85,7 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 
 	handlerPayload := payload
 	if unmarshalErr == nil {
-		handlerPayload = []byte(internal.StripEventBridgeContext(msg))
+		handlerPayload = []byte(internal.StripInjectedContext(msg))
 	}
 
 	result, err := h.handler.Invoke(ctx, handlerPayload)
