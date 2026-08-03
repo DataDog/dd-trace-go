@@ -3224,9 +3224,9 @@ func TestPprofLabels(t *testing.T) {
 }
 
 // TestApplyPPROFLabelsTraceID verifies the pprof label gating matrix: the whole
-// 128-bit "trace id" (32-char lowercase hex) and "local root span id" are
-// emitted for code hotspots; "span id" stays hotspots-only; "trace endpoint"
-// stays endpoints-only; and nothing is emitted when no feature is enabled.
+// 128-bit "trace id" (32-char lowercase hex) is emitted for code hotspots;
+// "span id" stays hotspots-only; "trace endpoint" stays endpoints-only; and
+// nothing is emitted when no feature is enabled.
 func TestApplyPPROFLabelsTraceID(t *testing.T) {
 	// WithAppSecEnabled(false) disables AppSec so the code-hotspots and endpoints
 	// gates can be tested deterministically; assert the global state to be safe.
@@ -3240,7 +3240,6 @@ func TestApplyPPROFLabelsTraceID(t *testing.T) {
 
 	traceID := span.context.TraceID()
 	require.Regexp(t, "^[0-9a-f]{32}$", traceID, "trace id must be the whole 128-bit id as lowercase hex")
-	localRoot := strconv.FormatUint(span.Root().getSpanID(), 10)
 	spanID := strconv.FormatUint(span.spanID, 10)
 
 	// apply resets the label context and (re)applies the labels for snap.
@@ -3267,7 +3266,6 @@ func TestApplyPPROFLabelsTraceID(t *testing.T) {
 		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerHotspotsEnabled: true})
 		require.NotNil(t, ctx)
 		present(t, ctx, traceprof.TraceID, traceID)
-		present(t, ctx, traceprof.LocalRootSpanID, localRoot)
 		present(t, ctx, traceprof.SpanID, spanID)
 		absent(t, ctx, traceprof.TraceEndpoint)
 	})
@@ -3275,7 +3273,7 @@ func TestApplyPPROFLabelsTraceID(t *testing.T) {
 		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerEndpoints: true})
 		require.NotNil(t, ctx)
 		present(t, ctx, traceprof.TraceEndpoint, "/things")
-		absent(t, ctx, traceprof.TraceID, traceprof.LocalRootSpanID, traceprof.SpanID)
+		absent(t, ctx, traceprof.TraceID, traceprof.SpanID)
 	})
 	t.Run("none", func(t *testing.T) {
 		require.Nil(t, apply(internalconfig.SpanStartSnapshot{}))
@@ -3283,8 +3281,8 @@ func TestApplyPPROFLabelsTraceID(t *testing.T) {
 }
 
 // TestApplyPPROFLabelsTraceIDAppSec verifies that enabling AppSec (with the
-// profiler features off) still emits "trace id" and "local root span id" for
-// trace/security correlation, but not the hotspots-only "span id".
+// profiler features off) still emits "trace id" for trace/security correlation,
+// but not the hotspots-only "span id".
 func TestApplyPPROFLabelsTraceIDAppSec(t *testing.T) {
 	if err := Start(WithAppSecEnabled(true), WithProfilerCodeHotspots(false), WithProfilerEndpoints(false)); err != nil {
 		t.Fatal(err)
@@ -3302,8 +3300,6 @@ func TestApplyPPROFLabelsTraceIDAppSec(t *testing.T) {
 	got, ok := pprof.Label(ctx, traceprof.TraceID)
 	require.True(t, ok, "trace id label should be present under appsec")
 	require.Equal(t, span.context.TraceID(), got)
-	_, ok = pprof.Label(ctx, traceprof.LocalRootSpanID)
-	require.True(t, ok, "local root span id label should be present under appsec")
 	_, ok = pprof.Label(ctx, traceprof.SpanID)
 	require.False(t, ok, "span id is hotspots-only and must be absent under appsec-only")
 }
