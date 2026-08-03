@@ -77,6 +77,11 @@ const (
 	// map under which Envoy publishes the attributes selected by the extension
 	// configuration. Google Cloud Service Extensions spell that selection
 	// forwardAttributes; the resulting wire format is Envoy's.
+	//
+	// Envoy keys that map by the filter's own name, so the value below is not
+	// arbitrary and must not be "corrected" to something friendlier:
+	// source/extensions/filters/http/ext_proc/ext_proc.cc does
+	// (*req.mutable_attributes())[FilterName] = std::move(attributes).
 	extProcAttributesNamespace = "envoy.filters.http.ext_proc"
 
 	// sourceIPAttribute holds the address of the TCP peer as seen by the load
