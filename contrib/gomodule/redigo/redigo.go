@@ -20,8 +20,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
-	"github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/internal/otelcguard"
-
 	"github.com/gomodule/redigo/redis"
 )
 
@@ -134,9 +132,9 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 func DialContext(ctx context.Context, network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
 	instr.Logger().Debug("contrib/gomodule/redigo: Dialing with context %s %s, %#v", network, address, cfg)
-	// Marked so the otelc hook on redis.DialContext knows this dial is already
-	// being wrapped here and leaves it alone. No effect without otelc.
-	c, err := redis.DialContext(otelcguard.Mark(ctx), network, address, dialOpts...)
+	// Marked so the otelc hook on redis.DialContext leaves this dial alone; see
+	// TraceMark. No effect without otelc.
+	c, err := redis.DialContext(TraceMark(ctx), network, address, dialOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +178,7 @@ func DialURLContext(ctx context.Context, rawurl string, options ...interface{}) 
 	network := "tcp"
 	// Marked so the otelc hook on redis.DialURLContext knows this dial is
 	// already being wrapped here and leaves it alone. No effect without otelc.
-	c, err := redis.DialURLContext(otelcguard.Mark(ctx), rawurl, dialOpts...)
+	c, err := redis.DialURLContext(TraceMark(ctx), rawurl, dialOpts...)
 	p := &params{config: cfg, network: network, host: host, port: port}
 	p.spanCfg = newSpanConfig(cfg, network, host, port)
 	tc := wrapConn(c, p)

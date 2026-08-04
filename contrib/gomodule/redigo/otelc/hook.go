@@ -15,7 +15,6 @@ import (
 	"go.opentelemetry.io/otelc/pkg/hook"
 
 	redigotrace "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2"
-	"github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/internal/otelcguard"
 )
 
 // dialResult carries the connection to the after hook, the only place otelc lets
@@ -29,7 +28,7 @@ type dialResult struct {
 // Marked contexts are the contrib's own dial and are left alone, which stops both
 // recursion and double wrapping.
 func BeforeDialContext(ictx hook.HookContext, ctx context.Context, network, address string, options ...redis.DialOption) {
-	if otelcguard.Marked(ctx) {
+	if redigotrace.TraceMarked(ctx) {
 		return
 	}
 	if ctx == nil {
