@@ -424,13 +424,12 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		firstExtraction := (ctx == nil)
 		extractedCtx, err := v.Extract(carrier)
 
-		// If this is the baggage propagator, just stash its items into pendingBaggage
+		// If this is the baggage propagator, take ownership of its map directly:
+		// there is only one baggage propagator (see extractBaggage below), so
+		// extractedCtx is not shared with anything else and its map needs no copy.
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
 			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				if pendingBaggage == nil {
-					pendingBaggage = make(map[string]string, len(extractedCtx.baggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				}
-				maps.Copy(pendingBaggage, extractedCtx.baggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				pendingBaggage = extractedCtx.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			}
 			continue
 		}
@@ -487,10 +486,9 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				baggage:     make(map[string]string, len(pendingBaggage)), // +checklocksignore - Initialization time, not shared yet.
-				baggageOnly: true,                                         // +checklocksignore - Initialization time, not shared yet.
+				baggage:     pendingBaggage, // +checklocksignore - Initialization time, not shared yet.
+				baggageOnly: true,           // +checklocksignore - Initialization time, not shared yet.
 			}
-			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil, nil
 		}
@@ -499,9 +497,13 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-			ctx.baggage = make(map[string]string, len(pendingBaggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			// Common case: no OT "ot-baggage-<key>" headers were extracted, so
+			// pendingBaggage can be taken directly instead of copied into a new map.
+			ctx.baggage = pendingBaggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		} else {
+			// ctx.baggage already holds OT-baggage items; merge, don't replace.
+			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		}
-		maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
@@ -1788,6 +1790,12 @@ const baggageKeyLen = 7
 // implementations fall back to foreachBaggageHeader, which is deliberately
 // its own function so its heap-allocated locals are scoped to calls that
 // actually take that path.
+//
+// This deliberately diverges from the ForeachKey-plus-scratch-struct pattern
+// datadogExtractScratch/w3cExtractScratch use: those extractors must inspect
+// every header key to find several different fields, so a scan is the only
+// option regardless of carrier type. Baggage reads exactly one key, so a
+// direct map/slice lookup on the two built-in carriers beats any scan.
 func lookupBaggageHeader(reader TextMapReader) (string, error) {
 	switch c := reader.(type) {
 	case TextMapCarrier:

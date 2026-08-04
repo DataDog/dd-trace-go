@@ -3638,6 +3638,36 @@ func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 	assert.Equal(t, "xyz", got["item"])
 }
 
+// TestExtractBaggageMergesWithOTBaggagePrefix pins the merge branch in
+// extractIncomingSpanContext: when the Datadog extractor has already
+// populated ctx.baggage from a legacy "ot-baggage-<key>" header, the W3C
+// "baggage" header's items must be merged into that map, not silently
+// discarded or used to replace it wholesale.
+func TestExtractBaggageMergesWithOTBaggagePrefix(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:                  "12345",
+		DefaultParentIDHeader:                 "67890",
+		DefaultBaggageHeaderPrefix + "legacy": "old",
+		"baggage":                             "item=xyz",
+	})
+
+	ctx, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 2)
+	assert.Equal(t, "old", got["legacy"])
+	assert.Equal(t, "xyz", got["item"])
+}
+
 // TestSpanContextDebugLoggingSecurity verifies that debug logging of span context
 // does not expose sensitive data from baggage or other fields.
 func TestSpanContextDebugLoggingSecurity(t *testing.T) {
