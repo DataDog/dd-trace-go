@@ -119,16 +119,38 @@ jobs:
           # mechanical transformation (e.g. _integration/redigo lives at
           # contrib/gomodule/redigo). Each migrated contrib adds its package below.
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
-          PACKAGE_NAMES=(
-            "${PREFIX}/otelc"           # otelc actually applied its rules
-            "${PREFIX}/gls"             # GLS storage, gate, span and AppSec lifecycle
-            "${PREFIX}/gls-leak"        # GLS reclaim, at the heap level
-            "${PREFIX}/otelc-autostart" # the tracer is started without the app asking
-          )
-          echo "Running otelc tests for: ${PACKAGE_NAMES[*]}"
+          export PACKAGE_NAMES="\
+            ${PREFIX}/otelc \
+            ${PREFIX}/gls \
+            ${PREFIX}/gls-leak \
+            ${PREFIX}/otelc-autostart"
+          echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
-          gotestsum --junitfile "${XML_PATH}" --raw-command -- \
-            otelc go test -json -shuffle=on "${PACKAGE_NAMES[@]}"
+          # `otelc go test -json` silently produces uninstrumented binaries: every
+          # GLS test skips and the proof test fails. So the tests run without it and
+          # the output is converted afterwards, which is also why each package gets
+          # its own invocation, since test2json -p labels one package at a time.
+          RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
+          cat > "${RUN_SCRIPT}" <<'EOF'
+          #!/usr/bin/env bash
+          set -o pipefail
+          rc=0
+          for pkg in ${PACKAGE_NAMES}; do
+            raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_').log"
+            otelc go test -v -shuffle=on "${pkg}" > "${raw}" 2>&1
+            status=$?
+            go tool test2json -t -p "${pkg}" < "${raw}"
+            if [[ "${status}" -ne 0 ]]; then
+              echo "::group::Raw output for ${pkg} (exit ${status})" >&2
+              cat "${raw}" >&2
+              echo "::endgroup::" >&2
+              rc=1
+            fi
+          done
+          exit "${rc}"
+          EOF
+
+          gotestsum --junitfile "${XML_PATH}" --raw-command -- bash "${RUN_SCRIPT}"
         working-directory: internal/orchestrion/_integration
         env:
           # otelc-autostart shells out to a nested `otelc go build`, which
