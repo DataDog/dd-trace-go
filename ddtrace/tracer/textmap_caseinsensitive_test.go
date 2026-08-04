@@ -125,6 +125,41 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 		require.NotNil(t, ctx)
 		assert.Equal(t, "baz", ctx.baggageItem("foo"))
 	})
+
+	// Carriers other than TextMapCarrier/HTTPHeadersCarrier -- e.g.
+	// contrib/IBM/sarama's ProducerMessageCarrier, whose Get method documents
+	// "last occurrence wins" for a repeated key -- go through the ForeachKey
+	// fallback (foreachBaggageHeader) instead of the fast path above. That
+	// fallback must preserve the same last-value-wins contract.
+	t.Run("baggage header, ForeachKey fallback keeps last of duplicate keys", func(t *testing.T) {
+		t.Setenv(envPropagationStyleExtract, "baggage")
+		p := NewPropagator(nil)
+		carrier := orderedHeaderCarrier{
+			{key: "baggage", val: "foo=bar"},
+			{key: "BAGGAGE", val: "foo=baz"},
+		}
+		ctx, err := p.Extract(carrier)
+		require.NoError(t, err)
+		require.NotNil(t, ctx)
+		assert.Equal(t, "baz", ctx.baggageItem("foo"))
+	})
+}
+
+// orderedHeaderCarrier is a minimal TextMapReader that emits key/value pairs
+// in a fixed slice order and can legitimately contain a duplicate key,
+// mirroring carriers like contrib/IBM/sarama's ProducerMessageCarrier -- unlike
+// TextMapCarrier, whose map iteration order is already randomized. It
+// deliberately does not implement TextMapWriter, so it always reaches the
+// ForeachKey fallback rather than a carrier-specific fast path.
+type orderedHeaderCarrier []struct{ key, val string }
+
+func (c orderedHeaderCarrier) ForeachKey(handler func(key, val string) error) error {
+	for _, kv := range c {
+		if err := handler(kv.key, kv.val); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // canonicalHTTPHeaders builds an http.Header whose keys are stored in canonical

@@ -1815,10 +1815,14 @@ func lookupBaggageHeader(reader TextMapReader) (string, error) {
 	}
 }
 
+// foreachBaggageHeader keeps the last matching value, not the first: carriers
+// that reach this fallback (Kafka/gRPC/etc. in contrib/) can have a real,
+// deterministic order where a repeated "baggage" key's last occurrence is the
+// documented winner -- see e.g. contrib/IBM/sarama's ProducerMessageCarrier.Get.
 func foreachBaggageHeader(reader TextMapReader) (string, error) {
 	var header string
 	err := reader.ForeachKey(func(k, v string) error {
-		if header == "" && len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
+		if len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
 			header = v
 		}
 		return nil
