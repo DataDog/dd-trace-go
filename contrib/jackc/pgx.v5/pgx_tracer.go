@@ -110,17 +110,37 @@ var (
 	_ allPgxTracers = (*pgxTracer)(nil)
 )
 
-func wrapPgxTracer(prev pgx.QueryTracer, connConfig *pgx.ConnConfig, opts ...Option) *pgxTracer {
+// wrapPgxTracer returns the tracer for a standalone connection. Such a connection
+// belongs to no pool, so it has no pool name to derive, and pgx.Conn offers no hook
+// that could rewrite its metadata after this point.
+func wrapPgxTracer(connConfig *pgx.ConnConfig, opts ...Option) *pgxTracer {
+	return newPgxTracer(connConfig, "", false, opts...)
+}
+
+// wrapPgxPoolTracer returns the tracer shared by every connection in a pool. A pool
+// names itself after its config, and its BeforeConnect hook can hand each connection
+// different metadata than the base config.
+func wrapPgxPoolTracer(config *pgxpool.Config, opts ...Option) *pgxTracer {
+	connConfig := config.ConnConfig
+	return newPgxTracer(connConfig, defaultPoolName(connConfig), config.BeforeConnect != nil, opts...)
+}
+
+func newPgxTracer(connConfig *pgx.ConnConfig, poolName string, perConnInfo bool, opts ...Option) *pgxTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	if cfg.poolName == "" && connConfig != nil {
-		cfg.poolName = defaultPoolName(connConfig)
+	if cfg.poolName == "" {
+		cfg.poolName = poolName
 	}
+	// Must follow poolName resolution: the statsd tags include it.
 	cfg.checkStatsdRequired()
-	tr := &pgxTracer{cfg: cfg}
-	if prev != nil {
+	tr := &pgxTracer{
+		cfg:         cfg,
+		connInfo:    newConnInfo(connConfig),
+		perConnInfo: perConnInfo,
+	}
+	if prev := connConfig.Tracer; prev != nil {
 		tr.wrapped.query = prev
 		if batchTr, ok := prev.(pgx.BatchTracer); ok {
 			tr.wrapped.batch = batchTr

@@ -41,11 +41,7 @@ func ConnectConfig(ctx context.Context, connConfig *pgx.ConnConfig, opts ...Opti
 	// as pgx takes ownership of the config. QueryTracer traces
 	// may work, but none of the others will, as they're set in
 	// unexported fields in the config in the pgx.connect function.
-	tracer := wrapPgxTracer(connConfig.Tracer, nil, opts...)
-	// pgx.Conn has no BeforeConnect equivalent and never rewrites these fields after
-	// ParseConfig, so this snapshot stays valid for the life of the connection.
-	tracer.connInfo = newConnInfo(connConfig)
-	connConfig.Tracer = tracer
+	connConfig.Tracer = wrapPgxTracer(connConfig, opts...)
 	return pgx.ConnectConfig(ctx, connConfig)
 }
 
