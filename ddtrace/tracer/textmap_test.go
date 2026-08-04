@@ -2655,6 +2655,16 @@ func TestExtractNoHeaders(t *testing.T) {
 			extractEnv:   "datadog,tracecontext",
 			extractFirst: true,
 		},
+		{
+			name:         "baggage only",
+			extractEnv:   "baggage",
+			extractFirst: false,
+		},
+		{
+			name:         "baggage only - extractFirst",
+			extractEnv:   "baggage",
+			extractFirst: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2763,6 +2773,57 @@ func BenchmarkExtractW3CUppercase(b *testing.B) {
 	}
 }
 
+// edgeRequestHeaders returns a realistic set of headers seen on an inbound
+// edge request, used by the baggage benchmarks below so the cost of scanning
+// past non-matching keys is represented, not just the cost of matching one.
+func edgeRequestHeaders() map[string]string {
+	return map[string]string{
+		"accept":          "application/json",
+		"accept-encoding": "gzip",
+		"user-agent":      "Go-http-client/1.1",
+		"host":            "api.example.com",
+		"x-forwarded-for": "10.0.0.1",
+		"x-request-id":    "5f2c1e2a-6b3d-4c8e-9b0a-1234567890ab",
+		"content-type":    "application/json",
+		"authorization":   "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+		"traceparent":     "00-00000000000000001111111111111111-2222222222222222-01",
+	}
+}
+
+// baggageHeaderValue includes a "+"/"%" escape so url.QueryUnescape actually
+// does work, instead of returning its input unchanged as it would for an
+// all-clean value.
+const baggageHeaderValue = "userId=amelie,session.id=789,serverNode=DF+28,region=us1"
+
+func BenchmarkExtractBaggage(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "baggage")
+
+	b.Run("TextMapCarrier", func(b *testing.B) {
+		propagator := NewPropagator(nil)
+		headers := edgeRequestHeaders()
+		headers["baggage"] = baggageHeaderValue
+		carrier := TextMapCarrier(headers)
+		b.ResetTimer()
+		for b.Loop() {
+			propagator.Extract(carrier)
+		}
+	})
+
+	b.Run("HTTPHeadersCarrier", func(b *testing.B) {
+		propagator := NewPropagator(nil)
+		h := http.Header{}
+		for k, v := range edgeRequestHeaders() {
+			h.Set(k, v)
+		}
+		h.Set("baggage", baggageHeaderValue)
+		carrier := HTTPHeadersCarrier(h)
+		b.ResetTimer()
+		for b.Loop() {
+			propagator.Extract(carrier)
+		}
+	})
+}
+
 // BenchmarkExtractDatadogNoHeaders exercises the common edge-request case of
 // no upstream Datadog trace headers at all, where extraction fails with
 // ErrSpanContextNotFound. See CACHE/alloc backlog item #3: propagator.extractTextMap
@@ -2790,11 +2851,14 @@ func BenchmarkExtractW3CNoHeaders(b *testing.B) {
 	}
 }
 
-// BenchmarkExtractBaggageNoHeaders documents that, unlike the datadog and W3C
-// extractors above, propagatorBaggage.extractTextMap has no allocation to
-// save on the no-headers path: its contract already returns a non-nil,
-// non-error *SpanContext even when no "baggage" header is present (an empty
-// baggage-only context), so a SpanContext must be allocated regardless.
+// BenchmarkExtractBaggageNoHeaders exercises the common edge-request case of
+// no "baggage" header at all. propagatorBaggage.extractTextMap now returns
+// (nil, nil) in that case instead of an allocated empty *SpanContext -- safe
+// because propagatorBaggage is unexported and both of its callers in
+// chainedPropagator already nil-check the result (extractBaggage and
+// extractIncomingSpanContext). Combined with the carrier-specific fast path
+// in lookupBaggageHeader that avoids the ForeachKey closure entirely, this
+// benchmark is 0 allocs/op.
 func BenchmarkExtractBaggageNoHeaders(b *testing.B) {
 	b.Setenv(envPropagationStyleExtract, "baggage")
 	propagator := NewPropagator(nil)
@@ -3571,6 +3635,36 @@ func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 		return true
 	})
 	assert.Len(t, got, 1)
+	assert.Equal(t, "xyz", got["item"])
+}
+
+// TestExtractBaggageMergesWithOTBaggagePrefix pins the merge branch in
+// extractIncomingSpanContext: when the Datadog extractor has already
+// populated ctx.baggage from a legacy "ot-baggage-<key>" header, the W3C
+// "baggage" header's items must be merged into that map, not silently
+// discarded or used to replace it wholesale.
+func TestExtractBaggageMergesWithOTBaggagePrefix(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:                  "12345",
+		DefaultParentIDHeader:                 "67890",
+		DefaultBaggageHeaderPrefix + "legacy": "old",
+		"baggage":                             "item=xyz",
+	})
+
+	ctx, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 2)
+	assert.Equal(t, "old", got["legacy"])
 	assert.Equal(t, "xyz", got["item"])
 }
 
