@@ -304,6 +304,27 @@ func processRetryFixtureFailureScenarioLogSentinel() string {
 	}
 }
 
+type processRetryAPIResponse[T any] struct {
+	Data processRetryAPIResponseData[T] `json:"data"`
+}
+
+type processRetryAPIResponseData[T any] struct {
+	ID         string `json:"id"`
+	Type       string `json:"type"`
+	Attributes T      `json:"attributes"`
+}
+
+func writeProcessRetryAPIResponse[T any](w http.ResponseWriter, id, responseType string, attributes T) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(processRetryAPIResponse[T]{
+		Data: processRetryAPIResponseData[T]{
+			ID:         id,
+			Type:       responseType,
+			Attributes: attributes,
+		},
+	})
+}
+
 func newProcessRetryFixtureServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == deferredProcessRetryOrderPath {
@@ -313,19 +334,10 @@ func newProcessRetryFixtureServer() *httptest.Server {
 		recordProcessRetryFixtureRequest(r)
 		switch r.URL.Path {
 		case "/api/v2/libraries/tests/services/setting":
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                               `json:"id"`
-					Type       string                               `json:"type"`
-					Attributes civisibilitynet.SettingsResponseData `json:"attributes"`
-				} `json:"data"`
-			}{}
-			response.Data.ID = "process-retry-fixture"
-			response.Data.Type = "ci_app_libraries_settings"
-			response.Data.Attributes.FlakyTestRetriesEnabled = processRetryFixtureEnv(processRetryBenchmarkRetriesEnabledEnv) != "false"
-			response.Data.Attributes.ItrEnabled = true
-			response.Data.Attributes.TestsSkipping = true
+			var attributes civisibilitynet.SettingsResponseData
+			attributes.FlakyTestRetriesEnabled = processRetryFixtureEnv(processRetryBenchmarkRetriesEnabledEnv) != "false"
+			attributes.ItrEnabled = true
+			attributes.TestsSkipping = true
 			if processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" {
 				retryCount := 2
 				if value := processRetryFixtureEnv(processRetryBenchmarkRetryCountEnv); value != "" {
@@ -335,50 +347,30 @@ func newProcessRetryFixtureServer() *httptest.Server {
 					}
 					retryCount = parsed
 				}
-				response.Data.Attributes.KnownTestsEnabled = true
-				response.Data.Attributes.EarlyFlakeDetection.Enabled = true
-				response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = retryCount
+				attributes.KnownTestsEnabled = true
+				attributes.EarlyFlakeDetection.Enabled = true
+				attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = retryCount
 			}
 			if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
-				response.Data.Attributes.TestManagement.Enabled = true
-				response.Data.Attributes.TestManagement.AttemptToFixRetries = 3
+				attributes.TestManagement.Enabled = true
+				attributes.TestManagement.AttemptToFixRetries = 3
 			}
-			_ = json.NewEncoder(w).Encode(&response)
+			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_settings", attributes)
 		case "/api/v2/ci/libraries/tests":
 			if processRetryFixtureEnv(processRetryParallelEFDEnv) != "true" {
 				http.NotFound(w, r)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                                 `json:"id"`
-					Type       string                                 `json:"type"`
-					Attributes civisibilitynet.KnownTestsResponseData `json:"attributes"`
-				} `json:"data"`
-			}{}
-			response.Data.ID = "process-retry-fixture"
-			response.Data.Type = "ci_app_libraries_tests"
-			response.Data.Attributes.Tests = civisibilitynet.KnownTestsResponseDataModules{
+			attributes := civisibilitynet.KnownTestsResponseData{Tests: civisibilitynet.KnownTestsResponseDataModules{
 				"known-module": civisibilitynet.KnownTestsResponseDataSuites{},
-			}
-			_ = json.NewEncoder(w).Encode(&response)
+			}}
+			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_tests", attributes)
 		case "/api/v2/test/libraries/test-management/tests":
 			if processRetryFixtureEnv(processRetryAttemptToFixEnv) != "true" {
 				http.NotFound(w, r)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                                                 `json:"id"`
-					Type       string                                                 `json:"type"`
-					Attributes civisibilitynet.TestManagementTestsResponseDataModules `json:"attributes"`
-				} `json:"data"`
-			}{}
-			response.Data.ID = "process-retry-fixture"
-			response.Data.Type = "ci_app_libraries_tests"
-			response.Data.Attributes.Modules = map[string]civisibilitynet.TestManagementTestsResponseDataSuites{
+			attributes := civisibilitynet.TestManagementTestsResponseDataModules{Modules: map[string]civisibilitynet.TestManagementTestsResponseDataSuites{
 				"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/retryprocess": {
 					Suites: map[string]civisibilitynet.TestManagementTestsResponseDataTests{
 						"fixtures_test.go": {
@@ -393,8 +385,8 @@ func newProcessRetryFixtureServer() *httptest.Server {
 						},
 					},
 				},
-			}
-			_ = json.NewEncoder(w).Encode(&response)
+			}}
+			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_tests", attributes)
 		case "/api/v2/ci/tests/skippable":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{

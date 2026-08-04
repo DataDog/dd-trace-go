@@ -206,70 +206,41 @@ func (c *processRetryBurstCollector) ServeHTTP(w http.ResponseWriter, r *http.Re
 	c.mu.Unlock()
 	switch r.URL.Path {
 	case "/api/v2/libraries/tests/services/setting":
-		w.Header().Set("Content-Type", "application/json")
-		response := struct {
-			Data struct {
-				ID         string                               `json:"id"`
-				Type       string                               `json:"type"`
-				Attributes civisibilitynet.SettingsResponseData `json:"attributes"`
-			} `json:"data"`
-		}{}
-		response.Data.ID = "process-retry-burst"
-		response.Data.Type = "ci_app_libraries_settings"
-		response.Data.Attributes.FlakyTestRetriesEnabled = c.scenario.flakyRetries
-		response.Data.Attributes.KnownTestsEnabled = c.scenario.efd
-		response.Data.Attributes.EarlyFlakeDetection.Enabled = c.scenario.efd
-		response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = c.scenario.retries
-		response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.TenS = c.scenario.retries
-		response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.ThirtyS = c.scenario.retries
-		response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveM = c.scenario.retries
-		response.Data.Attributes.TestManagement.Enabled = c.scenario.attemptToFix || c.scenario.disabled || c.scenario.quarantined
-		response.Data.Attributes.TestManagement.AttemptToFixRetries = c.scenario.retries
-		response.Data.Attributes.ItrEnabled = c.scenario.itrForced
-		response.Data.Attributes.TestsSkipping = c.scenario.itrForced
-		_ = json.NewEncoder(w).Encode(&response)
+		var attributes civisibilitynet.SettingsResponseData
+		attributes.FlakyTestRetriesEnabled = c.scenario.flakyRetries
+		attributes.KnownTestsEnabled = c.scenario.efd
+		attributes.EarlyFlakeDetection.Enabled = c.scenario.efd
+		attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = c.scenario.retries
+		attributes.EarlyFlakeDetection.SlowTestRetries.TenS = c.scenario.retries
+		attributes.EarlyFlakeDetection.SlowTestRetries.ThirtyS = c.scenario.retries
+		attributes.EarlyFlakeDetection.SlowTestRetries.FiveM = c.scenario.retries
+		attributes.TestManagement.Enabled = c.scenario.attemptToFix || c.scenario.disabled || c.scenario.quarantined
+		attributes.TestManagement.AttemptToFixRetries = c.scenario.retries
+		attributes.ItrEnabled = c.scenario.itrForced
+		attributes.TestsSkipping = c.scenario.itrForced
+		writeProcessRetryAPIResponse(w, "process-retry-burst", "ci_app_libraries_settings", attributes)
 	case "/api/v2/ci/libraries/tests":
 		if !c.scenario.efd {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		response := struct {
-			Data struct {
-				ID         string                                 `json:"id"`
-				Type       string                                 `json:"type"`
-				Attributes civisibilitynet.KnownTestsResponseData `json:"attributes"`
-			} `json:"data"`
-		}{}
-		response.Data.ID = "process-retry-burst"
-		response.Data.Type = "ci_app_libraries_tests"
-		response.Data.Attributes.Tests = make(civisibilitynet.KnownTestsResponseDataModules, processRetryBurstMaxPackages)
+		attributes := civisibilitynet.KnownTestsResponseData{Tests: make(civisibilitynet.KnownTestsResponseDataModules, processRetryBurstMaxPackages)}
 		for i := range processRetryBurstMaxPackages {
 			module := fmt.Sprintf("github.com/DataDog/dd-trace-go/v2/burstfixture/pkg%02d", i)
-			response.Data.Attributes.Tests[module] = civisibilitynet.KnownTestsResponseDataSuites{
+			attributes.Tests[module] = civisibilitynet.KnownTestsResponseDataSuites{
 				"burst_test.go": {"TestZFirstPassComplete"},
 			}
 		}
-		_ = json.NewEncoder(w).Encode(&response)
+		writeProcessRetryAPIResponse(w, "process-retry-burst", "ci_app_libraries_tests", attributes)
 	case "/api/v2/test/libraries/test-management/tests":
 		if !c.scenario.attemptToFix && !c.scenario.disabled && !c.scenario.quarantined {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		response := struct {
-			Data struct {
-				ID         string                                                 `json:"id"`
-				Type       string                                                 `json:"type"`
-				Attributes civisibilitynet.TestManagementTestsResponseDataModules `json:"attributes"`
-			} `json:"data"`
-		}{}
-		response.Data.ID = "process-retry-burst"
-		response.Data.Type = "ci_app_libraries_tests"
-		response.Data.Attributes.Modules = make(map[string]civisibilitynet.TestManagementTestsResponseDataSuites, processRetryBurstMaxPackages)
+		attributes := civisibilitynet.TestManagementTestsResponseDataModules{Modules: make(map[string]civisibilitynet.TestManagementTestsResponseDataSuites, processRetryBurstMaxPackages)}
 		for i := range processRetryBurstMaxPackages {
 			module := fmt.Sprintf("github.com/DataDog/dd-trace-go/v2/burstfixture/pkg%02d", i)
-			response.Data.Attributes.Modules[module] = civisibilitynet.TestManagementTestsResponseDataSuites{
+			attributes.Modules[module] = civisibilitynet.TestManagementTestsResponseDataSuites{
 				Suites: map[string]civisibilitynet.TestManagementTestsResponseDataTests{
 					"burst_test.go": {
 						Tests: map[string]civisibilitynet.TestManagementTestsResponseDataTestProperties{
@@ -283,7 +254,7 @@ func (c *processRetryBurstCollector) ServeHTTP(w http.ResponseWriter, r *http.Re
 				},
 			}
 		}
-		_ = json.NewEncoder(w).Encode(&response)
+		writeProcessRetryAPIResponse(w, "process-retry-burst", "ci_app_libraries_tests", attributes)
 	case "/api/v2/ci/tests/skippable":
 		if !c.scenario.itrForced {
 			http.NotFound(w, r)
@@ -966,23 +937,8 @@ func BenchmarkProcessRetryMultiPackageBurst(b *testing.B) {
 		{name: "packages=8/retries=5", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "packages=8/profile=body", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["body"]},
 		{name: "packages=8/profile=cpu", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["cpu"]},
-		{name: "families/ftr/initial-pass", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true},
-		{name: "families/ftr/fail-to-pass", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true, parentFails: true, profile: profiles["startup"]},
-		{name: "families/ftr/persistent-failure", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
-		{name: "families/ftr/budget-limited=2", packages: 8, packageConcurrency: 8, retries: 5, totalRetryBudget: 2, flakyRetries: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
-		{name: "families/efd/sequential-pass", packages: 8, packageConcurrency: 8, retries: 10, efd: true, profile: profiles["startup"]},
-		{name: "families/efd/parallel-pass", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, profile: profiles["startup"]},
-		{name: "families/efd/parallel-persistent-failure", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
-		{name: "families/a2f/all-pass", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, profile: profiles["startup"]},
-		{name: "families/a2f/persistent-failure", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
-		{name: "families/a2f+efd+ftr/precedence", packages: 8, packageConcurrency: 8, retries: 3, flakyRetries: true, efd: true, parallelEFD: true, attemptToFix: true, profile: profiles["startup"]},
-		{name: "families/a2f+disabled/all-pass", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, disabled: true, profile: profiles["startup"]},
-		{name: "families/a2f+quarantined/all-pass", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, quarantined: true, profile: profiles["startup"]},
-		{name: "families/test-management/disabled", packages: 8, packageConcurrency: 8, disabled: true, parentFails: true},
-		{name: "families/test-management/quarantined", packages: 8, packageConcurrency: 8, quarantined: true, parentFails: true},
-		{name: "families/itr-forced/ftr-fail-to-pass", packages: 8, packageConcurrency: 8, retries: 1, flakyRetries: true, itrForced: true, parentFails: true, profile: profiles["startup"]},
-		{name: "families/coverage/efd-parallel", packages: 8, packageConcurrency: 8, retries: 2, efd: true, parallelEFD: true, coverage: true, parentFails: true, profile: profiles["startup"]},
 	}
+	cases = append(cases, retryFamilyBenchmarkScenarios(profiles, "/all-pass")...)
 	moduleDirs := make(map[string]string, len(targetRoots))
 	for _, name := range []string{"experiment", "baseline"} {
 		targetRoot, ok := targetRoots[name]
@@ -1065,25 +1021,12 @@ func processRetryBurstProfiles() map[string]processRetryBurstProfile {
 }
 
 func retryExecutionModeBenchmarkScenarios(profiles map[string]processRetryBurstProfile) []processRetryBurstScenario {
-	return []processRetryBurstScenario{
+	scenarios := []processRetryBurstScenario{
 		{name: "no-retries/ci-visibility", packages: 8, packageConcurrency: 8},
 		{name: "no-retries/efd-enabled", packages: 8, packageConcurrency: 8, efd: true},
-		{name: "families/ftr/initial-pass", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true},
-		{name: "families/ftr/fail-to-pass", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true, parentFails: true, profile: profiles["startup"]},
-		{name: "families/ftr/persistent-failure", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
-		{name: "families/ftr/budget-limited=2", packages: 8, packageConcurrency: 8, retries: 5, totalRetryBudget: 2, flakyRetries: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
-		{name: "families/efd/sequential-pass", packages: 8, packageConcurrency: 8, retries: 10, efd: true, profile: profiles["startup"]},
-		{name: "families/efd/parallel-pass", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, profile: profiles["startup"]},
-		{name: "families/efd/parallel-persistent-failure", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
-		{name: "families/a2f/all-pass", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, profile: profiles["startup"]},
-		{name: "families/a2f/persistent-failure", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
-		{name: "families/a2f+efd+ftr/precedence", packages: 8, packageConcurrency: 8, retries: 3, flakyRetries: true, efd: true, parallelEFD: true, attemptToFix: true, profile: profiles["startup"]},
-		{name: "families/a2f+disabled", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, disabled: true, profile: profiles["startup"]},
-		{name: "families/a2f+quarantined", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, quarantined: true, profile: profiles["startup"]},
-		{name: "families/test-management/disabled", packages: 8, packageConcurrency: 8, disabled: true, parentFails: true},
-		{name: "families/test-management/quarantined", packages: 8, packageConcurrency: 8, quarantined: true, parentFails: true},
-		{name: "families/itr-forced/ftr-fail-to-pass", packages: 8, packageConcurrency: 8, retries: 1, flakyRetries: true, itrForced: true, parentFails: true, profile: profiles["startup"]},
-		{name: "families/coverage/efd-parallel", packages: 8, packageConcurrency: 8, retries: 2, efd: true, parallelEFD: true, coverage: true, parentFails: true, profile: profiles["startup"]},
+	}
+	scenarios = append(scenarios, retryFamilyBenchmarkScenarios(profiles, "")...)
+	return append(scenarios, []processRetryBurstScenario{
 		{name: "efd-retries/2", packages: 8, packageConcurrency: 8, retries: 2, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "efd-retries/5", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "efd-retries/10", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
@@ -1101,6 +1044,27 @@ func retryExecutionModeBenchmarkScenarios(profiles map[string]processRetryBurstP
 		{name: "profile/startup", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "profile/body", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["body"]},
 		{name: "profile/cpu", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["cpu"]},
+	}...)
+}
+
+func retryFamilyBenchmarkScenarios(profiles map[string]processRetryBurstProfile, managedA2FSuffix string) []processRetryBurstScenario {
+	return []processRetryBurstScenario{
+		{name: "families/ftr/initial-pass", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true},
+		{name: "families/ftr/fail-to-pass", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true, parentFails: true, profile: profiles["startup"]},
+		{name: "families/ftr/persistent-failure", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
+		{name: "families/ftr/budget-limited=2", packages: 8, packageConcurrency: 8, retries: 5, totalRetryBudget: 2, flakyRetries: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
+		{name: "families/efd/sequential-pass", packages: 8, packageConcurrency: 8, retries: 10, efd: true, profile: profiles["startup"]},
+		{name: "families/efd/parallel-pass", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, profile: profiles["startup"]},
+		{name: "families/efd/parallel-persistent-failure", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
+		{name: "families/a2f/all-pass", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, profile: profiles["startup"]},
+		{name: "families/a2f/persistent-failure", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
+		{name: "families/a2f+efd+ftr/precedence", packages: 8, packageConcurrency: 8, retries: 3, flakyRetries: true, efd: true, parallelEFD: true, attemptToFix: true, profile: profiles["startup"]},
+		{name: "families/a2f+disabled" + managedA2FSuffix, packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, disabled: true, profile: profiles["startup"]},
+		{name: "families/a2f+quarantined" + managedA2FSuffix, packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, quarantined: true, profile: profiles["startup"]},
+		{name: "families/test-management/disabled", packages: 8, packageConcurrency: 8, disabled: true, parentFails: true},
+		{name: "families/test-management/quarantined", packages: 8, packageConcurrency: 8, quarantined: true, parentFails: true},
+		{name: "families/itr-forced/ftr-fail-to-pass", packages: 8, packageConcurrency: 8, retries: 1, flakyRetries: true, itrForced: true, parentFails: true, profile: profiles["startup"]},
+		{name: "families/coverage/efd-parallel", packages: 8, packageConcurrency: 8, retries: 2, efd: true, parallelEFD: true, coverage: true, parentFails: true, profile: profiles["startup"]},
 	}
 }
 

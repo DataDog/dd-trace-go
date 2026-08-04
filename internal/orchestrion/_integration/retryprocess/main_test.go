@@ -78,6 +78,21 @@ func requireOrchestrionProcessRetryContainmentForTesting(t testing.TB) {
 	}
 }
 
+func runOrchestrionRetryProcessController(t *testing.T, runFilter string, extraEnv []string, extraArgs ...string) {
+	t.Helper()
+	if orchestrionRetryProcessChild() {
+		t.Skip("controller runs only in the parent process")
+	}
+	args := []string{"-test.run=" + runFilter, "-test.v"}
+	args = append(args, extraArgs...)
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = append(os.Environ(), extraEnv...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Orchestrion controller subprocess %s failed: %v\n%s", runFilter, err, output)
+	}
+}
+
 type retryProcessChildResult struct {
 	Version      int    `json:"version"`
 	TestName     string `json:"test_name"`
@@ -249,16 +264,7 @@ func TestOrchestrionTestingMControlContract(t *testing.T) {
 }
 
 func TestOrchestrionRetryProcessSequentialMRunRestoresNativeWorkloadsController(t *testing.T) {
-	if orchestrionRetryProcessChild() {
-		t.Skip("controller runs only in the parent process")
-	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=^TestOrchestrionRetryProcessSequentialMRunFixture$", "-test.v")
-	cmd.Env = append(os.Environ(), orchestrionRetryProcessSequentialMRunEnv+"=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("sequential M.Run subprocess failed: %v\n%s", err, output)
-	}
+	runOrchestrionRetryProcessController(t, "^TestOrchestrionRetryProcessSequentialMRunFixture$", []string{orchestrionRetryProcessSequentialMRunEnv + "=true"})
 }
 
 func runOrchestrionRetryProcessSequentialMRun(m *testing.M) int {
@@ -312,16 +318,7 @@ func TestOrchestrionRetryProcessSequentialMRunFixture(t *testing.T) {
 
 func TestOrchestrionRetryProcessPureParentUsesProcessRetryController(t *testing.T) {
 	requireOrchestrionProcessRetryContainmentForTesting(t)
-	if orchestrionRetryProcessChild() {
-		t.Skip("controller runs only in the parent process")
-	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=^TestOrchestrionRetryProcessPureParentFixture$", "-test.v")
-	cmd.Env = append(os.Environ(), orchestrionRetryProcessPureParentEnv+"=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("pure Orchestrion parent subprocess failed: %v\n%s", err, output)
-	}
+	runOrchestrionRetryProcessController(t, "^TestOrchestrionRetryProcessPureParentFixture$", []string{orchestrionRetryProcessPureParentEnv + "=true"})
 }
 
 func runOrchestrionRetryProcessPureParent(m *testing.M) int {
@@ -355,16 +352,7 @@ func runOrchestrionRetryProcessPureParent(m *testing.M) int {
 
 func TestOrchestrionRetryProcessHybridParentOwnershipController(t *testing.T) {
 	requireOrchestrionProcessRetryContainmentForTesting(t)
-	if orchestrionRetryProcessChild() {
-		t.Skip("controller runs only in the parent process")
-	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=^TestOrchestrionRetryProcessHybridParentFixture$", "-test.v")
-	cmd.Env = append(os.Environ(), orchestrionRetryProcessHybridParentEnv+"=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("orchestrion hybrid parent subprocess failed: %v\n%s", err, output)
-	}
+	runOrchestrionRetryProcessController(t, "^TestOrchestrionRetryProcessHybridParentFixture$", []string{orchestrionRetryProcessHybridParentEnv + "=true"})
 }
 
 func runOrchestrionRetryProcessHybridParent(m *testing.M) int {
@@ -379,16 +367,7 @@ func runOrchestrionRetryProcessHybridParent(m *testing.M) int {
 }
 
 func TestOrchestrionRetryProcessSelectedSubtestAttemptToFixController(t *testing.T) {
-	if orchestrionRetryProcessChild() {
-		t.Skip("controller runs only in the parent process")
-	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=^TestOrchestrionRetryProcessSelectedSubtestAttemptToFixFixture$", "-test.v")
-	cmd.Env = append(os.Environ(), orchestrionRetryProcessSelectedSubtestA2FEnv+"=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Orchestrion selected-subtest attempt-to-fix subprocess failed: %v\n%s", err, output)
-	}
+	runOrchestrionRetryProcessController(t, "^TestOrchestrionRetryProcessSelectedSubtestAttemptToFixFixture$", []string{orchestrionRetryProcessSelectedSubtestA2FEnv + "=true"})
 }
 
 func runOrchestrionRetryProcessSelectedSubtestA2F(m *testing.M) int {
@@ -439,25 +418,16 @@ func runOrchestrionRetryProcessSelectedSubtestA2F(m *testing.M) int {
 
 func TestOrchestrionRetryProcessDefersEFDUntilFirstPassCompletesController(t *testing.T) {
 	requireOrchestrionProcessRetryContainmentForTesting(t)
-	if orchestrionRetryProcessChild() {
-		t.Skip("controller runs only in the parent process")
-	}
-
 	orderPath := filepath.Join(t.TempDir(), "attempt-order")
-	cmd := exec.Command(
-		os.Args[0],
-		"-test.run=^TestOrchestrionRetryProcessDeferredOrdering(A|B)$",
-		"-test.v",
+	runOrchestrionRetryProcessController(
+		t,
+		"^TestOrchestrionRetryProcessDeferredOrdering(A|B)$",
+		[]string{
+			orchestrionRetryProcessDeferredOrderingEnv + "=true",
+			orchestrionRetryProcessDeferredOrderingPathEnv + "=" + orderPath,
+		},
 		"-test.count=1",
 	)
-	cmd.Env = append(os.Environ(),
-		orchestrionRetryProcessDeferredOrderingEnv+"=true",
-		orchestrionRetryProcessDeferredOrderingPathEnv+"="+orderPath,
-	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("deferred Orchestrion EFD subprocess failed: %v\n%s", err, output)
-	}
 }
 
 func runOrchestrionRetryProcessDeferredOrdering(m *testing.M) int {

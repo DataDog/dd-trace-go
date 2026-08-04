@@ -319,13 +319,75 @@ func TestDeferredProcessRetryAggregatePolicy(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			group := deferredProcessRetryGroup{metadata: test.metadata, allAttemptsPassed: true, allRetriesFailed: true}
+			group := deferredProcessRetryGroup{metadata: test.metadata}
 			for _, observation := range test.observations {
-				group.observe(observation[0], observation[1])
+				group.outcomes.observe(observation[0], observation[1])
 				group.latest.failed = observation[0]
 				group.latest.skipped = observation[1]
 			}
 			require.Equal(t, test.failed, group.packageFailed())
+		})
+	}
+}
+
+func TestRetryOutcomeAccumulator(t *testing.T) {
+	tests := []struct {
+		name              string
+		observations      [][2]bool
+		passed            int
+		skipped           int
+		failed            int
+		allAttemptsPassed bool
+		allRetriesFailed  bool
+	}{
+		{name: "empty", allAttemptsPassed: true, allRetriesFailed: true},
+		{name: "pass", observations: [][2]bool{{false, false}}, passed: 1, allAttemptsPassed: true},
+		{name: "failure", observations: [][2]bool{{true, false}}, failed: 1, allRetriesFailed: true},
+		{name: "skip", observations: [][2]bool{{false, true}}, skipped: 1},
+		{name: "mixed", observations: [][2]bool{{true, false}, {false, true}, {false, false}}, passed: 1, skipped: 1, failed: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var outcomes retryOutcomeAccumulator
+			for _, observation := range test.observations {
+				outcomes.observe(observation[0], observation[1])
+			}
+			require.Equal(t, test.passed, outcomes.passed)
+			require.Equal(t, test.skipped, outcomes.skipped)
+			require.Equal(t, test.failed, outcomes.failed)
+			require.Equal(t, test.passed > 0, outcomes.anyPassed())
+			require.Equal(t, test.failed > 0, outcomes.anyFailed())
+			require.Equal(t, test.allAttemptsPassed, outcomes.allAttemptsPassed())
+			require.Equal(t, test.allRetriesFailed, outcomes.allRetriesFailed())
+		})
+	}
+}
+
+func TestRetryExecutionIsLast(t *testing.T) {
+	tests := []struct {
+		name       string
+		metadata   *testExecutionMetadata
+		remaining  int64
+		budget     int64
+		last       bool
+		recognized bool
+	}{
+		{name: "nil metadata"},
+		{name: "no retry family", metadata: &testExecutionMetadata{}},
+		{name: "attempt to fix last", metadata: &testExecutionMetadata{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true}, remaining: 1, last: true, recognized: true},
+		{name: "attempt to fix not last", metadata: &testExecutionMetadata{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true}, remaining: 2, recognized: true},
+		{name: "unowned attempt to fix", metadata: &testExecutionMetadata{isAttemptToFix: true}, remaining: 1},
+		{name: "efd last", metadata: &testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true}, remaining: 1, last: true, recognized: true},
+		{name: "efd not last", metadata: &testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isAModifiedTest: true}, remaining: 2, recognized: true},
+		{name: "flaky retry count exhausted", metadata: &testExecutionMetadata{isFlakyTestRetriesEnabled: true}, remaining: 1, budget: 2, last: true, recognized: true},
+		{name: "flaky budget exhausted", metadata: &testExecutionMetadata{isFlakyTestRetriesEnabled: true}, remaining: 3, last: true, recognized: true},
+		{name: "flaky retry remains", metadata: &testExecutionMetadata{isFlakyTestRetriesEnabled: true}, remaining: 3, budget: 2, recognized: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			last, recognized := retryExecutionIsLast(test.metadata, test.remaining, test.budget)
+			require.Equal(t, test.last, last)
+			require.Equal(t, test.recognized, recognized)
 		})
 	}
 }
@@ -566,10 +628,9 @@ func TestDeferredProcessRetryCoordinatorSelectsOneTerminalReplay(t *testing.T) {
 func TestDeferredProcessRetryCancellationFinalizesTailEventOnce(t *testing.T) {
 	event := newProcessRetryRecordingTestForTesting("TestDeferredTail")
 	group := &deferredProcessRetryGroup{
-		metadata:          processRetryMetadataSnapshot{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
-		latest:            retryAttemptObservation{failed: true},
-		anyFailed:         true,
-		allAttemptsPassed: false,
+		metadata: processRetryMetadataSnapshot{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
+		latest:   retryAttemptObservation{failed: true},
+		outcomes: retryOutcomeAccumulator{failed: 1},
 		tailEvent: &deferredProcessRetryEvent{
 			event:  event,
 			status: integrations.ResultStatusFail,
@@ -588,8 +649,8 @@ func TestDeferredProcessRetryCancellationFinalizesTailEventOnce(t *testing.T) {
 func TestDeferredProcessRetryTerminalFailureOverridesEarlierEFDPass(t *testing.T) {
 	event := newProcessRetryRecordingTestForTesting("TestDeferredTerminalEFD")
 	group := &deferredProcessRetryGroup{
-		metadata:  processRetryMetadataSnapshot{isEarlyFlakeDetectionEnabled: true, isANewTest: true},
-		anyPassed: true,
+		metadata: processRetryMetadataSnapshot{isEarlyFlakeDetectionEnabled: true, isANewTest: true},
+		outcomes: retryOutcomeAccumulator{passed: 1},
 		tailEvent: &deferredProcessRetryEvent{
 			event:  event,
 			status: integrations.ResultStatusPass,
@@ -795,12 +856,10 @@ func TestDeferredProcessRetryChildEventRemainsTailUntilAggregateFinalization(t *
 	require.Len(t, recorder.tests, 1)
 	require.Zero(t, recorder.tests[0].closeCount)
 	group := &deferredProcessRetryGroup{
-		metadata:          processRetryMetadataSnapshot{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
-		latest:            retryAttemptObservation{},
-		anyPassed:         true,
-		allAttemptsPassed: true,
-		allRetriesFailed:  false,
-		tailEvent:         tail,
+		metadata:  processRetryMetadataSnapshot{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
+		latest:    retryAttemptObservation{},
+		outcomes:  retryOutcomeAccumulator{passed: 1},
+		tailEvent: tail,
 	}
 	group.finish()
 
@@ -1153,8 +1212,6 @@ func newDeferredProcessRetrySchedulerGroup(
 		retryCount:        retryCount,
 		phaseID:           1,
 		latest:            retryAttemptObservation{failed: true, rootParallel: rootParallel},
-		allAttemptsPassed: true,
-		allRetriesFailed:  true,
 		parallelEFD:       parallelEFD,
 		rootParallel:      rootParallel,
 		nativeMaxParallel: nativeMaxParallel,
@@ -1165,7 +1222,7 @@ func newDeferredProcessRetrySchedulerGroup(
 			ready:  true,
 		},
 	}
-	group.observe(true, false)
+	group.outcomes.observe(true, false)
 	return group
 }
 

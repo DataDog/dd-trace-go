@@ -14,6 +14,39 @@ import (
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
+type retryOutcomeAccumulator struct {
+	passed  int
+	skipped int
+	failed  int
+}
+
+func (o *retryOutcomeAccumulator) observe(failed, skipped bool) {
+	switch {
+	case failed:
+		o.failed++
+	case skipped:
+		o.skipped++
+	default:
+		o.passed++
+	}
+}
+
+func (o retryOutcomeAccumulator) anyPassed() bool {
+	return o.passed > 0
+}
+
+func (o retryOutcomeAccumulator) anyFailed() bool {
+	return o.failed > 0
+}
+
+func (o retryOutcomeAccumulator) allAttemptsPassed() bool {
+	return o.failed == 0 && o.skipped == 0
+}
+
+func (o retryOutcomeAccumulator) allRetriesFailed() bool {
+	return o.passed == 0 && o.skipped == 0
+}
+
 // calculateFinalStatus computes the test.final_status value based on the overall test outcome.
 // Priority order: quarantined/disabled -> ATF fail (any fail) -> pass (any pass wins) -> fail -> skip -> fail.
 func calculateFinalStatus(anyPassed, anyFailed, currentIsSkip, isQuarantined, isDisabled, isAttemptToFix bool) string {
@@ -97,6 +130,25 @@ func efdHasPossibleRetry(settings *civisibilitynet.SettingsResponseData) bool {
 	}
 	retries := settings.EarlyFlakeDetection.SlowTestRetries
 	return retries.FiveS > 0 || retries.TenS > 0 || retries.ThirtyS > 0 || retries.FiveM > 0
+}
+
+// retryExecutionIsLast reports whether the current retry is the last one for
+// a recognized retry family. Callers retain their existing behavior when no
+// retry family is active by consulting the second return value.
+func retryExecutionIsLast(execMeta *testExecutionMetadata, remainingRetries, remainingBudget int64) (bool, bool) {
+	if execMeta == nil {
+		return false, false
+	}
+	if execMeta.isAttemptToFix && execMeta.shouldOrchestrateAttemptToFix {
+		return remainingRetries == 1, true
+	}
+	if usesEfdRetrySemantics(execMeta) {
+		return remainingRetries == 1, true
+	}
+	if execMeta.isFlakyTestRetriesEnabled {
+		return remainingRetries == 1 || remainingBudget == 0, true
+	}
+	return false, false
 }
 
 // willRetryAfterExecution mirrors postShouldRetry logic to determine if another retry

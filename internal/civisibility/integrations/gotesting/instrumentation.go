@@ -699,14 +699,7 @@ func applyAdditionalFeaturesToTestFunc(
 		t.Helper()
 		originalExecMeta := getTestMetadata(t)
 
-		// For Early Flake Detection: counters used to collect test results.
-		var testPassCount, testSkipCount, testFailCount int
-		// For Test Management and auto retries.
-		var allAttemptsPassed int32 = 1
-		var allRetriesFailed int32 = 1
-		// For test.final_status computation: track pass/fail across all executions.
-		var anyExecutionPassed atomic.Int32
-		var anyExecutionFailed atomic.Int32
+		var outcomes retryOutcomeAccumulator
 
 		runTestWithRetry(&runTestWithRetryOptions{
 			targetFunc:                    f,
@@ -733,12 +726,12 @@ func applyAdditionalFeaturesToTestFunc(
 				if isSubtest {
 					execMeta.suppressParentRetryMetadata = true
 				}
-				execMeta.allAttemptsPassed = atomic.LoadInt32(&allAttemptsPassed) == 1
-				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
+				execMeta.allAttemptsPassed = outcomes.allAttemptsPassed()
+				execMeta.allRetriesFailed = outcomes.allRetriesFailed()
 
-				// Copy test.final_status tracking state from wrapper-level atomics.
-				execMeta.anyExecutionPassed = anyExecutionPassed.Load() == 1
-				execMeta.anyExecutionFailed = anyExecutionFailed.Load() == 1
+				// Copy test.final_status tracking state from the wrapper-level accumulator.
+				execMeta.anyExecutionPassed = outcomes.anyPassed()
+				execMeta.anyExecutionFailed = outcomes.anyFailed()
 
 				// Propagate flags from the original test metadata.
 				propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
@@ -746,22 +739,8 @@ func applyAdditionalFeaturesToTestFunc(
 				syncFeatureMetadataFromExecution(ptrMeta, execMeta)
 			},
 			preIsLastRetry: func(execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
-				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
-					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
-					return remainingRetries == 1
-				}
-
-				if usesEfdRetrySemantics(execMeta) {
-					// For EFD, the last retry is when remaining retries == 1.
-					return remainingRetries == 1
-				}
-
-				// FlakyTestRetries also considers the global remaining retry count.
-				if execMeta.isFlakyTestRetriesEnabled {
-					return remainingRetries == 1 || flakyRetryBudgetRemaining(flakyRetriesSettings) == 0
-				}
-
-				return false
+				last, recognized := retryExecutionIsLast(execMeta, remainingRetries, flakyRetryBudgetRemaining(flakyRetriesSettings))
+				return recognized && last
 			},
 			postAdjustRetryCount: func(execMeta *testExecutionMetadata, duration time.Duration) int64 {
 				// adjust retry count only runs after the first run
@@ -780,20 +759,7 @@ func applyAdditionalFeaturesToTestFunc(
 				skipped := ptrToLocalT.Skipped()
 				log.Debug("applyAdditionalFeaturesToTestFunc: postPerExecution called for execution %d, failed: %t, skipped: %t", executionIndex, failed, skipped)
 
-				if failed || skipped {
-					atomic.StoreInt32(&allAttemptsPassed, 0)
-				}
-				if !failed {
-					atomic.StoreInt32(&allRetriesFailed, 0)
-				}
-
-				// Track pass/fail for test.final_status computation.
-				if !failed && !skipped {
-					anyExecutionPassed.Store(1)
-				}
-				if failed {
-					anyExecutionFailed.Store(1)
-				}
+				outcomes.observe(failed, skipped)
 
 				if execMeta.isAttemptToFix {
 					status := "PASS"
@@ -818,13 +784,10 @@ func applyAdditionalFeaturesToTestFunc(
 				if usesEfdRetrySemantics(execMeta) {
 					if skipped {
 						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test skipped, incrementing skip count")
-						testSkipCount++
 					} else if failed {
 						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test failed, incrementing fail count")
-						testFailCount++
 					} else {
 						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test passed, incrementing pass count")
-						testPassCount++
 					}
 					return
 				}
@@ -875,7 +838,7 @@ func applyAdditionalFeaturesToTestFunc(
 				// Attempt-to-fix owns result propagation when it is active, even if EFD or FTR
 				// metadata is also present for tag compatibility.
 				attemptToFixActive := ptrMeta.isAttemptToFix
-				if result.failfastRawFailure || result.lateFailure || attemptToFixActive && anyExecutionFailed.Load() == 1 {
+				if result.failfastRawFailure || result.lateFailure || attemptToFixActive && outcomes.anyFailed() {
 					tCommonPrivates.SetFailed(true)
 					tParentCommonPrivates := getTestParentPrivateFields(t)
 					if tParentCommonPrivates == nil {
@@ -891,12 +854,12 @@ func applyAdditionalFeaturesToTestFunc(
 				if efdOnNewTest || efdOnModifiedTest {
 					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Early Flake Detection")
 					status := "passed"
-					if testPassCount == 0 {
-						if testSkipCount > 0 {
+					if !outcomes.anyPassed() {
+						if outcomes.skipped > 0 {
 							status = "skipped"
 							tCommonPrivates.SetSkipped(true)
 						}
-						if testFailCount > 0 {
+						if outcomes.anyFailed() {
 							status = "failed"
 							tCommonPrivates.SetFailed(true)
 							tParentCommonPrivates := getTestParentPrivateFields(t)

@@ -977,28 +977,24 @@ func TestDeferredProcessRetryFTRFailfastController(t *testing.T) {
 }
 
 func TestDeferredProcessRetryFTRFailfastA(t *testing.T) {
-	path := processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv)
-	if path == "" {
-		t.Skip("deferred FTR failfast fixture runs only from its controller subprocess")
-	}
-	if processRetryFixtureChild() {
-		appendStartupFixtureLine(path, "A:retry")
-	} else {
-		appendStartupFixtureLine(path, "A:first")
-	}
-	t.Fail()
+	runDeferredProcessRetryFTRFailfastFixture(t, "A")
 }
 
 func TestDeferredProcessRetryFTRFailfastB(t *testing.T) {
+	runDeferredProcessRetryFTRFailfastFixture(t, "B")
+}
+
+func runDeferredProcessRetryFTRFailfastFixture(t *testing.T, name string) {
+	t.Helper()
 	path := processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv)
 	if path == "" {
 		t.Skip("deferred FTR failfast fixture runs only from its controller subprocess")
 	}
+	phase := "first"
 	if processRetryFixtureChild() {
-		appendStartupFixtureLine(path, "B:retry")
-	} else {
-		appendStartupFixtureLine(path, "B:first")
+		phase = "retry"
 	}
+	appendStartupFixtureLine(path, name+":"+phase)
 	t.Fail()
 }
 

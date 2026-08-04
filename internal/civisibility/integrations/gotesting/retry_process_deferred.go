@@ -91,11 +91,7 @@ type deferredProcessRetryGroup struct {
 	retryCount            int64
 	reservation           *flakyRetryBudgetReservation
 	latest                retryAttemptObservation
-	anyPassed             bool
-	anyFailed             bool
-	allAttemptsPassed     bool
-	allRetriesFailed      bool
-	skipCount             int
+	outcomes              retryOutcomeAccumulator
 	module                integrations.TestModule
 	suite                 integrations.TestSuite
 	terminalFailure       bool
@@ -301,11 +297,7 @@ func (c *processRetryCoordinator) drain(nativeExitCode int) processRetryCoordina
 	if c.completionOwner.CompareAndSwap(0, 1) {
 		c.complete(nativeExitCode, false)
 	}
-	<-c.completed
-	c.mu.Lock()
-	summary := c.summary
-	c.mu.Unlock()
-	return summary
+	return c.waitSummary()
 }
 
 func (c *processRetryCoordinator) requestShutdown() {
@@ -345,11 +337,14 @@ func (c *processRetryCoordinator) abort() processRetryCoordinatorSummary {
 	if c.completionOwner.CompareAndSwap(0, 2) {
 		c.complete(processRetryFailureExitCode, true)
 	}
+	return c.waitSummary()
+}
+
+func (c *processRetryCoordinator) waitSummary() processRetryCoordinatorSummary {
 	<-c.completed
 	c.mu.Lock()
-	summary := c.summary
-	c.mu.Unlock()
-	return summary
+	defer c.mu.Unlock()
+	return c.summary
 }
 
 func (c *processRetryCoordinator) complete(nativeExitCode int, shuttingDown bool) {
@@ -676,7 +671,7 @@ func (c *processRetryCoordinator) drainScheduledBatch(
 			}
 		} else {
 			continueGroup := state.group.applyCompletedAttempt(scheduled.completed, !state.stopPending, false)
-			if c.failfastEnabled() && state.group.metadata.isAttemptToFix && state.group.anyFailed {
+			if c.failfastEnabled() && state.group.metadata.isAttemptToFix && state.group.outcomes.anyFailed() {
 				continueGroup = false
 				state.group.truncated = true
 			}
@@ -944,8 +939,6 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 			raceDetected:   execOpts.lastObservation.raceDetected,
 			rootParallel:   execOpts.lastObservation.rootParallel,
 		},
-		allAttemptsPassed: true,
-		allRetriesFailed:  true,
 		module:            execOpts.module,
 		suite:             execOpts.suite,
 		panicPresent:      execOpts.lastObservation.panicData != nil,
@@ -963,7 +956,7 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 		group:     group,
 	}
 	execOpts.executionMetadata.deferredRetryEvent = group.tailEvent
-	group.observe(execOpts.lastObservation.failed, execOpts.lastObservation.skipped)
+	group.outcomes.observe(execOpts.lastObservation.failed, execOpts.lastObservation.skipped)
 	// The pending admission owns any FTR reservation admitted after the first
 	// attempt. It becomes visible to the coordinator only after the first event
 	// finalizer publishes its immutable close disposition.
@@ -984,13 +977,14 @@ func (g *deferredProcessRetryGroup) prepareAttempt() (deferredProcessRetryPrepar
 	execMeta.identity = &g.identity
 	execMeta.isARetry = true
 	execMeta.hasAdditionalFeatureWrapper = true
-	execMeta.allAttemptsPassed = g.allAttemptsPassed
-	execMeta.allRetriesFailed = g.allRetriesFailed
-	execMeta.anyExecutionPassed = g.anyPassed
-	execMeta.anyExecutionFailed = g.anyFailed
+	execMeta.allAttemptsPassed = g.outcomes.allAttemptsPassed()
+	execMeta.allRetriesFailed = g.outcomes.allRetriesFailed()
+	execMeta.anyExecutionPassed = g.outcomes.anyPassed()
+	execMeta.anyExecutionFailed = g.outcomes.anyFailed()
 	execMeta.remainingRetries = g.retryCount
 	execMeta.isEfdInParallel = g.parallelEFD
-	execMeta.isLastRetry = deferredProcessRetryIsLast(execMeta, g.retryCount)
+	last, recognized := retryExecutionIsLast(execMeta, g.retryCount, flakyRetryBudgetRemaining(integrations.GetFlakyRetriesSettings()))
+	execMeta.isLastRetry = !recognized || last
 	retryReason, ok := processRetryReasonForExecution(execMeta)
 	if !ok {
 		g.cancel("missing_retry_reason", true)
@@ -1027,11 +1021,11 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 	continueGroup := continuationAdmitted && !terminal
 	effective, nextTail := deferProcessRetryTestEventWithAdmission(&g.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {
 		g.retryCount--
-		g.observe(effective.Failed, effective.Skipped)
-		execMeta.allAttemptsPassed = g.allAttemptsPassed
-		execMeta.allRetriesFailed = g.allRetriesFailed
-		execMeta.anyExecutionPassed = g.anyPassed
-		execMeta.anyExecutionFailed = g.anyFailed
+		g.outcomes.observe(effective.Failed, effective.Skipped)
+		execMeta.allAttemptsPassed = g.outcomes.allAttemptsPassed()
+		execMeta.allRetriesFailed = g.outcomes.allRetriesFailed()
+		execMeta.anyExecutionPassed = g.outcomes.anyPassed()
+		execMeta.anyExecutionFailed = g.outcomes.anyFailed()
 		if decideContinuation {
 			continueGroup = !terminal && deferredProcessRetryShouldContinue(execMeta, effective.Failed, effective.Skipped, g.retryCount)
 			if continueGroup && usesFlakyRetryBudget(execMeta) {
@@ -1088,19 +1082,6 @@ func errorsIsDeferredTerminal(err error) bool {
 		errors.Is(err, errProcessRetryShutdown))
 }
 
-func deferredProcessRetryIsLast(meta *testExecutionMetadata, remaining int64) bool {
-	if meta == nil {
-		return true
-	}
-	if meta.isAttemptToFix && meta.shouldOrchestrateAttemptToFix || usesEfdRetrySemantics(meta) {
-		return remaining == 1
-	}
-	if meta.isFlakyTestRetriesEnabled {
-		return remaining == 1 || flakyRetryBudgetRemaining(integrations.GetFlakyRetriesSettings()) == 0
-	}
-	return true
-}
-
 func deferredProcessRetryShouldContinue(meta *testExecutionMetadata, failed, skipped bool, remaining int64) bool {
 	remainingBudget := int64(0)
 	if usesFlakyRetryBudget(meta) {
@@ -1117,23 +1098,6 @@ func consumeDeferredFlakyRetryReservation(group *deferredProcessRetryGroup) {
 	group.reservation = nil
 }
 
-func (g *deferredProcessRetryGroup) observe(failed, skipped bool) {
-	if failed || skipped {
-		g.allAttemptsPassed = false
-	}
-	if !failed {
-		g.allRetriesFailed = false
-	}
-	switch {
-	case failed:
-		g.anyFailed = true
-	case skipped:
-		g.skipCount++
-	default:
-		g.anyPassed = true
-	}
-}
-
 func (g *deferredProcessRetryGroup) packageFailed() bool {
 	if g == nil || g.metadata.isDisabled || g.metadata.isQuarantined {
 		return false
@@ -1142,10 +1106,10 @@ func (g *deferredProcessRetryGroup) packageFailed() bool {
 		return true
 	}
 	if g.metadata.isAttemptToFix {
-		return g.anyFailed
+		return g.outcomes.anyFailed()
 	}
 	if usesEfdRetrySemanticsSnapshot(&g.metadata) {
-		return !g.anyPassed && g.anyFailed
+		return !g.outcomes.anyPassed() && g.outcomes.anyFailed()
 	}
 	return g.latest.failed
 }
@@ -1169,7 +1133,6 @@ func (g *deferredProcessRetryGroup) cancel(reason string, failed bool) {
 		g.reservation.refund()
 		g.reservation = nil
 	}
-	g.closeTailEvent(true)
 	g.finish()
 }
 
@@ -1195,8 +1158,8 @@ func (g *deferredProcessRetryGroup) closeTailEvent(final bool) {
 	}
 	if final {
 		finalStatus := calculateFinalStatus(
-			g.anyPassed && !g.terminalFailure,
-			g.anyFailed || g.terminalFailure,
+			g.outcomes.anyPassed() && !g.terminalFailure,
+			g.outcomes.anyFailed() || g.terminalFailure,
 			g.latest.skipped,
 			g.metadata.isQuarantined,
 			g.metadata.isDisabled,
@@ -1204,10 +1167,10 @@ func (g *deferredProcessRetryGroup) closeTailEvent(final bool) {
 		)
 		g.tailEvent.event.SetTag(constants.TestFinalStatus, finalStatus)
 		if g.metadata.isAttemptToFix {
-			attemptToFixPassed := g.allAttemptsPassed && !g.truncated && !g.terminalFailure
+			attemptToFixPassed := g.outcomes.allAttemptsPassed() && !g.truncated && !g.terminalFailure
 			g.tailEvent.event.SetTag(constants.TestAttemptToFixPassed, strconv.FormatBool(attemptToFixPassed))
 		}
-		if g.tailEvent.failed && g.allRetriesFailed {
+		if g.tailEvent.failed && g.outcomes.allRetriesFailed() {
 			g.tailEvent.event.SetTag(constants.TestHasFailedAllRetries, "true")
 		}
 	}
@@ -1281,7 +1244,7 @@ func (g *deferredProcessRetryGroup) printSummary() {
 	status := "passed"
 	if g.packageFailed() {
 		status = "failed"
-	} else if !g.anyPassed && g.skipCount > 0 {
+	} else if !g.outcomes.anyPassed() && g.outcomes.skipped > 0 {
 		status = "skipped"
 	}
 	reason := "auto test retries"
