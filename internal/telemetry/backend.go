@@ -21,7 +21,7 @@ import (
 
 const (
 	stackTraceKey      = "stacktrace"
-	telemetryStackSkip = 4 // Skip: CaptureWithRedaction, capture, loggerBackend.add, loggerBackend.Add
+	telemetryStackSkip = 2 // Skip loggerBackend.add and loggerBackend.Add.
 )
 
 type loggerKey struct {
@@ -105,21 +105,27 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 		opt(&key, nil)
 	}
 
-	value, _ := logger.store.LoadOrCompute(key, func() (*loggerValue, bool) {
-		// Create the record at capture time, not send time
-		value := &loggerValue{
-			record: record,
-		}
-		for _, opt := range opts {
-			opt(nil, value)
-		}
-		if value.captureStacktrace {
-			value.rawStack = stacktrace.CaptureRaw(telemetryStackSkip)
-		}
-		logger.distinctLogs.Add(1)
-		return value, false
-	})
+	if value, ok := logger.store.Load(key); ok {
+		value.count.Add(1)
+		return
+	}
 
+	// Create the record at capture time, not send time. Capture before entering
+	// LoadOrCompute so third-party map frames do not precede the log call site.
+	candidate := &loggerValue{
+		record: record,
+	}
+	for _, opt := range opts {
+		opt(nil, candidate)
+	}
+	if candidate.captureStacktrace {
+		candidate.rawStack = stacktrace.CaptureRaw(telemetryStackSkip)
+	}
+
+	value, _ := logger.store.LoadOrCompute(key, func() (*loggerValue, bool) {
+		logger.distinctLogs.Add(1)
+		return candidate, false
+	})
 	value.count.Add(1)
 }
 
