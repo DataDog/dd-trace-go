@@ -4035,6 +4035,7 @@ func TestProcessRetryUnitRunFilterIncludesSpecialCaseRegressions(t *testing.T) {
 	testNames := []string{
 		"TestFinalizeProcessRetryOutputCapturesKillsTreeWithinSingleDrainBudget",
 		"TestCombineProcessRetryOutputTailsMarksPerStreamTruncation",
+		"TestProcessRetryNestedOrchestrionCommandUsesHermeticCISettings",
 	}
 	tests := make([]testing.InternalTest, 0, len(testNames))
 	for _, testName := range testNames {

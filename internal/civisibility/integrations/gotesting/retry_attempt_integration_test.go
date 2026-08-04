@@ -493,7 +493,7 @@ func retryParityNestedOrchestrionCommand(t *testing.T, testName string, extraEnv
 	return cmd
 }
 
-func TestRetryParityNestedOrchestrionCommandUsesHermeticCISettings(t *testing.T) {
+func TestProcessRetryNestedOrchestrionCommandUsesHermeticCISettings(t *testing.T) {
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "inherited")
 	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "false")
 	t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, "https://inherited.invalid")
