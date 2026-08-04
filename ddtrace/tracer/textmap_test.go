@@ -2267,6 +2267,49 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
+	t.Run("continue/extract-first/same-trace-id", func(t *testing.T) {
+		// Default behavior + extract-first: extraction stops after Datadog (the first
+		// configured extractor), so W3C never runs. Baggage is still propagated: it is
+		// extracted independently of the trace-context extractor loop.
+		t.Setenv(envPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		span := tr.StartSpan("test", ChildOf(sctx))
+		defer span.Finish()
+
+		assert.Equal(t, uint64(1), span.traceID)
+		assert.Empty(t, sctx.spanLinks)
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("continue/extract-first/unique-trace-ids", func(t *testing.T) {
+		// Default behavior + extract-first, with unique trace IDs: unlike
+		// continue/unique-trace-ids, no terminated_context span link is created here,
+		// because extraction stops after Datadog and the conflicting W3C context is
+		// never seen. Baggage is still propagated.
+		t.Setenv(envPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		span := tr.StartSpan("test", ChildOf(sctx))
+		defer span.Finish()
+
+		assert.Equal(t, uint64(1), span.traceID)
+		assert.Empty(t, sctx.spanLinks)
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
 	t.Run("restart/same-trace-id", func(t *testing.T) {
 		// restart mode: a new local trace context is created regardless of the incoming
 		// trace ID. The incoming context is referenced via a span link with
@@ -2373,7 +2416,8 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 	t.Run("restart/extract-first/unique-trace-ids", func(t *testing.T) {
 		// restart + extract_first with unique trace IDs: extraction stops after Datadog,
 		// so the W3C conflicting context is never seen. One span link to the Datadog context.
-		// Baggage is still propagated via the explicit baggage pass in Extract().
+		// Baggage is still propagated: it is extracted independently of the trace-context
+		// extractor loop.
 		//
 		// Tracestate is empty because the Datadog propagator does not carry W3C tracestate.
 		// Flags=1 because sampling priority > 0.
@@ -2403,6 +2447,31 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
 		}, span.spanLinks[0])
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("restart/extract-first/ot-baggage", func(t *testing.T) {
+		// restart + extract-first with legacy OpenTracing "ot-baggage-*" items and no
+		// "baggage" header: the restart branch used to replace incomingCtx.baggage with
+		// a fresh extraction instead of using it, silently dropping ot-baggage-* items
+		// that only the Datadog propagator populates.
+		t.Setenv(envPropagationBehaviorExtract, "restart")
+		t.Setenv(envPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		otBaggageCarrier := TextMapCarrier{
+			DefaultTraceIDHeader:  "1",
+			DefaultParentIDHeader: "1",
+			DefaultPriorityHeader: "1",
+			"ot-baggage-foo":      "bar",
+		}
+
+		sctx, err := tr.Extract(otBaggageCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		assert.Equal(t, map[string]string{"foo": "bar"}, sctx.baggage)
 	})
 
 	t.Run("ignore/same-trace-id", func(t *testing.T) {
@@ -3654,62 +3723,98 @@ func TestExtractBaggagePropagatorMalformedPastLimit(t *testing.T) {
 	}
 }
 
+// TestExtractOnlyBaggage runs with extractFirst=true too, and with both a
+// baggage-only propagation style and the default style (datadog,tracecontext,
+// baggage): it pins that a baggage-only carrier produces the exact same
+// baggage-only context whether or not DD_TRACE_PROPAGATION_EXTRACT_FIRST is
+// set. The default-style case is the one that matters: with extract-first, the
+// datadog extractor runs first, fails with ErrSpanContextNotFound (no trace
+// headers present), and that used to short-circuit straight to an error
+// instead of falling through to the baggage-only context built from
+// pendingBaggage.
 func TestExtractOnlyBaggage(t *testing.T) {
-	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage")
-	headers := TextMapCarrier(map[string]string{
-		"baggage": "foo=bar,baz=qux",
-	})
+	for _, style := range []string{"baggage", ""} { // "" leaves DD_TRACE_PROPAGATION_STYLE unset, so the default style applies
+		styleName := style
+		if styleName == "" {
+			styleName = "default"
+		}
+		for _, extractFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("style=%s/extractFirst=%v", styleName, extractFirst), func(t *testing.T) {
+				if style != "" {
+					t.Setenv("DD_TRACE_PROPAGATION_STYLE", style)
+				}
+				if extractFirst {
+					t.Setenv(envPropagationExtractFirst, "true")
+				}
+				headers := TextMapCarrier(map[string]string{
+					"baggage": "foo=bar,baz=qux",
+				})
 
-	tracer, err := newTracer()
-	assert.NoError(t, err)
-	defer tracer.Stop()
+				tracer, err := newTracer()
+				assert.NoError(t, err)
+				defer tracer.Stop()
 
-	ctx, err := tracer.Extract(headers)
-	assert.Nil(t, err)
+				ctx, err := tracer.Extract(headers)
+				require.NoError(t, err)
+				require.NotNil(t, ctx)
 
-	got := make(map[string]string)
-	ctx.ForeachBaggageItem(func(k, v string) bool {
-		got[k] = v
-		return true
-	})
-	assert.Len(t, got, 2)
-	assert.Equal(t, "bar", got["foo"])
-	assert.Equal(t, "qux", got["baz"])
+				got := make(map[string]string)
+				ctx.ForeachBaggageItem(func(k, v string) bool {
+					got[k] = v
+					return true
+				})
+				assert.Len(t, got, 2)
+				assert.Equal(t, "bar", got["foo"])
+				assert.Equal(t, "qux", got["baz"])
+			})
+		}
+	}
 }
 
 // TestExtractBaggageFirstThenDatadog verifies that when both baggage and trace headers are present,
 // the trace context (trace ID, parent ID, etc.) is extracted from trace headers, and the baggage items are properly inherited,
 // specifically when baggage has a higher precedence than trace headers in the propagation style.
+//
+// Runs with extractFirst=true too: it pins that extractIncomingSpanContext extracts baggage
+// unconditionally, independent of extractor order or of onlyExtractFirst short-circuiting the
+// trace-context loop after the baggage propagator (first in this style list).
 func TestExtractBaggageFirstThenDatadog(t *testing.T) {
-	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
+	for _, extractFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("extractFirst=%v", extractFirst), func(t *testing.T) {
+			t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
+			if extractFirst {
+				t.Setenv(envPropagationExtractFirst, "true")
+			}
 
-	// Set up headers with both baggage and Datadog trace context
-	headers := TextMapCarrier(map[string]string{
-		"baggage":             "item=xyz",
-		DefaultTraceIDHeader:  "12345",
-		DefaultParentIDHeader: "67890",
-		DefaultPriorityHeader: "1",
-	})
+			// Set up headers with both baggage and Datadog trace context
+			headers := TextMapCarrier(map[string]string{
+				"baggage":             "item=xyz",
+				DefaultTraceIDHeader:  "12345",
+				DefaultParentIDHeader: "67890",
+				DefaultPriorityHeader: "1",
+			})
 
-	tracer, err := newTracer()
-	assert.NoError(t, err)
-	defer tracer.Stop()
+			tracer, err := newTracer()
+			assert.NoError(t, err)
+			defer tracer.Stop()
 
-	ctx, err := tracer.Extract(headers)
-	assert.NoError(t, err)
+			ctx, err := tracer.Extract(headers)
+			assert.NoError(t, err)
 
-	// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
-	expectedTraceID := traceIDFrom64Bits(12345)
-	assert.Equal(t, expectedTraceID.value, ctx.traceID.value)
-	assert.Equal(t, uint64(67890), ctx.spanID)
+			// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
+			expectedTraceID := traceIDFrom64Bits(12345)
+			assert.Equal(t, expectedTraceID.value, ctx.traceID.value)
+			assert.Equal(t, uint64(67890), ctx.spanID)
 
-	got := make(map[string]string)
-	ctx.ForeachBaggageItem(func(k, v string) bool {
-		got[k] = v
-		return true
-	})
-	assert.Len(t, got, 1)
-	assert.Equal(t, "xyz", got["item"])
+			got := make(map[string]string)
+			ctx.ForeachBaggageItem(func(k, v string) bool {
+				got[k] = v
+				return true
+			})
+			assert.Len(t, got, 1)
+			assert.Equal(t, "xyz", got["item"])
+		})
+	}
 }
 
 // TestExtractBaggageMergesWithOTBaggagePrefix pins the merge branch in
