@@ -139,3 +139,127 @@ aspects:
             {{ else -}}
               defer span.Finish()
             {{- end -}}
+
+  # --- GLS lifecycle for active spans (orchestrion-on-top) ---
+  # The tracer source is fully GLS-agnostic: ContextWithSpan does a plain
+  # context.WithValue and SpanFromContext a plain ctx.Value, so a build WITHOUT
+  # orchestrion pays nothing. These tracer-internal aspects weave the whole GLS
+  # lifecycle (push + popper capture, read fallback, pop, and the cross-goroutine
+  # liveness cell) into the tracer at build time, fixing the GLS over-pop and the
+  # cross-goroutine leak (https://github.com/DataDog/orchestrion/issues/782).
+  # The actual logic lives in internal/orchestrion (GLSActivate / GLSDeactivate /
+  # WrapContext) so the injected templates stay thin and unit-testable.
+
+  # Add the GLS bookkeeping fields to Span. Scope exit is identity-matched, so a
+  # finish on the pushing goroutine always removes its own entry; a finish
+  # elsewhere cannot, because the popper is a no-op off-goroutine and a foreign
+  # stack must not be touched. Push drops the entries left behind and Peek refuses
+  # to hand them out as the active span, so the liveness signal has to stay
+  # accurate for the lifetime of the entry, not just until the next push.
+  #
+  # That signal is a heap cell reached through __dd_glsDone, not a bool on the
+  # span, because the span itself is recyclable: the pool hands the same object to
+  # an unrelated scope, and clear would reset a bool on it back to false — telling
+  # entries that a scope which ended is live again. Each entry captures the cell at
+  # push time, so it keeps describing the scope it actually opened. See
+  # internal/orchestrion.GLSDoneCell.
+  - id: Span GLS fields
+    tracer-internal: true
+    join-point:
+      struct-definition: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.Span
+    advice:
+      - add-struct-field:
+          name: __dd_glsPop
+          type: github.com/DataDog/dd-trace-go/v2/internal/orchestrion.GLSPopperCell
+      - add-struct-field:
+          name: __dd_glsDone
+          type: github.com/DataDog/dd-trace-go/v2/internal/orchestrion.GLSDoneCell
+
+  # On ContextWithSpan: push the span onto this goroutine's GLS stack and capture
+  # a goroutine-scoped popper (first push wins, matching the in-source design).
+  # GLSActivate does the push + first-wins popper capture, so this stays a
+  # one-liner (ctxp is nil: ContextWithSpan's own context.WithValue handles the
+  # explicit chain, the GLS only needs the span pushed).
+  - id: Span ContextWithSpan GLS push
+    tracer-internal: true
+    join-point:
+      all-of:
+        - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+        - function-body:
+            function:
+              - name: ContextWithSpan
+    advice:
+      - prepend-statements:
+          imports:
+            orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+            internal: github.com/DataDog/dd-trace-go/v2/internal
+          template: |-
+            {{- $s := .Function.Argument 1 -}}
+            if {{ $s }} != nil {
+              orchestrion.GLSActivate(nil, internal.ActiveSpanKey, {{ $s }}, &{{ $s }}.__dd_glsPop, &{{ $s }}.__dd_glsDone)
+            }
+
+  # On SpanFromContext: wrap ctx so the subsequent ctx.Value also consults the
+  # GLS when the explicit context chain has no active span.
+  - id: Span SpanFromContext GLS read
+    tracer-internal: true
+    join-point:
+      all-of:
+        - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+        - function-body:
+            function:
+              - name: SpanFromContext
+    advice:
+      - prepend-statements:
+          imports:
+            orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            if {{ $ctx }} != nil {
+              {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
+            }
+
+  # On Finish: deactivate the span on the GLS (mark the liveness cell + run the
+  # popper once). Runs at the TOP of Finish (not deferred) so the pop happens before
+  # s.finish() submits the chunk: with span pooling enabled, the tracer worker
+  # can clear()/recycle the span as soon as it is submitted, and clear resets
+  # __dd_glsPop. Deactivating first orders the pop ahead of any clear (the
+  # channel send in finish establishes happens-before), so clear can never nil
+  # the popper out from under Finish and leave a stale active span on the GLS.
+  # GLSDeactivate groups the cell marking and the once-only pop and is idempotent
+  # on a double finish. See orchestrion#782.
+  - id: Span Finish GLS deactivate
+    tracer-internal: true
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.Span'
+          - name: Finish
+    advice:
+      - prepend-statements:
+          imports:
+            orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+          template: |-
+            {{- $s := .Function.Receiver -}}
+            if {{ $s }} != nil {
+              orchestrion.GLSDeactivate(&{{ $s }}.__dd_glsDone, &{{ $s }}.__dd_glsPop)
+            }
+
+  # On clear (span pool recycle): reset the GLS bookkeeping so a reused span never
+  # carries a stale popper or a cell describing its previous lifecycle. Clearing
+  # __dd_glsDone drops only the span's pointer to the cell; entries already on a
+  # stack keep theirs, so the finish this reset follows stays visible to the drain.
+  - id: Span clear GLS reset
+    tracer-internal: true
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.Span'
+          - name: clear
+    advice:
+      - prepend-statements:
+          imports:
+            orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+          template: |-
+            {{- $s := .Function.Receiver -}}
+            orchestrion.GLSReset(&{{ $s }}.__dd_glsDone, &{{ $s }}.__dd_glsPop)

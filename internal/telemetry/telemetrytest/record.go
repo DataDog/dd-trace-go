@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
@@ -178,10 +179,15 @@ func (r *RecordClient) RegisterAppConfig(key string, value any, origin telemetry
 func (r *RecordClient) RegisterAppConfigs(kvs ...telemetry.Configuration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for i := range kvs {
-		kvs[i].Value = telemetry.SanitizeConfigValue(kvs[i].Value)
+	for _, kv := range kvs {
+		// Mirror the production sink: configurations marked sensitive are not
+		// reported in configuration telemetry.
+		if env.IsSensitive(kv.Name) {
+			continue
+		}
+		kv.Value = telemetry.SanitizeConfigValue(kv.Value)
+		r.Configuration = append(r.Configuration, kv)
 	}
-	r.Configuration = append(r.Configuration, kvs...)
 }
 
 func (r *RecordClient) MarkIntegrationAsLoaded(integration telemetry.Integration) {

@@ -37,8 +37,9 @@ const (
 	endpointEvalMetric = "/api/intake/llm-obs/v2/eval-metric"
 	endpointLLMSpan    = "/api/v2/llmobs"
 
-	endpointPrefixEVPProxy = "/evp_proxy/v2"
-	endpointPrefixDNE      = "/api/unstable/llm-obs/v1"
+	endpointPrefixEVPProxy  = "/evp_proxy/v2"
+	endpointPrefixDNE       = "/api/unstable/llm-obs/v1"
+	endpointPrefixDNEStable = "/api/v2/llm-obs/v1"
 
 	subdomainLLMSpan    = "llmobs-intake"
 	subdomainEvalMetric = "api"
@@ -74,6 +75,7 @@ type Transport struct {
 	agentURL       *url.URL
 	agentless      bool
 	appKey         string
+	testBaseURL    string // overrides all URL construction when non-empty
 }
 
 // New builds a new Transport for LLM Observability endpoints.
@@ -104,6 +106,7 @@ func New(cfg *config.Config) *Transport {
 		agentURL:       cfg.TracerConfig.AgentURL,
 		agentless:      cfg.ResolvedAgentlessEnabled,
 		appKey:         cfg.TracerConfig.APPKey,
+		testBaseURL:    cfg.TestBaseURL,
 	}
 }
 
@@ -144,6 +147,9 @@ func errStackTrace(err error) string {
 }
 
 func (c *Transport) baseURL(subdomain string) string {
+	if c.testBaseURL != "" {
+		return c.testBaseURL
+	}
 	if c.agentless {
 		return fmt.Sprintf("https://%s.%s", subdomain, c.site)
 	}
@@ -213,8 +219,8 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			req.Header.Set(headerEVPSubdomain, subdomain)
 		}
 
-		// Set headers for datasets and experiments endpoints
-		if strings.HasPrefix(path, endpointPrefixDNE) {
+		// Set headers for datasets and experiments endpoints (both unstable and stable v2 paths)
+		if strings.HasPrefix(path, endpointPrefixDNE) || strings.HasPrefix(path, endpointPrefixDNEStable) {
 			if c.agentless && c.appKey != "" {
 				// In agentless mode, set the app key header if available
 				req.Header.Set("DD-APPLICATION-KEY", c.appKey)

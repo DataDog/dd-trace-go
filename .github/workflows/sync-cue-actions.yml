@@ -8,6 +8,7 @@ on:
       - ".github/workflows/test-apps.yml"
 
 permissions:
+  id-token: write
   contents: write
 
 jobs:
@@ -15,9 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.sync-cue-actions
 
       - name: Sync action SHAs to CUE template
         run: |
@@ -46,7 +54,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "https://x-access-token:${{ steps.generate-token.outputs.token }}@github.com/${{ github.repository }}.git"
           git add .github/workflows/test-apps.cue
           if git diff --cached --quiet; then
             echo "No CUE changes needed"

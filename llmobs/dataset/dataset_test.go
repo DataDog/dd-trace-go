@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
@@ -34,8 +36,7 @@ const (
 
 func TestDatasetCreation(t *testing.T) {
 	t.Run("successful-creation", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		records := []Record{
 			{
@@ -65,8 +66,7 @@ func TestDatasetCreation(t *testing.T) {
 		assert.Equal(t, 2, ds.Len())
 	})
 	t.Run("creation-with-options", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		records := []Record{
 			{
@@ -88,8 +88,7 @@ func TestDatasetCreation(t *testing.T) {
 		assert.Equal(t, 1, ds.Len())
 	})
 	t.Run("with-project-name-option", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		records := []Record{
 			{
@@ -115,9 +114,20 @@ func TestDatasetCreation(t *testing.T) {
 		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", "")
 
-		// Use agentless mode to trigger app key requirement
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
-		defer tt.Stop()
+		// Use agentless mode to trigger app key requirement.
+		// Note: coll.TracerOption() forces ResolvedAgentlessEnabled=false, so we
+		// intentionally skip it here to allow true agentless mode validation.
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(true),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+		)
+		require.NoError(t, err)
 
 		records := []Record{
 			{
@@ -126,7 +136,7 @@ func TestDatasetCreation(t *testing.T) {
 			},
 		}
 
-		_, err := Create(
+		_, err = Create(
 			context.Background(),
 			"test-dataset",
 			records,
@@ -140,8 +150,7 @@ func TestDatasetCreation(t *testing.T) {
 		t.Setenv("DD_APP_KEY", "")
 
 		// Use agent mode - app key should not be required
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
-		defer tt.Stop()
+		testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
 
 		records := []Record{
 			{
@@ -163,8 +172,7 @@ func TestDatasetCreation(t *testing.T) {
 	})
 	t.Run("missing-project-name", func(t *testing.T) {
 
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
-		defer tt.Stop()
+		testTracer(t, tracer.WithLLMObsProjectName(""))
 
 		records := []Record{
 			{
@@ -178,8 +186,7 @@ func TestDatasetCreation(t *testing.T) {
 		assert.Contains(t, err.Error(), "project name must be provided")
 	})
 	t.Run("empty-records", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds, err := Create(
 			context.Background(),
@@ -195,8 +202,7 @@ func TestDatasetCreation(t *testing.T) {
 
 func TestDatasetCRUDOperations(t *testing.T) {
 	t.Run("append-records", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// Create initial dataset
 		initialRecords := []Record{
@@ -228,8 +234,7 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		assert.Equal(t, 3, ds.Len())
 	})
 	t.Run("update-records", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// Create dataset with records
 		records := []Record{
@@ -259,8 +264,7 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		assert.Equal(t, 1, ds.Len())
 	})
 	t.Run("delete-records", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// Create dataset with multiple records
 		records := []Record{
@@ -289,8 +293,7 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		assert.Equal(t, 1, ds.Len())
 	})
 	t.Run("push-without-id-fails", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// Create a dataset manually without going through Create()
 		ds := &Dataset{}
@@ -305,8 +308,7 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		assert.Contains(t, err.Error(), "dataset has no ID")
 	})
 	t.Run("bulk-upload-for-large-datasets", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// Create initial dataset with one record
 		initialRecords := []Record{
@@ -346,8 +348,7 @@ func TestDatasetCRUDOperations(t *testing.T) {
 
 func TestDatasetCSVImport(t *testing.T) {
 	t.Run("successful-csv-import", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// Create a temporary CSV file
 		csvContent := `question,answer,category
@@ -383,8 +384,7 @@ What is the largest planet?,Jupiter,astronomy`
 		assert.Equal(t, map[string]any{"category": "geography"}, rec.Metadata)
 	})
 	t.Run("csv-with-project-name-option", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		csvContent := "question,answer,category\nWhat is 2+2?,4,math\nWhat is the capital of Spain?,Madrid,geography\n"
 		csvFile := createTempCSV(t, csvContent)
@@ -406,8 +406,7 @@ What is the largest planet?,Jupiter,astronomy`
 		assert.Equal(t, 2, ds.Len())
 	})
 	t.Run("csv-with-custom-delimiter", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// Create CSV with semicolon delimiter
 		csvContent := `question;answer;category
@@ -431,8 +430,7 @@ What is 5+5?;10;math`
 		assert.Equal(t, 2, ds.Len())
 	})
 	t.Run("csv-missing-columns", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		csvContent := `question,answer
 What is the capital of Italy?,Rome`
@@ -453,8 +451,7 @@ What is the capital of Italy?,Rome`
 		assert.Contains(t, err.Error(), "metadata columns not found in CSV header")
 	})
 	t.Run("csv-empty-file", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		csvFile := createTempCSV(t, "")
 		defer os.Remove(csvFile)
@@ -470,8 +467,7 @@ What is the capital of Italy?,Rome`
 		assert.Contains(t, err.Error(), "CSV file appears to be empty")
 	})
 	t.Run("csv-nonexistent-file", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		_, err := CreateFromCSV(
 			context.Background(),
@@ -485,8 +481,7 @@ What is the capital of Italy?,Rome`
 	})
 	t.Run("csv-missing-project-name", func(t *testing.T) {
 
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
-		defer tt.Stop()
+		testTracer(t, tracer.WithLLMObsProjectName(""))
 
 		csvFile := createTempCSV(t, "question,answer\nWhat is 2+2?,4\n")
 		defer os.Remove(csvFile)
@@ -505,8 +500,7 @@ What is the capital of Italy?,Rome`
 
 func TestDatasetPull(t *testing.T) {
 	t.Run("successful-pull", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds, err := Pull(context.Background(), "existing-dataset")
 		require.NoError(t, err)
@@ -517,8 +511,7 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, 2, ds.Len())
 	})
 	t.Run("pull-with-project-name-option", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds, err := Pull(
 			context.Background(),
@@ -532,8 +525,7 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, 2, ds.Len())
 	})
 	t.Run("pull-nonexistent-dataset", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// The mock handler will return an error for unknown datasets
 		_, err := Pull(context.Background(), "nonexistent-dataset")
@@ -542,8 +534,7 @@ func TestDatasetPull(t *testing.T) {
 	})
 	t.Run("pull-missing-project-name", func(t *testing.T) {
 
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
-		defer tt.Stop()
+		testTracer(t, tracer.WithLLMObsProjectName(""))
 
 		_, err := Pull(context.Background(), "existing-dataset")
 		require.Error(t, err)
@@ -553,11 +544,22 @@ func TestDatasetPull(t *testing.T) {
 		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", "")
 
-		// Use agentless mode to trigger app key requirement
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
-		defer tt.Stop()
+		// Use agentless mode to trigger app key requirement.
+		// Note: coll.TracerOption() forces ResolvedAgentlessEnabled=false, so we
+		// intentionally skip it here to allow true agentless mode validation.
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(true),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+		)
+		require.NoError(t, err)
 
-		_, err := Pull(context.Background(), "existing-dataset")
+		_, err = Pull(context.Background(), "existing-dataset")
 
 		// Should fail - datasets require DD_APP_KEY in agentless mode
 		require.Error(t, err)
@@ -567,8 +569,7 @@ func TestDatasetPull(t *testing.T) {
 		t.Setenv("DD_APP_KEY", "")
 
 		// Use agent mode - app key should not be required
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
-		defer tt.Stop()
+		testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
 
 		ds, err := Pull(context.Background(), "existing-dataset")
 
@@ -578,16 +579,20 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, "existing-dataset", ds.Name())
 	})
 	t.Run("pull-dataset-with-non-map-input", func(t *testing.T) {
-		h := func(r *http.Request) *http.Response {
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
 			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
-				return nil
+				w.WriteHeader(http.StatusNotFound)
+				return
 			}
 			path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
 
 			switch {
 			case path == "/projects" && r.Method == http.MethodPost:
-				return handleMockProjectCreate(r)
+				handleMockProjectCreate(w, r)
 			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
 				response := llmobstransport.GetDatasetResponse{
 					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
@@ -604,43 +609,45 @@ func TestDatasetPull(t *testing.T) {
 					},
 				}
 				respData, _ := json.Marshal(response)
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(bytes.NewReader(respData)),
-					Request:    r,
-				}
-			case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
-				// Return records with string input (not a map) - this simulates a dataset created externally
-				rawJSON := `{
-					"data": [
-						{
-							"id": "record-1",
-							"type": "dataset_records",
-							"attributes": {
-								"id": "record-1",
-								"input": "This is a simple string input, not a map",
-								"expected_output": "Some output",
-								"version": 1
-							}
-						}
-					]
-				}`
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader(rawJSON)),
-					Request:    r,
-				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(respData)
 			default:
-				return nil
+				w.WriteHeader(http.StatusNotFound)
 			}
-		}
-
-		tt := testTracer(t, testtracer.WithMockResponses(h))
-		defer tt.Stop()
+		})
+		coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			// Records are fetched from the v2 endpoint, which returns a flat
+			// record shape (no "attributes" wrapper) and no per-record version.
+			if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			// Return a record with string input (not a map) - this simulates a dataset created externally
+			rawJSON := `{
+				"data": [
+					{
+						"id": "record-1",
+						"input": "This is a simple string input, not a map",
+						"expected_output": "Some output"
+					}
+				],
+				"meta": {}
+			}`
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(rawJSON))
+		})
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
+		)
+		require.NoError(t, err)
 
 		ds, err := Pull(context.Background(), "string-input-dataset")
 		require.NoError(t, err)
@@ -655,16 +662,20 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, "Some output", rec.ExpectedOutput)
 	})
 	t.Run("pull-dataset-with-non-map-metadata", func(t *testing.T) {
-		h := func(r *http.Request) *http.Response {
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
 			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
-				return nil
+				w.WriteHeader(http.StatusNotFound)
+				return
 			}
 			path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
 
 			switch {
 			case path == "/projects" && r.Method == http.MethodPost:
-				return handleMockProjectCreate(r)
+				handleMockProjectCreate(w, r)
 			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
 				response := llmobstransport.GetDatasetResponse{
 					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
@@ -681,44 +692,46 @@ func TestDatasetPull(t *testing.T) {
 					},
 				}
 				respData, _ := json.Marshal(response)
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(bytes.NewReader(respData)),
-					Request:    r,
-				}
-			case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
-				// Return records with string metadata (not a map) - this simulates a dataset created externally
-				rawJSON := `{
-					"data": [
-						{
-							"id": "record-1",
-							"type": "dataset_records",
-							"attributes": {
-								"id": "record-1",
-								"input": {"question": "What is AI?"},
-								"expected_output": "Artificial Intelligence",
-								"metadata": "simple string metadata from UI",
-								"version": 1
-							}
-						}
-					]
-				}`
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader(rawJSON)),
-					Request:    r,
-				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(respData)
 			default:
-				return nil
+				w.WriteHeader(http.StatusNotFound)
 			}
-		}
-
-		tt := testTracer(t, testtracer.WithMockResponses(h))
-		defer tt.Stop()
+		})
+		coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			// Records are fetched from the v2 endpoint, which returns a flat
+			// record shape (no "attributes" wrapper) and no per-record version.
+			if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			// Return a record with string metadata (not a map) - this simulates a dataset created externally
+			rawJSON := `{
+				"data": [
+					{
+						"id": "record-1",
+						"input": {"question": "What is AI?"},
+						"expected_output": "Artificial Intelligence",
+						"metadata": "simple string metadata from UI"
+					}
+				],
+				"meta": {}
+			}`
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(rawJSON))
+		})
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
+		)
+		require.NoError(t, err)
 
 		// This should succeed - metadata can be any type, not just map[string]any
 		ds, err := Pull(context.Background(), "string-metadata-dataset")
@@ -740,16 +753,20 @@ func TestDatasetPull(t *testing.T) {
 		// Track which page we're on to simulate pagination
 		var requestCount int
 
-		h := func(r *http.Request) *http.Response {
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
 			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
-				return nil
+				w.WriteHeader(http.StatusNotFound)
+				return
 			}
 			path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
 
 			switch {
 			case path == "/projects" && r.Method == http.MethodPost:
-				return handleMockProjectCreate(r)
+				handleMockProjectCreate(w, r)
 			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
 				response := llmobstransport.GetDatasetResponse{
 					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
@@ -766,104 +783,90 @@ func TestDatasetPull(t *testing.T) {
 					},
 				}
 				respData, _ := json.Marshal(response)
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(bytes.NewReader(respData)),
-					Request:    r,
-				}
-			case strings.Contains(path, "/datasets/") && strings.Contains(path, "/records") && r.Method == http.MethodGet:
-				// Simulate 3 pages of results
-				requestCount++
-				var rawJSON string
-
-				switch requestCount {
-				case 1:
-					// First page - has cursor for next page
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-1",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-1",
-									"input": {"question": "Q1"},
-									"expected_output": "A1",
-									"metadata": {},
-									"version": 1
-								}
-							},
-							{
-								"id": "record-2",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-2",
-									"input": {"question": "Q2"},
-									"expected_output": "A2",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {
-							"after": "cursor-page-2"
-						}
-					}`
-				case 2:
-					// Second page - has cursor for next page
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-3",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-3",
-									"input": {"question": "Q3"},
-									"expected_output": "A3",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {
-							"after": "cursor-page-3"
-						}
-					}`
-				default:
-					// Third page - no cursor (last page)
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-4",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-4",
-									"input": {"question": "Q4"},
-									"expected_output": "A4",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {}
-					}`
-				}
-
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader(rawJSON)),
-					Request:    r,
-				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(respData)
 			default:
-				return nil
+				w.WriteHeader(http.StatusNotFound)
 			}
-		}
+		})
+		coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			// Records are fetched from the v2 endpoint, which returns a flat
+			// record shape (no "attributes" wrapper) and no per-record version.
+			if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			// Simulate 3 pages of results
+			requestCount++
+			var rawJSON string
 
-		tt := testTracer(t, testtracer.WithMockResponses(h))
-		defer tt.Stop()
+			switch requestCount {
+			case 1:
+				// First page - has cursor for next page
+				rawJSON = `{
+					"data": [
+						{
+							"id": "record-1",
+							"input": {"question": "Q1"},
+							"expected_output": "A1",
+							"metadata": {}
+						},
+						{
+							"id": "record-2",
+							"input": {"question": "Q2"},
+							"expected_output": "A2",
+							"metadata": {}
+						}
+					],
+					"meta": {
+						"after": "cursor-page-2"
+					}
+				}`
+			case 2:
+				// Second page - has cursor for next page
+				rawJSON = `{
+					"data": [
+						{
+							"id": "record-3",
+							"input": {"question": "Q3"},
+							"expected_output": "A3",
+							"metadata": {}
+						}
+					],
+					"meta": {
+						"after": "cursor-page-3"
+					}
+				}`
+			default:
+				// Third page - no cursor (last page)
+				rawJSON = `{
+					"data": [
+						{
+							"id": "record-4",
+							"input": {"question": "Q4"},
+							"expected_output": "A4",
+							"metadata": {}
+						}
+					],
+					"meta": {}
+				}`
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(rawJSON))
+		})
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
+		)
+		require.NoError(t, err)
 
 		// Pull the dataset - should fetch all pages automatically (eager loading)
 		ds, err := Pull(context.Background(), "paginated-dataset")
@@ -885,12 +888,94 @@ func TestDatasetPull(t *testing.T) {
 			assert.Equal(t, fmt.Sprintf("A%d", i+1), rec.ExpectedOutput)
 		}
 	})
+	t.Run("pull-with-version-option", func(t *testing.T) {
+		var capturedQuery url.Values
+		var capturedHeaders http.Header
+
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			path := strings.TrimPrefix(r.URL.Path, "/api/unstable/llm-obs/v1")
+			switch {
+			case path == "/projects" && r.Method == http.MethodPost:
+				handleMockProjectCreate(w, r)
+			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
+				response := llmobstransport.GetDatasetResponse{
+					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+						{
+							ID:   "versioned-dataset-id",
+							Type: "datasets",
+							Attributes: llmobstransport.DatasetView{
+								ID:             "versioned-dataset-id",
+								Name:           "versioned-dataset",
+								CurrentVersion: 5,
+							},
+						},
+					},
+				}
+				respData, _ := json.Marshal(response)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(respData)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		})
+		coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			// v2 project-scoped records endpoint — capture the query params and headers
+			if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			capturedQuery = r.URL.Query()
+			capturedHeaders = r.Header.Clone()
+			rawJSON := `{
+				"data": [
+					{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans"}
+				],
+				"meta": {}
+			}`
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(rawJSON))
+		})
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
+		)
+		require.NoError(t, err)
+
+		ds, err := Pull(context.Background(), "versioned-dataset", WithPullVersion(2))
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, 1, ds.Len())
+
+		// Confirm filter[version]=2 was sent in the records request
+		require.NotNil(t, capturedQuery, "records request should have been made")
+		assert.Equal(t, "2", capturedQuery.Get("filter[version]"))
+
+		// Confirm the auth header was sent on the v2 records path
+		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "auth header must be present on v2 records path")
+
+		// Confirm ds.Version() reflects the requested version, not the dataset's current_version (5)
+		assert.Equal(t, 2, ds.Version(), "Version() must return the pulled version, not the latest current_version")
+
+		// Confirm each record's Version is stamped with the requested version
+		rec, ok := ds.Record(0)
+		require.True(t, ok)
+		assert.Equal(t, 2, rec.Version(), "record Version must equal the pulled snapshot version")
+	})
 }
 
 func TestDatasetRecordIteration(t *testing.T) {
 	t.Run("records-iterator", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		records := []Record{
 			{
@@ -922,8 +1007,7 @@ func TestDatasetRecordIteration(t *testing.T) {
 		assert.Equal(t, 3, count)
 	})
 	t.Run("record-by-index", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		records := []Record{
 			{
@@ -953,8 +1037,7 @@ func TestDatasetRecordIteration(t *testing.T) {
 
 func TestDatasetURL(t *testing.T) {
 	run := func(t *testing.T) string {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds, err := Create(context.Background(), "test-dataset", []Record{})
 		require.NoError(t, err)
@@ -978,25 +1061,30 @@ func TestDDAppKeyHeader(t *testing.T) {
 		t.Setenv("DD_APP_KEY", testAppKey)
 
 		var capturedHeaders http.Header
-		h := func(r *http.Request) *http.Response {
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
-			if strings.Contains(path, "/api/unstable/llm-obs/v1/datasets") {
+
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/api/unstable/llm-obs/v1/datasets") {
 				capturedHeaders = r.Header.Clone()
 			}
-			// Let the default dataset mock handler handle the response
-			return createMockHandler()(r)
-		}
+			createMockHandler()(w, r)
+		})
 
-		// Force agentless mode explicitly
-		tt := testTracer(t,
-			testtracer.WithTracerStartOpts(
-				tracer.WithLLMObsAgentlessEnabled(true),
-			),
-			testtracer.WithMockResponses(h),
+		// Note: coll.TracerOption() sets testBaseURL which forces ResolvedAgentlessEnabled=false.
+		// In the coll-based setup all requests go through the collector in agent mode.
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
 		)
-		defer tt.Stop()
+		require.NoError(t, err)
 
-		_, err := Create(
+		_, err = Create(
 			context.Background(),
 			"test-dataset",
 			[]Record{
@@ -1005,38 +1093,38 @@ func TestDDAppKeyHeader(t *testing.T) {
 					ExpectedOutput: "answer",
 				},
 			},
-			WithDescription("Test DD_APP_KEY header in agentless mode"),
+			WithDescription("Test DD_APP_KEY header handling"),
 		)
 		require.NoError(t, err)
 
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agentless mode")
+		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should be set")
 	})
 	t.Run("dd-app-key-header-agent-mode", func(t *testing.T) {
 		var capturedHeaders http.Header
-		h := func(r *http.Request) *http.Response {
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
 
-			if strings.Contains(path, "/api/unstable/llm-obs/v1/datasets") {
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/api/unstable/llm-obs/v1/datasets") {
 				capturedHeaders = r.Header.Clone()
 			}
-			// Let the default dataset mock handler handle the response
-			return createMockHandler()(r)
-		}
+			createMockHandler()(w, r)
+		})
 
-		// Force agent mode explicitly
-		tt := testTracer(t,
-			testtracer.WithTracerStartOpts(
-				tracer.WithLLMObsAgentlessEnabled(false),
-			),
-			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-				Endpoints: []string{"/evp_proxy/v2/"}, // Agent supports evp_proxy
-			}),
-			testtracer.WithMockResponses(h),
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
 		)
-		defer tt.Stop()
+		require.NoError(t, err)
 
-		_, err := Create(
+		_, err = Create(
 			context.Background(),
 			"test-dataset",
 			[]Record{
@@ -1057,29 +1145,29 @@ func TestDDAppKeyHeader(t *testing.T) {
 		t.Setenv("DD_APP_KEY", "") // No app key provided
 
 		var capturedHeaders http.Header
-		h := func(r *http.Request) *http.Response {
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
 
-			if strings.Contains(path, "/api/unstable/llm-obs/v1/datasets") {
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/api/unstable/llm-obs/v1/datasets") {
 				capturedHeaders = r.Header.Clone()
 			}
-			// Let the default dataset mock handler handle the response
-			return createMockHandler()(r)
-		}
+			createMockHandler()(w, r)
+		})
 
-		// Force agent mode explicitly
-		tt := testTracer(t,
-			testtracer.WithTracerStartOpts(
-				tracer.WithLLMObsAgentlessEnabled(false),
-			),
-			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-				Endpoints: []string{"/evp_proxy/v2/"}, // Agent supports evp_proxy
-			}),
-			testtracer.WithMockResponses(h),
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
 		)
-		defer tt.Stop()
+		require.NoError(t, err)
 
-		_, err := Create(context.Background(), "test-dataset", []Record{
+		_, err = Create(context.Background(), "test-dataset", []Record{
 			{
 				Input:          map[string]any{"question": "test"},
 				ExpectedOutput: "answer",
@@ -1163,65 +1251,97 @@ func generateRandomRecords(n int) []*Record {
 	return records
 }
 
-func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
-	tracerOpts := []tracer.StartOption{
+func testTracer(t *testing.T, tracerOpts ...tracer.StartOption) *llmobstest.Collector {
+	t.Helper()
+	agent, err := tracertest.StartAgent(t)
+	require.NoError(t, err)
+	coll := llmobstest.New(t)
+	registerMockHandlers(coll)
+	_, err = tracertest.Start(t, agent, append([]tracer.StartOption{
 		tracer.WithLLMObsEnabled(true),
 		tracer.WithLLMObsMLApp("test-app"),
-		tracer.WithLLMObsProjectName("test-project"),
 		tracer.WithLLMObsAgentlessEnabled(false),
+		tracer.WithLLMObsProjectName("test-project"),
 		tracer.WithService("test-service"),
 		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	}, tracerOpts...)...)
+	require.NoError(t, err)
+	return coll
+}
+
+func registerMockHandlers(coll *llmobstest.Collector) {
+	coll.HandleFunc("/api/unstable/llm-obs/v1/", createMockHandler())
+	// Dataset records are fetched from the v2 endpoint (see endpointPrefixDNEStable).
+	coll.HandleFunc("/api/v2/llm-obs/v1/", handleMockDatasetRecordsV2)
+}
+
+// handleMockDatasetRecordsV2 serves the v2 dataset-records endpoint. The v2 wire
+// format is a flat record object (id, input, expected_output, metadata) with no
+// "attributes" wrapper and no per-record version field.
+func handleMockDatasetRecordsV2(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
-	defaultOpts := []testtracer.Option{
-		testtracer.WithTracerStartOpts(tracerOpts...),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-		testtracer.WithMockResponses(createMockHandler()),
+	recordsResponse := llmobstransport.GetDatasetRecordsResponseV2{
+		Data: []llmobstransport.DatasetRecordItemV2{
+			{
+				ID:             "record-1",
+				Input:          map[string]any{"question": "What is AI?"},
+				ExpectedOutput: "Artificial Intelligence",
+			},
+			{
+				ID:             "record-2",
+				Input:          map[string]any{"question": "What is ML?"},
+				ExpectedOutput: "Machine Learning",
+			},
+		},
 	}
-	allOpts := append(defaultOpts, opts...)
-	tt := testtracer.Start(t, allOpts...)
-	t.Cleanup(tt.Stop)
-	return tt
+	respData, _ := json.Marshal(recordsResponse)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
 // createMockHandler creates a mock handler for dataset-related requests
-func createMockHandler() testtracer.MockResponseFunc {
+func createMockHandler() http.HandlerFunc {
 	state := newMockDatasetState()
 
-	return func(r *http.Request) *http.Response {
-		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
 		if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
-			return nil
+			w.WriteHeader(http.StatusNotFound)
+			return
 		}
 		path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
 
 		switch {
 		case path == "/projects" && r.Method == http.MethodPost:
-			return handleMockProjectCreate(r)
+			handleMockProjectCreate(w, r)
 
 		case strings.HasPrefix(path, "/datasets") && strings.HasSuffix(path, "/batch_update"):
-			return handleMockDatasetBatchUpdate(r)
+			handleMockDatasetBatchUpdate(w, r)
 
 		case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records/upload") && r.Method == http.MethodPost:
-			return handleMockDatasetBulkUpload(r)
+			handleMockDatasetBulkUpload(w, r)
 
 		case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
-			return handleMockDatasetGet(r, state)
+			handleMockDatasetGet(w, r, state)
 
 		case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
-			return handleMockDatasetGet(r, state)
+			handleMockDatasetGet(w, r, state)
 
 		case strings.Contains(path, "/datasets") && r.Method == http.MethodPost:
-			return handleMockDatasetCreate(r, state)
+			handleMockDatasetCreate(w, r, state)
 
 		default:
-			return nil
+			w.WriteHeader(http.StatusNotFound)
 		}
 	}
 }
 
-func handleMockProjectCreate(r *http.Request) *http.Response {
+func handleMockProjectCreate(w http.ResponseWriter, _ *http.Request) {
 	// Mock project creation - always return the same project
 	response := llmobstransport.CreateProjectResponse{
 		Data: llmobstransport.ResponseData[llmobstransport.ProjectView]{
@@ -1234,16 +1354,12 @@ func handleMockProjectCreate(r *http.Request) *http.Response {
 		},
 	}
 	respData, _ := json.Marshal(response)
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewReader(respData)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
-func handleMockDatasetCreate(r *http.Request, state *mockDatasetState) *http.Response {
+func handleMockDatasetCreate(w http.ResponseWriter, r *http.Request, state *mockDatasetState) {
 	// Parse the request body to get the dataset name
 	body, _ := io.ReadAll(r.Body)
 	r.Body = io.NopCloser(bytes.NewReader(body)) // Reset body for potential re-reading
@@ -1251,13 +1367,10 @@ func handleMockDatasetCreate(r *http.Request, state *mockDatasetState) *http.Res
 	// The actual request structure matches CreateDatasetRequest
 	var createReq llmobstransport.CreateDatasetRequest
 	if err := json.Unmarshal(body, &createReq); err != nil {
-		return &http.Response{
-			Status:     "400 Bad Request",
-			StatusCode: http.StatusBadRequest,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"error": "invalid request body"}`)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "invalid request body"}`))
+		return
 	}
 
 	name := createReq.Data.Attributes.Name
@@ -1265,13 +1378,10 @@ func handleMockDatasetCreate(r *http.Request, state *mockDatasetState) *http.Res
 
 	// Check if dataset already exists
 	if _, exists := state.getDataset(name); exists {
-		return &http.Response{
-			Status:     "400 Bad Request",
-			StatusCode: http.StatusBadRequest,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"error": "dataset already exists"}`)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "dataset already exists"}`))
+		return
 	}
 
 	// Create the dataset
@@ -1291,16 +1401,12 @@ func handleMockDatasetCreate(r *http.Request, state *mockDatasetState) *http.Res
 		},
 	}
 	respData, _ := json.Marshal(response)
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewReader(respData)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
-func handleMockDatasetGet(r *http.Request, state *mockDatasetState) *http.Response {
+func handleMockDatasetGet(w http.ResponseWriter, r *http.Request, state *mockDatasetState) {
 	// Parse query parameters to determine if this is a specific dataset request
 	name := r.URL.Query().Get("filter[name]")
 
@@ -1344,13 +1450,10 @@ func handleMockDatasetGet(r *http.Request, state *mockDatasetState) *http.Respon
 		}
 
 		respData, _ := json.Marshal(response)
-		return &http.Response{
-			Status:     "200 OK",
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(bytes.NewReader(respData)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(respData)
+		return
 	}
 
 	// Check if this is a request for dataset records
@@ -1380,13 +1483,10 @@ func handleMockDatasetGet(r *http.Request, state *mockDatasetState) *http.Respon
 			},
 		}
 		respData, _ := json.Marshal(recordsResponse)
-		return &http.Response{
-			Status:     "200 OK",
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(bytes.NewReader(respData)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(respData)
+		return
 	}
 
 	// Return mock dataset
@@ -1406,29 +1506,22 @@ func handleMockDatasetGet(r *http.Request, state *mockDatasetState) *http.Respon
 	}
 
 	respData, _ := json.Marshal(datasetResponse)
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewReader(respData)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
-func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
+func handleMockDatasetBatchUpdate(w http.ResponseWriter, r *http.Request) {
 	// Parse the request body to understand what operations are being performed
 	body, _ := io.ReadAll(r.Body)
 	r.Body = io.NopCloser(bytes.NewReader(body)) // Reset body for potential re-reading
 
 	var batchReq llmobstransport.BatchUpdateDatasetRequest
 	if err := json.Unmarshal(body, &batchReq); err != nil {
-		return &http.Response{
-			Status:     "400 Bad Request",
-			StatusCode: http.StatusBadRequest,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"error": "invalid request body"}`)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "invalid request body"}`))
+		return
 	}
 
 	attrs := batchReq.Data.Attributes
@@ -1466,49 +1559,35 @@ func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
 	}
 
 	respData, _ := json.Marshal(response)
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewReader(respData)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
-func handleMockDatasetBulkUpload(r *http.Request) *http.Response {
+func handleMockDatasetBulkUpload(w http.ResponseWriter, r *http.Request) {
 	// For bulk upload, we just need to verify the multipart form is valid
 	// and return a success response. The actual CSV parsing is done on the backend.
 	contentType := r.Header.Get("Content-Type")
 	if !strings.HasPrefix(contentType, "multipart/form-data") {
-		return &http.Response{
-			Status:     "400 Bad Request",
-			StatusCode: http.StatusBadRequest,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"error": "expected multipart/form-data"}`)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "expected multipart/form-data"}`))
+		return
 	}
 
 	// Read and verify the body exists (we don't parse CSV in tests)
 	body, _ := io.ReadAll(r.Body)
 	if len(body) == 0 {
-		return &http.Response{
-			Status:     "400 Bad Request",
-			StatusCode: http.StatusBadRequest,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"error": "empty body"}`)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "empty body"}`))
+		return
 	}
 
 	// Return success response
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader(`{"status": "success"}`)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "success"}`))
 }
 
 func createTempCSV(t *testing.T, content string) string {
@@ -1552,22 +1631,19 @@ func TestLargeDatasetPushChunking(t *testing.T) {
 	var bulkUploadCalled bool
 	var batchUpdateSizes []int
 
-	mockHandler := func(r *http.Request) *http.Response {
-		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
-		path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
+	agent, err := tracertest.StartAgent(t)
+	require.NoError(t, err)
+	coll := llmobstest.New(t)
+	coll.HandleFunc("/api/unstable/llm-obs/v1/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/unstable/llm-obs/v1")
 
 		// Simulate the EVP proxy rejecting bulk uploads with a 502.
 		if strings.Contains(path, "/records/upload") {
 			mu.Lock()
 			bulkUploadCalled = true
 			mu.Unlock()
-			return &http.Response{
-				Status:     "502 Bad Gateway",
-				StatusCode: http.StatusBadGateway,
-				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader("read limit reached")),
-				Request:    r,
-			}
+			http.Error(w, "read limit reached", http.StatusBadGateway)
+			return
 		}
 
 		// Track the body size of each batch_update request.
@@ -1581,11 +1657,18 @@ func TestLargeDatasetPushChunking(t *testing.T) {
 			}
 		}
 
-		return createMockHandler()(r)
-	}
-
-	tt := testTracer(t, testtracer.WithMockResponses(mockHandler))
-	defer tt.Stop()
+		createMockHandler()(w, r)
+	}))
+	_, err = tracertest.Start(t, agent,
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-app"),
+		tracer.WithLLMObsAgentlessEnabled(false),
+		tracer.WithLLMObsProjectName("test-project"),
+		tracer.WithService("test-service"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	)
+	require.NoError(t, err)
 
 	// Build records whose total JSON size exceeds batchUpdateThreshold (5MB) so that
 	// the current code would attempt a bulk upload. Each record is ~900KB:

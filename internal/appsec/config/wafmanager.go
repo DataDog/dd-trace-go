@@ -13,10 +13,10 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	telemetryLog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 type (
@@ -24,13 +24,17 @@ type (
 	WAFManager struct {
 		builder      *libddwaf.Builder
 		staticRules  []byte // nullable
+		obfuscator   ObfuscatorConfig
 		rulesVersion string
 		mu           sync.RWMutex
 		cleanup      runtime.Cleanup
 	}
 )
 
-const defaultRulesPath = "ASM_DD/default"
+const (
+	defaultRulesPath     = "ASM_DD/default"
+	obfuscatorConfigPath = "obfuscator/config"
+)
 
 // NewWAFManager creates a new [WAFManager] with the provided [config.ObfuscatorConfig] and initial
 // rules (if any).
@@ -39,14 +43,18 @@ func NewWAFManager(obfuscator ObfuscatorConfig) (*WAFManager, error) {
 }
 
 func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byte) (*WAFManager, error) {
-	builder, err := libddwaf.NewBuilder(obfuscator.KeyRegex, obfuscator.ValueRegex)
+	builder, err := libddwaf.NewBuilder()
 	if err != nil {
+		return nil, err
+	}
+	if err := addObfuscatorConfig(builder, obfuscator); err != nil {
 		return nil, err
 	}
 
 	mgr := &WAFManager{
 		builder:     builder,
 		staticRules: staticRules,
+		obfuscator:  obfuscator,
 	}
 
 	if err := mgr.RestoreDefaultConfig(); err != nil {
@@ -57,7 +65,7 @@ func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byt
 	// garbage collected, in case [WAFManager.Close] was not called explicitly by
 	// the user.
 	mgr.cleanup = runtime.AddCleanup(mgr, func(b *libddwaf.Builder) {
-		telemetryLog.Warn("WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!")
+		telemetrylog.Warn("WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!")
 		b.Close()
 	}, builder)
 
@@ -66,7 +74,11 @@ func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byt
 
 // Reset resets the WAF manager to its initial state.
 func (m *WAFManager) Reset() error {
-	for _, path := range m.ConfigPaths("") {
+	paths, err := m.configPaths("")
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
 		m.RemoveConfig(path)
 	}
 	return m.RestoreDefaultConfig()
@@ -76,6 +88,14 @@ func (m *WAFManager) Reset() error {
 // [WAFManager]. This is typically used for testing purposes. An optional filter regular expression
 // can be provided to limit what paths are returned.
 func (m *WAFManager) ConfigPaths(filter string) []string {
+	paths, err := m.configPaths(filter)
+	if err != nil {
+		return nil
+	}
+	return paths
+}
+
+func (m *WAFManager) configPaths(filter string) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -86,9 +106,12 @@ func (m *WAFManager) ConfigPaths(filter string) []string {
 // version of the rules that were used to build it.
 func (m *WAFManager) NewHandle() (*libddwaf.Handle, string) {
 	m.mu.RLock()
+	defer m.mu.RUnlock()
 	rulesVersion := m.rulesVersion
-	hdl := m.builder.Build()
-	m.mu.RUnlock()
+	hdl, err := m.builder.Build()
+	if err != nil {
+		telemetrylog.Error("failed to build WAF handle", slog.Any("error", telemetrylog.NewSafeError(err)))
+	}
 	return hdl, rulesVersion
 }
 
@@ -149,6 +172,10 @@ func (m *WAFManager) AddOrUpdateConfig(path string, fragment any) (libddwaf.Diag
 
 // RestoreDefaultConfig restores the initial configurations to the receiving [WAFManager].
 func (m *WAFManager) RestoreDefaultConfig() error {
+	if err := addObfuscatorConfig(m.builder, m.obfuscator); err != nil {
+		return err
+	}
+
 	var diags libddwaf.Diagnostics
 	var err error
 	if m.staticRules == nil {
@@ -175,8 +202,22 @@ func (m *WAFManager) RestoreDefaultConfig() error {
 	return err
 }
 
+func addObfuscatorConfig(builder *libddwaf.Builder, obfuscator ObfuscatorConfig) error {
+	if obfuscator.KeyRegex == "" && obfuscator.ValueRegex == "" {
+		return nil
+	}
+
+	_, err := builder.AddOrUpdateConfig(obfuscatorConfigPath, map[string]any{
+		"obfuscator": map[string]any{
+			"key_regex":   obfuscator.KeyRegex,
+			"value_regex": obfuscator.ValueRegex,
+		},
+	})
+	return err
+}
+
 func logLocalDiagnosticMessages(name string, feature *libddwaf.Feature) {
-	logger := telemetryLog.With(telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:appsec::waf::ruleset::diagnostic"}))
+	logger := telemetrylog.With(telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:appsec::waf::ruleset::diagnostic"}))
 
 	if feature.Error != "" {
 		logger.Error("feature error", slog.String("message", feature.Error))

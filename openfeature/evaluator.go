@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,9 +35,21 @@ type evaluationResult struct {
 	Metadata map[string]any
 }
 
-// evaluateFlag evaluates a feature flag with the given context.
+const (
+	metadataAllocationKey = "dd.allocation.key"
+	metadataDoLogKey      = "dd.doLog"
+	metadataSerialIDKey   = "dd.serialId"
+	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
+	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time.
+	metadataEvalTimeKey = "dd.eval.timestamp_ms"
+)
+
+// evaluateFlag evaluates a feature flag with the given context. The caller supplies the
+// evaluation time (now) so a single timestamp is shared between the allocation time-window
+// checks here and the EVP eval-time metadata stamped by DatadogProvider.evaluate — avoiding a
+// second time.Now() on the evaluation path.
 // It returns the variant value, reason, and any error that occurred.
-func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluationResult {
+func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time) evaluationResult {
 	if flag == nil {
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
@@ -48,8 +61,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 		}
 	}
 
-	// Evaluate allocations in order - first match wins
-	now := time.Now()
+	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
 		split, matched, err := evaluateAllocation(allocation, context, now)
 		if err != nil {
@@ -80,7 +92,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 			}
 
 			// Build metadata for exposure tracking
-			metadata := make(map[string]any)
+			metadata := make(map[string]any, 3)
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)
@@ -90,14 +102,22 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 			}
 			metadata[metadataDoLogKey] = doLog
 
+			if split.SerialID != nil {
+				metadata[metadataSerialIDKey] = *split.SerialID
+			}
+
 			// Determine reason:
-			//   rules matched           → TARGETING_MATCH
-			//   no rules, shards used   → SPLIT
-			//   no rules, no shards     → STATIC (catch-all; value is same for everyone)
+			//   rules matched                         → TARGETING_MATCH
+			//   temporal allocation with one split   → DEFAULT
+			//   no rules, shards used                 → SPLIT
+			//   no rules, no shards                   → STATIC
 			var reason of.Reason
 			switch {
 			case len(allocation.Rules) > 0:
 				reason = of.TargetingMatchReason
+			case (allocation.StartAt != nil || allocation.EndAt != nil) &&
+				len(allocation.Splits) == 1 && len(split.Shards) == 0:
+				reason = of.DefaultReason
 			case len(split.Shards) > 0:
 				reason = of.SplitReason
 			default:
@@ -117,6 +137,29 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 	return evaluationResult{
 		Value:  defaultValue,
 		Reason: of.DefaultReason,
+	}
+}
+
+// evaluateConfiguredFlag evaluates a flag from a parsed configuration. Invalid
+// flags return the caller default. Missing flags return FLAG_NOT_FOUND.
+func evaluateConfiguredFlag(
+	config *universalFlagsConfiguration,
+	flagKey string,
+	defaultValue any,
+	context map[string]any,
+	now time.Time,
+) evaluationResult {
+	flag, exists := config.Flags[flagKey]
+	if exists {
+		return evaluateFlag(flag, defaultValue, context, now)
+	}
+	if _, invalid := config.invalidFlags[flagKey]; invalid {
+		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
+	}
+	return evaluationResult{
+		Value:  defaultValue,
+		Reason: of.ErrorReason,
+		Error:  fmt.Errorf("%w: %q", errFlagNotFound, flagKey),
 	}
 }
 
@@ -224,7 +267,9 @@ func loadRegex(pattern string) (*regexp.Regexp, error) {
 	}
 
 	// Not in cache, compile it (we are probably in the remote config goroutine, so this is acceptable)
-	compiled, err := regexp.Compile(pattern)
+	// Go regular expressions are Unicode-aware by default and do not support
+	// the explicit (?u) mode accepted by some other SDK runtimes.
+	compiled, err := regexp.Compile(strings.TrimPrefix(pattern, "(?u)"))
 	if err != nil {
 		return nil, err
 	}

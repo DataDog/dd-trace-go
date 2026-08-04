@@ -803,6 +803,67 @@ func TestIgnoredMetadata(t *testing.T) {
 	}
 }
 
+// WithMetadataTags must never write credential-bearing or binary metadata keys
+// into span tags, regardless of user-supplied WithIgnoredMetadata options.
+func TestMetadataCredentialLeakPrevention(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(false, WithMetadataTags())
+	require.NoError(t, err)
+	defer rig.Close()
+
+	sensitiveKeys := []string{
+		"authorization",
+		"proxy-authorization",
+		"cookie",
+		"set-cookie",
+		"x-api-key",
+		"x-auth-token",
+	}
+
+	md := metadata.MD{
+		"authorization":           []string{"Bearer secret-token"},
+		"proxy-authorization":     []string{"Basic secret"},
+		"cookie":                  []string{"session=secret"},
+		"set-cookie":              []string{"id=secret; HttpOnly"},
+		"x-api-key":               []string{"secret-api-key"},
+		"x-auth-token":            []string{"secret-auth-token"},
+		"grpc-status-details-bin": []string{"binary-data"},
+		"safe-key":                []string{"visible"},
+	}
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	require.NoError(t, err)
+
+	waitForSpans(mt, 1)
+
+	var serverSpan *mocktracer.Span
+	for _, s := range mt.FinishedSpans() {
+		if s.OperationName() == "grpc.server" {
+			serverSpan = s
+			break
+		}
+	}
+	require.NotNil(t, serverSpan, "grpc.server span not found")
+
+	for _, key := range sensitiveKeys {
+		assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+key), "credential key %q must not appear as span tag", key)
+		assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+key+".0"), "credential key %q must not appear as span tag", key)
+	}
+
+	// Binary metadata must also be suppressed.
+	assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+"grpc-status-details-bin"), "binary metadata must not appear as span tag")
+	assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+"grpc-status-details-bin.0"), "binary metadata must not appear as span tag")
+
+	// Non-sensitive keys must still be tagged.
+	safeTag := serverSpan.Tag(tagMetadataPrefix + "safe-key")
+	if safeTag == nil {
+		safeTag = serverSpan.Tag(tagMetadataPrefix + "safe-key.0")
+	}
+	assert.NotNil(t, safeTag, "non-sensitive metadata key must still be tagged")
+}
+
 func TestSpanOpts(t *testing.T) {
 	t.Run("unary", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -1040,7 +1101,7 @@ func TestIssue2050(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: &roundTripper{
 			assertSpanFromRequest: func(r *http.Request) {
-				if r.URL.Path != "/v0.4/traces" {
+				if r.URL.Path != "/v0.4/traces" && r.URL.Path != "/v1.0/traces" {
 					return
 				}
 				req := r.Clone(context.Background())
@@ -1049,26 +1110,46 @@ func TestIssue2050(t *testing.T) {
 				buf, err := io.ReadAll(req.Body)
 				require.NoError(t, err)
 
-				var payload bytes.Buffer
-				_, err = msgp.UnmarshalAsJSON(&payload, buf)
-				require.NoError(t, err)
+				if r.URL.Path == "/v1.0/traces" {
+					var trace map[string]interface{}
+					trace = testutils.DecodeV1Traces(t, buf)
+					chunks, ok := trace["11"].([]interface{})
+					if !ok || len(chunks) == 0 {
+						return
+					}
+					require.Len(t, chunks, 2)
+					getFirstSpan := func(c interface{}) map[string]interface{} {
+						return c.(map[string]interface{})["4"].([]interface{})[0].(map[string]interface{})
+					}
+					s0 := getFirstSpan(chunks[0])
+					s1 := getFirstSpan(chunks[1])
+					assert.Equal(t, "some-dd-service", s0["1"])
+					assert.Equal(t, "grpc.client", s1["1"])
+					assert.EqualValues(t, 2, s0["16"]) // server
+					assert.EqualValues(t, 3, s1["16"]) // client
+				} else {
+					// allow fallback to v0.4
+					var payload bytes.Buffer
+					_, err = msgp.UnmarshalAsJSON(&payload, buf)
+					require.NoError(t, err)
 
-				var trace [][]map[string]interface{}
-				err = json.Unmarshal(payload.Bytes(), &trace)
-				require.NoError(t, err)
+					var trace [][]map[string]interface{}
+					err = json.Unmarshal(payload.Bytes(), &trace)
+					require.NoError(t, err)
 
-				if len(trace) == 0 {
-					return
+					if len(trace) == 0 {
+						return
+					}
+					require.Len(t, trace, 2)
+					s0 := trace[0][0]
+					s1 := trace[1][0]
+
+					assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
+					assert.Equal(t, "some-dd-service", s0["service"])
+
+					assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
+					assert.Equal(t, "grpc.client", s1["service"])
 				}
-				require.Len(t, trace, 2)
-				s0 := trace[0][0]
-				s1 := trace[1][0]
-
-				assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
-				assert.Equal(t, "some-dd-service", s0["service"])
-
-				assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
-				assert.Equal(t, "grpc.client", s1["service"])
 				close(spansFound)
 			},
 		},

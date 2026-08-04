@@ -155,3 +155,7 @@ ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all
 .PHONY: upgrade/orchestrion
 upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
 	$(BIN_PATH) ORCHESTRION_VERSION=$(ORCHESTRION_VERSION) ORCHESTRION_DIRS="$(ORCHESTRION_DIRS)" ./scripts/upgrade_orchestrion.sh
+
+.PHONY: config-audit
+config-audit: ## Report which DD_* configs are migrated to internal/config
+	@cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table

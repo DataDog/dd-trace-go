@@ -4,7 +4,8 @@
 // Copyright 2024 Datadog, Inc.
 
 // Package os provides integrations into the standard library's `os` package,
-// allowing protection against Local File Inclusion (LFI) attacks.
+// allowing protection against Local File Inclusion (LFI) and Command Injection
+// (CMDi) attacks.
 package os
 
 // These imports satisfy injected dependencies for Orchestrion auto instrumentation.
@@ -55,4 +56,36 @@ func OpenFile(ctx context.Context, path string, flag int, perm os.FileMode) (fil
 	}
 
 	return os.OpenFile(path, flag, perm)
+}
+
+// StartProcess is a [context.Context]-aware version of [os.StartProcess], that allows
+// the use of ASM rules to protect against Command Injection (CMDi) attacks.
+func StartProcess(ctx context.Context, name string, argv []string, attr *os.ProcAttr) (proc *os.Process, err error) {
+	parent, _ := dyngo.FromContext(ctx)
+	if parent != nil {
+		op := &ossec.RunCommandOperation{
+			Operation: dyngo.NewOperation(parent),
+		}
+
+		var block bool
+		dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
+			block = true
+		})
+
+		dyngo.StartOperation(op, ossec.RunCommandOperationArgs{
+			Name:     name,
+			Commands: argv,
+		})
+
+		defer dyngo.FinishOperation(op, ossec.RunCommandOperationRes[*os.Process]{
+			Process: &proc,
+			Err:     &err,
+		})
+
+		if block {
+			return
+		}
+	}
+
+	return os.StartProcess(name, argv, attr)
 }

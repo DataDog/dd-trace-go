@@ -33,13 +33,16 @@ func TestSampler(t *testing.T) {
 		defer cancel()
 	}
 
-	const samplesToTake = config.MaxItemCount << 10
-
 	type testCase struct {
 		// KeySpace is the set of keys to randomly draw from when sampling.
 		KeySpace []SamplingKey
 		// SimulatedTPS is the number of samples per second to simulate.
 		SimulatedTPS int
+		// SamplesPerWorker is the number of samples each worker goroutine takes.
+		// It is set per-case because the cost per Hit varies widely with key-space
+		// size: at load≈1.0 the open-addressing table degenerates to a full linear
+		// scan, making each Hit O(capacity) — far more expensive than a low-load case.
+		SamplesPerWorker int
 		// ExpectedKeepRate is the expected rate of samples being kept [0;1]
 		ExpectedKeepRate float64
 		// AllowedDelta is the allowed delta for the keep rate.
@@ -49,34 +52,39 @@ func TestSampler(t *testing.T) {
 		"small": {
 			KeySpace:         testVector[:config.MaxItemCount/32],
 			SimulatedTPS:     10,
+			SamplesPerWorker: config.MaxItemCount << 7, // load≈0.01, very cheap per Hit
 			ExpectedKeepRate: .0415,
 			AllowedDelta:     .0001,
 		},
 		"medium": {
 			KeySpace:         testVector[:config.MaxItemCount/16],
 			SimulatedTPS:     20,
+			SamplesPerWorker: config.MaxItemCount << 7, // load≈0.03, cheap per Hit
 			ExpectedKeepRate: .0415,
 			AllowedDelta:     .0001,
 		},
 		"high": {
 			KeySpace:         testVector[:config.MaxItemCount*2/3],
 			SimulatedTPS:     1000,
-			ExpectedKeepRate: .0091,
+			SamplesPerWorker: config.MaxItemCount << 7, // load≈0.33, manageable per Hit
+			ExpectedKeepRate: .0094,
 			AllowedDelta:     .0001,
 		},
 		"large": {
 			KeySpace:         testVector[:config.MaxItemCount],
 			SimulatedTPS:     1000,
-			ExpectedKeepRate: .01,
-			AllowedDelta:     .005, // Small chance of collision here... so a bit more wiggle room...
+			SamplesPerWorker: config.MaxItemCount << 7, // load≈0.5, moderate per Hit
+			ExpectedKeepRate: .0145,
+			AllowedDelta:     .001, // Small chance of collision here... so a bit more wiggle room...
 		},
 		"extreme": { // Not actually realistic usage... Evictions galore!
 			KeySpace:         testVector[:2*config.MaxItemCount],
 			SimulatedTPS:     10000,
-			ExpectedKeepRate: .21,
+			SamplesPerWorker: config.MaxItemCount << 3, // load≈1.0, O(capacity) per Hit; 16× cut
+			ExpectedKeepRate: .16,
 			// Very random evictions, so keep rate can be pretty off...
 			// It appears that some newer gen P-cores/E-cores CPU are significantly worse at running this job
-			// so we allow a bit more wiggle room here (like 50% worse).
+			// so we keep this tolerance intentionally broad.
 			AllowedDelta: .5,
 		},
 	}
@@ -97,18 +105,26 @@ func TestSampler(t *testing.T) {
 					dropped atomic.Uint64
 				)
 				sb.Add(1 + goroutineCount) // All child goroutines + this one...
-				for range goroutineCount {
+				for workerID := range goroutineCount {
 					wg.Go(func() {
+						rng := rand.New(rand.NewSource(int64(workerID)))
 						sb.Done() // We're ready for business, signal to the start barrier...
 						sb.Wait() // Wait for all the goroutines to have started...
 
-						for i := range samplesToTake {
-							if subject.DecisionFor(randomOne(tc.KeySpace)) {
+						for i := range tc.SamplesPerWorker {
+							// ctx.Err() is a non-blocking atomic read, safe inside
+							// the synctest bubble. Workers exit early if the test's
+							// deadline is approaching so a slow CI run fails cleanly
+							// with a diagnostic instead of a binary-wide panic.
+							if ctx.Err() != nil {
+								return
+							}
+							if subject.DecisionFor(randomOneFrom(rng, tc.KeySpace)) {
 								kept.Add(1)
 							} else {
 								dropped.Add(1)
 							}
-							// The clock ticks every 10 samples (model a server processing 10 TPS)
+							// The clock ticks every SimulatedTPS samples (model a server processing N TPS)
 							if i%tc.SimulatedTPS == 0 {
 								time.Sleep(time.Second)
 							}
@@ -118,6 +134,11 @@ func TestSampler(t *testing.T) {
 
 				sb.Done()
 				wg.Wait()
+
+				if ctx.Err() != nil {
+					t.Errorf("test deadline reached before workers finished; the sampler workload is too large for the CI timeout budget")
+					return
+				}
 
 				samplesTaken := kept.Load() + dropped.Load()
 
@@ -209,8 +230,8 @@ func BenchmarkSampler(b *testing.B) {
 	}
 }
 
-func randomOne[T any](list []T) T {
-	return list[rand.Intn(len(list))]
+func randomOneFrom[T any](rng *rand.Rand, list []T) T {
+	return list[rng.Intn(len(list))]
 }
 
 var (

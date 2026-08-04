@@ -209,11 +209,10 @@ func TestLoggerBackend_StackTrace(t *testing.T) {
 		stackTrace := logs.Logs[0].StackTrace
 		assert.NotEmpty(t, stackTrace, "Should have stack trace")
 
-		// With skip=4, the stack should NOT contain backend.add, backend.Add, CaptureWithRedaction, or capture
-		assert.NotContains(t, stackTrace, "backend.add", "Should skip backend.add frame")
-		assert.NotContains(t, stackTrace, "backend.Add", "Should skip backend.Add frame")
-		assert.NotContains(t, stackTrace, "CaptureWithRedaction", "Should skip CaptureWithRedaction frame")
-		assert.NotContains(t, stackTrace, ".capture", "Should skip capture frame")
+		assert.NotContains(t, stackTrace, "loggerBackend).add", "Should skip loggerBackend.add frame")
+		assert.NotContains(t, stackTrace, "loggerBackend).Add", "Should skip loggerBackend.Add frame")
+		assert.NotContains(t, stackTrace, "github.com/puzpuzpuz/xsync", "Should not capture map implementation frames")
+		assert.NotContains(t, stackTrace, "CaptureRaw", "Should skip CaptureRaw frame")
 
 		// Should contain this test function
 		assert.Contains(t, stackTrace, "TestLoggerBackend_StackTrace", "Should contain calling test function")

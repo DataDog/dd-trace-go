@@ -49,8 +49,9 @@ func TestTelemetryDefaultConfigurations(t *testing.T) {
 	}
 }
 
-// TestTelemetryExporterConfigurations verifies that OTEL_EXPORTER_OTLP_* configurations
-// are reported to telemetry when set via environment variables.
+// TestTelemetryExporterConfigurations verifies that non-sensitive OTEL_EXPORTER_OTLP_*
+// configurations are reported to telemetry when set via environment variables, and that
+// OTEL_EXPORTER_OTLP_HEADERS is not reported in configuration telemetry.
 func TestTelemetryExporterConfigurations(t *testing.T) {
 	recorder := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(recorder)()
@@ -58,7 +59,7 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 	// Set environment variables
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 	t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "30000")
-	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=key,other-config-value=value")
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=SENTINEL_OTLP_BASE,other-config-value=value")
 	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
@@ -70,10 +71,9 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 	}
 	defer Shutdown(t.Context(), mp)
 
-	// Check configurations are reported with env_var origin
+	// Check non-sensitive configurations are reported with env_var origin
 	expectedConfigs := map[string]any{
 		"OTEL_EXPORTER_OTLP_TIMEOUT":  30000,
-		"OTEL_EXPORTER_OTLP_HEADERS":  "api-key=key,other-config-value=value",
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
 		"OTEL_METRIC_EXPORT_INTERVAL": 5000,
@@ -92,10 +92,23 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 		}
 		assert.True(t, found, "expected config %s not found in telemetry", configName)
 	}
+
+	// OTEL_EXPORTER_OTLP_HEADERS must not be reported in configuration telemetry,
+	// and no reported configuration value may contain the sentinel.
+	for _, cfg := range recorder.Configuration {
+		assert.NotEqual(t, "OTEL_EXPORTER_OTLP_HEADERS", cfg.Name,
+			"OTEL_EXPORTER_OTLP_HEADERS should not be reported in configuration telemetry")
+		if s, ok := cfg.Value.(string); ok {
+			assert.NotContains(t, s, "SENTINEL_OTLP_BASE",
+				"configuration value for %s must not contain the OTLP headers sentinel", cfg.Name)
+		}
+	}
 }
 
-// TestTelemetryExporterMetricsConfigurations verifies that OTEL_EXPORTER_OTLP_METRICS_*
-// configurations are reported to telemetry when set via environment variables.
+// TestTelemetryExporterMetricsConfigurations verifies that non-sensitive
+// OTEL_EXPORTER_OTLP_METRICS_* configurations are reported to telemetry when set via
+// environment variables, and that OTEL_EXPORTER_OTLP_METRICS_HEADERS is not reported in
+// configuration telemetry.
 func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
 	recorder := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(recorder)()
@@ -103,7 +116,7 @@ func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
 	// Set environment variables
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TIMEOUT", "30000")
-	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=key,other-config-value=value")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=SENTINEL_OTLP_METRICS,other-config-value=value")
 	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
 	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://localhost:4325")
 
@@ -113,10 +126,9 @@ func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
 	}
 	defer Shutdown(t.Context(), mp)
 
-	// Check configurations are reported with env_var origin
+	// Check non-sensitive configurations are reported with env_var origin
 	expectedConfigs := map[string]any{
 		"OTEL_EXPORTER_OTLP_METRICS_TIMEOUT":  30000,
-		"OTEL_EXPORTER_OTLP_METRICS_HEADERS":  "api-key=key,other-config-value=value",
 		"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://localhost:4325",
 	}
@@ -132,6 +144,17 @@ func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
 			}
 		}
 		assert.True(t, found, "expected config %s not found in telemetry", configName)
+	}
+
+	// OTEL_EXPORTER_OTLP_METRICS_HEADERS must not be reported in configuration telemetry,
+	// and no reported configuration value may contain the sentinel.
+	for _, cfg := range recorder.Configuration {
+		assert.NotEqual(t, "OTEL_EXPORTER_OTLP_METRICS_HEADERS", cfg.Name,
+			"OTEL_EXPORTER_OTLP_METRICS_HEADERS should not be reported in configuration telemetry")
+		if s, ok := cfg.Value.(string); ok {
+			assert.NotContains(t, s, "SENTINEL_OTLP_METRICS",
+				"configuration value for %s must not contain the OTLP metrics headers sentinel", cfg.Name)
+		}
 	}
 }
 

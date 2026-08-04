@@ -10,19 +10,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -133,56 +132,12 @@ type rcTag struct {
 
 // Sampling rules provided by the remote config define tags differently other than using a map.
 type rcSamplingRule struct {
-	Service    string     `json:"service"`
-	Provenance provenance `json:"provenance"`
-	Name       string     `json:"name,omitempty"`
-	Resource   string     `json:"resource"`
-	Tags       []rcTag    `json:"tags,omitempty"`
-	SampleRate float64    `json:"sample_rate"`
-}
-
-func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
-	if rules == nil {
-		return nil
-	}
-	var convertedRules []SamplingRule
-	for _, rule := range *rules {
-		if rule.Tags != nil {
-			tags := make(map[string]*regexp.Regexp, len(rule.Tags))
-			tagsStrs := make(map[string]string, len(rule.Tags))
-			for _, tag := range rule.Tags {
-				tags[tag.Key] = globMatch(tag.ValueGlob)
-				tagsStrs[tag.Key] = tag.ValueGlob
-			}
-			x := SamplingRule{
-				Service:    globMatch(rule.Service),
-				Name:       globMatch(rule.Name),
-				Resource:   globMatch(rule.Resource),
-				Rate:       rule.SampleRate,
-				Tags:       tags,
-				Provenance: rule.Provenance,
-				globRule: &jsonRule{
-					Name:     rule.Name,
-					Service:  rule.Service,
-					Resource: rule.Resource,
-					Tags:     tagsStrs,
-				},
-			}
-
-			convertedRules = append(convertedRules, x)
-		} else {
-			x := SamplingRule{
-				Service:    globMatch(rule.Service),
-				Name:       globMatch(rule.Name),
-				Resource:   globMatch(rule.Resource),
-				Rate:       rule.SampleRate,
-				Provenance: rule.Provenance,
-				globRule:   &jsonRule{Name: rule.Name, Service: rule.Service, Resource: rule.Resource},
-			}
-			convertedRules = append(convertedRules, x)
-		}
-	}
-	return &convertedRules
+	Service    string                   `json:"service"`
+	Provenance samplingrules.Provenance `json:"provenance"`
+	Name       string                   `json:"name,omitempty"`
+	Resource   string                   `json:"resource"`
+	Tags       []rcTag                  `json:"tags,omitempty"`
+	SampleRate float64                  `json:"sample_rate"`
 }
 
 type headerTags []headerTag
@@ -226,6 +181,21 @@ func (t *tags) toMap() *map[string]any {
 	return &m
 }
 
+// newRCTagsMap builds the tag map passed to GlobalTagsConfig().HandleRC,
+// always injecting the runtime ID so it ends up on every span. RC replaces the
+// whole tag map, so the runtime ID must be re-added on each update; this is
+// race-free because the map isn't shared with readers yet. Returns nil on reset
+// (t == nil), where HandleRC restores the startup baseline (which already
+// carries the runtime ID).
+func newRCTagsMap(t *tags) *map[string]any {
+	if t == nil {
+		return nil
+	}
+	m := t.toMap()
+	(*m)[ext.RuntimeID] = globalconfig.RuntimeID()
+	return m
+}
+
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
@@ -258,32 +228,17 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	if updated {
 		t.rulesSampling.traces.setGlobalSampleRate(sampleRateCfg.Get())
 	}
-	updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(merged.TraceSamplingRules))
+	traceSampleRulesCfg := t.config.internalConfig.TraceSamplingRulesConfig()
+	updated = traceSampleRulesCfg.HandleRC(convertRemoteSamplingRules(merged.TraceSamplingRules))
 	if updated {
-		telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
+		t.rulesSampling.traces.setTraceSampleRules(traceSampleRulesCfg.Get())
 	}
-	updated = t.config.headerAsTags.handleRC(merged.HeaderTags.toSlice())
-	if updated {
-		telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
-	}
-	updated = t.config.globalTags.handleRC(merged.Tags.toMap())
-	if updated {
-		telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
-	}
+	t.config.internalConfig.HeaderAsTagsConfig().HandleRC(merged.HeaderTags.toSlice())
+	t.config.internalConfig.GlobalTagsConfig().HandleRC(newRCTagsMap(merged.Tags))
 
-	if telem := t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled); telem != nil {
-		telemConfigs = append(telemConfigs, *telem)
-	}
+	t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled)
 
-	if merged.Enabled != nil {
-		if t.config.enabled.get() && !*merged.Enabled {
-			log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
-			t.config.enabled.handleRC(merged.Enabled)
-			telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
-		} else if !t.config.enabled.get() && *merged.Enabled {
-			log.Debug("APM Tracing is disabled. Restart the service to enable it.")
-		}
-	}
+	t.handleTracingEnabledRC(merged.Enabled)
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
 		telemetry.RegisterAppConfigs(telemConfigs...)
@@ -291,48 +246,52 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	return statuses
 }
 
-// Handle enabling or disabling of Dynamic Instrumentation / Live Debugger.
-//
-// Returns a telemetry configuration if the value changed.
-func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) *telemetry.Configuration {
-	// Do not overwrite a "false" value coming from the
-	// DD_DYNAMIC_INSTRUMENTATION_ENABLED env var, or from other local sources.
-	explicitOrigins := []telemetry.Origin{
-		telemetry.OriginCode,
-		telemetry.OriginDDConfig,
-		telemetry.OriginEnvVar,
-		telemetry.OriginLocalStableConfig,
-		telemetry.OriginManagedStableConfig,
+// handleTracingEnabledRC applies a tracing-enabled update from RC.
+// RC can only disable tracing; it cannot re-enable it once a local source has
+// set it to false.
+func (t *tracer) handleTracingEnabledRC(val *bool) {
+	if val == nil {
+		return
 	}
-	enabled, origin := t.config.dynamicInstrumentationEnabled.getCurrentAndOrigin()
-	if !enabled && slices.Contains(explicitOrigins, origin) {
-		return nil
+	cfg := t.config.internalConfig.TracingEnabledConfig()
+	if !cfg.Get() && *val {
+		log.Debug("APM Tracing is disabled. Restart the service to enable it.")
+		return
+	}
+	if cfg.Get() && !*val {
+		log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
+		cfg.HandleRC(val)
+	}
+}
+
+// Handle enabling or disabling of Dynamic Instrumentation / Live Debugger.
+func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) {
+	cfg := t.config.internalConfig.DynamicInstrumentationEnabledConfig()
+
+	// Do not overwrite a "false" value coming from any explicit local source
+	// (env var, stable config, programmatic API).
+	baselineEnabled, baselineOrigin := cfg.Baseline()
+	if !baselineEnabled && baselineOrigin != telemetry.OriginDefault {
+		return
 	}
 
-	if !t.config.dynamicInstrumentationEnabled.handleRC(val) {
-		return nil
+	if !cfg.HandleRC(val) {
+		return
 	}
 
 	// The value changed; subscribe or unsubscribe from the Live Debugging RC
 	// product.
-	if t.config.dynamicInstrumentationEnabled.get() {
+	if cfg.Get() {
 		log.Info("Dynamic Instrumentation starting through Remote Config update")
-		err := t.startDynamicInstrumentationRCSubscriptions()
-		if err != nil {
+		if err := t.startDynamicInstrumentationRCSubscriptions(); err != nil {
 			log.Error("failed to start Dynamic Instrumentation subscriptions: %s", err)
-			return nil
 		}
 	} else {
 		log.Info("Dynamic Instrumentation stopping through Remote Config update")
-		err := t.stopDynamicInstrumentationRCSubscriptions()
-		if err != nil {
+		if err := t.stopDynamicInstrumentationRCSubscriptions(); err != nil {
 			log.Error("failed to stop Dynamic Instrumentation subscriptions: %s", err)
-			return nil
 		}
 	}
-
-	telem := t.config.dynamicInstrumentationEnabled.toTelemetry()
-	return &telem
 }
 
 type dynamicInstrumentationRCProbeConfig struct {
@@ -489,7 +448,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 
 	var dynamicInstrumentationError, apmTracingError error
 
-	if t.config.dynamicInstrumentationEnabled.get() {
+	if t.config.internalConfig.DynamicInstrumentationEnabled() {
 		dynamicInstrumentationError = t.startDynamicInstrumentationRCSubscriptions()
 	}
 
@@ -507,7 +466,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingEnableLiveDebugging,
 	)
 
-	if internal.BoolEnv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false) {
+	if t.config.internalConfig.ExperimentalFlaggingProviderEnabled() {
 		if err := internalffe.SubscribeRC(); err != nil {
 			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
 		}

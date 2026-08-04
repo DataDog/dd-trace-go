@@ -60,6 +60,7 @@ Targets:
   apidiff/incompatible Show only breaking (incompatible) API changes for ddtrace/tracer
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
+  config-audit         Report which DD_* configs are migrated to internal/config
 ```
 
 ### Direct Execution
@@ -124,6 +125,66 @@ go run ./scripts/program-name.go
 2. Add proper build tags to prevent inclusion in main builds
 3. If it needs dependencies, create a separate `go.mod` file
 4. Don't add the module to `go.work`
+
+## Build Metrics Scripts
+
+Scripts for measuring build cost and publishing to Datadog CI Visibility:
+
+### measure_build.sh
+
+Measures build time and binary size for Orchestrion integration samples. Builds are performed with a cold build cache to measure full compilation cost, after warming the module download cache (untimed) so the measurement reflects compilation rather than network downloads.
+
+```bash
+# Build with standard Go toolchain
+./scripts/measure_build.sh --sample net_http --mode standard --output /tmp/metrics.json
+
+# Build with Orchestrion
+./scripts/measure_build.sh --sample net_http --mode orchestrion --output /tmp/metrics.json
+
+# Multiple repeats for median (reduces noise)
+./scripts/measure_build.sh --sample net_http --mode standard --repeats 3
+```
+
+**Options:**
+- `--sample NAME` - Sample to build (default: net_http)
+- `--mode MODE` - Build mode: `standard` or `orchestrion` (required)
+- `--output PATH` - Output JSON file path (default: stdout)
+- `--repeats N` - Number of build repeats (default: 3)
+
+**Output format:**
+```json
+{
+  "sample": "net_http",
+  "mode": "orchestrion",
+  "metrics": {
+    "build_duration_samples": [312.4, 308.1, 315.7],
+    "binary_size_bytes": 48217344
+  },
+  "go_version": "1.25.0",
+  "orchestrion_version": "v1.9.0"
+}
+```
+
+`build_duration_samples` contains one entry per `--repeats` run. `binary_size_bytes` is taken from the last build.
+
+### publish_build_metrics.sh
+
+Publishes build metrics to Datadog CI Visibility using `datadog-ci`. Attaches measures (`go.build.duration_seconds`, `go.build.duration_seconds.0`, `go.build.duration_seconds.1`, ..., `go.build.binary_size_bytes`, and, in standard mode with dependency attribution, `go.build.dependency_size_bytes.<dep>`, `go.build.top_dependency_size_bytes.0`, `go.build.top_dependency_size_bytes.1`, ...) and tags (`build.toolchain`, `build.sample`, `build.cache`, `go.version`, `orchestrion.version`, and, in standard mode, `build.top_dependency_name.0`, `build.top_dependency_name.1`, ...) to the current CI job span.
+
+Each attributed dependency is published as a measure named after it (`go.build.dependency_size_bytes.<dep>`) for querying one dependency's size trend over time. It's also published by rank — `go.build.top_dependency_size_bytes.<i>` paired with a `build.top_dependency_name.<i>` tag holding that rank's dependency name, where index `0` is the single largest dependency in that build.
+
+```bash
+# Set environment and publish
+export METRICS_FILE=/tmp/metrics.json
+export DATADOG_API_KEY=<key>
+export DATADOG_SITE=datadoghq.com
+./scripts/publish_build_metrics.sh
+```
+
+**Required environment variables:**
+- `METRICS_FILE` - Path to metrics JSON from `measure_build.sh`
+- `DATADOG_API_KEY` - Datadog API key
+- `DATADOG_SITE` - Datadog site (default: datadoghq.com)
 
 ## Guidelines
 

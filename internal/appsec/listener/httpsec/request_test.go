@@ -10,14 +10,16 @@ import (
 	_ "embed" // For go:embed
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
+	"net/http"
 	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -250,6 +252,62 @@ func TestTags(t *testing.T) {
 	}
 }
 
+func TestSetRequestHeadersTagsDoesNotOwnSecurityTestingHeaders(t *testing.T) {
+	var span MockSpan
+	setRequestHeadersTags(&span, map[string][]string{
+		"X-Datadog-Endpoint-Scan": {"scan-uuid"},
+		"X-Datadog-Security-Test": {"test-uuid"},
+		"X-Forwarded-For":         {"1.2.3.4"},
+	})
+
+	require.Equal(t, "1.2.3.4", span.Tags["http.request.headers.x-forwarded-for"])
+	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-endpoint-scan")
+	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-security-test")
+}
+
+func TestSecurityTestingHeaderTagValues(t *testing.T) {
+	headers := http.Header{
+		"X-Datadog-Endpoint-Scan": {" scan-uuid "},
+		"X-Datadog-Security-Test": {"test-uuid", "second-value"},
+	}
+
+	tagNames, tagValues, count := SecurityTestingHeaderTagValues(headers)
+
+	require.Equal(t, 2, count)
+	require.Equal(t, securityTestingEndpointScanTag, tagNames[0])
+	require.Equal(t, "scan-uuid", tagValues[0])
+	require.Equal(t, securityTestingTag, tagNames[1])
+	require.Equal(t, "test-uuid,second-value", tagValues[1])
+}
+
+func TestSecurityTestingHeaderByteTagValues(t *testing.T) {
+	values := [][2][]byte{
+		{[]byte("X-Datadog-Endpoint-Scan"), []byte(" scan-uuid ")},
+		{[]byte("X-Datadog-Security-Test"), []byte("test-uuid")},
+		{[]byte("x-datadog-security-test"), []byte("second-value")},
+	}
+
+	tagNames, tagValues, count := SecurityTestingHeaderByteTagValues(func(visit func(key, value []byte)) {
+		for _, value := range values {
+			key := append([]byte(nil), value[0]...)
+			headerValue := append([]byte(nil), value[1]...)
+			visit(key, headerValue)
+			for i := range key {
+				key[i] = 'x'
+			}
+			for i := range headerValue {
+				headerValue[i] = 'x'
+			}
+		}
+	})
+
+	require.Equal(t, 2, count)
+	require.Equal(t, securityTestingEndpointScanTag, tagNames[0])
+	require.Equal(t, "scan-uuid", tagValues[0])
+	require.Equal(t, securityTestingTag, tagNames[1])
+	require.Equal(t, "test-uuid,second-value", tagValues[1])
+}
+
 //go:embed testdata/trace_tagging_rules.json
 var wafRulesJSON []byte
 
@@ -333,6 +391,58 @@ func TestTraceTagging(t *testing.T) {
 			op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
 
 			require.Subset(t, span.Tags, tc.ExpectedTags)
+		})
+	}
+}
+
+// BenchmarkSecurityTestingHeaderTagValues measures the hot-path cost of
+// scanning for security testing headers on every HTTP request.
+// The "absent" case represents real user traffic (headers never present);
+// the "present" case represents Datadog scan/test traffic.
+func BenchmarkSecurityTestingHeaderTagValues(b *testing.B) {
+	// Realistic ~20-header request without security testing headers.
+	baseHeaders := http.Header{
+		"Accept":            {"text/html,application/xhtml+xml"},
+		"Accept-Encoding":   {"gzip, deflate, br"},
+		"Accept-Language":   {"en-US,en;q=0.9"},
+		"Cache-Control":     {"no-cache"},
+		"Connection":        {"keep-alive"},
+		"Content-Type":      {"application/json"},
+		"Host":              {"example.com"},
+		"Pragma":            {"no-cache"},
+		"Referer":           {"https://example.com/"},
+		"User-Agent":        {"Mozilla/5.0 (compatible; BenchmarkBot/1.0)"},
+		"X-Forwarded-For":   {"1.2.3.4"},
+		"X-Real-Ip":         {"1.2.3.4"},
+		"X-Request-Id":      {"abc-123-def"},
+		"X-Forwarded-Host":  {"example.com"},
+		"X-Forwarded-Port":  {"443"},
+		"X-Forwarded-Proto": {"https"},
+		"X-Amzn-Trace-Id":   {"Root=1-abc-def"},
+		"Cf-Ray":            {"abc123-LAX"},
+		"Cf-Connecting-Ip":  {"1.2.3.4"},
+		"Via":               {"1.1 proxy.example.com"},
+	}
+
+	headersPresent := make(http.Header, len(baseHeaders)+2)
+	maps.Copy(headersPresent, baseHeaders)
+	headersPresent["X-Datadog-Endpoint-Scan"] = []string{"scan-uuid"}
+	headersPresent["X-Datadog-Security-Test"] = []string{"test-uuid"}
+
+	cases := []struct {
+		name    string
+		headers http.Header
+	}{
+		{"absent", baseHeaders},
+		{"present", headersPresent},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				SecurityTestingHeaderTagValues(tc.headers)
+			}
 		})
 	}
 }

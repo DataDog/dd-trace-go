@@ -458,6 +458,11 @@ aspects:
             span := p.__dd_tracer.StartProduceSpan(tMsg)
 
             var errChan chan error
+
+            if {{ $deliveryChan }} == nil {
+              {{ $deliveryChan }} = {{ $p }}.__dd_events
+            }
+
             {{ $deliveryChan }}, errChan = kafkatrace.WrapDeliveryChannel({{ $p }}.__dd_tracer, {{ $deliveryChan }}, span, __dd_wrapEvent)
 
             {{ $p }}.__dd_tracer.SetProduceCheckpoint(tMsg)

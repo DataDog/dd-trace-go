@@ -92,7 +92,7 @@ func TestLogDirectory(t *testing.T) {
 			}
 			// convert file content to []string{}, split by \n, to easily check its contents
 			lines := bytes.Split(b, []byte{'\n'})
-			var logs []string
+			logs := make([]string, 0, len(lines))
 			for _, line := range lines {
 				logs = append(logs, string(line))
 			}

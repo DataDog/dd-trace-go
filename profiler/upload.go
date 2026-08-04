@@ -23,10 +23,20 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
 const maxRetries = 2
+
+// headerEVPOrigin and evpOrigin identify the dd-trace-go profiler as the origin
+// of profile uploads in the shared profiling ingestion pipeline.
+// headerEVPOriginVersion carries the dd-trace-go release version.
+const (
+	headerEVPOrigin        = "DD-EVP-ORIGIN"
+	evpOrigin              = "dd-trace-go"
+	headerEVPOriginVersion = "DD-EVP-ORIGIN-VERSION"
+)
 
 var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-based profiling deployments " +
 	"require Datadog Agent >= 7.20")
@@ -107,6 +117,8 @@ func (p *profiler) doRequest(bat batch) error {
 	if eid := entityID.Load(); eid != nil && *eid != "" {
 		req.Header.Set("Datadog-Entity-ID", *eid)
 	}
+	req.Header.Set(headerEVPOrigin, evpOrigin)
+	req.Header.Set(headerEVPOriginVersion, version.Tag)
 	req.Header.Set("Content-Type", contentType)
 
 	resp, err := p.cfg.httpClient.Do(req)
@@ -159,7 +171,7 @@ type profilerInfo struct {
 // encode encodes the profile as a multipart mime request.
 func encode(bat batch, cfg *config) (contentType string, body io.Reader, err error) {
 	tags := append(cfg.tags.Slice(),
-		fmt.Sprintf("service:%s", cfg.service),
+		"service:"+cfg.service,
 		// The profile_seq tag can be used to identify the first profile
 		// uploaded by a given runtime-id, identify missing profiles, etc.. See
 		// PROF-5612 (internal) for more details.
@@ -171,10 +183,10 @@ func encode(bat batch, cfg *config) (contentType string, body io.Reader, err err
 	// the tag so that the agent has a chance to supply a default tag.
 	// Otherwise, the tag supplied by the client will have priority.
 	if cfg.env != "" {
-		tags = append(tags, fmt.Sprintf("env:%s", cfg.env))
+		tags = append(tags, "env:"+cfg.env)
 	}
 	if bat.host != "" {
-		tags = append(tags, fmt.Sprintf("host:%s", bat.host))
+		tags = append(tags, "host:"+bat.host)
 	}
 
 	var buf bytes.Buffer

@@ -162,6 +162,34 @@ func TestGetMethods(t *testing.T) {
 			assert.Equal(t, false, p.GetBool("TEST_BOOL", false), "Expected default (false) for invalid value %q", val)
 		}
 	})
+	t.Run("GetBoolWithOrigin returns OriginDefault when unset", func(t *testing.T) {
+		p := newTestProvider(newTestConfigSource(nil, telemetry.OriginEnvVar))
+		v, origin := p.GetBoolWithOrigin("TEST_BOOL", false)
+		assert.Equal(t, false, v)
+		assert.Equal(t, telemetry.OriginDefault, origin)
+
+		v, origin = p.GetBoolWithOrigin("TEST_BOOL", true)
+		assert.Equal(t, true, v)
+		assert.Equal(t, telemetry.OriginDefault, origin)
+	})
+	t.Run("GetBoolWithOrigin returns source origin when set", func(t *testing.T) {
+		for _, origin := range []telemetry.Origin{
+			telemetry.OriginEnvVar,
+			telemetry.OriginLocalStableConfig,
+			telemetry.OriginManagedStableConfig,
+		} {
+			p := newTestProvider(newTestConfigSource(map[string]string{"TEST_BOOL": "true"}, origin))
+			v, gotOrigin := p.GetBoolWithOrigin("TEST_BOOL", false)
+			assert.Equal(t, true, v)
+			assert.Equal(t, origin, gotOrigin)
+		}
+	})
+	t.Run("GetBoolWithOrigin returns OriginDefault for invalid value", func(t *testing.T) {
+		p := newTestProvider(newTestConfigSource(map[string]string{"TEST_BOOL": "notabool"}, telemetry.OriginEnvVar))
+		v, origin := p.GetBoolWithOrigin("TEST_BOOL", true)
+		assert.Equal(t, true, v)
+		assert.Equal(t, telemetry.OriginDefault, origin)
+	})
 }
 
 func TestNew(t *testing.T) {
@@ -461,6 +489,24 @@ apm_configuration_default:
 
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_ENV", "local-env", telemetry.OriginLocalStableConfig, "local-456")))
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_ENV", "default-env")))
+	})
+
+	t.Run("sensitive keys are not reported to telemetry", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+		defer telemetry.MockClient(telemetryClient)()
+
+		source := newTestConfigSource(map[string]string{
+			"DD_APP_KEY": "secret-app-key",
+			"DD_API_KEY": "secret-api-key",
+		}, telemetry.OriginEnvVar)
+		p := newTestProvider(source)
+
+		_ = p.GetString("DD_APP_KEY", "")
+		_ = p.GetString("DD_API_KEY", "")
+
+		telemetryClient.AssertNotCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_APP_KEY", "secret-app-key", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertNotCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_API_KEY", "secret-api-key", telemetry.OriginEnvVar, telemetry.EmptyID)))
 	})
 
 	t.Run("still reports defaults via telemetry when key missing or invalid", func(t *testing.T) {

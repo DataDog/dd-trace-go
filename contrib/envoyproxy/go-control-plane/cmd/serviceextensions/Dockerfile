@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 ENV CGO_ENABLED=1
 
 WORKDIR /app
@@ -22,7 +22,7 @@ RUN openssl x509 -req -days 3660 \
 RUN go build -tags=appsec -o ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/serviceextensions ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions
 
 # Runtime stage
-FROM alpine:3.20.3
+FROM alpine:3.24.1
 
 # Set opencontainers labels for Github container registry
 LABEL org.opencontainers.image.source=https://github.com/DataDog/dd-trace-go/tree/main/contrib/envoyproxy/go-control-plane/cmd/serviceextensions

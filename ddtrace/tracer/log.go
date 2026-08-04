@@ -13,14 +13,33 @@ import (
 	"math"
 	"net/http"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
+)
+
+// orchestrionConfig is the JSON shape used to report Orchestrion configuration
+// in the startup log. Values are sourced from the internal/orchestrion package
+// (orchestrion.Enabled / orchestrion.Version), which are set at build time.
+type (
+	orchestrionConfig struct {
+		// Enabled indicates whether this tracer was instantiated via Orchestrion.
+		Enabled bool `json:"enabled"`
+
+		// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
+		Metadata *orchestrionMetadata `json:"metadata,omitempty"`
+	}
+	orchestrionMetadata struct {
+		// Version is the version of the orchestrion tool that was used to instrument the application.
+		Version string `json:"version,omitempty"`
+	}
 )
 
 // startupInfo contains various information about the status of the tracer on startup.
@@ -69,7 +88,7 @@ type startupInfo struct {
 // checkEndpoint tries to connect to the URL specified by endpoint.
 // If the endpoint is not reachable, checkEndpoint returns an error
 // explaining why.
-func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
+func checkEndpoint(c *http.Client, endpoint string, protocol float64, extraHeaders map[string]string) error {
 	b := []byte{0x90} // empty array
 	if protocol == traceProtocolV1 {
 		b = []byte{0x80} // empty map
@@ -80,6 +99,9 @@ func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
 	res, err := c.Do(req)
 	if err != nil {
 		return err
@@ -92,7 +114,8 @@ func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
 // JSON format.
 func logStartup(t *tracer) {
 	tags := make(map[string]string)
-	for k, v := range t.config.globalTags.get() {
+	globalTags := t.config.internalConfig.GlobalTags()
+	for k, v := range globalTags {
 		tags[k] = fmt.Sprintf("%v", v)
 	}
 
@@ -103,6 +126,11 @@ func logStartup(t *tracer) {
 	}
 
 	partialFlushEnabled, partialFlushMinSpans := t.config.internalConfig.PartialFlushEnabled()
+
+	orchCfg := orchestrionConfig{Enabled: orchestrion.Enabled()}
+	if orchestrion.Version != "" {
+		orchCfg.Metadata = &orchestrionMetadata{Version: orchestrion.Version}
+	}
 
 	var injectorNames, extractorNames string
 	switch v := t.config.propagator.(type) {
@@ -138,8 +166,8 @@ func logStartup(t *tracer) {
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
 		SampleRateLimit:             "disabled",
-		TraceSamplingRules:          t.config.traceRules,
-		SpanSamplingRules:           t.config.spanRules,
+		TraceSamplingRules:          t.config.internalConfig.TraceSamplingRules(),
+		SpanSamplingRules:           t.config.internalConfig.SpanSamplingRules(),
 		ServiceMappings:             t.config.internalConfig.ServiceMappings(),
 		Tags:                        tags,
 		RuntimeMetricsEnabled:       t.config.internalConfig.RuntimeMetricsEnabled(),
@@ -149,28 +177,26 @@ func logStartup(t *tracer) {
 		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
-		LambdaMode:                  fmt.Sprintf("%t", t.config.internalConfig.LogToStdout()),
+		LambdaMode:                  strconv.FormatBool(t.config.internalConfig.LogToStdout()),
 		AgentFeatures:               t.config.agent.load(),
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         partialFlushEnabled,
 		PartialFlushMinSpans:        partialFlushMinSpans,
-		Orchestrion:                 t.config.orchestrionCfg,
+		Orchestrion:                 orchCfg,
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
 		TracingAsTransport:          t.config.tracingAsTransport,
-		DogstatsdAddr:               t.config.dogstatsdAddr,
+		DogstatsdAddr:               t.config.internalConfig.DogstatsdAddr(),
 		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
-	}
-	if _, _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = err.Error()
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.internalConfig.LogToStdout() {
-		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
+		startupHeaders := traceTransportHeaders(t.config.internalConfig)
+		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol(), startupHeaders); err != nil {
 			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}

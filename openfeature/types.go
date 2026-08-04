@@ -5,7 +5,10 @@
 
 package openfeature
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // universalFlagsConfiguration represents the universal feature flags configuration structure.
 // of the openfeature standard for server-side flag configurations.
@@ -18,6 +21,43 @@ type universalFlagsConfiguration struct {
 	Environment environment `json:"environment"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
+	// invalidFlags contains flags that could not be parsed or validated.
+	invalidFlags map[string]struct{}
+}
+
+// UnmarshalJSON parses flags independently so one invalid flag does not reject
+// the complete configuration.
+func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		CreatedAt   time.Time                  `json:"createdAt"`
+		Format      string                     `json:"format"`
+		Environment environment                `json:"environment"`
+		Flags       map[string]json.RawMessage `json:"flags"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	config.CreatedAt = raw.CreatedAt
+	config.Format = raw.Format
+	config.Environment = raw.Environment
+	config.Flags = make(map[string]*flag, len(raw.Flags))
+	config.invalidFlags = make(map[string]struct{})
+
+	for flagKey, flagData := range raw.Flags {
+		var parsedFlag flag
+		if err := json.Unmarshal(flagData, &parsedFlag); err != nil {
+			config.invalidFlags[flagKey] = struct{}{}
+			continue
+		}
+		if err := validateFlag(flagKey, &parsedFlag); err != nil {
+			config.invalidFlags[flagKey] = struct{}{}
+			continue
+		}
+		config.Flags[flagKey] = &parsedFlag
+	}
+
+	return nil
 }
 
 // environment represents environment information for the configuration.
@@ -147,9 +187,8 @@ type split struct {
 	// All shards must match for the split to apply (AND logic)
 	Shards []*shard `json:"shards"`
 	// VariationKey is the key of the variation to return if this split matches
-	VariationKey string `json:"variationKey"`
-	// ExtraLogging contains additional metadata for logging purposes
-	ExtraLogging map[string]string `json:"extraLogging,omitempty"`
+	VariationKey string  `json:"variationKey"`
+	SerialID     *uint32 `json:"serialId,omitempty"`
 }
 
 // shard defines a portion of traffic using consistent hashing.

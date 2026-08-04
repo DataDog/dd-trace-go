@@ -4,6 +4,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -14,7 +15,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -30,6 +31,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -39,7 +41,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -55,6 +57,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -64,7 +67,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -80,6 +83,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -90,7 +94,7 @@
       "WORKSPACE": "foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -107,6 +111,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -117,7 +122,7 @@
       "WORKSPACE": "/foo/bar~"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -134,6 +139,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -144,7 +150,7 @@
       "WORKSPACE": "/foo/~/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -161,6 +167,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -173,7 +180,7 @@
       "WORKSPACE": "~/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -190,6 +197,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -202,7 +210,7 @@
       "WORKSPACE": "~foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -219,6 +227,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -231,7 +240,7 @@
       "WORKSPACE": "~"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -248,6 +257,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -258,7 +268,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -275,6 +285,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "refs/heads/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -285,7 +296,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -302,6 +313,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "refs/heads/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -312,7 +324,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName/another",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -329,6 +341,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "refs/heads/feature/one",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -339,7 +352,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -356,6 +369,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "refs/heads/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -366,7 +380,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -383,6 +397,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "refs/heads/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -393,7 +408,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -410,6 +425,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/tags/0.1.0",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -419,7 +435,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -435,6 +451,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "refs/heads/tags/0.1.0",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -444,7 +461,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -460,6 +477,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -470,7 +488,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -487,6 +505,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -497,7 +516,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -514,6 +533,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -524,7 +544,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -541,6 +561,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -551,7 +572,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -568,6 +589,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_BRANCH": "origin/master",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -578,7 +600,7 @@
       "WORKSPACE": "/foo/bar"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.name": "jobName",
       "ci.pipeline.number": "jenkins-pipeline-number",
@@ -595,6 +617,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "DD_GIT_BRANCH": "user-supplied-branch",
       "DD_GIT_COMMIT_AUTHOR_DATE": "usersupplied-authordate",
@@ -611,7 +634,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -633,6 +656,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "DD_GIT_COMMIT_AUTHOR_DATE": "usersupplied-authordate",
       "DD_GIT_COMMIT_AUTHOR_EMAIL": "usersupplied-authoremail",
@@ -649,7 +673,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -671,6 +695,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "DD_TEST_CASE_NAME": "http-repository-url-no-git-suffix",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -679,7 +704,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -693,6 +718,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "DD_TEST_CASE_NAME": "ssh-repository-url-no-git-suffix",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -701,7 +727,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -715,6 +741,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "GIT_URL_1": "https://user:password@github.com/DataDog/dogweb.git",
@@ -722,7 +749,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -736,6 +763,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "GIT_URL_1": "https://user@github.com/DataDog/dogweb.git",
@@ -743,7 +771,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -757,6 +785,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "GIT_URL_1": "https://user:password@github.com:1234/DataDog/dogweb.git",
@@ -764,7 +793,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -778,6 +807,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "GIT_URL_1": "https://user:password@1.1.1.1/DataDog/dogweb.git",
@@ -785,7 +815,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -799,6 +829,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "GIT_URL_1": "https://user:password@1.1.1.1:1234/DataDog/dogweb.git",
@@ -806,7 +837,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -820,6 +851,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "GIT_URL_1": "https://user:password@1.1.1.1:1234/DataDog/dogweb_with_@_yeah.git",
@@ -827,7 +859,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -841,6 +873,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "GIT_URL_1": "ssh://user@host.xz:54321/path/to/repo.git/",
@@ -848,7 +881,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -862,6 +895,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "GIT_URL_1": "ssh://user:password@host.xz:54321/path/to/repo.git/",
@@ -869,7 +903,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",
@@ -883,6 +917,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
       "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "JENKINS_URL": "jenkins",
@@ -891,7 +926,7 @@
       "NODE_NAME": "my-node"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.node.labels": "[\"built-in\",\"linux\"]",
       "ci.node.name": "my-node",
       "ci.pipeline.id": "jenkins-pipeline-id",
@@ -906,6 +941,7 @@
       "BUILD_NUMBER": "jenkins-pipeline-number",
       "BUILD_TAG": "jenkins-pipeline-id",
       "BUILD_URL": "https://jenkins.com/pipeline",
+      "DD_CUSTOM_PARENT_ID": "jenkins-custom-parent-id",
       "CHANGE_ID": 42,
       "CHANGE_TARGET": "target-branch",
       "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
@@ -914,7 +950,7 @@
       "JOB_URL": "https://jenkins.com/job"
     },
     {
-      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_PARENT_ID\":\"jenkins-custom-parent-id\",\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
       "ci.pipeline.id": "jenkins-pipeline-id",
       "ci.pipeline.number": "jenkins-pipeline-number",
       "ci.pipeline.url": "https://jenkins.com/pipeline",

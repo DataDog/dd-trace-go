@@ -26,6 +26,8 @@ const (
 	telemetryMetricAnnotations       = "annotations"
 	telemetryMetricEvalsSubmitted    = "evals_submitted"
 	telemetryMetricUserFlushes       = "user_flush"
+	telemetryMetricCostTagsAnnotated = "cost_tags.annotated"
+	telemetryMetricCostTagsSubmitted = "cost_tags.submitted"
 )
 
 var telemetryErrorTypes = map[error]string{
@@ -143,6 +145,26 @@ func trackSpanAnnotations(span *Span, err error) {
 	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricAnnotations, tags).Submit(1)
 }
 
+func trackCostTagsAnnotated(span *Span, source string) {
+	if telemetry.Disabled() {
+		return
+	}
+
+	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricCostTagsAnnotated, costTagsTelemetryTags(span, source)).Submit(1)
+}
+
+func trackCostTagsSubmitted(span *Span, count int, source, state, reason string) {
+	if telemetry.Disabled() || count == 0 {
+		return
+	}
+
+	tags := append(costTagsTelemetryTags(span, source),
+		"state:"+state,
+		"reason:"+reason,
+	)
+	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricCostTagsSubmitted, tags).Submit(float64(count))
+}
+
 func trackSubmitEvaluationMetric(metric *transport.LLMObsMetric, err error) {
 	if telemetry.Disabled() {
 		return
@@ -167,6 +189,29 @@ func trackUserFlush() {
 		return
 	}
 	userFlushHandle.Submit(1)
+}
+
+func costTagsTelemetryTags(span *Span, source string) []string {
+	spanKind := "N/A"
+	mlApp := "N/A"
+	modelProvider := "N/A"
+	if span != nil {
+		if span.spanKind != "" {
+			spanKind = string(span.spanKind)
+		}
+		if span.mlApp != "" {
+			mlApp = span.mlApp
+		}
+		if span.llmCtx.modelProvider != "" {
+			modelProvider = span.llmCtx.modelProvider
+		}
+	}
+	return []string{
+		"span_kind:" + spanKind,
+		"source:" + source,
+		"ml_app:" + mlApp,
+		"model_provider:" + modelProvider,
+	}
 }
 
 func spanEventTags(event *transport.LLMObsSpanEvent) []string {

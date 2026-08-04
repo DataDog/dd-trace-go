@@ -9,11 +9,57 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// TestProcessTagsConcurrentReadWrite races lock-free String()/Slice() readers against rebuild() writers (run under -race).
+func TestProcessTagsConcurrentReadWrite(t *testing.T) {
+	t.Cleanup(Reload)
+	Reload()
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	for w := range 4 {
+		wg.Go(func() {
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				SetServiceNameTag("svc-"+strconv.Itoa(w)+"-"+strconv.Itoa(i), i%2 == 0)
+			}
+		})
+	}
+
+	for range 8 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				tags := GlobalTags()
+				_ = len(tags.String())
+				for _, s := range tags.Slice() { // dereference header + elements
+					_ = len(s)
+				}
+			}
+		})
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+}
 
 func TestSetServiceNameTag(t *testing.T) {
 	t.Run("auto-assigned sets svc.auto", func(t *testing.T) {
@@ -121,4 +167,17 @@ func TestDirectoryTagValue(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "app", got)
 	})
+}
+
+func TestContainerTagsHash(t *testing.T) {
+	t.Cleanup(func() { SetContainerTagsHash("") })
+
+	SetContainerTagsHash("hash-1")
+	assert.Equal(t, "hash-1", ContainerTagsHash())
+
+	SetContainerTagsHash("hash-2")
+	assert.Equal(t, "hash-2", ContainerTagsHash())
+
+	SetContainerTagsHash("")
+	assert.Empty(t, ContainerTagsHash())
 }

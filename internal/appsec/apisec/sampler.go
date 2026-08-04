@@ -41,13 +41,13 @@ type (
 
 // NewProxySampler creates a new sampler suitable for proxy environments where the sampling decision
 // is not based on the request's properties, but on a rate.
+// The returned sampler is backed by a synchronous token-bucket limiter that does not start a background goroutine.
 func NewProxySampler(rate int, interval time.Duration) Sampler {
 	if rate <= 0 {
 		return &nullSampler{}
 	}
 	r := int64(rate)
 	l := limiter.NewTokenTickerWithInterval(r, r, interval)
-	l.Start()
 	return &proxySampler{
 		limiter: l,
 	}

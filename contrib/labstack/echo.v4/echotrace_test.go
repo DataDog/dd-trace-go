@@ -720,6 +720,106 @@ func TestWithErrorCheck(t *testing.T) {
 	}
 }
 
+// TestPropagationBehaviorExtract is an integration test verifying DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT
+// through a real HTTP middleware stack.
+// Echotrace was used because it was
+// already available; any HTTP middleware integration would work equivalently.
+func TestPropagationBehaviorExtract(t *testing.T) {
+	tests := []struct {
+		name            string
+		behavior        string
+		wantSameTraceID bool // server span continues the root trace
+		wantParentID    bool // server span has root as parent
+		wantSpanLinks   bool // server span has a span link to the root context
+		wantBaggage     bool // baggage from root is propagated to server span
+	}{
+		{
+			name:            "continue",
+			behavior:        "continue",
+			wantSameTraceID: true,
+			wantParentID:    true,
+			wantSpanLinks:   false,
+			wantBaggage:     true,
+		},
+		{
+			name:            "restart",
+			behavior:        "restart",
+			wantSameTraceID: false,
+			wantParentID:    false,
+			wantSpanLinks:   true,
+			wantBaggage:     true,
+		},
+		{
+			name:            "ignore",
+			behavior:        "ignore",
+			wantSameTraceID: false,
+			wantParentID:    false,
+			wantSpanLinks:   false,
+			wantBaggage:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", tc.behavior)
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			router.Use(Middleware(WithService("test-service")))
+			router.GET("/test", func(c echo.Context) error {
+				return c.NoContent(200)
+			})
+
+			root := tracer.StartSpan("incoming-request")
+			root.SetBaggageItem("test-baggage", "baggage-value")
+
+			r := httptest.NewRequest("GET", "/test", nil)
+			err := tracer.Inject(root.Context(), tracer.HTTPHeadersCarrier(r.Header))
+			require.NoError(t, err)
+
+			router.ServeHTTP(httptest.NewRecorder(), r)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			span := spans[0]
+
+			if tc.wantSameTraceID {
+				assert.Equal(t, root.Context().TraceID(), span.Context().TraceID())
+			} else {
+				assert.NotEqual(t, root.Context().TraceID(), span.Context().TraceID())
+			}
+
+			if tc.wantParentID {
+				assert.Equal(t, root.Context().SpanID(), span.ParentID())
+			} else {
+				assert.Equal(t, uint64(0), span.ParentID())
+			}
+
+			links := span.Links()
+			if tc.wantSpanLinks {
+				require.Len(t, links, 1)
+				assert.Equal(t, root.Context().SpanID(), links[0].SpanID)
+				assert.Equal(t, map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"}, links[0].Attributes)
+			} else {
+				assert.Empty(t, links)
+			}
+
+			var baggageItems []string
+			span.Context().ForeachBaggageItem(func(k, v string) bool {
+				baggageItems = append(baggageItems, k+"="+v)
+				return true
+			})
+			if tc.wantBaggage {
+				assert.Contains(t, baggageItems, "test-baggage=baggage-value")
+			} else {
+				assert.Empty(t, baggageItems)
+			}
+		})
+	}
+}
+
 func BenchmarkEchoWithTracing(b *testing.B) {
 	tracer.Start(tracer.WithLogger(testutils.DiscardLogger()))
 	defer tracer.Stop()

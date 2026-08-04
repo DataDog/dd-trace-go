@@ -6,9 +6,11 @@
 package tracer
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -23,6 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -37,7 +40,7 @@ const TraceIDZero string = "00000000000000000000000000000000"
 var traceID128BitEnabled atomic.Bool
 
 func init() {
-	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true))
+	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)) //nolint:configaudit — intentional: atomic cache for hot path; re-seeded from internalConfig on tracer.Start
 }
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
@@ -48,11 +51,22 @@ type traceID struct {
 	hexEncoded string
 }
 
+// HexEncoded returns the 32-character hex representation of the 128-bit
+// trace ID. It returns the cached value populated by cacheHex when the
+// traceID is finalized at construction (the context-extraction paths). When
+// the cache is empty it falls back to a non-caching computation. An empty
+// cache is the normal state for a locally started span: newSpanContext
+// deliberately does not call cacheHex (see the note there), so every
+// HexEncoded call on such a span recomputes the hex and allocates. It is also
+// the state for a traceID built via direct field assignment (e.g. in tests).
+// The non-caching fallback is required for concurrency: HexEncoded is called
+// from Inject on a SpanContext that may be shared across goroutines, and
+// writing to t.hexEncoded here would race.
 func (t *traceID) HexEncoded() string {
-	if t.hexEncoded == "" {
-		t.computeAndCacheHex()
+	if t.hexEncoded != "" {
+		return t.hexEncoded
 	}
-	return t.hexEncoded
+	return hex.EncodeToString(t.value[:])
 }
 
 func (t *traceID) Lower() uint64 {
@@ -102,7 +116,11 @@ func (t *traceID) HasUpper() bool {
 
 func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
 
-func (t *traceID) computeAndCacheHex() {
+// cacheHex populates the hexEncoded cache. It must be called at traceID
+// construction finalization, before the enclosing SpanContext is shared with
+// other goroutines. After cacheHex returns, HexEncoded becomes a pure read
+// and is safe under concurrent access.
+func (t *traceID) cacheHex() {
 	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
@@ -114,10 +132,15 @@ type SpanContext struct {
 	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
 
 	// the below group should propagate only locally
+	isRemote bool
+	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// +checklocks:mu
+	baggageOnly bool
+	errors      atomic.Int32 // number of spans with errors in this trace
+	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	hasBaggage uint32 // +checkatomic
 
-	trace  *trace       // reference to the trace that this span belongs too
-	span   *Span        // reference to the span that hosts this context
-	errors atomic.Int32 // number of spans with errors in this trace
+	trace *trace // reference to the trace that this span belongs too
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -128,7 +151,6 @@ type SpanContext struct {
 	// Missing parent span could occur when a W3C-compliant tracer
 	// propagated this context, but didn't send any spans to Datadog.
 	reparentID string
-	isRemote   bool
 
 	// the below group should propagate cross-process
 
@@ -139,8 +161,9 @@ type SpanContext struct {
 	mu locking.RWMutex
 	// +checklocks:mu
 	baggage map[string]string
-	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
-	hasBaggage uint32 // +checkatomic
+	// +checklocks:mu
+	// spanSnapshot stores mirrored data from the span that hosts this context.
+	spanSnapshot spanSnapshot
 	// e.g. "synthetics"
 	// +checklocks:mu
 	origin string
@@ -148,9 +171,6 @@ type SpanContext struct {
 	// links to related spans in separate|external|disconnected traces
 	// +checklocks:mu
 	spanLinks []SpanLink
-	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
-	// +checklocks:mu
-	baggageOnly bool
 }
 
 // Private interface for span contexts that can propagate sampling decisions.
@@ -182,6 +202,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 
 	ctxSpl, ok := c.(spanContextWithSamplingDecision)
 	if !ok {
+		sc.traceID.cacheHex()
 		return &sc
 	}
 
@@ -229,6 +250,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 
 	ctx, ok := c.(spanContextV1Adapter)
 	if !ok {
+		sc.traceID.cacheHex()
 		return &sc
 	}
 
@@ -236,11 +258,17 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	if sc.trace == nil {
 		sc.trace = newTrace()
 	}
-	sc.trace.tags = ctx.Tags()                                    // +checklocksignore - Initialization time, not shared yet.
-	sc.trace.propagatingTags = ctx.PropagatingTags()              // +checklocksignore - Initialization time, not shared yet.
-	if dm, ok := sc.trace.propagatingTags[keyDecisionMaker]; ok { // +checklocksignore - Initialization time, not shared yet.
-		sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.tags = ctx.Tags()                    // +checklocksignore - Initialization time, not shared yet.
+	if pt := ctx.PropagatingTags(); len(pt) > 0 { // +checklocksignore - Initialization time, not shared yet.
+		// Clone the map so that the atomic.Value snapshot is immutable and
+		// independent of whatever the adapter holds internally.
+		cp := maps.Clone(pt)
+		sc.trace.propagatingTags.Store(cp)
+		if dm, ok := cp[keyDecisionMaker]; ok {
+			sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+		}
 	}
+	sc.traceID.cacheHex()
 	return &sc
 }
 
@@ -253,7 +281,6 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
 		spanID: span.spanID,
-		span:   span,
 	}
 
 	context.traceID.SetLower(span.traceID)
@@ -268,7 +295,11 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if traceID128BitEnabled.Load() {
+	}
+	// We generate a new upper trace ID when the trace is brand new (no parent)
+	// or when the parent is baggage only, since baggage only parents should
+	// not propagate their trace IDs
+	if (parent == nil || parent.baggageOnly) && traceID128BitEnabled.Load() { // +checklocksignore - Read-only after init.
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second
@@ -287,11 +318,88 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
+	// The span snapshot is populated by tracer.StartSpan after all
+	// env/version/service-mapping mutations, so we skip the intermediate
+	// write here. Direct callers of newSpanContext (tests) do not read
+	// the snapshot before populating it.
 	// setting context.updated to false here is necessary to distinguish
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
 	context.updated = false
+	// Note: we deliberately do NOT call context.traceID.cacheHex() here.
+	// Unlike the extraction paths (extractTextMap, FromGenericCtx, ...), which
+	// finalize the cache before returning, locally started spans rely on the
+	// non-caching HexEncoded fallback. Caching here would add a hex allocation
+	// to every StartSpan, including spans that are never propagated. The
+	// trade-off is that HexEncoded/UpperHex allocates on each call for a local
+	// span (e.g. once per Inject, and once at finish via setTraceTagsLocked for
+	// 128-bit spans). This is safe under concurrent Inject because the fallback
+	// performs no write. See HexEncoded and cacheHex for the full contract.
 	return context
+}
+
+func (c *SpanContext) getSpanSnapshot() spanSnapshot {
+	if c == nil {
+		return spanSnapshot{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanSnapshot
+}
+
+func (c *SpanContext) setSpanSnapshot(data spanSnapshot) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot = data
+}
+
+func (c *SpanContext) setSpanSnapshotService(service, source string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot.service = service
+	c.spanSnapshot.serviceSource = source
+}
+
+func (c *SpanContext) setSpanSnapshotPPROFCtx(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot.pprofCtx = ctx
+}
+
+func (c *SpanContext) setSpanSnapshotMeta(key, value string) {
+	if c == nil {
+		return
+	}
+	switch key {
+	case ext.PeerService, ext.Environment, ext.Version:
+	default:
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.setSpanSnapshotMetaLocked(key, value)
+}
+
+// +checklocks:c.mu
+func (c *SpanContext) setSpanSnapshotMetaLocked(key, value string) {
+	assert.RWMutexLocked(&c.mu)
+	switch key {
+	case ext.PeerService:
+		c.spanSnapshot.peerService = value
+	case ext.Environment:
+		c.spanSnapshot.env = value
+	case ext.Version:
+		c.spanSnapshot.version = value
+	}
 }
 
 // SpanID implements ddtrace.SpanContext.
@@ -413,6 +521,17 @@ func (c *SpanContext) setBaggageItem(key, val string) {
 	c.setBaggageItemLocked(key, val)
 }
 
+// setOTBaggageItem stores a baggage item extracted from a legacy OpenTracing
+// "ot-baggage-<key>" HTTP header. <key> is derived from a case-insensitive
+// header name, so it must be lowercased here to match how it was matched.
+// This is deliberately not folded into setBaggageItem itself, which is also
+// used by the public Span.SetBaggageItem API (arbitrary user-chosen keys) and
+// by the case-sensitive W3C "baggage" header extractor (opaque token keys) —
+// neither of those should have their keys silently normalized.
+func (c *SpanContext) setOTBaggageItem(key, val string) {
+	c.setBaggageItem(strings.ToLower(key), val)
+}
+
 // baggageItemLocked retrieves a baggage item.
 // c.mu must be held for reading.
 // +checklocksread:c.mu
@@ -440,8 +559,8 @@ func (c *SpanContext) baggageItem(key string) string {
 
 // finish marks this span as finished in the trace.
 // The span must be locked by the caller.
-func (c *SpanContext) finish() {
-	c.trace.finishedOneLocked(c.span)
+func (c *SpanContext) finish(s *Span) {
+	c.trace.finishedOneLocked(s)
 }
 
 // safeDebugString returns a safe string representation of the SpanContext for debug logging.
@@ -491,8 +610,8 @@ type trace struct {
 	// +checklocks:mu
 	tags map[string]string
 	// trace level tags that will be propagated across service boundaries
-	// +checklocks:mu
-	propagatingTags map[string]string
+	// holds map[string]string; readers are lock-free (atomic.Value); writers hold mu and use copy-on-write
+	propagatingTags atomic.Value
 	// the number of finished spans
 	// +checklocks:mu
 	finished int
@@ -519,6 +638,17 @@ type trace struct {
 	// the trace yet.
 	// Write-once during initialization in newSpanContext, read-only afterward.
 	root *Span
+
+	// rootFlushed is set when partial flushing sends the local root before the
+	// trace completes. The root must stay out of the pool while unfinished spans
+	// still refer to it through trace.root.
+	// +checklocks:mu
+	rootFlushed bool
+
+	// filterReject is set when the local root finishes and is consumed when a
+	// chunk containing that root is assembled.
+	// +checklocks:mu
+	filterReject bool
 }
 
 var (
@@ -631,7 +761,8 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	updatedPriority := old == nil || *old != float64(p)
 
 	t.priority.Store(samplingPriorityPtr(p)) // +checklocksignore
-	curDM, existed := t.propagatingTags[keyDecisionMaker]
+	curDM := t.propagatingTag(keyDecisionMaker)
+	existed := curDM != ""
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
@@ -702,7 +833,7 @@ func (t *trace) push(sp *Span) {
 }
 
 // setTraceTagsLocked sets all "trace level" tags on the provided span
-// t must already be locked.
+// t must already be read-locked (t.mu.RLock held by caller).
 // +checklocksread:t.mu
 // +checklocks:s.mu
 func (t *trace) setTraceTagsLocked(s *Span) {
@@ -711,12 +842,15 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	for k, v := range t.tags {
 		s.setMetaLocked(k, v)
 	}
-	for k, v := range t.propagatingTags {
+	for k, v := range t.loadPropagatingTags() {
 		s.setMetaLocked(k, v)
 	}
 	updateTracerGitMetadataTags(s)
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMetaLocked(keyTraceID128, s.context.traceID.UpperHex())
+	}
+	if pTags := processtags.GlobalTags().String(); pTags != "" {
+		s.setMetaLocked(keyProcessTags, pTags)
 	}
 }
 
@@ -753,6 +887,9 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// to a race condition where spans can be modified while flushing.
 		//
 		// TODO(partialFlush): should we do a partial flush in this scenario?
+		if tr, ok := getGlobalTracer().(*tracer); ok {
+			tr.computeOversizedSpanStats(s)
+		}
 		t.mu.Unlock()
 		return
 	}
@@ -792,6 +929,11 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// in the chunk there.
 		t.setTraceTagsLocked(s)
 	}
+	if realTracer, ok := tr.(*tracer); ok {
+		realTracer.computeSpanStats(t, s)
+	} else {
+		s.statSpan = nil
+	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
 	// We need to track when any single span is finished.
@@ -802,13 +944,19 @@ func (t *trace) finishedOneLocked(s *Span) {
 	// Full flush: all spans finished
 	if len(t.spans) == t.finished {
 		spans := t.spans
+		spansToRelease := spans
+		if t.rootFlushed {
+			spansToRelease = append(append([]*Span(nil), spans...), t.root)
+			t.rootFlushed = false
+		}
 		willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
+		// t.filterReject is guarded by t.mu, so capture it before unlocking below.
+		// The root has finished by full flush, so its decision is set.
+		filterRejected := t.filterReject
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 		t.mu.Unlock()
-		if tr, ok := tr.(*tracer); ok {
-			tr.submitChunk(&chunk{spans: spans, willSend: willSend})
-		}
+		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 		return
 	}
 
@@ -823,37 +971,70 @@ func (t *trace) finishedOneLocked(s *Span) {
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
 	telemetry.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", []string{"reason:large_trace"}).Submit(1)
 
+	// Partition spans in-place: finished spans go to finishedSpans, unfinished
+	// spans are compacted to the front of t.spans. This avoids a separate
+	// leftoverSpans allocation on every partial flush trigger.
+	originalFirst := t.spans[0]
 	finishedSpans := make([]*Span, 0, t.finished)
-	leftoverSpans := make([]*Span, 0, len(t.spans)-t.finished)
+	leftIdx := 0
 	for _, s2 := range t.spans {
 		if s2.finished {
 			finishedSpans = append(finishedSpans, s2)
 		} else {
-			leftoverSpans = append(leftoverSpans, s2)
+			t.spans[leftIdx] = s2
+			leftIdx++
 		}
 	}
 
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
-	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
+	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(leftIdx))
 
-	// #incident-46344 -- if we set metrics and tags on a different span than what was passed into this function,
-	// we need to lock this new span. However, to preserve lock ordering (span.mu -> trace.mu), we must
-	// release trace.mu before acquiring fSpan.mu.
+	// #incident-46344 -- the first span in the chunk (fSpan) may differ from the
+	// span being finished; the chunk-level metrics and tags are set on it below.
+	// See the locking note before that update for the span.mu/fSpan.mu ordering.
 	fSpan := finishedSpans[0]
-	currentSpanIsFirstInChunk := s == fSpan
-	needsFirstSpanTags := s != t.spans[0]
+	finishingSpanIsFirstInChunk := s == fSpan
+	needsFirstSpanTags := s != originalFirst
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
+	spansToRelease := finishedSpans
+	if t.root != nil {
+		for i, s2 := range finishedSpans {
+			if s2 == t.root {
+				t.rootFlushed = true
+				spansToRelease = append(append([]*Span(nil), finishedSpans[:i]...), finishedSpans[i+1:]...)
+				break
+			}
+		}
+	}
+	// t.filterReject stays false until the root finishes, so this passes pre-root
+	// partial-flush chunks through unfiltered and applies the root's decision once
+	// it is known — same as the full-flush path above.
+	filterRejected := t.filterReject
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
-	t.spans = leftoverSpans
+	// Clear the tail so the GC can collect the flushed spans; without this the
+	// backing array retains pointers past len(t.spans) and keeps them alive.
+	clear(t.spans[leftIdx:])
+	t.spans = t.spans[:leftIdx]
 	t.finished = 0 // important, because a buffer can be used for several flushes
 	t.mu.Unlock()
 
-	// Set sampling priority and trace-level tags on first span in chunk
-	// If fSpan == s, lock is already held by caller; otherwise acquire it
-	if !currentSpanIsFirstInChunk {
+	// Set sampling priority and trace-level tags on the first span in the chunk.
+	//
+	// When fSpan != s, fSpan is a different span of the same lock class as s.
+	// We must not hold s.mu while locking fSpan.mu: nesting two Span.mu in
+	// inconsistent order across goroutines is a deadlock cycle (and fSpan may
+	// still be inside its own finish() -> tracer.submit, reading its meta/metrics
+	// under fSpan.mu, so the lock is load-bearing, not vestigial). Release s.mu
+	// around the fSpan update, then re-lock it before submitChunkWithTracer: the
+	// re-lock is required because Span.clear() acquires s.mu to serialize after
+	// finish()'s deferred unlock, and the channel send inside the submit must
+	// happen while s.mu is still held.
+	//
+	// When fSpan == s, the caller's s.mu is already held and is the right lock.
+	if !finishingSpanIsFirstInChunk {
+		s.mu.Unlock()
 		fSpan.mu.Lock()
-		defer fSpan.mu.Unlock()
 	}
 	if priority != nil {
 		fSpan.setMetricLocked(keySamplingPriority, *priority)
@@ -862,10 +1043,26 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RLock()
 		t.setTraceTagsLocked(fSpan)
 		t.mu.RUnlock()
+		// recompute stats after trace tags propagation
+		if realTracer, ok := tr.(*tracer); ok && fSpan.statSpan != nil {
+			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpan(fSpan, realTracer.obfuscator)
+		}
+	}
+	if !finishingSpanIsFirstInChunk {
+		fSpan.mu.Unlock()
+		s.mu.Lock()
 	}
 
-	if tr, ok := tr.(*tracer); ok {
-		tr.submitChunk(&chunk{spans: finishedSpans, willSend: willSend})
+	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
+}
+
+// submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.
+func submitChunkWithTracer(tr Tracer, c *chunk) {
+	switch t := tr.(type) {
+	case *tracer:
+		t.submitChunk(c)
+	case *ciVisibilityNoopTracer:
+		submitChunkWithTracer(t.Tracer, c)
 	}
 }
 
