@@ -39,11 +39,12 @@ jobs:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
@@ -227,11 +228,12 @@ jobs:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
 
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -408,12 +410,13 @@ jobs:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: always()
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:

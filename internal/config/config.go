@@ -217,6 +217,8 @@ type Config struct {
 	otlpMetricsHeaders map[string]string
 	// otlpMetricsFlushInterval is the span metrics flush cadence (default 10s).
 	otlpMetricsFlushInterval time.Duration
+	// otlpMetricsProtocol is the OTLP export protocol for metrics: "http/json" or "http/protobuf".
+	otlpMetricsProtocol string
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
 	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
@@ -395,7 +397,7 @@ func loadConfig() *Config {
 		// DD_TRACE_STATS_COMPUTATION_ENABLED was not explicitly configured,
 		// disable native stats too: the user has signalled they want no SDK-side
 		// span metrics, and the Datadog-Client-Computed-Stats header should
-		// therefore be absent (FR15).
+		// therefore be absent.
 		if !v {
 			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
 				cfg.statsComputationEnabled = false
@@ -411,7 +413,14 @@ func loadConfig() *Config {
 		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
 	)
-	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL"))
+	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
+	otlpProtocolFallback := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL") {
+		otlpProtocolFallback = "http/protobuf"
+	}
+	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
+		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
+	})
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -1546,6 +1555,15 @@ func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, 
 func (c *Config) TraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	// OTLP span metrics use their own concentrator and are not native CSS, so the trace
+	// transport must stay on v0.4 where the Datadog Agent can see the
+	// Datadog-Client-Computed-Stats header. Inline OTLPSpanMetricsEnabled logic to avoid
+	// a deadlock on c.mu.
+	otlpSpanMetrics := (c.otlpSpanMetricsEnabled != nil && *c.otlpSpanMetricsEnabled) ||
+		(c.otlpSpanMetricsEnabled == nil && c.otlpExportMode && c.runtimeMetricsOtel)
+	if otlpSpanMetrics {
+		return TraceProtocolV04
+	}
 	return c.traceProtocol
 }
 
@@ -1621,6 +1639,17 @@ func (c *Config) OTLPSpanMetricsEnabled() bool {
 	return c.otlpExportMode && c.runtimeMetricsOtel
 }
 
+func (c *Config) SetOTLPSpanMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("OTEL_TRACES_SPAN_METRICS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	v := enabled
+	c.otlpSpanMetricsEnabled = &v
+	configtelemetry.Report("OTEL_TRACES_SPAN_METRICS_ENABLED", enabled, origin)
+}
+
 func (c *Config) OTLPMetricsURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1638,6 +1667,13 @@ func (c *Config) OTLPMetricsFlushInterval() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpMetricsFlushInterval
+}
+
+// OTLPMetricsProtocol returns the OTLP export protocol for metrics ("http/json" or "http/protobuf").
+func (c *Config) OTLPMetricsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpMetricsProtocol
 }
 
 func (c *Config) TraceID128BitEnabled() bool {

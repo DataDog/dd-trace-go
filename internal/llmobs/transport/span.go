@@ -118,7 +118,7 @@ func (c *Transport) PushSpanEventsWithResult(
 	method := http.MethodPost
 	body := NewPushSpanEventsRequests(events)
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultLimits)
 	if err != nil {
 		return summarizeRequest(result), err
 	}

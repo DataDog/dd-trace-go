@@ -22,7 +22,6 @@ import (
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 const spanDurationMetricName = "traces.span.sdk.metrics.duration"
@@ -88,18 +87,7 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 
 // buildMetricsResource builds the OTLP Resource; adds host.name and datadog.* attrs in default mode.
 func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportHostname bool, hostname string) *otlpresource.Resource {
-	attrs := []*otlpcommon.KeyValue{
-		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
-		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
-		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
-		otlpKeyValue("service.name", otlpStringValue(payload.Service)),
-	}
-	if payload.Version != "" {
-		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(payload.Version)))
-	}
-	if payload.Env != "" {
-		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(payload.Env)))
-	}
+	attrs := buildBaseResourceAttrs(payload.Service, payload.Version, payload.Env)
 	if reportHostname && hostname != "" {
 		attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(hostname)))
 	}
@@ -110,9 +98,11 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportH
 		if payload.ProcessTags != "" {
 			for tag := range strings.SplitSeq(payload.ProcessTags, ",") {
 				parts := strings.SplitN(tag, ":", 2)
-				// Skip keys emitted explicitly above (runtime_id) to avoid duplicate
-				// resource attributes, and skip tags with empty values.
-				if len(parts) == 2 && parts[0] != "" && parts[1] != "" && parts[0] != "runtime_id" {
+				if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+					continue
+				}
+				// datadog.<key> resource attributes for all non-runtime_id process tags.
+				if parts[0] != "runtime_id" {
 					attrs = append(attrs, otlpKeyValue("datadog."+parts[0], otlpStringValue(parts[1])))
 				}
 			}
@@ -208,13 +198,6 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 		statusCode = 2 // STATUS_CODE_ERROR
 	}
 	attrs = append(attrs, otlpKeyValue("status.code", otlpIntValue(statusCode)))
-	// grpc.method.name arrives via PeerTags (no dedicated field in ClientGroupedStats) and maps to rpc.method.
-	for _, tag := range gs.PeerTags {
-		if k, v, ok := strings.Cut(tag, ":"); ok && k == "grpc.method.name" && v != "" {
-			attrs = append(attrs, otlpKeyValue("rpc.method", otlpStringValue(v)))
-			break
-		}
-	}
 
 	if svc := gs.Service; svc != "" && svc != defaultService {
 		attrs = append(attrs, otlpKeyValue("service.name", otlpStringValue(svc)))
@@ -230,6 +213,9 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 		}
 		// top_level is true only when all spans in the group were top-level (TopLevelHits == Hits).
 		attrs = append(attrs, otlpKeyValue("datadog.span.top_level", otlpBoolValue(gs.Hits > 0 && gs.TopLevelHits == gs.Hits)))
+		// ClientGroupedStats carries only a boolean Synthetics field; finer-grained
+		// origin values (synthetics-browser, rum, ciapp-test, lambda) are not available
+		// at the stats aggregation layer and require a proto change upstream to support.
 		if gs.Synthetics {
 			attrs = append(attrs, otlpKeyValue("datadog.origin", otlpStringValue("synthetics")))
 		}

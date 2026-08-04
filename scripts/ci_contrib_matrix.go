@@ -4,7 +4,6 @@
 // Copyright 2025 Datadog, Inc.
 
 //go:build ignore
-// +build ignore
 
 // This tool outputs a JSON encoded array that can be used as a matrix input to GitHub workflows.
 // Rather than testing all contribs under one job, we would rather parallelize the jobs
@@ -21,7 +20,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"regexp"
+	"path/filepath"
+	"strings"
 )
 
 const numRunners = 6
@@ -35,7 +35,10 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	contribRe := regexp.MustCompile(`/(contrib|instrumentation)/.*/`)
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	contribs := make([]string, numRunners)
 	i := 0
@@ -43,16 +46,22 @@ func main() {
 	for dec.More() {
 		var pkg struct {
 			Path string `json:"Path"`
+			Dir  string `json:"Dir"`
 		}
 		if err := dec.Decode(&pkg); err != nil {
 			continue
 		}
-		// we want to only count packages in the contrib directory
-		validContrib := contribRe.FindStringSubmatch(pkg.Path)
-		if validContrib == nil {
+
+		rel, err := filepath.Rel(cwd, pkg.Dir)
+		if err != nil {
 			continue
 		}
-		contribs[i] += "." + validContrib[0] + " "
+		rel = filepath.ToSlash(rel)
+		// we want to only count packages in the contrib or instrumentation directory
+		if !strings.HasPrefix(rel, "contrib/") && !strings.HasPrefix(rel, "instrumentation/") {
+			continue
+		}
+		contribs[i] += "./" + rel + "/ "
 		i = (i + 1) % numRunners
 	}
 

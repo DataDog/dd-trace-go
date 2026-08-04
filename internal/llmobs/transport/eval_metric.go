@@ -124,7 +124,7 @@ func (c *Transport) PushEvalMetricsBodyWithResult(ctx context.Context, body []by
 		subdomainEvalMetric,
 		bytes.NewReader(body),
 		"application/json",
-		defaultTimeout,
+		defaultLimits,
 	)
 	if err != nil {
 		return summarizeRequest(result), err
