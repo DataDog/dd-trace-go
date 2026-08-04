@@ -17,7 +17,6 @@ import (
 	"go.opentelemetry.io/otelc/pkg/hook/hooktest"
 
 	redigotrace "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2"
-	"github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/internal/otelcguard"
 )
 
 // listen starts a socket that accepts connections and never speaks. Dialing is
@@ -87,7 +86,7 @@ func TestDialContextHookReentrant(t *testing.T) {
 	// The contrib marks the dial it makes itself. Letting a marked dial through
 	// is what keeps the hook from recursing and from double-wrapping a connection
 	// the caller already wrapped.
-	ctx := otelcguard.Mark(context.Background())
+	ctx := redigotrace.TraceMark(context.Background())
 
 	ictx := hooktest.NewMockHookContext()
 	BeforeDialContext(ictx, ctx, "tcp", addr)
