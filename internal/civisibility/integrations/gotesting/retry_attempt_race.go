@@ -9,8 +9,6 @@ package gotesting
 
 import "runtime"
 
-const retryAttemptRaceEnabled = true
-
 func retryAttemptRaceErrors() int64 {
 	return int64(runtime.RaceErrors())
 }

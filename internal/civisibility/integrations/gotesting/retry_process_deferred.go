@@ -774,18 +774,6 @@ func (c *processRetryCoordinator) awaitCompletion(deadline time.Time) bool {
 	}
 }
 
-func (c *processRetryCoordinator) stateChange() <-chan struct{} {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.changed
-}
-
-func (c *processRetryCoordinator) stateSnapshot() processRetryCoordinatorState {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.state
-}
-
 func (c *processRetryCoordinator) notifyLocked() {
 	close(c.changed)
 	c.changed = make(chan struct{})

@@ -50,16 +50,6 @@ func processRetryModeEnabledFromEnv() bool {
 	}
 }
 
-func processRetryMaxConcurrencyFromEnv(defaultValue int) int {
-	if defaultValue < 1 {
-		defaultValue = 1
-	}
-	if configured, ok := processRetryConfiguredMaxConcurrencyFromEnv(); ok {
-		return configured
-	}
-	return defaultValue
-}
-
 func processRetryConfiguredMaxConcurrencyFromEnv() (int, bool) {
 	raw := strings.TrimSpace(env.Get(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable))
 	if raw == "" {
@@ -71,10 +61,6 @@ func processRetryConfiguredMaxConcurrencyFromEnv() (int, bool) {
 		return 0, false
 	}
 	return n, true
-}
-
-func processRetryDefaultMaxConcurrency() int {
-	return processRetryDefaultMaxConcurrencyForCPU(runtime.GOMAXPROCS(0))
 }
 
 func processRetryDefaultMaxConcurrencyForCPU(currentCPU int) int {
@@ -1159,13 +1145,6 @@ func processRetryShuttingDown() bool {
 	return processRetryLaunchGate.shuttingDown.Load()
 }
 
-func disableProcessRetryLaunches() {
-	processRetryLaunchGate.mu.Lock()
-	processRetryLaunchGate.disabled.Store(true)
-	processRetryLaunchGate.notifyLocked()
-	processRetryLaunchGate.mu.Unlock()
-}
-
 type processRetryGroupLease struct {
 	shutdown <-chan struct{}
 	released atomic.Bool
@@ -1307,15 +1286,6 @@ func registerProcessRetryShutdownAction() bool {
 		processRetryActiveChildren.mu.Unlock()
 		return registered
 	}
-}
-
-func registerActiveProcessRetryChild(cmd *exec.Cmd, hooks processRetryRunnerHooks) {
-	if cmd == nil {
-		return
-	}
-	processRetryLaunchGate.mu.Lock()
-	registerActiveProcessRetryChildLocked(cmd, hooks)
-	processRetryLaunchGate.mu.Unlock()
 }
 
 func registerActiveProcessRetryChildLocked(cmd *exec.Cmd, hooks processRetryRunnerHooks) {
@@ -1503,28 +1473,6 @@ func getProcessRetryLimiter() *processRetryLimiter {
 	return globalProcessRetryLimiter.Load()
 }
 
-func (l *processRetryLimiter) acquire(ctx context.Context, parentDeadlineHardCap <-chan time.Time) processRetryLimiterAcquireResult {
-	return l.acquireWithShutdownLimit(
-		ctx,
-		parentDeadlineHardCap,
-		nil,
-		processRetryMaxConcurrencyFromEnv(processRetryDefaultMaxConcurrency()),
-	)
-}
-
-func (l *processRetryLimiter) acquireWithShutdown(
-	ctx context.Context,
-	parentDeadlineHardCap <-chan time.Time,
-	shutdown <-chan struct{},
-) processRetryLimiterAcquireResult {
-	return l.acquireWithShutdownLimit(
-		ctx,
-		parentDeadlineHardCap,
-		shutdown,
-		processRetryMaxConcurrencyFromEnv(processRetryDefaultMaxConcurrency()),
-	)
-}
-
 func (l *processRetryLimiter) acquireWithShutdownLimit(
 	ctx context.Context,
 	parentDeadlineHardCap <-chan time.Time,
@@ -1671,20 +1619,6 @@ func processRetryShutdownRequested(shutdown <-chan struct{}) bool {
 
 func processRetryParentDeadlineReserve() time.Duration {
 	return processRetryKillGracePeriod + processRetryPostKillWait + processRetryOutputDrainBudget + processRetryParentDeadlineSafetyMargin
-}
-
-func runProcessRetryAttempt(ctx context.Context, cfg processRetryChildConfig, parentDeadline time.Time, parentDeadlineOK bool) processRetryAttemptResult {
-	return runProcessRetryAttemptWithBaseline(ctx, cfg, parentDeadline, parentDeadlineOK, captureProcessRetryLaunchBaseline())
-}
-
-func runProcessRetryAttemptWithBaseline(
-	ctx context.Context,
-	cfg processRetryChildConfig,
-	parentDeadline time.Time,
-	parentDeadlineOK bool,
-	baseline *processRetryLaunchBaseline,
-) processRetryAttemptResult {
-	return runProcessRetryAttemptWithBaselineAndShutdown(ctx, cfg, parentDeadline, parentDeadlineOK, baseline, nil)
 }
 
 func runProcessRetryAttemptWithBaselineAndShutdown(
@@ -2119,26 +2053,6 @@ func selectedProcessRetryTimeout(
 	return selected
 }
 
-func waitProcessRetryChild(
-	ctx context.Context,
-	hooks processRetryRunnerHooks,
-	cmd *exec.Cmd,
-	waitCh <-chan error,
-	timeoutTimer processRetryTimer,
-	attempt *processRetryAttemptResult,
-) error {
-	teardownPhase := &processRetryReapPhase{}
-	containmentLost := false
-	markContainmentLost := func(err error) {
-		containmentLost = true
-		attempt.ContainmentLost = true
-		attempt.Err = errors.Join(attempt.Err, errProcessRetryContainmentLost, err)
-	}
-	err := waitProcessRetryChildWithTeardown(ctx, nil, hooks, cmd, waitCh, nil, timeoutTimer, attempt, teardownPhase, markContainmentLost)
-	teardownPhase.finish(containmentLost || attempt.Unreaped)
-	return err
-}
-
 func waitProcessRetryChildWithTeardown(
 	ctx context.Context,
 	shutdown <-chan struct{},
@@ -2219,13 +2133,6 @@ func waitProcessRetryChildWithTeardown(
 			return terminateAndWait()
 		}
 	}
-}
-
-func waitForProcessRetryReapAfterKill(hooks processRetryRunnerHooks, waitCh <-chan error, attempt *processRetryAttemptResult) error {
-	reapPhase := beginProcessRetryReapPhase()
-	err := waitForProcessRetryReapAfterKillWithPhase(hooks, waitCh, attempt, reapPhase)
-	reapPhase.finish(attempt != nil && attempt.Unreaped)
-	return err
 }
 
 func waitForProcessRetryReapAfterKillWithPhase(
@@ -2575,10 +2482,6 @@ func finishProcessRetryTestEvent(
 		test.Close(integrations.ResultStatusPass, closeOpts...)
 	}
 	return effective
-}
-
-func buildProcessRetryArgs(originalArgs []string, testName string, currentCPU int, childTestingTimeout time.Duration) ([]string, bool, string) {
-	return buildProcessRetryArgsFromSnapshot(captureProcessRetryArgsSnapshot(originalArgs), testName, currentCPU, childTestingTimeout)
 }
 
 func captureProcessRetryArgsSnapshot(originalArgs []string) processRetryArgsSnapshot {

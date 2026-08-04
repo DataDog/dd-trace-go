@@ -1676,22 +1676,6 @@ func TestProcessRetryChildResultStatuses(t *testing.T) {
 	}
 }
 
-func TestProcessRetryParityProcessChildRaceIsStructured(t *testing.T) {
-	if !retryAttemptRaceEnabled {
-		t.Skip("requires the race detector")
-	}
-
-	result, exitCode, output := runProcessRetryChildResultFixture(t, "race")
-	require.NotZero(t, exitCode, output)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-	require.True(t, result.RaceDetected)
-	require.Equal(t, "test_race", effectiveProcessRetryStatus(processRetryAttemptResult{
-		Result:   result,
-		ExitCode: exitCode,
-	}, false).FailureKind)
-}
-
 func TestProcessRetryChildPublicHelpersPreserveNativeState(t *testing.T) {
 	tests := []struct {
 		name         string

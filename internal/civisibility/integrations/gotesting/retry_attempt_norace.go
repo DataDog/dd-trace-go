@@ -7,8 +7,6 @@
 
 package gotesting
 
-const retryAttemptRaceEnabled = false
-
 func retryAttemptRaceErrors() int64 {
 	return 0
 }

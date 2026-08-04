@@ -89,26 +89,12 @@ func (w retryAttemptCaptureWriter) Write(p []byte) (int, error) {
 	return w.writer.Write(p)
 }
 
-func (c *retryAttemptOutputCapture) snapshot() []byte {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]byte(nil), c.output...)
-}
-
 func (c *retryAttemptOutputCapture) take() []byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	output := c.output
 	c.output = nil
 	return output
-}
-
-func newRetryAttemptRoot(original *testing.T) (*retryAttemptRoot, string) {
-	group, reason := newRetryAttemptGroup(original)
-	if reason != "" {
-		return nil, reason
-	}
-	return newRetryAttemptRootInGroup(group)
 }
 
 func newRetryAttemptGroup(original *testing.T) (*retryAttemptGroup, string) {

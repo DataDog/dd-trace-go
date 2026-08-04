@@ -95,18 +95,6 @@ type retryAttemptResult struct {
 
 var errRetryAttemptNilPanicOrGoexit = errors.New("test executed panic(nil) or runtime.Goexit")
 
-func runFreshRetryAttempt(original *testing.T, target func(*testing.T)) (*retryAttemptRoot, retryAttemptResult, string) {
-	group, reason := newRetryAttemptGroup(original)
-	if reason != "" {
-		return nil, retryAttemptResult{}, reason
-	}
-	return runFreshRetryAttemptInGroup(group, target)
-}
-
-func runFreshRetryAttemptInGroup(group *retryAttemptGroup, target func(*testing.T)) (*retryAttemptRoot, retryAttemptResult, string) {
-	return runFreshRetryAttemptInGroupWithCallbacks(group, nil, target, nil)
-}
-
 func runFreshRetryAttemptInGroupWithCallbacks(
 	group *retryAttemptGroup,
 	prepare func(*retryAttemptRoot) string,
