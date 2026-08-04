@@ -85,6 +85,46 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 		assert.Equal(t, uint64(42), ctx.TraceIDLower())
 		assert.Equal(t, uint64(7), ctx.SpanID())
 	})
+
+	// The baggage propagator matches header names via a carrier-specific fast
+	// path (lookupBaggageHeader) rather than the ForeachKey scan the other
+	// propagators use, so it needs its own case-insensitivity coverage.
+	t.Run("baggage header, TextMapCarrier non-canonical case", func(t *testing.T) {
+		t.Setenv(envPropagationStyleExtract, "baggage")
+		p := NewPropagator(nil)
+		carrier := TextMapCarrier{"BAGGAGE": "foo=bar"}
+		ctx, err := p.Extract(carrier)
+		require.NoError(t, err)
+		require.NotNil(t, ctx)
+		assert.Equal(t, "bar", ctx.baggageItem("foo"))
+	})
+
+	// http.Header canonicalizes keys written via Set/Add, but a carrier can be
+	// built by hand with an arbitrary-case key -- lookupBaggageHeader's O(1)
+	// canonical lookup must fall back to a scan in that case.
+	t.Run("baggage header, HTTPHeadersCarrier non-canonical case", func(t *testing.T) {
+		t.Setenv(envPropagationStyleExtract, "baggage")
+		p := NewPropagator(nil)
+		carrier := HTTPHeadersCarrier(http.Header{"baggage": {"foo=bar"}})
+		ctx, err := p.Extract(carrier)
+		require.NoError(t, err)
+		require.NotNil(t, ctx)
+		assert.Equal(t, "bar", ctx.baggageItem("foo"))
+	})
+
+	// Pins that a repeated "baggage" header keeps the same last-value-wins
+	// behavior as before this fast path existed.
+	t.Run("baggage header, HTTPHeadersCarrier multi-value", func(t *testing.T) {
+		t.Setenv(envPropagationStyleExtract, "baggage")
+		p := NewPropagator(nil)
+		h := http.Header{}
+		h.Add("baggage", "foo=bar")
+		h.Add("baggage", "foo=baz")
+		ctx, err := p.Extract(HTTPHeadersCarrier(h))
+		require.NoError(t, err)
+		require.NotNil(t, ctx)
+		assert.Equal(t, "baz", ctx.baggageItem("foo"))
+	})
 }
 
 // canonicalHTTPHeaders builds an http.Header whose keys are stored in canonical
