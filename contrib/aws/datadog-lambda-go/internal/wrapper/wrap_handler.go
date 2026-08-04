@@ -71,11 +71,7 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, error) {
 	//nolint
 	ctx = context.WithValue(ctx, "cold_start", h.coldStart)
-	msg := json.RawMessage{}
-	unmarshalErr := msg.UnmarshalJSON(payload)
-	if unmarshalErr != nil {
-		logger.Error(fmt.Errorf("couldn't load handler payload: %v", unmarshalErr))
-	}
+	msg := json.RawMessage(payload)
 
 	for _, listener := range h.listeners {
 		ctx = listener.HandlerStarted(ctx, msg)
@@ -83,10 +79,7 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 
 	CurrentContext = ctx
 
-	handlerPayload := payload
-	if unmarshalErr == nil {
-		handlerPayload = []byte(internal.StripInjectedContext(msg))
-	}
+	handlerPayload := []byte(internal.StripInjectedContext(msg))
 
 	result, err := h.handler.Invoke(ctx, handlerPayload)
 	for _, listener := range h.listeners {
