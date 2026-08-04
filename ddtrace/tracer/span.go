@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"math"
 	"reflect"
@@ -39,6 +40,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
@@ -160,6 +162,8 @@ type Span struct {
 	spanLinks []SpanLink `msg:"span_links,omitempty"` // links to other spans
 	// +checklocks:mu
 	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
+	// +checklocks:mu
+	statSpan *tracerStatSpan `msg:"-"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -209,6 +213,7 @@ func (s *Span) clear() {
 	s.error = 0
 	s.spanLinks = nil
 	s.spanEvents = nil
+	s.statSpan = nil
 	s.goExecTraced = false
 	s.noDebugStack = false
 	s.finished = false
@@ -427,6 +432,27 @@ func (s *Span) SetTag(key string, value any) {
 	defer s.mu.Unlock()
 
 	s.setTagLocked(key, value)
+}
+
+// SetMetaStruct adds a tag with the given key and value to the `meta_struct`
+// field of the span if the agent supports it and returns true. If the
+// `meta_struct` feature is not supported by the agent or the receiver is nil,
+// nothing is stored in the span and false is returned.
+func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
+	if s == nil {
+		return false
+	}
+
+	tracer, hasTracer := getGlobalTracer().(*tracer)
+	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
+		return false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.setMetaStructLocked(key, value)
+	return true
 }
 
 // setTags sets multiple tags on the span during initialization. It acquires
@@ -764,11 +790,9 @@ func takeStacktrace(depth uint, skip uint) string {
 		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
 	}()
 
-	// This is necessary for span error stacktraces where we want complete visibility.
-	// Skip +4: The old implementation used runtime.Callers(2+skip, ...) which skipped runtime.Callers
-	// and takeStacktrace. The internal/stacktrace package auto-filters its own frames, but we still
-	// need to account for: runtime.Callers(1) + takeStacktrace(1) + setTagError(1) + additional frame(1)
-	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+4)
+	// Keep Datadog frames in span error stack traces, but omit this wrapper on top
+	// of the stacktrace package's own machinery.
+	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+1)
 	return stacktrace.Format(stack)
 }
 
@@ -818,6 +842,21 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 	assert.RWMutexLocked(&s.mu)
 	if s.metaStruct == nil {
 		s.metaStruct = make(metaStructMap, 1)
+	}
+	if key == stacktrace.SpanKey {
+		if current, ok := s.metaStruct[key]; ok {
+			merged, err := stacktrace.MergeSpanValues(current, v)
+			if err != nil {
+				telemetrylog.Warn(
+					"failed to merge stack-trace span values",
+					slog.Any("error", telemetrylog.NewSafeError(err)),
+					slog.String("current_type", fmt.Sprintf("%T", current)),
+					slog.String("next_type", fmt.Sprintf("%T", v)),
+				)
+				return
+			}
+			v = merged
+		}
 	}
 	s.metaStruct[key] = v
 }
@@ -1137,11 +1176,6 @@ func (s *Span) finish(finishTime int64) {
 	// this span (to set trace-level tags).
 	// Lock ordering is span.mu -> trace.mu.
 	s.context.finish(s)
-
-	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
-	if hasTracer {
-		tracer.submit(s)
-	}
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this

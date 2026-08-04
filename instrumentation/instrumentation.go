@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -159,6 +160,29 @@ func (i *Instrumentation) TelemetryMetrics() TelemetryMetricsClient {
 	return &i.telemetryMetrics
 }
 
+type TelemetryNamespace = telemetry.Namespace
+
+const (
+	// TelemetryNamespaceIAST is the namespace for IAST telemetry
+	TelemetryNamespaceIAST = telemetry.NamespaceIAST
+)
+
+// TelemetryProductStarted declares a telemetry product as having started.
+func (i *Instrumentation) TelemetryProductStarted(ns TelemetryNamespace) {
+	telemetry.ProductStarted(ns)
+}
+
+// TelemetryProductStartError declares a telemetry product as having failed to
+// start because of the specified error.
+func (i *Instrumentation) TelemetryProductStartError(ns TelemetryNamespace, err error) {
+	telemetry.ProductStartError(ns, err)
+}
+
+// TelemetryProductStopped declares a telemetry product as having stopped.
+func (i *Instrumentation) TelemetryProductStopped(ns TelemetryNamespace) {
+	telemetry.ProductStopped(ns)
+}
+
 type TelemetryOrigin = telemetry.Origin
 
 const (
@@ -257,4 +281,100 @@ func (i *Instrumentation) HTTPHeadersAsTags() HeaderTags {
 
 func (i *Instrumentation) ActiveSpanKey() any {
 	return internal.ActiveSpanKey
+}
+
+// StackTrace is a stack-trace event captured by an [Instrumentation]. Its
+// fields must not be mutated after passing it to [Instrumentation.RecordStackTrace].
+type StackTrace = stacktrace.Event
+
+// StackFrame is a single frame of a [StackTrace].
+type StackFrame = stacktrace.StackFrame
+
+// StackTraceCategory identifies the kind of event associated with a stack trace.
+type StackTraceCategory = stacktrace.EventCategory
+
+const (
+	// StackTraceCategoryException identifies an exception stack trace.
+	StackTraceCategoryException StackTraceCategory = stacktrace.ExceptionEvent
+	// StackTraceCategoryVulnerability identifies a vulnerability stack trace.
+	StackTraceCategoryVulnerability StackTraceCategory = stacktrace.VulnerabilityEvent
+	// StackTraceCategoryExploit identifies an exploit stack trace.
+	StackTraceCategoryExploit StackTraceCategory = stacktrace.ExploitEvent
+)
+
+// StackTraceOption configures a captured stack-trace event. Values are created
+// by the WithStackTrace functions in this package.
+type StackTraceOption = stacktrace.Option
+
+// WithStackTraceType sets the event type.
+func WithStackTraceType(eventType string) StackTraceOption {
+	return stacktrace.WithType(eventType)
+}
+
+// WithStackTraceMessage sets the event message.
+func WithStackTraceMessage(message string) StackTraceOption {
+	return stacktrace.WithMessage(message)
+}
+
+// WithStackTraceID sets the event correlation ID. Vulnerability and exploit
+// stack traces require a non-empty ID.
+func WithStackTraceID(id string) StackTraceOption {
+	return stacktrace.WithID(id)
+}
+
+// WithStackTraceSkip sets the number of caller frames to skip after the
+// stacktrace capture machinery. Negative values are treated as zero.
+func WithStackTraceSkip(skip int) StackTraceOption {
+	return stacktrace.WithSkip(skip)
+}
+
+// WithStackTraceDepth sets the maximum number of frames to capture. A
+// non-positive depth uses the default depth.
+func WithStackTraceDepth(depth int) StackTraceOption {
+	return stacktrace.WithDepth(depth)
+}
+
+// CaptureStackTrace captures a stack trace for an event in category. It returns
+// nil when no frames are captured or when a vulnerability or exploit event has
+// no correlation ID. The caller is responsible for applying its product-specific
+// enablement configuration.
+func (i *Instrumentation) CaptureStackTrace(category StackTraceCategory, options ...StackTraceOption) *StackTrace {
+	// We need to skip the frame for the call to [*Instrumentation.CaptureStackTrace] itself.
+	options = append(options, stacktrace.WithAdditionalSkip(1))
+	event := stacktrace.NewEvent(category, options...)
+	if !validStackTrace(event) {
+		return nil
+	}
+	return event
+}
+
+// RecordStackTrace submits trace to the local root span's _dd.stack meta_struct
+// entry. Calls from IAST, AppSec, and other producers are aggregated by event
+// category and encoded when the span is serialized. Nil traces, traces without
+// frames, and vulnerability or exploit traces without an ID are ignored. The
+// caller is responsible for product-specific enablement.
+//
+// The return value reports whether the trace passed validation and was submitted
+// to the root span. The span API does not report whether a finished root rejected
+// the tag.
+func (i *Instrumentation) RecordStackTrace(span *tracer.Span, trace *StackTrace) bool {
+	if span == nil || !validStackTrace(trace) {
+		return false
+	}
+
+	root := span.Root()
+	if root == nil {
+		return false
+	}
+	return stacktrace.AddToSpan(root, trace)
+}
+
+func validStackTrace(trace *StackTrace) bool {
+	if trace == nil || len(trace.Frames) == 0 {
+		return false
+	}
+	if trace.Category == StackTraceCategoryVulnerability || trace.Category == StackTraceCategoryExploit {
+		return trace.ID != ""
+	}
+	return true
 }

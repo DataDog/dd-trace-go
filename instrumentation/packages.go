@@ -35,6 +35,7 @@ const (
 	PackageGlobalsignMgo        Package = "globalsign/mgo"
 	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
 	PackageMongoDriverV2        Package = "go.mongodb.org/mongo-driver.v2"
+	PackageGoUberOrgZap         Package = "go.uber.org/zap"
 	PackageChi                  Package = "go-chi/chi"
 	PackageChiV5                Package = "go-chi/chi.v5"
 	PackageGoPGV10              Package = "go-pg/pg.v10"
@@ -231,6 +232,12 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV0:      staticName("pubsub.publish"),
 				buildOpNameV1:      staticName("gcp.pubsub.send"),
 			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("gcp.pubsub.request"),
+				buildOpNameV1:      staticName("gcp.pubsub.request"),
+			},
 		},
 	},
 	PackageGCPPubsubV2: {
@@ -248,6 +255,12 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName(""),
 				buildOpNameV0:      staticName("pubsub.publish"),
 				buildOpNameV1:      staticName("gcp.pubsub.send"),
+			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("gcp.pubsub.request"),
+				buildOpNameV1:      staticName("gcp.pubsub.request"),
 			},
 		},
 	},
@@ -629,6 +642,10 @@ var packages = map[Package]PackageInfo{
 	PackageRsZerolog: {
 		TracedPackage: "github.com/rs/zerolog",
 		EnvVarPrefix:  "ZEROLOG",
+	},
+	PackageGoUberOrgZap: {
+		TracedPackage: "go.uber.org/zap",
+		EnvVarPrefix:  "ZAP",
 	},
 	PackageShopifySarama: {
 		TracedPackage: "github.com/Shopify/sarama",

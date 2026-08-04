@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,20 @@ const (
 
 	// DefaultMaxTagsHeaderLen is the default value for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	DefaultMaxTagsHeaderLen = 512
+	// defaultStatsAdditionalTagsCardinalityLimit is the default per-bucket cap for additional metric tag cardinality.
+	defaultStatsAdditionalTagsCardinalityLimit = 100
+	// maxAdditionalTagKeys is the maximum number of configured additional metric tag keys.
+	maxAdditionalTagKeys = 6
+	// defaultStatsWholeKeyCardinalityLimit is the default whole-key cardinality cap per bucket.
+	defaultStatsWholeKeyCardinalityLimit = 2048
+	// defaultStatsResourceCardinalityLimit is the default per-field cap for resource cardinality.
+	defaultStatsResourceCardinalityLimit = 1024
+	// defaultStatsHTTPEndpointCardinalityLimit is the default per-field cap for http_endpoint cardinality.
+	defaultStatsHTTPEndpointCardinalityLimit = 512
+	// defaultStatsPeerTagsCardinalityLimit is the default per-field cap for peer_tags cardinality.
+	defaultStatsPeerTagsCardinalityLimit = 512
+	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
+	defaultStatsOriginCardinalityLimit = 20
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a
@@ -102,6 +117,32 @@ func validateSendRetries(retries int) bool {
 		return false
 	}
 	return true
+}
+
+func capAdditionalTagKeys(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(tags))
+	unique := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		unique = append(unique, tag)
+	}
+	if len(unique) > maxAdditionalTagKeys {
+		dropped := unique[maxAdditionalTagKeys:]
+		log.Warn("DD_TRACE_STATS_ADDITIONAL_TAGS is limited to %d keys; dropping configured tag keys: %s", maxAdditionalTagKeys, strings.Join(dropped, ","))
+		unique = unique[:maxAdditionalTagKeys]
+	}
+	slices.Sort(unique)
+	return unique
 }
 
 // parseSpanAttributeSchema parses the DD_TRACE_SPAN_ATTRIBUTE_SCHEMA value.
@@ -265,9 +306,6 @@ func formatDogstatsdAddr(u *url.URL) string {
 	return u.Host
 }
 
-// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
-// When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
-// If validation fails, the default endpoint is used instead.
 // parseAndValidateOTLPURL parses rawURL and validates that it uses http or https.
 // Logs a warning and returns (nil, false) on failure.
 func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
@@ -283,6 +321,9 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
+// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set,
+// else derives a default from agentURL host + port 4318 + /v1/traces.
+// When the user-provided endpoint is set it is validated; if invalid the default is used instead.
 func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
 	if otlpTracesEndpoint != "" {
 		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
@@ -408,7 +449,17 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 	return merged
 }
 
-// resolveOTLPMetricsFlushInterval parses _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (milliseconds).
+// validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
+// envVar is used in the warning message to identify which env var had the bad value.
+func validateOTLPProtocol(v, envVar string) bool {
+	if v == "http/json" || v == "http/protobuf" {
+		return true
+	}
+	log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	return false
+}
+
+// resolveOTLPMetricsFlushInterval parses _DD_TRACE_STATS_INTERVAL (milliseconds).
 // The variable is internal and intended for tests only; in production it returns the default 10 s.
 func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
 	if raw == "" {
@@ -416,7 +467,7 @@ func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
 	}
 	ms, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || ms <= 0 {
-		log.Warn("Invalid _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
+		log.Warn("Invalid _DD_TRACE_STATS_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
 		return OTLPMetricsFlushInterval
 	}
 	return time.Duration(ms) * time.Millisecond
