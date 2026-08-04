@@ -104,12 +104,20 @@ jobs:
 
       # GitHub runs this on a candidate merge commit, so dependency updates landed
       # on main since the branch was cut can leave go.mod/go.sum stale.
+      #
+      # otelc/all is tidied too, unlike the orchestrion lane which only needs the
+      # test module. Auto-pin walks tool files recursively and loads each hop from
+      # the directory of the tool file that declared it, so following
+      # _integration/otel.instrumentation.go into otelc/all runs a read-only
+      # `go list` inside otelc/all; a stale go.mod there fails the whole lane with
+      # "updates to go.mod needed".
       - name: Run 'go mod tidy'
         shell: bash
         run: |-
-          source ../../../.github/workflows/apps/go-retry.sh
-          retry_on_corruption go mod tidy
-        working-directory: internal/orchestrion/_integration
+          source .github/workflows/apps/go-retry.sh
+          for dir in internal/orchestrion/_integration otelc/all; do
+            retry_on_corruption go -C "${dir}" mod tidy
+          done
 
       - name: Run Tests
         shell: bash
