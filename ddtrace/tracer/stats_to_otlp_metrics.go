@@ -59,7 +59,7 @@ const (
 var spanMetricBounds = [16]float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
 
 // buildOTLPMetricsRequest converts a ClientStatsPayload to OTLP ResourceMetrics (DELTA histogram).
-// Non-default services carry service.name as a data-point attribute. Returns nil when empty.
+// Returns nil when empty.
 func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) []*otlpmetrics.ResourceMetrics {
 	otelMode := cfg.OTelSemanticsEnabled()
 
@@ -67,7 +67,7 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 	for _, bucket := range payload.Stats {
 		bucketEnd := bucket.Start + bucket.Duration
 		for _, gs := range bucket.Stats {
-			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd, payload.Service, otelMode)
+			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd, otelMode)
 			allPoints = append(allPoints, pts...)
 		}
 	}
@@ -123,23 +123,22 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportH
 }
 
 // buildGroupDataPoints produces up to two OTLP histogram data points (ok + error) from a ClientGroupedStats.
-// Non-default services carry service.name as a data-point attribute.
-func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, defaultService string, otelMode bool) []*otlpmetrics.HistogramDataPoint {
+func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, otelMode bool) []*otlpmetrics.HistogramDataPoint {
 	var pts []*otlpmetrics.HistogramDataPoint
 	if len(gs.OkSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, defaultService, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, otelMode); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	if len(gs.ErrorSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, defaultService, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, otelMode); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	return pts
 }
 
-func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, defaultService string, otelMode bool) *otlpmetrics.HistogramDataPoint {
+func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, otelMode bool) *otlpmetrics.HistogramDataPoint {
 	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
 	if err != nil {
 		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
@@ -159,13 +158,13 @@ func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, star
 		Max:               &maxSec,
 		ExplicitBounds:    spanMetricBounds[:],
 		BucketCounts:      bucketCounts,
-		Attributes:        buildDataPointAttributes(gs, isError, defaultService, otelMode),
+		Attributes:        buildDataPointAttributes(gs, isError, otelMode),
 	}
 	return dp
 }
 
-// buildDataPointAttributes returns OTLP data-point attributes; adds service.name for non-default services.
-func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultService string, otelMode bool) []*otlpcommon.KeyValue {
+// buildDataPointAttributes returns OTLP data-point attributes.
+func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, otelMode bool) []*otlpcommon.KeyValue {
 	var attrs []*otlpcommon.KeyValue
 
 	// OTel semantic-convention attributes.
@@ -211,9 +210,7 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 	}
 	attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue(statusCode)))
 
-	if svc := gs.Service; svc != "" && svc != defaultService {
-		attrs = append(attrs, otlpKeyValue("service.name", otlpStringValue(svc)))
-	}
+	attrs = append(attrs, otlpKeyValue("service.name", otlpStringValue(gs.Service)))
 
 	// additional_metric_tags support is still evolving/TBD across most SDKs.
 	for _, tag := range gs.AdditionalMetricTags {
