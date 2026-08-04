@@ -4,12 +4,8 @@
 // Copyright 2026-present Datadog, Inc.
 
 // Package otelc holds the otelc compile-time instrumentation hooks for
-// github.com/gomodule/redigo. It is not part of this module's public API: it
-// exists only to be linked in by the rules in otelc.yaml.
-//
-// redis.Dial, redis.DialURL and redis.DialURLContext all funnel into
-// redis.DialContext, so hooking that one definition covers every entry point
-// the orchestrion aspects wrap at their call sites.
+// github.com/gomodule/redigo. It exists only to be linked in by otelc.yaml, and
+// is a separate module so otelc never reaches contrib users who do not use it.
 package otelc
 
 import (
@@ -21,19 +17,16 @@ import (
 	redigotrace "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2"
 )
 
-// dialResult carries the traced connection from the before hook to the after
-// hook, which is the only place otelc lets us write the return values.
+// dialResult carries the connection to the after hook, the only place otelc lets
+// us write return values.
 type dialResult struct {
 	conn redis.Conn
 	err  error
 }
 
 // BeforeDialContext substitutes redigotrace.DialContext for redis.DialContext.
-//
-// The contrib marks the dial it makes itself, which covers both directions of the
-// same problem: the inner call this hook triggers is let through instead of
-// recursing, and an application that called the contrib directly keeps the single
-// wrapper it already has rather than getting a second one.
+// Marked contexts are the contrib's own dial and are left alone, which stops both
+// recursion and double wrapping.
 func BeforeDialContext(ictx hook.HookContext, ctx context.Context, network, address string, options ...redis.DialOption) {
 	if redigotrace.TraceMarked(ctx) {
 		return
@@ -57,8 +50,7 @@ func AfterDialContext(ictx hook.HookContext, _ redis.Conn, _ error) {
 	if !ok {
 		return
 	}
-	// SetReturnVal discards nil values, and skipping the call left both return
-	// values zeroed, so only the non-nil ones need writing.
+	// Skipping the call zeroed both return values, and SetReturnVal discards nils.
 	if res.conn != nil {
 		ictx.SetReturnVal(0, res.conn)
 	}
