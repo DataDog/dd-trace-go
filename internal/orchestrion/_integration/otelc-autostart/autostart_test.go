@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -104,7 +105,13 @@ func TestOtelcStartsTracer(t *testing.T) {
 		{name: "plain build starts nothing", instrument: false, wantSpan: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// `go build -o` appends .exe on Windows, so the path handed to
+			// exec.Command has to carry it or the run fails with
+			// "executable file not found in %PATH%".
 			bin := filepath.Join(t.TempDir(), "otelc-autostart")
+			if runtime.GOOS == "windows" {
+				bin += ".exe"
+			}
 
 			var build *exec.Cmd
 			if tc.instrument {
