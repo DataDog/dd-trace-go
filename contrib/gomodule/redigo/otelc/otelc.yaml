@@ -1,0 +1,34 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# ../orchestrion.yml rewrites three call sites (redis.Dial, redis.DialContext
+# and redis.DialURL) to call redigotrace.Dial* instead. otelc cannot express
+# that: its wrap_call replace template exposes only the matched call as a whole
+# ({{ . }}), with no way to re-target it while keeping its arguments.
+#
+# So this hooks the funnel instead. redis.Dial, redis.DialTimeout, redis.DialURL
+# and redis.DialURLContext all reach redis.DialContext, so hooking that one
+# definition covers every entry point the three aspects wrap, and the network,
+# host and port the contrib derives come out the same.
+#
+# Two differences from rewriting call sites:
+#
+#   1. redis.DialTimeout and redis.DialURLContext are traced too, which
+#      orchestrion does not do.
+#   2. A binary built with otelc that ALSO calls redigotrace.Dial* directly
+#      wraps the connection twice and emits two spans per command, because the
+#      contrib's own redis.DialContext call is hooked as well. Orchestrion is
+#      unaffected: it never rewrites call sites inside dd-trace-go. Closing this
+#      needs the contrib to mark the context of its own dial so the hook can
+#      recognise it. Reasoned from the call graph, not reproduced in a test.
+redigo_dial_context:
+  target: github.com/gomodule/redigo/redis
+  where:
+    func: DialContext
+  do:
+    - inject_hooks:
+        before: BeforeDialContext
+        after: AfterDialContext
+        path: github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/otelc

@@ -6,6 +6,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
 	github.com/gomodule/redigo v1.9.2
 	github.com/stretchr/testify v1.11.1
+	go.opentelemetry.io/otelc/pkg v0.0.0-20260804083803-f6cc0e47c20f
 )
 
 require (
