@@ -81,6 +81,13 @@ func BeforeHandle(serveCfg *ServeConfig, w http.ResponseWriter, r *http.Request)
 	// of who the client is cannot drift apart.
 	appsecEnabled := appsec.Enabled()
 	remoteIP, clientIP := serveCfg.RemoteIP, serveCfg.ClientIP
+	if clientip.CustomHeaderConfigured() {
+		// The operator named the header identity comes from, which outranks an
+		// address the integration inferred from its own infrastructure. Without
+		// this, configuring DD_TRACE_CLIENT_IP_HEADER for a CDN in front of the
+		// load balancer would stop taking effect.
+		remoteIP, clientIP = netip.Addr{}, netip.Addr{}
+	}
 	if !clientIP.IsValid() && (cfg.traceClientIP || appsecEnabled) {
 		remoteIP, clientIP = resolveClientIP(r.Header, true, r.RemoteAddr)
 	}

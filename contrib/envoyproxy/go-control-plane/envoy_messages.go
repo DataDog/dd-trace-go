@@ -44,6 +44,13 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 		return proxy.PseudoRequest{}, err
 	}
 
+	// Captured before mergeMetadataHeaders, which fills an absent X-Forwarded-For
+	// from the ext_proc stream's own metadata. The GCLB positional contract below
+	// describes the request that travelled through the load balancer, not the gRPC
+	// connection carrying this callout, so only the proxied request's own header
+	// may decide identity.
+	requestForwardedFor := headers["X-Forwarded-For"]
+
 	var remoteAddr string
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -58,7 +65,7 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	// The trustworthy address travels beside it instead.
 	var remoteIP, clientIP netip.Addr
 	if m.component(ctx) == componentNameGCPServiceExtension {
-		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), headers["X-Forwarded-For"], m.integrationDeclared); ok {
+		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), requestForwardedFor, m.integrationDeclared); ok {
 			remoteIP, clientIP = trustedIP, trustedIP
 		}
 	}

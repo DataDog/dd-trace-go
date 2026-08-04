@@ -104,7 +104,9 @@ func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 // Callers reaching AppSec through instrumentation/httptrace have already
 // resolved this and pass it down; those wrapping a handler directly have not.
 func clientIdentity(opts *Config, r *http.Request) (remoteIP, clientIP netip.Addr) {
-	if opts.ClientIP.IsValid() {
+	// A header named by DD_TRACE_CLIENT_IP_HEADER outranks a supplied address:
+	// see clientip.CustomHeaderConfigured.
+	if opts.ClientIP.IsValid() && !clientip.CustomHeaderConfigured() {
 		return opts.RemoteIP, opts.ClientIP
 	}
 	return clientip.Resolve(r.Header, true, r.RemoteAddr)

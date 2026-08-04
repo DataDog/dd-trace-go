@@ -98,7 +98,13 @@ Once an address is resolved this way it becomes both `http.client_ip` and
 rule address, taken from the last `X-Forwarded-For` entry; that address is no longer
 recorded, because the client is what the tag is meant to describe.
 
-Two limitations:
+If `DD_TRACE_CLIENT_IP_HEADER` names a header, that header decides identity and none
+of the above applies. Naming a header is an explicit statement about where the client
+address lives, so it outranks both `source.ip` and the positional rule — which is what
+makes it the right setting when a CDN in front of the load balancer is the only thing
+that knows the real client.
+
+Three limitations:
 
 - **A CDN or proxy sits in front of the load balancer.** Both `source.ip` and the
   observed `X-Forwarded-For` entry describe the connection Google Cloud received, which
@@ -107,7 +113,15 @@ Two limitations:
   on trusting it; this integration does not attempt it.
 - **Fewer than two `X-Forwarded-For` entries, with no `source.ip`.** There is then no
   load-balancer-appended entry to rely on, so resolution falls back to the generic
-  behaviour of earlier releases.
+  behaviour of earlier releases. Zero-configuration protection therefore depends on the
+  genuine `X-Forwarded-For` actually reaching the extension: if the extension is
+  configured not to forward it, and `source.ip` is not forwarded either, then identity
+  comes from whichever headers *are* forwarded and is client-selectable again.
+- **The extension must only be reachable by the load balancer.** Both `source.ip` and the
+  positional rule describe what the infrastructure reported, so anything able to call the
+  callout's gRPC endpoint directly can present either and choose the identity that gets
+  recorded and denylist-checked. Keep the callout backend restricted to traffic from your
+  own proxy, as the default deployment does.
 
 ### SSL Configuration
 

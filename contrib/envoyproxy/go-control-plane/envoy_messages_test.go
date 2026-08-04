@@ -173,6 +173,24 @@ func clientIPTestCases() []clientIPTestCase {
 			requestHeaders: map[string]string{"X-Forwarded-For": "203.0.113.77"},
 		},
 		{
+			// mergeMetadataHeaders fills an absent X-Forwarded-For from the ext_proc
+			// stream's metadata. That header describes the gRPC connection carrying
+			// the callout, not the request that crossed the load balancer, so the
+			// positional rule must not read it.
+			name:        "X-Forwarded-For present only in stream metadata resolves nothing",
+			integration: GCPServiceExtensionIntegration,
+			metadata:    metadata.Pairs("x-forwarded-for", "203.0.113.77", "x-forwarded-for", "82.67.164.163"),
+		},
+		{
+			// Same, but source.ip is authoritative regardless of which transport the
+			// header came from.
+			name:         "stream-metadata X-Forwarded-For does not stop source.ip",
+			integration:  GCPServiceExtensionIntegration,
+			metadata:     metadata.Pairs("x-forwarded-for", "203.0.113.77", "x-forwarded-for", "82.67.164.163"),
+			attributes:   testSourceIPAttributes(structpb.NewStringValue("18.18.18.18")),
+			wantClientIP: "18.18.18.18",
+		},
+		{
 			name:        "zone-scoped source.ip is rejected",
 			integration: GCPServiceExtensionIntegration,
 			attributes:  testSourceIPAttributes(structpb.NewStringValue("fe80::1%eth0")),
@@ -289,10 +307,33 @@ func TestExtractRequestPreservesXFFVerbatim(t *testing.T) {
 			got := tc.extract(t)
 
 			if raw, ok := tc.requestHeaders["X-Forwarded-For"]; ok {
+				// The request carried the header: it must arrive untouched, and
+				// stream metadata must not be allowed to displace it.
 				require.Equal(t, []string{raw}, got.forwardedFor)
-			} else {
-				require.Empty(t, got.forwardedFor)
+				return
 			}
+			// The request carried no header. mergeMetadataHeaders then substitutes
+			// the ext_proc stream's copy, which is long-standing behaviour and is
+			// what the WAF has always inspected in that case — identity resolution
+			// is what must ignore it, not the header view.
+			require.Equal(t, tc.metadata.Get("x-forwarded-for"), got.forwardedFor)
 		})
 	}
+}
+
+// TestExtractRequestTooFewHeaders covers a malformed ProcessingRequest carrying
+// fewer entries than there are pseudo-headers, which had no coverage. It must be
+// rejected as a bad request.
+func TestExtractRequestTooFewHeaders(t *testing.T) {
+	msg := messageRequestHeaders{
+		ProcessingRequest: &extproc.ProcessingRequest{},
+		HttpHeaders: &extproc.HttpHeaders{Headers: &corev3.HeaderMap{
+			Headers: []*corev3.HeaderValue{{Key: ":method", RawValue: []byte("GET")}},
+		}},
+		integration:         GCPServiceExtensionIntegration,
+		integrationDeclared: true,
+	}
+
+	_, err := msg.ExtractRequest(context.Background())
+	require.Error(t, err, "a request missing pseudo-headers must be rejected, not panic")
 }

@@ -7,6 +7,7 @@ package clientip
 
 import (
 	"net/netip"
+	"slices"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -32,10 +33,16 @@ var DefaultIPHeaders = []string{
 	"cf-connecting-ipv6",
 }
 
-// monitoredHeaders is the list of IP-related headers leveraged to retrieve the
-// public client IP address in RemoteAddr. This is defined at init time in
-// function of the value of the envClientIPHeader environment variable.
-var monitoredHeaders []string
+var (
+	// monitoredHeaders is the list of IP-related headers leveraged to retrieve the
+	// public client IP address in RemoteAddr. This is defined at init time in
+	// function of the value of the envClientIPHeader environment variable.
+	monitoredHeaders []string
+
+	// customHeaderConfigured records that envClientIPHeader named a header, and
+	// that the header is therefore the only place identity may come from.
+	customHeaderConfigured bool
+)
 
 func init() {
 	readMonitoredHeadersConfig()
@@ -45,17 +52,38 @@ func readMonitoredHeadersConfig() {
 	if header := env.Get(envClientIPHeader); header != "" {
 		// Make this header the only one to consider in RemoteAddr
 		monitoredHeaders = []string{header}
+		customHeaderConfigured = true
 	} else {
 		// No specific IP header was configured, use the default list
 		monitoredHeaders = DefaultIPHeaders
+		customHeaderConfigured = false
 	}
 }
 
 // MonitoredHeaders returns the IP-related headers the default resolution policy
 // scans, which is either the single header named by DD_TRACE_CLIENT_IP_HEADER or
-// [DefaultIPHeaders]. Callers must not modify the returned slice.
+// [DefaultIPHeaders].
 func MonitoredHeaders() []string {
-	return monitoredHeaders
+	return slices.Clone(monitoredHeaders)
+}
+
+// ResetConfig re-reads DD_TRACE_CLIENT_IP_HEADER. The configuration is read once
+// at init; this exists so tests in the packages that consume the policy can
+// exercise both branches, mirroring httptrace.ResetCfg.
+func ResetConfig() {
+	readMonitoredHeadersConfig()
+}
+
+// CustomHeaderConfigured reports whether DD_TRACE_CLIENT_IP_HEADER named the
+// header client identity must be taken from.
+//
+// An integration that determines identity from its own infrastructure has to
+// defer to the default policy when this is true. Naming a header is an explicit
+// statement by the operator about where identity lives — typically because
+// something in front of them, a CDN say, is the only thing that knows the real
+// client — and it outranks an address an integration inferred.
+func CustomHeaderConfigured() bool {
+	return customHeaderConfigured
 }
 
 // Resolve returns the remote IP and the client IP of a request, applying the

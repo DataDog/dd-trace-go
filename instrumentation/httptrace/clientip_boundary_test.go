@@ -17,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
@@ -236,4 +237,104 @@ func TestStartRequestSpanResolvesStandalone(t *testing.T) {
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	assert.Equal(t, "203.0.113.77", spans[0].Tag(ext.HTTPClientIP))
+}
+
+// TestCustomHeaderOutranksIntegrationIdentity covers the precedence an operator
+// expects: naming a header with DD_TRACE_CLIENT_IP_HEADER says where identity
+// lives, typically because something in front of the load balancer is the only
+// thing that knows the real client. An address an integration inferred must not
+// silently replace it.
+func TestCustomHeaderOutranksIntegrationIdentity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	// Registered before t.Setenv so it runs after the env var is restored.
+	t.Cleanup(clientip.ResetConfig)
+
+	t.Setenv("DD_TRACE_CLIENT_IP_HEADER", "CF-Connecting-IP")
+	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	clientip.ResetConfig()
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec is not available in this build")
+	}
+	ResetCfg()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+	// What the operator declared as authoritative.
+	r.Header.Set("CF-Connecting-IP", "82.67.164.163")
+	// Not monitored once a custom header is configured.
+	r.Header.Set("X-Forwarded-For", "203.0.113.77")
+	w := httptest.NewRecorder()
+
+	// What a GCP Service Extension would report as the peer it observed.
+	supplied := netip.MustParseAddr("8.233.57.190")
+
+	rw, rt, after, handled := BeforeHandle(&ServeConfig{
+		Route:    "/test",
+		RemoteIP: supplied,
+		ClientIP: supplied,
+	}, w, r)
+	require.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "82.67.164.163", spans[0].Tag(ext.HTTPClientIP),
+		"the configured header must decide identity, not the address the integration supplied")
+	assert.NotEqual(t, "8.233.57.190", spans[0].Tag(ext.HTTPClientIP))
+	assert.NotEqual(t, "203.0.113.77", spans[0].Tag(ext.HTTPClientIP))
+}
+
+// TestCustomHeaderOutranksIntegrationIdentityWithoutAppSec covers the same
+// precedence on the tracing-only path. With AppSec enabled the listener rewrites
+// the IP tags from its own resolution, which would mask a mistake here; with it
+// disabled this package's decision is the only one, so this is what actually
+// pins the check in BeforeHandle.
+func TestCustomHeaderOutranksIntegrationIdentityWithoutAppSec(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	// Registered before t.Setenv so it runs after the env var is restored.
+	t.Cleanup(clientip.ResetConfig)
+
+	t.Setenv("DD_TRACE_CLIENT_IP_HEADER", "CF-Connecting-IP")
+	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")
+	clientip.ResetConfig()
+	ResetCfg()
+	require.False(t, appsec.Enabled(), "this test must exercise the tracing-only path")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+	r.Header.Set("CF-Connecting-IP", "82.67.164.163")
+	r.Header.Set("X-Forwarded-For", "203.0.113.77")
+	w := httptest.NewRecorder()
+
+	supplied := netip.MustParseAddr("8.233.57.190")
+
+	rw, rt, after, handled := BeforeHandle(&ServeConfig{
+		Route:    "/test",
+		RemoteIP: supplied,
+		ClientIP: supplied,
+	}, w, r)
+	require.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "82.67.164.163", spans[0].Tag(ext.HTTPClientIP))
+	assert.NotEqual(t, "8.233.57.190", spans[0].Tag(ext.HTTPClientIP))
 }

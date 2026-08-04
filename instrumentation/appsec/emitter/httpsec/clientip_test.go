@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 )
 
 // TestClientIdentity covers the emitter's half of the resolve-once contract. The
@@ -56,4 +58,28 @@ func TestClientIdentity(t *testing.T) {
 			assert.Equal(t, tc.wantClientIP, clientIP.String())
 		})
 	}
+}
+
+// TestClientIdentityCustomHeaderPrecedence pins the emitter half of the operator
+// precedence rule: a header named by DD_TRACE_CLIENT_IP_HEADER outranks an
+// identity the caller supplied, so a CDN configuration keeps working when an
+// integration also reports an address.
+func TestClientIdentityCustomHeaderPrecedence(t *testing.T) {
+	// Registered before t.Setenv so it runs after the env var is restored.
+	t.Cleanup(clientip.ResetConfig)
+	t.Setenv("DD_TRACE_CLIENT_IP_HEADER", "CF-Connecting-IP")
+	clientip.ResetConfig()
+
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+	r.Header.Set("CF-Connecting-IP", "82.67.164.163")
+	r.Header.Set("X-Forwarded-For", "203.0.113.77")
+	r.RemoteAddr = "10.0.0.1:4242"
+
+	supplied := netip.MustParseAddr("8.233.57.190")
+	cfg := Config{RemoteIP: supplied, ClientIP: supplied}
+
+	_, clientIP := clientIdentity(&cfg, r)
+
+	assert.Equal(t, "82.67.164.163", clientIP.String(),
+		"the configured header must decide identity, not the supplied address")
 }
