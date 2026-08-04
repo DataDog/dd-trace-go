@@ -166,8 +166,8 @@ func newTestIdentity(moduleName, suiteName, fullName string) *testIdentity {
 // topLevelTestName returns the top-level test name without allocating. The
 // boolean reports whether fullName itself identifies a top-level test.
 func topLevelTestName(fullName string) (string, bool) {
-	if separator := strings.IndexByte(fullName, '/'); separator >= 0 {
-		return fullName[:separator], false
+	if topLevelName, _, found := strings.Cut(fullName, "/"); found {
+		return topLevelName, false
 	}
 	return fullName, true
 }

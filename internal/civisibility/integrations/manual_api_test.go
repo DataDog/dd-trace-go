@@ -20,7 +20,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -34,14 +33,15 @@ import (
 func TestSessionFinishedTelemetryIncludesFaultyEFDAbortReason(t *testing.T) {
 	for _, exitCode := range []int{0, 1} {
 		t.Run(fmt.Sprintf("exit=%d", exitCode), func(t *testing.T) {
-			mockTracer := mocktracer.Start()
-			defer mockTracer.Stop()
+			mockTracer.Reset()
+			defer mockTracer.Reset()
 			recorder := new(telemetrytest.RecordClient)
 			defer coretelemetry.MockClient(recorder)()
 
 			session := CreateTestSession(WithTestSessionFramework("golang.org/pkg/testing", runtime.Version()))
 			session.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "faulty")
 			session.Close(exitCode)
+			require.Len(t, mockTracer.FinishedSpans(), 1)
 
 			found := false
 			for key, metric := range recorder.Metrics {

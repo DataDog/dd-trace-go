@@ -56,7 +56,7 @@ func TestProcessRetryEFDFaultySessionLimit(t *testing.T) {
 }
 
 func TestProcessRetryEFDFaultySessionLimitMatchesFaultyPredicate(t *testing.T) {
-	for threshold := uint64(0); threshold < 100; threshold++ {
+	for threshold := range uint64(100) {
 		for known := uint64(0); known <= 1_000; known++ {
 			limit, ok := efdFaultySessionLimit(threshold, known)
 			require.True(t, ok)
@@ -252,7 +252,7 @@ func TestProcessRetryEFDFaultySessionFilesystemStoreExactBoundary(t *testing.T) 
 		now:        time.Now,
 		sleep:      time.Sleep,
 	}
-	for index := 0; index < 10; index++ {
+	for range 10 {
 		require.Equal(t, earlyFlakeDetectionAdmissionAllowed, store.claim())
 	}
 	require.Equal(t, earlyFlakeDetectionAdmissionFaulty, store.claim())
@@ -358,7 +358,7 @@ func TestProcessRetryEFDFaultySessionZeroThresholdConcurrentPublishers(t *testin
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestProcessRetryEFDFaultySessionLockOwnerDoesNotRemoveReplacement(t *testing.T) {
+func TestProcessRetryEFDFaultySessionLockReleasePreservesOwnership(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), efdFaultySessionDirectoryName)
 	store := &efdFaultySessionFilesystemStore{
 		directory: directory,
@@ -368,6 +368,14 @@ func TestProcessRetryEFDFaultySessionLockOwnerDoesNotRemoveReplacement(t *testin
 	lock, err := store.acquireLock()
 	require.NoError(t, err)
 	lockPath := filepath.Join(directory, efdFaultySessionLockFile)
+	if runtime.GOOS == "windows" {
+		// Windows prevents replacing a lock while its owning handle is open.
+		require.Error(t, os.Remove(lockPath))
+		require.NoError(t, store.releaseLock(lock))
+		_, err = os.Stat(lockPath)
+		require.ErrorIs(t, err, os.ErrNotExist)
+		return
+	}
 	require.NoError(t, os.Remove(lockPath))
 	require.NoError(t, os.WriteFile(lockPath, []byte("replacement"), 0o600))
 	require.Error(t, store.releaseLock(lock))
