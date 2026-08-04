@@ -75,25 +75,25 @@ func TestMain(m *testing.M) {
 func TestConnect(t *testing.T) {
 	testCases := []struct {
 		name           string
-		newConnCreator func(t *testing.T, prev *pgxMockTracer) createConnFn
+		newConnCreator func() createConnFn
 	}{
 		{
 			name: "pool",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newPoolCreator(nil, opts...)
 			},
 		},
 		{
 			name: "conn",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, nil, opts...)
 			},
 		},
 		{
 			name: "conn_with_options",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, &pgx.ParseConfigOptions{}, opts...)
 			},
@@ -104,7 +104,7 @@ func TestConnect(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			runAllOperations(t, tc.newConnCreator(t, nil))
+			runAllOperations(t, tc.newConnCreator())
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 2)
