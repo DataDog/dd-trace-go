@@ -53,20 +53,30 @@ type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
 	config           AppsecEnvoyConfig
 	messageProcessor proxy.Processor
+	// integrationDeclared reports whether config.Integration was set by the
+	// caller rather than defaulted to GCP.
+	integrationDeclared bool
 }
 
 // AppsecEnvoyExternalProcessorServer creates a new external processor server with AAP enabled
 func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer, config AppsecEnvoyConfig) envoyextproc.ExternalProcessorServer {
+	// Whether the caller named its integration, as opposed to being defaulted to
+	// GCP below. Client IP resolution needs the distinction: rules that hold on
+	// Google Cloud's load balancer must not be applied to a deployment that only
+	// landed on GCP because it declared nothing.
+	integrationDeclared := true
 	switch config.Integration {
 	case GCPServiceExtensionIntegration, EnvoyIntegration, IstioIntegration, EnvoyGatewayIntegration:
 	default:
 		instr.Logger().Error("external_processing: invalid proxy integration type %d. Defaulting to GCPServiceExtensionIntegration", config.Integration)
 		config.Integration = GCPServiceExtensionIntegration
+		integrationDeclared = false
 	}
 
 	return &appsecEnvoyExternalProcessorServer{
 		ExternalProcessorServer: userImplementation,
 		config:                  config,
+		integrationDeclared:     integrationDeclared,
 		messageProcessor: proxy.NewProcessor(proxy.ProcessorConfig{
 			BlockingUnavailable:  config.BlockingUnavailable,
 			BodyParsingSizeLimit: config.BodyParsingSizeLimit,
@@ -147,7 +157,7 @@ func (s *appsecEnvoyExternalProcessorServer) handleReceiveError(err error) error
 func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context, req *envoyextproc.ProcessingRequest, currentRequest *proxy.RequestState) (err error) {
 	switch v := req.Request.(type) {
 	case *envoyextproc.ProcessingRequest_RequestHeaders:
-		*currentRequest, err = s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{ProcessingRequest: req, HttpHeaders: req.GetRequestHeaders(), integration: s.config.Integration})
+		*currentRequest, err = s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{ProcessingRequest: req, HttpHeaders: req.GetRequestHeaders(), integration: s.config.Integration, integrationDeclared: s.integrationDeclared})
 		return err
 
 	case *envoyextproc.ProcessingRequest_RequestBody:

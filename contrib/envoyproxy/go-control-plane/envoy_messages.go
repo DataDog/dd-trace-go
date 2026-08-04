@@ -33,6 +33,9 @@ type messageRequestHeaders struct {
 	*extproc.ProcessingRequest
 	*extproc.HttpHeaders
 	integration Integration
+	// integrationDeclared reports whether integration was named by the caller
+	// rather than defaulted to GCP. See trustedClientIP.
+	integrationDeclared bool
 }
 
 func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.PseudoRequest, error) {
@@ -55,7 +58,7 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	// The trustworthy address travels beside it instead.
 	var remoteIP, clientIP netip.Addr
 	if m.component(ctx) == componentNameGCPServiceExtension {
-		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), headers["X-Forwarded-For"]); ok {
+		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), headers["X-Forwarded-For"], m.integrationDeclared); ok {
 			remoteIP, clientIP = trustedIP, trustedIP
 		}
 	}
@@ -98,11 +101,23 @@ const (
 // trustedClientIP returns the address of the peer the Google Cloud load balancer
 // observed, which is the one address in the request the client could not forge.
 //
-// It is only meaningful for GCP Service Extensions and callers must gate on that;
-// the X-Forwarded-For rule below is a property of GCLB, not of Envoy in general.
-func trustedClientIP(attributes map[string]*structpb.Struct, forwardedFor []string) (netip.Addr, bool) {
+// It is only meaningful for GCP Service Extensions and callers must gate on that.
+//
+// gclbShape additionally gates the positional X-Forwarded-For rule, which unlike
+// source.ip is a property of Google Cloud's load balancer rather than of Envoy.
+// Pass false unless the deployment positively declared itself a GCP Service
+// Extension: an unset integration is defaulted to GCP, and a caller that named
+// nothing is more likely a self-hosted Envoy, which appends a single
+// X-Forwarded-For entry and would therefore have its len-2 position land on a
+// client-supplied value.
+func trustedClientIP(attributes map[string]*structpb.Struct, forwardedFor []string, gclbShape bool) (netip.Addr, bool) {
+	// source.ip is set by the infrastructure and does not exist in stock Envoy,
+	// so it is trustworthy wherever it turns up.
 	if sourceIP, ok := parseExtProcSourceIP(attributes); ok {
 		return sourceIP, true
+	}
+	if !gclbShape {
+		return netip.Addr{}, false
 	}
 	return gclbForwardedForClientIP(forwardedFor)
 }

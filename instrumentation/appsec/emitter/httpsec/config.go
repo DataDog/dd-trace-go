@@ -18,6 +18,8 @@ type Config struct {
 	// rather than by scanning the request headers. ClientIP is the switch: when
 	// it is invalid the default resolution policy runs and produces both values,
 	// and RemoteIP is ignored.
+	// When ClientIP is valid, RemoteIP is taken exactly as given, so leaving it
+	// invalid means no network.client.ip tag is reported for the request.
 	RemoteIP netip.Addr
 	ClientIP netip.Addr
 	// OnBlock is a list of callbacks to be invoked when a block decision is made.

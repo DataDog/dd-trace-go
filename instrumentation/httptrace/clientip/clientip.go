@@ -26,7 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// ResolveWith returns the first public IP address found in the given headers. If
+// resolveWith returns the first public IP address found in the given headers. If
 // none is present, it returns the first valid IP address present, possibly
 // being a local IP address. The remote address, when valid, is used as fallback
 // when no IP address has been found at all.

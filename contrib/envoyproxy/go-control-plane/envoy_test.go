@@ -8,6 +8,7 @@ package gocontrolplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -1734,7 +1735,7 @@ func requireUnblockedStream(t *testing.T, stream envoyextproc.ExternalProcessor_
 		"the request was blocked but this scenario expects it to be allowed through")
 
 	sendProcessingResponseHeaders(t, stream, nil, "200", false)
-	if _, err := stream.Recv(); err != nil && err != io.EOF {
+	if _, err := stream.Recv(); err != nil && !errors.Is(err, io.EOF) {
 		// io.EOF just means the processor is done with this stream, which is the
 		// normal outcome when there is no body left to analyze.
 		require.NoError(t, err)

@@ -43,6 +43,8 @@ type ServeConfig struct {
 	// request headers — for example a proxy whose load balancer reports the
 	// peer it observed. ClientIP is the switch: when it is invalid the default
 	// resolver runs and produces both values, and RemoteIP is ignored.
+	// When ClientIP is valid, RemoteIP is taken exactly as given, so leaving it
+	// invalid means no network.client.ip tag is reported for the request.
 	RemoteIP netip.Addr
 	ClientIP netip.Addr
 	// FinishOpts specifies any options to be used when finishing the request span.
