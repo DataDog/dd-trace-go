@@ -26,6 +26,10 @@ die() {
   exit 1
 }
 
+mean() {
+  awk 'BEGIN { s = 0 } { for (i = 1; i <= NF; i++) s += $i } END { print s / NF }' <<< "$*"
+}
+
 # Validate environment
 if [[ -z "${METRICS_FILE:-}" ]]; then
   die "METRICS_FILE environment variable is required"
@@ -50,7 +54,10 @@ ORCHESTRION_VERSION=$(jq -r '.orchestrion_version // empty' "$METRICS_FILE")
 # Read all duration samples into a bash array
 mapfile -t DURATIONS < <(jq -r '.metrics.build_duration_samples[]' "$METRICS_FILE")
 
-# Read dependency size attribution (standard mode only; empty otherwise)
+# Read dependency size attribution (standard mode only; empty otherwise).
+# Sorted descending by size (see measure_build.sh), so index 0 is the single
+# largest dependency, index 1 the second largest, etc.
+mapfile -t DEP_NAMES < <(jq -r '.metrics.dependency_sizes[]?.name' "$METRICS_FILE")
 mapfile -t DEP_KEYS < <(jq -r '.metrics.dependency_sizes[]?.metric_key' "$METRICS_FILE")
 mapfile -t DEP_SIZES < <(jq -r '.metrics.dependency_sizes[]?.size_bytes' "$METRICS_FILE")
 
@@ -65,16 +72,25 @@ if [[ -n "$ORCHESTRION_VERSION" ]]; then
   message "  Orchestrion version: $ORCHESTRION_VERSION"
 fi
 
-# Publish measures to CI Visibility — one indexed measure per duration sample,
-# one size sample, and (standard mode only) one indexed measure per dependency
-# attributed by gsa, following the same duration_seconds.<i> naming convention
+# Publish measures to CI Visibility — one indexed measure per duration
+# sample plus a flat mean duration measure (repeated samples of the same
+# build, so a mean is meaningful), and (standard mode only) one measure per
+# dependency attributed by gsa, named after the dependency for historical,
+# per-dependency trend queries.
 message "Publishing measures to Datadog CI Visibility..."
-MEASURE_ARGS=(--measures "go.build.binary_size_bytes:${SIZE}")
+MEAN_DURATION=$(mean "${DURATIONS[@]}")
+message "  Mean duration: ${MEAN_DURATION}s"
+MEASURE_ARGS=(
+  --measures "go.build.binary_size_bytes:${SIZE}"
+  --measures "go.build.duration_seconds:${MEAN_DURATION}"
+)
 for i in "${!DURATIONS[@]}"; do
   MEASURE_ARGS+=(--measures "go.build.duration_seconds.${i}:${DURATIONS[$i]}")
 done
 for i in "${!DEP_KEYS[@]}"; do
   MEASURE_ARGS+=(--measures "go.build.dependency_size_bytes.${DEP_KEYS[$i]}:${DEP_SIZES[$i]}")
+  # Publish dependency size bytes by rank (0 = single largest dependency in this build)
+  MEASURE_ARGS+=(--measures "go.build.top_dependency_size_bytes.${i}:${DEP_SIZES[$i]}")
 done
 
 DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
@@ -93,6 +109,10 @@ TAGS=(
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
   TAGS+=("orchestrion.version:${ORCHESTRION_VERSION}")
 fi
+
+for i in "${!DEP_NAMES[@]}"; do
+  TAGS+=("build.top_dependency_name.${i}:${DEP_NAMES[$i]}")
+done
 
 # Build tag arguments
 TAG_ARGS=()
