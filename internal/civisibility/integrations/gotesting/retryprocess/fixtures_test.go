@@ -6,14 +6,17 @@
 package retryprocess
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -96,6 +99,9 @@ const (
 	processRetryStartupRerunFileEnv           = "PROCESS_RETRY_STARTUP_RERUN_FILE"
 	processRetryStartupConflictFileEnv        = "PROCESS_RETRY_STARTUP_CONFLICT_FILE"
 	processRetryStartupConflictMarkerEnv      = "PROCESS_RETRY_STARTUP_CONFLICT_MARKER_FILE"
+	processRetryDeferredOrderingEnv           = "PROCESS_RETRY_DEFERRED_ORDERING_FIXTURE"
+	processRetryDeferredRepeatedOrderingEnv   = "PROCESS_RETRY_DEFERRED_REPEATED_ORDERING_FIXTURE"
+	processRetryDeferredFTRFailfastPathEnv    = "PROCESS_RETRY_DEFERRED_FTR_FAILFAST_PATH"
 )
 
 var (
@@ -793,6 +799,58 @@ func TestProcessRetryControllersAreNotRetried(t *testing.T) {
 	}
 }
 
+func TestDeferredProcessRetryFirstPassCompletesBeforeRetryStarts(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "deferred first-pass ordering")
+	runProcessRetryFixtureSubprocess(t, "deferred-first-pass-ordering", []string{
+		"-test.run=^(TestDeferredProcessRetryOrderingA|TestDeferredProcessRetryOrderingB)$",
+		"-test.v",
+	}, processRetryDeferredOrderingEnv+"=true")
+}
+
+func TestDeferredProcessRetryPhasesRemainOrderedAcrossCount(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "deferred repeated-phase ordering")
+	runProcessRetryFixtureSubprocess(t, "deferred-repeated-phase-ordering", []string{
+		"-test.run=^(TestDeferredProcessRetryOrderingA|TestDeferredProcessRetryOrderingB)$",
+		"-test.count=2",
+		"-test.v",
+	},
+		processRetryDeferredOrderingEnv+"=true",
+		processRetryDeferredRepeatedOrderingEnv+"=true",
+	)
+}
+
+func TestDeferredProcessRetryOrderingA(t *testing.T) {
+	if processRetryFixtureEnv(processRetryDeferredOrderingEnv) != "true" {
+		t.Skip("deferred ordering fixture runs only from its controller subprocess")
+	}
+	if processRetryFixtureChild() {
+		recordDeferredProcessRetryOrder(t, "A:retry")
+		return
+	}
+	recordDeferredProcessRetryOrder(t, "A:first")
+	t.Fail()
+}
+
+func TestDeferredProcessRetryOrderingB(t *testing.T) {
+	if processRetryFixtureEnv(processRetryDeferredOrderingEnv) != "true" || processRetryFixtureChild() {
+		t.Skip("deferred ordering fixture runs only during the parent first pass")
+	}
+	recordDeferredProcessRetryOrder(t, "B:first")
+}
+
+func recordDeferredProcessRetryOrder(t *testing.T, entry string) {
+	t.Helper()
+	url := processRetryFixtureEnv(constants.CIVisibilityAgentlessURLEnvironmentVariable) + deferredProcessRetryOrderPath
+	response, err := http.Post(url, "text/plain", strings.NewReader(entry))
+	if err != nil {
+		t.Fatalf("record deferred process retry order %q: %v", entry, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("record deferred process retry order %q: status %s", entry, response.Status)
+	}
+}
+
 func TestProcessRetryFocusedMainAssertionsController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "focused main assertions")
 	const testName = "TestProcessRetryITRForcedRun"
@@ -846,6 +904,98 @@ func TestProcessRetryAttemptToFixParent(t *testing.T) {
 	if run := attemptToFixRuns.Add(1); run != 1 {
 		t.Fatalf("attempt-to-fix retry ran in the parent process with run count %d", run)
 	}
+}
+
+func TestDeferredProcessRetryAttemptToFixFailfastController(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "deferred attempt-to-fix failfast")
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestDeferredProcessRetryAttemptToFixFailfast(A|B)$",
+		"-test.failfast",
+		"-test.v",
+	)
+	cmd.Env = processRetryScenarioEnvironment(
+		processRetryAttemptToFixEnv+"=true",
+		constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable+"=3",
+	)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("deferred A2F failfast subprocess unexpectedly passed:\n%s", output)
+	}
+	if !bytes.Contains(output, []byte("--- FAIL: TestDeferredProcessRetryAttemptToFixFailfastA")) {
+		t.Fatalf("deferred A2F did not commit the irreversible first failure to the native test:\n%s", output)
+	}
+	if bytes.Contains(output, []byte("deferred-a2f-failfast-b-ran")) {
+		t.Fatalf("native failfast allowed the following first attempt to run:\n%s", output)
+	}
+	if bytes.Contains(output, []byte("deferred-a2f-failfast-child-ran")) {
+		t.Fatalf("native failfast allowed the queued A2F child to run:\n%s", output)
+	}
+}
+
+func TestDeferredProcessRetryAttemptToFixFailfastA(t *testing.T) {
+	if processRetryFixtureEnv(processRetryAttemptToFixEnv) != "true" {
+		t.Skip("deferred A2F failfast fixture runs only from its controller subprocess")
+	}
+	if processRetryFixtureChild() {
+		fmt.Println("deferred-a2f-failfast-child-ran")
+		return
+	}
+	t.Fail()
+}
+
+func TestDeferredProcessRetryAttemptToFixFailfastB(t *testing.T) {
+	if processRetryFixtureEnv(processRetryAttemptToFixEnv) != "true" {
+		t.Skip("deferred A2F failfast fixture runs only from its controller subprocess")
+	}
+	fmt.Println("deferred-a2f-failfast-b-ran")
+}
+
+func TestDeferredProcessRetryFTRFailfastController(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "deferred FTR failfast")
+	path := filepath.Join(t.TempDir(), "attempts")
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestDeferredProcessRetryFTRFailfast(A|B)$",
+		"-test.failfast",
+		"-test.v",
+	)
+	cmd.Env = processRetryScenarioEnvironment(processRetryDeferredFTRFailfastPathEnv + "=" + path)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("deferred FTR failfast subprocess unexpectedly passed:\n%s", output)
+	}
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("read deferred FTR failfast attempts: %v", readErr)
+	}
+	entries := strings.Fields(string(data))
+	want := []string{"A:first", "B:first", "A:retry"}
+	if !slices.Equal(entries, want) {
+		t.Fatalf("deferred FTR failfast attempts = %v, want %v (output: %s)", entries, want, output)
+	}
+}
+
+func TestDeferredProcessRetryFTRFailfastA(t *testing.T) {
+	runDeferredProcessRetryFTRFailfastFixture(t, "A")
+}
+
+func TestDeferredProcessRetryFTRFailfastB(t *testing.T) {
+	runDeferredProcessRetryFTRFailfastFixture(t, "B")
+}
+
+func runDeferredProcessRetryFTRFailfastFixture(t *testing.T, name string) {
+	t.Helper()
+	path := processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv)
+	if path == "" {
+		t.Skip("deferred FTR failfast fixture runs only from its controller subprocess")
+	}
+	phase := "first"
+	if processRetryFixtureChild() {
+		phase = "retry"
+	}
+	appendStartupFixtureLine(path, name+":"+phase)
+	t.Fail()
 }
 
 func TestProcessRetryCoverageUsesFirstParentAttempt(t *testing.T) {

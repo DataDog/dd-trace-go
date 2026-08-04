@@ -16,8 +16,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +46,15 @@ var processRetryFixtureRequests = struct {
 var processRetryFixturePayloads = struct {
 	mu     locking.Mutex
 	values []string
+}{}
+
+var processRetryFixtureServiceSequence atomic.Uint64
+
+const deferredProcessRetryOrderPath = "/deferred-process-retry/order"
+
+var deferredProcessRetryOrder = struct {
+	mu      locking.Mutex
+	entries []string
 }{}
 
 func TestMain(m *testing.M) {
@@ -153,6 +164,9 @@ func TestMain(m *testing.M) {
 	tracer := integrations.InitializeCIVisibilityMock()
 	runMStart := time.Now()
 	exitCode := gotesting.RunM(m)
+	if exitCode == 0 && processRetryFixtureEnv(processRetryDeferredOrderingEnv) == "true" {
+		assertDeferredProcessRetryOrder()
+	}
 	if path := processRetryFixtureEnv(processRetryBenchmarkMetricsPathEnv); path != "" {
 		if err := writeProcessRetryBenchmarkMetrics(path, time.Since(runMStart)); err != nil {
 			panic(fmt.Sprintf("write process retry benchmark metrics: %v", err))
@@ -183,7 +197,8 @@ func TestMain(m *testing.M) {
 		assertProcessRetryAttemptToFixSpans(tracer)
 	}
 	requireLogs := processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) == "" &&
-		processRetryFixtureEnv(processRetryParallelEFDEnv) != "true"
+		processRetryFixtureEnv(processRetryParallelEFDEnv) != "true" &&
+		processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv) == ""
 	assertProcessRetryFixtureRequests(requireLogs)
 	os.Exit(exitCode)
 }
@@ -193,9 +208,43 @@ func processRetryFixtureScenarioEnabled() bool {
 }
 
 func processRetryScenarioEnvironment(entries ...string) []string {
-	result := append([]string(nil), os.Environ()...)
+	result := make([]string, 0, len(os.Environ())+len(entries)+2)
+	for _, entry := range os.Environ() {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && key == "DD_SERVICE" {
+			continue
+		}
+		result = append(result, entry)
+	}
 	result = append(result, processRetryScenarioEnv+"=true")
+	result = append(result, fmt.Sprintf("DD_SERVICE=process-retry-fixture-%d-%d", os.Getpid(), processRetryFixtureServiceSequence.Add(1)))
 	return append(result, entries...)
+}
+
+func TestProcessRetryScenarioEnvironmentIsolatesReadCache(t *testing.T) {
+	t.Setenv("DD_SERVICE", "inherited-service")
+
+	serviceName := func(environment []string) (string, int) {
+		t.Helper()
+		var value string
+		var count int
+		for _, entry := range environment {
+			if current, ok := strings.CutPrefix(entry, "DD_SERVICE="); ok {
+				value = current
+				count++
+			}
+		}
+		return value, count
+	}
+
+	first, firstCount := serviceName(processRetryScenarioEnvironment())
+	second, secondCount := serviceName(processRetryScenarioEnvironment())
+	if firstCount != 1 || secondCount != 1 {
+		t.Fatalf("service entry counts = %d/%d, want 1/1", firstCount, secondCount)
+	}
+	if first == "" || second == "" || first == second || first == "inherited-service" || second == "inherited-service" {
+		t.Fatalf("isolated service names = %q/%q, want distinct generated values", first, second)
+	}
 }
 
 func processRetryFixtureMainAssertionsEnabled() bool {
@@ -255,24 +304,40 @@ func processRetryFixtureFailureScenarioLogSentinel() string {
 	}
 }
 
+type processRetryAPIResponse[T any] struct {
+	Data processRetryAPIResponseData[T] `json:"data"`
+}
+
+type processRetryAPIResponseData[T any] struct {
+	ID         string `json:"id"`
+	Type       string `json:"type"`
+	Attributes T      `json:"attributes"`
+}
+
+func writeProcessRetryAPIResponse[T any](w http.ResponseWriter, id, responseType string, attributes T) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(processRetryAPIResponse[T]{
+		Data: processRetryAPIResponseData[T]{
+			ID:         id,
+			Type:       responseType,
+			Attributes: attributes,
+		},
+	})
+}
+
 func newProcessRetryFixtureServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == deferredProcessRetryOrderPath {
+			handleDeferredProcessRetryOrder(w, r)
+			return
+		}
 		recordProcessRetryFixtureRequest(r)
 		switch r.URL.Path {
 		case "/api/v2/libraries/tests/services/setting":
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                               `json:"id"`
-					Type       string                               `json:"type"`
-					Attributes civisibilitynet.SettingsResponseData `json:"attributes"`
-				} `json:"data"`
-			}{}
-			response.Data.ID = "process-retry-fixture"
-			response.Data.Type = "ci_app_libraries_settings"
-			response.Data.Attributes.FlakyTestRetriesEnabled = processRetryFixtureEnv(processRetryBenchmarkRetriesEnabledEnv) != "false"
-			response.Data.Attributes.ItrEnabled = true
-			response.Data.Attributes.TestsSkipping = true
+			var attributes civisibilitynet.SettingsResponseData
+			attributes.FlakyTestRetriesEnabled = processRetryFixtureEnv(processRetryBenchmarkRetriesEnabledEnv) != "false"
+			attributes.ItrEnabled = true
+			attributes.TestsSkipping = true
 			if processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" {
 				retryCount := 2
 				if value := processRetryFixtureEnv(processRetryBenchmarkRetryCountEnv); value != "" {
@@ -282,50 +347,30 @@ func newProcessRetryFixtureServer() *httptest.Server {
 					}
 					retryCount = parsed
 				}
-				response.Data.Attributes.KnownTestsEnabled = true
-				response.Data.Attributes.EarlyFlakeDetection.Enabled = true
-				response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = retryCount
+				attributes.KnownTestsEnabled = true
+				attributes.EarlyFlakeDetection.Enabled = true
+				attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = retryCount
 			}
 			if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
-				response.Data.Attributes.TestManagement.Enabled = true
-				response.Data.Attributes.TestManagement.AttemptToFixRetries = 3
+				attributes.TestManagement.Enabled = true
+				attributes.TestManagement.AttemptToFixRetries = 3
 			}
-			_ = json.NewEncoder(w).Encode(&response)
+			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_settings", attributes)
 		case "/api/v2/ci/libraries/tests":
 			if processRetryFixtureEnv(processRetryParallelEFDEnv) != "true" {
 				http.NotFound(w, r)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                                 `json:"id"`
-					Type       string                                 `json:"type"`
-					Attributes civisibilitynet.KnownTestsResponseData `json:"attributes"`
-				} `json:"data"`
-			}{}
-			response.Data.ID = "process-retry-fixture"
-			response.Data.Type = "ci_app_libraries_tests"
-			response.Data.Attributes.Tests = civisibilitynet.KnownTestsResponseDataModules{
+			attributes := civisibilitynet.KnownTestsResponseData{Tests: civisibilitynet.KnownTestsResponseDataModules{
 				"known-module": civisibilitynet.KnownTestsResponseDataSuites{},
-			}
-			_ = json.NewEncoder(w).Encode(&response)
+			}}
+			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_tests", attributes)
 		case "/api/v2/test/libraries/test-management/tests":
 			if processRetryFixtureEnv(processRetryAttemptToFixEnv) != "true" {
 				http.NotFound(w, r)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                                                 `json:"id"`
-					Type       string                                                 `json:"type"`
-					Attributes civisibilitynet.TestManagementTestsResponseDataModules `json:"attributes"`
-				} `json:"data"`
-			}{}
-			response.Data.ID = "process-retry-fixture"
-			response.Data.Type = "ci_app_libraries_tests"
-			response.Data.Attributes.Modules = map[string]civisibilitynet.TestManagementTestsResponseDataSuites{
+			attributes := civisibilitynet.TestManagementTestsResponseDataModules{Modules: map[string]civisibilitynet.TestManagementTestsResponseDataSuites{
 				"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/retryprocess": {
 					Suites: map[string]civisibilitynet.TestManagementTestsResponseDataTests{
 						"fixtures_test.go": {
@@ -333,12 +378,15 @@ func newProcessRetryFixtureServer() *httptest.Server {
 								"TestProcessRetryAttemptToFixParent": {
 									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
 								},
+								"TestDeferredProcessRetryAttemptToFixFailfastA": {
+									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+								},
 							},
 						},
 					},
 				},
-			}
-			_ = json.NewEncoder(w).Encode(&response)
+			}}
+			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_tests", attributes)
 		case "/api/v2/ci/tests/skippable":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -376,6 +424,31 @@ func newProcessRetryFixtureServer() *httptest.Server {
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func handleDeferredProcessRetryOrder(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	entry, err := io.ReadAll(io.LimitReader(r.Body, 128))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	deferredProcessRetryOrder.mu.Lock()
+	deferredProcessRetryOrder.entries = append(deferredProcessRetryOrder.entries, string(entry))
+	deferredProcessRetryOrder.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func assertDeferredProcessRetryOrder() {
+	deferredProcessRetryOrder.mu.Lock()
+	defer deferredProcessRetryOrder.mu.Unlock()
+	want := []string{"A:first", "B:first", "A:retry"}
+	if processRetryFixtureEnv(processRetryDeferredRepeatedOrderingEnv) == "true" {
+		want = []string{"A:first", "B:first", "A:first", "B:first", "A:retry", "A:retry"}
+	}
+	if !slices.Equal(deferredProcessRetryOrder.entries, want) {
+		panic(fmt.Sprintf("deferred process retry order = %v, want %v", deferredProcessRetryOrder.entries, want))
+	}
 }
 
 func recordProcessRetryFixturePayloadsFromLogs(entries []processRetryFixtureLogEntry) {
@@ -624,6 +697,7 @@ func assertProcessRetryParallelEFDSpans(tracer mocktracer.Tracer) {
 		panic(fmt.Sprintf("expected one parent and two parallel EFD retry spans, got %d", len(fixtureSpans)))
 	}
 	processRetrySpans := 0
+	finalProcessRetrySpans := 0
 	for _, span := range fixtureSpans {
 		if span.Tag(constants.TestRetryExecutionMode) != "process" {
 			continue
@@ -635,12 +709,18 @@ func assertProcessRetryParallelEFDSpans(tracer mocktracer.Tracer) {
 		if span.Tag(constants.TestRetryReason) != constants.EarlyFlakeDetectionRetryReason {
 			panic("expected parallel EFD process retry reason " + constants.EarlyFlakeDetectionRetryReason)
 		}
-		if span.Tag(constants.TestFinalStatus) != nil {
-			panic("parallel EFD retry span unexpectedly has test.final_status")
+		if finalStatus := span.Tag(constants.TestFinalStatus); finalStatus != nil {
+			if finalStatus != constants.TestStatusPass {
+				panic(fmt.Sprintf("parallel EFD final retry status = %v, want %s", finalStatus, constants.TestStatusPass))
+			}
+			finalProcessRetrySpans++
 		}
 	}
 	if processRetrySpans != 2 {
 		panic(fmt.Sprintf("expected exactly 2 parallel EFD process retry spans, got %d", processRetrySpans))
+	}
+	if finalProcessRetrySpans != 1 {
+		panic(fmt.Sprintf("expected exactly one final parallel EFD process retry span, got %d", finalProcessRetrySpans))
 	}
 }
 

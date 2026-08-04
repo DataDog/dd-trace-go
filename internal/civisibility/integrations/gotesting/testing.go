@@ -79,6 +79,11 @@ var (
 	testingMActiveHookEpoch     atomic.Pointer[testingMHookEpoch]
 )
 
+// testingMAbnormalExitCode is an internal-only sentinel passed to a finalizer
+// when testing.M.Run unwinds through a panic. Native test exit codes cannot
+// reach this negative value.
+const testingMAbnormalExitCode = -1 << 30
+
 type (
 	testingMFinalizer func(exitCode int) int
 
@@ -96,6 +101,9 @@ type (
 		testDescriptors      *[]testing.InternalTest
 		benchmarkDescriptors *[]testing.InternalBenchmark
 		retired              bool
+		stickyExitCode       int
+		deferredFailure      bool
+		failfastLatched      bool
 	}
 
 	// testIdentity represents the fully-qualified identity of a Go test or subtest.
@@ -273,7 +281,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	case testingMClaimActiveConflict:
 		return false, failureTestingMFinalizer
 	case testingMClaimRetiredNative:
-		return true, identityTestingMFinalizer
+		return retiredTestingMDisposition(claim)
 	}
 
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
@@ -302,6 +310,12 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	}
 	if processModeEnabled && wrapperOpts.processRetryAllowed {
 		wrapperOpts.processRetryLaunchTemplate = captureProcessRetryLaunchTemplate()
+		coordinator := newProcessRetryCoordinator(retryAttemptFailfastEnabled, runDeferredProcessRetryAttempt)
+		if registerProcessRetryCoordinator(coordinator) {
+			wrapperOpts.processRetryCoordinator = coordinator
+		} else {
+			log.Debug("instrumentTestingM: deferred process retry coordinator registration rejected")
+		}
 	}
 
 	coverageInitialized := false
@@ -338,6 +352,24 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	}
 
 	return true, func(exitCode int) int {
+		abnormalExit := exitCode == testingMAbnormalExitCode
+		if abnormalExit {
+			exitCode = processRetryFailureExitCode
+		}
+		var deferredTerminalPanic any
+		if wrapperOpts.processRetryCoordinator != nil {
+			var summary processRetryCoordinatorSummary
+			if abnormalExit {
+				summary = wrapperOpts.processRetryCoordinator.abort()
+			} else {
+				summary = wrapperOpts.processRetryCoordinator.drain(exitCode)
+			}
+			exitCode = summary.exitCode
+			if !abnormalExit {
+				deferredTerminalPanic = summary.terminalPanic
+			}
+			recordTestingMDeferredDisposition(claim, summary)
+		}
 		retireTestingMInstrumentation(m, claim)
 		releaseHookEpoch()
 		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
@@ -350,6 +382,9 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 				session.Close(exitCode)
 				coverage.CleanupRuntimeCoverageSnapshot()
 				integrations.ExitCiVisibility()
+				if deferredTerminalPanic != nil {
+					panic(deferredTerminalPanic)
+				}
 				return exitCode
 			}
 			if !corrected {
@@ -371,8 +406,40 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 
 		// Finalize CI Visibility
 		integrations.ExitCiVisibility()
+		if deferredTerminalPanic != nil {
+			panic(deferredTerminalPanic)
+		}
 		return exitCode
 	}
+}
+
+func recordTestingMDeferredDisposition(claim *testingMInstrumentationClaim, summary processRetryCoordinatorSummary) {
+	if claim == nil || !summary.deferredFailed {
+		return
+	}
+	testingMInstrumentationClaims.mu.Lock()
+	defer testingMInstrumentationClaims.mu.Unlock()
+	claim.deferredFailure = true
+	claim.stickyExitCode = mergeDeferredProcessRetryExitCode(claim.stickyExitCode, true)
+	claim.failfastLatched = claim.failfastLatched || summary.failfast
+}
+
+func retiredTestingMDisposition(claim *testingMInstrumentationClaim) (bool, testingMFinalizer) {
+	failfastEnabled := retryAttemptFailfastEnabled()
+	testingMInstrumentationClaims.mu.Lock()
+	stickyExitCode := claim.stickyExitCode
+	if claim.deferredFailure && failfastEnabled {
+		claim.failfastLatched = true
+	}
+	latched := claim.failfastLatched
+	testingMInstrumentationClaims.mu.Unlock()
+	finalize := func(exitCode int) int {
+		if exitCode == 0 && stickyExitCode != 0 {
+			return stickyExitCode
+		}
+		return exitCode
+	}
+	return !latched, finalize
 }
 
 func identityTestingMFinalizer(exitCode int) int {
@@ -431,22 +498,31 @@ func (ddm *M) Run() (exitCode int) {
 	}
 
 	// Instrument testing.M
-	proceed, exitFn := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
+	proceed, exitFn := instrumentTestingMWithOptions(m, processRetryDeferredWrapperOptions())
 	if !proceed {
 		return exitFn(processRetryFailureExitCode)
 	}
 
 	// Finalization also restores the native workload descriptors if M.Run
 	// unwinds through a panic instead of returning normally.
-	defer func() { exitCode = exitFn(exitCode) }()
+	defer func() {
+		if panicData := recover(); panicData != nil {
+			_ = exitFn(testingMAbnormalExitCode)
+			panic(panicData)
+		}
+		exitCode = exitFn(exitCode)
+	}()
 	exitCode = m.Run()
 	return
 }
 
-func processRetryWrapperOptions() additionalFeatureWrapperOptions {
+func processRetryLegacyWrapperOptions() additionalFeatureWrapperOptions {
+	return additionalFeatureWrapperOptions{}
+}
+
+func processRetryDeferredWrapperOptions() additionalFeatureWrapperOptions {
 	return additionalFeatureWrapperOptions{
 		processRetryAllowed: true,
-		fuzzActive:          processRetryFuzzActive,
 	}
 }
 
@@ -454,10 +530,8 @@ func snapshotProcessRetryWrapperOptions(options *additionalFeatureWrapperOptions
 	if options == nil || !options.processRetryAllowed {
 		return false
 	}
-	options.processRetryMode = retryExecutionModeFromEnv()
-	options.processRetryModeSet = true
 	options.parallelEFDAllowed = internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false)
-	if options.processRetryMode != retryExecutionModeProcess {
+	if !processRetryModeEnabledFromEnv() {
 		return false
 	}
 	if options.mRunEpoch == 0 {
@@ -466,8 +540,8 @@ func snapshotProcessRetryWrapperOptions(options *additionalFeatureWrapperOptions
 	if options.mRunInvocations == nil {
 		options.mRunInvocations = &atomic.Uint64{}
 	}
-	if options.processRetryFuzzGuard == nil && options.fuzzActive != nil {
-		options.processRetryFuzzGuard = &processRetryFuzzGuardSnapshot{evaluate: options.fuzzActive}
+	if options.processRetryFuzzGuard == nil {
+		options.processRetryFuzzGuard = &processRetryFuzzGuardSnapshot{evaluate: processRetryFuzzActive}
 	}
 	return true
 }

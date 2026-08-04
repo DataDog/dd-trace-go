@@ -7,6 +7,9 @@ package gotesting
 
 import (
 	"bytes"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +20,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 )
 
 func retryParityOrchestrionCleanupFailure(t *testing.T) {
@@ -197,20 +203,16 @@ func TestProcessRetryParityCoverageCollectorBelongsOnlyToParentAttempt(t *testin
 	require.False(t, shouldCollectExecutionCoverage(true, &testExecutionMetadata{suppressCoverageCollection: true}))
 }
 
-func TestProcessRetryParityDetectedRaceStopsEveryRetryBackend(t *testing.T) {
-	cancelCalls := 0
+func TestProcessRetryParityDetectedRaceStopsFreshRetryGroup(t *testing.T) {
 	execOpts := &executionOptions{
-		retryCount:               3,
-		processRetryPolicyCancel: func() { cancelCalls++ },
+		retryCount: 3,
 	}
 
-	require.True(t, stopRetryGroupAfterRaceLocked(execOpts, true))
+	require.True(t, stopRetryGroupAfterRace(execOpts, true))
 	require.Zero(t, execOpts.retryCount)
 	require.True(t, execOpts.rawAttemptFailureSeen)
-	require.Equal(t, 1, cancelCalls)
 
-	require.False(t, stopRetryGroupAfterRaceLocked(execOpts, false))
-	require.Equal(t, 1, cancelCalls)
+	require.False(t, stopRetryGroupAfterRace(execOpts, false))
 }
 
 func TestProcessRetryParityFailfastStopsAfterFirstRawFailure(t *testing.T) {
@@ -329,13 +331,93 @@ func TestProcessRetryParitySkipsLateFailureScanWhileFailfastIsDisabled(t *testin
 		retryAttemptGroup: group,
 		retryCount:        1,
 	}
-	require.False(t, retryContinuationStoppedLocked(execOpts, nil, nil))
+	require.False(t, retryContinuationStoppedAfterAttempt(execOpts, nil, nil))
 	require.False(t, execOpts.rawAttemptFailureSeen, "disabled failfast must not scan retained attempts")
 
 	failfast.Store(true)
-	require.True(t, retryContinuationStoppedLocked(execOpts, nil, nil))
+	require.True(t, retryContinuationStoppedAfterAttempt(execOpts, nil, nil))
 	require.True(t, execOpts.rawAttemptFailureSeen)
 	require.Zero(t, execOpts.retryCount)
+
+	withoutCoordinator := &executionOptions{
+		options: &runTestWithRetryOptions{
+			failfastEnabled: func() bool { return true },
+		},
+		retryAttemptGroup: group,
+		executionIndex:    0,
+		retryCount:        1,
+	}
+	require.True(t, retryContinuationStoppedForDeferredAdmission(withoutCoordinator, nil, nil))
+	require.Zero(t, withoutCoordinator.retryCount, "an unavailable deferred owner must preserve in-process failfast")
+}
+
+func TestProcessRetryParityDefersFirstAttemptFailfastToProcessCoordinator(t *testing.T) {
+	group, reason := newRetryAttemptGroup(t)
+	require.Empty(t, reason)
+	defer group.retire()
+
+	attempt, _, reason := runFreshRetryAttemptInGroup(group, func(*testing.T) {})
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	require.Panics(t, attempt.test.Fail)
+	require.True(t, group.hasLateFailure())
+
+	execOpts := &executionOptions{
+		options: &runTestWithRetryOptions{
+			failfastEnabled:         func() bool { return true },
+			processRetryCoordinator: newProcessRetryCoordinatorForTesting(false),
+		},
+		retryAttemptGroup: group,
+		executionIndex:    0,
+		retryCount:        1,
+	}
+	require.False(t, retryContinuationStoppedForDeferredAdmission(execOpts, nil, nil))
+	require.False(t, execOpts.rawAttemptFailureSeen)
+	require.Equal(t, int64(1), execOpts.retryCount)
+
+	require.True(t, retryContinuationStoppedAfterAttempt(execOpts, nil, nil))
+	require.True(t, execOpts.rawAttemptFailureSeen)
+	require.Zero(t, execOpts.retryCount)
+}
+
+func TestProcessRetryParityFailfastStopsWhenDeferredAdmissionFails(t *testing.T) {
+	restoreBudget := setProcessRetryBudgetForTesting(1, 1)
+	defer restoreBudget()
+	createTestMetadata(t, nil)
+	defer deleteTestMetadata(t)
+
+	identity := newTestIdentity("module", "suite", "TestDeferredAdmissionFailure")
+	var bodyCalls int
+	runTestWithRetry(&runTestWithRetryOptions{
+		t:                          t,
+		failfastEnabled:            func() bool { return true },
+		nativeFailfastObserved:     func() bool { return false },
+		processRetryCoordinator:    newProcessRetryCoordinatorForTesting(false),
+		processRetryIdentity:       identity,
+		processRetryLaunchTemplate: &processRetryLaunchBaseline{err: errors.New("launch baseline unavailable")},
+		processRetryFuzzGuard:      &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }},
+		testInfo: &commonInfo{
+			moduleName: identity.ModuleName,
+			suiteName:  identity.SuiteName,
+			testName:   identity.FullName,
+			identity:   identity,
+		},
+		targetFunc: func(local *testing.T) {
+			bodyCalls++
+			if bodyCalls == 1 {
+				local.Fail()
+			}
+		},
+		preExecMetaAdjust: func(meta *testExecutionMetadata, _ int) {
+			meta.isFlakyTestRetriesEnabled = true
+			meta.identity = identity
+		},
+		postAdjustRetryCount: func(*testExecutionMetadata, time.Duration) int64 { return 1 },
+		postShouldRetry:      func(*testing.T, *testExecutionMetadata, int, int64) bool { return true },
+	})
+
+	require.Equal(t, 1, bodyCalls, "failfast must stop before an in-process fallback retry")
+	require.Equal(t, int64(1), flakyRetryBudgetRemaining(integrations.GetFlakyRetriesSettings()), "failed deferred admission must refund the FTR reservation")
 }
 
 func TestProcessRetryParityOrchestrionFinalizesAfterFreshCleanup(t *testing.T) {
@@ -380,10 +462,63 @@ func TestProcessRetryParityWrapperPreservesNativeFatalPanic(t *testing.T) {
 	require.NotContains(t, output.String(), "test timed out")
 }
 
+func retryParityNestedOrchestrionCommand(t *testing.T, testName string, extraEnv ...string) *exec.Cmd {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"id":"retry-parity","type":"ci_app_libraries_settings","attributes":{}}}`))
+	}))
+	t.Cleanup(server.Close)
+	overrides := map[string]string{
+		constants.CIVisibilityEnabledEnvironmentVariable:          "false",
+		constants.CIVisibilityAgentlessEnabledEnvironmentVariable: "true",
+		constants.CIVisibilityAgentlessURLEnvironmentVariable:     server.URL,
+		constants.CIVisibilityGitUploadEnabledEnvironmentVariable: "false",
+		constants.APIKeyEnvironmentVariable:                       "retry-parity-api-key",
+	}
+	env := make([]string, 0, len(os.Environ())+len(overrides)+len(extraEnv))
+	for _, entry := range os.Environ() {
+		key, _, ok := strings.Cut(entry, "=")
+		if _, replaced := overrides[key]; ok && replaced {
+			continue
+		}
+		env = append(env, entry)
+	}
+	for key, value := range overrides {
+		env = append(env, key+"="+value)
+	}
+	env = append(env, extraEnv...)
+	cmd := exec.Command(os.Args[0], "-test.run=^"+testName+"$", "-test.count=1", "-test.timeout=10s")
+	cmd.Env = env
+	return cmd
+}
+
+func TestProcessRetryNestedOrchestrionCommandUsesHermeticCISettings(t *testing.T) {
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "inherited")
+	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "false")
+	t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, "https://inherited.invalid")
+	t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.APIKeyEnvironmentVariable, "inherited")
+	cmd := retryParityNestedOrchestrionCommand(t, "TestFixture", "RETRY_PARITY_SENTINEL=true")
+	values := make(map[string][]string)
+	for _, entry := range cmd.Env {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok {
+			values[key] = append(values[key], value)
+		}
+	}
+	require.Equal(t, []string{"false"}, values[constants.CIVisibilityEnabledEnvironmentVariable])
+	require.Equal(t, []string{"true"}, values[constants.CIVisibilityAgentlessEnabledEnvironmentVariable])
+	require.Len(t, values[constants.CIVisibilityAgentlessURLEnvironmentVariable], 1)
+	require.NotEqual(t, "https://inherited.invalid", values[constants.CIVisibilityAgentlessURLEnvironmentVariable][0])
+	require.Equal(t, []string{"false"}, values[constants.CIVisibilityGitUploadEnabledEnvironmentVariable])
+	require.Equal(t, []string{"retry-parity-api-key"}, values[constants.APIKeyEnvironmentVariable])
+	require.Equal(t, []string{"true"}, values["RETRY_PARITY_SENTINEL"])
+}
+
 func TestProcessRetryParityNestedOrchestrionPanicIsRetryable(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "continued")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryParityNestedOrchestrionPanicRetryFixture$", "-test.count=1", "-test.timeout=10s")
-	cmd.Env = append(os.Environ(),
+	cmd := retryParityNestedOrchestrionCommand(t, "TestProcessRetryParityNestedOrchestrionPanicRetryFixture",
 		"Bypass=true",
 		"RETRY_PARITY_NESTED_ORCHESTRION_PANIC_RETRY_FIXTURE=true",
 		"RETRY_PARITY_NESTED_ORCHESTRION_PANIC_MARKER="+markerPath,
@@ -429,8 +564,7 @@ func TestProcessRetryParityNestedOrchestrionPanicRetryFixture(t *testing.T) {
 
 func TestProcessRetryParityNestedOrchestrionCleanupPanicRemainsNativeFatal(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "continued")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryParityNestedOrchestrionCleanupPanicFixture$", "-test.count=1", "-test.timeout=10s")
-	cmd.Env = append(os.Environ(),
+	cmd := retryParityNestedOrchestrionCommand(t, "TestProcessRetryParityNestedOrchestrionCleanupPanicFixture",
 		"Bypass=true",
 		"RETRY_PARITY_NESTED_ORCHESTRION_CLEANUP_PANIC_FIXTURE=true",
 		"RETRY_PARITY_NESTED_ORCHESTRION_CLEANUP_PANIC_MARKER="+markerPath,
@@ -468,8 +602,7 @@ func TestProcessRetryParityNestedOrchestrionCleanupPanicFixture(t *testing.T) {
 
 func TestProcessRetryParityNestedOrchestrionBareCleanupGoexitDoesNotFail(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "passed")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryParityNestedOrchestrionBareCleanupGoexitFixture$", "-test.count=1", "-test.timeout=10s")
-	cmd.Env = append(os.Environ(),
+	cmd := retryParityNestedOrchestrionCommand(t, "TestProcessRetryParityNestedOrchestrionBareCleanupGoexitFixture",
 		"Bypass=true",
 		"RETRY_PARITY_NESTED_ORCHESTRION_CLEANUP_GOEXIT_FIXTURE=true",
 		"RETRY_PARITY_NESTED_ORCHESTRION_CLEANUP_GOEXIT_MARKER="+markerPath,
