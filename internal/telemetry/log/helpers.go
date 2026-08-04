@@ -50,7 +50,9 @@ func ReportError(msg string, err error, opts ...telemetry.LogOption) {
 // panic(string) or a plain struct), only its type is attached — never its
 // content — matching the same disclosure rule [NewSafeError] applies to errors.
 // A redacted stack trace is always attached.
-func ReportPanic(msg string, recovered any) {
+//
+// opts may include [telemetry.WithTags] or additional options.
+func ReportPanic(msg string, recovered any, opts ...telemetry.LogOption) {
 	record := telemetry.NewRecord(telemetry.LogError, msg)
 	if recovered != nil {
 		if err, ok := recovered.(error); ok {
@@ -60,7 +62,10 @@ func ReportPanic(msg string, recovered any) {
 		}
 	}
 
-	sendLog(record, telemetry.WithStacktrace())
+	allOpts := make([]telemetry.LogOption, 0, len(opts)+1)
+	allOpts = append(allOpts, telemetry.WithStacktrace())
+	allOpts = append(allOpts, opts...)
+	sendLog(record, allOpts...)
 }
 
 // LogAndReportError logs msg locally via internal/log.Error and forwards the
@@ -83,7 +88,7 @@ func LogAndReportError(msg string, err error, opts ...telemetry.LogOption) {
 
 // LogAndReportPanic mirrors [LogAndReportError] for recover() sites, pairing
 // with [ReportPanic].
-func LogAndReportPanic(msg string, recovered any) {
+func LogAndReportPanic(msg string, recovered any, opts ...telemetry.LogOption) {
 	errStr := "<nil>"
 	if recovered != nil {
 		// fmt.Sprint recovers a panicking Error() method (e.g. a typed-nil
@@ -91,5 +96,5 @@ func LogAndReportPanic(msg string, recovered any) {
 		errStr = fmt.Sprint(recovered)
 	}
 	internallog.Error(msg+": %s", errStr)
-	ReportPanic(msg, recovered)
+	ReportPanic(msg, recovered, opts...)
 }

@@ -123,6 +123,20 @@ func TestReportPanic_UnnamedTypeRecovered(t *testing.T) {
 	assert.True(t, found, "recovered_type attribute must be present")
 }
 
+func TestReportPanic_WithTagsOption(t *testing.T) {
+	var capturedOpts []telemetry.LogOption
+
+	orig := sendLog
+	defer func() { sendLog = orig }()
+	sendLog = func(_ telemetry.Record, opts ...telemetry.LogOption) { capturedOpts = opts }
+
+	ReportPanic("unexpected panic in goroutine", "a string panic value")
+	assert.Len(t, capturedOpts, 1, "WithStacktrace only, no extra opts passed")
+
+	ReportPanic("unexpected panic in goroutine", "a string panic value", telemetry.WithTags([]string{"env:prod"}))
+	assert.Len(t, capturedOpts, 2, "caller-supplied opts must reach sendLog alongside WithStacktrace")
+}
+
 func TestLogAndReportError_BasicFlow(t *testing.T) {
 	var captured telemetry.Record
 
@@ -340,6 +354,23 @@ func TestLogAndReportPanic_PanickyError(t *testing.T) {
 	logs := recorder.Logs()
 	assert.Len(t, logs, 1)
 	assert.Contains(t, logs[0], "unexpected panic in goroutine: ")
+}
+
+func TestLogAndReportPanic_WithTagsOption(t *testing.T) {
+	var capturedOpts []telemetry.LogOption
+
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(_ telemetry.Record, opts ...telemetry.LogOption) { capturedOpts = opts }
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	LogAndReportPanic("unexpected panic in goroutine", "a string panic value", telemetry.WithTags([]string{"env:prod"}))
+	internallog.Flush()
+
+	assert.Len(t, capturedOpts, 2, "caller-supplied opts must reach sendLog alongside WithStacktrace")
 }
 
 // BenchmarkReportError measures the cost of the explicit ReportError helper,

@@ -90,11 +90,11 @@ var DefaultFuncs = []FuncSpec{
 
 	// internal/telemetry/log — explicit helpers for non-log.Error call sites.
 	{PkgPath: telemetryLogPkg, FuncName: "ReportError", MsgArgIndex: 0},
-	{PkgPath: telemetryLogPkg, FuncName: "ReportPanic", MsgArgIndex: 0}, // func(msg, recovered)
+	{PkgPath: telemetryLogPkg, FuncName: "ReportPanic", MsgArgIndex: 0},
 
 	// internal/telemetry/log — combined local-log + report helpers.
 	{PkgPath: telemetryLogPkg, FuncName: "LogAndReportError", MsgArgIndex: 0},
-	{PkgPath: telemetryLogPkg, FuncName: "LogAndReportPanic", MsgArgIndex: 0}, // func(msg, recovered)
+	{PkgPath: telemetryLogPkg, FuncName: "LogAndReportPanic", MsgArgIndex: 0},
 }
 
 // DefaultSkipPkgs is the set of package paths skipped by the default Analyzer.
