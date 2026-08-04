@@ -121,7 +121,12 @@ Two facts to keep straight:
    Run these in a shell **without** `GOWORK=off`. Some generators need the workspace to resolve the
    contrib modules and crash without it, while others set `GOWORK=off` for themselves. Exporting it
    globally for otelc work breaks the first group.
-8. After opening the PR, check its CI. Pushing is not the end of the task.
+8. Keep the PR description short. "Add otelc support for `<name>`" is usually the whole thing. Add a
+   note only for what a reviewer would otherwise have to find on their own: an aspect left
+   unmigrated, a feature gap, an aspect reproduced by different means but with the same observable
+   behaviour, or tests added to the orchestrion or contrib side to pin down behaviour the migration
+   relies on.
+9. After opening the PR, check its CI. Pushing is not the end of the task.
    - Read the `OTelc` workflow first. When every matrix job fails they nearly always fail for the
      same reason, so read only `Integration Test (ubuntu | stable)` and skip the rest.
    - `failed to load instrumentation packages: ... go: updates to go.mod needed` means a module
