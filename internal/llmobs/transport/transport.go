@@ -292,6 +292,10 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 				return requestResult{}, fmt.Errorf("failed to read response body: %w", readErr)
 			}
 			if int64(len(b)) > lim.maxResponseSize {
+				// Left undrained on purpose, unlike the branches below: the remainder
+				// is already past what we agreed to read, and draining it to salvage
+				// the connection would mean reading up to 1MiB more that we would
+				// still abandon whenever the body is far oversize.
 				// Retrying would only buffer the same oversized body again.
 				return requestResult{}, backoff.Permanent(fmt.Errorf("%w: over %d bytes", errResponseTooLarge, lim.maxResponseSize))
 			}
