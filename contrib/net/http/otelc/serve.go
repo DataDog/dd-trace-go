@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 
 	"go.opentelemetry.io/otelc/pkg/hook"
 
@@ -19,10 +20,24 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
+// wrappedServers tracks if a handler has already been wrapped.
+var (
+	wrappedServersMu sync.Mutex
+	wrappedServers   = map[*http.Server]struct{}{}
+)
+
 // BeforeServe ensures srv.Handler is wrapped with contrib/net/http tracing
 // before the server starts accepting connections. It is injected at the top
 // of (*http.Server).Serve.
 func BeforeServe(_ hook.HookContext, srv *http.Server, _ net.Listener) {
+	wrappedServersMu.Lock()
+	defer wrappedServersMu.Unlock()
+
+	if _, ok := wrappedServers[srv]; ok {
+		return
+	}
+	wrappedServers[srv] = struct{}{}
+
 	handler := srv.Handler
 	if handler == nil {
 		handler = http.DefaultServeMux

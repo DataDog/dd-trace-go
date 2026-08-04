@@ -8,6 +8,7 @@ package otelc
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -133,4 +134,53 @@ func TestBeforeServeLeavesAlreadyWrappedServeMuxUnchanged(t *testing.T) {
 	require.Len(t, spans, 1, "must not wrap an already-wrapped ServeMux again, or requests would produce nested duplicate spans")
 	assert.Equal(t, "GET /users/{id}", spans[0].Tag(ext.ResourceName))
 	assert.Same(t, mux, srv.Handler, "BeforeServe must leave an already-wrapped ServeMux untouched")
+}
+
+// Force a race to ensure BeforeServe is thread-safe.
+func TestBeforeServeConcurrentListeners(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const rounds = 20
+	const listeners = 20
+	const requestsPerListener = 20
+
+	r, err := http.NewRequest(http.MethodGet, "http://example.com/", nil)
+	require.NoError(t, err)
+
+	for range rounds {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		srv := &http.Server{Handler: handler}
+
+		ready := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(listeners)
+		for range listeners {
+			go func() {
+				defer wg.Done()
+				<-ready
+
+				ictx := hooktest.NewMockHookContext(srv, nil)
+				BeforeServe(ictx, srv, nil)
+
+				var reqWg sync.WaitGroup
+				reqWg.Add(requestsPerListener)
+				for range requestsPerListener {
+					go func() {
+						defer reqWg.Done()
+						w := httptest.NewRecorder()
+						srv.Handler.ServeHTTP(w, r)
+					}()
+				}
+				reqWg.Wait()
+			}()
+		}
+		close(ready)
+		wg.Wait()
+
+		_, wrapped := srv.Handler.(wrap.WrappedHandler)
+		assert.True(t, wrapped, "BeforeServe must replace srv.Handler with a traced wrapper")
+	}
 }
