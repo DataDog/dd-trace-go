@@ -513,6 +513,129 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 	})
 }
 
+func TestFlagEvaluationPayloadsRespectEncodedSizeLimit(t *testing.T) {
+	w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, newEVPClient())
+
+	events := []flagEvalLoggingEvent{
+		newTestFlagEvaluationPayloadEvent("flag-a", "user-a", map[string]any{"blob": strings.Repeat("a", 100)}),
+		newTestFlagEvaluationPayloadEvent("flag-b", "user-b", map[string]any{"blob": strings.Repeat("b", 100)}),
+	}
+	singleResult, err := w.buildFlagEvaluationPayloads(events[:1], 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(single) returned error: %v", err)
+	}
+	sizeLimit := len(singleResult.payloads[0].body)
+
+	result, err := w.buildFlagEvaluationPayloads(events, sizeLimit)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(split) returned error: %v", err)
+	}
+	if got := len(result.payloads); got != len(events) {
+		t.Fatalf("payload count = %d, want %d", got, len(events))
+	}
+	if result.droppedPayloadLimitCount != 0 || result.degradedPayloadLimitCount != 0 {
+		t.Fatalf("unexpected limit counters: dropped=%d degraded=%d", result.droppedPayloadLimitCount, result.degradedPayloadLimitCount)
+	}
+	for i, payload := range result.payloads {
+		if len(payload.body) > sizeLimit {
+			t.Fatalf("payload %d size = %d, limit = %d", i, len(payload.body), sizeLimit)
+		}
+		var decoded flagEvalLoggingPayload
+		if err := json.Unmarshal(payload.body, &decoded); err != nil {
+			t.Fatalf("payload %d body is invalid JSON: %v", i, err)
+		}
+		if got := len(decoded.FlagEvaluations); got != 1 {
+			t.Fatalf("payload %d event count = %d, want 1", i, got)
+		}
+	}
+
+	fullEvent := newTestFlagEvaluationPayloadEvent("large", "customer-1", map[string]any{"blob": strings.Repeat("x", 1024)})
+	degradedEvent, ok := degradeFlagEvaluationEventForPayloadLimit(fullEvent)
+	if !ok {
+		t.Fatal("expected full event to be degradable")
+	}
+
+	fullResult, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{fullEvent}, 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(full) returned error: %v", err)
+	}
+	degradedResult, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{degradedEvent}, 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(degraded) returned error: %v", err)
+	}
+	degradedLimit := len(degradedResult.payloads[0].body)
+	if len(fullResult.payloads[0].body) <= degradedLimit {
+		t.Fatalf("full payload size = %d, want > degraded limit %d", len(fullResult.payloads[0].body), degradedLimit)
+	}
+
+	result, err = w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{fullEvent}, degradedLimit)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
+	}
+	if result.droppedPayloadLimitCount != 0 {
+		t.Fatalf("unexpected dropped count: got %d, want 0", result.droppedPayloadLimitCount)
+	}
+	if result.degradedPayloadLimitCount != fullEvent.EvaluationCount {
+		t.Fatalf("degraded count = %d, want %d", result.degradedPayloadLimitCount, fullEvent.EvaluationCount)
+	}
+	payloads := result.payloads
+	if got := len(payloads); got != 1 {
+		t.Fatalf("payload count = %d, want 1", got)
+	}
+	if len(payloads[0].body) > degradedLimit {
+		t.Fatalf("payload size = %d, limit = %d", len(payloads[0].body), degradedLimit)
+	}
+
+	var decoded flagEvalLoggingPayload
+	if err := json.Unmarshal(payloads[0].body, &decoded); err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+	event := decoded.FlagEvaluations[0]
+	if event.TargetingKey != "" {
+		t.Fatalf("degraded event retained targeting_key %q", event.TargetingKey)
+	}
+	if event.Context != nil {
+		t.Fatalf("degraded event retained context: %#v", event.Context)
+	}
+	if got := event.Flag.Key; got != "large" {
+		t.Fatalf("flag key = %q, want large", got)
+	}
+
+	droppedEvent := newTestFlagEvaluationPayloadEvent(strings.Repeat("f", 256), "", nil)
+	droppedFullResult, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{droppedEvent}, 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(full) returned error: %v", err)
+	}
+	result, err = w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{droppedEvent}, len(droppedFullResult.payloads[0].body)-1)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
+	}
+	if len(result.payloads) != 0 {
+		t.Fatalf("payload count = %d, want 0", len(result.payloads))
+	}
+	if result.droppedPayloadLimitCount != droppedEvent.EvaluationCount {
+		t.Fatalf("dropped count = %d, want %d", result.droppedPayloadLimitCount, droppedEvent.EvaluationCount)
+	}
+}
+
+func newTestFlagEvaluationPayloadEvent(flagKey, targetingKey string, attrs map[string]any) flagEvalLoggingEvent {
+	nowMs := time.Now().UnixMilli()
+	event := flagEvalLoggingEvent{
+		Timestamp:       nowMs,
+		Flag:            flagEvalFlag{Key: flagKey},
+		FirstEvaluation: nowMs,
+		LastEvaluation:  nowMs,
+		EvaluationCount: 1,
+		TargetingKey:    targetingKey,
+		Variant:         &flagEvalVariant{Key: "on"},
+		Allocation:      &flagEvalAllocation{Key: "alloc-a"},
+	}
+	if len(attrs) > 0 {
+		event.Context = &flagEvalEventContext{Evaluation: attrs}
+	}
+	return event
+}
+
 // TestAggregatorDistinctAllocationBuckets verifies that allocation is part of the aggregation key.
 func TestAggregatorDistinctAllocationBuckets(t *testing.T) {
 	agg := setupTestAggregator(t)
