@@ -1019,6 +1019,10 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		delete(span.metrics, ext.Environment)
 		span.meta.Set(ext.Environment, cSnap.Env)
 	}
+	// Apply the pprof labels before t.sample: a custom Sampler receives the span
+	// and may publish it to another goroutine, after which writing span fields
+	// here would race with that goroutine (e.g. SetTag or Finish).
+	t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
@@ -1028,7 +1032,6 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, &span.meta, span.metrics)
 	}
-	t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
 	if cSnap.DebugAbandonedSpans {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
@@ -1056,11 +1059,13 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // endpoint filtering features, and the trace correlation label for AppSec.
 // When span finishes, any pprof labels found in ctx are restored. Additionally,
 // this func informs the profiler how many times each endpoint is called.
-// +checklocksignore — Initialization time, called from StartSpan before span is shared.
+// +checklocksignore — Initialization time, called from StartSpan before the span
+// is handed to the sampler, so it is not yet shared with other goroutines.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
 	// "trace id" is AppSec-only. Profiling features retain their own labels
 	// without adding trace correlation cardinality.
 	appsecCorrelation := appsec.Enabled()
+	span.pprofEndpoints = snap.ProfilerEndpoints
 	if !snap.ProfilerHotspotsEnabled && !snap.ProfilerEndpoints && !appsecCorrelation {
 		// No feature needs pprof labels; nothing to restore when the span finishes.
 		span.pprofCtxRestore = nil
@@ -1070,7 +1075,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 	// an upstream optimization that landed in go1.24.  This results in ~10%
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
-	labels := make([]string, 0, 3*2 /* up to 3 key value pairs */)
+	labels := make([]string, 0, 3*2)
 	if snap.ProfilerHotspotsEnabled {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
@@ -1087,17 +1092,19 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 		}
 	}
 	if appsecCorrelation {
-		// newSpanContext finalizes the hex cache while the context is still
-		// private, so this is a pure read: HexEncoded never writes the span
-		// context, which by now the sampler may already have published.
+		// newSpanContext already finalized the hex cache, so this is a pure read.
 		labels = append(labels, traceprof.TraceID, span.context.traceID.HexEncoded())
 	}
-	if len(labels) > 0 {
-		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
-		span.pprofCtxRestore = ctx
-		span.pprofCtxActive = pprofActive
-		pprof.SetGoroutineLabels(pprofActive)
+	if len(labels) == 0 {
+		// Every enabled feature declined to label this span, so there is nothing
+		// to restore when it finishes.
+		span.pprofCtxRestore = nil
+		return
 	}
+	pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
+	span.pprofCtxRestore = ctx
+	span.pprofCtxActive = pprofActive
+	pprof.SetGoroutineLabels(pprofActive)
 }
 
 // spanResourcePIISafe returns true if s.resource can be considered to not

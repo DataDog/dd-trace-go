@@ -3652,11 +3652,10 @@ func TestSpanContextDebugLoggingSecurity(t *testing.T) {
 // It covers both hex-cache states a shared SpanContext can be in when injected
 // concurrently:
 //
-//   - cold cache: a locally started span with the pprof label path disabled.
-//     newSpanContext does not populate hexEncoded, so every UpperHex() takes the
-//     non-caching fallback. Code hotspots must be off here: when it (or AppSec)
-//     is enabled, applyPPROFLabels warms the hex cache at StartSpan (safely,
-//     before the span is shared) via hexEncodedCached.
+//   - cold cache: a locally started span. newSpanContext leaves hexEncoded empty
+//     unless AppSec is enabled, so every UpperHex() takes the non-caching
+//     fallback. AppSec must be off here, otherwise the cache is finalized at
+//     construction and this subtest would no longer exercise that path.
 //   - hot cache: an extracted context. extractTextMap finalizes the traceID via
 //     cacheHex, so UpperHex() returns the cached string.
 //
@@ -3668,11 +3667,10 @@ func TestConcurrentInjectTraceIDHex(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog")
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 
-	// Disable code hotspots so locally started spans keep a cold hex cache; with
-	// it (or AppSec) enabled, applyPPROFLabels warms the cache at StartSpan and
-	// the "cold cache" subtest below could no longer exercise the non-caching
-	// HexEncoded read path.
-	tracer, _, _, stop, err := startTestTracer(t, WithProfilerCodeHotspots(false))
+	// Disable AppSec so locally started spans keep a cold hex cache; with it
+	// enabled, newSpanContext finalizes the cache and the "cold cache" subtest
+	// below could no longer exercise the non-caching HexEncoded read path.
+	tracer, _, _, stop, err := startTestTracer(t, WithAppSecEnabled(false))
 	require.NoError(t, err)
 	defer stop()
 
@@ -3703,10 +3701,6 @@ func TestConcurrentInjectTraceIDHex(t *testing.T) {
 		spanCtx := span.Context()
 
 		require.True(t, spanCtx.traceID.HasUpper(), "test requires a 128-bit traceID so injectTextMap calls UpperHex()")
-		// A locally started span is never finalized via cacheHex, so the cache
-		// is already empty and every concurrent UpperHex() exercises the
-		// non-caching fallback. Assert the precondition rather than forcing it,
-		// so the test fails loudly if newSpanContext ever starts caching.
 		require.Empty(t, spanCtx.traceID.hexEncoded, "local span is expected to have a cold hex cache")
 
 		fanOutInject(t, spanCtx)
