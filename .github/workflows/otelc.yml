@@ -95,7 +95,11 @@ jobs:
       # `go install` is enough: unlike the upstream Makefile's `make install`, it
       # produces a binary that resolves rules purely from this repository's tool
       # files, which is all these suites need.
+      # shell: bash matters here. The Windows default is PowerShell, where
+      # ${OTELC_VERSION} expands to nothing and the install fails with
+      # "version must not be empty".
       - name: Install otelc binary
+        shell: bash
         run: go install "go.opentelemetry.io/otelc/tool/cmd/otelc@${OTELC_VERSION}"
 
       # GitHub runs this on a candidate merge commit, so dependency updates landed
