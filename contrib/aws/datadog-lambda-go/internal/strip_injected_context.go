@@ -15,15 +15,13 @@ import (
 )
 
 const (
-	stripInjectedContextEnvVar = "DD_TRACE_STRIP_INJECTED_CONTEXT"
+	StripInjectedContextEnvVar = "DD_TRACE_STRIP_INJECTED_CONTEXT"
 )
 
 var (
 	// Datadog injects _datadog as a flat JSON object carrier in one of two shapes:
-	//  1. Object detail:  "_datadog": {"x-datadog-trace-id":"...", ...}
-	//  2. String detail:  \"_datadog\":{\"x-datadog-trace-id\":\"...\", ...}  (escaped in JSON string)
-	// Carrier value is always a {...} object. No post-removal comma cleanup is performed
-	// (avoids corrupting customer string values — see TestStripInjectedContext_regression).
+	//  1. Object detail:  "_datadog": {"x-datadog-trace-id":"...", ...}  — stripped via byte scan
+	//  2. String detail:  detail field contains "{\"...\",\"_datadog\":{...}}"  — stripped via json unmarshal/remarshal
 	stripInjectedContextEnabledOnce sync.Once
 	stripInjectedContextEnabledVal  bool
 	datadogCarrierKeyBytes          = []byte(`"_datadog"`)
@@ -32,13 +30,11 @@ var (
 )
 
 type carrierKeyForm struct {
-	key     []byte
-	escaped bool // true for \"_datadog\" inside string-encoded detail
+	key []byte
 }
 
 var datadogCarrierForms = []carrierKeyForm{
-	{key: datadogCarrierKeyBytes, escaped: false},
-	{key: datadogCarrierEscapedKey, escaped: true},
+	{key: datadogCarrierKeyBytes},
 }
 
 // StripInjectedContext removes injected _datadog propagation carriers from the
@@ -73,7 +69,7 @@ func StripInjectedContext(msg json.RawMessage) json.RawMessage {
 // stripInjectedContextEnabled reports whether stripping is enabled, caching the env lookup for the process lifetime.
 func stripInjectedContextEnabled() bool {
 	stripInjectedContextEnabledOnce.Do(func() {
-		v, ok := env.Lookup(stripInjectedContextEnvVar)
+		v, ok := env.Lookup(StripInjectedContextEnvVar)
 		if !ok {
 			return // unset -> opt-in off
 		}
@@ -91,40 +87,116 @@ func ResetStripInjectedContextCacheForTest() {
 
 // stripInjectedContextBytes removes every _datadog carrier from msg and reports whether the bytes changed.
 func stripInjectedContextBytes(msg json.RawMessage) (json.RawMessage, bool) {
-	out := msg
-	changed := false
+	out, objectChanged := stripObjectCarriers(msg)
+	out2, stringChanged := stripStringEncodedCarriers(out)
+	if stringChanged {
+		return out2, true
+	}
+	return out, objectChanged
+}
 
+// stripObjectCarriers strips object-form "_datadog" carriers via byte scanning, supporting multiple carriers in O(n).
+func stripObjectCarriers(msg json.RawMessage) (json.RawMessage, bool) {
+	type span struct{ start, end int }
+	var ranges []span
+
+	searchFrom := 0
 	for {
-		start, end, ok := findCarrierRange(out)
+		start, end, ok := findCarrierRange(msg, searchFrom)
 		if !ok {
 			break
 		}
-		out = append(append([]byte{}, out[:start]...), out[end:]...)
-		changed = true
+		ranges = append(ranges, span{start, end})
+		searchFrom = end
 	}
-	return out, changed
+	if len(ranges) == 0 {
+		return msg, false
+	}
+
+	out := make([]byte, 0, len(msg))
+	prev := 0
+	for _, r := range ranges {
+		out = append(out, msg[prev:r.start]...)
+		prev = r.end
+	}
+	out = append(out, msg[prev:]...)
+	return out, true
 }
 
-// findCarrierRange returns the byte span of the first removable _datadog key/value pair in b.
-func findCarrierRange(b []byte) (start, end int, ok bool) {
+const datadogCarrierKey = "_datadog"
+
+// stripStringEncodedCarriers removes _datadog from JSON objects embedded in top-level string fields.
+func stripStringEncodedCarriers(msg json.RawMessage) (json.RawMessage, bool) {
+	if !bytes.Contains(msg, datadogCarrierEscapedKey) {
+		return msg, false
+	}
+
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(msg, &envelope); err != nil {
+		return msg, false
+	}
+
+	changed := false
+	for key, rawVal := range envelope {
+		var s string
+		if err := json.Unmarshal(rawVal, &s); err != nil {
+			continue // not a string field
+		}
+		if !bytes.Contains([]byte(s), datadogCarrierSubstrBytes) {
+			continue
+		}
+
+		var inner map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(s), &inner); err != nil {
+			continue // string is not a JSON object
+		}
+		if _, ok := inner[datadogCarrierKey]; !ok {
+			continue
+		}
+
+		delete(inner, datadogCarrierKey)
+		innerBytes, err := json.Marshal(inner)
+		if err != nil {
+			return msg, false
+		}
+		newVal, err := json.Marshal(string(innerBytes))
+		if err != nil {
+			return msg, false
+		}
+		envelope[key] = newVal
+		changed = true
+	}
+
+	if !changed {
+		return msg, false
+	}
+	out, err := json.Marshal(envelope)
+	if err != nil {
+		return msg, false
+	}
+	return out, true
+}
+
+// findCarrierRange returns the byte span of the first removable _datadog key/value pair in b at or after searchFrom.
+func findCarrierRange(b []byte, searchFrom int) (start, end int, ok bool) {
 	for _, form := range datadogCarrierForms {
-		searchFrom := 0
+		formSearchFrom := searchFrom
 		keyLen := len(form.key)
 		for {
-			keyIdx := bytes.Index(b[searchFrom:], form.key)
+			keyIdx := bytes.Index(b[formSearchFrom:], form.key)
 			if keyIdx < 0 {
 				break
 			}
-			keyIdx += searchFrom
+			keyIdx += formSearchFrom
 
 			if !isCarrierKeyAt(b, keyIdx, keyLen) {
-				searchFrom = keyIdx + 1
+				formSearchFrom = keyIdx + 1
 				continue
 			}
 
-			valueEnd, ok := jsonCarrierValueEnd(b, keyIdx+keyLen, form.escaped)
+			valueEnd, ok := jsonCarrierValueEnd(b, keyIdx+keyLen)
 			if !ok {
-				searchFrom = keyIdx + 1
+				formSearchFrom = keyIdx + 1
 				continue
 			}
 
@@ -148,7 +220,7 @@ func isCarrierKeyAt(b []byte, keyIdx, keyLen int) bool {
 }
 
 // jsonCarrierValueEnd returns the byte offset after the {...} carrier value following a matched key.
-func jsonCarrierValueEnd(b []byte, from int, escaped bool) (int, bool) {
+func jsonCarrierValueEnd(b []byte, from int) (int, bool) {
 	i := from
 	for i < len(b) && isJSONWhitespace(b[i]) {
 		i++
@@ -162,9 +234,6 @@ func jsonCarrierValueEnd(b []byte, from int, escaped bool) (int, bool) {
 	}
 	if i >= len(b) || b[i] != '{' {
 		return 0, false
-	}
-	if escaped {
-		return scanDelimitedValueEndEscaped(b, i)
 	}
 	return scanDelimitedValueEnd(b, i, '{', '}')
 }
@@ -226,27 +295,6 @@ func scanDelimitedValueEnd(b []byte, start int, open, close byte) (int, bool) {
 		case open:
 			depth++
 		case close:
-			depth--
-			if depth == 0 {
-				return i + 1, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// scanDelimitedValueEndEscaped returns the byte offset after a balanced {...} value with backslash-escaped bytes.
-func scanDelimitedValueEndEscaped(b []byte, start int) (int, bool) {
-	depth := 0
-	for i := start; i < len(b); i++ {
-		if b[i] == '\\' && i+1 < len(b) {
-			i++
-			continue
-		}
-		switch b[i] {
-		case '{':
-			depth++
-		case '}':
 			depth--
 			if depth == 0 {
 				return i + 1, true
