@@ -11,17 +11,16 @@ import (
 
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
-	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
 // MetricType is the type of an evaluation metric value.
-type MetricType = llmobs.EvalMetricType
+type MetricType = transport.EvalMetricType
 
 const (
-	MetricTypeCategorical MetricType = llmobs.EvalMetricTypeCategorical
-	MetricTypeScore       MetricType = llmobs.EvalMetricTypeScore
-	MetricTypeBoolean     MetricType = llmobs.EvalMetricTypeBoolean
-	MetricTypeJSON        MetricType = llmobs.EvalMetricTypeJSON
+	MetricTypeCategorical MetricType = transport.EvalMetricTypeCategorical
+	MetricTypeScore       MetricType = transport.EvalMetricTypeScore
+	MetricTypeBoolean     MetricType = transport.EvalMetricTypeBoolean
+	MetricTypeJSON        MetricType = transport.EvalMetricTypeJSON
 )
 
 // EvaluationMetric is a caller-built LLM Obs evaluation metric.
@@ -104,7 +103,7 @@ func (c *Client) sendEvalBatch(ctx context.Context, batch []evalRow, res *Result
 		return
 	}
 	rr := RequestResult{InputIndices: evalInputIndices(batch)}
-	result, requestErr := c.transport.PushEvalMetricsWithResult(ctx, metrics)
+	result, requestErr := c.transport.PushEvalMetricsBodyWithResult(ctx, body)
 	applyResult(&rr, result, requestErr)
 	res.Requests = append(res.Requests, rr)
 }
