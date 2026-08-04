@@ -168,6 +168,9 @@ func TestEvaluateSemverCondition(t *testing.T) {
 		{name: "numeric prerelease ordering", operator: operatorSemverLT, attribute: "1.0.0-beta.2", comparand: "1.0.0-beta.11", want: true},
 		{name: "build metadata ordering", operator: operatorSemverGT, attribute: "1.0.0+2", comparand: "1.0.0+1", want: true},
 		{name: "build metadata leading zeros", operator: operatorSemverLT, attribute: "1.0.0+90", comparand: "1.0.0+090", want: true},
+		{name: "build metadata identifier count", operator: operatorSemverLT, attribute: "1.0.0+a", comparand: "1.0.0+a.b", want: true},
+		{name: "build metadata numeric length", operator: operatorSemverLT, attribute: "1.0.0+2", comparand: "1.0.0+11", want: true},
+		{name: "numeric build metadata before nonnumeric", operator: operatorSemverLT, attribute: "1.0.0+1", comparand: "1.0.0+alpha", want: true},
 		{name: "different build metadata not equal", operator: operatorSemverNEQ, attribute: "1.0.0+linux", comparand: "1.0.0+darwin", want: true},
 		{name: "invalid attribute", operator: operatorSemverNEQ, attribute: "not-a-version", comparand: "1.0.0"},
 		{name: "short attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0"},
@@ -200,6 +203,12 @@ func TestEvaluateSemverCondition(t *testing.T) {
 		}
 		if evaluateCondition(condition, map[string]any{}) {
 			t.Error("expected a missing attribute not to match")
+		}
+	})
+
+	t.Run("unsupported operator", func(t *testing.T) {
+		if evaluateSemverCondition("1.2.3", "1.2.3", conditionOperator("UNKNOWN")) {
+			t.Error("expected an unsupported operator not to match")
 		}
 	})
 }
