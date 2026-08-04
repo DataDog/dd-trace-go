@@ -38,6 +38,8 @@ const (
 	processRetryBurstSampleResourcesEnv = "PROCESS_RETRY_BURST_SAMPLE_RESOURCES"
 	processRetryBurstEventPath          = "/process-retry-burst/event"
 	processRetryBurstMaxPackages        = 8
+	processRetryBurstInProcessMode      = "in_process"
+	processRetryBurstProcessMode        = "process"
 )
 
 var processRetryBurstServiceSequence atomic.Uint64
@@ -50,6 +52,7 @@ type processRetryBurstProfile struct {
 
 type processRetryBurstScenario struct {
 	name               string
+	retryExecutionMode string
 	packages           int
 	packageConcurrency int
 	processConcurrency int
@@ -67,6 +70,20 @@ type processRetryBurstScenario struct {
 	childFails         bool
 	expectFailure      bool
 	profile            processRetryBurstProfile
+}
+
+func (s processRetryBurstScenario) executionMode() string {
+	if s.retryExecutionMode == "" {
+		return processRetryBurstProcessMode
+	}
+	return s.retryExecutionMode
+}
+
+func (s processRetryBurstScenario) expectedChildTotal() int {
+	if s.executionMode() != processRetryBurstProcessMode {
+		return 0
+	}
+	return s.expectedRetryTotal()
 }
 
 func (s processRetryBurstScenario) expectedRetryReason() string {
@@ -335,6 +352,14 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 			retryFinishes++
 			active--
 			activeByPackage[event.Package]--
+		case "in_process_retry_start":
+			retryStarts++
+			retryReasons[event.Reason]++
+			if _, ok := firstPassByPackage[event.Package]; !ok {
+				retriesBeforeFirstPass++
+			}
+		case "in_process_retry_finish":
+			retryFinishes++
 		case "parent_finish":
 			parentFinishes++
 		}
@@ -458,6 +483,7 @@ func processRetryBurstEnvironment(serverURL string, scenario processRetryBurstSc
 		"PROCESS_RETRY_BURST_CPU_WORK":                                         strconv.Itoa(scenario.profile.cpuWork),
 		"PROCESS_RETRY_BURST_PARENT_FAILS":                                     strconv.FormatBool(scenario.parentFails),
 		"PROCESS_RETRY_BURST_CHILD_FAILS":                                      strconv.FormatBool(scenario.childFails),
+		"PROCESS_RETRY_BURST_RETRY_REASON":                                     scenario.expectedRetryReason(),
 		"DD_GIT_REPOSITORY_URL":                                                "https://github.com/DataDog/dd-trace-go.git",
 		"DD_GIT_COMMIT_SHA":                                                    "1234567890abcdef1234567890abcdef12345678",
 		"DD_INSTRUMENTATION_TELEMETRY_ENABLED":                                 "false",
@@ -466,7 +492,7 @@ func processRetryBurstEnvironment(serverURL string, scenario processRetryBurstSc
 		constants.CIVisibilityAgentlessURLEnvironmentVariable:                  serverURL,
 		constants.CIVisibilityGitUploadEnabledEnvironmentVariable:              "false",
 		constants.APIKeyEnvironmentVariable:                                    "process-retry-burst-api-key",
-		constants.CIVisibilityRetryExecutionModeEnvironmentVariable:            "process",
+		constants.CIVisibilityRetryExecutionModeEnvironmentVariable:            scenario.executionMode(),
 		constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable:    strconv.FormatBool(scenario.efd),
 		constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable: "-1",
 		constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled:       strconv.FormatBool(scenario.parallelEFD),
@@ -535,6 +561,35 @@ func TestProcessRetryBurstEnvironmentIsolatesReadCache(t *testing.T) {
 	}
 }
 
+func TestProcessRetryBurstEnvironmentSelectsExecutionMode(t *testing.T) {
+	value := func(environment []string, key string) string {
+		t.Helper()
+		prefix := key + "="
+		for _, entry := range environment {
+			if value, ok := strings.CutPrefix(entry, prefix); ok {
+				return value
+			}
+		}
+		return ""
+	}
+
+	for _, test := range []struct {
+		name     string
+		scenario processRetryBurstScenario
+		want     string
+	}{
+		{name: "default", want: processRetryBurstProcessMode},
+		{name: "in-process", scenario: processRetryBurstScenario{retryExecutionMode: processRetryBurstInProcessMode}, want: processRetryBurstInProcessMode},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			environment := processRetryBurstEnvironment("", test.scenario)
+			if got := value(environment, constants.CIVisibilityRetryExecutionModeEnvironmentVariable); got != test.want {
+				t.Fatalf("retry execution mode = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func warmProcessRetryBurstModule(tb testing.TB, moduleDir string, packageCount int) {
 	tb.Helper()
 	args := make([]string, 0, 4+packageCount)
@@ -590,14 +645,15 @@ func runProcessRetryBurstScenario(tb testing.TB, moduleDir string, scenario proc
 func validateProcessRetryBurstMetrics(tb testing.TB, collector *processRetryBurstCollector, scenario processRetryBurstScenario, metrics processRetryBurstMetrics) {
 	tb.Helper()
 	wantRetries := scenario.expectedRetryTotal()
+	wantChildren := scenario.expectedChildTotal()
 	if metrics.parentProcesses != scenario.packages {
 		tb.Fatalf("parent processes = %d, want %d\n%s", metrics.parentProcesses, scenario.packages, metrics.output)
 	}
 	if metrics.parentFinishes != scenario.packages || metrics.firstPassCompletions != scenario.packages {
 		tb.Fatalf("parent finishes/first-pass completions = %d/%d, want %d each\n%s", metrics.parentFinishes, metrics.firstPassCompletions, scenario.packages, metrics.output)
 	}
-	if metrics.childProcesses != wantRetries || metrics.retryStarts != wantRetries || metrics.retryFinishes != wantRetries {
-		tb.Fatalf("child processes/start/finish = %d/%d/%d, want %d each\n%s", metrics.childProcesses, metrics.retryStarts, metrics.retryFinishes, wantRetries, metrics.output)
+	if metrics.childProcesses != wantChildren || metrics.retryStarts != wantRetries || metrics.retryFinishes != wantRetries {
+		tb.Fatalf("child processes/start/finish = %d/%d/%d, want %d/%d/%d\n%s", metrics.childProcesses, metrics.retryStarts, metrics.retryFinishes, wantChildren, wantRetries, wantRetries, metrics.output)
 	}
 	wantReason := scenario.expectedRetryReason()
 	if wantRetries == 0 {
@@ -624,6 +680,12 @@ func validateProcessRetryBurstMetrics(tb testing.TB, collector *processRetryBurs
 	validateFeatureRequests("/api/v2/ci/libraries/tests", scenario.efd)
 	validateFeatureRequests("/api/v2/test/libraries/test-management/tests", scenario.testManagementEnabled())
 	validateFeatureRequests("/api/v2/ci/tests/skippable", scenario.itrForced)
+	if scenario.executionMode() != processRetryBurstProcessMode {
+		if metrics.maximumChildren != 0 || len(metrics.maximumChildrenByPackage) != 0 {
+			tb.Fatalf("in-process retry child concurrency = %d/%v, want none", metrics.maximumChildren, metrics.maximumChildrenByPackage)
+		}
+		return
+	}
 	limit := scenario.processConcurrency
 	if limit == 0 {
 		limit = min(max(runtime.GOMAXPROCS(0), 1), 4)
@@ -796,13 +858,25 @@ func TestProcessRetryBurstFamilyScenarios(t *testing.T) {
 		{name: "itr-forced-ftr", flakyRetries: true, itrForced: true, retries: 1, parentFails: true},
 		{name: "coverage-efd", efd: true, parallelEFD: true, retries: 2, coverage: true, parentFails: true},
 	}
+	inProcessCases := map[string]bool{
+		"ftr-persistent-failure":   true,
+		"efd-parallel-pass":        true,
+		"a2f-precedes-efd-and-ftr": true,
+		"coverage-efd":             true,
+	}
 	for _, scenario := range cases {
 		scenario.packages = 2
 		scenario.packageConcurrency = 2
 		scenario.processConcurrency = 2
-		t.Run(scenario.name, func(t *testing.T) {
+		t.Run(processRetryBurstProcessMode+"/"+scenario.name, func(t *testing.T) {
 			runProcessRetryBurstScenario(t, moduleDir, scenario)
 		})
+		if inProcessCases[scenario.name] {
+			scenario.retryExecutionMode = processRetryBurstInProcessMode
+			t.Run(processRetryBurstInProcessMode+"/"+scenario.name, func(t *testing.T) {
+				runProcessRetryBurstScenario(t, moduleDir, scenario)
+			})
+		}
 	}
 }
 
@@ -833,6 +907,40 @@ func TestProcessRetryBurstMetricsUseEventOrderAndProcessIdentity(t *testing.T) {
 	}
 }
 
+func TestProcessRetryBurstMetricsCountInProcessRetriesWithoutChildren(t *testing.T) {
+	start := time.Unix(100, 0)
+	collector := newProcessRetryBurstCollector(processRetryBurstScenario{retryExecutionMode: processRetryBurstInProcessMode, retries: 1})
+	collector.events = []processRetryBurstRecordedEvent{
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "parent_start", PID: 1}, received: start.Add(time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "in_process_retry_start", PID: 1, Reason: constants.EarlyFlakeDetectionRetryReason}, received: start.Add(2 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "in_process_retry_finish", PID: 1}, received: start.Add(3 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "first_pass_complete", PID: 1}, received: start.Add(4 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "parent_finish", PID: 1}, received: start.Add(5 * time.Millisecond)},
+	}
+	metrics := collector.metrics(start, 6*time.Millisecond, processRetryBurstResourceMetrics{}, "")
+	if metrics.childProcesses != 0 || metrics.maximumChildren != 0 {
+		t.Fatalf("child processes/maximum = %d/%d, want 0/0", metrics.childProcesses, metrics.maximumChildren)
+	}
+	if metrics.retryStarts != 1 || metrics.retryFinishes != 1 || metrics.retriesBeforeFirstPass != 1 {
+		t.Fatalf("retry starts/finishes/early = %d/%d/%d, want 1/1/1", metrics.retryStarts, metrics.retryFinishes, metrics.retriesBeforeFirstPass)
+	}
+	if got := metrics.retryReasons[constants.EarlyFlakeDetectionRetryReason]; got != 1 {
+		t.Fatalf("EFD retry reasons = %d, want 1", got)
+	}
+}
+
+func TestMedianProcessRetryBurstImprovementUsesPairedSamples(t *testing.T) {
+	experiment := []processRetryBurstMetrics{{elapsed: 9 * time.Millisecond}, {elapsed: 200 * time.Millisecond}, {elapsed: 30 * time.Millisecond}}
+	baseline := []processRetryBurstMetrics{{elapsed: 10 * time.Millisecond}, {elapsed: 100 * time.Millisecond}, {elapsed: 40 * time.Millisecond}}
+	got := medianProcessRetryBurstImprovement(experiment, baseline, func(metrics processRetryBurstMetrics) time.Duration { return metrics.elapsed })
+	if got != 10 {
+		t.Fatalf("paired median improvement = %v, want 10", got)
+	}
+	if got := medianProcessRetryBurstImprovement(experiment[:2], baseline, func(metrics processRetryBurstMetrics) time.Duration { return metrics.elapsed }); got != 0 {
+		t.Fatalf("mismatched sample improvement = %v, want 0", got)
+	}
+}
+
 func BenchmarkProcessRetryMultiPackageBurst(b *testing.B) {
 	if !gotesting.ProcessRetryContainmentSupported() {
 		b.Skip("process retry burst benchmark requires process-tree containment")
@@ -842,11 +950,7 @@ func BenchmarkProcessRetryMultiPackageBurst(b *testing.B) {
 	if baseline := strings.TrimSpace(os.Getenv(processRetryBurstBaselineRootEnv)); baseline != "" {
 		targetRoots["baseline"] = baseline
 	}
-	profiles := map[string]processRetryBurstProfile{
-		"startup": {startupDelay: 250 * time.Millisecond},
-		"body":    {bodyDelay: 250 * time.Millisecond},
-		"cpu":     {cpuWork: 250_000_000},
-	}
+	profiles := processRetryBurstProfiles()
 	cases := []processRetryBurstScenario{
 		{name: "packages=8/retries=0", packages: 8, packageConcurrency: 8, efd: true},
 		{name: "scale/packages=1", packages: 1, packageConcurrency: 1, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
@@ -909,14 +1013,94 @@ func BenchmarkProcessRetryMultiPackageBurst(b *testing.B) {
 			reportProcessRetryBurstSamples(b, "experiment", samples["experiment"])
 			if baselineSamples := samples["baseline"]; len(baselineSamples) > 0 {
 				reportProcessRetryBurstSamples(b, "baseline", baselineSamples)
-				experimentRun := medianProcessRetryBurstDuration(samples["experiment"], func(metrics processRetryBurstMetrics) time.Duration { return metrics.elapsed })
-				baselineRun := medianProcessRetryBurstDuration(baselineSamples, func(metrics processRetryBurstMetrics) time.Duration { return metrics.elapsed })
-				experimentFirstPass := medianProcessRetryBurstDuration(samples["experiment"], func(metrics processRetryBurstMetrics) time.Duration { return metrics.firstPass })
-				baselineFirstPass := medianProcessRetryBurstDuration(baselineSamples, func(metrics processRetryBurstMetrics) time.Duration { return metrics.firstPass })
-				b.ReportMetric(processRetryBurstImprovement(experimentRun, baselineRun), "run-improvement-percent")
-				b.ReportMetric(processRetryBurstImprovement(experimentFirstPass, baselineFirstPass), "first-pass-improvement-percent")
+				b.ReportMetric(medianProcessRetryBurstImprovement(samples["experiment"], baselineSamples, func(metrics processRetryBurstMetrics) time.Duration { return metrics.elapsed }), "run-improvement-percent")
+				b.ReportMetric(medianProcessRetryBurstImprovement(samples["experiment"], baselineSamples, func(metrics processRetryBurstMetrics) time.Duration { return metrics.firstPass }), "first-pass-improvement-percent")
 			}
 		})
+	}
+}
+
+func BenchmarkRetryExecutionModeMatrix(b *testing.B) {
+	if !gotesting.ProcessRetryContainmentSupported() {
+		b.Skip("retry execution mode benchmark requires process-tree containment")
+	}
+	root := processRetryBurstRepositoryRoot(b)
+	moduleDir := writeProcessRetryBurstModule(b, root, processRetryBurstMaxPackages)
+	warmProcessRetryBurstModule(b, moduleDir, processRetryBurstMaxPackages)
+	for _, scenario := range retryExecutionModeBenchmarkScenarios(processRetryBurstProfiles()) {
+		b.Run(scenario.name, func(b *testing.B) {
+			samples := map[string][]processRetryBurstMetrics{
+				processRetryBurstInProcessMode: nil,
+				processRetryBurstProcessMode:   nil,
+			}
+			b.ResetTimer()
+			for i := range b.N {
+				order := []string{processRetryBurstInProcessMode, processRetryBurstProcessMode}
+				if i%2 != 0 {
+					order[0], order[1] = order[1], order[0]
+				}
+				for _, mode := range order {
+					modeScenario := scenario
+					modeScenario.retryExecutionMode = mode
+					samples[mode] = append(samples[mode], runProcessRetryBurstScenario(b, moduleDir, modeScenario))
+				}
+			}
+			b.StopTimer()
+			inProcessSamples := samples[processRetryBurstInProcessMode]
+			processSamples := samples[processRetryBurstProcessMode]
+			reportProcessRetryBurstSamples(b, "in-process", inProcessSamples)
+			reportProcessRetryBurstSamples(b, "process", processSamples)
+			b.ReportMetric(medianProcessRetryBurstImprovement(processSamples, inProcessSamples, func(metrics processRetryBurstMetrics) time.Duration { return metrics.elapsed }), "process-total-improvement-percent")
+			b.ReportMetric(medianProcessRetryBurstImprovement(processSamples, inProcessSamples, func(metrics processRetryBurstMetrics) time.Duration { return metrics.firstPass }), "process-first-pass-improvement-percent")
+		})
+	}
+}
+
+func processRetryBurstProfiles() map[string]processRetryBurstProfile {
+	return map[string]processRetryBurstProfile{
+		"startup": {startupDelay: 250 * time.Millisecond},
+		"body":    {bodyDelay: 250 * time.Millisecond},
+		"cpu":     {cpuWork: 250_000_000},
+	}
+}
+
+func retryExecutionModeBenchmarkScenarios(profiles map[string]processRetryBurstProfile) []processRetryBurstScenario {
+	return []processRetryBurstScenario{
+		{name: "no-retries/ci-visibility", packages: 8, packageConcurrency: 8},
+		{name: "no-retries/efd-enabled", packages: 8, packageConcurrency: 8, efd: true},
+		{name: "families/ftr/initial-pass", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true},
+		{name: "families/ftr/fail-to-pass", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true, parentFails: true, profile: profiles["startup"]},
+		{name: "families/ftr/persistent-failure", packages: 8, packageConcurrency: 8, retries: 5, flakyRetries: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
+		{name: "families/ftr/budget-limited=2", packages: 8, packageConcurrency: 8, retries: 5, totalRetryBudget: 2, flakyRetries: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
+		{name: "families/efd/sequential-pass", packages: 8, packageConcurrency: 8, retries: 10, efd: true, profile: profiles["startup"]},
+		{name: "families/efd/parallel-pass", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, profile: profiles["startup"]},
+		{name: "families/efd/parallel-persistent-failure", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
+		{name: "families/a2f/all-pass", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, profile: profiles["startup"]},
+		{name: "families/a2f/persistent-failure", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, parentFails: true, childFails: true, expectFailure: true, profile: profiles["startup"]},
+		{name: "families/a2f+efd+ftr/precedence", packages: 8, packageConcurrency: 8, retries: 3, flakyRetries: true, efd: true, parallelEFD: true, attemptToFix: true, profile: profiles["startup"]},
+		{name: "families/a2f+disabled", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, disabled: true, profile: profiles["startup"]},
+		{name: "families/a2f+quarantined", packages: 8, packageConcurrency: 8, retries: 3, attemptToFix: true, quarantined: true, profile: profiles["startup"]},
+		{name: "families/test-management/disabled", packages: 8, packageConcurrency: 8, disabled: true, parentFails: true},
+		{name: "families/test-management/quarantined", packages: 8, packageConcurrency: 8, quarantined: true, parentFails: true},
+		{name: "families/itr-forced/ftr-fail-to-pass", packages: 8, packageConcurrency: 8, retries: 1, flakyRetries: true, itrForced: true, parentFails: true, profile: profiles["startup"]},
+		{name: "families/coverage/efd-parallel", packages: 8, packageConcurrency: 8, retries: 2, efd: true, parallelEFD: true, coverage: true, parentFails: true, profile: profiles["startup"]},
+		{name: "efd-retries/2", packages: 8, packageConcurrency: 8, retries: 2, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "efd-retries/5", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "efd-retries/10", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "package-scale/1", packages: 1, packageConcurrency: 1, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "package-scale/2", packages: 2, packageConcurrency: 2, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "package-scale/4", packages: 4, packageConcurrency: 4, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "package-scale/8", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "go-test-p/1", packages: 8, packageConcurrency: 1, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "go-test-p/2", packages: 8, packageConcurrency: 2, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "go-test-p/4", packages: 8, packageConcurrency: 4, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "go-test-p/8", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "process-concurrency/1", packages: 8, packageConcurrency: 8, processConcurrency: 1, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "process-concurrency/2", packages: 8, packageConcurrency: 8, processConcurrency: 2, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "process-concurrency/default", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "profile/startup", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
+		{name: "profile/body", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["body"]},
+		{name: "profile/cpu", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["cpu"]},
 	}
 }
 
@@ -957,6 +1141,18 @@ func medianProcessRetryBurstDuration(samples []processRetryBurstMetrics, value f
 	return values[len(values)/2]
 }
 
+func medianProcessRetryBurstImprovement(experiment, baseline []processRetryBurstMetrics, value func(processRetryBurstMetrics) time.Duration) float64 {
+	if len(experiment) != len(baseline) || len(experiment) == 0 {
+		return 0
+	}
+	improvements := make([]float64, len(experiment))
+	for i := range experiment {
+		improvements[i] = processRetryBurstImprovement(value(experiment[i]), value(baseline[i]))
+	}
+	slices.Sort(improvements)
+	return improvements[len(improvements)/2]
+}
+
 func processRetryBurstImprovement(experiment, baseline time.Duration) float64 {
 	if baseline <= 0 {
 		return 0
@@ -983,6 +1179,7 @@ import (
 )
 
 var cpuSink atomic.Uint64
+var testRuns atomic.Int32
 
 type event struct {
 	Package string ` + "`json:\"package\"`" + `
@@ -1045,13 +1242,20 @@ func runWork() {
 	cpuSink.Store(value)
 }
 
-func RunFlaky(t *testing.T) {
-	runWork()
+func RunFlaky(t *testing.T, pkg string) {
+	attempt := testRuns.Add(1)
 	child := integrations.IsProcessRetryChild()
-	if child && os.Getenv("PROCESS_RETRY_BURST_CHILD_FAILS") == "true" {
+	retry := child || attempt > 1
+	if retry && !child {
+		reason := os.Getenv("PROCESS_RETRY_BURST_RETRY_REASON")
+		post(pkg, "in_process_retry_start", reason)
+		defer post(pkg, "in_process_retry_finish", "")
+	}
+	runWork()
+	if retry && os.Getenv("PROCESS_RETRY_BURST_CHILD_FAILS") == "true" {
 		t.Fail()
 	}
-	if !child && os.Getenv("PROCESS_RETRY_BURST_PARENT_FAILS") == "true" {
+	if !retry && os.Getenv("PROCESS_RETRY_BURST_PARENT_FAILS") == "true" {
 		t.Fail()
 	}
 }
@@ -1091,7 +1295,7 @@ const packageName = %q
 func init() { harness.ChildStarted(packageName) }
 
 //dd:test.unskippable
-func TestAFlaky(t *testing.T) { harness.RunFlaky(t) }
+func TestAFlaky(t *testing.T) { harness.RunFlaky(t, packageName) }
 
 func TestZFirstPassComplete(t *testing.T) { harness.FirstPassComplete(packageName) }
 
