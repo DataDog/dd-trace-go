@@ -1947,6 +1947,25 @@ func TestSubmitEvaluation(t *testing.T) {
 	}
 }
 
+func TestSubmitEvaluationDefaultsTimestamp(t *testing.T) {
+	_, coll, ll := testTracer(t)
+	before := time.Now().UnixMilli()
+
+	err := ll.SubmitEvaluation(llmobs.EvaluationConfig{
+		SpanID:     "test-span-id",
+		TraceID:    "test-trace-id",
+		Label:      "timestamp-default",
+		ScoreValue: ptrFromVal(1.0),
+	})
+	require.NoError(t, err)
+	after := time.Now().UnixMilli()
+
+	tracer.Flush()
+	metric := coll.RequireMetric(t, "timestamp-default")
+	assert.GreaterOrEqual(t, metric.TimestampMS, before)
+	assert.LessOrEqual(t, metric.TimestampMS, after)
+}
+
 func TestLLMObsLifecycle(t *testing.T) {
 	t.Run("start-stop", func(t *testing.T) {
 		// Ensure no active LLMObs initially

@@ -54,17 +54,11 @@ type SpanEventOption func(*SpanEvent)
 // NewSpanEvent constructs a completed span.
 func NewSpanEvent(traceID, spanID string, kind Kind, opts ...SpanEventOption) SpanEvent {
 	event := SpanEvent{
-		SpanID:   spanID,
-		TraceID:  traceID,
-		ParentID: illmobs.DefaultParentID,
-		Name:     string(kind),
-		Status:   StatusOK,
-		Meta:     illmobs.NewSpanEventMeta(kind),
-		DDAttributes: DDAttributes{
-			SpanID:  spanID,
-			TraceID: traceID,
-		},
+		SpanID:  spanID,
+		TraceID: traceID,
+		Meta:    illmobs.NewSpanEventMeta(kind),
 	}
+	illmobs.ApplySpanEventDefaults(&event)
 	for _, opt := range opts {
 		opt(&event)
 	}
@@ -86,14 +80,14 @@ func WithTiming(start time.Time, duration time.Duration) SpanEventOption {
 // WithModel sets model details for an LLM or embedding span.
 func WithModel(name, provider string) SpanEventOption {
 	return func(event *SpanEvent) {
-		illmobs.SetSpanModelMeta(spanEventMeta(event), spanEventKind(event), name, provider)
+		illmobs.SetSpanModelMeta(illmobs.EnsureSpanEventMeta(event), illmobs.SpanEventKind(event), name, provider)
 	}
 }
 
 // WithTextIO sets text input and output.
 func WithTextIO(input, output string) SpanEventOption {
 	return func(event *SpanEvent) {
-		meta := spanEventMeta(event)
+		meta := illmobs.EnsureSpanEventMeta(event)
 		if input == "" {
 			delete(meta, "input")
 		} else {
@@ -110,7 +104,7 @@ func WithTextIO(input, output string) SpanEventOption {
 // WithMetadata sets span metadata.
 func WithMetadata(metadata map[string]any) SpanEventOption {
 	return func(event *SpanEvent) {
-		meta := spanEventMeta(event)
+		meta := illmobs.EnsureSpanEventMeta(event)
 		if len(metadata) == 0 {
 			delete(meta, "metadata")
 			return
@@ -123,20 +117,8 @@ func WithMetadata(metadata map[string]any) SpanEventOption {
 func WithSpanError(details ErrorMessage) SpanEventOption {
 	return func(event *SpanEvent) {
 		event.Status = StatusError
-		illmobs.SetSpanErrorMeta(spanEventMeta(event), &details)
+		illmobs.SetSpanErrorMeta(illmobs.EnsureSpanEventMeta(event), &details)
 	}
-}
-
-func spanEventMeta(event *SpanEvent) map[string]any {
-	if event.Meta == nil {
-		event.Meta = make(map[string]any)
-	}
-	return event.Meta
-}
-
-func spanEventKind(event *SpanEvent) Kind {
-	kind, _ := event.Meta["span.kind"].(string)
-	return Kind(kind)
 }
 
 // SubmitSpans submits completed LLM Obs spans.
