@@ -7,13 +7,8 @@
 
 // Enables otelc instrumentation for this module, the otelc counterpart of
 // orchestrion.tool.go.
-//
-// The single import below is enough for the whole foundation: otelc finds the
-// tool file at dd-trace-go's module root and recurses into it, picking up the
-// tracer, GLS and AppSec rules. Per-integration imports get added here as
-// contribs are migrated, the same way orchestrion.tool.go lists them.
 package tools
 
 import (
-	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer" // foundation
+	_ "github.com/DataDog/dd-trace-go/otelc/all/v2" // integration
 )
