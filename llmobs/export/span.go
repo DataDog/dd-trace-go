@@ -8,6 +8,7 @@ package export
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -52,7 +53,18 @@ type SpanEventOption func(*SpanEvent)
 
 // NewSpanEvent constructs a completed span.
 func NewSpanEvent(traceID, spanID string, kind Kind, opts ...SpanEventOption) SpanEvent {
-	event := illmobs.NewExportSpanEvent(traceID, spanID, kind)
+	event := SpanEvent{
+		SpanID:   spanID,
+		TraceID:  traceID,
+		ParentID: illmobs.DefaultParentID,
+		Name:     string(kind),
+		Status:   StatusOK,
+		Meta:     illmobs.NewSpanEventMeta(kind),
+		DDAttributes: DDAttributes{
+			SpanID:  spanID,
+			TraceID: traceID,
+		},
+	}
 	for _, opt := range opts {
 		opt(&event)
 	}
@@ -62,36 +74,69 @@ func NewSpanEvent(traceID, spanID string, kind Kind, opts ...SpanEventOption) Sp
 // WithTiming sets the span start time and duration.
 func WithTiming(start time.Time, duration time.Duration) SpanEventOption {
 	return func(event *SpanEvent) {
-		illmobs.SetExportSpanTiming(event, start, duration)
+		if start.IsZero() {
+			event.StartNS = 0
+		} else {
+			event.StartNS = start.UnixNano()
+		}
+		event.Duration = duration
 	}
 }
 
 // WithModel sets model details for an LLM or embedding span.
 func WithModel(name, provider string) SpanEventOption {
 	return func(event *SpanEvent) {
-		illmobs.SetExportSpanModel(event, name, provider)
+		illmobs.SetSpanModelMeta(spanEventMeta(event), spanEventKind(event), name, provider)
 	}
 }
 
 // WithTextIO sets text input and output.
 func WithTextIO(input, output string) SpanEventOption {
 	return func(event *SpanEvent) {
-		illmobs.SetExportSpanTextIO(event, input, output)
+		meta := spanEventMeta(event)
+		if input == "" {
+			delete(meta, "input")
+		} else {
+			meta["input"] = map[string]any{"value": input}
+		}
+		if output == "" {
+			delete(meta, "output")
+		} else {
+			meta["output"] = map[string]any{"value": output}
+		}
 	}
 }
 
 // WithMetadata sets span metadata.
 func WithMetadata(metadata map[string]any) SpanEventOption {
 	return func(event *SpanEvent) {
-		illmobs.SetExportSpanMetadata(event, metadata)
+		meta := spanEventMeta(event)
+		if len(metadata) == 0 {
+			delete(meta, "metadata")
+			return
+		}
+		meta["metadata"] = maps.Clone(metadata)
 	}
 }
 
 // WithSpanError marks the span as failed and sets its error details.
 func WithSpanError(details ErrorMessage) SpanEventOption {
 	return func(event *SpanEvent) {
-		illmobs.SetExportSpanError(event, details)
+		event.Status = StatusError
+		illmobs.SetSpanErrorMeta(spanEventMeta(event), &details)
 	}
+}
+
+func spanEventMeta(event *SpanEvent) map[string]any {
+	if event.Meta == nil {
+		event.Meta = make(map[string]any)
+	}
+	return event.Meta
+}
+
+func spanEventKind(event *SpanEvent) Kind {
+	kind, _ := event.Meta["span.kind"].(string)
+	return Kind(kind)
 }
 
 // SubmitSpans submits completed LLM Obs spans.
