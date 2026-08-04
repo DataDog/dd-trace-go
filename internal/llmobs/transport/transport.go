@@ -55,8 +55,49 @@ const (
 	getDatasetRecordsTimeout = 20 * time.Second
 )
 
+// Response bodies are buffered in memory before being decoded, so each request
+// declares how much of one it is willing to hold.
+const (
+	// ackResponseSize fits endpoints that reply with an acknowledgement or a
+	// single resource.
+	ackResponseSize = 1 << 20 // 1MiB
+	// payloadResponseSize fits endpoints whose reply echoes back a payload the
+	// caller supplied, such as dataset records or an experiment config. Dataset
+	// writes are chunked well below this, so it leaves ample headroom.
+	payloadResponseSize = 64 << 20 // 64MiB
+	// errorBodySize caps how much of a failed response is kept to build the
+	// returned error message.
+	errorBodySize = 32 << 10 // 32KiB
+)
+
 var (
 	ErrDatasetNotFound = errors.New("dataset not found")
+
+	// errResponseTooLarge is returned when a response body exceeds the limit the
+	// request declared for it.
+	errResponseTooLarge = errors.New("response body too large")
+)
+
+// requestLimits bounds a single request: how long it may run, and how much of
+// the response body may be buffered.
+type requestLimits struct {
+	timeout         time.Duration
+	maxResponseSize int64
+}
+
+var (
+	// defaultLimits suits endpoints replying with an acknowledgement or a single
+	// resource.
+	defaultLimits = requestLimits{timeout: defaultTimeout, maxResponseSize: ackResponseSize}
+	// payloadLimits suits endpoints that echo back a payload the caller sent, so
+	// the reply can be as large as the request was.
+	payloadLimits = requestLimits{timeout: defaultTimeout, maxResponseSize: payloadResponseSize}
+	// datasetRecordsLimits suits the dataset records endpoint, which returns a
+	// page of records.
+	datasetRecordsLimits = requestLimits{timeout: getDatasetRecordsTimeout, maxResponseSize: payloadResponseSize}
+	// bulkUploadLimits suits the CSV upload endpoint, where the request is large
+	// but the response is only an acknowledgement.
+	bulkUploadLimits = requestLimits{timeout: bulkUploadTimeout, maxResponseSize: ackResponseSize}
 )
 
 func defaultBackoffStrategy() *backoff.ExponentialBackOff {
@@ -163,7 +204,7 @@ func (c *Transport) baseURL(subdomain string) string {
 	return u
 }
 
-func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain string, body any, timeout time.Duration) (requestResult, error) {
+func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain string, body any, lim requestLimits) (requestResult, error) {
 	var jsonBody io.Reader
 	if body != nil {
 		var buf bytes.Buffer
@@ -174,7 +215,7 @@ func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain str
 		}
 		jsonBody = bytes.NewReader(buf.Bytes())
 	}
-	return c.request(ctx, method, path, subdomain, jsonBody, "application/json", timeout)
+	return c.request(ctx, method, path, subdomain, jsonBody, "application/json", lim)
 }
 
 type requestResult struct {
@@ -182,9 +223,12 @@ type requestResult struct {
 	body       []byte
 }
 
-func (c *Transport) request(ctx context.Context, method, path, subdomain string, body io.Reader, contentType string, timeout time.Duration) (requestResult, error) {
-	if timeout == 0 {
-		timeout = defaultTimeout
+func (c *Transport) request(ctx context.Context, method, path, subdomain string, body io.Reader, contentType string, lim requestLimits) (requestResult, error) {
+	if lim.timeout == 0 {
+		lim.timeout = defaultTimeout
+	}
+	if lim.maxResponseSize == 0 {
+		lim.maxResponseSize = ackResponseSize
 	}
 	urlStr := c.baseURL(subdomain) + path
 	backoffStrat := defaultBackoffStrategy()
@@ -231,7 +275,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		}
 
 		// Set per-endpoint timeout
-		timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+		timeoutCtx, cancel := context.WithTimeout(ctx, lim.timeout)
 		defer cancel()
 		req = req.WithContext(timeoutCtx)
 
@@ -243,9 +287,17 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 
 		code := resp.StatusCode
 		if code >= 200 && code <= 299 {
-			b, readErr := io.ReadAll(resp.Body)
+			b, readErr := io.ReadAll(io.LimitReader(resp.Body, lim.maxResponseSize+1))
 			if readErr != nil {
 				return requestResult{}, fmt.Errorf("failed to read response body: %w", readErr)
+			}
+			if int64(len(b)) > lim.maxResponseSize {
+				// Left undrained on purpose, unlike the branches below: the remainder
+				// is already past what we agreed to read, and draining it to salvage
+				// the connection would mean reading up to 1MiB more that we would
+				// still abandon whenever the body is far oversize.
+				// Retrying would only buffer the same oversized body again.
+				return requestResult{}, backoff.Permanent(fmt.Errorf("%w: over %d bytes", errResponseTooLarge, lim.maxResponseSize))
 			}
 			return requestResult{statusCode: code, body: b}, nil
 		}
@@ -254,6 +306,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			if body := readErrorBody(resp); body != "" {
 				errMsg = fmt.Sprintf("%s: %s", errMsg, body)
 			}
+			drainAndClose(resp.Body)
 			return requestResult{}, fmt.Errorf("%s", errMsg)
 		}
 		if code == http.StatusTooManyRequests {
@@ -282,7 +335,9 @@ func readErrorBody(resp *http.Response) string {
 	if !strings.Contains(contentType, "application/json") {
 		return ""
 	}
-	body, err := io.ReadAll(resp.Body)
+	// The body only feeds an error message, so keep just enough of it to stay
+	// useful and discard the rest.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, errorBodySize))
 	if err != nil {
 		return ""
 	}
