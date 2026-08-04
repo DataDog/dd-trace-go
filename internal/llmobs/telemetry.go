@@ -225,7 +225,7 @@ func spanEventTags(event *transport.LLMObsSpanEvent) []string {
 	integration := findTagValue(event.Tags, "integration:")
 	mlApp := findTagValue(event.Tags, "ml_app:")
 	autoInstrumented := integration != ""
-	hasError := event.Status == SpanStatusError
+	hasError := event.Status == transport.SpanStatusError
 
 	return []string{
 		"span_kind:" + spanKind,

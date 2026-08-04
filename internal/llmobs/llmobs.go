@@ -79,14 +79,6 @@ const (
 	SpanKindTool SpanKind = transport.SpanKindTool
 )
 
-// SpanStatus represents the terminal status of an LLM Obs span.
-type SpanStatus = transport.SpanStatus
-
-const (
-	SpanStatusOK    SpanStatus = transport.SpanStatusOK
-	SpanStatusError SpanStatus = transport.SpanStatusError
-)
-
 // EvalMetricType represents an evaluation metric value type.
 type EvalMetricType = transport.EvalMetricType
 
@@ -139,9 +131,9 @@ const (
 
 const modelUnknown = "custom"
 
-func standardSpanEventTags(cfg *config.Config, mlApp, service, sessionID string, status SpanStatus, errorType, integration string) map[string]string {
+func standardSpanEventTags(cfg *config.Config, mlApp, service, sessionID string, status transport.SpanStatus, errorType, integration string) map[string]string {
 	errorValue := "0"
-	if status == SpanStatusError {
+	if status == transport.SpanStatusError {
 		errorValue = "1"
 	}
 	tags := map[string]string{
@@ -683,10 +675,10 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		meta["tool.version"] = toolVersion
 	}
 
-	spanStatus := SpanStatusOK
+	spanStatus := transport.SpanStatusOK
 	var errMsg *transport.ErrorMessage
 	if span.error != nil {
-		spanStatus = SpanStatusError
+		spanStatus = transport.SpanStatusError
 		errMsg = transport.NewErrorMessage(span.error)
 		setErrorMeta(meta, errMsg)
 	}

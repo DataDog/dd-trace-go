@@ -57,10 +57,81 @@ var (
 		SpanKindLLM: {}, SpanKindAgent: {}, SpanKindWorkflow: {}, SpanKindTask: {},
 		SpanKindTool: {}, SpanKindEmbedding: {}, SpanKindRetrieval: {},
 	}
-	validExportSpanStatuses = map[SpanStatus]struct{}{
-		SpanStatusOK: {}, SpanStatusError: {},
+	validExportSpanStatuses = map[transport.SpanStatus]struct{}{
+		transport.SpanStatusOK: {}, transport.SpanStatusError: {},
 	}
 )
+
+func NewExportSpanEvent(traceID, spanID string, kind SpanKind) transport.LLMObsSpanEvent {
+	return transport.LLMObsSpanEvent{
+		SpanID:   spanID,
+		TraceID:  traceID,
+		ParentID: defaultParentID,
+		Name:     string(kind),
+		Status:   transport.SpanStatusOK,
+		Meta:     map[string]any{"span.kind": string(kind)},
+		DDAttributes: transport.DDAttributes{
+			SpanID:  spanID,
+			TraceID: traceID,
+		},
+	}
+}
+
+func SetExportSpanTiming(event *transport.LLMObsSpanEvent, start time.Time, duration time.Duration) {
+	if start.IsZero() {
+		event.StartNS = 0
+	} else {
+		event.StartNS = start.UnixNano()
+	}
+	event.Duration = duration
+}
+
+func SetExportSpanModel(event *transport.LLMObsSpanEvent, modelName, modelProvider string) {
+	meta := ensureSpanEventMeta(event)
+	name, provider, ok := normalizeModel(exportSpanKind(*event), modelName, modelProvider)
+	if !ok {
+		delete(meta, metaKeyModelName)
+		delete(meta, metaKeyModelProvider)
+		return
+	}
+	meta[metaKeyModelName] = name
+	meta[metaKeyModelProvider] = provider
+}
+
+func SetExportSpanTextIO(event *transport.LLMObsSpanEvent, input, output string) {
+	meta := ensureSpanEventMeta(event)
+	if input == "" {
+		delete(meta, "input")
+	} else {
+		meta["input"] = map[string]any{"value": input}
+	}
+	if output == "" {
+		delete(meta, "output")
+	} else {
+		meta["output"] = map[string]any{"value": output}
+	}
+}
+
+func SetExportSpanMetadata(event *transport.LLMObsSpanEvent, metadata map[string]any) {
+	meta := ensureSpanEventMeta(event)
+	if len(metadata) == 0 {
+		delete(meta, "metadata")
+		return
+	}
+	meta["metadata"] = maps.Clone(metadata)
+}
+
+func SetExportSpanError(event *transport.LLMObsSpanEvent, details transport.ErrorMessage) {
+	event.Status = transport.SpanStatusError
+	setErrorMeta(ensureSpanEventMeta(event), &details)
+}
+
+func ensureSpanEventMeta(event *transport.LLMObsSpanEvent) map[string]any {
+	if event.Meta == nil {
+		event.Meta = make(map[string]any)
+	}
+	return event.Meta
+}
 
 // ValidateExportSpan checks the fields required by the LLM Obs intake.
 func ValidateExportSpan(event transport.LLMObsSpanEvent) *ExportValidationError {
@@ -108,27 +179,8 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, servic
 	span.CollectionErrors = slices.Clone(event.CollectionErrors)
 	span.SpanLinks = slices.Clone(event.SpanLinks)
 
-	if span.Meta == nil {
-		span.Meta = make(map[string]any)
-	}
+	ensureSpanEventMeta(&span)
 	kind := exportSpanKind(span)
-	span.Meta["span.kind"] = string(kind)
-	if modelName, modelProvider, ok := normalizeModel(kind, span.ModelName, span.ModelProvider); ok {
-		span.Meta[metaKeyModelName] = modelName
-		span.Meta[metaKeyModelProvider] = modelProvider
-	}
-	if span.Input != "" {
-		span.Meta["input"] = map[string]any{"value": span.Input}
-	}
-	if span.Output != "" {
-		span.Meta["output"] = map[string]any{"value": span.Output}
-	}
-	if len(span.Metadata) > 0 {
-		span.Meta["metadata"] = span.Metadata
-	}
-	if !span.Start.IsZero() {
-		span.StartNS = span.Start.UnixNano()
-	}
 	if span.ParentID == "" {
 		span.ParentID = defaultParentID
 	}
@@ -136,10 +188,7 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, servic
 		span.Name = string(kind)
 	}
 	if span.Status == "" {
-		span.Status = SpanStatusOK
-	}
-	if span.Service == "" {
-		span.Service = service
+		span.Status = transport.SpanStatusOK
 	}
 	if span.DDAttributes.SpanID == "" {
 		span.DDAttributes.SpanID = span.SpanID
@@ -147,40 +196,11 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, servic
 	if span.DDAttributes.TraceID == "" {
 		span.DDAttributes.TraceID = span.TraceID
 	}
-	if span.DDAttributes.APMTraceID == "" {
-		span.DDAttributes.APMTraceID = span.APMTraceID
-	}
-
-	var errMsg *transport.ErrorMessage
-	if span.Status == SpanStatusError {
-		message := span.ErrorMessage
-		if message == "" {
-			message = span.StatusMessage
-		}
-		if message == "" {
-			message, _ = span.Meta["error.message"].(string)
-		}
-		errorType := span.ErrorType
-		if errorType == "" {
-			errorType, _ = span.Meta["error.type"].(string)
-		}
-		errorStack := span.ErrorStack
-		if errorStack == "" {
-			errorStack, _ = span.Meta["error.stack"].(string)
-		}
-		errMsg = &transport.ErrorMessage{
-			Message: message,
-			Type:    errorType,
-			Stack:   errorStack,
-		}
-	}
-	setErrorMeta(span.Meta, errMsg)
-
 	errorType := ""
-	if errMsg != nil {
-		errorType = errMsg.Type
+	if span.Status == transport.SpanStatusError {
+		errorType, _ = span.Meta[metaKeyErrorType].(string)
 	}
-	for key, value := range standardSpanEventTags(cfg, cfg.MLApp, span.Service, span.SessionID, span.Status, errorType, "") {
+	for key, value := range standardSpanEventTags(cfg, cfg.MLApp, service, span.SessionID, span.Status, errorType, "") {
 		switch key {
 		case "service", "session_id":
 			span.Tags = replaceExportTag(span.Tags, key, value)
@@ -282,9 +302,6 @@ func buildEvaluation(metric EvaluationConfig, defaultMLApp string, rejectNonFini
 }
 
 func exportSpanKind(event transport.LLMObsSpanEvent) SpanKind {
-	if event.Kind != "" {
-		return SpanKind(event.Kind)
-	}
 	kind, _ := event.Meta["span.kind"].(string)
 	return SpanKind(kind)
 }

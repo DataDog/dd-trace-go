@@ -79,12 +79,6 @@ type DatasetRecordUpdate struct {
 	Metadata       any    `json:"metadata,omitempty"`
 }
 
-type ErrorMessage struct {
-	Message string `json:"message,omitempty"`
-	Type    string `json:"type,omitempty"`
-	Stack   string `json:"stack,omitempty"`
-}
-
 // ---------- Requests ----------
 
 type Request[T any] struct {

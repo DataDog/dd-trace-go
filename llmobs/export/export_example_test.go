@@ -24,19 +24,18 @@ func ExampleClient_SubmitSpans() {
 		log.Fatal(err)
 	}
 
-	res, err := client.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID:       "1234567890",
-		SpanID:        "2345678901",
-		Kind:          export.KindLLM,
-		Name:          "chat",
-		Start:         time.Now().Add(-2 * time.Second),
-		Duration:      1500 * time.Millisecond,
-		ModelName:     "gpt-4o",
-		ModelProvider: "openai",
-		Input:         "hello",
-		Output:        "hi there",
-		Metrics:       map[string]float64{"input_tokens": 12, "output_tokens": 8},
-	}})
+	event := export.NewSpanEvent(
+		"1234567890",
+		"2345678901",
+		export.KindLLM,
+		export.WithTiming(time.Now().Add(-2*time.Second), 1500*time.Millisecond),
+		export.WithModel("gpt-4o", "openai"),
+		export.WithTextIO("hello", "hi there"),
+	)
+	event.Name = "chat"
+	event.Metrics = map[string]float64{"input_tokens": 12, "output_tokens": 8}
+
+	res, err := client.SubmitSpans(context.Background(), []export.SpanEvent{event})
 	if err != nil {
 		log.Printf("submit spans: %v", err)
 	}
