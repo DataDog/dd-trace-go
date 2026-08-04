@@ -12,11 +12,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
-	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // ExportValidationCode identifies why an offline event cannot be exported.
@@ -130,92 +128,35 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, servic
 
 // BuildExportEvaluation validates and lowers the existing evaluation config.
 func BuildExportEvaluation(metric EvaluationConfig, defaultMLApp string) (*transport.LLMObsMetric, *ExportValidationError) {
-	return buildEvaluation(metric, defaultMLApp, true)
-}
-
-func buildEvaluation(metric EvaluationConfig, defaultMLApp string, rejectNonFinite bool) (*transport.LLMObsMetric, *ExportValidationError) {
-	if metric.Label == "" {
-		return nil, &ExportValidationError{
-			Code: ExportCodeMissingLabel, Reason: "missing label", cause: errInvalidMetricLabel,
-		}
+	joinOn, valueType, validation := validateEvaluation(metric)
+	if validation != nil {
+		return nil, exportEvaluationValidationError(validation)
 	}
-
-	joinOn, err := buildEvaluationJoin(metric.SpanID, metric.TraceID, metric.TagKey, metric.TagValue)
-	if err != nil {
-		return nil, &ExportValidationError{
-			Code: ExportCodeInvalidJoin, Reason: err.Error(), cause: err,
-		}
-	}
-
-	values := 0
-	if metric.CategoricalValue != nil {
-		values++
-	}
-	if metric.ScoreValue != nil {
-		values++
-	}
-	if metric.BooleanValue != nil {
-		values++
-	}
-	if metric.JSONValue != nil {
-		values++
-	}
-	if values != 1 {
-		return nil, &ExportValidationError{
-			Code: ExportCodeInvalidValue, Reason: "exactly one of categorical, score, boolean, or json value must be set",
-		}
-	}
-	if metric.JSONValue != nil && len(metric.JSONValue) == 0 {
-		return nil, &ExportValidationError{
-			Code: ExportCodeInvalidValue, Reason: "json_value must not be empty",
-		}
-	}
-	if rejectNonFinite && metric.ScoreValue != nil && (math.IsNaN(*metric.ScoreValue) || math.IsInf(*metric.ScoreValue, 0)) {
+	if metric.ScoreValue != nil && (math.IsNaN(*metric.ScoreValue) || math.IsInf(*metric.ScoreValue, 0)) {
 		return nil, &ExportValidationError{
 			Code: ExportCodeInvalidValue, Reason: "score value must be a finite number",
 		}
 	}
-
-	valueType := evaluationValueType(metric)
-	metricType := metric.MetricType
-	switch {
-	case metricType == "":
-		metricType = valueType
-	case metricType != EvalMetricTypeCategorical &&
-		metricType != EvalMetricTypeScore &&
-		metricType != EvalMetricTypeBoolean &&
-		metricType != EvalMetricTypeJSON:
-		return nil, &ExportValidationError{
-			Code:   ExportCodeTypeMismatch,
-			Reason: fmt.Sprintf("invalid metric type %q (want categorical, score, boolean, or json)", metricType),
-		}
-	case metricType != valueType:
-		return nil, &ExportValidationError{
-			Code:   ExportCodeTypeMismatch,
-			Reason: fmt.Sprintf("metric type %q does not match the %s value provided", metricType, valueType),
-		}
+	metricType, validation := resolveEvaluationMetricType(metric.MetricType, valueType)
+	if validation != nil {
+		return nil, exportEvaluationValidationError(validation)
 	}
+	return lowerEvaluation(metric, defaultMLApp, joinOn, metricType), nil
+}
 
-	mlApp := metric.MLApp
-	if mlApp == "" {
-		mlApp = defaultMLApp
+func exportEvaluationValidationError(validation *evaluationValidationError) *ExportValidationError {
+	var code ExportValidationCode
+	switch validation.kind {
+	case evaluationMissingLabel:
+		code = ExportCodeMissingLabel
+	case evaluationInvalidJoin:
+		code = ExportCodeInvalidJoin
+	case evaluationInvalidValue:
+		code = ExportCodeInvalidValue
+	case evaluationTypeMismatch:
+		code = ExportCodeTypeMismatch
 	}
-
-	return &transport.LLMObsMetric{
-		JoinOn:             joinOn,
-		Label:              metric.Label,
-		MetricType:         metricType,
-		TimestampMS:        evaluationTimestamp(metric),
-		MLApp:              mlApp,
-		Tags:               exportEvaluationTags(metric.Tags),
-		Assessment:         metric.Assessment,
-		Reasoning:          metric.Reasoning,
-		EvalMetricMetadata: metric.Metadata,
-		CategoricalValue:   metric.CategoricalValue,
-		ScoreValue:         metric.ScoreValue,
-		BooleanValue:       metric.BooleanValue,
-		JSONValue:          metric.JSONValue,
-	}, nil
+	return &ExportValidationError{Code: code, Reason: validation.reason, cause: validation.cause}
 }
 
 func canonicalDecimalID(id string) bool {
@@ -254,38 +195,4 @@ func replaceExportTag(tags []string, key, value string) []string {
 		}
 	}
 	return append(out, prefix+value)
-}
-
-func evaluationValueType(metric EvaluationConfig) EvalMetricType {
-	switch {
-	case metric.CategoricalValue != nil:
-		return EvalMetricTypeCategorical
-	case metric.ScoreValue != nil:
-		return EvalMetricTypeScore
-	case metric.BooleanValue != nil:
-		return EvalMetricTypeBoolean
-	default:
-		return EvalMetricTypeJSON
-	}
-}
-
-func evaluationTimestamp(metric EvaluationConfig) int64 {
-	if metric.TimestampMS != 0 {
-		return metric.TimestampMS
-	}
-	if !metric.Timestamp.IsZero() {
-		return metric.Timestamp.UnixMilli()
-	}
-	return time.Now().UnixMilli()
-}
-
-func exportEvaluationTags(tags []string) []string {
-	prefix := tagKeyTracerVersion + ":"
-	out := make([]string, 0, len(tags)+1)
-	for _, tag := range tags {
-		if !strings.HasPrefix(tag, prefix) {
-			out = append(out, tag)
-		}
-	}
-	return append(out, prefix+version.Tag)
 }
