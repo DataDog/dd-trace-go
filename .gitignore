@@ -38,3 +38,4 @@ coverage-*.txt
 /.claude/*
 !/.claude/commands/
 !/.claude/settings.json
+!/.claude/skills/
