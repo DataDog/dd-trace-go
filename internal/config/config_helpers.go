@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
@@ -23,6 +24,19 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
+
+// IsAPIKeyValid reports whether key has the expected Datadog API key shape.
+func IsAPIKeyValid(key string) bool {
+	if len(key) != 32 {
+		return false
+	}
+	for _, c := range key {
+		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
+			return false
+		}
+	}
+	return true
+}
 
 // DefaultSocketDSDPath is the UDS socket path probed during DogStatsD
 // auto-discovery. Exported as a var only for test overrides.
