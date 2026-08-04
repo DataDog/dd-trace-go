@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,6 +47,8 @@ var processRetryFixturePayloads = struct {
 	mu     locking.Mutex
 	values []string
 }{}
+
+var processRetryFixtureServiceSequence atomic.Uint64
 
 const deferredProcessRetryOrderPath = "/deferred-process-retry/order"
 
@@ -205,9 +208,43 @@ func processRetryFixtureScenarioEnabled() bool {
 }
 
 func processRetryScenarioEnvironment(entries ...string) []string {
-	result := append([]string(nil), os.Environ()...)
+	result := make([]string, 0, len(os.Environ())+len(entries)+2)
+	for _, entry := range os.Environ() {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && key == "DD_SERVICE" {
+			continue
+		}
+		result = append(result, entry)
+	}
 	result = append(result, processRetryScenarioEnv+"=true")
+	result = append(result, fmt.Sprintf("DD_SERVICE=process-retry-fixture-%d-%d", os.Getpid(), processRetryFixtureServiceSequence.Add(1)))
 	return append(result, entries...)
+}
+
+func TestProcessRetryScenarioEnvironmentIsolatesReadCache(t *testing.T) {
+	t.Setenv("DD_SERVICE", "inherited-service")
+
+	serviceName := func(environment []string) (string, int) {
+		t.Helper()
+		var value string
+		var count int
+		for _, entry := range environment {
+			if current, ok := strings.CutPrefix(entry, "DD_SERVICE="); ok {
+				value = current
+				count++
+			}
+		}
+		return value, count
+	}
+
+	first, firstCount := serviceName(processRetryScenarioEnvironment())
+	second, secondCount := serviceName(processRetryScenarioEnvironment())
+	if firstCount != 1 || secondCount != 1 {
+		t.Fatalf("service entry counts = %d/%d, want 1/1", firstCount, secondCount)
+	}
+	if first == "" || second == "" || first == second || first == "inherited-service" || second == "inherited-service" {
+		t.Fatalf("isolated service names = %q/%q, want distinct generated values", first, second)
+	}
 }
 
 func processRetryFixtureMainAssertionsEnabled() bool {
