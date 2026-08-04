@@ -13,16 +13,18 @@
 # definition covers every entry point the three aspects wrap, and the network,
 # host and port the contrib derives come out the same.
 #
-# Two differences from rewriting call sites:
+# Two consequences of hooking a definition rather than call sites:
 #
 #   1. redis.DialTimeout and redis.DialURLContext are traced too, which
 #      orchestrion does not do.
-#   2. A binary built with otelc that ALSO calls redigotrace.Dial* directly
-#      wraps the connection twice and emits two spans per command, because the
-#      contrib's own redis.DialContext call is hooked as well. Orchestrion is
-#      unaffected: it never rewrites call sites inside dd-trace-go. Closing this
-#      needs the contrib to mark the context of its own dial so the hook can
-#      recognise it. Reasoned from the call graph, not reproduced in a test.
+#   2. The contrib calls redis.DialContext itself, so without a way to tell that
+#      call apart, an application dialing through the contrib in an
+#      auto-instrumented build would have its connection wrapped twice and report
+#      two spans per command. Orchestrion never had this problem: it rewrites
+#      call sites in application code and leaves dd-trace-go's own alone. The
+#      contrib marks its own dial (../internal/otelcguard) and the hook skips
+#      marked ones. Covered by _integration/redigo_manual, which fails at two
+#      spans and passes under both tools.
 redigo_dial_context:
   target: github.com/gomodule/redigo/redis
   where:
