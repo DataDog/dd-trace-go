@@ -83,7 +83,8 @@ func runOrchestrionRetryProcessController(t *testing.T, runFilter string, extraE
 	if orchestrionRetryProcessChild() {
 		t.Skip("controller runs only in the parent process")
 	}
-	args := []string{"-test.run=" + runFilter, "-test.v"}
+	args := make([]string, 0, 2+len(extraArgs))
+	args = append(args, "-test.run="+runFilter, "-test.v")
 	args = append(args, extraArgs...)
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Env = append(os.Environ(), extraEnv...)
