@@ -366,7 +366,7 @@ func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
 			HTTPClient: c.httpClient,
 			Site:       c.internalConfig.Site(),
 		},
-		TestBaseURL:   c.llmobsTestBaseURL,
+		TestBaseURL: c.llmobsTestBaseURL,
 	}
 	if c.llmobsHTTPClient != nil {
 		cfg.TracerConfig.HTTPClient = c.llmobsHTTPClient
