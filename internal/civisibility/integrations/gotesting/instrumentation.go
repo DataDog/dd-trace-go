@@ -95,12 +95,14 @@ type (
 		processRetryFuzzGuard         *processRetryFuzzGuardSnapshot
 		processRetryLaunchTemplate    *processRetryLaunchBaseline
 		processRetryCoordinator       *processRetryCoordinator
+		efdFaultySessionGuard         earlyFlakeDetectionFaultySession
 		retryAttemptGroupFactory      func(*testing.T) (*retryAttemptGroup, string)
 		retryAttemptObserveOutput     bool
 		retryAttemptObserveOutputSet  bool
 		retryAttemptMaskingFallback   bool
 		failfastEnabled               func() bool
 		nativeFailfastObserved        func() bool
+		postRetryFamilyTransition     func(*testExecutionMetadata)
 
 		// function to modify the execution metadata before each execution (first callback executed). It's also called before postOnRetryEnd to do a final sync
 		preExecMetaAdjust func(execMeta *testExecutionMetadata, executionIndex int)
@@ -129,6 +131,7 @@ type (
 		mRunInvocations            *atomic.Uint64
 		processRetryLaunchTemplate *processRetryLaunchBaseline
 		processRetryCoordinator    *processRetryCoordinator
+		efdFaultySessionGuard      earlyFlakeDetectionFaultySession
 		retryAttemptObserveOutput  bool
 	}
 
@@ -156,6 +159,7 @@ type (
 		capabilityFallbackCompleted bool
 		lastObservation             retryAttemptObservation
 		deferredQueued              bool
+		efdFaultySessionChecked     bool
 	}
 
 	flakyRetryBudgetReservation struct {
@@ -711,6 +715,7 @@ func applyAdditionalFeaturesToTestFunc(
 			processRetryInvocationCounter: wrapperOpts.mRunInvocations,
 			processRetryLaunchTemplate:    wrapperOpts.processRetryLaunchTemplate,
 			processRetryCoordinator:       wrapperOpts.processRetryCoordinator,
+			efdFaultySessionGuard:         wrapperOpts.efdFaultySessionGuard,
 			processRetryFuzzGuard:         wrapperOpts.processRetryFuzzGuard,
 			retryAttemptObserveOutput:     wrapperOpts.retryAttemptObserveOutput,
 			retryAttemptObserveOutputSet:  true,
@@ -736,6 +741,9 @@ func applyAdditionalFeaturesToTestFunc(
 				// Propagate flags from the original test metadata.
 				propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
 
+				syncFeatureMetadataFromExecution(ptrMeta, execMeta)
+			},
+			postRetryFamilyTransition: func(execMeta *testExecutionMetadata) {
 				syncFeatureMetadataFromExecution(ptrMeta, execMeta)
 			},
 			preIsLastRetry: func(execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
@@ -1122,6 +1130,9 @@ func reserveRetryBudgetIfNeeded(execOpts *executionOptions, t *testing.T, execMe
 	if !execOpts.options.postShouldRetry(t, execMeta, executionIndex, execOpts.retryCount) {
 		return false
 	}
+	if !admitEarlyFlakeDetectionContinuation(execOpts, t, execMeta) {
+		return false
+	}
 	if !usesFlakyRetryBudget(execMeta) {
 		return true
 	}
@@ -1132,6 +1143,54 @@ func reserveRetryBudgetIfNeeded(execOpts *executionOptions, t *testing.T, execMe
 		return false
 	}
 	return true
+}
+
+func admitEarlyFlakeDetectionContinuation(execOpts *executionOptions, t *testing.T, execMeta *testExecutionMetadata) bool {
+	if execOpts == nil || execOpts.options == nil || execMeta == nil || !usesEfdRetrySemantics(execMeta) {
+		return true
+	}
+	guard := execOpts.options.efdFaultySessionGuard
+	if guard == nil {
+		return true
+	}
+
+	admission := earlyFlakeDetectionAdmissionAllowed
+	if !execOpts.efdFaultySessionChecked {
+		execOpts.efdFaultySessionChecked = true
+		switch {
+		case execMeta.isANewTest:
+			admission = guard.admitNewTest(execMeta.identity)
+		case execMeta.isAModifiedTest:
+			admission = guard.retryState()
+		}
+	} else {
+		admission = guard.retryState()
+	}
+	if admission == earlyFlakeDetectionAdmissionAllowed {
+		return true
+	}
+
+	// EFD suppression may fall through to FTR only for a still-failing test
+	// with no successful attempt. Preserve factual EFD metadata while switching
+	// the retry family and resetting its independent per-test budget once.
+	failed := t != nil && t.Failed()
+	if retryCount, ok := transitionSuppressedEFDToFlakyRetries(execMeta, failed, execMeta.anyExecutionPassed); ok {
+		execOpts.retryCount = retryCount
+		if execOpts.options.postRetryFamilyTransition != nil {
+			execOpts.options.postRetryFamilyTransition(execMeta)
+		}
+		return true
+	}
+	return false
+}
+
+func transitionSuppressedEFDToFlakyRetries(execMeta *testExecutionMetadata, failed, anyPassed bool) (int64, bool) {
+	if execMeta == nil || !failed || anyPassed || !execMeta.isFlakyTestRetriesEnabled || execMeta.efdFellBackToFlakyRetries {
+		return 0, false
+	}
+	execMeta.efdFellBackToFlakyRetries = true
+	retryCount := integrations.GetFlakyRetriesSettings().RetryCount - 1
+	return retryCount, retryCount >= 0
 }
 
 func usesFlakyRetryBudget(execMeta *testExecutionMetadata) bool {

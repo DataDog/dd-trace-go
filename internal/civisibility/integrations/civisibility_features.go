@@ -196,19 +196,7 @@ func ensureSettingsInitialization(serviceName string) {
 			}
 		}
 
-		// check if we need to disable EFD because known tests is not enabled
-		if !ciSettings.KnownTestsEnabled {
-			// "known_tests_enabled" parameter works as a kill-switch for EFD, so if “known_tests_enabled” is false it
-			// will disable EFD even if “early_flake_detection.enabled” is set to true (which should not happen normally,
-			// the backend should disable both of them in that case)
-			ciSettings.EarlyFlakeDetection.Enabled = false
-		}
-
-		// check if early flake detection is disabled by env-vars
-		if ciSettings.EarlyFlakeDetection.Enabled && !internal.BoolEnv(constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable, true) {
-			log.Warn("civisibility: early flake detection was disabled by the %s environment variable", constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable)
-			ciSettings.EarlyFlakeDetection.Enabled = false
-		}
+		applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings)
 		earlyFlakeDetectionMaxRetries := internal.IntEnv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, -1)
 		slowTestRetries := &ciSettings.EarlyFlakeDetection.SlowTestRetries
 		slowTestRetries.FiveS = capEarlyFlakeDetectionRetries(slowTestRetries.FiveS, earlyFlakeDetectionMaxRetries)
@@ -290,6 +278,28 @@ func capEarlyFlakeDetectionRetries(retries, maxRetries int) int {
 		return maxRetries
 	}
 	return retries
+}
+
+func applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings *net.SettingsResponseData) {
+	if ciSettings == nil {
+		return
+	}
+	// Known tests remains the backend kill switch because EFD cannot classify
+	// new or modified tests without that data.
+	if !ciSettings.KnownTestsEnabled {
+		ciSettings.EarlyFlakeDetection.Enabled = false
+		return
+	}
+	enabled, configured := internal.BoolEnvNoDefault(constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable)
+	if !configured || enabled == ciSettings.EarlyFlakeDetection.Enabled {
+		return
+	}
+	state := "disabled"
+	if enabled {
+		state = "enabled"
+	}
+	log.Warn("civisibility: early flake detection was %s by the %s environment variable", state, constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable)
+	ciSettings.EarlyFlakeDetection.Enabled = enabled
 }
 
 // logSettingsFetchError reports a failed or empty CI Visibility settings response.

@@ -3048,7 +3048,7 @@ func TestRunProcessRetryAttemptStopsActiveChildOnShutdown(t *testing.T) {
 			},
 			time.Time{},
 			false,
-			captureProcessRetryLaunchBaseline(),
+			captureProcessRetryLaunchBaselineForTesting(),
 			shutdown,
 		)
 	}()
@@ -3763,12 +3763,26 @@ func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 		},
 	})
 
-	template := captureProcessRetryLaunchTemplate()
+	startup := captureProcessRetryStartupSnapshot(
+		func() (string, error) {
+			workingDirectoryCalls.Add(1)
+			return "/tmp/startup-work", nil
+		},
+		func() []string {
+			environCalls.Add(1)
+			return []string{
+				"STARTUP=1",
+				constants.CIVisibilityInternalRetryProcessChild + "=true",
+				processRetryCoverageDirectoryEnvironmentVariable + "=/tmp/coverage",
+			}
+		},
+	)
+	template := captureProcessRetryLaunchTemplateFromStartup(startup)
 	require.NoError(t, template.err)
 	require.Equal(t, int32(1), executableCalls.Load())
 	require.Equal(t, int32(1), argsCalls.Load())
-	require.Zero(t, workingDirectoryCalls.Load())
-	require.Zero(t, environCalls.Load())
+	require.Equal(t, int32(1), workingDirectoryCalls.Load())
+	require.Equal(t, int32(1), environCalls.Load())
 
 	first := captureProcessRetryLaunchBaselineFromTemplate(template)
 	second := captureProcessRetryLaunchBaselineFromTemplate(template)
@@ -3776,12 +3790,12 @@ func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 	require.NoError(t, second.err)
 	require.Equal(t, int32(1), executableCalls.Load())
 	require.Equal(t, int32(1), argsCalls.Load())
-	require.Equal(t, int32(2), workingDirectoryCalls.Load())
-	require.Equal(t, int32(2), environCalls.Load())
-	require.Equal(t, "/tmp/work-1", first.workingDirectory)
-	require.Equal(t, "/tmp/work-2", second.workingDirectory)
-	require.Equal(t, []string{"ATTEMPT=1"}, first.environment)
-	require.Equal(t, []string{"ATTEMPT=2"}, second.environment)
+	require.Equal(t, int32(1), workingDirectoryCalls.Load())
+	require.Equal(t, int32(1), environCalls.Load())
+	require.Equal(t, "/tmp/startup-work", first.workingDirectory)
+	require.Equal(t, "/tmp/startup-work", second.workingDirectory)
+	require.Equal(t, []string{"STARTUP=1"}, first.environment)
+	require.Equal(t, []string{"STARTUP=1"}, second.environment)
 }
 
 func TestProcessRetryChildControlConfigUsesBootstrapSnapshot(t *testing.T) {
@@ -3986,7 +4000,7 @@ func TestRunProcessRetryAttemptContainsOrdinaryDescendant(t *testing.T) {
 		}
 	})
 
-	baseline := captureProcessRetryLaunchBaseline()
+	baseline := captureProcessRetryLaunchBaselineForTesting()
 	require.NoError(t, baseline.err)
 	baseline.argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
 	baseline.argsSnapshot.runSelector = ""
@@ -4193,7 +4207,7 @@ func TestRunProcessRetryAttemptPreservesArtifactPolicy(t *testing.T) {
 	t.Setenv(processRetryChildResultScenarioEnv, "artifact_dir")
 	t.Setenv(processRetryArtifactObservedPathEnv, observationPath)
 
-	baseline := captureProcessRetryLaunchBaseline()
+	baseline := captureProcessRetryLaunchBaselineForTesting()
 	require.NoError(t, baseline.err)
 	baseline.args = []string{"-test.outputdir=" + outputDir, "-test.artifacts=true"}
 	baseline.argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)

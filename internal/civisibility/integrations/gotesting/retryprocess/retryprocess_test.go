@@ -50,14 +50,8 @@ var processRetryFixturePayloads = struct {
 
 var processRetryFixtureServiceSequence atomic.Uint64
 
-const deferredProcessRetryOrderPath = "/deferred-process-retry/order"
-
-var deferredProcessRetryOrder = struct {
-	mu      locking.Mutex
-	entries []string
-}{}
-
 func TestMain(m *testing.M) {
+	applyProcessRetryTestMainBaselineFixture()
 	if processRetryFixtureEnv(processRetryTransportProbeEnv) == "true" {
 		if integrations.IsProcessRetryChild() {
 			panic("process retry transport descendant entered child mode")
@@ -203,6 +197,29 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
+func applyProcessRetryTestMainBaselineFixture() {
+	if processRetryFixtureEnv(processRetryTestMainFixtureEnv) != "true" {
+		return
+	}
+	expectedCwd := processRetryFixtureEnv(processRetryTestMainCwdEnv)
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic(fmt.Sprintf("read process retry TestMain working directory: %v", err))
+	}
+	if cwd != expectedCwd {
+		panic(fmt.Sprintf("process retry TestMain working directory = %q, want startup directory %q", cwd, expectedCwd))
+	}
+	if value, ok := os.LookupEnv(processRetryTestMainMarkerEnv); ok {
+		panic(fmt.Sprintf("process retry TestMain inherited post-setup environment value %q", value))
+	}
+	if err := os.Setenv(processRetryTestMainMarkerEnv, "applied"); err != nil {
+		panic(fmt.Sprintf("set process retry TestMain environment marker: %v", err))
+	}
+	if err := os.Chdir(processRetryTestMainWorkDir); err != nil {
+		panic(fmt.Sprintf("apply process retry TestMain working directory: %v", err))
+	}
+}
+
 func processRetryFixtureScenarioEnabled() bool {
 	return processRetryFixtureEnv(processRetryScenarioEnv) == "true"
 }
@@ -327,10 +344,6 @@ func writeProcessRetryAPIResponse[T any](w http.ResponseWriter, id, responseType
 
 func newProcessRetryFixtureServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == deferredProcessRetryOrderPath {
-			handleDeferredProcessRetryOrder(w, r)
-			return
-		}
 		recordProcessRetryFixtureRequest(r)
 		switch r.URL.Path {
 		case "/api/v2/libraries/tests/services/setting":
@@ -426,28 +439,18 @@ func newProcessRetryFixtureServer() *httptest.Server {
 	}))
 }
 
-func handleDeferredProcessRetryOrder(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-	entry, err := io.ReadAll(io.LimitReader(r.Body, 128))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	deferredProcessRetryOrder.mu.Lock()
-	deferredProcessRetryOrder.entries = append(deferredProcessRetryOrder.entries, string(entry))
-	deferredProcessRetryOrder.mu.Unlock()
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func assertDeferredProcessRetryOrder() {
-	deferredProcessRetryOrder.mu.Lock()
-	defer deferredProcessRetryOrder.mu.Unlock()
+	data, err := os.ReadFile(processRetryFixtureEnv(processRetryDeferredOrderingPathEnv))
+	if err != nil {
+		panic(fmt.Sprintf("read deferred process retry order: %v", err))
+	}
+	entries := strings.Fields(string(data))
 	want := []string{"A:first", "B:first", "A:retry"}
 	if processRetryFixtureEnv(processRetryDeferredRepeatedOrderingEnv) == "true" {
 		want = []string{"A:first", "B:first", "A:first", "B:first", "A:retry", "A:retry"}
 	}
-	if !slices.Equal(deferredProcessRetryOrder.entries, want) {
-		panic(fmt.Sprintf("deferred process retry order = %v, want %v", deferredProcessRetryOrder.entries, want))
+	if !slices.Equal(entries, want) {
+		panic(fmt.Sprintf("deferred process retry order = %v, want %v", entries, want))
 	}
 }
 

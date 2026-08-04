@@ -7,6 +7,7 @@ package integrations
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -19,13 +20,43 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
+	coretelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+func TestSessionFinishedTelemetryIncludesFaultyEFDAbortReason(t *testing.T) {
+	for _, exitCode := range []int{0, 1} {
+		t.Run(fmt.Sprintf("exit=%d", exitCode), func(t *testing.T) {
+			mockTracer := mocktracer.Start()
+			defer mockTracer.Stop()
+			recorder := new(telemetrytest.RecordClient)
+			defer coretelemetry.MockClient(recorder)()
+
+			session := CreateTestSession(WithTestSessionFramework("golang.org/pkg/testing", runtime.Version()))
+			session.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "faulty")
+			session.Close(exitCode)
+
+			found := false
+			for key, metric := range recorder.Metrics {
+				if key.Namespace != coretelemetry.NamespaceCIVisibility || key.Name != "event_finished" {
+					continue
+				}
+				if strings.Contains(key.Tags, "event_type:session") && strings.Contains(key.Tags, "early_flake_detection_abort_reason:faulty") {
+					require.Equal(t, 1.0, metric.Get())
+					found = true
+				}
+			}
+			require.True(t, found, "session-finished telemetry did not contain the faulty EFD abort reason: %#v", recorder.Metrics)
+		})
+	}
+}
 
 // Mocking the ddTslvEvent interface
 type MockDdTslvEvent struct {

@@ -43,6 +43,7 @@ const orchestrionRetryProcessDeferredOrderingEnv = "ORCHESTRION_RETRY_PROCESS_DE
 const orchestrionRetryProcessDeferredOrderingPathEnv = "ORCHESTRION_RETRY_PROCESS_DEFERRED_ORDERING_PATH"
 const orchestrionRetryProcessSequentialMRunEnv = "ORCHESTRION_RETRY_PROCESS_SEQUENTIAL_M_RUN"
 const orchestrionRetryProcessDuplicateChildMRunEnv = "ORCHESTRION_RETRY_PROCESS_DUPLICATE_CHILD_M_RUN"
+const orchestrionRetryProcessFaultySessionModeEnv = "ORCHESTRION_RETRY_PROCESS_FAULTY_SESSION_MODE"
 const orchestrionRetryProcessCleanupPathEnv = "ORCHESTRION_RETRY_PROCESS_CLEANUP_PATH"
 const orchestrionRetryProcessSubtestPanicContinuedPathEnv = "ORCHESTRION_RETRY_PROCESS_SUBTEST_PANIC_CONTINUED_PATH"
 const orchestrionRetryProcessChildAPIKey = "orchestrion-process-retry-child-api-key"
@@ -70,6 +71,7 @@ var orchestrionRetryProcessSelectedSubtestA2FParentRuns atomic.Int32
 var orchestrionRetryProcessSelectedSubtestA2FRuns atomic.Int32
 var orchestrionRetryProcessSequentialMRunRuns atomic.Int32
 var orchestrionRetryProcessSequentialMRunNestedRuns atomic.Int32
+var orchestrionRetryProcessFaultySessionRuns atomic.Int32
 
 func requireOrchestrionProcessRetryContainmentForTesting(t testing.TB) {
 	t.Helper()
@@ -234,6 +236,12 @@ func TestMain(m *testing.M) {
 			os.Exit(m.Run())
 		}
 		os.Exit(runOrchestrionRetryProcessDeferredOrdering(m))
+	}
+	if mode := orchestrionRetryProcessEnv(orchestrionRetryProcessFaultySessionModeEnv); mode != "" {
+		if orchestrionRetryProcessChild() {
+			os.Exit(m.Run())
+		}
+		os.Exit(runOrchestrionRetryProcessFaultySession(m, mode))
 	}
 	if orchestrionRetryProcessEnv(orchestrionRetryProcessSequentialMRunEnv) == "true" {
 		os.Exit(runOrchestrionRetryProcessSequentialMRun(m))
@@ -431,6 +439,63 @@ func TestOrchestrionRetryProcessDefersEFDUntilFirstPassCompletesController(t *te
 	)
 }
 
+func TestOrchestrionRetryProcessFaultySessionOwnershipController(t *testing.T) {
+	for _, mode := range []string{"orchestrion", "hybrid"} {
+		t.Run(mode, func(t *testing.T) {
+			runOrchestrionRetryProcessController(
+				t,
+				"^TestOrchestrionRetryProcessFaultySessionFixture$",
+				[]string{orchestrionRetryProcessFaultySessionModeEnv + "=" + mode},
+				"-test.count=1",
+			)
+		})
+	}
+}
+
+func runOrchestrionRetryProcessFaultySession(m *testing.M, mode string) int {
+	threshold := 0
+	harness := newOrchestrionRetryProcessParentHarnessWithConfig(
+		"orchestrion-faulty-session-"+mode,
+		"orchestrion-faulty-session-api-key",
+		orchestrionRetryProcessHarnessConfig{efdRetries: 1, faultySessionThreshold: &threshold},
+	)
+	defer harness.close()
+
+	var exitCode int
+	if mode == "hybrid" {
+		exitCode = gotesting.RunM(m)
+	} else {
+		exitCode = m.Run()
+	}
+	if exitCode != 0 {
+		return exitCode
+	}
+	if got := orchestrionRetryProcessFaultySessionRuns.Load(); got != 1 {
+		panic(fmt.Sprintf("unexpected faulty-session fixture run count: got=%d want=1", got))
+	}
+
+	const resourceName = "main_test.go.TestOrchestrionRetryProcessFaultySessionFixture"
+	testSpans := 0
+	processRetrySpans := 0
+	sessionFaulty := false
+	for _, span := range harness.tracer.FinishedSpans() {
+		if span.Tag(ext.ResourceName) == resourceName {
+			testSpans++
+			if span.Tag(constants.TestRetryExecutionMode) == "process" {
+				processRetrySpans++
+			}
+		}
+		if span.Tag(ext.SpanType) == constants.SpanTypeTestSession && span.Tag(constants.TestEarlyFlakeDetectionRetryAborted) == "faulty" {
+			sessionFaulty = true
+		}
+	}
+	if testSpans != 1 || processRetrySpans != 0 || !sessionFaulty {
+		panic(fmt.Sprintf("unexpected faulty-session spans: tests=%d process_retries=%d session_faulty=%t", testSpans, processRetrySpans, sessionFaulty))
+	}
+	harness.assertRequests("faulty session " + mode)
+	return 0
+}
+
 func runOrchestrionRetryProcessDeferredOrdering(m *testing.M) int {
 	harness := newOrchestrionRetryProcessParentHarnessWithConfig(
 		"orchestrion-deferred-ordering",
@@ -481,10 +546,11 @@ func runOrchestrionRetryProcessDeferredOrdering(m *testing.M) int {
 }
 
 type orchestrionRetryProcessHarnessConfig struct {
-	flakyRetries        bool
-	efdRetries          int
-	attemptToFixRetries int
-	managementData      *civisibilitynet.TestManagementTestsResponseDataModules
+	flakyRetries           bool
+	efdRetries             int
+	faultySessionThreshold *int
+	attemptToFixRetries    int
+	managementData         *civisibilitynet.TestManagementTestsResponseDataModules
 }
 
 func newOrchestrionRetryProcessParentHarness(settingsID, apiKey string) *orchestrionRetryProcessParentHarness {
@@ -523,6 +589,7 @@ func newOrchestrionRetryProcessParentHarnessWithConfig(
 				response.Data.Attributes.KnownTestsEnabled = true
 				response.Data.Attributes.EarlyFlakeDetection.Enabled = true
 				response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = config.efdRetries
+				response.Data.Attributes.EarlyFlakeDetection.FaultySessionThreshold = config.faultySessionThreshold
 			}
 			response.Data.Attributes.TestManagement.Enabled = config.managementData != nil
 			response.Data.Attributes.TestManagement.AttemptToFixRetries = config.attemptToFixRetries
@@ -1384,6 +1451,16 @@ func TestOrchestrionRetryProcessDeferredOrderingB(t *testing.T) {
 		return
 	}
 	recordOrchestrionRetryProcessDeferredOrder(t, "B:first")
+}
+
+func TestOrchestrionRetryProcessFaultySessionFixture(t *testing.T) {
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessFaultySessionModeEnv) == "" {
+		t.Skip("faulty-session fixture runs only from its controller subprocess")
+	}
+	if orchestrionRetryProcessChild() {
+		t.Fatal("faulty-session suppression launched a process retry child")
+	}
+	orchestrionRetryProcessFaultySessionRuns.Add(1)
 }
 
 func recordOrchestrionRetryProcessDeferredOrder(t *testing.T, entry string) {

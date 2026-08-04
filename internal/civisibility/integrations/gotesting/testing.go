@@ -152,8 +152,8 @@ func newTestIdentity(moduleName, suiteName, fullName string) *testIdentity {
 	if fullName == "" {
 		fullName = "<unknown>"
 	}
+	baseName, _ := topLevelTestName(fullName)
 	segments := strings.Split(fullName, "/")
-	baseName := segments[0]
 	return &testIdentity{
 		ModuleName: moduleName,
 		SuiteName:  suiteName,
@@ -161,6 +161,15 @@ func newTestIdentity(moduleName, suiteName, fullName string) *testIdentity {
 		FullName:   fullName,
 		Segments:   segments,
 	}
+}
+
+// topLevelTestName returns the top-level test name without allocating. The
+// boolean reports whether fullName itself identifies a top-level test.
+func topLevelTestName(fullName string) (string, bool) {
+	if separator := strings.IndexByte(fullName, '/'); separator >= 0 {
+		return fullName[:separator], false
+	}
+	return fullName, true
 }
 
 type testManagementMatchKind int
@@ -320,6 +329,14 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 
 	coverageInitialized := false
 	settings := integrations.GetSettings()
+	var knownTests *net.KnownTestsResponseData
+	if settings != nil && settings.EarlyFlakeDetection.Enabled && settings.EarlyFlakeDetection.FaultySessionThreshold != nil {
+		threshold := *settings.EarlyFlakeDetection.FaultySessionThreshold
+		if threshold > 0 && threshold < 100 {
+			knownTests = integrations.GetKnownTests()
+		}
+	}
+	wrapperOpts.efdFaultySessionGuard = newEarlyFlakeDetectionFaultySession(settings, knownTests)
 	if settings != nil {
 		if settings.CodeCoverage {
 			// Initialize the runtime coverage if enabled.
@@ -370,6 +387,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			}
 			recordTestingMDeferredDisposition(claim, summary)
 		}
+		markEFDSessionFaultyIfNeeded(wrapperOpts.efdFaultySessionGuard)
 		retireTestingMInstrumentation(m, claim)
 		releaseHookEpoch()
 		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)

@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -291,6 +292,51 @@ func TestCapEarlyFlakeDetectionRetries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, capEarlyFlakeDetectionRetries(tt.retries, tt.maxRetries))
+		})
+	}
+}
+
+func TestApplyEarlyFlakeDetectionEnabledEnvironmentOverride(t *testing.T) {
+	key := constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable
+	previous, previouslySet := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+	t.Cleanup(func() {
+		if previouslySet {
+			_ = os.Setenv(key, previous)
+			return
+		}
+		_ = os.Unsetenv(key)
+	})
+
+	tests := []struct {
+		name              string
+		remoteEnabled     bool
+		knownTestsEnabled bool
+		override          string
+		overrideSet       bool
+		want              bool
+	}{
+		{name: "unset preserves disabled remote setting", knownTestsEnabled: true, want: false},
+		{name: "unset preserves enabled remote setting", remoteEnabled: true, knownTestsEnabled: true, want: true},
+		{name: "true enables disabled remote setting", knownTestsEnabled: true, override: "true", overrideSet: true, want: true},
+		{name: "false disables enabled remote setting", remoteEnabled: true, knownTestsEnabled: true, override: "false", overrideSet: true, want: false},
+		{name: "invalid preserves remote setting", remoteEnabled: true, knownTestsEnabled: true, override: "invalid", overrideSet: true, want: true},
+		{name: "known tests remains a kill switch", remoteEnabled: true, override: "true", overrideSet: true, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.overrideSet {
+				t.Setenv(key, tt.override)
+			}
+			settings := civisibilitynet.SettingsResponseData{KnownTestsEnabled: tt.knownTestsEnabled}
+			settings.EarlyFlakeDetection.Enabled = tt.remoteEnabled
+
+			applyEarlyFlakeDetectionEnabledEnvironmentOverride(&settings)
+
+			assert.Equal(t, tt.want, settings.EarlyFlakeDetection.Enabled)
 		})
 	}
 }

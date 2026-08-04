@@ -93,7 +93,13 @@ func (l *processRetryLimiter) acquireWithShutdown(
 }
 
 func runProcessRetryAttempt(ctx context.Context, cfg processRetryChildConfig, parentDeadline time.Time, parentDeadlineOK bool) processRetryAttemptResult {
-	return runProcessRetryAttemptWithBaseline(ctx, cfg, parentDeadline, parentDeadlineOK, captureProcessRetryLaunchBaseline())
+	return runProcessRetryAttemptWithBaseline(ctx, cfg, parentDeadline, parentDeadlineOK, captureProcessRetryLaunchBaselineForTesting())
+}
+
+func captureProcessRetryLaunchBaselineForTesting() *processRetryLaunchBaseline {
+	hooks := currentProcessRetryRunnerHooks()
+	startup := captureProcessRetryStartupSnapshot(hooks.workingDirectory, hooks.environ)
+	return captureProcessRetryLaunchBaselineFromTemplate(captureProcessRetryLaunchTemplateFromStartup(startup))
 }
 
 func runProcessRetryAttemptWithBaseline(

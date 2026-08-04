@@ -69,6 +69,9 @@ type processRetryBurstScenario struct {
 	parentFails        bool
 	childFails         bool
 	expectFailure      bool
+	faultyThreshold    *int
+	expectedRetries    *int
+	knownFlaky         bool
 	profile            processRetryBurstProfile
 }
 
@@ -120,6 +123,9 @@ func (s processRetryBurstScenario) expectedRetriesPerPackage() int {
 }
 
 func (s processRetryBurstScenario) expectedRetryTotal() int {
+	if s.expectedRetries != nil {
+		return *s.expectedRetries
+	}
 	perPackage := s.expectedRetriesPerPackage()
 	if s.flakyRetries && !s.efd && !s.attemptToFix && s.totalRetryBudget > 0 {
 		perPackage = min(perPackage, s.totalRetryBudget)
@@ -210,6 +216,7 @@ func (c *processRetryBurstCollector) ServeHTTP(w http.ResponseWriter, r *http.Re
 		attributes.FlakyTestRetriesEnabled = c.scenario.flakyRetries
 		attributes.KnownTestsEnabled = c.scenario.efd
 		attributes.EarlyFlakeDetection.Enabled = c.scenario.efd
+		attributes.EarlyFlakeDetection.FaultySessionThreshold = c.scenario.faultyThreshold
 		attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = c.scenario.retries
 		attributes.EarlyFlakeDetection.SlowTestRetries.TenS = c.scenario.retries
 		attributes.EarlyFlakeDetection.SlowTestRetries.ThirtyS = c.scenario.retries
@@ -227,8 +234,12 @@ func (c *processRetryBurstCollector) ServeHTTP(w http.ResponseWriter, r *http.Re
 		attributes := civisibilitynet.KnownTestsResponseData{Tests: make(civisibilitynet.KnownTestsResponseDataModules, processRetryBurstMaxPackages)}
 		for i := range processRetryBurstMaxPackages {
 			module := fmt.Sprintf("github.com/DataDog/dd-trace-go/v2/burstfixture/pkg%02d", i)
+			tests := []string{"TestZFirstPassComplete"}
+			if c.scenario.knownFlaky {
+				tests = append(tests, "TestAFlaky")
+			}
 			attributes.Tests[module] = civisibilitynet.KnownTestsResponseDataSuites{
-				"burst_test.go": {"TestZFirstPassComplete"},
+				"burst_test.go": tests,
 			}
 		}
 		writeProcessRetryAPIResponse(w, "process-retry-burst", "ci_app_libraries_tests", attributes)
@@ -789,6 +800,35 @@ func TestDeferredProcessRetryMultiPackageBurst(t *testing.T) {
 	}
 }
 
+func TestProcessRetryEFDFaultySessionSharesBudgetAcrossPackages(t *testing.T) {
+	if !gotesting.ProcessRetryContainmentSupported() {
+		t.Skip("process retry burst fixture requires process-tree containment")
+	}
+	root := processRetryBurstRepositoryRoot(t)
+	moduleDir := writeProcessRetryBurstModule(t, root, 3)
+	warmProcessRetryBurstModule(t, moduleDir, 3)
+	threshold := 1
+	expectedRetries := 1
+	for _, mode := range []string{processRetryBurstProcessMode, processRetryBurstInProcessMode} {
+		t.Run(mode, func(t *testing.T) {
+			metrics := runProcessRetryBurstScenario(t, moduleDir, processRetryBurstScenario{
+				name:               "faulty-session-shared-budget-" + mode,
+				retryExecutionMode: mode,
+				packages:           3,
+				packageConcurrency: 3,
+				processConcurrency: 2,
+				retries:            1,
+				efd:                true,
+				faultyThreshold:    &threshold,
+				expectedRetries:    &expectedRetries,
+			})
+			if metrics.retryStarts != expectedRetries {
+				t.Fatalf("retry starts = %d, want one globally admitted EFD retry", metrics.retryStarts)
+			}
+		})
+	}
+}
+
 func TestProcessRetryMultiPackageBurstWithoutRetries(t *testing.T) {
 	root := processRetryBurstRepositoryRoot(t)
 	moduleDir := writeProcessRetryBurstModule(t, root, 2)
@@ -922,10 +962,16 @@ func BenchmarkProcessRetryMultiPackageBurst(b *testing.B) {
 		targetRoots["baseline"] = baseline
 	}
 	profiles := processRetryBurstProfiles()
+	faultyThreshold := 1
+	zeroRetries := 0
+	oneIdentityRetries := 10
 	familyCases := retryFamilyBenchmarkScenarios(profiles, "/all-pass")
 	cases := make([]processRetryBurstScenario, 0, 14+len(familyCases))
 	cases = append(cases, []processRetryBurstScenario{
 		{name: "packages=8/retries=0", packages: 8, packageConcurrency: 8, efd: true},
+		{name: "faulty-session/all-known", packages: 8, packageConcurrency: 8, retries: 10, efd: true, knownFlaky: true, faultyThreshold: &faultyThreshold, expectedRetries: &zeroRetries},
+		{name: "faulty-session/below-limit", packages: 1, packageConcurrency: 1, retries: 10, efd: true, faultyThreshold: &faultyThreshold},
+		{name: "faulty-session/crossing", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, faultyThreshold: &faultyThreshold, expectedRetries: &oneIdentityRetries},
 		{name: "scale/packages=1", packages: 1, packageConcurrency: 1, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "scale/packages=2", packages: 2, packageConcurrency: 2, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "scale/packages=4", packages: 4, packageConcurrency: 4, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},

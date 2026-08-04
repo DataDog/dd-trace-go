@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,6 +45,7 @@ var processRetryBenchmarkAggregateRuns atomic.Int32
 var processRetryBenchmarkCPUSink atomic.Uint64
 var parallelEFDRuns atomic.Int32
 var attemptToFixRuns atomic.Int32
+var testMainBaselineRuns atomic.Int32
 var processRetryBenchmarkChildStart time.Time
 
 var processRetryCoverageProfileBlock = regexp.MustCompile(`^(.+):(\d+)\.\d+,(\d+)\.\d+\s+\d+\s+(\d+)$`)
@@ -99,7 +99,12 @@ const (
 	processRetryStartupRerunFileEnv           = "PROCESS_RETRY_STARTUP_RERUN_FILE"
 	processRetryStartupConflictFileEnv        = "PROCESS_RETRY_STARTUP_CONFLICT_FILE"
 	processRetryStartupConflictMarkerEnv      = "PROCESS_RETRY_STARTUP_CONFLICT_MARKER_FILE"
+	processRetryTestMainFixtureEnv            = "PROCESS_RETRY_TESTMAIN_BASELINE_FIXTURE"
+	processRetryTestMainCwdEnv                = "PROCESS_RETRY_TESTMAIN_BASELINE_EXPECTED_CWD"
+	processRetryTestMainMarkerEnv             = "PROCESS_RETRY_TESTMAIN_BASELINE_APPLIED"
+	processRetryTestMainWorkDir               = "testmain-workdir"
 	processRetryDeferredOrderingEnv           = "PROCESS_RETRY_DEFERRED_ORDERING_FIXTURE"
+	processRetryDeferredOrderingPathEnv       = "PROCESS_RETRY_DEFERRED_ORDERING_PATH"
 	processRetryDeferredRepeatedOrderingEnv   = "PROCESS_RETRY_DEFERRED_REPEATED_ORDERING_FIXTURE"
 	processRetryDeferredFTRFailfastPathEnv    = "PROCESS_RETRY_DEFERRED_FTR_FAILFAST_PATH"
 )
@@ -801,20 +806,23 @@ func TestProcessRetryControllersAreNotRetried(t *testing.T) {
 
 func TestDeferredProcessRetryFirstPassCompletesBeforeRetryStarts(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "deferred first-pass ordering")
+	path := filepath.Join(t.TempDir(), "order")
 	runProcessRetryFixtureSubprocess(t, "deferred-first-pass-ordering", []string{
 		"-test.run=^(TestDeferredProcessRetryOrderingA|TestDeferredProcessRetryOrderingB)$",
 		"-test.v",
-	}, processRetryDeferredOrderingEnv+"=true")
+	}, processRetryDeferredOrderingEnv+"=true", processRetryDeferredOrderingPathEnv+"="+path)
 }
 
 func TestDeferredProcessRetryPhasesRemainOrderedAcrossCount(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "deferred repeated-phase ordering")
+	path := filepath.Join(t.TempDir(), "order")
 	runProcessRetryFixtureSubprocess(t, "deferred-repeated-phase-ordering", []string{
 		"-test.run=^(TestDeferredProcessRetryOrderingA|TestDeferredProcessRetryOrderingB)$",
 		"-test.count=2",
 		"-test.v",
 	},
 		processRetryDeferredOrderingEnv+"=true",
+		processRetryDeferredOrderingPathEnv+"="+path,
 		processRetryDeferredRepeatedOrderingEnv+"=true",
 	)
 }
@@ -840,14 +848,16 @@ func TestDeferredProcessRetryOrderingB(t *testing.T) {
 
 func recordDeferredProcessRetryOrder(t *testing.T, entry string) {
 	t.Helper()
-	url := processRetryFixtureEnv(constants.CIVisibilityAgentlessURLEnvironmentVariable) + deferredProcessRetryOrderPath
-	response, err := http.Post(url, "text/plain", strings.NewReader(entry))
+	file, err := os.OpenFile(processRetryFixtureEnv(processRetryDeferredOrderingPathEnv), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
+		t.Fatalf("open deferred process retry order for %q: %v", entry, err)
+	}
+	if _, err := file.WriteString(entry + "\n"); err != nil {
+		_ = file.Close()
 		t.Fatalf("record deferred process retry order %q: %v", entry, err)
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusNoContent {
-		t.Fatalf("record deferred process retry order %q: status %s", entry, response.Status)
+	if err := file.Close(); err != nil {
+		t.Fatalf("close deferred process retry order after %q: %v", entry, err)
 	}
 }
 
@@ -1560,6 +1570,30 @@ func TestProcessRetryStartupConflictController(t *testing.T) {
 	}
 }
 
+func TestProcessRetryTestMainBaselineController(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "TestMain startup baseline")
+	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, processRetryTestMainWorkDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryTestMainBaselineParent$", "-test.v")
+	cmd.Dir = root
+	cmd.Env = processRetryScenarioEnvironment(
+		processRetryTestMainFixtureEnv+"=true",
+		processRetryTestMainCwdEnv+"="+root,
+		"DD_GIT_REPOSITORY_URL=https://github.com/DataDog/dd-trace-go.git",
+		"DD_GIT_COMMIT_SHA=1234567890abcdef1234567890abcdef12345678",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("TestMain baseline subprocess failed: %v\n%s", err, output)
+	}
+}
+
 func TestProcessRetryStartupRerunsParent(t *testing.T) {
 	if processRetryFixtureEnv(processRetryStartupFixtureEnv) != "true" && !processRetryFixtureChild() {
 		t.Skip("startup fixture runs only from its controller subprocess")
@@ -1590,6 +1624,22 @@ func TestProcessRetryStartupConflictParent(t *testing.T) {
 		t.Fatal("first startup-conflict execution must fail to trigger process retry")
 	}
 	t.Fatalf("startup-conflict retry ran in the parent process with run count %d", startupConflictRuns.Load())
+}
+
+func TestProcessRetryTestMainBaselineParent(t *testing.T) {
+	if processRetryFixtureEnv(processRetryTestMainFixtureEnv) != "true" && !processRetryFixtureChild() {
+		t.Skip("TestMain baseline fixture runs only from its controller subprocess")
+	}
+	if processRetryFixtureChild() {
+		if testMainBaselineRuns.Load() != 0 {
+			t.Fatalf("process retry child inherited parent TestMain baseline count: %d", testMainBaselineRuns.Load())
+		}
+		return
+	}
+	if testMainBaselineRuns.Add(1) == 1 {
+		t.Fatal("first TestMain baseline execution must fail to trigger process retry")
+	}
+	t.Fatalf("TestMain baseline retry ran in the parent process with run count %d", testMainBaselineRuns.Load())
 }
 
 func filepathForStartupFixture(t *testing.T, name string) string {

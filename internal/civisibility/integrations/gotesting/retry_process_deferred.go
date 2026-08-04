@@ -104,6 +104,7 @@ type deferredProcessRetryGroup struct {
 	parallelEFD           bool
 	rootParallel          bool
 	nativeMaxParallel     int
+	efdFaultySessionGuard earlyFlakeDetectionFaultySession
 }
 
 type deferredProcessRetryEvent struct {
@@ -168,15 +169,17 @@ type deferredProcessRetryScheduledResult struct {
 }
 
 type deferredProcessRetryScheduleState struct {
-	group       *deferredProcessRetryGroup
-	ctx         context.Context
-	cancel      context.CancelFunc
-	active      int
-	remaining   int64
-	completed   []deferredProcessRetryCompletedAttempt
-	activated   bool
-	done        bool
-	stopPending bool
+	group           *deferredProcessRetryGroup
+	ctx             context.Context
+	cancel          context.CancelFunc
+	active          int
+	remaining       int64
+	completed       []deferredProcessRetryCompletedAttempt
+	activated       bool
+	done            bool
+	stopPending     bool
+	efdStopped      bool
+	terminalAttempt bool
 }
 
 type deferredProcessRetryDrainOutcome struct {
@@ -605,8 +608,14 @@ func (c *processRetryCoordinator) drainScheduledBatch(
 			if state.done || state.stopPending {
 				continue
 			}
-			prepared, ok := state.group.prepareAttempt()
+			prepared, ok, efdStopped := state.group.prepareAttempt(state.active == 0)
 			if !ok {
+				if efdStopped && state.active > 0 {
+					state.stopPending = true
+					state.efdStopped = true
+					state.remaining = 0
+					continue
+				}
 				finishState(index)
 				activate()
 				continue
@@ -656,6 +665,7 @@ func (c *processRetryCoordinator) drainScheduledBatch(
 			state.completed = append(state.completed, scheduled.completed)
 			if deferredProcessRetryAttemptTerminal(scheduled.completed.result) {
 				state.stopPending = true
+				state.terminalAttempt = true
 				state.remaining = 0
 				state.group.truncated = true
 				state.cancel()
@@ -664,8 +674,22 @@ func (c *processRetryCoordinator) drainScheduledBatch(
 				slices.SortFunc(state.completed, func(a, b deferredProcessRetryCompletedAttempt) int {
 					return cmp.Compare(a.prepared.index, b.prepared.index)
 				})
+				continueGroup := false
 				for resultIndex, completed := range state.completed {
-					state.group.applyCompletedAttempt(completed, false, resultIndex+1 < len(state.completed))
+					lastResult := resultIndex+1 == len(state.completed)
+					continueGroup = state.group.applyCompletedAttempt(
+						completed,
+						state.efdStopped && !state.terminalAttempt && lastResult,
+						!lastResult,
+					)
+				}
+				state.completed = nil
+				if continueGroup {
+					state.stopPending = false
+					state.efdStopped = false
+					state.terminalAttempt = false
+					ready = append(ready, scheduled.groupIndex)
+					continue
 				}
 				finishState(scheduled.groupIndex)
 			}
@@ -927,14 +951,15 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 			raceDetected:   execOpts.lastObservation.raceDetected,
 			rootParallel:   execOpts.lastObservation.rootParallel,
 		},
-		module:            execOpts.module,
-		suite:             execOpts.suite,
-		panicPresent:      execOpts.lastObservation.panicData != nil,
-		panicMessage:      panicMessage,
-		panicStack:        string(execOpts.lastObservation.panicStack),
-		parallelEFD:       parallelEFD,
-		rootParallel:      execOpts.lastObservation.rootParallel,
-		nativeMaxParallel: nativeMaxParallel,
+		module:                execOpts.module,
+		suite:                 execOpts.suite,
+		panicPresent:          execOpts.lastObservation.panicData != nil,
+		panicMessage:          panicMessage,
+		panicStack:            string(execOpts.lastObservation.panicStack),
+		parallelEFD:           parallelEFD,
+		rootParallel:          execOpts.lastObservation.rootParallel,
+		nativeMaxParallel:     nativeMaxParallel,
+		efdFaultySessionGuard: options.efdFaultySessionGuard,
 	}
 	group.metadata.identity = &group.identity
 	group.testInfo.identity = &group.identity
@@ -952,14 +977,18 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 	return true
 }
 
-func (g *deferredProcessRetryGroup) prepareAttempt() (deferredProcessRetryPreparedAttempt, bool) {
+func (g *deferredProcessRetryGroup) prepareAttempt(allowEFDTransition bool) (deferredProcessRetryPreparedAttempt, bool, bool) {
 	if g == nil || g.retryCount < 0 {
-		return deferredProcessRetryPreparedAttempt{}, false
+		return deferredProcessRetryPreparedAttempt{}, false, false
+	}
+	allowed, stopped := g.admitEarlyFlakeDetectionContinuationWithTransition(allowEFDTransition)
+	if !allowed {
+		return deferredProcessRetryPreparedAttempt{}, false, stopped
 	}
 	execMeta := &testExecutionMetadata{}
 	if !applyProcessRetryMetadataSnapshot(execMeta, &g.metadata) {
 		g.cancel("missing_metadata_snapshot", true)
-		return deferredProcessRetryPreparedAttempt{}, false
+		return deferredProcessRetryPreparedAttempt{}, false, false
 	}
 	g.executionIndex++
 	execMeta.identity = &g.identity
@@ -976,10 +1005,10 @@ func (g *deferredProcessRetryGroup) prepareAttempt() (deferredProcessRetryPrepar
 	retryReason, ok := processRetryReasonForExecution(execMeta)
 	if !ok {
 		g.cancel("missing_retry_reason", true)
-		return deferredProcessRetryPreparedAttempt{}, false
+		return deferredProcessRetryPreparedAttempt{}, false, false
 	}
 	consumeDeferredFlakyRetryReservation(g)
-	return deferredProcessRetryPreparedAttempt{index: g.executionIndex, retryReason: retryReason, execMeta: execMeta}, true
+	return deferredProcessRetryPreparedAttempt{index: g.executionIndex, retryReason: retryReason, execMeta: execMeta}, true, false
 }
 
 func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
@@ -1016,7 +1045,10 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		execMeta.anyExecutionFailed = g.outcomes.anyFailed()
 		if decideContinuation {
 			continueGroup = !terminal && deferredProcessRetryShouldContinue(execMeta, effective.Failed, effective.Skipped, g.retryCount)
-			if continueGroup && usesFlakyRetryBudget(execMeta) {
+			if continueGroup {
+				continueGroup = g.admitEarlyFlakeDetectionContinuation()
+			}
+			if continueGroup && usesFlakyRetryBudget(execMeta) && g.reservation == nil {
 				g.reservation = &flakyRetryBudgetReservation{}
 				continueGroup = g.reservation.reserve()
 			}
@@ -1046,6 +1078,38 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		attempt.Cleanup()
 	}
 	return continueGroup
+}
+
+func (g *deferredProcessRetryGroup) admitEarlyFlakeDetectionContinuation() bool {
+	allowed, _ := g.admitEarlyFlakeDetectionContinuationWithTransition(true)
+	return allowed
+}
+
+func (g *deferredProcessRetryGroup) admitEarlyFlakeDetectionContinuationWithTransition(allowTransition bool) (bool, bool) {
+	if g == nil || !usesEfdRetrySemanticsSnapshot(&g.metadata) || g.efdFaultySessionGuard == nil {
+		return true, false
+	}
+	if g.efdFaultySessionGuard.retryState() == earlyFlakeDetectionAdmissionAllowed {
+		return true, false
+	}
+	if !allowTransition {
+		return false, true
+	}
+	transitionMeta := &testExecutionMetadata{
+		isFlakyTestRetriesEnabled: g.metadata.isFlakyTestRetriesEnabled,
+		efdFellBackToFlakyRetries: g.metadata.efdFellBackToFlakyRetries,
+	}
+	if retryCount, ok := transitionSuppressedEFDToFlakyRetries(transitionMeta, g.latest.failed, g.outcomes.anyPassed()); ok {
+		g.metadata.efdFellBackToFlakyRetries = transitionMeta.efdFellBackToFlakyRetries
+		g.retryCount = retryCount
+		g.parallelEFD = false
+		if g.retryCount < 0 {
+			return false, true
+		}
+		g.reservation = &flakyRetryBudgetReservation{}
+		return g.reservation.reserve(), true
+	}
+	return false, true
 }
 
 func (g *deferredProcessRetryGroup) shutdown() <-chan struct{} {

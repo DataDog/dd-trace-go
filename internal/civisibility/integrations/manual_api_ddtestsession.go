@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
 // Test Session
@@ -32,6 +33,8 @@ type tslvTestSession struct {
 	workingDirectory string
 	framework        string
 	frameworkVersion string
+	efdAbortReasonMu locking.Mutex
+	efdAbortReason   string
 
 	modules map[string]TestModule
 }
@@ -130,6 +133,17 @@ func (t *tslvTestSession) SessionID() uint64 {
 	return t.sessionID
 }
 
+// SetTag sets a session tag and retains the EFD abort reason needed when
+// producing the session-finished telemetry event.
+func (t *tslvTestSession) SetTag(key string, value any) {
+	t.ciVisibilityCommon.SetTag(key, value)
+	if key == constants.TestEarlyFlakeDetectionRetryAborted {
+		t.efdAbortReasonMu.Lock()
+		t.efdAbortReason = fmt.Sprint(value)
+		t.efdAbortReasonMu.Unlock()
+	}
+}
+
 // Command returns the command used to run the test session.
 func (t *tslvTestSession) Command() string { return t.command }
 
@@ -168,6 +182,9 @@ func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption)
 		t.SetError(WithErrorInfo("ExitCode", "exit code is not zero.", ""))
 		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusFail)
 	}
+	t.efdAbortReasonMu.Lock()
+	faultyEFDSession := t.efdAbortReason == "faulty"
+	t.efdAbortReasonMu.Unlock()
 
 	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
@@ -179,6 +196,9 @@ func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption)
 	}
 	if _, hasCiProvider := utils.GetCITags()[constants.CIProviderName]; !hasCiProvider {
 		testingEventType = append(testingEventType, telemetry.UnsupportedCiEventType...)
+	}
+	if faultyEFDSession {
+		testingEventType = append(testingEventType, telemetry.EfdAbortFaultyEventType...)
 	}
 	telemetry.EventFinished(t.framework, testingEventType)
 	tracer.Flush()

@@ -33,8 +33,8 @@ const (
 	// This environment variable should be set to "0" or "false" to disable the flaky retry feature.
 	CIVisibilityFlakyRetryEnabledEnvironmentVariable = "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED"
 
-	// CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable kill-switch that allows explicitly disabling EFD even if the remote setting is enabled.
-	// This environment variable should be set to "0" or "false" to disable the early flake detection feature.
+	// CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable overrides the remote EFD setting when explicitly set.
+	// Enabling EFD still requires known tests to be enabled by the backend.
 	CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable = "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED"
 
 	// CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable caps the number of EFD retries per test without increasing the backend setting.

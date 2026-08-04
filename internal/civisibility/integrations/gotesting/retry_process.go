@@ -883,6 +883,12 @@ type processRetryLaunchBaseline struct {
 	err               error
 }
 
+type processRetryStartupSnapshot struct {
+	workingDirectory string
+	environment      []string
+	err              error
+}
+
 type processRetryArgsSnapshot struct {
 	captured         bool
 	preserved        []string
@@ -990,6 +996,7 @@ type processRetryActiveChild struct {
 
 var globalProcessRetryLimiter atomic.Pointer[processRetryLimiter]
 var processRetryRunnerHooksOverride atomic.Pointer[processRetryRunnerHooks]
+var processRetryStartup = captureProcessRetryStartupSnapshot(os.Getwd, os.Environ)
 var processRetryLaunchGate = processRetryLaunchGateState{
 	shutdown: make(chan struct{}),
 	changed:  make(chan struct{}),
@@ -1103,8 +1110,32 @@ func killDirectChild(cmd *exec.Cmd) error {
 }
 
 func captureProcessRetryLaunchTemplate() *processRetryLaunchBaseline {
+	return captureProcessRetryLaunchTemplateFromStartup(processRetryStartup)
+}
+
+func captureProcessRetryStartupSnapshot(
+	workingDirectory func() (string, error),
+	environ func() []string,
+) processRetryStartupSnapshot {
+	dir, err := workingDirectory()
+	return processRetryStartupSnapshot{
+		workingDirectory: dir,
+		environment:      sanitizeProcessRetryBaseEnv(environ()),
+		err:              err,
+	}
+}
+
+func captureProcessRetryLaunchTemplateFromStartup(startup processRetryStartupSnapshot) *processRetryLaunchBaseline {
 	hooks := currentProcessRetryRunnerHooks()
-	baseline := &processRetryLaunchBaseline{hooks: hooks}
+	baseline := &processRetryLaunchBaseline{
+		hooks:            hooks,
+		workingDirectory: startup.workingDirectory,
+		environment:      append([]string(nil), startup.environment...),
+		err:              startup.err,
+	}
+	if baseline.err != nil {
+		return baseline
+	}
 	baseline.executable, baseline.err = hooks.executable()
 	if baseline.err != nil {
 		return baseline
@@ -1128,11 +1159,6 @@ func captureProcessRetryLaunchBaselineFromTemplate(template *processRetryLaunchB
 	if baseline.err != nil {
 		return &baseline
 	}
-	baseline.workingDirectory, baseline.err = baseline.hooks.workingDirectory()
-	if baseline.err != nil {
-		return &baseline
-	}
-	baseline.environment = sanitizeProcessRetryBaseEnv(baseline.hooks.environ())
 	baseline.currentCPU = processRetryCurrentCPU()
 	return &baseline
 }
