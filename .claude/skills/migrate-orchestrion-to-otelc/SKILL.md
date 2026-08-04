@@ -36,6 +36,15 @@ When you find a behaviour difference, write the test before deciding what to do 
    behaviour is wrong, and everything after this is built on that mistake.
 3. Run it under otelc and see what actually happens.
 
+Then put the test at the lowest level that can still fail. Most of what a migration changes is
+ordinary contrib behaviour, so a unit test in `contrib/<name>` with `mocktracer` is usually enough
+and runs in seconds. Reach for `_integration` only when the assertion genuinely needs a woven build.
+A mechanism the hooks depend on is often observable directly: `TestDialMarksItsOwnDial` in
+`contrib/gomodule/redigo` pins the contract the redigo hook relies on with no server and no otelc.
+
+Check the test fails when you break the thing it guards. Several of these guards passed for the
+wrong reason on the first attempt.
+
 Reasoning from the call graph is not a substitute for step 3. A difference you argued for on paper
 and never ran is a guess, and it should be labelled as one until a test says otherwise.
 
@@ -74,30 +83,66 @@ Two facts to keep straight:
    syntax from the sources in `references.md`, not from memory.
 3. Check `feature-gaps.md`. If an aspect needs something otelc has no equivalent for, stop and flag
    it rather than inventing a workaround.
-4. Author `contrib/<name>/otelc/`, one package holding everything specific to otelc: the rules
-   (`otelc.yaml`) and the before/after hooks, plus any helper code only they use. None of this is
-   useful to regular contrib users, so keep it out of the main contrib package. The rules' `path:`
-   points at this same package.
+4. Author `contrib/<name>/otelc/` as **its own Go module**, holding everything specific to otelc: the
+   rules (`otelc.yaml`) and the before/after hooks, plus any helper code only they use. The rules'
+   `path:` points at this same package.
+   - Its own module because the hooks import `go.opentelemetry.io/otelc/pkg/hook`, and a package
+     inside the contrib module would put that dependency in the `go.mod` of everyone importing the
+     contrib, otelc user or not. Module path `.../contrib/<name>/v2/otelc` (no trailing version
+     element) keeps it under the contrib's import prefix, so it can still import the contrib's
+     `internal/` packages.
    - The rules go **in this directory, not next to `orchestrion.yml`**. otelc loads rule files from
-     the directory of the package the tool file imports, so the rules and the hooks have to be the
-     same package for one import to pull in both. Splitting them also leaves the hook package out
-     of the consuming module's import graph, so its dependencies never reach that module's
-     `go.sum` and the build fails on a missing entry.
-   - Do not put it under `internal/`: otelc blank-imports the hook package into the built app's
-     module, which cannot import a package under `contrib/<name>/internal/`.
+     the directory of the package the tool file imports, so rules and hooks have to be one package
+     for a single import to pull in both.
+   - Do not put the hook package under `internal/`: it is blank-imported into the built app's
+     module, which cannot import `contrib/<name>/internal/...`.
    The hooks call the existing contrib entrypoints; keep injection-independent logic in normal
    sub-packages and let only the thin hook layer touch injected fields.
-5. Enable the integration by blank-importing `contrib/<name>/otelc` from the tool file at
-   `internal/orchestrion/_integration/otel.instrumentation.go`, the way `orchestrion.tool.go` lists
-   integrations, then run `go mod tidy` in that module.
+
+   State the hooks and the contrib both need goes in the **contrib package itself**, exported, not
+   in an `internal/` helper. The hook module can reach `internal/`, but a caller-visible name says
+   what it is for (see `redigotrace.TraceMark`).
+5. Enable the integration by blank-importing `contrib/<name>/otelc` from `otelc/all`, the way
+   `orchestrion/all` lists integrations, then `go mod tidy` that module. Applications import
+   `otelc/all`, so nothing else needs editing.
 6. Validate both rungs from the Success criterion, and diff the otelc spans against the orchestrion
    ones.
+7. Before opening the PR, from the repository root:
+   - `make fix-modules`. Adding a module or a dependency leaves `go.mod`/`go.sum` and the replace
+     directives inconsistent, and CI fails on it. Every module in the graph needs its own replace
+     in the **main** module being built, because replaces in dependency modules are ignored.
+   - `make lint`, and fix what it reports. Submodules are linted separately, so also run
+     `golangci-lint run --disable=gocritic ./...` inside `contrib/<name>` and inside
+     `internal/orchestrion/_integration`.
+   - `make generate`, and commit whatever it changes. Adding a dependency to a contrib module
+     updates `internal/stacktrace/contribs_generated.go`, and CI fails when generated files are
+     stale.
+
+   Run these in a shell **without** `GOWORK=off`. Some generators need the workspace to resolve the
+   contrib modules and crash without it, while others set `GOWORK=off` for themselves. Exporting it
+   globally for otelc work breaks the first group.
+8. After opening the PR, check its CI. Pushing is not the end of the task.
+   - Read the `OTelc` workflow first. When every matrix job fails they nearly always fail for the
+     same reason, so read only `Integration Test (ubuntu | stable)` and skip the rest.
+   - `failed to load instrumentation packages: ... go: updates to go.mod needed` means a module
+     otelc reads has a stale `go.mod`. GitHub runs CI on a candidate merge commit, so a dependency
+     bump that landed on `main` after the branch was cut raises the build list of every module that
+     replaces `dd-trace-go/v2` with a local path. Auto-pin recurses into each module that owns a
+     tool file (`otel.instrumentation.go` / `otelc.tool.go`) and runs `go list` from that module's
+     directory, where read-only mode turns the stale `go.mod` into a hard error. Fix: merge
+     `origin/main` and `go mod tidy` the module the error names. If the migration gave a new module
+     its own tool file, add that module to the tidy loop in `.github/workflows/otelc.yml`, which
+     exists for exactly this and only covers the modules listed in it.
+   - Any other failure: fix and push if the cause is obvious. Otherwise stop, explain the failure,
+     and agree on the fix before changing anything.
 
 ## Cautions
 
 - Reuse the contrib. The goal is functional and performance parity with minimal new code.
 - A hook file that references an injected field only compiles under otelc (not a plain `go build`),
-  so keep it thin and cover it with integration tests, not standalone unit tests.
+  so keep it thin. Everything else about the migration should still be unit-testable.
+- Keep comments short. Say what is not obvious from the code and stop; do not restate the diff or
+  explain why something is absent.
 - Definition-side double-firing: otelc hooks a definition, so a constructor that internally calls
   another hooked constructor fires both. Hook only the inner funnel, or add a re-entrancy guard.
 - Do not copy rule syntax or API signatures into these docs; they drift. Re-read `references.md`.
