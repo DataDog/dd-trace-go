@@ -21,7 +21,23 @@ work. Produce the migration fresh.
 
 Full parity: the integration's existing Orchestrion integration tests under
 `internal/orchestrion/_integration/<name>/` pass built with otelc instead of Orchestrion, with the
-same spans. Those tests decide whether the migration is correct. Do not weaken them.
+same spans. Those tests decide whether the migration is correct.
+
+**Do not edit existing tests or assertions to make the migration pass.** They describe the behaviour
+you have to reproduce, so changing them changes the answer. Adding is fine, and often necessary:
+new test cases, and stronger assertions on behaviour that was real but never pinned down.
+
+When you find a behaviour difference, write the test before deciding what to do about it:
+
+1. Assert the orchestrion behaviour, as strictly as it deserves. Existing suites often assert that
+   the expected spans are present but not that unexpected ones are absent, so "exactly one span"
+   usually needs a new assertion rather than an edited one.
+2. Run it under orchestrion. It must pass. If it does not, your understanding of the current
+   behaviour is wrong, and everything after this is built on that mistake.
+3. Run it under otelc and see what actually happens.
+
+Reasoning from the call graph is not a substitute for step 3. A difference you argued for on paper
+and never ran is a guess, and it should be labelled as one until a test says otherwise.
 
 Two rungs, in order, both run from `internal/orchestrion/_integration`:
 - **Compile + inject.** `otelc go build ./<name>/...`. If it compiles with the hooks injected, the
@@ -58,16 +74,22 @@ Two facts to keep straight:
    syntax from the sources in `references.md`, not from memory.
 3. Check `feature-gaps.md`. If an aspect needs something otelc has no equivalent for, stop and flag
    it rather than inventing a workaround.
-4. Author, alongside the contrib:
-   - `contrib/<name>/otelc.yaml` — the otelc rules, placed next to the existing `orchestrion.yml`.
-   - `contrib/<name>/otelc/` — a package holding everything specific to otelc: the before/after
-     hooks and any helper code only the rules or hooks use. This is not useful to regular contrib
-     users, so keep it out of the main contrib package. The rules' `path:` points at this package.
-     Do not put it under `internal/`: otelc blank-imports the hook package into the built app's
+4. Author `contrib/<name>/otelc/`, one package holding everything specific to otelc: the rules
+   (`otelc.yaml`) and the before/after hooks, plus any helper code only they use. None of this is
+   useful to regular contrib users, so keep it out of the main contrib package. The rules' `path:`
+   points at this same package.
+   - The rules go **in this directory, not next to `orchestrion.yml`**. otelc loads rule files from
+     the directory of the package the tool file imports, so the rules and the hooks have to be the
+     same package for one import to pull in both. Splitting them also leaves the hook package out
+     of the consuming module's import graph, so its dependencies never reach that module's
+     `go.sum` and the build fails on a missing entry.
+   - Do not put it under `internal/`: otelc blank-imports the hook package into the built app's
      module, which cannot import a package under `contrib/<name>/internal/`.
    The hooks call the existing contrib entrypoints; keep injection-independent logic in normal
    sub-packages and let only the thin hook layer touch injected fields.
-5. Enable the integration via otelc's import-driven tool file (see `references.md`).
+5. Enable the integration by blank-importing `contrib/<name>/otelc` from the tool file at
+   `internal/orchestrion/_integration/otel.instrumentation.go`, the way `orchestrion.tool.go` lists
+   integrations, then run `go mod tidy` in that module.
 6. Validate both rungs from the Success criterion, and diff the otelc spans against the orchestrion
    ones.
 
