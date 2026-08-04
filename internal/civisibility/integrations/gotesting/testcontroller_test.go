@@ -126,6 +126,7 @@ func TestMain(m *testing.M) {
 		runTestControllerSubprocess("RetryParityUnitTests", buildRetryParityUnitRunFilter(*tests, layoutAvailable), "Bypass=true", "-test.parallel=1")
 		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
 		if layoutAvailable {
+			runTestControllerSubprocess("RetryNativeParallelUnitTest", "^TestRetryAttemptNativeMaxParallelMatchesTestingFlag$", "Bypass=true", "-test.parallel=3")
 			for _, v := range scenarios {
 				runTestControllerSubprocess(v, legacyScenarioRunFilter, v+"=true")
 			}

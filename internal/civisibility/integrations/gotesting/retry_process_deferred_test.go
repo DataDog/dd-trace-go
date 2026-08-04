@@ -208,6 +208,12 @@ func TestDeferredProcessRetryCoordinatorShutdownOverridesNormalDrain(t *testing.
 	require.True(t, coordinator.awaitCompletion(time.Now()))
 }
 
+func TestDeferredProcessRetryCoordinatorAwaitCompletionRejectsExpiredDeadline(t *testing.T) {
+	var nilCoordinator *processRetryCoordinator
+	require.True(t, nilCoordinator.awaitCompletion(time.Time{}))
+	require.False(t, newProcessRetryCoordinator().awaitCompletion(time.Time{}))
+}
+
 func TestDeferredProcessRetryCoordinatorAbortCancelsQueuedGroupsWithoutLaunching(t *testing.T) {
 	coordinator := newProcessRetryCoordinator()
 	group := newDeferredProcessRetrySchedulerGroup("TestAbortedMRun", 1, false, false, 1, 1)
@@ -667,6 +673,51 @@ func TestDeferredProcessRetryMissingInitialEventAbortsAdmission(t *testing.T) {
 	require.Nil(t, execMeta.deferredRetryEvent)
 	require.Nil(t, group.tailEvent)
 	require.Nil(t, group.lease)
+}
+
+func TestDeferredProcessRetryLeaseFailureAbortsAdmission(t *testing.T) {
+	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
+	defer restoreLaunchGate()
+	restoreSupport := setProcessRetrySupportHooksForTesting(t, processRetrySupportHooks{
+		childCleanupSupported:      func() bool { return true },
+		testingMWorkloadsSupported: func() bool { return true },
+	})
+	defer restoreSupport()
+
+	oldRegistered := processRetryActiveChildren.closeActionRegistered.Load()
+	processRetryActiveChildren.closeActionRegistered.Store(false)
+	t.Cleanup(func() { processRetryActiveChildren.closeActionRegistered.Store(oldRegistered) })
+
+	identity := newTestIdentity("module", "suite", "TestDeferredLeaseFailure")
+	execMeta := &testExecutionMetadata{
+		identity:                  identity,
+		isFlakyTestRetriesEnabled: true,
+		test:                      newProcessRetryRecordingTestForTesting(identity.FullName),
+		retryAttemptFinalizer:     func(retryAttemptResult) {},
+	}
+	coordinator := newProcessRetryCoordinator()
+	execOpts := &executionOptions{
+		options: &runTestWithRetryOptions{
+			t:                       t,
+			testInfo:                &commonInfo{moduleName: identity.ModuleName, suiteName: identity.SuiteName, testName: identity.FullName, identity: identity},
+			processRetryCoordinator: coordinator,
+			processRetryIdentity:    identity,
+			processRetryFuzzGuard:   &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }},
+		},
+		executionMetadata:          execMeta,
+		retryCount:                 1,
+		lastObservation:            retryAttemptObservation{failed: true},
+		processRetryLaunchBaseline: &processRetryLaunchBaseline{argsSnapshot: processRetryArgsSnapshot{captured: true, ok: true}, currentCPU: 1, maxConcurrency: 1, maxConcurrencySet: true},
+	}
+
+	require.False(t, enqueueDeferredProcessRetryGroup(execOpts))
+	coordinator.mu.Lock()
+	inFlight := coordinator.inFlight
+	queued := len(coordinator.queue)
+	coordinator.mu.Unlock()
+	require.Zero(t, inFlight)
+	require.Zero(t, queued)
+	require.Nil(t, execMeta.deferredRetryEvent)
 }
 
 func TestDeferredProcessRetryInitialPanicControlsTerminalReplay(t *testing.T) {

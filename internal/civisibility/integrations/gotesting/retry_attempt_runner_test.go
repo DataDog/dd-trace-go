@@ -8,11 +8,13 @@ package gotesting
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -711,6 +713,17 @@ func snapshotRetryAttemptTestState(t *testing.T) retryAttemptTestStateSnapshot {
 		numWaiting:  *fieldPtr[int](base, layout.testState.numWaiting),
 		maxParallel: *fieldPtr[int](base, layout.testState.maxParallel),
 	}
+}
+
+func TestRetryAttemptNativeMaxParallelMatchesTestingFlag(t *testing.T) {
+	parallelFlag := flag.Lookup("test.parallel")
+	require.NotNil(t, parallelFlag)
+	expected, err := strconv.Atoi(parallelFlag.Value.String())
+	require.NoError(t, err)
+
+	maxParallel, ok := retryAttemptNativeMaxParallel(t)
+	require.True(t, ok)
+	require.Equal(t, expected, maxParallel)
 }
 
 func TestProcessRetryParityFreshRunnerBalancesSchedulerLease(t *testing.T) {
