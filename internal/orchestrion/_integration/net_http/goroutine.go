@@ -5,14 +5,6 @@
 
 package nethttp
 
-// TestCaseClientGoroutine verifies trace correlation for the net/http client
-// shorthands (http.Get, ...) when the call happens on a goroutine that received
-// a context.Context as a parameter. This distinguishes call-site context
-// injection (which works across goroutines) from GLS-based propagation (which
-// does not cross goroutine boundaries): the parent span is started on the test
-// goroutine, so it is absent from the spawned goroutine's GLS, and correct
-// parenting can only come from the injected context.
-
 import (
 	"context"
 	"net/http"
@@ -24,6 +16,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
+// TestCaseClientGoroutine verifies trace correlation for the net/http client
+// shorthands (http.Get, ...) when the call happens on a goroutine that received
+// a context.Context as a parameter. This distinguishes call-site context
+// injection (which works across goroutines) from GLS-based propagation (which
+// does not cross goroutine boundaries): the parent span is started on the test
+// goroutine, so it is absent from the spawned goroutine's GLS, and correct
+// parenting can only come from the injected context.
 type TestCaseClientGoroutine struct {
 	base
 }
