@@ -8,10 +8,17 @@
 // Blank-importing this package from an application's otel.instrumentation.go
 // enables all of dd-trace-go's otelc instrumentation, the way
 // github.com/DataDog/dd-trace-go/orchestrion/all/v2 does for orchestrion.
+//
+// Each import contributes the rule files sitting next to that package.
 package all
 
 import (
-	// Reaches dd-trace-go's own tool file through this package's module root,
-	// which is what pulls in the tracer, GLS and AppSec rules.
+	// Build-mode flag and the GLS storage woven into the runtime package.
+	_ "github.com/DataDog/dd-trace-go/v2/internal/otelc"
+
+	// Tracer lifecycle and the span GLS lifecycle.
 	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+
+	// AppSec operation GLS lifecycle.
+	_ "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 )
