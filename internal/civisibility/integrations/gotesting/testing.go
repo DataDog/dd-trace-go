@@ -310,7 +310,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	}
 	if processModeEnabled && wrapperOpts.processRetryAllowed {
 		wrapperOpts.processRetryLaunchTemplate = captureProcessRetryLaunchTemplate()
-		coordinator := newProcessRetryCoordinator()
+		coordinator := newProcessRetryCoordinator(retryAttemptFailfastEnabled, runDeferredProcessRetryAttempt)
 		if registerProcessRetryCoordinator(coordinator) {
 			wrapperOpts.processRetryCoordinator = coordinator
 		} else {

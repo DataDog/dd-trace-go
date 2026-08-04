@@ -90,7 +90,7 @@ func TestDeferredProcessRetryFreshObservationTerminalPolicy(t *testing.T) {
 }
 
 func TestDeferredProcessRetryCoordinatorAdmissionSealLinearizes(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
 	admission := coordinator.beginAdmission()
 	require.NotNil(t, admission)
 
@@ -111,7 +111,7 @@ func TestDeferredProcessRetryCoordinatorAdmissionSealLinearizes(t *testing.T) {
 }
 
 func TestDeferredProcessRetryCoordinatorAdmissionAbortIsIdempotent(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
 	admission := coordinator.beginAdmission()
 	require.NotNil(t, admission)
 	require.True(t, admission.abort())
@@ -121,7 +121,7 @@ func TestDeferredProcessRetryCoordinatorAdmissionAbortIsIdempotent(t *testing.T)
 }
 
 func TestDeferredProcessRetryCoordinatorTracksNativeInvocationPhases(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
 	first := newTestIdentity("module", "suite", "TestFirst")
 	second := newTestIdentity("module", "suite", "TestSecond")
 
@@ -136,7 +136,7 @@ func TestDeferredProcessRetryInvocationIsCapturedBeforeExecutionMetadata(t *test
 	if !ProcessRetryContainmentSupported() {
 		t.Skip("process retry containment is unavailable")
 	}
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
 	counter := &atomic.Uint64{}
 	fuzzGuard := &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }}
 	firstOptions := &runTestWithRetryOptions{
@@ -162,7 +162,7 @@ func TestDeferredProcessRetryInvocationIsCapturedBeforeExecutionMetadata(t *test
 }
 
 func TestDeferredProcessRetryCoordinatorDrainPublishesOneSummary(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
 	require.True(t, registerProcessRetryCoordinator(coordinator))
 	require.True(t, processRetryCoordinatorRegisteredForTesting(coordinator))
 
@@ -189,7 +189,7 @@ func TestDeferredProcessRetryCoordinatorDrainPublishesOneSummary(t *testing.T) {
 }
 
 func TestDeferredProcessRetryCoordinatorShutdownOverridesNormalDrain(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
 	admission := coordinator.beginAdmission()
 	require.NotNil(t, admission)
 
@@ -211,17 +211,17 @@ func TestDeferredProcessRetryCoordinatorShutdownOverridesNormalDrain(t *testing.
 func TestDeferredProcessRetryCoordinatorAwaitCompletionRejectsExpiredDeadline(t *testing.T) {
 	var nilCoordinator *processRetryCoordinator
 	require.True(t, nilCoordinator.awaitCompletion(time.Time{}))
-	require.False(t, newProcessRetryCoordinator().awaitCompletion(time.Time{}))
+	require.False(t, newProcessRetryCoordinatorForTesting(false).awaitCompletion(time.Time{}))
 }
 
 func TestDeferredProcessRetryCoordinatorAbortCancelsQueuedGroupsWithoutLaunching(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
-	group := newDeferredProcessRetrySchedulerGroup("TestAbortedMRun", 1, false, false, 1, 1)
-	require.True(t, coordinator.beginAdmission().commit(group))
-	coordinator.attemptRunner = func(context.Context, *deferredProcessRetryGroup, deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+	runner := func(context.Context, *deferredProcessRetryGroup, deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 		t.Fatal("an abnormal testing.M unwind must not launch deferred retries")
 		return processRetryAttemptResult{}
 	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	group := newDeferredProcessRetrySchedulerGroup("TestAbortedMRun", 1, false, false, 1, 1)
+	require.True(t, coordinator.beginAdmission().commit(group))
 
 	summary := coordinator.abort()
 	require.Equal(t, processRetryFailureExitCode, summary.exitCode)
@@ -236,12 +236,8 @@ func TestDeferredProcessRetryCoordinatorAbortCancelsQueuedGroupsWithoutLaunching
 func TestDeferredProcessRetryCoordinatorAbortCancelsActiveWorker(t *testing.T) {
 	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
-	group := newDeferredProcessRetrySchedulerGroup("TestActiveAbort", 1, false, false, 1, 1)
-	require.True(t, coordinator.beginAdmission().commit(group))
 	started := make(chan struct{})
-	coordinator.attemptRunner = func(ctx context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+	runner := func(ctx context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 		close(started)
 		<-ctx.Done()
 		attempt := deferredProcessRetryPassingAttempt(prepared.index)
@@ -250,6 +246,9 @@ func TestDeferredProcessRetryCoordinatorAbortCancelsActiveWorker(t *testing.T) {
 		attempt.ExitCode = processRetryFailureExitCode
 		return attempt
 	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	group := newDeferredProcessRetrySchedulerGroup("TestActiveAbort", 1, false, false, 1, 1)
+	require.True(t, coordinator.beginAdmission().commit(group))
 	drained := make(chan processRetryCoordinatorSummary, 1)
 	go func() { drained <- coordinator.drain(0) }()
 	<-started
@@ -265,18 +264,18 @@ func TestDeferredProcessRetryCoordinatorAbortCancelsActiveWorker(t *testing.T) {
 }
 
 func TestDeferredProcessRetryCoordinatorLateShutdownPublishesFailedSummary(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
-	group := &deferredProcessRetryGroup{}
-	require.True(t, coordinator.beginAdmission().commit(group))
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
 	drainEntered := make(chan struct{})
 	releaseDrain := make(chan struct{})
-	coordinator.drainGroup = func(group *deferredProcessRetryGroup) bool {
+	runner := func(_ context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 		close(drainEntered)
 		<-releaseDrain
-		group.finish()
-		return false
+		return deferredProcessRetryPassingAttempt(prepared.index)
 	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	group := newDeferredProcessRetrySchedulerGroup("TestLateShutdown", 0, false, false, 1, 1)
+	require.True(t, coordinator.beginAdmission().commit(group))
 	drained := make(chan processRetryCoordinatorSummary, 1)
 	go func() { drained <- coordinator.drain(0) }()
 	<-drainEntered
@@ -290,7 +289,7 @@ func TestDeferredProcessRetryCoordinatorLateShutdownPublishesFailedSummary(t *te
 }
 
 func TestDeferredProcessRetryCoordinatorEmptyDrainPreservesNativeFailure(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
 	summary := coordinator.drain(7)
 	require.Equal(t, 7, summary.exitCode)
 	require.True(t, summary.packageFailed)
@@ -355,18 +354,21 @@ func TestDeferredProcessRetryIrreversibleFirstFailurePolicy(t *testing.T) {
 }
 
 func TestDeferredProcessRetryCoordinatorDrainsGroupsFIFO(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
-	groups := []*deferredProcessRetryGroup{{}, {}, {}}
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	var drained []uint64
+	runner := func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+		drained = append(drained, group.id)
+		return deferredProcessRetryPassingAttempt(prepared.index)
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	groups := []*deferredProcessRetryGroup{
+		newDeferredProcessRetrySchedulerGroup("TestFIFO1", 0, false, false, 1, 1),
+		newDeferredProcessRetrySchedulerGroup("TestFIFO2", 0, false, false, 1, 1),
+		newDeferredProcessRetrySchedulerGroup("TestFIFO3", 0, false, false, 1, 1),
+	}
 	for _, group := range groups {
 		require.True(t, coordinator.beginAdmission().commit(group))
-	}
-
-	var drained []uint64
-	coordinator.drainGroup = func(group *deferredProcessRetryGroup) bool {
-		drained = append(drained, group.id)
-		group.finish()
-		return false
 	}
 	summary := coordinator.drain(0)
 
@@ -460,19 +462,21 @@ func TestDeferredProcessRetryGroupRetainsNoAttemptRuntime(t *testing.T) {
 }
 
 func TestDeferredProcessRetryCoordinatorFailfastStopsLaterGroups(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return true }
-	first := &deferredProcessRetryGroup{}
-	second := &deferredProcessRetryGroup{allAttemptsPassed: true, allRetriesFailed: true}
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	var drained []uint64
+	runner := func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+		drained = append(drained, group.id)
+		attempt := deferredProcessRetryPassingAttempt(prepared.index)
+		attempt.Result.Status = processRetryStatusFail
+		attempt.ExitCode = processRetryFailureExitCode
+		return attempt
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(true, runner)
+	first := newDeferredProcessRetrySchedulerGroup("TestFailfastFirst", 0, false, false, 1, 1)
+	second := newDeferredProcessRetrySchedulerGroup("TestFailfastSecond", 0, false, false, 1, 1)
 	require.True(t, coordinator.beginAdmission().commit(first))
 	require.True(t, coordinator.beginAdmission().commit(second))
-
-	var drained []uint64
-	coordinator.drainGroup = func(group *deferredProcessRetryGroup) bool {
-		drained = append(drained, group.id)
-		group.finish()
-		return true
-	}
 	summary := coordinator.drain(0)
 
 	require.Equal(t, []uint64{first.id}, drained)
@@ -484,14 +488,13 @@ func TestDeferredProcessRetryCoordinatorFailfastStopsLaterGroups(t *testing.T) {
 }
 
 func TestDeferredProcessRetryCoordinatorNativeFailfastLaunchesNoGroups(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return true }
+	runner := func(context.Context, *deferredProcessRetryGroup, deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+		t.Fatal("native package failure must latch failfast before deferred launch")
+		return processRetryAttemptResult{}
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(true, runner)
 	group := &deferredProcessRetryGroup{}
 	require.True(t, coordinator.beginAdmission().commit(group))
-	coordinator.drainGroup = func(*deferredProcessRetryGroup) bool {
-		t.Fatal("native package failure must latch failfast before deferred launch")
-		return false
-	}
 
 	summary := coordinator.drain(3)
 	require.Equal(t, 3, summary.exitCode)
@@ -535,23 +538,28 @@ func TestDeferredProcessRetryRetiredMRunKeepsStickyFailure(t *testing.T) {
 }
 
 func TestDeferredProcessRetryCoordinatorSelectsOneTerminalReplay(t *testing.T) {
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
-	first := &deferredProcessRetryGroup{panicPresent: true, panicMessage: "boom", panicStack: "stack"}
-	second := &deferredProcessRetryGroup{}
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	var drained []uint64
+	runner := func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+		drained = append(drained, group.id)
+		attempt := deferredProcessRetryPassingAttempt(prepared.index)
+		attempt.Result.Status = processRetryStatusFail
+		attempt.ExitCode = processRetryFailureExitCode
+		return attempt
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	first := newDeferredProcessRetrySchedulerGroup("TestTerminalReplayFirst", 0, false, false, 1, 1)
+	first.panicPresent = true
+	first.panicMessage = "boom"
+	first.panicStack = "stack"
+	second := newDeferredProcessRetrySchedulerGroup("TestTerminalReplaySecond", 0, false, false, 1, 1)
 	require.True(t, coordinator.beginAdmission().commit(first))
 	require.True(t, coordinator.beginAdmission().commit(second))
-
-	var drained []uint64
-	coordinator.drainGroup = func(group *deferredProcessRetryGroup) bool {
-		drained = append(drained, group.id)
-		group.finish()
-		return true
-	}
 	summary := coordinator.drain(0)
 
 	require.Equal(t, []uint64{first.id}, drained)
-	require.Equal(t, "test failed and panicked after 0 retries.\nboom\nstack", summary.terminalPanic)
+	require.Equal(t, "test failed and panicked after 1 retries.\nboom\nstack", summary.terminalPanic)
 	require.Equal(t, "terminal_replay", second.terminalFailureReason)
 }
 
@@ -606,27 +614,19 @@ func TestDeferredProcessRetryShutdownStartsCompletionWithoutWaitingForInitialEve
 	require.Equal(t, 1, inFlight)
 	require.Zero(t, queued)
 
-	var complete func()
-	coordinator.startCompletion = func(run func()) { complete = run }
 	coordinator.completeShutdown()
 	require.Equal(t, processRetryCoordinatorShuttingDown, coordinator.stateSnapshot())
-	require.NotNil(t, complete, "shutdown must schedule completion instead of waiting for admission publication")
 	select {
 	case <-coordinator.completed:
-		t.Fatal("coordinator completed before the scheduled completion owner ran")
+		t.Fatal("coordinator completed before the pending admission was published")
 	default:
 	}
 	require.Zero(t, event.closeCount)
 
-	shutdownComplete := make(chan struct{})
-	go func() {
-		complete()
-		close(shutdownComplete)
-	}()
 	deferOrCloseInstrumentedTestEvent(execMeta, event, integrations.ResultStatusFail, "")
 	completeDeferredProcessRetryEvent(execMeta)
 	select {
-	case <-shutdownComplete:
+	case <-coordinator.completed:
 	case <-t.Context().Done():
 		t.Fatal("shutdown did not complete after the initial event was published")
 	}
@@ -643,7 +643,13 @@ func TestDeferredProcessRetryQueuedPanicUsesFrozenMessage(t *testing.T) {
 		panicData:  panicValue,
 		panicStack: []byte("original stack"),
 	})
-	coordinator, execMeta, event, group := newDeferredProcessRetryPendingGroupForTesting(t, observation)
+	runner := func(_ context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+		attempt := deferredProcessRetryPassingAttempt(prepared.index)
+		attempt.Result.Status = processRetryStatusFail
+		attempt.ExitCode = processRetryFailureExitCode
+		return attempt
+	}
+	coordinator, execMeta, event, group := newDeferredProcessRetryPendingGroupForTesting(t, observation, runner)
 
 	require.Nil(t, group.latest.panicData, "the deferred queue must not retain the mutable panic value")
 	require.Nil(t, group.latest.cleanupPanicData)
@@ -651,11 +657,6 @@ func TestDeferredProcessRetryQueuedPanicUsesFrozenMessage(t *testing.T) {
 	panicValue.message = "mutated panic"
 	deferOrCloseInstrumentedTestEvent(execMeta, event, integrations.ResultStatusFail, "")
 	completeDeferredProcessRetryEvent(execMeta)
-	coordinator.drainGroup = func(group *deferredProcessRetryGroup) bool {
-		group.latest.failed = true
-		group.finish()
-		return true
-	}
 
 	summary := coordinator.drain(0)
 	terminal := fmt.Sprint(summary.terminalPanic)
@@ -695,7 +696,7 @@ func TestDeferredProcessRetryLeaseFailureAbortsAdmission(t *testing.T) {
 		test:                      newProcessRetryRecordingTestForTesting(identity.FullName),
 		retryAttemptFinalizer:     func(retryAttemptResult) {},
 	}
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
 	execOpts := &executionOptions{
 		options: &runTestWithRetryOptions{
 			t:                       t,
@@ -732,19 +733,21 @@ func TestDeferredProcessRetryInitialPanicControlsTerminalReplay(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			runner := func(_ context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+				attempt := deferredProcessRetryPassingAttempt(prepared.index)
+				if test.retryFailed {
+					attempt.Result.Status = processRetryStatusFail
+					attempt.ExitCode = processRetryFailureExitCode
+				}
+				return attempt
+			}
 			coordinator, execMeta, event, _ := newDeferredProcessRetryPendingGroupForTesting(t, retryAttemptObservation{
 				failed:     true,
 				panicData:  panicValue,
 				panicStack: []byte("initial stack"),
-			})
+			}, runner)
 			deferOrCloseInstrumentedTestEvent(execMeta, event, integrations.ResultStatusFail, "")
 			completeDeferredProcessRetryEvent(execMeta)
-			coordinator.drainGroup = func(group *deferredProcessRetryGroup) bool {
-				group.latest = retryAttemptObservation{failed: test.retryFailed}
-				group.observe(test.retryFailed, false)
-				group.finish()
-				return group.packageFailed()
-			}
 
 			summary := coordinator.drain(0)
 			if test.terminalPanic {
@@ -809,27 +812,25 @@ func TestDeferredProcessRetryChildEventRemainsTailUntilAggregateFinalization(t *
 func TestDeferredProcessRetrySchedulerSharesWorkersRoundRobin(t *testing.T) {
 	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
-	groups := []*deferredProcessRetryGroup{
-		newDeferredProcessRetrySchedulerGroup("TestRoundRobinA", 1, true, true, 2, 2),
-		newDeferredProcessRetrySchedulerGroup("TestRoundRobinB", 1, true, true, 2, 2),
-	}
-	for _, group := range groups {
-		require.True(t, coordinator.beginAdmission().commit(group))
-	}
-
 	type startedAttempt struct {
 		groupID uint64
 		index   int
 		release chan struct{}
 	}
 	started := make(chan startedAttempt, 4)
-	coordinator.attemptRunner = func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+	runner := func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 		release := make(chan struct{})
 		started <- startedAttempt{groupID: group.id, index: prepared.index, release: release}
 		<-release
 		return deferredProcessRetryPassingAttempt(prepared.index)
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	groups := []*deferredProcessRetryGroup{
+		newDeferredProcessRetrySchedulerGroup("TestRoundRobinA", 1, true, true, 2, 2),
+		newDeferredProcessRetrySchedulerGroup("TestRoundRobinB", 1, true, true, 2, 2),
+	}
+	for _, group := range groups {
+		require.True(t, coordinator.beginAdmission().commit(group))
 	}
 	drained := make(chan processRetryCoordinatorSummary, 1)
 	go func() { drained <- coordinator.drain(0) }()
@@ -872,8 +873,18 @@ func TestDeferredProcessRetrySchedulerBatchesSerialBeforeParallelWithinEachPhase
 func TestDeferredProcessRetrySchedulerHonorsNativeParallelGroupLimit(t *testing.T) {
 	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
+	type startedGroup struct {
+		id      uint64
+		release chan struct{}
+	}
+	started := make(chan startedGroup, 3)
+	runner := func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+		release := make(chan struct{})
+		started <- startedGroup{id: group.id, release: release}
+		<-release
+		return deferredProcessRetryPassingAttempt(prepared.index)
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
 	groups := []*deferredProcessRetryGroup{
 		newDeferredProcessRetrySchedulerGroup("TestNativeLimitA", 0, false, true, 2, 3),
 		newDeferredProcessRetrySchedulerGroup("TestNativeLimitB", 0, false, true, 2, 3),
@@ -882,17 +893,6 @@ func TestDeferredProcessRetrySchedulerHonorsNativeParallelGroupLimit(t *testing.
 	require.Equal(t, 2, deferredProcessRetryMaxActiveGroups(groups), "the scheduler must use the stricter native parallel limit")
 	for _, group := range groups {
 		require.True(t, coordinator.beginAdmission().commit(group))
-	}
-	type startedGroup struct {
-		id      uint64
-		release chan struct{}
-	}
-	started := make(chan startedGroup, len(groups))
-	coordinator.attemptRunner = func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
-		release := make(chan struct{})
-		started <- startedGroup{id: group.id, release: release}
-		<-release
-		return deferredProcessRetryPassingAttempt(prepared.index)
 	}
 	drained := make(chan processRetryCoordinatorSummary, 1)
 	go func() { drained <- coordinator.drain(0) }()
@@ -911,17 +911,12 @@ func TestDeferredProcessRetrySchedulerHonorsNativeParallelGroupLimit(t *testing.
 func TestDeferredProcessRetrySchedulerAppliesParallelResultsInExecutionOrder(t *testing.T) {
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
-	group := newDeferredProcessRetrySchedulerGroup("TestOrderedResults", 2, true, false, 1, 3)
-	require.True(t, coordinator.beginAdmission().commit(group))
-
 	type startedAttempt struct {
 		index   int
 		release chan struct{}
 	}
 	started := make(chan startedAttempt, 3)
-	coordinator.attemptRunner = func(_ context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+	runner := func(_ context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 		release := make(chan struct{})
 		started <- startedAttempt{index: prepared.index, release: release}
 		<-release
@@ -932,6 +927,9 @@ func TestDeferredProcessRetrySchedulerAppliesParallelResultsInExecutionOrder(t *
 		}
 		return attempt
 	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	group := newDeferredProcessRetrySchedulerGroup("TestOrderedResults", 2, true, false, 1, 3)
+	require.True(t, coordinator.beginAdmission().commit(group))
 	drained := make(chan processRetryCoordinatorSummary, 1)
 	go func() { drained <- coordinator.drain(0) }()
 
@@ -955,13 +953,8 @@ func TestDeferredProcessRetrySchedulerAppliesParallelResultsInExecutionOrder(t *
 func TestDeferredProcessRetryLateSetupFailureIsOneConsumedProcessAttempt(t *testing.T) {
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
-	group := newDeferredProcessRetrySchedulerGroup("TestLateSetupFailure", 1, false, false, 1, 1)
-	require.True(t, coordinator.beginAdmission().commit(group))
-
 	starts := 0
-	coordinator.attemptRunner = func(_ context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+	runner := func(_ context.Context, _ *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 		starts++
 		now := time.Unix(0, int64(prepared.index))
 		return processRetryAttemptResult{
@@ -972,6 +965,9 @@ func TestDeferredProcessRetryLateSetupFailureIsOneConsumedProcessAttempt(t *test
 			FinishTime:   now.Add(time.Nanosecond),
 		}
 	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	group := newDeferredProcessRetrySchedulerGroup("TestLateSetupFailure", 1, false, false, 1, 1)
+	require.True(t, coordinator.beginAdmission().commit(group))
 
 	summary := coordinator.drain(0)
 	require.Equal(t, 1, starts, "a deferred setup failure must not be replayed without a live native testing.T")
@@ -984,21 +980,13 @@ func TestDeferredProcessRetryLateSetupFailureIsOneConsumedProcessAttempt(t *test
 func TestDeferredProcessRetrySchedulerFailfastStartsNoNewAttempts(t *testing.T) {
 	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return true }
-	first := newDeferredProcessRetrySchedulerGroup("TestFailfastA", 1, false, true, 2, 2)
-	second := newDeferredProcessRetrySchedulerGroup("TestFailfastB", 1, false, true, 2, 2)
-	for _, group := range []*deferredProcessRetryGroup{first, second} {
-		group.metadata.isAttemptToFix = true
-		group.metadata.shouldOrchestrateAttemptToFix = true
-		require.True(t, coordinator.beginAdmission().commit(group))
-	}
 	type startedAttempt struct {
 		groupID uint64
 		release chan struct{}
 	}
 	started := make(chan startedAttempt, 4)
-	coordinator.attemptRunner = func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+	var first *deferredProcessRetryGroup
+	runner := func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 		release := make(chan struct{})
 		started <- startedAttempt{groupID: group.id, release: release}
 		<-release
@@ -1008,6 +996,14 @@ func TestDeferredProcessRetrySchedulerFailfastStartsNoNewAttempts(t *testing.T) 
 			attempt.ExitCode = processRetryFailureExitCode
 		}
 		return attempt
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(true, runner)
+	first = newDeferredProcessRetrySchedulerGroup("TestFailfastA", 1, false, true, 2, 2)
+	second := newDeferredProcessRetrySchedulerGroup("TestFailfastB", 1, false, true, 2, 2)
+	for _, group := range []*deferredProcessRetryGroup{first, second} {
+		group.metadata.isAttemptToFix = true
+		group.metadata.shouldOrchestrateAttemptToFix = true
+		require.True(t, coordinator.beginAdmission().commit(group))
 	}
 	drained := make(chan processRetryCoordinatorSummary, 1)
 	go func() { drained <- coordinator.drain(0) }()
@@ -1029,15 +1025,9 @@ func TestDeferredProcessRetrySchedulerFailfastStartsNoNewAttempts(t *testing.T) 
 func TestDeferredProcessRetrySchedulerContainmentLossStopsLaterGroups(t *testing.T) {
 	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
-	coordinator := newProcessRetryCoordinator()
-	coordinator.failfastEnabled = func() bool { return false }
-	first := newDeferredProcessRetrySchedulerGroup("TestContainmentLossA", 0, false, false, 1, 1)
-	second := newDeferredProcessRetrySchedulerGroup("TestContainmentLossB", 0, false, false, 1, 1)
-	for _, group := range []*deferredProcessRetryGroup{first, second} {
-		require.True(t, coordinator.beginAdmission().commit(group))
-	}
 	var starts int
-	coordinator.attemptRunner = func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+	var first *deferredProcessRetryGroup
+	runner := func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 		starts++
 		if group != first {
 			t.Fatal("containment loss must withdraw later groups before they reach the runner")
@@ -1048,6 +1038,12 @@ func TestDeferredProcessRetrySchedulerContainmentLossStopsLaterGroups(t *testing
 		attempt.ContainmentLost = true
 		attempt.Err = errProcessRetryContainmentLost
 		return attempt
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+	first = newDeferredProcessRetrySchedulerGroup("TestContainmentLossA", 0, false, false, 1, 1)
+	second := newDeferredProcessRetrySchedulerGroup("TestContainmentLossB", 0, false, false, 1, 1)
+	for _, group := range []*deferredProcessRetryGroup{first, second} {
+		require.True(t, coordinator.beginAdmission().commit(group))
 	}
 
 	summary := coordinator.drain(0)
@@ -1070,18 +1066,9 @@ func TestDeferredProcessRetryGlobalStopCountsCanceledLaterOrdinaryGroup(t *testi
 		t.Run(tt.name, func(t *testing.T) {
 			_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 			defer restoreSession()
-			coordinator := newProcessRetryCoordinator()
-			coordinator.failfastEnabled = func() bool { return false }
-			first := newDeferredProcessRetrySchedulerGroup("TestMaskedContainmentLoss", 0, false, false, 1, 1)
-			tt.configure(&first.metadata)
-			second := newDeferredProcessRetrySchedulerGroup("TestCanceledOrdinaryFTR", 0, false, false, 1, 1)
-			second.metadata.isEarlyFlakeDetectionEnabled = false
-			second.metadata.isANewTest = false
-			for _, group := range []*deferredProcessRetryGroup{first, second} {
-				require.True(t, coordinator.beginAdmission().commit(group))
-			}
-			starts := 0
-			coordinator.attemptRunner = func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+			var starts int
+			var first *deferredProcessRetryGroup
+			runner := func(_ context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
 				starts++
 				require.Same(t, first, group)
 				attempt := deferredProcessRetryPassingAttempt(prepared.index)
@@ -1090,6 +1077,15 @@ func TestDeferredProcessRetryGlobalStopCountsCanceledLaterOrdinaryGroup(t *testi
 				attempt.ContainmentLost = true
 				attempt.Err = errProcessRetryContainmentLost
 				return attempt
+			}
+			coordinator := newProcessRetryCoordinatorForTesting(false, runner)
+			first = newDeferredProcessRetrySchedulerGroup("TestMaskedContainmentLoss", 0, false, false, 1, 1)
+			tt.configure(&first.metadata)
+			second := newDeferredProcessRetrySchedulerGroup("TestCanceledOrdinaryFTR", 0, false, false, 1, 1)
+			second.metadata.isEarlyFlakeDetectionEnabled = false
+			second.metadata.isANewTest = false
+			for _, group := range []*deferredProcessRetryGroup{first, second} {
+				require.True(t, coordinator.beginAdmission().commit(group))
 			}
 
 			summary := coordinator.drain(0)
@@ -1129,7 +1125,7 @@ func BenchmarkDeferredProcessRetryQueueAdmission(b *testing.B) {
 			b.ReportAllocs()
 			b.ReportMetric(float64(groupCount), "groups/op")
 			for range b.N {
-				coordinator := newProcessRetryCoordinator()
+				coordinator := newProcessRetryCoordinatorForTesting(false)
 				for index := range groupCount {
 					group := &deferredProcessRetryGroup{invocationOrdinal: uint64(index + 1)}
 					if !coordinator.beginAdmission().commit(group) {
@@ -1176,8 +1172,11 @@ func newDeferredProcessRetrySchedulerGroup(
 func newDeferredProcessRetryPendingGroupForTesting(
 	t *testing.T,
 	observation retryAttemptObservation,
+	runners ...deferredProcessRetryAttemptRunner,
 ) (*processRetryCoordinator, *testExecutionMetadata, *processRetryRecordingTest, *deferredProcessRetryGroup) {
 	t.Helper()
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	t.Cleanup(restoreSession)
 	if !ProcessRetryContainmentSupported() {
 		t.Skip("process retry containment is unavailable")
 	}
@@ -1198,7 +1197,7 @@ func newDeferredProcessRetryPendingGroupForTesting(
 		test:                      event,
 	}
 	execMeta.retryAttemptFinalizer = func(retryAttemptResult) {}
-	coordinator := newProcessRetryCoordinator()
+	coordinator := newProcessRetryCoordinatorForTesting(false, runners...)
 	options := &runTestWithRetryOptions{
 		t:                       t,
 		testInfo:                &commonInfo{moduleName: identity.ModuleName, suiteName: identity.SuiteName, testName: identity.FullName, identity: identity},
@@ -1229,4 +1228,12 @@ func deferredProcessRetryPassingAttempt(index int) processRetryAttemptResult {
 		StartTime:  start,
 		FinishTime: start.Add(time.Nanosecond),
 	}
+}
+
+func newProcessRetryCoordinatorForTesting(failfastEnabled bool, runners ...deferredProcessRetryAttemptRunner) *processRetryCoordinator {
+	runner := runDeferredProcessRetryAttempt
+	if len(runners) > 0 {
+		runner = runners[0]
+	}
+	return newProcessRetryCoordinator(func() bool { return failfastEnabled }, runner)
 }

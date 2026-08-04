@@ -146,9 +146,7 @@ type processRetryCoordinator struct {
 	invocationPhase  uint64
 	phaseByTestName  map[string]uint64
 	failfastEnabled  func() bool
-	drainGroup       func(*deferredProcessRetryGroup) bool
 	attemptRunner    deferredProcessRetryAttemptRunner
-	startCompletion  func(func())
 }
 
 type deferredProcessRetryPreparedAttempt struct {
@@ -205,13 +203,14 @@ var processRetryCoordinatorRegistry = struct {
 	values map[*processRetryCoordinator]struct{}
 }{values: make(map[*processRetryCoordinator]struct{})}
 
-func newProcessRetryCoordinator() *processRetryCoordinator {
+func newProcessRetryCoordinator(failfastEnabled func() bool, attemptRunner deferredProcessRetryAttemptRunner) *processRetryCoordinator {
 	return &processRetryCoordinator{
 		state:           processRetryCoordinatorAccepting,
 		changed:         make(chan struct{}),
 		shutdown:        make(chan struct{}),
 		completed:       make(chan struct{}),
-		failfastEnabled: retryAttemptFailfastEnabled,
+		failfastEnabled: failfastEnabled,
+		attemptRunner:   attemptRunner,
 	}
 }
 
@@ -334,12 +333,7 @@ func (c *processRetryCoordinator) completeShutdown() {
 		// Completion may need an in-flight first-attempt finalizer to publish or
 		// abort its admission. Do not let that handoff block the pre-close owner;
 		// stopActiveProcessRetryChildren bounds the wait on c.completed.
-		complete := func() { c.complete(processRetryFailureExitCode, true) }
-		if c.startCompletion != nil {
-			c.startCompletion(complete)
-		} else {
-			go complete()
-		}
+		go c.complete(processRetryFailureExitCode, true)
 	}
 }
 
@@ -365,12 +359,10 @@ func (c *processRetryCoordinator) complete(nativeExitCode int, shuttingDown bool
 	})
 	packageFailed := nativeExitCode != 0
 	deferredFailed := false
-	failfastLatched := c.failfastEnabled != nil && c.failfastEnabled() && packageFailed
+	failfastLatched := c.failfastEnabled() && packageFailed
 	var terminalPanic any
 	if !shuttingDown && !c.shutdownRequested() {
-		if c.drainGroup != nil {
-			deferredFailed, failfastLatched, terminalPanic = c.completeWithDrainHook(queue, failfastLatched)
-		} else if !failfastLatched {
+		if !failfastLatched {
 			outcome := c.drainScheduledGroups(queue)
 			deferredFailed = outcome.deferredFailed
 			failfastLatched = outcome.failfast
@@ -410,30 +402,6 @@ func (c *processRetryCoordinator) complete(nativeExitCode int, shuttingDown bool
 	unregisterProcessRetryCoordinator(c)
 }
 
-func (c *processRetryCoordinator) completeWithDrainHook(queue []*deferredProcessRetryGroup, failfastLatched bool) (bool, bool, any) {
-	deferredFailed := false
-	var terminalPanic any
-	for _, group := range queue {
-		if terminalPanic != nil {
-			group.cancel("terminal_replay", false)
-			continue
-		}
-		if failfastLatched {
-			group.cancel("failfast", false)
-			continue
-		}
-		groupFailed := c.drainGroup(group)
-		deferredFailed = groupFailed || deferredFailed
-		if groupFailed && c.failfastEnabled != nil && c.failfastEnabled() {
-			failfastLatched = true
-		}
-		if groupFailed && group.panicPresent {
-			terminalPanic = deferredProcessRetryTerminalPanic(group)
-		}
-	}
-	return deferredFailed, failfastLatched, terminalPanic
-}
-
 func cancelDeferredProcessRetryGroups(groups []*deferredProcessRetryGroup, reason string, failed bool) {
 	for _, group := range groups {
 		group.cancel(reason, failed)
@@ -442,9 +410,6 @@ func cancelDeferredProcessRetryGroups(groups []*deferredProcessRetryGroup, reaso
 
 func (c *processRetryCoordinator) drainScheduledGroups(queue []*deferredProcessRetryGroup) deferredProcessRetryDrainOutcome {
 	runner := c.attemptRunner
-	if runner == nil {
-		runner = runDeferredProcessRetryAttempt
-	}
 	var outcome deferredProcessRetryDrainOutcome
 	batches := deferredProcessRetryScheduleBatches(queue)
 	for index, groups := range batches {
@@ -586,7 +551,7 @@ func (c *processRetryCoordinator) drainScheduledBatch(
 		state.group.printSummary()
 		groupFailed := state.group.packageFailed()
 		outcome.deferredFailed = outcome.deferredFailed || groupFailed
-		if groupFailed && c.failfastEnabled != nil && c.failfastEnabled() {
+		if groupFailed && c.failfastEnabled() {
 			outcome.failfast = true
 		}
 		if groupFailed && state.group.panicPresent && outcome.terminalPanic == nil {
@@ -711,7 +676,7 @@ func (c *processRetryCoordinator) drainScheduledBatch(
 			}
 		} else {
 			continueGroup := state.group.applyCompletedAttempt(scheduled.completed, !state.stopPending, false)
-			if c.failfastEnabled != nil && c.failfastEnabled() && state.group.metadata.isAttemptToFix && state.group.anyFailed {
+			if c.failfastEnabled() && state.group.metadata.isAttemptToFix && state.group.anyFailed {
 				continueGroup = false
 				state.group.truncated = true
 			}

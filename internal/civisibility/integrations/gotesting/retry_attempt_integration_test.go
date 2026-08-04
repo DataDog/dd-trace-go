@@ -365,7 +365,7 @@ func TestProcessRetryParityDefersFirstAttemptFailfastToProcessCoordinator(t *tes
 	execOpts := &executionOptions{
 		options: &runTestWithRetryOptions{
 			failfastEnabled:         func() bool { return true },
-			processRetryCoordinator: newProcessRetryCoordinator(),
+			processRetryCoordinator: newProcessRetryCoordinatorForTesting(false),
 		},
 		retryAttemptGroup: group,
 		executionIndex:    0,
@@ -392,7 +392,7 @@ func TestProcessRetryParityFailfastStopsWhenDeferredAdmissionFails(t *testing.T)
 		t:                          t,
 		failfastEnabled:            func() bool { return true },
 		nativeFailfastObserved:     func() bool { return false },
-		processRetryCoordinator:    newProcessRetryCoordinator(),
+		processRetryCoordinator:    newProcessRetryCoordinatorForTesting(false),
 		processRetryIdentity:       identity,
 		processRetryLaunchTemplate: &processRetryLaunchBaseline{err: errors.New("launch baseline unavailable")},
 		processRetryFuzzGuard:      &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }},

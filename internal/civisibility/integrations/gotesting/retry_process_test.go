@@ -287,7 +287,7 @@ func TestDeferredProcessRetryPreparationCachesFuzzGuardAcrossTests(t *testing.T)
 	for range 3 {
 		options := &runTestWithRetryOptions{
 			processRetryIdentity:    identity,
-			processRetryCoordinator: newProcessRetryCoordinator(),
+			processRetryCoordinator: newProcessRetryCoordinatorForTesting(false),
 			processRetryFuzzGuard:   guard,
 			processRetryLaunchTemplate: &processRetryLaunchBaseline{
 				err: errors.New("stop after fuzz snapshot"),
@@ -696,7 +696,7 @@ func TestProcessRetryEligible(t *testing.T) {
 		return &runTestWithRetryOptions{
 			testInfo:                &commonInfo{moduleName: "module", suiteName: "suite", testName: "TestProcess", identity: identity},
 			processRetryIdentity:    identity,
-			processRetryCoordinator: newProcessRetryCoordinator(),
+			processRetryCoordinator: newProcessRetryCoordinatorForTesting(false),
 			processRetryFuzzGuard:   &processRetryFuzzGuardSnapshot{evaluate: func() bool { return false }},
 		}
 	}

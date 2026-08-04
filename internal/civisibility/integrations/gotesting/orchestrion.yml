@@ -25,8 +25,8 @@ aspects:
             //go:linkname __dd_civisibility_instrumentTestingBuiltWithOrchestrion github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingBuiltWithOrchestrion
             func __dd_civisibility_instrumentTestingBuiltWithOrchestrion()
 
-            //go:linkname __dd_civisibility_instrumentTestingMWithDeferredControl github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingMWithDeferredControl
-            func __dd_civisibility_instrumentTestingMWithDeferredControl(*M) (bool, func(int) int)
+            //go:linkname __dd_civisibility_instrumentTestingMWithControl github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingMWithControl
+            func __dd_civisibility_instrumentTestingMWithControl(*M) (bool, func(int) int)
 
             //go:linkname __dd_civisibility_instrumentTestingMAbnormalExitCode github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingMAbnormalExitCode
             func __dd_civisibility_instrumentTestingMAbnormalExitCode() int
@@ -36,7 +36,7 @@ aspects:
             }
       - prepend-statements:
           template: |-
-            proceed, exitFunc := __dd_civisibility_instrumentTestingMWithDeferredControl({{ .Function.Receiver }})
+            proceed, exitFunc := __dd_civisibility_instrumentTestingMWithControl({{ .Function.Receiver }})
             if !proceed {
               return exitFunc(1)
             }

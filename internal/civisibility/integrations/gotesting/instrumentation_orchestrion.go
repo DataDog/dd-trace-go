@@ -109,15 +109,6 @@ func instrumentTestingMWithControl(m *testing.M) (bool, func(int) int) {
 	return proceed, finalize
 }
 
-// instrumentTestingMWithDeferredControl is private glue for current Orchestrion
-// advice, whose generated defer propagates the adjusted M.Run exit code.
-//
-//go:linkname instrumentTestingMWithDeferredControl
-func instrumentTestingMWithDeferredControl(m *testing.M) (bool, func(int) int) {
-	proceed, finalize := instrumentTestingMWithOptions(m, processRetryDeferredWrapperOptions())
-	return proceed, finalize
-}
-
 //go:linkname instrumentTestingMAbnormalExitCode
 func instrumentTestingMAbnormalExitCode() int {
 	return testingMAbnormalExitCode
