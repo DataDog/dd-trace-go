@@ -62,77 +62,6 @@ var (
 	}
 )
 
-func NewExportSpanEvent(traceID, spanID string, kind SpanKind) transport.LLMObsSpanEvent {
-	return transport.LLMObsSpanEvent{
-		SpanID:   spanID,
-		TraceID:  traceID,
-		ParentID: defaultParentID,
-		Name:     string(kind),
-		Status:   transport.SpanStatusOK,
-		Meta:     map[string]any{"span.kind": string(kind)},
-		DDAttributes: transport.DDAttributes{
-			SpanID:  spanID,
-			TraceID: traceID,
-		},
-	}
-}
-
-func SetExportSpanTiming(event *transport.LLMObsSpanEvent, start time.Time, duration time.Duration) {
-	if start.IsZero() {
-		event.StartNS = 0
-	} else {
-		event.StartNS = start.UnixNano()
-	}
-	event.Duration = duration
-}
-
-func SetExportSpanModel(event *transport.LLMObsSpanEvent, modelName, modelProvider string) {
-	meta := ensureSpanEventMeta(event)
-	name, provider, ok := normalizeModel(exportSpanKind(*event), modelName, modelProvider)
-	if !ok {
-		delete(meta, metaKeyModelName)
-		delete(meta, metaKeyModelProvider)
-		return
-	}
-	meta[metaKeyModelName] = name
-	meta[metaKeyModelProvider] = provider
-}
-
-func SetExportSpanTextIO(event *transport.LLMObsSpanEvent, input, output string) {
-	meta := ensureSpanEventMeta(event)
-	if input == "" {
-		delete(meta, "input")
-	} else {
-		meta["input"] = map[string]any{"value": input}
-	}
-	if output == "" {
-		delete(meta, "output")
-	} else {
-		meta["output"] = map[string]any{"value": output}
-	}
-}
-
-func SetExportSpanMetadata(event *transport.LLMObsSpanEvent, metadata map[string]any) {
-	meta := ensureSpanEventMeta(event)
-	if len(metadata) == 0 {
-		delete(meta, "metadata")
-		return
-	}
-	meta["metadata"] = maps.Clone(metadata)
-}
-
-func SetExportSpanError(event *transport.LLMObsSpanEvent, details transport.ErrorMessage) {
-	event.Status = transport.SpanStatusError
-	setErrorMeta(ensureSpanEventMeta(event), &details)
-}
-
-func ensureSpanEventMeta(event *transport.LLMObsSpanEvent) map[string]any {
-	if event.Meta == nil {
-		event.Meta = make(map[string]any)
-	}
-	return event.Meta
-}
-
 // ValidateExportSpan checks the fields required by the LLM Obs intake.
 func ValidateExportSpan(event transport.LLMObsSpanEvent) *ExportValidationError {
 	if event.SpanID == "" || event.TraceID == "" {
@@ -179,10 +108,12 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, servic
 	span.CollectionErrors = slices.Clone(event.CollectionErrors)
 	span.SpanLinks = slices.Clone(event.SpanLinks)
 
-	ensureSpanEventMeta(&span)
+	if span.Meta == nil {
+		span.Meta = make(map[string]any)
+	}
 	kind := exportSpanKind(span)
 	if span.ParentID == "" {
-		span.ParentID = defaultParentID
+		span.ParentID = DefaultParentID
 	}
 	if span.Name == "" {
 		span.Name = string(kind)

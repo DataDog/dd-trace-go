@@ -54,7 +54,8 @@ const (
 )
 
 const (
-	defaultParentID = "undefined"
+	// DefaultParentID is the parent ID used for root spans.
+	DefaultParentID = "undefined"
 )
 
 // SpanKind represents the type of an LLMObs span.
@@ -173,7 +174,22 @@ func normalizeModel(kind SpanKind, modelName, modelProvider string) (name, provi
 	return name, provider, true
 }
 
-func setErrorMeta(meta map[string]any, msg *transport.ErrorMessage) {
+func NewSpanEventMeta(kind SpanKind) map[string]any {
+	return map[string]any{"span.kind": string(kind)}
+}
+
+func SetSpanModelMeta(meta map[string]any, kind SpanKind, modelName, modelProvider string) {
+	name, provider, ok := normalizeModel(kind, modelName, modelProvider)
+	if !ok {
+		delete(meta, metaKeyModelName)
+		delete(meta, metaKeyModelProvider)
+		return
+	}
+	meta[metaKeyModelName] = name
+	meta[metaKeyModelProvider] = provider
+}
+
+func SetSpanErrorMeta(meta map[string]any, msg *transport.ErrorMessage) {
 	if msg == nil {
 		return
 	}
@@ -594,15 +610,9 @@ func (l *LLMObs) submitLLMObsSpan(span *Span) {
 }
 
 func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
-	meta := make(map[string]any)
-
 	spanKind := span.spanKind
-	meta["span.kind"] = string(spanKind)
-
-	if modelName, modelProvider, ok := normalizeModel(spanKind, span.llmCtx.modelName, span.llmCtx.modelProvider); ok {
-		meta[metaKeyModelName] = modelName
-		meta[metaKeyModelProvider] = modelProvider
-	}
+	meta := NewSpanEventMeta(spanKind)
+	SetSpanModelMeta(meta, spanKind, span.llmCtx.modelName, span.llmCtx.modelProvider)
 
 	metadata := span.llmCtx.metadata
 	if len(metadata) > 0 {
@@ -680,7 +690,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	if span.error != nil {
 		spanStatus = transport.SpanStatusError
 		errMsg = transport.NewErrorMessage(span.error)
-		setErrorMeta(meta, errMsg)
+		SetSpanErrorMeta(meta, errMsg)
 	}
 
 	if len(input) > 0 {
@@ -703,7 +713,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 
 	spanID := span.apm.SpanID()
-	parentID := defaultParentID
+	parentID := DefaultParentID
 	if span.parent != nil {
 		parentID = span.parent.apm.SpanID()
 	} else if span.propagated != nil {
