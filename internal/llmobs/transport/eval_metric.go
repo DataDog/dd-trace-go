@@ -6,6 +6,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -104,11 +105,27 @@ func (c *Transport) PushEvalMetricsWithResult(
 	if len(metrics) == 0 {
 		return RequestResult{}, nil
 	}
-	path := endpointEvalMetric
-	method := http.MethodPost
-	body := NewPushMetricsRequest(metrics)
+	body, err := encodeJSON(NewPushMetricsRequest(metrics))
+	if err != nil {
+		return RequestResult{}, fmt.Errorf("failed to json encode body: %w", err)
+	}
+	return c.PushEvalMetricsBodyWithResult(ctx, body.Bytes())
+}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
+// PushEvalMetricsBodyWithResult sends an encoded evaluation metric request.
+func (c *Transport) PushEvalMetricsBodyWithResult(ctx context.Context, body []byte) (RequestResult, error) {
+	if len(body) == 0 {
+		return RequestResult{}, nil
+	}
+	result, err := c.request(
+		ctx,
+		http.MethodPost,
+		endpointEvalMetric,
+		subdomainEvalMetric,
+		bytes.NewReader(body),
+		"application/json",
+		defaultTimeout,
+	)
 	if err != nil {
 		return summarizeRequest(result), err
 	}
