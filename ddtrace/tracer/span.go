@@ -163,13 +163,9 @@ type Span struct {
 	// +checklocks:mu
 	statSpan *tracerStatSpan `msg:"-"`
 
-	goExecTraced bool `msg:"-"`
-	noDebugStack bool `msg:"-"` // disables debug stack traces
-	// pprofEndpoints records whether endpoint profiling is enabled, so that a
-	// later resource-name override only relabels the endpoint for that feature.
-	// AppSec also populates pprofCtxActive, which must not imply endpoint labels.
-	pprofEndpoints bool         `msg:"-"`
-	context        *SpanContext `msg:"-"` // span propagation context
+	goExecTraced bool         `msg:"-"`
+	noDebugStack bool         `msg:"-"` // disables debug stack traces
+	context      *SpanContext `msg:"-"` // span propagation context
 	// +checklocks:mu
 	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
 
@@ -218,7 +214,6 @@ func (s *Span) clear() {
 	s.statSpan = nil
 	s.goExecTraced = false
 	s.noDebugStack = false
-	s.pprofEndpoints = false
 	s.finished = false
 	s.integration = ""
 	s.supportsEvents = false
@@ -516,9 +511,13 @@ func (s *Span) setTagLocked(key string, value any) {
 		return
 	}
 	if v, ok := value.(string); ok {
-		if key == ext.ResourceName && s.pprofEndpoints && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) && hasEndpointLabel(s.pprofCtxActive) {
 			// If the user overrides the resource name for the span,
 			// update the endpoint label for the runtime profilers.
+			//
+			// Only spans that already carry an endpoint label are updated:
+			// AppSec also populates pprofCtxActive, and endpoint labels must
+			// stay tied to endpoint profiling.
 			//
 			// We don't change s.pprofCtxRestore since that should
 			// stay as the original parent span context regardless

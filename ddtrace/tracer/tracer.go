@@ -1065,7 +1065,6 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 	// "trace id" is AppSec-only. Profiling features retain their own labels
 	// without adding trace correlation cardinality.
 	appsecCorrelation := appsec.Enabled()
-	span.pprofEndpoints = snap.ProfilerEndpoints
 	if !snap.ProfilerHotspotsEnabled && !snap.ProfilerEndpoints && !appsecCorrelation {
 		// No feature needs pprof labels; nothing to restore when the span finishes.
 		span.pprofCtxRestore = nil
@@ -1105,6 +1104,13 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 	span.pprofCtxRestore = ctx
 	span.pprofCtxActive = pprofActive
 	pprof.SetGoroutineLabels(pprofActive)
+}
+
+// hasEndpointLabel reports whether ctx already carries the profiler's endpoint
+// label, i.e. whether endpoint profiling labelled the span when it started.
+func hasEndpointLabel(ctx gocontext.Context) bool {
+	_, ok := pprof.Label(ctx, traceprof.TraceEndpoint)
+	return ok
 }
 
 // spanResourcePIISafe returns true if s.resource can be considered to not
