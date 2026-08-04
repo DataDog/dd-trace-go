@@ -3847,6 +3847,51 @@ func TestExtractBaggageMergesWithOTBaggagePrefix(t *testing.T) {
 	assert.Equal(t, "xyz", got["item"])
 }
 
+// TestExtractFirstContinuesPastFailedExtractor is a regression test: with the
+// default datadog,tracecontext,baggage order and
+// DD_TRACE_PROPAGATION_EXTRACT_FIRST=true, a request that carries a valid W3C
+// traceparent and a baggage header but no x-datadog-* headers must still
+// extract the W3C trace context (with baggage merged in), not a baggage-only
+// context. onlyExtractFirst must only stop the loop after a successful
+// extraction, never after a failed one -- the Datadog extractor's
+// ErrSpanContextNotFound must not prevent the tracecontext extractor from
+// running.
+func TestExtractFirstContinuesPastFailedExtractor(t *testing.T) {
+	for _, extractFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("extractFirst=%v", extractFirst), func(t *testing.T) {
+			if extractFirst {
+				t.Setenv(envPropagationExtractFirst, "true")
+			}
+			// Default style: datadog,tracecontext,baggage. No x-datadog-* headers.
+			headers := TextMapCarrier(map[string]string{
+				traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+				"baggage":         "item=xyz",
+			})
+
+			tracer, err := newTracer()
+			assert.NoError(t, err)
+			defer tracer.Stop()
+
+			ctx, err := tracer.Extract(headers)
+			require.NoError(t, err)
+			require.NotNil(t, ctx)
+
+			// Must be the real W3C-derived trace context, not a baggage-only stand-in.
+			assert.False(t, ctx.baggageOnly)
+			assert.Equal(t, "12345678901234567890123456789012", ctx.TraceID())
+			assert.Equal(t, uint64(0x1234567890123456), ctx.SpanID())
+
+			got := make(map[string]string)
+			ctx.ForeachBaggageItem(func(k, v string) bool {
+				got[k] = v
+				return true
+			})
+			assert.Len(t, got, 1)
+			assert.Equal(t, "xyz", got["item"])
+		})
+	}
+}
+
 // TestSpanContextDebugLoggingSecurity verifies that debug logging of span context
 // does not expose sensitive data from baggage or other fields.
 func TestSpanContextDebugLoggingSecurity(t *testing.T) {

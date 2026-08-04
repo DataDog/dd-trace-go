@@ -430,21 +430,18 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		extractedCtx, err := v.Extract(carrier)
 
 		if firstExtraction {
-			if err != nil {
-				if err != ErrSpanContextNotFound { // We don't care about ErrSpanContextNotFound because we could find a span context in a subsequent extractor
-					return nil, nil, err
-				}
-				if p.onlyExtractFirst { // No further extractors will run; the tail below decides between a baggage-only context and ErrSpanContextNotFound.
-					break
-				}
-			}
-			if p.onlyExtractFirst {
-				ctx, producer = extractedCtx, v
-				break
+			// Hard errors always bail immediately, regardless of onlyExtractFirst.
+			// ErrSpanContextNotFound falls through to try the next extractor either
+			// way: onlyExtractFirst only stops the loop once a context is actually
+			// found below, it does not skip failed extractors (see PR #2339).
+			if err != nil && err != ErrSpanContextNotFound {
+				return nil, nil, err
 			}
 			if extractedCtx != nil {
-				ctx = extractedCtx
-				producer = v
+				ctx, producer = extractedCtx, v
+				if p.onlyExtractFirst {
+					break
+				}
 			}
 		} else { // A trace context was already extracted by a previous propagator
 			// When trace IDs match, merge W3C tracestate and resolve parent ID conflicts.
