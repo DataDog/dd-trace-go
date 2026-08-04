@@ -125,18 +125,31 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           otelc version
 
-          # Explicit rather than discovered. Only the foundation lanes exist today,
-          # and every one of them is verifiable here; a discovery loop would have
-          # to map _integration directory names onto contrib paths, which is not a
+          # Explicit rather than discovered. A discovery loop would have to map
+          # _integration directory names onto contrib paths, which is not a
           # mechanical transformation (e.g. _integration/redigo lives at
           # contrib/gomodule/redigo). Each migrated contrib adds its package below.
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
-          export PACKAGE_NAMES="\
-            ${PREFIX}/otelc \
-            ${PREFIX}/gls \
-            ${PREFIX}/gls-leak \
-            ${PREFIX}/otelc-autostart"
-          echo "Running otelc tests for: ${PACKAGE_NAMES}"
+          CANDIDATES=(
+            "${PREFIX}/otelc"           # otelc actually applied its rules
+            "${PREFIX}/gls"             # GLS storage, gate, span and AppSec lifecycle
+            "${PREFIX}/gls-leak"        # GLS reclaim, at the heap level
+            "${PREFIX}/otelc-autostart" # the tracer is started without the app asking
+            "${PREFIX}/redigo"          # integration
+          )
+
+          # Integration suites are commonly constrained to Linux under the githubci
+          # tag, which leaves the package with no buildable files elsewhere and makes
+          # `go test` fail rather than skip. Drop those, and say which were dropped.
+          export PACKAGE_NAMES=""
+          for pkg in "${CANDIDATES[@]}"; do
+            if go list "${pkg}" > /dev/null 2>&1; then
+              PACKAGE_NAMES="${PACKAGE_NAMES} ${pkg}"
+            else
+              echo "skipping ${pkg}: excluded by build constraints on this platform"
+            fi
+          done
+          echo "Running otelc tests for:${PACKAGE_NAMES}"
 
           # `otelc go test -json` silently produces uninstrumented binaries: every
           # GLS test skips and the proof test fails. So the tests run without it and
