@@ -42,6 +42,15 @@ type capturedRequest struct {
 	body    []byte
 }
 
+type countingJSONValue struct {
+	encodes *int
+}
+
+func (v countingJSONValue) MarshalJSON() ([]byte, error) {
+	(*v.encodes)++
+	return []byte(`"encoded"`), nil
+}
+
 func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := req.Context().Err(); err != nil {
 		return nil, err
@@ -778,6 +787,29 @@ func TestSubmitEvaluations_Chunking(t *testing.T) {
 	assert.Equal(t, 2019, res.Requests[2].InputIndices[19])
 	assert.Equal(t, 2020, res.Sent)
 	assert.Len(t, fake.captured(), 3)
+}
+
+func TestSubmitEvaluations_EncodesSuccessfulBatchOnce(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+	encodes := 0
+
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
+		SpanID:  "s",
+		TraceID: "t",
+		Label:   "json",
+		JSONValue: map[string]any{
+			"value": countingJSONValue{encodes: &encodes},
+		},
+	}})
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Sent)
+	assert.Equal(t, 1, encodes)
+
+	requests := fake.captured()
+	require.Len(t, requests, 1)
+	metrics := decode(t, requests[0].body)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)
+	assert.Equal(t, "encoded", metrics[0].(map[string]any)["json_value"].(map[string]any)["value"])
 }
 
 func TestSubmitEvaluations_SplitsOversizedBatch(t *testing.T) {
