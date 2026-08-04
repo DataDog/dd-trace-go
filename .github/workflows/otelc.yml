@@ -115,7 +115,8 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration otelc/all; do
+          for dir in internal/orchestrion/_integration otelc/all \
+                     contrib/gomodule/redigo/otelc; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -136,7 +137,6 @@ jobs:
             "${PREFIX}/gls-leak"        # GLS reclaim, at the heap level
             "${PREFIX}/otelc-autostart" # the tracer is started without the app asking
             "${PREFIX}/redigo"          # integration
-            "${PREFIX}/redigo_manual"   # integration + manual contrib use in one binary
           )
 
           # Integration suites are commonly constrained to Linux under the githubci
