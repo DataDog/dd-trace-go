@@ -203,7 +203,7 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Result
 			return
 		}
 	}
-	result, requestErr := c.transport.PushSpanEventsWithResult(ctx, spanEvents(batch))
+	result, requestErr := c.transport.PushSpanEventsBodyWithResult(ctx, body)
 	applyResult(&rr, result, requestErr)
 	res.Requests = append(res.Requests, rr)
 }
