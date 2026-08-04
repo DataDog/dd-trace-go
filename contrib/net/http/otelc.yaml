@@ -1,0 +1,104 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+
+net-client:
+  target: net/http
+  where:
+    func: RoundTrip
+    recv: "*Transport"
+  do:
+    - inject_hooks:
+        before: BeforeRoundTrip
+        after: AfterRoundTrip
+        path: github.com/DataDog/dd-trace-go/contrib/net/http/v2/otelc
+
+net-server:
+  target: net/http
+  where:
+    func: Serve
+    recv: "*Server"
+  do:
+    - inject_hooks:
+        before: BeforeServe
+        path: github.com/DataDog/dd-trace-go/contrib/net/http/v2/otelc
+
+# Unlike Orchestrion, otelc does not yet support `.AST.Fun.Name`, so we instead create four
+# different rules for each of the four functions required (GET, HEAD, POST, and POSTFORM).
+get:
+  target: "$root"
+  where:
+    function_call: net/http.Get
+  do:
+    - wrap_call:
+        replace: |-
+            {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+            {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              ddhttpclient.Get({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else if $req -}}
+              ddhttpclient.Get({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+  imports:
+    ddhttpclient: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+head:
+  target: "$root"
+  where:
+    function_call: net/http.Head
+  do:
+    - wrap_call:
+        replace: |-
+            {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+            {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              ddhttpclient.Head({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else if $req -}}
+              ddhttpclient.Head({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+  imports:
+    ddhttpclient: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+post:
+  target: "$root"
+  where:
+    function_call: net/http.Post
+  do:
+    - wrap_call:
+        replace: |-
+            {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+            {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              ddhttpclient.Post({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else if $req -}}
+              ddhttpclient.Post({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+  imports:
+    ddhttpclient: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+postform:
+  target: "$root"
+  where:
+    function_call: net/http.PostForm
+  do:
+    - wrap_call:
+        replace: |-
+            {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+            {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              ddhttpclient.PostForm({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else if $req -}}
+              ddhttpclient.PostForm({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+  imports:
+    ddhttpclient: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
