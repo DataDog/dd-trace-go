@@ -922,7 +922,9 @@ func BenchmarkProcessRetryMultiPackageBurst(b *testing.B) {
 		targetRoots["baseline"] = baseline
 	}
 	profiles := processRetryBurstProfiles()
-	cases := []processRetryBurstScenario{
+	familyCases := retryFamilyBenchmarkScenarios(profiles, "/all-pass")
+	cases := make([]processRetryBurstScenario, 0, 14+len(familyCases))
+	cases = append(cases, []processRetryBurstScenario{
 		{name: "packages=8/retries=0", packages: 8, packageConcurrency: 8, efd: true},
 		{name: "scale/packages=1", packages: 1, packageConcurrency: 1, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "scale/packages=2", packages: 2, packageConcurrency: 2, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
@@ -937,8 +939,8 @@ func BenchmarkProcessRetryMultiPackageBurst(b *testing.B) {
 		{name: "packages=8/retries=5", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "packages=8/profile=body", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["body"]},
 		{name: "packages=8/profile=cpu", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["cpu"]},
-	}
-	cases = append(cases, retryFamilyBenchmarkScenarios(profiles, "/all-pass")...)
+	}...)
+	cases = append(cases, familyCases...)
 	moduleDirs := make(map[string]string, len(targetRoots))
 	for _, name := range []string{"experiment", "baseline"} {
 		targetRoot, ok := targetRoots[name]
@@ -1021,12 +1023,11 @@ func processRetryBurstProfiles() map[string]processRetryBurstProfile {
 }
 
 func retryExecutionModeBenchmarkScenarios(profiles map[string]processRetryBurstProfile) []processRetryBurstScenario {
-	scenarios := []processRetryBurstScenario{
+	head := []processRetryBurstScenario{
 		{name: "no-retries/ci-visibility", packages: 8, packageConcurrency: 8},
 		{name: "no-retries/efd-enabled", packages: 8, packageConcurrency: 8, efd: true},
 	}
-	scenarios = append(scenarios, retryFamilyBenchmarkScenarios(profiles, "")...)
-	return append(scenarios, []processRetryBurstScenario{
+	tail := []processRetryBurstScenario{
 		{name: "efd-retries/2", packages: 8, packageConcurrency: 8, retries: 2, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "efd-retries/5", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "efd-retries/10", packages: 8, packageConcurrency: 8, retries: 10, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
@@ -1044,7 +1045,12 @@ func retryExecutionModeBenchmarkScenarios(profiles map[string]processRetryBurstP
 		{name: "profile/startup", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["startup"]},
 		{name: "profile/body", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["body"]},
 		{name: "profile/cpu", packages: 8, packageConcurrency: 8, retries: 5, efd: true, parallelEFD: true, parentFails: true, profile: profiles["cpu"]},
-	}...)
+	}
+	familyScenarios := retryFamilyBenchmarkScenarios(profiles, "")
+	scenarios := make([]processRetryBurstScenario, 0, len(head)+len(familyScenarios)+len(tail))
+	scenarios = append(scenarios, head...)
+	scenarios = append(scenarios, familyScenarios...)
+	return append(scenarios, tail...)
 }
 
 func retryFamilyBenchmarkScenarios(profiles map[string]processRetryBurstProfile, managedA2FSuffix string) []processRetryBurstScenario {
