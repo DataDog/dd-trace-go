@@ -68,6 +68,27 @@ func kvAttrsToMap(kvs []*otlpcommon.KeyValue) map[string]string {
 	return m
 }
 
+// kvArrayValue returns the stringValue elements of the named arrayValue attribute, or nil if absent/not an array.
+func kvArrayValue(kvs []*otlpcommon.KeyValue, key string) []string {
+	for _, kv := range kvs {
+		if kv.Key != key {
+			continue
+		}
+		arr, ok := kv.Value.Value.(*otlpcommon.AnyValue_ArrayValue)
+		if !ok {
+			return nil
+		}
+		out := make([]string, 0, len(arr.ArrayValue.Values))
+		for _, v := range arr.ArrayValue.Values {
+			if sv, ok := v.Value.(*otlpcommon.AnyValue_StringValue); ok {
+				out = append(out, sv.StringValue)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 // ---- sketchToHistogram ----
 
 func TestSketchToHistogramEmpty(t *testing.T) {
@@ -249,35 +270,8 @@ func TestBuildMetricsResourceProcessTagsDefaultMode(t *testing.T) {
 	payload := makePayload("svc", "", "", nil)
 	payload.ProcessTags = "entrypoint.name:myapp,entrypoint.type:binary"
 	res := buildMetricsResource(payload, false /* otelMode */, false, "")
-	m := kvAttrsToMap(res.Attributes)
-	assert.Equal(t, "myapp", m["datadog.entrypoint.name"])
-	assert.Equal(t, "binary", m["datadog.entrypoint.type"])
-}
-
-func TestBuildMetricsResourceProcessTagsSkipsEmptyValue(t *testing.T) {
-	payload := makePayload("svc", "", "", nil)
-	payload.ProcessTags = "entrypoint.name:,entrypoint.type:binary"
-	res := buildMetricsResource(payload, false, false, "")
-	m := kvAttrsToMap(res.Attributes)
-	assert.NotContains(t, m, "datadog.entrypoint.name")
-	assert.Equal(t, "binary", m["datadog.entrypoint.type"])
-}
-
-func TestBuildMetricsResourceProcessTagsNoRuntimeIDDuplicate(t *testing.T) {
-	payload := makePayload("svc", "", "", nil)
-	payload.RuntimeID = "explicit-id"
-	payload.ProcessTags = "runtime_id:from-tags,entrypoint.name:myapp"
-	res := buildMetricsResource(payload, false, false, "")
-	m := kvAttrsToMap(res.Attributes)
-	// The explicit RuntimeID field wins; the ProcessTag must not create a second datadog.runtime_id.
-	assert.Equal(t, "explicit-id", m["datadog.runtime_id"])
-	var count int
-	for _, kv := range res.Attributes {
-		if kv.Key == "datadog.runtime_id" {
-			count++
-		}
-	}
-	assert.Equal(t, 1, count, "datadog.runtime_id should appear exactly once")
+	values := kvArrayValue(res.Attributes, "datadog.process_tags")
+	assert.ElementsMatch(t, []string{"entrypoint.name:myapp", "entrypoint.type:binary"}, values)
 }
 
 func TestBuildMetricsResourceRuntimeIDDefaultMode(t *testing.T) {
@@ -299,7 +293,7 @@ func TestBuildMetricsResourceOtelModeSuppressesDatadogAttrs(t *testing.T) {
 	payload.RuntimeID = "abc-123"
 	res := buildMetricsResource(payload, true /* otelMode */, false, "")
 	m := kvAttrsToMap(res.Attributes)
-	assert.NotContains(t, m, "datadog.entrypoint.name")
+	assert.NotContains(t, m, "datadog.process_tags")
 	assert.NotContains(t, m, "datadog.runtime_id")
 }
 
@@ -317,7 +311,7 @@ func TestDataPointAttributesOTelMode(t *testing.T) {
 	}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "" /* defaultService */, true /* otelMode */))
 	assert.Equal(t, "/users", m["span.name"])
-	assert.Equal(t, "server", m["span.kind"])
+	assert.Equal(t, "SPAN_KIND_SERVER", m["span.kind"])
 	assert.Equal(t, "GET", m["http.request.method"])
 	assert.Equal(t, "200", m["http.response.status_code"])
 	assert.NotContains(t, m, "datadog.operation.name")
@@ -353,15 +347,39 @@ func TestDataPointAttributesTopLevelFalse(t *testing.T) {
 }
 
 func TestDataPointAttributesStatusCode(t *testing.T) {
-	// Non-error: STATUS_CODE_UNSET (0) as intValue.
 	gs := &pb.ClientGroupedStats{Resource: "/ok"}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false /* isError */, "", true))
-	assert.Equal(t, "0", m["status.code"])
+	assert.Equal(t, "STATUS_CODE_OK", m["status.code"])
 
-	// Error: STATUS_CODE_ERROR (2) as intValue.
 	gs = &pb.ClientGroupedStats{Resource: "/err"}
 	m = kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */, "", true))
-	assert.Equal(t, "2", m["status.code"])
+	assert.Equal(t, "STATUS_CODE_ERROR", m["status.code"])
+}
+
+func TestDataPointAttributesIsTraceRoot(t *testing.T) {
+	gs := &pb.ClientGroupedStats{Resource: "root", IsTraceRoot: pb.Trilean_TRUE}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", false /* default mode */))
+	assert.Equal(t, "true", m["datadog.is_trace_root"])
+
+	gs = &pb.ClientGroupedStats{Resource: "child", IsTraceRoot: pb.Trilean_FALSE}
+	m = kvAttrsToMap(buildDataPointAttributes(gs, false, "", false))
+	assert.Equal(t, "false", m["datadog.is_trace_root"])
+
+	gs = &pb.ClientGroupedStats{Resource: "unknown", IsTraceRoot: pb.Trilean_NOT_SET}
+	m = kvAttrsToMap(buildDataPointAttributes(gs, false, "", true /* otelMode */))
+	assert.NotContains(t, m, "datadog.is_trace_root")
+}
+
+func TestDataPointAttributesAdditionalMetricTags(t *testing.T) {
+	gs := &pb.ClientGroupedStats{
+		Resource:             "/users",
+		AdditionalMetricTags: []string{"customer.tier:gold", "region:us-east-1", "malformed", "empty:"},
+	}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true /* otelMode: not gated */))
+	assert.Equal(t, "gold", m["customer.tier"])
+	assert.Equal(t, "us-east-1", m["region"])
+	assert.NotContains(t, m, "malformed")
+	assert.NotContains(t, m, "empty")
 }
 
 func TestDataPointAttributesHTTPRoute(t *testing.T) {
@@ -381,15 +399,16 @@ func TestDataPointAttributesOptionalFieldsAbsentWhenUnset(t *testing.T) {
 	assert.NotContains(t, m, "rpc.response.status_code")
 }
 
-func TestDataPointAttributesPeerTagsNotEmitted(t *testing.T) {
-	// peer.* tags and other non-grpc.method.name peer tags are not forwarded (out of scope per RFC).
+func TestDataPointAttributesPeerTags(t *testing.T) {
 	gs := &pb.ClientGroupedStats{
-		Resource: "web.request",
-		PeerTags: []string{"peer.service:db", "db.system:postgresql"},
+		Resource: "postgres.query",
+		PeerTags: []string{"db.hostname:prod-db-1"},
 	}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
-	assert.NotContains(t, m, "peer.service")
-	assert.NotContains(t, m, "db.system")
+	values := kvArrayValue(buildDataPointAttributes(gs, false, "", false /* default mode */), "datadog.peer_tags")
+	assert.Contains(t, values, "db.hostname:prod-db-1")
+
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true /* otelMode */))
+	assert.NotContains(t, m, "datadog.peer_tags")
 }
 
 func TestDataPointAttributesGRPCStatusCode(t *testing.T) {
