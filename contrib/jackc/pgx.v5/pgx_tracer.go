@@ -82,10 +82,28 @@ type connInfo struct {
 	user string
 }
 
+func newConnInfo(connConfig *pgx.ConnConfig) connInfo {
+	if connConfig == nil {
+		return connInfo{}
+	}
+	return connInfo{
+		host: connConfig.Host,
+		port: connConfig.Port,
+		db:   connConfig.Database,
+		user: connConfig.User,
+	}
+}
+
 type pgxTracer struct {
 	cfg      *config
 	wrapped  wrappedPgxTracer
 	connInfo connInfo
+
+	// perConnInfo reports whether individual connections may carry different
+	// metadata than the snapshot in connInfo. A pool's BeforeConnect hook receives
+	// a copy of the base config and can rewrite host, port, database or user per
+	// connection, so the snapshot cannot be trusted for connection-scoped spans.
+	perConnInfo bool
 }
 
 var (
@@ -145,7 +163,7 @@ func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pg
 	if t.wrapped.query != nil {
 		ctx = t.wrapped.query.TraceQueryStart(ctx, conn, data)
 	}
-	opts := t.spanOptions(operationTypeQuery, data.SQL)
+	opts := t.spanOptions(t.connInfoFor(conn), operationTypeQuery, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.query", opts...)
 	return ctx
 }
@@ -171,7 +189,7 @@ func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pg
 	if t.wrapped.batch != nil {
 		ctx = t.wrapped.batch.TraceBatchStart(ctx, conn, data)
 	}
-	opts := t.spanOptions(operationTypeBatch, "",
+	opts := t.spanOptions(t.connInfoFor(conn), operationTypeBatch, "",
 		tracer.Tag(tagBatchNumQueries, data.Batch.Len()),
 	)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.batch", opts...)
@@ -194,7 +212,7 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 	if bs != nil && bs.prevQuery != nil {
 		bs.prevQuery.finish()
 	}
-	opts := t.spanOptions(operationTypeQuery, data.SQL,
+	opts := t.spanOptions(t.connInfoFor(conn), operationTypeQuery, data.SQL,
 		tracer.Tag(tagRowsAffected, data.CommandTag.RowsAffected()),
 	)
 	span, _ := tracer.StartSpanFromContext(ctx, "pgx.batch.query", opts...)
@@ -227,7 +245,7 @@ func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data
 	if t.wrapped.copyFrom != nil {
 		ctx = t.wrapped.copyFrom.TraceCopyFromStart(ctx, conn, data)
 	}
-	opts := t.spanOptions(operationTypeCopyFrom, "",
+	opts := t.spanOptions(t.connInfoFor(conn), operationTypeCopyFrom, "",
 		tracer.Tag(tagCopyFromTables, data.TableName),
 		tracer.Tag(tagCopyFromColumns, data.ColumnNames),
 	)
@@ -252,7 +270,7 @@ func (t *pgxTracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data 
 	if t.wrapped.prepare != nil {
 		ctx = t.wrapped.prepare.TracePrepareStart(ctx, conn, data)
 	}
-	opts := t.spanOptions(operationTypePrepare, data.SQL)
+	opts := t.spanOptions(t.connInfoFor(conn), operationTypePrepare, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.prepare", opts...)
 	return ctx
 }
@@ -274,7 +292,11 @@ func (t *pgxTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnect
 	if t.wrapped.connect != nil {
 		ctx = t.wrapped.connect.TraceConnectStart(ctx, data)
 	}
-	opts := t.spanOptions(operationTypeConnect, "")
+	// data.ConnConfig is the config this connection is actually being established with,
+	// handed over by pgx without copying, so it is both free to read and already
+	// reflects any BeforeConnect rewrites.
+	ci := newConnInfo(data.ConnConfig)
+	opts := t.spanOptions(&ci, operationTypeConnect, "")
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.connect", opts...)
 	return ctx
 }
@@ -296,7 +318,10 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, d
 	if t.wrapped.poolAcquire != nil {
 		ctx = t.wrapped.poolAcquire.TraceAcquireStart(ctx, pool, data)
 	}
-	opts := t.spanOptions(operationTypeAcquire, "")
+	// Acquire is scoped to the pool, not to a single connection: this span previously
+	// read pool.Config(), which returns the same base config the snapshot was taken
+	// from, so the cache is always equivalent here.
+	opts := t.spanOptions(&t.connInfo, operationTypeAcquire, "")
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.pool.acquire", opts...)
 	return ctx
 }
@@ -311,8 +336,18 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 	t.finishSpan(ctx, data.Err)
 }
 
-func (t *pgxTracer) spanOptions(op operationType, sqlStatement string, extraOpts ...tracer.StartSpanOption) []tracer.StartSpanOption {
-	ci := &t.connInfo
+// connInfoFor returns the metadata to tag a connection-scoped span with. It uses the
+// cached snapshot unless a BeforeConnect hook may have rewritten the connection's
+// config, in which case it pays for conn.Config() to keep the tags accurate.
+func (t *pgxTracer) connInfoFor(conn *pgx.Conn) *connInfo {
+	if !t.perConnInfo || conn == nil {
+		return &t.connInfo
+	}
+	ci := newConnInfo(conn.Config())
+	return &ci
+}
+
+func (t *pgxTracer) spanOptions(ci *connInfo, op operationType, sqlStatement string, extraOpts ...tracer.StartSpanOption) []tracer.StartSpanOption {
 	opts := []tracer.StartSpanOption{
 		instrumentation.ServiceNameWithSource(t.cfg.serviceName, t.cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeSQL),

@@ -42,12 +42,9 @@ func ConnectConfig(ctx context.Context, connConfig *pgx.ConnConfig, opts ...Opti
 	// may work, but none of the others will, as they're set in
 	// unexported fields in the config in the pgx.connect function.
 	tracer := wrapPgxTracer(connConfig.Tracer, nil, opts...)
-	tracer.connInfo = connInfo{
-		host: connConfig.Host,
-		port: connConfig.Port,
-		db:   connConfig.Database,
-		user: connConfig.User,
-	}
+	// pgx.Conn has no BeforeConnect equivalent and never rewrites these fields after
+	// ParseConfig, so this snapshot stays valid for the life of the connection.
+	tracer.connInfo = newConnInfo(connConfig)
 	connConfig.Tracer = tracer
 	return pgx.ConnectConfig(ctx, connConfig)
 }
