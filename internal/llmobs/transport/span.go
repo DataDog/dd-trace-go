@@ -6,6 +6,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -114,11 +115,27 @@ func (c *Transport) PushSpanEventsWithResult(
 	if len(events) == 0 {
 		return RequestResult{}, nil
 	}
-	path := endpointLLMSpan
-	method := http.MethodPost
-	body := NewPushSpanEventsRequests(events)
+	body, err := encodeJSON(NewPushSpanEventsRequests(events))
+	if err != nil {
+		return RequestResult{}, fmt.Errorf("failed to json encode body: %w", err)
+	}
+	return c.PushSpanEventsBodyWithResult(ctx, body.Bytes())
+}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultLimits)
+// PushSpanEventsBodyWithResult sends an encoded span-event request.
+func (c *Transport) PushSpanEventsBodyWithResult(ctx context.Context, body []byte) (RequestResult, error) {
+	if len(body) == 0 {
+		return RequestResult{}, nil
+	}
+	result, err := c.request(
+		ctx,
+		http.MethodPost,
+		endpointLLMSpan,
+		subdomainLLMSpan,
+		bytes.NewReader(body),
+		"application/json",
+		defaultLimits,
+	)
 	if err != nil {
 		return summarizeRequest(result), err
 	}
