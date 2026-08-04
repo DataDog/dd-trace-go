@@ -1087,9 +1087,10 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 		}
 	}
 	if appsecCorrelation {
-		// hexEncodedCached memoizes the hex on the (not-yet-shared) context so
-		// child spans reuse it: one hex allocation per trace, not per span.
-		labels = append(labels, traceprof.TraceID, span.context.traceID.hexEncodedCached())
+		// newSpanContext finalizes the hex cache while the context is still
+		// private, so this is a pure read: HexEncoded never writes the span
+		// context, which by now the sampler may already have published.
+		labels = append(labels, traceprof.TraceID, span.context.traceID.HexEncoded())
 	}
 	if len(labels) > 0 {
 		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))

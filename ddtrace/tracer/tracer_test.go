@@ -3300,6 +3300,81 @@ func TestApplyPPROFLabelsTraceIDAppSec(t *testing.T) {
 	require.False(t, ok, "span id is hotspots-only and must be absent under appsec-only")
 }
 
+// publishingSampler hands every sampled span to a channel, emulating a custom
+// Sampler that publishes the span to another goroutine. tracer.StartSpan calls
+// Sample before it applies the pprof labels, so anything the label path writes
+// to the SpanContext afterwards races with readers of the published span.
+type publishingSampler struct{ spans chan *Span }
+
+func (s *publishingSampler) Sample(span *Span) bool {
+	s.spans <- span
+	return true
+}
+
+// TestApplyPPROFLabelsTraceIDNoCacheWriteAfterPublish verifies that building the
+// AppSec "trace id" label never writes the traceID hex cache. Under -race, a
+// write there is a data race against a concurrent TraceID()/Inject() on a span
+// that a custom Sampler already published to another goroutine.
+func TestApplyPPROFLabelsTraceIDNoCacheWriteAfterPublish(t *testing.T) {
+	sampler := &publishingSampler{spans: make(chan *Span, 128)}
+	require.NoError(t, Start(
+		WithAppSecEnabled(true),
+		WithProfilerCodeHotspots(false),
+		WithProfilerEndpoints(false),
+		WithSampler(sampler),
+	))
+	defer Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec is not enabled on this platform; skipping appsec-only pprof label race test")
+	}
+
+	var readers sync.WaitGroup
+	readers.Go(func() {
+		for span := range sampler.spans {
+			// Reads the same traceID the "trace id" label is built from, while
+			// StartSpan is still running for this span.
+			for range 50 {
+				if got := span.Context().TraceID(); len(got) != 32 {
+					t.Errorf("trace id = %q, want 32 hex characters", got)
+				}
+			}
+		}
+	})
+
+	for range 128 {
+		StartSpan("web.request").Finish()
+	}
+	close(sampler.spans)
+	readers.Wait()
+}
+
+// TestNewSpanContextTraceIDHexInheritsParentReadOnly verifies that creating a
+// child context copies the parent's trace ID hex cache without mutating the
+// parent. The parent is shared across all of its children, so a write here
+// would be a data race for any caller that starts children concurrently.
+func TestNewSpanContextTraceIDHexInheritsParentReadOnly(t *testing.T) {
+	tr, err := newTracer(WithProfilerCodeHotspots(false), WithProfilerEndpoints(false))
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	// Extracted contexts finalize the hex cache, so the parent starts warm.
+	parent, err := tr.Extract(TextMapCarrier{
+		DefaultTraceIDHeader:  "1234",
+		DefaultParentIDHeader: "5678",
+		DefaultPriorityHeader: "1",
+	})
+	require.NoError(t, err)
+	want := parent.traceID.hexEncoded
+	require.Len(t, want, 32)
+
+	for range 4 {
+		child := tr.StartSpan("child", ChildOf(parent))
+		require.Equal(t, want, child.context.traceID.hexEncoded, "child must inherit the parent hex cache")
+		require.Equal(t, want, parent.traceID.hexEncoded, "creating a child must not rewrite the parent hex cache")
+		child.Finish()
+	}
+}
+
 func TestNoopTracerStartSpan(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {

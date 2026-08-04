@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
@@ -122,20 +123,6 @@ func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
 // and is safe under concurrent access.
 func (t *traceID) cacheHex() {
 	t.hexEncoded = hex.EncodeToString(t.value[:])
-}
-
-// hexEncodedCached returns HexEncoded and memoizes the result on the traceID so
-// subsequent reads (and child spans, via newSpanContext) reuse it instead of
-// re-encoding. Because it writes t.hexEncoded, it MUST only be called while the
-// enclosing SpanContext is not yet shared with other goroutines (e.g. from
-// tracer.StartSpan, before the span is returned). This lets a whole trace pay a
-// single hex allocation for the profiler's "trace id" label instead of one per
-// span.
-func (t *traceID) hexEncodedCached() string {
-	if t.hexEncoded == "" {
-		t.cacheHex()
-	}
-	return t.hexEncoded
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -324,11 +311,20 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		context.traceID.SetUpper(tUp)
 	}
 	// A child span shares its parent's trace ID, so reuse the parent's cached hex
-	// string (lazily populated on the pprof "trace id" label path) rather than
-	// re-encoding it. This keeps the whole trace at a single hex allocation. The
-	// value equality check guards against ever copying a mismatched hex.
-	if parent != nil && parent.traceID.hexEncoded != "" && context.traceID.value == parent.traceID.value {
+	// string rather than re-encoding it, keeping the whole trace at a single hex
+	// allocation. The value check guards against copying a mismatched hex; the
+	// parent's cache is read-only by the time any child can be created.
+	if parent != nil && context.traceID.value == parent.traceID.value {
 		context.traceID.hexEncoded = parent.traceID.hexEncoded
+	}
+	// AppSec correlates security events with profiles through the "trace id"
+	// pprof label, which needs the hex form. Finalize the cache here, while the
+	// context is still private to this goroutine: StartSpan hands the span to
+	// the sampler (and any custom Sampler may publish it) before it applies the
+	// pprof labels, so a lazy write from that later point would race with
+	// readers such as TraceID and Inject.
+	if context.traceID.hexEncoded == "" && appsec.Enabled() {
+		context.traceID.cacheHex()
 	}
 	if context.trace == nil {
 		context.trace = newTrace()
@@ -347,7 +343,8 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
 	context.updated = false
-	// Note: we deliberately do NOT call context.traceID.cacheHex() here.
+	// Note: outside of the AppSec case handled above, we deliberately do NOT
+	// call context.traceID.cacheHex() here.
 	// Unlike the extraction paths (extractTextMap, FromGenericCtx, ...), which
 	// finalize the cache before returning, locally started spans rely on the
 	// non-caching HexEncoded fallback. Caching here would add a hex allocation
