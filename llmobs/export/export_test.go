@@ -496,6 +496,25 @@ func TestSubmitSpans_AcceptsExistingSpanRepresentation(t *testing.T) {
 	assert.Equal(t, "456", span["span_links"].([]any)[0].(map[string]any)["span_id"])
 }
 
+func TestSubmitSpans_DefaultsExistingSpanRepresentation(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "trace",
+		SpanID:  "span",
+		Meta:    map[string]any{"span.kind": string(export.KindLLM)},
+	}})
+	require.NoError(t, err)
+
+	span := allSpans(t, fake.captured()[0].body)[0]
+	assert.Equal(t, "undefined", span["parent_id"])
+	assert.Equal(t, "llm", span["name"])
+	assert.Equal(t, "ok", span["status"])
+	assert.Equal(t, "span", span["_dd"].(map[string]any)["span_id"])
+	assert.Equal(t, "trace", span["_dd"].(map[string]any)["trace_id"])
+}
+
 func TestSubmitSpans_ErrorSpanShapeMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
