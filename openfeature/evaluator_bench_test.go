@@ -16,7 +16,7 @@ func BenchmarkCompareSemver(b *testing.B) {
 	}{
 		{name: "release", left: "1.2.3", right: "2.0.0", wantBefore: true},
 		{name: "prerelease", left: "1.0.0-beta.2", right: "1.0.0-beta.11", wantBefore: true},
-		{name: "build_metadata", left: "1.0.0+2", right: "1.0.0+11", wantBefore: true},
+		{name: "build_metadata_ignored", left: "1.0.0+2", right: "1.0.0+11"},
 	}
 
 	for _, benchmark := range benchmarks {
