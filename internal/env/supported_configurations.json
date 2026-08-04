@@ -681,13 +681,6 @@
         "default": null
       }
     ],
-    "DD_TRACE_STRIP_INJECTED_CONTEXT": [
-      {
-        "implementation": "A",
-        "type": "bool",
-        "default": "false"
-      }
-    ],
     "DD_LLMOBS_AGENTLESS_ENABLED": [
       {
         "implementation": "C",
@@ -1834,6 +1827,13 @@
         "implementation": "A",
         "type": "int",
         "default": "1024"
+      }
+    ],
+    "DD_TRACE_STRIP_INJECTED_CONTEXT": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "false"
       }
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [

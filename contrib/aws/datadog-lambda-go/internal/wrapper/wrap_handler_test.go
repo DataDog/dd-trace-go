@@ -13,11 +13,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 )
 
 type (
@@ -300,7 +300,7 @@ func TestWrapHandlerInterfaceWithListeners(t *testing.T) {
 
 func TestWrapHandlerWithListeners_stripsInjectedContextForHandlerOnly(t *testing.T) {
 	internal.ResetStripInjectedContextCacheForTest()
-	t.Setenv("DD_TRACE_STRIP_INJECTED_CONTEXT", "true")
+	t.Setenv(internal.StripInjectedContextEnvVar, "true")
 
 	raw := loadRawJSON(t, "../testdata/eventbridge-with-datadog-object.json")
 	var handlerMsg json.RawMessage
@@ -330,7 +330,7 @@ func TestWrapHandlerWithListeners_stripsInjectedContextForHandlerOnly(t *testing
 
 func TestDatadogHandler_Invoke_stripsInjectedContextForHandlerOnly(t *testing.T) {
 	internal.ResetStripInjectedContextCacheForTest()
-	t.Setenv("DD_TRACE_STRIP_INJECTED_CONTEXT", "true")
+	t.Setenv(internal.StripInjectedContextEnvVar, "true")
 
 	payload, err := os.ReadFile("../testdata/eventbridge-with-datadog-object.json")
 	require.NoError(t, err)
@@ -362,7 +362,7 @@ func (h *rawPayloadHandler) Invoke(_ context.Context, payload []byte) ([]byte, e
 
 func TestDatadogHandler_Invoke_passthroughInvalidJSON(t *testing.T) {
 	internal.ResetStripInjectedContextCacheForTest()
-	t.Setenv("DD_TRACE_STRIP_INJECTED_CONTEXT", "true")
+	t.Setenv(internal.StripInjectedContextEnvVar, "true")
 
 	invalid := []byte(`{not json`)
 	h := &rawPayloadHandler{}

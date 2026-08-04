@@ -15,8 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const datadogCarrierKey = "_datadog"
-
 func loadTestJSON(t *testing.T, name string) json.RawMessage {
 	t.Helper()
 
@@ -108,7 +106,7 @@ func TestStripInjectedContext(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ResetStripInjectedContextCacheForTest()
-			t.Setenv(stripInjectedContextEnvVar, tt.envValue)
+			t.Setenv(StripInjectedContextEnvVar, tt.envValue)
 
 			var in json.RawMessage
 			if tt.fixture == "invalid.json" {
@@ -134,7 +132,7 @@ func TestStripInjectedContext(t *testing.T) {
 
 func TestStripInjectedContext_preservesOtherEnvelopeFields(t *testing.T) {
 	ResetStripInjectedContextCacheForTest()
-	t.Setenv(stripInjectedContextEnvVar, "true")
+	t.Setenv(StripInjectedContextEnvVar, "true")
 
 	in := loadTestJSON(t, "eventbridge-with-datadog-object.json")
 	out := StripInjectedContext(in)
@@ -188,7 +186,7 @@ func assertDetailContains(t *testing.T, out json.RawMessage, key, want string) {
 
 func BenchmarkStripInjectedContext_disabled(b *testing.B) {
 	ResetStripInjectedContextCacheForTest()
-	b.Setenv(stripInjectedContextEnvVar, "false")
+	b.Setenv(StripInjectedContextEnvVar, "false")
 	msg := mustLoadTestJSON(b, "eventbridge-with-datadog-object.json")
 
 	for b.Loop() {
@@ -198,7 +196,7 @@ func BenchmarkStripInjectedContext_disabled(b *testing.B) {
 
 func BenchmarkStripInjectedContext_enabled_strip(b *testing.B) {
 	ResetStripInjectedContextCacheForTest()
-	b.Setenv(stripInjectedContextEnvVar, "true")
+	b.Setenv(StripInjectedContextEnvVar, "true")
 	msg := mustLoadTestJSON(b, "eventbridge-with-datadog-object.json")
 
 	for b.Loop() {
@@ -208,7 +206,7 @@ func BenchmarkStripInjectedContext_enabled_strip(b *testing.B) {
 
 func BenchmarkStripInjectedContext_enabled_noop_sqs(b *testing.B) {
 	ResetStripInjectedContextCacheForTest()
-	b.Setenv(stripInjectedContextEnvVar, "true")
+	b.Setenv(StripInjectedContextEnvVar, "true")
 	msg := mustLoadTestJSON(b, "sqs-event.json")
 
 	for b.Loop() {
@@ -223,11 +221,11 @@ func loadTestFileBytes(t *testing.T, name string) []byte {
 	return bytes
 }
 
-func TestStripInjectedContext_regression(t *testing.T) {
+func TestStripInjectedContext_regression_objectDetail(t *testing.T) {
 	ResetStripInjectedContextCacheForTest()
-	t.Setenv(stripInjectedContextEnvVar, "true")
+	t.Setenv(StripInjectedContextEnvVar, "true")
 
-	// Bug E
+	// Bug E (object-detail path): '}' and ',' inside customer string must survive strip.
 	in := json.RawMessage(`{"foo":"a,}b","_datadog":{"x":1}}`)
 	out := StripInjectedContext(in)
 
@@ -235,4 +233,24 @@ func TestStripInjectedContext_regression(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out, &obj))
 	assert.Equal(t, "a,}b", obj["foo"])
 	assert.NotContains(t, obj, datadogCarrierKey)
+}
+
+func TestStripInjectedContext_regression_stringDetail(t *testing.T) {
+	ResetStripInjectedContextCacheForTest()
+	t.Setenv(StripInjectedContextEnvVar, "true")
+
+	// Bug E equivalent (string-encoded detail path): '}' inside carrier string value.
+	in := json.RawMessage(`{"detail":"{\"foo\":\"bar\",\"_datadog\":{\"k\":\"v}z\"}}"}`)
+	out := StripInjectedContext(in)
+
+	var envelope map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(out, &envelope))
+
+	var detailStr string
+	require.NoError(t, json.Unmarshal(envelope["detail"], &detailStr))
+
+	var detail map[string]string
+	require.NoError(t, json.Unmarshal([]byte(detailStr), &detail))
+	assert.Equal(t, "bar", detail["foo"])
+	assert.NotContains(t, detail, datadogCarrierKey)
 }
