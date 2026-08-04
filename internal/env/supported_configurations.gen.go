@@ -276,6 +276,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT":                                 {},
 	"DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT":                              {},
 	"DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT":                               {},
+	"DD_TRACE_STRIP_INJECTED_CONTEXT":                                         {},
 	"DD_TRACE_TWIRP_ANALYTICS_ENABLED":                                        {},
 	"DD_TRACE_UNIVERSAL_VERSION_ENABLED":                                      {},
 	"DD_TRACE_VALKEY_ANALYTICS_ENABLED":                                       {},

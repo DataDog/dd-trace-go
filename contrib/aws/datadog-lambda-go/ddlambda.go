@@ -19,6 +19,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/metrics"
@@ -104,7 +105,7 @@ const (
 	FIPSModeEnvVar = "DD_LAMBDA_FIPS_MODE"
 	// StripInjectedContextEnvVar enables stripping of injected _datadog propagation
 	// carriers from the Lambda payload before the user handler is invoked.
-	StripInjectedContextEnvVar = "DD_TRACE_STRIP_INJECTED_CONTEXT"
+	StripInjectedContextEnvVar = internal.StripInjectedContextEnvVar
 
 	// DefaultSite to send API messages to.
 	DefaultSite = "datadoghq.com"
