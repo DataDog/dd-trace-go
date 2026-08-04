@@ -81,7 +81,8 @@ func startSpanFromContext(
 	return tracer.StartSpanFromContext(ctx, operation, opts...)
 }
 
-// finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
+// finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors,
+// as well as any error that cfg.nonErrorCodes or cfg.errCheck classify as not being an error.
 func finishWithError(span *tracer.Span, err error, method string, cfg *config) {
 	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		err = nil
