@@ -154,29 +154,8 @@ type (
 	// ToolResult represents the result of a tool call within an LLM message.
 	ToolResult = illmobs.ToolResult
 
-	// SpanKind identifies an LLM Obs span kind.
-	SpanKind = illmobs.SpanKind
-
-	// SpanStatus identifies an LLM Obs span status.
-	SpanStatus = illmobs.SpanStatus
-
 	// EvalMetricType identifies an evaluation metric value type.
 	EvalMetricType = illmobs.EvalMetricType
-)
-
-const (
-	SpanKindLLM       SpanKind = illmobs.SpanKindLLM
-	SpanKindAgent     SpanKind = illmobs.SpanKindAgent
-	SpanKindWorkflow  SpanKind = illmobs.SpanKindWorkflow
-	SpanKindTask      SpanKind = illmobs.SpanKindTask
-	SpanKindTool      SpanKind = illmobs.SpanKindTool
-	SpanKindEmbedding SpanKind = illmobs.SpanKindEmbedding
-	SpanKindRetrieval SpanKind = illmobs.SpanKindRetrieval
-)
-
-const (
-	SpanStatusOK    SpanStatus = illmobs.SpanStatusOK
-	SpanStatusError SpanStatus = illmobs.SpanStatusError
 )
 
 const (

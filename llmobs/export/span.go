@@ -8,31 +8,31 @@ package export
 import (
 	"context"
 	"fmt"
+	"time"
 
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
-	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
 // Kind is the LLM Obs span kind.
-type Kind = llmobs.SpanKind
+type Kind = transport.SpanKind
 
 const (
-	KindLLM       Kind = llmobs.SpanKindLLM
-	KindAgent     Kind = llmobs.SpanKindAgent
-	KindWorkflow  Kind = llmobs.SpanKindWorkflow
-	KindTask      Kind = llmobs.SpanKindTask
-	KindTool      Kind = llmobs.SpanKindTool
-	KindEmbedding Kind = llmobs.SpanKindEmbedding
-	KindRetrieval Kind = llmobs.SpanKindRetrieval
+	KindLLM       Kind = transport.SpanKindLLM
+	KindAgent     Kind = transport.SpanKindAgent
+	KindWorkflow  Kind = transport.SpanKindWorkflow
+	KindTask      Kind = transport.SpanKindTask
+	KindTool      Kind = transport.SpanKindTool
+	KindEmbedding Kind = transport.SpanKindEmbedding
+	KindRetrieval Kind = transport.SpanKindRetrieval
 )
 
 // Status is the terminal status of a span.
-type Status = llmobs.SpanStatus
+type Status = transport.SpanStatus
 
 const (
-	StatusOK    Status = llmobs.SpanStatusOK
-	StatusError Status = llmobs.SpanStatusError
+	StatusOK    Status = transport.SpanStatusOK
+	StatusError Status = transport.SpanStatusError
 )
 
 // SpanEvent is a completed LLM Obs span.
@@ -43,6 +43,56 @@ type SpanLink = transport.SpanLink
 
 // DDAttributes contains Datadog correlation attributes for a span.
 type DDAttributes = transport.DDAttributes
+
+// ErrorMessage contains error details for a span.
+type ErrorMessage = transport.ErrorMessage
+
+// SpanEventOption configures a span built by [NewSpanEvent].
+type SpanEventOption func(*SpanEvent)
+
+// NewSpanEvent constructs a completed span.
+func NewSpanEvent(traceID, spanID string, kind Kind, opts ...SpanEventOption) SpanEvent {
+	event := illmobs.NewExportSpanEvent(traceID, spanID, kind)
+	for _, opt := range opts {
+		opt(&event)
+	}
+	return event
+}
+
+// WithTiming sets the span start time and duration.
+func WithTiming(start time.Time, duration time.Duration) SpanEventOption {
+	return func(event *SpanEvent) {
+		illmobs.SetExportSpanTiming(event, start, duration)
+	}
+}
+
+// WithModel sets model details for an LLM or embedding span.
+func WithModel(name, provider string) SpanEventOption {
+	return func(event *SpanEvent) {
+		illmobs.SetExportSpanModel(event, name, provider)
+	}
+}
+
+// WithTextIO sets text input and output.
+func WithTextIO(input, output string) SpanEventOption {
+	return func(event *SpanEvent) {
+		illmobs.SetExportSpanTextIO(event, input, output)
+	}
+}
+
+// WithMetadata sets span metadata.
+func WithMetadata(metadata map[string]any) SpanEventOption {
+	return func(event *SpanEvent) {
+		illmobs.SetExportSpanMetadata(event, metadata)
+	}
+}
+
+// WithSpanError marks the span as failed and sets its error details.
+func WithSpanError(details ErrorMessage) SpanEventOption {
+	return func(event *SpanEvent) {
+		illmobs.SetExportSpanError(event, details)
+	}
+}
 
 // SubmitSpans submits completed LLM Obs spans.
 func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...SubmitSpansOption) (*Result, error) {
