@@ -54,19 +54,6 @@ type DDAttributes struct {
 }
 
 type LLMObsSpanEvent struct {
-	Kind          SpanKind       `json:"-"`
-	ModelName     string         `json:"-"`
-	ModelProvider string         `json:"-"`
-	Input         string         `json:"-"`
-	Output        string         `json:"-"`
-	Metadata      map[string]any `json:"-"`
-	Start         time.Time      `json:"-"`
-	Service       string         `json:"-"`
-	APMTraceID    string         `json:"-"`
-	ErrorMessage  string         `json:"-"`
-	ErrorType     string         `json:"-"`
-	ErrorStack    string         `json:"-"`
-
 	SpanID           string             `json:"span_id,omitempty"`
 	TraceID          string             `json:"trace_id,omitempty"`
 	ParentID         string             `json:"parent_id,omitempty"`

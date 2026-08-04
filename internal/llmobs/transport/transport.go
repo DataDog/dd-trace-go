@@ -115,6 +115,12 @@ func AnyPtr[T any](v T) *T {
 	return &v
 }
 
+type ErrorMessage struct {
+	Message string `json:"message,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Stack   string `json:"stack,omitempty"`
+}
+
 // NewErrorMessage returns the payload representation of an error.
 func NewErrorMessage(err error) *ErrorMessage {
 	if err == nil {

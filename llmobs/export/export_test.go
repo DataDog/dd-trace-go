@@ -174,6 +174,34 @@ func tagsOf(t *testing.T, span map[string]any) []string {
 
 func ptr[T any](v T) *T { return &v }
 
+func spanEvent(traceID, spanID string, kind export.Kind, opts ...export.SpanEventOption) export.SpanEvent {
+	return export.NewSpanEvent(traceID, spanID, kind, opts...)
+}
+
+func withSpanTags(tags ...string) export.SpanEventOption {
+	return func(event *export.SpanEvent) { event.Tags = tags }
+}
+
+func withSpanLinks(links ...export.SpanLink) export.SpanEventOption {
+	return func(event *export.SpanEvent) { event.SpanLinks = links }
+}
+
+func withSpanMetrics(metrics map[string]float64) export.SpanEventOption {
+	return func(event *export.SpanEvent) { event.Metrics = metrics }
+}
+
+func withSpanStatus(status export.Status) export.SpanEventOption {
+	return func(event *export.SpanEvent) { event.Status = status }
+}
+
+func withSessionID(sessionID string) export.SpanEventOption {
+	return func(event *export.SpanEvent) { event.SessionID = sessionID }
+}
+
+func withParentID(parentID string) export.SpanEventOption {
+	return func(event *export.SpanEvent) { event.ParentID = parentID }
+}
+
 func keysOf(m map[string]any) []string {
 	ks := make([]string, 0, len(m))
 	for k := range m {
@@ -231,9 +259,9 @@ func TestNewClient_GlobalDefaultsAndAPIOverrides(t *testing.T) {
 			fake := &fakeTransport{}
 			client := newClient(t, fake, "test-app", tt.options...)
 
-			_, err := client.SubmitSpans(context.Background(), []export.SpanEvent{{
-				TraceID: "t", SpanID: "s", Kind: export.KindLLM,
-			}})
+			_, err := client.SubmitSpans(context.Background(), []export.SpanEvent{
+				spanEvent("t", "s", export.KindLLM),
+			})
 			require.NoError(t, err)
 
 			tags := tagsOf(t, allSpans(t, fake.captured()[0].body)[0])
@@ -252,20 +280,67 @@ func TestNewClient_GlobalDefaultsAndAPIOverrides(t *testing.T) {
 	}
 }
 
+func TestNewSpanEvent_BuildsCanonicalEvent(t *testing.T) {
+	start := time.Unix(123, 456)
+	metadata := map[string]any{"team": "search"}
+	event := export.NewSpanEvent(
+		"trace",
+		"span",
+		export.KindLLM,
+		export.WithTiming(start, 1500*time.Millisecond),
+		export.WithModel("gpt-4o", "OpenAI"),
+		export.WithTextIO("hello", "hi there"),
+		export.WithMetadata(metadata),
+		export.WithSpanError(export.ErrorMessage{
+			Message: "upstream refused",
+			Type:    "*errors.errorString",
+			Stack:   "stack",
+		}),
+	)
+	metadata["team"] = "changed"
+
+	assert.Equal(t, "trace", event.TraceID)
+	assert.Equal(t, "span", event.SpanID)
+	assert.Equal(t, "undefined", event.ParentID)
+	assert.Equal(t, "llm", event.Name)
+	assert.Equal(t, start.UnixNano(), event.StartNS)
+	assert.Equal(t, 1500*time.Millisecond, event.Duration)
+	assert.Equal(t, export.StatusError, event.Status)
+	assert.Equal(t, "trace", event.DDAttributes.TraceID)
+	assert.Equal(t, "span", event.DDAttributes.SpanID)
+	assert.Equal(t, "llm", event.Meta["span.kind"])
+	assert.Equal(t, "gpt-4o", event.Meta["model_name"])
+	assert.Equal(t, "openai", event.Meta["model_provider"])
+	assert.Equal(t, map[string]any{"value": "hello"}, event.Meta["input"])
+	assert.Equal(t, map[string]any{"value": "hi there"}, event.Meta["output"])
+	assert.Equal(t, map[string]any{"team": "search"}, event.Meta["metadata"])
+	assert.Equal(t, "upstream refused", event.Meta["error.message"])
+	assert.Equal(t, "*errors.errorString", event.Meta["error.type"])
+	assert.Equal(t, "stack", event.Meta["error.stack"])
+}
+
 func TestSpanWireShape_Contract(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, "test-app", export.WithEnv("prod"), export.WithVersion("1.2.3"))
+	c := newClient(t, fake, "test-app", export.WithService("svc"), export.WithEnv("prod"), export.WithVersion("1.2.3"))
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", ParentID: "p", Kind: export.KindLLM, Name: "chat",
-		SessionID: "sess", Service: "svc", Start: time.Unix(0, 1), Duration: 2, Status: export.StatusOK,
-		ModelName: "gpt", ModelProvider: "openai", Input: "in", Output: "out",
-		Metadata:   map[string]any{"k": "v"},
-		Metrics:    map[string]float64{"input_tokens": 1},
-		APMTraceID: "apm-1",
-		SpanLinks:  []export.SpanLink{{SpanID: "22", TraceID: "11", Attributes: map[string]string{"a": "b"}}},
-		Tags:       []string{"x:y"},
-	}})
+	event := spanEvent(
+		"t",
+		"s",
+		export.KindLLM,
+		export.WithTiming(time.Unix(0, 1), 2),
+		export.WithModel("gpt", "openai"),
+		export.WithTextIO("in", "out"),
+		export.WithMetadata(map[string]any{"k": "v"}),
+	)
+	event.ParentID = "p"
+	event.Name = "chat"
+	event.SessionID = "sess"
+	event.Metrics = map[string]float64{"input_tokens": 1}
+	event.DDAttributes.APMTraceID = "apm-1"
+	event.SpanLinks = []export.SpanLink{{SpanID: "22", TraceID: "11", Attributes: map[string]string{"a": "b"}}}
+	event.Tags = []string{"x:y"}
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{event})
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
@@ -298,21 +373,21 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app", export.WithService("svc"), export.WithEnv("prod"), export.WithVersion("1.2.3"))
 
-	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID:    "111",
-		SpanID:     "222",
-		SessionID:  "sess",
-		Kind:       export.KindLLM,
-		Name:       "chat",
-		Start:      time.Unix(0, 1000),
-		Duration:   500,
-		Input:      "hello <b>",
-		Output:     "hi",
-		Metrics:    map[string]float64{"input_tokens": 10},
-		Tags:       []string{"ml_app:myapp"},
-		SpanLinks:  []export.SpanLink{{SpanID: "999", TraceID: "888"}},
-		APMTraceID: "aabbccdd",
-	}})
+	event := spanEvent(
+		"111",
+		"222",
+		export.KindLLM,
+		export.WithTiming(time.Unix(0, 1000), 500),
+		export.WithTextIO("hello <b>", "hi"),
+	)
+	event.SessionID = "sess"
+	event.Name = "chat"
+	event.Metrics = map[string]float64{"input_tokens": 10}
+	event.Tags = []string{"ml_app:myapp"}
+	event.SpanLinks = []export.SpanLink{{SpanID: "999", TraceID: "888"}}
+	event.DDAttributes.APMTraceID = "aabbccdd"
+
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{event})
 	require.NoError(t, err)
 	require.Zero(t, res.Failed)
 	require.Equal(t, 1, res.Sent)
@@ -425,13 +500,13 @@ func TestSubmitSpans_ErrorSpanShapeMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
-		Status:       export.StatusError,
-		ErrorMessage: "upstream refused",
-		ErrorType:    "*errors.errorString",
-		ErrorStack:   "goroutine 1 [running]",
-	}})
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		spanEvent("t", "s", export.KindLLM, export.WithSpanError(export.ErrorMessage{
+			Message: "upstream refused",
+			Type:    "*errors.errorString",
+			Stack:   "goroutine 1 [running]",
+		})),
+	})
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
@@ -446,27 +521,28 @@ func TestSubmitSpans_ErrorSpanShapeMatchesLive(t *testing.T) {
 	assert.Contains(t, tags, "error_type:*errors.errorString")
 }
 
-func TestSubmitSpans_ErrorMessageFallsBackToStatusMessage(t *testing.T) {
+func TestSubmitSpans_PreservesCanonicalStatusMessage(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
-		Status: export.StatusError, StatusMessage: "boom",
-	}})
+	event := spanEvent("t", "s", export.KindLLM)
+	event.Status = export.StatusError
+	event.StatusMessage = "boom"
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{event})
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
-	assert.Equal(t, "boom", span["meta"].(map[string]any)["error.message"])
+	assert.Equal(t, "boom", span["status_message"])
+	assert.NotContains(t, span["meta"].(map[string]any), "error.message")
 }
 
-func TestSubmitSpans_OKSpanHasNoErrorMeta(t *testing.T) {
+func TestNewSpanEvent_DefaultsToOKWithoutErrorMeta(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: export.KindLLM, ErrorMessage: "ignored",
-	}})
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		spanEvent("t", "s", export.KindLLM),
+	})
 	require.NoError(t, err)
 
 	meta := allSpans(t, fake.captured()[0].body)[0]["meta"].(map[string]any)
@@ -481,10 +557,10 @@ func TestSubmitSpans_ModelNormalizationMatchesLive(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, ModelName: "gpt-4o", ModelProvider: "OpenAI"},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, ModelName: "gpt-4o"},
-		{TraceID: "t3", SpanID: "s3", Kind: export.KindLLM, ModelProvider: "Anthropic"},
-		{TraceID: "t4", SpanID: "s4", Kind: export.KindWorkflow},
+		spanEvent("t1", "s1", export.KindLLM, export.WithModel("gpt-4o", "OpenAI")),
+		spanEvent("t2", "s2", export.KindLLM, export.WithModel("gpt-4o", "")),
+		spanEvent("t3", "s3", export.KindLLM, export.WithModel("", "Anthropic")),
+		spanEvent("t4", "s4", export.KindWorkflow),
 	})
 	require.NoError(t, err)
 
@@ -507,9 +583,9 @@ func TestSubmitSpans_ModelGateMatchesLive(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t", SpanID: "s1", Kind: export.KindWorkflow, ModelName: "gpt-4o"},
-		{TraceID: "t", SpanID: "s2", Kind: export.KindWorkflow, ModelProvider: "OpenAI"},
-		{TraceID: "t", SpanID: "s3", Kind: export.KindEmbedding, ModelName: "text-embed-3"},
+		spanEvent("t", "s1", export.KindWorkflow, export.WithModel("gpt-4o", "")),
+		spanEvent("t", "s2", export.KindWorkflow, export.WithModel("", "OpenAI")),
+		spanEvent("t", "s3", export.KindEmbedding, export.WithModel("text-embed-3", "")),
 	})
 	require.NoError(t, err)
 
@@ -529,16 +605,16 @@ func TestSubmitSpans_ErrorSpanWithNoDetailMatchesLive(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t", SpanID: "s", Kind: export.KindLLM, Status: export.StatusError},
-	})
+	event := spanEvent("t", "s", export.KindLLM)
+	event.Status = export.StatusError
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{event})
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
 	meta := span["meta"].(map[string]any)
-	assert.Equal(t, "", meta["error.message"])
-	assert.Equal(t, "", meta["error.type"])
-	assert.Equal(t, "", meta["error.stack"])
+	assert.NotContains(t, meta, "error.message")
+	assert.NotContains(t, meta, "error.type")
+	assert.NotContains(t, meta, "error.stack")
 	assert.Equal(t, "error", span["status"])
 	assert.Contains(t, tagsOf(t, span), "error:1")
 }
@@ -551,7 +627,7 @@ func TestSubmitSpans_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 	}}
 	c := newClient(t, fake, "test-app")
 
-	res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+	res, err := c.SubmitSpans(ctx, []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 	require.NoError(t, err, "every row was delivered; a late cancel is not a failure")
 	assert.Equal(t, 1, res.Sent)
 	assert.Equal(t, 0, res.Failed)
@@ -586,7 +662,7 @@ func TestNewClient_FallsBackToEnv(t *testing.T) {
 			export.WithDatadogIntake("", ""),
 		)
 		require.NoError(t, err)
-		_, err = c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+		_, err = c.SubmitSpans(context.Background(), []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 		require.NoError(t, err)
 
 		req := fake.captured()[0]
@@ -604,7 +680,7 @@ func TestNewClient_FallsBackToEnv(t *testing.T) {
 			export.WithDatadogIntake("us3.datadoghq.com", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
 		)
 		require.NoError(t, err)
-		_, err = c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+		_, err = c.SubmitSpans(context.Background(), []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 		require.NoError(t, err)
 
 		req := fake.captured()[0]
@@ -626,7 +702,7 @@ func TestSubmitSpans_OneEnvelopePerSpan(t *testing.T) {
 
 	events := make([]export.SpanEvent, 4)
 	for i := range events {
-		events[i] = export.SpanEvent{TraceID: "t", SpanID: strconv.Itoa(i), Kind: export.KindLLM}
+		events[i] = spanEvent("t", strconv.Itoa(i), export.KindLLM)
 	}
 	res, err := c.SubmitSpans(context.Background(), events)
 	require.NoError(t, err)
@@ -651,7 +727,7 @@ func TestSubmitSpans_Chunking(t *testing.T) {
 
 	events := make([]export.SpanEvent, 120)
 	for i := range events {
-		events[i] = export.SpanEvent{TraceID: "t", SpanID: "s", Kind: export.KindLLM}
+		events[i] = spanEvent("t", "s", export.KindLLM)
 	}
 	res, err := c.SubmitSpans(context.Background(), events)
 	require.NoError(t, err)
@@ -732,11 +808,7 @@ func TestSubmitSpans_AcceptsEveryExportableKind(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 	events := make([]export.SpanEvent, 0, len(kinds))
 	for i, kind := range kinds {
-		events = append(events, export.SpanEvent{
-			TraceID: "t",
-			SpanID:  strconv.Itoa(i),
-			Kind:    kind,
-		})
+		events = append(events, spanEvent("t", strconv.Itoa(i), kind))
 	}
 
 	res, err := c.SubmitSpans(context.Background(), events)
@@ -750,12 +822,12 @@ func TestSubmitSpans_ValidationDropsInvalidRows(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},
-		{SpanID: "s2", Kind: export.KindLLM},
-		{TraceID: "t3", Kind: export.KindLLM},
-		{TraceID: "t4", SpanID: "s4", Kind: "banana"},
-		{TraceID: "t5", SpanID: "s5", Kind: export.KindLLM, Status: "kinda-ok"},
-		{TraceID: "t6", SpanID: "s6", Kind: export.Kind(illmobs.SpanKindExperiment)},
+		spanEvent("t1", "s1", export.KindLLM),
+		spanEvent("", "s2", export.KindLLM),
+		spanEvent("t3", "", export.KindLLM),
+		spanEvent("t4", "s4", "banana"),
+		spanEvent("t5", "s5", export.KindLLM, withSpanStatus("kinda-ok")),
+		spanEvent("t6", "s6", illmobs.SpanKindExperiment),
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 5)
@@ -786,21 +858,18 @@ func TestSubmitSpans_ValidatesCanonicalSpanLinkIDs(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{
-			TraceID: "t0",
-			SpanID:  "s0",
-			Kind:    export.KindLLM,
-			SpanLinks: []export.SpanLink{{
+		spanEvent("t0", "s0", export.KindLLM, withSpanLinks(
+			export.SpanLink{
 				TraceID:     "18446744073709551615",
 				TraceIDHigh: "0",
 				SpanID:      "42",
-			}},
-		},
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{TraceID: "01", SpanID: "2"}}},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{TraceID: "1", SpanID: "+2"}}},
-		{TraceID: "t3", SpanID: "s3", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{TraceID: "1", SpanID: "2", TraceIDHigh: "18446744073709551616"}}},
-		{TraceID: "t4", SpanID: "s4", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{SpanID: "2"}}},
-		{TraceID: "t5", SpanID: "s5", Kind: export.KindLLM, SpanLinks: []export.SpanLink{{TraceID: "1"}}},
+			},
+		)),
+		spanEvent("t1", "s1", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "01", SpanID: "2"})),
+		spanEvent("t2", "s2", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "1", SpanID: "+2"})),
+		spanEvent("t3", "s3", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "1", SpanID: "2", TraceIDHigh: "18446744073709551616"})),
+		spanEvent("t4", "s4", export.KindLLM, withSpanLinks(export.SpanLink{SpanID: "2"})),
+		spanEvent("t5", "s5", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "1"})),
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 5)
@@ -815,10 +884,11 @@ func TestDefaultSizeGuardMatchesLiveLimit(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
-		Input: strings.Repeat("x", illmobs.SizeLimitEVPEvent+1),
-	}})
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		spanEvent("t", "s", export.KindLLM,
+			export.WithTextIO(strings.Repeat("x", illmobs.SizeLimitEVPEvent+1), ""),
+		),
+	})
 	require.NoError(t, err)
 	require.Len(t, res.Requests, 1)
 
@@ -830,14 +900,11 @@ func TestSubmitSpans_DropsOversizedSpanWithoutIO(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t",
-		SpanID:  "s",
-		Kind:    export.KindLLM,
-		Metadata: map[string]any{
-			"value": strings.Repeat("x", illmobs.SizeLimitEVPEvent),
-		},
-	}})
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		spanEvent("t", "s", export.KindLLM,
+			export.WithMetadata(map[string]any{"value": strings.Repeat("x", illmobs.SizeLimitEVPEvent)}),
+		),
+	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 1)
 	assert.Equal(t, export.CodeTooLarge, res.ValidationErrors[0].Code)
@@ -850,8 +917,8 @@ func TestSubmitSpans_SplitsOversizedBatchInsteadOfDroppingIO(t *testing.T) {
 	value := strings.Repeat("x", illmobs.SizeLimitEVPEvent/2)
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: value},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: value},
+		spanEvent("t1", "s1", export.KindLLM, export.WithTextIO(value, "")),
+		spanEvent("t2", "s2", export.KindLLM, export.WithTextIO(value, "")),
 	})
 	require.NoError(t, err)
 	require.Len(t, res.Requests, 2)
@@ -870,9 +937,9 @@ func TestSubmitSpans_StampsMLAppFromClient(t *testing.T) {
 	c := newClient(t, fake, "my-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Tags: []string{"ml_app:override"}},
-		{TraceID: "t3", SpanID: "s3", Kind: export.KindLLM, Tags: []string{"ml_app:"}},
+		spanEvent("t1", "s1", export.KindLLM),
+		spanEvent("t2", "s2", export.KindLLM, withSpanTags("ml_app:override")),
+		spanEvent("t3", "s3", export.KindLLM, withSpanTags("ml_app:")),
 	})
 	require.NoError(t, err)
 
@@ -889,7 +956,7 @@ func TestSubmitSpans_AgentRoute(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newAgentClient(t, fake, "http://localhost:8126", "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 	require.NoError(t, err)
 
 	reqs := fake.captured()
@@ -904,7 +971,7 @@ func TestSubmitSpans_WithCallServiceOverride(t *testing.T) {
 	c := newClient(t, fake, "test-app", export.WithService("default-svc"))
 
 	_, err := c.SubmitSpans(context.Background(),
-		[]export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}},
+		[]export.SpanEvent{spanEvent("t", "s", export.KindLLM)},
 		export.WithCallService("call-svc"),
 	)
 	require.NoError(t, err)
@@ -923,7 +990,7 @@ func TestSubmitSpans_RetryTransient(t *testing.T) {
 	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) { return 500, "boom" }}
 	c := newClient(t, fake, "test-app")
 
-	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 	require.Error(t, err)
 	require.Equal(t, 1, res.Failed)
 	require.Zero(t, res.Sent)
@@ -940,7 +1007,7 @@ func TestSubmitSpans_PermanentError(t *testing.T) {
 	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) { return 400, "bad" }}
 	c := newClient(t, fake, "test-app")
 
-	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
 	assert.Equal(t, 1, res.Requests[0].Attempts)
@@ -975,11 +1042,9 @@ func TestSubmitSpans_ResponseSnippetIsBoundedUTF8(t *testing.T) {
 			}}
 			c := newClient(t, fake, "test-app")
 
-			res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-				TraceID: "t",
-				SpanID:  "s",
-				Kind:    export.KindLLM,
-			}})
+			res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+				spanEvent("t", "s", export.KindLLM),
+			})
 			require.Error(t, err)
 			require.Len(t, res.Requests, 1)
 			snippet := res.Requests[0].ResponseSnippet
@@ -1203,7 +1268,7 @@ func TestSubmitSpans_ConcurrentDoesNotMutateCaller(t *testing.T) {
 
 	shared := make([]string, 1, 8)
 	shared[0] = "ml_app:x"
-	ev := export.SpanEvent{TraceID: "t", SpanID: "s", Kind: export.KindLLM, Tags: shared}
+	ev := spanEvent("t", "s", export.KindLLM, withSpanTags(shared...))
 
 	var wg sync.WaitGroup
 	for range 8 {
@@ -1221,7 +1286,7 @@ func TestSubmitSpans_AgentRouteTrimsTrailingSlash(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newAgentClient(t, fake, "http://localhost:8126/", "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:8126/evp_proxy/v2/api/v2/llmobs", fake.captured()[0].url)
 }
@@ -1232,7 +1297,7 @@ func TestSubmitSpans_ContextCanceledStopsPromptly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+	res, err := c.SubmitSpans(ctx, []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, fake.captured())
@@ -1299,7 +1364,7 @@ func TestSubmitSpans_AccountingCoversWholeInputOnCancel(t *testing.T) {
 
 	events := make([]export.SpanEvent, 51)
 	for i := range events {
-		events[i] = export.SpanEvent{TraceID: "t", SpanID: strconv.Itoa(i), Kind: export.KindLLM}
+		events[i] = spanEvent("t", strconv.Itoa(i), export.KindLLM)
 	}
 	res, err := c.SubmitSpans(ctx, events)
 	require.Error(t, err)
@@ -1342,7 +1407,7 @@ func TestSubmitSpans_StampsSessionIDTag(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t", SpanID: "s", Kind: export.KindLLM, SessionID: "sess-1"},
+		spanEvent("t", "s", export.KindLLM, withSessionID("sess-1")),
 	})
 	require.NoError(t, err)
 
@@ -1356,7 +1421,7 @@ func TestSubmitSpans_DropsMissingKind(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},
+		spanEvent("t1", "s1", export.KindLLM),
 		{TraceID: "t2", SpanID: "s2"},
 	})
 	require.NoError(t, err)
@@ -1372,8 +1437,8 @@ func TestSubmitSpans_RejectsNonFiniteMetric(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Metrics: map[string]float64{"estimated_total_cost": math.Inf(1)}},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM},
+		spanEvent("t1", "s1", export.KindLLM, withSpanMetrics(map[string]float64{"estimated_total_cost": math.Inf(1)})),
+		spanEvent("t2", "s2", export.KindLLM),
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 1)
@@ -1387,10 +1452,12 @@ func TestSubmitSpans_SessionIDOverridesStaleTag(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: export.KindLLM, SessionID: "new",
-		Tags: []string{"session_id:old", "team:ml"},
-	}})
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		spanEvent("t", "s", export.KindLLM,
+			withSessionID("new"),
+			withSpanTags("session_id:old", "team:ml"),
+		),
+	})
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
@@ -1408,10 +1475,9 @@ func TestSubmitSpans_ServiceTagReplacesStale(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app", export.WithService("svc"))
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
-		Tags: []string{"service:stale", "team:ml"},
-	}})
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		spanEvent("t", "s", export.KindLLM, withSpanTags("service:stale", "team:ml")),
+	})
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
@@ -1429,15 +1495,14 @@ func TestSubmitSpans_UsesExistingMetricsMap(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
-		Metrics: map[string]float64{
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		spanEvent("t", "s", export.KindLLM, withSpanMetrics(map[string]float64{
 			"input_tokens":             10,
 			"billable_character_count": 42,
 			"time_to_first_token":      0.25,
 			"custom_metric":            7,
-		},
-	}})
+		})),
+	})
 	require.NoError(t, err)
 
 	m := allSpans(t, fake.captured()[0].body)[0]["metrics"].(map[string]any)
@@ -1504,7 +1569,7 @@ func TestSubmitSpans_ZeroStartAndDurationOmitFields(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t", SpanID: "s", Kind: export.KindLLM},
+		spanEvent("t", "s", export.KindLLM),
 	})
 	require.NoError(t, err)
 
@@ -1518,7 +1583,7 @@ func TestSubmitSpans_ParentIDPreservedVerbatim(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t", SpanID: "s", ParentID: "p123", Kind: export.KindLLM},
+		spanEvent("t", "s", export.KindLLM, withParentID("p123")),
 	})
 	require.NoError(t, err)
 
@@ -1549,7 +1614,7 @@ func TestSubmitSpans_RetryClassification(t *testing.T) {
 			}
 			c := newClient(t, fake, "test-app")
 
-			res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+			res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 			require.Error(t, err)
 			require.Len(t, res.Requests, 1)
 			assert.Equal(t, tc.code, res.Requests[0].StatusCode)
@@ -1578,7 +1643,7 @@ func TestSubmitSpans_MidFlightCancelNotRetriable(t *testing.T) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+		res, err := c.SubmitSpans(ctx, []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 		done <- outcome{res, err}
 	}()
 
@@ -1619,7 +1684,7 @@ func TestSubmitSpans_RetriableStatusThenCancelNotRetriable(t *testing.T) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+		res, err := c.SubmitSpans(ctx, []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
 		done <- outcome{res, err}
 	}()
 
@@ -1685,8 +1750,8 @@ func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 	value := strings.Repeat("x", illmobs.SizeLimitEVPEvent/2)
 
 	res, err := c.SubmitSpans(ctx, []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: value},
-		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: value},
+		spanEvent("t1", "s1", export.KindLLM, export.WithTextIO(value, "")),
+		spanEvent("t2", "s2", export.KindLLM, export.WithTextIO(value, "")),
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
