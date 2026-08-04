@@ -397,13 +397,12 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		firstExtraction := (ctx == nil)
 		extractedCtx, err := v.Extract(carrier)
 
-		// If this is the baggage propagator, just stash its items into pendingBaggage
+		// If this is the baggage propagator, take ownership of its map directly:
+		// there is only one baggage propagator (see extractBaggage below), so
+		// extractedCtx is not shared with anything else and its map needs no copy.
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
 			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				if pendingBaggage == nil {
-					pendingBaggage = make(map[string]string, len(extractedCtx.baggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				}
-				maps.Copy(pendingBaggage, extractedCtx.baggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				pendingBaggage = extractedCtx.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			}
 			continue
 		}
@@ -460,10 +459,9 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				baggage:     make(map[string]string, len(pendingBaggage)), // +checklocksignore - Initialization time, not shared yet.
-				baggageOnly: true,                                         // +checklocksignore - Initialization time, not shared yet.
+				baggage:     pendingBaggage, // +checklocksignore - Initialization time, not shared yet.
+				baggageOnly: true,           // +checklocksignore - Initialization time, not shared yet.
 			}
-			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil, nil
 		}
@@ -472,9 +470,13 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-			ctx.baggage = make(map[string]string, len(pendingBaggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			// Common case: no OT "ot-baggage-<key>" headers were extracted, so
+			// pendingBaggage can be taken directly instead of copied into a new map.
+			ctx.baggage = pendingBaggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		} else {
+			// ctx.baggage already holds OT-baggage items; merge, don't replace.
+			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		}
-		maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
@@ -1747,26 +1749,83 @@ func (p *propagatorBaggage) Extract(carrier any) (*SpanContext, error) {
 	}
 }
 
-func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
-	var baggageHeader string
-	var ctx SpanContext
+// baggageKeyLen is len("baggage"), used to reject non-matches before paying
+// for strings.EqualFold, which has no length fast path.
+const baggageKeyLen = 7
+
+// lookupBaggageHeader returns the case-insensitive "baggage" header value
+// found in reader, or "" if none is present. TextMapCarrier and
+// HTTPHeadersCarrier get a direct-iteration fast path instead of going
+// through ForeachKey: ForeachKey is an interface method, so the compiler
+// must assume any closure passed to it escapes, which forces both the
+// closure and the local it captures onto the heap on every call -- even the
+// common case where there is no baggage header at all. Other TextMapReader
+// implementations fall back to foreachBaggageHeader, which is deliberately
+// its own function so its heap-allocated locals are scoped to calls that
+// actually take that path.
+//
+// This deliberately diverges from the ForeachKey-plus-scratch-struct pattern
+// datadogExtractScratch/w3cExtractScratch use: those extractors must inspect
+// every header key to find several different fields, so a scan is the only
+// option regardless of carrier type. Baggage reads exactly one key, so a
+// direct map/slice lookup on the two built-in carriers beats any scan.
+func lookupBaggageHeader(reader TextMapReader) (string, error) {
+	switch c := reader.(type) {
+	case TextMapCarrier:
+		for k, v := range c {
+			if len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
+				return v, nil
+			}
+		}
+		return "", nil
+	case HTTPHeadersCarrier:
+		// "Baggage" is the canonical form net/http produces and the one
+		// HTTPHeadersCarrier.Set writes via http.Header.Set.
+		if vals := c["Baggage"]; len(vals) > 0 {
+			return vals[len(vals)-1], nil
+		}
+		for k, vals := range c {
+			if len(vals) == 0 || len(k) != baggageKeyLen || !strings.EqualFold(k, "baggage") {
+				continue
+			}
+			return vals[len(vals)-1], nil
+		}
+		return "", nil
+	default:
+		return foreachBaggageHeader(reader)
+	}
+}
+
+// foreachBaggageHeader keeps the last matching value, not the first: carriers
+// that reach this fallback (Kafka/gRPC/etc. in contrib/) can have a real,
+// deterministic order where a repeated "baggage" key's last occurrence is the
+// documented winner -- see e.g. contrib/IBM/sarama's ProducerMessageCarrier.Get.
+func foreachBaggageHeader(reader TextMapReader) (string, error) {
+	var header string
 	err := reader.ForeachKey(func(k, v string) error {
-		if strings.EqualFold(k, "baggage") {
-			// Expect only one baggage header, return early
-			baggageHeader = v
-			return nil
+		if len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
+			header = v
 		}
 		return nil
 	})
+	return header, err
+}
+
+// extractTextMap parses the incoming "baggage" header into a scratch map and
+// only allocates a *SpanContext once at least one item has been extracted,
+// matching the pattern used by datadogExtractScratch above: the common case
+// of no baggage header should cost nothing.
+func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
+	baggageHeader, err := lookupBaggageHeader(reader)
 	if err != nil {
 		return nil, err
 	}
-
 	if baggageHeader == "" {
-		return &ctx, nil
+		return nil, nil
 	}
 
 	// Single pass: enforce baggageMaxItems and baggageMaxBytes, validate, and apply.
+	var baggage map[string]string
 	ctr := 0
 	byteCount := 0
 	for kv := range strings.SplitSeq(baggageHeader, ",") {
@@ -1787,14 +1846,22 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		trimmedV := strings.TrimSpace(v)
 		if !ok || trimmedK == "" || trimmedV == "" {
 			log.Warn("invalid baggage item: %q, dropping entire header", kv)
-			return &SpanContext{}, nil
+			return nil, nil
 		}
 		key, _ := url.QueryUnescape(trimmedK)
 		val, _ := url.QueryUnescape(trimmedV)
-		ctx.setBaggageItem(key, val)
+		if baggage == nil {
+			baggage = make(map[string]string, 1)
+		}
+		baggage[key] = val
 		byteCount += itemBytes
 		ctr++
 	}
+	if len(baggage) == 0 {
+		return nil, nil
+	}
 
-	return &ctx, nil
+	ctx := &SpanContext{baggage: baggage} // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+	atomic.StoreUint32(&ctx.hasBaggage, 1)
+	return ctx, nil
 }
