@@ -19,11 +19,8 @@ import (
 	"go.opentelemetry.io/otelc/pkg/hook"
 
 	redigotrace "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2"
+	"github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/internal/otelcguard"
 )
-
-// dialGuardKey marks the context of the dial redigotrace.DialContext performs
-// on our behalf, so the hook lets that inner call through instead of recursing.
-type dialGuardKey struct{}
 
 // dialResult carries the traced connection from the before hook to the after
 // hook, which is the only place otelc lets us write the return values.
@@ -33,18 +30,23 @@ type dialResult struct {
 }
 
 // BeforeDialContext substitutes redigotrace.DialContext for redis.DialContext.
+//
+// The contrib marks the dial it makes itself, which covers both directions of the
+// same problem: the inner call this hook triggers is let through instead of
+// recursing, and an application that called the contrib directly keeps the single
+// wrapper it already has rather than getting a second one.
 func BeforeDialContext(ictx hook.HookContext, ctx context.Context, network, address string, options ...redis.DialOption) {
+	if otelcguard.Marked(ctx) {
+		return
+	}
 	if ctx == nil {
 		ctx = context.Background()
-	}
-	if ctx.Value(dialGuardKey{}) != nil {
-		return
 	}
 	opts := make([]any, len(options))
 	for i, opt := range options {
 		opts[i] = opt
 	}
-	conn, err := redigotrace.DialContext(context.WithValue(ctx, dialGuardKey{}, struct{}{}), network, address, opts...)
+	conn, err := redigotrace.DialContext(ctx, network, address, opts...)
 	ictx.SetData(dialResult{conn: conn, err: err})
 	ictx.SetSkipCall(true)
 }
