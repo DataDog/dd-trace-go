@@ -52,29 +52,19 @@ func (e ExportValidationError) Unwrap() error {
 	return e.cause
 }
 
-var (
-	validExportSpanKinds = map[SpanKind]struct{}{
-		SpanKindLLM: {}, SpanKindAgent: {}, SpanKindWorkflow: {}, SpanKindTask: {},
-		SpanKindTool: {}, SpanKindEmbedding: {}, SpanKindRetrieval: {},
-	}
-	validExportSpanStatuses = map[transport.SpanStatus]struct{}{
-		transport.SpanStatusOK: {}, transport.SpanStatusError: {},
-	}
-)
-
 // ValidateExportSpan checks the fields required by the LLM Obs intake.
 func ValidateExportSpan(event transport.LLMObsSpanEvent) *ExportValidationError {
 	if event.SpanID == "" || event.TraceID == "" {
 		return &ExportValidationError{Code: ExportCodeMissingID, Reason: "missing span_id or trace_id"}
 	}
-	kind := exportSpanKind(event)
+	kind := SpanEventKind(&event)
 	if kind == "" {
 		return &ExportValidationError{Code: ExportCodeMissingKind, Reason: `missing meta["span.kind"]`}
 	}
-	if _, ok := validExportSpanKinds[kind]; !ok {
+	if !isExportSpanKind(kind) {
 		return &ExportValidationError{Code: ExportCodeInvalidKind, Reason: fmt.Sprintf("invalid span kind %q", kind)}
 	}
-	if _, ok := validExportSpanStatuses[event.Status]; event.Status != "" && !ok {
+	if event.Status != "" && !isValidSpanStatus(event.Status) {
 		return &ExportValidationError{Code: ExportCodeInvalidStatus, Reason: fmt.Sprintf("invalid status %q", event.Status)}
 	}
 	for i, link := range event.SpanLinks {
@@ -99,6 +89,20 @@ func ValidateExportSpan(event transport.LLMObsSpanEvent) *ExportValidationError 
 	return nil
 }
 
+func isExportSpanKind(kind SpanKind) bool {
+	switch kind {
+	case SpanKindLLM, SpanKindAgent, SpanKindWorkflow, SpanKindTask,
+		SpanKindTool, SpanKindEmbedding, SpanKindRetrieval:
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidSpanStatus(status transport.SpanStatus) bool {
+	return status == transport.SpanStatusOK || status == transport.SpanStatusError
+}
+
 // BuildExportSpan clones a validated transport span and applies client defaults.
 func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, service string) *transport.LLMObsSpanEvent {
 	span := event
@@ -108,25 +112,7 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, servic
 	span.CollectionErrors = slices.Clone(event.CollectionErrors)
 	span.SpanLinks = slices.Clone(event.SpanLinks)
 
-	if span.Meta == nil {
-		span.Meta = make(map[string]any)
-	}
-	kind := exportSpanKind(span)
-	if span.ParentID == "" {
-		span.ParentID = DefaultParentID
-	}
-	if span.Name == "" {
-		span.Name = string(kind)
-	}
-	if span.Status == "" {
-		span.Status = transport.SpanStatusOK
-	}
-	if span.DDAttributes.SpanID == "" {
-		span.DDAttributes.SpanID = span.SpanID
-	}
-	if span.DDAttributes.TraceID == "" {
-		span.DDAttributes.TraceID = span.TraceID
-	}
+	ApplySpanEventDefaults(&span)
 	errorType := ""
 	if span.Status == transport.SpanStatusError {
 		errorType, _ = span.Meta[metaKeyErrorType].(string)
@@ -230,11 +216,6 @@ func buildEvaluation(metric EvaluationConfig, defaultMLApp string, rejectNonFini
 		BooleanValue:       metric.BooleanValue,
 		JSONValue:          metric.JSONValue,
 	}, nil
-}
-
-func exportSpanKind(event transport.LLMObsSpanEvent) SpanKind {
-	kind, _ := event.Meta["span.kind"].(string)
-	return SpanKind(kind)
 }
 
 func canonicalDecimalID(id string) bool {

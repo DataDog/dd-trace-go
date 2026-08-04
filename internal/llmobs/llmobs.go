@@ -179,6 +179,37 @@ func NewSpanEventMeta(kind SpanKind) map[string]any {
 	return map[string]any{"span.kind": string(kind)}
 }
 
+func EnsureSpanEventMeta(event *transport.LLMObsSpanEvent) map[string]any {
+	if event.Meta == nil {
+		event.Meta = make(map[string]any)
+	}
+	return event.Meta
+}
+
+func SpanEventKind(event *transport.LLMObsSpanEvent) SpanKind {
+	kind, _ := event.Meta["span.kind"].(string)
+	return SpanKind(kind)
+}
+
+func ApplySpanEventDefaults(event *transport.LLMObsSpanEvent) {
+	EnsureSpanEventMeta(event)
+	if event.ParentID == "" {
+		event.ParentID = DefaultParentID
+	}
+	if event.Name == "" {
+		event.Name = string(SpanEventKind(event))
+	}
+	if event.Status == "" {
+		event.Status = transport.SpanStatusOK
+	}
+	if event.DDAttributes.SpanID == "" {
+		event.DDAttributes.SpanID = event.SpanID
+	}
+	if event.DDAttributes.TraceID == "" {
+		event.DDAttributes.TraceID = event.TraceID
+	}
+}
+
 func SetSpanModelMeta(meta map[string]any, kind SpanKind, modelName, modelProvider string) {
 	name, provider, ok := normalizeModel(kind, modelName, modelProvider)
 	if !ok {
@@ -1046,9 +1077,6 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 		trackSubmitEvaluationMetric(metric, err)
 	}()
 
-	if cfg.TimestampMS == 0 && cfg.Timestamp.IsZero() {
-		cfg.TimestampMS = time.Now().UnixMilli()
-	}
 	metric, validation := buildEvaluation(cfg, l.Config.MLApp, false)
 	if validation != nil {
 		if cause := validation.Unwrap(); cause != nil {
