@@ -125,36 +125,56 @@ func TestConnect(t *testing.T) {
 }
 
 func TestQuery(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	// A pool and a standalone connection snapshot the connection metadata from different
+	// configs, so the tags asserted by assertCommonTags are only covered for whichever
+	// path runs here.
+	testCases := []struct {
+		name       string
+		createConn func(opts ...Option) createConnFn
+	}{
+		{
+			name:       "pool",
+			createConn: func(opts ...Option) createConnFn { return newPoolCreator(nil, opts...) },
+		},
+		{
+			name:       "conn",
+			createConn: func(opts ...Option) createConnFn { return newConnCreator(nil, nil, opts...) },
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	opts := append(tracingAllDisabled(), WithTraceQuery(true))
-	runAllOperations(t, newPoolCreator(nil, opts...))
+			opts := append(tracingAllDisabled(), WithTraceQuery(true))
+			runAllOperations(t, tc.createConn(opts...))
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 3)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 3)
 
-	ps := spans[2]
-	assert.Equal(t, "parent", ps.OperationName())
-	assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
+			ps := spans[2]
+			assert.Equal(t, "parent", ps.OperationName())
+			assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
 
-	s := spans[0]
-	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.query", s.OperationName())
-	assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
-	assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
-	assert.Equal(t, ps.SpanID(), s.ParentID())
+			s := spans[0]
+			assertCommonTags(t, s)
+			assert.Equal(t, "pgx.query", s.OperationName())
+			assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag("db.operation"))
+			assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
+			assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
+			assert.Equal(t, ps.SpanID(), s.ParentID())
 
-	s = spans[1]
-	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.query", s.OperationName())
-	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
-	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
-	assert.Equal(t, ps.SpanID(), s.ParentID())
+			s = spans[1]
+			assertCommonTags(t, s)
+			assert.Equal(t, "pgx.query", s.OperationName())
+			assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag("db.operation"))
+			assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
+			assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
+			assert.Equal(t, ps.SpanID(), s.ParentID())
+		})
+	}
 }
 
 func TestIgnoreError(t *testing.T) {
