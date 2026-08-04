@@ -1862,12 +1862,14 @@ func (c *Config) SetLLMObsEnabled(enabled bool, origin telemetry.Origin, product
 	configtelemetry.Report("DD_LLMOBS_ENABLED", enabled, origin)
 }
 
+// LLMObsMLApp returns DD_LLMOBS_ML_APP.
 func (c *Config) LLMObsMLApp() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.llmObsMLApp
 }
 
+// SetLLMObsMLApp sets DD_LLMOBS_ML_APP.
 func (c *Config) SetLLMObsMLApp(mlApp string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1878,12 +1880,14 @@ func (c *Config) SetLLMObsMLApp(mlApp string, origin telemetry.Origin, product .
 	configtelemetry.Report("DD_LLMOBS_ML_APP", mlApp, origin)
 }
 
+// LLMObsProjectName returns DD_LLMOBS_PROJECT_NAME.
 func (c *Config) LLMObsProjectName() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.llmObsProjectName
 }
 
+// SetLLMObsProjectName sets DD_LLMOBS_PROJECT_NAME.
 func (c *Config) SetLLMObsProjectName(name string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1894,18 +1898,26 @@ func (c *Config) SetLLMObsProjectName(name string, origin telemetry.Origin, prod
 	configtelemetry.Report("DD_LLMOBS_PROJECT_NAME", name, origin)
 }
 
+// LLMObsAgentlessEnabled returns DD_LLMOBS_AGENTLESS_ENABLED. It returns nil
+// when unset, allowing callers to distinguish an explicit false from unset.
 func (c *Config) LLMObsAgentlessEnabled() *bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.llmObsAgentlessEnabled
 }
 
+// SetLLMObsAgentlessEnabled sets DD_LLMOBS_AGENTLESS_ENABLED. A nil value
+// indicates the setting is unset (tri-state).
 func (c *Config) SetLLMObsAgentlessEnabled(v *bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.checkProductConflict("DD_LLMOBS_AGENTLESS_ENABLED", origin, v, product...) {
+	conflictValue := "unset"
+	if v != nil {
+		conflictValue = strconv.FormatBool(*v)
+	}
+	if c.checkProductConflict("DD_LLMOBS_AGENTLESS_ENABLED", origin, conflictValue, product...) {
 		return
 	}
 	c.llmObsAgentlessEnabled = v
-	configtelemetry.Report("DD_LLMOBS_AGENTLESS_ENABLED", v, origin)
+	configtelemetry.Report("DD_LLMOBS_AGENTLESS_ENABLED", conflictValue, origin)
 }

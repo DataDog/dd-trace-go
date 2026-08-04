@@ -308,47 +308,12 @@ func Start(opts ...StartOption) error {
 	t.startAppSec()
 
 	if t.config.internalConfig.LLMObsEnabled() {
-		af := t.config.agent.load()
-		var resolvedAgentless bool
-		if t.config.llmobsTestBaseURL != "" {
-			// TestBaseURL bypasses agent/agentless selection and validation entirely.
-			resolvedAgentless = false
-		} else {
-			var err error
-			resolvedAgentless, err = llmobs.ResolveAgentlessEnabled(
-				t.config.internalConfig.LLMObsAgentlessEnabled(),
-				af.evpProxyV2,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to start llmobs: %w", err)
-			}
-		}
-		cfg := llmobsconfig.Config{
-			Enabled:          true,
-			MLApp:            t.config.internalConfig.LLMObsMLApp(),
-			AgentlessEnabled: resolvedAgentless,
-			ProjectName:      t.config.internalConfig.LLMObsProjectName(),
-			TracerConfig: llmobsconfig.TracerConfig{
-				DDTags:     t.config.internalConfig.GlobalTags(),
-				Env:        t.config.internalConfig.Env(),
-				Service:    t.config.internalConfig.ServiceName(),
-				Version:    t.config.internalConfig.Version(),
-				AgentURL:   t.config.internalConfig.AgentURL(),
-				APIKey:     t.config.internalConfig.APIKey(),
-				APPKey:     t.config.internalConfig.AppKey(),
-				HTTPClient: t.config.httpClient,
-				Site:       t.config.internalConfig.Site(),
-			},
-			AgentFeatures: llmobsconfig.AgentFeatures{EVPProxyV2: af.evpProxyV2},
-			TestBaseURL:   t.config.llmobsTestBaseURL,
-		}
-		if t.config.llmobsHTTPClient != nil {
-			cfg.TracerConfig.HTTPClient = t.config.llmobsHTTPClient
-		}
-		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}); err != nil {
+		cfg, resolveErr := buildLLMObsConfig(t.config)
+		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}, resolveErr); err != nil {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
 	}
+
 	if t.config.internalConfig.LogStartup() {
 		logStartup(t)
 	}
@@ -364,6 +329,49 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// buildLLMObsConfig assembles the llmobsconfig.Config used to start LLMObs,
+// resolving agentless mode against the agent's advertised features. Callers
+// must only invoke this when c.internalConfig.LLMObsEnabled() is true.
+func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
+	af := c.agent.load()
+	var resolvedAgentless bool
+	if c.llmobsTestBaseURL != "" {
+		// TestBaseURL bypasses agent/agentless selection and validation entirely.
+		resolvedAgentless = false
+	} else {
+		var err error
+		resolvedAgentless, err = llmobs.ResolveAgentlessEnabled(
+			c.internalConfig.LLMObsAgentlessEnabled(),
+			af.evpProxyV2,
+		)
+		if err != nil {
+			return llmobsconfig.Config{}, err
+		}
+	}
+	cfg := llmobsconfig.Config{
+		Enabled:          true,
+		MLApp:            c.internalConfig.LLMObsMLApp(),
+		AgentlessEnabled: resolvedAgentless,
+		ProjectName:      c.internalConfig.LLMObsProjectName(),
+		TracerConfig: llmobsconfig.TracerConfig{
+			DDTags:     c.internalConfig.GlobalTags(),
+			Env:        c.internalConfig.Env(),
+			Service:    c.internalConfig.ServiceName(),
+			Version:    c.internalConfig.Version(),
+			AgentURL:   c.internalConfig.AgentURL(),
+			APIKey:     c.internalConfig.APIKey(),
+			APPKey:     c.internalConfig.AppKey(),
+			HTTPClient: c.httpClient,
+			Site:       c.internalConfig.Site(),
+		},
+		TestBaseURL:   c.llmobsTestBaseURL,
+	}
+	if c.llmobsHTTPClient != nil {
+		cfg.TracerConfig.HTTPClient = c.llmobsHTTPClient
+	}
+	return cfg, nil
 }
 
 // startAppSec builds the remote-config client config and AppSec start options,

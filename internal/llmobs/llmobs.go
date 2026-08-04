@@ -215,16 +215,18 @@ func ResolveAgentlessEnabled(agentlessEnabled *bool, agentSupportsLLMObs bool) (
 
 // Start starts the global LLMObs instance with the given configuration and tracer.
 // Returns an error if LLMObs is already running or if configuration is invalid.
-func Start(cfg config.Config, tracer Tracer) (err error) {
+func Start(cfg config.Config, tracer Tracer, startErr error) (err error) {
 	startTime := time.Now()
 	defer func() {
 		trackLLMObsStart(startTime, err, cfg)
 	}()
 	mu.Lock()
 	defer mu.Unlock()
-
 	if activeLLMObs != nil {
 		activeLLMObs.Stop()
+	}
+	if startErr != nil {
+		return startErr
 	}
 	if !cfg.Enabled {
 		return nil

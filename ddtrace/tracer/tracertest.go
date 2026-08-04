@@ -17,7 +17,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
-	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 )
 
 // +checklocksignore
@@ -183,44 +182,8 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 	// inspectable tracer's synctest/no-network guarantees.
 	tracer.startAppSec()
 	if tracer.config.internalConfig.LLMObsEnabled() {
-		af := tracer.config.agent.load()
-		var resolvedAgentless bool
-		if tracer.config.llmobsTestBaseURL != "" {
-			// TestBaseURL bypasses agent/agentless selection and validation entirely.
-			resolvedAgentless = false
-		} else {
-			var err error
-			resolvedAgentless, err = llmobs.ResolveAgentlessEnabled(
-				tracer.config.internalConfig.LLMObsAgentlessEnabled(),
-				af.evpProxyV2,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to start llmobs: %w", err)
-			}
-		}
-		cfg := llmobsconfig.Config{
-			Enabled:          true,
-			MLApp:            tracer.config.internalConfig.LLMObsMLApp(),
-			AgentlessEnabled: resolvedAgentless,
-			ProjectName:      tracer.config.internalConfig.LLMObsProjectName(),
-			TracerConfig: llmobsconfig.TracerConfig{
-				DDTags:     tracer.config.internalConfig.GlobalTags(),
-				Env:        tracer.config.internalConfig.Env(),
-				Service:    tracer.config.internalConfig.ServiceName(),
-				Version:    tracer.config.internalConfig.Version(),
-				AgentURL:   tracer.config.internalConfig.AgentURL(),
-				APIKey:     tracer.config.internalConfig.APIKey(),
-				APPKey:     tracer.config.internalConfig.AppKey(),
-				HTTPClient: tracer.config.httpClient,
-				Site:       tracer.config.internalConfig.Site(),
-			},
-			AgentFeatures: llmobsconfig.AgentFeatures{EVPProxyV2: af.evpProxyV2},
-			TestBaseURL:   tracer.config.llmobsTestBaseURL,
-		}
-		if tracer.config.llmobsHTTPClient != nil {
-			cfg.TracerConfig.HTTPClient = tracer.config.llmobsHTTPClient
-		}
-		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}); err != nil {
+		cfg, resolveErr := buildLLMObsConfig(tracer.config)
+		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}, resolveErr); err != nil {
 			return nil, fmt.Errorf("failed to start llmobs: %w", err)
 		}
 		tb.Cleanup(llmobs.Stop)
