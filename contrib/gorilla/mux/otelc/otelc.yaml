@@ -1,0 +1,32 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml. Both rules target github.com/gorilla/mux
+# directly, not this contrib, because the orchestrion aspect instruments the
+# target library's own Router type so that mux.NewRouter() and every
+# Subrouter it produces are traced without the caller wrapping anything.
+# hooks.go explains why the hook can't instead call this contrib's WrapRouter.
+
+router_config_field:
+  target: github.com/gorilla/mux
+  where:
+    struct: Router
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: DDIgnoreRequest
+            type: bool
+          - name: DDConfig
+            type: any
+
+router_serve_http:
+  target: github.com/gorilla/mux
+  where:
+    func: ServeHTTP
+    recv: "*Router"
+  do:
+    - inject_hooks:
+        before: BeforeServeHTTP
+        path: github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2

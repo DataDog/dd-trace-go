@@ -39,6 +39,7 @@ use (
 	./contrib/google.golang.org/api/internal/gen_endpoints
 	./contrib/google.golang.org/grpc
 	./contrib/gorilla/mux
+	./contrib/gorilla/mux/otelc
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
