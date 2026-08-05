@@ -30,6 +30,10 @@ It also holds `supported_configurations*`, which maintains which environment var
 
 `go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY`
 
+### Export Utilities
+
+Contains response-body snippet, failure aggregation, and retry helpers used by offline export transports. See [exportutil](./exportutil/).
+
 ### Locking
 
 Locking functionality that serves as a replacement for `sync.mutex` and similar locking mechanisms. It enables checking for deadlocks and should be used instead of `sync`. For more information, read the [README](./locking/README.md).
