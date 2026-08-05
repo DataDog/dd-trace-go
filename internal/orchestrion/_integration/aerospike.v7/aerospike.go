@@ -123,18 +123,19 @@ func (tc *TestCaseGoroutine) Run(ctx context.Context, t *testing.T) {
 	key, err := as.NewKey("test", "testset", "orchestrion-goroutine-key")
 	require.NoError(t, err)
 
-	done := make(chan struct{})
-	go putInGoroutine(ctx, t, tc.client, key, done)
-	<-done
+	errCh := make(chan as.Error, 1)
+	go putInGoroutine(ctx, tc.client, key, errCh)
+	require.NoError(t, <-errCh)
 }
 
 // putInGoroutine calls client.Put with a context.Context in scope so the
 // instrumentation threads it into the span. It runs on a goroutine that does not
 // hold the parent span in its GLS, so correct parenting proves the context
-// propagated through the surrounding scope rather than GLS.
-func putInGoroutine(ctx context.Context, t *testing.T, client *as.Client, key *as.Key, done chan<- struct{}) {
-	defer close(done)
-	require.NoError(t, client.Put(nil, key, as.BinMap{"value": "hello"}))
+// propagated through the surrounding scope rather than GLS. The error goes back
+// to the test goroutine, since require must not call FailNow from here.
+func putInGoroutine(ctx context.Context, client *as.Client, key *as.Key, errCh chan<- as.Error) {
+	_ = ctx
+	errCh <- client.Put(nil, key, as.BinMap{"value": "hello"})
 }
 
 func (tc *TestCaseGoroutine) ExpectedTraces() trace.Traces {
