@@ -40,7 +40,7 @@ const TraceIDZero string = "00000000000000000000000000000000"
 var traceID128BitEnabled atomic.Bool
 
 func init() {
-	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)) //nolint:configaudit — intentional: atomic cache for hot path; re-seeded from internalConfig on tracer.Start
+	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)) //configaudit:ignore — intentional: atomic cache for hot path; re-seeded from internalConfig on tracer.Start
 }
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
@@ -657,7 +657,7 @@ var (
 	// reasonable as span is actually way bigger, and avoids re-allocating
 	// over and over. Could be fine-tuned at runtime.
 	traceStartSize = 10
-	traceMaxSize   = internalconfig.TraceMaxSize
+	traceMaxSize   = internalconfig.TraceMaxSize // +checklocksignore — package-level config knob, read under t.mu in trace.push; only ever mutated by tests, never concurrently with a running trace.
 )
 
 // samplingPriorityCache holds pre-allocated pointers for the four standard

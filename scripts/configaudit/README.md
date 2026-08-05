@@ -33,13 +33,17 @@ make config-audit
 ## Suppressing intentional reads
 
 If a direct env-var read is intentional and not a migration candidate, annotate
-the line with `//nolint:configaudit`:
+the line with `//configaudit:ignore`:
 
 ```go
-} else if v := env.Get("DD_ENV"); v != "" { //nolint:configaudit — intentional: ...
+} else if v := env.Get("DD_ENV"); v != "" { //configaudit:ignore — intentional: ...
 ```
 
-The scanner skips any call site whose source line carries this annotation.
+The scanner skips any call site whose source line carries this directive. This
+is a standalone directive rather than a `//nolint:configaudit` entry:
+`configaudit` is not a golangci-lint linter, so naming it in a `//nolint:`
+comment makes golangci-lint's nolint filter warn about an unknown linter on
+every run.
 
 ## CI
 
