@@ -21,4 +21,7 @@ import (
 
 	// AppSec operation GLS lifecycle.
 	_ "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+
+	// database/sql Register, Open and OpenDB.
+	_ "github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2"
 )

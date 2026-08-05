@@ -188,6 +188,20 @@ func (t *tracedConnector) Driver() driver.Driver {
 	return t.connector.Driver()
 }
 
+// ddMarkTracedConnector is an unexported marker method, so IsTracedConnector
+// can identify a *tracedConnector from outside the package without exporting
+// the type itself.
+func (t *tracedConnector) ddMarkTracedConnector() {}
+
+// IsTracedConnector reports whether c was already produced by OpenDB. The
+// otelc hook for database/sql.OpenDB uses this to recognize the connector
+// OpenDB passes to the real database/sql.OpenDB, and let that inner call
+// through unmodified instead of wrapping it a second time.
+func IsTracedConnector(c driver.Connector) bool {
+	_, ok := c.(interface{ ddMarkTracedConnector() })
+	return ok
+}
+
 // Close closes the dbClose channel
 // This method will be invoked when DB.Close() is called, which we expect to occur only once: https://cs.opensource.google/go/go/+/refs/tags/go1.23.4:src/database/sql/sql.go;l=918-950
 func (t *tracedConnector) Close() error {

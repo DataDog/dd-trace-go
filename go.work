@@ -17,6 +17,7 @@ use (
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/database/sql
+	./contrib/database/sql/otelc
 	./contrib/dimfeld/httptreemux.v5
 	./contrib/elastic/go-elasticsearch.v6
 	./contrib/emicklei/go-restful.v3

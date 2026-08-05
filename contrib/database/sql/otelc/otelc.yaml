@@ -1,0 +1,46 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml. Orchestrion rewrites call sites in
+# application code, so sqltrace's own calls to these same stdlib functions
+# are never woven by its own aspects. These rules hook the stdlib function
+# definitions instead, so sqltrace's internal calls back into
+# database/sql.Open and database/sql.OpenDB would otherwise recurse into the
+# hook that redirected them here. See open.go and hooks.go for the guards.
+#
+# sql_open and sql_opendb pair a before and an after hook: otelc only builds
+# HookContext.returnVals from an After trampoline (pointers to the target
+# function's real return variables), so a Before-only hook cannot call
+# SetReturnVal. The before hook computes sqltrace's result and skips the
+# call; the after hook writes that result into the actual return values.
+
+sql_register:
+  target: database/sql
+  where:
+    func: Register
+  do:
+    - inject_hooks:
+        before: BeforeRegister
+        path: github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2
+
+sql_open:
+  target: database/sql
+  where:
+    func: Open
+  do:
+    - inject_hooks:
+        before: BeforeOpen
+        after: AfterOpen
+        path: github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2
+
+sql_opendb:
+  target: database/sql
+  where:
+    func: OpenDB
+  do:
+    - inject_hooks:
+        before: BeforeOpenDB
+        after: AfterOpenDB
+        path: github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2
