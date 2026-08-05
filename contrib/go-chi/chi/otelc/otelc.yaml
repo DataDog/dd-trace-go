@@ -1,0 +1,86 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of contrib/go-chi/chi/orchestrion.yml's NewMux aspect: wrap every
+# chi.NewMux()/chi.NewRouter() call site in the application so the returned
+# *chi.Mux always has chitrace.Middleware() attached.
+#
+# One rule per function name, since function_call matches a single qualified
+# name. chi.NewRouter calls chi.NewMux internally, but that inner call is
+# unqualified (same package), and these rules never reach chi's own package
+# (target: $root excludes dependency modules; target: main only ever matches
+# the application's package main), so each call site here still gets wrapped
+# exactly once.
+#
+# Two targets per function are required: a Go build's package main always has
+# the literal compile-time import path "main", not its real module-qualified
+# import path, so target: $root's module-path glob never reaches code written
+# directly in package main (the most common place to see chi.NewMux/NewRouter
+# called in a real application). target: main is the dedicated selector for
+# that package; target: $root covers every other package in the application.
+
+wrap_new_mux_root:
+  target: $root
+  where:
+    function_call: github.com/go-chi/chi.NewMux
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *chi.Mux {
+            mux := {{ . }}
+            mux.Use(chitrace.Middleware())
+            return mux
+          })()
+  imports:
+    chi: github.com/go-chi/chi
+    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
+
+wrap_new_mux_main:
+  target: main
+  where:
+    function_call: github.com/go-chi/chi.NewMux
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *chi.Mux {
+            mux := {{ . }}
+            mux.Use(chitrace.Middleware())
+            return mux
+          })()
+  imports:
+    chi: github.com/go-chi/chi
+    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
+
+wrap_new_router_root:
+  target: $root
+  where:
+    function_call: github.com/go-chi/chi.NewRouter
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *chi.Mux {
+            mux := {{ . }}
+            mux.Use(chitrace.Middleware())
+            return mux
+          })()
+  imports:
+    chi: github.com/go-chi/chi
+    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
+
+wrap_new_router_main:
+  target: main
+  where:
+    function_call: github.com/go-chi/chi.NewRouter
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *chi.Mux {
+            mux := {{ . }}
+            mux.Use(chitrace.Middleware())
+            return mux
+          })()
+  imports:
+    chi: github.com/go-chi/chi
+    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
