@@ -120,8 +120,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.11.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.11.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/otelc v0.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.11.0-dev.1 // indirect
@@ -499,4 +499,4 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../.
 
 replace github.com/DataDog/dd-trace-go/otelc/all/v2 => ../../../otelc/all
 
-replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/otelc => ../../../contrib/gomodule/redigo/otelc
+replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 => ../../../contrib/gomodule/redigo/otelc

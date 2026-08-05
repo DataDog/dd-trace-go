@@ -5,7 +5,7 @@ go 1.25.0
 replace github.com/DataDog/dd-trace-go/v2 => ../..
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/otelc v0.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
 )
 
@@ -81,6 +81,6 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/otelc => ../../contrib/gomodule/redigo/otelc
+replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 => ../../contrib/gomodule/redigo/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 => ../../contrib/gomodule/redigo

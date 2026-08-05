@@ -23,4 +23,4 @@ redigo_dial_context:
     - inject_hooks:
         before: BeforeDialContext
         after: AfterDialContext
-        path: github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/otelc
+        path: github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2

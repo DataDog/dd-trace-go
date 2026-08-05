@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2/otelc
+module github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2
 
 go 1.25.0
 
