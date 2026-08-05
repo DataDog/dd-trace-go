@@ -115,7 +115,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration otelc/all; do
+          for dir in internal/orchestrion/_integration otelc/all contrib/gofiber/fiber.v2/otelc; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -135,7 +135,8 @@ jobs:
             ${PREFIX}/otelc \
             ${PREFIX}/gls \
             ${PREFIX}/gls-leak \
-            ${PREFIX}/otelc-autostart"
+            ${PREFIX}/otelc-autostart \
+            ${PREFIX}/fiber.v2"
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
           # `otelc go test -json` silently produces uninstrumented binaries: every

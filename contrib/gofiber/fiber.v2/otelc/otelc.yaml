@@ -1,0 +1,40 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# The otelc port of ../orchestrion.yml. Read that file for why New is wrapped
+# this way and why DD_Instrumented is set; the reasoning is identical.
+#
+# fasthttp.Server has no DD_Instrumented field under otelc yet: the
+# contrib/valyala/fasthttp integration, which owns that field under
+# Orchestrion, has no otelc rules of its own. This rule adds the field itself
+# so the wrap below compiles. It has no runtime effect until fasthttp also
+# gets an otelc Serve() hook that reads it.
+
+fasthttp_server_instrumented_flag:
+  target: github.com/valyala/fasthttp
+  where:
+    struct: Server
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: DD_Instrumented
+            type: bool
+
+new_app_middleware:
+  target: $root
+  where:
+    function_call: github.com/gofiber/fiber/v2.New
+  do:
+    - wrap_call:
+        replace: |-
+          func() *fiber.App {
+            app := {{ . }}
+            app.Use(fibertrace.Middleware())
+            app.Server().DD_Instrumented = true
+            return app
+          }()
+  imports:
+    fiber: github.com/gofiber/fiber/v2
+    fibertrace: github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2

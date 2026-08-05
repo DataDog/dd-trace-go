@@ -119,6 +119,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.11.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.11.0-dev.1 // indirect
@@ -438,6 +439,8 @@ replace github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 => ../../../co
 replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 => ../../../contrib/gocql/gocql
 
 replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../../contrib/gofiber/fiber.v2
+
+replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 => ../../../contrib/gofiber/fiber.v2/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 => ../../../contrib/gomodule/redigo
 

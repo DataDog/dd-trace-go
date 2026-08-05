@@ -34,6 +34,7 @@ use (
 	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
+	./contrib/gofiber/fiber.v2/otelc
 	./contrib/gomodule/redigo
 	./contrib/google.golang.org/api
 	./contrib/google.golang.org/api/internal/gen_endpoints

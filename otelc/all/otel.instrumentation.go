@@ -21,4 +21,7 @@ import (
 
 	// AppSec operation GLS lifecycle.
 	_ "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+
+	// gofiber/fiber.v2 tracing middleware, wired in at App construction.
+	_ "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2"
 )
