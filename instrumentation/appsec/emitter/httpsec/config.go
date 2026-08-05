@@ -13,14 +13,11 @@ import (
 type Config struct {
 	// Framework is the name of the framework or library being used (optional).
 	Framework string
-	// RemoteIP and ClientIP are the client identity, already resolved by the
-	// caller. They are set by integrations that determine identity themselves
-	// rather than by scanning the request headers. ClientIP is the switch: when
-	// it is invalid the default resolution policy runs and produces both values,
-	// and RemoteIP is ignored.
-	// When ClientIP is valid, RemoteIP is taken exactly as given, so leaving it
-	// invalid means no network.client.ip tag is reported for the request.
+	// RemoteIP is the transport peer, reported as the network.client.ip tag. It
+	// is taken exactly as given; leaving it invalid omits the tag.
 	RemoteIP netip.Addr
+	// ClientIP is the client identity supplied by an integration rather than
+	// derived from request headers. DD_TRACE_CLIENT_IP_HEADER outranks it.
 	ClientIP netip.Addr
 	// OnBlock is a list of callbacks to be invoked when a block decision is made.
 	OnBlock []func()

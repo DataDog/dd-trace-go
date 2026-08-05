@@ -86,12 +86,12 @@ lands on the forged entry. Neither the positional rule nor `source.ip` is under 
 client's control, so neither can be manipulated that way. The header itself is left
 byte-for-byte intact so that App & API Protection still inspects exactly what was sent.
 
-This applies to GCP Service Extensions only, and only when the integration is declared as
-such — which the published callout image does. Deployments that identify themselves as
-plain Envoy, Envoy Gateway or Istio are unaffected, as is an extension embedding this
-package without naming its integration, because the positional rule is a property of
-Google Cloud's load balancer rather than of Envoy in general. `source.ip`, being set by
-the infrastructure and absent from stock Envoy, is honoured wherever it appears.
+This applies only when the request is identified as a GCP Service Extension. In
+addition, the positional rule requires `TrustGCLBXForwardedFor` on
+`AppsecEnvoyConfig`; the published callout image enables it for its default GCP
+deployment and disables it when `DD_SERVICE_EXTENSION_UDS_PATH` selects the documented
+self-managed Envoy mode. Deployments identified as plain Envoy, Envoy Gateway or Istio
+ignore both `source.ip` and the positional rule.
 
 Once an address is resolved this way it becomes both `http.client_ip` and
 `network.client.ip`. Previously `network.client.ip` held the load balancer's forwarding

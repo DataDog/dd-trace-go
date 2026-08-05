@@ -39,6 +39,11 @@ func TestClientIdentity(t *testing.T) {
 			wantRemoteIP: "invalid IP",
 			wantClientIP: "82.67.164.163",
 		},
+		"a supplied remote IP is the client fallback": {
+			config:       Config{RemoteIP: trusted},
+			wantRemoteIP: "82.67.164.163",
+			wantClientIP: "82.67.164.163",
+		},
 		"no supplied identity falls back to the default policy": {
 			config:       Config{},
 			wantRemoteIP: "10.0.0.1",

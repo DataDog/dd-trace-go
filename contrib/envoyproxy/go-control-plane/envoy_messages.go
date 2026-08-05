@@ -32,10 +32,8 @@ var _ proxy.HTTPBody = (*messageBody)(nil)
 type messageRequestHeaders struct {
 	*extproc.ProcessingRequest
 	*extproc.HttpHeaders
-	integration Integration
-	// integrationDeclared reports whether integration was named by the caller
-	// rather than defaulted to GCP. See trustedClientIP.
-	integrationDeclared bool
+	integration            Integration
+	trustGCLBXForwardedFor bool
 }
 
 func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.PseudoRequest, error) {
@@ -65,7 +63,7 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	// The trustworthy address travels beside it instead.
 	var remoteIP, clientIP netip.Addr
 	if m.component(ctx) == componentNameGCPServiceExtension {
-		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), requestForwardedFor, m.integrationDeclared); ok {
+		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), requestForwardedFor, m.trustGCLBXForwardedFor); ok {
 			remoteIP, clientIP = trustedIP, trustedIP
 		}
 	}
@@ -112,11 +110,11 @@ const (
 //
 // gclbShape additionally gates the positional X-Forwarded-For rule, which unlike
 // source.ip is a property of Google Cloud's load balancer rather than of Envoy.
-// Pass false unless the deployment positively declared itself a GCP Service
-// Extension: an unset integration is defaulted to GCP, and a caller that named
-// nothing is more likely a self-hosted Envoy, which appends a single
-// X-Forwarded-For entry and would therefore have its len-2 position land on a
-// client-supplied value.
+// Pass true only when the deployment is known to sit behind GCLB. The published
+// binary enables it for its default GCP mode and disables it for UDS, the
+// documented self-managed Envoy mode. Stock Envoy appends one X-Forwarded-For
+// entry, so applying GCLB's len-2 rule there would land on a client-supplied
+// value.
 func trustedClientIP(attributes map[string]*structpb.Struct, forwardedFor []string, gclbShape bool) (netip.Addr, bool) {
 	// source.ip is set by the infrastructure and does not exist in stock Envoy,
 	// so it is trustworthy wherever it turns up.

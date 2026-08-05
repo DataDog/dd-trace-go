@@ -1379,9 +1379,10 @@ func newEnvoyAppsecRig(t *testing.T, integration Integration, blockingUnavailabl
 
 	var appsecSrv envoyextproc.ExternalProcessorServer
 	appsecSrv = AppsecEnvoyExternalProcessorServer(fixtureServer, AppsecEnvoyConfig{
-		Integration:          integration,
-		BlockingUnavailable:  blockingUnavailable,
-		BodyParsingSizeLimit: bodyParsingSizeLimit,
+		Integration:            integration,
+		TrustGCLBXForwardedFor: integration == GCPServiceExtensionIntegration,
+		BlockingUnavailable:    blockingUnavailable,
+		BodyParsingSizeLimit:   bodyParsingSizeLimit,
 	})
 
 	envoyextproc.RegisterExternalProcessorServer(server, appsecSrv)

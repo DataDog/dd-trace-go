@@ -43,13 +43,13 @@ func testSourceIPAttributes(value *structpb.Value) map[string]*structpb.Struct {
 type clientIPTestCase struct {
 	name        string
 	integration Integration
-	// undeclaredIntegration reproduces an embedder that left
-	// AppsecEnvoyConfig.Integration unset and was therefore defaulted to GCP.
-	undeclaredIntegration bool
-	metadata              metadata.MD
-	attributes            map[string]*structpb.Struct
-	requestHeaders        map[string]string
-	wantClientIP          string
+	// disableGCLBXForwardedFor represents a GCP component for which the caller
+	// did not assert the two-entry GCLB suffix contract.
+	disableGCLBXForwardedFor bool
+	metadata                 metadata.MD
+	attributes               map[string]*structpb.Struct
+	requestHeaders           map[string]string
+	wantClientIP             string
 }
 
 func clientIPTestCases() []clientIPTestCase {
@@ -211,23 +211,18 @@ func clientIPTestCases() []clientIPTestCase {
 			requestHeaders: map[string]string{"X-Forwarded-For": "203.0.113.77, 82.67.164.163, 8.233.57.190"},
 		},
 		{
-			// An embedder that left Integration unset is defaulted to GCP, but the
-			// GCLB positional rule must not be applied to it: stock Envoy appends a
-			// single entry, so len-2 would be a client-supplied value.
-			name:                  "undeclared integration does not get the positional rule",
-			integration:           GCPServiceExtensionIntegration,
-			undeclaredIntegration: true,
-			requestHeaders:        map[string]string{"X-Forwarded-For": "82.67.164.163, 203.0.113.9, 10.0.0.5"},
+			name:                     "GCP without positional trust does not get the positional rule",
+			integration:              GCPServiceExtensionIntegration,
+			disableGCLBXForwardedFor: true,
+			requestHeaders:           map[string]string{"X-Forwarded-For": "82.67.164.163, 203.0.113.9, 10.0.0.5"},
 		},
 		{
-			// source.ip is infrastructure-set and absent from stock Envoy, so it stays
-			// trustworthy even when the integration was not named.
-			name:                  "undeclared integration still trusts source.ip",
-			integration:           GCPServiceExtensionIntegration,
-			undeclaredIntegration: true,
-			attributes:            testSourceIPAttributes(structpb.NewStringValue("18.18.18.18")),
-			requestHeaders:        map[string]string{"X-Forwarded-For": "203.0.113.77, 82.67.164.163, 8.233.57.190"},
-			wantClientIP:          "18.18.18.18",
+			name:                     "GCP without positional trust still trusts source.ip",
+			integration:              GCPServiceExtensionIntegration,
+			disableGCLBXForwardedFor: true,
+			attributes:               testSourceIPAttributes(structpb.NewStringValue("18.18.18.18")),
+			requestHeaders:           map[string]string{"X-Forwarded-For": "203.0.113.77, 82.67.164.163, 8.233.57.190"},
+			wantClientIP:             "18.18.18.18",
 		},
 		{
 			name:           "istio declared through the integration header resolves nothing",
@@ -255,10 +250,10 @@ func (tc clientIPTestCase) extract(t *testing.T) (request extractedRequest) {
 	}
 
 	msg := messageRequestHeaders{
-		ProcessingRequest:   &extproc.ProcessingRequest{Attributes: tc.attributes},
-		HttpHeaders:         &extproc.HttpHeaders{Headers: headers},
-		integration:         tc.integration,
-		integrationDeclared: !tc.undeclaredIntegration,
+		ProcessingRequest:      &extproc.ProcessingRequest{Attributes: tc.attributes},
+		HttpHeaders:            &extproc.HttpHeaders{Headers: headers},
+		integration:            tc.integration,
+		trustGCLBXForwardedFor: !tc.disableGCLBXForwardedFor,
 	}
 
 	ctx := context.Background()
@@ -330,8 +325,8 @@ func TestExtractRequestTooFewHeaders(t *testing.T) {
 		HttpHeaders: &extproc.HttpHeaders{Headers: &corev3.HeaderMap{
 			Headers: []*corev3.HeaderValue{{Key: ":method", RawValue: []byte("GET")}},
 		}},
-		integration:         GCPServiceExtensionIntegration,
-		integrationDeclared: true,
+		integration:            GCPServiceExtensionIntegration,
+		trustGCLBXForwardedFor: true,
 	}
 
 	_, err := msg.ExtractRequest(context.Background())

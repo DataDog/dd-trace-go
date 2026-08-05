@@ -26,13 +26,11 @@ type PseudoRequest struct {
 	RemoteAddr string
 	Headers    map[string][]string
 
-	// RemoteIP and ClientIP let a proxy that knows the trustworthy address —
-	// because its infrastructure reported the peer it observed — state that
-	// identity outright instead of leaving it to be guessed from headers the
-	// client controls. ClientIP is the switch: when it is invalid the default
-	// policy runs against Headers and RemoteAddr as it always has, and RemoteIP
-	// is ignored.
+	// RemoteIP is the transport peer, reported as the network.client.ip tag. It
+	// is only read when ClientIP is valid.
 	RemoteIP netip.Addr
+	// ClientIP is the identity reported by the proxy's infrastructure. When
+	// invalid, the default policy runs against Headers and RemoteAddr.
 	ClientIP netip.Addr
 }
 

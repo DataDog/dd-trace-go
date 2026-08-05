@@ -199,7 +199,7 @@ func makeSecurityTestingHeadersCanonical() {
 }
 
 func makeCollectedHTTPHeadersLookupMap() {
-	collectedHeadersLookupMap = make(map[string]struct{}, len(defaultCollectedHeaders))
+	collectedHeadersLookupMap = make(map[string]struct{}, len(defaultCollectedHeaders)+len(clientip.MonitoredHeaders()))
 	for _, h := range defaultCollectedHeaders {
 		collectedHeadersLookupMap[h] = struct{}{}
 	}

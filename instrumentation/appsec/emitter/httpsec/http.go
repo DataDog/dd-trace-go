@@ -73,11 +73,11 @@ type (
 		RequestURI   string
 		RequestRoute string
 		Host         string
-		// RemoteIP and ClientIP carry the client identity already resolved by
-		// the producer of this operation. Nothing downstream re-derives them
-		// from the headers, so the span tags and the WAF cannot disagree.
-		// An invalid address means no identity could be determined.
-		RemoteIP    netip.Addr
+		// RemoteIP is the transport peer already resolved by the producer. An
+		// invalid address means none was determined.
+		RemoteIP netip.Addr
+		// ClientIP is the identity already resolved by the producer. Nothing
+		// downstream re-derives it, so the span and WAF cannot disagree.
 		ClientIP    netip.Addr
 		Headers     map[string][]string
 		Cookies     map[string][]string
@@ -106,8 +106,13 @@ func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 func clientIdentity(opts *Config, r *http.Request) (remoteIP, clientIP netip.Addr) {
 	// A header named by DD_TRACE_CLIENT_IP_HEADER outranks a supplied address:
 	// see clientip.CustomHeaderConfigured.
-	if opts.ClientIP.IsValid() && !clientip.CustomHeaderConfigured() {
-		return opts.RemoteIP, opts.ClientIP
+	if !clientip.CustomHeaderConfigured() {
+		if opts.ClientIP.IsValid() {
+			return opts.RemoteIP, opts.ClientIP
+		}
+		if opts.RemoteIP.IsValid() {
+			return opts.RemoteIP, opts.RemoteIP
+		}
 	}
 	return clientip.Resolve(r.Header, true, r.RemoteAddr)
 }
