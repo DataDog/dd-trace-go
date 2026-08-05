@@ -811,11 +811,13 @@ func TestProcessRetryEFDFaultySessionSharesBudgetAcrossPackages(t *testing.T) {
 	expectedRetries := 1
 	for _, mode := range []string{processRetryBurstProcessMode, processRetryBurstInProcessMode} {
 		t.Run(mode, func(t *testing.T) {
+			// This scenario proves cross-package persistence. Keep package execution
+			// ordered so the admitted retry drains before the next package latches faulty.
 			metrics := runProcessRetryBurstScenario(t, moduleDir, processRetryBurstScenario{
 				name:               "faulty-session-shared-budget-" + mode,
 				retryExecutionMode: mode,
 				packages:           3,
-				packageConcurrency: 3,
+				packageConcurrency: 1,
 				processConcurrency: 2,
 				retries:            1,
 				efd:                true,
