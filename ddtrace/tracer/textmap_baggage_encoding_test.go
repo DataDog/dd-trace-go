@@ -70,6 +70,35 @@ func TestBaggageControlCharsNotInjectedRaw(t *testing.T) {
 	}
 }
 
+// TestOTBaggageRoundTripsEncodedValues covers the ot-baggage-* prefix path
+// end-to-end: a baggage key/value containing characters the injector
+// percent-encodes (space, non-ASCII) must decode back to the original bytes
+// on extraction through the same legacy prefix, the same way the W3C
+// "baggage" header round-trips. Before the extractor decoded, "key with
+// space"="Amélie DF 28" would come back as "key+with+space"="Am%C3%A9lie+DF+28".
+func TestOTBaggageRoundTripsEncodedValues(t *testing.T) {
+	t.Setenv(envPropagationStyle, "datadog")
+	tr, err := newTracer()
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
+	ctx.setBaggageItem("key with space", "Amélie DF 28")
+
+	out := TextMapCarrier{}
+	require.NoError(t, tr.Inject(ctx, out))
+
+	sctx, err := tr.Extract(out)
+	require.NoError(t, err)
+
+	got := map[string]string{}
+	sctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Equal(t, "Amélie DF 28", got["key with space"])
+}
+
 // TestBaggageControlCharsNotInjectedRawFromDirectContext isolates the
 // injector from extraction: baggage set directly on a span context (as
 // SetBaggageItem would) must still be sanitized when re-injected under the

@@ -100,4 +100,37 @@ func TestTracestateSizeBounded(t *testing.T) {
 		require.NoError(t, tr.Inject(ctx, out))
 		assert.NotContains(t, out[tracestateHeader], oversizedVendor)
 	})
+
+	t.Run("inject_bounds_total_recomposed_size", func(t *testing.T) {
+		t.Setenv(envPropagationStyle, "tracecontext")
+		tr, err := newTracer()
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		// 8 vendor members, each within tracestateMemberMaxSize (512) on its
+		// own, joined into a tracestate that is itself within
+		// tracestateMaxSize (4096) -- i.e. exactly what parseTracestate would
+		// have accepted and stored on extraction.
+		var members []string
+		for range 8 {
+			members = append(members, "v="+strings.Repeat("A", 500))
+		}
+		oldState := strings.Join(members, ",")
+		require.LessOrEqual(t, len(oldState), tracestateMaxSize)
+
+		// composeTracestate always prepends its own dd= member on recompose.
+		// A large origin inflates it enough that dd= + the vendor members
+		// above exceeds tracestateMaxSize, even though neither the dd= member
+		// nor any single vendor member is oversized on its own -- only the
+		// recomposed total is.
+		ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1, isRemote: true}
+		ctx.origin = strings.Repeat("x", 100)
+		setPropagatingTag(ctx, tracestateHeader, oldState)
+
+		out := TextMapCarrier{}
+		require.NoError(t, tr.Inject(ctx, out))
+		assert.LessOrEqual(t, len(out[tracestateHeader]), tracestateMaxSize)
+		// dd= is never dropped to make room; excess vendor members are.
+		assert.True(t, strings.HasPrefix(out[tracestateHeader], "dd=s:"))
+	})
 }

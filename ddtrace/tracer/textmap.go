@@ -645,11 +645,17 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 		// percent-decoded baggage) can't reach the header name/value
 		// verbatim and poison the request.
 		ek, ev := encodeKey(k), encodeValue(v)
-		if baggageByteCapped(baggageBytes, len(ek)+len(ev)) {
+		// The header name carries p.cfg.BaggagePrefix on top of the encoded
+		// key, so it must count toward the byte cap too -- otherwise the
+		// actual emitted bytes (prefix + key + value, times up to
+		// baggageMaxItems headers) can exceed baggageMaxBytes even though
+		// this check passes.
+		addBytes := len(p.cfg.BaggagePrefix) + len(ek) + len(ev)
+		if baggageByteCapped(baggageBytes, addBytes) {
 			return false
 		}
 		writer.Set(p.cfg.BaggagePrefix+ek, ev)
-		baggageBytes += len(ek) + len(ev)
+		baggageBytes += addBytes
 		baggageItems++
 		return true
 	})
@@ -724,23 +730,35 @@ func baggageByteCapped(bytes, addBytes int) bool {
 // addOTBaggageItem stores a baggage item received under the legacy
 // ot-baggage-<key> header prefix, enforcing the same baggageMaxItems/
 // baggageMaxBytes limits that propagatorBaggage already enforces for the
-// W3C "baggage" header. baggageBytes is the running total of accepted
-// key+value bytes; it and the (possibly newly allocated) map are returned
-// for the caller to store back into its scratch value.
-func addOTBaggageItem(baggage map[string]string, baggageBytes int, key, val string) (map[string]string, int) {
+// W3C "baggage" header, and percent-decoding key/val the same way
+// propagatorBaggage.extractTextMap decodes the "baggage" header -- undoing
+// the percent-encoding the injector above applies, so an inject/extract
+// hop through this legacy prefix path is lossless. baggageBytes is the
+// running total of accepted (still-encoded) key+value bytes, and warned
+// tracks whether a limit has already been logged; both, and the (possibly
+// newly allocated) map, are returned for the caller to store back into its
+// scratch value. A carrier with thousands of ot-baggage-* headers past the
+// limit would otherwise log a warning per header.
+func addOTBaggageItem(baggage map[string]string, baggageBytes int, warned bool, key, val string) (map[string]string, int, bool) {
 	if baggageItemCapped(len(baggage)) {
-		log.Warn("baggage item count exceeded limit (%d), dropping remaining ot-baggage-* items", baggageMaxItems)
-		return baggage, baggageBytes
+		if !warned {
+			log.Warn("baggage item count exceeded limit (%d), dropping remaining ot-baggage-* items", baggageMaxItems)
+		}
+		return baggage, baggageBytes, true
 	}
 	if baggageByteCapped(baggageBytes, len(key)+len(val)) {
-		log.Warn("baggage byte limit exceeded (%d), dropping remaining ot-baggage-* items", baggageMaxBytes)
-		return baggage, baggageBytes
+		if !warned {
+			log.Warn("baggage byte limit exceeded (%d), dropping remaining ot-baggage-* items", baggageMaxBytes)
+		}
+		return baggage, baggageBytes, true
 	}
 	if baggage == nil {
 		baggage = make(map[string]string, 1)
 	}
-	baggage[key] = val
-	return baggage, baggageBytes + len(key) + len(val)
+	dk, _ := url.QueryUnescape(key)
+	dv, _ := url.QueryUnescape(val)
+	baggage[dk] = dv
+	return baggage, baggageBytes + len(key) + len(val), warned
 }
 
 // datadogExtractScratch holds the fields extracted from incoming Datadog
@@ -751,13 +769,14 @@ func addOTBaggageItem(baggage map[string]string, baggageBytes int, key, val stri
 // allocation count even though no single one of them is as large as a full
 // SpanContext. A single consolidated scratch value only needs one escape.
 type datadogExtractScratch struct {
-	traceID      traceID
-	spanID       uint64
-	origin       string
-	tr           *trace
-	updated      bool
-	baggage      map[string]string
-	baggageBytes int
+	traceID            traceID
+	spanID             uint64
+	origin             string
+	tr                 *trace
+	updated            bool
+	baggage            map[string]string
+	baggageBytes       int
+	baggageLimitWarned bool
 }
 
 // extractTextMap parses the incoming Datadog headers into a scratch value
@@ -803,7 +822,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			s.tr = unmarshalPropagatingTagsIntoTrace(s.tr, v, p.cfg.MaxTagsHeaderLen)
 		default:
 			if after, ok := cutPrefixFold(k, p.cfg.BaggagePrefix); ok {
-				s.baggage, s.baggageBytes = addOTBaggageItem(s.baggage, s.baggageBytes, strings.ToLower(after), v)
+				s.baggage, s.baggageBytes, s.baggageLimitWarned = addOTBaggageItem(s.baggage, s.baggageBytes, s.baggageLimitWarned, strings.ToLower(after), v)
 			}
 		}
 		return nil
@@ -1511,10 +1530,11 @@ func (p *propagatorW3c) Extract(carrier any) (*SpanContext, error) {
 // even though no single one of them is as large as a full SpanContext. A
 // single consolidated scratch value only needs one escape.
 type w3cExtractScratch struct {
-	parentHeader string
-	stateHeader  string
-	baggage      map[string]string
-	baggageBytes int
+	parentHeader       string
+	stateHeader        string
+	baggage            map[string]string
+	baggageBytes       int
+	baggageLimitWarned bool
 }
 
 // extractTextMap parses the W3C headers into a scratch value during the
@@ -1545,7 +1565,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 			s.stateHeader = v
 		default:
 			if after, ok := cutPrefixFold(k, DefaultBaggageHeaderPrefix); ok {
-				s.baggage, s.baggageBytes = addOTBaggageItem(s.baggage, s.baggageBytes, strings.ToLower(after), v)
+				s.baggage, s.baggageBytes, s.baggageLimitWarned = addOTBaggageItem(s.baggage, s.baggageBytes, s.baggageLimitWarned, strings.ToLower(after), v)
 			}
 		}
 		return nil
