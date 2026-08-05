@@ -101,9 +101,9 @@ Prefer hooks; inject raw code only when it must run inside the target package.
      always fail for the same reason.
    - `failed to load instrumentation packages: ... go: updates to go.mod needed` means a module
      otelc reads has a stale `go.mod`, usually because CI builds a merge commit with a newer `main`.
-     Merge `origin/main`, `go mod tidy` the module the error names, and if it owns a tool file
-     (`otel.instrumentation.go` / `otelc.tool.go`) add it to the tidy loop in
-     `.github/workflows/otelc.yml`.
+     Merge `origin/main`, `go mod tidy` the module the error names, and add the new hook module to
+     the tidy loop in `.github/workflows/otelc.yml`. Every module otelc reads needs a current
+     `go.mod`, including one a rule's `path:` points at, not only modules owning a tool file.
    - Any other failure: fix and push if the cause is obvious, otherwise stop and agree on the fix.
 
 ## Cautions
