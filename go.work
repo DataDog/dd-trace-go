@@ -4,6 +4,7 @@ use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
+	./contrib/99designs/gqlgen/otelc
 	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
