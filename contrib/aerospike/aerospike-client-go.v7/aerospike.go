@@ -17,6 +17,7 @@ package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/ae
 
 import (
 	"context"
+	"reflect"
 	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v7"
@@ -50,12 +51,29 @@ func WrapClient(client *as.Client, opts ...ClientOption) *Client {
 // Orchestrion builds a wrapper on every instrumented call, so this keeps that
 // path to a single allocation.
 func WrapClientContext(client *as.Client, ctx context.Context) *Client {
-	if ctx == nil {
+	if isNilContext(ctx) {
 		ctx = context.Background()
 	}
 	return &Client{
 		Client:  client,
 		context: ctx,
+	}
+}
+
+// isNilContext reports whether ctx cannot be used. Besides a nil interface, the
+// aspect may thread a parameter whose concrete type merely implements
+// context.Context; a nil one of those is held in a non-nil interface and would
+// panic on the first method call.
+func isNilContext(ctx context.Context) bool {
+	if ctx == nil {
+		return true
+	}
+	v := reflect.ValueOf(ctx)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
+		return v.IsNil()
+	default:
+		return false
 	}
 }
 

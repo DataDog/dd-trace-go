@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v7"
 	"github.com/stretchr/testify/assert"
@@ -358,6 +359,31 @@ func TestWrapClientContext(t *testing.T) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "aerospike", spans[0].Tag(ext.ServiceName))
 	})
+}
+
+// nilableCtx is a concrete type implementing context.Context whose methods
+// dereference the receiver. Orchestrion's ArgumentThatImplements fallback can
+// select a parameter of such a type, and a typed-nil one becomes a non-nil
+// context.Context interface at the call site.
+type nilableCtx struct {
+	values map[any]any
+}
+
+func (c *nilableCtx) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *nilableCtx) Done() <-chan struct{}       { return nil }
+func (c *nilableCtx) Err() error                  { return nil }
+func (c *nilableCtx) Value(key any) any           { return c.values[key] }
+
+func TestWrapClientContextTypedNil(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var ctx *nilableCtx // typed nil: the interface value is not nil
+	WrapClientContext(nil, ctx).startSpan("Put").Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	validateAerospikeSpan(t, spans[0], "Put")
 }
 
 func TestStartSpanTags(t *testing.T) {
