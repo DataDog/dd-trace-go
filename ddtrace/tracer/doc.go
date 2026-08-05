@@ -152,4 +152,13 @@
 //
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
+//
+// # Trace Protocol
+//
+// Client-side stats computation is independent of the Datadog trace protocol
+// version (DD_TRACE_AGENT_PROTOCOL_VERSION). Disabling stats computation does
+// not change the wire format used to send traces, and selecting a protocol
+// version does not enable or disable stats computation. The protocol falls
+// back from 1.0 to 0.4 only when the Datadog Agent does not advertise the
+// /v1.0/traces endpoint.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
