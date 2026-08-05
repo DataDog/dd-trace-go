@@ -38,3 +38,17 @@ func StartSpan(ctx context.Context, serviceName, serviceSource, operationName, r
 	)
 	return span
 }
+
+// StartDefaultSpan starts a span from ctx, resolving the service and operation
+// names at call time. Resolution is deliberately not cached: the service name
+// comes from global tracer configuration that tracer.Start can still change
+// after a client has been created.
+func StartDefaultSpan(ctx context.Context, resourceName string) *Span {
+	return StartSpan(
+		ctx,
+		Instr.ServiceName(instrumentation.ComponentDefault, nil),
+		string(instrumentation.PackageAerospikeClientGoV7),
+		Instr.OperationName(instrumentation.ComponentDefault, nil),
+		resourceName,
+	)
+}

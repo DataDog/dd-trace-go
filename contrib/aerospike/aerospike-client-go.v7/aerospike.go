@@ -29,13 +29,10 @@ import (
 // WrapClient wraps an aerospike.Client so that all requests are traced using
 // the default tracer with the service name "aerospike".
 func WrapClient(client *as.Client, opts ...ClientOption) *Client {
-	cfg := defaultConfig()
-	if len(opts) > 0 {
-		withOpts := *cfg
-		cfg = &withOpts
-		for _, opt := range opts {
-			opt.apply(cfg)
-		}
+	cfg := new(clientConfig)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt.apply(cfg)
 	}
 	tracing.Instr.Logger().Debug("contrib/aerospike/aerospike-client-go.v7: Wrapping Client: %#v", cfg)
 	return &Client{
@@ -48,17 +45,16 @@ func WrapClient(client *as.Client, opts ...ClientOption) *Client {
 // WrapClientContext returns a traced Client for client, bound to ctx and using
 // the default configuration. A nil ctx is treated as context.Background().
 //
-// It is equivalent to WrapClient(client).WithContext(ctx), but allocates a
-// single Client and reuses the resolved default configuration. Orchestrion
-// builds a wrapper on every instrumented call, so it uses this instead of
-// WrapClient to keep that per-call cost down.
+// It behaves like WrapClient(client).WithContext(ctx), but leaves the default
+// configuration to be resolved when each span starts rather than here.
+// Orchestrion builds a wrapper on every instrumented call, so this keeps that
+// path to a single allocation.
 func WrapClientContext(client *as.Client, ctx context.Context) *Client {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	return &Client{
 		Client:  client,
-		cfg:     defaultConfig(),
 		context: ctx,
 	}
 }
@@ -79,8 +75,13 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 	}
 }
 
-// startSpan starts a span from the context set with WithContext.
+// startSpan starts a span from the context set with WithContext. A nil cfg means
+// the client was built by WrapClientContext, which leaves the defaults to be
+// resolved here so that later tracer configuration is picked up.
 func (c *Client) startSpan(resourceName string) *tracer.Span {
+	if c.cfg == nil {
+		return tracing.StartDefaultSpan(c.context, resourceName)
+	}
 	return tracing.StartSpan(c.context, c.cfg.serviceName, c.cfg.serviceSource, c.cfg.operationName, resourceName)
 }
 
