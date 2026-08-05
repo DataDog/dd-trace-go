@@ -24,6 +24,7 @@ use (
 	./contrib/gin-gonic/gin
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
+	./contrib/go-chi/chi/otelc
 	./contrib/go-chi/chi.v5
 	./contrib/go-pg/pg.v10
 	./contrib/go-redis/redis

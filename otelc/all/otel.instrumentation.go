@@ -21,4 +21,7 @@ import (
 
 	// AppSec operation GLS lifecycle.
 	_ "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+
+	// go-chi/chi (v4) middleware attachment.
+	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2"
 )
