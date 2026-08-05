@@ -8,6 +8,7 @@ package tracer
 import (
 	"maps"
 	"strconv"
+	"strings"
 	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -211,6 +212,22 @@ func (t *trace) propagatingTagsByteLen() int {
 			n++ // comma separator
 		}
 		n += len(k) + 1 + len(v) // key=value
+	}
+	return n
+}
+
+// propagatingTagsTracestateByteLen returns the byte length that the current
+// _dd.p.* propagating tags would consume inside the tracestate dd= entry.
+// Each tag contributes (stripped-key-len + value-len + 4) bytes, matching the
+// check used by composeTracestate (";t." prefix + ":" separator = 4 bytes).
+// The fixed dd= header (e.g. "dd=s:1;p:<hex>") is NOT included.
+func (t *trace) propagatingTagsTracestateByteLen() int {
+	n := 0
+	for k, v := range t.loadPropagatingTags() {
+		if !strings.HasPrefix(k, "_dd.p.") {
+			continue
+		}
+		n += len(k) - len("_dd.p.") + len(v) + 4
 	}
 	return n
 }
