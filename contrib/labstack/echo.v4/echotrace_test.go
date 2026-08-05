@@ -550,8 +550,10 @@ func TestIgnoreRequestFunc(t *testing.T) {
 
 func TestIgnoreRoute(t *testing.T) {
 	ignoredRoutes = sync.Map{}
+	hasIgnoredRoutes.Store(false)
 	t.Cleanup(func() {
 		ignoredRoutes = sync.Map{}
+		hasIgnoredRoutes.Store(false)
 	})
 
 	assert := assert.New(t)
@@ -602,6 +604,121 @@ func TestIgnoreRoute(t *testing.T) {
 	assert.Equal(http.StatusNoContent, liveRec.Code)
 	assert.True(liveCalled)
 	assert.True(liveTraced)
+	assert.Len(mt.FinishedSpans(), 1)
+}
+
+func TestIgnoreRouteWithMiddleware(t *testing.T) {
+	ignoredRoutes = sync.Map{}
+	hasIgnoredRoutes.Store(false)
+	t.Cleanup(func() {
+		ignoredRoutes = sync.Map{}
+		hasIgnoredRoutes.Store(false)
+	})
+
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var readyCalled bool
+
+	router := echo.New()
+	router.Use(Middleware())
+	IgnoreRoute(router.GET("/ready", func(c echo.Context) error {
+		readyCalled = true
+		return c.NoContent(http.StatusNoContent)
+	}))
+
+	readyReq := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	readyRec := httptest.NewRecorder()
+	router.ServeHTTP(readyRec, readyReq)
+
+	assert.Equal(http.StatusNoContent, readyRec.Code)
+	assert.True(readyCalled)
+	assert.Len(mt.FinishedSpans(), 0)
+}
+
+func TestIgnoreRouteScopesToEchoInstance(t *testing.T) {
+	ignoredRoutes = sync.Map{}
+	hasIgnoredRoutes.Store(false)
+	t.Cleanup(func() {
+		ignoredRoutes = sync.Map{}
+		hasIgnoredRoutes.Store(false)
+	})
+
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var ignoredCalled, tracedCalled bool
+
+	ignoredRouter := Wrap(echo.New())
+	IgnoreRoute(ignoredRouter.GET("/ready", func(c echo.Context) error {
+		ignoredCalled = true
+		return c.NoContent(http.StatusNoContent)
+	}))
+
+	tracedRouter := Wrap(echo.New())
+	tracedRouter.GET("/ready", func(c echo.Context) error {
+		tracedCalled = true
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	ignoredReq := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	ignoredRec := httptest.NewRecorder()
+	ignoredRouter.ServeHTTP(ignoredRec, ignoredReq)
+
+	assert.Equal(http.StatusNoContent, ignoredRec.Code)
+	assert.True(ignoredCalled)
+	assert.Len(mt.FinishedSpans(), 0)
+
+	tracedReq := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	tracedRec := httptest.NewRecorder()
+	tracedRouter.ServeHTTP(tracedRec, tracedReq)
+
+	assert.Equal(http.StatusNoContent, tracedRec.Code)
+	assert.True(tracedCalled)
+	assert.Len(mt.FinishedSpans(), 1)
+}
+
+func TestIgnoreRouteScopesToEchoHost(t *testing.T) {
+	ignoredRoutes = sync.Map{}
+	hasIgnoredRoutes.Store(false)
+	t.Cleanup(func() {
+		ignoredRoutes = sync.Map{}
+		hasIgnoredRoutes.Store(false)
+	})
+
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var defaultCalled, hostCalled bool
+
+	router := Wrap(echo.New())
+	IgnoreRoute(router.GET("/ready", func(c echo.Context) error {
+		defaultCalled = true
+		return c.NoContent(http.StatusNoContent)
+	}))
+	router.Host("host.local").GET("/ready", func(c echo.Context) error {
+		hostCalled = true
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	defaultRec := httptest.NewRecorder()
+	router.ServeHTTP(defaultRec, defaultReq)
+
+	assert.Equal(http.StatusNoContent, defaultRec.Code)
+	assert.True(defaultCalled)
+	assert.Len(mt.FinishedSpans(), 0)
+
+	hostReq := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	hostReq.Host = "host.local"
+	hostRec := httptest.NewRecorder()
+	router.ServeHTTP(hostRec, hostReq)
+
+	assert.Equal(http.StatusNoContent, hostRec.Code)
+	assert.True(hostCalled)
 	assert.Len(mt.FinishedSpans(), 1)
 }
 

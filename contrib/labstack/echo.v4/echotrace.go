@@ -32,21 +32,9 @@ func init() {
 // to use this if you want to benefit from future tracer features that require
 // additional properties to be configured without having to update your code.
 func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
-	e.Use(Middleware(withIgnoredRoutes(opts...)...))
+	e.Use(Middleware(opts...))
 	e.OnAddRouteHandler = OnAddRouteHandler
 	return e
-}
-
-func withIgnoredRoutes(opts ...Option) []Option {
-	wrapped := make([]Option, 0, len(opts)+1)
-	wrapped = append(wrapped, opts...)
-	wrapped = append(wrapped, OptionFn(func(cfg *config) {
-		ignoreRequestFunc := cfg.ignoreRequestFunc
-		cfg.ignoreRequestFunc = func(c echo.Context) bool {
-			return isIgnoredRoute(c) || (ignoreRequestFunc != nil && ignoreRequestFunc(c))
-		}
-	}))
-	return wrapped
 }
 
 // Middleware returns echo middleware which will trace incoming requests.
@@ -74,7 +62,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
-			if cfg.ignoreRequestFunc != nil && cfg.ignoreRequestFunc(c) {
+			if isIgnoredRoute(c) || (cfg.ignoreRequestFunc != nil && cfg.ignoreRequestFunc(c)) {
 				return next(c)
 			}
 

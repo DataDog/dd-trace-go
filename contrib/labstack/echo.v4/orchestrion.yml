@@ -36,7 +36,10 @@ aspects:
             - function-call: Match
             - function-call: RouteNotFound
             - function-call: Add
+            - function-call: File
             - function-call: FileFS
+            - function-call: Static
+            - function-call: StaticFS
     advice:
       - wrap-expression:
           imports:
