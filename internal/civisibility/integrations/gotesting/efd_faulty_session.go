@@ -610,7 +610,7 @@ func (s *efdFaultySessionFilesystemStore) unavailable(operation string, err erro
 }
 
 func (*efdFaultySessionFilesystemStore) logError(operation string, err error) {
-	log.Debug("civisibility: EFD faulty-session filesystem error during %s: %v", operation, err)
+	log.Debug("civisibility: EFD faulty-session filesystem error during %s: %v", operation, err.Error())
 }
 
 func (s *efdFaultySessionFilesystemStore) publishTerminal(value string) error {
