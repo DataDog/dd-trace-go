@@ -94,15 +94,10 @@ type evaluationAggregationKey struct {
 	errorMessage   string
 	targetingKey   string
 	contextKey     string // exact canonical encoding of the pruned context; comparable, not a digest
-	// observeFullEvaluationData is the consent snapshot this bucket was opened with. It is part
-	// of the key so two subjects evaluated under different consent can never merge into one
-	// bucket and inherit a single policy.
-	//
-	// When it is false, contextKey is ALWAYS empty (enforced in add). The key must carry
-	// exactly the dimensions that survive serialization, and a consent-off bucket discards its
-	// context — keying on a context that is then dropped would let one high-cardinality
-	// attribute produce many wire-identical rows and burn perFlagCap on precisely the
-	// privacy-protected traffic, pushing it into the degraded tier.
+	// observeFullEvaluationData keeps consent-on and consent-off traffic in separate buckets.
+	// When false, contextKey is always empty (enforced in add) — the key must only carry
+	// dimensions that survive serialization, or one context field would inflate cardinality
+	// and burn perFlagCap on the privacy-protected path.
 	observeFullEvaluationData bool
 }
 
@@ -111,12 +106,8 @@ type evaluationAggregationKey struct {
 // keeping only schema-visible fields emitted by the degraded payload. When a NEW degraded
 // bucket would exceed degradedCap, the count is dropped and counted.
 //
-// Consent is deliberately NOT a dimension here. The degraded payload emits neither
-// targeting_key nor context, so consent changes nothing about a degraded event and two
-// degraded buckets differing only by consent would be byte-identical on the wire. Adding it
-// would double degraded cardinality for mixed-consent traffic and burn degradedCap for no
-// privacy gain — the same "key exactly the dimensions that survive serialization" rule that
-// drops the context dimension from evaluationAggregationKey when consent is off.
+// Consent is intentionally not a dimension: the degraded payload emits neither targeting_key
+// nor context, so consent-differing rows would be byte-identical on the wire.
 type evaluationDegradedKey struct {
 	flagKey        string
 	variant        string
@@ -135,11 +126,9 @@ type evaluationEntry struct {
 	targetingKey string
 	contextAttrs map[string]any
 	errorMessage string
-	// observeFullEvaluationData decides at serialization whether this bucket emits its raw
-	// targeting key and context or the hashed key with no context. It duplicates the
-	// evaluationAggregationKey field on purpose: add AND-folds it across observations, so if
-	// the key ever drifts from this field a single consent-off observation still forces the
-	// whole bucket onto the privacy-protected path.
+	// observeFullEvaluationData drives serialization: raw targeting_key + context, or hashed
+	// key with no context. Duplicates the key field on purpose — add AND-folds it, so any
+	// drift from the key still forces the whole bucket to the privacy-protected path.
 	observeFullEvaluationData bool
 }
 
@@ -406,9 +395,9 @@ func (w *flagEvalLoggingWriter) flush() {
 	}
 }
 
-// buildFlushEvents drains both aggregation tiers and renders them as wire events stamped with
-// flushTimeMs. It is the whole serialization decision — in particular the full-fidelity vs
-// privacy-protected split — separated from the transport so it can be asserted directly.
+// buildFlushEvents drains both tiers and renders them as wire events stamped with flushTimeMs.
+// Split from flush so the full-fidelity vs privacy-protected serialization can be tested
+// without the transport.
 func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLoggingEvent {
 	w.aggregator.mu.Lock()
 
@@ -449,12 +438,9 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	for key, e := range full {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
-		// The subject and its context leave the SDK verbatim only when the environment this
-		// bucket was evaluated against consented. Otherwise the subject is reduced to a
-		// one-way fingerprint and the context is omitted entirely — the key is absent, not
-		// null and not an empty object. Consent is read from the bucket, which snapshotted it
-		// from the evaluation; never from live configuration, whose value may have changed
-		// since.
+		// Consent-on emits raw targeting_key + context; consent-off emits the hashed key and
+		// omits context (absent, not empty). Consent is read from the bucket snapshot, never
+		// from live configuration.
 		if e.observeFullEvaluationData {
 			ev.TargetingKey = e.targetingKey
 			if len(e.contextAttrs) > 0 {
@@ -538,9 +524,8 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 		d:                d,
 		evaluationTimeMs: evaluationTimeMs,
 	}
-	// Capture the evaluation context only when the environment consented to it. Without
-	// consent the context is neither serialized nor part of the bucket key, so retaining a
-	// reference to the caller's attributes would keep it alive in the queue for nothing.
+	// Skip when consent-off — the context is neither serialized nor keyed, so keeping the
+	// caller's attributes alive in the queue serves nothing.
 	if d.observeFullEvaluationData {
 		ev.evaluationContext = hookContext.EvaluationContext()
 	}
@@ -553,8 +538,7 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
 func (w *flagEvalLoggingWriter) aggregate(ev evalEvent) {
-	// Without consent the context is dropped at serialization and excluded from the bucket
-	// key, so flattening and pruning it would be pure overhead on the privacy-protected path.
+	// Consent-off drops context at serialization and from the bucket key, so skip flatten+prune.
 	var contextAttrs map[string]any
 	if ev.d.observeFullEvaluationData {
 		contextAttrs = flattenAndPruneContext(ev.evaluationContext.Attributes())
@@ -692,9 +676,8 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Enforce the consent-off invariant here rather than only at the call site, so it holds for
-	// every caller: without consent the context never reaches the wire, so it must not reach
-	// the bucket key either (see evaluationAggregationKey).
+	// Enforce the consent-off invariant for every caller: no context on the wire → no context
+	// in the key (see evaluationAggregationKey).
 	if !d.observeFullEvaluationData {
 		contextAttrs = nil
 	}
@@ -716,10 +699,8 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	// contextKey is the full canonical encoding (not a digest), this fast path is hit only by a
 	// genuinely identical pruned context — never by an aliasing collision.
 	if e, ok := a.full[fullKey]; ok {
-		// Defense in depth. Consent is part of fullKey, so a consent-off observation cannot
-		// reach a consent-on bucket today; the AND-fold means that if the key ever stops
-		// carrying consent, the privacy-protected policy still wins for the whole bucket
-		// instead of the bucket inheriting the consent of whichever observation opened it.
+		// Defense in depth: AND-fold so if consent ever leaves the key, one consent-off
+		// observation still forces the whole bucket to the privacy-protected path.
 		e.observeFullEvaluationData = e.observeFullEvaluationData && d.observeFullEvaluationData
 		e.observe(evaluationTimeMs)
 		return

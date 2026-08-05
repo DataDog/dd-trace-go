@@ -490,10 +490,9 @@ func (p *DatadogProvider) evaluate(
 	evalNow := time.Now()
 	log.Debug("openfeature: evaluating flag %q", flagKey)
 
-	// Consent snapshot for THIS evaluation, taken from the exact configuration it evaluated
-	// against and stamped onto the returned metadata. It stays false on every path that
-	// evaluated against no configuration at all (cancelled context, provider not ready), so
-	// an evaluation with no environment behind it is treated as withholding consent.
+	// Consent for this evaluation, stamped onto res.Metadata by the defer below. Stays false
+	// on paths with no configuration (cancelled context, provider not ready) — an evaluation
+	// with no environment behind it withholds consent.
 	var observeFullEvaluationData bool
 	defer func() {
 		if res.Metadata == nil {
@@ -525,9 +524,8 @@ func (p *DatadogProvider) evaluate(
 		}
 	}
 
-	// Snapshot consent from this exact configuration BEFORE evaluating, so the value stamped
-	// on the result is the one the evaluation ran against even if Remote Config replaces
-	// p.configuration a moment later.
+	// Snapshot consent before evaluating, so a Remote Config swap of p.configuration mid-eval
+	// cannot change the value stamped on the result.
 	observeFullEvaluationData = config.ObserveFullEvaluationData
 
 	// Evaluate the flag, sharing the eval-time captured at entry.

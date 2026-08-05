@@ -19,15 +19,10 @@ type universalFlagsConfiguration struct {
 	Format string `json:"format"`
 	// Environment contains information about the environment this configuration applies to
 	Environment environment `json:"environment"`
-	// ObserveFullEvaluationData reports whether this environment consents to full-fidelity
-	// flagevaluation data — the raw targeting key and the raw evaluation context. It is
-	// environment-scoped in origin but lives at the ROOT of the UFC, as a sibling of
-	// Environment rather than a field on it.
-	//
-	// Not omitempty: false must be on the wire so absent-as-false is unambiguous. Reading it
-	// as a plain bool is what makes the default fail closed — both an absent key and an
-	// explicit null leave it false, so a stale or malformed configuration can never opt an
-	// environment into emitting PII.
+	// ObserveFullEvaluationData reports whether this environment consents to emitting the raw
+	// targeting key and evaluation context. Environment-scoped in origin but lives at the UFC
+	// root, as a sibling of Environment. Plain bool (no omitempty, no pointer) so an absent
+	// or malformed value fails closed to false.
 	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
@@ -36,10 +31,8 @@ type universalFlagsConfiguration struct {
 }
 
 // UnmarshalJSON parses flags independently so one invalid flag does not reject
-// the complete configuration.
-//
-// This shadow struct is the ONLY thing that populates the configuration: a field added to
-// universalFlagsConfiguration but not listed and copied here reads as its zero value forever.
+// the complete configuration. The shadow struct is the sole populator: any new field on
+// universalFlagsConfiguration must be added and copied here or it reads as zero forever.
 func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		CreatedAt                 time.Time                  `json:"createdAt"`
