@@ -37,6 +37,14 @@ func NewServeMux(opts ...internal.Option) *ServeMux {
 	mux := cfg.Mux
 	if mux == nil {
 		mux = http.NewServeMux()
+	} else if internal.Instrumentation.AppSecEnabled() {
+		// Routes registered directly on a caller-provided *http.ServeMux (e.g. before it
+		// was passed to WithServeMux) never go through this package's Handle/HandleFunc,
+		// so they never call httpsec.RouteMatched: the WAF never sees the resolved path
+		// parameters for those routes, and can't block on rules that key off of them.
+		instr.Logger().Warn("contrib/net/http: WithServeMux was used while AppSec is enabled; " +
+			"path-parameter WAF rules only apply to routes registered via ServeMux.Handle or " +
+			"ServeMux.HandleFunc, not to routes already registered on the wrapped *http.ServeMux")
 	}
 
 	return &ServeMux{
