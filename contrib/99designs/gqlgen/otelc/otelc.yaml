@@ -1,0 +1,40 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of the `New` aspect in ../orchestrion.yml. Read that file for what
+# this reproduces: the IIFE is byte-for-byte the same, moved to a wrap_call rule
+# because function-call is a call-site join point and $root reaches every
+# package in the application being built, unlike a fixed target import path.
+# one-of has no otelc combinator, so New and NewDefaultServer are two rules.
+
+wrap_handler_new:
+  target: $root
+  where:
+    function_call: github.com/99designs/gqlgen/graphql/handler.New
+  do:
+    - wrap_call:
+        replace: |-
+          func(s *handler.Server) *handler.Server {
+            s.Use(gqlgentrace.NewTracer())
+            return s
+          }({{ . }})
+  imports:
+    handler: github.com/99designs/gqlgen/graphql/handler
+    gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
+
+wrap_handler_new_default_server:
+  target: $root
+  where:
+    function_call: github.com/99designs/gqlgen/graphql/handler.NewDefaultServer
+  do:
+    - wrap_call:
+        replace: |-
+          func(s *handler.Server) *handler.Server {
+            s.Use(gqlgentrace.NewTracer())
+            return s
+          }({{ . }})
+  imports:
+    handler: github.com/99designs/gqlgen/graphql/handler
+    gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
