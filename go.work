@@ -22,6 +22,7 @@ use (
 	./contrib/emicklei/go-restful.v3
 	./contrib/envoyproxy/go-control-plane
 	./contrib/gin-gonic/gin
+	./contrib/gin-gonic/gin/otelc
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
 	./contrib/go-chi/chi.v5

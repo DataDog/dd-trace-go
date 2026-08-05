@@ -1,15 +1,10 @@
-module github.com/DataDog/dd-trace-go/otelc/all/v2
+module github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 go 1.25.0
 
-replace (
-	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 => ../../contrib/gin-gonic/gin/otelc
-	github.com/DataDog/dd-trace-go/v2 => ../..
-)
-
 require (
-	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/gin-gonic/gin v1.10.1
 )
 
 require (
@@ -40,7 +35,6 @@ require (
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/gin-gonic/gin v1.10.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
@@ -82,7 +76,7 @@ require (
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
-	go.opentelemetry.io/otelc/pkg v0.0.0-20260805144206-6e38c7ce37a8 // indirect
+	go.opentelemetry.io/otelc/pkg v0.0.0-20260805144206-6e38c7ce37a8
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
@@ -102,3 +96,5 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../../..

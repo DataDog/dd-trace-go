@@ -1,0 +1,250 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# The otelc port of ../orchestrion.yml. See ../orchestrion.yml for the aspects
+# this reproduces and hooks.go for the hook bodies.
+#
+# `one-of`/`not` do not work at the top of `where` (otelc v1.0.1), so each
+# orchestrion `one-of` alternative below is its own rule instead of one
+# combined rule.
+
+# --- id: New ---
+# orchestrion wraps the gin.New()/gin.Default() call expression itself, so the
+# otelc equivalent is a call-site rewrite (wrap_call), not a hook on the
+# definition: New()'s call inside Default()'s own body is unqualified and
+# never matches, so there is no double-firing risk either way.
+new_new:
+  target: $root
+  where:
+    function_call: github.com/gin-gonic/gin.New
+  do:
+    - wrap_call:
+        replace: |-
+          func() *gin.Engine {
+            e := {{ . }}
+            e.Use(ddgin.Middleware(""))
+            return e
+          }()
+  imports:
+    gin: github.com/gin-gonic/gin
+    ddgin: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
+
+new_default:
+  target: $root
+  where:
+    function_call: github.com/gin-gonic/gin.Default
+  do:
+    - wrap_call:
+        replace: |-
+          func() *gin.Engine {
+            e := {{ . }}
+            e.Use(ddgin.Middleware(""))
+            return e
+          }()
+  imports:
+    gin: github.com/gin-gonic/gin
+    ddgin: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
+
+# --- id: gin.Context.[Must]Bind ---
+bind_bind:
+  target: github.com/gin-gonic/gin
+  where:
+    func: Bind
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_should_bind:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBind
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_bind_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: BindJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_should_bind_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBindJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_bind_toml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: BindTOML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_should_bind_toml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBindTOML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_bind_yaml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: BindYAML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_should_bind_yaml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBindYAML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_bind_xml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: BindXML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+bind_should_bind_xml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBindXML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+# --- id: Response.Body ---
+response_ascii_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: AsciiJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_indented_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: IndentedJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: JSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_jsonp:
+  target: github.com/gin-gonic/gin
+  where:
+    func: JSONP
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_pure_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: PureJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_secure_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: SecureJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_xml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: XML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_yaml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: YAML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_toml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: TOML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+response_protobuf:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ProtoBuf
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeResponseBody
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
