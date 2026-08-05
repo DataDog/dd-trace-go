@@ -1374,7 +1374,7 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 			// above may not include it yet. Reserve its space on 128-bit traces so we
 			// don't accept a name that would push inject over the budget.
 			if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
-				used += 27  // "," + "_dd.p.tid" (9) + "=" + 16-hex-char value
+				used += 27   // "," + "_dd.p.tid" (9) + "=" + 16-hex-char value
 				tsUsed += 23 // "tid" (3) + 16-hex-char value + 4 (";t." prefix + ":" sep)
 			}
 			// An existing pagent_name would be overwritten, not added; adjust both
