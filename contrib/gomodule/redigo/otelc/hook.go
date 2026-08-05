@@ -50,7 +50,8 @@ func AfterDialContext(ictx hook.HookContext, _ redis.Conn, _ error) {
 	if !ok {
 		return
 	}
-	// Skipping the call zeroed both return values, and SetReturnVal discards nils.
+	// Skipping the call zeroed both return values, so only the non-nil one needs
+	// writing back. otelc v1.0.1 drops a nil passed to SetReturnVal anyway.
 	if res.conn != nil {
 		ictx.SetReturnVal(0, res.conn)
 	}
