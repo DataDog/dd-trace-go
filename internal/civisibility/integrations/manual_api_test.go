@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -427,9 +428,7 @@ func TestSnapshotProcessRetryChildTransport(t *testing.T) {
 	}
 	clone := func() map[string]string {
 		values := make(map[string]string, len(valid))
-		for name, value := range valid {
-			values[name] = value
-		}
+		maps.Copy(values, valid)
 		return values
 	}
 	without := func(key string) map[string]string {
@@ -465,9 +464,7 @@ func TestSnapshotProcessRetryChildTransport(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values := make(map[string]string, len(tt.values))
-			for key, value := range tt.values {
-				values[key] = value
-			}
+			maps.Copy(values, tt.values)
 			var unsetKeys []string
 			unsetErr := errors.New("unset failed")
 			state, warning := snapshotProcessRetryChildTransport(

@@ -91,7 +91,7 @@ func processRetryChildTransportKey(name string) (string, bool) {
 func initializeProcessRetryChildTransport() *processRetryChildTransportState {
 	state, err := snapshotProcessRetryChildTransport(internalenv.Lookup, os.Unsetenv)
 	if err != nil {
-		log.Warn("civisibility: ignoring invalid process retry child transport and continuing normal test execution: %v", err)
+		log.Warn("civisibility: ignoring invalid process retry child transport and continuing normal test execution: %v", err.Error())
 	}
 	return state
 }
