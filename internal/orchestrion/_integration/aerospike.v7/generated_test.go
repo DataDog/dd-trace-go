@@ -30,3 +30,7 @@ func TestQuery(t *testing.T) {
 func TestScanAll(t *testing.T) {
 	harness.Run(t, new(TestCaseScanAll))
 }
+
+func TestValueReceiver(t *testing.T) {
+	harness.Run(t, new(TestCaseValueReceiver))
+}

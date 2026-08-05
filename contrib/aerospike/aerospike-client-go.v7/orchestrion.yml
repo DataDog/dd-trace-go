@@ -21,51 +21,51 @@ aspects:
         - not:
             import-path: github.com/aerospike/aerospike-client-go/v7
         - one-of:
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Put, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PutBins, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Append, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: AppendBins, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Prepend, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PrependBins, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Add, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: AddBins, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Delete, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Touch, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Exists, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchExists, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Get, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: GetHeader, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGet, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetHeader, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetOperate, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Operate, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanAll, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanPartitions, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetComplex, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchDelete, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchOperate, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchExecute, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Execute, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ExecuteUDF, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ExecuteUDFNode, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryExecute, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryPartitions, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Query, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryNode, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanNode, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Truncate, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryAggregate, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Put}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PutBins}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Append}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: AppendBins}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Prepend}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PrependBins}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Add}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: AddBins}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Delete}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Touch}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Exists}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchExists}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Get}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: GetHeader}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGet}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetHeader}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetOperate}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Operate}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanAll}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanPartitions}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetComplex}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchDelete}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchOperate}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchExecute}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Execute}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ExecuteUDF}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ExecuteUDFNode}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryExecute}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryPartitions}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Query}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryNode}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanNode}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: Truncate}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryAggregate}
             # Object API (client_reflect.go, //go:build !as_performance): absent
             # under -tags as_performance, so these simply never match.
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PutObject, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: GetObject, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetObjects, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanAllObjects, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanNodeObjects, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanPartitionObjects, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryObjects, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryNodeObjects, match: pointer-only}
-            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryPartitionObjects, match: pointer-only}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: PutObject}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: GetObject}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: BatchGetObjects}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanAllObjects}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanNodeObjects}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: ScanPartitionObjects}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryObjects}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryNodeObjects}
+            - method-call: {receiver: github.com/aerospike/aerospike-client-go/v7.Client, name: QueryPartitionObjects}
     advice:
       - wrap-expression:
           imports:

@@ -322,7 +322,7 @@ func TestWrapClientContext(t *testing.T) {
 		defer mt.Stop()
 
 		parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
-		WrapClientContext(nil, ctx).startSpan("Put").Finish()
+		WrapClientContext[*as.Client](nil, ctx).startSpan("Put").Finish()
 		parent.Finish()
 
 		spans := mt.FinishedSpans()
@@ -336,7 +336,7 @@ func TestWrapClientContext(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		WrapClientContext(nil, nil).startSpan("Get").Finish()
+		WrapClientContext[*as.Client](nil, nil).startSpan("Get").Finish()
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
@@ -344,7 +344,7 @@ func TestWrapClientContext(t *testing.T) {
 	})
 
 	t.Run("defers config resolution to span time", func(t *testing.T) {
-		c := WrapClientContext(nil, context.Background())
+		c := WrapClientContext[*as.Client](nil, context.Background())
 		assert.Nil(t, c.cfg,
 			"config must not be resolved at wrap time, so later tracer configuration is picked up")
 	})
@@ -353,7 +353,7 @@ func TestWrapClientContext(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		WrapClientContext(nil, context.Background()).startSpan("Put").Finish()
+		WrapClientContext[*as.Client](nil, context.Background()).startSpan("Put").Finish()
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
@@ -379,7 +379,7 @@ func TestWrapClientContextTypedNil(t *testing.T) {
 	defer mt.Stop()
 
 	var ctx *nilableCtx // typed nil: the interface value is not nil
-	WrapClientContext(nil, ctx).startSpan("Put").Finish()
+	WrapClientContext[*as.Client](nil, ctx).startSpan("Put").Finish()
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)

@@ -46,18 +46,26 @@ func WrapClient(client *as.Client, opts ...ClientOption) *Client {
 // WrapClientContext returns a traced Client for client, bound to ctx and using
 // the default configuration. A nil ctx is treated as context.Background().
 //
+// client may be an *as.Client or an as.Client value, so that one Orchestrion
+// aspect can rewrite both receiver forms. A value receiver only reaches here when
+// it is addressable, since that is all Go permits for a pointer-receiver method.
+//
 // It behaves like WrapClient(client).WithContext(ctx), but leaves the default
 // configuration to be resolved when each span starts rather than here.
 // Orchestrion builds a wrapper on every instrumented call, so this keeps that
 // path to a single allocation.
-func WrapClientContext(client *as.Client, ctx context.Context) *Client {
+func WrapClientContext[T as.Client | *as.Client](client T, ctx context.Context) *Client {
 	if isNilContext(ctx) {
 		ctx = context.Background()
 	}
-	return &Client{
-		Client:  client,
-		context: ctx,
+	traced := &Client{context: ctx}
+	switch v := any(client).(type) {
+	case *as.Client:
+		traced.Client = v
+	case as.Client:
+		traced.Client = &v
 	}
+	return traced
 }
 
 // isNilContext reports whether ctx cannot be used. Besides a nil interface, the

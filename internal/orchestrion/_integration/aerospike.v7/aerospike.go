@@ -147,6 +147,37 @@ func (tc *TestCaseGoroutine) ExpectedTraces() trace.Traces {
 	}
 }
 
+// TestCaseValueReceiver covers calling through a dereferenced client. Go only
+// permits these calls because the value is addressable, so the aspect can reach
+// them, but the receiver resolves to as.Client rather than *as.Client.
+type TestCaseValueReceiver struct {
+	client *as.Client
+}
+
+func (tc *TestCaseValueReceiver) Setup(_ context.Context, t *testing.T) {
+	tc.client = newClient(t)
+}
+
+func (tc *TestCaseValueReceiver) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
+	key, err := as.NewKey("test", "testset", "orchestrion-value-key")
+	require.NoError(t, err)
+
+	client := *tc.client
+	require.NoError(t, client.Put(nil, key, as.BinMap{"value": "hello"}))
+}
+
+func (tc *TestCaseValueReceiver) ExpectedTraces() trace.Traces {
+	return trace.Traces{
+		{
+			Tags:     map[string]any{"name": "test.root"},
+			Children: trace.Traces{aerospikeChild("Put")},
+		},
+	}
+}
+
 // TestCaseScanAll checks that ScanAll yields exactly one span: its internal
 // delegation to ScanPartitions runs on the raw client, which is not instrumented.
 type TestCaseScanAll struct {
