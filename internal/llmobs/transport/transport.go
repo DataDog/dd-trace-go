@@ -156,6 +156,12 @@ func AnyPtr[T any](v T) *T {
 	return &v
 }
 
+type ErrorMessage struct {
+	Message string `json:"message,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Stack   string `json:"stack,omitempty"`
+}
+
 // NewErrorMessage returns the payload representation of an error.
 func NewErrorMessage(err error) *ErrorMessage {
 	if err == nil {
@@ -204,13 +210,30 @@ func (c *Transport) baseURL(subdomain string) string {
 	return u
 }
 
+func encodeJSON(v any) (*bytes.Buffer, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return &buf, nil
+}
+
+// MarshalJSON encodes v without HTML escaping or a trailing newline.
+func MarshalJSON(v any) ([]byte, error) {
+	buf, err := encodeJSON(v)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
 func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain string, body any, lim requestLimits) (requestResult, error) {
 	var jsonBody io.Reader
 	if body != nil {
-		var buf bytes.Buffer
-		enc := json.NewEncoder(&buf)
-		enc.SetEscapeHTML(false)
-		if err := enc.Encode(body); err != nil {
+		buf, err := encodeJSON(body)
+		if err != nil {
 			return requestResult{}, fmt.Errorf("failed to json encode body: %w", err)
 		}
 		jsonBody = bytes.NewReader(buf.Bytes())
@@ -220,7 +243,24 @@ func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain str
 
 type requestResult struct {
 	statusCode int
+	attempts   int
 	body       []byte
+	retriable  bool
+}
+
+func (c *Transport) newRequest(ctx context.Context, method, url, subdomain, contentType string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	for key, val := range c.defaultHeaders {
+		req.Header.Set(key, val)
+	}
+	if !c.agentless {
+		req.Header.Set(headerEVPSubdomain, subdomain)
+	}
+	return req, nil
 }
 
 func (c *Transport) request(ctx context.Context, method, path, subdomain string, body io.Reader, contentType string, lim requestLimits) (requestResult, error) {
@@ -232,8 +272,11 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 	}
 	urlStr := c.baseURL(subdomain) + path
 	backoffStrat := defaultBackoffStrategy()
+	var attempts int
+	var last requestResult
 
 	doRequest := func() (result requestResult, err error) {
+		attempts++
 		log.Debug("llmobs: sending request (method: %s | url: %s)", method, urlStr)
 		defer func() {
 			if err != nil {
@@ -250,17 +293,9 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, method, urlStr, body)
+		req, err := c.newRequest(ctx, method, urlStr, subdomain, contentType, body)
 		if err != nil {
 			return requestResult{}, err
-		}
-
-		req.Header.Set("Content-Type", contentType)
-		for key, val := range c.defaultHeaders {
-			req.Header.Set(key, val)
-		}
-		if !c.agentless {
-			req.Header.Set(headerEVPSubdomain, subdomain)
 		}
 
 		// Set headers for datasets and experiments endpoints (both unstable and stable v2 paths)
@@ -281,6 +316,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			last = requestResult{attempts: attempts, retriable: ctx.Err() == nil}
 			return requestResult{}, err
 		}
 		defer resp.Body.Close()
@@ -297,59 +333,101 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 				// the connection would mean reading up to 1MiB more that we would
 				// still abandon whenever the body is far oversize.
 				// Retrying would only buffer the same oversized body again.
+				last = requestResult{statusCode: code, attempts: attempts}
 				return requestResult{}, backoff.Permanent(fmt.Errorf("%w: over %d bytes", errResponseTooLarge, lim.maxResponseSize))
 			}
-			return requestResult{statusCode: code, body: b}, nil
+			last = requestResult{statusCode: code, attempts: attempts, body: b}
+			return last, nil
 		}
 		if isRetriableStatus(code) {
+			body := readResponseBody(resp.Body)
+			last = requestResult{
+				statusCode: code,
+				attempts:   attempts,
+				body:       body,
+				retriable:  true,
+			}
 			errMsg := fmt.Sprintf("request failed with transient http status code: %d", code)
-			if body := readErrorBody(resp); body != "" {
-				errMsg = fmt.Sprintf("%s: %s", errMsg, body)
+			if message := errorBodyMessage(resp.Header, body); message != "" {
+				errMsg = fmt.Sprintf("%s: %s", errMsg, message)
 			}
 			drainAndClose(resp.Body)
 			return requestResult{}, fmt.Errorf("%s", errMsg)
 		}
 		if code == http.StatusTooManyRequests {
+			body := readResponseBody(resp.Body)
+			last = requestResult{
+				statusCode: code,
+				attempts:   attempts,
+				body:       body,
+				retriable:  true,
+			}
 			wait := parseRetryAfter(resp.Header)
 			log.Debug("llmobs: status code 429, waiting %s before retry...", wait.String())
 			drainAndClose(resp.Body)
 			return requestResult{}, backoff.RetryAfter(int(wait.Seconds()))
 		}
+		body := readResponseBody(resp.Body)
+		last = requestResult{statusCode: code, attempts: attempts, body: body}
 		errMsg := fmt.Sprintf("request failed with http status code: %d", resp.StatusCode)
-		if body := readErrorBody(resp); body != "" {
-			errMsg = fmt.Sprintf("%s: %s", errMsg, body)
+		if message := errorBodyMessage(resp.Header, body); message != "" {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, message)
 		}
 		drainAndClose(resp.Body)
 		return requestResult{}, backoff.Permanent(fmt.Errorf("%s", errMsg))
 	}
 
-	return backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
+	result, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
+	if err != nil {
+		last.attempts = attempts
+		if ctx.Err() != nil {
+			last.retriable = false
+		}
+		return last, err
+	}
+	result.attempts = attempts
+	return result, nil
 }
 
-func readErrorBody(resp *http.Response) string {
-	if resp == nil || resp.Body == nil {
-		return ""
+// RequestResult reports an LLM Obs transport request.
+type RequestResult struct {
+	StatusCode int
+	Attempts   int
+	Body       []byte
+	Retriable  bool
+}
+
+func summarizeRequest(result requestResult) RequestResult {
+	return RequestResult{
+		StatusCode: result.statusCode,
+		Attempts:   result.attempts,
+		Body:       result.body,
+		Retriable:  result.retriable,
 	}
-	// Only read the body if it's JSON
-	contentType := resp.Header.Get("Content-Type")
+}
+
+func errorBodyMessage(header http.Header, body []byte) string {
+	contentType := header.Get("Content-Type")
 	if !strings.Contains(contentType, "application/json") {
-		return ""
-	}
-	// The body only feeds an error message, so keep just enough of it to stay
-	// useful and discard the rest.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, errorBodySize))
-	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(body))
 }
 
-func drainAndClose(b io.ReadCloser) {
-	if b == nil {
+func readResponseBody(body io.Reader) []byte {
+	if body == nil {
+		return nil
+	}
+	response, _ := io.ReadAll(io.LimitReader(body, errorBodySize))
+	return response
+}
+
+func drainAndClose(body io.ReadCloser) {
+	if body == nil {
 		return
 	}
-	io.Copy(io.Discard, io.LimitReader(b, 1<<20)) // drain up to 1MB to reuse conn
-	_ = b.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, 1<<20))
+	_ = body.Close()
 }
 
 func parseRetryAfter(h http.Header) time.Duration {

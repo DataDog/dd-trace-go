@@ -7,6 +7,7 @@ package llmobs_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -404,7 +405,7 @@ func TestStartSpan(t *testing.T) {
 		l0 := coll.RequireSpan(t, "llm")
 		assert.Equal(t, "llm", l0.Name)
 		assert.Equal(t, customStartTime.UnixNano(), l0.StartNS)
-		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), l0.Duration)
+		assert.Equal(t, customFinishTime.Sub(customStartTime), l0.Duration)
 	})
 
 }
@@ -1683,12 +1684,12 @@ func TestSubmitEvaluation(t *testing.T) {
 		{
 			name: "span-join-score",
 			config: llmobs.EvaluationConfig{
-				SpanID:      "test-span-id",
-				TraceID:     "test-trace-id",
-				Label:       "rating",
-				ScoreValue:  ptrFromVal(0.85),
-				MLApp:       "test-app",
-				TimestampMS: 1234567890,
+				SpanID:     "test-span-id",
+				TraceID:    "test-trace-id",
+				Label:      "rating",
+				ScoreValue: ptrFromVal(0.85),
+				MLApp:      "test-app",
+				Timestamp:  time.UnixMilli(1234567890),
 			},
 			wantMetric: func() llmobstransport.LLMObsMetric {
 				return llmobstransport.LLMObsMetric{
@@ -1780,6 +1781,46 @@ func TestSubmitEvaluation(t *testing.T) {
 				CategoricalValue: ptrFromVal("value"),
 			},
 			wantError: "provide either span/trace IDs or tag key/value, not both",
+		},
+		{
+			name: "partial-span-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "both span and trace IDs are required for span-based joining",
+		},
+		{
+			name: "partial-tag-join",
+			config: llmobs.EvaluationConfig{
+				TagKey:           "session_id",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "both tag key and value are required for tag-based joining",
+		},
+		{
+			name: "partial-span-with-full-tag-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TagKey:           "session_id",
+				TagValue:         "session-123",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "both span and trace IDs are required for span-based joining",
+		},
+		{
+			name: "full-span-with-partial-tag-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TraceID:          "test-trace-id",
+				TagKey:           "session_id",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "both tag key and value are required for tag-based joining",
 		},
 		{
 			name: "no-value-provided",
@@ -1904,6 +1945,25 @@ func TestSubmitEvaluation(t *testing.T) {
 			assert.Equal(t, tc.wantMetric(), *got)
 		})
 	}
+}
+
+func TestSubmitEvaluationDefaultsTimestamp(t *testing.T) {
+	_, coll, ll := testTracer(t)
+	before := time.Now().UnixMilli()
+
+	err := ll.SubmitEvaluation(llmobs.EvaluationConfig{
+		SpanID:     "test-span-id",
+		TraceID:    "test-trace-id",
+		Label:      "timestamp-default",
+		ScoreValue: ptrFromVal(1.0),
+	})
+	require.NoError(t, err)
+	after := time.Now().UnixMilli()
+
+	tracer.Flush()
+	metric := coll.RequireMetric(t, "timestamp-default")
+	assert.GreaterOrEqual(t, metric.TimestampMS, before)
+	assert.LessOrEqual(t, metric.TimestampMS, after)
 }
 
 func TestLLMObsLifecycle(t *testing.T) {
@@ -2554,7 +2614,7 @@ func assertAPMTraceID(t *testing.T, apmSpan agenttest.Span, llmSpan llmobstransp
 // the backend's size limit.
 //
 // The fix (PR #4524) adds size-based flushing: before appending a new event to the buffer, if the
-// cumulative size would exceed sizeLimitEVPEvent (5MB), the current buffer is flushed first.
+// cumulative size would exceed SizeLimitEVPEvent (5MB), the current buffer is flushed first.
 func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
 
@@ -2588,7 +2648,7 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 // to exceed the backend's size limit.
 //
 // The fix adds size-based flushing for eval metrics, mirroring PR #4524 for span events: before
-// appending a new metric to the buffer, if the cumulative size would exceed sizeLimitEVPEvent
+// appending a new metric to the buffer, if the cumulative size would exceed SizeLimitEVPEvent
 // (5MB), the current buffer is flushed first.
 func TestEvalMetricsSizeBasedFlushing(t *testing.T) {
 	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
@@ -2747,4 +2807,38 @@ func TestFlushSync(t *testing.T) {
 			t.Fatal("FlushSync hung after Stop")
 		}
 	})
+}
+
+func TestSpanLinkJSONTags(t *testing.T) {
+	b, err := json.Marshal(llmobs.SpanLink{TraceID: 111, SpanID: 222})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"span_id":222}`, string(b))
+
+	b, err = json.Marshal(llmobs.SpanLink{
+		TraceID: 111, TraceIDHigh: 333, SpanID: 222,
+		Attributes: map[string]string{"a": "b"}, Tracestate: "ts", Flags: 1,
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"trace_id_high":333,"span_id":222,"attributes":{"a":"b"},"tracestate":"ts","flags":1}`, string(b))
+}
+
+func TestSpanLinkWire(t *testing.T) {
+	_, coll, ll := testTracer(t)
+
+	span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "llm-links", llmobs.StartSpanConfig{})
+	span.AddLink(llmobs.SpanLink{TraceID: 111, SpanID: 222})
+	span.AddLink(llmobs.SpanLink{TraceID: 333, TraceIDHigh: 444, SpanID: 555, Attributes: map[string]string{"a": "b"}})
+	span.Finish(llmobs.FinishSpanConfig{})
+	tracer.Flush()
+
+	l := coll.RequireSpan(t, "llm-links")
+	require.Len(t, l.SpanLinks, 2)
+
+	b, err := json.Marshal(l.SpanLinks[0])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":"111","span_id":"222"}`, string(b))
+
+	b, err = json.Marshal(l.SpanLinks[1])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":"333","trace_id_high":"444","span_id":"555","attributes":{"a":"b"}}`, string(b))
 }

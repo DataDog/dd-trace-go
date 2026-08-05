@@ -451,7 +451,7 @@ func TestExperimentRun(t *testing.T) {
 		require.Equal(t, 2, coll.SpanCount())
 		for i := range 2 {
 			span := coll.RequireSpan(t, "failing-task")
-			assert.Equal(t, "error", span.Status, "span %d status should be 'error' when task fails", i)
+			assert.Equal(t, llmobstransport.SpanStatusError, span.Status, "span %d status should be 'error' when task fails", i)
 		}
 	})
 
