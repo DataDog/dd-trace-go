@@ -23,8 +23,9 @@
 #
 # A point-selector rule like the one below does not have that problem: `target:
 # main` combined with `where.func` does not match a test-main compile unit, so
-# this never fires under `otelc go test`. tracer_autostart_test.go is the
-# regression gate for that, since a silent double start would be hard to spot.
+# this never fires under `otelc go test`. The regression gate for that is
+# internal/orchestrion/_integration/otelc-autostart, since a silent double start
+# would be hard to spot.
 
 create_tracer:
   target: main
