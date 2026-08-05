@@ -25,6 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -40,6 +41,38 @@ var securityTestingHeaders = [...]struct {
 }{
 	{header: "x-datadog-endpoint-scan", tag: ext.HTTPRequestHeaders + ".x-datadog-endpoint-scan"},
 	{header: "x-datadog-security-test", tag: ext.HTTPRequestHeaders + ".x-datadog-security-test"},
+}
+
+func TestCustomClientIPHeaderPrecedesIntegrationIP(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+	t.Cleanup(clientip.ResetConfig)
+	t.Setenv("DD_TRACE_CLIENT_IP_HEADER", "CF-Connecting-IP")
+	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")
+	clientip.ResetConfig()
+	ResetCfg()
+	require.False(t, appsec.Enabled())
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+	r.Header.Set("CF-Connecting-IP", "82.67.164.163")
+	r.Header.Set("X-Forwarded-For", "203.0.113.77")
+	r.RemoteAddr = "10.0.0.1:4242"
+
+	rw, rt, after, handled := BeforeHandle(&ServeConfig{
+		ClientIP: netip.MustParseAddr("8.233.57.190"),
+	}, httptest.NewRecorder(), r)
+	require.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "82.67.164.163", spans[0].Tag(ext.HTTPClientIP))
+	assert.Equal(t, "10.0.0.1", spans[0].Tag(ext.NetworkClientIP))
 }
 
 func TestGetErrorCodesFromInput(t *testing.T) {

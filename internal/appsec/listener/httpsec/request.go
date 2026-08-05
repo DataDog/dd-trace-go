@@ -78,8 +78,8 @@ var (
 // carry it in the operation arguments, so they do not call this. It exists for
 // the gRPC listener, which still resolves from the raw request metadata.
 func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteAddr string) (tags map[string]string, clientIP netip.Addr) {
-	remoteIP, clientIP := clientip.Resolve(headers, hasCanonicalHeaders, remoteAddr)
-	return clientip.TagsFor(remoteIP, clientIP), clientIP
+	_, clientIP = clientip.Resolve(headers, hasCanonicalHeaders, remoteAddr)
+	return clientip.TagsFor(remoteAddr, clientIP), clientIP
 }
 
 // NormalizeHTTPHeaders returns the HTTP headers following Datadog's

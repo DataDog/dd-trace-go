@@ -49,14 +49,14 @@ func TestFeature_headerCollection(t *testing.T) {
 	require.NoError(t, err)
 
 	requestHeaders := map[string][]string{"X-Forwarded": {"127.0.0.1"}, "X-Forwarded-For": {"4.5.6.7", "9.8.7.6"}}
-	remoteIP, clientIP := clientip.Resolve(requestHeaders, true, "1.2.3.4")
+	_, clientIP := clientip.Resolve(requestHeaders, true, "1.2.3.4")
 
 	var (
 		request = emitter.HandlerOperationArgs{
 			Method:     http.MethodGet,
 			RequestURI: "https://datadoghq.com/",
 			Host:       "datadoghq.com",
-			RemoteIP:   remoteIP,
+			RemoteAddr: "1.2.3.4",
 			ClientIP:   clientIP,
 			Headers:    requestHeaders,
 		}

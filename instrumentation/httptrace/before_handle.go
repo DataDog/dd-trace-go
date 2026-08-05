@@ -38,12 +38,9 @@ type ServeConfig struct {
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
 	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
-	// RemoteIP is the transport peer, reported as the network.client.ip tag. It
-	// is only read when ClientIP is valid. Leaving it invalid omits the tag.
-	RemoteIP netip.Addr
 	// ClientIP is the client identity supplied by an integration. When invalid,
-	// the default resolver produces both values. DD_TRACE_CLIENT_IP_HEADER
-	// outranks this value.
+	// the default resolver determines it. DD_TRACE_CLIENT_IP_HEADER outranks this
+	// value.
 	ClientIP netip.Addr
 	// FinishOpts specifies any options to be used when finishing the request span.
 	FinishOpts []tracer.FinishOption
@@ -74,28 +71,17 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	endpointOpt, endpointFn := handleHTTPEndpoint(cfg, r)
 	opts = append(opts, endpointOpt)
 
-	// Resolve the client identity once, here, and hand the same pair to the span
-	// tags and to AppSec. Nothing downstream resolves it again, so the two views
-	// of who the client is cannot drift apart.
 	appsecEnabled := appsec.Enabled()
-	remoteIP, clientIP := cfg.RemoteIP, cfg.ClientIP
+	clientIP := cfg.ClientIP
 	if clientip.CustomHeaderConfigured() {
-		// The operator named the header identity comes from, which outranks an
-		// address the integration inferred from its own infrastructure. Without
-		// this, configuring DD_TRACE_CLIENT_IP_HEADER for a CDN in front of the
-		// load balancer would stop taking effect.
-		remoteIP, clientIP = netip.Addr{}, netip.Addr{}
-	} else if !clientIP.IsValid() && remoteIP.IsValid() {
-		clientIP = remoteIP
+		clientIP = netip.Addr{}
 	}
 	if !clientIP.IsValid() && (traceClientIPEnabled() || appsecEnabled) {
-		remoteIP, clientIP = resolveClientIP(r.Header, true, r.RemoteAddr)
+		_, clientIP = clientip.Resolve(r.Header, true, r.RemoteAddr)
 	}
-	// The span carries the IP tags only when client IP tracing is on; AppSec
-	// tags the span itself from the same pair when it is enabled.
 	var ipTags map[string]string
 	if traceClientIPEnabled() {
-		ipTags = clientip.TagsFor(remoteIP, clientIP)
+		ipTags = clientip.TagsFor(r.RemoteAddr, clientIP)
 	}
 
 	span, ctx, finishSpans := startRequestSpan(r, ipTags, opts...)
@@ -111,7 +97,6 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 			Framework:   cfg.Framework,
 			Route:       renamedRoute(cfg.Route, endpointFn(), r.URL.EscapedPath()),
 			RouteParams: cfg.RouteParams,
-			RemoteIP:    remoteIP,
 			ClientIP:    clientIP,
 		}
 

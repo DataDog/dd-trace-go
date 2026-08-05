@@ -43,85 +43,37 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 
 ### Client IP resolution
 
-App & API Protection identifies clients by IP address, both to attribute traces and to
-enforce IP denylists. This works with no extra configuration: Google Cloud
-[appends the address it observed](https://cloud.google.com/load-balancing/docs/https#x-forwarded-for_header)
-to `X-Forwarded-For`, followed by the forwarding rule address, so the extension reads
-the client from that fixed position rather than trusting whatever the client put in
-front of it.
-
-Forwarding the `source.ip` attribute is recommended but **not required**. It removes
-the dependency on the header shape and is what the extension uses when present:
+The extension identifies the address observed by Google Cloud rather than trusting the
+first client-supplied `X-Forwarded-For` entry. Forwarding `source.ip` is recommended but
+not required:
 
 ```yaml
 forwardAttributes: [source.ip]
 ```
 
-The Terraform equivalent, on `google_network_services_lb_traffic_extension` or
-`google_network_services_lb_route_extension`:
-
 ```hcl
 forward_attributes = ["source.ip"]
 ```
 
-> Terraform support for `forward_attributes` needs a recent
+> Terraform requires a recent
 > [`google-beta` provider](https://registry.terraform.io/providers/hashicorp/google-beta/latest/docs/resources/network_services_lb_traffic_extension);
-> older versions reject the argument.
+> `source.address` is not supported: GCP rejects it as an invalid forward attribute.
 
-`source.address`, Envoy's own attribute carrying the same address as `host:port`, is
-**not supported**: Google Cloud rejects it at configuration time with
-`Error 400: invalid forward attribute source.address`, so there is nothing for the
-extension to read.
-
-Why this matters: a client connecting to the load balancer chooses what it sends in
-`X-Forwarded-For`, so it can present an address that is not its own. The header the
-load balancer delivers looks like
+Without `source.ip`, GCLB's documented suffix is used:
 
 ```text
 X-Forwarded-For: <client-supplied>,<client observed by the load balancer>,<forwarding rule>
 ```
 
-and generic resolution, which scans left to right and takes the first public address,
-lands on the forged entry. Neither the positional rule nor `source.ip` is under the
-client's control, so neither can be manipulated that way. The header itself is left
-byte-for-byte intact so that App & API Protection still inspects exactly what was sent.
+The raw header remains unchanged for WAF inspection. `http.client_ip` receives the
+trusted identity; `network.client.ip` continues to come from the transport
+`RemoteAddr`. `DD_TRACE_CLIENT_IP_HEADER` takes precedence over both mechanisms.
 
-This applies only when the request is identified as a GCP Service Extension. In
-addition, the positional rule requires `TrustGCLBXForwardedFor` on
-`AppsecEnvoyConfig`; the published callout image enables it for its default GCP
-deployment and disables it when `DD_SERVICE_EXTENSION_UDS_PATH` selects the documented
-self-managed Envoy mode. Deployments identified as plain Envoy, Envoy Gateway or Istio
-ignore both `source.ip` and the positional rule.
-
-An address resolved this way becomes `http.client_ip`. The raw remote address remains
-only a fallback for requests where the proxy could not determine `ClientIP`; the GCP
-path does not report the load balancer's forwarding-rule address as
-`network.client.ip`.
-
-If `DD_TRACE_CLIENT_IP_HEADER` names a header, that header decides identity and none
-of the above applies. Naming a header is an explicit statement about where the client
-address lives, so it outranks both `source.ip` and the positional rule — which is what
-makes it the right setting when a CDN in front of the load balancer is the only thing
-that knows the real client.
-
-Three limitations:
-
-- **A CDN or proxy sits in front of the load balancer.** Both `source.ip` and the
-  observed `X-Forwarded-For` entry describe the connection Google Cloud received, which
-  in that topology comes from the CDN rather than from the end user. Recovering the
-  original address then depends on whatever forwarding mechanism that CDN offers, and
-  on trusting it; this integration does not attempt it.
-- **Fewer than two `X-Forwarded-For` entries, with no `source.ip`.** There is then no
-  load-balancer-appended entry to rely on, so resolution falls back to the generic
-  behaviour of earlier releases. Zero-configuration protection therefore depends on the
-  genuine `X-Forwarded-For` actually reaching the extension: if the extension is
-  configured not to forward it, and `source.ip` is not forwarded either, then identity
-  comes from whichever headers *are* forwarded and is client-selectable again.
-- **The extension must only be reachable by the load balancer.** Both `source.ip` and the
-  positional rule describe what the infrastructure reported, so anything able to call the
-  callout's gRPC endpoint directly can present either and choose the identity that gets
-  recorded and denylist-checked. Keep the callout backend restricted to traffic from your
-  own proxy, as the default deployment does.
+The positional rule is enabled only for the published GCP deployment and disabled for
+the documented self-managed UDS mode. Keep the callout endpoint restricted to your own
+proxy. With a CDN in front, use its trusted client-IP header via
+`DD_TRACE_CLIENT_IP_HEADER`. If neither `source.ip` nor the full GCLB header reaches the
+extension, resolution falls back to the standard header policy.
 
 ### SSL Configuration
 

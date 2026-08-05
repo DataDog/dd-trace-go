@@ -141,10 +141,7 @@ func (*HeaderExtractionFeature) OnResponse(op *httpsec.HandlerOperation, resp ht
 }
 
 func extractRequestHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
-	// The identity was resolved once by whoever started the operation; the WAF
-	// and the span tags below both read that same pair rather than each running
-	// their own header scan.
-	op.SetStringTags(clientip.TagsFor(args.RemoteIP, args.ClientIP))
+	op.SetStringTags(clientip.TagsFor(args.RemoteAddr, args.ClientIP))
 
 	headers := headersRemoveCookies(args.Headers)
 	headers["host"] = []string{args.Host}

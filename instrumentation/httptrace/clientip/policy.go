@@ -96,9 +96,11 @@ func Resolve(hdrs map[string][]string, hasCanonicalHeaders bool, remoteAddr stri
 }
 
 // TagsFor returns the Datadog span tags `http.client_ip` containing the client
-// IP and `network.client.ip` containing the remote IP. Each tag is present only
-// if the corresponding address is valid; nil is returned when neither is.
-func TagsFor(remoteIP netip.Addr, clientIP netip.Addr) map[string]string {
+// IP and `network.client.ip` containing the parsed remote address. Each tag is
+// present only if the corresponding address is valid; nil is returned when
+// neither is.
+func TagsFor(remoteAddr string, clientIP netip.Addr) map[string]string {
+	remoteIP := parseIP(remoteAddr)
 	remoteIPValid := remoteIP.IsValid()
 	clientIPValid := clientIP.IsValid()
 

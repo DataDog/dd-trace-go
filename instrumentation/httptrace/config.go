@@ -74,9 +74,7 @@ func ResetCfg() {
 	cfg = newConfig()
 }
 
-func traceClientIPEnabled() bool {
-	return cfg.traceClientIP
-}
+func traceClientIPEnabled() bool { return cfg.traceClientIP }
 
 func newConfig() config {
 	c := config{

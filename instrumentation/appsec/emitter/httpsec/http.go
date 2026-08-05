@@ -73,16 +73,12 @@ type (
 		RequestURI   string
 		RequestRoute string
 		Host         string
-		// RemoteIP is the transport peer already resolved by the producer. An
-		// invalid address means none was determined.
-		RemoteIP netip.Addr
-		// ClientIP is the identity already resolved by the producer. Nothing
-		// downstream re-derives it, so the span and WAF cannot disagree.
-		ClientIP    netip.Addr
-		Headers     map[string][]string
-		Cookies     map[string][]string
-		QueryParams map[string][]string
-		PathParams  map[string]string
+		RemoteAddr   string
+		ClientIP     netip.Addr
+		Headers      map[string][]string
+		Cookies      map[string][]string
+		QueryParams  map[string][]string
+		PathParams   map[string]string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -103,18 +99,14 @@ func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 //
 // Callers reaching AppSec through instrumentation/httptrace have already
 // resolved this and pass it down; those wrapping a handler directly have not.
-func clientIdentity(opts *Config, r *http.Request) (remoteIP, clientIP netip.Addr) {
+func clientIdentity(opts *Config, r *http.Request) netip.Addr {
 	// A header named by DD_TRACE_CLIENT_IP_HEADER outranks a supplied address:
 	// see clientip.CustomHeaderConfigured.
-	if !clientip.CustomHeaderConfigured() {
-		if opts.ClientIP.IsValid() {
-			return opts.RemoteIP, opts.ClientIP
-		}
-		if opts.RemoteIP.IsValid() {
-			return opts.RemoteIP, opts.RemoteIP
-		}
+	if !clientip.CustomHeaderConfigured() && opts.ClientIP.IsValid() {
+		return opts.ClientIP
 	}
-	return clientip.Resolve(r.Header, true, r.RemoteAddr)
+	_, clientIP := clientip.Resolve(r.Header, true, r.RemoteAddr)
+	return clientIP
 }
 
 func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.TagSetter) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
@@ -299,7 +291,7 @@ func BeforeHandle(
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
 
-	remoteIP, clientIP := clientIdentity(opts, r)
+	clientIP := clientIdentity(opts, r)
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
 		Framework:    opts.Framework,
@@ -307,7 +299,7 @@ func BeforeHandle(
 		RequestURI:   r.RequestURI,
 		RequestRoute: opts.Route,
 		Host:         r.Host,
-		RemoteIP:     remoteIP,
+		RemoteAddr:   r.RemoteAddr,
 		ClientIP:     clientIP,
 		Headers:      r.Header,
 		Cookies:      makeCookies(r.Cookies()),

@@ -13,9 +13,6 @@ import (
 type Config struct {
 	// Framework is the name of the framework or library being used (optional).
 	Framework string
-	// RemoteIP is the transport peer, reported as the network.client.ip tag. It
-	// is taken exactly as given; leaving it invalid omits the tag.
-	RemoteIP netip.Addr
 	// ClientIP is the client identity supplied by an integration rather than
 	// derived from request headers. DD_TRACE_CLIENT_IP_HEADER outranks it.
 	ClientIP netip.Addr

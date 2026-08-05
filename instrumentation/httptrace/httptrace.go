@@ -53,16 +53,13 @@ type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.Fi
 // spans that end up with 9+ tags (IP/AppSec/baggage) skip a growth and rehash.
 const requestSpanTagsSizeHint = 9
 
-// resolveClientIP is the default client IP resolution policy, held in a
-// variable so tests can count how many times a single request resolves.
-var resolveClientIP = clientip.Resolve
-
 // StartRequestSpan starts a server-side HTTP request span with the standard list of HTTP request span tags
 // (http.method, http.url, http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
 	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ipTags = clientip.TagsFor(resolveClientIP(r.Header, true, r.RemoteAddr))
+		_, clientIP := clientip.Resolve(r.Header, true, r.RemoteAddr)
+		ipTags = clientip.TagsFor(r.RemoteAddr, clientIP)
 	}
 	return startRequestSpan(r, ipTags, opts...)
 }

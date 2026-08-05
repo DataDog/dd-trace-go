@@ -387,7 +387,7 @@ func TestClientIPExtraction(t *testing.T) {
 						monitoredHdrs = tc.clientIPHeaders
 					}
 					remoteIP, clientIP := resolveWith(headers, hasCanonicalMIMEHeaderKeys, tc.remoteAddr, monitoredHdrs)
-					tags := TagsFor(remoteIP, clientIP)
+					tags := TagsFor(tc.remoteAddr, clientIP)
 					if tc.expectedIP.IsValid() {
 						expectedIP := tc.expectedIP.String()
 						require.Equal(t, expectedIP, clientIP.String())
