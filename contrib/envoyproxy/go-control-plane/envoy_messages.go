@@ -61,10 +61,10 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	// X-Forwarded-For is deliberately left exactly as received, forged entries
 	// and all, so the WAF keeps inspecting the header the client actually sent.
 	// The trustworthy address travels beside it instead.
-	var remoteIP, clientIP netip.Addr
+	var clientIP netip.Addr
 	if m.component(ctx) == componentNameGCPServiceExtension {
 		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), requestForwardedFor, m.trustGCLBXForwardedFor); ok {
-			remoteIP, clientIP = trustedIP, trustedIP
+			clientIP = trustedIP
 		}
 	}
 
@@ -75,7 +75,6 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 		Scheme:     pseudoHeaders[":scheme"],
 		Headers:    headers,
 		RemoteAddr: remoteAddr,
-		RemoteIP:   remoteIP,
 		ClientIP:   clientIP,
 	}, nil
 }

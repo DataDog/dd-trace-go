@@ -93,10 +93,10 @@ deployment and disables it when `DD_SERVICE_EXTENSION_UDS_PATH` selects the docu
 self-managed Envoy mode. Deployments identified as plain Envoy, Envoy Gateway or Istio
 ignore both `source.ip` and the positional rule.
 
-Once an address is resolved this way it becomes both `http.client_ip` and
-`network.client.ip`. Previously `network.client.ip` held the load balancer's forwarding
-rule address, taken from the last `X-Forwarded-For` entry; that address is no longer
-recorded, because the client is what the tag is meant to describe.
+An address resolved this way becomes `http.client_ip`. The raw remote address remains
+only a fallback for requests where the proxy could not determine `ClientIP`; the GCP
+path does not report the load balancer's forwarding-rule address as
+`network.client.ip`.
 
 If `DD_TRACE_CLIENT_IP_HEADER` names a header, that header decides identity and none
 of the above applies. Naming a header is an explicit statement about where the client

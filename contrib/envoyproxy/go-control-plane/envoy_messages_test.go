@@ -263,12 +263,11 @@ func (tc clientIPTestCase) extract(t *testing.T) (request extractedRequest) {
 
 	pseudoRequest, err := msg.ExtractRequest(ctx)
 	require.NoError(t, err)
-	return extractedRequest{pseudoRequest.ClientIP, pseudoRequest.RemoteIP, pseudoRequest.Headers["X-Forwarded-For"]}
+	return extractedRequest{pseudoRequest.ClientIP, pseudoRequest.Headers["X-Forwarded-For"]}
 }
 
 type extractedRequest struct {
 	clientIP     netip.Addr
-	remoteIP     netip.Addr
 	forwardedFor []string
 }
 
@@ -281,13 +280,10 @@ func TestExtractRequestClientIP(t *testing.T) {
 
 			if tc.wantClientIP == "" {
 				require.False(t, got.clientIP.IsValid(), "expected no resolved identity, got %s", got.clientIP)
-				require.False(t, got.remoteIP.IsValid(), "expected no resolved identity, got %s", got.remoteIP)
 				return
 			}
 
 			require.Equal(t, tc.wantClientIP, got.clientIP.String())
-			require.Equal(t, tc.wantClientIP, got.remoteIP.String(),
-				"the address the load balancer observed is both the peer and the client")
 		})
 	}
 }

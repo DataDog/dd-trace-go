@@ -26,11 +26,8 @@ type PseudoRequest struct {
 	RemoteAddr string
 	Headers    map[string][]string
 
-	// RemoteIP is the transport peer, reported as the network.client.ip tag. It
-	// is only read when ClientIP is valid.
-	RemoteIP netip.Addr
 	// ClientIP is the identity reported by the proxy's infrastructure. When
-	// invalid, the default policy runs against Headers and RemoteAddr.
+	// invalid, the default policy runs against Headers and the raw RemoteAddr.
 	ClientIP netip.Addr
 }
 
