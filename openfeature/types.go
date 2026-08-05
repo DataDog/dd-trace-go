@@ -19,6 +19,16 @@ type universalFlagsConfiguration struct {
 	Format string `json:"format"`
 	// Environment contains information about the environment this configuration applies to
 	Environment environment `json:"environment"`
+	// ObserveFullEvaluationData reports whether this environment consents to full-fidelity
+	// flagevaluation data — the raw targeting key and the raw evaluation context. It is
+	// environment-scoped in origin but lives at the ROOT of the UFC, as a sibling of
+	// Environment rather than a field on it.
+	//
+	// Not omitempty: false must be on the wire so absent-as-false is unambiguous. Reading it
+	// as a plain bool is what makes the default fail closed — both an absent key and an
+	// explicit null leave it false, so a stale or malformed configuration can never opt an
+	// environment into emitting PII.
+	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
 	// invalidFlags contains flags that could not be parsed or validated.
@@ -27,12 +37,16 @@ type universalFlagsConfiguration struct {
 
 // UnmarshalJSON parses flags independently so one invalid flag does not reject
 // the complete configuration.
+//
+// This shadow struct is the ONLY thing that populates the configuration: a field added to
+// universalFlagsConfiguration but not listed and copied here reads as its zero value forever.
 func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		CreatedAt   time.Time                  `json:"createdAt"`
-		Format      string                     `json:"format"`
-		Environment environment                `json:"environment"`
-		Flags       map[string]json.RawMessage `json:"flags"`
+		CreatedAt                 time.Time                  `json:"createdAt"`
+		Format                    string                     `json:"format"`
+		Environment               environment                `json:"environment"`
+		ObserveFullEvaluationData bool                       `json:"observeFullEvaluationData"`
+		Flags                     map[string]json.RawMessage `json:"flags"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -41,6 +55,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.CreatedAt = raw.CreatedAt
 	config.Format = raw.Format
 	config.Environment = raw.Environment
+	config.ObserveFullEvaluationData = raw.ObserveFullEvaluationData
 	config.Flags = make(map[string]*flag, len(raw.Flags))
 	config.invalidFlags = make(map[string]struct{})
 

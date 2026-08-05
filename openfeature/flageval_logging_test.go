@@ -969,7 +969,9 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 		t.Run("distinct buckets via add(): "+tc.name, func(t *testing.T) {
 			agg := setupTestAggregator(t)
 			nowMs := time.Now().UnixMilli()
-			d := evalDetails{flagKey: "f", variant: "on"}
+			// Consent on: the context is a bucket dimension only when it survives
+			// serialization. See TestConsentOffDropsContextFromBucketKey for the other half.
+			d := evalDetails{flagKey: "f", variant: "on", observeFullEvaluationData: true}
 			agg.add(d, tc.mapA, nowMs)
 			agg.add(d, tc.mapB, nowMs)
 
@@ -992,7 +994,7 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 	t.Run("re-adding identical multi-field context increments same bucket", func(t *testing.T) {
 		agg := setupTestAggregator(t)
 		nowMs := time.Now().UnixMilli()
-		d := evalDetails{flagKey: "f", variant: "on"}
+		d := evalDetails{flagKey: "f", variant: "on", observeFullEvaluationData: true}
 		ctx := map[string]any{"a": "x\ny", "b": 7, "c=d": true}
 		agg.add(d, ctx, nowMs)
 		agg.add(d, map[string]any{"b": 7, "a": "x\ny", "c=d": true}, nowMs) // same logical context, different insertion order
@@ -1193,6 +1195,8 @@ func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
 			ResolutionDetail: of.ResolutionDetail{
 				Variant: "on",
 				Reason:  of.TargetingMatchReason,
+				// Consent on: pruning is only reachable when the context is captured at all.
+				FlagMetadata: of.FlagMetadata{metadataObserveFullEvaluationDataKey: true},
 			},
 		},
 	}

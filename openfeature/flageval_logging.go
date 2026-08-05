@@ -94,12 +94,29 @@ type evaluationAggregationKey struct {
 	errorMessage   string
 	targetingKey   string
 	contextKey     string // exact canonical encoding of the pruned context; comparable, not a digest
+	// observeFullEvaluationData is the consent snapshot this bucket was opened with. It is part
+	// of the key so two subjects evaluated under different consent can never merge into one
+	// bucket and inherit a single policy.
+	//
+	// When it is false, contextKey is ALWAYS empty (enforced in add). The key must carry
+	// exactly the dimensions that survive serialization, and a consent-off bucket discards its
+	// context — keying on a context that is then dropped would let one high-cardinality
+	// attribute produce many wire-identical rows and burn perFlagCap on precisely the
+	// privacy-protected traffic, pushing it into the degraded tier.
+	observeFullEvaluationData bool
 }
 
 // evaluationDegradedKey is the key for the degraded aggregation map in the
 // full → degraded → drop path. It drops targeting key, context, and other full-only fields,
 // keeping only schema-visible fields emitted by the degraded payload. When a NEW degraded
 // bucket would exceed degradedCap, the count is dropped and counted.
+//
+// Consent is deliberately NOT a dimension here. The degraded payload emits neither
+// targeting_key nor context, so consent changes nothing about a degraded event and two
+// degraded buckets differing only by consent would be byte-identical on the wire. Adding it
+// would double degraded cardinality for mixed-consent traffic and burn degradedCap for no
+// privacy gain — the same "key exactly the dimensions that survive serialization" rule that
+// drops the context dimension from evaluationAggregationKey when consent is off.
 type evaluationDegradedKey struct {
 	flagKey        string
 	variant        string
@@ -118,6 +135,12 @@ type evaluationEntry struct {
 	targetingKey string
 	contextAttrs map[string]any
 	errorMessage string
+	// observeFullEvaluationData decides at serialization whether this bucket emits its raw
+	// targeting key and context or the hashed key with no context. It duplicates the
+	// evaluationAggregationKey field on purpose: add AND-folds it across observations, so if
+	// the key ever drifts from this field a single consent-off observation still forces the
+	// whole bucket onto the privacy-protected path.
+	observeFullEvaluationData bool
 }
 
 // observe records one more evaluation against an existing bucket: it bumps the count and
@@ -263,6 +286,9 @@ type evalDetails struct {
 	errorMessage   string
 	runtimeDefault bool
 	evalTimeMs     int64
+	// observeFullEvaluationData is the consent the evaluator stamped onto this evaluation's
+	// metadata. Read only from there — never from live configuration.
+	observeFullEvaluationData bool
 }
 
 // newFlagEvalLoggingWriter creates a new flag evaluation writer.
@@ -363,6 +389,27 @@ func (w *flagEvalLoggingWriter) flush() {
 		log.Debug("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
 	}
 
+	events := w.buildFlushEvents(time.Now().UnixMilli())
+	if len(events) == 0 {
+		return
+	}
+
+	payload := flagEvalLoggingPayload{
+		Context:         w.ddContext,
+		FlagEvaluations: events,
+	}
+
+	if err := w.sendToAgent(payload); err != nil {
+		log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
+	} else {
+		log.Debug("openfeature: successfully sent %d flag evaluation events", len(events))
+	}
+}
+
+// buildFlushEvents drains both aggregation tiers and renders them as wire events stamped with
+// flushTimeMs. It is the whole serialization decision — in particular the full-fidelity vs
+// privacy-protected split — separated from the transport so it can be asserted directly.
+func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLoggingEvent {
 	w.aggregator.mu.Lock()
 
 	// Under lock: drain both maps.
@@ -379,7 +426,7 @@ func (w *flagEvalLoggingWriter) flush() {
 		if degradedOverflow > 0 {
 			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
 		}
-		return
+		return nil
 	}
 
 	// Reset maps.
@@ -395,7 +442,6 @@ func (w *flagEvalLoggingWriter) flush() {
 		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
 	}
 
-	flushTimeMs := time.Now().UnixMilli()
 	var events []flagEvalLoggingEvent
 
 	// Full tier: required fields + variant + allocation + targeting_key + context + error.
@@ -403,7 +449,20 @@ func (w *flagEvalLoggingWriter) flush() {
 	for key, e := range full {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
-		ev.TargetingKey = e.targetingKey
+		// The subject and its context leave the SDK verbatim only when the environment this
+		// bucket was evaluated against consented. Otherwise the subject is reduced to a
+		// one-way fingerprint and the context is omitted entirely — the key is absent, not
+		// null and not an empty object. Consent is read from the bucket, which snapshotted it
+		// from the evaluation; never from live configuration, whose value may have changed
+		// since.
+		if e.observeFullEvaluationData {
+			ev.TargetingKey = e.targetingKey
+			if len(e.contextAttrs) > 0 {
+				ev.Context = &flagEvalEventContext{Evaluation: e.contextAttrs}
+			}
+		} else {
+			ev.TargetingKey = hashTargetingKey(e.targetingKey)
+		}
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
 		}
@@ -412,9 +471,6 @@ func (w *flagEvalLoggingWriter) flush() {
 		}
 		if e.errorMessage != "" {
 			ev.Error = &flagEvalError{Message: e.errorMessage}
-		}
-		if len(e.contextAttrs) > 0 {
-			ev.Context = &flagEvalEventContext{Evaluation: e.contextAttrs}
 		}
 		events = append(events, ev)
 	}
@@ -436,20 +492,7 @@ func (w *flagEvalLoggingWriter) flush() {
 		events = append(events, ev)
 	}
 
-	if len(events) == 0 {
-		return
-	}
-
-	payload := flagEvalLoggingPayload{
-		Context:         w.ddContext,
-		FlagEvaluations: events,
-	}
-
-	if err := w.sendToAgent(payload); err != nil {
-		log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
-	} else {
-		log.Debug("openfeature: successfully sent %d flag evaluation events", len(events))
-	}
+	return events
 }
 
 // baseFlagEvalLoggingEvent builds a flagEvalLoggingEvent with ONLY the five required schema
@@ -492,9 +535,14 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 		evaluationTimeMs = time.Now().UnixMilli()
 	}
 	ev := evalEvent{
-		d:                 d,
-		evaluationContext: hookContext.EvaluationContext(),
-		evaluationTimeMs:  evaluationTimeMs,
+		d:                d,
+		evaluationTimeMs: evaluationTimeMs,
+	}
+	// Capture the evaluation context only when the environment consented to it. Without
+	// consent the context is neither serialized nor part of the bucket key, so retaining a
+	// reference to the caller's attributes would keep it alive in the queue for nothing.
+	if d.observeFullEvaluationData {
+		ev.evaluationContext = hookContext.EvaluationContext()
 	}
 	select {
 	case w.events <- ev:
@@ -505,7 +553,12 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
 func (w *flagEvalLoggingWriter) aggregate(ev evalEvent) {
-	contextAttrs := flattenAndPruneContext(ev.evaluationContext.Attributes())
+	// Without consent the context is dropped at serialization and excluded from the bucket
+	// key, so flattening and pruning it would be pure overhead on the privacy-protected path.
+	var contextAttrs map[string]any
+	if ev.d.observeFullEvaluationData {
+		contextAttrs = flattenAndPruneContext(ev.evaluationContext.Attributes())
+	}
 	w.aggregator.add(ev.d, contextAttrs, ev.evaluationTimeMs)
 }
 
@@ -639,22 +692,35 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Enforce the consent-off invariant here rather than only at the call site, so it holds for
+	// every caller: without consent the context never reaches the wire, so it must not reach
+	// the bucket key either (see evaluationAggregationKey).
+	if !d.observeFullEvaluationData {
+		contextAttrs = nil
+	}
+
 	// Build the full key from schema-visible dimensions including the canonical context encoding.
 	// No hash, so distinct contexts get distinct buckets.
 	fullKey := evaluationAggregationKey{
-		flagKey:        d.flagKey,
-		variant:        d.variant,
-		allocationKey:  d.allocationKey,
-		runtimeDefault: d.runtimeDefault,
-		errorMessage:   d.errorMessage,
-		targetingKey:   d.targetingKey,
-		contextKey:     canonicalContextKey(contextAttrs),
+		flagKey:                   d.flagKey,
+		variant:                   d.variant,
+		allocationKey:             d.allocationKey,
+		runtimeDefault:            d.runtimeDefault,
+		errorMessage:              d.errorMessage,
+		targetingKey:              d.targetingKey,
+		contextKey:                canonicalContextKey(contextAttrs),
+		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
 
 	// Fast path: this exact full-tier bucket already exists → increment its count. Because
 	// contextKey is the full canonical encoding (not a digest), this fast path is hit only by a
 	// genuinely identical pruned context — never by an aliasing collision.
 	if e, ok := a.full[fullKey]; ok {
+		// Defense in depth. Consent is part of fullKey, so a consent-off observation cannot
+		// reach a consent-on bucket today; the AND-fold means that if the key ever stops
+		// carrying consent, the privacy-protected policy still wins for the whole bucket
+		// instead of the bucket inheriting the consent of whichever observation opened it.
+		e.observeFullEvaluationData = e.observeFullEvaluationData && d.observeFullEvaluationData
 		e.observe(evaluationTimeMs)
 		return
 	}
@@ -684,13 +750,14 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 
 	// New full-tier entry.
 	a.full[fullKey] = &evaluationEntry{
-		count:           1,
-		firstEvaluation: evaluationTimeMs,
-		lastEvaluation:  evaluationTimeMs,
-		runtimeDefault:  d.runtimeDefault,
-		targetingKey:    d.targetingKey,
-		contextAttrs:    contextAttrs,
-		errorMessage:    d.errorMessage,
+		count:                     1,
+		firstEvaluation:           evaluationTimeMs,
+		lastEvaluation:            evaluationTimeMs,
+		runtimeDefault:            d.runtimeDefault,
+		targetingKey:              d.targetingKey,
+		contextAttrs:              contextAttrs,
+		errorMessage:              d.errorMessage,
+		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
 	a.globalCount++
 }
@@ -877,13 +944,17 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errMsg = string(details.ErrorCode)
 	}
 	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
+	// Fail closed: a missing or non-bool consent stamp yields false, so an evaluation that
+	// never passed through the evaluator cannot emit raw PII.
+	observeFullEvaluationData, _ := details.FlagMetadata[metadataObserveFullEvaluationDataKey].(bool)
 	return evalDetails{
-		flagKey:        hookContext.FlagKey(),
-		variant:        details.Variant,
-		allocationKey:  allocationKey,
-		targetingKey:   hookContext.EvaluationContext().TargetingKey(),
-		errorMessage:   errMsg,
-		runtimeDefault: isRuntimeDefault(details),
-		evalTimeMs:     evalTimeMs,
+		flagKey:                   hookContext.FlagKey(),
+		variant:                   details.Variant,
+		allocationKey:             allocationKey,
+		targetingKey:              hookContext.EvaluationContext().TargetingKey(),
+		errorMessage:              errMsg,
+		runtimeDefault:            isRuntimeDefault(details),
+		evalTimeMs:                evalTimeMs,
+		observeFullEvaluationData: observeFullEvaluationData,
 	}
 }

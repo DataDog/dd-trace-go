@@ -42,6 +42,16 @@ const (
 	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
 	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time.
 	metadataEvalTimeKey = "dd.eval.timestamp_ms"
+	// metadataObserveFullEvaluationDataKey carries the environment's consent to observe
+	// full-fidelity evaluation data, snapshotted in DatadogProvider.evaluate from the exact
+	// UFC the evaluation ran against. It travels WITH the evaluation because nothing
+	// downstream of the evaluator may consult live configuration: a Remote Config update
+	// landing between evaluation and flush would otherwise retroactively apply another
+	// environment's consent, leaking raw values or needlessly hashing.
+	//
+	// Deliberately unprefixed snake_case, unlike the dd.* keys above: this is the cross-SDK
+	// contract key, so every SDK stamps and reads the same name.
+	metadataObserveFullEvaluationDataKey = "observe_full_evaluation_data"
 )
 
 // evaluateFlag evaluates a feature flag with the given context. The caller supplies the
@@ -91,8 +101,9 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 				}
 			}
 
-			// Build metadata for exposure tracking
-			metadata := make(map[string]any, 3)
+			// Build metadata for exposure tracking. Sized for the three keys set here plus the
+			// two DatadogProvider.evaluate stamps onto every return path.
+			metadata := make(map[string]any, 5)
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)
