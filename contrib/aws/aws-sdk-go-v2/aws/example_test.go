@@ -35,8 +35,7 @@ func Example() {
 // An example of instrumenting the AWS config via a LoadOptionsFunc, for use when the aws.Config isn't otherwise
 // directly accessible (e.g. when the AWS config is loaded by other code, such as an SDK helper or an AWS-provided
 // config loader).
-func Example_withDataDogTracer() {
-	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), awstrace.WithDataDogTracer())
+func ExampleWithDataDogTracer() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}

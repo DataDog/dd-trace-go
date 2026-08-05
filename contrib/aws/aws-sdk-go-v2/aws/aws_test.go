@@ -159,11 +159,15 @@ func TestWithDataDogTracer(t *testing.T) {
 			require.NoError(t, err)
 
 			sqsClient := sqs.NewFromConfig(awsCfg)
-			// TODO(darccio): assert.NoError
-			sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+			_, err = sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
 				MessageBody: aws.String("foobar"),
 				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 			})
+			if tt.expectedStatusCode >= 400 {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
