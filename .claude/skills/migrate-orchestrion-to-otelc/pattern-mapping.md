@@ -1,48 +1,61 @@
 # Orchestrion aspect patterns → otelc
 
-For each aspect in the integration's `orchestrion.yml`, write the otelc rule that does the **same
-thing**. Do not introduce mechanisms the aspect does not use. Take exact rule syntax from the otelc
-sources in `references.md`, and exact orchestrion semantics from the orchestrion sources there.
+Reproduce each aspect's behaviour and nothing more. Exact syntax and semantics come from the sources
+in `references.md`.
 
 ## Advice → otelc rule
 
 | Orchestrion advice | otelc equivalent |
 |---|---|
-| `wrap-expression` on a `function-call` | `wrap_call` (call-site `replace` template), or an `inject_hooks` after-hook when it is easier to act on the constructor's result |
-| `append-args` | `wrap_call` with `append_args` |
-| `replace-function` / `redirect-call` | before-hook: `SetSkipCall(true)` + call the same drop-in the aspect points to + `SetReturnVal`; guard re-entrancy if the drop-in calls the target again |
-| `prepend-statements` in a `function-body` | `inject_hooks` before/after hook, or `inject_code` if the code must run in-package |
-| `add-struct-field` | `add_struct_fields` (make the field **exported** if a hook must read it) |
-| `inject-declarations` (`go:linkname` to the contrib) | usually unnecessary: the hook is an external package and otelc links it via its own trampoline. Only needed if in-package `inject_code` must reference a contrib symbol |
+| `wrap-expression` on a `function-call` | `wrap_call` with a `replace` template, or an `inject_hooks` after-hook when acting on the constructor's result is easier |
+| `append-args` | `wrap_call` with `append_args`, plus `variadic_type` when the matched call spreads a slice |
+| `replace-function` | before-hook: `SetSkipCall(true)` + call the drop-in the aspect points to + `SetReturnVal`; guard re-entrancy if the drop-in calls the target again |
+| `prepend-statements` in a `function-body` | `inject_hooks` before/after hook, or `inject_code` when the code must run in-package |
+| `add-struct-field` | `add_struct_fields`, exported if a hook must read it |
+| `assign-value` | `assign_value`: `replace:` for a new expression, `wrap:` to keep the original as `{{ . }}` |
+| `inject-declarations` (`go:linkname` to the contrib) | usually nothing: otelc links external hooks through its own trampoline. Only needed if in-package `inject_code` must reference a contrib symbol |
+| `add-blank-import` | the rule's top-level `imports:` map |
 
-Join points map directly: `function-call` → `function_call`; `function-body` func/recv → `func`/`recv`;
-`struct-definition` → `struct`; the `all-of`/`one-of`/`not` combinators have otelc equivalents.
-Confirm names and shape against the sources.
+## Join point → otelc selector
+
+| Orchestrion join point | otelc |
+|---|---|
+| `function-body` over `function` (`name`, `receiver`) | `where: {func:, recv:}` |
+| `function` with `signature` / `signature-contains` | `where:` sub-filters `signature`, `signature_contains`, `result`, `last_result`, `param` |
+| `function-call` | `where: {function_call: "import/path.Func"}` |
+| `struct-definition` | `where: {struct:}` |
+| `declaration-of`, `value-declaration` | `where: {identifier:, kind: var\|const}` |
+| `directive` (`dd:span`) | `where: {directive:}` with `expand_directive` |
+| `import-path`, `package-name`, `package-filter` | `target:`, exact or glob; `$root` for the module being built |
+| `test-main` | nothing. `target: test_main` is unsupported; `where.file.is_test` gates files inside a point-selector rule |
+| `all-of` | flat keys in one `where` are an implicit conjunction |
+| `one-of` | no combinator: one rule per alternative |
+| `not` | see `feature-gaps.md` |
+
+`version: <start>,<end>` binds a rule to a range of the target library. Orchestrion has no
+equivalent, so use it only when the hook depends on that range.
 
 ## Porting a template to `inject_code`
 
-Orchestrion templates name parameters positionally (`.Function.Argument 1`, `.Function.Receiver`).
-otelc's `inject_code` takes a **raw string with no template variables**, so the injected code has to
-spell the receiver and parameter names exactly as the target's source does.
+`inject_code` takes a raw string (`raw:`) with no template variables:
+- Spell the receiver and parameter names exactly as the target's source does.
+- Results the target leaves unnamed become `_unnamedRetVal0`, `_unnamedRetVal1`, and so on.
+- Imports the snippet needs come from the rule's top-level `imports:`.
+- It lands at the top of the body, unless `pattern:` plus `placement: before|after` anchor it to a
+  statement.
 
-That is fine when the target is our own code, and unusable when it is a third-party library whose
-parameter names you do not control. For our own code, write the names literally and add a test that
-parses the source with `go/ast` and asserts they are unchanged. A rename normally breaks the otelc
-build, since the injected code then names something that does not exist, but the failure surfaces as
-a compile error inside an instrumented copy of the package rather than pointing at the rule. The
-guard test turns it into a plain `go test` failure that names the yaml.
-(`ddtrace/tracer/gls_otelc_identifiers_test.go` is the worked example.)
+Only workable when the target is our own code. Guard the coupling with a test that parses the source
+with `go/ast` and asserts the identifiers are unchanged: without it a rename fails as a compile
+error inside an instrumented copy of the package instead of pointing at the yaml
+(`ddtrace/tracer/gls_otelc_identifiers_test.go`).
 
 ## Reaching state the aspect read in-package
 
-An otelc hook is an external package. It can read/write **exported** fields (including exported fields
-added by `add_struct_fields`), but not the library's original **unexported** fields. If the
-orchestrion aspect read an unexported field (its `prepend-statements` ran in-package), reproduce it
-one of two ways:
-- wrap a public accessor's return value (stay external), or
-- use `inject_code` (raw, in-body, runs in-package) for that piece.
+Hooks are external. They can read and write exported fields, including ones added by
+`add_struct_fields`, but not the library's unexported fields. If the aspect read an unexported
+field, either wrap a public accessor's return value or use `inject_code` for that piece.
 
 ## Reuse rule
 
-Every hook calls the existing contrib entrypoint (`WrapClient`, `Middleware`, `Open`, ...). The otelc
-layer is glue that reproduces the orchestrion aspect; the tracing logic stays in the contrib.
+Every hook calls the existing contrib entrypoint (`WrapClient`, `Middleware`, `Open`, ...). The
+tracing logic stays in the contrib.
