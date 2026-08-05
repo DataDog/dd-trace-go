@@ -8,163 +8,129 @@ description: >-
 
 # Migrate an integration from Orchestrion to otelc
 
-Port one dd-trace-go contrib's Orchestrion auto-instrumentation to otelc. The otelc rules and hooks
-must reproduce what the integration's `orchestrion.yml` already does, reusing the existing contrib
-entrypoints. Do not reimplement tracing, and do not introduce mechanisms the `orchestrion.yml` does
-not use.
+Reproduce what the integration's `orchestrion.yml` does, with otelc rules and hooks that call the
+existing contrib entrypoints. Do not reimplement tracing, and do not introduce mechanisms the
+`orchestrion.yml` does not use.
 
 **Scope:** work only in the current branch/worktree and the sources in `references.md`. Do not
 inspect, borrow from, or depend on other branches, PRs, or worktrees, even if they contain otelc
-work. Produce the migration fresh.
+work.
 
 ## Success criterion
 
-Full parity: the integration's existing Orchestrion integration tests under
-`internal/orchestrion/_integration/<name>/` pass built with otelc instead of Orchestrion, with the
-same spans. Those tests decide whether the migration is correct.
+The integration's existing tests under `internal/orchestrion/_integration/<name>/` pass built with
+otelc instead of Orchestrion, with the same spans.
 
-**Do not edit existing tests or assertions to make the migration pass.** They describe the behaviour
-you have to reproduce, so changing them changes the answer. Adding is fine, and often necessary:
-new test cases, and stronger assertions on behaviour that was real but never pinned down.
+**Do not edit existing tests or assertions to make the migration pass.** Adding is fine and often
+necessary: new cases, and stronger assertions on behaviour that was real but never pinned down
+("exactly one span" usually needs a new assertion rather than an edited one).
 
-When you find a behaviour difference, write the test before deciding what to do about it:
+For each behaviour difference you think you found, in this order:
 
-1. Assert the orchestrion behaviour, as strictly as it deserves. Existing suites often assert that
-   the expected spans are present but not that unexpected ones are absent, so "exactly one span"
-   usually needs a new assertion rather than an edited one.
-2. Run it under orchestrion. It must pass. If it does not, your understanding of the current
-   behaviour is wrong, and everything after this is built on that mistake.
-3. Run it under otelc and see what actually happens.
+1. Assert the orchestrion behaviour.
+2. Run it under orchestrion. It must pass; if it does not, your reading of the current behaviour is
+   wrong.
+3. Run it under otelc. A difference argued from the call graph and never run is a guess.
 
-Then put the test at the lowest level that can still fail. Most of what a migration changes is
-ordinary contrib behaviour, so a unit test in `contrib/<name>` with `mocktracer` is usually enough
-and runs in seconds. Reach for `_integration` only when the assertion genuinely needs a woven build.
-A mechanism the hooks depend on is often observable directly: `TestDialMarksItsOwnDial` in
-`contrib/gomodule/redigo` pins the contract the redigo hook relies on with no server and no otelc.
+Put each test at the lowest level that can still fail. A `contrib/<name>` unit test with
+`mocktracer` covers most migrations; use `_integration` only when the assertion needs a woven build.
+Check that each test fails when you break what it guards.
 
-Check the test fails when you break the thing it guards. Several of these guards passed for the
-wrong reason on the first attempt.
+Two rungs, both run from `internal/orchestrion/_integration`:
+- **Compile + inject:** `otelc go build ./<name>/...`.
+- **Span parity:** `otelc go test ./<name>/...` against the same suite under `orchestrion go test`.
 
-Reasoning from the call graph is not a substitute for step 3. A difference you argued for on paper
-and never ran is a guess, and it should be labelled as one until a test says otherwise.
+Rules with `target: main` fire in neither rung: under `go test` the package under test compiles as
+`-p <import path>`. Check those by building a binary and running it, as
+`_integration/otelc-autostart` does.
 
-Two rungs, in order, both run from `internal/orchestrion/_integration`:
-- **Compile + inject.** `otelc go build ./<name>/...`. If it compiles with the hooks injected, the
-  `otelc.yaml` and hook package are structurally sound.
-- **Span parity.** `otelc go test ./<name>/...`, then the same suite under `orchestrion go test`, and
-  compare. The foundation this needs (tracer lifecycle, GLS bridge, harness support) is already in
-  the repo, so do not build it and do not go looking for it in other branches, PRs, or worktrees.
-
-A green run is not enough on its own: check the output for tests that **skipped**. Most of these
-suites skip themselves when instrumentation is missing, so a build where nothing was woven reports
-as passing. See the two failure modes under Cautions.
+Before believing a green run, scan for **skipped** tests and check `matched.json` (see Cautions).
+`harness.Run` fails loudly on an unwoven build, but the GLS and foundation suites skip themselves.
 
 ## Build enough context first
 
-Before touching an integration, understand both sides. Read `references.md` and, from the sources it
-links, learn:
-- Orchestrion: what a join point and an advice are, the full set available, and what the advice
-  templates can read (the `.` accessors).
-- otelc: the rule kinds, their exact syntax, and when to use each.
+From the sources in `references.md`, learn:
+- Orchestrion: the full set of join points and advice, and what advice templates can read (the `.`
+  accessors).
+- otelc: the seven rule kinds (`inject_hooks`, `inject_code`, `add_struct_fields`, `wrap_call`,
+  `add_file`, `assign_value`, `expand_directive`), the `where` and `where.file` selectors, glob and
+  `$root` targets, and `version` ranges.
 
-Two facts to keep straight:
-- These are dd's own otelc rules for dd-trace-go. The hooks import dd-trace-go and call the existing
-  contrib, the same way the `orchestrion.yml` aspects do today.
-- Orchestrion renders Go code templates into the matched AST node. otelc's normal path is external Go
-  hook functions linked in via a trampoline plus `//go:linkname`; it can *also* inject raw code into
-  a body (`inject_code`), like Orchestrion. Prefer hooks; use raw in-body injection only when the
-  code must run inside the target package.
+Orchestrion renders Go code templates into the matched AST node. otelc calls external hook functions
+through a trampoline and `//go:linkname`, and can also inject raw code in-package (`inject_code`).
+Prefer hooks; inject raw code only when it must run inside the target package.
 
 ## Workflow
 
-1. Enumerate the source: read `contrib/<name>/orchestrion.yml`; list each aspect as (join point,
-   advice, which contrib function it calls).
-2. Map each aspect to the otelc rule that reproduces it, using `pattern-mapping.md`. Take exact rule
-   syntax from the sources in `references.md`, not from memory.
-3. Check `feature-gaps.md`. If an aspect needs something otelc has no equivalent for, stop and flag
-   it rather than inventing a workaround.
-4. Author `contrib/<name>/otelc/` as **its own Go module**, holding everything specific to otelc: the
-   rules (`otelc.yaml`) and the before/after hooks, plus any helper code only they use. The rules'
-   `path:` points at this same package.
-   - Its own module because the hooks import `go.opentelemetry.io/otelc/pkg/hook`, and a package
-     inside the contrib module would put that dependency in the `go.mod` of everyone importing the
-     contrib, otelc user or not. Module path `.../contrib/<name>/v2/otelc` (no trailing version
-     element) keeps it under the contrib's import prefix, so it can still import the contrib's
-     `internal/` packages.
-   - The rules go **in this directory, not next to `orchestrion.yml`**. otelc loads rule files from
-     the directory of the package the tool file imports, so rules and hooks have to be one package
-     for a single import to pull in both.
-   - Do not put the hook package under `internal/`: it is blank-imported into the built app's
-     module, which cannot import `contrib/<name>/internal/...`.
-   The hooks call the existing contrib entrypoints; keep injection-independent logic in normal
-   sub-packages and let only the thin hook layer touch injected fields.
-
-   State the hooks and the contrib both need goes in the **contrib package itself**, exported, not
-   in an `internal/` helper. The hook module can reach `internal/`, but a caller-visible name says
-   what it is for (see `redigotrace.TraceMark`).
-5. Enable the integration by blank-importing `contrib/<name>/otelc` from `otelc/all`, the way
-   `orchestrion/all` lists integrations, then `go mod tidy` that module. Applications import
-   `otelc/all`, so nothing else needs editing.
-6. Validate both rungs from the Success criterion, and diff the otelc spans against the orchestrion
-   ones.
-7. Before opening the PR, from the repository root:
-   - `make fix-modules`. Adding a module or a dependency leaves `go.mod`/`go.sum` and the replace
-     directives inconsistent, and CI fails on it. Every module in the graph needs its own replace
-     in the **main** module being built, because replaces in dependency modules are ignored.
-   - `make lint`, and fix what it reports. Submodules are linted separately, so also run
-     `golangci-lint run --disable=gocritic ./...` inside `contrib/<name>` and inside
-     `internal/orchestrion/_integration`.
-   - `make generate`, and commit whatever it changes. Adding a dependency to a contrib module
-     updates `internal/stacktrace/contribs_generated.go`, and CI fails when generated files are
-     stale.
-
-   Run these in a shell **without** `GOWORK=off`. Some generators need the workspace to resolve the
-   contrib modules and crash without it, while others set `GOWORK=off` for themselves. Exporting it
-   globally for otelc work breaks the first group.
+1. List every aspect in `contrib/<name>/orchestrion.yml` as (join point, advice, contrib function it
+   calls).
+2. Map each aspect with `pattern-mapping.md`, taking exact syntax from `references.md`.
+3. Check the whole list from step 1 against `feature-gaps.md`, not just the first aspect that trips
+   a gap. Report every gap together, and invent no workarounds.
+4. Author `contrib/<name>/otelc/` as **its own Go module**, holding the rules and the before/after
+   hooks. Separate module because the hooks import `go.opentelemetry.io/otelc/pkg/hook`, which
+   otherwise lands in the `go.mod` of everyone importing the contrib.
+   - Module path MUST be `github.com/DataDog/dd-trace-go/contrib/<name>/otelc/v2`, version suffix
+     last, like every other module in the repo.
+   - Rule files live in this directory, not next to `orchestrion.yml`, named `otelc.yaml`,
+     `otelc.yml` or `*.otelc.yaml`. Each rule's `path:` is this package. otelc walks a named
+     package's directory tree and stops at nested modules, so `otelc/all` must name this module
+     directly.
+   - Not under `internal/`: `otelc/all` blank-imports it from outside the contrib's import prefix.
+   - State the hooks and the contrib both need is exported from the **contrib package**. The hook
+     module cannot reach `contrib/<name>/v2/internal/...`.
+   - Keep the hook layer thin. It is the only code that needs otelc to compile; everything else goes
+     in normal sub-packages and stays unit-testable.
+5. Blank-import `contrib/<name>/otelc` from `otelc/all`, the way `orchestrion/all` lists
+   integrations, `go mod tidy` that module, and add the new module to `go.work` (`make fix-modules`
+   does not touch the workspace). Applications import `otelc/all`, so nothing else needs editing.
+6. Validate both rungs, and diff the otelc spans against the orchestrion ones.
+7. From the repository root, in a shell **without** `GOWORK=off` (some generators need the
+   workspace, others set `GOWORK=off` for themselves):
+   - `make fix-modules`. Replace directives do not propagate from dependency modules, and CI fails
+     on an inconsistent module graph.
+   - `make lint`, plus `golangci-lint run --disable=gocritic ./...` inside `contrib/<name>` and
+     inside `internal/orchestrion/_integration`, which are linted separately.
+   - `make generate`, and commit what it changes. A new contrib dependency updates
+     `internal/stacktrace/contribs_generated.go`.
 8. Keep the PR description short. "Add otelc support for `<name>`" is usually the whole thing. Add a
-   note only for what a reviewer would otherwise have to find on their own: an aspect left
-   unmigrated, a feature gap, an aspect reproduced by different means but with the same observable
-   behaviour, or tests added to the orchestrion or contrib side to pin down behaviour the migration
-   relies on.
-9. After opening the PR, check its CI. Pushing is not the end of the task.
-   - Read the `OTelc` workflow first. When every matrix job fails they nearly always fail for the
-     same reason, so read only `Integration Test (ubuntu | stable)` and skip the rest.
+   note only for an unmigrated aspect, a feature gap, an aspect reproduced by other means with the
+   same observable behaviour, or tests added to pin down behaviour the migration relies on.
+9. Check CI after opening the PR.
+   - Read `Integration Test (ubuntu | stable)` in the `OTelc` workflow first. Matrix jobs nearly
+     always fail for the same reason.
    - `failed to load instrumentation packages: ... go: updates to go.mod needed` means a module
-     otelc reads has a stale `go.mod`. GitHub runs CI on a candidate merge commit, so a dependency
-     bump that landed on `main` after the branch was cut raises the build list of every module that
-     replaces `dd-trace-go/v2` with a local path. Auto-pin recurses into each module that owns a
-     tool file (`otel.instrumentation.go` / `otelc.tool.go`) and runs `go list` from that module's
-     directory, where read-only mode turns the stale `go.mod` into a hard error. Fix: merge
-     `origin/main` and `go mod tidy` the module the error names. If the migration gave a new module
-     its own tool file, add that module to the tidy loop in `.github/workflows/otelc.yml`, which
-     exists for exactly this and only covers the modules listed in it.
-   - Any other failure: fix and push if the cause is obvious. Otherwise stop, explain the failure,
-     and agree on the fix before changing anything.
+     otelc reads has a stale `go.mod`, usually because CI builds a merge commit with a newer `main`.
+     Merge `origin/main`, `go mod tidy` the module the error names, and if it owns a tool file
+     (`otel.instrumentation.go` / `otelc.tool.go`) add it to the tidy loop in
+     `.github/workflows/otelc.yml`.
+   - Any other failure: fix and push if the cause is obvious, otherwise stop and agree on the fix.
 
 ## Cautions
 
-- Reuse the contrib. The goal is functional and performance parity with minimal new code.
-- A hook file that references an injected field only compiles under otelc (not a plain `go build`),
-  so keep it thin. Everything else about the migration should still be unit-testable.
-- Keep comments short. Say what is not obvious from the code and stop; do not restate the diff or
-  explain why something is absent.
-- Definition-side double-firing: otelc hooks a definition, so a constructor that internally calls
-  another hooked constructor fires both. Hook only the inner funnel, or add a re-entrancy guard.
-- Do not copy rule syntax or API signatures into these docs; they drift. Re-read `references.md`.
+- Reuse the contrib. Functional and performance parity with minimal new code.
+- Definition-side double-firing: a hooked constructor that internally calls another hooked
+  constructor fires both. Hook only the inner funnel, or add a re-entrancy guard.
+- `SetParam` and `SetReturnVal` do not work on a generic target function.
+- Upstream limits hook imports to the target library, OpenTelemetry and the standard library, and
+  expects hooks to honour `OTEL_GO_ENABLED_INSTRUMENTATIONS` / `OTEL_GO_DISABLED_INSTRUMENTATIONS`.
+  Ours import the contrib and follow dd's own configuration instead; say so in the PR.
+- Keep comments short: what is not obvious from the code, and nothing else.
+- Do not copy rule syntax or API signatures into these docs. Re-read `references.md`.
 
-Two otelc defects that produce a passing run with nothing instrumented. Both cost a CI cycle to
-find, so check for them before believing a green result (otelc v1.0.1):
+Two otelc v1.0.1 defects leave a green run with nothing instrumented:
 
-- **Never pass `-json` to `otelc go test`.** otelc derives its build plan by parsing the text output
-  of `go test -a -x -n`, your `-json` is forwarded into that command, and the plan comes back
-  unreadable. It then instruments nothing, with no error. Use `-v` and convert afterwards with
-  `go tool test2json -t -p <pkg>` if you need machine-readable output.
-- **A package with only `_test.go` files gets skipped**, after which otelc finds no tool file, falls
-  back to its embedded default rules, and instruments nothing. Give such a package a `doc.go`.
+- **Never pass `-json` to `otelc go test`.** It is forwarded into the `go <verb> -a -x -n` dry run
+  otelc parses for its build plan, which then arrives empty. Use `-v`, and `go tool test2json -t -p
+  <pkg>` afterwards if you need machine-readable output.
+- **A package whose only Go files are `_test.go` is skipped.** When it is the package under test the
+  whole build loses instrumentation, including rules targeting other modules. Give it a `doc.go`.
 
-To tell instrumented from not, check `.otelc-build/matched.json`: `null` means no rule matched.
-`.otelc-build/debug/<pkg>/` holds the post-instrumentation source, which is the fastest way to see
-whether a rule did what you meant.
+Read `.otelc-build/matched.json` to tell instrumented from not: `[]` means matching ran and matched
+nothing, `null` means it never got that far (the skipped-package case above).
+`.otelc-build/debug/<pkg>/` holds the post-instrumentation source, with slashes in the package path
+turned into underscores (`debug/net_http/`). otelc's troubleshooting doc in `references.md` covers
+`--debug`, `--stats` and `otelc cleanup`.
 
 ## Supporting docs
 
