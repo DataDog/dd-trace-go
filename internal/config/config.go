@@ -399,7 +399,11 @@ func loadConfig() *Config {
 		// therefore be absent.
 		if !v {
 			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
-				cfg.statsComputationEnabled = false
+				// Go through the setter, not the raw field: this is a derived
+				// value the user never typed, so it has to reach config telemetry
+				// as OriginCalculated. A direct write left telemetry reporting the
+				// default (true) while the tracer behaved as false.
+				cfg.SetStatsComputationEnabled(false, telemetry.OriginCalculated)
 			}
 		}
 	}
