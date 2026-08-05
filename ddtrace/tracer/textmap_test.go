@@ -228,6 +228,58 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 	}
 }
 
+// On the dual-header path (Datadog and W3C headers, same trace ID) the Datadog
+// context wins extraction, so the inbound ot= sampling decision parsed onto the
+// throwaway W3C context must be carried over. Otherwise re-composition strips it
+// and the OTel threshold is lost across the hop.
+func TestTextMapExtractDualHeaderPreservesOtel(t *testing.T) {
+	t.Setenv(envPropagationStyle, "datadog,tracecontext")
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	assert.NoError(err)
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		traceparentHeader:     "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:      "dd=s:1;p:2222222222222222,ot=rv:ef284ace7a91e1;th:e6666666666668,othervendor=t61rcWkgMzE",
+	})
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+	assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
+
+	// Inject into a fresh carrier and confirm the inbound ot= survives the hop.
+	out := TextMapCarrier(map[string]string{})
+	assert.NoError(tracer.Inject(sctx, out))
+	assert.Contains(out[tracestateHeader], "ot=rv:ef284ace7a91e1;th:e6666666666668")
+	assert.Contains(out[tracestateHeader], "othervendor=t61rcWkgMzE")
+}
+
+// OTel defines only rv/th in the `ot=` member today but reserves room for more
+// sub-keys. An inherited unknown sub-key must be forwarded verbatim rather than
+// dropped, so DD stays transparent to future additions.
+func TestTextMapForwardsUnknownOtelSubkeys(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	assert.NoError(err)
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1;p:2222222222222222,ot=rv:ef284ace7a91e1;th:e6666666666668;foo:bar",
+	})
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+
+	out := TextMapCarrier(map[string]string{})
+	assert.NoError(tracer.Inject(sctx, out))
+	assert.Contains(out[tracestateHeader], "ot=rv:ef284ace7a91e1;th:e6666666666668;foo:bar")
+}
+
 func TestTextMapPropagatorErrors(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
@@ -3117,6 +3169,28 @@ func TestMalformedTID(t *testing.T) {
 		v, _ := root.meta.Get(keyTraceID128)
 		assert.Equal("640cfd8d00000000", v)
 	})
+}
+
+// Inbound tracestate members may carry optional whitespace (OWS) after the
+// commas per the W3C spec. composeTracestate must strip the DD-managed dd= and
+// ot= members regardless of that whitespace, otherwise it re-emits them and
+// produces duplicate list-members (invalid tracestate).
+func TestComposeTracestateDropsManagedMembersWithOWS(t *testing.T) {
+	ctx := new(SpanContext)
+	ctx.trace = newTrace()
+	ctx.traceID = traceIDFrom64Bits(1)
+	ctx.spanID = 1
+	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+	ctx.trace.setOtelUpstream(0x1234567890abcd, true, 0, false, "")
+
+	// OWS after each comma, with the managed members not first in the list.
+	oldState := "vendorA=x, ot=rv:aabbccddeeff00, dd=s:9, vendorB=y"
+	got := composeTracestate(ctx, 1, oldState)
+
+	assert.Equal(t, 1, strings.Count(got, "dd="), "exactly one dd= member: %q", got)
+	assert.Equal(t, 1, strings.Count(got, "ot="), "exactly one ot= member: %q", got)
+	assert.Contains(t, got, "vendorA=x")
+	assert.Contains(t, got, "vendorB=y")
 }
 
 func BenchmarkComposeTracestate(b *testing.B) {
