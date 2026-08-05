@@ -37,9 +37,10 @@ const (
 	efdFaultySessionSchemaVersion = 1
 	efdFaultySessionMaxStateBytes = 1024
 
-	efdFaultySessionInitialBackoff = 250 * time.Microsecond
-	efdFaultySessionMaxBackoff     = 10 * time.Millisecond
-	efdFaultySessionLockTimeout    = 2 * time.Second
+	efdFaultySessionInitialBackoff  = 250 * time.Microsecond
+	efdFaultySessionMaxBackoff      = 10 * time.Millisecond
+	efdFaultySessionLockTimeout     = 2 * time.Second
+	efdFaultySessionReleaseAttempts = 3
 )
 
 type earlyFlakeDetectionAdmission uint8
@@ -93,6 +94,8 @@ type efdFaultySessionFilesystemStore struct {
 	sleep          func(time.Duration)
 	stateWriter    func(string, efdFaultySessionState) error
 	terminalWriter func(string) error
+	lockLstat      func(string) (os.FileInfo, error)
+	lockRemove     func(string) error
 }
 
 type efdFaultySessionLocalStore struct {
@@ -351,9 +354,11 @@ func (s *efdFaultySessionLocalStore) retryStateOnly() earlyFlakeDetectionAdmissi
 func (s *efdFaultySessionFilesystemStore) claim() earlyFlakeDetectionAdmission {
 	if s.threshold == 0 {
 		if err := s.ensureDirectory(); err != nil {
-			return earlyFlakeDetectionAdmissionUnavailable
+			return s.unavailable("prepare state directory", err)
 		}
-		_ = s.writeTerminal("faulty")
+		if err := s.writeTerminal("faulty"); err != nil {
+			s.logError("publish faulty terminal state", err)
+		}
 		return earlyFlakeDetectionAdmissionFaulty
 	}
 	if admission, recognized := s.observe(); recognized || admission != earlyFlakeDetectionAdmissionAllowed {
@@ -364,13 +369,14 @@ func (s *efdFaultySessionFilesystemStore) claim() earlyFlakeDetectionAdmission {
 		if admission, recognized := s.observe(); recognized {
 			return admission
 		}
-		_ = s.writeTerminal("unavailable")
-		return earlyFlakeDetectionAdmissionUnavailable
+		return s.unavailable("acquire lock", err)
 	}
 	admission := s.claimLocked()
-	if releaseErr := s.releaseLock(lock); releaseErr != nil && admission == earlyFlakeDetectionAdmissionAllowed {
-		_ = s.writeTerminal("unavailable")
-		return earlyFlakeDetectionAdmissionUnavailable
+	if releaseErr := s.releaseLock(lock); releaseErr != nil {
+		if admission == earlyFlakeDetectionAdmissionAllowed {
+			return s.unavailable("release lock", releaseErr)
+		}
+		s.logError("release lock", releaseErr)
 	}
 	return admission
 }
@@ -382,6 +388,7 @@ func (s *efdFaultySessionFilesystemStore) observe() (earlyFlakeDetectionAdmissio
 		return earlyFlakeDetectionAdmissionAllowed, false
 	}
 	if err != nil {
+		s.logError("read terminal state", err)
 		return earlyFlakeDetectionAdmissionUnavailable, false
 	}
 	switch string(contents) {
@@ -390,6 +397,7 @@ func (s *efdFaultySessionFilesystemStore) observe() (earlyFlakeDetectionAdmissio
 	case "unavailable":
 		return earlyFlakeDetectionAdmissionUnavailable, true
 	default:
+		s.logError("read terminal state", errors.New("unknown terminal state"))
 		return earlyFlakeDetectionAdmissionUnavailable, false
 	}
 }
@@ -400,39 +408,52 @@ func (s *efdFaultySessionFilesystemStore) claimLocked() earlyFlakeDetectionAdmis
 	}
 	state, err := s.loadOrInitializeState()
 	if err != nil {
-		_ = s.writeTerminal("unavailable")
-		return earlyFlakeDetectionAdmissionUnavailable
+		return s.unavailable("load state", err)
 	}
 	countPath := filepath.Join(s.directory, efdFaultySessionCountFile)
 	pathInfo, err := os.Lstat(countPath)
-	if err != nil || validateEFDPrivateFile(pathInfo) != nil {
-		_ = s.writeTerminal("unavailable")
-		return earlyFlakeDetectionAdmissionUnavailable
+	if err != nil {
+		return s.unavailable("inspect counter", err)
+	}
+	if err := validateEFDPrivateFile(pathInfo); err != nil {
+		return s.unavailable("validate counter", err)
 	}
 	countFile, err := os.OpenFile(countPath, os.O_RDWR, 0)
 	if err != nil {
-		_ = s.writeTerminal("unavailable")
-		return earlyFlakeDetectionAdmissionUnavailable
+		return s.unavailable("open counter", err)
 	}
 	info, statErr := countFile.Stat()
-	if statErr != nil || validateEFDPrivateFile(info) != nil || !os.SameFile(pathInfo, info) || info.Size() < 0 || uint64(info.Size()) > state.Limit {
+	if statErr != nil {
 		_ = countFile.Close()
-		_ = s.writeTerminal("unavailable")
-		return earlyFlakeDetectionAdmissionUnavailable
+		return s.unavailable("inspect open counter", statErr)
+	}
+	if err := validateEFDPrivateFile(info); err != nil {
+		_ = countFile.Close()
+		return s.unavailable("validate open counter", err)
+	}
+	if !os.SameFile(pathInfo, info) {
+		_ = countFile.Close()
+		return s.unavailable("validate counter ownership", errors.New("faulty-session counter ownership changed"))
+	}
+	if info.Size() < 0 || uint64(info.Size()) > state.Limit {
+		_ = countFile.Close()
+		return s.unavailable("validate counter size", errors.New("faulty-session counter size is invalid"))
 	}
 	if uint64(info.Size()) == state.Limit {
-		_ = countFile.Close()
-		_ = s.writeTerminal("faulty")
+		if err := countFile.Close(); err != nil {
+			return s.unavailable("close counter at boundary", err)
+		}
+		if err := s.writeTerminal("faulty"); err != nil {
+			s.logError("publish faulty terminal state", err)
+		}
 		return earlyFlakeDetectionAdmissionFaulty
 	}
 	if err := countFile.Truncate(info.Size() + 1); err != nil {
 		_ = countFile.Close()
-		_ = s.writeTerminal("unavailable")
-		return earlyFlakeDetectionAdmissionUnavailable
+		return s.unavailable("extend counter", err)
 	}
 	if err := countFile.Close(); err != nil {
-		_ = s.writeTerminal("unavailable")
-		return earlyFlakeDetectionAdmissionUnavailable
+		return s.unavailable("close counter", err)
 	}
 	if admission, recognized := s.observe(); recognized || admission != earlyFlakeDetectionAdmissionAllowed {
 		return admission
@@ -531,20 +552,65 @@ func (s *efdFaultySessionFilesystemStore) releaseLock(lock *os.File) error {
 	owner, err := lock.Stat()
 	if err != nil {
 		_ = lock.Close()
-		return err
+		return fmt.Errorf("inspect lock owner: %w", err)
 	}
 	if err := lock.Close(); err != nil {
-		return err
+		return fmt.Errorf("close lock: %w", err)
 	}
 	lockPath := filepath.Join(s.directory, efdFaultySessionLockFile)
-	current, err := os.Lstat(lockPath)
-	if err != nil {
-		return err
+	backoff := efdFaultySessionInitialBackoff
+	var lastErr error
+	for attempt := range efdFaultySessionReleaseAttempts {
+		current, err := s.lstatLock(lockPath)
+		if err != nil {
+			lastErr = fmt.Errorf("inspect lock path: %w", err)
+		} else if !os.SameFile(owner, current) {
+			return errors.New("faulty-session lock ownership changed")
+		} else if err := s.removeLock(lockPath); err == nil {
+			return nil
+		} else {
+			lastErr = fmt.Errorf("remove lock: %w", err)
+		}
+		if attempt+1 < efdFaultySessionReleaseAttempts {
+			s.wait(backoff)
+			backoff = min(backoff*2, efdFaultySessionMaxBackoff)
+		}
 	}
-	if !os.SameFile(owner, current) {
-		return errors.New("faulty-session lock ownership changed")
+	return lastErr
+}
+
+func (s *efdFaultySessionFilesystemStore) lstatLock(path string) (os.FileInfo, error) {
+	if s.lockLstat != nil {
+		return s.lockLstat(path)
 	}
-	return os.Remove(lockPath)
+	return os.Lstat(path)
+}
+
+func (s *efdFaultySessionFilesystemStore) removeLock(path string) error {
+	if s.lockRemove != nil {
+		return s.lockRemove(path)
+	}
+	return os.Remove(path)
+}
+
+func (s *efdFaultySessionFilesystemStore) wait(duration time.Duration) {
+	if s.sleep != nil {
+		s.sleep(duration)
+		return
+	}
+	time.Sleep(duration)
+}
+
+func (s *efdFaultySessionFilesystemStore) unavailable(operation string, err error) earlyFlakeDetectionAdmission {
+	s.logError(operation, err)
+	if terminalErr := s.writeTerminal("unavailable"); terminalErr != nil {
+		s.logError("publish unavailable terminal state", terminalErr)
+	}
+	return earlyFlakeDetectionAdmissionUnavailable
+}
+
+func (*efdFaultySessionFilesystemStore) logError(operation string, err error) {
+	log.Debug("civisibility: EFD faulty-session filesystem error during %s: %v", operation, err)
 }
 
 func (s *efdFaultySessionFilesystemStore) publishTerminal(value string) error {

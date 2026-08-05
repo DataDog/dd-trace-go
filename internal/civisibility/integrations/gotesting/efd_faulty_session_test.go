@@ -25,6 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalLog "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func TestProcessRetryEFDFaultySessionLimit(t *testing.T) {
@@ -316,8 +317,7 @@ func TestProcessRetryEFDFaultySessionFilesystemStoreConcurrentBoundary(t *testin
 	info, err := os.Stat(filepath.Join(directory, efdFaultySessionCountFile))
 	require.NoError(t, err)
 	require.Equal(t, int64(10), info.Size())
-	require.Positive(t, allowed)
-	require.LessOrEqual(t, int64(allowed), info.Size())
+	require.Equal(t, 10, allowed)
 }
 
 func TestProcessRetryEFDFaultySessionZeroThresholdConcurrentPublishers(t *testing.T) {
@@ -383,6 +383,117 @@ func TestProcessRetryEFDFaultySessionLockReleasePreservesOwnership(t *testing.T)
 	contents, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.Equal(t, "replacement", string(contents))
+}
+
+func TestProcessRetryEFDFaultySessionLockReleaseRetriesTransientFilesystemErrors(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		configure func(*efdFaultySessionFilesystemStore, *int)
+	}{
+		{
+			name: "lstat",
+			configure: func(store *efdFaultySessionFilesystemStore, calls *int) {
+				store.lockLstat = func(path string) (os.FileInfo, error) {
+					(*calls)++
+					if *calls < efdFaultySessionReleaseAttempts {
+						return nil, errors.New("injected transient lstat failure")
+					}
+					return os.Lstat(path)
+				}
+			},
+		},
+		{
+			name: "remove",
+			configure: func(store *efdFaultySessionFilesystemStore, calls *int) {
+				store.lockRemove = func(path string) error {
+					(*calls)++
+					if *calls < efdFaultySessionReleaseAttempts {
+						return errors.New("injected transient remove failure")
+					}
+					return os.Remove(path)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := filepath.Join(t.TempDir(), efdFaultySessionDirectoryName)
+			var sleeps []time.Duration
+			store := &efdFaultySessionFilesystemStore{
+				directory: directory,
+				now:       time.Now,
+				sleep:     func(duration time.Duration) { sleeps = append(sleeps, duration) },
+			}
+			calls := 0
+			test.configure(store, &calls)
+
+			lock, err := store.acquireLock()
+			require.NoError(t, err)
+			require.NoError(t, store.releaseLock(lock))
+			require.Equal(t, efdFaultySessionReleaseAttempts, calls)
+			require.Equal(t, []time.Duration{efdFaultySessionInitialBackoff, 2 * efdFaultySessionInitialBackoff}, sleeps)
+			_, err = os.Stat(filepath.Join(directory, efdFaultySessionLockFile))
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+func TestProcessRetryEFDFaultySessionLockReleaseRevalidatesOwnershipBeforeRetry(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), efdFaultySessionDirectoryName)
+	removeCalls := 0
+	store := &efdFaultySessionFilesystemStore{
+		directory: directory,
+		now:       time.Now,
+		sleep:     func(time.Duration) {},
+		lockRemove: func(path string) error {
+			removeCalls++
+			require.NoError(t, os.Remove(path))
+			require.NoError(t, os.WriteFile(path, []byte("replacement"), 0o600))
+			return errors.New("injected remove failure after replacement")
+		},
+	}
+	lock, err := store.acquireLock()
+	require.NoError(t, err)
+	require.ErrorContains(t, store.releaseLock(lock), "ownership changed")
+	require.Equal(t, 1, removeCalls, "an ownership mismatch must stop retries before removing the replacement")
+	contents, err := os.ReadFile(filepath.Join(directory, efdFaultySessionLockFile))
+	require.NoError(t, err)
+	require.Equal(t, "replacement", string(contents))
+}
+
+func TestProcessRetryEFDFaultySessionLockReleaseFailureIsLoggedAndFailsClosed(t *testing.T) {
+	logger := &processRetryRecordingLogger{}
+	restoreLogger := internalLog.UseLogger(logger)
+	defer restoreLogger()
+	oldLevel := internalLog.GetLevel()
+	internalLog.SetLevel(internalLog.LevelDebug)
+	defer internalLog.SetLevel(oldLevel)
+
+	directory := filepath.Join(t.TempDir(), efdFaultySessionDirectoryName)
+	removeCalls := 0
+	sleepCalls := 0
+	store := &efdFaultySessionFilesystemStore{
+		directory:  directory,
+		threshold:  10,
+		knownCount: func() uint64 { return 90 },
+		now:        time.Now,
+		sleep:      func(time.Duration) { sleepCalls++ },
+		lockRemove: func(string) error {
+			removeCalls++
+			return errors.New("injected permanent remove failure")
+		},
+	}
+	require.Equal(t, earlyFlakeDetectionAdmissionUnavailable, store.claim())
+	internalLog.Flush()
+
+	require.Equal(t, efdFaultySessionReleaseAttempts, removeCalls)
+	require.Equal(t, efdFaultySessionReleaseAttempts-1, sleepCalls)
+	info, err := os.Stat(filepath.Join(directory, efdFaultySessionCountFile))
+	require.NoError(t, err)
+	require.Equal(t, int64(1), info.Size(), "a failed release must not refund the consumed slot")
+	require.Contains(t, logger.Messages(), "EFD faulty-session filesystem error during release lock: remove lock: injected permanent remove failure")
+	contents, err := os.ReadFile(filepath.Join(directory, efdFaultySessionTerminalFile))
+	require.NoError(t, err)
+	require.Equal(t, "unavailable", string(contents))
 }
 
 func TestProcessRetryReadEFDFaultySessionStateStrictValidation(t *testing.T) {
