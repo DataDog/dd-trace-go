@@ -369,6 +369,34 @@ func TestWithServeMux(t *testing.T) {
 	assert.Equal("OK\n", underlyingW.Body.String())
 }
 
+// TestWithServeMuxPreConfigured covers the motivating use case from the PR: wrapping a
+// *http.ServeMux that already has routes registered on it, rather than registering routes
+// through the traced wrapper. Requests to those routes must still be traced.
+func TestWithServeMuxPreConfigured(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	assert := assert.New(t)
+
+	underlying := http.NewServeMux()
+	underlying.HandleFunc("/200", handler200)
+
+	mux := NewServeMux(WithServeMux(underlying))
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/200", nil)
+	mux.ServeHTTP(w, r)
+
+	assert.Equal(200, w.Code)
+	assert.Equal("OK\n", w.Body.String())
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+	s := spans[0]
+	assert.Equal("GET /200", s.Tag(ext.ResourceName))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
+}
+
 func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
