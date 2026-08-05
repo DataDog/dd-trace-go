@@ -19,7 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -43,6 +43,17 @@ type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.Fi
 // StartRequestSpan starts a server-side HTTP request span with the standard list of HTTP request span tags
 // (http.method, http.url, http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
+	var ipTags map[string]string
+	if cfg.traceClientIP {
+		_, clientIP := clientip.Resolve(r.Header, true, r.RemoteAddr)
+		ipTags = clientip.TagsFor(r.RemoteAddr, clientIP)
+	}
+	return startRequestSpan(r, ipTags, opts...)
+}
+
+// startRequestSpan exists so that callers which resolve the client identity
+// themselves do not trigger a second resolution here.
+func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
@@ -52,11 +63,6 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
 		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
 	})
-
-	var ipTags map[string]string
-	if cfg.traceClientIP {
-		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
-	}
 
 	var inferredProxySpan *tracer.Span
 

@@ -23,12 +23,45 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCustomClientIPHeaderPrecedesIntegrationIP(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+	t.Cleanup(clientip.ResetConfig)
+	t.Setenv("DD_TRACE_CLIENT_IP_HEADER", "CF-Connecting-IP")
+	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")
+	clientip.ResetConfig()
+	ResetCfg()
+	require.False(t, appsec.Enabled())
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+	r.Header.Set("CF-Connecting-IP", "82.67.164.163")
+	r.Header.Set("X-Forwarded-For", "203.0.113.77")
+	r.RemoteAddr = "10.0.0.1:4242"
+
+	rw, rt, after, handled := BeforeHandle(&ServeConfig{
+		ClientIP: netip.MustParseAddr("8.233.57.190"),
+	}, httptest.NewRecorder(), r)
+	require.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "82.67.164.163", spans[0].Tag(ext.HTTPClientIP))
+	assert.Equal(t, "10.0.0.1", spans[0].Tag(ext.NetworkClientIP))
+}
 
 func TestGetErrorCodesFromInput(t *testing.T) {
 	codesOnly := "400,401,402"
@@ -188,7 +221,7 @@ func TestTraceClientIPFlag(t *testing.T) {
 
 	// use 0.0.0.0 as ip address of all test cases
 	// more comprehensive ip address testing is done in testing
-	// of ClientIPTags in appsec/dyngo/instrumentation/httpsec
+	// of the resolver in internal/clientip
 	validIPAddr := "0.0.0.0"
 
 	type ipTestCase struct {

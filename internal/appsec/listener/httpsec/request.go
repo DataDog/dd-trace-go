@@ -10,37 +10,14 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-)
-
-const (
-	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
-	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 )
 
 var (
-	// defaultIPHeaders is the default list of IP-related headers leveraged to
-	// retrieve the public client IP address in RemoteAddr. The headers are
-	// checked in the order they are listed; do not re-order unless you know what
-	// you are doing.
-	defaultIPHeaders = []string{
-		"x-forwarded-for",
-		"x-real-ip",
-		"true-client-ip",
-		"x-client-ip",
-		"forwarded",
-		"forwarded-for",
-		"x-cluster-client-ip",
-		"fastly-client-ip",
-		"cf-connecting-ip",
-		"cf-connecting-ipv6",
-	}
-
 	// defaultCollectedHeaders is the default list of HTTP headers collected as
 	// request span tags when appsec is enabled.
-	defaultCollectedHeaders = append([]string{
+	defaultCollectedHeaders = clientip.AppendDefaultHeaders([]string{
 		"accept-encoding",
 		"accept-language",
 		"accept",
@@ -60,45 +37,23 @@ var (
 		"x-forwarded",
 		"x-sigsci-requestid",
 		"x-sigsci-tags",
-	}, defaultIPHeaders...)
+	})
 
 	// collectedHeadersLookupMap is a helper lookup map of HTTP headers to
 	// collect as request span tags when appsec is enabled. It is computed at
 	// init-time based on defaultCollectedHeaders and leveraged by NormalizeHTTPHeaders.
 	collectedHeadersLookupMap map[string]struct{}
-
-	// monitoredClientIPHeadersCfg is the list of IP-related headers leveraged to
-	// retrieve the public client IP address in RemoteAddr. This is defined at init
-	// time in function of the value of the envClientIPHeader environment variable.
-	monitoredClientIPHeadersCfg []string
 )
 
-// ClientIPTags returns the resulting Datadog span tags `http.client_ip`
-// containing the client IP and `network.client.ip` containing the remote IP.
-// The tags are present only if a valid ip address has been returned by
-// RemoteAddr().
+// ClientIPTags resolves the client identity from raw transport data with the
+// default policy and returns it as span tags.
+//
+// HTTP integrations resolve identity once at the instrumentation boundary and
+// carry it in the operation arguments, so they do not call this. It exists for
+// the gRPC listener, which still resolves from the raw request metadata.
 func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteAddr string) (tags map[string]string, clientIP netip.Addr) {
-	remoteIP, clientIP := ClientIP(headers, hasCanonicalHeaders, remoteAddr, monitoredClientIPHeadersCfg)
-	return ClientIPTagsFor(remoteIP, clientIP), clientIP
-}
-
-func ClientIPTagsFor(remoteIP netip.Addr, clientIP netip.Addr) map[string]string {
-	remoteIPValid := remoteIP.IsValid()
-	clientIPValid := clientIP.IsValid()
-
-	if !remoteIPValid && !clientIPValid {
-		return nil
-	}
-
-	tags := make(map[string]string, 2)
-	if remoteIPValid {
-		tags[ext.NetworkClientIP] = remoteIP.String()
-	}
-	if clientIPValid {
-		tags[ext.HTTPClientIP] = clientIP.String()
-	}
-
-	return tags
+	_, clientIP = clientip.Resolve(headers, hasCanonicalHeaders, remoteAddr)
+	return clientip.TagsFor(remoteAddr, clientIP), clientIP
 }
 
 // NormalizeHTTPHeaders returns the HTTP headers following Datadog's
@@ -152,27 +107,18 @@ func normalizeHTTPHeaderValue(values []string) string {
 
 func init() {
 	makeCollectedHTTPHeadersLookupMap()
-	readMonitoredClientIPHeadersConfig()
 }
 
 func makeCollectedHTTPHeadersLookupMap() {
-	collectedHeadersLookupMap = make(map[string]struct{}, len(defaultCollectedHeaders))
+	collectedHeadersLookupMap = make(map[string]struct{}, len(defaultCollectedHeaders)+len(clientip.MonitoredHeaders()))
 	for _, h := range defaultCollectedHeaders {
 		collectedHeadersLookupMap[h] = struct{}{}
 	}
-}
-
-func readMonitoredClientIPHeadersConfig() {
-	if header := env.Get(envClientIPHeader); header != "" {
-		// Make this header the only one to consider in RemoteAddr
-		monitoredClientIPHeadersCfg = []string{header}
-
-		// Add this header to the list of collected headers
-		header = normalizeHTTPHeaderName(header)
-		collectedHeadersLookupMap[header] = struct{}{}
-	} else {
-		// No specific IP header was configured, use the default list
-		monitoredClientIPHeadersCfg = defaultIPHeaders
+	// Whatever header the client IP resolver monitors is also collected as a
+	// span tag. With the default policy these are already in the list above;
+	// with DD_TRACE_CLIENT_IP_HEADER set, this is what adds the custom one.
+	for _, h := range clientip.MonitoredHeaders() {
+		collectedHeadersLookupMap[normalizeHTTPHeaderName(h)] = struct{}{}
 	}
 }
 

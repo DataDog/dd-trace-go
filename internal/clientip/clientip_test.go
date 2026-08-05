@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package httpsec
+package clientip
 
 import (
 	"fmt"
@@ -382,12 +382,12 @@ func TestClientIPExtraction(t *testing.T) {
 					}
 
 					// Default list to use - the tests rely on x-forwarded-for only when using this default list
-					monitoredHeaders := []string{"x-client-ip", "x-forwarded-for", "true-client-ip"}
+					monitoredHdrs := []string{"x-client-ip", "x-forwarded-for", "true-client-ip"}
 					if tc.clientIPHeaders != nil {
-						monitoredHeaders = tc.clientIPHeaders
+						monitoredHdrs = tc.clientIPHeaders
 					}
-					remoteIP, clientIP := ClientIP(headers, hasCanonicalMIMEHeaderKeys, tc.remoteAddr, monitoredHeaders)
-					tags := ClientIPTagsFor(remoteIP, clientIP)
+					remoteIP, clientIP := resolveWith(headers, hasCanonicalMIMEHeaderKeys, tc.remoteAddr, monitoredHdrs)
+					tags := TagsFor(tc.remoteAddr, clientIP)
 					if tc.expectedIP.IsValid() {
 						expectedIP := tc.expectedIP.String()
 						require.Equal(t, expectedIP, clientIP.String())
@@ -501,5 +501,39 @@ func randPrivateIPv6() netip.Addr {
 		if !isGlobalIP(ip) && ip.IsPrivate() {
 			return ip
 		}
+	}
+}
+
+func BenchmarkClientIP(b *testing.B) {
+	headers := []struct {
+		name string
+		hdrs map[string][]string
+	}{
+		{
+			name: "x-forwarded-for/single",
+			hdrs: map[string][]string{"X-Forwarded-For": {"203.0.113.1"}},
+		},
+		{
+			name: "x-forwarded-for/multi",
+			hdrs: map[string][]string{"X-Forwarded-For": {"10.0.0.1, 172.16.0.1, 203.0.113.1"}},
+		},
+		{
+			name: "forwarded",
+			hdrs: map[string][]string{"Forwarded": {`for=203.0.113.1;by=unknown;proto=https`}},
+		},
+		{
+			name: "no_match",
+			hdrs: map[string][]string{"Content-Type": {"application/json"}},
+		},
+	}
+	monitoredHdrs := []string{"X-Forwarded-For", "Forwarded"}
+	for _, tc := range headers {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				resolveWith(tc.hdrs, true, "192.168.1.1:8080", monitoredHdrs)
+			}
+		})
 	}
 }

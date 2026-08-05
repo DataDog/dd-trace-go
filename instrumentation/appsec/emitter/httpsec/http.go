@@ -17,6 +17,7 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
+	"net/netip"
 	"sync/atomic"
 
 	"github.com/DataDog/go-libddwaf/v4"
@@ -27,6 +28,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
@@ -72,6 +74,7 @@ type (
 		RequestRoute string
 		Host         string
 		RemoteAddr   string
+		ClientIP     netip.Addr
 		Headers      map[string][]string
 		Cookies      map[string][]string
 		QueryParams  map[string][]string
@@ -90,6 +93,21 @@ type (
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
+
+// clientIdentity returns who the client is, according to the caller when it
+// knows, and to the default policy otherwise.
+//
+// Callers reaching AppSec through instrumentation/httptrace have already
+// resolved this and pass it down; those wrapping a handler directly have not.
+func clientIdentity(opts *Config, r *http.Request) netip.Addr {
+	// A header named by DD_TRACE_CLIENT_IP_HEADER outranks a supplied address:
+	// see clientip.CustomHeaderConfigured.
+	if !clientip.CustomHeaderConfigured() && opts.ClientIP.IsValid() {
+		return opts.ClientIP
+	}
+	_, clientIP := clientip.Resolve(r.Header, true, r.RemoteAddr)
+	return clientIP
+}
 
 func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.TagSetter) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
 	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
@@ -273,6 +291,8 @@ func BeforeHandle(
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
 
+	clientIP := clientIdentity(opts, r)
+
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
 		Framework:    opts.Framework,
 		Method:       r.Method,
@@ -280,6 +300,7 @@ func BeforeHandle(
 		RequestRoute: opts.Route,
 		Host:         r.Host,
 		RemoteAddr:   r.RemoteAddr,
+		ClientIP:     clientIP,
 		Headers:      r.Header,
 		Cookies:      makeCookies(r.Cookies()),
 		QueryParams:  r.URL.Query(),
