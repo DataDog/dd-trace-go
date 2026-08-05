@@ -1352,7 +1352,14 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	// predecessor's values don't leak to downstream services. When there is an ancestor, unset the
 	// name whenever it is absent or wire-unsafe so isValidPropagatableTag can't stamp a propagation
 	// error for an empty value, and so a stale name from a previous sibling can't linger.
+	// Concurrent siblings under the same trace making outbound calls at the same time can still
+	// race on these shared, trace-scoped tags (same caveat as session_id above) — this only
+	// closes the sequential case.
 	if pagentID := llmSpan.PropagatedParentAgentSpanID(); pagentID != "" {
+		// span_id is always set without a budget check: it is the essential half of
+		// attribution (id-only is still useful), and at ~43 bytes it is unlikely to
+		// overflow the header on its own. The name below is the best-effort half and
+		// is dropped when either budget is tight.
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentSpanID, pagentID)
 		name := llmSpan.PropagatedParentAgentName()
 		if name != "" && illmobs.AgentNameWireSafe(name) {
