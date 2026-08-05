@@ -1391,10 +1391,30 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentSpanID, pagentID)
 		name := llmSpan.PropagatedParentAgentName()
 		if name != "" && illmobs.AgentNameWireSafe(name) {
+			// Use the runtime-configured x-datadog-tags budget, falling back to the
+			// default when no tracer is running (e.g. in tests).
+			xddBudget := internalconfig.DefaultMaxTagsHeaderLen
+			if tr, ok := getGlobalTracer().(*tracer); ok {
+				xddBudget = tr.config.internalConfig.MaxTagsHeaderLen()
+			}
 			// Only propagate the name if it fits in the remaining x-datadog-tags budget.
 			// This mirrors the len(k)+len(v) measurement used by marshalPropagatingTags.
 			used := spanCtx.trace.propagatingTagsByteLen()
-			if used+len(keyPropagatedLLMObsPAgentName)+len(name) <= internalconfig.DefaultMaxTagsHeaderLen {
+			// Also check the W3C tracestate budget. The dd= entry is capped at
+			// tracestateDDMaxSize bytes; we reserve tracestateHeaderReserve bytes for
+			// the fixed "dd=s:X;p:<hex>" prefix so the name doesn't crowd out the
+			// span ID or other core LLMObs tags from being serialized.
+			const tracestateHeaderReserve = 40
+			tsUsed := spanCtx.trace.propagatingTagsTracestateByteLen()
+			// An existing pagent_name (e.g. from an extracted inbound context) would be
+			// overwritten, not added; subtract it so we don't double-count the budget.
+			if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsPAgentName); prior != "" {
+				tsUsed -= len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(prior) + 4
+			}
+			// +4: ";t." prefix (3 bytes) + ":" separator (1 byte), matching composeTracestate.
+			nameTracestateLen := len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(name) + 4
+			if used+len(keyPropagatedLLMObsPAgentName)+len(name) <= xddBudget &&
+				tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
 				spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentName, name)
 			} else {
 				spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
