@@ -10,8 +10,9 @@ meta:
 
 aspects:
   # Rewrite aerospike Client method calls to go through the contrib wrapper,
-  # threading a context.Context from the enclosing function when one is in scope:
-  #   client.Put(...)  ->  __dd_aerospike.WrapClient(client).WithContext(ctx).Put(...)
+  # threading a context.Context from the enclosing function when one is in scope
+  # (nil otherwise, which the wrapper reads as context.Background()):
+  #   client.Put(...)  ->  __dd_aerospike.WrapClientContext(client, ctx).Put(...)
   #
   # The rewrite must not fire inside the contrib (the wrapper calls the raw
   # client, which would wrap recursively) nor inside the aerospike library (that
@@ -76,8 +77,11 @@ aspects:
             __dd_aerospike: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
-            {{- if $ctx -}}
-            __dd_aerospike.WrapClient({{ .AST.Fun.X }}).WithContext({{ $ctx }}).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if .AST.Ellipsis }}...{{ end }})
-            {{- else -}}
-            __dd_aerospike.WrapClient({{ .AST.Fun.X }}).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if .AST.Ellipsis }}...{{ end }})
+            {{- if eq $ctx "" -}}
+            {{- $ctx = .Function.ArgumentThatImplements "context.Context" -}}
             {{- end -}}
+            {{- if eq $ctx "" -}}
+            {{- $ctx = "nil" -}}
+            {{- end -}}
+            {{- $ellipsis := .AST.Ellipsis -}}
+            __dd_aerospike.WrapClientContext({{ .AST.Fun.X }}, {{ $ctx }}).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})

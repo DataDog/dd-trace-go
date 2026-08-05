@@ -315,6 +315,47 @@ func TestWithServiceOption(t *testing.T) {
 	assert.Equal(t, instrumentation.ServiceSourceWithServiceOption, cfg.serviceSource)
 }
 
+func TestWrapClientContext(t *testing.T) {
+	t.Run("inherits the span in ctx", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+		WrapClientContext(nil, ctx).startSpan("Put").Finish()
+		parent.Finish()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+		validateAerospikeSpan(t, spans[0], "Put")
+		assert.Equal(t, spans[1].TraceID(), spans[0].TraceID(),
+			"aerospike span should be part of the parent trace")
+	})
+
+	t.Run("nil ctx falls back to background", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		WrapClientContext(nil, nil).startSpan("Get").Finish()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		validateAerospikeSpan(t, spans[0], "Get")
+	})
+
+	t.Run("uses the default config", func(t *testing.T) {
+		c := WrapClientContext(nil, context.Background())
+		assert.Equal(t, defaultConfig(), c.cfg, "should reuse the shared default config")
+	})
+}
+
+func TestWrapClientOptionsDoNotMutateDefaults(t *testing.T) {
+	c := WrapClient(nil, WithService("custom"))
+
+	assert.Equal(t, "custom", c.cfg.serviceName)
+	assert.Equal(t, "aerospike", defaultConfig().serviceName,
+		"applying options must not mutate the shared default config")
+}
+
 func TestStartSpanTags(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()

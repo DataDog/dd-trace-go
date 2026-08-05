@@ -6,6 +6,8 @@
 package aerospike
 
 import (
+	"sync"
+
 	"github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -34,6 +36,16 @@ func defaults(cfg *clientConfig) {
 	cfg.serviceSource = string(instrumentation.PackageAerospikeClientGoV7)
 	cfg.operationName = tracing.Instr.OperationName(instrumentation.ComponentDefault, nil)
 }
+
+// defaultConfig resolves the default configuration once and shares it across
+// clients. Callers must treat the result as read-only, and copy it before
+// applying options. Automatic instrumentation builds a wrapper per call, so this
+// keeps that path free of repeated registry lookups and allocations.
+var defaultConfig = sync.OnceValue(func() *clientConfig {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	return cfg
+})
 
 // WithService sets the given service name for the connection.
 func WithService(name string) ClientOptionFn {
