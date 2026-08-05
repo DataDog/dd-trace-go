@@ -1646,4 +1646,17 @@ func TestLLMObsEnvVars(t *testing.T) {
 		cfg := Get()
 		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
 	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unparseable value stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (nil), not silently coerced into an explicit false. Before the
+		// fix, IsSet only checked the string was non-empty, so GetBool's
+		// parse-error fallback to its default (false) was mistaken for an
+		// explicit false.
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "garbage")
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
 }
