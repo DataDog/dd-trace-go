@@ -7,9 +7,11 @@ package integrations
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -415,6 +417,90 @@ func TestProcessRetryChildTransportIgnoresLiveEnvironment(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestSnapshotProcessRetryChildTransport(t *testing.T) {
+	valid := map[string]string{
+		constants.CIVisibilityInternalRetryProcessChild:      "true",
+		constants.CIVisibilityInternalRetryProcessResultPath: "/tmp/result.json",
+		constants.CIVisibilityInternalRetryProcessTestName:   "TestProcessRetry",
+		constants.CIVisibilityInternalRetryProcessAttempt:    "1",
+		constants.CIVisibilityInternalRetryProcessReason:     constants.AutoTestRetriesRetryReason,
+	}
+	clone := func() map[string]string {
+		values := make(map[string]string, len(valid))
+		for name, value := range valid {
+			values[name] = value
+		}
+		return values
+	}
+	without := func(key string) map[string]string {
+		values := clone()
+		delete(values, key)
+		return values
+	}
+	withAttempt := func(attempt string) map[string]string {
+		values := clone()
+		values[constants.CIVisibilityInternalRetryProcessAttempt] = attempt
+		return values
+	}
+	tests := []struct {
+		name       string
+		values     map[string]string
+		active     bool
+		warning    bool
+		unsetError bool
+	}{
+		{name: "absent marker", values: map[string]string{}},
+		{name: "false marker", values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "false"}},
+		{name: "invalid marker", values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "invalid"}, warning: true},
+		{name: "missing result path", values: without(constants.CIVisibilityInternalRetryProcessResultPath), warning: true},
+		{name: "missing test name", values: without(constants.CIVisibilityInternalRetryProcessTestName), warning: true},
+		{name: "missing attempt", values: without(constants.CIVisibilityInternalRetryProcessAttempt), warning: true},
+		{name: "invalid attempt", values: withAttempt("invalid"), warning: true},
+		{name: "zero attempt", values: withAttempt("0"), warning: true},
+		{name: "missing reason", values: without(constants.CIVisibilityInternalRetryProcessReason), warning: true},
+		{name: "valid", values: valid, active: true},
+		{name: "valid with unset error", values: valid, active: true, unsetError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values := make(map[string]string, len(tt.values))
+			for key, value := range tt.values {
+				values[key] = value
+			}
+			var unsetKeys []string
+			unsetErr := errors.New("unset failed")
+			state, warning := snapshotProcessRetryChildTransport(
+				func(key string) (string, bool) {
+					value, ok := values[key]
+					return value, ok
+				},
+				func(key string) error {
+					unsetKeys = append(unsetKeys, key)
+					delete(values, key)
+					if tt.unsetError && key == constants.CIVisibilityInternalRetryProcessChild {
+						return unsetErr
+					}
+					return nil
+				},
+			)
+
+			require.Equal(t, tt.active, state.active)
+			require.Equal(t, tt.warning, warning != nil)
+			if tt.unsetError {
+				require.ErrorIs(t, state.err, unsetErr)
+			} else {
+				require.NoError(t, state.err)
+			}
+			if _, markerPresent := tt.values[constants.CIVisibilityInternalRetryProcessChild]; markerPresent {
+				require.ElementsMatch(t, processRetryChildTransportKeys[:], unsetKeys)
+			} else {
+				require.Empty(t, unsetKeys)
+			}
+		})
+	}
+}
+
 func TestProcessRetryChildUsesImmutableStartupClassification(t *testing.T) {
 	previous := processRetryChildTransport
 	t.Cleanup(func() { processRetryChildTransport = previous })
@@ -471,17 +557,46 @@ func TestProcessRetryChildStartupHasNoCloseActions(t *testing.T) {
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryChildStartupHasNoCloseActions$", "-test.count=1")
-	envWithoutChildMarker := make([]string, 0, len(os.Environ())+1)
-	markerPrefix := strings.ToUpper(constants.CIVisibilityInternalRetryProcessChild) + "="
-	for _, entry := range os.Environ() {
-		if strings.HasPrefix(strings.ToUpper(entry), markerPrefix) {
-			continue
-		}
-		envWithoutChildMarker = append(envWithoutChildMarker, entry)
-	}
-	cmd.Env = append(envWithoutChildMarker, constants.CIVisibilityInternalRetryProcessChild+"=true")
+	cmd.Env = append(environmentWithoutProcessRetryTransport(),
+		constants.CIVisibilityInternalRetryProcessChild+"=true",
+		constants.CIVisibilityInternalRetryProcessResultPath+"="+filepath.Join(t.TempDir(), "result.json"),
+		constants.CIVisibilityInternalRetryProcessTestName+"=TestProcessRetryChildStartupHasNoCloseActions",
+		constants.CIVisibilityInternalRetryProcessAttempt+"=1",
+		constants.CIVisibilityInternalRetryProcessReason+"="+constants.AutoTestRetriesRetryReason,
+	)
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
+}
+
+func TestProcessRetryIncompleteChildTransportRunsNormally(t *testing.T) {
+	const fixtureEnv = "DD_TEST_PROCESS_RETRY_INCOMPLETE_TRANSPORT"
+	if os.Getenv(fixtureEnv) == "true" {
+		require.False(t, IsProcessRetryChild())
+		session := CreateTestSession()
+		require.NotZero(t, session.SessionID())
+		session.Close(0)
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryIncompleteChildTransportRunsNormally$", "-test.count=1")
+	cmd.Env = append(environmentWithoutProcessRetryTransport(),
+		fixtureEnv+"=true",
+		constants.CIVisibilityInternalRetryProcessChild+"=true",
+	)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "ignoring invalid process retry child transport")
+}
+
+func environmentWithoutProcessRetryTransport() []string {
+	environment := make([]string, 0, len(os.Environ()))
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if !IsProcessRetryChildTransportKey(name) {
+			environment = append(environment, entry)
+		}
+	}
+	return environment
 }
 
 func (m *MockDdTestSuite) CreateTest(name string, options ...TestStartOption) Test {

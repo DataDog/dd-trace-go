@@ -4318,6 +4318,24 @@ func TestRunProcessRetryAttemptReportsUnavailableTreeContainmentBeforeStart(t *t
 	require.Zero(t, startCalls.Load())
 }
 
+func TestProcessRetryStartRetainsTreeHandleBeforeWaiting(t *testing.T) {
+	retainErr := errors.New("retain failed")
+	retained := false
+	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.count=1")
+	cmd.Env = append(os.Environ(), "Bypass=true")
+	waitCh, err := startAndWaitProcessRetryChild(cmd, func(cmd *exec.Cmd) error {
+		retained = true
+		require.NotNil(t, cmd.Process)
+		require.Nil(t, cmd.ProcessState)
+		return retainErr
+	})
+
+	require.True(t, retained)
+	require.ErrorIs(t, err, retainErr)
+	require.NotNil(t, waitCh)
+	require.NoError(t, <-waitCh)
+}
+
 func TestRunProcessRetryAttemptAttachesBeforeResumeAndReleasesLast(t *testing.T) {
 	resetProcessRetryLimiterForTesting(t)
 	phases := make([]string, 0, 6)

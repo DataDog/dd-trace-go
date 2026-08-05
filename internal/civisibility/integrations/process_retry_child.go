@@ -7,6 +7,7 @@ package integrations
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 type processRetryChildTransportState struct {
@@ -87,23 +89,58 @@ func processRetryChildTransportKey(name string) (string, bool) {
 }
 
 func initializeProcessRetryChildTransport() *processRetryChildTransportState {
-	state := &processRetryChildTransportState{}
-	child, ok := internalenv.Lookup(constants.CIVisibilityInternalRetryProcessChild)
-	enabled, err := strconv.ParseBool(child)
-	if !ok || err != nil || !enabled {
-		return state
+	state, err := snapshotProcessRetryChildTransport(internalenv.Lookup, os.Unsetenv)
+	if err != nil {
+		log.Warn("civisibility: ignoring invalid process retry child transport and continuing normal test execution: %v", err)
 	}
-	state.active = true
+	return state
+}
+
+func snapshotProcessRetryChildTransport(
+	lookup func(string) (string, bool),
+	unset func(string) error,
+) (*processRetryChildTransportState, error) {
+	state := &processRetryChildTransportState{}
+	child, ok := lookup(constants.CIVisibilityInternalRetryProcessChild)
+	if !ok {
+		return state, nil
+	}
 	state.values = make(map[string]string, len(processRetryChildTransportKeys))
 	for _, key := range processRetryChildTransportKeys {
-		if value, ok := internalenv.Lookup(key); ok {
+		if value, ok := lookup(key); ok {
 			state.values[key] = value
 		}
-		if err := os.Unsetenv(key); err != nil && state.err == nil {
+		if err := unset(key); err != nil && state.err == nil {
 			state.err = err
 		}
 	}
-	return state
+
+	enabled, err := strconv.ParseBool(strings.TrimSpace(child))
+	if err != nil {
+		state.values = nil
+		return state, fmt.Errorf("invalid %s marker", constants.CIVisibilityInternalRetryProcessChild)
+	}
+	if !enabled {
+		state.values = nil
+		return state, nil
+	}
+	for _, key := range []string{
+		constants.CIVisibilityInternalRetryProcessResultPath,
+		constants.CIVisibilityInternalRetryProcessTestName,
+		constants.CIVisibilityInternalRetryProcessReason,
+	} {
+		if strings.TrimSpace(state.values[key]) == "" {
+			state.values = nil
+			return state, fmt.Errorf("missing %s", key)
+		}
+	}
+	attempt, err := strconv.Atoi(strings.TrimSpace(state.values[constants.CIVisibilityInternalRetryProcessAttempt]))
+	if err != nil || attempt < 1 {
+		state.values = nil
+		return state, fmt.Errorf("invalid %s", constants.CIVisibilityInternalRetryProcessAttempt)
+	}
+	state.active = true
+	return state, nil
 }
 
 var (

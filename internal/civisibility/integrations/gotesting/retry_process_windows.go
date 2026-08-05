@@ -23,10 +23,15 @@ import (
 // ordinary retry-child descendants.
 func ProcessRetryContainmentSupported() bool { return true }
 
+type processRetryWindowsJob struct {
+	job     windows.Handle
+	process windows.Handle
+}
+
 var processRetryWindowsJobs = struct {
 	mu   locking.Mutex
-	jobs map[*exec.Cmd]windows.Handle
-}{jobs: make(map[*exec.Cmd]windows.Handle)}
+	jobs map[*exec.Cmd]processRetryWindowsJob
+}{jobs: make(map[*exec.Cmd]processRetryWindowsJob)}
 
 func processRetryChildStartsSuspended() bool { return true }
 
@@ -127,8 +132,33 @@ func setProcessGroupForCommand(cmd *exec.Cmd) error {
 		return err
 	}
 	processRetryWindowsJobs.mu.Lock()
-	processRetryWindowsJobs.jobs[cmd] = job
+	processRetryWindowsJobs.jobs[cmd] = processRetryWindowsJob{job: job}
 	processRetryWindowsJobs.mu.Unlock()
+	return nil
+}
+
+func retainProcessTreeHandle(cmd *exec.Cmd) error {
+	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+		return errProcessRetryProcessNotStarted
+	}
+	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
+	if err != nil {
+		return err
+	}
+	processRetryWindowsJobs.mu.Lock()
+	entry, ok := processRetryWindowsJobs.jobs[cmd]
+	if ok && entry.process == 0 {
+		entry.process = process
+		processRetryWindowsJobs.jobs[cmd] = entry
+		process = 0
+	}
+	processRetryWindowsJobs.mu.Unlock()
+	if process != 0 {
+		_ = windows.CloseHandle(process)
+	}
+	if !ok {
+		return errProcessRetryProcessNotStarted
+	}
 	return nil
 }
 
@@ -182,35 +212,28 @@ func resumeProcessTree(cmd *exec.Cmd) error {
 func attachProcessTree(cmd *exec.Cmd) error {
 	processRetryWindowsJobs.mu.Lock()
 	defer processRetryWindowsJobs.mu.Unlock()
-	job, ok := processRetryWindowsJobs.jobs[cmd]
-	if !ok || cmd == nil {
+	entry, ok := processRetryWindowsJobs.jobs[cmd]
+	if !ok || entry.process == 0 {
 		return errProcessRetryProcessNotStarted
 	}
-	if cmd.Process == nil {
-		return nil
-	}
-	if cmd.Process.Pid <= 0 {
-		return errProcessRetryProcessNotStarted
-	}
-	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
-	if err != nil {
-		return err
-	}
-	defer windows.CloseHandle(process)
-	return windows.AssignProcessToJobObject(job, process)
+	return windows.AssignProcessToJobObject(entry.job, entry.process)
 }
 
 func releaseProcessTree(cmd *exec.Cmd) error {
 	processRetryWindowsJobs.mu.Lock()
-	defer processRetryWindowsJobs.mu.Unlock()
-	job, ok := processRetryWindowsJobs.jobs[cmd]
+	entry, ok := processRetryWindowsJobs.jobs[cmd]
 	if ok {
 		delete(processRetryWindowsJobs.jobs, cmd)
 	}
+	processRetryWindowsJobs.mu.Unlock()
 	if !ok {
 		return nil
 	}
-	return windows.CloseHandle(job)
+	var processErr error
+	if entry.process != 0 {
+		processErr = windows.CloseHandle(entry.process)
+	}
+	return errors.Join(processErr, windows.CloseHandle(entry.job))
 }
 
 func terminateProcessTree(cmd *exec.Cmd) error {
@@ -224,9 +247,9 @@ func killProcessTree(cmd *exec.Cmd) error {
 func terminateProcessRetryWindowsJob(cmd *exec.Cmd) error {
 	processRetryWindowsJobs.mu.Lock()
 	defer processRetryWindowsJobs.mu.Unlock()
-	job, ok := processRetryWindowsJobs.jobs[cmd]
+	entry, ok := processRetryWindowsJobs.jobs[cmd]
 	if !ok {
 		return killDirectChild(cmd)
 	}
-	return windows.TerminateJobObject(job, 1)
+	return windows.TerminateJobObject(entry.job, 1)
 }

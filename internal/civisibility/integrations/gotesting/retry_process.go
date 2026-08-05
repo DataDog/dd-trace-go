@@ -1032,14 +1032,7 @@ func defaultProcessRetryRunnerHooks() processRetryRunnerHooks {
 		command:     exec.Command,
 		prepareTree: setProcessGroupForCommand,
 		startAndWait: func(cmd *exec.Cmd) (<-chan error, error) {
-			if err := cmd.Start(); err != nil {
-				return nil, err
-			}
-			waitCh := make(chan error, 1)
-			go func() {
-				waitCh <- cmd.Wait()
-			}()
-			return waitCh, nil
+			return startAndWaitProcessRetryChild(cmd, retainProcessTreeHandle)
 		},
 		attachTree:    attachProcessTree,
 		resumeTree:    resumeProcessTree,
@@ -1057,6 +1050,21 @@ func defaultProcessRetryRunnerHooks() processRetryRunnerHooks {
 		startsSuspended: processRetryChildStartsSuspended(),
 		controlEnabled:  true,
 	}
+}
+
+func startAndWaitProcessRetryChild(
+	cmd *exec.Cmd,
+	retain func(*exec.Cmd) error,
+) (<-chan error, error) {
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	retainErr := retain(cmd)
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+	return waitCh, retainErr
 }
 
 func currentProcessRetryRunnerHooks() processRetryRunnerHooks {

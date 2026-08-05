@@ -35,6 +35,8 @@ func setProcessGroupForCommand(cmd *exec.Cmd) error {
 
 func attachProcessTree(*exec.Cmd) error { return nil }
 
+func retainProcessTreeHandle(*exec.Cmd) error { return nil }
+
 func resumeProcessTree(*exec.Cmd) error { return nil }
 
 func releaseProcessTree(*exec.Cmd) error { return nil }
