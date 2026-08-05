@@ -34,7 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
-const orchestrionRetryProcessInvalidConfigEnv = "ORCHESTRION_RETRY_PROCESS_INVALID_CONFIG"
+const orchestrionRetryProcessIncompleteTransportEnv = "ORCHESTRION_RETRY_PROCESS_INCOMPLETE_TRANSPORT"
 const orchestrionRetryProcessHybridEnv = "ORCHESTRION_RETRY_PROCESS_HYBRID"
 const orchestrionRetryProcessHybridParentEnv = "ORCHESTRION_RETRY_PROCESS_HYBRID_PARENT"
 const orchestrionRetryProcessPureParentEnv = "ORCHESTRION_RETRY_PROCESS_PURE_PARENT"
@@ -1029,29 +1029,28 @@ func TestOrchestrionRetryProcessNoMatchingChildModeController(t *testing.T) {
 	}
 }
 
-func TestOrchestrionRetryProcessInvalidConfigController(t *testing.T) {
+func TestOrchestrionRetryProcessIncompleteTransportController(t *testing.T) {
 	if orchestrionRetryProcessChild() {
 		t.Skip("controller runs only in the parent process")
 	}
 
-	result, output, err, _ := runOrchestrionRetryProcessChild(
+	_, output, err, tempDir := runOrchestrionRetryProcessChild(
 		t,
 		"^TestOrchestrionRetryProcessSelectedChild$",
 		"TestOrchestrionRetryProcessSelectedChild",
 		false,
-		func(string) []string { return []string{orchestrionRetryProcessInvalidConfigEnv + "=true"} },
+		func(string) []string { return []string{orchestrionRetryProcessIncompleteTransportEnv + "=true"} },
 	)
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
-		t.Fatalf("orchestrion invalid-config child process returned %v, want exit code 1\n%s", err, output)
+	if err != nil {
+		t.Fatalf("orchestrion incomplete-transport process failed: %v\n%s", err, output)
 	}
-
-	if result.Version != 1 ||
-		result.Status != "not_run" ||
-		result.ResultError != "missing_attempt" ||
-		result.Failed ||
-		result.Skipped {
-		t.Fatalf("unexpected invalid-config child result: %+v\n%s", result, output)
+	if !bytes.Contains(output, []byte("ignoring invalid process retry child transport")) {
+		t.Fatalf("orchestrion incomplete-transport process did not report the ignored transport:\n%s", output)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "result.json")); err == nil {
+		t.Fatal("orchestrion incomplete-transport process unexpectedly wrote a child result")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("checking incomplete-transport child result: %v", err)
 	}
 }
 
@@ -1083,9 +1082,12 @@ func runOrchestrionRetryProcessChild(
 	}
 	cmd.Env = append(cmd.Env, orchestrionRetryProcessChildActivityEnv(server.URL)...)
 	output, err := runOrchestrionRetryProcessChildCommand(t, cmd, resultPath, testName, completeConfig)
-	result := decodeOrchestrionRetryProcessResult(t, resultPath, output)
-	if got := requests.Load(); got != 0 {
-		t.Fatalf("expected zero Orchestrion child CI Visibility requests, got %d", got)
+	var result retryProcessChildResult
+	if completeConfig {
+		result = decodeOrchestrionRetryProcessResult(t, resultPath, output)
+		if got := requests.Load(); got != 0 {
+			t.Fatalf("expected zero Orchestrion child CI Visibility requests, got %d", got)
+		}
 	}
 	return result, output, err, tempDir
 }
@@ -1270,8 +1272,11 @@ func decodeOrchestrionRetryProcessResult(t *testing.T, resultPath string, output
 }
 
 func TestOrchestrionRetryProcessSelectedChild(t *testing.T) {
-	if orchestrionRetryProcessEnv(orchestrionRetryProcessInvalidConfigEnv) == "true" {
-		t.Fatal("selected test ran despite invalid process retry child config")
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessIncompleteTransportEnv) == "true" {
+		if orchestrionRetryProcessChild() {
+			t.Fatal("incomplete process retry transport activated child mode")
+		}
+		return
 	}
 	if !orchestrionRetryProcessChild() {
 		t.Skip("selected child fixture runs only in process retry child mode")
