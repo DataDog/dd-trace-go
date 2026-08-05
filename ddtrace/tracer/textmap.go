@@ -568,6 +568,22 @@ func (p *propagatorW3c) propagateTracestate(ctx *SpanContext, w3cCtx *SpanContex
 	// Note: Other trace context fields like sampling priority, propagated tags,
 	// and origin will remain unchanged.
 	ts := w3cCtx.trace.propagatingTag(tracestateHeader)
+	// On the dual-header path (both Datadog and W3C headers, same trace ID) the
+	// Datadog context wins extraction and carries no ot= of its own, while the
+	// inbound OTel sampling decision was parsed onto the W3C context. Carry it
+	// over so composeTracestate re-emits it; otherwise it strips the inbound ot=
+	// from the raw tracestate and the threshold is lost.
+	if crv, cth, _ := ctx.trace.otelTracestate(); crv == nil && cth == nil {
+		wrv, wth, wunknown := w3cCtx.trace.otelTracestate()
+		var rv, th uint64
+		if wrv != nil {
+			rv = *wrv
+		}
+		if wth != nil {
+			th = *wth
+		}
+		ctx.trace.setOtelUpstream(rv, wrv != nil, th, wth != nil, wunknown)
+	}
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
 	ctx.isRemote = (w3cCtx.isRemote)
@@ -1372,12 +1388,29 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		b.WriteString(value)
 		return true
 	})
+	// Emit the OpenTelemetry `ot=` member as the second list-member (right
+	// after `dd=`), keeping both DD-managed members at the front so a crowded
+	// tracestate can't truncate them. An inherited value may be rv-only or
+	// th-only; a DD-generated one is always the rv+th pair.
+	rv, th, unknown := ctx.trace.otelTracestate()
+	if rv != nil || th != nil || unknown != "" {
+		b.WriteString(",ot=")
+		appendOtelValue(&b, rv, th, unknown)
+		listLength++
+	}
 	// the old state is split by vendors, must be concatenated with a `,`
 	if len(oldState) == 0 {
 		return b.String()
 	}
 	for s := range strings.SplitSeq(strings.Trim(oldState, " \t"), ",") {
-		if strings.HasPrefix(s, "dd=") {
+		// The W3C spec allows optional whitespace (OWS) around the commas
+		// separating list-members, so an entry may arrive as " dd=..." or
+		// " ot=...". Trim before the prefix check: filtering on the raw entry
+		// would miss OWS-prefixed managed members and re-emit them here,
+		// producing duplicate dd=/ot= list-members and an invalid tracestate.
+		s = strings.Trim(s, " \t")
+		// dd= and ot= are DD-managed and re-emitted above; drop any inbound copy.
+		if strings.HasPrefix(s, "dd=") || strings.HasPrefix(s, "ot=") {
 			continue
 		}
 		listLength++
@@ -1387,7 +1420,7 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 			break
 		}
 		b.WriteString(",")
-		b.WriteString(strings.Trim(s, " \t"))
+		b.WriteString(s)
 	}
 	return b.String()
 }
@@ -1571,6 +1604,19 @@ func parseTracestate(ctx *SpanContext, header string) {
 	hasOversizedDD := false
 	for group := range strings.SplitSeq(header, ",") {
 		group = strings.Trim(group, "\t ")
+		if after, ok := strings.CutPrefix(group, "ot="); ok {
+			// OpenTelemetry consistent probability sampling: read rv/th so DD
+			// can honor an upstream decision. Malformed values are treated as
+			// absent (never reject the trace).
+			rv, rvOK, th, thOK, unknown := parseOtelTracestate(after)
+			if rvOK || thOK || unknown != "" {
+				if ctx.trace == nil {
+					ctx.trace = newTrace()
+				}
+				ctx.trace.setOtelUpstream(rv, rvOK, th, thOK, unknown)
+			}
+			continue
+		}
 		if !strings.HasPrefix(group, "dd=") {
 			continue
 		}

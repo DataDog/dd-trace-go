@@ -649,6 +649,118 @@ type trace struct {
 	// chunk containing that root is assembled.
 	// +checklocks:mu
 	filterReject bool
+
+	// otel holds the OpenTelemetry consistent probability sampling state, or nil
+	// when the trace carries none. See otelTraceState.
+	// +checklocks:mu
+	otel *otelTraceState
+}
+
+// otelTraceState is the OpenTelemetry consistent probability sampling state
+// (OTEP 235) carried in the `ot=` tracestate list-member: the 56-bit randomness
+// (rv) and rejection threshold (th). A nil field means that value is absent; th
+// can be present without rv, which is how an upstream OTel default-sampling
+// decision arrives. hasUpstreamDecision marks that an inbound `ot=` carried a
+// sampling decision (rv and/or th) that DD must honor: such values are forwarded
+// verbatim and never re-derived locally. It is NOT set for an `ot=` that carries
+// only unknown sub-keys, since those describe no sampling decision.
+type otelTraceState struct {
+	rv, th *uint64
+	// unknown holds inbound `ot=` sub-keys other than rv/th (';'-joined), forwarded
+	// verbatim so DD stays transparent to sub-keys OTel may add later. Only ever set
+	// from an inbound `ot=`.
+	unknown             string
+	hasUpstreamDecision bool
+}
+
+// setOtelUpstream records rv/th (and any unknown sub-keys) parsed from an inbound
+// `ot=` member. rv/th carry an upstream sampling decision that is forwarded
+// unchanged on inject and never re-derived locally; an `ot=` with only unknown
+// sub-keys carries no decision, so DD still derives its own (rv, th) alongside it.
+// Note: keep/drop is driven by the W3C sampled flag (parseTraceparent), which for
+// a compliant sender already equals (rv >= th); we trust that flag and do not
+// validate the inbound pair against it.
+func (t *trace) setOtelUpstream(rv uint64, rvOK bool, th uint64, thOK bool, unknown string) {
+	if !rvOK && !thOK && unknown == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil {
+		t.otel = &otelTraceState{}
+	}
+	if rvOK {
+		t.otel.rv = &rv
+	}
+	if thOK {
+		t.otel.th = &th
+	}
+	t.otel.unknown = unknown
+	// rv/th are a decision to honor; unknown-only sub-keys are not.
+	t.otel.hasUpstreamDecision = rvOK || thOK
+}
+
+// setOtelProbability records the (rv, th) pair for a genuine DD probability
+// decision at the given rate. It is a no-op when an upstream sampling decision
+// was inherited (DD honors it) or when rate is 0 (a rejection with no
+// representable threshold, so nothing is emitted).
+func (t *trace) setOtelProbability(traceIDLower uint64, rate float64) {
+	if rate <= 0 {
+		// A rate-0 decision is a drop with no representable threshold. Clear any
+		// previously derived local (rv, th) so a re-sample (e.g. a trace rule with
+		// sample_rate:0 applied after an earlier agent-rate decision) can't leave a
+		// stale threshold to be injected. Upstream-decided values are preserved.
+		t.clearOtelProbability()
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil {
+		t.otel = &otelTraceState{}
+	} else if t.otel.hasUpstreamDecision {
+		return
+	}
+	rv := deriveOtelRV(traceIDLower)
+	th := deriveOtelTH(rate)
+	// DD decides keep/drop on the full 64-bit hash, but rv/th carry only 56 bits.
+	// On the rare boundary trace IDs where that truncation would flip a
+	// downstream reader's (rv >= th) decision, nudge rv (never th) so it
+	// reproduces DD's exact keep/drop. rv moves by at most one step.
+	if sampledByRate(traceIDLower, rate) {
+		if rv < th {
+			rv = th
+		}
+	} else if th > 0 && rv >= th { // th == 0 (rate ~= 1) has no drop to represent
+		rv = th - 1
+	}
+	t.otel.rv = &rv
+	t.otel.th = &th
+}
+
+// clearOtelProbability erases a locally-derived (rv, th) pair for a
+// non-probability decision (force-keep or a rate-limiter-caused drop). Values
+// from an upstream decision are left untouched so an upstream rv is still forwarded.
+func (t *trace) clearOtelProbability() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil || t.otel.hasUpstreamDecision {
+		return
+	}
+	t.otel.rv = nil
+	t.otel.th = nil
+}
+
+// otelTracestate returns the resolved OTel sampling state for injection under a
+// single lock: rv/th for the sampling decision (a nil rv or th must not be
+// emitted) and any inherited non-rv/th sub-keys to re-emit verbatim (empty when
+// none were inherited).
+func (t *trace) otelTracestate() (rv, th *uint64, unknown string) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.otel == nil {
+		return nil, nil, ""
+	}
+	return t.otel.rv, t.otel.th, t.otel.unknown
 }
 
 var (
@@ -755,6 +867,17 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	assert.RWMutexLocked(&t.mu)
 	if t.locked && !force {
 		return false
+	}
+
+	// A manual or AppSec force-keep is not a probability decision, so erase the
+	// OTel threshold rather than encode a fabricated rate. An upstream rv is still
+	// forwarded (it describes upstream's randomness); a locally-derived rv has no
+	// meaning without its threshold, so it is dropped too.
+	if t.otel != nil && (sampler == samplernames.Manual || sampler == samplernames.AppSec) {
+		t.otel.th = nil
+		if !t.otel.hasUpstreamDecision {
+			t.otel.rv = nil
+		}
 	}
 
 	old := t.priority.Load() // +checklocksignore
