@@ -277,9 +277,9 @@
     ],
     "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED": [
       {
-        "implementation": "B",
+        "implementation": "C",
         "type": "boolean",
-        "default": "true"
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES": [
