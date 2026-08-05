@@ -41,6 +41,40 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 | `DD_AGENT_HOST`       | `N/A`         | Host of a running Datadog Agent. |
 | `DD_TRACE_AGENT_PORT` | `8126`        | Port of a running Datadog Agent. |
 
+### Client IP resolution
+
+The extension identifies the address observed by Google Cloud rather than trusting the
+first client-supplied `X-Forwarded-For` entry. Forwarding `source.ip` is recommended but
+not required:
+
+```yaml
+forwardAttributes: [source.ip]
+```
+
+```hcl
+forward_attributes = ["source.ip"]
+```
+
+> Terraform requires a recent
+> [`google-beta` provider](https://registry.terraform.io/providers/hashicorp/google-beta/latest/docs/resources/network_services_lb_traffic_extension);
+> `source.address` is not supported: GCP rejects it as an invalid forward attribute.
+
+Without `source.ip`, GCLB's documented suffix is used:
+
+```text
+X-Forwarded-For: <client-supplied>,<client observed by the load balancer>,<forwarding rule>
+```
+
+The raw header remains unchanged for WAF inspection. `http.client_ip` receives the
+trusted identity; `network.client.ip` continues to come from the transport
+`RemoteAddr`. `DD_TRACE_CLIENT_IP_HEADER` takes precedence over both mechanisms.
+
+The positional rule is enabled only for the published GCP deployment and disabled for
+the documented self-managed UDS mode. Keep the callout endpoint restricted to your own
+proxy. With a CDN in front, use its trusted client-IP header via
+`DD_TRACE_CLIENT_IP_HEADER`. If neither `source.ip` nor the full GCLB header reaches the
+extension, resolution falls back to the standard header policy.
+
 ### SSL Configuration
 
 The Envoy of GCP is configured to communicate to the Service Extension with TLS.
