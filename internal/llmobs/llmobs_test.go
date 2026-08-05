@@ -593,6 +593,71 @@ func TestStartSpan(t *testing.T) {
 		assert.Nil(t, attr["pagent_name"], "unsafe name must not propagate; pagent_name must be nil (id-only)")
 		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
 	})
+	t.Run("distributed-context-propagation-agent-name-dropped-when-over-budget", func(t *testing.T) {
+		// When the agent name is so long that appending it would push the x-datadog-tags
+		// header past MaxTagsHeaderLen, the name is silently dropped (id-only path) while
+		// the span ID is always propagated unconditionally.
+		_, _, ll := testTracer(t)
+
+		var capturedTags string
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			capturedTags = req.Header.Get("X-Datadog-Tags")
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			// 400 printable ASCII chars: wire-safe per AgentNameWireSafe but too large
+			// to fit alongside the other LLMObs propagating tags within the 512-byte budget.
+			longName := strings.Repeat("a", 400)
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, longName, llmobs.StartSpanConfig{})
+			defer agent.Finish(llmobs.FinishSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		assert.Contains(t, capturedTags, "_dd.p.llmobs_pagent_span_id=", "span ID must always be propagated")
+		assert.NotContains(t, capturedTags, "_dd.p.llmobs_pagent_name=", "oversized name must be dropped to stay within budget")
+	})
+	t.Run("distributed-context-propagation-agent-name-equals-sign-roundtrips", func(t *testing.T) {
+		// "=" is accepted by AgentNameWireSafe and preserved end-to-end through the
+		// x-datadog-tags header: parsePropagatableTraceTags reads everything after the
+		// first "=" as the value, so an "=" inside the value is not misread as a separator.
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		var agentSpanID string
+		genSpans := func() {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "agent=v2", llmobs.StartSpanConfig{})
+			agentSpanID = agent.SpanID()
+			defer agent.Finish(llmobs.FinishSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "server-side tool must carry agent_attribution")
+		assert.Equal(t, "agent=v2", attr["pagent_name"], "= in agent name must be preserved through propagation")
+		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
+	})
 
 }
 
