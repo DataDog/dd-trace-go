@@ -185,10 +185,16 @@ func TestEvaluateSemverCondition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			comparand, _ := tt.comparand.(string)
+			var parsedComparand *parsedSemver
+			if parsed, ok := parseSemver(comparand); ok {
+				parsedComparand = &parsed
+			}
 			condition := &condition{
-				Operator:  tt.operator,
-				Attribute: "version",
-				Value:     tt.comparand,
+				Operator:        tt.operator,
+				Attribute:       "version",
+				Value:           tt.comparand,
+				semverComparand: parsedComparand,
 			}
 			context := map[string]any{"version": tt.attribute}
 			if got := evaluateCondition(condition, context); got != tt.want {
@@ -198,10 +204,15 @@ func TestEvaluateSemverCondition(t *testing.T) {
 	}
 
 	t.Run("missing attribute", func(t *testing.T) {
+		comparand, ok := parseSemver("1.2.3")
+		if !ok {
+			t.Fatal("parseSemver failed")
+		}
 		condition := &condition{
-			Operator:  operatorSemverEQ,
-			Attribute: "version",
-			Value:     "1.2.3",
+			Operator:        operatorSemverEQ,
+			Attribute:       "version",
+			Value:           "1.2.3",
+			semverComparand: &comparand,
 		}
 		if evaluateCondition(condition, map[string]any{}) {
 			t.Error("expected a missing attribute not to match")
@@ -209,7 +220,11 @@ func TestEvaluateSemverCondition(t *testing.T) {
 	})
 
 	t.Run("unsupported operator", func(t *testing.T) {
-		if evaluateSemverCondition("1.2.3", "1.2.3", conditionOperator("UNKNOWN")) {
+		comparand, ok := parseSemver("1.2.3")
+		if !ok {
+			t.Fatal("parseSemver failed")
+		}
+		if evaluateSemverCondition("1.2.3", &comparand, conditionOperator("UNKNOWN")) {
 			t.Error("expected an unsupported operator not to match")
 		}
 	})

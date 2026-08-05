@@ -18,6 +18,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
+var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
+
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	provider := newDatadogProvider(config)
 
@@ -216,13 +218,15 @@ func validateFlag(flagKey string, flag *flag) error {
 					operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
 					comparand, ok := condition.Value.(string)
 					if !ok {
-						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires string value",
-							flagKey, i, condition.Operator)
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q that requires string value",
+							errInvalidSemverComparand, flagKey, i, condition.Operator)
 					}
-					if _, ok := parseSemver(comparand); !ok {
-						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q and invalid semantic version %q",
-							flagKey, i, condition.Operator, comparand)
+					parsedComparand, ok := parseSemver(comparand)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q and invalid semantic version %q",
+							errInvalidSemverComparand, flagKey, i, condition.Operator, comparand)
 					}
+					condition.semverComparand = &parsedComparand
 				}
 			}
 		}

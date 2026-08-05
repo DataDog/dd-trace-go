@@ -21,12 +21,17 @@ func BenchmarkCompareSemver(b *testing.B) {
 
 	for _, benchmark := range benchmarks {
 		b.Run(benchmark.name, func(b *testing.B) {
+			comparand, ok := parseSemver(benchmark.right)
+			if !ok {
+				b.Fatalf("parseSemver(%q) failed", benchmark.right)
+			}
 			b.ReportAllocs()
 
 			var ordering int
-			var ok bool
 			for b.Loop() {
-				ordering, ok = compareSemver(benchmark.left, benchmark.right)
+				var version parsedSemver
+				version, ok = parseSemver(benchmark.left)
+				ordering = compareSemver(version, comparand)
 			}
 			if !ok || (ordering < 0) != benchmark.wantBefore {
 				b.Fatalf("compareSemver(%q, %q) = (%d, %v)", benchmark.left, benchmark.right, ordering, ok)
@@ -36,10 +41,15 @@ func BenchmarkCompareSemver(b *testing.B) {
 }
 
 func BenchmarkEvaluateSemverCondition(b *testing.B) {
+	comparand, ok := parseSemver("2.0.0-beta.11+build.11")
+	if !ok {
+		b.Fatal("parseSemver failed")
+	}
 	condition := &condition{
-		Operator:  operatorSemverLT,
-		Attribute: "version",
-		Value:     "2.0.0-beta.11+build.11",
+		Operator:        operatorSemverLT,
+		Attribute:       "version",
+		Value:           "2.0.0-beta.11+build.11",
+		semverComparand: &comparand,
 	}
 	context := map[string]any{
 		"version": "2.0.0-beta.2+build.2",

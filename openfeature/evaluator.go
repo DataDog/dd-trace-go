@@ -8,6 +8,7 @@ package openfeature
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -16,7 +17,6 @@ import (
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
-	"golang.org/x/mod/semver"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -142,7 +142,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 }
 
 // evaluateConfiguredFlag evaluates a flag from a parsed configuration. Invalid
-// flags return the caller default. Missing flags return FLAG_NOT_FOUND.
+// SemVer comparands return PARSE_ERROR. Missing flags return FLAG_NOT_FOUND.
 func evaluateConfiguredFlag(
 	config *universalFlagsConfiguration,
 	flagKey string,
@@ -154,7 +154,14 @@ func evaluateConfiguredFlag(
 	if exists {
 		return evaluateFlag(flag, defaultValue, context, now)
 	}
-	if _, invalid := config.invalidFlags[flagKey]; invalid {
+	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
+		if errors.Is(configErr, errInvalidSemverComparand) {
+			return evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  fmt.Errorf("%w: invalid configuration for flag %q: %w", errParseError, flagKey, configErr),
+			}
+		}
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
 	return evaluationResult{
@@ -252,7 +259,7 @@ func evaluateCondition(condition *condition, context map[string]any) bool {
 		return evaluateNumericCondition(attributeValue, condition.Value, condition.Operator)
 	case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
 		operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
-		return evaluateSemverCondition(attributeValue, condition.Value, condition.Operator)
+		return evaluateSemverCondition(attributeValue, condition.semverComparand, condition.Operator)
 	default:
 		return false
 	}
@@ -407,20 +414,20 @@ func evaluateNumericCondition(attributeValue any, conditionValue any, operator c
 }
 
 // evaluateSemverCondition evaluates semantic version comparison operators.
-func evaluateSemverCondition(attributeValue any, conditionValue any, operator conditionOperator) bool {
+func evaluateSemverCondition(attributeValue any, comparand *parsedSemver, operator conditionOperator) bool {
 	attribute, ok := attributeValue.(string)
 	if !ok {
 		return false
 	}
-	comparand, ok := conditionValue.(string)
-	if !ok {
+	if comparand == nil {
 		return false
 	}
 
-	ordering, ok := compareSemver(attribute, comparand)
+	parsedAttribute, ok := parseSemver(attribute)
 	if !ok {
 		return false
 	}
+	ordering := compareSemver(parsedAttribute, *comparand)
 
 	switch operator {
 	case operatorSemverEQ:
@@ -438,45 +445,6 @@ func evaluateSemverCondition(attributeValue any, conditionValue any, operator co
 	default:
 		return false
 	}
-}
-
-// parseSemver accepts the same version syntax as Rust's semver::Version::parse.
-func parseSemver(version string) (string, bool) {
-	normalized := "v" + version
-	if !semver.IsValid(normalized) {
-		return "", false
-	}
-
-	coreEnd := strings.IndexAny(version, "-+")
-	if coreEnd == -1 {
-		coreEnd = len(version)
-	}
-	core := strings.Split(version[:coreEnd], ".")
-	if len(core) != 3 {
-		return "", false
-	}
-	for _, part := range core {
-		if _, err := strconv.ParseUint(part, 10, 64); err != nil {
-			return "", false
-		}
-	}
-
-	return normalized, true
-}
-
-// compareSemver compares semantic version precedence. Build metadata is ignored
-// as required by SemVer 2.0.0.
-func compareSemver(left, right string) (int, bool) {
-	leftVersion, ok := parseSemver(left)
-	if !ok {
-		return 0, false
-	}
-	rightVersion, ok := parseSemver(right)
-	if !ok {
-		return 0, false
-	}
-
-	return semver.Compare(leftVersion, rightVersion), true
 }
 
 // evaluateSplit determines if a split matches by evaluating all its shards.

@@ -21,8 +21,8 @@ type universalFlagsConfiguration struct {
 	Environment environment `json:"environment"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
-	// invalidFlags contains flags that could not be parsed or validated.
-	invalidFlags map[string]struct{}
+	// invalidFlags contains errors for flags that could not be parsed or validated.
+	invalidFlags map[string]error
 }
 
 // UnmarshalJSON parses flags independently so one invalid flag does not reject
@@ -42,16 +42,16 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.Format = raw.Format
 	config.Environment = raw.Environment
 	config.Flags = make(map[string]*flag, len(raw.Flags))
-	config.invalidFlags = make(map[string]struct{})
+	config.invalidFlags = make(map[string]error)
 
 	for flagKey, flagData := range raw.Flags {
 		var parsedFlag flag
 		if err := json.Unmarshal(flagData, &parsedFlag); err != nil {
-			config.invalidFlags[flagKey] = struct{}{}
+			config.invalidFlags[flagKey] = err
 			continue
 		}
 		if err := validateFlag(flagKey, &parsedFlag); err != nil {
-			config.invalidFlags[flagKey] = struct{}{}
+			config.invalidFlags[flagKey] = err
 			continue
 		}
 		config.Flags[flagKey] = &parsedFlag
@@ -188,6 +188,8 @@ type condition struct {
 	// - List operators (ONE_OF, NOT_ONE_OF): []any or []string
 	// - Null check (IS_NULL): bool
 	Value any `json:"value"`
+	// semverComparand is the validated, parsed SemVer condition value.
+	semverComparand *parsedSemver
 }
 
 // split defines how traffic should be distributed for a specific variant.
