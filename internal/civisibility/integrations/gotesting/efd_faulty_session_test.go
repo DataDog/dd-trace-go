@@ -439,6 +439,7 @@ func TestProcessRetryEFDFaultySessionLockReleaseRetriesTransientFilesystemErrors
 
 func TestProcessRetryEFDFaultySessionLockReleaseRevalidatesOwnershipBeforeRetry(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), efdFaultySessionDirectoryName)
+	replacementPath := filepath.Join(directory, "replacement-lock")
 	removeCalls := 0
 	store := &efdFaultySessionFilesystemStore{
 		directory: directory,
@@ -447,12 +448,13 @@ func TestProcessRetryEFDFaultySessionLockReleaseRevalidatesOwnershipBeforeRetry(
 		lockRemove: func(path string) error {
 			removeCalls++
 			require.NoError(t, os.Remove(path))
-			require.NoError(t, os.WriteFile(path, []byte("replacement"), 0o600))
+			require.NoError(t, os.Rename(replacementPath, path))
 			return errors.New("injected remove failure after replacement")
 		},
 	}
 	lock, err := store.acquireLock()
 	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(replacementPath, []byte("replacement"), 0o600))
 	require.ErrorContains(t, store.releaseLock(lock), "ownership changed")
 	require.Equal(t, 1, removeCalls, "an ownership mismatch must stop retries before removing the replacement")
 	contents, err := os.ReadFile(filepath.Join(directory, efdFaultySessionLockFile))
