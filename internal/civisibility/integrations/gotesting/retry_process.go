@@ -29,6 +29,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
@@ -369,13 +370,19 @@ const processRetryCoverageDirectoryEnvironmentVariable = "GOCOVERDIR"
 func sanitizeProcessRetryBaseEnv(base []string) []string {
 	result := make([]string, 0, len(base))
 	for _, entry := range base {
-		key, _, ok := strings.Cut(entry, "=")
+		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
 			result = append(result, entry)
 			continue
 		}
 		if isProcessRetryInternalEnvKey(key) || strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable) {
 			continue
+		}
+		if strings.EqualFold(key, constants.CIVisibilityEnabledEnvironmentVariable) {
+			if mode, valid := envconfig.ParseEnabledMode(value); valid && mode == envconfig.EnabledModeParent {
+				result = append(result, key+"=false")
+				continue
+			}
 		}
 		result = append(result, entry)
 	}
@@ -885,6 +892,7 @@ type processRetryLaunchBaseline struct {
 
 type processRetryStartupSnapshot struct {
 	workingDirectory string
+	args             []string
 	environment      []string
 	err              error
 }
@@ -996,7 +1004,11 @@ type processRetryActiveChild struct {
 
 var globalProcessRetryLimiter atomic.Pointer[processRetryLimiter]
 var processRetryRunnerHooksOverride atomic.Pointer[processRetryRunnerHooks]
-var processRetryStartup = captureProcessRetryStartupSnapshot(os.Getwd, os.Environ)
+var processRetryStartup = captureProcessRetryStartupSnapshot(
+	os.Getwd,
+	func() []string { return os.Args[1:] },
+	os.Environ,
+)
 var processRetryLaunchGate = processRetryLaunchGateState{
 	shutdown: make(chan struct{}),
 	changed:  make(chan struct{}),
@@ -1115,11 +1127,13 @@ func captureProcessRetryLaunchTemplate() *processRetryLaunchBaseline {
 
 func captureProcessRetryStartupSnapshot(
 	workingDirectory func() (string, error),
+	args func() []string,
 	environ func() []string,
 ) processRetryStartupSnapshot {
 	dir, err := workingDirectory()
 	return processRetryStartupSnapshot{
 		workingDirectory: dir,
+		args:             append([]string(nil), args()...),
 		environment:      sanitizeProcessRetryBaseEnv(environ()),
 		err:              err,
 	}
@@ -1130,6 +1144,7 @@ func captureProcessRetryLaunchTemplateFromStartup(startup processRetryStartupSna
 	baseline := &processRetryLaunchBaseline{
 		hooks:            hooks,
 		workingDirectory: startup.workingDirectory,
+		args:             append([]string(nil), startup.args...),
 		environment:      append([]string(nil), startup.environment...),
 		err:              startup.err,
 	}
@@ -1140,7 +1155,6 @@ func captureProcessRetryLaunchTemplateFromStartup(startup processRetryStartupSna
 	if baseline.err != nil {
 		return baseline
 	}
-	baseline.args = append([]string(nil), hooks.args()...)
 	baseline.argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
 	baseline.timeout, baseline.timeoutSet = processRetryTimeoutFromEnv()
 	baseline.maxConcurrency, baseline.maxConcurrencySet = processRetryConfiguredMaxConcurrencyFromEnv()

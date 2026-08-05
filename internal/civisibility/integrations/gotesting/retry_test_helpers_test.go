@@ -98,7 +98,7 @@ func runProcessRetryAttempt(ctx context.Context, cfg processRetryChildConfig, pa
 
 func captureProcessRetryLaunchBaselineForTesting() *processRetryLaunchBaseline {
 	hooks := currentProcessRetryRunnerHooks()
-	startup := captureProcessRetryStartupSnapshot(hooks.workingDirectory, hooks.environ)
+	startup := captureProcessRetryStartupSnapshot(hooks.workingDirectory, hooks.args, hooks.environ)
 	return captureProcessRetryLaunchBaselineFromTemplate(captureProcessRetryLaunchTemplateFromStartup(startup))
 }
 

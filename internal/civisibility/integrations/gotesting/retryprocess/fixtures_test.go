@@ -8,6 +8,7 @@ package retryprocess
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -102,6 +103,7 @@ const (
 	processRetryTestMainFixtureEnv            = "PROCESS_RETRY_TESTMAIN_BASELINE_FIXTURE"
 	processRetryTestMainCwdEnv                = "PROCESS_RETRY_TESTMAIN_BASELINE_EXPECTED_CWD"
 	processRetryTestMainMarkerEnv             = "PROCESS_RETRY_TESTMAIN_BASELINE_APPLIED"
+	processRetryTestMainArgName               = "process-retry-testmain-baseline"
 	processRetryTestMainWorkDir               = "testmain-workdir"
 	processRetryDeferredOrderingEnv           = "PROCESS_RETRY_DEFERRED_ORDERING_FIXTURE"
 	processRetryDeferredOrderingPathEnv       = "PROCESS_RETRY_DEFERRED_ORDERING_PATH"
@@ -116,6 +118,7 @@ var (
 )
 
 func init() {
+	flag.String(processRetryTestMainArgName, "", "process retry TestMain baseline marker")
 	if processRetryFixtureChild() && processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) != "" {
 		processRetryBenchmarkChildStart = time.Now()
 		time.Sleep(processRetryBenchmarkDuration(processRetryBenchmarkChildStartupDelayEnv))

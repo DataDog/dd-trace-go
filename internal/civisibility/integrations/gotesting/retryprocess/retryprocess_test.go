@@ -212,6 +212,11 @@ func applyProcessRetryTestMainBaselineFixture() {
 	if value, ok := os.LookupEnv(processRetryTestMainMarkerEnv); ok {
 		panic(fmt.Sprintf("process retry TestMain inherited post-setup environment value %q", value))
 	}
+	argument := "-" + processRetryTestMainArgName + "=applied"
+	if slices.Contains(os.Args[1:], argument) {
+		panic("process retry TestMain inherited post-setup arguments")
+	}
+	os.Args = append(os.Args, argument)
 	if err := os.Setenv(processRetryTestMainMarkerEnv, "applied"); err != nil {
 		panic(fmt.Sprintf("set process retry TestMain environment marker: %v", err))
 	}
