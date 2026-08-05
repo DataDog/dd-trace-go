@@ -366,7 +366,7 @@ func TestDataPointAttributesIsTraceRoot(t *testing.T) {
 	assert.Equal(t, "false", m["datadog.is_trace_root"])
 
 	gs = &pb.ClientGroupedStats{Resource: "unknown", IsTraceRoot: pb.Trilean_NOT_SET}
-	m = kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
+	m = kvAttrsToMap(buildDataPointAttributes(gs, false, false))
 	assert.NotContains(t, m, "datadog.is_trace_root")
 }
 

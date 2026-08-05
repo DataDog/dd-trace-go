@@ -50,7 +50,6 @@ var otelSpanKindByDDSpanKind = map[string]string{
 
 // statusCode* are the OTel Span Metrics Connector's string convention for the status.code attribute.
 const (
-	statusCodeUnset = "STATUS_CODE_UNSET"
 	statusCodeOK    = "STATUS_CODE_OK"
 	statusCodeError = "STATUS_CODE_ERROR"
 )
@@ -231,7 +230,9 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, otelMode 
 		}
 		// top_level is true only when all spans in the group were top-level (TopLevelHits == Hits).
 		attrs = append(attrs, otlpKeyValue("datadog.span.top_level", otlpBoolValue(gs.Hits > 0 && gs.TopLevelHits == gs.Hits)))
-		attrs = append(attrs, otlpKeyValue("datadog.is_trace_root", otlpBoolValue(gs.IsTraceRoot == pb.Trilean_TRUE)))
+		if gs.IsTraceRoot != pb.Trilean_NOT_SET {
+			attrs = append(attrs, otlpKeyValue("datadog.is_trace_root", otlpBoolValue(gs.IsTraceRoot == pb.Trilean_TRUE)))
+		}
 		if len(gs.PeerTags) > 0 {
 			attrs = append(attrs, otlpKeyValue("datadog.peer_tags", otlpStringArrayValue(gs.PeerTags)))
 		}
