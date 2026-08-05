@@ -1,12 +1,16 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2025 Datadog, Inc.
+// Copyright 2026 Datadog, Inc.
 
 package openfeature
 
 import "strings"
 
+// parsedSemver is the language-neutral representation of the Rust/Eppo SemVer
+// subset used by FFE. Owning this parser and comparator keeps behavior
+// consistent across SDKs and lets configuration preprocessing cache comparands
+// instead of reparsing them during every evaluation.
 type parsedSemver struct {
 	major      uint64
 	minor      uint64
@@ -15,6 +19,9 @@ type parsedSemver struct {
 }
 
 // parseSemver accepts the same version syntax as Rust's semver::Version::parse.
+// Core identifiers are limited to uint64, while numeric prerelease identifiers
+// may be arbitrarily large. Build metadata is validated but not retained because
+// it does not affect SemVer precedence.
 func parseSemver(version string) (parsedSemver, bool) {
 	major, next, ok := parseSemverCoreIdentifier(version, 0)
 	if !ok || next >= len(version) || version[next] != '.' {
@@ -63,6 +70,8 @@ func parseSemver(version string) (parsedSemver, bool) {
 	return parsed, true
 }
 
+// parseSemverCoreIdentifier enforces Rust's uint64 bound without accepting
+// Go-specific shorthand or prefixes.
 func parseSemverCoreIdentifier(version string, start int) (uint64, int, bool) {
 	if start >= len(version) || !isASCIIDigit(version[start]) {
 		return 0, start, false
@@ -85,6 +94,8 @@ func parseSemverCoreIdentifier(version string, start int) (uint64, int, bool) {
 	return value, end, true
 }
 
+// validSemverIdentifiers permits leading zeros for build metadata only; numeric
+// prerelease identifiers reject them.
 func validSemverIdentifiers(value string, allowLeadingZeros bool) bool {
 	identifierStart := 0
 	identifierNumeric := true
@@ -111,7 +122,8 @@ func validSemverIdentifiers(value string, allowLeadingZeros bool) bool {
 	return true
 }
 
-// compareSemver compares semantic version precedence. Build metadata is ignored.
+// compareSemver compares SemVer precedence rather than Rust's total Version
+// ordering. Build metadata is intentionally ignored.
 func compareSemver(left, right parsedSemver) int {
 	if left.major != right.major {
 		if left.major < right.major {
