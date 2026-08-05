@@ -384,7 +384,7 @@
       {
         "implementation": "A",
         "type": "int",
-        "default": null
+        "default": "1"
       }
     ],
     "DD_CIVISIBILITY_RETRY_PROCESS_TIMEOUT": [
