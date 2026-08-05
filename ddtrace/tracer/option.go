@@ -331,13 +331,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4.
-	// Also downgrade if CSS is disabled (v1 requires CSS). TraceProtocol() additionally
-	// returns v0.4 when OTLP span metrics are enabled (see internal/config).
+	// Also downgrade if CSS is disabled (v1 requires CSS). RequestedTraceProtocol()
+	// additionally returns v0.4 when OTLP span metrics are enabled (see internal/config).
 	//
 	// Only the config is downgraded: the transport holds a URL per protocol and
 	// picks between them from the payload's own protocol at send time, so it has
 	// nothing left to keep in sync with this decision.
-	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
+	if c.internalConfig.RequestedTraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 	}
 
