@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
@@ -87,6 +88,9 @@ type startupInfo struct {
 	OTLPTracesExportEnabled  bool `json:"otlp_traces_export_enabled"`  // Whether traces are exported over OTLP
 	OTLPMetricsExportEnabled bool `json:"otlp_metrics_export_enabled"` // Whether metrics are exported over OTLP
 	OTLPLogsExportEnabled    bool `json:"otlp_logs_export_enabled"`    // Whether logs are exported over OTLP
+
+	TraceProtocol       string `json:"trace_protocol"`        // Datadog trace protocol in use ("0.4" or "1.0")
+	V1ProtocolAvailable bool   `json:"v1_protocol_available"` // Whether the agent advertises /v1.0/traces
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -202,6 +206,8 @@ func logStartup(t *tracer) {
 		OTLPTracesExportEnabled:     t.otlpExportMode,
 		OTLPMetricsExportEnabled:    t.config.otelRuntimeMetricsShouldBeEnabled,
 		OTLPLogsExportEnabled:       t.config.internalConfig.LogsOTelEnabled(),
+		TraceProtocol:               internalconfig.TraceProtocolVersionString(proto),
+		V1ProtocolAvailable:         af.v1ProtocolAvailable,
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
