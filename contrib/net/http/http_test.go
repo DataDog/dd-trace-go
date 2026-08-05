@@ -335,6 +335,40 @@ func TestServeMuxGo122Patterns(t *testing.T) {
 	assert.Equal("GET /foo", fooSpan.Tag(ext.ResourceName))
 }
 
+func TestWithServeMux(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	assert := assert.New(t)
+
+	underlying := http.NewServeMux()
+	mux := NewServeMux(WithServeMux(underlying))
+	mux.HandleFunc("/200", handler200)
+
+	// registering routes on the traced mux also registers them on the
+	// underlying mux, since it wraps it rather than replacing it
+	assert.Same(underlying, mux.ServeMux)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/200", nil)
+	mux.ServeHTTP(w, r)
+
+	assert.Equal(200, w.Code)
+	assert.Equal("OK\n", w.Body.String())
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+	s := spans[0]
+	assert.Equal("GET /200", s.Tag(ext.ResourceName))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
+
+	// the underlying mux itself dispatches to the same handler
+	underlyingW := httptest.NewRecorder()
+	underlying.ServeHTTP(underlyingW, httptest.NewRequest("GET", "/200", nil))
+	assert.Equal(200, underlyingW.Code)
+	assert.Equal("OK\n", underlyingW.Body.String())
+}
+
 func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
