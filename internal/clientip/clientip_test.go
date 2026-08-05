@@ -57,7 +57,7 @@ func genIPTestCases() []ipTestCase {
 	}
 
 	// Simple ipv4 test cases over all headers
-	for _, header := range DefaultIPHeaders {
+	for _, header := range defaultIPHeaders {
 		if header == "forwarded" {
 			// The `Forwarded` header has a different format to others, so it's handled separately.
 			continue
@@ -69,33 +69,33 @@ func genIPTestCases() []ipTestCase {
 				remoteAddr:      ipv4Private,
 				headers:         map[string]string{header: ipv4Global},
 				expectedIP:      netip.MustParseAddr(ipv4Global),
-				clientIPHeaders: DefaultIPHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv4-private." + header,
 				headers:         map[string]string{header: ipv4Private},
 				remoteAddr:      ipv6Private,
 				expectedIP:      netip.MustParseAddr(ipv4Private),
-				clientIPHeaders: DefaultIPHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv4-global-remoteaddr-local-ip-header." + header,
 				remoteAddr:      ipv4Global,
 				headers:         map[string]string{header: ipv4Private},
 				expectedIP:      netip.MustParseAddr(ipv4Global),
-				clientIPHeaders: DefaultIPHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv4-global-remoteaddr-global-ip-header." + header,
 				remoteAddr:      ipv6Global,
 				headers:         map[string]string{header: ipv4Global},
 				expectedIP:      netip.MustParseAddr(ipv4Global),
-				clientIPHeaders: DefaultIPHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			})
 	}
 
 	// Simple ipv6 test cases over all headers
-	for _, header := range DefaultIPHeaders {
+	for _, header := range defaultIPHeaders {
 		if header == "forwarded" {
 			// The `Forwarded` header has a different format to others, so it's handled separately.
 			continue
@@ -106,28 +106,28 @@ func genIPTestCases() []ipTestCase {
 			remoteAddr:      ipv4Private,
 			headers:         map[string]string{header: ipv6Global},
 			expectedIP:      netip.MustParseAddr(ipv6Global),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 			ipTestCase{
 				name:            "ipv6-private." + header,
 				headers:         map[string]string{header: ipv6Private},
 				remoteAddr:      ipv4Private,
 				expectedIP:      netip.MustParseAddr(ipv6Private),
-				clientIPHeaders: DefaultIPHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv6-global-remoteaddr-local-ip-header." + header,
 				remoteAddr:      ipv6Global,
 				headers:         map[string]string{header: ipv6Private},
 				expectedIP:      netip.MustParseAddr(ipv6Global),
-				clientIPHeaders: DefaultIPHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv6-global-remoteaddr-global-ip-header." + header,
 				remoteAddr:      ipv4Global,
 				headers:         map[string]string{header: ipv6Global},
 				expectedIP:      netip.MustParseAddr(ipv6Global),
-				clientIPHeaders: DefaultIPHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			})
 	}
 
@@ -294,28 +294,28 @@ func genIPTestCases() []ipTestCase {
 			remoteAddr:      ipv4Private,
 			headers:         map[string]string{"forwarded": "for=" + ipv4Global},
 			expectedIP:      netip.MustParseAddr(ipv4Global),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		ipTestCase{
 			name:            "ipv4-private.forwarded",
 			headers:         map[string]string{"forwarded": "for=" + ipv4Private},
 			remoteAddr:      ipv6Private,
 			expectedIP:      netip.MustParseAddr(ipv4Private),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		ipTestCase{
 			name:            "ipv4-global-remoteaddr-local-ip-header.forwarded",
 			remoteAddr:      ipv4Global,
 			headers:         map[string]string{"forwarded": "for=" + ipv4Private},
 			expectedIP:      netip.MustParseAddr(ipv4Global),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		ipTestCase{
 			name:            "ipv4-global-remoteaddr-global-ip-header.forwarded",
 			remoteAddr:      ipv6Global,
 			headers:         map[string]string{"forwarded": "for=" + ipv4Global},
 			expectedIP:      netip.MustParseAddr(ipv4Global),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		// IPv6 flavor
 		ipTestCase{
@@ -323,28 +323,28 @@ func genIPTestCases() []ipTestCase {
 			remoteAddr:      ipv4Private,
 			headers:         map[string]string{"forwarded": `for="[` + ipv6Global + `]"`},
 			expectedIP:      netip.MustParseAddr(ipv6Global),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		ipTestCase{
 			name:            "ipv6-private.forwarded",
 			headers:         map[string]string{"forwarded": `for="[` + ipv6Private + `]"`},
 			remoteAddr:      ipv4Private,
 			expectedIP:      netip.MustParseAddr(ipv6Private),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		ipTestCase{
 			name:            "ipv6-global-remoteaddr-local-ip-header.forwarded",
 			remoteAddr:      ipv6Global,
 			headers:         map[string]string{"forwarded": `for="[` + ipv6Private + `]"`},
 			expectedIP:      netip.MustParseAddr(ipv6Global),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		ipTestCase{
 			name:            "ipv6-global-remoteaddr-global-ip-header.forwarded",
 			remoteAddr:      ipv4Global,
 			headers:         map[string]string{"forwarded": `for="[` + ipv6Global + `]"`},
 			expectedIP:      netip.MustParseAddr(ipv6Global),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		// Seen in the System-Tests
 		ipTestCase{
@@ -352,14 +352,14 @@ func genIPTestCases() []ipTestCase {
 			remoteAddr:      ipv4Global,
 			headers:         map[string]string{"forwarded": `for=127.0.0.1;host="example.host";by=2.2.2.2;proto=http,for="1.1.1.1:6543"`},
 			expectedIP:      netip.MustParseAddr("1.1.1.1"),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 		ipTestCase{
 			name:            "system-tests-ipv6.forwarded",
 			remoteAddr:      ipv6Global,
 			headers:         map[string]string{"forwarded": `for="[::1]",for="[9f7b:5e67:5472:4464:90b0:6b0a:9aa6:f9dc]:4485"`},
 			expectedIP:      netip.MustParseAddr("9f7b:5e67:5472:4464:90b0:6b0a:9aa6:f9dc"),
-			clientIPHeaders: DefaultIPHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 	)
 

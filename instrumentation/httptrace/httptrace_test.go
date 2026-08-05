@@ -25,9 +25,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 
@@ -343,7 +343,7 @@ func TestTraceClientIPFlag(t *testing.T) {
 
 	// use 0.0.0.0 as ip address of all test cases
 	// more comprehensive ip address testing is done in testing
-	// of the resolver in instrumentation/httptrace/clientip
+	// of the resolver in internal/clientip
 	validIPAddr := "0.0.0.0"
 
 	type ipTestCase struct {

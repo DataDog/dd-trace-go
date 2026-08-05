@@ -26,10 +26,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	wafemitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 )
 
 func TestClientIdentity(t *testing.T) {

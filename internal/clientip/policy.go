@@ -7,7 +7,6 @@ package clientip
 
 import (
 	"net/netip"
-	"slices"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -16,11 +15,7 @@ import (
 // envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
 const envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
 
-// DefaultIPHeaders is the default list of IP-related headers leveraged to
-// retrieve the public client IP address in RemoteAddr. The headers are
-// checked in the order they are listed; do not re-order unless you know what
-// you are doing.
-var DefaultIPHeaders = []string{
+var defaultIPHeaders = []string{
 	"x-forwarded-for",
 	"x-real-ip",
 	"true-client-ip",
@@ -55,16 +50,20 @@ func readMonitoredHeadersConfig() {
 		customHeaderConfigured = true
 	} else {
 		// No specific IP header was configured, use the default list
-		monitoredHeaders = DefaultIPHeaders
+		monitoredHeaders = defaultIPHeaders
 		customHeaderConfigured = false
 	}
 }
 
-// MonitoredHeaders returns the IP-related headers the default resolution policy
-// scans, which is either the single header named by DD_TRACE_CLIENT_IP_HEADER or
-// [DefaultIPHeaders].
+// AppendDefaultHeaders appends the default IP headers in resolution order.
+func AppendDefaultHeaders(headers []string) []string {
+	return append(headers, defaultIPHeaders...)
+}
+
+// MonitoredHeaders returns the configured headers in resolution order. Callers
+// must not modify the returned slice.
 func MonitoredHeaders() []string {
-	return slices.Clone(monitoredHeaders)
+	return monitoredHeaders
 }
 
 // ResetConfig re-reads DD_TRACE_CLIENT_IP_HEADER. The configuration is read once

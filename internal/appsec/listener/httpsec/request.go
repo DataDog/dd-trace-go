@@ -14,7 +14,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace/clientip"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 var (
 	// defaultCollectedHeaders is the default list of HTTP headers collected as
 	// request span tags when appsec is enabled.
-	defaultCollectedHeaders = append([]string{
+	defaultCollectedHeaders = clientip.AppendDefaultHeaders([]string{
 		"accept-encoding",
 		"accept-language",
 		"accept",
@@ -50,7 +50,7 @@ var (
 		"x-forwarded",
 		"x-sigsci-requestid",
 		"x-sigsci-tags",
-	}, clientip.DefaultIPHeaders...)
+	})
 
 	// securityTestingHeaders maps security testing headers to service-entry span tags.
 	// These headers are tagged separately from defaultCollectedHeaders because

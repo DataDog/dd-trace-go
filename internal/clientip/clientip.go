@@ -7,14 +7,8 @@
 //
 // It owns the default resolution policy — scan the monitored IP headers left to
 // right, prefer the first globally-routable address, fall back to the remote
-// address — and is the only place that policy lives. Integrations that already
-// know the trustworthy address, because their infrastructure told them, resolve
-// it their own way and hand the result across the instrumentation boundary
-// rather than calling in here.
-//
-// This package deliberately imports neither its parent httptrace nor any AppSec
-// emitter or listener package: it sits below all of them so that the tracer, the
-// AppSec listeners, and out-of-tree integrations can all depend on it.
+// address — and is the only place that policy lives. Integrations that know a
+// trustworthy address pass it across the instrumentation boundary instead.
 package clientip
 
 import (
