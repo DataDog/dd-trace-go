@@ -9,10 +9,15 @@ meta:
   description: Aerospike client for Go.
 
 aspects:
-  # Rewrite aerospike Client method calls to go through the contrib wrapper,
-  # threading a context.Context from the enclosing function when one is in scope
-  # (nil otherwise, which the wrapper reads as context.Background()):
+  # Rewrite aerospike Client method calls to go through the contrib wrapper:
   #   client.Put(...)  ->  __dd_aerospike.WrapClientContext(client, ctx).Put(...)
+  #
+  # ctx is only resolved when the immediately enclosing function or closure
+  # declares it as a parameter. A captured ctx (`go func() { client.Put(...) }()`)
+  # or a local (`ctx := r.Context()`) is not picked up, and the call gets nil,
+  # which the wrapper reads as context.Background(). Parenting then relies on the
+  # tracer's goroutine-local storage, which is correct on the same goroutine but
+  # not across one.
   #
   # The rewrite must not fire inside the contrib (the wrapper calls the raw
   # client, which would wrap recursively) nor inside the aerospike library (that
