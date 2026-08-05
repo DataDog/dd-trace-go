@@ -1356,14 +1356,9 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentSpanID, pagentID)
 		name := llmSpan.PropagatedParentAgentName()
 		if name != "" && illmobs.AgentNameWireSafe(name) {
-			// Use the runtime-configured x-datadog-tags budget, falling back to the
-			// default when no tracer is running (e.g. in tests).
-			xddBudget := internalconfig.DefaultMaxTagsHeaderLen
-			if tr, ok := getGlobalTracer().(*tracer); ok {
-				xddBudget = tr.config.internalConfig.MaxTagsHeaderLen()
-			}
 			// Only propagate the name if it fits in the remaining x-datadog-tags budget.
-			// This mirrors the len(k)+len(v) measurement used by marshalPropagatingTags.
+			// +2 accounts for the "=" separator and the "," before this entry, matching
+			// the len(k)+1+len(v) measurement propagatingTagsByteLen uses per entry.
 			used := spanCtx.trace.propagatingTagsByteLen()
 			// Also check the W3C tracestate budget. The dd= entry is capped at
 			// tracestateDDMaxSize bytes; we reserve tracestateHeaderReserve bytes for
@@ -1378,7 +1373,7 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 			}
 			// +4: ";t." prefix (3 bytes) + ":" separator (1 byte), matching composeTracestate.
 			nameTracestateLen := len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(name) + 4
-			if used+len(keyPropagatedLLMObsPAgentName)+len(name) <= xddBudget &&
+			if used+len(keyPropagatedLLMObsPAgentName)+len(name)+2 <= internalconfig.Get().MaxTagsHeaderLen() &&
 				tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
 				spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentName, name)
 			} else {
