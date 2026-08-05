@@ -69,6 +69,14 @@ type Agent interface {
 	// Transport returns an optimized transport for interacting with the agent.
 	Transport() http.RoundTripper
 
+	// SetInfoEndpoints overrides the endpoints /info advertises, independent of
+	// which HTTP patterns are actually registered via HandleTraces. By default,
+	// /info advertises every registered pattern, mirroring the real agent
+	// discovery contract. Tests can use this to advertise or withhold specific
+	// endpoints (e.g. /v0.6/stats, /v1.0/traces) to control agent-capability-
+	// driven tracer behavior (such as trace protocol selection) deterministically.
+	SetInfoEndpoints(endpoints []string)
+
 	// FindSpan returns the first collected span matching all provided conditions,
 	// or nil if none is found.
 	FindSpan(...*SpanMatch) *Span
@@ -86,6 +94,11 @@ type agent struct {
 	addr      string
 	endpoints []string
 
+	// infoEndpoints, when non-nil, overrides endpoints as the value /info
+	// advertises. nil means "advertise every registered pattern" (the default,
+	// matching the real agent discovery contract).
+	infoEndpoints []string
+
 	info  *Info
 	spans []*Span
 }
@@ -102,6 +115,14 @@ func New() Agent {
 	return a
 }
 
+// SetInfoEndpoints overrides the endpoints /info advertises, independent of
+// which HTTP patterns are actually registered via HandleTraces.
+func (a *agent) SetInfoEndpoints(endpoints []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.infoEndpoints = endpoints
+}
+
 // Info returns the agent info configuration (e.g. sampling rates).
 func (a *agent) Info() *Info {
 	return a.info
@@ -110,7 +131,9 @@ func (a *agent) Info() *Info {
 // HandleTraces registers a handler that decodes traces arriving at the given
 // HTTP pattern (e.g. "/v0.4/traces") and stores the resulting spans.
 func (a *agent) HandleTraces(pattern string, handler TraceHandler) {
+	a.mu.Lock()
 	a.endpoints = append(a.endpoints, pattern)
+	a.mu.Unlock()
 	a.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 		spans := handler(r.Body)
 		a.mu.Lock()
@@ -123,8 +146,14 @@ func (a *agent) HandleTraces(pattern string, handler TraceHandler) {
 }
 
 func (a *agent) handleInfo(w http.ResponseWriter, _ *http.Request) {
+	a.mu.Lock()
+	endpoints := a.endpoints
+	if a.infoEndpoints != nil {
+		endpoints = a.infoEndpoints
+	}
+	a.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"endpoints": a.endpoints, "client_drop_p0s": true})
+	json.NewEncoder(w).Encode(map[string]any{"endpoints": endpoints, "client_drop_p0s": true})
 }
 
 // Addr returns the agent address to pass to the tracer via WithAgentAddr.
