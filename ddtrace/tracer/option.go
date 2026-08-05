@@ -297,9 +297,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	processtags.SetServiceNameTag(c.internalConfig.ServiceName(), svcIsUserDefined)
 	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
-		traceURL := resolveTraceURL(c.internalConfig)
 		headers := traceTransportHeaders(c.internalConfig)
-		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
+		c.ddTransport = newHTTPTransport(agentURL, c.httpClient, headers)
 	}
 	if c.propagator == nil {
 		extractFirst := c.internalConfig.PropagationExtractFirst()
@@ -334,11 +333,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4.
 	// Also downgrade if CSS is disabled (v1 requires CSS). TraceProtocol() additionally
 	// returns v0.4 when OTLP span metrics are enabled (see internal/config).
+	//
+	// Only the config is downgraded: the transport holds a URL per protocol and
+	// picks between them from the payload's own protocol at send time, so it has
+	// nothing left to keep in sync with this decision.
 	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
-		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
-			t.traceURL = agentURL.String() + tracesAPIPath
-		}
 	}
 
 	info, ok := debug.ReadBuildInfo()
@@ -413,23 +413,10 @@ func apmTracingDisabled(c *config) {
 	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
 }
 
-// resolveTraceURL returns the trace URL for the Datadog agent transport,
-// based on the configured trace protocol version. In OTLP export mode the
-// ddTransport is not used for trace sending (otlpTransport handles that),
-// but it may still be used for stats and agent discovery, so it always
-// points at the DD agent.
-func resolveTraceURL(cfg *internalconfig.Config) string {
-	agentURL := cfg.AgentURL().String()
-	if cfg.TraceProtocol() == traceProtocolV1 {
-		return agentURL + tracesAPIPathV1
-	}
-	return agentURL + tracesAPIPath
-}
-
 // traceTransportHeaders returns the headers to send with Datadog agent trace
-// transport requests. Unlike resolveTraceURL, this does not depend on the
-// trace protocol, so callers that only need headers (e.g. the startup
-// diagnostics probe) can call this without an extra TraceProtocol() read.
+// transport requests. This does not depend on the trace protocol, so callers
+// that only need headers (e.g. the startup diagnostics probe) can call this
+// without an extra protocol read.
 func traceTransportHeaders(cfg *internalconfig.Config) map[string]string {
 	headers := datadogHeaders()
 	if cfg.OTLPSpanMetricsEnabled() {
@@ -1539,7 +1526,7 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 	return ok, nil
 }
 
-func (t *dummyTransport) endpoint() string {
+func (t *dummyTransport) endpoint(float64) string {
 	return "http://localhost:9/v1.0/traces"
 }
 
@@ -1565,7 +1552,7 @@ func (discardTransport) sendStats(*pb.ClientStatsPayload, int) error {
 	return nil
 }
 
-func (discardTransport) endpoint() string {
+func (discardTransport) endpoint(float64) string {
 	return "http://localhost:9/v1.0/traces"
 }
 
