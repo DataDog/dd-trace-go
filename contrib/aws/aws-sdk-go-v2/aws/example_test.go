@@ -32,6 +32,18 @@ func Example() {
 	sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
 }
 
+// An example of instrumenting the AWS config via a LoadOptionsFunc, for use when the aws.Config isn't otherwise
+// directly accessible (e.g. when the AWS config is loaded by other code, such as an SDK helper or an AWS-provided
+// config loader).
+func Example_withDataDogTracer() {
+	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), awstrace.WithDataDogTracer())
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	sqsClient := sqs.NewFromConfig(awsCfg)
+	sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+}
+
 // An example of the aws span inheriting a parent span from context.
 func Example_context() {
 	tracer.Start()
