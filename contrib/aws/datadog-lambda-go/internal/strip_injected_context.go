@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	StripInjectedContextEnvVar = "DD_TRACE_STRIP_INJECTED_CONTEXT"
+	StripInjectedContextEnvVar = "DD_LAMBDA_STRIP_INJECTED_CONTEXT"
 )
 
 var (
@@ -39,7 +39,7 @@ var datadogCarrierForms = []carrierKeyForm{
 
 // StripInjectedContext removes injected _datadog propagation carriers from the
 // Lambda payload before it reaches the user handler when
-// DD_TRACE_STRIP_INJECTED_CONTEXT=true.
+// DD_LAMBDA_STRIP_INJECTED_CONTEXT=true.
 //
 // Extension listeners must receive the raw payload first so APM trace extraction
 // is unchanged. Returns the original message when the env var is unset/false,
@@ -79,7 +79,7 @@ func stripInjectedContextEnabled() bool {
 	return stripInjectedContextEnabledVal
 }
 
-// ResetStripInjectedContextCacheForTest clears the env cache so tests can change DD_TRACE_STRIP_INJECTED_CONTEXT.
+// ResetStripInjectedContextCacheForTest clears the env cache so tests can change DD_LAMBDA_STRIP_INJECTED_CONTEXT.
 func ResetStripInjectedContextCacheForTest() {
 	stripInjectedContextEnabledOnce = sync.Once{}
 	stripInjectedContextEnabledVal = false
