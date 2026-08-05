@@ -205,9 +205,14 @@ func (t *trace) propagatingTagsLen() int {
 // propagatingTagsByteLen returns the byte length of the serialized propagating-tags
 // header value (format: "k1=v1,k2=v2,..."), matching the measurement used by
 // marshalPropagatingTags so callers can pre-check whether a new tag fits in the budget.
+// Like marshalPropagatingTags, it excludes tracestate/traceparent — those are stored in
+// the same map for W3C propagation but are never written to the x-datadog-tags header.
 func (t *trace) propagatingTagsByteLen() int {
 	n := 0
 	for k, v := range t.loadPropagatingTags() {
+		if k == tracestateHeader || k == traceparentHeader {
+			continue
+		}
 		if n > 0 {
 			n++ // comma separator
 		}

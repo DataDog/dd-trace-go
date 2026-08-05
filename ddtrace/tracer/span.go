@@ -1363,24 +1363,34 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentSpanID, pagentID)
 		name := llmSpan.PropagatedParentAgentName()
 		if name != "" && illmobs.AgentNameWireSafe(name) {
-			// Only propagate the name if it fits in the remaining x-datadog-tags budget.
-			// +2 accounts for the "=" separator and the "," before this entry, matching
-			// the len(k)+1+len(v) measurement propagatingTagsByteLen uses per entry.
+			// Only propagate the name if it fits in the remaining x-datadog-tags and
+			// W3C tracestate budgets. The dd= entry is capped at tracestateDDMaxSize;
+			// tracestateHeaderReserve covers the fixed "dd=s:X;p:<hex>" prefix written
+			// by composeTracestate before it appends any _dd.p.* tags (≈25–26 bytes).
+			const tracestateHeaderReserve = 28
 			used := spanCtx.trace.propagatingTagsByteLen()
-			// Also check the W3C tracestate budget. The dd= entry is capped at
-			// tracestateDDMaxSize bytes; we reserve tracestateHeaderReserve bytes for
-			// the fixed "dd=s:X;p:<hex>" prefix so the name doesn't crowd out the
-			// span ID or other core LLMObs tags from being serialized.
-			const tracestateHeaderReserve = 40
 			tsUsed := spanCtx.trace.propagatingTagsTracestateByteLen()
-			// An existing pagent_name (e.g. from an extracted inbound context) would be
-			// overwritten, not added; subtract it so we don't double-count the budget.
-			if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsPAgentName); prior != "" {
-				tsUsed -= len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(prior) + 4
+			// _dd.p.tid is stamped during Inject (not at span start), so the snapshot
+			// above may not include it yet. Reserve its space on 128-bit traces so we
+			// don't accept a name that would push inject over the budget.
+			if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+				used += 27  // "," + "_dd.p.tid" (9) + "=" + 16-hex-char value
+				tsUsed += 23 // "tid" (3) + 16-hex-char value + 4 (";t." prefix + ":" sep)
 			}
-			// +4: ";t." prefix (3 bytes) + ":" separator (1 byte), matching composeTracestate.
+			// An existing pagent_name would be overwritten, not added; adjust both
+			// budgets to avoid double-counting the replaced entry.
+			var nameXTagsLen int
+			if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsPAgentName); prior != "" {
+				// Replacement: key and separators stay, only the value length changes.
+				nameXTagsLen = used - len(prior) + len(name)
+				// +4: ";t." prefix (3 bytes) + ":" separator (1 byte), matching composeTracestate.
+				tsUsed -= len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(prior) + 4
+			} else {
+				// New entry: +2 for "=" separator and "," before this entry.
+				nameXTagsLen = used + len(keyPropagatedLLMObsPAgentName) + len(name) + 2
+			}
 			nameTracestateLen := len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(name) + 4
-			if used+len(keyPropagatedLLMObsPAgentName)+len(name)+2 <= internalconfig.Get().MaxTagsHeaderLen() &&
+			if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
 				tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
 				spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentName, name)
 			} else {
