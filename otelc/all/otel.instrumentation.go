@@ -21,4 +21,8 @@ import (
 
 	// AppSec operation GLS lifecycle.
 	_ "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+
+	// gorm.io/gorm.v1: register the tracing plugin on a *gorm.DB opened
+	// directly through gorm.Open.
+	_ "github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2"
 )

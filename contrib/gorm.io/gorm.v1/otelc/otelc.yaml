@@ -1,0 +1,17 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of the Open aspect in ../orchestrion.yml: register the tracing
+# plugin on a *gorm.DB right after gorm.Open constructs it, for callers that
+# open a connection directly instead of going through this contrib's own Open.
+
+open_plugin:
+  target: gorm.io/gorm
+  where:
+    func: Open
+  do:
+    - inject_hooks:
+        after: AfterOpen
+        path: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2
