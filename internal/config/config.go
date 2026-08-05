@@ -536,11 +536,8 @@ func loadConfig() *Config {
 	cfg.llmObsEnabled = p.GetBool("DD_LLMOBS_ENABLED", false)
 	cfg.llmObsMLApp = p.GetString("DD_LLMOBS_ML_APP", "")
 	cfg.llmObsProjectName = p.GetString("DD_LLMOBS_PROJECT_NAME", "")
-	if p.IsSet("DD_LLMOBS_AGENTLESS_ENABLED") {
-		v := p.GetBool("DD_LLMOBS_AGENTLESS_ENABLED", false)
+	if v, origin := p.GetBoolWithOrigin("DD_LLMOBS_AGENTLESS_ENABLED", false); origin != telemetry.OriginDefault {
 		cfg.llmObsAgentlessEnabled = &v
-	} else {
-		cfg.llmObsAgentlessEnabled = nil
 	}
 
 	return cfg
