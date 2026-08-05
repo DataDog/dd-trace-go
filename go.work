@@ -25,6 +25,7 @@ use (
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
 	./contrib/go-chi/chi.v5
+	./contrib/go-chi/chi.v5/otelc
 	./contrib/go-pg/pg.v10
 	./contrib/go-redis/redis
 	./contrib/go-redis/redis.v7

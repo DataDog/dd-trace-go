@@ -1,0 +1,50 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of the `NewMux` aspect in ../orchestrion.yml: attach the Datadog
+# middleware to every chi router the application builds.
+#
+# KNOWN PARITY DIFFERENCE: orchestrion instruments the call wherever it appears
+# in the whole build, so its aspect must explicitly exclude
+# github.com/go-chi/chi/v5 and its middleware subpackage, otherwise the call
+# NewRouter -> NewMux inside chi's own source would get instrumented too,
+# forcing chi to import this contrib, which imports chi back (a cycle).
+# otelc's `target: $root` only ever reaches the application's own module,
+# which never includes go-chi/chi/v5 (a separate module), so that exclusion
+# is unnecessary here. Trade-off: a chi router built inside a third-party
+# dependency module, rather than in the application itself, is not
+# instrumented under otelc.
+
+new_mux:
+  target: $root
+  where:
+    function_call: github.com/go-chi/chi/v5.NewMux
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *chi.Mux {
+            mux := {{ . }}
+            mux.Use(chitrace.Middleware())
+            return mux
+          })()
+  imports:
+    chi: github.com/go-chi/chi/v5
+    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
+
+new_router:
+  target: $root
+  where:
+    function_call: github.com/go-chi/chi/v5.NewRouter
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *chi.Mux {
+            mux := {{ . }}
+            mux.Use(chitrace.Middleware())
+            return mux
+          })()
+  imports:
+    chi: github.com/go-chi/chi/v5
+    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
