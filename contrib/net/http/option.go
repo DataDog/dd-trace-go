@@ -32,6 +32,7 @@ type HandlerOptionFn = internal.HandlerOptionFn
 // of allocating a new one. This is useful when the traced ServeMux needs to wrap
 // a ServeMux that was already configured elsewhere, or when it needs to be the
 // outermost handler in a chain of wrapped handlers.
+// This option only affects NewServeMux; it has no effect when passed to WrapHandler.
 func WithServeMux(mux *http.ServeMux) HandlerOptionFn {
 	return func(cfg *internal.Config) {
 		cfg.Mux = mux
