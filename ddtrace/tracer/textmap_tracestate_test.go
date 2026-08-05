@@ -111,7 +111,7 @@ func TestTracestateSizeBounded(t *testing.T) {
 		// own, joined into a tracestate that is itself within
 		// tracestateMaxSize (4096) -- i.e. exactly what parseTracestate would
 		// have accepted and stored on extraction.
-		var members []string
+		members := make([]string, 0, 8)
 		for range 8 {
 			members = append(members, "v="+strings.Repeat("A", 500))
 		}
