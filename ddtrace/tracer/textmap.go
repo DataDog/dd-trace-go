@@ -372,15 +372,11 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		}
 		ctx.spanLinks = []SpanLink{link}
 
-		// When onlyExtractFirst is set, extractIncomingSpanContext returns after the
-		// first successful non-baggage extractor, so incomingCtx carries no baggage.
-		// Extract baggage explicitly so it is propagated regardless.
-		baggage := incomingCtx.baggage // +checklocksignore
-		if p.onlyExtractFirst {
-			baggage = p.extractBaggage(carrier)
-		}
-		if len(baggage) > 0 {
-			ctx.baggage = maps.Clone(baggage) // +checklocksignore
+		// incomingCtx.baggage is already fully populated here: extractIncomingSpanContext
+		// extracts baggage unconditionally, independent of onlyExtractFirst and of the
+		// trace-context extractor loop.
+		if baggage := incomingCtx.baggage; len(baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			ctx.baggage = maps.Clone(baggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 		}
 
@@ -393,8 +389,9 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 }
 
 // extractBaggage runs only the baggage propagator against the carrier and
-// returns the extracted items. Used when onlyExtractFirst has prevented the
-// baggage propagator from running inside extractIncomingSpanContext.
+// returns the extracted items. Baggage is orthogonal to trace-context
+// propagation, so extractIncomingSpanContext calls this once, up front,
+// independent of extractor order and of onlyExtractFirst.
 func (p *chainedPropagator) extractBaggage(carrier any) map[string]string {
 	for _, v := range p.extractors {
 		if _, isBaggage := v.(*propagatorBaggage); !isBaggage {
@@ -414,41 +411,37 @@ func (p *chainedPropagator) extractBaggage(carrier any) map[string]string {
 // propagator that created the ctx is returned, not subsequent ones that
 // enriched it.
 func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContext, Propagator, error) {
+	// Baggage is orthogonal to trace-context propagation: extract it once, up
+	// front, so it survives regardless of extractor order or of onlyExtractFirst
+	// short-circuiting the loop below.
+	pendingBaggage := p.extractBaggage(carrier)
+
 	var ctx *SpanContext
 	var producer Propagator // propagator that produced ctx
 	var links []SpanLink
-	var pendingBaggage map[string]string // used to store baggage items temporarily, allocated lazily
 
 	for _, v := range p.extractors {
+		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
+			continue // already handled by extractBaggage above
+		}
+
 		// If incomingCtx is nil, no extraction has run yet
 		firstExtraction := (ctx == nil)
 		extractedCtx, err := v.Extract(carrier)
 
-		// If this is the baggage propagator, take ownership of its map directly:
-		// there is only one baggage propagator (see extractBaggage below), so
-		// extractedCtx is not shared with anything else and its map needs no copy.
-		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
-			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				pendingBaggage = extractedCtx.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-			}
-			continue
-		}
-
 		if firstExtraction {
-			if err != nil {
-				if p.onlyExtractFirst { // Every error is relevant when we are relying on the first extractor
-					return nil, nil, err
-				}
-				if err != ErrSpanContextNotFound { // We don't care about ErrSpanContextNotFound because we could find a span context in a subsequent extractor
-					return nil, nil, err
-				}
-			}
-			if p.onlyExtractFirst {
-				return extractedCtx, v, nil
+			// Hard errors always bail immediately, regardless of onlyExtractFirst.
+			// ErrSpanContextNotFound falls through to try the next extractor either
+			// way: onlyExtractFirst only stops the loop once a context is actually
+			// found below, it does not skip failed extractors (see PR #2339).
+			if err != nil && err != ErrSpanContextNotFound {
+				return nil, nil, err
 			}
 			if extractedCtx != nil {
-				ctx = extractedCtx
-				producer = v
+				ctx, producer = extractedCtx, v
+				if p.onlyExtractFirst {
+					break
+				}
 			}
 		} else { // A trace context was already extracted by a previous propagator
 			// When trace IDs match, merge W3C tracestate and resolve parent ID conflicts.
@@ -510,7 +503,9 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	if len(links) > 0 {
 		ctx.spanLinks = links // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 	}
-	log.Debug("Extracted span context: %s", ctx.safeDebugString())
+	if log.DebugEnabled() { // safeDebugString is not cheap; avoid it when debug logging is off.
+		log.Debug("Extracted span context: %s", ctx.safeDebugString())
+	}
 	return ctx, producer, nil
 }
 
