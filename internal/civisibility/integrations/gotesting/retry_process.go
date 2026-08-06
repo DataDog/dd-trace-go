@@ -2642,7 +2642,7 @@ func finishProcessRetrySubtestEvents(testInfo *commonInfo, parentMeta *testExecu
 		execMeta.anyExecutionPassed = result.Status == processRetryStatusPass
 		execMeta.anyExecutionFailed = result.Failed
 		execMeta.allAttemptsPassed = result.Status == processRetryStatusPass
-		execMeta.allRetriesFailed = result.Failed
+		execMeta.allRetriesFailed = execMeta.isARetry && parentMeta.allRetriesFailed && result.Failed
 		childAttempt := completedProcessRetryAttempt(processRetryResult{
 			Version:        1,
 			TestName:       result.TestName,
@@ -3466,7 +3466,7 @@ func (o *processRetryChildObservation) buildResult(status processRetryStatus) pr
 		Panic:             panicData != nil,
 		RaceDetected:      o.result.raceDetected,
 		RootParallel:      rootParallel,
-		Coverage:          append([]coverage.ProcessTestCoverageFile(nil), o.coverage...),
+		Coverage:          o.coverage,
 	}
 	if o.cfg.BatchChild {
 		result.OutputTail, result.OutputTruncated = truncateProcessRetryOutputTail(o.result.output)

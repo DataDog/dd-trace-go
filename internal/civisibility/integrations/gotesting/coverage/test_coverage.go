@@ -466,14 +466,20 @@ func (t *testCoverage) CollectCoverageBeforeTestExecution() {
 		return
 	}
 
-	t.preCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-pre.out", t.moduleID, t.suiteID, t.testID))
-	_, err := tearDown(t.preCoverageFilename, "")
-	if err != nil {
+	if err := t.collectCoverageBeforeTestExecution(); err != nil {
 		log.Debug("civisibility.cov: error getting coverage file: %s", err.Error())
 		telemetry.CodeCoverageErrors()
 	} else {
 		telemetry.CodeCoverageStarted(testFramework, telemetry.DefaultCoverageLibraryType)
 	}
+}
+
+func (t *testCoverage) collectCoverageBeforeTestExecution() error {
+	if t.preCoverageFilename == "" {
+		t.preCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-pre.out", t.moduleID, t.suiteID, t.testID))
+	}
+	_, err := tearDown(t.preCoverageFilename, "")
+	return err
 }
 
 // CollectCoverageAfterTestExecution collects coverage after test execution.
@@ -502,7 +508,13 @@ func (t *testCoverage) getCoverageData() error {
 		return nil
 	}
 
-	t.postCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-post.out", t.moduleID, t.suiteID, t.testID))
+	return t.collectCoverageAfterTestExecution()
+}
+
+func (t *testCoverage) collectCoverageAfterTestExecution() error {
+	if t.postCoverageFilename == "" {
+		t.postCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-post.out", t.moduleID, t.suiteID, t.testID))
+	}
 	_, err := tearDown(t.postCoverageFilename, "")
 	if err != nil {
 		log.Debug("civisibility.cov: error getting coverage file: %s", err.Error())
@@ -514,35 +526,49 @@ func (t *testCoverage) getCoverageData() error {
 
 // processCoverageData processes the coverage data.
 func (t *testCoverage) processCoverageData() {
+	if !t.loadCoverageData() {
+		return
+	}
+	t.submitCoverageData()
+	t.removeCoverageFiles()
+}
+
+func (t *testCoverage) loadCoverageData() bool {
 	if t.preCoverageFilename == "" ||
 		t.postCoverageFilename == "" ||
 		t.preCoverageFilename == t.postCoverageFilename {
 		log.Debug("civisibility.cov: no coverage data to process")
 		telemetry.CodeCoverageErrors()
-		return
+		return false
 	}
 	preCoverage, err := parseCoverProfile(t.preCoverageFilename)
 	if err != nil {
 		log.Debug("civisibility.cov: error parsing pre-coverage file: %s", err.Error())
 		telemetry.CodeCoverageErrors()
-		return
+		return false
 	}
 	postCoverage, err := parseCoverProfile(t.postCoverageFilename)
 	if err != nil {
 		log.Debug("civisibility.cov: error parsing post-coverage file: %s", err.Error())
 		telemetry.CodeCoverageErrors()
-		return
+		return false
 	}
 
 	t.filesCovered = getFilesCovered(t.testFile, preCoverage, postCoverage)
+	return true
+}
+
+func (t *testCoverage) submitCoverageData() {
 	telemetry.CodeCoverageFinished(testFramework, telemetry.DefaultCoverageLibraryType)
 	if len(t.filesCovered) == 0 {
 		telemetry.CodeCoverageIsEmpty()
 	}
 
 	covWriter.add(t)
+}
 
-	err = os.Remove(t.preCoverageFilename)
+func (t *testCoverage) removeCoverageFiles() {
+	err := os.Remove(t.preCoverageFilename)
 	if err != nil {
 		log.Debug("civisibility.cov: error removing pre-coverage file: %s", err.Error())
 	}

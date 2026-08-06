@@ -234,7 +234,9 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		first.launchBaseline,
 		first.shutdown(),
 	)
-	replayDeferredProcessRetryBatchOutput(os.Stdout, processAttempt)
+	if processAttempt.OutputTail != "" {
+		_, _ = io.WriteString(os.Stdout, processAttempt.OutputTail)
+	}
 	if processAttempt.TempDir == "" {
 		for _, group := range groups {
 			attempt := processAttempt
@@ -276,12 +278,6 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		processAttempt.Cleanup()
 	}
 	return completed, missing
-}
-
-func replayDeferredProcessRetryBatchOutput(writer io.Writer, attempt processRetryAttemptResult) {
-	if writer != nil && attempt.OutputTail != "" {
-		_, _ = io.WriteString(writer, attempt.OutputTail)
-	}
 }
 
 func earliestDeferredProcessRetryDeadline(groups []*deferredProcessRetryGroup) (time.Time, bool) {

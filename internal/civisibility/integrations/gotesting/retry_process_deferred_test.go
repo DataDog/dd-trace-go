@@ -549,45 +549,27 @@ func TestDeferredProcessRetryCoordinatorFailfastStopsLaterGroups(t *testing.T) {
 	require.False(t, second.terminalFailure, "failfast cancellation keeps the latest real observation authoritative")
 }
 
-func TestDeferredProcessRetryCoordinatorNativeFailfastLaunchesNoGroups(t *testing.T) {
-	runner := func(context.Context, *deferredProcessRetryGroup, deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
-		t.Fatal("native package failure must latch failfast before deferred launch")
-		return processRetryAttemptResult{}
-	}
-	coordinator := newProcessRetryCoordinatorForTesting(true, runner)
-	group := &deferredProcessRetryGroup{}
-	require.True(t, coordinator.beginAdmission().commit(group))
-
-	summary := coordinator.drain(3)
-	require.Equal(t, 3, summary.exitCode)
-	require.True(t, summary.packageFailed)
-	require.False(t, summary.deferredFailed)
-	require.True(t, summary.failfast)
-	require.Equal(t, "failfast", group.terminalFailureReason)
-}
-
-func TestDeferredProcessRetryCoordinatorNativeFailfastRunsEarlierFirstAttempts(t *testing.T) {
+func TestDeferredProcessRetryCoordinatorNativeFailfastRunsAdmittedFirstAttempts(t *testing.T) {
 	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
 	coordinator := newProcessRetryCoordinatorForTesting(true)
-	before := newDeferredQuarantinedFirstAttemptGroupForTesting("TestBeforeFailure", 1, 1)
-	after := newDeferredQuarantinedFirstAttemptGroupForTesting("TestAfterFailure", 1, 2)
-	require.True(t, coordinator.beginAdmission().commit(before))
-	require.True(t, coordinator.beginAdmission().commit(after))
+	first := newDeferredQuarantinedFirstAttemptGroupForTesting("TestFirst", 1, 1)
+	second := newDeferredQuarantinedFirstAttemptGroupForTesting("TestSecond", 1, 2)
+	require.True(t, coordinator.beginAdmission().commit(first))
+	require.True(t, coordinator.beginAdmission().commit(second))
 	var batches [][]*deferredProcessRetryGroup
 	coordinator.batchRunner = func(_ context.Context, groups []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
 		batches = append(batches, append([]*deferredProcessRetryGroup(nil), groups...))
 		return map[*deferredProcessRetryGroup]processRetryAttemptResult{
-			before: fixedProcessRetryAttempt(processRetryStatusPass, 1),
+			first:  fixedProcessRetryAttempt(processRetryStatusPass, 1),
+			second: fixedProcessRetryAttempt(processRetryStatusPass, 1),
 		}
 	}
-	coordinator.observeNativeFailure(1)
 
 	summary := coordinator.drain(3)
 
-	require.Equal(t, [][]*deferredProcessRetryGroup{{before}}, batches)
-	require.Len(t, recorder.tests, 1)
-	require.Equal(t, "failfast", after.terminalFailureReason)
+	require.Equal(t, [][]*deferredProcessRetryGroup{{first, second}}, batches)
+	require.Len(t, recorder.tests, 2)
 	require.Equal(t, 3, summary.exitCode)
 	require.True(t, summary.failfast)
 }

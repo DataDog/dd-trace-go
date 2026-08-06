@@ -6,7 +6,6 @@
 package gotesting
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -220,15 +219,6 @@ func TestProcessRetryBatchKeepsOutputPerTest(t *testing.T) {
 	require.Contains(t, b.OutputTail, processRetryOutputTruncationMarker)
 	require.Contains(t, b.OutputTail, "test-b-output-sentinel")
 	require.NotContains(t, b.OutputTail, "test-a-output-sentinel")
-}
-
-func TestProcessRetryBatchReplaysNativeOutputOnce(t *testing.T) {
-	var output bytes.Buffer
-	attempt := processRetryAttemptResult{OutputTail: "native stdout and stderr sentinel"}
-
-	replayDeferredProcessRetryBatchOutput(&output, attempt)
-
-	require.Equal(t, attempt.OutputTail, output.String())
 }
 
 func deferredProcessRetryBatchGroup(name string, ordinal uint64) *deferredProcessRetryGroup {

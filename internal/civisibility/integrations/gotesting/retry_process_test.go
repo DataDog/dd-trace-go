@@ -1745,35 +1745,53 @@ func TestProcessRetryChildCapturesInstrumentedSubtestResults(t *testing.T) {
 }
 
 func TestFinishProcessRetrySubtestEventsPublishesTerminalSubtest(t *testing.T) {
-	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
-	defer restoreSession()
-	identity := newTestIdentity("module", "suite", "TestParent")
-	parentMeta := &testExecutionMetadata{identity: identity}
-	finishProcessRetrySubtestEvents(&commonInfo{
-		moduleName: identity.ModuleName,
-		suiteName:  identity.SuiteName,
-		testName:   identity.FullName,
-		identity:   identity,
-	}, parentMeta, processRetryAttemptResult{Result: processRetryResult{Subtests: []processRetrySubtestResult{{
-		TestName:       "TestParent/child",
-		Status:         processRetryStatusFail,
-		StartUnixNano:  10,
-		FinishUnixNano: 20,
-		DurationNanos:  10,
-		Failed:         true,
-		Panic:          true,
-		ErrorType:      "panic",
-		ErrorMessage:   "subtest panic sentinel",
-		ErrorStack:     "subtest stack sentinel",
-	}}}})
+	for _, tt := range []struct {
+		name             string
+		isRetry          bool
+		allRetriesFailed bool
+		expectTag        bool
+	}{
+		{name: "initial attempt"},
+		{name: "all retries failed", isRetry: true, allRetriesFailed: true, expectTag: true},
+		{name: "a retry passed", isRetry: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+			defer restoreSession()
+			identity := newTestIdentity("module", "suite", "TestParent")
+			parentMeta := &testExecutionMetadata{
+				identity:         identity,
+				isARetry:         tt.isRetry,
+				allRetriesFailed: tt.allRetriesFailed,
+			}
+			finishProcessRetrySubtestEvents(&commonInfo{
+				moduleName: identity.ModuleName,
+				suiteName:  identity.SuiteName,
+				testName:   identity.FullName,
+				identity:   identity,
+			}, parentMeta, processRetryAttemptResult{Result: processRetryResult{Subtests: []processRetrySubtestResult{{
+				TestName:       "TestParent/child",
+				Status:         processRetryStatusFail,
+				StartUnixNano:  10,
+				FinishUnixNano: 20,
+				DurationNanos:  10,
+				Failed:         true,
+				Panic:          true,
+				ErrorType:      "panic",
+				ErrorMessage:   "subtest panic sentinel",
+				ErrorStack:     "subtest stack sentinel",
+			}}}})
 
-	require.Len(t, recorder.tests, 1)
-	require.Equal(t, "TestParent/child", recorder.tests[0].name)
-	require.Equal(t, processRetryStatusFail, recorder.tests[0].status)
-	require.Equal(t, 1, recorder.tests[0].closeCount)
-	require.Equal(t, "panic", recorder.tests[0].errorType)
-	require.Equal(t, "subtest panic sentinel", recorder.tests[0].errorMessage)
-	require.Equal(t, "subtest stack sentinel", recorder.tests[0].errorStack)
+			require.Len(t, recorder.tests, 1)
+			require.Equal(t, "TestParent/child", recorder.tests[0].name)
+			require.Equal(t, processRetryStatusFail, recorder.tests[0].status)
+			require.Equal(t, 1, recorder.tests[0].closeCount)
+			require.Equal(t, "panic", recorder.tests[0].errorType)
+			require.Equal(t, "subtest panic sentinel", recorder.tests[0].errorMessage)
+			require.Equal(t, "subtest stack sentinel", recorder.tests[0].errorStack)
+			require.Equal(t, tt.expectTag, recorder.tests[0].tags[constants.TestHasFailedAllRetries] == "true")
+		})
+	}
 }
 
 func TestProcessRetryChildCleanupRunsExactlyOnce(t *testing.T) {

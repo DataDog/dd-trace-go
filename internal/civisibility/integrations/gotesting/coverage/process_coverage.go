@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // ProcessTestCoverageFile is the serializable per-test coverage produced by an
@@ -26,9 +28,9 @@ type ProcessTestCoverageFile struct {
 
 // ProcessTestCoverage owns one serialized runtime-coverage delta.
 type ProcessTestCoverage struct {
-	testFile string
-	before   map[string][]coverageBlock
-	active   bool
+	coverage     *testCoverage
+	temporaryDir string
+	active       bool
 }
 
 var processTestCoverageMu sync.Mutex
@@ -40,16 +42,26 @@ func BeginProcessTestCoverage(testFile string) *ProcessTestCoverage {
 		return nil
 	}
 	processTestCoverageMu.Lock()
-	before, err := processRuntimeCoverageSnapshot()
+	temporaryDir, err := os.MkdirTemp("", "dd-process-coverage-*")
 	if err != nil {
+		log.Debug("civisibility.cov: error creating process coverage directory: %s", err.Error())
+		telemetry.CodeCoverageErrors()
 		processTestCoverageMu.Unlock()
 		return nil
 	}
-	return &ProcessTestCoverage{
-		testFile: utils.GetRelativePathFromCITagsSourceRoot(testFile),
-		before:   before,
-		active:   true,
+	collector := &testCoverage{
+		testFile:             utils.GetRelativePathFromCITagsSourceRoot(testFile),
+		preCoverageFilename:  filepath.Join(temporaryDir, "pre.out"),
+		postCoverageFilename: filepath.Join(temporaryDir, "post.out"),
 	}
+	if err := collector.collectCoverageBeforeTestExecution(); err != nil {
+		log.Debug("civisibility.cov: error getting process coverage file: %s", err.Error())
+		telemetry.CodeCoverageErrors()
+		_ = os.RemoveAll(temporaryDir)
+		processTestCoverageMu.Unlock()
+		return nil
+	}
+	return &ProcessTestCoverage{coverage: collector, temporaryDir: temporaryDir, active: true}
 }
 
 // Finish returns the coverage delta and releases the serialized collector.
@@ -59,33 +71,18 @@ func (c *ProcessTestCoverage) Finish() []ProcessTestCoverageFile {
 	}
 	c.active = false
 	defer processTestCoverageMu.Unlock()
-	after, err := processRuntimeCoverageSnapshot()
-	if err != nil {
+	defer func() { _ = os.RemoveAll(c.temporaryDir) }()
+	if err := c.coverage.collectCoverageAfterTestExecution(); err != nil {
 		return nil
 	}
-	covered := getFilesCovered(c.testFile, c.before, after)
-	files := make([]ProcessTestCoverageFile, 0, len(covered))
-	for _, file := range covered {
-		files = append(files, ProcessTestCoverageFile{Name: file.name, Bitmap: append([]byte(nil), file.bitmap...)})
+	if !c.coverage.loadCoverageData() {
+		return nil
+	}
+	files := make([]ProcessTestCoverageFile, 0, len(c.coverage.filesCovered))
+	for _, file := range c.coverage.filesCovered {
+		files = append(files, ProcessTestCoverageFile{Name: file.name, Bitmap: file.bitmap})
 	}
 	return files
-}
-
-func processRuntimeCoverageSnapshot() (map[string][]coverageBlock, error) {
-	file, err := os.CreateTemp("", "dd-process-coverage-*.out")
-	if err != nil {
-		return nil, err
-	}
-	path := file.Name()
-	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
-		return nil, err
-	}
-	defer func() { _ = os.Remove(path) }()
-	if _, err := tearDown(path, ""); err != nil {
-		return nil, err
-	}
-	return parseCoverProfile(path)
 }
 
 // WriteProcessCoverageProfile writes the isolated process aggregate profile.
@@ -177,9 +174,8 @@ func SubmitProcessTestCoverage(sessionID, suiteID, testID uint64, files []Proces
 	}
 	covered := make([]coveredFile, 0, len(files))
 	for _, file := range files {
-		covered = append(covered, coveredFile{name: file.Name, bitmap: append([]byte(nil), file.Bitmap...)})
+		covered = append(covered, coveredFile{name: file.Name, bitmap: file.Bitmap})
 	}
 	telemetry.CodeCoverageStarted(testFramework, telemetry.DefaultCoverageLibraryType)
-	covWriter.add(&testCoverage{sessionID: sessionID, suiteID: suiteID, testID: testID, filesCovered: covered})
-	telemetry.CodeCoverageFinished(testFramework, telemetry.DefaultCoverageLibraryType)
+	(&testCoverage{sessionID: sessionID, suiteID: suiteID, testID: testID, filesCovered: covered}).submitCoverageData()
 }

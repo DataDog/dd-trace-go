@@ -39,6 +39,33 @@ func TestMergeProcessCoverageProfilesRejectsDifferentModes(t *testing.T) {
 	require.Error(t, mergeProcessCoverageProfiles(parent, child))
 }
 
+func TestProcessTestCoverageUsesTestCoverageCollector(t *testing.T) {
+	oldMode, oldTearDown := mode, tearDown
+	t.Cleanup(func() {
+		mode, tearDown = oldMode, oldTearDown
+	})
+	mode = "count"
+	profiles := [][]byte{
+		[]byte("mode: count\npkg/source.go:1.1,1.2 1 0\n"),
+		[]byte("mode: count\npkg/source.go:1.1,1.2 1 1\n"),
+	}
+	var snapshots int
+	tearDown = func(path, _ string) (string, error) {
+		snapshots++
+		return path, os.WriteFile(path, profiles[snapshots-1], 0o600)
+	}
+
+	collector := BeginProcessTestCoverage("pkg/source_test.go")
+	require.NotNil(t, collector)
+	files := collector.Finish()
+
+	require.Equal(t, 2, snapshots)
+	require.Equal(t, []ProcessTestCoverageFile{
+		{Name: "pkg/source_test.go"},
+		{Name: "pkg/source.go", Bitmap: []byte{0x80}},
+	}, files)
+}
+
 func TestSubmitProcessTestCoverageUsesParentEventIdentifiers(t *testing.T) {
 	oldMode, oldUpload, oldWriter := mode, coverageUploadEnabled, covWriter
 	t.Cleanup(func() {
