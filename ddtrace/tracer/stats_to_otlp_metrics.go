@@ -60,13 +60,11 @@ var spanMetricBounds = [16]float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 
 // buildOTLPMetricsRequest converts a ClientStatsPayload to OTLP ResourceMetrics (DELTA histogram).
 // Returns nil when empty.
 func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) []*otlpmetrics.ResourceMetrics {
-	otelMode := cfg.OTelSemanticsEnabled()
-
 	var allPoints []*otlpmetrics.HistogramDataPoint
 	for _, bucket := range payload.Stats {
 		bucketEnd := bucket.Start + bucket.Duration
 		for _, gs := range bucket.Stats {
-			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd, otelMode)
+			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd)
 			allPoints = append(allPoints, pts...)
 		}
 	}
@@ -75,7 +73,7 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 		return nil
 	}
 
-	resource := buildMetricsResource(payload, otelMode, cfg.ReportHostname(), cfg.Hostname())
+	resource := buildMetricsResource(payload, cfg.ReportHostname(), cfg.Hostname())
 
 	scopeMetrics := []*otlpmetrics.ScopeMetrics{
 		{
@@ -102,42 +100,40 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 	}
 }
 
-// buildMetricsResource builds the OTLP Resource; adds host.name and datadog.* attrs in default mode.
-func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportHostname bool, hostname string) *otlpresource.Resource {
+// buildMetricsResource builds the OTLP Resource.
+func buildMetricsResource(payload *pb.ClientStatsPayload, reportHostname bool, hostname string) *otlpresource.Resource {
 	attrs := buildBaseResourceAttrs(payload.Service, payload.Version, payload.Env)
 	if reportHostname && hostname != "" {
 		attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(hostname)))
 	}
-	if !otelMode {
-		if payload.RuntimeID != "" {
-			attrs = append(attrs, otlpKeyValue("datadog.runtime_id", otlpStringValue(payload.RuntimeID)))
-		}
-		if payload.ProcessTags != "" {
-			// Mirrors the same comma-separated ProcessTags string the /v0.6/stats (ddStatsSender) path sends as-is; update both if that shape changes.
-			tags := strings.Split(payload.ProcessTags, ",")
-			attrs = append(attrs, otlpKeyValue("datadog.process_tags", otlpStringArrayValue(tags)))
-		}
+	if payload.RuntimeID != "" {
+		attrs = append(attrs, otlpKeyValue("datadog.runtime_id", otlpStringValue(payload.RuntimeID)))
+	}
+	if payload.ProcessTags != "" {
+		// Mirrors the same comma-separated ProcessTags string the /v0.6/stats (ddStatsSender) path sends as-is; update both if that shape changes.
+		tags := strings.Split(payload.ProcessTags, ",")
+		attrs = append(attrs, otlpKeyValue("datadog.process_tags", otlpStringArrayValue(tags)))
 	}
 	return &otlpresource.Resource{Attributes: attrs}
 }
 
 // buildGroupDataPoints produces up to two OTLP histogram data points (ok + error) from a ClientGroupedStats.
-func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, otelMode bool) []*otlpmetrics.HistogramDataPoint {
+func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64) []*otlpmetrics.HistogramDataPoint {
 	var pts []*otlpmetrics.HistogramDataPoint
 	if len(gs.OkSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	if len(gs.ErrorSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	return pts
 }
 
-func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, otelMode bool) *otlpmetrics.HistogramDataPoint {
+func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool) *otlpmetrics.HistogramDataPoint {
 	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
 	if err != nil {
 		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
@@ -157,20 +153,17 @@ func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, star
 		Max:               &maxSec,
 		ExplicitBounds:    spanMetricBounds[:],
 		BucketCounts:      bucketCounts,
-		Attributes:        buildDataPointAttributes(gs, isError, otelMode),
+		Attributes:        buildDataPointAttributes(gs, isError),
 	}
 	return dp
 }
 
 // buildDataPointAttributes returns OTLP data-point attributes.
-func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, otelMode bool) []*otlpcommon.KeyValue {
+func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool) []*otlpcommon.KeyValue {
 	var attrs []*otlpcommon.KeyValue
 
 	// OTel semantic-convention attributes.
 	// Resource (e.g. "GET /users/{id}") maps to span.name.
-	// gs.Name (the Datadog operation name, e.g. "web.request") is intentionally
-	// omitted in OTel mode — it has no OTel semconv equivalent and is only
-	// emitted as datadog.operation.name in default mode below.
 	if gs.Resource != "" {
 		attrs = append(attrs, otlpKeyValue("span.name", otlpStringValue(gs.Resource)))
 	}
@@ -212,41 +205,37 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, otelMode 
 	// additional_metric_tags support is still evolving/TBD across most SDKs.
 	for _, tag := range gs.AdditionalMetricTags {
 		key, value, ok := strings.Cut(tag, ":")
-		if !ok || key == "" || value == "" || otelMode && isDatadogAttribute(key) {
+		if !ok || key == "" || value == "" {
 			continue
 		}
 		attrs = append(attrs, otlpKeyValue(key, otlpStringValue(value)))
 	}
 
-	// Datadog-specific attributes (default mode only).
-	if !otelMode {
-		if gs.Name != "" {
-			attrs = append(attrs, otlpKeyValue("datadog.operation.name", otlpStringValue(gs.Name)))
-		}
-		if gs.Type != "" {
-			attrs = append(attrs, otlpKeyValue("datadog.span.type", otlpStringValue(gs.Type)))
-		}
-		// top_level is true only when all spans in the group were top-level (TopLevelHits == Hits).
-		attrs = append(attrs, otlpKeyValue("datadog.span.top_level", otlpBoolValue(gs.Hits > 0 && gs.TopLevelHits == gs.Hits)))
-		if gs.IsTraceRoot != pb.Trilean_NOT_SET {
-			attrs = append(attrs, otlpKeyValue("datadog.is_trace_root", otlpBoolValue(gs.IsTraceRoot == pb.Trilean_TRUE)))
-		}
-		if len(gs.PeerTags) > 0 {
-			attrs = append(attrs, otlpKeyValue("datadog.peer_tags", otlpStringArrayValue(gs.PeerTags)))
-		}
-		// ClientGroupedStats carries only a boolean Synthetics field; finer-grained
-		// origin values (synthetics-browser, rum, ciapp-test, lambda) are not available
-		// at the stats aggregation layer and require a proto change upstream to support.
-		if gs.Synthetics {
-			attrs = append(attrs, otlpKeyValue("datadog.origin", otlpStringValue("synthetics")))
-		}
+	if gs.Name != "" {
+		attrs = append(attrs, otlpKeyValue("datadog.operation.name", otlpStringValue(gs.Name)))
+	}
+	if gs.Type != "" {
+		attrs = append(attrs, otlpKeyValue("datadog.span.type", otlpStringValue(gs.Type)))
+	}
+	// top_level is true only when all spans in the group were top-level (TopLevelHits == Hits).
+	attrs = append(attrs, otlpKeyValue("datadog.span.top_level", otlpBoolValue(gs.Hits > 0 && gs.TopLevelHits == gs.Hits)))
+	if gs.IsTraceRoot != pb.Trilean_NOT_SET {
+		attrs = append(attrs, otlpKeyValue("datadog.is_trace_root", otlpBoolValue(gs.IsTraceRoot == pb.Trilean_TRUE)))
+	}
+	if len(gs.PeerTags) > 0 {
+		attrs = append(attrs, otlpKeyValue("datadog.peer_tags", otlpStringArrayValue(gs.PeerTags)))
+	}
+	if gs.ServiceSource != "" {
+		attrs = append(attrs, otlpKeyValue("datadog.svc_src", otlpStringValue(gs.ServiceSource)))
+	}
+	// ClientGroupedStats carries only a boolean Synthetics field; finer-grained
+	// origin values (synthetics-browser, rum, ciapp-test, lambda) are not available
+	// at the stats aggregation layer and require a proto change upstream to support.
+	if gs.Synthetics {
+		attrs = append(attrs, otlpKeyValue("datadog.origin", otlpStringValue("synthetics")))
 	}
 
 	return attrs
-}
-
-func isDatadogAttribute(key string) bool {
-	return strings.HasPrefix(key, "datadog.")
 }
 
 func otlpStringArrayValue(values []string) *otlpcommon.AnyValue {
