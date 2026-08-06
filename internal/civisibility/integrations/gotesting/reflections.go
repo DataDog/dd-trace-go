@@ -688,7 +688,7 @@ func copyTestWithoutParentReflect(source *testing.T, target *testing.T) {
 	_ = copyFieldUsingPointers[context.Context](source, target, "ctx")
 	_ = copyFieldUsingPointers[context.CancelFunc](source, target, "cancelCtx")
 
-	if field, ok := denyParallelField(reflect.TypeOf(*source)); ok && field.available {
+	if field, ok := denyParallelField(reflect.TypeOf(source).Elem()); ok && field.available {
 		copyDenyParallelField(unsafe.Pointer(source), unsafe.Pointer(target), field)
 	}
 	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "tstate") // For running tests and subtests.
