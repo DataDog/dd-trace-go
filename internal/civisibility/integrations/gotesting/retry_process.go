@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -32,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -112,6 +114,7 @@ type processRetryChildConfig struct {
 	ObservedGOMAXPROCS     int
 	Batch                  *processRetryBatchConfig
 	BatchChild             bool
+	CollectPerTestCoverage bool
 	controlConfig          processRetryControlConfig
 	controlConfigLoaded    bool
 }
@@ -152,29 +155,30 @@ const (
 )
 
 type processRetryResult struct {
-	Version           int                         `json:"version"`
-	TestName          string                      `json:"test_name"`
-	Attempt           int                         `json:"attempt"`
-	RetryReason       string                      `json:"retry_reason"`
-	MRunEpoch         uint64                      `json:"m_run_epoch,omitempty"`
-	InvocationOrdinal uint64                      `json:"invocation_ordinal,omitempty"`
-	Status            processRetryStatus          `json:"status"`
-	StartUnixNano     int64                       `json:"start_unix_nano"`
-	FinishUnixNano    int64                       `json:"finish_unix_nano"`
-	DurationNanos     int64                       `json:"duration_nanos"`
-	Failed            bool                        `json:"failed"`
-	Skipped           bool                        `json:"skipped"`
-	Panic             bool                        `json:"panic"`
-	RaceDetected      bool                        `json:"race_detected,omitempty"`
-	RootParallel      bool                        `json:"root_parallel,omitempty"`
-	ErrorType         string                      `json:"error_type,omitempty"`
-	ErrorMessage      string                      `json:"error_message,omitempty"`
-	ErrorStack        string                      `json:"error_stack,omitempty"`
-	SkipReason        string                      `json:"skip_reason,omitempty"`
-	ResultError       string                      `json:"result_error,omitempty"`
-	OutputTail        string                      `json:"output_tail,omitempty"`
-	OutputTruncated   bool                        `json:"output_truncated,omitempty"`
-	Subtests          []processRetrySubtestResult `json:"subtests,omitempty"`
+	Version           int                                `json:"version"`
+	TestName          string                             `json:"test_name"`
+	Attempt           int                                `json:"attempt"`
+	RetryReason       string                             `json:"retry_reason"`
+	MRunEpoch         uint64                             `json:"m_run_epoch,omitempty"`
+	InvocationOrdinal uint64                             `json:"invocation_ordinal,omitempty"`
+	Status            processRetryStatus                 `json:"status"`
+	StartUnixNano     int64                              `json:"start_unix_nano"`
+	FinishUnixNano    int64                              `json:"finish_unix_nano"`
+	DurationNanos     int64                              `json:"duration_nanos"`
+	Failed            bool                               `json:"failed"`
+	Skipped           bool                               `json:"skipped"`
+	Panic             bool                               `json:"panic"`
+	RaceDetected      bool                               `json:"race_detected,omitempty"`
+	RootParallel      bool                               `json:"root_parallel,omitempty"`
+	ErrorType         string                             `json:"error_type,omitempty"`
+	ErrorMessage      string                             `json:"error_message,omitempty"`
+	ErrorStack        string                             `json:"error_stack,omitempty"`
+	SkipReason        string                             `json:"skip_reason,omitempty"`
+	ResultError       string                             `json:"result_error,omitempty"`
+	OutputTail        string                             `json:"output_tail,omitempty"`
+	OutputTruncated   bool                               `json:"output_truncated,omitempty"`
+	Subtests          []processRetrySubtestResult        `json:"subtests,omitempty"`
+	Coverage          []coverage.ProcessTestCoverageFile `json:"coverage,omitempty"`
 }
 
 type processRetrySubtestResult struct {
@@ -1926,9 +1930,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	selector := cfg.TestName
 	if childCfg.Batch != nil {
 		selector = "."
-		argsSnapshot.runSelector = ""
-		argsSnapshot.skipSelector = ""
-		argsSnapshot.preserved = append(append([]string(nil), argsSnapshot.preserved...), "-test.failfast=false")
+		argsSnapshot = processRetryBatchArgsSnapshot(argsSnapshot)
 	}
 	filteredArgs, ok, reason := buildProcessRetryArgsFromSnapshot(argsSnapshot, selector, currentCPU, childTestingTimeout)
 	if !ok {
@@ -2089,6 +2091,11 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		unregisterActiveProcessRetryChild(cmd)
 	}
 	return attempt
+}
+
+func processRetryBatchArgsSnapshot(snapshot processRetryArgsSnapshot) processRetryArgsSnapshot {
+	snapshot.preserved = append(append([]string(nil), snapshot.preserved...), "-test.failfast=false")
+	return snapshot
 }
 
 func applyProcessRetryControlledTerminalState(
@@ -2508,6 +2515,7 @@ func finishProcessRetryTestEvent(
 		test.SetTestFunc(testInfo.sourceFunc)
 	}
 	execMeta.test = test
+	coverage.SubmitProcessTestCoverage(session.SessionID(), suite.SuiteID(), test.TestID(), attempt.Result.Coverage)
 	cancelExecution := setTestTagsFromExecutionMetadataNoClose(test, execMeta)
 	test.SetTag(constants.TestRetryExecutionMode, "process")
 	if execMeta.isItrForcedRun {
@@ -3049,6 +3057,9 @@ func instrumentProcessRetryChild(m *testing.M, cfg processRetryChildConfig) (boo
 		return false, failureTestingMFinalizer
 	}
 	cfg = control.cfg
+	if cfg.Batch != nil && testing.CoverMode() != "" {
+		coverage.InitializeCoverage(m, false)
+	}
 	if err := control.childAdmission(); err != nil {
 		_ = control.Close()
 		writer.Write(processRetryNotRunResult(cfg, "control_protocol_failure"))
@@ -3176,6 +3187,9 @@ func configureProcessRetryBatchChildWorkloads(
 		for _, finalizeTest := range finalizers {
 			finalizeTest()
 		}
+		if err := coverage.WriteProcessCoverageProfile(processRetryBatchCoveragePath(cfg.ResultPath)); err != nil {
+			log.Debug("civisibility: failed to write isolated first-attempt coverage: %s", err.Error())
+		}
 		writer.Write(processRetryNotRunResult(cfg, ""))
 		return finalize(exitCode)
 	}
@@ -3286,6 +3300,7 @@ type processRetryChildObservation struct {
 	group     *retryAttemptGroup
 	execMeta  *testExecutionMetadata
 	result    retryAttemptResult
+	coverage  []coverage.ProcessTestCoverageFile
 	startTime time.Time
 }
 
@@ -3304,6 +3319,7 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		}
 		if cfg.BatchChild {
 			group.outputLimit = processRetryResultOutputMaxBytes
+			group.suppressOriginalParallelTransition = cfg.CollectPerTestCoverage
 		}
 		observation.group = group
 		if control != nil {
@@ -3329,7 +3345,22 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			observation.execMeta = execMeta
 			return ""
 		}
-		attempt, result, reason := runFreshRetryAttemptInGroupWithCallbacks(group, prepare, original, nil)
+		childBody := original
+		if cfg.BatchChild && cfg.CollectPerTestCoverage && coverage.CanCollect() {
+			if fn := runtime.FuncForPC(reflect.ValueOf(original).Pointer()); fn != nil {
+				testFile, _ := fn.FileLine(fn.Entry())
+				childBody = func(t *testing.T) {
+					collector := coverage.BeginProcessTestCoverage(testFile)
+					if collector == nil {
+						original(t)
+						return
+					}
+					defer func() { observation.coverage = collector.Finish() }()
+					original(t)
+				}
+			}
+		}
+		attempt, result, reason := runFreshRetryAttemptInGroupWithCallbacks(group, prepare, childBody, nil)
 		if reason != "" || attempt == nil {
 			writer.Write(processRetryNotRunResult(cfg, "testing_t_reflection_drift"))
 			t.Fail()
@@ -3435,6 +3466,7 @@ func (o *processRetryChildObservation) buildResult(status processRetryStatus) pr
 		Panic:             panicData != nil,
 		RaceDetected:      o.result.raceDetected,
 		RootParallel:      rootParallel,
+		Coverage:          append([]coverage.ProcessTestCoverageFile(nil), o.coverage...),
 	}
 	if o.cfg.BatchChild {
 		result.OutputTail, result.OutputTruncated = truncateProcessRetryOutputTail(o.result.output)
@@ -3554,7 +3586,15 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 				deleteTestMetadata(t)
 			})
 		}
-		t.Cleanup(finish)
+		directChild := getTestMetadataFromPointer(*fields.parent) == owner
+		t.Cleanup(func() {
+			finish()
+			if directChild {
+				if root, ok := owner.test.(*processRetryNoopTest); ok {
+					root.writePanicResult(owner.processRetryPanic.Load())
+				}
+			}
+		})
 
 		bodyReturned := false
 		defer func() {
@@ -3574,10 +3614,6 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 			}
 			execMeta.processRetryPanic.CompareAndSwap(nil, info)
 			owner.processRetryPanic.CompareAndSwap(nil, info)
-			if root, ok := owner.test.(*processRetryNoopTest); ok {
-				finish()
-				root.writePanicResult(owner.processRetryPanic.Load())
-			}
 			if unexpectedTermination {
 				return
 			}
@@ -3708,7 +3744,7 @@ func writeProcessRetryResultAtomically(resultPath string, result processRetryRes
 		return err
 	}
 	maxBytes := processRetryResultMaxBytes
-	if len(result.Subtests) > 0 {
+	if len(result.Subtests) > 0 || len(result.Coverage) > 0 {
 		maxBytes = processRetryResultWithSubtestsMaxBytes
 	}
 	if len(payload) > maxBytes {
@@ -3767,7 +3803,7 @@ func readProcessRetryResult(resultPath string, expected processRetryChildConfig)
 	if err := validateProcessRetryResult(result, expected); err != nil {
 		return processRetryResult{}, false, err
 	}
-	if len(result.Subtests) == 0 && len(payload) > processRetryResultMaxBytes {
+	if len(result.Subtests) == 0 && len(result.Coverage) == 0 && len(payload) > processRetryResultMaxBytes {
 		return processRetryResult{}, false, fmt.Errorf("%w: result file too large", errProcessRetryResultInvalid)
 	}
 	timingOK := result.StartUnixNano != 0 && result.FinishUnixNano != 0 && result.FinishUnixNano >= result.StartUnixNano
@@ -3825,6 +3861,17 @@ func validateProcessRetryResult(result processRetryResult, expected processRetry
 			return err
 		}
 	}
+	if len(result.Coverage) > 0 && !expected.BatchChild {
+		return fmt.Errorf("%w: unexpected process coverage", errProcessRetryResultInvalid)
+	}
+	if len(result.Coverage) > processRetryBatchMaxTests {
+		return fmt.Errorf("%w: too many process coverage files", errProcessRetryResultInvalid)
+	}
+	for _, file := range result.Coverage {
+		if strings.TrimSpace(file.Name) == "" || !processRetryJSONStringFits(file.Name, processRetryErrorMessageMaxBytes) {
+			return fmt.Errorf("%w: invalid process coverage file", errProcessRetryResultInvalid)
+		}
+	}
 	switch result.Status {
 	case processRetryStatusPass:
 		if result.Failed || result.Skipped || result.Panic || result.RaceDetected || result.ErrorType != "" || result.ErrorMessage != "" || result.ErrorStack != "" || result.SkipReason != "" || result.ResultError != "" {
@@ -3843,7 +3890,7 @@ func validateProcessRetryResult(result processRetryResult, expected processRetry
 			return fmt.Errorf("%w: invalid controlled terminal mirrors", errProcessRetryResultInvalid)
 		}
 	case processRetryStatusNotRun:
-		if result.Failed || result.Skipped || result.Panic || result.RaceDetected || result.RootParallel || result.ErrorType != "" || result.ErrorMessage != "" || result.ErrorStack != "" || result.SkipReason != "" || result.OutputTail != "" || result.OutputTruncated || !validProcessRetryResultError(result.ResultError) {
+		if result.Failed || result.Skipped || result.Panic || result.RaceDetected || result.RootParallel || result.ErrorType != "" || result.ErrorMessage != "" || result.ErrorStack != "" || result.SkipReason != "" || result.OutputTail != "" || result.OutputTruncated || len(result.Coverage) > 0 || !validProcessRetryResultError(result.ResultError) {
 			return fmt.Errorf("%w: invalid not_run mirrors", errProcessRetryResultInvalid)
 		}
 	default:

@@ -1614,6 +1614,7 @@ func TestProcessRetryChildResultStatuses(t *testing.T) {
 		outputContains   []string
 		skipReason       string
 		subtestError     string
+		subtestNames     []string
 		requireStack     bool
 	}{
 		{name: "pass", scenario: "pass", exitOK: true, status: processRetryStatusPass},
@@ -1625,6 +1626,7 @@ func TestProcessRetryChildResultStatuses(t *testing.T) {
 		{name: "runtime Goexit", scenario: "goexit", status: processRetryStatusControlledUnexpectedGoexitReady, failed: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
 		{name: "failed runtime Goexit", scenario: "failed_goexit", status: processRetryStatusControlledUnexpectedGoexitReady, failed: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
 		{name: "subtest panic", scenario: "subtest_panic", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "subtest panic sentinel", subtestError: "subtest panic sentinel", requireStack: true},
+		{name: "nested subtest panic", scenario: "nested_subtest_panic", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "nested subtest panic sentinel", subtestError: "nested subtest panic sentinel", subtestNames: []string{"TestProcessRetryChildResultFixture/parent", "TestProcessRetryChildResultFixture/parent/child"}, requireStack: true},
 		{name: "subtest runtime Goexit", scenario: "subtest_goexit", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", subtestError: "runtime.Goexit", requireStack: true},
 		{name: "parallel subtest runtime Goexit", scenario: "parallel_subtest_goexit", status: processRetryStatusControlledPanicReady, failed: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", subtestError: "runtime.Goexit", requireStack: true},
 		{name: "subtest parent FailNow", scenario: "subtest_parent_failnow", status: processRetryStatusFail, failed: true},
@@ -1670,11 +1672,19 @@ func TestProcessRetryChildResultStatuses(t *testing.T) {
 				require.NotEmpty(t, result.ErrorStack)
 			}
 			if tt.subtestError != "" {
-				require.Len(t, result.Subtests, 1)
-				require.Equal(t, "TestProcessRetryChildResultFixture/child", result.Subtests[0].TestName)
-				require.Equal(t, processRetryStatusFail, result.Subtests[0].Status)
-				require.True(t, result.Subtests[0].Panic)
-				require.Contains(t, result.Subtests[0].ErrorMessage, tt.subtestError)
+				wantNames := tt.subtestNames
+				if len(wantNames) == 0 {
+					wantNames = []string{"TestProcessRetryChildResultFixture/child"}
+				}
+				require.Len(t, result.Subtests, len(wantNames))
+				for index, wantName := range wantNames {
+					require.Equal(t, wantName, result.Subtests[index].TestName)
+					require.Equal(t, processRetryStatusFail, result.Subtests[index].Status)
+					if len(wantNames) == 1 || strings.HasSuffix(wantName, "/child") {
+						require.True(t, result.Subtests[index].Panic)
+						require.Contains(t, result.Subtests[index].ErrorMessage, tt.subtestError)
+					}
+				}
 			}
 		})
 	}
@@ -6553,6 +6563,12 @@ func TestProcessRetryChildResultFixture(t *testing.T) {
 	case "subtest_panic":
 		t.Run("child", instrumentProcessRetryChildSubtest(func(*testing.T) {
 			panic("subtest panic sentinel")
+		}))
+	case "nested_subtest_panic":
+		t.Run("parent", instrumentProcessRetryChildSubtest(func(t *testing.T) {
+			t.Run("child", instrumentProcessRetryChildSubtest(func(*testing.T) {
+				panic("nested subtest panic sentinel")
+			}))
 		}))
 	case "subtest_goexit":
 		t.Run("child", instrumentProcessRetryChildSubtest(func(*testing.T) {

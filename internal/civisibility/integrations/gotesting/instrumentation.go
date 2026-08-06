@@ -692,16 +692,17 @@ func applyAdditionalFeaturesToTestFunc(
 
 	switch selection.path {
 	case additionalFeaturePathNone:
-		return f
+		return observeProcessRetryNativeFailure(f, identity, wrapperOpts)
 	case additionalFeaturePathMetadataOnly:
-		return wrapWithAdditionalFeatureMetadata(f, ptrMeta, needsMetadataOnly, false)
+		return observeProcessRetryNativeFailure(wrapWithAdditionalFeatureMetadata(f, ptrMeta, needsMetadataOnly, false), identity, wrapperOpts)
 	case additionalFeaturePathDisabledFast:
-		return wrapWithAdditionalFeatureMetadata(f, ptrMeta, false, true)
+		return observeProcessRetryNativeFailure(wrapWithAdditionalFeatureMetadata(f, ptrMeta, false, true), identity, wrapperOpts)
 	}
 
 	// Create a unified wrapper that will use a single runTestWithRetry call.
 	wrapper := func(t *testing.T) {
 		t.Helper()
+		defer observeProcessRetryNativeTerminal(t, identity, wrapperOpts)
 		originalExecMeta := getTestMetadata(t)
 
 		var outcomes retryOutcomeAccumulator
@@ -930,6 +931,34 @@ func applyAdditionalFeaturesToTestFunc(
 	// Mark the wrapper as instrumented.
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.ValueOf(wrapper).Pointer()), &instrumentationMetadata{IsInternal: true})
 	return wrapper
+}
+
+func observeProcessRetryNativeFailure(f func(*testing.T), identity *testIdentity, wrapperOpts additionalFeatureWrapperOptions) func(*testing.T) {
+	if f == nil || identity == nil || len(identity.Segments) != 1 || wrapperOpts.processRetryCoordinator == nil || wrapperOpts.mRunInvocations == nil {
+		return f
+	}
+	return func(t *testing.T) {
+		defer observeProcessRetryNativeTerminal(t, identity, wrapperOpts)
+		f(t)
+	}
+}
+
+func observeProcessRetryNativeTerminal(t *testing.T, identity *testIdentity, wrapperOpts additionalFeatureWrapperOptions) {
+	panicData := recover()
+	if panicData != nil {
+		if identity != nil && len(identity.Segments) == 1 && wrapperOpts.processRetryCoordinator != nil && wrapperOpts.mRunInvocations != nil {
+			wrapperOpts.processRetryCoordinator.observeNativeFailure(wrapperOpts.mRunInvocations.Load())
+		}
+		panic(panicData)
+	}
+	recordProcessRetryNativeFailure(t, identity, wrapperOpts)
+}
+
+func recordProcessRetryNativeFailure(t *testing.T, identity *testIdentity, wrapperOpts additionalFeatureWrapperOptions) {
+	if t == nil || !t.Failed() || identity == nil || len(identity.Segments) != 1 || wrapperOpts.processRetryCoordinator == nil || wrapperOpts.mRunInvocations == nil {
+		return
+	}
+	wrapperOpts.processRetryCoordinator.observeNativeFailure(wrapperOpts.mRunInvocations.Load())
 }
 
 // runTestWithRetry encapsulates the common retry logic for test functions.

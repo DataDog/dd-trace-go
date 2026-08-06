@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -18,7 +19,8 @@ import (
 func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "batch.json")
 	want := &processRetryBatchConfig{
-		Version: processRetryBatchVersion,
+		Version:                processRetryBatchVersion,
+		CollectPerTestCoverage: true,
 		Tests: []processRetryBatchTestConfig{
 			{TestName: "TestA", InvocationOrdinal: 11},
 			{TestName: "TestB", InvocationOrdinal: 12},
@@ -31,13 +33,14 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 	child := processRetryBatchChildConfig(processRetryChildConfig{
-		ResultPath: path, Attempt: 1, RetryReason: processRetryBatchReason, MRunEpoch: 7,
+		ResultPath: path, Attempt: 1, RetryReason: processRetryBatchReason, MRunEpoch: 7, Batch: got,
 	}, 1, got.Tests[1])
 	require.Equal(t, "TestB", child.TestName)
 	require.Equal(t, 1, child.Attempt)
 	require.Equal(t, processRetryBatchReason, child.RetryReason)
 	require.Equal(t, uint64(7), child.MRunEpoch)
 	require.Equal(t, uint64(12), child.InvocationOrdinal)
+	require.True(t, child.CollectPerTestCoverage)
 }
 
 func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
@@ -69,6 +72,25 @@ func TestProcessRetryBatchConfigRejectsUnknownAndTrailingData(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestProcessRetryBatchArgsPreserveSegmentedSelectors(t *testing.T) {
+	snapshot := captureProcessRetryArgsSnapshot([]string{
+		"-test.run=^TestQuarantined$/wanted$",
+		"-test.skip=destructive$",
+	})
+
+	got, ok, reason := buildProcessRetryArgsFromSnapshot(processRetryBatchArgsSnapshot(snapshot), ".", 1, time.Second)
+
+	require.True(t, ok, reason)
+	require.Equal(t, []string{
+		"-test.failfast=false",
+		"-test.run=^TestQuarantined$/wanted$",
+		"-test.skip=destructive$",
+		"-test.count=1",
+		"-test.cpu=1",
+		"-test.timeout=1s",
+	}, got)
 }
 
 func TestProcessRetryBatchRetriesOnlyMissingGroups(t *testing.T) {
@@ -150,6 +172,26 @@ func TestProcessRetryBatchCancellationDoesNotSplitPendingWork(t *testing.T) {
 	require.ErrorIs(t, results[b].Err, context.Canceled)
 }
 
+func TestProcessRetryBatchGlobalStopDoesNotSplitPendingWork(t *testing.T) {
+	a := deferredProcessRetryBatchGroup("TestA", 1)
+	b := deferredProcessRetryBatchGroup("TestB", 2)
+	calls := 0
+	runOnce := func(_ context.Context, _ []*deferredProcessRetryGroup) (
+		map[*deferredProcessRetryGroup]processRetryAttemptResult,
+		map[*deferredProcessRetryGroup]processRetryAttemptResult,
+	) {
+		calls++
+		attempt := processRetryAttemptResult{Unreaped: true, Err: errProcessRetryChildUnreaped}
+		return nil, map[*deferredProcessRetryGroup]processRetryAttemptResult{a: attempt, b: attempt}
+	}
+
+	results := runDeferredQuarantinedProcessRetryBatchWithRunner(context.Background(), []*deferredProcessRetryGroup{a, b}, runOnce)
+
+	require.Equal(t, 1, calls)
+	require.True(t, results[a].Unreaped)
+	require.True(t, results[b].Unreaped)
+}
+
 func TestCompletedProcessRetryAttemptPreservesPanicSemantics(t *testing.T) {
 	attempt := completedProcessRetryAttempt(processRetryResult{
 		Status: processRetryStatusControlledPanicReady,
@@ -178,6 +220,15 @@ func TestProcessRetryBatchKeepsOutputPerTest(t *testing.T) {
 	require.Contains(t, b.OutputTail, processRetryOutputTruncationMarker)
 	require.Contains(t, b.OutputTail, "test-b-output-sentinel")
 	require.NotContains(t, b.OutputTail, "test-a-output-sentinel")
+}
+
+func TestProcessRetryBatchReplaysNativeOutputOnce(t *testing.T) {
+	var output bytes.Buffer
+	attempt := processRetryAttemptResult{OutputTail: "native stdout and stderr sentinel"}
+
+	replayDeferredProcessRetryBatchOutput(&output, attempt)
+
+	require.Equal(t, attempt.OutputTail, output.String())
 }
 
 func deferredProcessRetryBatchGroup(name string, ordinal uint64) *deferredProcessRetryGroup {

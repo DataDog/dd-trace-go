@@ -831,6 +831,35 @@ func TestProcessRetryParityFreshRunnerSharesRootParallelLeaseAcrossSequentialAtt
 	})
 }
 
+func TestProcessRetryCoverageSuppressesOriginalRootParallelTransition(t *testing.T) {
+	t.Run("container", func(container *testing.T) {
+		container.Run("attempt", func(original *testing.T) {
+			before := snapshotRetryAttemptTestState(original)
+			group, reason := newRetryAttemptGroup(original)
+			require.Empty(original, reason)
+			group.suppressOriginalParallelTransition = true
+
+			attempt, result, reason := runFreshRetryAttemptInGroup(group, func(local *testing.T) {
+				local.Parallel()
+			})
+			require.Empty(original, reason)
+			require.NotNil(original, attempt)
+			attempt.cancelContexts()
+			group.retire()
+
+			require.False(original, result.failed)
+			require.True(original, group.rootParallelWasObserved())
+			fields := getTestPrivateFields(original)
+			require.NotNil(original, fields)
+			fields.mu.RLock()
+			originalParallel := *fields.isParallel
+			fields.mu.RUnlock()
+			require.False(original, originalParallel)
+			require.Equal(original, before, snapshotRetryAttemptTestState(original))
+		})
+	})
+}
+
 func TestProcessRetryParityFreshRunnerSerializesAttemptsInOneGroup(t *testing.T) {
 	group, reason := newRetryAttemptGroup(t)
 	require.Empty(t, reason)

@@ -57,6 +57,8 @@ var processRetryUnitTestPrefixes = []string{
 
 const retryParityUnitTestPrefix = "TestProcessRetryParity"
 
+const quarantinedRaceCoverageEnabledEnv = "DD_TEST_QUARANTINED_RACE_COVERAGE_ENABLED"
+
 var retryParityFallbackUnitTests = map[string]struct{}{
 	"TestProcessRetryParityRuntimeLayoutRejectsMissingCapabilities":                 {},
 	"TestProcessRetryParityMaskedFallbackRunsInstrumentedShellWithoutUserBody":      {},
@@ -68,6 +70,7 @@ var retryParityFallbackUnitTests = map[string]struct{}{
 var mTracer mocktracer.Tracer
 var logsEntries []*mockedLogEntry
 var parallelEfd bool
+var mockCoverageRequests atomic.Int32
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
@@ -152,7 +155,18 @@ func TestMain(m *testing.M) {
 					if err := os.Setenv(quarantinedRacePIDDirEnv, pidDir); err != nil {
 						panic(err)
 					}
+					previousCoverageEnabled, hadCoverageEnabled := os.LookupEnv(quarantinedRaceCoverageEnabledEnv)
+					if testing.CoverMode() != "" {
+						if err := os.Setenv(quarantinedRaceCoverageEnabledEnv, "true"); err != nil {
+							panic(err)
+						}
+					}
 					runTestControllerSubprocess(v, runFilter, v+"=true")
+					if hadCoverageEnabled {
+						_ = os.Setenv(quarantinedRaceCoverageEnabledEnv, previousCoverageEnabled)
+					} else {
+						_ = os.Unsetenv(quarantinedRaceCoverageEnabledEnv)
+					}
 					if hadPIDDir {
 						_ = os.Setenv(quarantinedRacePIDDirEnv, previousPIDDir)
 					} else {
@@ -1631,6 +1645,7 @@ func setUpHTTPServer(
 
 	// Reset the collected logs for the new server instance.
 	logsEntries = nil
+	mockCoverageRequests.Store(0)
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1656,6 +1671,7 @@ func setUpHTTPServer(
 				TestsSkipping:           itrEnabled,
 				KnownTestsEnabled:       enableKnownTests,
 				ImpactedTestsEnabled:    impactedTests,
+				CodeCoverage:            os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true",
 			}
 
 			response.Data.Attributes.TestManagement.Enabled = testManagement
@@ -1718,6 +1734,9 @@ func setUpHTTPServer(
 			}
 			log.Debug("MockApi sending response: %v", response)
 			json.NewEncoder(w).Encode(&response)
+		} else if r.URL.Path == "/api/v2/citestcov" {
+			mockCoverageRequests.Add(1)
+			w.WriteHeader(http.StatusAccepted)
 		} else if r.URL.Path == "/api/v2/logs" {
 			// Mock the logs intake endpoint.
 			reader, _ := gzip.NewReader(r.Body)

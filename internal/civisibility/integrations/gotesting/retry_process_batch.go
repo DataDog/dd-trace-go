@@ -17,6 +17,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -34,12 +37,17 @@ type processRetryBatchTestConfig struct {
 }
 
 type processRetryBatchConfig struct {
-	Version int                           `json:"version"`
-	Tests   []processRetryBatchTestConfig `json:"tests"`
+	Version                int                           `json:"version"`
+	Tests                  []processRetryBatchTestConfig `json:"tests"`
+	CollectPerTestCoverage bool                          `json:"collect_per_test_coverage,omitempty"`
 }
 
 func processRetryBatchManifestPath(resultPath string) string {
 	return filepath.Clean(resultPath) + ".batch.json"
+}
+
+func processRetryBatchCoveragePath(resultPath string) string {
+	return filepath.Clean(resultPath) + ".coverage.out"
 }
 
 func processRetryBatchResultPath(resultPath string, index int) string {
@@ -58,6 +66,7 @@ func processRetryBatchChildConfig(root processRetryChildConfig, index int, test 
 		ParentDeadlineOK:       root.ParentDeadlineOK,
 		ObservedGOMAXPROCS:     root.ObservedGOMAXPROCS,
 		BatchChild:             true,
+		CollectPerTestCoverage: root.Batch != nil && root.Batch.CollectPerTestCoverage,
 	}
 }
 
@@ -151,6 +160,17 @@ func runDeferredQuarantinedProcessRetryBatchWithRunner(
 			maps.Copy(results, missing)
 			break
 		}
+		globalStop := false
+		for _, attempt := range missing {
+			if deferredProcessRetryGlobalStopReason(attempt) != "" {
+				globalStop = true
+				break
+			}
+		}
+		if globalStop {
+			maps.Copy(results, missing)
+			break
+		}
 		if len(completed) > 0 {
 			next := pending[:0]
 			for _, group := range pending {
@@ -186,7 +206,11 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		return completed, missing
 	}
 	first := groups[0]
-	batch := &processRetryBatchConfig{Version: processRetryBatchVersion, Tests: make([]processRetryBatchTestConfig, 0, len(groups))}
+	batch := &processRetryBatchConfig{
+		Version:                processRetryBatchVersion,
+		Tests:                  make([]processRetryBatchTestConfig, 0, len(groups)),
+		CollectPerTestCoverage: coverage.CanCollectPerTestCoverage(),
+	}
 	for _, group := range groups {
 		batch.Tests = append(batch.Tests, processRetryBatchTestConfig{
 			TestName:          group.identity.FullName,
@@ -210,6 +234,7 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		first.launchBaseline,
 		first.shutdown(),
 	)
+	replayDeferredProcessRetryBatchOutput(os.Stdout, processAttempt)
 	if processAttempt.TempDir == "" {
 		for _, group := range groups {
 			attempt := processAttempt
@@ -222,6 +247,9 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		return completed, missing
 	}
 	resultRoot := filepath.Join(processAttempt.TempDir, "result.json")
+	if err := coverage.MergeProcessCoverageProfile(processRetryBatchCoveragePath(resultRoot)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Debug("civisibility: failed to merge isolated first-attempt coverage: %s", err.Error())
+	}
 	expectedRoot := rootCfg
 	expectedRoot.ResultPath = resultRoot
 	expectedRoot.ParentDeadlineOK = parentDeadlineOK
@@ -248,6 +276,12 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		processAttempt.Cleanup()
 	}
 	return completed, missing
+}
+
+func replayDeferredProcessRetryBatchOutput(writer io.Writer, attempt processRetryAttemptResult) {
+	if writer != nil && attempt.OutputTail != "" {
+		_, _ = io.WriteString(writer, attempt.OutputTail)
+	}
 }
 
 func earliestDeferredProcessRetryDeadline(groups []*deferredProcessRetryGroup) (time.Time, bool) {

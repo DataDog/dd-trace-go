@@ -81,6 +81,9 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 	}
 
 	exitCode := RunM(m)
+	if os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true" && mockCoverageRequests.Load() == 0 {
+		panic("expected quarantined process retries to upload test coverage")
+	}
 	if isolated && exitCode != 0 {
 		panic("expected a quarantined race not to affect the test run exit code; got " + strconv.Itoa(exitCode))
 	}

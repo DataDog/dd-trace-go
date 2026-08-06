@@ -25,23 +25,24 @@ import (
 )
 
 type retryAttemptGroup struct {
-	mu                     locking.Mutex
-	executionMu            locking.Mutex
-	original               *testing.T
-	layout                 *testingInternalsLayout
-	originalParentBase     unsafe.Pointer
-	originalParentBarrier  <-chan bool
-	rootParallelObserved   bool
-	originalTransitioned   bool
-	originalParallelReady  chan struct{}
-	originalParallelLocked func()
-	rootParallelBridge     func() error
-	matcher                *retryAttemptMatcherTransaction
-	attempts               []*retryAttemptRoot
-	observeOutput          bool
-	observeNativeOutput    bool
-	outputLimit            int64
-	retired                bool
+	mu                                 locking.Mutex
+	executionMu                        locking.Mutex
+	original                           *testing.T
+	layout                             *testingInternalsLayout
+	originalParentBase                 unsafe.Pointer
+	originalParentBarrier              <-chan bool
+	rootParallelObserved               bool
+	suppressOriginalParallelTransition bool
+	originalTransitioned               bool
+	originalParallelReady              chan struct{}
+	originalParallelLocked             func()
+	rootParallelBridge                 func() error
+	matcher                            *retryAttemptMatcherTransaction
+	attempts                           []*retryAttemptRoot
+	observeOutput                      bool
+	observeNativeOutput                bool
+	outputLimit                        int64
+	retired                            bool
 }
 
 type retryAttemptMatcherTransaction struct {
@@ -402,6 +403,10 @@ func (g *retryAttemptGroup) transitionOriginalToParallel() bool {
 
 	g.mu.Lock()
 	g.rootParallelObserved = true
+	if g.suppressOriginalParallelTransition {
+		g.mu.Unlock()
+		return true
+	}
 	if g.originalTransitioned {
 		ready := g.originalParallelReady
 		g.mu.Unlock()

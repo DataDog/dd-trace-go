@@ -130,22 +130,36 @@ type processRetryCoordinatorSummary struct {
 }
 
 type processRetryCoordinator struct {
-	mu               locking.Mutex
-	state            processRetryCoordinatorState
-	nextID           uint64
-	inFlight         int
-	queue            []*deferredProcessRetryGroup
-	changed          chan struct{}
-	shutdown         chan struct{}
-	shutdownSignaled bool
-	completed        chan struct{}
-	completionOwner  atomic.Uint32
-	summary          processRetryCoordinatorSummary
-	invocationPhase  uint64
-	phaseByTestName  map[string]uint64
-	failfastEnabled  func() bool
-	attemptRunner    deferredProcessRetryAttemptRunner
-	batchRunner      deferredProcessRetryBatchRunner
+	mu                    locking.Mutex
+	state                 processRetryCoordinatorState
+	nextID                uint64
+	inFlight              int
+	queue                 []*deferredProcessRetryGroup
+	changed               chan struct{}
+	shutdown              chan struct{}
+	shutdownSignaled      bool
+	completed             chan struct{}
+	completionOwner       atomic.Uint32
+	summary               processRetryCoordinatorSummary
+	invocationPhase       uint64
+	phaseByTestName       map[string]uint64
+	nativeFailureOrdinal  uint64
+	nativeFailureObserved bool
+	failfastEnabled       func() bool
+	attemptRunner         deferredProcessRetryAttemptRunner
+	batchRunner           deferredProcessRetryBatchRunner
+}
+
+func (c *processRetryCoordinator) observeNativeFailure(invocationOrdinal uint64) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	if !c.nativeFailureObserved {
+		c.nativeFailureObserved = true
+		c.nativeFailureOrdinal = invocationOrdinal
+	}
+	c.mu.Unlock()
 }
 
 type deferredProcessRetryPreparedAttempt struct {
@@ -370,7 +384,24 @@ func (c *processRetryCoordinator) complete(nativeExitCode int, shuttingDown bool
 			failfastLatched = outcome.failfast
 			terminalPanic = outcome.terminalPanic
 		} else {
-			cancelDeferredProcessRetryGroups(queue, "failfast", false)
+			c.mu.Lock()
+			failureOrdinal, failureObserved := c.nativeFailureOrdinal, c.nativeFailureObserved
+			c.mu.Unlock()
+			if failureObserved {
+				beforeFailure := make([]*deferredProcessRetryGroup, 0, len(queue))
+				afterFailure := make([]*deferredProcessRetryGroup, 0, len(queue))
+				for _, group := range queue {
+					if group.deferredFirstAttempt && group.invocationOrdinal <= failureOrdinal {
+						beforeFailure = append(beforeFailure, group)
+					} else {
+						afterFailure = append(afterFailure, group)
+					}
+				}
+				cancelDeferredProcessRetryGroups(c.drainDeferredFirstAttempts(beforeFailure), "failfast", false)
+				cancelDeferredProcessRetryGroups(afterFailure, "failfast", false)
+			} else {
+				cancelDeferredProcessRetryGroups(queue, "failfast", false)
+			}
 		}
 		packageFailed = deferredFailed || packageFailed
 	} else {
@@ -480,6 +511,9 @@ func (g *deferredProcessRetryGroup) applyDeferredFirstAttempt(attempt processRet
 	effective, tail := deferProcessRetryTestEventWithAdmission(&g.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {
 		g.outcomes.observe(effective.Failed, effective.Skipped)
 		continueGroup = !terminal && deferredProcessRetryShouldContinue(execMeta, effective.Failed, effective.Skipped, g.retryCount)
+		if continueGroup {
+			continueGroup = g.admitDeferredFirstAttemptContinuation(execMeta, effective)
+		}
 		execMeta.retryContinuationDecided = true
 		execMeta.retryContinuationAdmitted = continueGroup
 		execMeta.isLastRetry = !continueGroup
@@ -506,6 +540,38 @@ func (g *deferredProcessRetryGroup) applyDeferredFirstAttempt(attempt processRet
 		g.tailEvent = tail
 	}
 	return continueGroup
+}
+
+func (g *deferredProcessRetryGroup) admitDeferredFirstAttemptContinuation(execMeta *testExecutionMetadata, effective processRetryEffectiveStatus) bool {
+	if g == nil || execMeta == nil {
+		return false
+	}
+	if usesEfdRetrySemantics(execMeta) && g.efdFaultySessionGuard != nil {
+		admission := earlyFlakeDetectionAdmissionAllowed
+		switch {
+		case execMeta.isANewTest:
+			admission = g.efdFaultySessionGuard.admitNewTest(execMeta.identity)
+		case execMeta.isAModifiedTest:
+			admission = g.efdFaultySessionGuard.retryState()
+		}
+		if admission != earlyFlakeDetectionAdmissionAllowed {
+			retryCount, ok := transitionSuppressedEFDToFlakyRetries(execMeta, effective.Failed, g.outcomes.anyPassed())
+			if !ok {
+				return false
+			}
+			g.metadata.efdFellBackToFlakyRetries = execMeta.efdFellBackToFlakyRetries
+			g.retryCount = retryCount
+			execMeta.remainingRetries = retryCount
+			execMeta.initialRetryCount = retryCount
+		}
+	}
+	if !usesFlakyRetryBudget(execMeta) {
+		return true
+	}
+	if g.reservation == nil {
+		g.reservation = &flakyRetryBudgetReservation{}
+	}
+	return g.reservation.reserve()
 }
 
 func cancelDeferredProcessRetryGroups(groups []*deferredProcessRetryGroup, reason string, failed bool) {
