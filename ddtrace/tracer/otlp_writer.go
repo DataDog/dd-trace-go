@@ -31,7 +31,7 @@ type otlpTraceWriter struct {
 	scope     *otlpcommon.InstrumentationScope
 	spans     []*otlptrace.Span // +checklocks:mu
 	buffSize  int               // +checklocks:mu
-	baseSize  int
+	baseSize  int               // +checklocks:mu
 
 	// climit bounds the number of concurrent outgoing sends dispatched by flush.
 	climit chan struct{}

@@ -70,6 +70,24 @@ func (t *Test) Method() StackTrace {
 	return CaptureWithRedaction(0)
 }
 
+type valueReceiver struct{}
+
+//go:noinline
+func (valueReceiver) captureStack() StackTrace {
+	return CaptureWithRedaction(0)
+}
+
+func TestStackValueReceiver(t *testing.T) {
+	stack := valueReceiver{}.captureStack()
+	require.NotEmpty(t, stack)
+
+	frame := stack[0]
+	require.Equal(t, "github.com/DataDog/dd-trace-go/v2/internal/stacktrace", frame.Namespace)
+	require.Equal(t, "valueReceiver", frame.ClassName)
+	require.Equal(t, "captureStack", frame.Function)
+	require.Contains(t, Format(stack[:1]), "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.valueReceiver.captureStack\n")
+}
+
 func TestStackMethodReceiver(t *testing.T) {
 	test := &Test{}
 	stack := test.Method()
@@ -200,10 +218,25 @@ func TestParseSymbol(t *testing.T) {
 			"*Test",
 			"Method",
 		}},
-		{"method-receiver", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(Test).Method", symbol{
+		{"method-receiver-parenthesized", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(Test).Method", symbol{
 			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
 			"Test",
 			"Method",
+		}},
+		{"method-receiver", "crypto.Hash.New", symbol{
+			"crypto",
+			"Hash",
+			"New",
+		}},
+		{"generic-method-receiver", "example.com/pkg.Value[...].Method", symbol{
+			"example.com/pkg",
+			"Value[...]",
+			"Method",
+		}},
+		{"generic-function", "example.com/pkg.Function[...]", symbol{
+			"example.com/pkg",
+			"",
+			"Function[...]",
 		}},
 		{"sample", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestGetPackageFromSymbol", symbol{
 			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
@@ -214,6 +247,31 @@ func TestParseSymbol(t *testing.T) {
 			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
 			"",
 			"TestGetPackageFromSymbol.func1",
+		}},
+		{"generated-wrapper", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestGetPackageFromSymbol.gowrap1", symbol{
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
+			"",
+			"TestGetPackageFromSymbol.gowrap1",
+		}},
+		{"inlined-closure", "example.com/pkg.Outer.Inlined.func1", symbol{
+			"example.com/pkg",
+			"",
+			"Outer.Inlined.func1",
+		}},
+		{"global-closure", "example.com/pkg.glob..func1", symbol{
+			"example.com/pkg",
+			"",
+			"glob..func1",
+		}},
+		{"package-init", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.init.0", symbol{
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
+			"",
+			"init.0",
+		}},
+		{"malformed-receiver", "example.com/pkg.(Value)", symbol{
+			"example.com/pkg",
+			"",
+			"(Value)",
 		}},
 		{"stdlib-sample", "os/exec.NewCmd", symbol{
 			"os/exec",
@@ -640,7 +698,7 @@ func TestFormat(t *testing.T) {
 		require.Equal(t, expected, result)
 	})
 
-	t.Run("frame with class", func(t *testing.T) {
+	t.Run("frame with pointer receiver", func(t *testing.T) {
 		stack := StackTrace{
 			{
 				Function:  "Method",
@@ -653,6 +711,22 @@ func TestFormat(t *testing.T) {
 
 		result := Format(stack)
 		expected := "github.com/example/pkg.(*MyStruct).Method\n\t/path/to/file.go:100"
+		require.Equal(t, expected, result)
+	})
+
+	t.Run("frame with value receiver", func(t *testing.T) {
+		stack := StackTrace{
+			{
+				Function:  "Method",
+				File:      "/path/to/file.go",
+				Line:      100,
+				Namespace: "github.com/example/pkg",
+				ClassName: "MyStruct",
+			},
+		}
+
+		result := Format(stack)
+		expected := "github.com/example/pkg.MyStruct.Method\n\t/path/to/file.go:100"
 		require.Equal(t, expected, result)
 	})
 

@@ -13,10 +13,7 @@
 package all
 
 import (
-	// Build-mode flag and the GLS storage woven into the runtime package.
-	_ "github.com/DataDog/dd-trace-go/v2/internal/otelc"
-
-	// Tracer lifecycle and the span GLS lifecycle.
+	// Core tracer (build-mode flag, tracer lifecycle, goroutine-local storage).
 	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	// AppSec operation GLS lifecycle.
