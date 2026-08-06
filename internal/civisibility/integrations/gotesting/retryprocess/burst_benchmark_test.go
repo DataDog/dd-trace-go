@@ -303,7 +303,11 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 	c.mu.Unlock()
 
 	firstPassByPackage := make(map[string]struct{})
-	parentPIDs := make(map[int]struct{})
+	type parentIdentity struct {
+		packageName string
+		pid         int
+	}
+	parentProcesses := make(map[parentIdentity]struct{})
 	childPIDs := make(map[int]struct{})
 	activeByPackage := make(map[string]int)
 	maximumByPackage := make(map[string]int)
@@ -313,7 +317,7 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 	for _, event := range events {
 		switch event.Kind {
 		case "parent_start":
-			parentPIDs[event.PID] = struct{}{}
+			parentProcesses[parentIdentity{packageName: event.Package, pid: event.PID}] = struct{}{}
 		case "first_pass_complete":
 			firstPassByPackage[event.Package] = struct{}{}
 			if event.received.After(lastFirstPass) {
@@ -354,7 +358,7 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 		elapsed:                  elapsed,
 		firstPass:                firstPass,
 		drain:                    max(elapsed-firstPass, 0),
-		parentProcesses:          len(parentPIDs),
+		parentProcesses:          len(parentProcesses),
 		parentFinishes:           parentFinishes,
 		firstPassCompletions:     len(firstPassByPackage),
 		childProcesses:           len(childPIDs),
@@ -917,6 +921,19 @@ func TestProcessRetryBurstMetricsUseEventOrderAndProcessIdentity(t *testing.T) {
 	}
 	if metrics.firstPass != 4*time.Millisecond || metrics.drain != 4*time.Millisecond {
 		t.Fatalf("durations = first-pass:%s drain:%s, want 4ms each", metrics.firstPass, metrics.drain)
+	}
+}
+
+func TestProcessRetryBurstMetricsDistinguishParentPIDReuseAcrossPackages(t *testing.T) {
+	start := time.Unix(100, 0)
+	collector := newProcessRetryBurstCollector(processRetryBurstScenario{})
+	collector.events = []processRetryBurstRecordedEvent{
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "parent_start", PID: 1}, received: start.Add(time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg01", Kind: "parent_start", PID: 1}, received: start.Add(2 * time.Millisecond)},
+	}
+	metrics := collector.metrics(start, 3*time.Millisecond, processRetryBurstResourceMetrics{}, "")
+	if metrics.parentProcesses != 2 {
+		t.Fatalf("parent processes = %d, want 2", metrics.parentProcesses)
 	}
 }
 
