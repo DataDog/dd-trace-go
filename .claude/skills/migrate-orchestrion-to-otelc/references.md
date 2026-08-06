@@ -44,15 +44,21 @@ These links point at `main`. CI builds with the version pinned as `OTELC_VERSION
 The otelc foundation, already written and passing. Closer to what you are doing than the upstream
 examples, because these rules target our own code and the hooks call dd-trace-go.
 
-- `internal/otelc/` — build-mode flag (`assign_value`) and the GLS storage woven into `runtime`
-  (`add_struct_fields` + `add_file` + `inject_code`, including `//go:linkname`).
-- `ddtrace/tracer/gls.otelc.yaml` — `add_struct_fields` plus four `inject_code` rules, with the
-  identifier-coupling guard test.
-- `ddtrace/tracer/otelc.yaml` — tracer lifecycle, and why it cannot use `add_file`.
+- `ddtrace/tracer/otelc.yaml` — every core rule in one file: build-mode flag (`assign_value`), the
+  GLS storage woven into `runtime` (`add_struct_fields` + `add_file` + `inject_code`, including
+  `//go:linkname`), the span GLS lifecycle, and the tracer lifecycle with why it cannot use
+  `add_file`. Worth reading before writing your own rules; a rule carries its own `target:`, so one
+  file can rewrite several packages.
+- `ddtrace/tracer/gls_otelc_identifiers_test.go` and the one in `instrumentation/appsec/dyngo` —
+  how to guard `inject_code` against a rename in the target.
 - `otelc/all/otel.instrumentation.go` and
   `internal/orchestrion/_integration/otel.instrumentation.go` — rule discovery. An application
   names `otelc/all` in the tool file at its own module root; otelc reads the tool file at that
   module's root and recurses into its imports, which is how rules reach packages an application
   cannot import itself.
+- `internal/apps/otelc-external-app` and `scripts/build_otelc_external_app.sh` — the guard that a
+  package your rules are read from is importable by a real user. Rules must not live under
+  `internal/`, because otelc blank-imports that package into the application's own main package. A
+  rule's `target:` may still be internal.
 - `.github/workflows/otelc.yml` — how the suites run in CI, which modules get tidied, and the
   pinned otelc version.
