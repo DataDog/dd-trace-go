@@ -265,8 +265,8 @@ func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, st
 	}
 	initializeRetryAttemptWriter(originalBase, rootBase, layout, true)
 	initializeRetryAttemptWriter(originalParentBase, parentBase, layout, false)
-	copyTypedField[bool](unsafe.Pointer(original), unsafe.Pointer(root), layout.denyParallel)
-	copyTypedField[bool](originalParentBase, unsafe.Pointer(parent), layout.denyParallel)
+	copyDenyParallelField(unsafe.Pointer(original), unsafe.Pointer(root), layout.denyParallel)
+	copyDenyParallelField(originalParentBase, unsafe.Pointer(parent), layout.denyParallel)
 	group.mu.Lock()
 	rootParallelObserved := group.rootParallelObserved
 	group.mu.Unlock()

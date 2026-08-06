@@ -67,6 +67,7 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseTestingInternalsCopyEquivalence(t)
 	exerciseTestingInternalsHelperMapIsolation(t)
 	exerciseTestingInternalsPrivatePointerAssignment(t)
+	exerciseDenyParallelFieldCompatibility(t)
 	exerciseBenchmarkFuncInstrumentationConcurrentWrites(t)
 	// These pure instrumentation assertions run under this existing top-level test
 	// so the subprocess span-count scenarios do not gain extra test spans.
@@ -76,6 +77,45 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseSlowEFDAbortTagging(t)
 	exerciseITRCoverageBackfillState(t)
 	exerciseNarrowingFlagParsing(t)
+}
+
+func exerciseDenyParallelFieldCompatibility(t *testing.T) {
+	t.Helper()
+
+	tests := []struct {
+		name string
+		typ  reflect.Type
+	}{
+		{name: "bool", typ: reflect.TypeFor[struct{ denyParallel bool }]()},
+		{name: "string", typ: reflect.TypeFor[struct{ denyParallel string }]()},
+	}
+	for _, test := range tests {
+		field, ok := denyParallelField(test.typ)
+		if !ok || !field.available || field.typ.Kind().String() != test.name {
+			t.Fatalf("expected supported denyParallel %s field, got field=%+v ok=%t", test.name, field, ok)
+		}
+	}
+
+	boolSource := struct{ denyParallel bool }{denyParallel: true}
+	boolTarget := struct{ denyParallel bool }{}
+	boolField, _ := denyParallelField(reflect.TypeOf(boolSource))
+	copyDenyParallelField(unsafe.Pointer(&boolSource), unsafe.Pointer(&boolTarget), boolField)
+	if !boolTarget.denyParallel {
+		t.Fatal("expected bool denyParallel value to be preserved")
+	}
+
+	stringSource := struct{ denyParallel string }{denyParallel: "t.Setenv"}
+	stringTarget := struct{ denyParallel string }{}
+	stringField, _ := denyParallelField(reflect.TypeOf(stringSource))
+	copyDenyParallelField(unsafe.Pointer(&stringSource), unsafe.Pointer(&stringTarget), stringField)
+	if stringTarget.denyParallel != stringSource.denyParallel {
+		t.Fatalf("expected string denyParallel value %q, got %q", stringSource.denyParallel, stringTarget.denyParallel)
+	}
+
+	field, ok := denyParallelField(reflect.TypeFor[struct{ denyParallel int }]())
+	if ok || field.available {
+		t.Fatalf("expected unsupported denyParallel field type, got field=%+v ok=%t", field, ok)
+	}
 }
 
 // TestGetInternalTestArray tests the getInternalTestArray function.
