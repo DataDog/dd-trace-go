@@ -228,6 +228,58 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 	}
 }
 
+// On the dual-header path (Datadog and W3C headers, same trace ID) the Datadog
+// context wins extraction, so the inbound ot= sampling decision parsed onto the
+// throwaway W3C context must be carried over. Otherwise re-composition strips it
+// and the OTel threshold is lost across the hop.
+func TestTextMapExtractDualHeaderPreservesOtel(t *testing.T) {
+	t.Setenv(envPropagationStyle, "datadog,tracecontext")
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	assert.NoError(err)
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		traceparentHeader:     "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:      "dd=s:1;p:2222222222222222,ot=rv:ef284ace7a91e1;th:e6666666666668,othervendor=t61rcWkgMzE",
+	})
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+	assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
+
+	// Inject into a fresh carrier and confirm the inbound ot= survives the hop.
+	out := TextMapCarrier(map[string]string{})
+	assert.NoError(tracer.Inject(sctx, out))
+	assert.Contains(out[tracestateHeader], "ot=rv:ef284ace7a91e1;th:e6666666666668")
+	assert.Contains(out[tracestateHeader], "othervendor=t61rcWkgMzE")
+}
+
+// OTel defines only rv/th in the `ot=` member today but reserves room for more
+// sub-keys. An inherited unknown sub-key must be forwarded verbatim rather than
+// dropped, so DD stays transparent to future additions.
+func TestTextMapForwardsUnknownOtelSubkeys(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	assert.NoError(err)
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1;p:2222222222222222,ot=rv:ef284ace7a91e1;th:e6666666666668;foo:bar",
+	})
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+
+	out := TextMapCarrier(map[string]string{})
+	assert.NoError(tracer.Inject(sctx, out))
+	assert.Contains(out[tracestateHeader], "ot=rv:ef284ace7a91e1;th:e6666666666668;foo:bar")
+}
+
 func TestTextMapPropagatorErrors(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
@@ -2655,6 +2707,16 @@ func TestExtractNoHeaders(t *testing.T) {
 			extractEnv:   "datadog,tracecontext",
 			extractFirst: true,
 		},
+		{
+			name:         "baggage only",
+			extractEnv:   "baggage",
+			extractFirst: false,
+		},
+		{
+			name:         "baggage only - extractFirst",
+			extractEnv:   "baggage",
+			extractFirst: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2763,6 +2825,57 @@ func BenchmarkExtractW3CUppercase(b *testing.B) {
 	}
 }
 
+// edgeRequestHeaders returns a realistic set of headers seen on an inbound
+// edge request, used by the baggage benchmarks below so the cost of scanning
+// past non-matching keys is represented, not just the cost of matching one.
+func edgeRequestHeaders() map[string]string {
+	return map[string]string{
+		"accept":          "application/json",
+		"accept-encoding": "gzip",
+		"user-agent":      "Go-http-client/1.1",
+		"host":            "api.example.com",
+		"x-forwarded-for": "10.0.0.1",
+		"x-request-id":    "5f2c1e2a-6b3d-4c8e-9b0a-1234567890ab",
+		"content-type":    "application/json",
+		"authorization":   "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+		"traceparent":     "00-00000000000000001111111111111111-2222222222222222-01",
+	}
+}
+
+// baggageHeaderValue includes a "+"/"%" escape so url.QueryUnescape actually
+// does work, instead of returning its input unchanged as it would for an
+// all-clean value.
+const baggageHeaderValue = "userId=amelie,session.id=789,serverNode=DF+28,region=us1"
+
+func BenchmarkExtractBaggage(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "baggage")
+
+	b.Run("TextMapCarrier", func(b *testing.B) {
+		propagator := NewPropagator(nil)
+		headers := edgeRequestHeaders()
+		headers["baggage"] = baggageHeaderValue
+		carrier := TextMapCarrier(headers)
+		b.ResetTimer()
+		for b.Loop() {
+			propagator.Extract(carrier)
+		}
+	})
+
+	b.Run("HTTPHeadersCarrier", func(b *testing.B) {
+		propagator := NewPropagator(nil)
+		h := http.Header{}
+		for k, v := range edgeRequestHeaders() {
+			h.Set(k, v)
+		}
+		h.Set("baggage", baggageHeaderValue)
+		carrier := HTTPHeadersCarrier(h)
+		b.ResetTimer()
+		for b.Loop() {
+			propagator.Extract(carrier)
+		}
+	})
+}
+
 // BenchmarkExtractDatadogNoHeaders exercises the common edge-request case of
 // no upstream Datadog trace headers at all, where extraction fails with
 // ErrSpanContextNotFound. See CACHE/alloc backlog item #3: propagator.extractTextMap
@@ -2790,11 +2903,14 @@ func BenchmarkExtractW3CNoHeaders(b *testing.B) {
 	}
 }
 
-// BenchmarkExtractBaggageNoHeaders documents that, unlike the datadog and W3C
-// extractors above, propagatorBaggage.extractTextMap has no allocation to
-// save on the no-headers path: its contract already returns a non-nil,
-// non-error *SpanContext even when no "baggage" header is present (an empty
-// baggage-only context), so a SpanContext must be allocated regardless.
+// BenchmarkExtractBaggageNoHeaders exercises the common edge-request case of
+// no "baggage" header at all. propagatorBaggage.extractTextMap now returns
+// (nil, nil) in that case instead of an allocated empty *SpanContext -- safe
+// because propagatorBaggage is unexported and both of its callers in
+// chainedPropagator already nil-check the result (extractBaggage and
+// extractIncomingSpanContext). Combined with the carrier-specific fast path
+// in lookupBaggageHeader that avoids the ForeachKey closure entirely, this
+// benchmark is 0 allocs/op.
 func BenchmarkExtractBaggageNoHeaders(b *testing.B) {
 	b.Setenv(envPropagationStyleExtract, "baggage")
 	propagator := NewPropagator(nil)
@@ -3053,6 +3169,28 @@ func TestMalformedTID(t *testing.T) {
 		v, _ := root.meta.Get(keyTraceID128)
 		assert.Equal("640cfd8d00000000", v)
 	})
+}
+
+// Inbound tracestate members may carry optional whitespace (OWS) after the
+// commas per the W3C spec. composeTracestate must strip the DD-managed dd= and
+// ot= members regardless of that whitespace, otherwise it re-emits them and
+// produces duplicate list-members (invalid tracestate).
+func TestComposeTracestateDropsManagedMembersWithOWS(t *testing.T) {
+	ctx := new(SpanContext)
+	ctx.trace = newTrace()
+	ctx.traceID = traceIDFrom64Bits(1)
+	ctx.spanID = 1
+	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+	ctx.trace.setOtelUpstream(0x1234567890abcd, true, 0, false, "")
+
+	// OWS after each comma, with the managed members not first in the list.
+	oldState := "vendorA=x, ot=rv:aabbccddeeff00, dd=s:9, vendorB=y"
+	got := composeTracestate(ctx, 1, oldState)
+
+	assert.Equal(t, 1, strings.Count(got, "dd="), "exactly one dd= member: %q", got)
+	assert.Equal(t, 1, strings.Count(got, "ot="), "exactly one ot= member: %q", got)
+	assert.Contains(t, got, "vendorA=x")
+	assert.Contains(t, got, "vendorB=y")
 }
 
 func BenchmarkComposeTracestate(b *testing.B) {
@@ -3571,6 +3709,36 @@ func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 		return true
 	})
 	assert.Len(t, got, 1)
+	assert.Equal(t, "xyz", got["item"])
+}
+
+// TestExtractBaggageMergesWithOTBaggagePrefix pins the merge branch in
+// extractIncomingSpanContext: when the Datadog extractor has already
+// populated ctx.baggage from a legacy "ot-baggage-<key>" header, the W3C
+// "baggage" header's items must be merged into that map, not silently
+// discarded or used to replace it wholesale.
+func TestExtractBaggageMergesWithOTBaggagePrefix(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:                  "12345",
+		DefaultParentIDHeader:                 "67890",
+		DefaultBaggageHeaderPrefix + "legacy": "old",
+		"baggage":                             "item=xyz",
+	})
+
+	ctx, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 2)
+	assert.Equal(t, "old", got["legacy"])
 	assert.Equal(t, "xyz", got["item"])
 }
 

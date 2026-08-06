@@ -8,12 +8,15 @@ package gocontrolplane
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -28,7 +31,8 @@ var _ proxy.HTTPBody = (*messageBody)(nil)
 type messageRequestHeaders struct {
 	*extproc.ProcessingRequest
 	*extproc.HttpHeaders
-	integration Integration
+	integration            Integration
+	trustGCLBXForwardedFor bool
 }
 
 func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.PseudoRequest, error) {
@@ -36,6 +40,13 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	if err := checkPseudoRequestHeaders(pseudoHeaders); err != nil {
 		return proxy.PseudoRequest{}, err
 	}
+
+	// Captured before mergeMetadataHeaders, which fills an absent X-Forwarded-For
+	// from the ext_proc stream's own metadata. The GCLB positional contract below
+	// describes the request that travelled through the load balancer, not the gRPC
+	// connection carrying this callout, so only the proxied request's own header
+	// may decide identity.
+	requestForwardedFor := headers["X-Forwarded-For"]
 
 	var remoteAddr string
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -45,6 +56,17 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	}
 
 	headers["Host"] = append(headers["Host"], pseudoHeaders[":authority"])
+
+	// X-Forwarded-For is deliberately left exactly as received, forged entries
+	// and all, so the WAF keeps inspecting the header the client actually sent.
+	// The trustworthy address travels beside it instead.
+	var clientIP netip.Addr
+	if m.component(ctx) == componentNameGCPServiceExtension {
+		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), requestForwardedFor, m.trustGCLBXForwardedFor); ok {
+			clientIP = trustedIP
+		}
+	}
+
 	return proxy.PseudoRequest{
 		Method:     pseudoHeaders[":method"],
 		Authority:  pseudoHeaders[":authority"],
@@ -52,7 +74,67 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 		Scheme:     pseudoHeaders[":scheme"],
 		Headers:    headers,
 		RemoteAddr: remoteAddr,
+		ClientIP:   clientIP,
 	}, nil
+}
+
+const (
+	// Envoy keys forwarded attributes by the filter's own name.
+	extProcAttributesNamespace = "envoy.filters.http.ext_proc"
+
+	// GCP rejects source.address as a forward attribute, so source.ip is the only
+	// infrastructure-provided address accepted here.
+	sourceIPAttribute = "source.ip"
+)
+
+func trustedClientIP(attributes map[string]*structpb.Struct, forwardedFor []string, gclbShape bool) (netip.Addr, bool) {
+	if sourceIP, ok := parseExtProcSourceIP(attributes); ok {
+		return sourceIP, true
+	}
+	if !gclbShape {
+		return netip.Addr{}, false
+	}
+	return gclbForwardedForClientIP(forwardedFor)
+}
+
+func parseExtProcSourceIP(attributes map[string]*structpb.Struct) (netip.Addr, bool) {
+	raw := attributes[extProcAttributesNamespace].GetFields()[sourceIPAttribute].GetStringValue()
+	if addrPort, err := netip.ParseAddrPort(raw); err == nil {
+		return addrPort.Addr().Unmap(), true
+	}
+	addr, err := netip.ParseAddr(raw)
+	if err != nil || addr.Zone() != "" {
+		return netip.Addr{}, false
+	}
+
+	return addr.Unmap(), true
+}
+
+// GCLB appends two entries of its own to whatever the client sent:
+//
+//	X-Forwarded-For: <client-supplied>,<client observed by GCLB>,<forwarding rule IP>
+//
+// Position, not address class, identifies the observed peer: the forwarding
+// rule may be public or private.
+func gclbForwardedForClientIP(forwardedFor []string) (netip.Addr, bool) {
+	entries := make([]string, 0, len(forwardedFor)+1)
+	for _, value := range forwardedFor {
+		for value != "" {
+			var entry string
+			entry, value, _ = strings.Cut(value, ",")
+			entries = append(entries, strings.TrimSpace(entry))
+		}
+	}
+	if len(entries) < 2 {
+		return netip.Addr{}, false
+	}
+
+	addr, err := netip.ParseAddr(entries[len(entries)-2])
+	if err != nil || addr.Zone() != "" {
+		return netip.Addr{}, false
+	}
+
+	return addr.Unmap(), true
 }
 
 func (m messageRequestHeaders) MessageType() proxy.MessageType {
