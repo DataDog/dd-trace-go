@@ -8,6 +8,7 @@ package llmobs_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -2127,9 +2128,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "env-test-app", ll.Config.MLApp)
 		assert.True(t, ll.Config.Enabled)
-		require.NotNil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should not be nil when set via env var")
-		assert.False(t, *ll.Config.AgentlessEnabled, "Should respect DD_LLMOBS_AGENTLESS_ENABLED=false")
-		assert.False(t, ll.Config.ResolvedAgentlessEnabled, "Should resolve to agentless=false")
+		assert.False(t, ll.Config.AgentlessEnabled, "Should respect DD_LLMOBS_AGENTLESS_ENABLED=false")
 
 		ctx := context.Background()
 		span, _ := ll.StartSpan(ctx, llmobs.SpanKindTask, "env-test-span", llmobs.StartSpanConfig{})
@@ -2177,19 +2176,20 @@ func TestLLMObsLifecycle(t *testing.T) {
 		// When agent supports evp_proxy/v2, should default to agentless=false
 		agent, err := tracertest.StartAgent(t)
 		require.NoError(t, err)
-		coll := llmobstest.New(t)
+		// Advertise evp_proxy/v2 support directly on the agent (not via
+		// llmobstest.Collector, which would set TestBaseURL and bypass
+		// resolution entirely).
+		agent.HandleTraces("/evp_proxy/v2/", func(io.Reader) []*agenttest.Span { return nil })
 		_, err = tracertest.Start(t, agent,
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp("agentless-test"),
 			tracer.WithLogStartup(false),
-			coll.TracerOption(),
 		)
 		require.NoError(t, err)
 
 		ll, err := llmobs.ActiveLLMObs()
 		require.NoError(t, err)
-		assert.Nil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should be nil when not explicitly set")
-		assert.False(t, ll.Config.ResolvedAgentlessEnabled, "Should default to agentless=false when agent supports evp_proxy")
+		assert.False(t, ll.Config.AgentlessEnabled, "Should default to agentless=false when agent supports evp_proxy")
 	})
 	t.Run("agentless-defaults-true-when-evp-proxy-unavailable", func(t *testing.T) {
 		// Set valid API key (32 chars, lowercase + numbers only)
@@ -2208,8 +2208,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 
 		ll, err := llmobs.ActiveLLMObs()
 		require.NoError(t, err)
-		assert.Nil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should be nil when not explicitly set")
-		assert.True(t, ll.Config.ResolvedAgentlessEnabled, "Should default to agentless=true when agent doesn't support evp_proxy")
+		assert.True(t, ll.Config.AgentlessEnabled, "Should default to agentless=true when agent doesn't support evp_proxy")
 	})
 	t.Run("agentless-fails-with-invalid-api-key", func(t *testing.T) {
 		// Set invalid API key (wrong length)
@@ -2254,25 +2253,6 @@ func TestLLMObsLifecycle(t *testing.T) {
 		_, err = llmobs.ActiveLLMObs()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "LLMObs is not enabled")
-	})
-	t.Run("explicit-agentless-overrides-default", func(t *testing.T) {
-		agent, err := tracertest.StartAgent(t)
-		require.NoError(t, err)
-		coll := llmobstest.New(t)
-		_, err = tracertest.Start(t, agent,
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("agentless-test"),
-			tracer.WithLLMObsAgentlessEnabled(false),
-			tracer.WithLogStartup(false),
-			coll.TracerOption(),
-		)
-		require.NoError(t, err)
-
-		ll, err := llmobs.ActiveLLMObs()
-		require.NoError(t, err)
-		require.NotNil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should not be nil when explicitly set")
-		assert.False(t, *ll.Config.AgentlessEnabled, "Explicit agentless=false should override default")
-		assert.False(t, ll.Config.ResolvedAgentlessEnabled, "Explicit agentless=false should override default")
 	})
 }
 
@@ -2747,4 +2727,60 @@ func TestFlushSync(t *testing.T) {
 			t.Fatal("FlushSync hung after Stop")
 		}
 	})
+}
+
+func TestResolveAgentlessEnabled(t *testing.T) {
+	trueVal, falseVal := true, false
+
+	tests := []struct {
+		name                string
+		agentlessEnabled    *bool
+		agentSupportsLLMObs bool
+		wantResolved        bool
+		wantErr             string
+	}{
+		{
+			name:                "unset defaults to agent mode when evp_proxy available",
+			agentlessEnabled:    nil,
+			agentSupportsLLMObs: true,
+			wantResolved:        false,
+		},
+		{
+			name:                "unset defaults to agentless when evp_proxy unavailable",
+			agentlessEnabled:    nil,
+			agentSupportsLLMObs: false,
+			wantResolved:        true,
+		},
+		{
+			name:                "explicit true is honored even without agent support",
+			agentlessEnabled:    &trueVal,
+			agentSupportsLLMObs: false,
+			wantResolved:        true,
+		},
+		{
+			name:                "explicit false is honored when agent supports evp_proxy",
+			agentlessEnabled:    &falseVal,
+			agentSupportsLLMObs: true,
+			wantResolved:        false,
+		},
+		{
+			name:                "explicit false errors when agent does not support llmobs",
+			agentlessEnabled:    &falseVal,
+			agentSupportsLLMObs: false,
+			wantErr:             "agent is not available or does not support LLMObs",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resolved, err := llmobs.ResolveAgentlessEnabled(tc.agentlessEnabled, tc.agentSupportsLLMObs)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantResolved, resolved)
+		})
+	}
 }

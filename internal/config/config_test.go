@@ -395,6 +395,11 @@ func getTestValueForType(t reflect.Type) any {
 	if t == reflect.TypeFor[*url.URL]() {
 		return &url.URL{Scheme: "http", Host: "test-agent:8126"}
 	}
+	// Optional tri-state bools (e.g. SetLLMObsAgentlessEnabled).
+	if t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Bool {
+		b := true
+		return &b
+	}
 
 	// Then check by kind
 	switch t.Kind() {
@@ -1600,5 +1605,58 @@ func TestSamplingRulesEnvPrecedenceOverCode(t *testing.T) {
 		cfg.SetTraceSamplingRules(otherRules, telemetry.OriginCode, ProductTracer)
 
 		assert.Equal(t, otherRules, cfg.TraceSamplingRules())
+	})
+}
+
+func TestLLMObsEnvVars(t *testing.T) {
+	t.Run("defaults when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		assert.False(t, cfg.LLMObsEnabled())
+		assert.Empty(t, cfg.LLMObsMLApp())
+		assert.Empty(t, cfg.LLMObsProjectName())
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("loads from env vars", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_LLMOBS_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_ML_APP", "my-app")
+		t.Setenv("DD_LLMOBS_PROJECT_NAME", "my-project")
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "false")
+
+		cfg := Get()
+		assert.True(t, cfg.LLMObsEnabled())
+		assert.Equal(t, "my-app", cfg.LLMObsMLApp())
+		assert.Equal(t, "my-project", cfg.LLMObsProjectName())
+		require.NotNil(t, cfg.LLMObsAgentlessEnabled())
+		assert.False(t, *cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unset stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Regression guard for the p.IsSet check in loadConfig: unset must stay
+		// nil (tri-state), not collapse to GetBool's zero-value false.
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unparseable value stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (nil), not silently coerced into an explicit false. Before the
+		// fix, IsSet only checked the string was non-empty, so GetBool's
+		// parse-error fallback to its default (false) was mistaken for an
+		// explicit false.
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "garbage")
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
 	})
 }
