@@ -194,16 +194,58 @@ jobs:
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
   # A single join point, so branch protection has one check to require.
+  # Catches breakage the suites above cannot see, because they are all
+  # applications inside this module: otelc pulling an internal package into the
+  # file it generates, and anything else that only fails for a real user.
+  external-app:
+    name: External Application Build
+    env:
+      GOWORK: 'off'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.4"
+          cache: true
+          cache-dependency-path: '**/go.mod'
+
+      - name: Install otelc binary
+        shell: bash
+        run: go install "go.opentelemetry.io/otelc/tool/cmd/otelc@${OTELC_VERSION}"
+
+      # Same reason as the integration-test lane: GitHub builds a candidate merge
+      # commit, so dependency updates landed on main since the branch was cut can
+      # leave these stale, and otelc fails with "updates to go.mod needed" for any
+      # module it reads.
+      - name: Run 'go mod tidy'
+        shell: bash
+        run: |-
+          source .github/workflows/apps/go-retry.sh
+          for dir in internal/apps/otelc-external-app otelc/all; do
+            retry_on_corruption go -C "${dir}" mod tidy
+          done
+
+      - name: Build an application outside this module
+        shell: bash
+        run: ./scripts/build_otelc_external_app.sh
+
   integration-test-done:
     name: OTelc Integration Tests
     needs:
       - integration-test
+      - external-app
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.integration-test.result == 'success'
+        if: needs.integration-test.result == 'success' && needs.external-app.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.integration-test.result != 'success'
+        if: needs.integration-test.result != 'success' || needs.external-app.result != 'success'
         run: echo "Failure!" && exit 1

@@ -51,6 +51,20 @@ type serviceExtensionConfig struct {
 	tls                  *tlsConfig
 }
 
+// trustGCLBXForwardedFor reports whether the published binary is running behind
+// a Google Cloud load balancer. UDS is documented for self-managed Envoy, whose
+// one-entry X-Forwarded-For append does not satisfy GCLB's positional contract.
+func trustGCLBXForwardedFor(config serviceExtensionConfig) bool {
+	return config.extensionSocketPath == ""
+}
+
+func integration(config serviceExtensionConfig) gocontrolplane.Integration {
+	if config.extensionSocketPath != "" {
+		return gocontrolplane.EnvoyIntegration
+	}
+	return gocontrolplane.GCPServiceExtensionIntegration
+}
+
 var log = NewLogger()
 
 func getDefaultEnvVars() map[string]string {
@@ -236,10 +250,11 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
 		gocontrolplane.AppsecEnvoyConfig{
-			Integration:          gocontrolplane.GCPServiceExtensionIntegration,
-			BlockingUnavailable:  config.observabilityMode,
-			Context:              ctx,
-			BodyParsingSizeLimit: config.bodyParsingSizeLimit,
+			Integration:            integration(config),
+			TrustGCLBXForwardedFor: trustGCLBXForwardedFor(config),
+			BlockingUnavailable:    config.observabilityMode,
+			Context:                ctx,
+			BodyParsingSizeLimit:   config.bodyParsingSizeLimit,
 		})
 
 	if config.extensionSocketPath != "" {
