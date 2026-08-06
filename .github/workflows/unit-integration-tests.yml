@@ -44,6 +44,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version: stable
@@ -228,6 +229,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
 
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -410,6 +412,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
