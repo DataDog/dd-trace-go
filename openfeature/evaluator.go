@@ -8,6 +8,7 @@ package openfeature
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -141,7 +142,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 }
 
 // evaluateConfiguredFlag evaluates a flag from a parsed configuration. Invalid
-// flags return the caller default. Missing flags return FLAG_NOT_FOUND.
+// SemVer comparands return PARSE_ERROR. Missing flags return FLAG_NOT_FOUND.
 func evaluateConfiguredFlag(
 	config *universalFlagsConfiguration,
 	flagKey string,
@@ -153,7 +154,14 @@ func evaluateConfiguredFlag(
 	if exists {
 		return evaluateFlag(flag, defaultValue, context, now)
 	}
-	if _, invalid := config.invalidFlags[flagKey]; invalid {
+	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
+		if errors.Is(configErr, errInvalidSemverComparand) {
+			return evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  fmt.Errorf("%w: invalid configuration for flag %q: %w", errParseError, flagKey, configErr),
+			}
+		}
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
 	return evaluationResult{
@@ -249,6 +257,9 @@ func evaluateCondition(condition *condition, context map[string]any) bool {
 		return !isOneOf(attributeValue, condition.Value)
 	case operatorGT, operatorGTE, operatorLT, operatorLTE:
 		return evaluateNumericCondition(attributeValue, condition.Value, condition.Operator)
+	case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+		operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+		return evaluateSemverCondition(attributeValue, condition.semverComparand, condition.Operator)
 	default:
 		return false
 	}
@@ -397,6 +408,40 @@ func evaluateNumericCondition(attributeValue any, conditionValue any, operator c
 		return attrNum < condNum
 	case operatorLTE:
 		return attrNum <= condNum
+	default:
+		return false
+	}
+}
+
+// evaluateSemverCondition evaluates semantic version comparison operators.
+func evaluateSemverCondition(attributeValue any, comparand *parsedSemver, operator conditionOperator) bool {
+	attribute, ok := attributeValue.(string)
+	if !ok {
+		return false
+	}
+	if comparand == nil {
+		return false
+	}
+
+	parsedAttribute, ok := parseSemver(attribute)
+	if !ok {
+		return false
+	}
+	ordering := compareSemver(parsedAttribute, *comparand)
+
+	switch operator {
+	case operatorSemverEQ:
+		return ordering == 0
+	case operatorSemverNEQ:
+		return ordering != 0
+	case operatorSemverLT:
+		return ordering < 0
+	case operatorSemverLTE:
+		return ordering <= 0
+	case operatorSemverGT:
+		return ordering > 0
+	case operatorSemverGTE:
+		return ordering >= 0
 	default:
 		return false
 	}

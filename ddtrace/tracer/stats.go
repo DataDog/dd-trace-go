@@ -130,11 +130,8 @@ func (s *otlpStatsSender) shouldObfuscate() bool {
 	return true
 }
 
-func (s *otlpStatsSender) peerTags(_ []string) []string {
-	// Custom OTLP peer tags aren't implemented yet (spec: "Out of scope for
-	// SDK implementation"); suppress agent-advertised peer tags instead of
-	// leaving stale DD-agent state on an OTLP-routed concentrator.
-	return []string{}
+func (s *otlpStatsSender) peerTags(agentPeerTags []string) []string {
+	return agentPeerTags
 }
 
 func (s *otlpStatsSender) httpRouteFallback() bool {

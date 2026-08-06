@@ -61,7 +61,7 @@ type (
 				FiveM   int `json:"5m"`
 				FiveS   int `json:"5s"`
 			} `json:"slow_test_retries"`
-			FaultySessionThreshold int `json:"faulty_session_threshold"`
+			FaultySessionThreshold *int `json:"faulty_session_threshold"`
 		} `json:"early_flake_detection"`
 		FlakyTestRetriesEnabled bool `json:"flaky_test_retries_enabled"`
 		ItrEnabled              bool `json:"itr_enabled"`

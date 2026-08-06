@@ -67,7 +67,9 @@
 // span counts across a mixed Datadog/OpenTelemetry trace. An inbound ot= is honored
 // and forwarded unchanged; non-probability decisions (manual keep, AppSec, or a
 // rate-limiter drop) omit the threshold. This is automatic, requires no configuration,
-// and leaves the existing Datadog propagation unchanged.
+// and leaves the existing Datadog propagation unchanged. When spans are exported over
+// OTLP, the same ot= member is carried on the span's trace_state and the W3C sampled
+// trace-flag is set, so the export matches what wire propagation would emit.
 //
 // To create spans, use the functions StartSpan and StartSpanFromContext. Both accept
 // StartSpanOptions that can be used to configure the span. A span that is started
