@@ -47,6 +47,11 @@ Rules with `target: main` fire in neither rung: under `go test` the package unde
 Before believing a green run, scan for **skipped** tests and check `matched.json` (see Cautions).
 `harness.Run` fails loudly on an unwoven build, but the GLS and foundation suites skip themselves.
 
+Before believing a red one, check who owns the missing spans. A suite often asserts spans produced
+by another contrib, so it cannot reach parity until that one is migrated too; grep the expected
+trace for `"component"` values that are not yours. That is a sequencing problem, not a gap, and the
+integration is not blocked. Say so, and do not open a PR until the suite is actually green.
+
 ## Build enough context first
 
 From the sources in `references.md`, learn:
@@ -76,7 +81,10 @@ Prefer hooks; inject raw code only when it must run inside the target package.
      `otelc.yml` or `*.otelc.yaml`. Each rule's `path:` is this package. otelc walks a named
      package's directory tree and stops at nested modules, so `otelc/all` must name this module
      directly.
-   - Not under `internal/`: `otelc/all` blank-imports it from outside the contrib's import prefix.
+   - Not under `internal/`. otelc blank-imports the packages it reads rules from into the
+     application's own main package, so a rule-carrying package under `internal/` builds here and
+     fails for every real user. `scripts/build_otelc_external_app.sh` guards this; a rule's
+     `target:` may still be internal, since targets are rewritten rather than imported.
    - State the hooks and the contrib both need is exported from the **contrib package**. The hook
      module cannot reach `contrib/<name>/v2/internal/...`.
    - Keep the hook layer thin. It is the only code that needs otelc to compile; everything else goes
@@ -87,12 +95,15 @@ Prefer hooks; inject raw code only when it must run inside the target package.
 6. Validate both rungs, and diff the otelc spans against the orchestrion ones.
 7. From the repository root, in a shell **without** `GOWORK=off` (some generators need the
    workspace, others set `GOWORK=off` for themselves):
-   - `make fix-modules`. Replace directives do not propagate from dependency modules, and CI fails
-     on an inconsistent module graph.
+   - `make fix-modules`, repeatedly until it stops changing files. It snapshots the module graph
+     once at start, so a brand new module needs two or three passes; the first often fails with
+     `unknown revision 000000000000`. Replace directives do not propagate from dependency modules,
+     and CI fails on an inconsistent module graph.
    - `make lint`, plus `golangci-lint run --disable=gocritic ./...` inside `contrib/<name>` and
      inside `internal/orchestrion/_integration`, which are linted separately.
    - `make generate`, and commit what it changes. A new contrib dependency updates
-     `internal/stacktrace/contribs_generated.go`.
+     `internal/stacktrace/contribs_generated.go`. Run `otelc cleanup` first: a stale `.otelc-build`
+     makes it fail with "expected exactly 1 package, got 0".
 8. Keep the PR description short. "Add otelc support for `<name>`" is usually the whole thing. Add a
    note only for an unmigrated aspect, a feature gap, an aspect reproduced by other means with the
    same observable behaviour, or tests added to pin down behaviour the migration relies on.
@@ -111,7 +122,18 @@ Prefer hooks; inject raw code only when it must run inside the target package.
 - Reuse the contrib. Functional and performance parity with minimal new code.
 - Definition-side double-firing: a hooked constructor that internally calls another hooked
   constructor fires both. Hook only the inner funnel, or add a re-entrancy guard.
-- `SetParam` and `SetReturnVal` do not work on a generic target function.
+- `SetParam` and `SetReturnVal` do not work on a generic target function. `SetReturnVal` also
+  panics in a before-only hook, because `returnVals` is allocated only for an after trampoline
+  (IDMPL-723). Pair before and after hooks and pass the value through `SetData`/`GetData`.
+- A hook that panics is swallowed by otelc's generated `recover()`: green build, green tests, no
+  instrumentation. Assume this whenever spans go missing without an error.
+- `inject_hooks` gives no init-ordering guarantee (IDMPL-719). The trampoline links through
+  `//go:linkname` and creates no import edge, so hooking a function that other packages call from
+  their own `init()` can run the hook before the hook module's own `init()`.
+- `target: $root` never matches `package main`, whose compile-time import path is the literal
+  string `main`. A call-site rule that must fire there needs a `$root` rule and a `main` rule.
+- Hook modules must pin `go.opentelemetry.io/otelc/pkg` to the commit behind the CLI's release tag
+  (IDMPL-722). There is no submodule tag, so plain `go mod tidy` drifts them onto HEAD.
 - Upstream limits hook imports to the target library, OpenTelemetry and the standard library, and
   expects hooks to honour `OTEL_GO_ENABLED_INSTRUMENTATIONS` / `OTEL_GO_DISABLED_INSTRUMENTATIONS`.
   Ours import the contrib and follow dd's own configuration instead; say so in the PR.

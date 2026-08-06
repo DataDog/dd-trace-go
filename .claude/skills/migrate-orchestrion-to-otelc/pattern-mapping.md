@@ -25,7 +25,7 @@ in `references.md`.
 | `function-call` | `where: {function_call: "import/path.Func"}` |
 | `struct-definition` | `where: {struct:}` |
 | `declaration-of`, `value-declaration` | `where: {identifier:, kind: var\|const}` |
-| `directive` (`dd:span`) | `where: {directive:}` with `expand_directive` |
+| `directive` (`dd:span`) | `where: {directive:}` with `expand_directive`, but the template reads only `{{FuncName}}`, not the directive's arguments (`feature-gaps.md`) |
 | `import-path`, `package-name`, `package-filter` | `target:`, exact or glob; `$root` for the module being built |
 | `test-main` | nothing. `target: test_main` is unsupported; `where.file.is_test` gates files inside a point-selector rule |
 | `all-of` | flat keys in one `where` are an implicit conjunction |
