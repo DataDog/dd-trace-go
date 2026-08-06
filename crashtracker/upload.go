@@ -28,9 +28,22 @@ const (
 	defaultSite          = "datadoghq.com"
 
 	uploadTimeout = 10 * time.Second
+
+	// uploadAttempts bounds how many times uploadReport tries to deliver a
+	// report before giving up. A crash report is a strictly one-shot payload:
+	// the monitor calls os.Exit(0) immediately after, with no later flush and
+	// no buffer to fall back on, so a single transient failure (the Agent
+	// restarting, a 503, a reset connection) would otherwise lose the report
+	// permanently.
+	uploadAttempts = 3
+
+	// uploadRetryBackoff is the base delay between upload attempts, scaled
+	// linearly by attempt number (500ms, 1s).
+	uploadRetryBackoff = 500 * time.Millisecond
 )
 
-// uploadReport sends a crash report to the Error Tracking intake.
+// uploadReport sends a crash report to the Error Tracking intake, retrying
+// transient failures.
 func uploadReport(cfg *config, r *Report) error {
 	body, err := json.Marshal(r)
 	if err != nil {
@@ -45,14 +58,39 @@ func uploadReport(cfg *config, r *Report) error {
 		return fmt.Errorf("crashtracker: compress report: %w", err)
 	}
 
+	var lastErr error
+	for attempt := range uploadAttempts {
+		if attempt > 0 {
+			time.Sleep(uploadRetryBackoff * time.Duration(attempt))
+		}
+		retryable, err := attemptUpload(cfg, compressed)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !retryable {
+			return err
+		}
+	}
+	return fmt.Errorf("crashtracker: upload failed after %d attempts: %w", uploadAttempts, lastErr)
+}
+
+// attemptUpload makes one upload attempt and reports whether a failure is
+// worth retrying. buildRequestAndClient is called fresh on every attempt
+// (rather than reusing one *http.Request) specifically so the request body
+// is rebuilt each time: an http.Request's body reader is consumed after use
+// and cannot simply be replayed on a retry.
+func attemptUpload(cfg *config, compressed []byte) (retryable bool, err error) {
 	req, client, err := buildRequestAndClient(cfg, compressed)
 	if err != nil {
-		return fmt.Errorf("crashtracker: build request: %w", err)
+		return false, fmt.Errorf("crashtracker: build request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("crashtracker: send report: %w", err)
+		// A transport-level failure (connection reset, DNS hiccup, the Agent
+		// mid-restart) might succeed on a later attempt.
+		return true, fmt.Errorf("crashtracker: send report: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -61,9 +99,12 @@ func uploadReport(cfg *config, r *Report) error {
 	// actually accepted by the intake, and this is the only check standing
 	// between that and silently treating the upload as successful.
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("crashtracker: intake returned %d", resp.StatusCode)
+		// 5xx and 429 are worth retrying; any other 4xx (bad request, invalid
+		// API key, ...) will fail identically on every attempt.
+		retryable := resp.StatusCode >= http.StatusInternalServerError || resp.StatusCode == http.StatusTooManyRequests
+		return retryable, fmt.Errorf("crashtracker: intake returned %d", resp.StatusCode)
 	}
-	return nil
+	return false, nil
 }
 
 // buildRequestAndClient builds an HTTP request and the matching client.
@@ -87,6 +128,10 @@ func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Clien
 			if site == "" {
 				site = defaultSite
 			}
+			// Tolerate DD_SITE supplied as a URL ("https://datadoghq.com")
+			// rather than a bare host, which would otherwise interpolate into
+			// a malformed intake URL (host position containing a full URL).
+			site = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(site, "https://"), "http://"), "/")
 			base = fmt.Sprintf(agentlessURLTemplate, site)
 		}
 		targetURL = base
