@@ -8,7 +8,9 @@ package export_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"slices"
@@ -1901,4 +1903,60 @@ func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
 	assert.Equal(t, 2, res.Sent+res.Failed+res.Dropped)
 	assert.Equal(t, 1, res.Sent)
 	assert.Equal(t, 1, res.Failed)
+}
+
+func ExampleClient_SubmitSpans() {
+	client, err := export.NewClient("my-ml-app",
+		export.WithDatadogIntake("datadoghq.com", "testtesttesttesttesttesttesttest"),
+		export.WithService("my-service"),
+		export.WithEnv("prod"),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	event := export.NewSpanEvent(
+		"1234567890",
+		"2345678901",
+		export.KindLLM,
+		export.WithTiming(time.Now().Add(-2*time.Second), 1500*time.Millisecond),
+		export.WithModel("gpt-4o", "openai"),
+		export.WithTextIO("hello", "hi there"),
+	)
+	event.Name = "chat"
+	event.Metrics = map[string]float64{"input_tokens": 12, "output_tokens": 8}
+
+	res, err := client.SubmitSpans(context.Background(), []export.SpanEvent{event})
+	if err != nil {
+		log.Printf("submit spans: %v", err)
+	}
+
+	fmt.Println(res.Sent, res.Dropped, res.Failed)
+	for _, ve := range res.ValidationErrors {
+		fmt.Println(ve.Index, ve.Code, ve.Reason)
+	}
+}
+
+func ExampleClient_SubmitEvaluations() {
+	client, err := export.NewClient("my-ml-app",
+		export.WithAgentURL("http://localhost:8126"),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	score := 0.87
+	res, err := client.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
+		SpanID:     "2345678901",
+		TraceID:    "1234567890",
+		Label:      "answer_quality",
+		ScoreValue: &score,
+		Assessment: "mostly correct",
+		Reasoning:  "cited two of three sources",
+	}})
+	if err != nil {
+		log.Printf("submit evaluations: %v", err)
+	}
+
+	fmt.Println(res.Sent, res.Dropped, res.Failed)
 }
