@@ -3,7 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-// Package export submits completed LLM Observability data without starting a tracer.
+// Package export submits completed LLM Observability spans and evaluations
+// directly to Datadog or through an Agent without starting a tracer.
 //
 // EXPERIMENTAL: This package may change or be removed without notice.
 package export
@@ -16,7 +17,6 @@ import (
 	"strings"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	llmconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
@@ -31,8 +31,8 @@ type clientConfig = llmconfig.Config
 // ClientOption configures a [Client] built by [NewClient].
 type ClientOption func(*clientConfig) error
 
-// WithDatadogIntake selects direct intake routing. Empty values use DD_SITE and
-// DD_API_KEY.
+// WithDatadogIntake selects direct intake routing. Empty values use the global
+// site and API key configuration.
 func WithDatadogIntake(site, apiKey string) ClientOption {
 	return func(cfg *clientConfig) error {
 		if err := setAgentless(cfg, true); err != nil {
@@ -59,7 +59,7 @@ func WithAgentURL(agentURL string) ClientOption {
 	}
 }
 
-// WithService overrides the global default service.
+// WithService sets the default service for spans without an explicit Service.
 func WithService(service string) ClientOption {
 	return func(cfg *clientConfig) error {
 		cfg.TracerConfig.Service = service
@@ -125,11 +125,11 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 
 	tc := &cfg.TracerConfig
 	if tc.Site == "" {
-		tc.Site = env.Get("DD_SITE")
+		tc.Site = global.Site()
 	}
 
 	if tc.APIKey == "" {
-		tc.APIKey = env.Get("DD_API_KEY")
+		tc.APIKey = global.APIKey()
 	}
 
 	cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
@@ -184,7 +184,7 @@ type submitSpansConfig struct {
 	service string
 }
 
-// WithCallService overrides the default service for one submission.
+// WithCallService sets the default service for spans in one submission.
 func WithCallService(service string) SubmitSpansOption {
 	return func(sc *submitSpansConfig) {
 		sc.service = service

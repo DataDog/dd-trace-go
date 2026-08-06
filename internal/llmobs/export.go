@@ -90,7 +90,7 @@ func ValidateExportSpan(event transport.LLMObsSpanEvent) *ExportValidationError 
 func isExportSpanKind(kind SpanKind) bool {
 	switch kind {
 	case SpanKindLLM, SpanKindAgent, SpanKindWorkflow, SpanKindTask,
-		SpanKindTool, SpanKindEmbedding, SpanKindRetrieval:
+		SpanKindTool, SpanKindEmbedding, SpanKindRetrieval, transport.SpanKindStep:
 		return true
 	default:
 		return false
@@ -111,11 +111,14 @@ func BuildExportSpan(event transport.LLMObsSpanEvent, cfg *config.Config, servic
 	span.SpanLinks = slices.Clone(event.SpanLinks)
 
 	ApplySpanEventDefaults(&span)
+	if span.Service == "" {
+		span.Service = service
+	}
 	errorType := ""
 	if span.Status == transport.SpanStatusError {
 		errorType, _ = span.Meta[metaKeyErrorType].(string)
 	}
-	for key, value := range standardSpanEventTags(cfg, cfg.MLApp, service, span.SessionID, span.Status, errorType, "") {
+	for key, value := range standardSpanEventTags(cfg, cfg.MLApp, span.Service, span.SessionID, span.Status, errorType, "") {
 		switch key {
 		case "service", "session_id":
 			span.Tags = replaceExportTag(span.Tags, key, value)

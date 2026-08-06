@@ -125,6 +125,15 @@ func newAgentClient(t *testing.T, fake *fakeTransport, agentURL, mlApp string, o
 	return c
 }
 
+func useFreshGlobalConfig(t *testing.T) {
+	t.Helper()
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() {
+		internalconfig.SetUseFreshConfig(false)
+		internalconfig.CreateNew()
+	})
+}
+
 func decode(t *testing.T, b []byte) map[string]any {
 	t.Helper()
 	var m map[string]any
@@ -232,15 +241,17 @@ func TestNewClient_GlobalDefaultsAndAPIOverrides(t *testing.T) {
 	global.SetVersion("global-version", internalconfig.OriginCode)
 
 	tests := []struct {
-		name       string
-		options    []export.ClientOption
-		wantTags   []string
-		unwantTags []string
-		noTagKeys  []string
+		name        string
+		options     []export.ClientOption
+		wantService string
+		wantTags    []string
+		unwantTags  []string
+		noTagKeys   []string
 	}{
 		{
-			name:     "global defaults",
-			wantTags: []string{"service:global-service", "env:global-env", "version:global-version"},
+			name:        "global defaults",
+			wantService: "global-service",
+			wantTags:    []string{"service:global-service", "env:global-env", "version:global-version"},
 		},
 		{
 			name: "API overrides",
@@ -249,8 +260,9 @@ func TestNewClient_GlobalDefaultsAndAPIOverrides(t *testing.T) {
 				export.WithEnv("api-env"),
 				export.WithVersion("api-version"),
 			},
-			wantTags:   []string{"service:api-service", "env:api-env", "version:api-version"},
-			unwantTags: []string{"service:global-service", "env:global-env", "version:global-version"},
+			wantService: "api-service",
+			wantTags:    []string{"service:api-service", "env:api-env", "version:api-version"},
+			unwantTags:  []string{"service:global-service", "env:global-env", "version:global-version"},
 		},
 		{
 			name: "explicit empty API values",
@@ -273,7 +285,13 @@ func TestNewClient_GlobalDefaultsAndAPIOverrides(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			tags := tagsOf(t, allSpans(t, fake.captured()[0].body)[0])
+			span := allSpans(t, fake.captured()[0].body)[0]
+			tags := tagsOf(t, span)
+			if tt.wantService == "" {
+				assert.NotContains(t, span, "service")
+			} else {
+				assert.Equal(t, tt.wantService, span["service"])
+			}
 			for _, tag := range tt.wantTags {
 				assert.Contains(t, tags, tag)
 			}
@@ -354,7 +372,7 @@ func TestSpanWireShape_Contract(t *testing.T) {
 
 	span := allSpans(t, fake.captured()[0].body)[0]
 	assert.ElementsMatch(t, []string{
-		"trace_id", "span_id", "parent_id", "session_id", "name",
+		"trace_id", "span_id", "parent_id", "session_id", "name", "service",
 		"start_ns", "duration", "status", "meta", "metrics", "tags", "span_links", "_dd",
 	}, keysOf(span), "top-level span wire keys drifted")
 
@@ -363,7 +381,7 @@ func TestSpanWireShape_Contract(t *testing.T) {
 		"span.kind", "model_name", "model_provider", "input", "output", "metadata",
 	}, keysOf(meta), "meta wire keys drifted")
 	assert.Equal(t, "llm", meta["span.kind"])
-	assert.NotContains(t, span, "service")
+	assert.Equal(t, "svc", span["service"])
 
 	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
@@ -426,7 +444,7 @@ func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	assert.Equal(t, "111", span["trace_id"])
 	assert.Equal(t, "222", span["span_id"])
 	assert.Equal(t, "undefined", span["parent_id"])
-	assert.NotContains(t, span, "service")
+	assert.Equal(t, "svc", span["service"])
 	assert.Equal(t, "chat", span["name"])
 	assert.Equal(t, "ok", span["status"])
 
@@ -680,6 +698,8 @@ func TestSubmitEvaluations_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 }
 
 func TestNewClient_FallsBackToEnv(t *testing.T) {
+	useFreshGlobalConfig(t)
+
 	t.Run("both from env", func(t *testing.T) {
 		t.Setenv("DD_SITE", "datadoghq.eu")
 		t.Setenv("DD_API_KEY", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -722,6 +742,33 @@ func TestNewClient_FallsBackToEnv(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "DD_API_KEY")
 	})
+}
+
+func TestNewClient_UsesGlobalIntakeConfig(t *testing.T) {
+	t.Cleanup(func() {
+		internalconfig.SetUseFreshConfig(false)
+		internalconfig.CreateNew()
+	})
+	t.Setenv("DD_SITE", "global.example")
+	t.Setenv("DD_API_KEY", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	internalconfig.SetUseFreshConfig(false)
+	internalconfig.CreateNew()
+
+	t.Setenv("DD_SITE", "environment.example")
+	t.Setenv("DD_API_KEY", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+	fake := &fakeTransport{}
+	c, err := export.NewClient("app",
+		export.WithHTTPClient(&http.Client{Transport: fake}),
+		export.WithDatadogIntake("", ""),
+	)
+	require.NoError(t, err)
+	_, err = c.SubmitSpans(context.Background(), []export.SpanEvent{spanEvent("t", "s", export.KindLLM)})
+	require.NoError(t, err)
+
+	req := fake.captured()[0]
+	assert.Equal(t, "https://llmobs-intake.global.example/api/v2/llmobs", req.url)
+	assert.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", req.headers.Get("DD-API-KEY"))
 }
 
 func TestSubmitSpans_OneEnvelopePerSpan(t *testing.T) {
@@ -872,6 +919,7 @@ func TestSubmitSpans_AcceptsEveryExportableKind(t *testing.T) {
 		export.KindAgent,
 		export.KindWorkflow,
 		export.KindTask,
+		export.KindStep,
 		export.KindTool,
 		export.KindEmbedding,
 		export.KindRetrieval,
@@ -1049,7 +1097,7 @@ func TestSubmitSpans_WithCallServiceOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
-	assert.NotContains(t, span, "service")
+	assert.Equal(t, "call-svc", span["service"])
 	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
@@ -1310,6 +1358,7 @@ func TestSubmit_EmptyInput(t *testing.T) {
 }
 
 func TestNewClient_RequiresAPIKeyForDirectRoute(t *testing.T) {
+	useFreshGlobalConfig(t)
 	t.Setenv("DD_API_KEY", "")
 	_, err := export.NewClient("app", export.WithDatadogIntake("datadoghq.com", ""))
 	assert.Error(t, err)
@@ -1560,7 +1609,23 @@ func TestSubmitSpans_ServiceTagReplacesStale(t *testing.T) {
 	assert.Contains(t, tags, "service:svc")
 	assert.NotContains(t, tags, "service:stale")
 	assert.Contains(t, tags, "team:ml")
-	assert.NotContains(t, span, "service")
+	assert.Equal(t, "svc", span["service"])
+}
+
+func TestSubmitSpans_EventServiceOverridesClientDefault(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app", export.WithService("client-svc"))
+	event := spanEvent("t", "s", export.KindStep, withSpanTags("service:stale"))
+	event.Service = "event-svc"
+
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{event})
+	require.NoError(t, err)
+
+	span := allSpans(t, fake.captured()[0].body)[0]
+	assert.Equal(t, "event-svc", span["service"])
+	assert.Contains(t, tagsOf(t, span), "service:event-svc")
+	assert.NotContains(t, tagsOf(t, span), "service:client-svc")
+	assert.Equal(t, "step", span["meta"].(map[string]any)["span.kind"])
 }
 
 func TestSubmitSpans_UsesExistingMetricsMap(t *testing.T) {
