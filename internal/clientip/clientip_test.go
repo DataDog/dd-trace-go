@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package httpsec
+package clientip
 
 import (
 	"fmt"
@@ -382,12 +382,12 @@ func TestClientIPExtraction(t *testing.T) {
 					}
 
 					// Default list to use - the tests rely on x-forwarded-for only when using this default list
-					monitoredHeaders := []string{"x-client-ip", "x-forwarded-for", "true-client-ip"}
+					monitoredHdrs := []string{"x-client-ip", "x-forwarded-for", "true-client-ip"}
 					if tc.clientIPHeaders != nil {
-						monitoredHeaders = tc.clientIPHeaders
+						monitoredHdrs = tc.clientIPHeaders
 					}
-					remoteIP, clientIP := ClientIP(headers, hasCanonicalMIMEHeaderKeys, tc.remoteAddr, monitoredHeaders)
-					tags := ClientIPTagsFor(remoteIP, clientIP)
+					remoteIP, clientIP := resolveWith(headers, hasCanonicalMIMEHeaderKeys, tc.remoteAddr, monitoredHdrs)
+					tags := TagsFor(tc.remoteAddr, clientIP)
 					if tc.expectedIP.IsValid() {
 						expectedIP := tc.expectedIP.String()
 						require.Equal(t, expectedIP, clientIP.String())
@@ -532,7 +532,7 @@ func BenchmarkClientIP(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				ClientIP(tc.hdrs, true, "192.168.1.1:8080", monitoredHdrs)
+				resolveWith(tc.hdrs, true, "192.168.1.1:8080", monitoredHdrs)
 			}
 		})
 	}
