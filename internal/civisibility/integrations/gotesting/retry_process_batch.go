@@ -15,10 +15,13 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -31,9 +34,12 @@ const (
 	processRetryBatchManifestMode = 0o600
 )
 
+var errProcessRetryBatchFailed = errors.New("process retry batch failed")
+
 type processRetryBatchTestConfig struct {
-	TestName          string `json:"test_name"`
-	InvocationOrdinal uint64 `json:"invocation_ordinal,omitempty"`
+	TestName          string   `json:"test_name"`
+	InvocationOrdinal uint64   `json:"invocation_ordinal,omitempty"`
+	DisabledSubtests  []string `json:"disabled_subtests,omitempty"`
 }
 
 type processRetryBatchConfig struct {
@@ -67,6 +73,7 @@ func processRetryBatchChildConfig(root processRetryChildConfig, index int, test 
 		ObservedGOMAXPROCS:     root.ObservedGOMAXPROCS,
 		BatchChild:             true,
 		CollectPerTestCoverage: root.Batch != nil && root.Batch.CollectPerTestCoverage,
+		batchTest:              &test,
 	}
 }
 
@@ -127,6 +134,29 @@ func validateProcessRetryBatchConfig(cfg *processRetryBatchConfig) error {
 		seen[test.TestName] = struct{}{}
 	}
 	return nil
+}
+
+func disabledProcessRetrySubtests(identity testIdentity, modules *net.TestManagementTestsResponseDataModules) []string {
+	if modules == nil {
+		return nil
+	}
+	module, ok := modules.Modules[identity.ModuleName]
+	if !ok {
+		return nil
+	}
+	suite, ok := module.Suites[identity.SuiteName]
+	if !ok {
+		return nil
+	}
+	prefix := identity.FullName + "/"
+	var disabled []string
+	for name, test := range suite.Tests {
+		if strings.HasPrefix(name, prefix) && test.Properties.Disabled && !test.Properties.AttemptToFix {
+			disabled = append(disabled, name)
+		}
+	}
+	slices.Sort(disabled)
+	return disabled
 }
 
 type deferredProcessRetryBatchRunner func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult
@@ -211,10 +241,15 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		Tests:                  make([]processRetryBatchTestConfig, 0, len(groups)),
 		CollectPerTestCoverage: coverage.CanCollectPerTestCoverage(),
 	}
+	var testManagementData *net.TestManagementTestsResponseDataModules
+	if settings := integrations.GetSettings(); settings != nil && settings.SubtestFeaturesEnabled {
+		testManagementData = integrations.GetTestManagementTestsData()
+	}
 	for _, group := range groups {
 		batch.Tests = append(batch.Tests, processRetryBatchTestConfig{
 			TestName:          group.identity.FullName,
 			InvocationOrdinal: group.invocationOrdinal,
+			DisabledSubtests:  disabledProcessRetrySubtests(group.identity, testManagementData),
 		})
 	}
 	parentDeadline, parentDeadlineOK := earliestDeferredProcessRetryDeadline(groups)
@@ -274,10 +309,37 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		}
 		completed[group] = attempt
 	}
+	preserveProcessRetryBatchFailure(processAttempt, groups, completed)
 	if processAttempt.Cleanup != nil {
 		processAttempt.Cleanup()
 	}
 	return completed, missing
+}
+
+func preserveProcessRetryBatchFailure(
+	processAttempt processRetryAttemptResult,
+	groups []*deferredProcessRetryGroup,
+	completed map[*deferredProcessRetryGroup]processRetryAttemptResult,
+) {
+	if !processAttempt.ExitStatusObserved || processAttempt.ExitCode == 0 {
+		return
+	}
+	for _, attempt := range completed {
+		if effectiveProcessRetryStatus(attempt, false).Failed {
+			return
+		}
+	}
+	for _, group := range groups {
+		attempt, ok := completed[group]
+		if !ok {
+			continue
+		}
+		attempt.ExitCode = processAttempt.ExitCode
+		attempt.ExitStatusObserved = true
+		attempt.Err = errors.Join(processAttempt.Err, errProcessRetryBatchFailed)
+		completed[group] = attempt
+		return
+	}
 }
 
 func earliestDeferredProcessRetryDeadline(groups []*deferredProcessRetryGroup) (time.Time, bool) {

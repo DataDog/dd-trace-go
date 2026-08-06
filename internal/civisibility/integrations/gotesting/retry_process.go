@@ -115,6 +115,7 @@ type processRetryChildConfig struct {
 	Batch                  *processRetryBatchConfig
 	BatchChild             bool
 	CollectPerTestCoverage bool
+	batchTest              *processRetryBatchTestConfig
 	controlConfig          processRetryControlConfig
 	controlConfigLoaded    bool
 }
@@ -3595,6 +3596,11 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 				}
 			}
 		})
+		if root, ok := owner.test.(*processRetryNoopTest); ok && root.cfg.batchTest != nil && slices.Contains(root.cfg.batchTest.DisabledSubtests, t.Name()) {
+			reason := constants.TestDisabledSkipReason
+			execMeta.processRetrySkipReason.Store(&reason)
+			t.SkipNow()
+		}
 
 		bodyReturned := false
 		defer func() {

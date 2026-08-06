@@ -1223,8 +1223,9 @@ func TestDeferredProcessRetryBatchesFirstAttemptsByPhase(t *testing.T) {
 		return results
 	}
 
-	remaining := coordinator.drainDeferredFirstAttempts([]*deferredProcessRetryGroup{a, ordinary, b, c})
+	remaining, batchFailed := coordinator.drainDeferredFirstAttempts([]*deferredProcessRetryGroup{a, ordinary, b, c})
 
+	require.False(t, batchFailed)
 	require.Equal(t, [][]*deferredProcessRetryGroup{{a, b}, {c}}, batches)
 	require.Equal(t, []*deferredProcessRetryGroup{ordinary}, remaining)
 	require.Len(t, recorder.tests, 3)
@@ -1243,8 +1244,9 @@ func TestDeferredProcessRetryFirstAttemptDrainReturnsOriginalQueueWhenUnused(t *
 		return nil
 	}
 
-	got := coordinator.drainDeferredFirstAttempts(queue)
+	got, batchFailed := coordinator.drainDeferredFirstAttempts(queue)
 
+	require.False(t, batchFailed)
 	require.Equal(t, queue, got)
 	require.Same(t, &queue[0], &got[0])
 }

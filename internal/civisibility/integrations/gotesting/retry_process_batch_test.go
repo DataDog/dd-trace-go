@@ -7,12 +7,15 @@ package gotesting
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
@@ -21,7 +24,7 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 		Version:                processRetryBatchVersion,
 		CollectPerTestCoverage: true,
 		Tests: []processRetryBatchTestConfig{
-			{TestName: "TestA", InvocationOrdinal: 11},
+			{TestName: "TestA", InvocationOrdinal: 11, DisabledSubtests: []string{"TestA/disabled"}},
 			{TestName: "TestB", InvocationOrdinal: 12},
 		},
 	}
@@ -33,13 +36,14 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	require.Equal(t, want, got)
 	child := processRetryBatchChildConfig(processRetryChildConfig{
 		ResultPath: path, Attempt: 1, RetryReason: processRetryBatchReason, MRunEpoch: 7, Batch: got,
-	}, 1, got.Tests[1])
-	require.Equal(t, "TestB", child.TestName)
+	}, 0, got.Tests[0])
+	require.Equal(t, "TestA", child.TestName)
 	require.Equal(t, 1, child.Attempt)
 	require.Equal(t, processRetryBatchReason, child.RetryReason)
 	require.Equal(t, uint64(7), child.MRunEpoch)
-	require.Equal(t, uint64(12), child.InvocationOrdinal)
+	require.Equal(t, uint64(11), child.InvocationOrdinal)
 	require.True(t, child.CollectPerTestCoverage)
+	require.Equal(t, []string{"TestA/disabled"}, child.batchTest.DisabledSubtests)
 }
 
 func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
@@ -57,6 +61,73 @@ func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
 			require.Error(t, validateProcessRetryBatchConfig(cfg))
 		})
 	}
+}
+
+func TestDisabledProcessRetrySubtests(t *testing.T) {
+	identity := newTestIdentity("module", "suite", "TestA")
+	modules := &net.TestManagementTestsResponseDataModules{Modules: map[string]net.TestManagementTestsResponseDataSuites{
+		"module": {Suites: map[string]net.TestManagementTestsResponseDataTests{
+			"suite": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+				"TestA/disabled": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
+				"TestA/enabled":  {},
+				"TestA/atf":      {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true, AttemptToFix: true}},
+				"TestB/disabled": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
+			}},
+		}},
+	}}
+
+	require.Equal(t, []string{"TestA/disabled"}, disabledProcessRetrySubtests(*identity, modules))
+}
+
+func TestPreserveProcessRetryBatchFailure(t *testing.T) {
+	a := deferredProcessRetryBatchGroup("TestA", 1)
+	b := deferredProcessRetryBatchGroup("TestB", 2)
+	processErr := errors.New("testmain teardown")
+	completed := map[*deferredProcessRetryGroup]processRetryAttemptResult{
+		a: deferredProcessRetryPassingAttempt(1),
+		b: deferredProcessRetryPassingAttempt(2),
+	}
+
+	preserveProcessRetryBatchFailure(processRetryAttemptResult{ExitCode: 3, ExitStatusObserved: true, Err: processErr}, []*deferredProcessRetryGroup{a, b}, completed)
+
+	require.Equal(t, "process_exit", effectiveProcessRetryStatus(completed[a], false).FailureKind)
+	require.ErrorIs(t, completed[a].Err, processErr)
+	require.ErrorIs(t, completed[a].Err, errProcessRetryBatchFailed)
+	require.Equal(t, processRetryStatusPass, effectiveProcessRetryStatus(completed[b], false).Status)
+}
+
+func TestProcessRetryBatchFailureFailsPackage(t *testing.T) {
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
+	require.True(t, coordinator.beginAdmission().commit(group))
+	coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		attempt := deferredProcessRetryPassingAttempt(1)
+		attempt.ExitCode = 1
+		attempt.Err = errProcessRetryBatchFailed
+		return map[*deferredProcessRetryGroup]processRetryAttemptResult{group: attempt}
+	}
+
+	summary := coordinator.drain(0)
+
+	require.True(t, summary.packageFailed)
+	require.True(t, summary.deferredFailed)
+	require.Equal(t, processRetryFailureExitCode, summary.exitCode)
+}
+
+func TestPreserveProcessRetryBatchFailureKeepsDecodedFailure(t *testing.T) {
+	a := deferredProcessRetryBatchGroup("TestA", 1)
+	b := deferredProcessRetryBatchGroup("TestB", 2)
+	completed := map[*deferredProcessRetryGroup]processRetryAttemptResult{
+		a: completedProcessRetryAttempt(processRetryResult{Status: processRetryStatusFail, Failed: true}),
+		b: deferredProcessRetryPassingAttempt(2),
+	}
+
+	preserveProcessRetryBatchFailure(processRetryAttemptResult{ExitCode: 1, ExitStatusObserved: true}, []*deferredProcessRetryGroup{a, b}, completed)
+
+	require.Equal(t, "test_fail", effectiveProcessRetryStatus(completed[a], false).FailureKind)
+	require.Equal(t, processRetryStatusPass, effectiveProcessRetryStatus(completed[b], false).Status)
 }
 
 func TestProcessRetryBatchConfigRejectsUnknownAndTrailingData(t *testing.T) {

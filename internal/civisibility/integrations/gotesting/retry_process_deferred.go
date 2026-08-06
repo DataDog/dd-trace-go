@@ -364,13 +364,15 @@ func (c *processRetryCoordinator) complete(nativeExitCode int, shuttingDown bool
 	var terminalPanic any
 	if !shuttingDown && !c.shutdownRequested() {
 		if !failfastLatched {
-			queue = c.drainDeferredFirstAttempts(queue)
+			var batchFailed bool
+			queue, batchFailed = c.drainDeferredFirstAttempts(queue)
 			outcome := c.drainScheduledGroups(queue)
-			deferredFailed = outcome.deferredFailed
+			deferredFailed = batchFailed || outcome.deferredFailed
 			failfastLatched = outcome.failfast
 			terminalPanic = outcome.terminalPanic
 		} else {
-			cancelDeferredProcessRetryGroups(c.drainDeferredFirstAttempts(queue), "failfast", false)
+			remaining, _ := c.drainDeferredFirstAttempts(queue)
+			cancelDeferredProcessRetryGroups(remaining, "failfast", false)
 		}
 		packageFailed = deferredFailed || packageFailed
 	} else {
@@ -404,9 +406,9 @@ func (c *processRetryCoordinator) complete(nativeExitCode int, shuttingDown bool
 	unregisterProcessRetryCoordinator(c)
 }
 
-func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredProcessRetryGroup) []*deferredProcessRetryGroup {
+func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredProcessRetryGroup) ([]*deferredProcessRetryGroup, bool) {
 	if len(queue) == 0 {
-		return nil
+		return nil, false
 	}
 	hasDeferredFirstAttempt := false
 	for _, group := range queue {
@@ -416,8 +418,9 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 		}
 	}
 	if !hasDeferredFirstAttempt {
-		return queue
+		return queue, false
 	}
+	batchFailed := false
 	remaining := make([]*deferredProcessRetryGroup, 0, len(queue))
 	groupsByPhase := make(map[uint64][]*deferredProcessRetryGroup)
 	phaseOrder := make([]uint64, 0)
@@ -444,6 +447,7 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 					FinishTime: time.Now(),
 				}
 			}
+			batchFailed = batchFailed || errors.Is(attempt.Err, errProcessRetryBatchFailed)
 			if group.applyDeferredFirstAttempt(attempt) {
 				group.deferredFirstAttempt = false
 				remaining = append(remaining, group)
@@ -456,7 +460,7 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 	slices.SortStableFunc(remaining, func(a, b *deferredProcessRetryGroup) int {
 		return cmp.Compare(a.invocationOrdinal, b.invocationOrdinal)
 	})
-	return remaining
+	return remaining, batchFailed
 }
 
 func (g *deferredProcessRetryGroup) applyDeferredFirstAttempt(attempt processRetryAttemptResult) bool {

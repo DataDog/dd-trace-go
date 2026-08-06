@@ -1101,6 +1101,28 @@ func TestProcessRetryChildSubtestErrorForwardsWithoutOverwritingTopLevelSkip(t *
 	require.Zero(t, spy.closeCalls.Load())
 }
 
+func TestProcessRetryChildSkipsDisabledSubtestBeforeBody(t *testing.T) {
+	owner := createTestMetadata(t, nil)
+	root := newProcessRetryNoopTest(t, processRetryChildConfig{
+		TestName:  t.Name(),
+		batchTest: &processRetryBatchTestConfig{DisabledSubtests: []string{t.Name() + "/disabled"}},
+	}, time.Now(), nil, nil, retryAttemptRaceErrors()).(*processRetryNoopTest)
+	owner.test = root
+	defer deleteTestMetadata(t)
+
+	bodyRan := false
+	require.True(t, t.Run("disabled", instrumentProcessRetryChildSubtest(func(*testing.T) {
+		bodyRan = true
+	})))
+
+	require.False(t, bodyRan)
+	require.Len(t, root.snapshotSubtests(), 1)
+	result := root.snapshotSubtests()[0]
+	require.Equal(t, processRetryStatusSkip, result.Status)
+	require.True(t, result.Skipped)
+	require.Equal(t, constants.TestDisabledSkipReason, result.SkipReason)
+}
+
 func TestProcessRetryChildCapturesMetadataWithoutSpanOwnership(t *testing.T) {
 	enableProcessRetryChildForTesting(t)
 
