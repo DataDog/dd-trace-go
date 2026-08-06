@@ -90,10 +90,12 @@ func parseCrashDump(dump []byte) *Report {
 	var stack *StackTrace
 	var threadName string
 	if crashed != nil {
-		// error.stack intentionally duplicates the crashed goroutine's frames
+		// error.stack intentionally repeats the crashed goroutine's frames
 		// already present in error.threads: the errorsintake schema requires
-		// error.stack as a distinct top-level field (see RFC 0011), so this
-		// copy is not redundant to trim away.
+		// error.stack as a distinct top-level field (see RFC 0011), so this is
+		// not redundant to trim away. Note this is a shallow copy — both views
+		// share one Frames backing array, so any future in-place rewriting of
+		// frames (scrubbing, path trimming) would affect both.
 		s := crashed.Stack
 		stack = &s
 		threadName = crashed.Name
@@ -145,6 +147,10 @@ func splitDump(dump []byte) (preamble []string, threads []Thread) {
 	}
 
 	// Find the first goroutine header; everything before it is the preamble.
+	// Note this also discards the frames of a leading "runtime stack:" block
+	// (emitted for stack overflow and for faults during runtime execution),
+	// since those precede any goroutine header. That is deliberate: the user
+	// goroutine below is the actionable stack for grouping and display.
 	start := len(lines)
 	for i, line := range lines {
 		if goroutineHeaderRe.MatchString(line) {
@@ -311,9 +317,11 @@ func crashingThread(threads []Thread) *Thread {
 }
 
 // capThreads bounds the number of goroutines included in a report to
-// maxReportThreads, always keeping the crashed goroutine. The errorsintake
-// schema has no field for "N goroutines omitted"; truncation is instead
-// observable via the monitor's diagnostic log (see runMonitor).
+// maxReportThreads, always keeping the crashed goroutine. On the truncating
+// path the crashed goroutine is hoisted to the front and the remainder keep
+// dump order; under the cap the input order is preserved as-is. The
+// errorsintake schema has no field for "N goroutines omitted"; truncation is
+// instead observable via the monitor's diagnostic log (see runMonitor).
 func capThreads(threads []Thread) []Thread {
 	if len(threads) <= maxReportThreads {
 		return threads
@@ -347,8 +355,12 @@ func capThreads(threads []Thread) []Thread {
 //     surrounding panic context.
 func parseSignal(preamble []string) *SigInfo {
 	for _, line := range preamble {
-		// Bracketed form: "[signal SIG…]"
-		if strings.Contains(line, "signal SIG") {
+		// Bracketed form: "[signal SIG…]". Anchored to the runtime's actual
+		// bracket rather than an unanchored substring test: a panic value that
+		// happens to contain the text "signal SIG..." (e.g. a message like
+		// "aborted: received signal SIGTERM before drain") would otherwise
+		// misclassify as that signal.
+		if strings.HasPrefix(strings.TrimSpace(line), "[signal ") {
 			nameMatch := signalNameRe.FindStringSubmatch(line)
 			if nameMatch == nil {
 				continue
@@ -416,10 +428,11 @@ func fatalErrorType(msg string) string {
 
 // errorMessage derives the human-readable error message from the preamble.
 func errorMessage(preamble []string, sigInfo *SigInfo) string {
-	// For signal crashes, prefer the "signal SIG..." line.
+	// For signal crashes, prefer the "[signal SIG...]" line. Anchored the same
+	// way as parseSignal, for the same reason.
 	if sigInfo != nil {
 		for _, line := range preamble {
-			if strings.Contains(line, "signal SIG") {
+			if strings.HasPrefix(strings.TrimSpace(line), "[signal ") {
 				return strings.Trim(strings.TrimSpace(line), "[]")
 			}
 		}
@@ -431,6 +444,10 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 		if strings.HasPrefix(line, "panic:") {
 			return collectPanicMessage(preamble, i)
 		}
+		// A "panic(<args>)" line is a stack frame, not a preamble line, so this
+		// branch is defensive only: in a dump the Go runtime produced, such a
+		// line always follows a goroutine header and is therefore parsed as a
+		// frame rather than reaching errorMessage.
 		if strings.HasPrefix(line, "panic(") {
 			return panicValue(line)
 		}

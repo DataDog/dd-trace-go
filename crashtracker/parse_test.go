@@ -205,6 +205,35 @@ func TestParseCrashDump(t *testing.T) {
 	}
 }
 
+func TestParseSignalQuit(t *testing.T) {
+	// SetCrashOutput captures SIGQUIT too (an operator Ctrl-\ or a diagnostic
+	// dump-all-goroutines signal), and the runtime reports it in the
+	// top-level "SIG…: …" form, e.g. "SIGQUIT: quit".
+	preamble := []string{"SIGQUIT: quit"}
+	got := parseSignal(preamble)
+	if got == nil {
+		t.Fatal("parseSignal returned nil, want a populated SigInfo")
+	}
+	if got.SiSignoHuman != "SIGQUIT" {
+		t.Errorf("SiSignoHuman = %q, want %q", got.SiSignoHuman, "SIGQUIT")
+	}
+	if got.SiSigno != 3 {
+		t.Errorf("SiSigno = %d, want 3", got.SiSigno)
+	}
+}
+
+func TestParseSignalIgnoresPanicMessageMentioningSignal(t *testing.T) {
+	// A panic value that happens to contain the text "signal SIG..." must not
+	// be misread as the runtime's own bracketed "[signal SIG…]" crash header.
+	preamble := []string{"panic: aborted: received signal SIGTERM before drain"}
+	if got := parseSignal(preamble); got != nil {
+		t.Errorf("parseSignal(%v) = %+v, want nil", preamble, got)
+	}
+	if got := errorType(preamble, nil); got != "panic" {
+		t.Errorf("errorType(%v, nil) = %q, want %q", preamble, got, "panic")
+	}
+}
+
 func TestParseCrashDumpCrashingGoroutineFrames(t *testing.T) {
 	// The panic fixture's crashing goroutine is goroutine 1 with four frames:
 	// panic, main.inner, main.middle, main.main.
@@ -309,6 +338,24 @@ func TestParseFramesCapsDeepStack(t *testing.T) {
 	}
 	if consumed != len(lines) {
 		t.Errorf("consumed = %d, want %d (all input lines, even past the cap)", consumed, len(lines))
+	}
+}
+
+func TestParseSignalDoesNotPopulateSiCodeHuman(t *testing.T) {
+	// Documents a known gap rather than masking it: si_code is signal- and
+	// platform-specific (SEGV_MAPERR, BUS_ADRALN, FPE_INTDIV, ...), needing the
+	// same kind of per-GOOS table this package already has for signalNumbers —
+	// deliberately not built here without the same verification rigor that
+	// went into signalNumbers, given how wrong an unverified one went for
+	// SIGBUS. If this ever gets implemented, this test should start failing,
+	// which is the correct prompt to update it alongside SigInfo's doc comment.
+	dump := readFixture(t, "sigsegv.txt")
+	r := parseCrashDump(dump)
+	if r.SigInfo == nil {
+		t.Fatal("SigInfo is nil")
+	}
+	if r.SigInfo.SiCodeHuman != "" {
+		t.Errorf("SiCodeHuman = %q, want empty (not yet implemented)", r.SigInfo.SiCodeHuman)
 	}
 }
 

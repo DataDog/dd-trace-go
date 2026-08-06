@@ -103,6 +103,25 @@ func TestBuildDDTagsNilConfig(t *testing.T) {
 	}
 }
 
+func TestBuildDDTagsOmitsZeroSignalFields(t *testing.T) {
+	// A top-level "SIG…: …" form (e.g. SIGQUIT) has no code=/addr= to parse,
+	// so SiCode/SiSigno stay at their zero value — which must be omitted from
+	// ddtags exactly like the JSON view omits them (omitempty), not rendered
+	// as a literal "0" that the JSON view disagrees with.
+	r := newTestCompleteReport()
+	r.SigInfo = &SigInfo{SiSignoHuman: "SIGQUIT"}
+	tags := buildDDTags(&config{}, r)
+
+	for _, absent := range []string{"si_code:", "si_signo:"} {
+		if strings.Contains(tags, absent) {
+			t.Errorf("buildDDTags() = %q, want it to omit %q for an unset signal field", tags, absent)
+		}
+	}
+	if !strings.Contains(tags, "si_signo_human_readable:SIGQUIT") {
+		t.Errorf("buildDDTags() = %q, want it to contain %q", tags, "si_signo_human_readable:SIGQUIT")
+	}
+}
+
 func TestBuildDDTagsIncomplete(t *testing.T) {
 	r := newTestCompleteReport()
 	r.Error.Stack.Incomplete = true
@@ -113,6 +132,11 @@ func TestBuildDDTagsIncomplete(t *testing.T) {
 }
 
 func TestBuildDDTagsSignalTags(t *testing.T) {
+	// SiCodeHuman is set here to test buildDDTags' own rendering in isolation;
+	// parseSignal does not currently populate it (see
+	// TestParseSignalDoesNotPopulateSiCodeHuman), so this value cannot yet
+	// arise from a real parsed crash. si_code_human_readable is therefore
+	// declared and rendered but never actually emitted with a value today.
 	r := newTestCompleteReport()
 	r.SigInfo = &SigInfo{
 		SiAddr:       "0x0",

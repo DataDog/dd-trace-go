@@ -26,7 +26,7 @@ const dataSchemaVersion = "1.8"
 
 // Report is the errorsintake payload sent to Datadog Error Tracking on a crash.
 type Report struct {
-	Timestamp int64    `json:"timestamp"` // unix ms at crash time
+	Timestamp int64    `json:"timestamp"` // unix ms when the monitor built the report (no crash time is available in the dump)
 	DDSource  string   `json:"ddsource"`  // "crashtracker"
 	DDTags    string   `json:"ddtags"`    // service,env,version,language_name:go,data_schema_version:...
 	Error     Error    `json:"error"`
@@ -80,8 +80,13 @@ type OSInfo struct {
 
 // SigInfo holds UNIX signal details for signal-triggered crashes.
 type SigInfo struct {
-	SiAddr       string `json:"si_addr,omitempty"`
-	SiCode       int    `json:"si_code,omitempty"`
+	SiAddr string `json:"si_addr,omitempty"`
+	SiCode int    `json:"si_code,omitempty"`
+	// SiCodeHuman is declared to match libdatadog's schema, but parseSignal
+	// does not currently populate it: the code-to-name mapping (SEGV_MAPERR,
+	// BUS_ADRALN, FPE_INTDIV, ...) is both signal- and platform-specific,
+	// needing the same kind of per-GOOS table as signalNumbers. Always empty
+	// today; see TestParseSignalDoesNotPopulateSiCodeHuman.
 	SiCodeHuman  string `json:"si_code_human_readable,omitempty"`
 	SiSigno      int    `json:"si_signo,omitempty"`
 	SiSignoHuman string `json:"si_signo_human_readable,omitempty"`
@@ -110,6 +115,14 @@ func buildDDTags(cfg *config, r *Report) string {
 		writeTag(key, strconv.FormatBool(value))
 	}
 	writeInt := func(key string, value int) {
+		// Skip zero to match the JSON model, where si_code/si_signo are
+		// omitempty: zero here always means "not parsed from the dump" (both
+		// fields are only ever set from a parsed value), never a real signal
+		// or code value, so the two views must not disagree over whether the
+		// tag is present.
+		if value == 0 {
+			return
+		}
 		writeTag(key, strconv.Itoa(value))
 	}
 
