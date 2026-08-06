@@ -35,6 +35,13 @@ import (
 // Implementations handle a specific wire format (e.g. msgpack v0.4 or binary v1.0).
 type TraceHandler func(io.Reader) []*Span
 
+// statsPattern is the agent's client-side stats endpoint. New always registers
+// a no-op handler for it: SetInfoEndpoints lets a test advertise this path via
+// /info without a matching HandleTraces call, and the real agent's discovery
+// contract means "advertised" implies "reachable" — a test that advertises
+// stats support should not get spurious 404s when the tracer flushes stats.
+const statsPattern = "/v0.6/stats"
+
 // Info holds agent configuration returned to the tracer on flush responses,
 // such as per-service sampling rates.
 type Info struct {
@@ -112,6 +119,7 @@ func New() Agent {
 		info: newInfo(),
 	}
 	mux.HandleFunc("/info", a.handleInfo)
+	mux.HandleFunc(statsPattern, a.handleStats)
 	return a
 }
 
@@ -154,6 +162,14 @@ func (a *agent) handleInfo(w http.ResponseWriter, _ *http.Request) {
 	a.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"endpoints": endpoints, "client_drop_p0s": true})
+}
+
+// handleStats discards client-side stats payloads and returns 200 OK. It exists
+// so that advertising statsPattern via SetInfoEndpoints doesn't lead the tracer
+// into a route the mock never serves.
+func (a *agent) handleStats(w http.ResponseWriter, r *http.Request) {
+	io.Copy(io.Discard, r.Body)
+	w.WriteHeader(http.StatusOK)
 }
 
 // Addr returns the agent address to pass to the tracer via WithAgentAddr.
