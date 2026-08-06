@@ -39,7 +39,7 @@ func (b *blockingTransport) send(p payload) (io.ReadCloser, error) {
 
 func (b *blockingTransport) sendStats(*pb.ClientStatsPayload, int) error { return nil }
 
-func (b *blockingTransport) endpoint() string { return "http://localhost:9/v1.0/traces" }
+func (b *blockingTransport) endpoint(float64) string { return "http://localhost:9/v1.0/traces" }
 
 var _ ddTransport = (*blockingTransport)(nil)
 
