@@ -1066,20 +1066,15 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 	// an upstream optimization that landed in go1.24.  This results in ~10%
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
-	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
-	localRootSpan := span.Root()
-	if snap.ProfilerHotspotsEnabled && localRootSpan != nil {
-		spanID := localRootSpan.getSpanID()
-		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
-	}
+	labels := make([]string, 0, 2*2 /* 2 key value pairs */)
 	if snap.ProfilerHotspotsEnabled {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	if snap.ProfilerEndpoints && localRootSpan != nil {
-		resource, piiSafe := localRootSpan.getResourceWithPIISafe()
+	if root := span.Root(); snap.ProfilerEndpoints && root != nil {
+		resource, piiSafe := root.getResourceWithPIISafe()
 		if piiSafe {
 			labels = append(labels, traceprof.TraceEndpoint, resource)
-			if span == localRootSpan {
+			if span == root {
 				// Inform the profiler of endpoint hits. This is used for the unit of
 				// work feature. We can't use APM stats for this since the stats don't
 				// have enough cardinality (e.g. runtime-id tags are missing).
