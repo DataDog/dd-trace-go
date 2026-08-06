@@ -26,8 +26,7 @@ func MockGLS() func() {
 	prevSetDDGLS := setDDGLS
 	prevEnabled := enabled
 
-	tmp := contextStack(make(map[any][]any))
-	var glsValue any = &tmp
+	var glsValue any = &contextStack{}
 	getDDGLS = func() any { return glsValue }
 	setDDGLS = func(a any) { glsValue = a }
 	enabled = true

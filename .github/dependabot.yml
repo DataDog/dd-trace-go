@@ -3,6 +3,12 @@
 version: 2
 
 updates:
+  # Git submodules — keeps canonical external test fixtures current.
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
   # GitHub Actions — pins to commit SHAs already used in workflows;
   # Dependabot keeps those SHAs current, preventing stale action hijacks.
   - package-ecosystem: "github-actions"

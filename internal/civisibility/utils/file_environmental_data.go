@@ -36,6 +36,7 @@ type (
 		  "ci.pipeline.id": "",
 		  "ci.pipeline.url": "",
 		  "ci.pipeline.name": "",
+		  "ci.pipeline.display_name": "",
 		  "ci.pipeline.number": "",
 		  "ci.stage.name": "",
 		  "ci.job.name": "",
@@ -48,29 +49,30 @@ type (
 
 	// fileEnvironmentalData represents the environmental data for the complete test session.
 	fileEnvironmentalData struct {
-		WorkspacePath        string `json:"ci.workspace_path,omitempty"`
-		RepositoryURL        string `json:"git.repository_url,omitempty"`
-		CommitSHA            string `json:"git.commit.sha,omitempty"`
-		Branch               string `json:"git.branch,omitempty"`
-		Tag                  string `json:"git.tag,omitempty"`
-		CommitAuthorDate     string `json:"git.commit.author.date,omitempty"`
-		CommitAuthorName     string `json:"git.commit.author.name,omitempty"`
-		CommitAuthorEmail    string `json:"git.commit.author.email,omitempty"`
-		CommitCommitterDate  string `json:"git.commit.committer.date,omitempty"`
-		CommitCommitterName  string `json:"git.commit.committer.name,omitempty"`
-		CommitCommitterEmail string `json:"git.commit.committer.email,omitempty"`
-		CommitMessage        string `json:"git.commit.message,omitempty"`
-		CIProviderName       string `json:"ci.provider.name,omitempty"`
-		CIPipelineID         string `json:"ci.pipeline.id,omitempty"`
-		CIPipelineURL        string `json:"ci.pipeline.url,omitempty"`
-		CIPipelineName       string `json:"ci.pipeline.name,omitempty"`
-		CIPipelineNumber     string `json:"ci.pipeline.number,omitempty"`
-		CIStageName          string `json:"ci.stage.name,omitempty"`
-		CIJobName            string `json:"ci.job.name,omitempty"`
-		CIJobURL             string `json:"ci.job.url,omitempty"`
-		CINodeName           string `json:"ci.node.name,omitempty"`
-		CINodeLabels         string `json:"ci.node.labels,omitempty"`
-		DDCIEnvVars          string `json:"_dd.ci.env_vars,omitempty"`
+		WorkspacePath         string `json:"ci.workspace_path,omitempty"`
+		RepositoryURL         string `json:"git.repository_url,omitempty"`
+		CommitSHA             string `json:"git.commit.sha,omitempty"`
+		Branch                string `json:"git.branch,omitempty"`
+		Tag                   string `json:"git.tag,omitempty"`
+		CommitAuthorDate      string `json:"git.commit.author.date,omitempty"`
+		CommitAuthorName      string `json:"git.commit.author.name,omitempty"`
+		CommitAuthorEmail     string `json:"git.commit.author.email,omitempty"`
+		CommitCommitterDate   string `json:"git.commit.committer.date,omitempty"`
+		CommitCommitterName   string `json:"git.commit.committer.name,omitempty"`
+		CommitCommitterEmail  string `json:"git.commit.committer.email,omitempty"`
+		CommitMessage         string `json:"git.commit.message,omitempty"`
+		CIProviderName        string `json:"ci.provider.name,omitempty"`
+		CIPipelineID          string `json:"ci.pipeline.id,omitempty"`
+		CIPipelineURL         string `json:"ci.pipeline.url,omitempty"`
+		CIPipelineName        string `json:"ci.pipeline.name,omitempty"`
+		CIPipelineDisplayName string `json:"ci.pipeline.display_name,omitempty"`
+		CIPipelineNumber      string `json:"ci.pipeline.number,omitempty"`
+		CIStageName           string `json:"ci.stage.name,omitempty"`
+		CIJobName             string `json:"ci.job.name,omitempty"`
+		CIJobURL              string `json:"ci.job.url,omitempty"`
+		CINodeName            string `json:"ci.node.name,omitempty"`
+		CINodeLabels          string `json:"ci.node.labels,omitempty"`
+		DDCIEnvVars           string `json:"_dd.ci.env_vars,omitempty"`
 	}
 )
 
@@ -191,6 +193,10 @@ func applyEnvironmentalDataIfRequired(tags map[string]string) {
 		tags[constants.CIPipelineName] = envData.CIPipelineName
 	}
 
+	if envData.CIPipelineDisplayName != "" && tags[constants.CIPipelineDisplayName] == "" {
+		tags[constants.CIPipelineDisplayName] = envData.CIPipelineDisplayName
+	}
+
 	if envData.CIPipelineNumber != "" && tags[constants.CIPipelineNumber] == "" {
 		tags[constants.CIPipelineNumber] = envData.CIPipelineNumber
 	}
@@ -229,29 +235,30 @@ func createEnvironmentalDataFromTags(tags map[string]string) *fileEnvironmentalD
 	}
 
 	return &fileEnvironmentalData{
-		WorkspacePath:        tags[constants.CIWorkspacePath],
-		RepositoryURL:        tags[constants.GitRepositoryURL],
-		CommitSHA:            tags[constants.GitCommitSHA],
-		Branch:               tags[constants.GitBranch],
-		Tag:                  tags[constants.GitTag],
-		CommitAuthorDate:     tags[constants.GitCommitAuthorDate],
-		CommitAuthorName:     tags[constants.GitCommitAuthorName],
-		CommitAuthorEmail:    tags[constants.GitCommitAuthorEmail],
-		CommitCommitterDate:  tags[constants.GitCommitCommitterDate],
-		CommitCommitterName:  tags[constants.GitCommitCommitterName],
-		CommitCommitterEmail: tags[constants.GitCommitCommitterEmail],
-		CommitMessage:        tags[constants.GitCommitMessage],
-		CIProviderName:       tags[constants.CIProviderName],
-		CIPipelineID:         tags[constants.CIPipelineID],
-		CIPipelineURL:        tags[constants.CIPipelineURL],
-		CIPipelineName:       tags[constants.CIPipelineName],
-		CIPipelineNumber:     tags[constants.CIPipelineNumber],
-		CIStageName:          tags[constants.CIStageName],
-		CIJobName:            tags[constants.CIJobName],
-		CIJobURL:             tags[constants.CIJobURL],
-		CINodeName:           tags[constants.CINodeName],
-		CINodeLabels:         tags[constants.CINodeLabels],
-		DDCIEnvVars:          tags[constants.CIEnvVars],
+		WorkspacePath:         tags[constants.CIWorkspacePath],
+		RepositoryURL:         tags[constants.GitRepositoryURL],
+		CommitSHA:             tags[constants.GitCommitSHA],
+		Branch:                tags[constants.GitBranch],
+		Tag:                   tags[constants.GitTag],
+		CommitAuthorDate:      tags[constants.GitCommitAuthorDate],
+		CommitAuthorName:      tags[constants.GitCommitAuthorName],
+		CommitAuthorEmail:     tags[constants.GitCommitAuthorEmail],
+		CommitCommitterDate:   tags[constants.GitCommitCommitterDate],
+		CommitCommitterName:   tags[constants.GitCommitCommitterName],
+		CommitCommitterEmail:  tags[constants.GitCommitCommitterEmail],
+		CommitMessage:         tags[constants.GitCommitMessage],
+		CIProviderName:        tags[constants.CIProviderName],
+		CIPipelineID:          tags[constants.CIPipelineID],
+		CIPipelineURL:         tags[constants.CIPipelineURL],
+		CIPipelineName:        tags[constants.CIPipelineName],
+		CIPipelineDisplayName: tags[constants.CIPipelineDisplayName],
+		CIPipelineNumber:      tags[constants.CIPipelineNumber],
+		CIStageName:           tags[constants.CIStageName],
+		CIJobName:             tags[constants.CIJobName],
+		CIJobURL:              tags[constants.CIJobURL],
+		CINodeName:            tags[constants.CINodeName],
+		CINodeLabels:          tags[constants.CINodeLabels],
+		DDCIEnvVars:           tags[constants.CIEnvVars],
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 )
 
 func TestInitializeEnvironment_All(t *testing.T) {
@@ -70,6 +72,15 @@ func TestConfigureObservabilityMode_All(t *testing.T) {
 	unsetEnv("_DD_APPSEC_BLOCKING_UNAVAILABLE")
 	assert.NoError(t, configureObservabilityMode(true))
 	assert.Equal(t, "true", os.Getenv("_DD_APPSEC_BLOCKING_UNAVAILABLE"))
+}
+
+func TestTrustGCLBXForwardedFor(t *testing.T) {
+	assert.True(t, trustGCLBXForwardedFor(serviceExtensionConfig{}),
+		"the default published deployment is fronted by GCLB")
+	assert.False(t, trustGCLBXForwardedFor(serviceExtensionConfig{extensionSocketPath: "/var/run/dd-se.sock"}),
+		"UDS is the documented self-managed Envoy mode")
+	assert.Equal(t, gocontrolplane.GCPServiceExtensionIntegration, integration(serviceExtensionConfig{}))
+	assert.Equal(t, gocontrolplane.EnvoyIntegration, integration(serviceExtensionConfig{extensionSocketPath: "/var/run/dd-se.sock"}))
 }
 
 func TestLoadConfig_VariousCases(t *testing.T) {

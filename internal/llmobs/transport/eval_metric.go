@@ -80,7 +80,7 @@ func (c *Transport) PushEvalMetrics(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultLimits)
 	if err != nil {
 		return err
 	}

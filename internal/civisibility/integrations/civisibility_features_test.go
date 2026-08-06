@@ -7,6 +7,7 @@ package integrations
 
 import (
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,6 +16,21 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
+
+func TestAdditionalFeaturesInitializationPublishesLockFreeFastPath(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
+
+	additionalFeaturesInitializationOnce = sync.Once{}
+	additionalFeaturesInitializationOnce.Do(func() {})
+	require.False(t, additionalFeaturesInitialized.Load())
+
+	ensureAdditionalFeaturesInitialization("")
+	require.True(t, additionalFeaturesInitialized.Load())
+
+	ensureAdditionalFeaturesInitialization("")
+	require.True(t, additionalFeaturesInitialized.Load())
+}
 
 func TestSearchCommitsResponseMissingCommitsPreservesLocalOrder(t *testing.T) {
 	response := newSearchCommitsResponse(

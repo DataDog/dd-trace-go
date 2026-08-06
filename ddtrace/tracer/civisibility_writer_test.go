@@ -158,6 +158,7 @@ func TestCiVisibilityTraceWriterClosesHTTPResponseBody(t *testing.T) {
 		c.httpClient = server.Client()
 		c.ddTransport = &ciVisibilityTransport{
 			config:           c,
+			httpClient:       c.httpClient,
 			testCycleURLPath: server.URL,
 			headers:          map[string]string{"Content-Type": "application/msgpack"},
 			agentless:        false,
