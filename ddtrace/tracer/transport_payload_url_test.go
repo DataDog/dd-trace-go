@@ -29,7 +29,7 @@ func TestSendURLMatchesPayloadEvenAfterConfigChanges(t *testing.T) {
 	tr := newTracerTest(t, agent)
 	defer stopTracerTest(tr)
 
-	require.Equal(t, traceProtocolV1, tr.config.internalConfig.TraceProtocol(),
+	require.Equal(t, traceProtocolV1, tr.config.internalConfig.RequestedTraceProtocol(),
 		"sanity check: the mock agent advertises /v1.0/traces and /v0.6/stats, so v1 must survive newConfig")
 
 	w := newAgentTraceWriter(tr.config, newPrioritySampler(), tr.statsd)
@@ -37,7 +37,7 @@ func TestSendURLMatchesPayloadEvenAfterConfigChanges(t *testing.T) {
 
 	// Change the configured protocol out from under the already-encoded payload.
 	tr.config.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
-	require.Equal(t, traceProtocolV04, tr.config.internalConfig.TraceProtocol(), "sanity check: config did change")
+	require.Equal(t, traceProtocolV04, tr.config.internalConfig.RequestedTraceProtocol(), "sanity check: config did change")
 
 	w.add([]*Span{makeSpan(1)})
 	w.flush()
@@ -71,7 +71,7 @@ func TestSendReportsAPIErrorsWithCorrectEndpointTag(t *testing.T) {
 		setGlobalTracer(&NoopTracer{})
 	}()
 
-	require.Equal(t, traceProtocolV1, trc.config.internalConfig.TraceProtocol(), "sanity check: agent must resolve to v1")
+	require.Equal(t, traceProtocolV1, trc.config.internalConfig.RequestedTraceProtocol(), "sanity check: agent must resolve to v1")
 
 	p := newPayload(traceProtocolV1)
 	_, err = p.push(getTestTrace(1, 1)[0])
