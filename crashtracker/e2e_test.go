@@ -77,6 +77,25 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 		os.Exit(0)
+
+	case "panic-many-goroutines":
+		// Crash victim with more live goroutines than maxReportThreads, run
+		// with GOTRACEBACK=all (set by the test in this subprocess's env) so
+		// the crash dump actually records all of them, not just the crashing
+		// one. Exercises the real spawnMonitor/SIGPIPE-prone diagnostics path
+		// end to end at the goroutine count that previously lost the report
+		// entirely, not just capThreads in isolation.
+		if err := crashtracker.Start(); err != nil {
+			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
+			os.Exit(1)
+		}
+		const manyGoroutines = 150
+		block := make(chan struct{})
+		for range manyGoroutines {
+			go func() { <-block }()
+		}
+		time.Sleep(200 * time.Millisecond) // let the goroutines actually park before crashing
+		panic("e2e many-goroutines crash")
 	}
 	os.Exit(m.Run())
 }
@@ -121,6 +140,63 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	select {
 	case body := <-received:
 		assertCrashReport(t, body, "panic", "e2e test crash")
+
+	case <-time.After(15 * time.Second):
+		t.Fatal("timeout waiting for crash report from monitor")
+	}
+}
+
+// TestE2ECrashReport_ManyGoroutines proves a crash with more goroutines than
+// maxReportThreads still delivers a report end to end. This exercises the
+// real monitor process (spawnMonitor's diagnostics wiring included), not
+// just capThreads in isolation: it is the case that previously lost the
+// report entirely once the goroutine count crossed maxReportThreads, because
+// the monitor's own truncation-warning log line killed it with SIGPIPE
+// before it could upload (see the monitor.go stdout/stderr fix). GOTRACEBACK
+// must be set to "all" here, in the victim's environment before it starts,
+// since the default "single" only records the crashing goroutine — none of
+// the other e2e tests exercise multi-goroutine reports at all.
+func TestE2ECrashReport_ManyGoroutines(t *testing.T) {
+	t.Parallel()
+
+	received := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertCanonicalAgentRequest(t, r)
+		body := decompressGzipBody(t, r)
+		select {
+		case received <- body:
+		default:
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
+	cmd.Env = append(filterE2EEnv(os.Environ()),
+		e2eRoleEnv+"=panic-many-goroutines",
+		"DD_TRACE_AGENT_URL="+srv.URL,
+		"DD_CRASHTRACKING_ENABLED=true",
+		"GOTRACEBACK=all",
+	)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawn crash victim: %v", err)
+	}
+	_ = cmd.Wait()
+
+	select {
+	case body := <-received:
+		report := assertRFC0013Body(t, body)
+		errObj := report["error"].(map[string]any)
+		threads, _ := errObj["threads"].([]any)
+		// maxReportThreads=100 is the exact cap; the victim's own goroutines
+		// (150) plus runtime/testing-internal ones comfortably exceed it, so
+		// this proves truncation engaged rather than merely "some threads
+		// arrived".
+		if len(threads) != 100 {
+			t.Errorf("error.threads length = %d, want exactly 100 (the maxReportThreads cap)", len(threads))
+		}
 
 	case <-time.After(15 * time.Second):
 		t.Fatal("timeout waiting for crash report from monitor")
