@@ -31,7 +31,7 @@ rm -rf .otelc-build
 
 echo "==> otelc go build"
 if ! otelc go build -o /dev/null .; then
-	cat >&2 <<'EOF'
+  cat >&2 << 'EOF'
 
 ==> FAILED: an application outside this repository cannot be built with otelc.
 
@@ -39,7 +39,7 @@ Read the build output above for the cause. A common one is "use of internal
 package ... not allowed", which means the otelc rules are read from a package
 under internal/; move them to one any application can import.
 EOF
-	exit 1
+  exit 1
 fi
 
 # A build that instruments nothing also succeeds, so without this the check
@@ -47,23 +47,23 @@ fi
 # nothing, and null when it never got that far.
 MATCHED=".otelc-build/matched.json"
 if [[ ! -s "${MATCHED}" ]]; then
-	echo "==> FAILED: ${MATCHED} is missing or empty, so nothing was instrumented" >&2
-	exit 1
+  echo "==> FAILED: ${MATCHED} is missing or empty, so nothing was instrumented" >&2
+  exit 1
 fi
 CONTENT="$(tr -d '[:space:]' < "${MATCHED}")"
 if [[ "${CONTENT}" == "null" || "${CONTENT}" == "[]" ]]; then
-	echo "==> FAILED: the build succeeded but instrumented nothing:" >&2
-	cat "${MATCHED}" >&2
-	exit 1
+  echo "==> FAILED: the build succeeded but instrumented nothing:" >&2
+  cat "${MATCHED}" >&2
+  exit 1
 fi
 
 # Best effort, and only when otelc left its debug dump behind: the generated
 # file in the application's main package must not name an internal package.
 if [[ -d ".otelc-build/debug/main" ]]; then
-	if grep -rn 'github.com/DataDog/dd-trace-go/v2/internal/' ".otelc-build/debug/main" >&2; then
-		echo "==> FAILED: the generated main-package file imports an internal package" >&2
-		exit 1
-	fi
+  if grep -rn 'github.com/DataDog/dd-trace-go/v2/internal/' ".otelc-build/debug/main" >&2; then
+    echo "==> FAILED: the generated main-package file imports an internal package" >&2
+    exit 1
+  fi
 fi
 
 rm -rf .otelc-build
