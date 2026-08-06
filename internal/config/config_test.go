@@ -631,7 +631,7 @@ func TestOTLPExportMode(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		assert.False(t, cfg.OTLPExportMode(), "otlpExportMode should be false when DD_TRACE_AGENT_PROTOCOL_VERSION is explicitly set")
-		assert.Equal(t, TraceProtocolV1, cfg.TraceProtocol())
+		assert.Equal(t, TraceProtocolV1, cfg.RequestedTraceProtocol())
 	})
 
 	t.Run("DD_TRACE_AGENT_PROTOCOL_VERSION=0.4 still overrides OTEL_TRACES_EXPORTER", func(t *testing.T) {
@@ -645,7 +645,7 @@ func TestOTLPExportMode(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		assert.False(t, cfg.OTLPExportMode(), "otlpExportMode should be false when DD_TRACE_AGENT_PROTOCOL_VERSION is explicitly set, even to the default value")
-		assert.Equal(t, TraceProtocolV04, cfg.TraceProtocol())
+		assert.Equal(t, TraceProtocolV04, cfg.RequestedTraceProtocol())
 	})
 
 	t.Run("SetOTLPExportMode toggles mode", func(t *testing.T) {

@@ -331,7 +331,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Only the config is downgraded: the transport holds a URL per protocol and
 	// picks between them from the payload's own protocol at send time, so it has
 	// nothing left to keep in sync with this decision.
-	if c.internalConfig.TraceProtocol() == traceProtocolV04 || !af.v1ProtocolAvailable || !c.internalConfig.StatsComputationEnabled() {
+	if c.internalConfig.RequestedTraceProtocol() == traceProtocolV04 || !af.v1ProtocolAvailable || !c.internalConfig.StatsComputationEnabled() {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 	}
 

@@ -1200,7 +1200,13 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, produ
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }
 
-func (c *Config) TraceProtocol() float64 {
+// RequestedTraceProtocol returns the Datadog trace protocol version to use for
+// /vX/traces (TraceProtocolV04 or TraceProtocolV1). It reflects what has been
+// asked for, by the user or by a derived override; it carries no information
+// about whether the trace-agent actually supports that protocol. Callers that
+// need the protocol in effect on the wire must combine this with agent
+// capability.
+func (c *Config) RequestedTraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.traceProtocol
@@ -1213,7 +1219,11 @@ func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin, product ..
 		return
 	}
 	c.traceProtocol = v
-	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", v, origin)
+	// Report the wire-version string, not the float64. The env-var load path
+	// reports this key through the provider as the raw string ("1.0"), so
+	// reporting a float64 here made the same telemetry key arrive with two
+	// different types depending on which source last set it.
+	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionString(v), origin)
 }
 
 func (c *Config) OTLPTraceURL() string {

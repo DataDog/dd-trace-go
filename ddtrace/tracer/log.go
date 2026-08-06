@@ -140,7 +140,7 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
-	proto := t.config.internalConfig.TraceProtocol()
+	proto := t.config.internalConfig.RequestedTraceProtocol()
 
 	// Determine the agent URL to use in the logs.
 	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
