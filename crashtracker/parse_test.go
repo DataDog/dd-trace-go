@@ -6,12 +6,42 @@
 package crashtracker
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestSplitDumpHandlesOversizedLine(t *testing.T) {
+	// A single line longer than the scanner's token limit (maxCrashDumpSize)
+	// trips bufio.Scanner's ErrTooLong. This is the only producer of a thread
+	// with Incomplete: true and zero frames, and it feeds reportIncomplete, so
+	// it decides whether a torn dump is reported as partial or silently as
+	// complete — worth covering even though a dump this size is rare. A
+	// normal line precedes the oversized one so the test also proves lines
+	// scanned before the failure point survive into preamble.
+	dump := append([]byte("panic: boom\n"), bytes.Repeat([]byte("x"), maxCrashDumpSize+1)...)
+
+	preamble, threads := splitDump(dump)
+
+	if len(threads) != 1 {
+		t.Fatalf("len(threads) = %d, want 1", len(threads))
+	}
+	if !threads[0].Crashed {
+		t.Error("synthesized thread is not marked Crashed")
+	}
+	if !threads[0].Stack.Incomplete {
+		t.Error("synthesized thread's Stack.Incomplete = false, want true")
+	}
+	if len(threads[0].Stack.Frames) != 0 {
+		t.Errorf("synthesized thread has %d frames, want 0", len(threads[0].Stack.Frames))
+	}
+	if len(preamble) != 1 || preamble[0] != "panic: boom" {
+		t.Errorf("preamble = %v, want the one line scanned before the failure point", preamble)
+	}
+}
 
 func TestParseCrashDump(t *testing.T) {
 	tests := []struct {
@@ -311,6 +341,31 @@ func TestErrorTypeWindowsException(t *testing.T) {
 		if got != "WindowsException" {
 			t.Errorf("errorType(%q) = %q, want %q", preambleLine, got, "WindowsException")
 		}
+	}
+}
+
+func TestCapThreadsKeepsCrashedGoroutineWhenTruncating(t *testing.T) {
+	threads := make([]Thread, maxReportThreads*2)
+	// Mark a goroutine well past the cap as the crashed one, so retaining it
+	// proves truncation is not just a prefix slice.
+	threads[len(threads)-1].Crashed = true
+
+	kept := capThreads(threads)
+
+	if len(kept) != maxReportThreads {
+		t.Fatalf("len(kept) = %d, want %d", len(kept), maxReportThreads)
+	}
+	crashed := 0
+	for _, th := range kept {
+		if th.Crashed {
+			crashed++
+		}
+	}
+	if crashed != 1 {
+		t.Errorf("crashed goroutine count = %d, want exactly 1", crashed)
+	}
+	if !kept[0].Crashed {
+		t.Error("crashed goroutine was not retained")
 	}
 }
 
