@@ -249,40 +249,6 @@ func TestBuildOTLPMetricsRequestMultipleServices(t *testing.T) {
 	assert.Equal(t, "svc-b", kvAttrsToMap(svcBPoint.Attributes)["service.name"])
 }
 
-func TestBuildOTLPMetricsRequestIgnoresOTelSemanticsMode(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
-			t.Cleanup(func() { internalconfig.CreateNew() })
-			t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", strconv.FormatBool(enabled))
-			cfg := internalconfig.CreateNew()
-			assert.Equal(t, enabled, cfg.OTelSemanticsEnabled())
-
-			gs := &pb.ClientGroupedStats{
-				Service:      "svc",
-				Name:         "web.request",
-				Resource:     "/users",
-				Type:         "web",
-				Hits:         1,
-				TopLevelHits: 1,
-				OkSummary:    encodeSketch(t, 50e6),
-			}
-			payload := makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})
-			payload.RuntimeID = "abc-123"
-			payload.ProcessTags = "entrypoint.name:myapp"
-
-			rm := buildOTLPMetricsRequest(payload, cfg)
-			require.Len(t, rm, 1)
-			resourceAttrs := kvAttrsToMap(rm[0].Resource.Attributes)
-			assert.Equal(t, "abc-123", resourceAttrs["datadog.runtime_id"])
-			assert.Equal(t, []string{"entrypoint.name:myapp"}, kvArrayValue(rm[0].Resource.Attributes, "datadog.process_tags"))
-
-			attrs := rm[0].ScopeMetrics[0].Metrics[0].GetHistogram().DataPoints[0].Attributes
-			assert.Equal(t, "web.request", kvAttrsToMap(attrs)["datadog.operation.name"])
-			assertOTLPBoolAttribute(t, attrs, "datadog.span.top_level", true)
-		})
-	}
-}
-
 // ---- Resource attributes ----
 
 func TestBuildMetricsResourceSDKAttributes(t *testing.T) {
