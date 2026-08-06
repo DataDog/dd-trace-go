@@ -1179,3 +1179,95 @@ func TestIssue2050(t *testing.T) {
 		return
 	}
 }
+
+// hasControlByte reports whether s contains a raw CR, LF, or NUL byte -- the
+// bytes an attacker needs to smuggle extra header lines into a carrier that
+// writes header values without validation.
+func hasControlByte(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\r', '\n', 0x00:
+			return true
+		}
+	}
+	return false
+}
+
+// otBaggageEntries returns the subset of md whose keys carry the legacy
+// OpenTracing baggage prefix. gRPC metadata keys are already lowercased by
+// MDCarrier.Set, matching the (also lowercase) DefaultBaggageHeaderPrefix.
+func otBaggageEntries(md metadata.MD) metadata.MD {
+	out := metadata.MD{}
+	for k, vals := range md {
+		if strings.HasPrefix(k, tracer.DefaultBaggageHeaderPrefix) {
+			out[k] = vals
+		}
+	}
+	return out
+}
+
+// TestBaggageControlCharsNotInjectedOverGRPC reproduces the outbound impact
+// of a poisoned baggage value over gRPC: "v\r\nX-Evil:1" is exactly what an
+// upstream "baggage: k=v%0D%0AX-Evil:1" header decodes to. gRPC metadata
+// values may legally contain arbitrary bytes, so the secure behavior here is
+// that the tracer itself never re-emits a raw control byte under the legacy
+// ot-baggage-* prefix, regardless of what the transport would otherwise allow.
+func TestBaggageControlCharsNotInjectedOverGRPC(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "x")
+	span.SetBaggageItem("k", "v\r\nX-Evil:1")
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	span.Finish()
+	require.NoError(t, err, "the RPC must not fail because of a poisoned ot-baggage-* metadata value")
+
+	md := rig.fixtureServer.LastRequestMetadata.Load().(metadata.MD)
+	baggage := otBaggageEntries(md)
+	for k, vals := range baggage {
+		for _, v := range vals {
+			assert.False(t, hasControlByte(v), "%s must not carry a raw control byte, got %q", k, v)
+		}
+	}
+	assert.NotEmpty(t, baggage, "expected an ot-baggage-* metadata entry on the outbound request")
+}
+
+// TestOTBaggageEnforcesLimitsOverGRPC covers the ot-baggage-* prefix path
+// over the gRPC client interceptor: unlike the W3C "baggage" header, this
+// path currently has no item-count or byte-size cap, so an attacker-sized
+// baggage set is fully delivered as outbound gRPC metadata.
+func TestOTBaggageEnforcesLimitsOverGRPC(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "x")
+	for i := range 100 {
+		span.SetBaggageItem(fmt.Sprintf("k%d", i), "x")
+	}
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	span.Finish()
+	require.NoError(t, err)
+
+	md := rig.fixtureServer.LastRequestMetadata.Load().(metadata.MD)
+	count, totalBytes := 0, 0
+	for k, vals := range otBaggageEntries(md) {
+		for _, v := range vals {
+			count++
+			totalBytes += len(k) + len(v)
+		}
+	}
+	assert.LessOrEqual(t, count, 64)
+	assert.LessOrEqual(t, totalBytes, 8192)
+}
