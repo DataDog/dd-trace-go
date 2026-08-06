@@ -216,3 +216,105 @@ func TestUploadReportRejects3xx(t *testing.T) {
 		t.Errorf("error %q does not mention status code 304", err.Error())
 	}
 }
+
+// TestUploadReportRetriesTransientFailure proves a crash report is no longer
+// lost to a single transient failure: the intake returning 503 (Agent
+// mid-restart) on the first attempt and 202 on the second must still result
+// in a delivered report, not a permanently lost one.
+func TestUploadReportRetriesTransientFailure(t *testing.T) {
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	cfg := &config{
+		agentURL:   srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	if err := uploadReport(cfg, newTestReport()); err != nil {
+		t.Fatalf("uploadReport returned unexpected error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Errorf("requestCount = %d, want 2 (one failure, one success)", requestCount)
+	}
+}
+
+// TestUploadReportDoesNotRetryBadRequest proves a non-retryable 4xx (which
+// will fail identically on every attempt) does not waste the monitor's
+// remaining time before exit retrying a request that can never succeed.
+func TestUploadReportDoesNotRetryBadRequest(t *testing.T) {
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	cfg := &config{
+		agentURL:   srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	err := uploadReport(cfg, newTestReport())
+	if err == nil {
+		t.Fatal("expected error for 400 response, got nil")
+	}
+	if requestCount != 1 {
+		t.Errorf("requestCount = %d, want 1 (400 must not be retried)", requestCount)
+	}
+}
+
+// TestUploadReportGivesUpAfterAllAttemptsFail proves uploadReport eventually
+// stops rather than retrying forever, and that the final error is
+// informative once every attempt has failed.
+func TestUploadReportGivesUpAfterAllAttemptsFail(t *testing.T) {
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	cfg := &config{
+		agentURL:   srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	err := uploadReport(cfg, newTestReport())
+	if err == nil {
+		t.Fatal("expected error after every attempt fails, got nil")
+	}
+	if requestCount != uploadAttempts {
+		t.Errorf("requestCount = %d, want %d", requestCount, uploadAttempts)
+	}
+	if !strings.Contains(err.Error(), "503") {
+		t.Errorf("error %q does not mention the underlying status code 503", err.Error())
+	}
+}
+
+// TestBuildRequestToleratesDDSiteAsURL verifies the fix for DD_SITE supplied
+// as a full URL ("https://datadoghq.com") rather than a bare host, which
+// would otherwise interpolate into a malformed intake URL.
+func TestBuildRequestToleratesDDSiteAsURL(t *testing.T) {
+	cfg := &config{
+		apiKey: "test-key",
+		site:   "https://datadoghq.com/",
+	}
+
+	req, _, err := buildRequestAndClient(cfg, []byte("{}"))
+	if err != nil {
+		t.Fatalf("buildRequestAndClient returned unexpected error: %v", err)
+	}
+
+	wantHost := "error-tracking-intake.datadoghq.com"
+	if req.URL.Host != wantHost {
+		t.Errorf("target host = %q, want %q", req.URL.Host, wantHost)
+	}
+}
