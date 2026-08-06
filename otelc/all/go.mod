@@ -4,7 +4,11 @@ go 1.25.0
 
 replace github.com/DataDog/dd-trace-go/v2 => ../..
 
+replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 => ../../contrib/google.golang.org/grpc/otelc
+
 require github.com/DataDog/dd-trace-go/v2 v2.0.0-00010101000000-000000000000
+
+require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.0.0-00010101000000-000000000000
 
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0-rc.2 // indirect

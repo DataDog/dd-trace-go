@@ -18,4 +18,7 @@ import (
 
 	// AppSec operation GLS lifecycle.
 	_ "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+
+	// google.golang.org/grpc integration.
+	_ "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2"
 )
