@@ -827,7 +827,7 @@ func (t *simpleTransport) sendStats(s *pb.ClientStatsPayload, obfVersion int) er
 	return nil
 }
 
-func (t *simpleTransport) endpoint() string {
+func (t *simpleTransport) endpoint(float64) string {
 	return "http://localhost:9/v1.0/traces"
 }
 
