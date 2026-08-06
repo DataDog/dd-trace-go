@@ -6,7 +6,6 @@
 package crashtracker
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -155,16 +154,18 @@ func spawnMonitor(cfg *config) error {
 	// covers the remaining window before this takes effect.
 	detachProcessGroup(cmd)
 
-	// Route the monitor's own stdout/stderr through a line-buffered forwarder
-	// instead of the app's raw os.Stderr fd: two processes writing the same fd
-	// with no synchronisation can interleave at byte granularity and corrupt
-	// whatever either of them was writing, including the app's own crash dump.
-	diagStdout, diagStderr, err := newDiagnosticsForwarder()
-	if err != nil {
-		return fmt.Errorf("crashtracker: create diagnostics pipe: %w", err)
-	}
-	cmd.Stdout = diagStdout
-	cmd.Stderr = diagStderr
+	// Give the monitor this process's own stderr, as Go's canonical
+	// SetCrashOutput monitor example does. A pipe back into this process would
+	// die with it: the monitor only writes after its io.ReadAll returns, and
+	// that only happens once this process's death closes the crash pipe, so a
+	// parent-owned reader is always already gone by then. That fd is normally a
+	// terminal or container log stream held by the runtime, so it outlives the
+	// app; the dump itself also goes to stderr independently (SetCrashOutput
+	// writes "in addition to standard error"), and since the monitor never
+	// writes until this process has finished dying, the only overlap window is
+	// the >32 MiB cap case where ReadAll returns early.
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
 
 	// StdinPipe wires the child's stdin; do not set cmd.Stdin separately.
 	pipe, err := cmd.StdinPipe()
@@ -205,37 +206,4 @@ func spawnMonitor(cfg *config) error {
 	}()
 
 	return nil
-}
-
-// newDiagnosticsForwarder returns two writers for a child's stdout and stderr.
-// Each line the child writes is forwarded to the shared logger as a single
-// log call, so concurrent writers never interleave partial lines on a shared fd.
-func newDiagnosticsForwarder() (stdout, stderr io.Writer, err error) {
-	stdout, err = newLineForwarder("stdout")
-	if err != nil {
-		return nil, nil, err
-	}
-	stderr, err = newLineForwarder("stderr")
-	if err != nil {
-		return nil, nil, err
-	}
-	return stdout, stderr, nil
-}
-
-// newLineForwarder returns the write end of a pipe whose lines are logged
-// through internal/log, one log.Warn call per complete line. stream is a
-// data argument (e.g. "stdout"/"stderr"), not a format string.
-func newLineForwarder(stream string) (io.Writer, error) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		return nil, fmt.Errorf("create pipe: %w", err)
-	}
-	go func() {
-		defer r.Close()
-		sc := bufio.NewScanner(r)
-		for sc.Scan() {
-			log.Warn("crashtracker: monitor %s: %s", stream, sc.Text())
-		}
-	}()
-	return w, nil
 }

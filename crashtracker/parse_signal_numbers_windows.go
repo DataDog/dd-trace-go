@@ -11,6 +11,7 @@ package crashtracker
 // structured exceptions rather than SIG* lines, so this table only ever
 // serves fixture parsing, never a live crash on this platform.
 var signalNumbers = map[string]int{
+	"SIGQUIT": 3,
 	"SIGILL":  4,
 	"SIGTRAP": 5,
 	"SIGABRT": 6,

@@ -17,6 +17,7 @@ import "syscall"
 // is no simpler rule that covers this than the constants the runtime itself
 // uses.
 var signalNumbers = map[string]int{
+	"SIGQUIT": int(syscall.SIGQUIT),
 	"SIGILL":  int(syscall.SIGILL),
 	"SIGTRAP": int(syscall.SIGTRAP),
 	"SIGABRT": int(syscall.SIGABRT),
