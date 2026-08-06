@@ -141,9 +141,9 @@ func (q *queue[T]) Remove() T {
 //
 // Handles various Go symbol formats:
 //   - Simple function: pkg.Function
-//   - Method with receiver: pkg.(*Type).Method or pkg.(Type).Method
+//   - Method with receiver: pkg.(*Type).Method or pkg.Type.Method
 //   - Lambda/closure: pkg.Function.func1 or pkg.(*Type).Method.func1
-//   - Generics: pkg.(*Type[...]).Method or pkg.Function[...]
+//   - Generics: pkg.(*Type[...]).Method, pkg.Type[...].Method, or pkg.Function[...]
 //
 // Examples:
 //
@@ -162,10 +162,38 @@ func parseSymbol(name string) symbol {
 		// Find the closing paren of the receiver
 		receiverEnd := strings.IndexByte(name[idx+2:], ')')
 		if receiverEnd != -1 {
-			pkg := name[:idx]
-			receiver := name[idx+2 : idx+2+receiverEnd]
-			// Everything after ")." is the function (which may contain dots for lambdas)
-			fn := name[idx+2+receiverEnd+2:] // +2 for ")."
+			receiverEnd += idx + 2
+			if receiverEnd+1 < len(name) && name[receiverEnd+1] == '.' {
+				return symbol{
+					Package:  name[:idx],
+					Receiver: name[idx+2 : receiverEnd],
+					Function: name[receiverEnd+2:],
+				}
+			}
+		}
+	}
+
+	// Find where the package ends and the symbol begins. The package path ends
+	// at the first dot after its final slash.
+	lastSlash := strings.LastIndexByte(name, '/')
+	searchStart := lastSlash + 1
+	firstDotAfterSlash := strings.IndexByte(name[searchStart:], '.')
+	if firstDotAfterSlash == -1 {
+		return symbol{Function: name}
+	}
+
+	pkgEnd := searchStart + firstDotAfterSlash
+	pkg := name[:pkgEnd]
+	remainder := name[pkgEnd+1:]
+
+	// The runtime omits parentheses for value receivers, yielding
+	// pkg.Type.Method. Only classify the unambiguous two-component form: extra
+	// components may belong to closures or compiler-generated wrappers. Dots in
+	// generic type arguments do not delimit components.
+	if receiverEnd := indexSymbolDot(remainder); receiverEnd != -1 {
+		receiver := remainder[:receiverEnd]
+		fn := remainder[receiverEnd+1:]
+		if indexSymbolDot(fn) == -1 && !isCompilerGeneratedFunctionSuffix(receiver, fn) {
 			return symbol{
 				Package:  pkg,
 				Receiver: receiver,
@@ -174,34 +202,60 @@ func parseSymbol(name string) symbol {
 		}
 	}
 
-	// No receiver case: need to find where package ends and function begins
-	// Package path ends at the last '/' followed by a segment before first '.'
-	// Examples:
-	//   "pkg.Function" -> pkg: "pkg", fn: "Function"
-	//   "pkg.Function.func1" -> pkg: "pkg", fn: "Function.func1"
-	//   "github.com/org/pkg.Function" -> pkg: "github.com/org/pkg", fn: "Function"
-
-	// Find the last slash to identify where the package name starts
-	lastSlash := strings.LastIndexByte(name, '/')
-
-	// Find the first dot after the last slash (or from the beginning if no slash)
-	searchStart := 0
-	if lastSlash != -1 {
-		searchStart = lastSlash + 1
-	}
-
-	firstDotAfterSlash := strings.IndexByte(name[searchStart:], '.')
-	if firstDotAfterSlash == -1 {
-		// No dots after last slash, the whole thing is the function name
-		return symbol{Function: name}
-	}
-
-	// Package ends at this dot, function starts after it
-	pkgEnd := searchStart + firstDotAfterSlash
 	return symbol{
-		Package:  name[:pkgEnd],
-		Function: name[pkgEnd+1:], // Everything after the dot, including nested dots for lambdas
+		Package:  pkg,
+		Function: remainder,
 	}
+}
+
+// indexSymbolDot returns the first dot outside generic type arguments.
+func indexSymbolDot(name string) int {
+	bracketDepth := 0
+	for i := range len(name) {
+		switch name[i] {
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case '.':
+			if bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// isCompilerGeneratedFunctionSuffix reports whether suffix is a component the
+// compiler appends to a package-level function name.
+func isCompilerGeneratedFunctionSuffix(outer, suffix string) bool {
+	if outer == "init" && hasNumericComponent(suffix, "") {
+		return true
+	}
+	return hasNumericComponent(suffix, "func") ||
+		hasNumericComponent(suffix, "gowrap") ||
+		hasNumericComponent(suffix, "deferwrap")
+}
+
+func hasNumericComponent(name, prefix string) bool {
+	if !strings.HasPrefix(name, prefix) {
+		return false
+	}
+	name = name[len(prefix):]
+	if len(name) == 0 || name[0] < '0' || name[0] > '9' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		if name[i] == '.' {
+			return true
+		}
+		if name[i] < '0' || name[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // Capture create a new stack trace from the current call stack
@@ -561,8 +615,10 @@ func Format(stack StackTrace) string {
 		// Use full function name (namespace + class + function)
 		function := frame.Function
 		if frame.Namespace != "" {
-			if frame.ClassName != "" {
+			if strings.HasPrefix(frame.ClassName, "*") {
 				function = frame.Namespace + ".(" + frame.ClassName + ")." + frame.Function
+			} else if frame.ClassName != "" {
+				function = frame.Namespace + "." + frame.ClassName + "." + frame.Function
 			} else {
 				function = frame.Namespace + "." + frame.Function
 			}
