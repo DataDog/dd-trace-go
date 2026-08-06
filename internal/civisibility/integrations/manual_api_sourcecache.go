@@ -9,17 +9,46 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
-// sourceFileMetadataCache stores parsed source metadata keyed by absolute file path.
-var sourceFileMetadataCache sync.Map
+var (
+	// sourceFileMetadataCache stores parsed source metadata keyed by absolute file path.
+	sourceFileMetadataCache sync.Map
 
-// sourceFileCacheSlot coordinates one-time metadata loading for a single source file.
+	// sourceFunctionMetadataCache stores immutable source metadata keyed by runtime entry PC.
+	sourceFunctionMetadataCache sync.Map
+)
+
+// sourceFileCacheSlot coordinates one-time metadata and CODEOWNERS loading for a single source file.
 type sourceFileCacheSlot struct {
+	once           sync.Once
+	entry          sourceFileMetadata
+	codeOwnerOnce  sync.Once
+	codeOwnerReady atomic.Bool
+	codeOwner      string
+	codeOwnerFound bool
+}
+
+type sourceFunctionCacheSlot struct {
 	once  sync.Once
-	entry sourceFileMetadata
+	entry sourceFunctionMetadata
+}
+
+type sourceFunctionMetadata struct {
+	runtimePath      string
+	runtimeStartLine int
+	fullName         string
+	shortName        string
+	sourcePath       utils.SourceFilePath
+	fileSlot         *sourceFileCacheSlot
+	fileMetadata     sourceFileMetadata
+	resolution       sourceResolution
 }
 
 // sourceFileMetadata contains the parsed source information needed by SetTestFunc.
@@ -47,23 +76,160 @@ type functionLiteralMetadata struct {
 
 // sourceResolution describes the cached source location selected for a runtime function.
 type sourceResolution struct {
-	startLine           int
-	endLine             int
-	functionUnskippable bool
-	matchedDeclaration  *namedFunctionMetadata
-	matchedLiteral      *functionLiteralMetadata
-	inspectedLiterals   []functionLiteralMetadata
+	startLine             int
+	endLine               int
+	functionUnskippable   bool
+	matchedDeclaration    *namedFunctionMetadata
+	matchedLiteral        *functionLiteralMetadata
+	inspectedLiteralCount int
+}
+
+type impactedTestClassifier interface {
+	IsImpacted(testName string, sourceFile string, startLine int, endLine int) bool
+}
+
+// IsTestFuncModified reports whether the configured impacted-tests analyzer
+// classifies fn as modified without requiring a test event to be created first.
+func IsTestFuncModified(testName string, fn *runtime.Func) bool {
+	return isTestFuncModified(GetImpactedTestsAnalyzer(), testName, fn)
+}
+
+func isTestFuncModified(analyzer impactedTestClassifier, testName string, fn *runtime.Func) bool {
+	if analyzer == nil || fn == nil {
+		return false
+	}
+	metadata := loadSourceFunctionMetadata(fn)
+	if !metadata.fileMetadata.parseOK {
+		return false
+	}
+	return analyzer.IsImpacted(testName, metadata.sourcePath.RelativePath, metadata.resolution.startLine, metadata.resolution.endLine)
+}
+
+func loadSourceFunctionMetadata(fn *runtime.Func) sourceFunctionMetadata {
+	if fn == nil {
+		return sourceFunctionMetadata{}
+	}
+	slot := sourceFunctionSlot(fn)
+	slot.once.Do(func() {
+		slot.entry = resolveSourceFunctionMetadata(fn)
+	})
+	return slot.entry
+}
+
+func loadSourceFunctionCodeOwner(metadata sourceFunctionMetadata) (string, bool) {
+	return loadSourceFunctionCodeOwnerWithLookup(metadata, loadCodeOwnersWithStatus)
+}
+
+type codeOwnerLookup func() (codeOwnerMatcher, bool)
+
+func loadCodeOwnersWithStatus() (codeOwnerMatcher, bool) {
+	return utils.GetCodeOwnersWithStatus()
+}
+
+func loadSourceFunctionCodeOwnerWithLookup(metadata sourceFunctionMetadata, lookup codeOwnerLookup) (string, bool) {
+	if metadata.fileSlot == nil {
+		return "", false
+	}
+	if metadata.fileSlot.codeOwnerReady.Load() {
+		return metadata.fileSlot.codeOwner, metadata.fileSlot.codeOwnerFound
+	}
+	codeOwners, lookupComplete := lookup()
+	return loadSourceFileCodeOwner(metadata.fileSlot, codeOwners, lookupComplete, metadata.sourcePath.RelativePath)
+}
+
+type codeOwnerMatcher interface {
+	Match(string) (*utils.Entry, bool)
+}
+
+func loadSourceFileCodeOwner(slot *sourceFileCacheSlot, codeOwners codeOwnerMatcher, lookupComplete bool, sourceFile string) (string, bool) {
+	if slot.codeOwnerReady.Load() {
+		return slot.codeOwner, slot.codeOwnerFound
+	}
+	if !lookupComplete {
+		return "", false
+	}
+	slot.codeOwnerOnce.Do(func() {
+		resolveSourceFileCodeOwner(slot, codeOwners, sourceFile)
+	})
+	slot.codeOwnerReady.Store(true)
+	return slot.codeOwner, slot.codeOwnerFound
+}
+
+func resolveSourceFileCodeOwner(slot *sourceFileCacheSlot, codeOwners codeOwnerMatcher, sourceFile string) {
+	if codeOwners == nil {
+		return
+	}
+	if match, found := codeOwners.Match("/" + sourceFile); found {
+		slot.codeOwner = match.GetOwnersString()
+		slot.codeOwnerFound = true
+	}
+}
+
+func sourceFunctionSlot(fn *runtime.Func) *sourceFunctionCacheSlot {
+	return sourceFunctionSlotForEntry(fn.Entry(), newSourceFunctionCacheSlot)
+}
+
+func newSourceFunctionCacheSlot() *sourceFunctionCacheSlot { return &sourceFunctionCacheSlot{} }
+
+func sourceFunctionSlotForEntry(entry uintptr, newSlot func() *sourceFunctionCacheSlot) *sourceFunctionCacheSlot {
+	if slotAny, ok := sourceFunctionMetadataCache.Load(entry); ok {
+		return slotAny.(*sourceFunctionCacheSlot)
+	}
+	slotAny, _ := sourceFunctionMetadataCache.LoadOrStore(entry, newSlot())
+	return slotAny.(*sourceFunctionCacheSlot)
+}
+
+func resolveSourceFunctionMetadata(fn *runtime.Func) sourceFunctionMetadata {
+	runtimePath, runtimeStartLine := fn.FileLine(fn.Entry())
+	sourcePath := resolveTestSourcePath(runtimePath)
+	fileSlot := sourceFileSlot(sourcePath.FilesystemPath, newSourceFileCacheSlot)
+	fileMetadata := loadSourceFileMetadataFromSlot(fileSlot, sourcePath.FilesystemPath)
+	fullName := fn.Name()
+	shortName := fullName[strings.LastIndex(fullName, ".")+1:]
+	metadata := sourceFunctionMetadata{
+		runtimePath:      runtimePath,
+		runtimeStartLine: runtimeStartLine,
+		fullName:         fullName,
+		shortName:        shortName,
+		sourcePath:       sourcePath,
+		fileSlot:         fileSlot,
+		fileMetadata:     fileMetadata,
+	}
+	if fileMetadata.parseOK {
+		metadata.resolution = resolveSourceLocation(fileMetadata, shortName, runtimeStartLine)
+	}
+	return metadata
 }
 
 // loadSourceFileMetadata parses and caches the metadata needed to resolve test source locations.
 func loadSourceFileMetadata(absolutePath string) sourceFileMetadata {
 	// Keep one cache slot per file so concurrent first lookups share the same parsing work.
-	slotAny, _ := sourceFileMetadataCache.LoadOrStore(absolutePath, &sourceFileCacheSlot{})
-	slot := slotAny.(*sourceFileCacheSlot)
+	slot := sourceFileSlot(absolutePath, newSourceFileCacheSlot)
+	return loadSourceFileMetadataFromSlot(slot, absolutePath)
+}
+
+func loadSourceFileMetadataFromSlot(slot *sourceFileCacheSlot, absolutePath string) sourceFileMetadata {
 	slot.once.Do(func() {
 		slot.entry = parseSourceFileMetadata(absolutePath)
 	})
 	return slot.entry
+}
+
+func newSourceFileCacheSlot() *sourceFileCacheSlot { return &sourceFileCacheSlot{} }
+
+func sourceFileSlot(absolutePath string, newSlot func() *sourceFileCacheSlot) *sourceFileCacheSlot {
+	if slotAny, ok := sourceFileMetadataCache.Load(absolutePath); ok {
+		return slotAny.(*sourceFileCacheSlot)
+	}
+	slotAny, _ := sourceFileMetadataCache.LoadOrStore(absolutePath, newSlot())
+	return slotAny.(*sourceFileCacheSlot)
+}
+
+func functionLiteralsToLog(literals []functionLiteralMetadata, inspectedCount int, debugEnabled bool) []functionLiteralMetadata {
+	if !debugEnabled {
+		return nil
+	}
+	return literals[:inspectedCount]
 }
 
 // parseSourceFileMetadata extracts the source metadata required by SetTestFunc for a file.
@@ -136,8 +302,8 @@ func resolveSourceLocation(metadata sourceFileMetadata, shortName string, runtim
 	}
 
 	if isFuncNShortName(shortName) {
-		matchedLiteral, inspectedLiterals, ok := findMatchingFunctionLiteral(metadata.functionLiterals, runtimeStartLine)
-		resolution.inspectedLiterals = inspectedLiterals
+		matchedLiteral, inspectedLiteralCount, ok := findMatchingFunctionLiteral(metadata.functionLiterals, runtimeStartLine)
+		resolution.inspectedLiteralCount = inspectedLiteralCount
 		if !ok {
 			return resolution
 		}
@@ -160,8 +326,8 @@ func resolveSourceLocation(metadata sourceFileMetadata, shortName string, runtim
 
 	// Preserve the old "first literal within one line" heuristic because runtime line numbers for
 	// literals point at the first instruction rather than the literal declaration itself.
-	matchedLiteral, inspectedLiterals, ok := findMatchingFunctionLiteral(metadata.functionLiterals, runtimeStartLine)
-	resolution.inspectedLiterals = inspectedLiterals
+	matchedLiteral, inspectedLiteralCount, ok := findMatchingFunctionLiteral(metadata.functionLiterals, runtimeStartLine)
+	resolution.inspectedLiteralCount = inspectedLiteralCount
 	if ok {
 		resolution.startLine = matchedLiteral.bodyStartLine
 		resolution.endLine = matchedLiteral.endLine
@@ -199,18 +365,15 @@ func findLineConfirmedDeclaration(functions []namedFunctionMetadata, runtimeStar
 }
 
 // findMatchingFunctionLiteral returns the exact line match when present, otherwise the closest tolerated literal.
-func findMatchingFunctionLiteral(literals []functionLiteralMetadata, runtimeStartLine int) (functionLiteralMetadata, []functionLiteralMetadata, bool) {
-	inspectedLiterals := make([]functionLiteralMetadata, 0, len(literals))
+func findMatchingFunctionLiteral(literals []functionLiteralMetadata, runtimeStartLine int) (functionLiteralMetadata, int, bool) {
 	var fallback functionLiteralMetadata
 	var fallbackDelta int
 	fallbackFound := false
 	for idx := range literals {
 		literal := literals[idx]
-		inspectedLiterals = append(inspectedLiterals, literal)
-
 		delta := literal.bodyStartLine - runtimeStartLine
 		if delta == 0 {
-			return literal, inspectedLiterals, true
+			return literal, idx + 1, true
 		}
 		if delta < -1 || delta > 1 {
 			continue
@@ -228,10 +391,10 @@ func findMatchingFunctionLiteral(literals []functionLiteralMetadata, runtimeStar
 	}
 
 	if fallbackFound {
-		return fallback, inspectedLiterals, true
+		return fallback, len(literals), true
 	}
 
-	return functionLiteralMetadata{}, inspectedLiterals, false
+	return functionLiteralMetadata{}, len(literals), false
 }
 
 func commentGroupsContain(commentGroups []*ast.CommentGroup, needle string) bool {
