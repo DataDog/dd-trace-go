@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"math"
 	"reflect"
@@ -39,6 +40,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
@@ -308,19 +310,35 @@ func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.Sampler
 	s.setMetricLocked(keyRulesSamplerAppliedRate, rate)
 	delete(s.metrics, keySamplingPriorityRate)
 	s.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	trace := s.context.trace
 	if !sampledByRate(s.traceID, rate) {
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	if limiter == nil {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	sampled, limiterRate := limiter.AllowOne(now)
 	if sampled {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 	} else {
+		// The Knuth rate would have kept this trace; the limiter is what dropped
+		// it. That is a non-probability outcome, so erase any threshold rather
+		// than encode the configured rate.
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.clearOtelProbability()
+		}
 	}
 	s.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
 	return true
@@ -788,11 +806,9 @@ func takeStacktrace(depth uint, skip uint) string {
 		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
 	}()
 
-	// This is necessary for span error stacktraces where we want complete visibility.
-	// Skip +4: The old implementation used runtime.Callers(2+skip, ...) which skipped runtime.Callers
-	// and takeStacktrace. The internal/stacktrace package auto-filters its own frames, but we still
-	// need to account for: runtime.Callers(1) + takeStacktrace(1) + setTagError(1) + additional frame(1)
-	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+4)
+	// Keep Datadog frames in span error stack traces, but omit this wrapper on top
+	// of the stacktrace package's own machinery.
+	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+1)
 	return stacktrace.Format(stack)
 }
 
@@ -842,6 +858,21 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 	assert.RWMutexLocked(&s.mu)
 	if s.metaStruct == nil {
 		s.metaStruct = make(metaStructMap, 1)
+	}
+	if key == stacktrace.SpanKey {
+		if current, ok := s.metaStruct[key]; ok {
+			merged, err := stacktrace.MergeSpanValues(current, v)
+			if err != nil {
+				telemetrylog.Warn(
+					"failed to merge stack-trace span values",
+					slog.Any("error", telemetrylog.NewSafeError(err)),
+					slog.String("current_type", fmt.Sprintf("%T", current)),
+					slog.String("next_type", fmt.Sprintf("%T", v)),
+				)
+				return
+			}
+			v = merged
+		}
 	}
 	s.metaStruct[key] = v
 }
@@ -908,7 +939,10 @@ func (s *Span) setMetricLocked(key string, v float64) {
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
+			// Force the keep: an AppSec attack-detection keep must retain the
+			// trace even when the sampling decision was inherited and locked
+			// from an upstream drop, mirroring the manual-keep path above.
+			s.forceSetSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
 	case "_sampling_priority_v1shim":
 		// We have this for backward compatibility with the v1 shim.
@@ -1276,12 +1310,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := env.Get("DD_ENV"); env != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
+			} else if env := env.Get("DD_ENV"); env != "" { //configaudit:ignore — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := env.Get("DD_VERSION"); v != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
+			} else if v := env.Get("DD_VERSION"); v != "" { //configaudit:ignore — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
