@@ -116,6 +116,11 @@ func exerciseDenyParallelFieldCompatibility(t *testing.T) {
 	if ok || field.available {
 		t.Fatalf("expected unsupported denyParallel field type, got field=%+v ok=%t", field, ok)
 	}
+
+	field, ok = denyParallelField(reflect.TypeFor[struct{}]())
+	if !ok || field.available {
+		t.Fatalf("expected missing denyParallel field to be a no-op, got field=%+v ok=%t", field, ok)
+	}
 }
 
 // TestGetInternalTestArray tests the getInternalTestArray function.

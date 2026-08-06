@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // unsafeField describes a private field discovered from a runtime type.
@@ -406,6 +408,7 @@ func denyParallelField(owner reflect.Type) (unsafeField, bool) {
 		return field, ok
 	}
 	if field.typ != reflect.TypeFor[bool]() && field.typ != reflect.TypeFor[string]() {
+		log.Debug("civisibility: testing.T.denyParallel has unexpected type %s; disabling retry fast path", field.typ)
 		return unsafeField{name: "denyParallel", optional: true}, false
 	}
 	return field, true
