@@ -246,7 +246,7 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, otelMode 
 }
 
 func isDatadogAttribute(key string) bool {
-	return strings.HasPrefix(key, "datadog.") || strings.HasPrefix(key, "_datadog.")
+	return strings.HasPrefix(key, "datadog.")
 }
 
 func otlpStringArrayValue(values []string) *otlpcommon.AnyValue {

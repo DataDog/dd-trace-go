@@ -327,7 +327,6 @@ func TestDataPointAttributesOTelMode(t *testing.T) {
 		AdditionalMetricTags: []string{
 			"customer.tier:gold",
 			"datadog.custom:hidden",
-			"_datadog.legacy:hidden",
 		},
 	}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
@@ -423,7 +422,6 @@ func TestDataPointAttributesAdditionalMetricTags(t *testing.T) {
 			"customer.tier:gold",
 			"region:us-east-1",
 			"datadog.custom:visible-by-default",
-			"_datadog.legacy:visible-by-default",
 			"malformed",
 			"empty:",
 		},
@@ -431,13 +429,11 @@ func TestDataPointAttributesAdditionalMetricTags(t *testing.T) {
 
 	defaultAttrs := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
 	assert.Equal(t, "visible-by-default", defaultAttrs["datadog.custom"])
-	assert.Equal(t, "visible-by-default", defaultAttrs["_datadog.legacy"])
 
 	otelAttrs := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
 	assert.Equal(t, "gold", otelAttrs["customer.tier"])
 	assert.Equal(t, "us-east-1", otelAttrs["region"])
 	assert.NotContains(t, otelAttrs, "datadog.custom")
-	assert.NotContains(t, otelAttrs, "_datadog.legacy")
 	assert.NotContains(t, otelAttrs, "malformed")
 	assert.NotContains(t, otelAttrs, "empty")
 }
