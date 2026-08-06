@@ -78,7 +78,7 @@ func (c *Transport) PushSpanEvents(
 		body = append(body, req)
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultLimits)
 	if err != nil {
 		return err
 	}

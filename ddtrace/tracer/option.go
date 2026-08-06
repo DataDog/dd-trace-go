@@ -231,21 +231,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
-	// The experimental span pool and Orchestrion's GLS weave are mutually
-	// exclusive. Span pooling recycles a finished span via sync.Pool; under
-	// Orchestrion that span may still be referenced from a goroutine-local
-	// storage (GLS) stack whose stale entry has not been drained, so reusing it
-	// can resurface a recycled span or leak the entry (see orchestrion#782).
-	// Recycling also clears the reclaim flag, and that flag now decides which
-	// entry the GLS hands out as a parent, so a pooled span reachable from a
-	// buried entry could parent unrelated work (see contextStack.Peek).
-	// Until the reclaim signal is decoupled from the pooled span, disable
-	// pooling when Orchestrion is active and warn once. Checked after the option
-	// loop so an explicit WithSpanPool(true) is gated too.
-	if shouldDisableSpanPool(c.internalConfig.SpanPoolEnabled(), orchestrion.Enabled()) {
-		c.internalConfig.SetSpanPoolEnabled(false, telemetry.OriginCode, internalconfig.ProductTracer)
-		log.Warn("the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED / WithSpanPool) is incompatible with Orchestrion and has been disabled")
-	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
@@ -312,7 +297,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	processtags.SetServiceNameTag(c.internalConfig.ServiceName(), svcIsUserDefined)
 	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
-		traceURL, headers := resolveTraceTransport(c.internalConfig)
+		traceURL := resolveTraceURL(c.internalConfig)
+		headers := traceTransportHeaders(c.internalConfig)
 		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
 	}
 	if c.propagator == nil {
@@ -345,8 +331,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	agentURL := c.internalConfig.AgentURL()
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
-	// If the agent doesn't support the v1 protocol, downgrade to v0.4
-	// Also downgrade if CSS is disabled, as v1 is not compatible without CSS.
+	// If the agent doesn't support the v1 protocol, downgrade to v0.4.
+	// Also downgrade if CSS is disabled (v1 requires CSS). TraceProtocol() additionally
+	// returns v0.4 when OTLP span metrics are enabled (see internal/config).
 	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
@@ -403,16 +390,6 @@ func computeOtelRuntimeMetricsShouldBeEnabled(c *config) bool {
 		(c.internalConfig.RuntimeMetricsV2Enabled() || c.internalConfig.RuntimeMetricsEnabled())
 }
 
-// shouldDisableSpanPool reports whether the experimental span pool must be
-// turned off because Orchestrion's GLS weave is active. The two are mutually
-// exclusive: pooling can recycle a finished span whose stale GLS entry has not
-// yet been drained, which the GLS reclaim path does not yet tolerate
-// (orchestrion#782). It is a pure helper so the gate is unit-testable without an
-// Orchestrion build (orchestrion.Enabled() is a build-time constant).
-func shouldDisableSpanPool(spanPoolEnabled, orchestrionEnabled bool) bool {
-	return spanPoolEnabled && orchestrionEnabled
-}
-
 func llmobsAgentlessEnabledFromEnv() *bool {
 	v, ok := internal.BoolEnvNoDefault(envLLMObsAgentlessEnabled)
 	if !ok {
@@ -436,17 +413,31 @@ func apmTracingDisabled(c *config) {
 	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
 }
 
-// resolveTraceTransport returns the trace URL and headers for the Datadog
-// agent transport. In OTLP export mode the ddTransport is not used for trace
-// sending (otlpTransport handles that), but it may still be used for stats
-// and agent discovery, so it always points at the DD agent.
-func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers map[string]string) {
+// resolveTraceURL returns the trace URL for the Datadog agent transport,
+// based on the configured trace protocol version. In OTLP export mode the
+// ddTransport is not used for trace sending (otlpTransport handles that),
+// but it may still be used for stats and agent discovery, so it always
+// points at the DD agent.
+func resolveTraceURL(cfg *internalconfig.Config) string {
 	agentURL := cfg.AgentURL().String()
-	traceURL = agentURL + tracesAPIPath
 	if cfg.TraceProtocol() == traceProtocolV1 {
-		traceURL = agentURL + tracesAPIPathV1
+		return agentURL + tracesAPIPathV1
 	}
-	return traceURL, datadogHeaders()
+	return agentURL + tracesAPIPath
+}
+
+// traceTransportHeaders returns the headers to send with Datadog agent trace
+// transport requests. Unlike resolveTraceURL, this does not depend on the
+// trace protocol, so callers that only need headers (e.g. the startup
+// diagnostics probe) can call this without an extra TraceProtocol() read.
+func traceTransportHeaders(cfg *internalconfig.Config) map[string]string {
+	headers := datadogHeaders()
+	if cfg.OTLPSpanMetricsEnabled() {
+		// Set statically so the header is present on every trace request from startup,
+		// before agent /info polling has completed and CanComputeStats becomes true.
+		headers["Datadog-Client-Computed-Stats"] = "yes"
+	}
+	return headers
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {

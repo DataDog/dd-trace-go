@@ -455,6 +455,57 @@ func TestProcessConfigUpdate(t *testing.T) {
 		}
 	})
 
+	t.Run("nil shard range does not reject valid flags", func(t *testing.T) {
+		provider := newDatadogProvider(ProviderConfig{})
+		data := []byte(`{
+			"format": "SERVER",
+			"flags": {
+				"valid-flag": {
+					"key": "valid-flag",
+					"enabled": true,
+					"variationType": "BOOLEAN",
+					"variations": {"on": {"key": "on", "value": true}},
+					"allocations": [{
+						"key": "static",
+						"rules": [],
+						"splits": [{"shards": [], "variationKey": "on"}]
+					}]
+				},
+				"invalid-flag": {
+					"key": "invalid-flag",
+					"enabled": true,
+					"variationType": "BOOLEAN",
+					"variations": {"on": {"key": "on", "value": true}},
+					"allocations": [{
+						"key": "invalid",
+						"rules": [],
+						"splits": [{
+							"shards": [{"totalShards": 8192, "ranges": [null]}],
+							"variationKey": "on"
+						}]
+					}]
+				}
+			}
+		}`)
+
+		status := processConfigUpdate(provider, "test-path", data)
+		require.Equal(t, rc.ApplyStateAcknowledged, status.State)
+
+		updatedConfig := provider.getConfiguration()
+		require.NotNil(t, updatedConfig)
+		require.Contains(t, updatedConfig.Flags, "valid-flag")
+		require.NotContains(t, updatedConfig.Flags, "invalid-flag")
+		require.Contains(t, updatedConfig.invalidFlags, "invalid-flag")
+
+		validResult := evaluateConfiguredFlag(updatedConfig, "valid-flag", false, nil, time.Now())
+		require.Equal(t, true, validResult.Value)
+		require.Equal(t, "STATIC", string(validResult.Reason))
+
+		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now())
+		require.Equal(t, false, invalidResult.Value)
+		require.Equal(t, "DEFAULT", string(invalidResult.Reason))
+	})
+
 	t.Run("configuration deletion", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
 

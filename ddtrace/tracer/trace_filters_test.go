@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func TestNewTraceFilters(t *testing.T) {
@@ -469,6 +470,51 @@ func TestTraceFilterComputeSpanStatsCSSOffClearsStaleValue(t *testing.T) {
 	tracer.computeSpanStats(trace, span)
 	assert.Nil(t, span.statSpan)
 	assert.False(t, trace.filterReject)
+}
+
+// TestComputeSpanStatsOTLPWithoutCapableAgent verifies that stats are computed
+// for OTLP span metrics even when the agent doesn't report native Client-Side
+// Stats capability (e.g. no agent, or an agent without /v0.6/stats support).
+func TestComputeSpanStatsOTLPWithoutCapableAgent(t *testing.T) {
+	tracer, err := newUnstartedTracer(withNoopInfoHTTPClient(), func(c *config) {
+		c.internalConfig.SetOTLPSpanMetricsEnabled(true, internalconfig.OriginCode)
+	})
+	require.NoError(t, err)
+	defer tracer.statsd.Close()
+
+	agentFeatures := tracer.config.agent.load()
+	agentFeatures.Stats = false
+	agentFeatures.DropP0s = false
+	tracer.config.agent.store(agentFeatures)
+
+	span := &Span{
+		name:     "http.request",
+		service:  "test-svc",
+		resource: "/api/v1",
+		start:    time.Now().UnixNano() - int64(30*time.Second),
+		duration: int64(50 * time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+	}
+	trace := &trace{root: span}
+	tracer.computeSpanStats(trace, span)
+	assert.NotNil(t, span.statSpan, "OTLP span metrics must be computed even without a capable agent")
+
+	oversized := &Span{
+		name:     "http.request",
+		service:  "test-svc",
+		resource: "/api/v2",
+		start:    time.Now().UnixNano() - int64(30*time.Second),
+		duration: int64(50 * time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+	}
+	tracer.computeOversizedSpanStats(oversized)
+	select {
+	case sent := <-tracer.stats.(*concentrator).In:
+		require.Len(t, sent, 1)
+		assert.NotNil(t, sent[0].statSpan)
+	default:
+		t.Fatal("OTLP span metrics must be sent for oversized spans without a capable agent")
+	}
 }
 
 func TestTraceFilterLargeChunkBatchesStats(t *testing.T) {

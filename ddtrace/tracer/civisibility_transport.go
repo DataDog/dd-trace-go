@@ -40,6 +40,7 @@ var _ ddTransport = (*ciVisibilityTransport)(nil)
 // to the Datadog endpoint, either in agentless mode or through the EVP proxy.
 type ciVisibilityTransport struct {
 	config           *config           // Configuration for the tracer.
+	httpClient       *http.Client      // HTTP client selected for the configured destination.
 	testCycleURLPath string            // URL path for the test cycle endpoint.
 	headers          map[string]string // HTTP headers to be included in the requests.
 	agentless        bool              // Gets if the transport is configured in agentless mode (eg: Gzip support)
@@ -74,10 +75,12 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 	// Determine if agentless mode is enabled (sourced from internal/config).
 	agentlessEnabled := config.internalConfig.CIVisibilityAgentless()
+	httpClient := config.httpClient
 
 	testCycleURL := ""
 	if agentlessEnabled {
 		// Agentless mode is enabled.
+		httpClient = internal.DefaultHTTPClient(config.internalConfig.AgentTimeout(), false)
 		APIKeyValue := config.internalConfig.APIKey()
 		if APIKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
@@ -109,6 +112,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 	return &ciVisibilityTransport{
 		config:           config,
+		httpClient:       httpClient,
 		testCycleURLPath: testCycleURL,
 		headers:          defaultHeaders,
 		agentless:        agentlessEnabled,
@@ -176,7 +180,7 @@ func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) 
 	log.Debug("ciVisibilityTransport: sending transport request: %d bytes", buffer.Len())
 
 	startTime := time.Now()
-	response, err := t.config.httpClient.Do(req)
+	response, err := t.httpClient.Do(req)
 	telemetry.EndpointPayloadRequestsMs(telemetry.TestCycleEndpointType, float64(time.Since(startTime).Milliseconds()))
 	if err != nil {
 		return nil, err
