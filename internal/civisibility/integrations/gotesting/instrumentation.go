@@ -133,6 +133,7 @@ type (
 		processRetryCoordinator    *processRetryCoordinator
 		efdFaultySessionGuard      earlyFlakeDetectionFaultySession
 		retryAttemptObserveOutput  bool
+		quarantinedRaceIsolation   bool
 	}
 
 	// executionOptions holds the execution options for the test
@@ -705,7 +706,7 @@ func applyAdditionalFeaturesToTestFunc(
 
 		var outcomes retryOutcomeAccumulator
 
-		runTestWithRetry(&runTestWithRetryOptions{
+		runOptions := &runTestWithRetryOptions{
 			targetFunc:                    f,
 			t:                             t,
 			parallelEFDAllowed:            wrapperOpts.parallelEFDAllowed,
@@ -918,7 +919,12 @@ func applyAdditionalFeaturesToTestFunc(
 					tParentCommonPrivates.SetFailed(true)
 				}
 			},
-		})
+		}
+		if wrapperOpts.quarantinedRaceIsolation && ptrMeta.isQuarantined {
+			deferQuarantinedRaceFirstAttempt(runOptions)
+			return
+		}
+		runTestWithRetry(runOptions)
 	}
 
 	// Mark the wrapper as instrumented.

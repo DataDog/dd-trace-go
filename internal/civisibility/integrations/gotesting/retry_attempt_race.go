@@ -12,3 +12,5 @@ import "runtime"
 func retryAttemptRaceErrors() int64 {
 	return int64(runtime.RaceErrors())
 }
+
+func retryAttemptRaceEnabled() bool { return true }

@@ -94,6 +94,14 @@ func IsTestFuncModified(testName string, fn *runtime.Func) bool {
 	return isTestFuncModified(GetImpactedTestsAnalyzer(), testName, fn)
 }
 
+// IsTestFuncUnskippable reports whether source metadata marks fn or its suite
+// as unskippable without requiring a test event to be created first.
+func IsTestFuncUnskippable(fn *runtime.Func) bool {
+	metadata := loadSourceFunctionMetadata(fn)
+	return metadata.fileMetadata.parseOK &&
+		(metadata.fileMetadata.suiteUnskippable || metadata.resolution.functionUnskippable)
+}
+
 func isTestFuncModified(analyzer impactedTestClassifier, testName string, fn *runtime.Func) bool {
 	if analyzer == nil || fn == nil {
 		return false

@@ -105,6 +105,7 @@ type deferredProcessRetryGroup struct {
 	rootParallel          bool
 	nativeMaxParallel     int
 	efdFaultySessionGuard earlyFlakeDetectionFaultySession
+	deferredFirstAttempt  bool
 }
 
 type deferredProcessRetryEvent struct {
@@ -144,6 +145,7 @@ type processRetryCoordinator struct {
 	phaseByTestName  map[string]uint64
 	failfastEnabled  func() bool
 	attemptRunner    deferredProcessRetryAttemptRunner
+	batchRunner      deferredProcessRetryBatchRunner
 }
 
 type deferredProcessRetryPreparedAttempt struct {
@@ -210,6 +212,7 @@ func newProcessRetryCoordinator(failfastEnabled func() bool, attemptRunner defer
 		completed:       make(chan struct{}),
 		failfastEnabled: failfastEnabled,
 		attemptRunner:   attemptRunner,
+		batchRunner:     runDeferredQuarantinedProcessRetryBatch,
 	}
 }
 
@@ -361,6 +364,7 @@ func (c *processRetryCoordinator) complete(nativeExitCode int, shuttingDown bool
 	var terminalPanic any
 	if !shuttingDown && !c.shutdownRequested() {
 		if !failfastLatched {
+			queue = c.drainDeferredFirstAttempts(queue)
 			outcome := c.drainScheduledGroups(queue)
 			deferredFailed = outcome.deferredFailed
 			failfastLatched = outcome.failfast
@@ -398,6 +402,110 @@ func (c *processRetryCoordinator) complete(nativeExitCode int, shuttingDown bool
 	close(c.completed)
 	c.mu.Unlock()
 	unregisterProcessRetryCoordinator(c)
+}
+
+func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredProcessRetryGroup) []*deferredProcessRetryGroup {
+	if len(queue) == 0 {
+		return nil
+	}
+	hasDeferredFirstAttempt := false
+	for _, group := range queue {
+		if group.deferredFirstAttempt {
+			hasDeferredFirstAttempt = true
+			break
+		}
+	}
+	if !hasDeferredFirstAttempt {
+		return queue
+	}
+	remaining := make([]*deferredProcessRetryGroup, 0, len(queue))
+	groupsByPhase := make(map[uint64][]*deferredProcessRetryGroup)
+	phaseOrder := make([]uint64, 0)
+	for _, group := range queue {
+		if !group.deferredFirstAttempt {
+			remaining = append(remaining, group)
+			continue
+		}
+		if _, exists := groupsByPhase[group.phaseID]; !exists {
+			phaseOrder = append(phaseOrder, group.phaseID)
+		}
+		groupsByPhase[group.phaseID] = append(groupsByPhase[group.phaseID], group)
+	}
+	for _, phaseID := range phaseOrder {
+		groups := groupsByPhase[phaseID]
+		results := c.batchRunner(context.Background(), groups)
+		for _, group := range groups {
+			attempt, ok := results[group]
+			if !ok {
+				attempt = processRetryAttemptResult{
+					Err:        errProcessRetryResultMissing,
+					ExitCode:   processRetryExitCodeUnset,
+					StartTime:  time.Now(),
+					FinishTime: time.Now(),
+				}
+			}
+			if group.applyDeferredFirstAttempt(attempt) {
+				group.deferredFirstAttempt = false
+				remaining = append(remaining, group)
+				continue
+			}
+			group.finish()
+			group.printSummary()
+		}
+	}
+	slices.SortStableFunc(remaining, func(a, b *deferredProcessRetryGroup) int {
+		return cmp.Compare(a.invocationOrdinal, b.invocationOrdinal)
+	})
+	return remaining
+}
+
+func (g *deferredProcessRetryGroup) applyDeferredFirstAttempt(attempt processRetryAttemptResult) bool {
+	execMeta := &testExecutionMetadata{}
+	if !applyProcessRetryMetadataSnapshot(execMeta, &g.metadata) {
+		g.cancel("missing_metadata_snapshot", true)
+		return false
+	}
+	execMeta.hasAdditionalFeatureWrapper = true
+	execMeta.isARetry = false
+	duration := max(attempt.FinishTime.Sub(attempt.StartTime), 0)
+	// Match the inline runner: the configured count is sampled from the first
+	// execution, then that completed execution consumes the initial slot.
+	g.retryCount = computeAdjustedRetryCount(execMeta, duration) - 1
+	execMeta.remainingRetries = g.retryCount
+	execMeta.initialRetryCount = g.retryCount
+	execMeta.initialRetryCountSet = true
+	execMeta.isLastRetry = g.retryCount <= 0
+	terminal := deferredProcessRetryAttemptTerminal(attempt)
+	continueGroup := false
+	effective, tail := deferProcessRetryTestEventWithAdmission(&g.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {
+		g.outcomes.observe(effective.Failed, effective.Skipped)
+		continueGroup = !terminal && deferredProcessRetryShouldContinue(execMeta, effective.Failed, effective.Skipped, g.retryCount)
+		execMeta.retryContinuationDecided = true
+		execMeta.retryContinuationAdmitted = continueGroup
+		execMeta.isLastRetry = !continueGroup
+		execMeta.anyExecutionPassed = g.outcomes.anyPassed()
+		execMeta.anyExecutionFailed = g.outcomes.anyFailed()
+		execMeta.allAttemptsPassed = g.outcomes.allAttemptsPassed()
+		execMeta.allRetriesFailed = g.executionIndex > 0 && g.outcomes.allRetriesFailed()
+	})
+	g.latest = retryAttemptObservation{
+		executionIndex: 0,
+		failed:         effective.Failed,
+		skipped:        effective.Skipped,
+		duration:       duration,
+		raceDetected:   attempt.Result.RaceDetected,
+		rootParallel:   attempt.Result.RootParallel,
+	}
+	g.rootParallel = attempt.Result.RootParallel
+	if attempt.Result.Panic {
+		g.panicPresent = true
+		g.panicMessage = attempt.Result.ErrorMessage
+		g.panicStack = attempt.Result.ErrorStack
+	}
+	if tail != nil {
+		g.tailEvent = tail
+	}
+	return continueGroup
 }
 
 func cancelDeferredProcessRetryGroups(groups []*deferredProcessRetryGroup, reason string, failed bool) {
@@ -876,6 +984,94 @@ func prepareDeferredProcessRetryInvocation(execOpts *executionOptions) {
 	}
 }
 
+func deferQuarantinedRaceFirstAttempt(options *runTestWithRetryOptions) {
+	if options == nil {
+		return
+	}
+	if options.t == nil || options.testInfo == nil || options.processRetryCoordinator == nil {
+		runTestWithRetry(options)
+		return
+	}
+	identity, ok := cloneDeferredTestIdentity(options.processRetryIdentity)
+	if !ok {
+		runTestWithRetry(options)
+		return
+	}
+	execMeta := &testExecutionMetadata{}
+	if options.preExecMetaAdjust != nil {
+		options.preExecMetaAdjust(execMeta, 0)
+	}
+	testInfo := &testingTInfo{commonInfo: *options.testInfo}
+	itrDecision := currentITRState().decisionFor(testInfo, execMeta, integrations.IsTestFuncUnskippable(options.testInfo.sourceFunc))
+	if itrDecision.skip {
+		originalExecMeta := getTestMetadata(options.t)
+		if originalExecMeta == nil {
+			originalExecMeta = createTestMetadata(options.t, nil)
+			defer deleteTestMetadata(options.t)
+		}
+		if options.preExecMetaAdjust != nil {
+			options.preExecMetaAdjust(originalExecMeta, 0)
+		}
+		options.targetFunc(options.t)
+		return
+	}
+	if itrDecision.forcedRun {
+		execMeta.isItrForcedRun = true
+	}
+	execMeta.identity = &identity
+	execMeta.hasAdditionalFeatureWrapper = true
+	execOpts := &executionOptions{options: options, executionMetadata: execMeta}
+	prepareDeferredProcessRetryInvocation(execOpts)
+	if ok, _ := processRetryParallelBaselineReady(execOpts.processRetryLaunchBaseline); !ok || options.processRetryPhaseID == 0 {
+		runTestWithRetry(options)
+		return
+	}
+	metadata := snapshotProcessRetryExecutionMetadata(execMeta)
+	if metadata == nil {
+		runTestWithRetry(options)
+		return
+	}
+	admission := options.processRetryCoordinator.beginAdmission()
+	if admission == nil {
+		runTestWithRetry(options)
+		return
+	}
+	lease, err := acquireProcessRetryGroupLease()
+	if err != nil {
+		admission.abort()
+		runTestWithRetry(options)
+		return
+	}
+	parentDeadline, parentDeadlineOK := options.t.Deadline()
+	module := session.GetOrCreateModule(options.testInfo.moduleName)
+	suite := module.GetOrCreateSuite(options.testInfo.suiteName)
+	group := &deferredProcessRetryGroup{
+		identity:              identity,
+		testInfo:              *options.testInfo,
+		metadata:              *metadata,
+		launchBaseline:        execOpts.processRetryLaunchBaseline,
+		lease:                 lease,
+		parentDeadline:        parentDeadline,
+		parentDeadlineOK:      parentDeadlineOK,
+		mRunEpoch:             options.processRetryMRunEpoch,
+		phaseID:               options.processRetryPhaseID,
+		invocationOrdinal:     ensureProcessRetryInvocationOrdinal(options),
+		executionIndex:        0,
+		module:                module,
+		suite:                 suite,
+		efdFaultySessionGuard: options.efdFaultySessionGuard,
+		deferredFirstAttempt:  true,
+	}
+	group.metadata.identity = &group.identity
+	group.testInfo.identity = &group.identity
+	if !admission.commit(group) {
+		lease.release()
+		runTestWithRetry(options)
+		return
+	}
+	options.t.SkipNow()
+}
+
 func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 	if execOpts == nil || execOpts.options == nil || execOpts.executionMetadata == nil {
 		return false
@@ -1222,7 +1418,7 @@ func (g *deferredProcessRetryGroup) closeTailEvent(final bool) {
 			attemptToFixPassed := g.outcomes.allAttemptsPassed() && !g.truncated && !g.terminalFailure
 			g.tailEvent.event.SetTag(constants.TestAttemptToFixPassed, strconv.FormatBool(attemptToFixPassed))
 		}
-		if g.tailEvent.failed && g.outcomes.allRetriesFailed() {
+		if g.executionIndex > 0 && g.tailEvent.failed && g.outcomes.allRetriesFailed() {
 			g.tailEvent.event.SetTag(constants.TestHasFailedAllRetries, "true")
 		}
 	}

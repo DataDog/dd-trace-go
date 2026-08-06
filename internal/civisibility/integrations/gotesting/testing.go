@@ -326,9 +326,14 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			log.Debug("instrumentTestingM: deferred process retry coordinator registration rejected")
 		}
 	}
-
 	coverageInitialized := false
 	settings := integrations.GetSettings()
+	testManagementEnabled := settings != nil && settings.TestManagement.Enabled &&
+		internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true)
+	if processModeEnabled && testManagementEnabled && retryAttemptRaceEnabled() &&
+		ProcessRetryContainmentSupported() && wrapperOpts.processRetryCoordinator != nil {
+		wrapperOpts.quarantinedRaceIsolation = true
+	}
 	var knownTests *net.KnownTestsResponseData
 	if settings != nil && settings.EarlyFlakeDetection.Enabled && settings.EarlyFlakeDetection.FaultySessionThreshold != nil {
 		threshold := *settings.EarlyFlakeDetection.FaultySessionThreshold
@@ -343,7 +348,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			coverage.InitializeCoverage(m, true)
 			coverageInitialized = true
 		}
-		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+		if testManagementEnabled {
 			// Set the test management tag if enabled.
 			session.SetTag(constants.TestManagementEnabled, "true")
 		}

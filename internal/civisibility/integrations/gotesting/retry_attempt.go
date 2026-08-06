@@ -40,6 +40,7 @@ type retryAttemptGroup struct {
 	attempts               []*retryAttemptRoot
 	observeOutput          bool
 	observeNativeOutput    bool
+	outputLimit            int64
 	retired                bool
 }
 
@@ -73,8 +74,9 @@ type retryAttemptRoot struct {
 }
 
 type retryAttemptOutputCapture struct {
-	mu     locking.Mutex
-	output []byte
+	mu      locking.Mutex
+	output  []byte
+	bounded *processRetryBoundedOutput
 }
 
 type retryAttemptCaptureWriter struct {
@@ -83,18 +85,30 @@ type retryAttemptCaptureWriter struct {
 }
 
 func (w retryAttemptCaptureWriter) Write(p []byte) (int, error) {
-	w.capture.mu.Lock()
-	w.capture.output = append(w.capture.output, p...)
-	w.capture.mu.Unlock()
+	w.capture.write(p)
 	return w.writer.Write(p)
 }
 
-func (c *retryAttemptOutputCapture) take() []byte {
+func (c *retryAttemptOutputCapture) write(p []byte) {
+	if c.bounded != nil {
+		_, _ = c.bounded.Write(p)
+		return
+	}
+	c.mu.Lock()
+	c.output = append(c.output, p...)
+	c.mu.Unlock()
+}
+
+func (c *retryAttemptOutputCapture) take() ([]byte, bool) {
+	if c.bounded != nil {
+		tail, truncated := c.bounded.Tail()
+		return []byte(tail), truncated
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	output := c.output
 	c.output = nil
-	return output
+	return output, false
 }
 
 func newRetryAttemptGroup(original *testing.T) (*retryAttemptGroup, string) {
@@ -251,6 +265,9 @@ func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, st
 		layout:       layout,
 		raceBaseline: raceBaseline,
 		stackCapture: debug.Stack,
+	}
+	if group.outputLimit > 0 {
+		attempt.outputCapture.bounded = newProcessRetryBoundedOutput(group.outputLimit)
 	}
 	group.mu.Lock()
 	if group.retired {

@@ -52,6 +52,7 @@ var processRetryUnitTestPrefixes = []string{
 	"TestWriteProcessRetry",
 	"TestFinalizeProcessRetry",
 	"TestCombineProcessRetry",
+	"TestUnquarantinedRace",
 }
 
 const retryParityUnitTestPrefix = "TestProcessRetryParity"
@@ -76,11 +77,20 @@ func TestMain(m *testing.M) {
 	const scenarioStarted = "**** [Scenario %s started] ****\n\n"
 	// We need to spawn separated test process for each scenario
 	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection", "TestFlakyTestRetriesWithTransientSettingsFailure"}
+	if quarantinedRaceScenarioAvailable() {
+		scenarios = append(scenarios, "TestQuarantinedRace")
+	}
 	if coverageModeSupportsITRBackfill() {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
 	}
 
-	if internal.BoolEnv(scenarios[0], false) {
+	if unquarantinedRaceFixtureSelected() {
+		runUnquarantinedRaceFixture(m)
+	} else if quarantinedRaceInProcessFixtureSelected() {
+		runQuarantinedRaceTests(m, "in_process")
+	} else if isProcessRetryChild() {
+		os.Exit(runProcessRetryChild(m))
+	} else if internal.BoolEnv(scenarios[0], false) {
 		fmt.Printf(scenarioStarted, scenarios[0])
 		runFlakyTestRetriesTests(m)
 	} else if internal.BoolEnv(scenarios[1], false) {
@@ -107,6 +117,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv("TestIntelligentTestRunnerWithCoverageBackfill", false) {
 		fmt.Printf(scenarioStarted, "TestIntelligentTestRunnerWithCoverageBackfill")
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
+	} else if internal.BoolEnv("TestQuarantinedRace", false) {
+		fmt.Printf(scenarioStarted, "TestQuarantinedRace")
+		runQuarantinedRaceTests(m, "process")
 	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
 		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
 		os.Exit(runProcessRetryChild(m))
@@ -128,7 +141,29 @@ func TestMain(m *testing.M) {
 		if layoutAvailable {
 			runTestControllerSubprocess("RetryNativeParallelUnitTest", "^TestRetryAttemptNativeMaxParallelMatchesTestingFlag$", "Bypass=true", "-test.parallel=3")
 			for _, v := range scenarios {
-				runTestControllerSubprocess(v, legacyScenarioRunFilter, v+"=true")
+				runFilter := legacyScenarioRunFilter
+				if v == "TestQuarantinedRace" {
+					runFilter = "^TestQuarantinedRace"
+					pidDir, err := os.MkdirTemp("", "dd-quarantined-race-pids-*")
+					if err != nil {
+						panic(err)
+					}
+					previousPIDDir, hadPIDDir := os.LookupEnv(quarantinedRacePIDDirEnv)
+					if err := os.Setenv(quarantinedRacePIDDirEnv, pidDir); err != nil {
+						panic(err)
+					}
+					runTestControllerSubprocess(v, runFilter, v+"=true")
+					if hadPIDDir {
+						_ = os.Setenv(quarantinedRacePIDDirEnv, previousPIDDir)
+					} else {
+						_ = os.Unsetenv(quarantinedRacePIDDirEnv)
+					}
+					if err := os.RemoveAll(pidDir); err != nil {
+						panic(err)
+					}
+					continue
+				}
+				runTestControllerSubprocess(v, runFilter, v+"=true")
 			}
 		}
 	}

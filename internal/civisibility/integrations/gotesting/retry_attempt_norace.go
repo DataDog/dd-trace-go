@@ -10,3 +10,5 @@ package gotesting
 func retryAttemptRaceErrors() int64 {
 	return 0
 }
+
+func retryAttemptRaceEnabled() bool { return false }

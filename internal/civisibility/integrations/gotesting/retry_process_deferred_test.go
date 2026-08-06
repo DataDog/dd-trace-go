@@ -1196,6 +1196,93 @@ func BenchmarkDeferredProcessRetryQueueAdmission(b *testing.B) {
 	}
 }
 
+func TestDeferredProcessRetryBatchesFirstAttemptsByPhase(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+
+	a := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
+	b := newDeferredQuarantinedFirstAttemptGroupForTesting("TestB", 1, 2)
+	c := newDeferredQuarantinedFirstAttemptGroupForTesting("TestC", 2, 3)
+	ordinary := &deferredProcessRetryGroup{invocationOrdinal: 4}
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	var batches [][]*deferredProcessRetryGroup
+	coordinator.batchRunner = func(_ context.Context, groups []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		batches = append(batches, append([]*deferredProcessRetryGroup(nil), groups...))
+		results := make(map[*deferredProcessRetryGroup]processRetryAttemptResult, len(groups))
+		for index, group := range groups {
+			results[group] = fixedProcessRetryAttempt(processRetryStatusPass, int64(index+1))
+		}
+		return results
+	}
+
+	remaining := coordinator.drainDeferredFirstAttempts([]*deferredProcessRetryGroup{a, ordinary, b, c})
+
+	require.Equal(t, [][]*deferredProcessRetryGroup{{a, b}, {c}}, batches)
+	require.Equal(t, []*deferredProcessRetryGroup{ordinary}, remaining)
+	require.Len(t, recorder.tests, 3)
+	for _, event := range recorder.tests {
+		require.Equal(t, processRetryStatusPass, event.status)
+		require.Equal(t, 1, event.closeCount)
+		require.Equal(t, constants.TestStatusSkip, event.tags[constants.TestFinalStatus])
+	}
+}
+
+func TestDeferredProcessRetryFirstAttemptDrainReturnsOriginalQueueWhenUnused(t *testing.T) {
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	queue := []*deferredProcessRetryGroup{{invocationOrdinal: 1}, {invocationOrdinal: 2}}
+	coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		t.Fatal("batch runner called without a deferred first attempt")
+		return nil
+	}
+
+	got := coordinator.drainDeferredFirstAttempts(queue)
+
+	require.Equal(t, queue, got)
+	require.Same(t, &queue[0], &got[0])
+}
+
+func TestDeferredProcessRetryFirstAttemptConsumesInitialRetrySlot(t *testing.T) {
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	settings := integrations.GetSettings()
+	oldSettings := *settings
+	defer func() { *settings = oldSettings }()
+	settings.TestManagement.AttemptToFixRetries = 10
+
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestAttemptToFix", 1, 1)
+	group.metadata.isAttemptToFix = true
+	group.metadata.shouldOrchestrateAttemptToFix = true
+
+	require.True(t, group.applyDeferredFirstAttempt(fixedProcessRetryAttempt(processRetryStatusPass, 1)))
+	require.Equal(t, int64(9), group.retryCount)
+}
+
+func TestDeferredProcessRetryFirstAttemptDoesNotMarkAllRetriesFailed(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestQuarantined", 1, 1)
+	attempt := fixedProcessRetryAttempt(processRetryStatusFail, 1)
+	attempt.Result.Failed = true
+
+	require.False(t, group.applyDeferredFirstAttempt(attempt))
+	group.finish()
+	require.Len(t, recorder.tests, 1)
+	_, tagged := recorder.tests[0].tags[constants.TestHasFailedAllRetries]
+	require.False(t, tagged)
+}
+
+func newDeferredQuarantinedFirstAttemptGroupForTesting(name string, phaseID, ordinal uint64) *deferredProcessRetryGroup {
+	identity := newTestIdentity("module", "suite", name)
+	return &deferredProcessRetryGroup{
+		identity:             *identity,
+		testInfo:             commonInfo{moduleName: identity.ModuleName, suiteName: identity.SuiteName, testName: identity.FullName, identity: identity},
+		metadata:             processRetryMetadataSnapshot{identity: identity, isQuarantined: true, hasAdditionalFeatureWrapper: true},
+		phaseID:              phaseID,
+		invocationOrdinal:    ordinal,
+		deferredFirstAttempt: true,
+	}
+}
+
 func newDeferredProcessRetrySchedulerGroup(
 	name string,
 	retryCount int64,
