@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,16 +143,12 @@ func runDeferredQuarantinedProcessRetryBatchWithRunner(
 	pending := append([]*deferredProcessRetryGroup(nil), groups...)
 	for len(pending) > 0 {
 		completed, missing := runOnce(ctx, pending)
-		for group, result := range completed {
-			results[group] = result
-		}
+		maps.Copy(results, completed)
 		if len(missing) == 0 {
 			break
 		}
 		if ctx.Err() != nil {
-			for group, result := range missing {
-				results[group] = result
-			}
+			maps.Copy(results, missing)
 			break
 		}
 		if len(completed) > 0 {
