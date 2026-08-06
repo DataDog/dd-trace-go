@@ -38,9 +38,12 @@
 // Start is idempotent: subsequent calls after the first are no-ops. A
 // companion Orchestrion integration (not part of this package) can inject a
 // Start call as the first statement of main using DD_* environment
-// configuration; where that integration is built in, a later programmatic
-// Start call with options in main is a no-op, so programmatic options should
-// not be relied on to control startup in that build.
+// configuration; where that integration is built in, it wins the race to be
+// the first Start call, so a later programmatic Start call with options in
+// main is a no-op and those options are silently dropped — not applied, not
+// merged, and not reported as ignored. Do not rely on programmatic options to
+// control startup in that build; use the DD_* environment configuration the
+// integration reads instead.
 //
 // # Configuration
 //
@@ -62,10 +65,14 @@
 // # Init order note
 //
 // The monitor child is intercepted from package init, which is the earliest hook
-// available to a pure Go implementation, but Go does not guarantee crashtracker's
-// init runs before every other imported package init. Some init side effects in
-// packages imported by main can still execute in the monitor child before the
-// monitor role exits. Keep expensive or externally visible init work out of
-// packages imported by main when crashtracking is enabled, and call Start as the
-// first statement of main for manual integrations.
+// available to a pure Go implementation. Go leaves cross-package init order
+// unspecified beyond dependency constraints, and in practice this means any
+// package linked into the binary — not just main's direct imports, but every
+// transitive dependency — can run its init to full completion in the monitor
+// role before crashtracker's own init detects that role and exits. This is not
+// something reordering your own imports can influence: the ordering is decided
+// by the toolchain across the whole import graph, not by import statement order
+// in your source. Keep expensive or externally visible init work out of any
+// package that might be imported when crashtracking is enabled, and call Start
+// as the first statement of main for manual integrations.
 package crashtracker

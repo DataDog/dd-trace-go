@@ -29,6 +29,10 @@ func decompressBody(t *testing.T, body []byte) []byte {
 	return decompressed
 }
 
+// newTestReport builds a Report exercising uploadReport/buildRequestAndClient
+// in isolation from a real crash dump. DDTags and OSInfo are derived from the
+// real buildDDTags/osInfo rather than hand-typed, so this fixture's shape
+// tracks the actual wire contract instead of silently drifting from it.
 func newTestReport() *Report {
 	stack := StackTrace{
 		Format: "Datadog Crashtracker 1.0",
@@ -38,10 +42,9 @@ func newTestReport() *Report {
 			Line:     10,
 		}},
 	}
-	return &Report{
+	r := &Report{
 		Timestamp: 1700000000000,
 		DDSource:  "crashtracker",
-		DDTags:    "language:go",
 		Error: Error{
 			Type:       "SIGSEGV",
 			Message:    "segmentation fault",
@@ -51,8 +54,10 @@ func newTestReport() *Report {
 			IsCrash:    true,
 			SourceType: "Crashtracking",
 		},
-		OSInfo: OSInfo{Architecture: "amd64", Bitness: "64-bit"},
+		OSInfo: osInfo(),
 	}
+	r.DDTags = buildDDTags(&config{}, r)
+	return r
 }
 
 func TestUploadReportAgentPath(t *testing.T) {
