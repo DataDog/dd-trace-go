@@ -3,7 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package httpsec
+// Package clientip resolves the identity of an HTTP client from transport data.
+//
+// It owns the default resolution policy — scan the monitored IP headers left to
+// right, prefer the first globally-routable address, fall back to the remote
+// address — and is the only place that policy lives. Integrations that know a
+// trustworthy address pass it across the instrumentation boundary instead.
+package clientip
 
 import (
 	"net"
@@ -14,11 +20,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// ClientIP returns the first public IP address found in the given headers. If
+// resolveWith returns the first public IP address found in the given headers. If
 // none is present, it returns the first valid IP address present, possibly
 // being a local IP address. The remote address, when valid, is used as fallback
 // when no IP address has been found at all.
-func ClientIP(hdrs map[string][]string, hasCanonicalHeaders bool, remoteAddr string, monitoredHeaders []string) (remoteIP, clientIP netip.Addr) {
+//
+// [Resolve] is the entry point callers use; this variant exists so the policy
+// can be exercised against an explicit header list.
+func resolveWith(hdrs map[string][]string, hasCanonicalHeaders bool, remoteAddr string, monitoredHeaders []string) (remoteIP, clientIP netip.Addr) {
 	// Walk IP-related headers
 	var foundIP netip.Addr
 headersLoop:

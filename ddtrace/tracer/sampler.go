@@ -312,5 +312,11 @@ func (ps *prioritySampler) apply(spn *Span) {
 	// as _dd.p.ksr to stay consistent with other tracers.
 	if fromAgent {
 		spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+		// Emit the OTel (rv, th) pair for this genuine probability decision.
+		// Gated on fromAgent for the same reason as _dd.p.ksr: the default
+		// fallback rate is not an agent-configured probability.
+		if spn.context != nil && spn.context.trace != nil {
+			spn.context.trace.setOtelProbability(spn.traceID, rate)
+		}
 	}
 }
