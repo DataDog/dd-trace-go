@@ -6,7 +6,7 @@
 //go:build ignore
 
 // This file is never compiled as part of this package. The add_file rule in
-// gls.otelc.yaml copies it into the runtime package during an otelc build, where
+// otelc.yaml copies it into the runtime package during an otelc build, where
 // getg() and the injected g.__dd_gls_v2 field exist. otelc rewrites the package
 // clause and drops the build constraint on the way in.
 //
@@ -14,7 +14,7 @@
 // internal/orchestrion/gls.go, which declares the matching //go:linkname vars and
 // is shared unmodified between orchestrion and otelc builds. Renaming either side
 // silently breaks the link, leaving the GLS permanently empty.
-package otelc
+package tracer
 
 import _ "unsafe" // for go:linkname
 
