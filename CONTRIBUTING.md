@@ -297,10 +297,6 @@ Sample PR: <https://github.com/DataDog/dd-trace-go/pull/3365>
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
-### Offline export clients
-
-The public [`llmobs/export`](./llmobs/export) client submits already-built LLM Observability spans and evaluations either directly to Datadog intake or through an Agent EVP proxy. The public `otlp/export` clients submit already-built OTLP trace, metric, and log requests either to the agentless `otlp.<site>` intake or to a caller-provided collector or Agent endpoint. These clients handle endpoint selection, authentication, HTTP retries, and structured results without starting live instrumentation; use one isolated client per destination.
-
 ### Working with environment variables
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
