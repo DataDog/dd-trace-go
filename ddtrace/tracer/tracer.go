@@ -847,8 +847,12 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
-		t.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:queue_full"}, 1)
-		t.statsd.Count("datadog.tracer.spans_dropped", int64(len(trace.spans)), []string{"reason:queue_full"}, 1)
+		if !trace.filterRejected {
+			// Filter-rejected chunks are already accounted for as reason:trace_filter
+			// in emitFilterDrop; counting them again here would double-count the drop.
+			t.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:queue_full"}, 1)
+			t.statsd.Count("datadog.tracer.spans_dropped", int64(len(trace.spans)), []string{"reason:queue_full"}, 1)
+		}
 		// Do NOT call releaseSpans here: pushChunk is called from within
 		// finish() while s.mu is held. clear() acquires s.mu to serialize
 		// after finish(), so calling it here deadlocks the same goroutine.
