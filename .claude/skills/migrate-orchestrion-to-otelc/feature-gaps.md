@@ -12,7 +12,11 @@ otelc has no rule that matches a `T{...}` literal at a use site. `assign_value` 
 top-level `var`/`const`. Blocker only when there is no constructor to hook instead:
 - A funnel exists (the value always flows through one constructor) → hook it and mutate the
   argument. Migratable, see `pattern-mapping.md`.
-- No funnel, built in many places or generated → stop (e.g. aws-sdk-go-v2, twitchtv/twirp).
+- No funnel, built in many places or generated → stop (e.g. `contrib/net/http`'s
+  `Transport{}` self-instrumentation guard).
+- aws-sdk-go-v2 and twitchtv/twirp look like no-funnel cases and are not: both funnel through a
+  generated per-package helper (`NewFromConfig`, `newServerOpts`). Check for a generated funnel
+  before concluding there is none.
 
 ## 2. Method call at a call site — IDMPL-721
 
