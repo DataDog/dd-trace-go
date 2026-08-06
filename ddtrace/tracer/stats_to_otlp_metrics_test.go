@@ -89,6 +89,20 @@ func kvArrayValue(kvs []*otlpcommon.KeyValue, key string) []string {
 	return nil
 }
 
+func assertOTLPBoolAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key string, want bool) {
+	t.Helper()
+	for _, kv := range kvs {
+		if kv.Key != key {
+			continue
+		}
+		value, ok := kv.Value.Value.(*otlpcommon.AnyValue_BoolValue)
+		require.True(t, ok, "%s must use an OTLP bool value", key)
+		assert.Equal(t, want, value.BoolValue)
+		return
+	}
+	require.Fail(t, "missing OTLP bool attribute", key)
+}
+
 // ---- sketchToHistogram ----
 
 func TestSketchToHistogramEmpty(t *testing.T) {
@@ -301,6 +315,7 @@ func TestBuildMetricsResourceOtelModeSuppressesDatadogAttrs(t *testing.T) {
 
 func TestDataPointAttributesOTelMode(t *testing.T) {
 	gs := &pb.ClientGroupedStats{
+		Service:        "api",
 		Name:           "web.request",
 		Resource:       "/users",
 		Type:           "web",
@@ -308,15 +323,24 @@ func TestDataPointAttributesOTelMode(t *testing.T) {
 		HTTPMethod:     "GET",
 		HTTPStatusCode: 200,
 		TopLevelHits:   1,
+		IsTraceRoot:    pb.Trilean_TRUE,
+		AdditionalMetricTags: []string{
+			"customer.tier:gold",
+			"datadog.custom:hidden",
+			"_datadog.legacy:hidden",
+		},
 	}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
 	assert.Equal(t, "/users", m["span.name"])
 	assert.Equal(t, "SPAN_KIND_SERVER", m["span.kind"])
 	assert.Equal(t, "GET", m["http.request.method"])
 	assert.Equal(t, "200", m["http.response.status_code"])
-	assert.NotContains(t, m, "datadog.operation.name")
-	assert.NotContains(t, m, "datadog.span.type")
-	assert.NotContains(t, m, "datadog.span.top_level")
+	assert.Equal(t, "STATUS_CODE_OK", m["status.code"])
+	assert.Equal(t, "api", m["service.name"])
+	assert.Equal(t, "gold", m["customer.tier"])
+	for key := range m {
+		assert.False(t, isDatadogAttribute(key), "unexpected Datadog attribute %q", key)
+	}
 }
 
 func TestDataPointAttributesDefaultMode(t *testing.T) {
@@ -327,22 +351,23 @@ func TestDataPointAttributesDefaultMode(t *testing.T) {
 		Hits:         1,
 		TopLevelHits: 1,
 	}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false /* default mode */))
+	attrs := buildDataPointAttributes(gs, false, false /* default mode */)
+	m := kvAttrsToMap(attrs)
 	assert.Equal(t, "web.request", m["datadog.operation.name"])
 	assert.Equal(t, "web", m["datadog.span.type"])
-	assert.Equal(t, "true", m["datadog.span.top_level"])
+	assertOTLPBoolAttribute(t, attrs, "datadog.span.top_level", true)
 }
 
 func TestDataPointAttributesTopLevelFalse(t *testing.T) {
 	t.Run("no top-level spans in group", func(t *testing.T) {
 		gs := &pb.ClientGroupedStats{Resource: "child-resource", Hits: 1, TopLevelHits: 0}
-		m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
-		assert.Equal(t, "false", m["datadog.span.top_level"])
+		attrs := buildDataPointAttributes(gs, false, false)
+		assertOTLPBoolAttribute(t, attrs, "datadog.span.top_level", false)
 	})
 	t.Run("mixed group conservatively non-top-level", func(t *testing.T) {
 		gs := &pb.ClientGroupedStats{Resource: "mixed", Hits: 10, TopLevelHits: 5}
-		m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
-		assert.Equal(t, "false", m["datadog.span.top_level"])
+		attrs := buildDataPointAttributes(gs, false, false)
+		assertOTLPBoolAttribute(t, attrs, "datadog.span.top_level", false)
 	})
 }
 
@@ -356,30 +381,65 @@ func TestDataPointAttributesStatusCode(t *testing.T) {
 	assert.Equal(t, "STATUS_CODE_ERROR", m["status.code"])
 }
 
+func TestDataPointAttributesSpanKind(t *testing.T) {
+	for name, tc := range map[string]struct {
+		spanKind string
+		want     string
+	}{
+		"known":   {spanKind: "client", want: "SPAN_KIND_CLIENT"},
+		"missing": {want: "SPAN_KIND_INTERNAL"},
+		"unknown": {spanKind: "invalid", want: "SPAN_KIND_INTERNAL"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gs := &pb.ClientGroupedStats{SpanKind: tc.spanKind}
+			m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+			assert.Equal(t, tc.want, m["span.kind"])
+		})
+	}
+}
+
 func TestDataPointAttributesIsTraceRoot(t *testing.T) {
 	gs := &pb.ClientGroupedStats{Resource: "root", IsTraceRoot: pb.Trilean_TRUE}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false /* default mode */))
-	assert.Equal(t, "true", m["datadog.is_trace_root"])
+	attrs := buildDataPointAttributes(gs, false, false /* default mode */)
+	assertOTLPBoolAttribute(t, attrs, "datadog.is_trace_root", true)
 
 	gs = &pb.ClientGroupedStats{Resource: "child", IsTraceRoot: pb.Trilean_FALSE}
-	m = kvAttrsToMap(buildDataPointAttributes(gs, false, false))
-	assert.Equal(t, "false", m["datadog.is_trace_root"])
+	attrs = buildDataPointAttributes(gs, false, false)
+	assertOTLPBoolAttribute(t, attrs, "datadog.is_trace_root", false)
 
 	gs = &pb.ClientGroupedStats{Resource: "unknown", IsTraceRoot: pb.Trilean_NOT_SET}
-	m = kvAttrsToMap(buildDataPointAttributes(gs, false, false))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
+	assert.NotContains(t, m, "datadog.is_trace_root")
+
+	gs = &pb.ClientGroupedStats{Resource: "root", IsTraceRoot: pb.Trilean_TRUE}
+	m = kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
 	assert.NotContains(t, m, "datadog.is_trace_root")
 }
 
 func TestDataPointAttributesAdditionalMetricTags(t *testing.T) {
 	gs := &pb.ClientGroupedStats{
-		Resource:             "/users",
-		AdditionalMetricTags: []string{"customer.tier:gold", "region:us-east-1", "malformed", "empty:"},
+		Resource: "/users",
+		AdditionalMetricTags: []string{
+			"customer.tier:gold",
+			"region:us-east-1",
+			"datadog.custom:visible-by-default",
+			"_datadog.legacy:visible-by-default",
+			"malformed",
+			"empty:",
+		},
 	}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode: not gated */))
-	assert.Equal(t, "gold", m["customer.tier"])
-	assert.Equal(t, "us-east-1", m["region"])
-	assert.NotContains(t, m, "malformed")
-	assert.NotContains(t, m, "empty")
+
+	defaultAttrs := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
+	assert.Equal(t, "visible-by-default", defaultAttrs["datadog.custom"])
+	assert.Equal(t, "visible-by-default", defaultAttrs["_datadog.legacy"])
+
+	otelAttrs := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+	assert.Equal(t, "gold", otelAttrs["customer.tier"])
+	assert.Equal(t, "us-east-1", otelAttrs["region"])
+	assert.NotContains(t, otelAttrs, "datadog.custom")
+	assert.NotContains(t, otelAttrs, "_datadog.legacy")
+	assert.NotContains(t, otelAttrs, "malformed")
+	assert.NotContains(t, otelAttrs, "empty")
 }
 
 func TestDataPointAttributesHTTPRoute(t *testing.T) {

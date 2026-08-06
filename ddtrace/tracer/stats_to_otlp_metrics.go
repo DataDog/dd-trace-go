@@ -174,13 +174,11 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, otelMode 
 	if gs.Resource != "" {
 		attrs = append(attrs, otlpKeyValue("span.name", otlpStringValue(gs.Resource)))
 	}
-	if gs.SpanKind != "" {
-		spanKind := gs.SpanKind
-		if canonical, ok := otelSpanKindByDDSpanKind[spanKind]; ok {
-			spanKind = canonical
-		}
-		attrs = append(attrs, otlpKeyValue("span.kind", otlpStringValue(spanKind)))
+	spanKind := "SPAN_KIND_INTERNAL"
+	if canonical, ok := otelSpanKindByDDSpanKind[gs.SpanKind]; ok {
+		spanKind = canonical
 	}
+	attrs = append(attrs, otlpKeyValue("span.kind", otlpStringValue(spanKind)))
 	if gs.HTTPMethod != "" {
 		attrs = append(attrs, otlpKeyValue("http.request.method", otlpStringValue(gs.HTTPMethod)))
 	}
@@ -214,7 +212,7 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, otelMode 
 	// additional_metric_tags support is still evolving/TBD across most SDKs.
 	for _, tag := range gs.AdditionalMetricTags {
 		key, value, ok := strings.Cut(tag, ":")
-		if !ok || key == "" || value == "" {
+		if !ok || key == "" || value == "" || otelMode && isDatadogAttribute(key) {
 			continue
 		}
 		attrs = append(attrs, otlpKeyValue(key, otlpStringValue(value)))
@@ -245,6 +243,10 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, otelMode 
 	}
 
 	return attrs
+}
+
+func isDatadogAttribute(key string) bool {
+	return strings.HasPrefix(key, "datadog.") || strings.HasPrefix(key, "_datadog.")
 }
 
 func otlpStringArrayValue(values []string) *otlpcommon.AnyValue {
