@@ -285,11 +285,14 @@ func TestE2ECrashReport_CleanExit(t *testing.T) {
 		t.Fatalf("crash victim exited non-zero: %v", err)
 	}
 
-	// Give the monitor a short window to (incorrectly) post a report.
+	// Give the monitor a generous window to (incorrectly) post a report: the
+	// assertion is that none ever arrives, so a window short enough for a
+	// merely-slow monitor to pass (CI under load, or the other e2e tests'
+	// subprocesses contending) would prove nothing.
 	select {
 	case <-posted:
 		t.Error("crash report was posted on clean exit; want none")
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(2 * time.Second):
 	}
 }
 
