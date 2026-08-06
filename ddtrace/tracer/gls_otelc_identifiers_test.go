@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestGLSOtelcInjectedIdentifiers guards the identifiers that gls.otelc.yaml
+// TestGLSOtelcInjectedIdentifiers guards the identifiers that otelc.yaml
 // writes literally into this package.
 //
 // otelc's inject_code takes a raw string and has no template variables, so unlike
@@ -30,7 +30,7 @@ import (
 // also covers the one case that would not fail loudly, where an unrelated symbol
 // of the same name happens to be in scope at the injection site.
 //
-// Keep in sync with ddtrace/tracer/gls.otelc.yaml.
+// Keep in sync with ddtrace/tracer/otelc.yaml.
 func TestGLSOtelcInjectedIdentifiers(t *testing.T) {
 	for _, tc := range []struct {
 		file string
@@ -60,7 +60,7 @@ func TestGLSOtelcInjectedIdentifiers(t *testing.T) {
 			if tc.param < 0 {
 				require.NotNil(t, decl.Recv, "expected a method")
 				assert.Equalf(t, tc.want, fieldNames(decl.Recv.List)[0],
-					"gls.otelc.yaml injects code into %s that refers to the receiver as %q; "+
+					"otelc.yaml injects code into %s that refers to the receiver as %q; "+
 						"rename it there too, or the injected code stops compiling", name, tc.want)
 				return
 			}
@@ -69,7 +69,7 @@ func TestGLSOtelcInjectedIdentifiers(t *testing.T) {
 			require.Greaterf(t, len(params), tc.param,
 				"%s no longer has a parameter at index %d", name, tc.param)
 			assert.Equalf(t, tc.want, params[tc.param],
-				"gls.otelc.yaml injects code into %s that refers to parameter %d as %q; "+
+				"otelc.yaml injects code into %s that refers to parameter %d as %q; "+
 					"rename it there too, or the injected code stops compiling", name, tc.param, tc.want)
 		})
 	}
