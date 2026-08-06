@@ -23,6 +23,7 @@ const (
 	KindAgent     Kind = transport.SpanKindAgent
 	KindWorkflow  Kind = transport.SpanKindWorkflow
 	KindTask      Kind = transport.SpanKindTask
+	KindStep      Kind = transport.SpanKindStep
 	KindTool      Kind = transport.SpanKindTool
 	KindEmbedding Kind = transport.SpanKindEmbedding
 	KindRetrieval Kind = transport.SpanKindRetrieval
