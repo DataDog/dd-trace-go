@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -24,6 +25,12 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 )
+
+type unencodableValue struct{}
+
+func (unencodableValue) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("cannot encode value")
+}
 
 func TestPushSpanEventsWithResult(t *testing.T) {
 	respBody := bytes.Repeat([]byte("x"), 1<<10)
@@ -119,6 +126,15 @@ func TestParseRetryAfter(t *testing.T) {
 			assert.Equal(t, tc.want, parseRetryAfter(tc.h))
 		})
 	}
+}
+
+func TestMarshalJSON(t *testing.T) {
+	body, err := MarshalJSON(map[string]string{"html": "<value>"})
+	require.NoError(t, err)
+	assert.Equal(t, `{"html":"<value>"}`, string(body))
+
+	_, err = MarshalJSON(unencodableValue{})
+	require.ErrorContains(t, err, "cannot encode value")
 }
 
 // sizedServer answers every request with statusCode and a JSON body of
