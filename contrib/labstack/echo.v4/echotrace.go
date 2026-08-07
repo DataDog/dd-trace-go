@@ -24,6 +24,7 @@ var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageLabstackEchoV4)
+	httptrace.RegisterRoutingHandlerType[*echo.Echo]()
 }
 
 // Wrap configures the provided [echo.Echo] and returns it. This is a
