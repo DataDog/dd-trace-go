@@ -153,6 +153,16 @@ type (
 
 	// ToolResult represents the result of a tool call within an LLM message.
 	ToolResult = illmobs.ToolResult
+
+	// EvalMetricType identifies an evaluation metric value type.
+	EvalMetricType = illmobs.EvalMetricType
+)
+
+const (
+	EvalMetricTypeCategorical EvalMetricType = illmobs.EvalMetricTypeCategorical
+	EvalMetricTypeScore       EvalMetricType = illmobs.EvalMetricTypeScore
+	EvalMetricTypeBoolean     EvalMetricType = illmobs.EvalMetricTypeBoolean
+	EvalMetricTypeJSON        EvalMetricType = illmobs.EvalMetricTypeJSON
 )
 
 // Span represents a generic LLMObs span that can be converted to specific span types.

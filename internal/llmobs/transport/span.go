@@ -6,6 +6,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -13,10 +14,34 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
+// SpanKind identifies the kind of an LLM Obs span.
+type SpanKind string
+
+const (
+	SpanKindExperiment SpanKind = "experiment"
+	SpanKindWorkflow   SpanKind = "workflow"
+	SpanKindLLM        SpanKind = "llm"
+	SpanKindEmbedding  SpanKind = "embedding"
+	SpanKindAgent      SpanKind = "agent"
+	SpanKindRetrieval  SpanKind = "retrieval"
+	SpanKindTask       SpanKind = "task"
+	SpanKindStep       SpanKind = "step"
+	SpanKindTool       SpanKind = "tool"
+)
+
+// SpanStatus identifies an LLM Obs span status.
+type SpanStatus = string
+
+const (
+	SpanStatusOK    SpanStatus = "ok"
+	SpanStatusError SpanStatus = "error"
+)
+
+// SpanLink links a span using decimal-string IDs.
 type SpanLink struct {
-	TraceID     uint64            `json:"trace_id"`
-	TraceIDHigh uint64            `json:"trace_id_high,omitempty"`
-	SpanID      uint64            `json:"span_id"`
+	TraceID     string            `json:"trace_id"`
+	TraceIDHigh string            `json:"trace_id_high,omitempty"`
+	SpanID      string            `json:"span_id"`
 	Attributes  map[string]string `json:"attributes,omitempty"`
 	Tracestate  string            `json:"tracestate,omitempty"`
 	Flags       uint32            `json:"flags,omitempty"`
@@ -36,9 +61,10 @@ type LLMObsSpanEvent struct {
 	SessionID        string             `json:"session_id,omitempty"`
 	Tags             []string           `json:"tags,omitempty"`
 	Name             string             `json:"name,omitempty"`
+	Service          string             `json:"service,omitempty"`
 	StartNS          int64              `json:"start_ns,omitempty"`
 	Duration         int64              `json:"duration,omitempty"`
-	Status           string             `json:"status,omitempty"`
+	Status           SpanStatus         `json:"status,omitempty"`
 	StatusMessage    string             `json:"status_message,omitempty"`
 	Meta             map[string]any     `json:"meta,omitempty"`
 	Metrics          map[string]float64 `json:"metrics,omitempty"`
@@ -55,15 +81,9 @@ type PushSpanEventsRequest struct {
 	Spans         []*LLMObsSpanEvent `json:"spans,omitempty"`
 }
 
-func (c *Transport) PushSpanEvents(
-	ctx context.Context,
-	events []*LLMObsSpanEvent,
-) error {
-	if len(events) == 0 {
-		return nil
-	}
-	path := endpointLLMSpan
-	method := http.MethodPost
+// NewPushSpanEventsRequests creates one envelope per span because scope belongs
+// to the envelope.
+func NewPushSpanEventsRequests(events []*LLMObsSpanEvent) []*PushSpanEventsRequest {
 	body := make([]*PushSpanEventsRequest, 0, len(events))
 	for _, ev := range events {
 		req := &PushSpanEventsRequest{
@@ -77,13 +97,51 @@ func (c *Transport) PushSpanEvents(
 		}
 		body = append(body, req)
 	}
+	return body
+}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultLimits)
+func (c *Transport) PushSpanEvents(
+	ctx context.Context,
+	events []*LLMObsSpanEvent,
+) error {
+	_, err := c.PushSpanEventsWithResult(ctx, events)
+	return err
+}
+
+// PushSpanEventsWithResult sends span events and returns request details.
+func (c *Transport) PushSpanEventsWithResult(
+	ctx context.Context,
+	events []*LLMObsSpanEvent,
+) (RequestResult, error) {
+	if len(events) == 0 {
+		return RequestResult{}, nil
+	}
+	body, err := encodeJSON(NewPushSpanEventsRequests(events))
 	if err != nil {
-		return err
+		return RequestResult{}, fmt.Errorf("failed to json encode body: %w", err)
+	}
+	return c.PushSpanEventsBodyWithResult(ctx, body.Bytes())
+}
+
+// PushSpanEventsBodyWithResult sends an encoded span-event request.
+func (c *Transport) PushSpanEventsBodyWithResult(ctx context.Context, body []byte) (RequestResult, error) {
+	if len(body) == 0 {
+		return RequestResult{}, nil
+	}
+	result, err := c.request(
+		ctx,
+		http.MethodPost,
+		endpointLLMSpan,
+		subdomainLLMSpan,
+		bytes.NewReader(body),
+		"application/json",
+		defaultLimits,
+	)
+	if err != nil {
+		return summarizeRequest(result), err
 	}
 	if result.statusCode != http.StatusOK && result.statusCode != http.StatusAccepted {
-		return fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+		return summarizeRequest(result), fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
-	return nil
+	return summarizeRequest(result), nil
 }
