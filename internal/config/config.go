@@ -1556,19 +1556,13 @@ func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, 
 // asked for, by the user or by a derived override; it carries no information
 // about whether the trace-agent actually supports that protocol. Callers that
 // need the protocol in effect on the wire must combine this with agent
-// capability.
+// capability. It is independent of stats computation: both native Client-Side
+// Stats and OTLP span metrics are signalled out-of-band (the
+// Datadog-Client-Computed-Stats header and the separate /v0.6/stats endpoint)
+// and are handled identically by the Agent on either protocol.
 func (c *Config) RequestedTraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	// OTLP span metrics use their own concentrator and are not native CSS, so the trace
-	// transport must stay on v0.4 where the Datadog Agent can see the
-	// Datadog-Client-Computed-Stats header. Inline OTLPSpanMetricsEnabled logic to avoid
-	// a deadlock on c.mu.
-	otlpSpanMetrics := (c.otlpSpanMetricsEnabled != nil && *c.otlpSpanMetricsEnabled) ||
-		(c.otlpSpanMetricsEnabled == nil && c.otlpExportMode && c.runtimeMetricsOtel)
-	if otlpSpanMetrics {
-		return TraceProtocolV04
-	}
 	return c.traceProtocol
 }
 
