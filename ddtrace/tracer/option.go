@@ -437,7 +437,13 @@ type agentFeatures struct {
 	// evpProxyV2 reports if the trace-agent can receive payloads on the /evp_proxy/v2 endpoint.
 	evpProxyV2 bool
 
-	// v1ProtocolAvailable reports whether the trace-agent and tracer are configured to use the v1 protocol.
+	// v1ProtocolAvailable reports whether the trace-agent advertises /v1.0/traces.
+	// Unlike most other fields here, this is refreshed on every /info poll (see
+	// refreshAgentFeatures) rather than frozen at startup, and it is consumed
+	// only at point of use — by (*config).effectiveTraceProtocol (and its
+	// snapshot variant effectiveTraceProtocolWithAgent) and by httpTransport.send
+	// via the payload's own protocol — so there is nothing baked into a component
+	// that a poll could desynchronize from it.
 	v1ProtocolAvailable bool
 
 	// hasTelemetryProxy reports whether the trace-agent exposes the /telemetry/proxy/ endpoint.

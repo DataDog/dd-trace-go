@@ -2694,6 +2694,21 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	af := tracer.config.agent.load()
 	af.Stats = true
 	af.DropP0s = true
+	// Only force v0.4 when the caller did not pick an agent: at the default
+	// address a developer machine may have a real v1-capable Agent listening,
+	// which would flip the protocol under tests that assert on it. A caller that
+	// points the tracer at a specific agent (a mock, a UDS, a real one) is opting
+	// into that agent's advertised capabilities, so leave those alone —
+	// otherwise benchmarks that stand up a /v1.0/traces mock would silently
+	// measure the v0.4 encoder instead.
+	//
+	// Pin the requested protocol too, not just the capability bit:
+	// v1ProtocolAvailable is now refreshed on every /info poll, so a lone
+	// capability override would expire after one poll interval.
+	if u := tracer.config.internalConfig.AgentURL(); u == nil || u.String() == defaultURL {
+		af.v1ProtocolAvailable = false
+		tracer.config.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCode)
+	}
 	tracer.config.agent.store(af)
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
