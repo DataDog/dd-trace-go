@@ -6,6 +6,7 @@
 package net
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,7 +39,7 @@ func (c *client) GetCommits(localCommits []string) ([]string, error) {
 	}
 
 	if c.repositoryURL == "" {
-		return nil, fmt.Errorf("civisibility.GetCommits: repository URL is required")
+		return nil, errors.New("civisibility.GetCommits: repository URL is required")
 	}
 
 	body := searchCommits{

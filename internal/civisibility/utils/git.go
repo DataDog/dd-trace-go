@@ -677,9 +677,9 @@ func hasTheGitLogHaveMoreThanOneCommits() (bool, error) {
 // getObjectsSha get the objects shas from the git repository based on the commits to include and exclude
 func getObjectsSha(commitsToInclude []string, commitsToExclude []string) []string {
 	// git rev-list --objects --no-object-names --filter=blob:none --since="1 month ago" HEAD " + string.Join(" ", commitsToExclude.Select(c => "^" + c)) + " " + string.Join(" ", commitsToInclude);
-	commitsToExcludeArgs := make([]string, len(commitsToExclude))
-	for i, c := range commitsToExclude {
-		commitsToExcludeArgs[i] = "^" + c
+	commitsToExcludeArgs := make([]string, 0, len(commitsToExclude)+len(commitsToInclude))
+	for _, c := range commitsToExclude {
+		commitsToExcludeArgs = append(commitsToExcludeArgs, "^"+c)
 	}
 	args := append([]string{"rev-list", "--objects", "--no-object-names", "--filter=blob:none", "--since=\"1 month ago\"", "HEAD"}, append(commitsToExcludeArgs, commitsToInclude...)...)
 	out, err := execGitString(telemetry.GetObjectsCommandsType, args...)

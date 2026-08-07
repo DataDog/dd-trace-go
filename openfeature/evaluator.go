@@ -8,9 +8,11 @@ package openfeature
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +35,15 @@ type evaluationResult struct {
 	// Metadata contains additional evaluation metadata for hooks
 	Metadata map[string]any
 }
+
+const (
+	metadataAllocationKey = "dd.allocation.key"
+	metadataDoLogKey      = "dd.doLog"
+	metadataSerialIDKey   = "dd.serialId"
+	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
+	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time.
+	metadataEvalTimeKey = "dd.eval.timestamp_ms"
+)
 
 // evaluateFlag evaluates a feature flag with the given context. The caller supplies the
 // evaluation time (now) so a single timestamp is shared between the allocation time-window
@@ -92,14 +103,22 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 			}
 			metadata[metadataDoLogKey] = doLog
 
+			if split.SerialID != nil {
+				metadata[metadataSerialIDKey] = *split.SerialID
+			}
+
 			// Determine reason:
-			//   rules matched           → TARGETING_MATCH
-			//   no rules, shards used   → SPLIT
-			//   no rules, no shards     → STATIC (catch-all; value is same for everyone)
+			//   rules matched                         → TARGETING_MATCH
+			//   temporal allocation with one split   → DEFAULT
+			//   no rules, shards used                 → SPLIT
+			//   no rules, no shards                   → STATIC
 			var reason of.Reason
 			switch {
 			case len(allocation.Rules) > 0:
 				reason = of.TargetingMatchReason
+			case (allocation.StartAt != nil || allocation.EndAt != nil) &&
+				len(allocation.Splits) == 1 && len(split.Shards) == 0:
+				reason = of.DefaultReason
 			case len(split.Shards) > 0:
 				reason = of.SplitReason
 			default:
@@ -119,6 +138,36 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 	return evaluationResult{
 		Value:  defaultValue,
 		Reason: of.DefaultReason,
+	}
+}
+
+// evaluateConfiguredFlag evaluates a flag from a parsed configuration. Invalid
+// SemVer comparands return PARSE_ERROR. Missing flags return FLAG_NOT_FOUND.
+func evaluateConfiguredFlag(
+	config *universalFlagsConfiguration,
+	flagKey string,
+	defaultValue any,
+	context map[string]any,
+	now time.Time,
+) evaluationResult {
+	flag, exists := config.Flags[flagKey]
+	if exists {
+		return evaluateFlag(flag, defaultValue, context, now)
+	}
+	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
+		if errors.Is(configErr, errInvalidSemverComparand) {
+			return evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  fmt.Errorf("%w: invalid configuration for flag %q: %w", errParseError, flagKey, configErr),
+			}
+		}
+		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
+	}
+	return evaluationResult{
+		Value:  defaultValue,
+		Reason: of.ErrorReason,
+		Error:  fmt.Errorf("%w: %q", errFlagNotFound, flagKey),
 	}
 }
 
@@ -208,6 +257,9 @@ func evaluateCondition(condition *condition, context map[string]any) bool {
 		return !isOneOf(attributeValue, condition.Value)
 	case operatorGT, operatorGTE, operatorLT, operatorLTE:
 		return evaluateNumericCondition(attributeValue, condition.Value, condition.Operator)
+	case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+		operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+		return evaluateSemverCondition(attributeValue, condition.semverComparand, condition.Operator)
 	default:
 		return false
 	}
@@ -226,7 +278,9 @@ func loadRegex(pattern string) (*regexp.Regexp, error) {
 	}
 
 	// Not in cache, compile it (we are probably in the remote config goroutine, so this is acceptable)
-	compiled, err := regexp.Compile(pattern)
+	// Go regular expressions are Unicode-aware by default and do not support
+	// the explicit (?u) mode accepted by some other SDK runtimes.
+	compiled, err := regexp.Compile(strings.TrimPrefix(pattern, "(?u)"))
 	if err != nil {
 		return nil, err
 	}
@@ -354,6 +408,40 @@ func evaluateNumericCondition(attributeValue any, conditionValue any, operator c
 		return attrNum < condNum
 	case operatorLTE:
 		return attrNum <= condNum
+	default:
+		return false
+	}
+}
+
+// evaluateSemverCondition evaluates semantic version comparison operators.
+func evaluateSemverCondition(attributeValue any, comparand *parsedSemver, operator conditionOperator) bool {
+	attribute, ok := attributeValue.(string)
+	if !ok {
+		return false
+	}
+	if comparand == nil {
+		return false
+	}
+
+	parsedAttribute, ok := parseSemver(attribute)
+	if !ok {
+		return false
+	}
+	ordering := compareSemver(parsedAttribute, *comparand)
+
+	switch operator {
+	case operatorSemverEQ:
+		return ordering == 0
+	case operatorSemverNEQ:
+		return ordering != 0
+	case operatorSemverLT:
+		return ordering < 0
+	case operatorSemverLTE:
+		return ordering <= 0
+	case operatorSemverGT:
+		return ordering > 0
+	case operatorSemverGTE:
+		return ordering >= 0
 	default:
 		return false
 	}

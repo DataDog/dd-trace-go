@@ -16,6 +16,7 @@ import (
 	"math"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +88,13 @@ const (
 	sizeLimitEVPEvent        = 5_000_000 // 5MB
 	collectionErrorDroppedIO = "dropped_io"
 	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
+
+	// evalMetricsEnvelopeSize is a conservative estimate of the fixed JSON overhead added by the
+	// transport.PushMetricsRequest wrapper that encloses buffered eval metrics when sent, i.e.
+	// {"data":{"type":"evaluation_metric","attributes":{"metrics":[...]}}}. The actual wrapper is
+	// ~65 bytes; we reserve more to keep the serialized body safely under sizeLimitEVPEvent even if
+	// the envelope grows. The per-metric array separator (",") is accounted for separately.
+	evalMetricsEnvelopeSize = 256
 )
 
 // See: https://docs.datadoghq.com/getting_started/site/#access-the-datadog-site
@@ -142,42 +150,50 @@ type LLMObs struct {
 	evalMetricsCh chan *transport.LLMObsMetric
 
 	// runtime buffers, payloads are accumulated here and flushed periodically
-	bufSpanEvents     []*transport.LLMObsSpanEvent
-	bufSpanEventsSize int // cumulative JSON size of buffered span events
-	bufEvalMetrics    []*transport.LLMObsMetric
+	bufSpanEvents      []*transport.LLMObsSpanEvent
+	bufSpanEventsSize  int // cumulative JSON size of buffered span events
+	bufEvalMetrics     []*transport.LLMObsMetric
+	bufEvalMetricsSize int // cumulative JSON size of buffered eval metrics
 
 	// lifecycle
 	mu            sync.Mutex
 	running       bool
-	sendWg        sync.WaitGroup // tracks in-flight batchSend goroutines
-	workerDone    chan struct{}  // closed when the worker loop exits
+	wg            sync.WaitGroup // tracks in-flight async batchSend goroutines only (not the main loop)
 	stopCh        chan struct{}  // signal stop
-	flushNowCh    chan chan struct{}
+	stoppedCh     chan struct{}  // closed when the main run loop exits
+	flushNowCh    chan struct{}
+	flushSyncCh   chan chan struct{} // synchronous flush: send a done channel, blocks until flush completes
 	flushInterval time.Duration
 }
 
 func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
-	agentSupportsLLMObs := cfg.AgentFeatures.EVPProxyV2
-	if !agentSupportsLLMObs {
-		log.Debug("llmobs: agent not available or does not support llmobs")
-	}
-	if cfg.AgentlessEnabled != nil {
-		if !*cfg.AgentlessEnabled && !agentSupportsLLMObs {
-			return nil, errAgentModeNotSupported
-		}
-		cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
+	if cfg.TestBaseURL != "" {
+		// TestBaseURL overrides all transport URL construction and bypasses
+		// agent-mode/agentless-mode detection. Used in tests only.
+		cfg.ResolvedAgentlessEnabled = false
 	} else {
-		// if agentlessEnabled is not set and evp_proxy is supported in the agent, default to use the agent
-		cfg.ResolvedAgentlessEnabled = !agentSupportsLLMObs
-		if cfg.ResolvedAgentlessEnabled {
-			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agentless mode")
-		} else {
-			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agent mode")
+		agentSupportsLLMObs := cfg.AgentFeatures.EVPProxyV2
+		if !agentSupportsLLMObs {
+			log.Debug("llmobs: agent not available or does not support llmobs")
 		}
-	}
+		if cfg.AgentlessEnabled != nil {
+			if !*cfg.AgentlessEnabled && !agentSupportsLLMObs {
+				return nil, errAgentModeNotSupported
+			}
+			cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
+		} else {
+			// if agentlessEnabled is not set and evp_proxy is supported in the agent, default to use the agent
+			cfg.ResolvedAgentlessEnabled = !agentSupportsLLMObs
+			if cfg.ResolvedAgentlessEnabled {
+				log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agentless mode")
+			} else {
+				log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agent mode")
+			}
+		}
 
-	if cfg.ResolvedAgentlessEnabled && !isAPIKeyValid(cfg.TracerConfig.APIKey) {
-		return nil, errAgentlessRequiresAPIKey
+		if cfg.ResolvedAgentlessEnabled && !isAPIKeyValid(cfg.TracerConfig.APIKey) {
+			return nil, errAgentlessRequiresAPIKey
+		}
 	}
 	if cfg.MLApp == "" {
 		return nil, errMLAppRequired
@@ -191,9 +207,10 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 		Tracer:        tracer,
 		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
 		evalMetricsCh: make(chan *transport.LLMObsMetric),
-		workerDone:    make(chan struct{}),
 		stopCh:        make(chan struct{}),
-		flushNowCh:    make(chan chan struct{}, 1),
+		stoppedCh:     make(chan struct{}),
+		flushNowCh:    make(chan struct{}, 1),
+		flushSyncCh:   make(chan chan struct{}),
 		flushInterval: defaultFlushInterval,
 	}, nil
 }
@@ -250,7 +267,7 @@ func Flush() {
 	}
 }
 
-// FlushSync forces a flush of all buffered LLMObs data and blocks until the flush completes.
+// FlushSync flushes all buffered LLMObs data and blocks until the send completes.
 func FlushSync() {
 	if activeLLMObs != nil {
 		activeLLMObs.FlushSync()
@@ -268,8 +285,8 @@ func (l *LLMObs) Run() {
 	l.mu.Unlock()
 
 	go func() {
-		defer close(l.workerDone)
 		// this goroutine should be the only one writing to the internal buffers
+		defer close(l.stoppedCh)
 
 		ticker := time.NewTicker(l.flushInterval)
 		defer ticker.Stop()
@@ -280,33 +297,38 @@ func (l *LLMObs) Run() {
 				evSize := jsonSize(ev)
 				if l.bufSpanEventsSize+evSize > sizeLimitEVPEvent {
 					log.Debug("llmobs: span events buffer size limit reached, flushing before adding new event")
-					params := l.clearBuffersNonLocked()
-					l.sendWg.Go(func() { l.batchSend(params) })
+					l.sendAsync(l.clearBuffersNonLocked())
 				}
 				l.bufSpanEvents = append(l.bufSpanEvents, ev)
 				l.bufSpanEventsSize += evSize
 
 			case evalMetric := <-l.evalMetricsCh:
+				// +1 accounts for the "," array separator that joins this metric to the others in
+				// the request body; combined with evalMetricsEnvelopeSize it makes the buffered size
+				// reflect the actual serialized PushMetricsRequest body rather than the bare metric.
+				mSize := jsonSize(evalMetric) + 1
+				if l.bufEvalMetricsSize+mSize+evalMetricsEnvelopeSize > sizeLimitEVPEvent {
+					log.Debug("llmobs: eval metrics buffer size limit reached, flushing before adding new metric")
+					l.sendAsync(l.clearBuffersNonLocked())
+				}
 				l.bufEvalMetrics = append(l.bufEvalMetrics, evalMetric)
+				l.bufEvalMetricsSize += mSize
 
 			case <-ticker.C:
-				params := l.clearBuffersNonLocked()
-				l.sendWg.Go(func() { l.batchSend(params) })
+				l.sendAsync(l.clearBuffersNonLocked())
 
-			case done := <-l.flushNowCh:
+			case <-l.flushNowCh:
 				log.Debug("llmobs: on-demand flush signal")
+				l.sendAsync(l.clearBuffersNonLocked())
+
+			case done := <-l.flushSyncCh:
+				log.Debug("llmobs: synchronous flush signal")
+				// wg tracks only async batchSend goroutines (not this main loop),
+				// so Wait() here cannot deadlock.
+				l.wg.Wait()
 				params := l.clearBuffersNonLocked()
-				l.sendWg.Add(1)
-				go func() {
-					defer func() {
-						l.sendWg.Done()
-						if done != nil {
-							l.sendWg.Wait()
-							close(done)
-						}
-					}()
-					l.batchSend(params)
-				}()
+				l.batchSend(params)
+				close(done)
 
 			case <-l.stopCh:
 				log.Debug("llmobs: stop signal")
@@ -319,6 +341,15 @@ func (l *LLMObs) Run() {
 	}()
 }
 
+// sendAsync dispatches params to batchSend in a new goroutine tracked by wg,
+// so FlushSync can wait for all in-flight sends via wg.Wait(). Must be called
+// only from the main Run worker goroutine.
+func (l *LLMObs) sendAsync(params batchSendParams) {
+	l.wg.Go(func() {
+		l.batchSend(params)
+	})
+}
+
 // clearBuffersNonLocked clears the internal buffers and returns the corresponding batchSendParams to send to the backend.
 // It is meant to be called only from the main Run worker goroutine.
 func (l *LLMObs) clearBuffersNonLocked() batchSendParams {
@@ -329,6 +360,7 @@ func (l *LLMObs) clearBuffersNonLocked() batchSendParams {
 	l.bufSpanEvents = nil
 	l.bufSpanEventsSize = 0
 	l.bufEvalMetrics = nil
+	l.bufEvalMetricsSize = 0
 	return params
 }
 
@@ -337,16 +369,18 @@ func (l *LLMObs) clearBuffersNonLocked() batchSendParams {
 func (l *LLMObs) Flush() {
 	// non-blocking edge trigger so multiple calls coalesce
 	select {
-	case l.flushNowCh <- nil:
+	case l.flushNowCh <- struct{}{}:
 	default:
 	}
 }
 
-// FlushSync forces an immediate flush and blocks until the flush completes.
+// FlushSync flushes all currently buffered data and blocks until the HTTP send completes.
+// If the instance has already been stopped, FlushSync returns immediately instead of
+// blocking forever on the unbuffered flushSyncCh send.
 func (l *LLMObs) FlushSync() {
 	done := make(chan struct{})
 	select {
-	case l.flushNowCh <- done:
+	case l.flushSyncCh <- done:
 		select {
 		case <-done:
 		case <-l.stopCh:
@@ -372,10 +406,10 @@ func (l *LLMObs) Stop() {
 		close(l.stopCh)
 	}
 
-	// Wait for the worker loop to exit (it does a final synchronous flush),
-	// then wait for any async batchSend goroutines still in flight.
-	<-l.workerDone
-	l.sendWg.Wait()
+	// Wait for the main loop to exit (it does a final synchronous flush before returning).
+	<-l.stoppedCh
+	// Wait for any async batchSend goroutines that were in flight when the loop stopped.
+	l.wg.Wait()
 }
 
 // drainChannels pulls everything currently buffered in the channels into our in-memory buffers.
@@ -874,7 +908,7 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, params Ex
 		span.apm.SetBaggageItem(baggageKeyExperimentRunID, params.RunID)
 	}
 	if params.RunIteration > 0 {
-		span.apm.SetBaggageItem(baggageKeyExperimentRunIteration, fmt.Sprintf("%d", params.RunIteration))
+		span.apm.SetBaggageItem(baggageKeyExperimentRunIteration, strconv.Itoa(params.RunIteration))
 	}
 	if params.ProjectID != "" {
 		span.apm.SetBaggageItem(baggageKeyExperimentProjectID, params.ProjectID)
@@ -959,7 +993,7 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 			tags = append(tags, tag)
 		}
 	}
-	tags = append(tags, fmt.Sprintf("ddtrace.version:%s", version.Tag))
+	tags = append(tags, "ddtrace.version:"+version.Tag)
 
 	metric = &transport.LLMObsMetric{
 		JoinOn:      joinOn,

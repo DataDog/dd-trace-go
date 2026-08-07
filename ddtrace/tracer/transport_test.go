@@ -8,7 +8,7 @@ package tracer
 import (
 	"bufio"
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -56,10 +56,10 @@ func getTestSpan() *Span {
 // getTestTrace returns a list of traces that is composed by “traceN“ number
 // of traces, each one composed by “size“ number of spans.
 func getTestTrace(traceN, size int) [][]*Span {
-	var traces [][]*Span
+	traces := make([][]*Span, 0, traceN)
 
 	for range traceN {
-		trace := []*Span{}
+		trace := make([]*Span, 0, size)
 		for range size {
 			trace = append(trace, getTestSpan())
 		}
@@ -94,7 +94,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+		transport := newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		body, err := transport.send(p)
@@ -110,8 +110,8 @@ func TestResolveAgentAddr(t *testing.T) {
 		out              *url.URL
 	}{
 		{nil, "", "", &url.URL{Scheme: "http", Host: defaultAddress}},
-		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: fmt.Sprintf("ip.local:%s", defaultPort)}},
-		{nil, "", "1234", &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:1234", defaultHostname)}},
+		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: "ip.local:" + defaultPort}},
+		{nil, "", "1234", &url.URL{Scheme: "http", Host: defaultHostname + ":1234"}},
 		{nil, "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.local:1234"}},
 		{WithAgentAddr("host:1243"), "", "", &url.URL{Scheme: "http", Host: "host:1243"}},
 		{WithAgentAddr("ip.other:9876"), "ip.local", "", &url.URL{Scheme: "http", Host: "ip.other:9876"}},
@@ -161,7 +161,7 @@ func TestTransportResponse(t *testing.T) {
 		"bad": {
 			status: http.StatusBadRequest,
 			body:   strings.Repeat("X", 1002),
-			err:    fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000)),
+			err:    strings.Repeat("X", 1000) + " (Status: Bad Request)",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -171,7 +171,7 @@ func TestTransportResponse(t *testing.T) {
 				w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+			transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 			rc, err := transport.send(newPayload(traceProtocolV04))
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
@@ -231,7 +231,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+		transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -273,7 +273,7 @@ func TestCustomTransport(t *testing.T) {
 
 	c := &http.Client{}
 	crt := wrapRecordingRoundTripper(c)
-	transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, c, datadogHeaders())
+	transport := newHTTPTransport(srv.URL, c, datadogHeaders())
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
 	_, err = transport.send(p)
@@ -287,7 +287,7 @@ func TestCustomTransport(t *testing.T) {
 type ErrTransport struct{}
 
 func (t *ErrTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
-	return nil, fmt.Errorf("error in RoundTripper")
+	return nil, errors.New("error in RoundTripper")
 }
 
 type ErrResponseTransport struct{}
@@ -538,8 +538,7 @@ func TestUDSTransportRecoversFromStaleIdleConn(t *testing.T) {
 	}()
 
 	transport := newHTTPTransport(
-		"http://localhost"+tracesAPIPath,
-		"http://localhost"+statsAPIPath,
+		"http://localhost",
 		internal.UDSClient(socketPath, 5*time.Second),
 		datadogHeaders(),
 	)
@@ -784,7 +783,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 
 	t.Run("header-set-when-both-conditions-met", func(t *testing.T) {
 		// When both conditions are met (stats endpoint + client_drop_p0s),
-		// the Datadog-Client-Computed-Stats header should be set to "t"
+		// the Datadog-Client-Computed-Stats header should be set to "yes".
 		assert := assert.New(t)
 		var headerValue string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -807,7 +806,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 		assert.NoError(err)
 		_, err = trc.config.ddTransport.send(p)
 		assert.NoError(err)
-		assert.Equal("t", headerValue, "Datadog-Client-Computed-Stats header should be set to 't' when both conditions are met")
+		assert.Equal("yes", headerValue, "Datadog-Client-Computed-Stats header should be set to 'yes' when both conditions are met")
 	})
 }
 
@@ -841,7 +840,7 @@ func TestConcurrentTraceFlushOverUDS(t *testing.T) {
 
 	udsURL := internal.UnixDataSocketURL(socketPath).String()
 	client := internal.UDSClient(socketPath, 5*time.Second)
-	transport := newHTTPTransport(udsURL+tracesAPIPath, udsURL+statsAPIPath, client, datadogHeaders())
+	transport := newHTTPTransport(udsURL, client, datadogHeaders())
 
 	const numGoroutines = 20
 

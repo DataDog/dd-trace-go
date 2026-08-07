@@ -71,7 +71,8 @@
         "default": null,
         "aliases": [
           "DD-API-KEY"
-        ]
+        ],
+        "sensitive": true
       }
     ],
     "DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE": [
@@ -135,6 +136,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_APPSEC_AGENTIC_ONBOARDING": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": ""
       }
     ],
     "DD_APPSEC_BODY_PARSING_SIZE_LIMIT": [
@@ -235,7 +243,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
@@ -264,6 +273,20 @@
         "implementation": "A",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED": [
+      {
+        "implementation": "C",
+        "type": "boolean",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "-1"
       }
     ],
     "DD_CIVISIBILITY_ENABLED": [
@@ -308,11 +331,67 @@
         "default": "false"
       }
     ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_ATTEMPT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "0"
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_CHILD": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_REASON": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_RESULT_PATH": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_TEST_NAME": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_CIVISIBILITY_LOGS_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_EXECUTION_MODE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "in_process"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_PROCESS_MAX_CONCURRENCY": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "1"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_PROCESS_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED": [
@@ -334,6 +413,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_CODE_COVERAGE_FLAGS": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_CUSTOM_PARENT_ID": [
@@ -400,6 +486,13 @@
       }
     ],
     "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
@@ -516,6 +609,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_HAPROXY_SPOA_HEALTHCHECK_PORT": [
@@ -1022,6 +1122,13 @@
         "default": "10m"
       }
     ],
+    "DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_AGENT_PORT": [
       {
         "implementation": "A",
@@ -1153,6 +1260,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_TRACE_FASTHTTP_ANALYTICS_ENABLED": [
@@ -1442,6 +1556,13 @@
         "default": "(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:(?:\\\\s|%20)*(?:=|%3D)[^&]+|(?:\\\"|%22)(?:\\\\s|%20)*(?::|%3A)(?:\\\\s|%20)*(?:\\\"|%22)(?:%2[^2]|%[^2]|[^\\\"%])+(?:\\\"|%22))|bearer(?:\\\\s|%20)+[a-z0-9\\\\._\\\\-]|token(?::|%3A)[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L](?:[\\\\w=-]|%3D)+\\\\.ey[I-L](?:[\\\\w=-]|%3D)+(?:\\\\.(?:[\\\\w.+\\\\/=-]|%3D|%2F|%2B)+)?|[\\\\-]{5}BEGIN(?:[a-z\\\\s]|%20)+PRIVATE(?:\\\\s|%20)KEY[\\\\-]{5}[^\\\\-]+[\\\\-]{5}END(?:[a-z\\\\s]|%20)+PRIVATE(?:\\\\s|%20)KEY|ssh-rsa(?:\\\\s|%20)*(?:[a-z0-9\\\\/\\\\.+]|%2F|%5C|%2B){100,}"
       }
     ],
+    "DD_TRACE_OTEL_SEMANTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_PARTIAL_FLUSH_ENABLED": [
       {
         "implementation": "A",
@@ -1645,11 +1766,60 @@
         "default": "true"
       }
     ],
+    "DD_TRACE_STATS_ADDITIONAL_TAGS": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "100"
+      }
+    ],
+    "DD_TRACE_STATS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "2048"
+      }
+    ],
     "DD_TRACE_STATS_COMPUTATION_ENABLED": [
       {
         "implementation": "B",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "512"
+      }
+    ],
+    "DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "20"
+      }
+    ],
+    "DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "512"
+      }
+    ],
+    "DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "1024"
       }
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
@@ -1692,6 +1862,13 @@
         "implementation": "A",
         "type": "int",
         "default": "512"
+      }
+    ],
+    "DD_TRACE_ZAP_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_ZEROLOG_ANALYTICS_ENABLED": [
@@ -1927,6 +2104,13 @@
         "implementation": "A",
         "type": "decimal",
         "default": "1.0"
+      }
+    ],
+    "OTEL_TRACES_SPAN_METRICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": null
       }
     ]
   }

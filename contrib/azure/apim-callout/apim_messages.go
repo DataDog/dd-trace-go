@@ -22,10 +22,6 @@ var (
 	_ proxy.RequestHeaders  = (*messageRequestHeaders)(nil)
 	_ proxy.ResponseHeaders = (*messageResponseHeaders)(nil)
 	_ proxy.HTTPBody        = (*messageBody)(nil)
-
-	// errBodySizeExceeded is returned when a base64-encoded inline body
-	// exceeds the configured body parsing size limit.
-	errBodySizeExceeded = errors.New("apim_callout: inline body exceeds body parsing size limit")
 )
 
 // calloutMessage represents the JSON body sent by the gateway on POST /.
@@ -214,10 +210,14 @@ func hasRawBody(raw json.RawMessage) bool {
 }
 
 // decodeRawBase64Body extracts the JSON string from a json.RawMessage and
-// base64-decodes its content in place without intermediate copies.
-// Returns nil if the raw message is empty/null.
-// When maxDecodedSize > 0, the function returns errBodySizeExceeded if the
-// decoded body would exceed the limit, preventing unbounded memory allocation.
+// base64-decodes its content. Returns nil if the raw message is empty/null.
+//
+// Security: when maxDecodedSize > 0 the decode is bounded to ~maxDecodedSize
+// bytes (preventing OOM) but the returned prefix may be a few bytes larger. The
+// proxy body buffer then enforces the exact limit and flags the body truncated
+// so the WAF still inspects the retained prefix. Returning a size error instead
+// would skip inspection entirely, letting an attacker bypass the WAF by padding
+// a malicious body past the limit.
 func decodeRawBase64Body(raw json.RawMessage, maxDecodedSize int) ([]byte, error) {
 	first := bytes.IndexByte(raw, '"')
 	if first < 0 {
@@ -228,20 +228,20 @@ func decodeRawBase64Body(raw json.RawMessage, maxDecodedSize int) ([]byte, error
 		return nil, nil
 	}
 	src := raw[first+1 : last]
-	decodedLen := base64.StdEncoding.DecodedLen(len(src))
-	// DecodedLen is an upper bound that can overestimate by up to 2 bytes due to
-	// base64 padding. Allow this tolerance so bodies exactly at the limit aren't
-	// falsely rejected. The exact decoded size is checked after decoding below.
-	if maxDecodedSize > 0 && decodedLen > maxDecodedSize+2 {
-		return nil, errBodySizeExceeded
+	if maxDecodedSize > 0 {
+		// Keep one base64 group (4 chars -> 3 bytes) past the limit so an
+		// oversized body decodes to strictly more than maxDecodedSize, letting
+		// the body buffer detect the overflow and mark it truncated. The bound
+		// is a multiple of 4, so slicing keeps whole, unpadded groups.
+		maxEncodedLen := (maxDecodedSize/3 + 1) * 4
+		if len(src) > maxEncodedLen {
+			src = src[:maxEncodedLen]
+		}
 	}
-	dst := make([]byte, decodedLen)
+	dst := make([]byte, base64.StdEncoding.DecodedLen(len(src)))
 	n, err := base64.StdEncoding.Decode(dst, src)
 	if err != nil {
 		return nil, err
-	}
-	if maxDecodedSize > 0 && n > maxDecodedSize {
-		return nil, errBodySizeExceeded
 	}
 	return dst[:n], nil
 }

@@ -30,6 +30,10 @@ It also holds `supported_configurations*`, which maintains which environment var
 
 `go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY`
 
+### Client IP
+
+Owns the shared HTTP client-IP resolution policy used by tracing and AppSec.
+
 ### Locking
 
 Locking functionality that serves as a replacement for `sync.mutex` and similar locking mechanisms. It enables checking for deadlocks and should be used instead of `sync`. For more information, read the [README](./locking/README.md).
@@ -37,6 +41,10 @@ Locking functionality that serves as a replacement for `sync.mutex` and similar 
 ### Orchestrion
 
 Contains internal Orchestrion implementations for all supported contribs in [./orchestrion/_integration](./orchestrion/_integration/). This includes GLS (Global Local Storage), work for generating changes to `go.mod` files, and tests for expected automatic traces. For more information, read the [README.md](./orchestrion/_integration/README.md).
+
+### Sampling Rules
+
+Defines the types and parsing logic for trace and span sampling rules (`DD_TRACE_SAMPLING_RULES`, `DD_SPAN_SAMPLING_RULES`, and their `WithSamplingRules` code equivalents), including glob/regex matching, rate limiting, and Remote Config provenance. It is shared between `internal/config` (configuration ownership) and `ddtrace/tracer` (runtime sampling decisions).
 
 ### Telemetry
 

@@ -8,7 +8,6 @@ package gin
 import (
 	"context"
 	"encoding/xml"
-	"fmt"
 	"io"
 	"net/http"
 	"runtime"
@@ -64,12 +63,13 @@ func (tc *TestCaseResponse) Setup(_ context.Context, t *testing.T) {
 		}{Payload: payload})
 	})
 
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: engine.Handler(),
 	}
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

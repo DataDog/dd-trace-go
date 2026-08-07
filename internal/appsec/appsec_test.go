@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

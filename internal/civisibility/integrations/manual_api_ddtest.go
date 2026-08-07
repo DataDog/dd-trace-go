@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,10 +77,10 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	if suite.module.session != nil {
-		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, fmt.Sprint(suite.module.session.sessionID))
+		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, strconv.FormatUint(suite.module.session.sessionID, 10))
 	}
-	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
-	setCIVisibilitySpanTag(span, constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
+	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, strconv.FormatUint(suite.module.moduleID, 10))
+	setCIVisibilitySpanTag(span, constants.TestSuiteIDTag, strconv.FormatUint(suite.suiteID, 10))
 	testID := span.Context().SpanID()
 
 	t := &tslvTest{
@@ -195,7 +196,7 @@ func (t *tslvTest) internalClose(options ...tracer.FinishOption) {
 		testingEventType = append(testingEventType, telemetry.HasFailedAllRetriesEventType...)
 	}
 	if retryReason, ok := t.ctx.Value(constants.TestRetryReason).(string); ok {
-		testingEventType = append(testingEventType, []string{fmt.Sprintf("retry_reason:%s", retryReason)}...)
+		testingEventType = append(testingEventType, []string{"retry_reason:" + retryReason}...)
 	}
 	telemetry.EventFinished(t.suite.module.framework, testingEventType)
 }
@@ -229,10 +230,12 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		return
 	}
 
-	// Resolve the runtime file into separate tag and filesystem paths. Go -trimpath can
-	// return a logical module path here, while source parsing still needs a local file path.
-	runtimePath, runtimeStartLine := fn.FileLine(fn.Entry())
-	sourcePath := resolveTestSourcePath(runtimePath)
+	// Resolve immutable function metadata once. Go -trimpath can return a logical
+	// module path while source parsing still needs a local file path.
+	functionMetadata := loadSourceFunctionMetadata(fn)
+	runtimePath := functionMetadata.runtimePath
+	runtimeStartLine := functionMetadata.runtimeStartLine
+	sourcePath := functionMetadata.sourcePath
 	file := sourcePath.RelativePath
 	log.Debug("civisibility: resolving test source location [function:%s file:%s start_line:%d relative_file:%s runtime_file:%s filesystem_file:%s filesystem_known:%t entry:%#x]",
 		fn.Name(), runtimePath, runtimeStartLine, file, sourcePath.RuntimePath, sourcePath.FilesystemPath, sourcePath.FilesystemKnown, fn.Entry())
@@ -241,7 +244,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	t.suite.SetTag(constants.TestSourceFile, file)
 
 	// Source inspection is cached per file so repeated retries/subtests do not reparse the same file.
-	metadata := loadSourceFileMetadata(sourcePath.FilesystemPath)
+	metadata := functionMetadata.fileMetadata
 	if !metadata.parseOK {
 		log.Debug("civisibility: failed parsing test source file [function:%s file:%s runtime_file:%s relative_file:%s start_line:%d error:%v]",
 			fn.Name(), sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine, metadata.parseErr)
@@ -255,22 +258,21 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		}
 
 		// get the function name without the package name
-		fullName := fn.Name()
-		firstDot := strings.LastIndex(fullName, ".") + 1
-		name := fullName[firstDot:]
+		fullName := functionMetadata.fullName
+		name := functionMetadata.shortName
 		log.Debug("civisibility: scanning AST for test source range [function:%s short_name:%s file:%s runtime_file:%s relative_file:%s runtime_start_line:%d]",
 			fullName, name, sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine)
 
 		// Resolve the source range from cached metadata but keep the existing declaration/literal
 		// matching rules and the same debug logs the tests already assert.
-		resolution := resolveSourceLocation(metadata, name, runtimeStartLine)
+		resolution := functionMetadata.resolution
 		startLine := resolution.startLine
 		endLine := resolution.endLine
 		if resolution.matchedDeclaration != nil {
 			log.Debug("civisibility: matched AST function declaration [function:%s decl_name:%s decl_start_line:%d body_start_line:%d body_end_line:%d runtime_start_line:%d]",
 				fullName, name, resolution.matchedDeclaration.declStartLine, resolution.matchedDeclaration.bodyStartLine, resolution.matchedDeclaration.endLine, runtimeStartLine)
 		}
-		for _, literal := range resolution.inspectedLiterals {
+		for _, literal := range functionLiteralsToLog(functionMetadata.fileMetadata.functionLiterals, resolution.inspectedLiteralCount, log.DebugEnabled()) {
 			delta := literal.bodyStartLine - runtimeStartLine
 			log.Debug("civisibility: inspecting AST function literal candidate [function:%s literal_start_line:%d literal_end_line:%d runtime_start_line:%d delta:%d]",
 				fullName, literal.bodyStartLine, literal.endLine, runtimeStartLine, delta)
@@ -314,14 +316,9 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	}
 
 	// get the codeowner of the function
-	codeOwners := utils.GetCodeOwners()
-	if codeOwners != nil {
-		match, found := codeOwners.Match("/" + file)
-		if found {
-			ownerString := match.GetOwnersString()
-			t.SetTag(constants.TestCodeOwners, ownerString)
-			t.suite.SetTag(constants.TestCodeOwners, ownerString)
-		}
+	if codeOwner, found := loadSourceFunctionCodeOwner(functionMetadata); found {
+		t.SetTag(constants.TestCodeOwners, codeOwner)
+		t.suite.SetTag(constants.TestCodeOwners, codeOwner)
 	}
 }
 
@@ -368,6 +365,9 @@ func SetGlobalEventFinishHook(hook func([]any)) {
 }
 
 func init() {
+	if IsProcessRetryChild() {
+		return
+	}
 	PushCiVisibilityCloseAction(func() {
 		finishedTestsMutex.Lock()
 		defer finishedTestsMutex.Unlock()

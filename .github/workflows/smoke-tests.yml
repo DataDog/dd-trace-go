@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       go-libddwaf-ref:
-        description: A git ref to update github.com/DataDog/go-libddwaf/v4 to. No-op if empty.
+        description: A git ref to update github.com/DataDog/go-libddwaf/v5 to. No-op if empty.
         required: false
         type: string
   push:
@@ -36,13 +36,14 @@ permissions:
 jobs:
   setup-env:
     runs-on: ubuntu-latest
+    timeout-minutes: 20 # normal runtime is ~5m; bounds a toolchain-corruption retry loop
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -51,7 +52,10 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: stable
+          # Pinned off `stable` (currently 1.26.5), which intermittently corrupts
+          # its own heap mid-build (golang/go#77168) and fails these sandboxed
+          # smoke jobs. Restore `stable` once a fixed 1.26.x ships.
+          go-version: "1.26.4"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
@@ -59,7 +63,7 @@ jobs:
         # go get -u executes dependency code from the network. Keep those
         # changes inside the gVisor sandbox; this setup job only needs to prove
         # the updated dependency graph still compiles.
-        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
+        uses: geomys/sandboxed-step@a6bfc174e532cea4f378e3427bcde8b714c2e810 # v1.2.2
         with:
           env: |
             GOPROXY=${{ env.GOPROXY }}
@@ -68,16 +72,27 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             mkdir -p "$TEST_RESULTS"
-            # shellcheck disable=SC2086
-            go get -u -t $PACKAGES
-            go mod tidy
-            find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
-            if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
-              go get -u -t "github.com/DataDog/go-libddwaf/v4@${GO_LIBDDWAF_REF}"
-              go mod tidy
-            fi
-            # shellcheck disable=SC2086
-            go build $PACKAGES
+            compile() {
+              # `until` conditions (see retry_on_corruption in go-retry.sh) suspend `-e` for
+              # the commands they wrap, including inside this function's body — a failed step
+              # here would otherwise go unnoticed as long as the final `go build` happens to
+              # still succeed. Propagate each failure explicitly.
+              # shellcheck disable=SC2086
+              go get -u -t $PACKAGES || return
+              go mod tidy || return
+              find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd || exit 1; done || return
+              if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
+                go get -u -t "github.com/DataDog/go-libddwaf/v5@${GO_LIBDDWAF_REF}" || return
+                go mod tidy || return
+              fi
+              # shellcheck disable=SC2086
+              go build $PACKAGES
+            }
+            # See go-retry.sh for why toolchain/cache corruption is retried instead of failing
+            # the job outright, and why a failure with none of the known signatures is treated
+            # as a genuine break and fails immediately, without retry.
+            source ./.github/workflows/apps/go-retry.sh
+            retry_on_corruption compile
 
       - name: Compute Matrix
         id: matrix
@@ -91,6 +106,7 @@ jobs:
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
     name: 'go get -u smoke test'
     needs: setup-env
+    timeout-minutes: 45 # normal chunk runtime is ~10-25m; bounds a toolchain-corruption retry loop
     strategy:
       fail-fast: false
       matrix:
@@ -100,7 +116,7 @@ jobs:
     env:
       TEST_RESULTS: ${{ github.workspace }}/test-results
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -112,7 +128,10 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: stable
+          # Pinned off `stable` (currently 1.26.5), which intermittently corrupts
+          # its own heap mid-build (golang/go#77168) and fails this sandboxed
+          # go-get-u smoke job. Restore `stable` once a fixed 1.26.x ships.
+          go-version: "1.26.4"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Capture trusted commit SHA
@@ -126,7 +145,7 @@ jobs:
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
         # The smoke script runs go get -u inside each contrib module, so run it
         # in gVisor and persist only the generated reports/coverage for uploads.
-        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
+        uses: geomys/sandboxed-step@a6bfc174e532cea4f378e3427bcde8b714c2e810 # v1.2.2
         with:
           persist-workspace-changes: 'true'
           env: |
@@ -134,6 +153,12 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
+            # ci_test_contrib.sh already retries each individual `go get`/`go mod tidy` call via
+            # go-retry.sh (see that file for why toolchain/cache corruption is retried while
+            # genuine breaks fail immediately). Don't wrap this whole multi-contrib loop in a
+            # second, outer retry_on_corruption: that would re-run every contrib in the chunk,
+            # including ones that already succeeded, on top of the inner retries — multiplying
+            # both work and cache-wipe churn instead of just retrying the one command that failed.
             ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
       - name: Stage sandbox artifacts outside workspace
         # Move the test results and coverage files to RUNNER_TEMP so the
@@ -161,7 +186,7 @@ jobs:
         # local action is invoked.
         id: recheckout
         if: always()
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ steps.trusted.outputs.sha }}
@@ -184,7 +209,7 @@ jobs:
         id: dd-sts
         if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
@@ -219,7 +244,7 @@ jobs:
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -243,7 +268,7 @@ jobs:
         id: dd-sts
         if: always()
         continue-on-error: true
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
@@ -267,7 +292,7 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -359,7 +384,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -368,9 +393,9 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Build
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: ./internal/setup-smoke-test/Dockerfile
@@ -388,21 +413,81 @@ jobs:
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
 
+  check-orchestrion-all-resolves:
+    # Verify that orchestrion/all/v2, and every dd-trace-go module it requires, can be
+    # resolved from the module proxy by an external consumer.
+    name: 'Check orchestrion/all resolves from the module proxy'
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'DataDog' # needs a commit pushed to the public repo
+    env:
+      REF: ${{ inputs.ref || github.sha }}
+      # This job checks that modules can be downloaded, not that their checksums match,
+      # which the other jobs already cover. Skipping the checksum database avoids a false
+      # failure when it has not yet caught up with a just-pushed commit.
+      GOSUMDB: "off"
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25" # lowest supported version, so this checks the floor
+      - name: Resolve orchestrion/all as an external consumer would
+        id: resolve
+        run: |-
+          set -euo pipefail
+          module=github.com/DataDog/dd-trace-go/orchestrion/all/v2
+
+          # Build the throwaway consumer outside the workspace, so no go.work or replace
+          # directive above it can influence resolution.
+          work=$(mktemp -d)
+          cd "$work"
+          go mod init ci.local/orchestrion-all-resolve-check
+
+          # orchestrion/all only pulls the contrib modules in under the `tools` build
+          # tag, which is how `orchestrion pin` wires it into a user's project. A plain
+          # `go get` prunes them away and passes even when a tag is missing, so the tool
+          # file plus `go mod tidy`, which considers every build tag, is what actually
+          # forces each contrib module to resolve.
+          printf '//go:build tools\n\npackage tools\n\nimport _ "%s"\n' "$module" > orchestrion.tool.go
+
+          echo "::group::go get $module@$REF"
+          go get "$module@$REF"
+          echo "::endgroup::"
+
+          echo "::group::go mod tidy"
+          go mod tidy
+          echo "::endgroup::"
+      - name: Explain how to fix this
+        if: failure() && steps.resolve.outcome == 'failure'
+        run: |-
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## `orchestrion/all` is not resolvable from the module proxy
+
+          A new nested module was most likely added without a published tag, so external
+          consumers cannot use `orchestrion/all/v2@main` even though this repository builds
+          fine. Please run the following to cut a new dev release:
+
+          ```sh
+          git checkout -b dev-vX.Y.x origin/main
+          go run ./scripts/autoreleasetagger --version vX.Y.0-dev.N --root .
+          ```
+          EOF
+
   smoke-tests-done:
     name: Smoke Tests
-    needs: 
+    needs:
       - setup-requirements-linux
       - smoke-test-tracer
       - go-get-u
+      - check-orchestrion-all-resolves
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.setup-requirements-linux.result == 'success' && needs.smoke-test-tracer.result == 'success' && needs.go-get-u.result == 'success'
+        if: needs.setup-requirements-linux.result == 'success' && needs.smoke-test-tracer.result == 'success' && needs.go-get-u.result == 'success' && needs.check-orchestrion-all-resolves.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.setup-requirements-linux.result != 'success' || needs.smoke-test-tracer.result != 'success' || needs.go-get-u.result != 'success'
-        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
+        if: needs.setup-requirements-linux.result != 'success' || needs.smoke-test-tracer.result != 'success' || needs.go-get-u.result != 'success' || needs.check-orchestrion-all-resolves.result != 'success'
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           webhook-type: incoming-webhook
           payload: |
@@ -411,6 +496,7 @@ jobs:
               "linux_result": "${{ needs.setup-requirements-linux.result }}",
               "core_result": "${{ needs.smoke-test-tracer.result }}",
               "contrib_result": "${{ needs.go-get-u.result }}",
+              "proxy_resolution_result": "${{ needs.check-orchestrion-all-resolves.result }}",
               "blocks": [
                 {
                   "type": "header",
@@ -446,6 +532,10 @@ jobs:
                       "type": "mrkdwn",
                       "text": "*Contrib Test Result:*\n${{ needs.go-get-u.result }}"
                     },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Proxy Resolution Result:*\n${{ needs.check-orchestrion-all-resolves.result }}"
+                    }
                   ]
                 }
               ]

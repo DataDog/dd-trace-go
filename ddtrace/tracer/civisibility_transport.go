@@ -19,9 +19,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -41,6 +40,7 @@ var _ ddTransport = (*ciVisibilityTransport)(nil)
 // to the Datadog endpoint, either in agentless mode or through the EVP proxy.
 type ciVisibilityTransport struct {
 	config           *config           // Configuration for the tracer.
+	httpClient       *http.Client      // HTTP client selected for the configured destination.
 	testCycleURLPath string            // URL path for the test cycle endpoint.
 	headers          map[string]string // HTTP headers to be included in the requests.
 	agentless        bool              // Gets if the transport is configured in agentless mode (eg: Gzip support)
@@ -75,11 +75,13 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 	// Determine if agentless mode is enabled (sourced from internal/config).
 	agentlessEnabled := config.internalConfig.CIVisibilityAgentless()
+	httpClient := config.httpClient
 
 	testCycleURL := ""
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		APIKeyValue := env.Get(constants.APIKeyEnvironmentVariable)
+		httpClient = internal.DefaultHTTPClient(config.internalConfig.AgentTimeout(), false)
+		APIKeyValue := config.internalConfig.APIKey()
 		if APIKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 		}
@@ -88,16 +90,13 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
-		if v := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
+		if v := config.internalConfig.CIVisibilityAgentlessURL(); v != "" {
 			agentlessURL = v
 		}
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
-			site := "datadoghq.com"
-			if v := env.Get("DD_SITE"); v != "" {
-				site = v
-			}
+			site := internalconfig.Get().Site()
 
 			testCycleURL = fmt.Sprintf("https://%s.%s/%s", TestCycleSubdomain, site, TestCyclePath)
 		} else {
@@ -113,6 +112,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 	return &ciVisibilityTransport{
 		config:           config,
+		httpClient:       httpClient,
 		testCycleURLPath: testCycleURL,
 		headers:          defaultHeaders,
 		agentless:        agentlessEnabled,
@@ -180,7 +180,7 @@ func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) 
 	log.Debug("ciVisibilityTransport: sending transport request: %d bytes", buffer.Len())
 
 	startTime := time.Now()
-	response, err := t.config.httpClient.Do(req)
+	response, err := t.httpClient.Do(req)
 	telemetry.EndpointPayloadRequestsMs(telemetry.TestCycleEndpointType, float64(time.Since(startTime).Milliseconds()))
 	if err != nil {
 		return nil, err
@@ -215,11 +215,12 @@ func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload, int) error {
 	return nil
 }
 
-// endpoint returns the URL path of the test cycle endpoint.
+// endpoint returns the URL path of the test cycle endpoint. CI Visibility does
+// not use the Datadog trace protocol, so the protocol argument is ignored.
 //
 // Returns:
 //
 //	The URL path as a string.
-func (t *ciVisibilityTransport) endpoint() string {
+func (t *ciVisibilityTransport) endpoint(float64) string {
 	return t.testCycleURLPath
 }

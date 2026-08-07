@@ -5,7 +5,10 @@
 
 package openfeature
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // universalFlagsConfiguration represents the universal feature flags configuration structure.
 // of the openfeature standard for server-side flag configurations.
@@ -18,6 +21,43 @@ type universalFlagsConfiguration struct {
 	Environment environment `json:"environment"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
+	// invalidFlags contains errors for flags that could not be parsed or validated.
+	invalidFlags map[string]error
+}
+
+// UnmarshalJSON parses flags independently so one invalid flag does not reject
+// the complete configuration.
+func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		CreatedAt   time.Time                  `json:"createdAt"`
+		Format      string                     `json:"format"`
+		Environment environment                `json:"environment"`
+		Flags       map[string]json.RawMessage `json:"flags"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	config.CreatedAt = raw.CreatedAt
+	config.Format = raw.Format
+	config.Environment = raw.Environment
+	config.Flags = make(map[string]*flag, len(raw.Flags))
+	config.invalidFlags = make(map[string]error)
+
+	for flagKey, flagData := range raw.Flags {
+		var parsedFlag flag
+		if err := json.Unmarshal(flagData, &parsedFlag); err != nil {
+			config.invalidFlags[flagKey] = err
+			continue
+		}
+		if err := validateFlag(flagKey, &parsedFlag); err != nil {
+			config.invalidFlags[flagKey] = err
+			continue
+		}
+		config.Flags[flagKey] = &parsedFlag
+	}
+
+	return nil
 }
 
 // environment represents environment information for the configuration.
@@ -111,6 +151,14 @@ const (
 	// operatorGTE checks if attribute >= value (value: number)
 	operatorGTE conditionOperator = "GTE"
 
+	// Semantic version operators compare string attributes to string values.
+	operatorSemverEQ  conditionOperator = "SEMVER_EQ"
+	operatorSemverNEQ conditionOperator = "SEMVER_NEQ"
+	operatorSemverLT  conditionOperator = "SEMVER_LT"
+	operatorSemverLTE conditionOperator = "SEMVER_LTE"
+	operatorSemverGT  conditionOperator = "SEMVER_GT"
+	operatorSemverGTE conditionOperator = "SEMVER_GTE"
+
 	// operatorMatches checks if attribute matches regex pattern (value: string regex)
 	operatorMatches conditionOperator = "MATCHES"
 	// operatorNotMatches checks if attribute doesn't match regex pattern (value: string regex)
@@ -135,10 +183,13 @@ type condition struct {
 	// Value is the value to compare against
 	// Type depends on the operator:
 	// - Numeric operators (LT, LTE, GT, GTE): number (int64 or float64)
+	// - Semantic version operators (SEMVER_EQ, SEMVER_NEQ, SEMVER_LT, SEMVER_LTE, SEMVER_GT, SEMVER_GTE): string
 	// - Regex operators (MATCHES, NOT_MATCHES): string (regex pattern)
 	// - List operators (ONE_OF, NOT_ONE_OF): []any or []string
 	// - Null check (IS_NULL): bool
 	Value any `json:"value"`
+	// semverComparand is the validated, parsed SemVer condition value.
+	semverComparand *parsedSemver
 }
 
 // split defines how traffic should be distributed for a specific variant.
@@ -147,9 +198,8 @@ type split struct {
 	// All shards must match for the split to apply (AND logic)
 	Shards []*shard `json:"shards"`
 	// VariationKey is the key of the variation to return if this split matches
-	VariationKey string `json:"variationKey"`
-	// ExtraLogging contains additional metadata for logging purposes
-	ExtraLogging map[string]string `json:"extraLogging,omitempty"`
+	VariationKey string  `json:"variationKey"`
+	SerialID     *uint32 `json:"serialId,omitempty"`
 }
 
 // shard defines a portion of traffic using consistent hashing.

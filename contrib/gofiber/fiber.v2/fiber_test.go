@@ -6,10 +6,14 @@
 package fiber
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -382,4 +386,110 @@ func TestSecurityTestingHeaders(t *testing.T) {
 	span := spans[0]
 	assert.Equal("true", span.Tag(ext.HTTPRequestHeaders+".x-datadog-endpoint-scan"))
 	assert.Equal("test-value", span.Tag(ext.HTTPRequestHeaders+".x-datadog-security-test"))
+}
+
+// TestFinishedSpanTagsChangeWhenFasthttpReusesConnectionBuffer reproduces
+// https://github.com/DataDog/dd-trace-go/issues/4968.
+//
+// Fiber's Ctx.Method() and Ctx.GetReqHeaders() return zero-copy strings that
+// alias fasthttp's per-connection read buffer. The middleware stores those
+// strings directly as span tags instead of copying them, so once fasthttp
+// reuses the buffer to parse a later keep-alive request on the same
+// connection, an already-finished span's tags can silently change. Same
+// root cause as https://github.com/gofiber/fiber/issues/4464, referenced
+// from #4968.
+//
+// Each subtest drives a real fasthttp.Server over a real connection with two
+// sequential requests, rather than manually overwriting fasthttp's buffer,
+// so the reuse is the same one fasthttp performs in production.
+func TestFinishedSpanTagsChangeWhenFasthttpReusesConnectionBuffer(t *testing.T) {
+	t.Run("http-method", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := fiber.New()
+		router.Use(Middleware(WithService("foobar")))
+		router.Use(func(c *fiber.Ctx) error {
+			return c.SendString("ok")
+		})
+
+		conn := serveOnPipe(t, router)
+
+		sendRequest(t, conn, "GET", "/first")
+		sendRequest(t, conn, "DELETE", "/second")
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+		assert.Equal(t, "GET", spans[0].Tag(ext.HTTPMethod),
+			"first request's http.method tag changed after being served: it aliases fasthttp's reused connection buffer instead of holding a copy")
+	})
+
+	t.Run("security-testing-header", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := fiber.New()
+		router.Use(Middleware(WithService("foobar")))
+		router.Use(func(c *fiber.Ctx) error {
+			return c.SendString("ok")
+		})
+
+		conn := serveOnPipe(t, router)
+
+		sendRequest(t, conn, "GET", "/first", "X-Datadog-Security-Test: test-value")
+		sendRequest(t, conn, "GET", "/second", "X-Datadog-Security-Test: corrupted!")
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+		tagName := ext.HTTPRequestHeaders + ".x-datadog-security-test"
+		assert.Equal(t, "test-value", spans[0].Tag(tagName),
+			"first request's security-testing header tag changed after being served: it aliases fasthttp's reused connection buffer instead of holding a copy")
+	})
+}
+
+// pipedConn is a real, single keep-alive connection to router's underlying
+// fasthttp.Server, backed by a net.Pipe.
+type pipedConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+// serveOnPipe starts router's underlying fasthttp.Server serving a single,
+// real keep-alive connection over a net.Pipe, and returns the client side.
+func serveOnPipe(t *testing.T, router *fiber.App) *pipedConn {
+	t.Helper()
+
+	// Build the route tree before serving.
+	router.Handler()
+
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { clientConn.Close() })
+	go func() {
+		_ = router.Server().ServeConn(serverConn)
+	}()
+
+	return &pipedConn{Conn: clientConn, r: bufio.NewReader(clientConn)}
+}
+
+// sendRequest writes a raw HTTP/1.1 request for method/path (with optional
+// extra "Key: value" header lines) onto conn, and reads+discards the
+// response so the connection is ready for the next keep-alive request.
+func sendRequest(t *testing.T, conn *pipedConn, method, path string, extraHeaders ...string) {
+	t.Helper()
+
+	var req strings.Builder
+	fmt.Fprintf(&req, "%s %s HTTP/1.1\r\nHost: example.com\r\n", method, path)
+	for _, h := range extraHeaders {
+		req.WriteString(h + "\r\n")
+	}
+	req.WriteString("\r\n")
+
+	_, err := conn.Write([]byte(req.String()))
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(conn.r, nil)
+	require.NoError(t, err)
+	_, err = io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
 }

@@ -22,3 +22,13 @@ func FreePort(t testing.TB) int {
 	tcpAddr, _ := addr.(*net.TCPAddr)
 	return tcpAddr.Port
 }
+
+// FreeListener binds to a random free port and returns the open listener.
+// Pass the listener to Server.Serve (or equivalent) instead of using
+// ListenAndServe — this guarantees the port is bound before Setup returns.
+func FreeListener(t testing.TB) *net.TCPListener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	return ln.(*net.TCPListener)
+}

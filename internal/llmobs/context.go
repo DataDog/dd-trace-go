@@ -20,6 +20,8 @@ type PropagatedLLMSpan struct {
 	TraceID string
 	// SpanID is the span ID.
 	SpanID string
+	// SessionID is the session ID.
+	SessionID string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.

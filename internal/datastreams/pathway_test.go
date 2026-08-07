@@ -162,7 +162,7 @@ func TestPathway(t *testing.T) {
 	// byte sequence. This unit test asserts that assumption.
 	t.Run("test hashWriterIsomorphism", func(t *testing.T) {
 		h := fnv.New64()
-		var b []byte
+		b := make([]byte, 0, 9)
 		b = append(b, "dog"...)
 		b = append(b, "cat"...)
 		b = append(b, "pig"...)

@@ -10,6 +10,9 @@ name: Build Metrics
 # Key features:
 # - Cold cache measurement: cleans build cache before each measurement to capture full compilation cost
 # - Warm module cache: runs go mod download (untimed) so measurement reflects compilation, not network
+# - Dependency attribution (standard mode only): go-size-analyzer breaks the binary down by
+#   vendor package, published as go.build.dependency_size_bytes.<dependency>, so a size
+#   regression can be traced to which dependency grew instead of just the binary total
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
 # - Runs on: Pull requests (when this file, scripts/*, orchestrion.yml, or any go.mod changes) and pushes to main
 # - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
@@ -52,6 +55,7 @@ jobs:
         mode: [standard, orchestrion]
         sample:
           - 99designs.gqlgen
+          - aerospike.v7
           - aws.v1
           - aws.v2
           - chi.v5
@@ -107,17 +111,25 @@ jobs:
     name: Build Metrics (${{ matrix.sample }}, ${{ matrix.mode }})
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
           cache: false  # Cold build cache for accurate measurements
           check-latest: true
+
+      - name: Install go-size-analyzer
+        if: matrix.mode == 'standard'
+        run: |
+          curl -L --fail "https://github.com/Zxilly/go-size-analyzer/releases/download/v1.13.0/go-size-analyzer_1.13.0_linux_amd64.tar.gz" -o gsa.tar.gz
+          tar -xzf gsa.tar.gz gsa
+          chmod +x gsa
+          echo "${{ github.workspace }}" >> "$GITHUB_PATH"
 
       - name: Measure build
         id: measure
@@ -136,7 +148,7 @@ jobs:
         id: dd-sts
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
         continue-on-error: true
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
 

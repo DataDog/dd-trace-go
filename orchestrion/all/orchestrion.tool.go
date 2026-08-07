@@ -25,6 +25,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"                         // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2"                               // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2"                           // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"         // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws"                    // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"                       // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"            // integration
@@ -41,6 +42,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2"                           // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2/mongo"     // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2/mongo"        // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2"                          // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"                              // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"                         // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2"                          // integration

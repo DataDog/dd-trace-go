@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -39,7 +40,7 @@ const TraceIDZero string = "00000000000000000000000000000000"
 var traceID128BitEnabled atomic.Bool
 
 func init() {
-	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true))
+	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)) //configaudit:ignore — intentional: atomic cache for hot path; re-seeded from internalConfig on tracer.Start
 }
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
@@ -257,10 +258,15 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	if sc.trace == nil {
 		sc.trace = newTrace()
 	}
-	sc.trace.tags = ctx.Tags()                                    // +checklocksignore - Initialization time, not shared yet.
-	sc.trace.propagatingTags = ctx.PropagatingTags()              // +checklocksignore - Initialization time, not shared yet.
-	if dm, ok := sc.trace.propagatingTags[keyDecisionMaker]; ok { // +checklocksignore - Initialization time, not shared yet.
-		sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.tags = ctx.Tags()                    // +checklocksignore - Initialization time, not shared yet.
+	if pt := ctx.PropagatingTags(); len(pt) > 0 { // +checklocksignore - Initialization time, not shared yet.
+		// Clone the map so that the atomic.Value snapshot is immutable and
+		// independent of whatever the adapter holds internally.
+		cp := maps.Clone(pt)
+		sc.trace.propagatingTags.Store(cp)
+		if dm, ok := cp[keyDecisionMaker]; ok {
+			sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+		}
 	}
 	sc.traceID.cacheHex()
 	return &sc
@@ -515,6 +521,17 @@ func (c *SpanContext) setBaggageItem(key, val string) {
 	c.setBaggageItemLocked(key, val)
 }
 
+// setOTBaggageItem stores a baggage item extracted from a legacy OpenTracing
+// "ot-baggage-<key>" HTTP header. <key> is derived from a case-insensitive
+// header name, so it must be lowercased here to match how it was matched.
+// This is deliberately not folded into setBaggageItem itself, which is also
+// used by the public Span.SetBaggageItem API (arbitrary user-chosen keys) and
+// by the case-sensitive W3C "baggage" header extractor (opaque token keys) —
+// neither of those should have their keys silently normalized.
+func (c *SpanContext) setOTBaggageItem(key, val string) {
+	c.setBaggageItem(strings.ToLower(key), val)
+}
+
 // baggageItemLocked retrieves a baggage item.
 // c.mu must be held for reading.
 // +checklocksread:c.mu
@@ -593,8 +610,8 @@ type trace struct {
 	// +checklocks:mu
 	tags map[string]string
 	// trace level tags that will be propagated across service boundaries
-	// +checklocks:mu
-	propagatingTags map[string]string
+	// holds map[string]string; readers are lock-free (atomic.Value); writers hold mu and use copy-on-write
+	propagatingTags atomic.Value
 	// the number of finished spans
 	// +checklocks:mu
 	finished int
@@ -627,6 +644,123 @@ type trace struct {
 	// still refer to it through trace.root.
 	// +checklocks:mu
 	rootFlushed bool
+
+	// filterReject is set when the local root finishes and is consumed when a
+	// chunk containing that root is assembled.
+	// +checklocks:mu
+	filterReject bool
+
+	// otel holds the OpenTelemetry consistent probability sampling state, or nil
+	// when the trace carries none. See otelTraceState.
+	// +checklocks:mu
+	otel *otelTraceState
+}
+
+// otelTraceState is the OpenTelemetry consistent probability sampling state
+// (OTEP 235) carried in the `ot=` tracestate list-member: the 56-bit randomness
+// (rv) and rejection threshold (th). A nil field means that value is absent; th
+// can be present without rv, which is how an upstream OTel default-sampling
+// decision arrives. hasUpstreamDecision marks that an inbound `ot=` carried a
+// sampling decision (rv and/or th) that DD must honor: such values are forwarded
+// verbatim and never re-derived locally. It is NOT set for an `ot=` that carries
+// only unknown sub-keys, since those describe no sampling decision.
+type otelTraceState struct {
+	rv, th *uint64
+	// unknown holds inbound `ot=` sub-keys other than rv/th (';'-joined), forwarded
+	// verbatim so DD stays transparent to sub-keys OTel may add later. Only ever set
+	// from an inbound `ot=`.
+	unknown             string
+	hasUpstreamDecision bool
+}
+
+// setOtelUpstream records rv/th (and any unknown sub-keys) parsed from an inbound
+// `ot=` member. rv/th carry an upstream sampling decision that is forwarded
+// unchanged on inject and never re-derived locally; an `ot=` with only unknown
+// sub-keys carries no decision, so DD still derives its own (rv, th) alongside it.
+// Note: keep/drop is driven by the W3C sampled flag (parseTraceparent), which for
+// a compliant sender already equals (rv >= th); we trust that flag and do not
+// validate the inbound pair against it.
+func (t *trace) setOtelUpstream(rv uint64, rvOK bool, th uint64, thOK bool, unknown string) {
+	if !rvOK && !thOK && unknown == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil {
+		t.otel = &otelTraceState{}
+	}
+	if rvOK {
+		t.otel.rv = &rv
+	}
+	if thOK {
+		t.otel.th = &th
+	}
+	t.otel.unknown = unknown
+	// rv/th are a decision to honor; unknown-only sub-keys are not.
+	t.otel.hasUpstreamDecision = rvOK || thOK
+}
+
+// setOtelProbability records the (rv, th) pair for a genuine DD probability
+// decision at the given rate. It is a no-op when an upstream sampling decision
+// was inherited (DD honors it) or when rate is 0 (a rejection with no
+// representable threshold, so nothing is emitted).
+func (t *trace) setOtelProbability(traceIDLower uint64, rate float64) {
+	if rate <= 0 {
+		// A rate-0 decision is a drop with no representable threshold. Clear any
+		// previously derived local (rv, th) so a re-sample (e.g. a trace rule with
+		// sample_rate:0 applied after an earlier agent-rate decision) can't leave a
+		// stale threshold to be injected. Upstream-decided values are preserved.
+		t.clearOtelProbability()
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil {
+		t.otel = &otelTraceState{}
+	} else if t.otel.hasUpstreamDecision {
+		return
+	}
+	rv := deriveOtelRV(traceIDLower)
+	th := deriveOtelTH(rate)
+	// DD decides keep/drop on the full 64-bit hash, but rv/th carry only 56 bits.
+	// On the rare boundary trace IDs where that truncation would flip a
+	// downstream reader's (rv >= th) decision, nudge rv (never th) so it
+	// reproduces DD's exact keep/drop. rv moves by at most one step.
+	if sampledByRate(traceIDLower, rate) {
+		if rv < th {
+			rv = th
+		}
+	} else if th > 0 && rv >= th { // th == 0 (rate ~= 1) has no drop to represent
+		rv = th - 1
+	}
+	t.otel.rv = &rv
+	t.otel.th = &th
+}
+
+// clearOtelProbability erases a locally-derived (rv, th) pair for a
+// non-probability decision (force-keep or a rate-limiter-caused drop). Values
+// from an upstream decision are left untouched so an upstream rv is still forwarded.
+func (t *trace) clearOtelProbability() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil || t.otel.hasUpstreamDecision {
+		return
+	}
+	t.otel.rv = nil
+	t.otel.th = nil
+}
+
+// otelTracestate returns the resolved OTel sampling state for injection under a
+// single lock: rv/th for the sampling decision (a nil rv or th must not be
+// emitted) and any inherited non-rv/th sub-keys to re-emit verbatim (empty when
+// none were inherited).
+func (t *trace) otelTracestate() (rv, th *uint64, unknown string) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.otel == nil {
+		return nil, nil, ""
+	}
+	return t.otel.rv, t.otel.th, t.otel.unknown
 }
 
 var (
@@ -635,7 +769,7 @@ var (
 	// reasonable as span is actually way bigger, and avoids re-allocating
 	// over and over. Could be fine-tuned at runtime.
 	traceStartSize = 10
-	traceMaxSize   = internalconfig.TraceMaxSize
+	traceMaxSize   = internalconfig.TraceMaxSize // +checklocksignore — package-level config knob, read under t.mu in trace.push; only ever mutated by tests, never concurrently with a running trace.
 )
 
 // samplingPriorityCache holds pre-allocated pointers for the four standard
@@ -735,11 +869,23 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		return false
 	}
 
+	// A manual or AppSec force-keep is not a probability decision, so erase the
+	// OTel threshold rather than encode a fabricated rate. An upstream rv is still
+	// forwarded (it describes upstream's randomness); a locally-derived rv has no
+	// meaning without its threshold, so it is dropped too.
+	if t.otel != nil && (sampler == samplernames.Manual || sampler == samplernames.AppSec) {
+		t.otel.th = nil
+		if !t.otel.hasUpstreamDecision {
+			t.otel.rv = nil
+		}
+	}
+
 	old := t.priority.Load() // +checklocksignore
 	updatedPriority := old == nil || *old != float64(p)
 
 	t.priority.Store(samplingPriorityPtr(p)) // +checklocksignore
-	curDM, existed := t.propagatingTags[keyDecisionMaker]
+	curDM := t.propagatingTag(keyDecisionMaker)
+	existed := curDM != ""
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
@@ -810,7 +956,7 @@ func (t *trace) push(sp *Span) {
 }
 
 // setTraceTagsLocked sets all "trace level" tags on the provided span
-// t must already be locked.
+// t must already be read-locked (t.mu.RLock held by caller).
 // +checklocksread:t.mu
 // +checklocks:s.mu
 func (t *trace) setTraceTagsLocked(s *Span) {
@@ -819,7 +965,7 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	for k, v := range t.tags {
 		s.setMetaLocked(k, v)
 	}
-	for k, v := range t.propagatingTags {
+	for k, v := range t.loadPropagatingTags() {
 		s.setMetaLocked(k, v)
 	}
 	updateTracerGitMetadataTags(s)
@@ -864,6 +1010,9 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// to a race condition where spans can be modified while flushing.
 		//
 		// TODO(partialFlush): should we do a partial flush in this scenario?
+		if tr, ok := getGlobalTracer().(*tracer); ok {
+			tr.computeOversizedSpanStats(s)
+		}
 		t.mu.Unlock()
 		return
 	}
@@ -903,6 +1052,11 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// in the chunk there.
 		t.setTraceTagsLocked(s)
 	}
+	if realTracer, ok := tr.(*tracer); ok {
+		realTracer.computeSpanStats(t, s)
+	} else {
+		s.statSpan = nil
+	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
 	// We need to track when any single span is finished.
@@ -919,10 +1073,13 @@ func (t *trace) finishedOneLocked(s *Span) {
 			t.rootFlushed = false
 		}
 		willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
+		// t.filterReject is guarded by t.mu, so capture it before unlocking below.
+		// The root has finished by full flush, so its decision is set.
+		filterRejected := t.filterReject
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 		t.mu.Unlock()
-		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease})
+		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 		return
 	}
 
@@ -972,6 +1129,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 			}
 		}
 	}
+	// t.filterReject stays false until the root finishes, so this passes pre-root
+	// partial-flush chunks through unfiltered and applies the root's decision once
+	// it is known — same as the full-flush path above.
+	filterRejected := t.filterReject
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
 	// Clear the tail so the GC can collect the flushed spans; without this the
@@ -1005,13 +1166,17 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RLock()
 		t.setTraceTagsLocked(fSpan)
 		t.mu.RUnlock()
+		// recompute stats after trace tags propagation
+		if realTracer, ok := tr.(*tracer); ok && fSpan.statSpan != nil {
+			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpan(fSpan, realTracer.obfuscator)
+		}
 	}
 	if !finishingSpanIsFirstInChunk {
 		fSpan.mu.Unlock()
 		s.mu.Lock()
 	}
 
-	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease})
+	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 }
 
 // submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.

@@ -128,6 +128,8 @@ func TestMain(m *testing.M) {
 
 func runScenarioChild(m *testing.M, cfg scenarioConfig) int {
 	if os.Getenv(externalMockServerEnv) == "true" {
+		restoreReadCache := civisibilitytest.ConfigureMockServerReadCacheFromEnv()
+		defer restoreReadCache()
 		return m.Run()
 	}
 

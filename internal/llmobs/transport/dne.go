@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -233,7 +234,7 @@ func (c *Transport) GetDatasetByName(ctx context.Context, name, projectID string
 	datasetPath := fmt.Sprintf("%s/%s/datasets?%s", endpointPrefixDNE, url.PathEscape(projectID), q.Encode())
 	method := http.MethodGet
 
-	result, err := c.jsonRequest(ctx, method, datasetPath, subdomainDNE, nil, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, datasetPath, subdomainDNE, nil, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +274,7 @@ func (c *Transport) CreateDataset(ctx context.Context, name, description, projec
 			},
 		},
 	}
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +302,7 @@ func (c *Transport) DeleteDataset(ctx context.Context, datasetIDs ...string) err
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return err
 	}
@@ -332,7 +333,7 @@ func (c *Transport) BatchUpdateDataset(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
 		return -1, nil, err
 	}
@@ -377,7 +378,7 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datase
 
 	q := url.Values{}
 	if version != nil {
-		q.Set("filter[version]", fmt.Sprintf("%d", *version))
+		q.Set("filter[version]", strconv.Itoa(*version))
 	}
 	if cursor != "" {
 		q.Set("page[cursor]", cursor)
@@ -386,7 +387,7 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datase
 		recordsPath = recordsPath + "?" + q.Encode()
 	}
 
-	result, err := c.jsonRequest(ctx, http.MethodGet, recordsPath, subdomainDNE, nil, getDatasetRecordsTimeout)
+	result, err := c.jsonRequest(ctx, http.MethodGet, recordsPath, subdomainDNE, nil, datasetRecordsLimits)
 	if err != nil {
 		return nil, "", err
 	}
@@ -471,7 +472,7 @@ func (c *Transport) GetOrCreateProject(ctx context.Context, name string) (*Proje
 			},
 		},
 	}
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -522,7 +523,9 @@ func (c *Transport) CreateExperiment(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	// The response echoes back the config supplied above, so it can be as large
+	// as the request was.
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -553,7 +556,7 @@ func (c *Transport) UpdateExperimentStatus(ctx context.Context, id, status, errS
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, http.MethodPatch, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, http.MethodPatch, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return err
 	}
@@ -583,7 +586,7 @@ func (c *Transport) PushExperimentEvents(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return err
 	}
@@ -648,9 +651,9 @@ func (c *Transport) BulkUploadDataset(ctx context.Context, datasetID string, rec
 	body.WriteString("--" + boundary + "--" + crlf)
 
 	path := fmt.Sprintf("%s/datasets/%s/records/upload", endpointPrefixDNE, url.PathEscape(datasetID))
-	contentType := fmt.Sprintf("multipart/form-data; boundary=%s", boundary)
+	contentType := "multipart/form-data; boundary=" + boundary
 
-	result, err := c.request(ctx, http.MethodPost, path, subdomainDNE, bytes.NewReader(body.Bytes()), contentType, bulkUploadTimeout)
+	result, err := c.request(ctx, http.MethodPost, path, subdomainDNE, bytes.NewReader(body.Bytes()), contentType, bulkUploadLimits)
 	if err != nil {
 		return err
 	}

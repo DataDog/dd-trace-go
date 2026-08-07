@@ -98,7 +98,7 @@ func StartHandlerOperation(ctx context.Context, span trace.TagSetter, args Handl
 
 // MonitorRequestMessage monitors the gRPC request message body as the WAF address `grpc.server.request.message`.
 func MonitorRequestMessage(ctx context.Context, msg any) error {
-	return waf.RunSimple(ctx,
+	return waf.RunSimpleSubcontext(ctx,
 		addresses.NewAddressesBuilder().
 			WithGRPCRequestMessage(msg).
 			Build(),
@@ -107,7 +107,7 @@ func MonitorRequestMessage(ctx context.Context, msg any) error {
 
 // MonitorResponseMessage monitors the gRPC response message body as the WAF address `grpc.server.response.message`.
 func MonitorResponseMessage(ctx context.Context, msg any) error {
-	return waf.RunSimple(ctx,
+	return waf.RunSimpleSubcontext(ctx,
 		addresses.NewAddressesBuilder().
 			WithGRPCResponseMessage(msg).
 			Build(),

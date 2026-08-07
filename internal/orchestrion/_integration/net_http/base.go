@@ -26,14 +26,15 @@ type base struct {
 }
 
 func (b *base) Setup(_ context.Context, t *testing.T) {
+	ln := net.FreeListener(t)
 	b.srv = &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:         ln.Addr().String(),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 	b.srv.Handler = b.handler
 
-	go func() { assert.ErrorIs(t, b.srv.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, b.srv.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

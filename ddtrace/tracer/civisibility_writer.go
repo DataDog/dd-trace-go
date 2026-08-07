@@ -79,7 +79,12 @@ func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 func (w *ciVisibilityTraceWriter) stop() {
 	w.flush()
 	w.wg.Wait()
+	if transport, ok := w.config.ddTransport.(*ciVisibilityTransport); ok {
+		transport.httpClient.CloseIdleConnections()
+	}
 }
+
+func (w *ciVisibilityTraceWriter) wait() { w.wg.Wait() }
 
 // flush sends the current payload to the transport. It ensures that the payload is reset
 // and the resources are freed after the flush operation is completed.

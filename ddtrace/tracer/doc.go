@@ -59,6 +59,18 @@
 //	export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "sample_rate": 1.0}]'
 //	export DD_SPAN_SAMPLING_RULES='[{"service":"test.?","name": "web.*", "sample_rate": 1.0, "max_per_second":100}]'
 //
+// When the tracer makes a probability-based sampling decision (the agent rate,
+// a global rate, or a sampling rule), it additionally expresses that decision as
+// an OpenTelemetry consistent-probability-sampling pair (ot.th/ot.rv, per OTEP 235)
+// on the W3C tracestate header, as the ot= list-member. This lets OpenTelemetry-native
+// downstream services make and verify the same keep/drop decision and extrapolate
+// span counts across a mixed Datadog/OpenTelemetry trace. An inbound ot= is honored
+// and forwarded unchanged; non-probability decisions (manual keep, AppSec, or a
+// rate-limiter drop) omit the threshold. This is automatic, requires no configuration,
+// and leaves the existing Datadog propagation unchanged. When spans are exported over
+// OTLP, the same ot= member is carried on the span's trace_state and the W3C sampled
+// trace-flag is set, so the export matches what wire propagation would emit.
+//
 // To create spans, use the functions StartSpan and StartSpanFromContext. Both accept
 // StartSpanOptions that can be used to configure the span. A span that is started
 // with no parent will begin a new trace. See the function documentation for details
@@ -107,4 +119,49 @@
 // Some libraries and frameworks are supported out-of-the-box by using one
 // of our integrations. You can see a list of supported integrations here:
 // https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib
+//
+// # Client-Side Stats Cardinality Controls
+//
+// When client-side stats computation is enabled (WithStatsComputation or
+// DD_TRACE_STATS_COMPUTATION_ENABLED), the tracer aggregates span metrics
+// locally before sending them to the agent. High-cardinality services can
+// produce an unbounded number of unique aggregation keys, which increases
+// memory usage and backend cost. Six limits cap the number of distinct values
+// per aggregation dimension before collapsing excess values to a placeholder:
+//
+//   - DD_TRACE_STATS_CARDINALITY_LIMIT / WithStatsCardinalityLimit
+//     Whole-key limit: caps the total number of unique aggregation keys per
+//     flush bucket across all dimensions combined. Default: 2048.
+//
+//   - DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT / WithStatsResourceCardinalityLimit
+//     Per-resource limit: caps distinct resource values within a service+name
+//     combination. Default: 1024.
+//
+//   - DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT / WithStatsHTTPEndpointCardinalityLimit
+//     Per-http_endpoint limit. Default: 512.
+//
+//   - DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT / WithStatsPeerTagsCardinalityLimit
+//     Per-peer-tags combination limit. Default: 512.
+//
+//   - DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT / WithStatsOriginCardinalityLimit
+//     Per-origin limit. Default: 20.
+//
+//   - DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT
+//     Per-additional-metric-tags combination limit (see below). Default: 100.
+//
+// When a limit is reached, excess spans are still counted but their grouping
+// dimension is replaced with a sentinel value. The tracer emits a
+// datadog.tracer.stats.collapsed_spans statsd metric tagged with the dimension
+// that was capped (e.g. collapsed:resource) so the event is observable.
+//
+// # Additional Metric Tags
+//
+// By default, client-side stats group spans by service, resource, name, type,
+// HTTP method, HTTP endpoint, peer tags, and origin. Additional span tag keys
+// can be included as extra grouping dimensions using:
+//
+//	tracer.Start(tracer.WithStatsAdditionalTags([]string{"region", "tenant_id"}))
+//
+// or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
+// This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

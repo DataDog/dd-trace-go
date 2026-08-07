@@ -109,6 +109,9 @@
 // Numeric comparisons:
 //   - LT, LTE, GT, GTE: Compare numeric attributes
 //
+// Semantic version comparisons:
+//   - SEMVER_EQ, SEMVER_NEQ, SEMVER_LT, SEMVER_LTE, SEMVER_GT, SEMVER_GTE: Compare semantic version strings
+//
 // String matching:
 //   - MATCHES, NOT_MATCHES: Regex pattern matching
 //
@@ -223,9 +226,16 @@
 //     (https://github.com/open-feature/go-sdk/tree/main/openfeature/multi)
 //     to implement local overrides during development or testing.
 //
+//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED: When set to
+//     "true", enables span enrichment — feature flag evaluation details are
+//     recorded as tags on the active trace's root span. Requires
+//     DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED to also be set to "true".
+//     Default: false. Note: the added span tags may affect APM billing.
+//
 // Example:
 //
 //	export DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED=true
+//	export DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED=true
 //
 // Standard Datadog environment variables also apply:
 //

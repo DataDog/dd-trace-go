@@ -206,6 +206,7 @@ All currently available features are the following ones:
 | GraphQL WAF Protection | Protects GraphQL requests from attacks                 |
 | SQL RASP               | Runtime Application Self-Protection for SQL injections |
 | OS RASP                | Runtime Application Self-Protection for LFI attacks    |
+| CMDi RASP              | Runtime Application Self-Protection for command injection attacks |
 | HTTP RASP              | Runtime Application Self-Protection for SSRF attacks   |
 | User Security          | User blocking and login failures/success events        |
 | WAF Context            | Setup of the request scoped context system of the WAF  |

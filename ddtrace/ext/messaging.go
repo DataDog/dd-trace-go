@@ -10,6 +10,10 @@ const (
 	MessagingSystem = "messaging.system"
 	// MessagingDestinationName identifies message destination name
 	MessagingDestinationName = "messaging.destination.name"
+	// MessagingOperationName identifies the messaging operation performed (e.g. send, receive).
+	MessagingOperationName = "messaging.operation.name"
+	// MessagingMessageID identifies the message ID assigned by the messaging system.
+	MessagingMessageID = "messaging.message.id"
 )
 
 // Available values for messaging.system.

@@ -27,6 +27,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 
@@ -40,6 +41,38 @@ var securityTestingHeaders = [...]struct {
 }{
 	{header: "x-datadog-endpoint-scan", tag: ext.HTTPRequestHeaders + ".x-datadog-endpoint-scan"},
 	{header: "x-datadog-security-test", tag: ext.HTTPRequestHeaders + ".x-datadog-security-test"},
+}
+
+func TestCustomClientIPHeaderPrecedesIntegrationIP(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+	t.Cleanup(clientip.ResetConfig)
+	t.Setenv("DD_TRACE_CLIENT_IP_HEADER", "CF-Connecting-IP")
+	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")
+	clientip.ResetConfig()
+	ResetCfg()
+	require.False(t, appsec.Enabled())
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+	r.Header.Set("CF-Connecting-IP", "82.67.164.163")
+	r.Header.Set("X-Forwarded-For", "203.0.113.77")
+	r.RemoteAddr = "10.0.0.1:4242"
+
+	rw, rt, after, handled := BeforeHandle(&ServeConfig{
+		ClientIP: netip.MustParseAddr("8.233.57.190"),
+	}, httptest.NewRecorder(), r)
+	require.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "82.67.164.163", spans[0].Tag(ext.HTTPClientIP))
+	assert.Equal(t, "10.0.0.1", spans[0].Tag(ext.NetworkClientIP))
 }
 
 func TestGetErrorCodesFromInput(t *testing.T) {
@@ -145,7 +178,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
 		assert.Equal(t, "0", spans[0].Tag(ext.HTTPCode))
-		assert.Equal(t, fmt.Sprintf("0: %s", http.StatusText(0)), spans[0].Tag(ext.ErrorMsg))
+		assert.Equal(t, "0: "+http.StatusText(0), spans[0].Tag(ext.ErrorMsg))
 	})
 }
 
@@ -187,7 +220,7 @@ func TestStartRequestSpanSecurityTestingHeaders(t *testing.T) {
 		{
 			name: "present",
 			headers: http.Header{
-				"x-datadog-endpoint-scan": {"scan-uuid"},
+				"X-Datadog-Endpoint-Scan": {"scan-uuid"},
 				"X-Datadog-Security-Test": {" test-uuid "},
 			},
 			expected: map[string]string{
@@ -310,7 +343,7 @@ func TestTraceClientIPFlag(t *testing.T) {
 
 	// use 0.0.0.0 as ip address of all test cases
 	// more comprehensive ip address testing is done in testing
-	// of ClientIPTags in appsec/dyngo/instrumentation/httpsec
+	// of the resolver in internal/clientip
 	validIPAddr := "0.0.0.0"
 
 	type ipTestCase struct {
@@ -1482,13 +1515,13 @@ func runBaggageSpanTagTest(t *testing.T, tc baggageSpanTagTest) {
 
 	// Check expected tags
 	for key, expectedValue := range tc.expectedTags {
-		assert.Contains(t, m, key, fmt.Sprintf("%s should be included in span tags", key))
+		assert.Contains(t, m, key, key+" should be included in span tags")
 		assert.Equal(t, expectedValue, m[key], fmt.Sprintf("should contain %s value", key))
 	}
 
 	// Check unexpected tags
 	for _, key := range tc.unexpectedTags {
-		assert.NotContains(t, m, key, fmt.Sprintf("%s should not be included in span tags", key))
+		assert.NotContains(t, m, key, key+" should not be included in span tags")
 	}
 
 	span.Finish()

@@ -356,15 +356,27 @@ var flagEvalBenchProfiles = []flagEvalBenchProfile{
 	{"scale/2500flags_500users_20fields", 2500, 500, 20},
 }
 
+// removeHookType removes all hooks of type T from p.hooks in-place.  Used by benchmarks to
+// select which hook tiers are active without rebuilding the provider from scratch.
+func removeHookType[T openfeature.Hook](p *DatadogProvider) {
+	out := p.hooks[:0]
+	for _, h := range p.hooks {
+		if _, ok := h.(T); !ok {
+			out = append(out, h)
+		}
+	}
+	p.hooks = out
+}
+
 // runFlagEvalBenchmark drives evaluations through a real OpenFeature client so the provider's
 // registered hooks actually run - calling provider.BooleanEvaluation directly would bypass
 // Hooks() and every column would measure the same bare evaluator. Flag and targeting keys
 // rotate to exercise flag- and user-cardinality.
 //
-// configureHooks nils whichever provider hooks the tier under test should exclude (it runs
-// before registration; Init does not recreate hooks, so the choice sticks). The 24h flush
-// interval keeps the EVP writer from flushing during the run, so no HTTP round-trip enters
-// the hot path - isolating hook + aggregator cost.
+// configureHooks adjusts p.hooks (via removeHookType) and any associated writer fields for the
+// tier under test (runs before registration; Init does not recreate hooks, so the choice sticks).
+// The 24h flush interval keeps the EVP writer from flushing during the run, so no HTTP
+// round-trip enters the hot path - isolating hook + aggregator cost.
 func runFlagEvalBenchmark(b *testing.B, configureHooks func(p *DatadogProvider)) {
 	b.Helper()
 	for _, p := range flagEvalBenchProfiles {
@@ -409,7 +421,9 @@ func runFlagEvalBenchmark(b *testing.B, configureHooks func(p *DatadogProvider))
 //	  -benchmem -count=3 -cpu=8
 func BenchmarkFlagEvaluationNoop(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
-		p.exposureHook = nil
+		removeHookType[*exposureHook](p)
+		removeHookType[*flagEvalMetricsHook](p)
+		removeHookType[*flagEvalLoggingHook](p)
 		p.flagEvalMetricsHook = nil
 		p.flagEvalLoggingHook = nil
 		p.flagEvalLoggingWriter = nil
@@ -421,7 +435,8 @@ func BenchmarkFlagEvaluationNoop(b *testing.B) {
 // are disabled so this column isolates the OTel hook's cost.
 func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
-		p.exposureHook = nil
+		removeHookType[*exposureHook](p)
+		removeHookType[*flagEvalLoggingHook](p)
 		p.flagEvalLoggingHook = nil
 		p.flagEvalLoggingWriter = nil
 	})
@@ -432,7 +447,7 @@ func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
 // hook is disabled; the OTel hook, EVP hook, and aggregator all run.
 func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
-		p.exposureHook = nil
+		removeHookType[*exposureHook](p)
 	})
 }
 
@@ -506,8 +521,7 @@ func BenchmarkFlagEvaluationOTelPlusEVPParallel(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{FlagEvaluationFlushInterval: 24 * time.Hour})
 	// Disable only the exposure hook; OTel hook + EVP hook + aggregator all run, so this
 	// measures the combined Path A + Path B cost under contention.
-	provider.exposureHook = nil
-
+	removeHookType[*exposureHook](provider)
 	config := makeBenchmarkConfig(p.numFlags)
 	provider.updateConfiguration(config)
 
