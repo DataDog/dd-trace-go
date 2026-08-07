@@ -70,6 +70,40 @@ func TestBaggageFunctions(t *testing.T) {
 		}
 	})
 
+	t.Run("SetAll merges into existing baggage", func(t *testing.T) {
+		ctx := context.Background()
+		ctx = Set(ctx, "existing", "value")
+		ctx = SetAll(ctx, map[string]string{"a": "1", "b": "2"})
+
+		all := All(ctx)
+		assert.Equal(t, map[string]string{"existing": "value", "a": "1", "b": "2"}, all)
+	})
+
+	t.Run("SetAll overwrites existing keys", func(t *testing.T) {
+		ctx := context.Background()
+		ctx = Set(ctx, "key", "original")
+		ctx = SetAll(ctx, map[string]string{"key": "updated"})
+
+		got, _ := Get(ctx, "key")
+		assert.Equal(t, "updated", got)
+	})
+
+	t.Run("SetAll with empty map is a no-op", func(t *testing.T) {
+		ctx := Set(context.Background(), "key", "value")
+		result := SetAll(ctx, map[string]string{})
+
+		assert.True(t, ctx == result, "SetAll with no values should return the same context") //nolint
+	})
+
+	t.Run("SetAll does not allow external mutation", func(t *testing.T) {
+		m := map[string]string{"key": "original"}
+		ctx := SetAll(context.Background(), m)
+		m["key"] = "mutated"
+
+		got, _ := Get(ctx, "key")
+		assert.Equal(t, "original", got)
+	})
+
 	t.Run("Remove", func(t *testing.T) {
 		ctx := context.Background()
 
