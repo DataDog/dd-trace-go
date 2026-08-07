@@ -29,6 +29,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -1381,6 +1382,61 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	} else {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
+	// pagent tags are optional and trace-scoped. Unset both when there is no agent ancestor so a
+	// predecessor's values don't leak to downstream services. When there is an ancestor, unset the
+	// name whenever it is absent or wire-unsafe so isValidPropagatableTag can't stamp a propagation
+	// error for an empty value, and so a stale name from a previous sibling can't linger.
+	// Concurrent siblings under the same trace making outbound calls at the same time can still
+	// race on these shared, trace-scoped tags (same caveat as session_id above) — this only
+	// closes the sequential case.
+	if pagentID := llmSpan.PropagatedParentAgentSpanID(); pagentID != "" {
+		// span_id is always set without a budget check: it is the essential half of
+		// attribution (id-only is still useful), and at ~43 bytes it is unlikely to
+		// overflow the header on its own. The name below is the best-effort half and
+		// is dropped when either budget is tight.
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentSpanID, pagentID)
+		name := llmSpan.PropagatedParentAgentName()
+		if name != "" && illmobs.AgentNameWireSafe(name) {
+			// Only propagate the name if it fits in the remaining x-datadog-tags and
+			// W3C tracestate budgets. The dd= entry is capped at tracestateDDMaxSize;
+			// tracestateHeaderReserve covers the fixed "dd=s:X;p:<hex>" prefix written
+			// by composeTracestate before it appends any _dd.p.* tags (≈25–26 bytes).
+			const tracestateHeaderReserve = 28
+			used := spanCtx.trace.propagatingTagsByteLen()
+			tsUsed := spanCtx.trace.propagatingTagsTracestateByteLen()
+			// _dd.p.tid is stamped during Inject (not at span start), so the snapshot
+			// above may not include it yet. Reserve its space on 128-bit traces so we
+			// don't accept a name that would push inject over the budget.
+			if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+				used += 27   // "," + "_dd.p.tid" (9) + "=" + 16-hex-char value
+				tsUsed += 23 // "tid" (3) + 16-hex-char value + 4 (";t." prefix + ":" sep)
+			}
+			// An existing pagent_name would be overwritten, not added; adjust both
+			// budgets to avoid double-counting the replaced entry.
+			var nameXTagsLen int
+			if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsPAgentName); prior != "" {
+				// Replacement: key and separators stay, only the value length changes.
+				nameXTagsLen = used - len(prior) + len(name)
+				// +4: ";t." prefix (3 bytes) + ":" separator (1 byte), matching composeTracestate.
+				tsUsed -= len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(prior) + 4
+			} else {
+				// New entry: +2 for "=" separator and "," before this entry.
+				nameXTagsLen = used + len(keyPropagatedLLMObsPAgentName) + len(name) + 2
+			}
+			nameTracestateLen := len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(name) + 4
+			if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
+				tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
+				spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentName, name)
+			} else {
+				spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
+			}
+		} else {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
+		}
+	} else {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentSpanID)
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
+	}
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
@@ -1450,6 +1506,10 @@ const (
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
 	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
+	// keyPropagatedLLMObsPAgentSpanID contains the propagated parent-agent span ID.
+	keyPropagatedLLMObsPAgentSpanID = "_dd.p.llmobs_pagent_span_id"
+	// keyPropagatedLLMObsPAgentName contains the propagated parent-agent name.
+	keyPropagatedLLMObsPAgentName = "_dd.p.llmobs_pagent_name"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

@@ -8,6 +8,7 @@ package tracer
 import (
 	"maps"
 	"strconv"
+	"strings"
 	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -199,6 +200,41 @@ func (t *trace) replacePropagatingTags(tags map[string]string) {
 
 func (t *trace) propagatingTagsLen() int {
 	return len(t.loadPropagatingTags())
+}
+
+// propagatingTagsByteLen returns the byte length of the serialized propagating-tags
+// header value (format: "k1=v1,k2=v2,..."), matching the measurement used by
+// marshalPropagatingTags so callers can pre-check whether a new tag fits in the budget.
+// Like marshalPropagatingTags, it excludes tracestate/traceparent — those are stored in
+// the same map for W3C propagation but are never written to the x-datadog-tags header.
+func (t *trace) propagatingTagsByteLen() int {
+	n := 0
+	for k, v := range t.loadPropagatingTags() {
+		if k == tracestateHeader || k == traceparentHeader {
+			continue
+		}
+		if n > 0 {
+			n++ // comma separator
+		}
+		n += len(k) + 1 + len(v) // key=value
+	}
+	return n
+}
+
+// propagatingTagsTracestateByteLen returns the byte length that the current
+// _dd.p.* propagating tags would consume inside the tracestate dd= entry.
+// Each tag contributes (stripped-key-len + value-len + 4) bytes, matching the
+// check used by composeTracestate (";t." prefix + ":" separator = 4 bytes).
+// The fixed dd= header (e.g. "dd=s:1;p:<hex>") is NOT included.
+func (t *trace) propagatingTagsTracestateByteLen() int {
+	n := 0
+	for k, v := range t.loadPropagatingTags() {
+		if !strings.HasPrefix(k, "_dd.p.") {
+			continue
+		}
+		n += len(k) - len("_dd.p.") + len(v) + 4
+	}
+	return n
 }
 
 // parseDecisionMaker parses the decision maker string (e.g. "-4") into

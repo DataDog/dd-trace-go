@@ -22,6 +22,12 @@ type PropagatedLLMSpan struct {
 	SpanID string
 	// SessionID is the session ID.
 	SessionID string
+	// ParentAgentName is the name of the nearest agent ancestor, propagated across
+	// process boundaries. Empty when the upstream hop sent an id-only attribution.
+	ParentAgentName string
+	// ParentAgentSpanID is the span ID of the nearest agent ancestor, propagated
+	// across process boundaries. Empty when there is no agent ancestor.
+	ParentAgentSpanID string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.
@@ -49,4 +55,26 @@ func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
 
 func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
 	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
+}
+
+// AgentNameWireSafe reports whether name can safely be written as a
+// propagating-tag value. The rules match the shared cross-language contract:
+//
+//   - reject any byte outside the printable ASCII range [0x20, 0x7E]
+//   - reject comma (tagset delimiter) and semicolon / tilde (W3C tracestate
+//     characters sanitized by composeTracestate, which would corrupt attribution)
+//
+// The length check is omitted here; callers are responsible for verifying that
+// adding the name tag does not exceed the x-datadog-tags budget.
+func AgentNameWireSafe(name string) bool {
+	for i := 0; i < len(name); i++ {
+		b := name[i]
+		if b < 0x20 || b > 0x7E {
+			return false
+		}
+		if b == ',' || b == ';' || b == '~' {
+			return false
+		}
+	}
+	return true
 }

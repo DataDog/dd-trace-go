@@ -253,6 +253,12 @@ type Span struct {
 	finishTime time.Time
 
 	spanLinks []SpanLink
+
+	// parentAgentName and parentAgentSpanID identify the nearest agent ancestor.
+	// Both are set exactly once in StartSpan and never mutated, so concurrent
+	// reads (e.g. from Annotate) are safe without holding the mutex.
+	parentAgentName   string
+	parentAgentSpanID string
 }
 
 func (s *Span) Name() string {
@@ -286,6 +292,27 @@ func (s *Span) MLApp() string {
 // SessionID returns the resolved session ID for this span.
 func (s *Span) SessionID() string {
 	return s.sessionID
+}
+
+// PropagatedParentAgentName returns the parent-agent name that a downstream
+// process should inherit via the x-datadog-tags header. If this span is itself
+// an Agent it IS the parent for any downstream child, so its own name is
+// returned. Otherwise the already-resolved attribution is forwarded unchanged.
+func (s *Span) PropagatedParentAgentName() string {
+	if s.spanKind == SpanKindAgent {
+		return s.name
+	}
+	return s.parentAgentName
+}
+
+// PropagatedParentAgentSpanID returns the parent-agent span ID that a downstream
+// process should inherit via the x-datadog-tags header. If this span is an Agent
+// its own span ID is returned; otherwise the already-resolved span ID is forwarded.
+func (s *Span) PropagatedParentAgentSpanID() string {
+	if s.spanKind == SpanKindAgent {
+		return s.SpanID()
+	}
+	return s.parentAgentSpanID
 }
 
 // AddLink adds a span link to this span.
