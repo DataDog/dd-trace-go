@@ -100,8 +100,18 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
+		// Set unconditionally: this feeds the OTLP status message (see convertSpanStatus)
+		// even under semantics, where error.msg is otherwise suppressed as a raw attribute.
 		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
-		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+		if s.otelSemanticsEnabled {
+			// Under OTel semantics, mark the span errored for the OTLP status without
+			// injecting DD's error.* tags: WithError would set error.type to the reflect
+			// type of the status wrapper ("*errors.errorString"), clobbering the stable
+			// OTel error.type that instrumentation sets.
+			s.DD.SetTag(ext.Error, true)
+		} else {
+			opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+		}
 	}
 	if len(s.finishOpts) != 0 {
 		opts = append(opts, s.finishOpts...)

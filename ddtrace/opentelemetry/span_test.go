@@ -265,6 +265,8 @@ func TestSpanEnd(t *testing.T) {
 	assert.Equal(1.0, p[0]["error"])                 // this should be an error span
 	meta := fmt.Sprintf("%v", p[0]["meta"])
 	assert.Contains(meta, msg)
+	// Non-semantics error path: WithError injects error.type as the wrapper's reflect type.
+	assert.Contains(meta, "error.type:*errors.errorString")
 	for k, v := range attributes {
 		assert.Contains(meta, fmt.Sprintf("%s:%s", k, v))
 	}
@@ -1039,4 +1041,57 @@ func TestRemapStatusCodeOtelSemantics(t *testing.T) {
 	// No legacy string remap; OTel key retained as a numeric tag.
 	assert.NotContains(meta, "http.status_code")
 	assert.Contains(metrics, "http.response.status_code:200")
+}
+
+// TestSpanEndErrorTypeOtelSemantics verifies that finishing an error-status span under
+// OTel semantics marks it errored without injecting Datadog's error.type/error.stack: an
+// instrumentation-set error.type survives, and when none is set no reflect-type value is
+// injected. (The non-semantics WithError path is covered by TestSpanEnd.)
+func TestSpanEndErrorTypeOtelSemantics(t *testing.T) {
+	// finish an error-status span under semantics, optionally with an
+	// instrumentation-set error.type, and return the exported span.
+	run := func(t *testing.T, instrumentationErrorType string) map[string]any {
+		// Reload global config on cleanup so the flag doesn't leak; LIFO order runs this
+		// after t.Setenv restores the env.
+		t.Cleanup(func() { internalconfig.CreateNew() })
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		internalconfig.CreateNew()
+
+		_, payloads, cleanup := mockTracerProvider(t)
+		tr := otel.Tracer("")
+		defer cleanup()
+
+		_, sp := tr.Start(context.Background(), "op")
+		if instrumentationErrorType != "" {
+			sp.SetAttributes(attribute.String(ext.ErrorType, instrumentationErrorType))
+		}
+		sp.SetStatus(codes.Error, "boom")
+		sp.End()
+
+		tracer.Flush()
+		traces, err := waitForPayload(payloads)
+		if err != nil {
+			t.Fatal(err.Error())
+		}
+		return traces[0][0]
+	}
+
+	t.Run("preserves instrumentation error.type", func(t *testing.T) {
+		assert := assert.New(t)
+		span := run(t, "*net.OpError")
+		assert.Equal(1.0, span["error"]) // span still flagged errored
+		meta := fmt.Sprintf("%v", span["meta"])
+		assert.Contains(meta, "error.type:*net.OpError") // instrumentation value survives
+		assert.NotContains(meta, "*errors.errorString")  // WithError was skipped
+		assert.NotContains(meta, "error.stack")          // no DD stack injected
+	})
+
+	t.Run("injects no error.type when instrumentation sets none", func(t *testing.T) {
+		assert := assert.New(t)
+		span := run(t, "")
+		assert.Equal(1.0, span["error"]) // still errored via the error flag / OTLP status
+		meta := fmt.Sprintf("%v", span["meta"])
+		assert.NotContains(meta, "error.type") // no reflect-type value injected
+		assert.NotContains(meta, "error.stack")
+	})
 }
