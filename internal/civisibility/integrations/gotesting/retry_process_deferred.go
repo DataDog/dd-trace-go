@@ -150,6 +150,7 @@ type processRetryCoordinator struct {
 	batchRunner      deferredProcessRetryBatchRunner
 	nativeTests      []processRetryBatchTestConfig
 	nativeTestIndex  map[string]int
+	nativeTestOrder  func() []string
 	nativeBatches    map[uint64]*nativeScheduledProcessRetryBatch
 }
 

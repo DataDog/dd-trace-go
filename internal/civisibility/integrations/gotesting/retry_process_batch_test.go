@@ -67,6 +67,29 @@ func TestProcessRetryNativeScheduledChildConfigUsesBatchIdentityAndGates(t *test
 	require.Equal(t, processRetryBatchParallelPath(root.ResultPath, 2), child.nativeParallelPath)
 }
 
+func TestProcessRetryNativeScheduledTestsFollowParentOrder(t *testing.T) {
+	tests, indexes, err := nativeScheduledTestsInParentOrder(
+		[]processRetryBatchTestConfig{{TestName: "TestA"}, {TestName: "TestB"}, {TestName: "TestC"}},
+		map[string]int{"TestA": 0, "TestB": 1, "TestC": 2},
+		[]string{"TestC", "TestOther", "TestA", "TestB"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, []processRetryBatchTestConfig{
+		{TestName: "TestC"},
+		{TestName: "TestA"},
+		{TestName: "TestB"},
+	}, tests)
+	require.Equal(t, map[string]int{"TestC": 0, "TestA": 1, "TestB": 2}, indexes)
+
+	_, _, err = nativeScheduledTestsInParentOrder(
+		[]processRetryBatchTestConfig{{TestName: "TestA"}, {TestName: "TestB"}},
+		map[string]int{"TestA": 0, "TestB": 1},
+		[]string{"TestA"},
+	)
+	require.Error(t, err)
+}
+
 func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
 	validTest := processRetryBatchTestConfig{TestName: "TestA"}
 	tests := map[string]*processRetryBatchConfig{

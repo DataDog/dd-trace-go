@@ -203,10 +203,37 @@ type deferredProcessRetryBatchOnceRunner func(
 type nativeScheduledProcessRetryBatch struct {
 	rootCfg    processRetryChildConfig
 	batch      *processRetryBatchConfig
+	testIndex  map[string]int
 	resultRoot string
 	done       chan struct{}
 	cancel     context.CancelFunc
 	attempt    processRetryAttemptResult
+}
+
+func (c *processRetryCoordinator) setNativeTestOrder(order func() []string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.nativeTestOrder = order
+	c.mu.Unlock()
+}
+
+func nativeScheduledTestsInParentOrder(tests []processRetryBatchTestConfig, registeredIndexes map[string]int, parentOrder []string) ([]processRetryBatchTestConfig, map[string]int, error) {
+	ordered := make([]processRetryBatchTestConfig, 0, len(tests))
+	indexes := make(map[string]int, len(tests))
+	for _, name := range parentOrder {
+		registeredIndex, found := registeredIndexes[name]
+		if !found {
+			continue
+		}
+		indexes[name] = len(ordered)
+		ordered = append(ordered, tests[registeredIndex])
+	}
+	if len(ordered) != len(tests) {
+		return nil, nil, errors.New("native process retry test order is incomplete")
+	}
+	return ordered, indexes, nil
 }
 
 func (c *processRetryCoordinator) registerNativeScheduledTest(identity testIdentity) {
@@ -242,12 +269,22 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	index, found := c.nativeTestIndex[group.identity.FullName]
-	if !found || len(c.nativeTests) == 0 {
+	if _, found := c.nativeTestIndex[group.identity.FullName]; !found || len(c.nativeTests) == 0 {
 		return nil, 0, errors.New("native process retry test was not registered")
 	}
 	if batch := c.nativeBatches[group.phaseID]; batch != nil {
+		index, found := batch.testIndex[group.identity.FullName]
+		if !found {
+			return nil, 0, errors.New("native process retry test is missing from batch")
+		}
 		return batch, index, nil
+	}
+	if c.nativeTestOrder == nil {
+		return nil, 0, errors.New("native process retry test order is unavailable")
+	}
+	tests, indexes, err := nativeScheduledTestsInParentOrder(c.nativeTests, c.nativeTestIndex, c.nativeTestOrder())
+	if err != nil {
+		return nil, 0, err
 	}
 	tempDir, err := os.MkdirTemp("", "dd-process-retry-native-*")
 	if err != nil {
@@ -255,7 +292,7 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 	}
 	batchConfig := &processRetryBatchConfig{
 		Version:                processRetryBatchVersion,
-		Tests:                  append([]processRetryBatchTestConfig(nil), c.nativeTests...),
+		Tests:                  tests,
 		CollectPerTestCoverage: coverage.CanCollectPerTestCoverage(),
 		PreserveNativeSchedule: true,
 	}
@@ -272,6 +309,7 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 	batch := &nativeScheduledProcessRetryBatch{
 		rootCfg:    rootCfg,
 		batch:      batchConfig,
+		testIndex:  indexes,
 		resultRoot: filepath.Join(tempDir, "result.json"),
 		done:       make(chan struct{}),
 		cancel:     cancel,
@@ -291,7 +329,7 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 		)
 		close(batch.done)
 	}()
-	return batch, index, nil
+	return batch, indexes[group.identity.FullName], nil
 }
 
 func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferredProcessRetryGroup, t *testing.T) processRetryAttemptResult {

@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -181,7 +182,9 @@ func TestMain(m *testing.M) {
 							panic(err)
 						}
 					}
-					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.parallel=2")
+					shuffleSeed := testControllerShuffleSeedWithFirst(*tests, "TestQuarantinedSerialOrderProducer",
+						"Test_Foo", "TestQuarantinedRace", "TestQuarantinedRaceSecond", "TestQuarantinedSerialOrderConsumer")
+					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.parallel=2", "-test.shuffle="+strconv.FormatInt(shuffleSeed, 10), "-test.timeout=30s")
 					if hadCoverageEnabled {
 						_ = os.Setenv(quarantinedRaceCoverageEnabledEnv, previousCoverageEnabled)
 					} else {
@@ -588,6 +591,40 @@ func buildTestControllerSubprocessArgs(originalArgs []string, runFilter string, 
 	args = append(args, "-test.run="+runFilter)
 	args = append(args, boundary...)
 	return args
+}
+
+func testControllerShuffleSeedWithFirst(tests []testing.InternalTest, first string, later ...string) int64 {
+	for seed := int64(1); seed < 1_000_000; seed++ {
+		shuffled := append([]testing.InternalTest(nil), tests...)
+		rand.New(rand.NewSource(seed)).Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+		positions := make(map[string]int, len(later)+1)
+		for i, test := range shuffled {
+			if test.Name == first {
+				positions[first] = i
+			}
+			for _, name := range later {
+				if test.Name == name {
+					positions[name] = i
+				}
+			}
+		}
+		if len(positions) != len(later)+1 {
+			break
+		}
+		valid := true
+		for _, name := range later {
+			if positions[first] >= positions[name] {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return seed
+		}
+	}
+	panic("unable to find deterministic test shuffle seed")
 }
 
 func testControllerBenchmarkSelected(args []string) bool {
