@@ -437,6 +437,37 @@ func TestHTTPClientGzipBodyCutoff(t *testing.T) {
 	assert.Len(t, span.Tag(ext.ErrorMsg).(string), bodyCutoff)
 }
 
+// TestHTTPClientGzipErrorResponseUncompressedRequest is a regression test: peek() must use
+// each body's own Content-Encoding header. A gzip-compressed error response must be decoded
+// even when the request itself was not gzip-compressed.
+func TestHTTPClientGzipErrorResponseUncompressedRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	errBody := `{"error":{"type":"index_not_found_exception"}}`
+	gz := gzipped(t, []byte(errBody))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(gz)
+	}))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/twitter/_search", nil)
+	require.NoError(t, err)
+	// Set explicitly: otherwise net/http requests gzip on its own, transparently
+	// inflates the response, and strips Content-Encoding before peek() sees it.
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res, err := NewHTTPClient().Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	span := mt.FinishedSpans()[0]
+	assert.Equal(t, errBody, span.Tag(ext.ErrorMsg))
+}
+
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
 		tc := NewHTTPClient(opts...)
