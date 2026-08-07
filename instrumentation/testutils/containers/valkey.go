@@ -50,7 +50,7 @@ func StartValkeyTestContainer(t testing.TB) (*testvalkey.ValkeyContainer, string
 		}),
 	}
 
-	container, err := testvalkey.Run(ctx, "valkey/valkey:8-alpine", opts...)
+	container, err := testvalkey.Run(ctx, Image("valkey"), opts...)
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
 
