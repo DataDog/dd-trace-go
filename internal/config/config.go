@@ -195,6 +195,10 @@ type Config struct {
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
 	// Only meaningful when otlpExportMode is false.
 	traceProtocol float64
+	// traceProtocolOrigin tracks where traceProtocol came from, so callers can
+	// distinguish an explicit request from the default (e.g. to decide whether
+	// a capability downgrade deserves a warning or a debug log).
+	traceProtocolOrigin telemetry.Origin
 	// effectiveTraceProtocolBits is the last value reported via
 	// ReportEffectiveTraceProtocol, stored as float64 bits so repeated reports
 	// of the same value can be deduplicated without inflating config-telemetry
@@ -391,7 +395,9 @@ func loadConfig() *Config {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
 	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
-	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion))
+	traceProtocolStr, traceProtocolOrigin := p.GetStringWithValidatorOrigin("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion)
+	cfg.traceProtocol = resolveTraceProtocol(traceProtocolStr)
+	cfg.traceProtocolOrigin = traceProtocolOrigin
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
 	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
@@ -1582,6 +1588,14 @@ func (c *Config) RequestedTraceProtocol() float64 {
 	return c.traceProtocol
 }
 
+// TraceProtocolOrigin reports where the requested trace protocol came from,
+// distinguishing an explicit user request from the untouched default.
+func (c *Config) TraceProtocolOrigin() telemetry.Origin {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceProtocolOrigin
+}
+
 // SetTraceProtocol sets the requested trace protocol version. It never
 // expresses an agent-capability downgrade: callers that need to report the
 // wire protocol actually in use should call ReportEffectiveTraceProtocol
@@ -1593,6 +1607,7 @@ func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin, product ..
 		return
 	}
 	c.traceProtocol = v
+	c.traceProtocolOrigin = origin
 	// Report the wire-version string, not the float64. The env-var load path
 	// reports this key through the provider as the raw string ("1.0"), so
 	// reporting a float64 here made the same telemetry key arrive with two
