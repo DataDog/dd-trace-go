@@ -191,6 +191,50 @@ func Test128(t *testing.T) {
 	})
 }
 
+// TestStartSpanFromContextDetachRegression guards against a regression introduced between
+// v2.9.1-rc.3 and v2.10.0-rc.4: ContextWithSpan(ctx, nil) is documented as the way to
+// detach from an ambient span while preserving ctx's cancellation/deadline. For a while it
+// only cleared internal.ActiveSpanKey and left behind any activeSpanContextKey{} snapshot
+// that a prior StartSpanFromContext call had already written into an ancestor of ctx.
+// StartSpanFromContext consults that snapshot before falling back to SpanFromContext, so a
+// "detached" context kept silently chaining onto the old parent's trace.
+func TestStartSpanFromContextDetachRegression(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	// Start a "parent" span the way a long-lived handler would, and get back a
+	// context carrying it.
+	parent, parentCtx := StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+
+	// Sanity check: without detaching, a child does inherit the parent's trace.
+	child, _ := StartSpanFromContext(parentCtx, "child")
+	defer child.Finish()
+	assert.Equal(t, parent.traceID, child.traceID)
+	assert.Equal(t, parent.spanID, child.parentID)
+
+	// Detach per the documented idiom: pass a nil span to keep ctx's cancellation/
+	// deadline but drop the ambient span.
+	detachedCtx := ContextWithSpan(parentCtx, nil)
+
+	// SpanFromContext correctly reports no active span on the detached context.
+	_, ok := SpanFromContext(detachedCtx)
+	assert.False(t, ok, "detached context must not report an active span")
+
+	// StartSpanFromContext must treat detachedCtx as having no parent and start a
+	// fresh root span (new trace, no parentID), not inherit the stale
+	// activeSpanContextKey{} snapshot left behind by the parent's own
+	// StartSpanFromContext call.
+	grandchild, _ := StartSpanFromContext(detachedCtx, "grandchild-should-be-root")
+	defer grandchild.Finish()
+
+	assert.NotEqual(t, parent.traceID, grandchild.traceID,
+		"span started from a detached context must not inherit the old trace ID")
+	assert.Zero(t, grandchild.parentID,
+		"span started from a detached context must not have a parentID")
+}
+
 func TestStartSpanFromNilContext(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)
