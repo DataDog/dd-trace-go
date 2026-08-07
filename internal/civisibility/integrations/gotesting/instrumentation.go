@@ -95,6 +95,7 @@ type (
 		processRetryFuzzGuard         *processRetryFuzzGuardSnapshot
 		processRetryLaunchTemplate    *processRetryLaunchBaseline
 		processRetryCoordinator       *processRetryCoordinator
+		quarantinedRaceNativeOrder    bool
 		efdFaultySessionGuard         earlyFlakeDetectionFaultySession
 		retryAttemptGroupFactory      func(*testing.T) (*retryAttemptGroup, string)
 		retryAttemptObserveOutput     bool
@@ -134,6 +135,7 @@ type (
 		efdFaultySessionGuard      earlyFlakeDetectionFaultySession
 		retryAttemptObserveOutput  bool
 		quarantinedRaceIsolation   bool
+		quarantinedRaceNativeOrder bool
 	}
 
 	// executionOptions holds the execution options for the test
@@ -698,6 +700,15 @@ func applyAdditionalFeaturesToTestFunc(
 	case additionalFeaturePathDisabledFast:
 		return wrapWithAdditionalFeatureMetadata(f, ptrMeta, false, true)
 	}
+	if wrapperOpts.quarantinedRaceNativeOrder && ptrMeta.isQuarantined && !isSubtest && wrapperOpts.processRetryCoordinator != nil {
+		execMeta := &testExecutionMetadata{}
+		applyAdditionalFeatureMetadataToExecution(execMeta, ptrMeta)
+		info := &testingTInfo{commonInfo: *testInfo}
+		itrDecision := currentITRState().decisionFor(info, execMeta, integrations.IsTestFuncUnskippable(testInfo.sourceFunc))
+		if !itrDecision.skip {
+			wrapperOpts.processRetryCoordinator.registerNativeScheduledTest(*identity)
+		}
+	}
 
 	// Create a unified wrapper that will use a single runTestWithRetry call.
 	wrapper := func(t *testing.T) {
@@ -716,6 +727,7 @@ func applyAdditionalFeaturesToTestFunc(
 			processRetryInvocationCounter: wrapperOpts.mRunInvocations,
 			processRetryLaunchTemplate:    wrapperOpts.processRetryLaunchTemplate,
 			processRetryCoordinator:       wrapperOpts.processRetryCoordinator,
+			quarantinedRaceNativeOrder:    wrapperOpts.quarantinedRaceNativeOrder,
 			efdFaultySessionGuard:         wrapperOpts.efdFaultySessionGuard,
 			processRetryFuzzGuard:         wrapperOpts.processRetryFuzzGuard,
 			retryAttemptObserveOutput:     wrapperOpts.retryAttemptObserveOutput,

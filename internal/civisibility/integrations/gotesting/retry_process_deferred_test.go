@@ -1236,6 +1236,26 @@ func TestDeferredProcessRetryBatchesFirstAttemptsByPhase(t *testing.T) {
 	}
 }
 
+func TestDeferredProcessRetryUsesNativeScheduledFirstAttemptResult(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
+	result := fixedProcessRetryAttempt(processRetryStatusPass, 1)
+	group.firstAttemptResult = &result
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		t.Fatal("native-scheduled first attempt was executed twice")
+		return nil
+	}
+
+	remaining, batchFailed := coordinator.drainDeferredFirstAttempts([]*deferredProcessRetryGroup{group})
+
+	require.False(t, batchFailed)
+	require.Empty(t, remaining)
+	require.Len(t, recorder.tests, 1)
+	require.Equal(t, processRetryStatusPass, recorder.tests[0].status)
+}
+
 func TestDeferredProcessRetryFirstAttemptDrainReturnsOriginalQueueWhenUnused(t *testing.T) {
 	coordinator := newProcessRetryCoordinatorForTesting(false)
 	queue := []*deferredProcessRetryGroup{{invocationOrdinal: 1}, {invocationOrdinal: 2}}

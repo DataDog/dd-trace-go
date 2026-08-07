@@ -166,7 +166,7 @@ func TestMain(m *testing.M) {
 					continue
 				}
 				if v == "TestQuarantinedRace" {
-					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|Test_Foo)$"
+					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|TestQuarantinedSerialOrderProducer|TestQuarantinedSerialOrderConsumer|Test_Foo)$"
 					pidDir, err := os.MkdirTemp("", "dd-quarantined-race-pids-*")
 					if err != nil {
 						panic(err)
@@ -181,7 +181,7 @@ func TestMain(m *testing.M) {
 							panic(err)
 						}
 					}
-					runTestControllerSubprocess(v, runFilter, v+"=true")
+					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.parallel=2")
 					if hadCoverageEnabled {
 						_ = os.Setenv(quarantinedRaceCoverageEnabledEnv, previousCoverageEnabled)
 					} else {

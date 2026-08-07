@@ -36,13 +36,13 @@ type retryAttemptGroup struct {
 	originalTransitioned               bool
 	originalParallelReady              chan struct{}
 	originalParallelLocked             func()
+	rootParallelAnnounce               func() error
 	rootParallelBridge                 func() error
 	matcher                            *retryAttemptMatcherTransaction
 	attempts                           []*retryAttemptRoot
 	observeOutput                      bool
 	observeNativeOutput                bool
 	outputLimit                        int64
-	raceCheckpoint                     *atomic.Int64
 	retired                            bool
 }
 
@@ -227,9 +227,6 @@ func newRetryAttemptRootInGroup(group *retryAttemptGroup) (*retryAttemptRoot, st
 	original := group.original
 
 	raceBaseline := retryAttemptRaceErrors()
-	if group.raceCheckpoint != nil {
-		raceBaseline = group.raceCheckpoint.Load()
-	}
 	originalBase := commonBaseForTest(original, layout)
 	if originalBase == nil {
 		return nil, "testing_t_layout_unsupported"

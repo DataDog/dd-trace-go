@@ -38,7 +38,10 @@ const (
 	quarantinedRaceCustomTestMainPIDEnv     = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN_PID"
 )
 
-var quarantinedRaceSecondFinished = make(chan struct{}, 1)
+var (
+	quarantinedRaceSecondReady = make(chan struct{})
+	quarantinedRaceFinished    = make(chan struct{})
+)
 
 func unquarantinedRaceFixtureSelected() bool {
 	return os.Getenv(unquarantinedRaceFixtureEnv) == "true"
@@ -76,6 +79,11 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 									},
 								},
 								"TestQuarantinedRaceSecond": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
+										Quarantined: true,
+									},
+								},
+								"TestQuarantinedSerialOrderProducer": {
 									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
 										Quarantined: true,
 									},
@@ -133,9 +141,10 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 		panic(fmt.Sprintf("expected one parent-owned test module, got %d", spanTypeCounts[constants.SpanTypeTestModule]))
 	}
 	resources := map[string]string{
-		"TestQuarantinedRace":       "quarantine_race_test.go.TestQuarantinedRace",
-		"TestQuarantinedRaceSecond": "quarantine_race_test.go.TestQuarantinedRaceSecond",
-		"Test_Foo":                  "testing_test.go.Test_Foo",
+		"TestQuarantinedRace":                "quarantine_race_test.go.TestQuarantinedRace",
+		"TestQuarantinedRaceSecond":          "quarantine_race_test.go.TestQuarantinedRaceSecond",
+		"TestQuarantinedSerialOrderProducer": "quarantine_race_test.go.TestQuarantinedSerialOrderProducer",
+		"Test_Foo":                           "testing_test.go.Test_Foo",
 	}
 	for testName, resource := range resources {
 		spans := checkSpansByResourceName(finishedSpans, resource, 1)
@@ -149,7 +158,7 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 			failedSpans++
 		}
 		wantStatus := any(constants.TestStatusPass)
-		if testName == "TestQuarantinedRace" {
+		if testName == "TestQuarantinedRace" || testName == "TestQuarantinedRaceSecond" && os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
 			wantStatus = constants.TestStatusFail
 		}
 		if status != wantStatus {
@@ -169,9 +178,15 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 			panic("quarantined race tests did not share one batch child")
 		}
 	}
-	if failedSpans != 1 {
-		panic(fmt.Sprintf("expected exactly one quarantined batch race failure, got %d", failedSpans))
+	wantFailedSpans := 2
+	if os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true" {
+		wantFailedSpans = 1
 	}
+	if failedSpans != wantFailedSpans {
+		panic(fmt.Sprintf("expected %d quarantined batch race failures, got %d", wantFailedSpans, failedSpans))
+	}
+	consumerSpans := checkSpansByResourceName(finishedSpans, "quarantine_race_test.go.TestQuarantinedSerialOrderConsumer", 1)
+	checkSpansByTagValue(consumerSpans, constants.TestStatus, constants.TestStatusPass, 1)
 	parentPID := strconv.Itoa(os.Getpid())
 	if isolated && childPID == parentPID {
 		panic("process mode executed quarantined race bodies in the parent")
@@ -301,10 +316,16 @@ func TestQuarantinedRace(t *testing.T) {
 	}
 	t.Parallel()
 
+	if os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
+		select {
+		case <-quarantinedRaceSecondReady:
+		case <-time.After(time.Second):
+			t.Fatal("parallel peer was not admitted")
+		}
+	}
 	runRaceFixture()
-	select {
-	case <-quarantinedRaceSecondFinished:
-	case <-time.After(250 * time.Millisecond):
+	if os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
+		close(quarantinedRaceFinished)
 	}
 	writeQuarantinedRacePID(t)
 	fmt.Fprint(os.Stdout, "quarantined race fixture completed")
@@ -315,10 +336,29 @@ func TestQuarantinedRaceSecond(t *testing.T) {
 		t.Skip("no CI Visibility quarantine wrapper active; skipping race injection")
 	}
 	t.Parallel()
+	if os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
+		close(quarantinedRaceSecondReady)
+		<-quarantinedRaceFinished
+	}
 	writeQuarantinedRacePID(t)
-	select {
-	case quarantinedRaceSecondFinished <- struct{}{}:
-	default:
+}
+
+func TestQuarantinedSerialOrderProducer(t *testing.T) {
+	if execMeta := getTestMetadata(t); !isProcessRetryChild() && (execMeta == nil || !execMeta.hasAdditionalFeatureWrapper) {
+		t.Skip("no CI Visibility quarantine wrapper active; skipping order fixture")
+	}
+	if err := os.WriteFile(filepath.Join(os.Getenv(quarantinedRacePIDDirEnv), "serial-order"), []byte("ready"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeQuarantinedRacePID(t)
+}
+
+func TestQuarantinedSerialOrderConsumer(t *testing.T) {
+	if os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true" {
+		return
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv(quarantinedRacePIDDirEnv), "serial-order")); err != nil {
+		t.Fatalf("quarantined predecessor did not run at its native position: %v", err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"sync"
@@ -106,6 +107,7 @@ type deferredProcessRetryGroup struct {
 	nativeMaxParallel     int
 	efdFaultySessionGuard earlyFlakeDetectionFaultySession
 	deferredFirstAttempt  bool
+	firstAttemptResult    *processRetryAttemptResult
 }
 
 type deferredProcessRetryEvent struct {
@@ -146,6 +148,9 @@ type processRetryCoordinator struct {
 	failfastEnabled  func() bool
 	attemptRunner    deferredProcessRetryAttemptRunner
 	batchRunner      deferredProcessRetryBatchRunner
+	nativeTests      []processRetryBatchTestConfig
+	nativeTestIndex  map[string]int
+	nativeBatches    map[uint64]*nativeScheduledProcessRetryBatch
 }
 
 type deferredProcessRetryPreparedAttempt struct {
@@ -436,7 +441,23 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 	}
 	for _, phaseID := range phaseOrder {
 		groups := groupsByPhase[phaseID]
-		results := c.batchRunner(context.Background(), groups)
+		results := make(map[*deferredProcessRetryGroup]processRetryAttemptResult, len(groups))
+		pending := make([]*deferredProcessRetryGroup, 0, len(groups))
+		native := make([]*deferredProcessRetryGroup, 0, len(groups))
+		for _, group := range groups {
+			if group.firstAttemptResult == nil {
+				pending = append(pending, group)
+				continue
+			}
+			results[group] = *group.firstAttemptResult
+			native = append(native, group)
+		}
+		if len(pending) > 0 {
+			maps.Copy(results, c.batchRunner(context.Background(), pending))
+		}
+		if processAttempt, ok := c.nativeScheduledBatchResult(phaseID); ok {
+			preserveProcessRetryBatchFailure(processAttempt, native, results)
+		}
 		for _, group := range groups {
 			attempt, ok := results[group]
 			if !ok {
@@ -460,6 +481,7 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 			group.finish()
 			group.printSummary()
 		}
+		c.cleanupNativeScheduledBatch(phaseID)
 	}
 	slices.SortStableFunc(remaining, func(a, b *deferredProcessRetryGroup) int {
 		return cmp.Compare(a.invocationOrdinal, b.invocationOrdinal)
@@ -1109,6 +1131,10 @@ func deferQuarantinedRaceFirstAttempt(options *runTestWithRetryOptions) {
 	}
 	group.metadata.identity = &group.identity
 	group.testInfo.identity = &group.identity
+	if options.quarantinedRaceNativeOrder {
+		firstAttempt := options.processRetryCoordinator.waitNativeScheduledFirstAttempt(group, options.t)
+		group.firstAttemptResult = &firstAttempt
+	}
 	if !admission.commit(group) {
 		lease.release()
 		runTestWithRetry(options)

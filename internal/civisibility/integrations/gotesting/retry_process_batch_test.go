@@ -46,6 +46,27 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	require.Equal(t, []string{"TestA/disabled"}, child.batchTest.DisabledSubtests)
 }
 
+func TestProcessRetryNativeScheduledChildConfigUsesBatchIdentityAndGates(t *testing.T) {
+	root := processRetryChildConfig{
+		ResultPath:        filepath.Join(t.TempDir(), "result.json"),
+		Attempt:           1,
+		RetryReason:       processRetryBatchReason,
+		MRunEpoch:         7,
+		InvocationOrdinal: 11,
+		Batch: &processRetryBatchConfig{
+			Version:                processRetryBatchVersion,
+			PreserveNativeSchedule: true,
+		},
+	}
+
+	child := processRetryBatchChildConfig(root, 2, processRetryBatchTestConfig{TestName: "TestA"})
+
+	require.Zero(t, child.MRunEpoch)
+	require.Zero(t, child.InvocationOrdinal)
+	require.Equal(t, processRetryBatchGatePath(root.ResultPath, 2), child.nativeGatePath)
+	require.Equal(t, processRetryBatchParallelPath(root.ResultPath, 2), child.nativeParallelPath)
+}
+
 func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
 	validTest := processRetryBatchTestConfig{TestName: "TestA"}
 	tests := map[string]*processRetryBatchConfig{
@@ -198,7 +219,6 @@ func TestProcessRetryBatchArgsPreserveSegmentedSelectors(t *testing.T) {
 	require.True(t, ok, reason)
 	require.Equal(t, []string{
 		"-test.failfast=false",
-		"-test.parallel=1",
 		"-test.testlogfile=child-testlog.txt",
 		"-test.run=^TestQuarantined$/wanted$",
 		"-test.skip=destructive$",

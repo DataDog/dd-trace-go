@@ -116,8 +116,10 @@ type processRetryChildConfig struct {
 	BatchChild             bool
 	CollectPerTestCoverage bool
 	batchTest              *processRetryBatchTestConfig
-	batchRaceCheckpoint    *atomic.Int64
 	batchCoverageFinalizer *processRetryBatchCoverageFinalizer
+	nativeGatePath         string
+	nativeParallelPath     string
+	tempDir                string
 	controlConfig          processRetryControlConfig
 	controlConfigLoaded    bool
 }
@@ -1870,9 +1872,13 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 			return remainingAttemptTime() <= 0
 		}
 	}
-	tempDir, err := os.MkdirTemp("", "dd-process-retry-*")
-	if err != nil {
-		return finishSetupFailure(err, false)
+	tempDir := cfg.tempDir
+	if tempDir == "" {
+		var err error
+		tempDir, err = os.MkdirTemp("", "dd-process-retry-*")
+		if err != nil {
+			return finishSetupFailure(err, false)
+		}
 	}
 	attempt.TempDir = tempDir
 	var cleanupOnce sync.Once
@@ -2139,10 +2145,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 }
 
 func processRetryBatchArgsSnapshot(snapshot processRetryArgsSnapshot, testLogFile string) processRetryArgsSnapshot {
-	// Race and coverage counters are process-global, so parallel batch tests
-	// cannot reliably attribute their increments to the test that caused them.
-	// Preserve t.Parallel's scheduling while serializing the admitted bodies.
-	snapshot.preserved = append(append([]string(nil), snapshot.preserved...), "-test.failfast=false", "-test.parallel=1")
+	snapshot.preserved = append(append([]string(nil), snapshot.preserved...), "-test.failfast=false")
 	if testLogFile != "" {
 		snapshot.preserved = append(snapshot.preserved, "-test.testlogfile="+testLogFile)
 	}
@@ -3250,8 +3253,6 @@ func configureProcessRetryBatchChildWorkloads(
 	fuzzTargets *[]testing.InternalFuzzTarget,
 	examples *[]testing.InternalExample,
 ) testingMFinalizer {
-	batchRaceCheckpoint := &atomic.Int64{}
-	batchRaceCheckpoint.Store(retryAttemptRaceErrors())
 	processCoverageProfile, err := coverage.BeginProcessCoverageProfile()
 	if err != nil {
 		log.Debug("civisibility: failed to capture isolated first-attempt coverage baseline: %s", err.Error())
@@ -3268,7 +3269,6 @@ func configureProcessRetryBatchChildWorkloads(
 	finalizers := make([]func(), 0, len(cfg.Batch.Tests))
 	for index, spec := range cfg.Batch.Tests {
 		childCfg := processRetryBatchChildConfig(cfg, index, spec)
-		childCfg.batchRaceCheckpoint = batchRaceCheckpoint
 		childCfg.batchCoverageFinalizer = finalizeCoverage
 		test, ok := available[spec.TestName]
 		if !ok {
@@ -3406,6 +3406,17 @@ type processRetryChildObservation struct {
 func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildConfig, writer *processRetryResultWriter, control *processRetryControl) (func(*testing.T), func()) {
 	observation := &processRetryChildObservation{cfg: cfg, writer: writer}
 	wrapped := func(t *testing.T) {
+		if cfg.nativeGatePath != "" {
+			deadline, deadlineOK := time.Time{}, false
+			if cfg.ParentDeadlineOK {
+				deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
+			}
+			if err := waitForProcessRetryBatchGate(cfg.nativeGatePath, deadline, deadlineOK); err != nil {
+				writer.Write(processRetryNotRunResult(cfg, err.Error()))
+				t.Fail()
+				return
+			}
+		}
 		start := time.Now()
 		observation.test = t
 		observation.startTime = start
@@ -3418,11 +3429,20 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		}
 		if cfg.BatchChild {
 			group.outputLimit = processRetryResultOutputMaxBytes
+			// Runtime coverage counters are process-global. Keep the native
+			// t.Parallel admission, but serialize covered bodies while each
+			// test owns the counter delta that becomes its coverage payload.
 			group.suppressOriginalParallelTransition = cfg.CollectPerTestCoverage
-			group.raceCheckpoint = cfg.batchRaceCheckpoint
 		}
 		observation.group = group
-		if control != nil {
+		if cfg.nativeParallelPath != "" {
+			// The parent must learn about t.Parallel before this child waits on
+			// its own package barrier, otherwise both native schedulers wait for
+			// the other process to enumerate the next test.
+			group.rootParallelAnnounce = func() error {
+				return os.WriteFile(cfg.nativeParallelPath, nil, processRetryBatchManifestMode)
+			}
+		} else if control != nil {
 			group.rootParallelBridge = control.childRootParallelBridge
 		}
 		defer group.retire()

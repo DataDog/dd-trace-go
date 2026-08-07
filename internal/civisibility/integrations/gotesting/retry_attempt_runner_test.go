@@ -1185,14 +1185,3 @@ func TestProcessRetryParityRaceBaselineReconciliationIsMonotonic(t *testing.T) {
 	require.Equal(t, target, originalBaseline.Load())
 	require.Equal(t, target, parentBaseline.Load())
 }
-
-func TestProcessRetryBatchRaceCheckpointClaimsEachIncrementOnce(t *testing.T) {
-	checkpoint := &atomic.Int64{}
-	checkpoint.Store(10)
-
-	require.True(t, claimRetryAttemptRaceCheckpoint(checkpoint, 11))
-	require.False(t, claimRetryAttemptRaceCheckpoint(checkpoint, 11))
-	require.False(t, claimRetryAttemptRaceCheckpoint(checkpoint, 10))
-	require.True(t, claimRetryAttemptRaceCheckpoint(checkpoint, 13))
-	require.Equal(t, int64(13), checkpoint.Load())
-}
