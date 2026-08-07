@@ -59,6 +59,18 @@
 //	export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "sample_rate": 1.0}]'
 //	export DD_SPAN_SAMPLING_RULES='[{"service":"test.?","name": "web.*", "sample_rate": 1.0, "max_per_second":100}]'
 //
+// When the tracer makes a probability-based sampling decision (the agent rate,
+// a global rate, or a sampling rule), it additionally expresses that decision as
+// an OpenTelemetry consistent-probability-sampling pair (ot.th/ot.rv, per OTEP 235)
+// on the W3C tracestate header, as the ot= list-member. This lets OpenTelemetry-native
+// downstream services make and verify the same keep/drop decision and extrapolate
+// span counts across a mixed Datadog/OpenTelemetry trace. An inbound ot= is honored
+// and forwarded unchanged; non-probability decisions (manual keep, AppSec, or a
+// rate-limiter drop) omit the threshold. This is automatic, requires no configuration,
+// and leaves the existing Datadog propagation unchanged. When spans are exported over
+// OTLP, the same ot= member is carried on the span's trace_state and the W3C sampled
+// trace-flag is set, so the export matches what wire propagation would emit.
+//
 // To create spans, use the functions StartSpan and StartSpanFromContext. Both accept
 // StartSpanOptions that can be used to configure the span. A span that is started
 // with no parent will begin a new trace. See the function documentation for details

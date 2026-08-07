@@ -277,7 +277,9 @@ func TestInternalMetricsDisabled(t *testing.T) {
 	}
 
 	t.Run("default non-Lambda: real client", func(t *testing.T) {
-		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without
+		// DNS/TCP, so no idle keep-alive connection is left for goleak to catch.
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
 		require.NoError(t, err)
 		defer tr.statsd.Close()
 		require.False(t, isNoop(tr.statsd), "statsd should be real by default, got %T", tr.statsd)
@@ -287,7 +289,7 @@ func TestInternalMetricsDisabled(t *testing.T) {
 		// In Lambda the core config layer defaults internal metrics to off so the
 		// tracer emits no statsd traffic by default.
 		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
-		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
 		require.NoError(t, err)
 		defer tr.statsd.Close()
 		require.True(t, isNoop(tr.statsd), "statsd should be a no-op in Lambda by default, got %T", tr.statsd)
@@ -298,7 +300,7 @@ func TestInternalMetricsDisabled(t *testing.T) {
 		// client is used and their setting is reported with origin env_var.
 		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
 		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "true")
-		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
 		require.NoError(t, err)
 		defer tr.statsd.Close()
 		require.False(t, isNoop(tr.statsd), "statsd should be real when user opts in, got %T", tr.statsd)
@@ -1928,7 +1930,7 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(false))
 		assert.NoError(err)
 		assert.False(c.internalConfig.StatsComputationEnabled())
-		assert.Equal(traceProtocolV04, c.internalConfig.TraceProtocol())
+		assert.Equal(traceProtocolV04, c.internalConfig.RequestedTraceProtocol())
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)

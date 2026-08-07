@@ -310,19 +310,35 @@ func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.Sampler
 	s.setMetricLocked(keyRulesSamplerAppliedRate, rate)
 	delete(s.metrics, keySamplingPriorityRate)
 	s.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	trace := s.context.trace
 	if !sampledByRate(s.traceID, rate) {
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	if limiter == nil {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	sampled, limiterRate := limiter.AllowOne(now)
 	if sampled {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 	} else {
+		// The Knuth rate would have kept this trace; the limiter is what dropped
+		// it. That is a non-probability outcome, so erase any threshold rather
+		// than encode the configured rate.
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.clearOtelProbability()
+		}
 	}
 	s.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
 	return true
@@ -923,7 +939,10 @@ func (s *Span) setMetricLocked(key string, v float64) {
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
+			// Force the keep: an AppSec attack-detection keep must retain the
+			// trace even when the sampling decision was inherited and locked
+			// from an upstream drop, mirroring the manual-keep path above.
+			s.forceSetSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
 	case "_sampling_priority_v1shim":
 		// We have this for backward compatibility with the v1 shim.
@@ -1291,12 +1310,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := env.Get("DD_ENV"); env != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
+			} else if env := env.Get("DD_ENV"); env != "" { //configaudit:ignore — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := env.Get("DD_VERSION"); v != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
+			} else if v := env.Get("DD_VERSION"); v != "" { //configaudit:ignore — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
