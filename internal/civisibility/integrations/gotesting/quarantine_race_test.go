@@ -47,11 +47,21 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 		panic(err)
 	}
 	isolated := executionMode == "process"
-	server := setUpHTTPServer(false, false, false, nil, false, nil, true,
+	server := setUpHTTPServer(false, false, false, nil, true, []net.SkippableResponseDataAttributes{{
+		Suite: "testing_test.go",
+		Name:  "Test_Foo",
+	}}, true,
 		&net.TestManagementTestsResponseDataModules{
 			Modules: map[string]net.TestManagementTestsResponseDataSuites{
 				"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": {
 					Suites: map[string]net.TestManagementTestsResponseDataTests{
+						"testing_test.go": {
+							Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+								"Test_Foo": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true},
+								},
+							},
+						},
 						"quarantine_race_test.go": {
 							Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 								"TestQuarantinedRace": {
@@ -70,8 +80,9 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 				},
 			},
 		},
-		false, nil)
+		true, nil)
 	defer server.Close()
+	configureImpactedTestsGitDiff()
 
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
@@ -106,10 +117,18 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 	if spanTypeCounts[constants.SpanTypeTestModule] != 1 {
 		panic(fmt.Sprintf("expected one parent-owned test module, got %d", spanTypeCounts[constants.SpanTypeTestModule]))
 	}
-	for _, testName := range []string{"TestQuarantinedRace", "TestQuarantinedRaceSecond"} {
-		spans := checkSpansByResourceName(finishedSpans, "quarantine_race_test.go."+testName, 1)
+	resources := map[string]string{
+		"TestQuarantinedRace":       "quarantine_race_test.go.TestQuarantinedRace",
+		"TestQuarantinedRaceSecond": "quarantine_race_test.go.TestQuarantinedRaceSecond",
+		"Test_Foo":                  "testing_test.go.Test_Foo",
+	}
+	for testName, resource := range resources {
+		spans := checkSpansByResourceName(finishedSpans, resource, 1)
 		checkSpansByTagValue(spans, constants.TestIsQuarantined, "true", 1)
 		checkSpansByTagValue(spans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		if testName == "Test_Foo" {
+			checkSpansByTagValue(spans, constants.TestIsModified, "true", 1)
+		}
 		if spans[0].Tag(constants.TestStatus) == constants.TestStatusFail {
 			failedSpans++
 		}
@@ -216,17 +235,6 @@ func TestQuarantinedRaceSecond(t *testing.T) {
 	}
 	t.Parallel()
 	writeQuarantinedRacePID(t)
-}
-
-func writeQuarantinedRacePID(t *testing.T) {
-	t.Helper()
-	dir := os.Getenv(quarantinedRacePIDDirEnv)
-	if dir == "" {
-		t.Fatal("missing quarantined race PID directory")
-	}
-	if err := os.WriteFile(filepath.Join(dir, t.Name()), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestUnquarantinedRace(t *testing.T) {

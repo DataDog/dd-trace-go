@@ -656,9 +656,9 @@ func applyAdditionalFeaturesToTestFunc(
 		// Record whether the test is new so we can surface it in spans later.
 		isKnown, hasKnownData := isKnownTest(testInfo)
 		meta.isNew = hasKnownData && !isKnown
-		if !meta.isNew && settings.ImpactedTestsEnabled {
-			meta.isModified = integrations.IsTestFuncModified(testInfo.testName, testInfo.sourceFunc)
-		}
+	}
+	if !meta.isNew && settings.ImpactedTestsEnabled {
+		meta.isModified = integrations.IsTestFuncModified(testInfo.testName, testInfo.sourceFunc)
 	}
 
 	var flakyRetryCount int64

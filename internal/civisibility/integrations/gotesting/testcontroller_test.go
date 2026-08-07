@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -146,7 +147,7 @@ func TestMain(m *testing.M) {
 			for _, v := range scenarios {
 				runFilter := legacyScenarioRunFilter
 				if v == "TestQuarantinedRace" {
-					runFilter = "^TestQuarantinedRace"
+					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|Test_Foo)$"
 					pidDir, err := os.MkdirTemp("", "dd-quarantined-race-pids-*")
 					if err != nil {
 						panic(err)
@@ -211,6 +212,17 @@ func runTestControllerSubprocess(name, runFilter, environment string, extraArgs 
 	}
 	fmt.Printf("cmd.Run: %v\n", err)
 	os.Exit(1)
+}
+
+func writeQuarantinedRacePID(t *testing.T) {
+	t.Helper()
+	dir := os.Getenv(quarantinedRacePIDDirEnv)
+	if dir == "" {
+		t.Fatal("missing quarantined race PID directory")
+	}
+	if err := os.WriteFile(filepath.Join(dir, t.Name()), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func buildProcessRetryUnitRunFilter(tests []testing.InternalTest, layoutAvailable bool) string {
@@ -923,19 +935,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 
 	// set impacted tests variables
 	if impactedTests {
-		// set the commit sha to a known value to always have the same git diff
-		base := "b97e7cbb464aef26da8cb5c07a225f7a144f26a4"
-		head := "3808532bc719ca418b938afb680246109768f343"
-		// 3808532bc719ca418b938afb680246109768f343 (feat) internal/civisibility: impacted tests (#3389)
-		// ...
-		// b97e7cbb464aef26da8cb5c07a225f7a144f26a4 v2.0.0 (#2427)
-
-		// let's make sure we have both shas available
-		_ = exec.Command("git", "fetch", "origin", base).Run()
-		_ = exec.Command("git", "fetch", "origin", head).Run()
-
-		utils.AddCITags(constants.GitPrBaseCommit, base)
-		utils.AddCITags(constants.GitHeadCommit, head)
+		configureImpactedTestsGitDiff()
 	}
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -1052,6 +1052,16 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	checkLogs()
 
 	os.Exit(0)
+}
+
+func configureImpactedTestsGitDiff() {
+	// Use the fixed range that introduced impacted tests and modified Test_Foo.
+	const base = "b97e7cbb464aef26da8cb5c07a225f7a144f26a4"
+	const head = "3808532bc719ca418b938afb680246109768f343"
+	_ = exec.Command("git", "fetch", "origin", base).Run()
+	_ = exec.Command("git", "fetch", "origin", head).Run()
+	utils.AddCITags(constants.GitPrBaseCommit, base)
+	utils.AddCITags(constants.GitHeadCommit, head)
 }
 
 func runIntelligentTestRunnerTests(m *testing.M) {

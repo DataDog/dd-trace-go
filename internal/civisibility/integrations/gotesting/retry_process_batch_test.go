@@ -96,24 +96,51 @@ func TestPreserveProcessRetryBatchFailure(t *testing.T) {
 	require.Equal(t, processRetryStatusPass, effectiveProcessRetryStatus(completed[b], false).Status)
 }
 
-func TestProcessRetryBatchFailureFailsPackage(t *testing.T) {
+func TestProcessRetryBatchFailureClassification(t *testing.T) {
 	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
-	coordinator := newProcessRetryCoordinatorForTesting(false)
-	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
-	require.True(t, coordinator.beginAdmission().commit(group))
-	coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
-		attempt := deferredProcessRetryPassingAttempt(1)
-		attempt.ExitCode = 1
-		attempt.Err = errProcessRetryBatchFailed
-		return map[*deferredProcessRetryGroup]processRetryAttemptResult{group: attempt}
+	batchFailure := deferredProcessRetryPassingAttempt(1)
+	batchFailure.ExitCode = 1
+	batchFailure.Err = errProcessRetryBatchFailed
+	testFailure := completedProcessRetryAttempt(processRetryResult{Status: processRetryStatusFail, Failed: true})
+	testPanic := completedProcessRetryAttempt(processRetryResult{Status: processRetryStatusFail, Failed: true, Panic: true})
+	testRace := completedProcessRetryAttempt(processRetryResult{Status: processRetryStatusFail, Failed: true, RaceDetected: true})
+	tests := []struct {
+		name              string
+		attempt           processRetryAttemptResult
+		wantPackageFailed bool
+	}{
+		{name: "unexplained batch exit", attempt: batchFailure, wantPackageFailed: true},
+		{name: "timeout", attempt: processRetryAttemptResult{TimedOut: true}, wantPackageFailed: true},
+		{name: "unreaped", attempt: processRetryAttemptResult{Unreaped: true}, wantPackageFailed: true},
+		{name: "setup", attempt: processRetryAttemptResult{SetupFailure: true}, wantPackageFailed: true},
+		{name: "missing result", attempt: processRetryAttemptResult{Err: errProcessRetryResultMissing}, wantPackageFailed: true},
+		{name: "invalid result", attempt: processRetryAttemptResult{Err: errProcessRetryResultInvalid}, wantPackageFailed: true},
+		{name: "launch error", attempt: processRetryAttemptResult{Err: errors.New("launch failed")}, wantPackageFailed: true},
+		{name: "test failure", attempt: testFailure},
+		{name: "test panic", attempt: testPanic},
+		{name: "test race", attempt: testRace},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			coordinator := newProcessRetryCoordinatorForTesting(false)
+			group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
+			require.True(t, coordinator.beginAdmission().commit(group))
+			coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+				return map[*deferredProcessRetryGroup]processRetryAttemptResult{group: tt.attempt}
+			}
 
-	summary := coordinator.drain(0)
+			summary := coordinator.drain(0)
 
-	require.True(t, summary.packageFailed)
-	require.True(t, summary.deferredFailed)
-	require.Equal(t, processRetryFailureExitCode, summary.exitCode)
+			require.Equal(t, tt.wantPackageFailed, summary.packageFailed)
+			require.Equal(t, tt.wantPackageFailed, summary.deferredFailed)
+			if tt.wantPackageFailed {
+				require.Equal(t, processRetryFailureExitCode, summary.exitCode)
+			} else {
+				require.Zero(t, summary.exitCode)
+			}
+		})
+	}
 }
 
 func TestPreserveProcessRetryBatchFailureKeepsDecodedFailure(t *testing.T) {

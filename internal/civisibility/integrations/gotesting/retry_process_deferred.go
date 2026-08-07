@@ -447,7 +447,11 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 					FinishTime: time.Now(),
 				}
 			}
-			batchFailed = batchFailed || errors.Is(attempt.Err, errProcessRetryBatchFailed)
+			switch effectiveProcessRetryStatus(attempt, false).FailureKind {
+			case "", "test_fail", "test_panic", "test_race":
+			default:
+				batchFailed = true
+			}
 			if group.applyDeferredFirstAttempt(attempt) {
 				group.deferredFirstAttempt = false
 				remaining = append(remaining, group)
