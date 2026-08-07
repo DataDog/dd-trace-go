@@ -215,11 +215,12 @@ func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload, int) error {
 	return nil
 }
 
-// endpoint returns the URL path of the test cycle endpoint.
+// endpoint returns the URL path of the test cycle endpoint. CI Visibility does
+// not use the Datadog trace protocol, so the protocol argument is ignored.
 //
 // Returns:
 //
 //	The URL path as a string.
-func (t *ciVisibilityTransport) endpoint() string {
+func (t *ciVisibilityTransport) endpoint(float64) string {
 	return t.testCycleURLPath
 }
