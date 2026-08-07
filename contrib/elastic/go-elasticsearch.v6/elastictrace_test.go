@@ -248,3 +248,36 @@ func TestRoundTripperGzipErrorResponseUncompressedRequest(t *testing.T) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal(t, errBody, span.Tag(ext.ErrorMsg))
 }
+
+// TestRoundTripperGzipBodyCutoffUncompressedRequest covers the path TestRoundTripperGzipBodyCutoff
+// doesn't: a gzip-bomb response arriving on an uncompressed request. Content-Encoding is now read
+// from the response's own header, so this path decodes gzip where it previously wouldn't have; it
+// must still respect bodyCutoff.
+func TestRoundTripperGzipBodyCutoffUncompressedRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	bomb := gzipped(t, make([]byte, 4<<20))
+	require.Less(t, len(bomb), bodyCutoff)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Length", strconv.Itoa(len(bomb)))
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(bomb)
+	}))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/twitter/_search", nil)
+	require.NoError(t, err)
+	// Set explicitly: otherwise net/http requests gzip on its own, transparently
+	// inflates the response, and strips Content-Encoding before peek() sees it.
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res, err := (&http.Client{Transport: NewRoundTripper()}).Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	span := mt.FinishedSpans()[0]
+	assert.Len(t, span.Tag(ext.ErrorMsg).(string), bodyCutoff)
+}
