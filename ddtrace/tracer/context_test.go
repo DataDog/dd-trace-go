@@ -192,12 +192,12 @@ func Test128(t *testing.T) {
 }
 
 // TestStartSpanFromContextDetachRegression guards against a regression introduced between
-// v2.9.1-rc.3 and v2.10.0-rc.4: ContextWithSpan(ctx, nil) is documented as the way to
-// detach from an ambient span while preserving ctx's cancellation/deadline. For a while it
-// only cleared internal.ActiveSpanKey and left behind any activeSpanContextKey{} snapshot
-// that a prior StartSpanFromContext call had already written into an ancestor of ctx.
-// StartSpanFromContext consults that snapshot before falling back to SpanFromContext, so a
-// "detached" context kept silently chaining onto the old parent's trace.
+// v2.9.1-rc.3 and v2.10.0-rc.4: ContextWithSpan(ctx, nil) is the way to detach from an
+// ambient span while preserving ctx's cancellation/deadline. For a while it only cleared
+// internal.ActiveSpanKey and left behind any activeSpanContextKey{} snapshot that a prior
+// StartSpanFromContext call had already written into an ancestor of ctx. StartSpanFromContext
+// consults that snapshot before falling back to SpanFromContext, so a "detached" context kept
+// silently chaining onto the old parent's trace.
 func TestStartSpanFromContextDetachRegression(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.NoError(t, err)
@@ -214,8 +214,8 @@ func TestStartSpanFromContextDetachRegression(t *testing.T) {
 	assert.Equal(t, parent.traceID, child.traceID)
 	assert.Equal(t, parent.spanID, child.parentID)
 
-	// Detach per the documented idiom: pass a nil span to keep ctx's cancellation/
-	// deadline but drop the ambient span.
+	// Detach: pass a nil span to keep ctx's cancellation/deadline but drop the
+	// ambient span.
 	detachedCtx := ContextWithSpan(parentCtx, nil)
 
 	// SpanFromContext correctly reports no active span on the detached context.
