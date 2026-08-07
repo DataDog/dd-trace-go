@@ -184,6 +184,16 @@ func TestPeekGzip(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, body, snip)
 	})
+
+	t.Run("encoding casing is ignored", func(t *testing.T) {
+		// Content-Encoding is a case-insensitive HTTP token (RFC 9110 8.4.1).
+		body := `{"error":{"type":"index_not_found_exception"}}`
+		gz := gzipped(t, []byte(body))
+
+		snip, _, err := peek(io.NopCloser(bytes.NewReader(gz)), "GZip", len(gz), bodyCutoff)
+		require.NoError(t, err)
+		assert.Equal(t, body, snip)
+	})
 }
 
 func TestRoundTripperGzipBodyCutoff(t *testing.T) {
@@ -280,4 +290,38 @@ func TestRoundTripperGzipBodyCutoffUncompressedRequest(t *testing.T) {
 
 	span := mt.FinishedSpans()[0]
 	assert.Len(t, span.Tag(ext.ErrorMsg).(string), bodyCutoff)
+}
+
+// TestRoundTripperGzipResponseCaseInsensitiveEncoding is a regression test: peek() must treat
+// Content-Encoding as case-insensitive per RFC 9110 8.4.1. A gzip-compressed request must not
+// prevent decoding a gzip-compressed response whose header uses different casing.
+func TestRoundTripperGzipResponseCaseInsensitiveEncoding(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	errBody := `{"error":{"type":"index_not_found_exception"}}`
+	gz := gzipped(t, []byte(errBody))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "GZip")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(gz)
+	}))
+	defer srv.Close()
+
+	reqBody := `{"query":{"match_all":{}}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/twitter/_search", bytes.NewReader(gzipped(t, []byte(reqBody))))
+	require.NoError(t, err)
+	req.Header.Set("Content-Encoding", "gzip")
+	// Set explicitly: otherwise net/http adds it itself, transparently inflates the
+	// response, and strips Content-Encoding before peek() ever sees a gzip stream.
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res, err := (&http.Client{Transport: NewRoundTripper()}).Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	span := mt.FinishedSpans()[0]
+	assert.Equal(t, reqBody, span.Tag("elasticsearch.body"))
+	assert.Equal(t, errBody, span.Tag(ext.ErrorMsg))
 }
