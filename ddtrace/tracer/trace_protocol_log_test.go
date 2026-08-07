@@ -129,4 +129,32 @@ func TestTraceProtocolDowngradeLog(t *testing.T) {
 				"an unreachable agent must not be reported as lacking /v1.0/traces")
 		}
 	})
+
+	t.Run("pre-7.28 agent (404 on /info) denies v1 and warns", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+		// A reachable Agent that 404s on /info is affirmative evidence it
+		// predates /v1.0/traces too (the latter postdates /info support), unlike
+		// a silent, unreachable Agent whose v1 support is merely unknown.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/info" {
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer srv.Close()
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+
+		tp := new(log.RecordLogger)
+		trc, err := newTracer(WithAgentAddr(u.Host), WithLogger(tp))
+		require.NoError(t, err)
+		defer trc.Stop()
+
+		found := false
+		for _, l := range tp.Logs() {
+			if strings.Contains(l, "WARN") && strings.Contains(l, "trace protocol v1.0 was requested") {
+				found = true
+			}
+		}
+		assert.True(t, found, "a 404 on /info denies v1 just like an advertised endpoint list without it; got: %v", tp.Logs())
+	})
 }
