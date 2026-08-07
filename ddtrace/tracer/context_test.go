@@ -235,6 +235,33 @@ func TestStartSpanFromContextDetachRegression(t *testing.T) {
 		"span started from a detached context must not have a parentID")
 }
 
+// TestStartSpanFromContextDetachWithExplicitParent guards the qualifier on
+// ContextWithSpan's root-span promise: detaching only suppresses the ambient
+// parent. A caller that also passes an explicit parent (e.g. ChildOf) to the
+// subsequent StartSpanFromContext call still gets that parent, not a root span.
+func TestStartSpanFromContextDetachWithExplicitParent(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	parent, parentCtx := StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+	detachedCtx := ContextWithSpan(parentCtx, nil)
+
+	explicitParent, _ := StartSpanFromContext(context.Background(), "explicit-parent")
+	defer explicitParent.Finish()
+
+	child, _ := StartSpanFromContext(detachedCtx, "child", ChildOf(explicitParent.Context()))
+	defer child.Finish()
+
+	assert.Equal(t, explicitParent.traceID, child.traceID,
+		"an explicit ChildOf passed alongside a detached context must still be honored")
+	assert.Equal(t, explicitParent.spanID, child.parentID,
+		"an explicit ChildOf passed alongside a detached context must still be honored")
+	assert.NotEqual(t, parent.traceID, child.traceID,
+		"the detached ambient parent must not leak through despite the explicit ChildOf")
+}
+
 func TestStartSpanFromNilContext(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)

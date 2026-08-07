@@ -30,7 +30,8 @@ type activeSpanContextKey struct{}
 // If ctx is nil, a new background context is created to avoid panicking.
 // Passing a nil span detaches ctx from any ambient span, including one
 // inherited from an ancestor context, so a subsequent StartSpanFromContext
-// starts a new root span.
+// starts a new root span — unless the caller also passes an explicit parent
+// (e.g. ChildOf) to that call, which is honored as usual.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	if ctx == nil {
 		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
