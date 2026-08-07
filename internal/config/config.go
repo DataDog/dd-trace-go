@@ -399,7 +399,7 @@ func loadConfig() *Config {
 		// therefore be absent.
 		if !v {
 			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
-				cfg.statsComputationEnabled = false
+				cfg.SetStatsComputationEnabled(false, telemetry.OriginCalculated)
 			}
 		}
 	}
