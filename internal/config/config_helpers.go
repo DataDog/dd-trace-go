@@ -198,6 +198,17 @@ func resolveTraceProtocol(v string) float64 {
 	return TraceProtocolV04
 }
 
+// TraceProtocolVersionString is the inverse of resolveTraceProtocol: it renders
+// a protocol float64 back into the wire-version string reported to config
+// telemetry, so DD_TRACE_AGENT_PROTOCOL_VERSION is always reported with a
+// consistent type regardless of which source set it.
+func TraceProtocolVersionString(v float64) string {
+	if v == TraceProtocolV1 {
+		return TraceProtocolVersionStringV1
+	}
+	return TraceProtocolVersionStringV04
+}
+
 // resolveAgentURL computes the final agent URL from the three env-var strings
 // read through the provider. The priority mirrors internal.AgentURLFromEnv:
 //  1. DD_TRACE_AGENT_URL (if non-empty and valid)

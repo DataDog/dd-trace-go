@@ -8,6 +8,7 @@ package gocontrolplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -26,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // findSetHeader searches for a header by key name in a slice of HeaderValueOption,
@@ -258,6 +260,139 @@ func TestAppSec(t *testing.T) {
 		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	// The address 111.222.111.222 is denylisted by the shared test rules, and
+	// "blocking-client-ip" above reaches it through a client-supplied
+	// X-Forwarded-For. The subtests below drive the same denylist through the
+	// identity the load balancer reports, which is the thing a client cannot
+	// forge, and cover the cases where the two disagree.
+	t.Run("blocking-client-ip-from-source-ip", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream, map[string]string{"User-Agent": "Mistake not..."}, "GET", "/", "111.222.111.222")
+
+		span := requireBlockedStream(t, stream, mt)
+		checkForAppsecEvent(t, []*mocktracer.Span{span}, map[string]int{"custom-001": 1, "blk-001-001": 1})
+		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("source-ip-wins-over-forged-x-forwarded-for", func(t *testing.T) {
+		// This is the vulnerability being fixed. The client controls
+		// X-Forwarded-For, so before this change it decided the identity the
+		// denylist was evaluated against; a forged public entry preceding the
+		// genuine one won. The reported peer must win instead, which means the
+		// forged denylisted value no longer decides anything.
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222, 18.18.18.18, 8.233.57.190"},
+			"GET", "/", "18.18.18.18")
+
+		span := requireUnblockedStream(t, stream, mt)
+		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
+		require.Nil(t, span.Tag("appsec.blocked"))
+	})
+
+	t.Run("source-ip-blocks-despite-benign-x-forwarded-for", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "18.18.18.18"},
+			"GET", "/", "111.222.111.222")
+
+		span := requireBlockedStream(t, stream, mt)
+		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("gclb-x-forwarded-for-resolves-without-any-attribute", func(t *testing.T) {
+		// Zero configuration: no forwarded attribute at all, just the header
+		// shape Google Cloud produces. The forged leading entry is denylisted
+		// and must not be the one identity is taken from.
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeaders(t, stream,
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222, 82.67.164.163, 8.233.57.190"},
+			"GET", "/", false)
+
+		span := requireUnblockedStream(t, stream, mt)
+		require.Equal(t, "82.67.164.163", span.Tag("http.client_ip"))
+		require.Nil(t, span.Tag("appsec.blocked"))
+	})
+
+	t.Run("gclb-x-forwarded-for-still-blocks-the-observed-client", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeaders(t, stream,
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "18.18.18.18, 111.222.111.222, 8.233.57.190"},
+			"GET", "/", false)
+
+		span := requireBlockedStream(t, stream, mt)
+		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("source-ip-does-not-hide-headers-from-the-waf", func(t *testing.T) {
+		// Resolving identity outside the headers must not stop the WAF from
+		// inspecting them: an attack payload still has to be detected while the
+		// reported peer drives the client IP.
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		stream, err := client.Process(context.Background())
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{"User-Agent": "dd-test-scanner-log", "X-Forwarded-For": "111.222.111.222, 18.18.18.18, 8.233.57.190"},
+			"GET", "/", "18.18.18.18")
+
+		span := requireUnblockedStream(t, stream, mt)
+		checkForAppsecEvent(t, []*mocktracer.Span{span}, map[string]int{"ua0-600-55x": 1})
+		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
+		require.Equal(t, "111.222.111.222, 18.18.18.18, 8.233.57.190", span.Tag("http.request.headers.x-forwarded-for"),
+			"the WAF and the trace must still see the header exactly as it was received")
+	})
+
+	t.Run("downgraded-to-envoy-keeps-header-based-resolution", func(t *testing.T) {
+		// A deployment that identifies itself as plain Envoy keeps the previous
+		// behaviour exactly, X-Forwarded-For included: the GCLB positional rule
+		// is not portable and must not run there.
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(datadogEnvoyIntegrationHeader, "1"))
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		sendProcessingRequestHeadersWithSourceIP(t, stream,
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222, 18.18.18.18, 8.233.57.190"},
+			"GET", "/", "18.18.18.18")
+
+		span := requireBlockedStream(t, stream, mt)
+		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"),
+			"the client-supplied X-Forwarded-For must still decide identity outside GCP Service Extensions")
 	})
 
 	t.Run("no-monitoring-event-on-request-body-parsing-disabled", func(t *testing.T) {
@@ -1244,9 +1379,10 @@ func newEnvoyAppsecRig(t *testing.T, integration Integration, blockingUnavailabl
 
 	var appsecSrv envoyextproc.ExternalProcessorServer
 	appsecSrv = AppsecEnvoyExternalProcessorServer(fixtureServer, AppsecEnvoyConfig{
-		Integration:          integration,
-		BlockingUnavailable:  blockingUnavailable,
-		BodyParsingSizeLimit: bodyParsingSizeLimit,
+		Integration:            integration,
+		TrustGCLBXForwardedFor: integration == GCPServiceExtensionIntegration,
+		BlockingUnavailable:    blockingUnavailable,
+		BodyParsingSizeLimit:   bodyParsingSizeLimit,
 	})
 
 	envoyextproc.RegisterExternalProcessorServer(server, appsecSrv)
@@ -1555,4 +1691,67 @@ func makeResponseHeaders(t *testing.T, headers map[string]string, status string)
 	h.Headers = append(h.Headers, &v3.HeaderValue{Key: ":status", RawValue: []byte(status)})
 
 	return h
+}
+
+// sendProcessingRequestHeadersWithSourceIP sends request headers together with
+// the ext_proc attributes through which a load balancer publishes the address of
+// the TCP peer it observed, as GCP does when configured with
+// forwardAttributes: [source.ip].
+func sendProcessingRequestHeadersWithSourceIP(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, headers map[string]string, method string, path string, sourceIP string) {
+	t.Helper()
+
+	err := stream.Send(&envoyextproc.ProcessingRequest{
+		Attributes: testSourceIPAttributes(structpb.NewStringValue(sourceIP)),
+		Request: &envoyextproc.ProcessingRequest_RequestHeaders{
+			RequestHeaders: &envoyextproc.HttpHeaders{
+				Headers:     makeRequestHeaders(t, headers, method, path),
+				EndOfStream: true,
+			},
+		},
+	})
+	require.NoError(t, err)
+}
+
+// requireBlockedStream asserts the request was blocked and returns its span.
+func requireBlockedStream(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, mt mocktracer.Tracer) *mocktracer.Span {
+	t.Helper()
+
+	res, err := stream.Recv()
+	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse(),
+		"the request was allowed through but this scenario expects it to be blocked")
+	require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
+
+	return flushSingleSpan(t, stream, mt)
+}
+
+// requireUnblockedStream drives a request that was allowed through to completion
+// so that its span is flushed, and returns that span.
+func requireUnblockedStream(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, mt mocktracer.Tracer) *mocktracer.Span {
+	t.Helper()
+
+	res, err := stream.Recv()
+	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_RequestHeaders{}, res.GetResponse(),
+		"the request was blocked but this scenario expects it to be allowed through")
+
+	sendProcessingResponseHeaders(t, stream, nil, "200", false)
+	if _, err := stream.Recv(); err != nil && !errors.Is(err, io.EOF) {
+		// io.EOF just means the processor is done with this stream, which is the
+		// normal outcome when there is no body left to analyze.
+		require.NoError(t, err)
+	}
+
+	return flushSingleSpan(t, stream, mt)
+}
+
+func flushSingleSpan(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, mt mocktracer.Tracer) *mocktracer.Span {
+	t.Helper()
+
+	require.NoError(t, stream.CloseSend())
+	_, _ = stream.Recv() // to flush the spans
+
+	finished := mt.FinishedSpans()
+	require.Len(t, finished, 1)
+	return finished[0]
 }

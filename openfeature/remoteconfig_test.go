@@ -412,6 +412,97 @@ func TestValidateFlag(t *testing.T) {
 	})
 }
 
+func TestValidateFlagSemverConditions(t *testing.T) {
+	newFlag := func(operator conditionOperator, value any) *flag {
+		return &flag{
+			Key:           "test-flag",
+			VariationType: valueTypeBoolean,
+			Variations: map[string]*variant{
+				"on": {Key: "on", Value: true},
+			},
+			Allocations: []*allocation{
+				{
+					Rules: []*rule{
+						{
+							Conditions: []*condition{
+								{Operator: operator, Attribute: "version", Value: value},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	operators := []conditionOperator{
+		operatorSemverEQ,
+		operatorSemverNEQ,
+		operatorSemverLT,
+		operatorSemverLTE,
+		operatorSemverGT,
+		operatorSemverGTE,
+	}
+	for _, operator := range operators {
+		t.Run(string(operator), func(t *testing.T) {
+			flag := newFlag(operator, "1.2.3-alpha.1+build.5")
+			require.NoError(t, validateFlag("test-flag", flag))
+			require.Equal(t, &parsedSemver{major: 1, minor: 2, patch: 3, prerelease: "alpha.1"},
+				flag.Allocations[0].Rules[0].Conditions[0].semverComparand)
+		})
+	}
+
+	invalidValues := []struct {
+		name  string
+		value any
+	}{
+		{name: "non-string", value: 1.2},
+		{name: "invalid", value: "not-a-version"},
+		{name: "short", value: "1.2"},
+		{name: "v prefix", value: "v1.2.3"},
+		{name: "leading zero", value: "01.2.3"},
+		{name: "overflow", value: "18446744073709551616.0.0"},
+	}
+	for _, tt := range invalidValues {
+		t.Run(tt.name, func(t *testing.T) {
+			require.ErrorIs(t, validateFlag("test-flag", newFlag(operatorSemverEQ, tt.value)), errInvalidSemverComparand)
+		})
+	}
+}
+
+func TestInvalidSemverComparandReturnsParseError(t *testing.T) {
+	data := []byte(`{
+		"format": "SERVER",
+		"flags": {
+			"invalid-semver": {
+				"key": "invalid-semver",
+				"enabled": true,
+				"variationType": "BOOLEAN",
+				"variations": {"on": {"key": "on", "value": true}},
+				"allocations": [{
+					"key": "targeted",
+					"rules": [{"conditions": [{
+						"attribute": "version",
+						"operator": "SEMVER_EQ",
+						"value": "not-a-version"
+					}]}],
+					"splits": [{"shards": [], "variationKey": "on"}]
+				}]
+			}
+		}
+	}`)
+
+	var config universalFlagsConfiguration
+	require.NoError(t, json.Unmarshal(data, &config))
+	require.NotContains(t, config.Flags, "invalid-semver")
+	require.ErrorIs(t, config.invalidFlags["invalid-semver"], errInvalidSemverComparand)
+
+	result := evaluateConfiguredFlag(&config, "invalid-semver", false, map[string]any{"version": "1.2.3"}, time.Now())
+	require.Equal(t, false, result.Value)
+	require.Equal(t, "ERROR", string(result.Reason))
+	require.ErrorIs(t, result.Error, errParseError)
+	require.ErrorIs(t, result.Error, errInvalidSemverComparand)
+}
+
 func TestProcessConfigUpdate(t *testing.T) {
 	t.Run("valid configuration update", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
