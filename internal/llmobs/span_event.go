@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -96,8 +97,14 @@ func EnsureSpanEventMeta(event *transport.LLMObsSpanEvent) map[string]any {
 }
 
 func SpanEventKind(event *transport.LLMObsSpanEvent) SpanKind {
-	kind, _ := event.Meta["span.kind"].(string)
-	return SpanKind(kind)
+	switch kind := event.Meta["span.kind"].(type) {
+	case string:
+		return SpanKind(kind)
+	case SpanKind:
+		return kind
+	default:
+		return ""
+	}
 }
 
 func ApplySpanEventDefaults(event *transport.LLMObsSpanEvent) {
@@ -291,7 +298,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		Tags:             tagsSlice,
 		Name:             span.name,
 		StartNS:          span.startTime.UnixNano(),
-		Duration:         span.finishTime.Sub(span.startTime),
+		Duration:         span.finishTime.Sub(span.startTime).Nanoseconds(),
 		Status:           spanStatus,
 		StatusMessage:    "",
 		Meta:             meta,
@@ -403,7 +410,9 @@ func DropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
 		droppedIO = true
 	}
 	if droppedIO {
-		ev.CollectionErrors = []string{collectionErrorDroppedIO}
+		if !slices.Contains(ev.CollectionErrors, collectionErrorDroppedIO) {
+			ev.CollectionErrors = append(ev.CollectionErrors, collectionErrorDroppedIO)
+		}
 	} else {
 		log.Debug("llmobs: attempted to drop span event IO but it was not present")
 	}

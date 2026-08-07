@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
@@ -31,7 +30,7 @@ const (
 )
 
 // SpanStatus identifies an LLM Obs span status.
-type SpanStatus string
+type SpanStatus = string
 
 const (
 	SpanStatusOK    SpanStatus = "ok"
@@ -64,7 +63,7 @@ type LLMObsSpanEvent struct {
 	Name             string             `json:"name,omitempty"`
 	Service          string             `json:"service,omitempty"`
 	StartNS          int64              `json:"start_ns,omitempty"`
-	Duration         time.Duration      `json:"duration,omitempty"`
+	Duration         int64              `json:"duration,omitempty"`
 	Status           SpanStatus         `json:"status,omitempty"`
 	StatusMessage    string             `json:"status_message,omitempty"`
 	Meta             map[string]any     `json:"meta,omitempty"`

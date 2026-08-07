@@ -33,6 +33,20 @@ func (unencodableValue) MarshalJSON() ([]byte, error) {
 	return nil, errors.New("cannot encode value")
 }
 
+type readErrorBody struct{}
+
+func (readErrorBody) Read(p []byte) (int, error) {
+	return copy(p, "partial"), io.ErrUnexpectedEOF
+}
+
+func (readErrorBody) Close() error { return nil }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 func TestPushSpanEventsWithResult(t *testing.T) {
 	respBody := bytes.Repeat([]byte("x"), 1<<10)
 
@@ -142,6 +156,30 @@ func TestRequestReportsExhaustedRetries(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, result.StatusCode)
 	assert.Equal(t, int(defaultMaxRetries), result.Attempts)
 	assert.Equal(t, response, result.Body)
+	assert.True(t, result.Retriable)
+}
+
+func TestRequestReportsSuccessfulStatusWhenResponseReadFails(t *testing.T) {
+	var requests atomic.Int32
+	transport := &Transport{
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			requests.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusAccepted,
+				Header:     make(http.Header),
+				Body:       readErrorBody{},
+			}, nil
+		})},
+		testBaseURL: "http://llmobs.test",
+		agentless:   true,
+	}
+
+	result, err := transport.PushSpanEventsBodyWithResult(context.Background(), []byte(`{}`))
+	require.ErrorContains(t, err, "failed to read response body")
+	assert.Equal(t, int32(defaultMaxRetries), requests.Load())
+	assert.Equal(t, http.StatusAccepted, result.StatusCode)
+	assert.Equal(t, int(defaultMaxRetries), result.Attempts)
+	assert.Equal(t, []byte("partial"), result.Body)
 	assert.True(t, result.Retriable)
 }
 
