@@ -75,6 +75,13 @@ lint/misc: tools-install ## Run miscellaneous linting checks (copyright, Makefil
 lint/action: tools-install ## Lint GitHub Actions workflows
 	$(BIN_PATH) ./scripts/lint.sh --action
 
+.PHONY: lint/errlog
+lint/errlog: ## Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
+	# Clear a possibly-stale GOROOT: the runner image's preinstalled GOROOT can point at an
+	# older Go patch than the one setup-go puts on PATH, so the compiler and go tool versions
+	# mismatch. Version-agnostic: checks nothing, pins nothing.
+	env -u GOROOT go run ./internal/telemetry/log/analyzer/cmd ./...
+
 .PHONY: format
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all

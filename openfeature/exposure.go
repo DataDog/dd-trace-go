@@ -8,7 +8,6 @@ package openfeature
 import (
 	"cmp"
 	"container/list"
-	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -202,14 +201,7 @@ func (w *exposureWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("openfeature: exposure writer recovered panic: %s", r)
-				var errAttr slog.Attr
-				if err, ok := r.(error); ok {
-					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
-				} else {
-					errAttr = slog.Any("panic", r)
-				}
-				telemetrylog.Error("openfeature: exposure writer recovered panic", errAttr)
+				telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r)
 			}
 			w.stop()
 		}()
