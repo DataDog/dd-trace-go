@@ -67,6 +67,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/bradfitz/gomemcache":                {"Memcache", false},
 	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", false},
 	"cloud.google.com/go/pubsub/v2":                 {"Pub/Sub v2", false},
+	"github.com/cloudevents/sdk-go/v2":              {"CloudEvents SDK v2", false},
 	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", false},
 	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", false},
 	"database/sql":                                  {"SQL", false},
