@@ -44,6 +44,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -332,8 +333,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.agent.store(af)
 	// The wire protocol is derived per-use from the requested protocol and the
 	// agent's advertised endpoints (see (*config).effectiveTraceProtocol);
-	// nothing is baked into the transport or downgraded in config here. Report
-	// the resolved value to config telemetry so it reflects what is on the wire.
+	// nothing is baked into the transport or downgraded in config here — only
+	// a diagnostic to log and a value to report to config telemetry.
+	logTraceProtocolDowngrade(c, agentURL, agentDisabled)
 	c.internalConfig.ReportEffectiveTraceProtocol(c.effectiveTraceProtocol())
 
 	info, ok := debug.ReadBuildInfo()
@@ -406,6 +408,40 @@ func apmTracingDisabled(c *config) {
 	// tell the agent we computed them, so it doesn't do it either.
 	c.internalConfig.SetRuntimeMetricsEnabled(false, internalconfig.OriginCalculated)
 	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
+}
+
+// logTraceProtocolDowngrade logs when a user-requested v1.0 trace protocol is
+// denied because the trace-agent does not advertise /v1.0/traces. It logs at
+// Warn only when v1.0 was explicitly requested (as opposed to left at its
+// default), since the default is v1.0 and an unconditional Warn would fire for
+// every user still on a pre-v1 Agent — a fully supported configuration.
+func logTraceProtocolDowngrade(c *config, agentURL *url.URL, agentDisabled bool) {
+	if agentDisabled {
+		// No agent in this mode (Lambda, agentless, tracing disabled); a
+		// capability warning would be misleading.
+		return
+	}
+	af := c.agent.load()
+	if c.internalConfig.RequestedTraceProtocol() != traceProtocolV1 || af.v1ProtocolAvailable {
+		return // v0.4 was requested, or the agent supports v1: nothing denied.
+	}
+	if !af.reachable {
+		// /info never answered, so v1ProtocolAvailable is "unknown", not
+		// "denied". Telling the user their agent lacks /v1.0/traces — and to
+		// upgrade it — would be wrong when the agent simply is not running.
+		return
+	}
+	// DD_TRACE_AGENT_URL may carry credentials for an authenticated proxy, and
+	// unlike the startup log this diagnostic is not gated on
+	// DD_TRACE_STARTUP_LOGS, so redact before logging.
+	safeURL := urlsanitizer.SanitizeURL(agentURL.String())
+	if c.internalConfig.TraceProtocolOrigin() == internalconfig.OriginDefault {
+		log.Debug("trace-agent at %s does not expose the %s endpoint; using trace protocol v0.4",
+			safeURL, tracesAPIPathV1)
+		return
+	}
+	log.Warn("trace protocol v1.0 was requested but the trace-agent at %s does not expose the %s endpoint; falling back to v0.4. Upgrade the Datadog Agent to enable v1.0.",
+		safeURL, tracesAPIPathV1)
 }
 
 // traceTransportHeaders returns the headers to send with Datadog agent trace
