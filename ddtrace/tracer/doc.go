@@ -161,4 +161,13 @@
 // version does not enable or disable stats computation. The protocol falls
 // back from 1.0 to 0.4 only when the Datadog Agent does not advertise the
 // /v1.0/traces endpoint.
+//
+// Agent capabilities are re-checked periodically, so this fallback is applied
+// at runtime and not only at startup: if a running Agent stops advertising
+// /v1.0/traces (for example after a rollback), the tracer switches to 0.4
+// without needing a restart. Re-upgrading to 1.0 requires several consecutive
+// positive checks, so an intermittently-capable Agent settles on 0.4 rather
+// than alternating wire formats. Traces already encoded as 1.0 when the
+// downgrade lands are still sent to /v1.0/traces and may be rejected, so a
+// downgrade can cost up to one flush interval of buffered traces.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
