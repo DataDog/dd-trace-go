@@ -361,6 +361,20 @@ func TestBuildExportEvaluationValidation(t *testing.T) {
 	assert.Same(t, validation, target)
 }
 
+func TestSubmitEvaluationTypeValidation(t *testing.T) {
+	score := 1.0
+	observer := &llmobs.LLMObs{Config: &config.Config{}}
+	err := observer.SubmitEvaluation(llmobs.EvaluationConfig{
+		SpanID:     "span",
+		TraceID:    "trace",
+		Label:      "quality",
+		ScoreValue: &score,
+		MetricType: "scores",
+	})
+	require.ErrorContains(t, err, `invalid metric type "scores"`)
+	assert.NoError(t, errors.Unwrap(err))
+}
+
 func exportFloatPtr(value float64) *float64 {
 	return &value
 }
