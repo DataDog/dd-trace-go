@@ -67,6 +67,40 @@ func TestProcessRetryNativeScheduledChildConfigUsesBatchIdentityAndGates(t *test
 	require.Equal(t, processRetryBatchParallelPath(root.ResultPath, 2), child.nativeParallelPath)
 }
 
+func TestNativeScheduledBatchResultSkipsUninvokedTestsBeforeWaiting(t *testing.T) {
+	resultPath := filepath.Join(t.TempDir(), "result.json")
+	batch := &nativeScheduledProcessRetryBatch{
+		batch:      &processRetryBatchConfig{Tests: []processRetryBatchTestConfig{{TestName: "TestA"}, {TestName: "TestB"}}},
+		resultRoot: resultPath,
+		done:       make(chan struct{}),
+		cancel:     func() {},
+	}
+	require.NoError(t, os.WriteFile(processRetryBatchGatePath(resultPath, 0), nil, processRetryBatchManifestMode))
+	run, err := waitForProcessRetryBatchGate(processRetryBatchGatePath(resultPath, 0), time.Time{}, false)
+	require.NoError(t, err)
+	require.True(t, run)
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	coordinator.nativeBatches = map[uint64]*nativeScheduledProcessRetryBatch{1: batch}
+	type gateResult struct {
+		run bool
+		err error
+	}
+	gate := make(chan gateResult, 1)
+	go func() {
+		run, err := waitForProcessRetryBatchGate(processRetryBatchGatePath(resultPath, 1), time.Time{}, false)
+		gate <- gateResult{run: run, err: err}
+		close(batch.done)
+	}()
+
+	_, ok := coordinator.nativeScheduledBatchResult(1)
+	require.True(t, ok)
+	decision := <-gate
+	require.NoError(t, decision.err)
+	require.False(t, decision.run)
+	require.NoFileExists(t, processRetryBatchSkipPath(resultPath, 0))
+	require.FileExists(t, processRetryBatchSkipPath(resultPath, 1))
+}
+
 func TestProcessRetryNativeScheduledTestsFollowParentOrder(t *testing.T) {
 	tests, indexes, err := nativeScheduledTestsInParentOrder(
 		[]processRetryBatchTestConfig{{TestName: "TestA"}, {TestName: "TestB"}, {TestName: "TestC"}},

@@ -506,7 +506,7 @@ func (g *deferredProcessRetryGroup) applyDeferredFirstAttempt(attempt processRet
 	execMeta.initialRetryCount = g.retryCount
 	execMeta.initialRetryCountSet = true
 	execMeta.isLastRetry = g.retryCount <= 0
-	terminal := deferredProcessRetryAttemptTerminal(attempt)
+	terminal := deferredProcessRetryAttemptTerminal(&g.metadata, attempt)
 	continueGroup := false
 	effective, tail := deferProcessRetryTestEventWithAdmission(&g.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {
 		g.outcomes.observe(effective.Failed, effective.Skipped)
@@ -837,7 +837,7 @@ func (c *processRetryCoordinator) drainScheduledBatch(
 
 		if state.group.parallelEFD {
 			state.completed = append(state.completed, scheduled.completed)
-			if deferredProcessRetryAttemptTerminal(scheduled.completed.result) {
+			if deferredProcessRetryAttemptTerminal(&state.group.metadata, scheduled.completed.result) {
 				state.stopPending = true
 				state.terminalAttempt = true
 				state.remaining = 0
@@ -1302,7 +1302,7 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 	// Queue admission commits this continuation to the process backend. By the
 	// time a late setup failure is observable, native M.Run and the original
 	// testing.T have completed, so represent the admitted continuation exactly once.
-	terminal := deferredProcessRetryAttemptTerminal(attempt)
+	terminal := deferredProcessRetryAttemptTerminal(&g.metadata, attempt)
 	continueGroup := continuationAdmitted && !terminal
 	effective, nextTail := deferProcessRetryTestEventWithAdmission(&g.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {
 		g.retryCount--
@@ -1387,8 +1387,13 @@ func (g *deferredProcessRetryGroup) shutdown() <-chan struct{} {
 	return g.lease.shutdown
 }
 
-func deferredProcessRetryAttemptTerminal(attempt processRetryAttemptResult) bool {
+func deferredProcessRetryAttemptTerminal(metadata *processRetryMetadataSnapshot, attempt processRetryAttemptResult) bool {
 	effective := effectiveProcessRetryStatus(attempt, false)
+	// Attempt-to-fix owns a fixed execution count, so a test race is an outcome
+	// rather than an infrastructure failure that truncates its continuations.
+	if effective.FailureKind == "test_race" && metadata != nil && metadata.isAttemptToFix && metadata.shouldOrchestrateAttemptToFix {
+		return false
+	}
 	return attempt.TimedOut || attempt.Unreaped || attempt.ContainmentLost || attempt.Result.RaceDetected ||
 		errorsIsDeferredTerminal(attempt.Err) || processRetryFailureStopsContinuation(effective.FailureKind)
 }

@@ -1258,6 +1258,8 @@ func TestProcessRetryResultErrorValidation(t *testing.T) {
 	}
 	base := processRetryNotRunResult(cfg, "invalid_child_config")
 	require.NoError(t, validateProcessRetryResult(base, cfg))
+	nativeNotRun := processRetryNotRunResult(cfg, "native_parent_not_run")
+	require.NoError(t, validateProcessRetryResult(nativeNotRun, cfg))
 
 	unknown := base
 	unknown.ResultError = "unknown_reason"
@@ -3999,9 +4001,10 @@ func BenchmarkProcessRetryBoundedOutputSaturated(b *testing.B) {
 	}
 }
 
-func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
+func TestProcessRetryLaunchBaselineRefreshesMutableStateFromStaticTemplate(t *testing.T) {
 	resetProcessRetryLimiterForTesting(t)
 	var executableCalls, lateArgsCalls, startupArgsCalls, workingDirectoryCalls, environCalls atomic.Int32
+	var workingDirectoryErr atomic.Bool
 	resetProcessRetryRunnerHooksForTesting(t, processRetryRunnerHooks{
 		executable: func() (string, error) {
 			executableCalls.Add(1)
@@ -4013,6 +4016,9 @@ func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 		},
 		workingDirectory: func() (string, error) {
 			call := workingDirectoryCalls.Add(1)
+			if workingDirectoryErr.Load() {
+				return "", errors.New("working directory unavailable")
+			}
 			return fmt.Sprintf("/tmp/work-%d", call), nil
 		},
 		environ: func() []string {
@@ -4057,12 +4063,22 @@ func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 	require.Equal(t, int32(1), executableCalls.Load())
 	require.Zero(t, lateArgsCalls.Load())
 	require.Equal(t, int32(1), startupArgsCalls.Load())
-	require.Equal(t, int32(1), workingDirectoryCalls.Load())
-	require.Equal(t, int32(1), environCalls.Load())
-	require.Equal(t, "/tmp/startup-work", first.workingDirectory)
-	require.Equal(t, "/tmp/startup-work", second.workingDirectory)
-	require.Equal(t, []string{"STARTUP=1"}, first.environment)
-	require.Equal(t, []string{"STARTUP=1"}, second.environment)
+	require.Equal(t, int32(3), workingDirectoryCalls.Load())
+	require.Equal(t, int32(3), environCalls.Load())
+	require.Equal(t, "/tmp/work-2", first.workingDirectory)
+	require.Equal(t, "/tmp/work-3", second.workingDirectory)
+	require.Equal(t, []string{"ATTEMPT=2"}, first.environment)
+	require.Equal(t, []string{"ATTEMPT=3"}, second.environment)
+	require.Equal(t, template.executable, first.executable)
+	require.Equal(t, template.executable, second.executable)
+	require.Equal(t, template.args, first.args)
+	require.Equal(t, template.args, second.args)
+
+	workingDirectoryErr.Store(true)
+	failed := captureProcessRetryLaunchBaselineFromTemplate(template)
+	require.ErrorContains(t, failed.err, "working directory unavailable")
+	require.Equal(t, int32(4), workingDirectoryCalls.Load())
+	require.Equal(t, int32(3), environCalls.Load())
 }
 
 func TestProcessRetryChildControlConfigUsesBootstrapSnapshot(t *testing.T) {

@@ -184,7 +184,7 @@ func TestMain(m *testing.M) {
 					}
 					shuffleSeed := testControllerShuffleSeedWithFirst(*tests, "TestQuarantinedSerialOrderProducer",
 						"Test_Foo", "TestQuarantinedRace", "TestQuarantinedRaceSecond", "TestQuarantinedSerialOrderConsumer")
-					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.parallel=2", "-test.shuffle="+strconv.FormatInt(shuffleSeed, 10), "-test.timeout=30s")
+					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.failfast=true", "-test.parallel=2", "-test.shuffle="+strconv.FormatInt(shuffleSeed, 10), "-test.timeout=30s")
 					if hadCoverageEnabled {
 						_ = os.Setenv(quarantinedRaceCoverageEnabledEnv, previousCoverageEnabled)
 					} else {

@@ -362,11 +362,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	if !coverageInitialized && testing.CoverMode() != "" {
 		coverage.InitializeCoverage(m, false)
 	}
-	// Per-test coverage counters are process-global, and failfast can stop the
-	// native pass before every registered gate is reached. In those modes keep
-	// the post-M.Run batch; otherwise preserve each first attempt's call order.
-	wrapperOpts.quarantinedRaceNativeOrder = wrapperOpts.quarantinedRaceIsolation &&
-		!coverage.CanCollectPerTestCoverage() && !retryAttemptFailfastEnabled()
+	wrapperOpts.quarantinedRaceNativeOrder = wrapperOpts.quarantinedRaceIsolation
 
 	ddm := (*M)(m)
 

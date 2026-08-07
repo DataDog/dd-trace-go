@@ -1268,6 +1268,12 @@ func captureProcessRetryLaunchBaselineFromTemplate(template *processRetryLaunchB
 	if baseline.err != nil {
 		return &baseline
 	}
+	// Keep retry configuration stable while matching mutable native process state at invocation.
+	baseline.workingDirectory, baseline.err = baseline.hooks.workingDirectory()
+	if baseline.err != nil {
+		return &baseline
+	}
+	baseline.environment = sanitizeProcessRetryBaseEnv(baseline.hooks.environ())
 	baseline.currentCPU = processRetryCurrentCPU()
 	return &baseline
 }
@@ -3411,9 +3417,14 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			if cfg.ParentDeadlineOK {
 				deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
 			}
-			if err := waitForProcessRetryBatchGate(cfg.nativeGatePath, deadline, deadlineOK); err != nil {
+			run, err := waitForProcessRetryBatchGate(cfg.nativeGatePath, deadline, deadlineOK)
+			if err != nil {
 				writer.Write(processRetryNotRunResult(cfg, err.Error()))
 				t.Fail()
+				return
+			}
+			if !run {
+				writer.Write(processRetryNotRunResult(cfg, "native_parent_not_run"))
 				return
 			}
 		}
@@ -4110,7 +4121,7 @@ func validateProcessRetrySubtestResult(result processRetrySubtestResult) error {
 
 func validProcessRetryResultError(reason string) bool {
 	switch reason {
-	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure":
+	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure", "native_parent_not_run":
 		return true
 	default:
 		return false

@@ -67,6 +67,10 @@ func processRetryBatchGatePath(resultPath string, index int) string {
 	return filepath.Join(filepath.Dir(resultPath), fmt.Sprintf("batch-gate-%06d", index))
 }
 
+func processRetryBatchSkipPath(resultPath string, index int) string {
+	return processRetryBatchGatePath(resultPath, index) + ".skip"
+}
+
 func processRetryBatchParallelPath(resultPath string, index int) string {
 	return filepath.Join(filepath.Dir(resultPath), fmt.Sprintf("batch-parallel-%06d", index))
 }
@@ -97,15 +101,20 @@ func processRetryBatchChildConfig(root processRetryChildConfig, index int, test 
 	return child
 }
 
-func waitForProcessRetryBatchGate(path string, deadline time.Time, deadlineOK bool) error {
+func waitForProcessRetryBatchGate(path string, deadline time.Time, deadlineOK bool) (bool, error) {
 	for {
 		if _, err := os.Stat(path); err == nil {
-			return nil
+			return true, nil
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
+			return false, err
+		}
+		if _, err := os.Stat(path + ".skip"); err == nil {
+			return false, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
 		}
 		if deadlineOK && !time.Now().Before(deadline) {
-			return context.DeadlineExceeded
+			return false, context.DeadlineExceeded
 		}
 		time.Sleep(processRetryBatchPollInterval)
 	}
@@ -398,6 +407,10 @@ func (c *processRetryCoordinator) nativeScheduledBatchResult(phaseID uint64) (pr
 	if batch == nil {
 		return processRetryAttemptResult{}, false
 	}
+	skipErr := skipUninvokedNativeScheduledTests(batch)
+	if skipErr != nil {
+		batch.cancel()
+	}
 	<-batch.done
 	if batch.attempt.OutputTail != "" {
 		_, _ = io.WriteString(os.Stdout, batch.attempt.OutputTail)
@@ -405,7 +418,30 @@ func (c *processRetryCoordinator) nativeScheduledBatchResult(phaseID uint64) (pr
 	if err := coverage.MergeProcessCoverageProfile(processRetryBatchCoveragePath(batch.resultRoot)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Debug("civisibility: failed to merge isolated first-attempt coverage: %s", err.Error())
 	}
+	if skipErr != nil {
+		batch.attempt.SetupFailure = true
+		batch.attempt.Err = errors.Join(batch.attempt.Err, skipErr)
+	}
 	return batch.attempt, true
+}
+
+func skipUninvokedNativeScheduledTests(batch *nativeScheduledProcessRetryBatch) error {
+	if batch == nil || batch.batch == nil {
+		return nil
+	}
+	// Filters and -failfast can leave registered tests uninvoked; release their
+	// child gates without executing their bodies before waiting for the batch.
+	for index := range batch.batch.Tests {
+		if _, err := os.Stat(processRetryBatchGatePath(batch.resultRoot, index)); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.WriteFile(processRetryBatchSkipPath(batch.resultRoot, index), nil, processRetryBatchManifestMode); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *processRetryCoordinator) cleanupNativeScheduledBatch(phaseID uint64) {

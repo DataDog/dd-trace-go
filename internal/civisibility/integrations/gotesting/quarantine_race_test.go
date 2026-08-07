@@ -354,9 +354,6 @@ func TestQuarantinedSerialOrderProducer(t *testing.T) {
 }
 
 func TestQuarantinedSerialOrderConsumer(t *testing.T) {
-	if os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true" {
-		return
-	}
 	if _, err := os.Stat(filepath.Join(os.Getenv(quarantinedRacePIDDirEnv), "serial-order")); err != nil {
 		t.Fatalf("quarantined predecessor did not run at its native position: %v", err)
 	}

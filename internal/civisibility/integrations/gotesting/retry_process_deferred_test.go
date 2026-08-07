@@ -1287,6 +1287,54 @@ func TestDeferredProcessRetryFirstAttemptConsumesInitialRetrySlot(t *testing.T) 
 	require.Equal(t, int64(9), group.retryCount)
 }
 
+func TestDeferredProcessRetryAttemptToFixContinuesAfterEveryRace(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	settings := integrations.GetSettings()
+	oldSettings := *settings
+	defer func() { *settings = oldSettings }()
+	settings.TestManagement.AttemptToFixRetries = 3
+
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestAttemptToFixRace", 1, 1)
+	group.metadata.isAttemptToFix = true
+	group.metadata.shouldOrchestrateAttemptToFix = true
+	raceAttempt := fixedProcessRetryAttempt(processRetryStatusFail, 1)
+	raceAttempt.Result.Failed = true
+	raceAttempt.Result.RaceDetected = true
+	require.True(t, group.applyDeferredFirstAttempt(raceAttempt))
+
+	for index, wantContinue := range []bool{true, false} {
+		prepared, ok, _ := group.prepareAttempt(true)
+		require.True(t, ok)
+		attempt := raceAttempt
+		attempt.StartTime = time.Unix(0, int64(index+2))
+		attempt.FinishTime = attempt.StartTime.Add(time.Nanosecond)
+		require.Equal(t, wantContinue, group.applyCompletedAttempt(deferredProcessRetryCompletedAttempt{
+			prepared: prepared,
+			result:   attempt,
+		}, true, false))
+	}
+	require.Zero(t, group.retryCount)
+	group.finish()
+	require.Len(t, recorder.tests, 3)
+}
+
+func TestDeferredProcessRetryAttemptToFixRaceTerminalPolicy(t *testing.T) {
+	raceAttempt := fixedProcessRetryAttempt(processRetryStatusFail, 1)
+	raceAttempt.Result.Failed = true
+	raceAttempt.Result.RaceDetected = true
+	ownedAttemptToFix := &processRetryMetadataSnapshot{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true}
+	unownedAttemptToFix := &processRetryMetadataSnapshot{isAttemptToFix: true}
+
+	require.False(t, deferredProcessRetryAttemptTerminal(ownedAttemptToFix, raceAttempt))
+	require.True(t, deferredProcessRetryAttemptTerminal(unownedAttemptToFix, raceAttempt))
+	require.True(t, deferredProcessRetryAttemptTerminal(nil, raceAttempt))
+
+	infrastructureFailure := raceAttempt
+	infrastructureFailure.ContainmentLost = true
+	require.True(t, deferredProcessRetryAttemptTerminal(ownedAttemptToFix, infrastructureFailure))
+}
+
 func TestDeferredProcessRetryFirstAttemptReservesFTRBudget(t *testing.T) {
 	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 	defer restoreSession()
