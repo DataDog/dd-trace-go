@@ -21,11 +21,12 @@ func isV04WireByte(b byte) bool {
 }
 
 // TestEmptyPayloadRotatesOnProtocolDowngrade pins that an idle writer does not
-// hold a stale v1 payload after the agent withdraws /v1.0/traces. flush() is
-// the only place that re-reads the effective protocol, and it early-returns on
-// an empty payload — so without the rotation a writer that saw no traffic
-// across the downgrade keeps its v1 payload indefinitely, and the first trace
-// to arrive afterwards is POSTed to /v1.0/traces and rejected.
+// hold a stale v1 payload after the agent withdraws /v1.0/traces. Neither
+// add() nor flush() otherwise re-reads the effective protocol once a payload
+// exists — so without rotateStalePayload, a writer that saw no traffic across
+// the downgrade keeps its v1 payload indefinitely, and the first trace to
+// arrive afterwards is pushed into it and POSTed to /v1.0/traces, where it is
+// rejected.
 func TestEmptyPayloadRotatesOnProtocolDowngrade(t *testing.T) {
 	agent := startTestAgent(t)
 	tr := newTracerTest(t, agent, WithSendRetries(0))
@@ -42,12 +43,13 @@ func TestEmptyPayloadRotatesOnProtocolDowngrade(t *testing.T) {
 	tr.refreshAgentFeatures()
 	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "sanity check: the poll must downgrade")
 
-	// The writer was idle across the downgrade: an empty flush must adopt v0.4.
-	w.flush()
-	require.Equal(t, traceProtocolV04, w.payload.protocol(), "an empty payload must not survive a protocol downgrade")
-
+	// The writer was idle across the downgrade and a trace arrives before any
+	// scheduled flush: add() itself, not just flush(), must rotate the stale
+	// v1 payload so this trace is not pushed into it.
 	agent.Reset()
 	w.add([]*Span{makeSpan(1)})
+	require.Equal(t, traceProtocolV04, w.payload.protocol(), "a trace accepted after a protocol downgrade must not land in the stale payload")
+
 	w.flush()
 	w.wg.Wait()
 	assert.Equal(t, []string{tracesAPIPath}, agent.Requests(), "the post-downgrade trace must land on /v0.4/traces")

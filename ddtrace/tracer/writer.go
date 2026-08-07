@@ -79,6 +79,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 
 func (h *agentTraceWriter) add(trace []*Span) {
 	h.mu.Lock()
+	h.rotateStalePayload()
 	stats, err := h.payload.push(trace)
 	if err != nil {
 		h.mu.Unlock()
@@ -145,26 +146,33 @@ func (h *agentTraceWriter) newPayload(hint int) payload {
 	return payload
 }
 
+// rotateStalePayload replaces h.payload with a freshly protocol-matched one if
+// it is still empty but was built for a protocol the agent no longer (or not
+// yet) accepts. An empty payload holds no encoded bytes, so it can adopt the
+// current protocol for free. Both add and flush must call this before relying
+// on h.payload's protocol: add is the first point a trace can land in an idle
+// payload, and flush is the only place that otherwise re-reads the protocol —
+// without either call, a writer that saw no traffic across an agent-info poll
+// would hold a stale payload indefinitely after the agent's advertised
+// protocol changed. The discarded payload was never handed to the transport,
+// so it is simply dropped rather than recycled through the payloadV1 pool:
+// handoff(pv1StateFlushDone) alone would not return it (the two-party handoff
+// also needs the transport's bit), and forcing both bits risks a double pool
+// return.
+// +checklocks:h.mu
+func (h *agentTraceWriter) rotateStalePayload() {
+	if h.payload.itemCount() == 0 && h.payload.protocol() != h.config.effectiveTraceProtocol() {
+		h.payload = h.newPayload(0)
+	}
+}
+
 // flush will push any currently buffered traces to the server.
 func (h *agentTraceWriter) flush() {
 	h.mu.Lock()
 	oldp := h.payload
 	// Check after acquiring lock
 	if oldp.itemCount() == 0 {
-		// An empty payload holds no encoded bytes, so it can adopt the current
-		// protocol for free. This is the only place that re-reads the protocol
-		// while idle: without it, a writer that saw no traffic across an
-		// agent-info poll would hold a stale payload indefinitely after the
-		// agent's advertised protocol changed, and the first trace to arrive —
-		// possibly minutes later — would be encoded for a protocol the agent no
-		// longer (or not yet) accepts. oldp was never handed to the transport,
-		// so it is simply dropped rather than recycled through the payloadV1
-		// pool: handoff(pv1StateFlushDone) alone would not return it (the
-		// two-party handoff also needs the transport's bit), and forcing both
-		// bits risks a double pool return.
-		if oldp.protocol() != h.config.effectiveTraceProtocol() {
-			h.payload = h.newPayload(0)
-		}
+		h.rotateStalePayload()
 		h.mu.Unlock()
 		return
 	}
