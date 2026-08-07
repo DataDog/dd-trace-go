@@ -84,3 +84,32 @@ func TestSetSpanErrorMeta(t *testing.T) {
 	assert.Equal(t, "provider.Error", meta["error.type"])
 	assert.Equal(t, "stack", meta["error.stack"])
 }
+
+func TestSetSpanModelMetaDefaults(t *testing.T) {
+	meta := map[string]any{}
+	llmobs.SetSpanModelMeta(meta, llmobs.SpanKindLLM, "", "OpenAI")
+	assert.Equal(t, "custom", meta["model_name"])
+	assert.Equal(t, "openai", meta["model_provider"])
+
+	llmobs.SetSpanModelMeta(meta, llmobs.SpanKindEmbedding, "embedding", "")
+	assert.Equal(t, "embedding", meta["model_name"])
+	assert.Equal(t, "custom", meta["model_provider"])
+
+	llmobs.SetSpanModelMeta(meta, llmobs.SpanKindWorkflow, "", "")
+	assert.NotContains(t, meta, "model_name")
+	assert.NotContains(t, meta, "model_provider")
+}
+
+func TestDropSpanEventIO(t *testing.T) {
+	assert.False(t, llmobs.DropSpanEventIO(nil))
+	assert.False(t, llmobs.DropSpanEventIO(&transport.LLMObsSpanEvent{}))
+
+	event := &transport.LLMObsSpanEvent{Meta: map[string]any{
+		"input":  map[string]any{"value": "in"},
+		"output": map[string]any{"value": "out"},
+	}}
+	assert.True(t, llmobs.DropSpanEventIO(event))
+	assert.Equal(t, []string{"dropped_io"}, event.CollectionErrors)
+	assert.NotEqual(t, map[string]any{"value": "in"}, event.Meta["input"])
+	assert.NotEqual(t, map[string]any{"value": "out"}, event.Meta["output"])
+}

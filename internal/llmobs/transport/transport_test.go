@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -102,6 +103,89 @@ func TestRequestDrainsErrorResponse(t *testing.T) {
 	assert.Equal(t, int32(1), newConns.Load())
 }
 
+func TestRequestRetriesTransientStatus(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if requests.Add(1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"retry"}`))
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"accepted":true}`))
+	}))
+	t.Cleanup(server.Close)
+
+	transport := newTestTransport(t, server.URL)
+	result, err := transport.PushSpanEventsBodyWithResult(context.Background(), []byte(`{}`))
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), requests.Load())
+	assert.Equal(t, http.StatusAccepted, result.StatusCode)
+	assert.Equal(t, 2, result.Attempts)
+	assert.Equal(t, []byte(`{"accepted":true}`), result.Body)
+	assert.False(t, result.Retriable)
+}
+
+func TestRequestReportsExhaustedRetries(t *testing.T) {
+	response := []byte(`{"error":"retry"}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(response)
+	}))
+	t.Cleanup(server.Close)
+
+	transport := newTestTransport(t, server.URL)
+	result, err := transport.PushSpanEventsBodyWithResult(context.Background(), []byte(`{}`))
+	require.ErrorContains(t, err, "transient http status code: 500")
+	assert.Equal(t, http.StatusInternalServerError, result.StatusCode)
+	assert.Equal(t, int(defaultMaxRetries), result.Attempts)
+	assert.Equal(t, response, result.Body)
+	assert.True(t, result.Retriable)
+}
+
+func TestNewRequest(t *testing.T) {
+	transport := &Transport{
+		defaultHeaders: map[string]string{"DD-API-KEY": "key"},
+	}
+	request, err := transport.newRequest(
+		context.Background(), http.MethodPost, "http://localhost/path", "subdomain", "application/json", bytes.NewReader(nil),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "application/json", request.Header.Get("Content-Type"))
+	assert.Equal(t, "key", request.Header.Get("DD-API-KEY"))
+	assert.Equal(t, "subdomain", request.Header.Get(headerEVPSubdomain))
+
+	transport.agentless = true
+	request, err = transport.newRequest(
+		context.Background(), http.MethodPost, "http://localhost/path", "subdomain", "application/json", nil,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, request.Header.Get(headerEVPSubdomain))
+
+	_, err = transport.newRequest(
+		context.Background(), "invalid method", "http://localhost/path", "subdomain", "application/json", nil,
+	)
+	require.Error(t, err)
+}
+
+func TestResponseHelpers(t *testing.T) {
+	assert.Empty(t, errorBodyMessage(mkHeader("Content-Type", "text/plain"), []byte("ignored")))
+	assert.Equal(t, "message", errorBodyMessage(mkHeader("Content-Type", "application/json"), []byte(" message\n")))
+	assert.Nil(t, readResponseBody(nil))
+	drainAndClose(nil)
+}
+
+func TestIsRetriableStatus(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooEarly, http.StatusInternalServerError, 599} {
+		assert.True(t, isRetriableStatus(status), status)
+	}
+	for _, status := range []int{http.StatusBadRequest, http.StatusTooManyRequests, 600} {
+		assert.False(t, isRetriableStatus(status), status)
+	}
+}
+
 func mkHeader(kv ...string) http.Header {
 	h := http.Header{}
 	for i := 0; i+1 < len(kv); i += 2 {
@@ -126,6 +210,11 @@ func TestParseRetryAfter(t *testing.T) {
 			assert.Equal(t, tc.want, parseRetryAfter(tc.h))
 		})
 	}
+
+	future := strconv.FormatInt(time.Now().Add(10*time.Second).Unix(), 10)
+	wait := parseRetryAfter(mkHeader(headerRateLimitReset, future))
+	assert.Positive(t, wait)
+	assert.LessOrEqual(t, wait, 10*time.Second)
 }
 
 func TestMarshalJSON(t *testing.T) {
