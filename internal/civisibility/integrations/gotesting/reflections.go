@@ -613,7 +613,7 @@ func copyTestWithoutParentFast(source *testing.T, target *testing.T, layout *tes
 		copyTypedField[context.CancelFunc](sourceBase, targetBase, layout.common.cancelCtx)
 	}
 	if layout.denyParallel.available {
-		copyTypedField[bool](unsafe.Pointer(source), unsafe.Pointer(target), layout.denyParallel)
+		copyDenyParallelField(unsafe.Pointer(source), unsafe.Pointer(target), layout.denyParallel)
 	}
 	if layout.tstate.available {
 		copyWordField(unsafe.Pointer(source), unsafe.Pointer(target), layout.tstate)
@@ -688,7 +688,9 @@ func copyTestWithoutParentReflect(source *testing.T, target *testing.T) {
 	_ = copyFieldUsingPointers[context.Context](source, target, "ctx")
 	_ = copyFieldUsingPointers[context.CancelFunc](source, target, "cancelCtx")
 
-	_ = copyFieldUsingPointers[bool](source, target, "denyParallel")
+	if field, ok := denyParallelField(reflect.TypeFor[testing.T]()); ok && field.available {
+		copyDenyParallelField(unsafe.Pointer(source), unsafe.Pointer(target), field)
+	}
 	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "tstate") // For running tests and subtests.
 }
 

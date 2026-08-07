@@ -252,7 +252,7 @@ func TestBuildOTLPMetricsRequestMultipleServices(t *testing.T) {
 // ---- Resource attributes ----
 
 func TestBuildMetricsResourceSDKAttributes(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, false, "")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "")
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "datadog", m["telemetry.sdk.name"])
 	assert.Equal(t, "go", m["telemetry.sdk.language"])
@@ -260,7 +260,7 @@ func TestBuildMetricsResourceSDKAttributes(t *testing.T) {
 }
 
 func TestBuildMetricsResourceServiceIdentity(t *testing.T) {
-	res := buildMetricsResource(makePayload("my-svc", "prod", "2.1.0", nil), false, false, "")
+	res := buildMetricsResource(makePayload("my-svc", "prod", "2.1.0", nil), false, "")
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "my-svc", m["service.name"])
 	assert.Equal(t, "prod", m["deployment.environment.name"])
@@ -268,7 +268,7 @@ func TestBuildMetricsResourceServiceIdentity(t *testing.T) {
 }
 
 func TestBuildMetricsResourceServiceIdentityOmitsEmptyEnvVer(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, false, "")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "")
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "svc", m["service.name"])
 	assert.NotContains(t, m, "deployment.environment.name")
@@ -276,44 +276,33 @@ func TestBuildMetricsResourceServiceIdentityOmitsEmptyEnvVer(t *testing.T) {
 }
 
 func TestBuildMetricsResourceHostnameOmitted(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, false, "")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "")
 	assert.NotContains(t, kvAttrsToMap(res.Attributes), "host.name")
 }
 
-func TestBuildMetricsResourceProcessTagsDefaultMode(t *testing.T) {
+func TestBuildMetricsResourceProcessTags(t *testing.T) {
 	payload := makePayload("svc", "", "", nil)
 	payload.ProcessTags = "entrypoint.name:myapp,entrypoint.type:binary"
-	res := buildMetricsResource(payload, false /* otelMode */, false, "")
+	res := buildMetricsResource(payload, false, "")
 	values := kvArrayValue(res.Attributes, "datadog.process_tags")
 	assert.ElementsMatch(t, []string{"entrypoint.name:myapp", "entrypoint.type:binary"}, values)
 }
 
-func TestBuildMetricsResourceRuntimeIDDefaultMode(t *testing.T) {
+func TestBuildMetricsResourceRuntimeID(t *testing.T) {
 	payload := makePayload("svc", "", "", nil)
 	payload.RuntimeID = "abc-123"
-	res := buildMetricsResource(payload, false /* otelMode */, false, "")
+	res := buildMetricsResource(payload, false, "")
 	assert.Equal(t, "abc-123", kvAttrsToMap(res.Attributes)["datadog.runtime_id"])
 }
 
 func TestBuildMetricsResourceNoRuntimeIDWhenEmpty(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, false, "")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "")
 	assert.NotContains(t, kvAttrsToMap(res.Attributes), "datadog.runtime_id")
-}
-
-func TestBuildMetricsResourceOtelModeSuppressesDatadogAttrs(t *testing.T) {
-	// OTel mode must not emit any datadog.* resource attributes (process tags, runtime ID, etc.).
-	payload := makePayload("svc", "", "", nil)
-	payload.ProcessTags = "entrypoint.name:myapp"
-	payload.RuntimeID = "abc-123"
-	res := buildMetricsResource(payload, true /* otelMode */, false, "")
-	m := kvAttrsToMap(res.Attributes)
-	assert.NotContains(t, m, "datadog.process_tags")
-	assert.NotContains(t, m, "datadog.runtime_id")
 }
 
 // ---- Data-point attributes ----
 
-func TestDataPointAttributesOTelMode(t *testing.T) {
+func TestDataPointAttributesIncludeOTelAndDatadogAttributes(t *testing.T) {
 	gs := &pb.ClientGroupedStats{
 		Service:        "api",
 		Name:           "web.request",
@@ -322,14 +311,16 @@ func TestDataPointAttributesOTelMode(t *testing.T) {
 		SpanKind:       "server",
 		HTTPMethod:     "GET",
 		HTTPStatusCode: 200,
+		Hits:           1,
 		TopLevelHits:   1,
 		IsTraceRoot:    pb.Trilean_TRUE,
 		AdditionalMetricTags: []string{
 			"customer.tier:gold",
-			"datadog.custom:hidden",
+			"datadog.custom:visible",
 		},
 	}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
+	attrs := buildDataPointAttributes(gs, false)
+	m := kvAttrsToMap(attrs)
 	assert.Equal(t, "/users", m["span.name"])
 	assert.Equal(t, "SPAN_KIND_SERVER", m["span.kind"])
 	assert.Equal(t, "GET", m["http.request.method"])
@@ -337,12 +328,14 @@ func TestDataPointAttributesOTelMode(t *testing.T) {
 	assert.Equal(t, "STATUS_CODE_OK", m["status.code"])
 	assert.Equal(t, "api", m["service.name"])
 	assert.Equal(t, "gold", m["customer.tier"])
-	for key := range m {
-		assert.False(t, isDatadogAttribute(key), "unexpected Datadog attribute %q", key)
-	}
+	assert.Equal(t, "web.request", m["datadog.operation.name"])
+	assert.Equal(t, "web", m["datadog.span.type"])
+	assert.Equal(t, "visible", m["datadog.custom"])
+	assertOTLPBoolAttribute(t, attrs, "datadog.span.top_level", true)
+	assertOTLPBoolAttribute(t, attrs, "datadog.is_trace_root", true)
 }
 
-func TestDataPointAttributesDefaultMode(t *testing.T) {
+func TestDataPointAttributesDatadogAttributes(t *testing.T) {
 	gs := &pb.ClientGroupedStats{
 		Name:         "web.request",
 		Resource:     "/users",
@@ -350,7 +343,7 @@ func TestDataPointAttributesDefaultMode(t *testing.T) {
 		Hits:         1,
 		TopLevelHits: 1,
 	}
-	attrs := buildDataPointAttributes(gs, false, false /* default mode */)
+	attrs := buildDataPointAttributes(gs, false)
 	m := kvAttrsToMap(attrs)
 	assert.Equal(t, "web.request", m["datadog.operation.name"])
 	assert.Equal(t, "web", m["datadog.span.type"])
@@ -360,23 +353,23 @@ func TestDataPointAttributesDefaultMode(t *testing.T) {
 func TestDataPointAttributesTopLevelFalse(t *testing.T) {
 	t.Run("no top-level spans in group", func(t *testing.T) {
 		gs := &pb.ClientGroupedStats{Resource: "child-resource", Hits: 1, TopLevelHits: 0}
-		attrs := buildDataPointAttributes(gs, false, false)
+		attrs := buildDataPointAttributes(gs, false)
 		assertOTLPBoolAttribute(t, attrs, "datadog.span.top_level", false)
 	})
 	t.Run("mixed group conservatively non-top-level", func(t *testing.T) {
 		gs := &pb.ClientGroupedStats{Resource: "mixed", Hits: 10, TopLevelHits: 5}
-		attrs := buildDataPointAttributes(gs, false, false)
+		attrs := buildDataPointAttributes(gs, false)
 		assertOTLPBoolAttribute(t, attrs, "datadog.span.top_level", false)
 	})
 }
 
 func TestDataPointAttributesStatusCode(t *testing.T) {
 	gs := &pb.ClientGroupedStats{Resource: "/ok"}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false /* isError */, true))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false /* isError */))
 	assert.Equal(t, "STATUS_CODE_OK", m["status.code"])
 
 	gs = &pb.ClientGroupedStats{Resource: "/err"}
-	m = kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */, true))
+	m = kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */))
 	assert.Equal(t, "STATUS_CODE_ERROR", m["status.code"])
 }
 
@@ -391,7 +384,7 @@ func TestDataPointAttributesSpanKind(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			gs := &pb.ClientGroupedStats{SpanKind: tc.spanKind}
-			m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+			m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 			assert.Equal(t, tc.want, m["span.kind"])
 		})
 	}
@@ -399,19 +392,19 @@ func TestDataPointAttributesSpanKind(t *testing.T) {
 
 func TestDataPointAttributesIsTraceRoot(t *testing.T) {
 	gs := &pb.ClientGroupedStats{Resource: "root", IsTraceRoot: pb.Trilean_TRUE}
-	attrs := buildDataPointAttributes(gs, false, false /* default mode */)
+	attrs := buildDataPointAttributes(gs, false)
 	assertOTLPBoolAttribute(t, attrs, "datadog.is_trace_root", true)
 
 	gs = &pb.ClientGroupedStats{Resource: "child", IsTraceRoot: pb.Trilean_FALSE}
-	attrs = buildDataPointAttributes(gs, false, false)
+	attrs = buildDataPointAttributes(gs, false)
 	assertOTLPBoolAttribute(t, attrs, "datadog.is_trace_root", false)
 
 	gs = &pb.ClientGroupedStats{Resource: "unknown", IsTraceRoot: pb.Trilean_NOT_SET}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 	assert.NotContains(t, m, "datadog.is_trace_root")
 
-	gs = &pb.ClientGroupedStats{Resource: "root", IsTraceRoot: pb.Trilean_TRUE}
-	m = kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
+	gs = &pb.ClientGroupedStats{Resource: "invalid", IsTraceRoot: pb.Trilean(99)}
+	m = kvAttrsToMap(buildDataPointAttributes(gs, false))
 	assert.NotContains(t, m, "datadog.is_trace_root")
 }
 
@@ -427,15 +420,12 @@ func TestDataPointAttributesAdditionalMetricTags(t *testing.T) {
 		},
 	}
 
-	defaultAttrs := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
-	assert.Equal(t, "visible-by-default", defaultAttrs["datadog.custom"])
-
-	otelAttrs := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
-	assert.Equal(t, "gold", otelAttrs["customer.tier"])
-	assert.Equal(t, "us-east-1", otelAttrs["region"])
-	assert.NotContains(t, otelAttrs, "datadog.custom")
-	assert.NotContains(t, otelAttrs, "malformed")
-	assert.NotContains(t, otelAttrs, "empty")
+	attrs := kvAttrsToMap(buildDataPointAttributes(gs, false))
+	assert.Equal(t, "gold", attrs["customer.tier"])
+	assert.Equal(t, "us-east-1", attrs["region"])
+	assert.Equal(t, "visible-by-default", attrs["datadog.custom"])
+	assert.NotContains(t, attrs, "malformed")
+	assert.NotContains(t, attrs, "empty")
 }
 
 func TestDataPointAttributesHTTPRoute(t *testing.T) {
@@ -443,14 +433,14 @@ func TestDataPointAttributesHTTPRoute(t *testing.T) {
 		Resource:     "web.request",
 		HTTPEndpoint: "/users/{id}",
 	}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 	assert.Equal(t, "/users/{id}", m["http.route"])
 }
 
 func TestDataPointAttributesOptionalFieldsAbsentWhenUnset(t *testing.T) {
 	// Optional OTel attributes are omitted when the corresponding source field is zero/empty.
 	gs := &pb.ClientGroupedStats{Resource: "op"}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 	assert.NotContains(t, m, "http.route")
 	assert.NotContains(t, m, "rpc.response.status_code")
 }
@@ -460,11 +450,8 @@ func TestDataPointAttributesPeerTags(t *testing.T) {
 		Resource: "postgres.query",
 		PeerTags: []string{"db.hostname:prod-db-1"},
 	}
-	values := kvArrayValue(buildDataPointAttributes(gs, false, false /* default mode */), "datadog.peer_tags")
+	values := kvArrayValue(buildDataPointAttributes(gs, false), "datadog.peer_tags")
 	assert.Contains(t, values, "db.hostname:prod-db-1")
-
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
-	assert.NotContains(t, m, "datadog.peer_tags")
 }
 
 func TestDataPointAttributesGRPCStatusCode(t *testing.T) {
@@ -475,50 +462,58 @@ func TestDataPointAttributesGRPCStatusCode(t *testing.T) {
 		"14": "UNAVAILABLE",
 	} {
 		gs := &pb.ClientGroupedStats{Resource: "grpc.request", GRPCStatusCode: code}
-		m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+		m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 		assert.Equal(t, name, m["rpc.response.status_code"], "code %s", code)
 	}
 	// Unknown numeric code: keep as integer (kvAttrsToMap renders it as a decimal string).
 	gs := &pb.ClientGroupedStats{Resource: "grpc.request", GRPCStatusCode: "99"}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 	assert.Equal(t, "99", m["rpc.response.status_code"])
 }
 
 func TestDataPointAttributesSyntheticsOrigin(t *testing.T) {
-	// Synthetics=true emits datadog.origin=synthetics in default mode.
 	gs := &pb.ClientGroupedStats{Resource: "web.request", Synthetics: true}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false /* default mode */))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 	assert.Equal(t, "synthetics", m["datadog.origin"])
 }
 
 func TestDataPointAttributesSyntheticsOriginOmitted(t *testing.T) {
-	t.Run("otel mode", func(t *testing.T) {
-		gs := &pb.ClientGroupedStats{Resource: "web.request", Synthetics: true}
-		m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
-		assert.NotContains(t, m, "datadog.origin")
-	})
-	t.Run("synthetics false", func(t *testing.T) {
-		gs := &pb.ClientGroupedStats{Resource: "web.request", Synthetics: false}
-		m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
-		assert.NotContains(t, m, "datadog.origin")
-	})
+	gs := &pb.ClientGroupedStats{Resource: "web.request", Synthetics: false}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false))
+	assert.NotContains(t, m, "datadog.origin")
 }
 
 func TestDataPointAttributesServiceName(t *testing.T) {
 	t.Run("non-default service carries service.name on data point", func(t *testing.T) {
 		gs := &pb.ClientGroupedStats{Service: "postgres", Resource: "SELECT"}
-		m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
+		m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 		assert.Equal(t, "postgres", m["service.name"])
 	})
 	t.Run("service matching the default/global service is still emitted", func(t *testing.T) {
 		gs := &pb.ClientGroupedStats{Service: "my-app", Resource: "web.request"}
-		m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
+		m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 		assert.Equal(t, "my-app", m["service.name"])
 	})
-	t.Run("emitted in OTel-semantics mode too", func(t *testing.T) {
-		gs := &pb.ClientGroupedStats{Service: "my-app", Resource: "web.request"}
-		m := kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
-		assert.Equal(t, "my-app", m["service.name"])
+}
+
+func TestDataPointAttributesServiceSource(t *testing.T) {
+	t.Run("present as string", func(t *testing.T) {
+		attrs := buildDataPointAttributes(&pb.ClientGroupedStats{ServiceSource: "manual"}, false)
+		for _, attr := range attrs {
+			if attr.Key != "datadog.svc_src" {
+				continue
+			}
+			value, ok := attr.Value.Value.(*otlpcommon.AnyValue_StringValue)
+			require.True(t, ok, "datadog.svc_src must use an OTLP string value")
+			assert.Equal(t, "manual", value.StringValue)
+			return
+		}
+		require.Fail(t, "missing datadog.svc_src attribute")
+	})
+
+	t.Run("absent when empty", func(t *testing.T) {
+		attrs := kvAttrsToMap(buildDataPointAttributes(&pb.ClientGroupedStats{}, false))
+		assert.NotContains(t, attrs, "datadog.svc_src")
 	})
 }
 
@@ -545,7 +540,7 @@ func TestDataPointCountEqualsBucketCountSum(t *testing.T) {
 }
 
 func TestBuildMetricsResourceHostnamePresent(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, true, "myhost")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), true, "myhost")
 	assert.Equal(t, "myhost", kvAttrsToMap(res.Attributes)["host.name"])
 }
 
@@ -579,6 +574,6 @@ func TestDataPointAttributesGRPCStatusCodeStringFallback(t *testing.T) {
 	// Non-numeric GRPCStatusCode is malformed; it is dropped rather than emitting a
 	// value that would change rpc.response.status_code's type across data points.
 	gs := &pb.ClientGroupedStats{Resource: "grpc.request", GRPCStatusCode: "CUSTOM_STATUS"}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false))
 	assert.NotContains(t, m, "rpc.response.status_code")
 }
