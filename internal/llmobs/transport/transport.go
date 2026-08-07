@@ -325,6 +325,12 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		if code >= 200 && code <= 299 {
 			b, readErr := io.ReadAll(io.LimitReader(resp.Body, lim.maxResponseSize+1))
 			if readErr != nil {
+				last = requestResult{
+					statusCode: code,
+					attempts:   attempts,
+					body:       b,
+					retriable:  ctx.Err() == nil,
+				}
 				return requestResult{}, fmt.Errorf("failed to read response body: %w", readErr)
 			}
 			if int64(len(b)) > lim.maxResponseSize {

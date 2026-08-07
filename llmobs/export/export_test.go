@@ -333,7 +333,7 @@ func TestNewSpanEvent_BuildsCanonicalEvent(t *testing.T) {
 	assert.Equal(t, "undefined", event.ParentID)
 	assert.Equal(t, "llm", event.Name)
 	assert.Equal(t, start.UnixNano(), event.StartNS)
-	assert.Equal(t, 1500*time.Millisecond, event.Duration)
+	assert.Equal(t, (1500 * time.Millisecond).Nanoseconds(), event.Duration)
 	assert.Equal(t, export.StatusError, event.Status)
 	assert.Equal(t, "trace", event.DDAttributes.TraceID)
 	assert.Equal(t, "span", event.DDAttributes.SpanID)
@@ -488,7 +488,7 @@ func TestSubmitSpans_AcceptsExistingSpanRepresentation(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
 		TraceID:  "trace",
 		SpanID:   "span",
 		ParentID: "parent",
@@ -497,7 +497,7 @@ func TestSubmitSpans_AcceptsExistingSpanRepresentation(t *testing.T) {
 		Duration: 456,
 		Status:   export.StatusError,
 		Meta: map[string]any{
-			"span.kind":     string(export.KindLLM),
+			"span.kind":     export.KindLLM,
 			"input":         map[string]any{"value": "existing input"},
 			"error.message": "existing error",
 			"error.type":    "existing.type",
@@ -513,6 +513,8 @@ func TestSubmitSpans_AcceptsExistingSpanRepresentation(t *testing.T) {
 		}},
 	}})
 	require.NoError(t, err)
+	require.Equal(t, 1, res.Sent)
+	require.Len(t, fake.captured(), 1)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
 	assert.Equal(t, float64(123), span["start_ns"])
@@ -1500,8 +1502,15 @@ func TestSubmitSpans_AccountingCoversWholeInputOnCancel(t *testing.T) {
 	assert.Equal(t, len(events), res.Sent+res.Failed+res.Dropped)
 }
 
-func TestNewClient_RejectsBadAgentURLScheme(t *testing.T) {
-	for _, bad := range []string{"htt://localhost:8126", "ftp://host", "localhost:8126"} {
+func TestNewClient_RejectsInvalidAgentURL(t *testing.T) {
+	for _, bad := range []string{
+		"htt://localhost:8126",
+		"ftp://host",
+		"localhost:8126",
+		"http://localhost:8126?x=1",
+		"http://localhost:8126?",
+		"http://localhost:8126#fragment",
+	} {
 		_, err := export.NewClient("app", export.WithAgentURL(bad))
 		assert.Error(t, err, "agent URL %q should be rejected", bad)
 	}

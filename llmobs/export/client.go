@@ -174,6 +174,9 @@ func parseAgentURL(agentURL string) (*url.URL, error) {
 	default:
 		return nil, fmt.Errorf("llmobs/export: invalid agent URL %q: scheme must be http, https, or unix", agentURL)
 	}
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return nil, fmt.Errorf("llmobs/export: invalid agent URL %q: query and fragment are not allowed", agentURL)
+	}
 	return u, nil
 }
 

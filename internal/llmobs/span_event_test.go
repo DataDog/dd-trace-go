@@ -31,6 +31,9 @@ func TestSpanEventKind(t *testing.T) {
 	assert.Equal(t, llmobs.SpanKindLLM, llmobs.SpanEventKind(&transport.LLMObsSpanEvent{
 		Meta: map[string]any{"span.kind": "llm"},
 	}))
+	assert.Equal(t, llmobs.SpanKindLLM, llmobs.SpanEventKind(&transport.LLMObsSpanEvent{
+		Meta: map[string]any{"span.kind": transport.SpanKindLLM},
+	}))
 	assert.Empty(t, llmobs.SpanEventKind(&transport.LLMObsSpanEvent{}))
 	assert.Empty(t, llmobs.SpanEventKind(&transport.LLMObsSpanEvent{
 		Meta: map[string]any{"span.kind": 1},
@@ -104,12 +107,18 @@ func TestDropSpanEventIO(t *testing.T) {
 	assert.False(t, llmobs.DropSpanEventIO(nil))
 	assert.False(t, llmobs.DropSpanEventIO(&transport.LLMObsSpanEvent{}))
 
-	event := &transport.LLMObsSpanEvent{Meta: map[string]any{
-		"input":  map[string]any{"value": "in"},
-		"output": map[string]any{"value": "out"},
-	}}
+	event := &transport.LLMObsSpanEvent{
+		Meta: map[string]any{
+			"input":  map[string]any{"value": "in"},
+			"output": map[string]any{"value": "out"},
+		},
+		CollectionErrors: []string{"existing"},
+	}
 	assert.True(t, llmobs.DropSpanEventIO(event))
-	assert.Equal(t, []string{"dropped_io"}, event.CollectionErrors)
+	assert.Equal(t, []string{"existing", "dropped_io"}, event.CollectionErrors)
 	assert.NotEqual(t, map[string]any{"value": "in"}, event.Meta["input"])
 	assert.NotEqual(t, map[string]any{"value": "out"}, event.Meta["output"])
+
+	assert.True(t, llmobs.DropSpanEventIO(event))
+	assert.Equal(t, []string{"existing", "dropped_io"}, event.CollectionErrors)
 }

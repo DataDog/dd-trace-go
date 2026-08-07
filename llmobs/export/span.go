@@ -74,7 +74,7 @@ func WithTiming(start time.Time, duration time.Duration) SpanEventOption {
 		} else {
 			event.StartNS = start.UnixNano()
 		}
-		event.Duration = duration
+		event.Duration = duration.Nanoseconds()
 	}
 }
 

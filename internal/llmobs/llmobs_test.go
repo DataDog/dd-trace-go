@@ -406,7 +406,7 @@ func TestStartSpan(t *testing.T) {
 		l0 := coll.RequireSpan(t, "llm")
 		assert.Equal(t, "llm", l0.Name)
 		assert.Equal(t, customStartTime.UnixNano(), l0.StartNS)
-		assert.Equal(t, customFinishTime.Sub(customStartTime), l0.Duration)
+		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), l0.Duration)
 	})
 	t.Run("distributed-context-propagation-agent-attribution", func(t *testing.T) {
 		_, coll, ll := testTracer(t)
@@ -660,6 +660,14 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
 	})
 
+}
+
+func TestCollectorSpanFieldCompatibility(t *testing.T) {
+	var duration int64 = 123
+	var status string = "ok"
+	span := llmobstest.LLMObsSpan{Duration: duration, Status: status}
+	assert.Equal(t, duration, span.Duration)
+	assert.Equal(t, status, span.Status)
 }
 
 func TestToolVersionPropagation(t *testing.T) {
