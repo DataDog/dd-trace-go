@@ -2701,15 +2701,11 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	// into that agent's advertised capabilities, so leave those alone —
 	// otherwise benchmarks that stand up a /v1.0/traces mock would silently
 	// measure the v0.4 encoder instead.
-	//
-	// Pin the requested protocol too, not just the capability bit:
-	// v1ProtocolAvailable is now refreshed on every /info poll, so a lone
-	// capability override would expire after one poll interval.
 	if u := tracer.config.internalConfig.AgentURL(); u == nil || u.String() == defaultURL {
-		af.v1ProtocolAvailable = false
-		tracer.config.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCode)
+		af = pinTestTracerToV04(tracer, af)
+	} else {
+		tracer.config.agent.store(af)
 	}
-	tracer.config.agent.store(af)
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		tracer.reportHealthMetrics()
@@ -2739,6 +2735,29 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		// clear any service name that was set: we want the state to be the same as startup
 		globalconfig.SetServiceName("")
 	}, nil
+}
+
+// pinTestTracerToV04 forces tr onto the v0.4 trace protocol, in both config and the
+// writer's already-built payload. Only startTestTracer calls this, and only when the
+// caller did not pick an explicit agent (see there for why).
+//
+// newTracer may have already built the writer's initial payload using whatever
+// protocol was in effect at construction time — v1, if the default address happens to
+// have a real, v1-capable Agent listening (a developer's local Agent). Overriding
+// config alone does not retroactively change an already-built payload: only an
+// empty-payload flush re-reads the effective protocol (see agentTraceWriter.flush), so
+// trigger one here rather than leaving the first real trace to encode for whatever
+// protocol construction happened to pick.
+//
+// Pin the requested protocol too, not just the capability bit: v1ProtocolAvailable is
+// refreshed on every /info poll, so a lone capability override would expire after one
+// poll interval.
+func pinTestTracerToV04(tr *tracer, af agentFeatures) agentFeatures {
+	af.v1ProtocolAvailable = false
+	tr.config.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCode)
+	tr.config.agent.store(af)
+	tr.traceWriter.flush()
+	return af
 }
 
 // testPrioritySampler extracts the *prioritySampler from a test tracer.
