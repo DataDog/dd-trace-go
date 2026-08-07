@@ -148,6 +148,7 @@ type processRetryCoordinator struct {
 	failfastEnabled  func() bool
 	attemptRunner    deferredProcessRetryAttemptRunner
 	batchRunner      deferredProcessRetryBatchRunner
+	nativeRunner     deferredProcessRetryBatchRunner
 	nativeTests      []processRetryBatchTestConfig
 	nativeTestIndex  map[string]int
 	nativeTestOrder  func() []string
@@ -219,6 +220,7 @@ func newProcessRetryCoordinator(failfastEnabled func() bool, attemptRunner defer
 		failfastEnabled: failfastEnabled,
 		attemptRunner:   attemptRunner,
 		batchRunner:     runDeferredQuarantinedProcessRetryBatch,
+		nativeRunner:    runDeferredNativeScheduledProcessRetryBatch,
 	}
 }
 
@@ -445,16 +447,24 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 		results := make(map[*deferredProcessRetryGroup]processRetryAttemptResult, len(groups))
 		pending := make([]*deferredProcessRetryGroup, 0, len(groups))
 		native := make([]*deferredProcessRetryGroup, 0, len(groups))
+		missingNative := make([]*deferredProcessRetryGroup, 0, len(groups))
 		for _, group := range groups {
 			if group.firstAttemptResult == nil {
 				pending = append(pending, group)
 				continue
 			}
-			results[group] = *group.firstAttemptResult
 			native = append(native, group)
+			if errors.Is(group.firstAttemptResult.Err, errProcessRetryResultMissing) {
+				missingNative = append(missingNative, group)
+				continue
+			}
+			results[group] = *group.firstAttemptResult
 		}
 		if len(pending) > 0 {
 			maps.Copy(results, c.batchRunner(context.Background(), pending))
+		}
+		if len(missingNative) > 0 {
+			maps.Copy(results, c.nativeRunner(context.Background(), missingNative))
 		}
 		if processAttempt, ok := c.nativeScheduledBatchResult(phaseID); ok {
 			preserveProcessRetryBatchFailure(processAttempt, native, results)

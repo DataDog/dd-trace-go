@@ -77,6 +77,7 @@ func TestProcessRetryNativeScheduledChildConfigUsesBatchIdentityAndGates(t *test
 	require.Zero(t, child.InvocationOrdinal)
 	require.Equal(t, processRetryBatchGatePath(root.ResultPath, 2), child.nativeGatePath)
 	require.Equal(t, processRetryBatchParallelPath(root.ResultPath, 2), child.nativeParallelPath)
+	require.Equal(t, processRetryBatchEnumerationPath(root.ResultPath), child.nativeEnumerationPath)
 }
 
 func TestProcessRetryBatchInvocationStateRoundTrip(t *testing.T) {

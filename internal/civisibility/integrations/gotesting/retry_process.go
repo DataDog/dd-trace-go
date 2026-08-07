@@ -122,6 +122,7 @@ type processRetryChildConfig struct {
 	batchCoverageFinalizer *processRetryBatchCoverageFinalizer
 	nativeGatePath         string
 	nativeParallelPath     string
+	nativeEnumerationPath  string
 	tempDir                string
 	controlConfig          processRetryControlConfig
 	controlConfigLoaded    bool
@@ -3507,6 +3508,15 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			// the other process to enumerate the next test.
 			group.rootParallelAnnounce = func() error {
 				return os.WriteFile(cfg.nativeParallelPath, nil, processRetryBatchManifestMode)
+			}
+			if !cfg.CollectPerTestCoverage {
+				group.rootParallelBridge = func() error {
+					deadline, deadlineOK := time.Time{}, false
+					if cfg.ParentDeadlineOK {
+						deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
+					}
+					return waitForProcessRetryBatchSignal(cfg.nativeEnumerationPath, deadline, deadlineOK)
+				}
 			}
 		} else if control != nil {
 			group.rootParallelBridge = control.childRootParallelBridge

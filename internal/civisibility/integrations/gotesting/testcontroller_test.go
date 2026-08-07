@@ -85,7 +85,7 @@ func TestMain(m *testing.M) {
 	// We need to spawn separated test process for each scenario
 	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection", "TestFlakyTestRetriesWithTransientSettingsFailure"}
 	if quarantinedRaceScenarioAvailable() {
-		scenarios = append(scenarios, "TestQuarantinedRace", "TestQuarantinedRaceCustomTestMain")
+		scenarios = append(scenarios, "TestQuarantinedRace", "TestQuarantinedCleanupPanic", "TestQuarantinedRaceCustomTestMain")
 	}
 	if coverageModeSupportsITRBackfill() {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
@@ -127,6 +127,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv("TestQuarantinedRace", false) {
 		fmt.Printf(scenarioStarted, "TestQuarantinedRace")
 		runQuarantinedRaceTests(m, "process")
+	} else if internal.BoolEnv("TestQuarantinedCleanupPanic", false) {
+		fmt.Printf(scenarioStarted, "TestQuarantinedCleanupPanic")
+		runQuarantinedRaceTests(m, "process")
 	} else if internal.BoolEnv("TestQuarantinedRaceCustomTestMain", false) {
 		fmt.Printf(scenarioStarted, "TestQuarantinedRaceCustomTestMain")
 		runQuarantinedRaceCustomTestMainTests(m)
@@ -166,8 +169,13 @@ func TestMain(m *testing.M) {
 					_ = os.RemoveAll(pidDir)
 					continue
 				}
-				if v == "TestQuarantinedRace" {
+				if v == "TestQuarantinedRace" || v == "TestQuarantinedCleanupPanic" {
 					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|TestQuarantinedSerialOrderProducer|TestQuarantinedInvocationStateMutator|TestQuarantinedInvocationStateSecondMutator|TestQuarantinedSerialOrderConsumer|Test_Foo)$"
+					orderedTests := []string{"TestQuarantinedSerialOrderProducer", "Test_Foo", "TestQuarantinedInvocationStateMutator", "TestQuarantinedRace", "TestQuarantinedInvocationStateSecondMutator", "TestQuarantinedRaceSecond", "TestQuarantinedSerialOrderConsumer"}
+					if v == "TestQuarantinedCleanupPanic" {
+						runFilter = "^(TestQuarantinedCleanupPanic|TestQuarantinedAfterCleanupPanic)$"
+						orderedTests = []string{"TestQuarantinedCleanupPanic", "TestQuarantinedAfterCleanupPanic"}
+					}
 					pidDir, err := os.MkdirTemp("", "dd-quarantined-race-pids-*")
 					if err != nil {
 						panic(err)
@@ -194,8 +202,7 @@ func TestMain(m *testing.M) {
 							panic(err)
 						}
 					}
-					shuffleSeed := testControllerShuffleSeedWithOrder(*tests, "TestQuarantinedSerialOrderProducer",
-						"Test_Foo", "TestQuarantinedInvocationStateMutator", "TestQuarantinedRace", "TestQuarantinedInvocationStateSecondMutator", "TestQuarantinedRaceSecond", "TestQuarantinedSerialOrderConsumer")
+					shuffleSeed := testControllerShuffleSeedWithOrder(*tests, orderedTests...)
 					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.failfast=true", "-test.parallel=2", "-test.shuffle="+strconv.FormatInt(shuffleSeed, 10), "-test.timeout=30s")
 					if hadCoverageEnabled {
 						_ = os.Setenv(quarantinedRaceCoverageEnabledEnv, previousCoverageEnabled)

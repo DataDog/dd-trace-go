@@ -1256,6 +1256,34 @@ func TestDeferredProcessRetryUsesNativeScheduledFirstAttemptResult(t *testing.T)
 	require.Equal(t, processRetryStatusPass, recorder.tests[0].status)
 }
 
+func TestDeferredProcessRetryRelaunchesMissingNativeFirstAttemptsTogether(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	a := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
+	b := newDeferredQuarantinedFirstAttemptGroupForTesting("TestB", 1, 2)
+	missing := processRetryAttemptResult{Err: errProcessRetryResultMissing, ExitCode: processRetryExitCodeUnset}
+	a.firstAttemptResult = &missing
+	b.firstAttemptResult = &missing
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		t.Fatal("missing native attempts used the ordinary batch runner")
+		return nil
+	}
+	coordinator.nativeRunner = func(_ context.Context, groups []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		require.Equal(t, []*deferredProcessRetryGroup{a, b}, groups)
+		return map[*deferredProcessRetryGroup]processRetryAttemptResult{
+			a: fixedProcessRetryAttempt(processRetryStatusPass, 1),
+			b: fixedProcessRetryAttempt(processRetryStatusPass, 2),
+		}
+	}
+
+	remaining, batchFailed := coordinator.drainDeferredFirstAttempts([]*deferredProcessRetryGroup{a, b})
+
+	require.False(t, batchFailed)
+	require.Empty(t, remaining)
+	require.Len(t, recorder.tests, 2)
+}
+
 func TestDeferredProcessRetryFirstAttemptDrainReturnsOriginalQueueWhenUnused(t *testing.T) {
 	coordinator := newProcessRetryCoordinatorForTesting(false)
 	queue := []*deferredProcessRetryGroup{{invocationOrdinal: 1}, {invocationOrdinal: 2}}

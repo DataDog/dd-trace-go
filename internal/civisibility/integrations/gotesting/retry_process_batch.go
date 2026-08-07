@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,6 +93,10 @@ func processRetryBatchParallelPath(resultPath string, index int) string {
 	return filepath.Join(filepath.Dir(resultPath), fmt.Sprintf("batch-parallel-%06d", index))
 }
 
+func processRetryBatchEnumerationPath(resultPath string) string {
+	return filepath.Join(filepath.Dir(resultPath), "batch-parent-enumerated")
+}
+
 func processRetryBatchChildConfig(root processRetryChildConfig, index int, test processRetryBatchTestConfig) processRetryChildConfig {
 	child := processRetryChildConfig{
 		ResultPath:             processRetryBatchResultPath(root.ResultPath, index),
@@ -118,6 +123,7 @@ func processRetryBatchChildConfig(root processRetryChildConfig, index int, test 
 		child.InvocationOrdinal = 0
 		child.nativeGatePath = processRetryBatchGatePath(root.ResultPath, index)
 		child.nativeParallelPath = processRetryBatchParallelPath(root.ResultPath, index)
+		child.nativeEnumerationPath = processRetryBatchEnumerationPath(root.ResultPath)
 	}
 	return child
 }
@@ -137,6 +143,20 @@ func waitForProcessRetryBatchGate(path string, deadline time.Time, deadlineOK bo
 		}
 		if deadlineOK && !time.Now().Before(deadline) {
 			return processRetryBatchInvocationState{}, false, context.DeadlineExceeded
+		}
+		time.Sleep(processRetryBatchPollInterval)
+	}
+}
+
+func waitForProcessRetryBatchSignal(path string, deadline time.Time, deadlineOK bool) error {
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if deadlineOK && !time.Now().Before(deadline) {
+			return context.DeadlineExceeded
 		}
 		time.Sleep(processRetryBatchPollInterval)
 	}
@@ -396,6 +416,7 @@ type nativeScheduledProcessRetryBatch struct {
 	done       chan struct{}
 	cancel     context.CancelFunc
 	attempt    processRetryAttemptResult
+	signal     func() error
 }
 
 func (c *processRetryCoordinator) setNativeTestOrder(order func() []string) {
@@ -499,13 +520,17 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 		tempDir:           tempDir,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	resultRoot := filepath.Join(tempDir, "result.json")
 	batch := &nativeScheduledProcessRetryBatch{
 		rootCfg:    rootCfg,
 		batch:      batchConfig,
 		testIndex:  indexes,
-		resultRoot: filepath.Join(tempDir, "result.json"),
+		resultRoot: resultRoot,
 		done:       make(chan struct{}),
 		cancel:     cancel,
+		signal: sync.OnceValue(func() error {
+			return os.WriteFile(processRetryBatchEnumerationPath(resultRoot), nil, processRetryBatchManifestMode)
+		}),
 	}
 	if c.nativeBatches == nil {
 		c.nativeBatches = make(map[uint64]*nativeScheduledProcessRetryBatch)
@@ -528,12 +553,10 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferredProcessRetryGroup, t *testing.T) processRetryAttemptResult {
 	batch, index, err := c.startNativeScheduledBatch(group)
 	if err != nil {
-		now := time.Now()
-		return processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
+		return failedNativeScheduledAttempt(err)
 	}
 	if err := writeProcessRetryBatchInvocationState(processRetryBatchGatePath(batch.resultRoot, index), group.launchBaseline); err != nil {
-		now := time.Now()
-		return processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
+		return failedNativeScheduledAttempt(err)
 	}
 	expectedRoot := batch.rootCfg
 	expectedRoot.ResultPath = batch.resultRoot
@@ -541,22 +564,22 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 	expected := processRetryBatchChildConfig(expectedRoot, index, batch.batch.Tests[index])
 	parallelPath := processRetryBatchParallelPath(batch.resultRoot, index)
 	parallel := false
-	readAttempt := func() (processRetryAttemptResult, bool) {
+	readAttempt := func() (processRetryAttemptResult, error) {
 		result, timingOK, readErr := readProcessRetryResult(expected.ResultPath, expected)
 		if readErr != nil {
-			return processRetryAttemptResult{}, false
+			return processRetryAttemptResult{}, readErr
 		}
 		attempt := completedProcessRetryAttempt(result)
 		if timingOK {
 			attempt.StartTime = time.Unix(0, result.StartUnixNano)
 			attempt.FinishTime = time.Unix(0, result.FinishUnixNano)
 		}
-		return attempt, true
+		return attempt, nil
 	}
 	ticker := time.NewTicker(processRetryBatchPollInterval)
 	defer ticker.Stop()
 	for {
-		if attempt, ok := readAttempt(); ok {
+		if attempt, readErr := readAttempt(); readErr == nil {
 			return attempt
 		}
 		// Covered batch bodies stay serial because their counters are process-global;
@@ -565,12 +588,18 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 			if _, statErr := os.Stat(parallelPath); statErr == nil {
 				parallel = true
 				t.Parallel()
+				if err := batch.signal(); err != nil {
+					return failedNativeScheduledAttempt(err)
+				}
 			}
 		}
 		select {
 		case <-batch.done:
-			if attempt, ok := readAttempt(); ok {
+			if attempt, readErr := readAttempt(); readErr == nil {
 				return attempt
+			} else if errors.Is(readErr, errProcessRetryResultMissing) && deferredProcessRetryGlobalStopReason(batch.attempt) == "" {
+				now := time.Now()
+				return processRetryAttemptResult{Err: readErr, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
 			}
 			attempt := batch.attempt
 			attempt.Cleanup = nil
@@ -581,6 +610,11 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 			return processRetryAttemptResult{SetupFailure: true, Err: errProcessRetryShutdown, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
 		}
 	}
+}
+
+func failedNativeScheduledAttempt(err error) processRetryAttemptResult {
+	now := time.Now()
+	return processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
 }
 
 func (c *processRetryCoordinator) nativeScheduledBatchResult(phaseID uint64) (processRetryAttemptResult, bool) {
@@ -655,6 +689,13 @@ func runDeferredQuarantinedProcessRetryBatch(
 	return runDeferredQuarantinedProcessRetryBatchWithRunner(ctx, groups, runDeferredQuarantinedProcessRetryBatchOnce)
 }
 
+func runDeferredNativeScheduledProcessRetryBatch(
+	ctx context.Context,
+	groups []*deferredProcessRetryGroup,
+) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+	return runDeferredQuarantinedProcessRetryBatchWithRunner(ctx, groups, runDeferredNativeScheduledProcessRetryBatchOnce)
+}
+
 func runDeferredQuarantinedProcessRetryBatchWithRunner(
 	ctx context.Context,
 	groups []*deferredProcessRetryGroup,
@@ -712,27 +753,60 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 	ctx context.Context,
 	groups []*deferredProcessRetryGroup,
 ) (map[*deferredProcessRetryGroup]processRetryAttemptResult, map[*deferredProcessRetryGroup]processRetryAttemptResult) {
+	return runDeferredProcessRetryBatchOnce(ctx, groups, false)
+}
+
+func runDeferredNativeScheduledProcessRetryBatchOnce(
+	ctx context.Context,
+	groups []*deferredProcessRetryGroup,
+) (map[*deferredProcessRetryGroup]processRetryAttemptResult, map[*deferredProcessRetryGroup]processRetryAttemptResult) {
+	return runDeferredProcessRetryBatchOnce(ctx, groups, true)
+}
+
+func runDeferredProcessRetryBatchOnce(
+	ctx context.Context,
+	groups []*deferredProcessRetryGroup,
+	preserveNativeSchedule bool,
+) (map[*deferredProcessRetryGroup]processRetryAttemptResult, map[*deferredProcessRetryGroup]processRetryAttemptResult) {
 	completed := make(map[*deferredProcessRetryGroup]processRetryAttemptResult, len(groups))
 	missing := make(map[*deferredProcessRetryGroup]processRetryAttemptResult, len(groups))
 	if len(groups) == 0 {
 		return completed, missing
+	}
+	fail := func(err error) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		attempt := failedNativeScheduledAttempt(err)
+		for _, group := range groups {
+			missing[group] = attempt
+		}
+		return missing
 	}
 	first := groups[0]
 	batch := &processRetryBatchConfig{
 		Version:                processRetryBatchVersion,
 		Tests:                  make([]processRetryBatchTestConfig, 0, len(groups)),
 		CollectPerTestCoverage: coverage.CanCollectPerTestCoverage(),
+		PreserveNativeSchedule: preserveNativeSchedule,
+	}
+	if preserveNativeSchedule {
+		if state := currentITRState(); state != nil {
+			batch.ITRCoverageActive = state.coverageActive
+			batch.ImpactedTestsEnabled = state.settings != nil && state.settings.ImpactedTestsEnabled
+		}
 	}
 	var testManagementData *net.TestManagementTestsResponseDataModules
 	if settings := integrations.GetSettings(); settings != nil && settings.SubtestFeaturesEnabled {
 		testManagementData = integrations.GetTestManagementTestsData()
 	}
 	for _, group := range groups {
-		batch.Tests = append(batch.Tests, processRetryBatchTestConfig{
+		spec := processRetryBatchTestConfig{
 			TestName:          group.identity.FullName,
 			InvocationOrdinal: group.invocationOrdinal,
 			DisabledSubtests:  disabledProcessRetrySubtests(group.identity, testManagementData),
-		})
+		}
+		if preserveNativeSchedule {
+			spec.ITRSubtests = processRetryITRSubtests(group.identity, currentITRState(), testManagementData)
+		}
+		batch.Tests = append(batch.Tests, spec)
 	}
 	parentDeadline, parentDeadlineOK := earliestDeferredProcessRetryDeadline(groups)
 	rootCfg := processRetryChildConfig{
@@ -742,6 +816,23 @@ func runDeferredQuarantinedProcessRetryBatchOnce(
 		MRunEpoch:         first.mRunEpoch,
 		InvocationOrdinal: first.invocationOrdinal,
 		Batch:             batch,
+	}
+	if preserveNativeSchedule {
+		tempDir, err := os.MkdirTemp("", "dd-process-retry-native-*")
+		if err != nil {
+			return completed, fail(err)
+		}
+		defer func() { _ = os.RemoveAll(tempDir) }()
+		rootCfg.tempDir = tempDir
+		resultRoot := filepath.Join(tempDir, "result.json")
+		for index, group := range groups {
+			if err := writeProcessRetryBatchInvocationState(processRetryBatchGatePath(resultRoot, index), group.launchBaseline); err != nil {
+				return completed, fail(err)
+			}
+		}
+		if err := os.WriteFile(processRetryBatchEnumerationPath(resultRoot), nil, processRetryBatchManifestMode); err != nil {
+			return completed, fail(err)
+		}
 	}
 	processAttempt := runProcessRetryAttemptWithBaselineAndShutdown(
 		ctx,
