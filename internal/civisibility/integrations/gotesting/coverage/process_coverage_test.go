@@ -127,6 +127,38 @@ func TestProcessTestCoverageUsesTestCoverageCollector(t *testing.T) {
 	}, files)
 }
 
+func TestProcessTestCoverageSupportsNestedSerializedCollectors(t *testing.T) {
+	oldMode, oldTearDown := mode, tearDown
+	t.Cleanup(func() {
+		mode, tearDown = oldMode, oldTearDown
+	})
+	mode = "count"
+	counts := []int{0, 1, 2, 3}
+	var snapshots int
+	tearDown = func(path, _ string) (string, error) {
+		count := counts[snapshots]
+		snapshots++
+		return path, os.WriteFile(path, fmt.Appendf(nil, "mode: count\npkg/source.go:1.1,1.2 1 %d\n", count), 0o600)
+	}
+
+	outer := BeginProcessTestCoverage("pkg/outer_test.go")
+	require.NotNil(t, outer)
+	inner := BeginProcessTestCoverage("pkg/inner_test.go")
+	require.NotNil(t, inner)
+	innerFiles := inner.Finish()
+	outerFiles := outer.Finish()
+
+	require.Equal(t, 4, snapshots)
+	require.Equal(t, []ProcessTestCoverageFile{
+		{Name: "pkg/inner_test.go"},
+		{Name: "pkg/source.go", Bitmap: []byte{0x80}},
+	}, innerFiles)
+	require.Equal(t, []ProcessTestCoverageFile{
+		{Name: "pkg/outer_test.go"},
+		{Name: "pkg/source.go", Bitmap: []byte{0x80}},
+	}, outerFiles)
+}
+
 func TestSubmitProcessTestCoverageUsesParentEventIdentifiers(t *testing.T) {
 	oldMode, oldUpload, oldWriter := mode, coverageUploadEnabled, covWriter
 	t.Cleanup(func() {

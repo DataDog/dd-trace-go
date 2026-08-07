@@ -34,6 +34,8 @@ const (
 	quarantinedRaceInProcessFixtureEnv      = "DD_TEST_QUARANTINED_RACE_IN_PROCESS_FIXTURE"
 	quarantinedRaceInProcessFailureSentinel = "quarantined race remained in the parent"
 	quarantinedRacePIDDirEnv                = "DD_TEST_QUARANTINED_RACE_PID_DIR"
+	quarantinedRaceStateDirEnv              = "DD_TEST_QUARANTINED_RACE_STATE_DIR"
+	quarantinedRaceMutableEnv               = "DD_TEST_QUARANTINED_RACE_MUTABLE"
 	quarantinedRaceCustomTestMainEnv        = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN"
 	quarantinedRaceCustomTestMainPIDEnv     = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN_PID"
 )
@@ -314,6 +316,7 @@ func TestQuarantinedRace(t *testing.T) {
 	if execMeta := getTestMetadata(t); !isProcessRetryChild() && (execMeta == nil || !execMeta.hasAdditionalFeatureWrapper) {
 		t.Skip("no CI Visibility quarantine wrapper active; skipping race injection")
 	}
+	requireQuarantinedInvocationState(t, "first")
 	t.Parallel()
 
 	if os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
@@ -335,6 +338,7 @@ func TestQuarantinedRaceSecond(t *testing.T) {
 	if execMeta := getTestMetadata(t); !isProcessRetryChild() && (execMeta == nil || !execMeta.hasAdditionalFeatureWrapper) {
 		t.Skip("no CI Visibility quarantine wrapper active; skipping race injection")
 	}
+	requireQuarantinedInvocationState(t, "second")
 	t.Parallel()
 	if os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
 		close(quarantinedRaceSecondReady)
@@ -351,6 +355,50 @@ func TestQuarantinedSerialOrderProducer(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeQuarantinedRacePID(t)
+}
+
+func TestQuarantinedInvocationStateMutator(t *testing.T) {
+	if os.Getenv(quarantinedRaceStateDirEnv) == "" || isProcessRetryChild() {
+		return
+	}
+	setQuarantinedInvocationState(t, "first")
+}
+
+func TestQuarantinedInvocationStateSecondMutator(t *testing.T) {
+	if os.Getenv(quarantinedRaceStateDirEnv) == "" || isProcessRetryChild() {
+		return
+	}
+	setQuarantinedInvocationState(t, "second")
+}
+
+func setQuarantinedInvocationState(t *testing.T, state string) {
+	t.Helper()
+	if err := os.Setenv(quarantinedRaceMutableEnv, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(filepath.Join(os.Getenv(quarantinedRaceStateDirEnv), state)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func requireQuarantinedInvocationState(t *testing.T, state string) {
+	t.Helper()
+	stateDir := os.Getenv(quarantinedRaceStateDirEnv)
+	if stateDir == "" {
+		return
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWorkingDirectory := filepath.Join(stateDir, state)
+	wantWorkingDirectory, err = filepath.EvalSymlinks(wantWorkingDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workingDirectory != wantWorkingDirectory || os.Getenv(quarantinedRaceMutableEnv) != state {
+		t.Fatalf("isolated invocation state = cwd %q env %q, want cwd %q env %q", workingDirectory, os.Getenv(quarantinedRaceMutableEnv), wantWorkingDirectory, state)
+	}
 }
 
 func TestQuarantinedSerialOrderConsumer(t *testing.T) {

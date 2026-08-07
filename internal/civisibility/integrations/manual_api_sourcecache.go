@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 )
 
 var (
@@ -108,6 +109,15 @@ type impactedTestClassifier interface {
 // classifies fn as modified without requiring a test event to be created first.
 func IsTestFuncModified(testName string, fn *runtime.Func) bool {
 	return isTestFuncModified(GetImpactedTestsAnalyzer(), testName, fn)
+}
+
+// IsTestFuncModifiedWithAnalyzer classifies a test with an explicitly owned
+// analyzer, allowing an isolated test process to avoid CI Visibility startup.
+func IsTestFuncModifiedWithAnalyzer(analyzer *impactedtests.ImpactedTestAnalyzer, testName string, fn *runtime.Func) bool {
+	if analyzer == nil {
+		return false
+	}
+	return isTestFuncModified(analyzer, testName, fn)
 }
 
 // IsTestFuncUnskippable reports whether source metadata marks fn or its suite

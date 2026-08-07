@@ -26,7 +26,8 @@ type ProcessTestCoverageFile struct {
 	Bitmap []byte `json:"bitmap,omitempty"`
 }
 
-// ProcessTestCoverage owns one serialized runtime-coverage delta.
+// ProcessTestCoverage owns one runtime-coverage delta. Callers must serialize
+// covered test bodies because the runtime counters are process-global.
 type ProcessTestCoverage struct {
 	coverage     *testCoverage
 	temporaryDir string
@@ -35,18 +36,18 @@ type ProcessTestCoverage struct {
 
 var processTestCoverageMu sync.Mutex
 
-// BeginProcessTestCoverage starts a serialized coverage delta when count-based
-// runtime coverage is available.
+// BeginProcessTestCoverage starts a coverage delta when count-based runtime
+// coverage is available. The caller must serialize the covered test body.
 func BeginProcessTestCoverage(testFile string) *ProcessTestCoverage {
 	if !CanCollect() {
 		return nil
 	}
 	processTestCoverageMu.Lock()
+	defer processTestCoverageMu.Unlock()
 	temporaryDir, err := os.MkdirTemp("", "dd-process-coverage-*")
 	if err != nil {
 		log.Debug("civisibility.cov: error creating process coverage directory: %s", err.Error())
 		telemetry.CodeCoverageErrors()
-		processTestCoverageMu.Unlock()
 		return nil
 	}
 	collector := &testCoverage{
@@ -58,18 +59,18 @@ func BeginProcessTestCoverage(testFile string) *ProcessTestCoverage {
 		log.Debug("civisibility.cov: error getting process coverage file: %s", err.Error())
 		telemetry.CodeCoverageErrors()
 		_ = os.RemoveAll(temporaryDir)
-		processTestCoverageMu.Unlock()
 		return nil
 	}
 	return &ProcessTestCoverage{coverage: collector, temporaryDir: temporaryDir, active: true}
 }
 
-// Finish returns the coverage delta and releases the serialized collector.
+// Finish returns the coverage delta and releases the collector resources.
 func (c *ProcessTestCoverage) Finish() []ProcessTestCoverageFile {
 	if c == nil || !c.active {
 		return nil
 	}
 	c.active = false
+	processTestCoverageMu.Lock()
 	defer processTestCoverageMu.Unlock()
 	defer func() { _ = os.RemoveAll(c.temporaryDir) }()
 	if err := c.coverage.collectCoverageAfterTestExecution(); err != nil {

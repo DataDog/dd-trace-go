@@ -11,6 +11,7 @@ import "testing"
 
 const (
 	quarantinedRacePIDDirEnv            = "DD_TEST_QUARANTINED_RACE_PID_DIR"
+	quarantinedRaceStateDirEnv          = "DD_TEST_QUARANTINED_RACE_STATE_DIR"
 	quarantinedRaceCustomTestMainEnv    = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN"
 	quarantinedRaceCustomTestMainPIDEnv = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN_PID"
 )

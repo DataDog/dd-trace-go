@@ -131,6 +131,36 @@ func exerciseNarrowingFlagParsing(t *testing.T) {
 	}
 }
 
+func TestProcessRetryITRDecisionPreservesNormalPrecedence(t *testing.T) {
+	tests := []struct {
+		name                string
+		candidate           bool
+		missingLineCoverage bool
+		coverageActive      bool
+		modified            bool
+		attemptToFix        bool
+		unskippable         bool
+		want                itrSkipDecision
+	}{
+		{name: "skippable", candidate: true, want: itrSkipDecision{skip: true}},
+		{name: "forced run", candidate: true, unskippable: true, want: itrSkipDecision{forcedRun: true}},
+		{name: "modified", candidate: true, modified: true},
+		{name: "attempt to fix", candidate: true, attemptToFix: true},
+		{name: "missing coverage", candidate: true, missingLineCoverage: true, coverageActive: true},
+		{name: "coverage disabled", candidate: true, missingLineCoverage: true, want: itrSkipDecision{skip: true}},
+		{name: "not a candidate"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := &testExecutionMetadata{isAModifiedTest: tt.modified, isAttemptToFix: tt.attemptToFix}
+			got := decideITRSkip(tt.candidate, tt.missingLineCoverage, tt.coverageActive, metadata, tt.unskippable)
+			if got != tt.want {
+				t.Fatalf("decision = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 func newExerciseITRState() *itrState {
 	return &itrState{
 		settings:              &net.SettingsResponseData{ItrEnabled: true, TestsSkipping: true},

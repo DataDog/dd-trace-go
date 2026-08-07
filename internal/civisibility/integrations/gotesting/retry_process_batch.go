@@ -15,6 +15,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -28,6 +29,7 @@ import (
 
 const (
 	processRetryBatchVersion      = 1
+	processRetryBatchGateVersion  = 1
 	processRetryBatchTestName     = "__dd_quarantined_race_batch__"
 	processRetryBatchReason       = "quarantined_race"
 	processRetryBatchMaxTests     = 100_000
@@ -39,9 +41,16 @@ const (
 var errProcessRetryBatchFailed = errors.New("process retry batch failed")
 
 type processRetryBatchTestConfig struct {
-	TestName          string   `json:"test_name"`
-	InvocationOrdinal uint64   `json:"invocation_ordinal,omitempty"`
-	DisabledSubtests  []string `json:"disabled_subtests,omitempty"`
+	TestName          string                         `json:"test_name"`
+	InvocationOrdinal uint64                         `json:"invocation_ordinal,omitempty"`
+	DisabledSubtests  []string                       `json:"disabled_subtests,omitempty"`
+	ITRSubtests       []processRetrySubtestITRConfig `json:"itr_subtests,omitempty"`
+}
+
+type processRetrySubtestITRConfig struct {
+	TestName                string `json:"test_name"`
+	MissingLineCodeCoverage bool   `json:"missing_line_code_coverage,omitempty"`
+	AttemptToFix            bool   `json:"attempt_to_fix,omitempty"`
 }
 
 type processRetryBatchConfig struct {
@@ -49,6 +58,14 @@ type processRetryBatchConfig struct {
 	Tests                  []processRetryBatchTestConfig `json:"tests"`
 	CollectPerTestCoverage bool                          `json:"collect_per_test_coverage,omitempty"`
 	PreserveNativeSchedule bool                          `json:"preserve_native_schedule,omitempty"`
+	ITRCoverageActive      bool                          `json:"itr_coverage_active,omitempty"`
+	ImpactedTestsEnabled   bool                          `json:"impacted_tests_enabled,omitempty"`
+}
+
+type processRetryBatchInvocationState struct {
+	Version          int      `json:"version"`
+	WorkingDirectory string   `json:"working_directory"`
+	Environment      []string `json:"environment"`
 }
 
 func processRetryBatchManifestPath(resultPath string) string {
@@ -90,6 +107,10 @@ func processRetryBatchChildConfig(root processRetryChildConfig, index int, test 
 		CollectPerTestCoverage: root.Batch != nil && root.Batch.CollectPerTestCoverage,
 		batchTest:              &test,
 	}
+	if root.Batch != nil {
+		child.itrCoverageActive = root.Batch.ITRCoverageActive
+		child.impactedTestsAnalyzer = root.impactedTestsAnalyzer
+	}
 	if root.Batch != nil && root.Batch.PreserveNativeSchedule {
 		// The native parent owns invocation identity; the child manifest is
 		// registered before those ordinals exist and is matched by batch index.
@@ -101,23 +122,123 @@ func processRetryBatchChildConfig(root processRetryChildConfig, index int, test 
 	return child
 }
 
-func waitForProcessRetryBatchGate(path string, deadline time.Time, deadlineOK bool) (bool, error) {
+func waitForProcessRetryBatchGate(path string, deadline time.Time, deadlineOK bool) (processRetryBatchInvocationState, bool, error) {
 	for {
 		if _, err := os.Stat(path); err == nil {
-			return true, nil
+			state, err := readProcessRetryBatchInvocationState(path)
+			return state, err == nil, err
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return false, err
+			return processRetryBatchInvocationState{}, false, err
 		}
 		if _, err := os.Stat(path + ".skip"); err == nil {
-			return false, nil
+			return processRetryBatchInvocationState{}, false, nil
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return false, err
+			return processRetryBatchInvocationState{}, false, err
 		}
 		if deadlineOK && !time.Now().Before(deadline) {
-			return false, context.DeadlineExceeded
+			return processRetryBatchInvocationState{}, false, context.DeadlineExceeded
 		}
 		time.Sleep(processRetryBatchPollInterval)
 	}
+}
+
+func writeProcessRetryBatchInvocationState(path string, baseline *processRetryLaunchBaseline) error {
+	if baseline == nil {
+		return errors.New("missing process retry invocation state")
+	}
+	state := processRetryBatchInvocationState{
+		Version:          processRetryBatchGateVersion,
+		WorkingDirectory: baseline.workingDirectory,
+		Environment:      make([]string, 0, len(baseline.environment)),
+	}
+	for _, entry := range baseline.environment {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && key == "" {
+			continue
+		}
+		state.Environment = append(state.Environment, entry)
+	}
+	if err := validateProcessRetryBatchInvocationState(state); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	if len(payload) > processRetryBatchMaxBytes {
+		return errors.New("process retry invocation state too large")
+	}
+	return writeProcessRetryFileAtomically(path, payload, ".process-retry-gate-*.tmp")
+}
+
+func readProcessRetryBatchInvocationState(path string) (processRetryBatchInvocationState, error) {
+	state, err := readProcessRetryBatchJSON[processRetryBatchInvocationState](path, "process retry invocation state")
+	if err != nil {
+		return processRetryBatchInvocationState{}, err
+	}
+	if err := validateProcessRetryBatchInvocationState(state); err != nil {
+		return processRetryBatchInvocationState{}, err
+	}
+	return state, nil
+}
+
+func validateProcessRetryBatchInvocationState(state processRetryBatchInvocationState) error {
+	if state.Version != processRetryBatchGateVersion || !filepath.IsAbs(state.WorkingDirectory) {
+		return errors.New("invalid process retry invocation state")
+	}
+	seen := make(map[string]struct{}, len(state.Environment))
+	for _, entry := range state.Environment {
+		key, value, ok := strings.Cut(entry, "=")
+		normalizedKey := processRetryInvocationEnvironmentKey(key)
+		if !ok || key == "" || strings.IndexByte(key, 0) >= 0 || strings.IndexByte(value, 0) >= 0 ||
+			isProcessRetryInternalEnvKey(key) || strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable) {
+			return errors.New("invalid process retry invocation environment")
+		}
+		if _, duplicate := seen[normalizedKey]; duplicate {
+			return errors.New("duplicate process retry invocation environment")
+		}
+		seen[normalizedKey] = struct{}{}
+	}
+	return nil
+}
+
+func applyProcessRetryBatchInvocationState(state processRetryBatchInvocationState) error {
+	if err := validateProcessRetryBatchInvocationState(state); err != nil {
+		return err
+	}
+	if err := os.Chdir(state.WorkingDirectory); err != nil {
+		return err
+	}
+	desired := make(map[string]struct{}, len(state.Environment))
+	for _, entry := range state.Environment {
+		key, _, _ := strings.Cut(entry, "=")
+		desired[processRetryInvocationEnvironmentKey(key)] = struct{}{}
+	}
+	for _, entry := range os.Environ() {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok || key == "" {
+			continue
+		}
+		if _, ok := desired[processRetryInvocationEnvironmentKey(key)]; !ok {
+			if err := os.Unsetenv(key); err != nil {
+				return err
+			}
+		}
+	}
+	for _, entry := range state.Environment {
+		key, value, _ := strings.Cut(entry, "=")
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func processRetryInvocationEnvironmentKey(key string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(key)
+	}
+	return key
 }
 
 func writeProcessRetryBatchConfig(path string, cfg *processRetryBatchConfig) error {
@@ -135,31 +256,39 @@ func writeProcessRetryBatchConfig(path string, cfg *processRetryBatchConfig) err
 }
 
 func readProcessRetryBatchConfig(path string) (*processRetryBatchConfig, error) {
-	file, err := os.Open(path)
+	cfg, err := readProcessRetryBatchJSON[processRetryBatchConfig](path, "process retry batch manifest")
 	if err != nil {
 		return nil, err
-	}
-	defer file.Close()
-	payload, err := io.ReadAll(io.LimitReader(file, processRetryBatchMaxBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(payload) > processRetryBatchMaxBytes {
-		return nil, errors.New("process retry batch manifest too large")
-	}
-	var cfg processRetryBatchConfig
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&cfg); err != nil {
-		return nil, err
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, errors.New("process retry batch manifest has trailing data")
 	}
 	if err := validateProcessRetryBatchConfig(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func readProcessRetryBatchJSON[T any](path, kind string) (T, error) {
+	var value T
+	file, err := os.Open(path)
+	if err != nil {
+		return value, err
+	}
+	defer file.Close()
+	payload, err := io.ReadAll(io.LimitReader(file, processRetryBatchMaxBytes+1))
+	if err != nil {
+		return value, err
+	}
+	if len(payload) > processRetryBatchMaxBytes {
+		return value, fmt.Errorf("%s too large", kind)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return value, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return value, fmt.Errorf("%s has trailing data", kind)
+	}
+	return value, nil
 }
 
 func validateProcessRetryBatchConfig(cfg *processRetryBatchConfig) error {
@@ -175,6 +304,16 @@ func validateProcessRetryBatchConfig(cfg *processRetryBatchConfig) error {
 			return errors.New("duplicate process retry batch test")
 		}
 		seen[test.TestName] = struct{}{}
+		seenITR := make(map[string]struct{}, len(test.ITRSubtests))
+		for _, subtest := range test.ITRSubtests {
+			if !strings.HasPrefix(subtest.TestName, test.TestName+"/") {
+				return errors.New("invalid process retry ITR subtest")
+			}
+			if _, duplicate := seenITR[subtest.TestName]; duplicate {
+				return errors.New("duplicate process retry ITR subtest")
+			}
+			seenITR[subtest.TestName] = struct{}{}
+		}
 	}
 	return nil
 }
@@ -200,6 +339,46 @@ func disabledProcessRetrySubtests(identity testIdentity, modules *net.TestManage
 	}
 	slices.Sort(disabled)
 	return disabled
+}
+
+func processRetryITRSubtests(identity testIdentity, state *itrState, modules *net.TestManagementTestsResponseDataModules) []processRetrySubtestITRConfig {
+	if state == nil || !state.testsSkippingEnabled() || state.response == nil {
+		return nil
+	}
+	suite := state.response.Skippables[identity.SuiteName]
+	prefix := identity.FullName + "/"
+	configs := make([]processRetrySubtestITRConfig, 0)
+	for name, candidates := range suite {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		config := processRetrySubtestITRConfig{TestName: name}
+		matched := false
+		for _, candidate := range candidates {
+			if strings.TrimSpace(candidate.Parameters) != "" {
+				continue
+			}
+			matched = true
+			config.MissingLineCodeCoverage = config.MissingLineCodeCoverage || candidate.MissingLineCodeCoverage
+		}
+		if !matched {
+			continue
+		}
+		if modules != nil {
+			if module, ok := modules.Modules[identity.ModuleName]; ok {
+				if managedSuite, ok := module.Suites[identity.SuiteName]; ok {
+					if test, ok := managedSuite.Tests[name]; ok {
+						config.AttemptToFix = test.Properties.AttemptToFix
+					}
+				}
+			}
+		}
+		configs = append(configs, config)
+	}
+	slices.SortFunc(configs, func(a, b processRetrySubtestITRConfig) int {
+		return strings.Compare(a.TestName, b.TestName)
+	})
+	return configs
 }
 
 type deferredProcessRetryBatchRunner func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult
@@ -256,6 +435,7 @@ func (c *processRetryCoordinator) registerNativeScheduledTest(identity testIdent
 	spec := processRetryBatchTestConfig{
 		TestName:         identity.FullName,
 		DisabledSubtests: disabledProcessRetrySubtests(identity, testManagementData),
+		ITRSubtests:      processRetryITRSubtests(identity, currentITRState(), testManagementData),
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -305,6 +485,10 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 		CollectPerTestCoverage: coverage.CanCollectPerTestCoverage(),
 		PreserveNativeSchedule: true,
 	}
+	if state := currentITRState(); state != nil {
+		batchConfig.ITRCoverageActive = state.coverageActive
+		batchConfig.ImpactedTestsEnabled = state.settings != nil && state.settings.ImpactedTestsEnabled
+	}
 	rootCfg := processRetryChildConfig{
 		TestName:          processRetryBatchTestName,
 		Attempt:           1,
@@ -347,7 +531,7 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 		now := time.Now()
 		return processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
 	}
-	if err := os.WriteFile(processRetryBatchGatePath(batch.resultRoot, index), nil, processRetryBatchManifestMode); err != nil {
+	if err := writeProcessRetryBatchInvocationState(processRetryBatchGatePath(batch.resultRoot, index), group.launchBaseline); err != nil {
 		now := time.Now()
 		return processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
 	}
@@ -414,6 +598,7 @@ func (c *processRetryCoordinator) nativeScheduledBatchResult(phaseID uint64) (pr
 		batch.cancel()
 	}
 	<-batch.done
+	mergePendingProcessRetryTestLog(&batch.attempt)
 	if batch.attempt.OutputTail != "" {
 		_, _ = io.WriteString(os.Stdout, batch.attempt.OutputTail)
 	}

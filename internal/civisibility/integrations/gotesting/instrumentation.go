@@ -47,6 +47,7 @@ type (
 		isEarlyFlakeDetectionEnabled bool // flag to tag if Early Flake Detection is enabled for this execution
 		isFlakyTestRetriesEnabled    bool // flag to tag if Flaky Test Retries is enabled for this execution
 		isItrForcedRun               bool // flag to preserve ITR forced-run state across parent-owned process retries
+		isItrSkipped                 bool // flag to report an ITR skip reconstructed from an isolated process
 		flakyRetryBudgetReservation  *flakyRetryBudgetReservation
 		isQuarantined                bool          // flag to check if the test is quarantined
 		isDisabled                   bool          // flag to check if the test is disabled

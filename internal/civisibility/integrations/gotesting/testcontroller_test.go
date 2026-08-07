@@ -167,7 +167,7 @@ func TestMain(m *testing.M) {
 					continue
 				}
 				if v == "TestQuarantinedRace" {
-					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|TestQuarantinedSerialOrderProducer|TestQuarantinedSerialOrderConsumer|Test_Foo)$"
+					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|TestQuarantinedSerialOrderProducer|TestQuarantinedInvocationStateMutator|TestQuarantinedInvocationStateSecondMutator|TestQuarantinedSerialOrderConsumer|Test_Foo)$"
 					pidDir, err := os.MkdirTemp("", "dd-quarantined-race-pids-*")
 					if err != nil {
 						panic(err)
@@ -176,14 +176,26 @@ func TestMain(m *testing.M) {
 					if err := os.Setenv(quarantinedRacePIDDirEnv, pidDir); err != nil {
 						panic(err)
 					}
+					stateDir := filepath.Join(pidDir, "invocation-state")
+					if err := os.Mkdir(stateDir, 0o700); err != nil {
+						panic(err)
+					}
+					for _, state := range []string{"first", "second"} {
+						if err := os.Mkdir(filepath.Join(stateDir, state), 0o700); err != nil {
+							panic(err)
+						}
+					}
+					if err := os.Setenv(quarantinedRaceStateDirEnv, stateDir); err != nil {
+						panic(err)
+					}
 					previousCoverageEnabled, hadCoverageEnabled := os.LookupEnv(quarantinedRaceCoverageEnabledEnv)
 					if testing.CoverMode() != "" {
 						if err := os.Setenv(quarantinedRaceCoverageEnabledEnv, "true"); err != nil {
 							panic(err)
 						}
 					}
-					shuffleSeed := testControllerShuffleSeedWithFirst(*tests, "TestQuarantinedSerialOrderProducer",
-						"Test_Foo", "TestQuarantinedRace", "TestQuarantinedRaceSecond", "TestQuarantinedSerialOrderConsumer")
+					shuffleSeed := testControllerShuffleSeedWithOrder(*tests, "TestQuarantinedSerialOrderProducer",
+						"Test_Foo", "TestQuarantinedInvocationStateMutator", "TestQuarantinedRace", "TestQuarantinedInvocationStateSecondMutator", "TestQuarantinedRaceSecond", "TestQuarantinedSerialOrderConsumer")
 					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.failfast=true", "-test.parallel=2", "-test.shuffle="+strconv.FormatInt(shuffleSeed, 10), "-test.timeout=30s")
 					if hadCoverageEnabled {
 						_ = os.Setenv(quarantinedRaceCoverageEnabledEnv, previousCoverageEnabled)
@@ -195,6 +207,7 @@ func TestMain(m *testing.M) {
 					} else {
 						_ = os.Unsetenv(quarantinedRacePIDDirEnv)
 					}
+					_ = os.Unsetenv(quarantinedRaceStateDirEnv)
 					if err := os.RemoveAll(pidDir); err != nil {
 						panic(err)
 					}
@@ -593,29 +606,26 @@ func buildTestControllerSubprocessArgs(originalArgs []string, runFilter string, 
 	return args
 }
 
-func testControllerShuffleSeedWithFirst(tests []testing.InternalTest, first string, later ...string) int64 {
+func testControllerShuffleSeedWithOrder(tests []testing.InternalTest, ordered ...string) int64 {
 	for seed := int64(1); seed < 1_000_000; seed++ {
 		shuffled := append([]testing.InternalTest(nil), tests...)
 		rand.New(rand.NewSource(seed)).Shuffle(len(shuffled), func(i, j int) {
 			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 		})
-		positions := make(map[string]int, len(later)+1)
+		positions := make(map[string]int, len(ordered))
 		for i, test := range shuffled {
-			if test.Name == first {
-				positions[first] = i
-			}
-			for _, name := range later {
+			for _, name := range ordered {
 				if test.Name == name {
 					positions[name] = i
 				}
 			}
 		}
-		if len(positions) != len(later)+1 {
+		if len(positions) != len(ordered) {
 			break
 		}
 		valid := true
-		for _, name := range later {
-			if positions[first] >= positions[name] {
+		for i := 1; i < len(ordered); i++ {
+			if positions[ordered[i-1]] >= positions[ordered[i]] {
 				valid = false
 				break
 			}

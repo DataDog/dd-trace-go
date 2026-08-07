@@ -23,8 +23,19 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	want := &processRetryBatchConfig{
 		Version:                processRetryBatchVersion,
 		CollectPerTestCoverage: true,
+		ITRCoverageActive:      true,
+		ImpactedTestsEnabled:   true,
 		Tests: []processRetryBatchTestConfig{
-			{TestName: "TestA", InvocationOrdinal: 11, DisabledSubtests: []string{"TestA/disabled"}},
+			{
+				TestName:          "TestA",
+				InvocationOrdinal: 11,
+				DisabledSubtests:  []string{"TestA/disabled"},
+				ITRSubtests: []processRetrySubtestITRConfig{{
+					TestName:                "TestA/skipped",
+					MissingLineCodeCoverage: true,
+					AttemptToFix:            true,
+				}},
+			},
 			{TestName: "TestB", InvocationOrdinal: 12},
 		},
 	}
@@ -43,6 +54,7 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	require.Equal(t, uint64(7), child.MRunEpoch)
 	require.Equal(t, uint64(11), child.InvocationOrdinal)
 	require.True(t, child.CollectPerTestCoverage)
+	require.True(t, child.itrCoverageActive)
 	require.Equal(t, []string{"TestA/disabled"}, child.batchTest.DisabledSubtests)
 }
 
@@ -67,6 +79,44 @@ func TestProcessRetryNativeScheduledChildConfigUsesBatchIdentityAndGates(t *test
 	require.Equal(t, processRetryBatchParallelPath(root.ResultPath, 2), child.nativeParallelPath)
 }
 
+func TestProcessRetryBatchInvocationStateRoundTrip(t *testing.T) {
+	path := processRetryBatchGatePath(filepath.Join(t.TempDir(), "result.json"), 0)
+	workingDirectory := t.TempDir()
+	baseline := &processRetryLaunchBaseline{
+		workingDirectory: workingDirectory,
+		environment:      []string{"FIRST=one", "SECOND=two=three"},
+	}
+
+	require.NoError(t, writeProcessRetryBatchInvocationState(path, baseline))
+	requireProcessRetryFileMode(t, path, processRetryBatchManifestMode)
+	state, run, err := waitForProcessRetryBatchGate(path, time.Time{}, false)
+	require.NoError(t, err)
+	require.True(t, run)
+	require.Equal(t, processRetryBatchInvocationState{
+		Version:          processRetryBatchGateVersion,
+		WorkingDirectory: workingDirectory,
+		Environment:      baseline.environment,
+	}, state)
+}
+
+func TestProcessRetryBatchInvocationStateRejectsInvalidPayloads(t *testing.T) {
+	for name, payload := range map[string]string{
+		"unknown field":         `{"version":1,"working_directory":"/tmp","environment":[],"unknown":true}`,
+		"trailing data":         `{"version":1,"working_directory":"/tmp","environment":[]} {}`,
+		"relative directory":    `{"version":1,"working_directory":"relative","environment":[]}`,
+		"private transport":     `{"version":1,"working_directory":"/tmp","environment":["DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_CHILD=true"]}`,
+		"coverage environment":  `{"version":1,"working_directory":"/tmp","environment":["GOCOVERDIR=/tmp/cov"]}`,
+		"duplicate environment": `{"version":1,"working_directory":"/tmp","environment":["PATH=one","PATH=two"]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "gate.json")
+			require.NoError(t, os.WriteFile(path, []byte(payload), processRetryBatchManifestMode))
+			_, err := readProcessRetryBatchInvocationState(path)
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestNativeScheduledBatchResultSkipsUninvokedTestsBeforeWaiting(t *testing.T) {
 	resultPath := filepath.Join(t.TempDir(), "result.json")
 	batch := &nativeScheduledProcessRetryBatch{
@@ -75,8 +125,8 @@ func TestNativeScheduledBatchResultSkipsUninvokedTestsBeforeWaiting(t *testing.T
 		done:       make(chan struct{}),
 		cancel:     func() {},
 	}
-	require.NoError(t, os.WriteFile(processRetryBatchGatePath(resultPath, 0), nil, processRetryBatchManifestMode))
-	run, err := waitForProcessRetryBatchGate(processRetryBatchGatePath(resultPath, 0), time.Time{}, false)
+	require.NoError(t, writeProcessRetryBatchInvocationState(processRetryBatchGatePath(resultPath, 0), &processRetryLaunchBaseline{workingDirectory: t.TempDir()}))
+	_, run, err := waitForProcessRetryBatchGate(processRetryBatchGatePath(resultPath, 0), time.Time{}, false)
 	require.NoError(t, err)
 	require.True(t, run)
 	coordinator := newProcessRetryCoordinatorForTesting(false)
@@ -87,7 +137,7 @@ func TestNativeScheduledBatchResultSkipsUninvokedTestsBeforeWaiting(t *testing.T
 	}
 	gate := make(chan gateResult, 1)
 	go func() {
-		run, err := waitForProcessRetryBatchGate(processRetryBatchGatePath(resultPath, 1), time.Time{}, false)
+		_, run, err := waitForProcessRetryBatchGate(processRetryBatchGatePath(resultPath, 1), time.Time{}, false)
 		gate <- gateResult{run: run, err: err}
 		close(batch.done)
 	}()
@@ -132,6 +182,8 @@ func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
 		"empty":               {Version: processRetryBatchVersion},
 		"missing name":        {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{InvocationOrdinal: 1}}},
 		"duplicate test name": {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{validTest, validTest}},
+		"ITR outside test":    {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", ITRSubtests: []processRetrySubtestITRConfig{{TestName: "TestB/child"}}}}},
+		"duplicate ITR":       {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", ITRSubtests: []processRetrySubtestITRConfig{{TestName: "TestA/child"}, {TestName: "TestA/child"}}}}},
 	}
 
 	for name, cfg := range tests {
@@ -155,6 +207,39 @@ func TestDisabledProcessRetrySubtests(t *testing.T) {
 	}}
 
 	require.Equal(t, []string{"TestA/disabled"}, disabledProcessRetrySubtests(*identity, modules))
+}
+
+func TestProcessRetryITRSubtests(t *testing.T) {
+	identity := newTestIdentity("module", "suite", "TestA")
+	state := &itrState{
+		settings: &net.SettingsResponseData{ItrEnabled: true, TestsSkipping: true},
+		response: &net.SkippableTestsResponse{Skippables: map[string]map[string][]net.SkippableResponseDataAttributes{
+			"suite": {
+				"TestA/safe": {
+					{Name: "TestA/safe"},
+					{Name: "TestA/safe", MissingLineCodeCoverage: true},
+				},
+				"TestA/parameterized": {{Name: "TestA/parameterized", Parameters: `{"case":"one"}`}},
+				"TestB/other":         {{Name: "TestB/other"}},
+			},
+		}},
+	}
+	modules := &net.TestManagementTestsResponseDataModules{Modules: map[string]net.TestManagementTestsResponseDataSuites{
+		"module": {Suites: map[string]net.TestManagementTestsResponseDataTests{
+			"suite": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+				"TestA/safe": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true}},
+			}},
+		}},
+	}}
+
+	require.Equal(t, []processRetrySubtestITRConfig{{
+		TestName:                "TestA/safe",
+		MissingLineCodeCoverage: true,
+		AttemptToFix:            true,
+	}}, processRetryITRSubtests(*identity, state, modules))
+
+	state.settings.TestsSkipping = false
+	require.Empty(t, processRetryITRSubtests(*identity, state, modules))
 }
 
 func TestPreserveProcessRetryBatchFailure(t *testing.T) {
@@ -298,6 +383,41 @@ func TestMergeProcessRetryTestLog(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(childPath, []byte("getenv MISSING_HEADER\n"), 0o600))
 	require.Error(t, mergeProcessRetryTestLog(parentPath, childPath, "/workspace/package"))
+}
+
+func TestNativeScheduledBatchMergesTestLogAfterParentFlush(t *testing.T) {
+	dir := t.TempDir()
+	parentPath := filepath.Join(dir, "parent-testlog.txt")
+	childPath := filepath.Join(dir, "child-testlog.txt")
+	require.NoError(t, os.WriteFile(parentPath, []byte(processRetryTestLogMagic), 0o600))
+	require.NoError(t, os.WriteFile(childPath, []byte(processRetryTestLogMagic+"getenv CHILD\n"), 0o600))
+
+	done := make(chan struct{})
+	close(done)
+	batch := &nativeScheduledProcessRetryBatch{
+		batch:      &processRetryBatchConfig{},
+		resultRoot: filepath.Join(dir, "result.json"),
+		done:       done,
+		cancel:     func() {},
+		attempt: processRetryAttemptResult{testLogMerge: &processRetryTestLogMerge{
+			parentPath:            parentPath,
+			childPath:             childPath,
+			childWorkingDirectory: "/workspace/package",
+		}},
+	}
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	coordinator.nativeBatches = map[uint64]*nativeScheduledProcessRetryBatch{1: batch}
+
+	// Simulate testing.StopTestLog flushing its buffered parent records after
+	// the native-scheduled child has already completed.
+	require.NoError(t, os.WriteFile(parentPath, []byte(processRetryTestLogMagic+"getenv PARENT\n"), 0o600))
+	attempt, ok := coordinator.nativeScheduledBatchResult(1)
+	require.True(t, ok)
+	require.NoError(t, attempt.Err)
+
+	got, err := os.ReadFile(parentPath)
+	require.NoError(t, err)
+	require.Equal(t, processRetryTestLogMagic+"getenv PARENT\nchdir /workspace/package\ngetenv CHILD\n", string(got))
 }
 
 func TestProcessRetryBatchTimeoutUsesPackageBudget(t *testing.T) {

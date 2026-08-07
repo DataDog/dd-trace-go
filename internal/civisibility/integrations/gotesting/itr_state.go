@@ -179,26 +179,23 @@ func (s *itrState) decisionFor(testInfo *testingTInfo, execMeta *testExecutionMe
 	}
 
 	candidates := s.skippableCandidates(testInfo)
-	if len(candidates) == 0 {
+	missingLineCoverage := false
+	for _, candidate := range candidates {
+		missingLineCoverage = missingLineCoverage || candidate.MissingLineCodeCoverage
+	}
+	return decideITRSkip(s.testsSkippingEnabled() && len(candidates) > 0, missingLineCoverage, s.coverageActive, execMeta, isUnskippable)
+}
+
+func decideITRSkip(candidate, missingLineCoverage, coverageActive bool, execMeta *testExecutionMetadata, isUnskippable bool) itrSkipDecision {
+	if !candidate || execMeta == nil || execMeta.isAttemptToFix || execMeta.isAModifiedTest {
 		return itrSkipDecision{}
 	}
-
-	if !s.testsSkippingEnabled() || execMeta.isAttemptToFix || execMeta.isAModifiedTest {
-		return itrSkipDecision{}
-	}
-
 	if isUnskippable {
 		return itrSkipDecision{forcedRun: true}
 	}
-
-	if s.coverageActive {
-		for _, candidate := range candidates {
-			if candidate.MissingLineCodeCoverage {
-				return itrSkipDecision{}
-			}
-		}
+	if coverageActive && missingLineCoverage {
+		return itrSkipDecision{}
 	}
-
 	return itrSkipDecision{skip: true}
 }
 

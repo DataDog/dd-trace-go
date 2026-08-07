@@ -1123,6 +1123,60 @@ func TestProcessRetryChildSkipsDisabledSubtestBeforeBody(t *testing.T) {
 	require.Equal(t, constants.TestDisabledSkipReason, result.SkipReason)
 }
 
+func TestProcessRetryChildSkipsITRSubtestBeforeBody(t *testing.T) {
+	owner := createTestMetadata(t, nil)
+	name := t.Name() + "/skipped"
+	root := newProcessRetryNoopTest(t, processRetryChildConfig{
+		TestName: t.Name(),
+		batchTest: &processRetryBatchTestConfig{ITRSubtests: []processRetrySubtestITRConfig{{
+			TestName: name,
+		}}},
+	}, time.Now(), nil, nil, retryAttemptRaceErrors()).(*processRetryNoopTest)
+	owner.test = root
+	defer deleteTestMetadata(t)
+
+	bodyRan := false
+	require.True(t, t.Run("skipped", instrumentProcessRetryChildSubtest(func(*testing.T) {
+		bodyRan = true
+	})))
+
+	require.False(t, bodyRan)
+	require.Len(t, root.snapshotSubtests(), 1)
+	result := root.snapshotSubtests()[0]
+	require.Equal(t, processRetryStatusSkip, result.Status)
+	require.True(t, result.SkippedByITR)
+	require.Equal(t, constants.SkippedByITRReason, result.SkipReason)
+}
+
+var processRetryUnskippableSubtestRuns atomic.Int32
+
+//dd:test.unskippable
+func processRetryUnskippableSubtestFixture(*testing.T) {
+	processRetryUnskippableSubtestRuns.Add(1)
+}
+
+func TestProcessRetryChildForcesUnskippableITRSubtestToRun(t *testing.T) {
+	processRetryUnskippableSubtestRuns.Store(0)
+	owner := createTestMetadata(t, nil)
+	name := t.Name() + "/forced"
+	root := newProcessRetryNoopTest(t, processRetryChildConfig{
+		TestName: t.Name(),
+		batchTest: &processRetryBatchTestConfig{ITRSubtests: []processRetrySubtestITRConfig{{
+			TestName: name,
+		}}},
+	}, time.Now(), nil, nil, retryAttemptRaceErrors()).(*processRetryNoopTest)
+	owner.test = root
+	defer deleteTestMetadata(t)
+
+	require.True(t, t.Run("forced", instrumentProcessRetryChildSubtest(processRetryUnskippableSubtestFixture)))
+	require.Equal(t, int32(1), processRetryUnskippableSubtestRuns.Load())
+	require.Len(t, root.snapshotSubtests(), 1)
+	result := root.snapshotSubtests()[0]
+	require.Equal(t, processRetryStatusPass, result.Status)
+	require.True(t, result.ITRForcedRun)
+	require.False(t, result.SkippedByITR)
+}
+
 func TestProcessRetryChildBoundsSubtestOutput(t *testing.T) {
 	owner := createTestMetadata(t, nil)
 	root := newProcessRetryNoopTest(t, processRetryChildConfig{TestName: t.Name()}, time.Now(), nil, nil, retryAttemptRaceErrors()).(*processRetryNoopTest)
@@ -5585,6 +5639,51 @@ func TestFinishProcessRetryTestEventPropagatesITRForcedRun(t *testing.T) {
 	metric := telemetrytest.MetricKey{
 		Namespace: coretelemetry.NamespaceCIVisibility,
 		Name:      "itr_forced_run",
+		Tags:      "event_type:test",
+		Kind:      "count",
+	}
+	require.Contains(t, telemetryRecorder.Metrics, metric)
+	require.Equal(t, 1.0, telemetryRecorder.Metrics[metric].Get())
+}
+
+func TestFinishProcessRetryTestEventPropagatesITRSkip(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	telemetryRecorder := new(telemetrytest.RecordClient)
+	defer coretelemetry.MockClient(telemetryRecorder)()
+	previousState := activeITRState.Load()
+	activeITRState.Store(&itrState{})
+	t.Cleanup(func() { activeITRState.Store(previousState) })
+	previousSkipped := numOfTestsSkipped.Load()
+	t.Cleanup(func() { numOfTestsSkipped.Store(previousSkipped) })
+
+	identity := newTestIdentity("module", "suite", "TestProcessRetryITRSkip")
+	now := time.Now()
+	effective := finishProcessRetryTestEventForTesting(&commonInfo{
+		moduleName: identity.ModuleName,
+		suiteName:  identity.SuiteName,
+		testName:   identity.FullName,
+		identity:   identity,
+	}, &testExecutionMetadata{identity: identity, isItrSkipped: true}, processRetryAttemptResult{
+		Result: processRetryResult{
+			Status:     processRetryStatusSkip,
+			Skipped:    true,
+			SkipReason: constants.SkippedByITRReason,
+		},
+		ExitCode:   0,
+		StartTime:  now,
+		FinishTime: now.Add(time.Millisecond),
+	})
+
+	require.Equal(t, processRetryStatusSkip, effective.Status)
+	require.Len(t, recorder.tests, 1)
+	require.Equal(t, "true", recorder.tests[0].tags[constants.TestSkippedByITR])
+	require.Equal(t, constants.TestStatusSkip, recorder.tests[0].tags[constants.TestFinalStatus])
+	require.Equal(t, "true", recorder.tags[constants.ITRTestsSkipped])
+	require.Equal(t, previousSkipped+1, numOfTestsSkipped.Load())
+	metric := telemetrytest.MetricKey{
+		Namespace: coretelemetry.NamespaceCIVisibility,
+		Name:      "itr_skipped",
 		Tags:      "event_type:test",
 		Kind:      "count",
 	}
