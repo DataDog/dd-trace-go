@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -149,7 +150,7 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 	if err != nil {
 		return string(snip), rc2, err
 	}
-	if encoding == "gzip" {
+	if strings.EqualFold(encoding, "gzip") {
 		// unpack the snippet
 		gzr, err2 := gzip.NewReader(bytes.NewReader(snip))
 		if err2 != nil {
