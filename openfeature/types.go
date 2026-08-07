@@ -19,6 +19,11 @@ type universalFlagsConfiguration struct {
 	Format string `json:"format"`
 	// Environment contains information about the environment this configuration applies to
 	Environment environment `json:"environment"`
+	// ObserveFullEvaluationData reports whether this environment consents to emitting the raw
+	// targeting key and evaluation context. Environment-scoped in origin but lives at the UFC
+	// root, as a sibling of Environment. Plain bool (no omitempty, no pointer) so an absent
+	// or malformed value fails closed to false.
+	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
 	// invalidFlags contains errors for flags that could not be parsed or validated.
@@ -26,13 +31,15 @@ type universalFlagsConfiguration struct {
 }
 
 // UnmarshalJSON parses flags independently so one invalid flag does not reject
-// the complete configuration.
+// the complete configuration. The shadow struct is the sole populator: any new field on
+// universalFlagsConfiguration must be added and copied here or it reads as zero forever.
 func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		CreatedAt   time.Time                  `json:"createdAt"`
-		Format      string                     `json:"format"`
-		Environment environment                `json:"environment"`
-		Flags       map[string]json.RawMessage `json:"flags"`
+		CreatedAt                 time.Time                  `json:"createdAt"`
+		Format                    string                     `json:"format"`
+		Environment               environment                `json:"environment"`
+		ObserveFullEvaluationData bool                       `json:"observeFullEvaluationData"`
+		Flags                     map[string]json.RawMessage `json:"flags"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -41,6 +48,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.CreatedAt = raw.CreatedAt
 	config.Format = raw.Format
 	config.Environment = raw.Environment
+	config.ObserveFullEvaluationData = raw.ObserveFullEvaluationData
 	config.Flags = make(map[string]*flag, len(raw.Flags))
 	config.invalidFlags = make(map[string]error)
 
