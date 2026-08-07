@@ -157,6 +157,20 @@ func TestPreserveProcessRetryBatchFailureKeepsDecodedFailure(t *testing.T) {
 	require.Equal(t, processRetryStatusPass, effectiveProcessRetryStatus(completed[b], false).Status)
 }
 
+func TestPreserveProcessRetryBatchFailureKeepsTestLogMergeFailure(t *testing.T) {
+	a := deferredProcessRetryBatchGroup("TestA", 1)
+	completed := map[*deferredProcessRetryGroup]processRetryAttemptResult{
+		a: completedProcessRetryAttempt(processRetryResult{Status: processRetryStatusFail, Failed: true}),
+	}
+
+	preserveProcessRetryBatchFailure(processRetryAttemptResult{
+		Err: errors.Join(errProcessRetryTestLogMerge, errors.New("malformed child log")),
+	}, []*deferredProcessRetryGroup{a}, completed)
+
+	require.True(t, completed[a].SetupFailure)
+	require.ErrorIs(t, completed[a].Err, errProcessRetryTestLogMerge)
+}
+
 func TestProcessRetryBatchConfigRejectsUnknownAndTrailingData(t *testing.T) {
 	for name, payload := range map[string]string{
 		"unknown field": `{"version":1,"tests":[{"test_name":"TestA"}],"unknown":true}`,
@@ -175,19 +189,69 @@ func TestProcessRetryBatchArgsPreserveSegmentedSelectors(t *testing.T) {
 	snapshot := captureProcessRetryArgsSnapshot([]string{
 		"-test.run=^TestQuarantined$/wanted$",
 		"-test.skip=destructive$",
+		"-test.testlogfile=parent-testlog.txt",
 	})
 
-	got, ok, reason := buildProcessRetryArgsFromSnapshot(processRetryBatchArgsSnapshot(snapshot), ".", 1, time.Second)
+	require.Equal(t, "parent-testlog.txt", snapshot.testLogFile)
+	got, ok, reason := buildProcessRetryArgsFromSnapshot(processRetryBatchArgsSnapshot(snapshot, "child-testlog.txt"), ".", 1, time.Second)
 
 	require.True(t, ok, reason)
 	require.Equal(t, []string{
 		"-test.failfast=false",
+		"-test.parallel=1",
+		"-test.testlogfile=child-testlog.txt",
 		"-test.run=^TestQuarantined$/wanted$",
 		"-test.skip=destructive$",
 		"-test.count=1",
 		"-test.cpu=1",
 		"-test.timeout=1s",
 	}, got)
+}
+
+func TestMergeProcessRetryTestLog(t *testing.T) {
+	parentPath := filepath.Join(t.TempDir(), "parent-testlog.txt")
+	childPath := filepath.Join(t.TempDir(), "child-testlog.txt")
+	require.NoError(t, os.WriteFile(parentPath, []byte(processRetryTestLogMagic+"getenv PARENT\n"), 0o600))
+	require.NoError(t, os.WriteFile(childPath, []byte(processRetryTestLogMagic+"getenv CHILD\nopen /tmp/input\n"), 0o600))
+
+	require.NoError(t, mergeProcessRetryTestLog(parentPath, childPath, "/workspace/package"))
+	got, err := os.ReadFile(parentPath)
+	require.NoError(t, err)
+	require.Equal(t, processRetryTestLogMagic+"getenv PARENT\nchdir /workspace/package\ngetenv CHILD\nopen /tmp/input\n", string(got))
+
+	require.NoError(t, os.WriteFile(childPath, []byte("getenv MISSING_HEADER\n"), 0o600))
+	require.Error(t, mergeProcessRetryTestLog(parentPath, childPath, "/workspace/package"))
+}
+
+func TestProcessRetryBatchTimeoutUsesPackageBudget(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	deadline := now.Add(30 * time.Minute)
+
+	require.Equal(t, 30*time.Minute-processRetryParentDeadlineReserve(), selectedProcessRetryTimeout(
+		true, 30*time.Minute, true, 0, false, deadline, true, now,
+	))
+	require.Equal(t, 5*time.Minute, selectedProcessRetryTimeout(
+		true, 30*time.Minute, true, 5*time.Minute, true, deadline, true, now,
+	))
+}
+
+func TestProcessRetryBatchCoverageFlushBeforeTerminalReplay(t *testing.T) {
+	tests := []struct {
+		name   string
+		result retryAttemptResult
+		want   bool
+	}{
+		{name: "pass"},
+		{name: "ordinary failure", result: retryAttemptResult{failed: true}},
+		{name: "native fatal", result: retryAttemptResult{nativeFatalTraceReplay: true}, want: true},
+		{name: "panic", result: retryAttemptResult{panicData: "panic"}, want: true},
+		{name: "cleanup panic", result: retryAttemptResult{cleanupPanicData: "panic"}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, requiresProcessRetryBatchCoverageFlush(tt.result))
+		})
+	}
 }
 
 func TestProcessRetryBatchRetriesOnlyMissingGroups(t *testing.T) {

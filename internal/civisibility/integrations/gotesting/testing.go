@@ -331,8 +331,11 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	settings := integrations.GetSettings()
 	testManagementEnabled := settings != nil && settings.TestManagement.Enabled &&
 		internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true)
+	// A batch child would re-enter a custom TestMain before its parent setup has
+	// been torn down, so keep quarantined first attempts in the native process.
 	if processModeEnabled && testManagementEnabled && retryAttemptRaceEnabled() &&
-		ProcessRetryContainmentSupported() && wrapperOpts.processRetryCoordinator != nil {
+		ProcessRetryContainmentSupported() && wrapperOpts.processRetryCoordinator != nil &&
+		!processRetryCustomTestMainActive() {
 		wrapperOpts.quarantinedRaceIsolation = true
 	}
 	var knownTests *net.KnownTestsResponseData
@@ -434,6 +437,21 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			panic(deferredTerminalPanic)
 		}
 		return exitCode
+	}
+}
+
+func processRetryCustomTestMainActive() bool {
+	callers := make([]uintptr, 32)
+	count := runtime.Callers(2, callers)
+	frames := runtime.CallersFrames(callers[:count])
+	for {
+		frame, more := frames.Next()
+		if strings.HasSuffix(frame.Function, ".TestMain") {
+			return true
+		}
+		if !more {
+			return false
+		}
 	}
 }
 

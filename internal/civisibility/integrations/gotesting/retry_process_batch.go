@@ -321,6 +321,18 @@ func preserveProcessRetryBatchFailure(
 	groups []*deferredProcessRetryGroup,
 	completed map[*deferredProcessRetryGroup]processRetryAttemptResult,
 ) {
+	if errors.Is(processAttempt.Err, errProcessRetryTestLogMerge) {
+		for _, group := range groups {
+			attempt, ok := completed[group]
+			if !ok {
+				continue
+			}
+			attempt.SetupFailure = true
+			attempt.Err = errors.Join(attempt.Err, processAttempt.Err)
+			completed[group] = attempt
+			return
+		}
+	}
 	if !processAttempt.ExitStatusObserved || processAttempt.ExitCode == 0 {
 		return
 	}

@@ -75,6 +75,8 @@ var mockCoverageRequests atomic.Int32
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
+	releaseQuarantinedRaceTestMainResource := acquireQuarantinedRaceCustomTestMainResource()
+	defer releaseQuarantinedRaceTestMainResource()
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
 	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
@@ -82,7 +84,7 @@ func TestMain(m *testing.M) {
 	// We need to spawn separated test process for each scenario
 	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection", "TestFlakyTestRetriesWithTransientSettingsFailure"}
 	if quarantinedRaceScenarioAvailable() {
-		scenarios = append(scenarios, "TestQuarantinedRace")
+		scenarios = append(scenarios, "TestQuarantinedRace", "TestQuarantinedRaceCustomTestMain")
 	}
 	if coverageModeSupportsITRBackfill() {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
@@ -124,6 +126,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv("TestQuarantinedRace", false) {
 		fmt.Printf(scenarioStarted, "TestQuarantinedRace")
 		runQuarantinedRaceTests(m, "process")
+	} else if internal.BoolEnv("TestQuarantinedRaceCustomTestMain", false) {
+		fmt.Printf(scenarioStarted, "TestQuarantinedRaceCustomTestMain")
+		runQuarantinedRaceCustomTestMainTests(m)
 	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
 		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
 		os.Exit(runProcessRetryChild(m))
@@ -146,6 +151,20 @@ func TestMain(m *testing.M) {
 			runTestControllerSubprocess("RetryNativeParallelUnitTest", "^TestRetryAttemptNativeMaxParallelMatchesTestingFlag$", "Bypass=true", "-test.parallel=3")
 			for _, v := range scenarios {
 				runFilter := legacyScenarioRunFilter
+				if v == "TestQuarantinedRaceCustomTestMain" {
+					pidDir, err := os.MkdirTemp("", "dd-quarantined-custom-testmain-*")
+					if err != nil {
+						panic(err)
+					}
+					pidPath := filepath.Join(pidDir, "pid")
+					_ = os.Setenv(quarantinedRaceCustomTestMainEnv, "127.0.0.1:0")
+					_ = os.Setenv(quarantinedRaceCustomTestMainPIDEnv, pidPath)
+					runTestControllerSubprocess(v, "^TestQuarantinedRaceCustomTestMain$", v+"=true", "-test.parallel=1")
+					_ = os.Unsetenv(quarantinedRaceCustomTestMainEnv)
+					_ = os.Unsetenv(quarantinedRaceCustomTestMainPIDEnv)
+					_ = os.RemoveAll(pidDir)
+					continue
+				}
 				if v == "TestQuarantinedRace" {
 					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|Test_Foo)$"
 					pidDir, err := os.MkdirTemp("", "dd-quarantined-race-pids-*")

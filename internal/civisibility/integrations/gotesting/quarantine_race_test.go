@@ -10,6 +10,7 @@ package gotesting
 import (
 	"bytes"
 	"fmt"
+	stdnet "net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -32,7 +34,11 @@ const (
 	quarantinedRaceInProcessFixtureEnv      = "DD_TEST_QUARANTINED_RACE_IN_PROCESS_FIXTURE"
 	quarantinedRaceInProcessFailureSentinel = "quarantined race remained in the parent"
 	quarantinedRacePIDDirEnv                = "DD_TEST_QUARANTINED_RACE_PID_DIR"
+	quarantinedRaceCustomTestMainEnv        = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN"
+	quarantinedRaceCustomTestMainPIDEnv     = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN_PID"
 )
+
+var quarantinedRaceSecondFinished = make(chan struct{}, 1)
 
 func unquarantinedRaceFixtureSelected() bool {
 	return os.Getenv(unquarantinedRaceFixtureEnv) == "true"
@@ -91,7 +97,16 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 		panic("missing quarantined race PID directory")
 	}
 
-	exitCode := RunM(m)
+	var exitCode int
+	if isolated {
+		// A generated test main has no user TestMain frame. RunM in a fresh
+		// goroutine so this fixture exercises that production call stack.
+		done := make(chan int, 1)
+		go func() { done <- RunM(m) }()
+		exitCode = <-done
+	} else {
+		exitCode = RunM(m)
+	}
 	if os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true" && mockCoverageRequests.Load() == 0 {
 		panic("expected quarantined process retries to upload test coverage")
 	}
@@ -129,8 +144,16 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 		if testName == "Test_Foo" {
 			checkSpansByTagValue(spans, constants.TestIsModified, "true", 1)
 		}
-		if spans[0].Tag(constants.TestStatus) == constants.TestStatusFail {
+		status := spans[0].Tag(constants.TestStatus)
+		if status == constants.TestStatusFail {
 			failedSpans++
+		}
+		wantStatus := any(constants.TestStatusPass)
+		if testName == "TestQuarantinedRace" {
+			wantStatus = constants.TestStatusFail
+		}
+		if status != wantStatus {
+			panic(fmt.Sprintf("%s status = %v, want %v", testName, status, wantStatus))
 		}
 		payload, readErr := os.ReadFile(filepath.Join(pidDir, testName))
 		if readErr != nil {
@@ -160,6 +183,60 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 		fmt.Fprint(os.Stdout, quarantinedRaceInProcessFailureSentinel)
 	}
 	os.Exit(exitCode)
+}
+
+func acquireQuarantinedRaceCustomTestMainResource() func() {
+	address := os.Getenv(quarantinedRaceCustomTestMainEnv)
+	if address == "" {
+		return func() {}
+	}
+	listener, err := stdnet.Listen("tcp", address)
+	if err != nil {
+		panic("quarantined race child re-entered active TestMain setup: " + err.Error())
+	}
+	if err := os.Setenv(quarantinedRaceCustomTestMainEnv, listener.Addr().String()); err != nil {
+		_ = listener.Close()
+		panic(err)
+	}
+	return func() { _ = listener.Close() }
+}
+
+func runQuarantinedRaceCustomTestMainTests(m *testing.M) {
+	if err := os.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process"); err != nil {
+		panic(err)
+	}
+	server := setUpHTTPServer(false, false, false, nil, true, nil, true,
+		&net.TestManagementTestsResponseDataModules{
+			Modules: map[string]net.TestManagementTestsResponseDataSuites{
+				"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": {
+					Suites: map[string]net.TestManagementTestsResponseDataTests{
+						"quarantine_race_test.go": {
+							Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+								"TestQuarantinedRaceCustomTestMain": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true},
+								},
+							},
+						},
+					},
+				},
+			},
+		}, true, nil)
+	defer server.Close()
+	configureImpactedTestsGitDiff()
+
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+	if exitCode := RunM(m); exitCode != 0 {
+		panic("custom TestMain quarantined fixture failed with exit code " + strconv.Itoa(exitCode))
+	}
+	payload, err := os.ReadFile(os.Getenv(quarantinedRaceCustomTestMainPIDEnv))
+	if err != nil {
+		panic(err)
+	}
+	if strings.TrimSpace(string(payload)) != strconv.Itoa(os.Getpid()) {
+		panic("custom TestMain quarantined fixture did not run in the parent")
+	}
+	os.Exit(0)
 }
 
 func runUnquarantinedRaceFixture(m *testing.M) {
@@ -225,6 +302,10 @@ func TestQuarantinedRace(t *testing.T) {
 	t.Parallel()
 
 	runRaceFixture()
+	select {
+	case <-quarantinedRaceSecondFinished:
+	case <-time.After(250 * time.Millisecond):
+	}
 	writeQuarantinedRacePID(t)
 	fmt.Fprint(os.Stdout, "quarantined race fixture completed")
 }
@@ -235,6 +316,19 @@ func TestQuarantinedRaceSecond(t *testing.T) {
 	}
 	t.Parallel()
 	writeQuarantinedRacePID(t)
+	select {
+	case quarantinedRaceSecondFinished <- struct{}{}:
+	default:
+	}
+}
+
+func TestQuarantinedRaceCustomTestMain(t *testing.T) {
+	if execMeta := getTestMetadata(t); !isProcessRetryChild() && (execMeta == nil || !execMeta.hasAdditionalFeatureWrapper) {
+		t.Skip("no CI Visibility quarantine wrapper active")
+	}
+	if err := os.WriteFile(os.Getenv(quarantinedRaceCustomTestMainPIDEnv), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestUnquarantinedRace(t *testing.T) {

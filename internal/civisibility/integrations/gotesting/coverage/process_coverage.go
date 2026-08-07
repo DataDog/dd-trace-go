@@ -85,15 +85,87 @@ func (c *ProcessTestCoverage) Finish() []ProcessTestCoverageFile {
 	return files
 }
 
-// WriteProcessCoverageProfile writes the isolated process aggregate profile.
-func WriteProcessCoverageProfile(path string) error {
+// ProcessCoverageProfile owns the aggregate coverage snapshot captured before
+// an isolated workload starts.
+type ProcessCoverageProfile struct {
+	before *orderedCoverProfile
+}
+
+// BeginProcessCoverageProfile captures the aggregate coverage present before
+// an isolated workload starts.
+func BeginProcessCoverageProfile() (*ProcessCoverageProfile, error) {
 	if !CanComputeCoverageProfile() {
+		return nil, nil
+	}
+	processTestCoverageMu.Lock()
+	defer processTestCoverageMu.Unlock()
+	before, err := snapshotProcessCoverageProfile()
+	if err != nil {
+		return nil, err
+	}
+	return &ProcessCoverageProfile{before: before}, nil
+}
+
+// WriteDelta writes only coverage added since BeginProcessCoverageProfile.
+func (p *ProcessCoverageProfile) WriteDelta(path string) error {
+	if p == nil {
 		return nil
 	}
 	processTestCoverageMu.Lock()
 	defer processTestCoverageMu.Unlock()
-	_, err := tearDown(path, "")
-	return err
+	after, err := snapshotProcessCoverageProfile()
+	if err != nil {
+		return err
+	}
+	if err := subtractProcessCoverageProfiles(p.before, after); err != nil {
+		return err
+	}
+	return after.writeAtomic(path)
+}
+
+func snapshotProcessCoverageProfile() (*orderedCoverProfile, error) {
+	temporaryDir, err := os.MkdirTemp("", "dd-process-profile-*")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(temporaryDir) }()
+	path := filepath.Join(temporaryDir, "coverage.out")
+	if _, err := tearDown(path, ""); err != nil {
+		return nil, err
+	}
+	return parseOrderedCoverProfile(path)
+}
+
+func subtractProcessCoverageProfiles(before, after *orderedCoverProfile) error {
+	if before == nil || after == nil {
+		return errors.New("coverage profile missing")
+	}
+	if len(before.lines) == 0 || len(after.lines) == 0 || strings.TrimSpace(before.lines[0].raw) != strings.TrimSpace(after.lines[0].raw) {
+		return errors.New("coverage profile modes differ")
+	}
+	mode := strings.TrimSpace(strings.TrimPrefix(after.lines[0].raw, "mode:"))
+	beforeByBlock := make(map[string]int)
+	for idx := range before.lines {
+		line := &before.lines[idx]
+		if line.block != nil {
+			beforeByBlock[processCoverageBlockKey(line.fileName, line.block)] = line.block.count
+		}
+	}
+	for idx := range after.lines {
+		line := &after.lines[idx]
+		if line.block == nil {
+			continue
+		}
+		beforeCount := beforeByBlock[processCoverageBlockKey(line.fileName, line.block)]
+		if mode == "set" {
+			if line.block.count <= beforeCount {
+				line.block.count = 0
+			}
+		} else {
+			line.block.count = max(line.block.count-beforeCount, 0)
+		}
+	}
+	return nil
 }
 
 // MergeProcessCoverageProfile merges an isolated process profile into the

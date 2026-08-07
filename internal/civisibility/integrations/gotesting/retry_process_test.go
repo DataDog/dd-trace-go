@@ -614,13 +614,13 @@ func TestProcessRetryTimeoutFromEnv(t *testing.T) {
 func TestProcessRetrySelectedTimeoutUsesDefaultUnlessShortened(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	require.Equal(t, processRetryDefaultTimeout, selectedProcessRetryTimeout(
-		30*time.Minute, true, 0, false, time.Time{}, false, now,
+		false, 30*time.Minute, true, 0, false, time.Time{}, false, now,
 	))
 	require.Equal(t, 5*time.Minute, selectedProcessRetryTimeout(
-		5*time.Minute, true, 0, false, time.Time{}, false, now,
+		false, 5*time.Minute, true, 0, false, time.Time{}, false, now,
 	))
 	require.Equal(t, 20*time.Minute, selectedProcessRetryTimeout(
-		30*time.Minute, true, 20*time.Minute, true, time.Time{}, false, now,
+		false, 30*time.Minute, true, 20*time.Minute, true, time.Time{}, false, now,
 	))
 }
 
@@ -4498,6 +4498,40 @@ func TestRunProcessRetryAttemptPreservesArtifactPolicy(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, "..", relative)
 	require.False(t, strings.HasPrefix(relative, ".."+string(filepath.Separator)))
+}
+
+func TestRunProcessRetryBatchMergesTestLog(t *testing.T) {
+	requireProcessRetryContainmentForTesting(t)
+	resetProcessRetryLimiterForTesting(t)
+	parentTestLog := filepath.Join(t.TempDir(), "testlog.txt")
+	require.NoError(t, os.WriteFile(parentTestLog, []byte(processRetryTestLogMagic), 0o600))
+	t.Setenv(processRetryNativeLifecycleFixtureEnv, "true")
+	t.Setenv(processRetryChildResultScenarioEnv, "pass")
+
+	baseline := captureProcessRetryLaunchBaselineForTesting()
+	require.NoError(t, baseline.err)
+	baseline.args = []string{"-test.testlogfile=" + parentTestLog}
+	baseline.argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
+	attempt := runProcessRetryAttemptWithBaseline(context.Background(), processRetryChildConfig{
+		TestName:    processRetryBatchTestName,
+		Attempt:     1,
+		RetryReason: processRetryBatchReason,
+		Batch: &processRetryBatchConfig{
+			Version: processRetryBatchVersion,
+			Tests: []processRetryBatchTestConfig{{
+				TestName: "TestProcessRetryChildResultFixture",
+			}},
+		},
+	}, time.Time{}, false, baseline)
+	if attempt.Cleanup != nil {
+		defer attempt.Cleanup()
+	}
+	require.False(t, attempt.SetupFailure)
+	require.NoError(t, attempt.Err)
+
+	got, err := os.ReadFile(parentTestLog)
+	require.NoError(t, err)
+	require.Contains(t, string(got), "getenv "+processRetryChildResultScenarioEnv+"\n")
 }
 
 func TestRunProcessRetryAttemptDoesNotInheritStdin(t *testing.T) {

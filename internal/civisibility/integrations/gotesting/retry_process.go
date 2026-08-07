@@ -117,8 +117,25 @@ type processRetryChildConfig struct {
 	CollectPerTestCoverage bool
 	batchTest              *processRetryBatchTestConfig
 	batchRaceCheckpoint    *atomic.Int64
+	batchCoverageFinalizer *processRetryBatchCoverageFinalizer
 	controlConfig          processRetryControlConfig
 	controlConfigLoaded    bool
+}
+
+type processRetryBatchCoverageFinalizer struct {
+	once    sync.Once
+	profile *coverage.ProcessCoverageProfile
+	path    string
+}
+
+func (f *processRetryBatchCoverageFinalizer) run() {
+	if f != nil {
+		f.once.Do(func() {
+			if err := f.profile.WriteDelta(f.path); err != nil {
+				log.Debug("civisibility: failed to write isolated first-attempt coverage: %s", err.Error())
+			}
+		})
+	}
 }
 
 type processRetryStatus string
@@ -142,6 +159,7 @@ const (
 	processRetryTruncationMarker           = "[dd-trace-go: process retry panic data truncated]"
 	processRetryMetadataTruncationMarker   = "[dd-trace-go: process retry metadata truncated]"
 	processRetryOutputTruncationMarker     = "\n[dd-trace-go: process retry output truncated]\n"
+	processRetryTestLogMagic               = "# test log\n"
 	processRetryOutputMaxBytes             = 32 * 1024
 	processRetryStreamMaxBytes             = 32 * 1024
 	processRetryExitCodeUnset              = -1
@@ -251,6 +269,7 @@ var (
 	errProcessRetryOutputDrainTimedOut = errors.New("process retry output drain timed out")
 	errProcessRetryContainmentLost     = errors.New("process retry process-tree containment lost")
 	errProcessRetryMultipleMRun        = errors.New("process retry child invoked testing.M.Run more than once")
+	errProcessRetryTestLogMerge        = errors.New("process retry test log merge failed")
 )
 
 var lookupProcessRetryChildTransport = integrations.LookupProcessRetryChildTransport
@@ -970,6 +989,7 @@ type processRetryArgsSnapshot struct {
 	skipSelector     string
 	artifactOutput   string
 	artifactsEnabled bool
+	testLogFile      string
 	timeout          time.Duration
 	timeoutSet       bool
 	ok               bool
@@ -1786,7 +1806,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	if currentCPU < 1 {
 		currentCPU = processRetryCurrentCPU()
 	}
-	selectedTimeout := selectedProcessRetryTimeout(argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
+	selectedTimeout := selectedProcessRetryTimeout(cfg.Batch != nil, argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
 	if selectedTimeout <= 0 {
 		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
@@ -1823,7 +1843,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	if err := ctx.Err(); err != nil {
 		return finishSetupFailure(err, false)
 	}
-	selectedTimeout = selectedProcessRetryTimeout(argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
+	selectedTimeout = selectedProcessRetryTimeout(cfg.Batch != nil, argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
 	if selectedTimeout <= 0 {
 		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
@@ -1865,6 +1885,14 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 
 	resultPath := filepath.Join(tempDir, "result.json")
+	parentTestLogPath := argsSnapshot.testLogFile
+	childTestLogPath := ""
+	if cfg.Batch != nil && parentTestLogPath != "" {
+		if !filepath.IsAbs(parentTestLogPath) {
+			parentTestLogPath = filepath.Join(workingDir, parentTestLogPath)
+		}
+		childTestLogPath = filepath.Join(tempDir, "testlog.txt")
+	}
 	childCfg := cfg
 	childCfg.ResultPath = resultPath
 	childCfg.ObservedGOMAXPROCS = currentCPU
@@ -1941,7 +1969,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	selector := cfg.TestName
 	if childCfg.Batch != nil {
 		selector = "."
-		argsSnapshot = processRetryBatchArgsSnapshot(argsSnapshot)
+		argsSnapshot = processRetryBatchArgsSnapshot(argsSnapshot, childTestLogPath)
 	}
 	filteredArgs, ok, reason := buildProcessRetryArgsFromSnapshot(argsSnapshot, selector, currentCPU, childTestingTimeout)
 	if !ok {
@@ -2074,6 +2102,12 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	if releaseErr := releaseTree(); releaseErr != nil {
 		markContainmentLost(releaseErr)
 	}
+	if childTestLogPath != "" && !attempt.Unreaped {
+		if err := mergeProcessRetryTestLog(parentTestLogPath, childTestLogPath, workingDir); err != nil {
+			attempt.SetupFailure = true
+			attempt.Err = errors.Join(attempt.Err, errProcessRetryTestLogMerge, err)
+		}
+	}
 	result, timingOK, resultErr := readProcessRetryResult(resultPath, childCfg)
 	if resultErr != nil {
 		attempt.Err = errors.Join(attempt.Err, resultErr)
@@ -2104,9 +2138,38 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	return attempt
 }
 
-func processRetryBatchArgsSnapshot(snapshot processRetryArgsSnapshot) processRetryArgsSnapshot {
-	snapshot.preserved = append(append([]string(nil), snapshot.preserved...), "-test.failfast=false")
+func processRetryBatchArgsSnapshot(snapshot processRetryArgsSnapshot, testLogFile string) processRetryArgsSnapshot {
+	// Race and coverage counters are process-global, so parallel batch tests
+	// cannot reliably attribute their increments to the test that caused them.
+	// Preserve t.Parallel's scheduling while serializing the admitted bodies.
+	snapshot.preserved = append(append([]string(nil), snapshot.preserved...), "-test.failfast=false", "-test.parallel=1")
+	if testLogFile != "" {
+		snapshot.preserved = append(snapshot.preserved, "-test.testlogfile="+testLogFile)
+	}
 	return snapshot
+}
+
+func mergeProcessRetryTestLog(parentPath, childPath, childWorkingDirectory string) error {
+	childLog, err := os.ReadFile(childPath)
+	if err != nil {
+		return err
+	}
+	if !bytes.HasPrefix(childLog, []byte(processRetryTestLogMagic)) || childLog[len(childLog)-1] != '\n' {
+		return errors.New("invalid child test log")
+	}
+	records := childLog[len(processRetryTestLogMagic):]
+	if len(records) == 0 {
+		return nil
+	}
+	parentLog, err := os.OpenFile(parentPath, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	_, writeErr := io.WriteString(parentLog, "chdir "+childWorkingDirectory+"\n")
+	if writeErr == nil {
+		_, writeErr = parentLog.Write(records)
+	}
+	return errors.Join(writeErr, parentLog.Close())
 }
 
 func applyProcessRetryControlledTerminalState(
@@ -2158,6 +2221,7 @@ func finalizeProcessRetryOutputCaptures(
 }
 
 func selectedProcessRetryTimeout(
+	batch bool,
 	argTimeout time.Duration,
 	argTimeoutSet bool,
 	envTimeout time.Duration,
@@ -2167,6 +2231,9 @@ func selectedProcessRetryTimeout(
 	now time.Time,
 ) time.Duration {
 	selected := processRetryDefaultTimeout
+	if batch && argTimeoutSet {
+		selected = argTimeout
+	}
 	if envTimeoutSet {
 		selected = envTimeout
 	}
@@ -2689,7 +2756,7 @@ func finishProcessRetrySubtestEvents(testInfo *commonInfo, parentMeta *testExecu
 func captureProcessRetryArgsSnapshot(originalArgs []string) processRetryArgsSnapshot {
 	preserved, boundary, runSelector, skipSelector, ok, reason := processRetryFilterArgs(originalArgs, true)
 	timeout, timeoutSet := processRetryTimeoutFromArgs(originalArgs)
-	artifactOutput, artifactsEnabled := processRetryArtifactPolicyFromArgs(originalArgs)
+	artifactOutput, artifactsEnabled, testLogFile := processRetryOutputPolicyFromArgs(originalArgs)
 	return processRetryArgsSnapshot{
 		captured:         true,
 		preserved:        append([]string(nil), preserved...),
@@ -2698,6 +2765,7 @@ func captureProcessRetryArgsSnapshot(originalArgs []string) processRetryArgsSnap
 		skipSelector:     skipSelector,
 		artifactOutput:   artifactOutput,
 		artifactsEnabled: artifactsEnabled,
+		testLogFile:      testLogFile,
 		timeout:          timeout,
 		timeoutSet:       timeoutSet,
 		ok:               ok,
@@ -2744,7 +2812,7 @@ func buildProcessRetryArgsFromSnapshot(snapshot processRetryArgsSnapshot, testNa
 	return args, true, ""
 }
 
-func processRetryArtifactPolicyFromArgs(originalArgs []string) (outputDir string, enabled bool) {
+func processRetryOutputPolicyFromArgs(originalArgs []string) (outputDir string, artifactsEnabled bool, testLogFile string) {
 	for i := 0; i < len(originalArgs); i++ {
 		arg := originalArgs[i]
 		if arg == "--" || !processRetryIsFlagToken(arg) {
@@ -2759,14 +2827,16 @@ func processRetryArtifactPolicyFromArgs(originalArgs []string) (outputDir string
 		case "-test.outputdir":
 			outputDir = value
 		case "-test.artifacts":
-			enabled = true
+			artifactsEnabled = true
 			if hasValue {
 				parsed, err := strconv.ParseBool(value)
-				enabled = err == nil && parsed
+				artifactsEnabled = err == nil && parsed
 			}
+		case "-test.testlogfile":
+			testLogFile = value
 		}
 	}
-	return outputDir, enabled
+	return outputDir, artifactsEnabled, testLogFile
 }
 
 func processRetryTimeoutFromArgs(originalArgs []string) (time.Duration, bool) {
@@ -3182,6 +3252,14 @@ func configureProcessRetryBatchChildWorkloads(
 ) testingMFinalizer {
 	batchRaceCheckpoint := &atomic.Int64{}
 	batchRaceCheckpoint.Store(retryAttemptRaceErrors())
+	processCoverageProfile, err := coverage.BeginProcessCoverageProfile()
+	if err != nil {
+		log.Debug("civisibility: failed to capture isolated first-attempt coverage baseline: %s", err.Error())
+	}
+	finalizeCoverage := &processRetryBatchCoverageFinalizer{
+		profile: processCoverageProfile,
+		path:    processRetryBatchCoveragePath(cfg.ResultPath),
+	}
 	available := make(map[string]testing.InternalTest, len(*tests))
 	for _, test := range *tests {
 		available[test.Name] = test
@@ -3191,6 +3269,7 @@ func configureProcessRetryBatchChildWorkloads(
 	for index, spec := range cfg.Batch.Tests {
 		childCfg := processRetryBatchChildConfig(cfg, index, spec)
 		childCfg.batchRaceCheckpoint = batchRaceCheckpoint
+		childCfg.batchCoverageFinalizer = finalizeCoverage
 		test, ok := available[spec.TestName]
 		if !ok {
 			newProcessRetryResultWriter(childCfg.ResultPath).Write(processRetryNotRunResult(childCfg, ""))
@@ -3209,9 +3288,7 @@ func configureProcessRetryBatchChildWorkloads(
 		for _, finalizeTest := range finalizers {
 			finalizeTest()
 		}
-		if err := coverage.WriteProcessCoverageProfile(processRetryBatchCoveragePath(cfg.ResultPath)); err != nil {
-			log.Debug("civisibility: failed to write isolated first-attempt coverage: %s", err.Error())
-		}
+		finalizeCoverage.run()
 		writer.Write(processRetryNotRunResult(cfg, ""))
 		return finalize(exitCode)
 	}
@@ -3395,6 +3472,7 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		} else {
 			observation.writeFinalResult()
 		}
+		finalizeProcessRetryBatchCoverageBeforeTerminalReplay(cfg, result)
 
 		if result.failed || result.raceDetected || result.panicData != nil || result.cleanupPanicData != nil {
 			t.Fail()
@@ -3414,6 +3492,16 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		}
 	}
 	return wrapped, observation.writeFinalResult
+}
+
+func finalizeProcessRetryBatchCoverageBeforeTerminalReplay(cfg processRetryChildConfig, result retryAttemptResult) {
+	if requiresProcessRetryBatchCoverageFlush(result) {
+		cfg.batchCoverageFinalizer.run()
+	}
+}
+
+func requiresProcessRetryBatchCoverageFlush(result retryAttemptResult) bool {
+	return result.nativeFatalTraceReplay || result.panicData != nil || result.cleanupPanicData != nil
 }
 
 func processRetryControlledTerminalStatus(result retryAttemptResult) processRetryStatus {

@@ -7,6 +7,7 @@ package coverage
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -37,6 +38,66 @@ func TestMergeProcessCoverageProfilesRejectsDifferentModes(t *testing.T) {
 	parent := &orderedCoverProfile{lines: []orderedCoverProfileLine{{raw: "mode: count"}}}
 	child := &orderedCoverProfile{lines: []orderedCoverProfileLine{{raw: "mode: atomic"}}}
 	require.Error(t, mergeProcessCoverageProfiles(parent, child))
+}
+
+func TestProcessCoverageProfileWritesOnlyWorkloadDelta(t *testing.T) {
+	oldMode, oldTearDown := mode, tearDown
+	t.Cleanup(func() {
+		mode, tearDown = oldMode, oldTearDown
+	})
+	mode = "count"
+	profiles := [][]byte{
+		[]byte("mode: count\npkg/source.go:1.1,1.2 1 2\npkg/source.go:2.1,2.2 1 0\n"),
+		[]byte("mode: count\npkg/source.go:1.1,1.2 1 2\npkg/source.go:2.1,2.2 1 3\n"),
+	}
+	var snapshots int
+	tearDown = func(path, _ string) (string, error) {
+		profile := profiles[snapshots]
+		snapshots++
+		return path, os.WriteFile(path, profile, 0o600)
+	}
+
+	profile, err := BeginProcessCoverageProfile()
+	require.NoError(t, err)
+	output := filepath.Join(t.TempDir(), "delta.out")
+	require.NoError(t, profile.WriteDelta(output))
+
+	delta, err := parseOrderedCoverProfile(output)
+	require.NoError(t, err)
+	require.Equal(t, 0, delta.lines[1].block.count)
+	require.Equal(t, 3, delta.lines[2].block.count)
+	require.Equal(t, 2, snapshots)
+}
+
+func TestSubtractProcessCoverageProfilesUsesModeSemantics(t *testing.T) {
+	for _, tt := range []struct {
+		mode        string
+		beforeCount int
+		afterCount  int
+		want        int
+	}{
+		{mode: "count", beforeCount: 4, afterCount: 7, want: 3},
+		{mode: "atomic", beforeCount: 4, afterCount: 7, want: 3},
+		{mode: "set", beforeCount: 1, afterCount: 1, want: 0},
+		{mode: "set", beforeCount: 0, afterCount: 1, want: 1},
+	} {
+		t.Run(fmt.Sprintf("%s/%d-%d", tt.mode, tt.beforeCount, tt.afterCount), func(t *testing.T) {
+			before := processCoverageProfileForTest(t, tt.mode, tt.beforeCount)
+			after := processCoverageProfileForTest(t, tt.mode, tt.afterCount)
+
+			require.NoError(t, subtractProcessCoverageProfiles(before, after))
+			require.Equal(t, tt.want, after.lines[1].block.count)
+		})
+	}
+}
+
+func processCoverageProfileForTest(t *testing.T, profileMode string, count int) *orderedCoverProfile {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "profile.out")
+	require.NoError(t, os.WriteFile(path, fmt.Appendf(nil, "mode: %s\npkg/source.go:1.1,1.2 1 %d\n", profileMode, count), 0o600))
+	profile, err := parseOrderedCoverProfile(path)
+	require.NoError(t, err)
+	return profile
 }
 
 func TestProcessTestCoverageUsesTestCoverageCollector(t *testing.T) {
