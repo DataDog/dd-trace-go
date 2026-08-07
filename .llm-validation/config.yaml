@@ -1,0 +1,26 @@
+# LLM Validation Platform — dd-trace-go config
+model: claude-opus-4-8
+runs: 3
+
+instruction_files:
+  - AGENTS.md
+  - contrib/AGENTS.md
+  - ddtrace/tracer/AGENTS.md
+  - internal/AGENTS.md
+
+default_level: minimum
+presets:
+  minimum:
+    cases: ["dd-trace-go-contrib-structure-001", "dd-trace-go-contrib-tags-002"]
+    runs: 4
+  medium:
+    max_cases: 4
+    runs: 3
+  full:
+    runs: 3
+
+policy:
+  noise_threshold: 1.0
+  pairwise_win_floor: 0.45
+  blocking_fail_floor: 0.45
+  blocking_fail_ci_upper: 0.55
