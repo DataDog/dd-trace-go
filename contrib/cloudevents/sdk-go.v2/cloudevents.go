@@ -3,8 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-// Package cloudevents provides Datadog tracing for CloudEvents clients created
-// with github.com/cloudevents/sdk-go/v2/client.
+// Package cloudevents instruments the CloudEvents Go SDK. CloudEvents defines a
+// common event envelope that can be transported over systems such as HTTP,
+// Kafka, or Google Pub/Sub. This integration traces events as they are sent and
+// received and propagates trace context in CloudEvent extension attributes.
 package cloudevents
 
 import (
@@ -60,15 +62,12 @@ func WithSubject() Option {
 	}
 }
 
-// New returns a Datadog implementation of client.ObservabilityService.
-// Install it on a CloudEvents client with client.WithObservabilityService.
+// New returns an observability service that the CloudEvents SDK calls around
+// send, request, and receive operations. Install it on a client with
+// client.WithObservabilityService.
 //
-// Tracing updates the event's propagation extensions, so callers must not send
-// the same event concurrently. Clone the event first when isolation is needed.
-//
-// CloudEvents SDK v2.16.2 does not invoke observability completion callbacks
-// for undelivered Request calls. Such request spans cannot finish until that
-// behavior is fixed upstream.
+// The service adds W3C trace context to outgoing event extensions. Callers that
+// send the same event concurrently should clone it before each send.
 func New(opts ...Option) client.ObservabilityService {
 	service := &observabilityService{}
 	for _, opt := range opts {
@@ -88,10 +87,14 @@ var _ client.ObservabilityService = (*observabilityService)(nil)
 
 type extractedContextKey struct{}
 
+// InboundContextDecorators extracts W3C trace context and baggage from event
+// metadata before the SDK decodes and dispatches an inbound message.
 func (s *observabilityService) InboundContextDecorators() []func(context.Context, binding.Message) context.Context {
 	return []func(context.Context, binding.Message) context.Context{s.extractInboundContext}
 }
 
+// extractInboundContext preserves propagation data until the SDK invokes the
+// application receiver.
 func (*observabilityService) extractInboundContext(
 	ctx context.Context,
 	message binding.Message,
@@ -107,6 +110,9 @@ func (*observabilityService) extractInboundContext(
 	return context.WithValue(ctx, extractedContextKey{}, extracted)
 }
 
+// RecordCallingInvoker starts a consumer span before the SDK calls the
+// application receiver. It starts a new trace linked to the sending span because
+// event delivery is asynchronous.
 func (s *observabilityService) RecordCallingInvoker(
 	ctx context.Context,
 	event *cloudevents.Event,
@@ -133,6 +139,8 @@ func (s *observabilityService) RecordCallingInvoker(
 	}
 }
 
+// extractedContext reads propagation data from transport metadata, or from the
+// decoded event when all metadata was serialized into the event body.
 func extractedContext(ctx context.Context, event *cloudevents.Event) *tracer.SpanContext {
 	extracted, _ := ctx.Value(extractedContextKey{}).(*tracer.SpanContext)
 	if extracted != nil || event == nil {
@@ -145,6 +153,8 @@ func extractedContext(ctx context.Context, event *cloudevents.Event) *tracer.Spa
 	return extracted
 }
 
+// spanLinks represents the sending trace as a link on the consumer span while
+// preserving links already supplied by the configured propagator.
 func spanLinks(extracted *tracer.SpanContext) []tracer.SpanLink {
 	if extracted == nil {
 		return nil
@@ -162,6 +172,8 @@ func spanLinks(extracted *tracer.SpanContext) []tracer.SpanLink {
 	}}
 }
 
+// RecordSendingEvent traces an event send and adds trace context to the outgoing
+// event. The SDK reports the delivery result through the returned callback.
 func (s *observabilityService) RecordSendingEvent(
 	ctx context.Context,
 	event cloudevents.Event,
@@ -172,6 +184,8 @@ func (s *observabilityService) RecordSendingEvent(
 	}
 }
 
+// RecordRequestEvent traces a request/reply operation and adds trace context to
+// the outgoing event. The SDK reports the result through the returned callback.
 func (s *observabilityService) RecordRequestEvent(
 	ctx context.Context,
 	event cloudevents.Event,
@@ -185,6 +199,8 @@ func (s *observabilityService) RecordRequestEvent(
 	}
 }
 
+// RecordReceivedMalformedEvent records a consumer error when an inbound message
+// cannot be decoded as a CloudEvent.
 func (s *observabilityService) RecordReceivedMalformedEvent(_ context.Context, err error) {
 	span := tracer.StartSpan(
 		instr.OperationName(instrumentation.ComponentConsumer, nil),
@@ -194,6 +210,8 @@ func (s *observabilityService) RecordReceivedMalformedEvent(_ context.Context, e
 	finishSpan(span, err)
 }
 
+// startProducerSpan creates the span shared by send and request operations and
+// adds its propagation context to the event.
 func (s *observabilityService) startProducerSpan(
 	ctx context.Context,
 	event *cloudevents.Event,
@@ -209,6 +227,7 @@ func (s *observabilityService) startProducerSpan(
 	return span, spanCtx
 }
 
+// spanOptions builds the Datadog messaging tags shared by send and receive spans.
 func (s *observabilityService) spanOptions(
 	component instrumentation.Component,
 	operation string,
@@ -238,6 +257,8 @@ func (s *observabilityService) spanOptions(
 	return opts
 }
 
+// tagEvent records event-envelope metadata but never records the event payload.
+// Subjects are included only when explicitly enabled.
 func (s *observabilityService) tagEvent(span *tracer.Span, event *cloudevents.Event) {
 	span.SetTag(ext.ResourceName, event.Type())
 	span.SetTag("cloudevents.id", event.ID())
@@ -254,10 +275,12 @@ func (s *observabilityService) tagEvent(span *tracer.Span, event *cloudevents.Ev
 	}
 }
 
+// isSuccess reports whether the transport acknowledged the operation.
 func isSuccess(result error) bool {
 	return protocol.IsACK(result)
 }
 
+// finishSpan records an unsuccessful transport result as a span error.
 func finishSpan(span *tracer.Span, result error) {
 	if !isSuccess(result) {
 		span.Finish(tracer.WithError(result))
