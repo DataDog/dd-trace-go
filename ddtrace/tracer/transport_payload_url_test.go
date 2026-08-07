@@ -20,10 +20,14 @@ import (
 
 // TestSendURLMatchesPayloadEvenAfterConfigChanges pins the invariant that makes
 // a wire-format/URL mismatch unrepresentable: send() picks its URL from the
-// payload's own protocol, never from live config. A payload encoded as v1.0
-// therefore still goes to /v1.0/traces even if the configured protocol changed
-// after it was created — the alternative (posting v1.0 bytes to /v0.4/traces)
-// is the failure this design rules out.
+// payload's own protocol, never from live config. A payload already carrying
+// an encoded trace therefore still goes to /v1.0/traces even if the
+// configured protocol changes afterward — the alternative (posting v1.0 bytes
+// to /v0.4/traces) is the failure this design rules out. This is deliberately
+// scoped to a non-empty payload: an empty one is rotated onto the new
+// protocol instead (see rotateStalePayload and
+// TestEmptyPayloadRotatesOnProtocolDowngrade), since it holds no encoded
+// bytes yet and can adopt the new protocol for free.
 func TestSendURLMatchesPayloadEvenAfterConfigChanges(t *testing.T) {
 	agent := startTestAgent(t)
 	tr := newTracerTest(t, agent)
@@ -35,11 +39,15 @@ func TestSendURLMatchesPayloadEvenAfterConfigChanges(t *testing.T) {
 	w := newAgentTraceWriter(tr.config, newPrioritySampler(), tr.statsd)
 	require.Equal(t, traceProtocolV1, w.payload.protocol(), "payload created while v1 was in effect must be v1")
 
+	// Encode a trace while v1 is still in effect, so the payload is no longer
+	// empty by the time the config changes below.
+	w.add([]*Span{makeSpan(1)})
+	require.Equal(t, traceProtocolV1, w.payload.protocol(), "sanity check: the payload must still be v1 after encoding")
+
 	// Change the configured protocol out from under the already-encoded payload.
 	tr.config.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 	require.Equal(t, traceProtocolV04, tr.config.internalConfig.RequestedTraceProtocol(), "sanity check: config did change")
 
-	w.add([]*Span{makeSpan(1)})
 	w.flush()
 	w.wg.Wait()
 
