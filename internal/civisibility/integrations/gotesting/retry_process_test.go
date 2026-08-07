@@ -1123,6 +1123,23 @@ func TestProcessRetryChildSkipsDisabledSubtestBeforeBody(t *testing.T) {
 	require.Equal(t, constants.TestDisabledSkipReason, result.SkipReason)
 }
 
+func TestProcessRetryChildBoundsSubtestOutput(t *testing.T) {
+	owner := createTestMetadata(t, nil)
+	root := newProcessRetryNoopTest(t, processRetryChildConfig{TestName: t.Name()}, time.Now(), nil, nil, retryAttemptRaceErrors()).(*processRetryNoopTest)
+	owner.test = root
+	defer deleteTestMetadata(t)
+
+	require.True(t, t.Run("output", instrumentProcessRetryChildSubtest(func(t *testing.T) {
+		t.Log(strings.Repeat("x", processRetryResultOutputMaxBytes) + "output tail sentinel")
+	})))
+
+	require.Len(t, root.snapshotSubtests(), 1)
+	result := root.snapshotSubtests()[0]
+	require.True(t, result.OutputTruncated)
+	require.Contains(t, result.OutputTail, "output tail sentinel")
+	require.LessOrEqual(t, len(result.OutputTail), processRetryResultOutputMaxBytes)
+}
+
 func TestProcessRetryChildCapturesMetadataWithoutSpanOwnership(t *testing.T) {
 	enableProcessRetryChildForTesting(t)
 
@@ -1761,9 +1778,21 @@ func TestProcessRetryChildCapturesInstrumentedSubtestResults(t *testing.T) {
 	require.Len(t, result.Subtests, 2)
 	require.Equal(t, "TestProcessRetryChildResultFixture/pass", result.Subtests[0].TestName)
 	require.Equal(t, processRetryStatusPass, result.Subtests[0].Status)
+	require.Contains(t, result.Subtests[0].OutputTail, "passing subtest output sentinel")
+	require.NotContains(t, result.Subtests[0].OutputTail, "failing subtest output sentinel")
+	require.NotNil(t, result.Subtests[0].Source)
+	require.NotEmpty(t, result.Subtests[0].Source.RuntimePath)
+	require.Positive(t, result.Subtests[0].Source.RuntimeStartLine)
+	require.NotEmpty(t, result.Subtests[0].Source.FunctionName)
 	require.Equal(t, "TestProcessRetryChildResultFixture/fail", result.Subtests[1].TestName)
 	require.Equal(t, processRetryStatusFail, result.Subtests[1].Status)
 	require.True(t, result.Subtests[1].Failed)
+	require.Contains(t, result.Subtests[1].OutputTail, "failing subtest output sentinel")
+	require.NotContains(t, result.Subtests[1].OutputTail, "passing subtest output sentinel")
+	require.NotNil(t, result.Subtests[1].Source)
+	require.NotEmpty(t, result.Subtests[1].Source.RuntimePath)
+	require.Positive(t, result.Subtests[1].Source.RuntimeStartLine)
+	require.NotEmpty(t, result.Subtests[1].Source.FunctionName)
 }
 
 func TestFinishProcessRetrySubtestEventsPublishesTerminalSubtest(t *testing.T) {
@@ -1802,6 +1831,7 @@ func TestFinishProcessRetrySubtestEventsPublishesTerminalSubtest(t *testing.T) {
 				ErrorType:      "panic",
 				ErrorMessage:   "subtest panic sentinel",
 				ErrorStack:     "subtest stack sentinel",
+				OutputTail:     "subtest output sentinel",
 			}}}})
 
 			require.Len(t, recorder.tests, 1)
@@ -1811,7 +1841,65 @@ func TestFinishProcessRetrySubtestEventsPublishesTerminalSubtest(t *testing.T) {
 			require.Equal(t, "panic", recorder.tests[0].errorType)
 			require.Equal(t, "subtest panic sentinel", recorder.tests[0].errorMessage)
 			require.Equal(t, "subtest stack sentinel", recorder.tests[0].errorStack)
+			require.Contains(t, recorder.tests[0].logs, "subtest output sentinel")
 			require.Equal(t, tt.expectTag, recorder.tests[0].tags[constants.TestHasFailedAllRetries] == "true")
+		})
+	}
+}
+
+func TestFinishProcessRetryDisabledResultRequiresChildSkip(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		result     processRetryResult
+		wantStatus processRetryStatus
+		wantError  bool
+	}{
+		{
+			name: "enforced disabled skip",
+			result: processRetryResult{
+				Status:     processRetryStatusSkip,
+				Skipped:    true,
+				SkipReason: constants.TestDisabledSkipReason,
+			},
+			wantStatus: processRetryStatusSkip,
+		},
+		{
+			name:       "unenforced disabled pass",
+			result:     processRetryResult{Status: processRetryStatusPass},
+			wantStatus: processRetryStatusFail,
+			wantError:  true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+			defer restoreSession()
+			identity := newTestIdentity("module", "suite", "TestParent/disabled")
+			result := tt.result
+			result.Version = 1
+			result.TestName = identity.FullName
+			result.StartUnixNano = 10
+			result.FinishUnixNano = 20
+			result.DurationNanos = 10
+
+			finishProcessRetryTestEvent(&commonInfo{
+				moduleName: identity.ModuleName,
+				suiteName:  identity.SuiteName,
+				testName:   identity.FullName,
+				identity:   identity,
+			}, &testExecutionMetadata{
+				identity:   identity,
+				isDisabled: true,
+			}, completedProcessRetryAttempt(result), nil, nil)
+
+			require.Len(t, recorder.tests, 1)
+			require.Equal(t, tt.wantStatus, recorder.tests[0].status)
+			require.Equal(t, "true", recorder.tests[0].tags[constants.TestIsDisabled])
+			_, testErrored := recorder.tests[0].tags["error"]
+			require.Equal(t, tt.wantError, testErrored)
+			_, suiteErrored := recorder.modules[identity.ModuleName].suites[identity.SuiteName].tags["error"]
+			_, moduleErrored := recorder.modules[identity.ModuleName].tags["error"]
+			require.Equal(t, tt.wantError, suiteErrored)
+			require.Equal(t, tt.wantError, moduleErrored)
 		})
 	}
 }
@@ -2365,6 +2453,9 @@ func TestProcessRetrySubtestResultValidation(t *testing.T) {
 		{name: "duplicate", subtests: []processRetrySubtestResult{validSubtest, validSubtest}},
 		{name: "invalid status mirrors", subtests: []processRetrySubtestResult{{TestName: "TestSelected/child", Status: processRetryStatusPass, Failed: true, StartUnixNano: 10, FinishUnixNano: 20, DurationNanos: 10}}},
 		{name: "oversized metadata", subtests: []processRetrySubtestResult{{TestName: "TestSelected/child", Status: processRetryStatusFail, Failed: true, ErrorType: "Error", ErrorMessage: strings.Repeat("x", processRetryErrorMessageMaxBytes+1), StartUnixNano: 10, FinishUnixNano: 20, DurationNanos: 10}}},
+		{name: "oversized output", subtests: []processRetrySubtestResult{{TestName: "TestSelected/child", Status: processRetryStatusPass, OutputTail: strings.Repeat("x", processRetryResultOutputMaxBytes+1), StartUnixNano: 10, FinishUnixNano: 20, DurationNanos: 10}}},
+		{name: "truncated empty output", subtests: []processRetrySubtestResult{{TestName: "TestSelected/child", Status: processRetryStatusPass, OutputTruncated: true, StartUnixNano: 10, FinishUnixNano: 20, DurationNanos: 10}}},
+		{name: "partial source", subtests: []processRetrySubtestResult{{TestName: "TestSelected/child", Status: processRetryStatusPass, Source: &processRetryTestSource{RuntimePath: "fixture_test.go"}, StartUnixNano: 10, FinishUnixNano: 20, DurationNanos: 10}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -6649,8 +6740,11 @@ func TestProcessRetryChildResultFixture(t *testing.T) {
 			t.Error("parallel child failure")
 		})
 	case "subtest_results":
-		GetTest(t).Run("pass", func(*testing.T) {})
+		GetTest(t).Run("pass", func(t *testing.T) {
+			t.Log("passing subtest output sentinel")
+		})
 		GetTest(t).Run("fail", func(t *testing.T) {
+			t.Log("failing subtest output sentinel")
 			GetTest(t).Error("subtest failure")
 		})
 	case "parallel_top_level_subtest_fail":

@@ -230,7 +230,7 @@ func finalizeFreshRetryAttempt(attempt *retryAttemptRoot, resultCh chan<- retryA
 		resultCh <- result
 	}()
 
-	result.raceCheckpointCount, result.raceDetected = checkRetryAttemptRaces(base, layout)
+	result.raceCheckpointCount, result.raceDetected = checkRetryAttemptRaces(attempt, base, layout)
 	if t.Failed() {
 		result.failureCheckpointPhase = retryAttemptFailurePreCheckpoint
 	}
@@ -320,8 +320,10 @@ func finalizeFreshRetryAttempt(attempt *retryAttemptRoot, resultCh chan<- retryA
 			return
 		}
 		addRetryAttemptElapsed(base, layout)
-		result.raceCheckpointCount, result.raceDetected = checkRetryAttemptRaces(base, layout)
-		if result.raceDetected && result.failureCheckpointPhase == retryAttemptNotFailed {
+		raceCheckpointCount, raceDetected := checkRetryAttemptRaces(attempt, base, layout)
+		result.raceCheckpointCount = max(result.raceCheckpointCount, raceCheckpointCount)
+		result.raceDetected = result.raceDetected || raceDetected
+		if raceDetected && result.failureCheckpointPhase == retryAttemptNotFailed {
 			result.failureCheckpointPhase = retryAttemptFailurePostCheckpoint
 		}
 		if !*fieldPtr[bool](base, layout.common.isParallel) {
@@ -566,8 +568,15 @@ func setRetryAttemptRunner(base unsafe.Pointer, layout *testingInternalsLayout) 
 	}
 }
 
-func checkRetryAttemptRaces(base unsafe.Pointer, layout *testingInternalsLayout) (int64, bool) {
+func checkRetryAttemptRaces(attempt *retryAttemptRoot, base unsafe.Pointer, layout *testingInternalsLayout) (int64, bool) {
 	raceErrors := retryAttemptRaceErrors()
+	if attempt != nil && attempt.group != nil && attempt.group.raceCheckpoint != nil {
+		checkpoint := attempt.group.raceCheckpoint
+		if !claimRetryAttemptRaceCheckpoint(checkpoint, raceErrors) {
+			advanceRetryAttemptRaceBaseline(fieldPtr[atomic.Int64](base, layout.common.lastRaceErrors), raceErrors)
+			return raceErrors, false
+		}
+	}
 	lastRaceErrors := fieldPtr[atomic.Int64](base, layout.common.lastRaceErrors)
 	for {
 		last := lastRaceErrors.Load()
@@ -596,6 +605,21 @@ func checkRetryAttemptRaces(base unsafe.Pointer, layout *testingInternalsLayout)
 		}
 	}
 	return raceErrors, true
+}
+
+func claimRetryAttemptRaceCheckpoint(checkpoint *atomic.Int64, raceErrors int64) bool {
+	if checkpoint == nil {
+		return true
+	}
+	for {
+		last := checkpoint.Load()
+		if raceErrors <= last {
+			return false
+		}
+		if checkpoint.CompareAndSwap(last, raceErrors) {
+			return true
+		}
+	}
 }
 
 func setRetryAttemptRan(base unsafe.Pointer, layout *testingInternalsLayout) {

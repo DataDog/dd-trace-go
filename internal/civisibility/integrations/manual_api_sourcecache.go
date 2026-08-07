@@ -40,6 +40,12 @@ type sourceFunctionCacheSlot struct {
 	entry sourceFunctionMetadata
 }
 
+type sourceFunctionIdentity struct {
+	runtimePath      string
+	runtimeStartLine int
+	functionName     string
+}
+
 type sourceFunctionMetadata struct {
 	runtimePath      string
 	runtimeStartLine int
@@ -49,6 +55,16 @@ type sourceFunctionMetadata struct {
 	fileSlot         *sourceFileCacheSlot
 	fileMetadata     sourceFileMetadata
 	resolution       sourceResolution
+}
+
+// SetTestSource applies a source identity captured in another process.
+func SetTestSource(test Test, runtimePath string, runtimeStartLine int, functionName string) {
+	if test == nil || runtimePath == "" || runtimeStartLine <= 0 || functionName == "" {
+		return
+	}
+	if test, ok := test.(*tslvTest); ok {
+		test.setTestSource(loadSourceFunctionMetadataFromIdentity(runtimePath, runtimeStartLine, functionName), 0)
+	}
 }
 
 // sourceFileMetadata contains the parsed source information needed by SetTestFunc.
@@ -124,6 +140,19 @@ func loadSourceFunctionMetadata(fn *runtime.Func) sourceFunctionMetadata {
 	return slot.entry
 }
 
+func loadSourceFunctionMetadataFromIdentity(runtimePath string, runtimeStartLine int, functionName string) sourceFunctionMetadata {
+	key := sourceFunctionIdentity{runtimePath: runtimePath, runtimeStartLine: runtimeStartLine, functionName: functionName}
+	slotAny, ok := sourceFunctionMetadataCache.Load(key)
+	if !ok {
+		slotAny, _ = sourceFunctionMetadataCache.LoadOrStore(key, newSourceFunctionCacheSlot())
+	}
+	slot := slotAny.(*sourceFunctionCacheSlot)
+	slot.once.Do(func() {
+		slot.entry = resolveSourceFunctionMetadataFromIdentity(runtimePath, runtimeStartLine, functionName)
+	})
+	return slot.entry
+}
+
 func loadSourceFunctionCodeOwner(metadata sourceFunctionMetadata) (string, bool) {
 	return loadSourceFunctionCodeOwnerWithLookup(metadata, loadCodeOwnersWithStatus)
 }
@@ -189,10 +218,13 @@ func sourceFunctionSlotForEntry(entry uintptr, newSlot func() *sourceFunctionCac
 
 func resolveSourceFunctionMetadata(fn *runtime.Func) sourceFunctionMetadata {
 	runtimePath, runtimeStartLine := fn.FileLine(fn.Entry())
+	return resolveSourceFunctionMetadataFromIdentity(runtimePath, runtimeStartLine, fn.Name())
+}
+
+func resolveSourceFunctionMetadataFromIdentity(runtimePath string, runtimeStartLine int, fullName string) sourceFunctionMetadata {
 	sourcePath := resolveTestSourcePath(runtimePath)
 	fileSlot := sourceFileSlot(sourcePath.FilesystemPath, newSourceFileCacheSlot)
 	fileMetadata := loadSourceFileMetadataFromSlot(fileSlot, sourcePath.FilesystemPath)
-	fullName := fn.Name()
 	shortName := fullName[strings.LastIndex(fullName, ".")+1:]
 	metadata := sourceFunctionMetadata{
 		runtimePath:      runtimePath,

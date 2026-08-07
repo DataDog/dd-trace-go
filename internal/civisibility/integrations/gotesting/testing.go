@@ -126,6 +126,7 @@ type (
 		testName   string
 		identity   *testIdentity
 		sourceFunc *runtime.Func
+		source     *processRetryTestSource
 	}
 
 	// testingTInfo holds information specific to tests.

@@ -1082,6 +1082,7 @@ func deferQuarantinedRaceFirstAttempt(options *runTestWithRetryOptions) {
 		return
 	}
 	parentDeadline, parentDeadlineOK := options.t.Deadline()
+	nativeMaxParallel, _ := retryAttemptNativeMaxParallel(options.t)
 	module := session.GetOrCreateModule(options.testInfo.moduleName)
 	suite := module.GetOrCreateSuite(options.testInfo.suiteName)
 	group := &deferredProcessRetryGroup{
@@ -1092,6 +1093,7 @@ func deferQuarantinedRaceFirstAttempt(options *runTestWithRetryOptions) {
 		lease:                 lease,
 		parentDeadline:        parentDeadline,
 		parentDeadlineOK:      parentDeadlineOK,
+		nativeMaxParallel:     nativeMaxParallel,
 		mRunEpoch:             options.processRetryMRunEpoch,
 		phaseID:               options.processRetryPhaseID,
 		invocationOrdinal:     ensureProcessRetryInvocationOrdinal(options),

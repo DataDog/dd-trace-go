@@ -232,13 +232,16 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 
 	// Resolve immutable function metadata once. Go -trimpath can return a logical
 	// module path while source parsing still needs a local file path.
-	functionMetadata := loadSourceFunctionMetadata(fn)
+	t.setTestSource(loadSourceFunctionMetadata(fn), fn.Entry())
+}
+
+func (t *tslvTest) setTestSource(functionMetadata sourceFunctionMetadata, entry uintptr) {
 	runtimePath := functionMetadata.runtimePath
 	runtimeStartLine := functionMetadata.runtimeStartLine
 	sourcePath := functionMetadata.sourcePath
 	file := sourcePath.RelativePath
 	log.Debug("civisibility: resolving test source location [function:%s file:%s start_line:%d relative_file:%s runtime_file:%s filesystem_file:%s filesystem_known:%t entry:%#x]",
-		fn.Name(), runtimePath, runtimeStartLine, file, sourcePath.RuntimePath, sourcePath.FilesystemPath, sourcePath.FilesystemKnown, fn.Entry())
+		functionMetadata.fullName, runtimePath, runtimeStartLine, file, sourcePath.RuntimePath, sourcePath.FilesystemPath, sourcePath.FilesystemKnown, entry)
 	t.SetTag(constants.TestSourceFile, file)
 	t.SetTag(constants.TestSourceStartLine, runtimeStartLine)
 	t.suite.SetTag(constants.TestSourceFile, file)
@@ -247,7 +250,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	metadata := functionMetadata.fileMetadata
 	if !metadata.parseOK {
 		log.Debug("civisibility: failed parsing test source file [function:%s file:%s runtime_file:%s relative_file:%s start_line:%d error:%v]",
-			fn.Name(), sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine, metadata.parseErr)
+			functionMetadata.fullName, sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine, metadata.parseErr)
 	}
 	if metadata.parseOK {
 		// let's check if the suite was marked as unskippable before

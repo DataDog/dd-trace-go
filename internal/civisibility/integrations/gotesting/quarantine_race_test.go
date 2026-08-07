@@ -127,8 +127,8 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 			panic("quarantined race tests did not share one batch child")
 		}
 	}
-	if failedSpans == 0 {
-		panic("expected the quarantined batch to report at least one race failure")
+	if failedSpans != 1 {
+		panic(fmt.Sprintf("expected exactly one quarantined batch race failure, got %d", failedSpans))
 	}
 	parentPID := strconv.Itoa(os.Getpid())
 	if isolated && childPID == parentPID {
@@ -214,7 +214,7 @@ func TestQuarantinedRaceSecond(t *testing.T) {
 	if execMeta := getTestMetadata(t); !isProcessRetryChild() && (execMeta == nil || !execMeta.hasAdditionalFeatureWrapper) {
 		t.Skip("no CI Visibility quarantine wrapper active; skipping race injection")
 	}
-	runRaceFixture()
+	t.Parallel()
 	writeQuarantinedRacePID(t)
 }
 
