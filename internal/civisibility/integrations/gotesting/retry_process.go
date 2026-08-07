@@ -973,6 +973,7 @@ type processRetryLaunchBaseline struct {
 	maxConcurrencySet bool
 	timeout           time.Duration
 	timeoutSet        bool
+	preserveStartup   bool
 	err               error
 }
 
@@ -1268,12 +1269,14 @@ func captureProcessRetryLaunchBaselineFromTemplate(template *processRetryLaunchB
 	if baseline.err != nil {
 		return &baseline
 	}
-	// Keep retry configuration stable while matching mutable native process state at invocation.
-	baseline.workingDirectory, baseline.err = baseline.hooks.workingDirectory()
-	if baseline.err != nil {
-		return &baseline
+	if !baseline.preserveStartup {
+		// Keep retry configuration stable while matching mutable native process state at invocation.
+		baseline.workingDirectory, baseline.err = baseline.hooks.workingDirectory()
+		if baseline.err != nil {
+			return &baseline
+		}
+		baseline.environment = sanitizeProcessRetryBaseEnv(baseline.hooks.environ())
 	}
-	baseline.environment = sanitizeProcessRetryBaseEnv(baseline.hooks.environ())
 	baseline.currentCPU = processRetryCurrentCPU()
 	return &baseline
 }

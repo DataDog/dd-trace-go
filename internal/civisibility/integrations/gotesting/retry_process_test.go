@@ -4074,6 +4074,15 @@ func TestProcessRetryLaunchBaselineRefreshesMutableStateFromStaticTemplate(t *te
 	require.Equal(t, template.args, first.args)
 	require.Equal(t, template.args, second.args)
 
+	template.preserveStartup = true
+	preserved := captureProcessRetryLaunchBaselineFromTemplate(template)
+	require.NoError(t, preserved.err)
+	require.Equal(t, "/tmp/startup-work", preserved.workingDirectory)
+	require.Equal(t, []string{"STARTUP=1"}, preserved.environment)
+	require.Equal(t, int32(3), workingDirectoryCalls.Load())
+	require.Equal(t, int32(3), environCalls.Load())
+	template.preserveStartup = false
+
 	workingDirectoryErr.Store(true)
 	failed := captureProcessRetryLaunchBaselineFromTemplate(template)
 	require.ErrorContains(t, failed.err, "working directory unavailable")

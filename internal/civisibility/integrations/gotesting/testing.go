@@ -318,8 +318,13 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
 		wrapperOpts.processRetryAllowed = false
 	}
+	customTestMainActive := false
 	if processModeEnabled && wrapperOpts.processRetryAllowed {
+		customTestMainActive = processRetryCustomTestMainActive()
 		wrapperOpts.processRetryLaunchTemplate = captureProcessRetryLaunchTemplate()
+		// A retry child re-enters TestMain, so bootstrap it from process-start
+		// state instead of inheriting TestMain's active setup.
+		wrapperOpts.processRetryLaunchTemplate.preserveStartup = customTestMainActive
 		coordinator := newProcessRetryCoordinator(retryAttemptFailfastEnabled, runDeferredProcessRetryAttempt)
 		if registerProcessRetryCoordinator(coordinator) {
 			wrapperOpts.processRetryCoordinator = coordinator
@@ -335,7 +340,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	// been torn down, so keep quarantined first attempts in the native process.
 	if processModeEnabled && testManagementEnabled && retryAttemptRaceEnabled() &&
 		ProcessRetryContainmentSupported() && wrapperOpts.processRetryCoordinator != nil &&
-		!processRetryCustomTestMainActive() {
+		!customTestMainActive {
 		wrapperOpts.quarantinedRaceIsolation = true
 	}
 	var knownTests *net.KnownTestsResponseData

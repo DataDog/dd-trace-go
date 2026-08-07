@@ -375,7 +375,9 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 		if attempt, ok := readAttempt(); ok {
 			return attempt
 		}
-		if !parallel {
+		// Covered batch bodies stay serial because their counters are process-global;
+		// mirroring t.Parallel in the parent would race with coverage's barrier guard.
+		if !parallel && !batch.batch.CollectPerTestCoverage {
 			if _, statErr := os.Stat(parallelPath); statErr == nil {
 				parallel = true
 				t.Parallel()
