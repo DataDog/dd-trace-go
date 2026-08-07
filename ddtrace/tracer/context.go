@@ -58,10 +58,13 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	if s != nil {
 		// Snapshot the SpanContext so it survives span pool recycling.
 		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, s.Context())
-	} else {
-		// Shadow any snapshot inherited from an ancestor context, otherwise
+	} else if sc, ok := ctx.Value(activeSpanContextKey{}).(*SpanContext); ok && sc != nil {
+		// Shadow a snapshot inherited from an ancestor context, otherwise
 		// StartSpanFromContext would keep re-parenting onto it even though
-		// ActiveSpanKey was just cleared above.
+		// ActiveSpanKey was just cleared above. Only an ancestor that actually
+		// holds a snapshot needs shadowing: ContextWithSpan(ctx, nil) is on the
+		// hot path whenever the tracer is disabled (StartSpan returns nil), so
+		// paying an allocation to shadow nothing would be wasted on every span.
 		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, (*SpanContext)(nil))
 	}
 	return contextWithPropagatedLLMSpan(newCtx, s)
