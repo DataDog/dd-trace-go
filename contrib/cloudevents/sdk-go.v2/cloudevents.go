@@ -3,7 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-// Package cloudevents traces github.com/cloudevents/sdk-go/v2 clients.
+// Package cloudevents provides Datadog tracing for CloudEvents clients created
+// with github.com/cloudevents/sdk-go/v2/client.
 package cloudevents
 
 import (
@@ -24,26 +25,44 @@ const componentName = instrumentation.PackageCloudEventsSDKGoV2
 
 var instr = instrumentation.Load(componentName)
 
-// Option configures the observability service returned by New.
+// Option configures the CloudEvents observability service returned by New.
 type Option func(*observabilityService)
 
-// WithService sets the service name for CloudEvents spans.
-func WithService(name string) Option { return func(s *observabilityService) { s.service = name } }
+// WithService sets the service name for spans created by the integration.
+// By default, spans use the service configured on the tracer.
+func WithService(name string) Option {
+	return func(service *observabilityService) {
+		service.service = name
+	}
+}
 
-// WithMessagingSystem sets the messaging system tag (for example, "kafka").
+// WithMessagingSystem sets the underlying messaging system, such as "kafka".
+// CloudEvents does not imply a messaging system, so no value is set by default.
 func WithMessagingSystem(system string) Option {
-	return func(s *observabilityService) { s.messagingSystem = system }
+	return func(service *observabilityService) {
+		service.messagingSystem = system
+	}
 }
 
-// WithDestinationName sets the messaging destination name tag.
+// WithDestinationName sets the name of the messaging destination, such as a
+// topic or queue name.
 func WithDestinationName(name string) Option {
-	return func(s *observabilityService) { s.destination = name }
+	return func(service *observabilityService) {
+		service.destination = name
+	}
 }
 
-// WithSubject enables recording the CloudEvent subject on spans.
-func WithSubject() Option { return func(s *observabilityService) { s.subject = true } }
+// WithSubject enables recording the CloudEvent subject on spans. The subject is
+// omitted by default because it may contain sensitive or high-cardinality data.
+func WithSubject() Option {
+	return func(service *observabilityService) {
+		service.recordSubject = true
+	}
+}
 
 // New returns a Datadog implementation of client.ObservabilityService.
+// Install it on a CloudEvents client with client.WithObservabilityService.
+//
 // Tracing updates the event's propagation extensions, so callers must not send
 // the same event concurrently. Clone the event first when isolation is needed.
 //
@@ -51,16 +70,18 @@ func WithSubject() Option { return func(s *observabilityService) { s.subject = t
 // for undelivered Request calls. Such request spans cannot finish until that
 // behavior is fixed upstream.
 func New(opts ...Option) client.ObservabilityService {
-	s := &observabilityService{}
+	service := &observabilityService{}
 	for _, opt := range opts {
-		opt(s)
+		opt(service)
 	}
-	return s
+	return service
 }
 
 type observabilityService struct {
-	service, messagingSystem, destination string
-	subject                               bool
+	service         string
+	messagingSystem string
+	destination     string
+	recordSubject   bool
 }
 
 var _ client.ObservabilityService = (*observabilityService)(nil)
@@ -68,72 +89,130 @@ var _ client.ObservabilityService = (*observabilityService)(nil)
 type extractedContextKey struct{}
 
 func (s *observabilityService) InboundContextDecorators() []func(context.Context, binding.Message) context.Context {
-	return []func(context.Context, binding.Message) context.Context{func(ctx context.Context, msg binding.Message) context.Context {
-		reader, ok := msg.(binding.MessageMetadataReader)
-		if !ok {
-			return ctx
-		}
-		extracted, err := tracer.Extract(messageCarrier{reader})
-		if err != nil || extracted == nil {
-			return ctx
-		}
-		return context.WithValue(ctx, extractedContextKey{}, extracted)
-	}}
+	return []func(context.Context, binding.Message) context.Context{s.extractInboundContext}
 }
 
-func (s *observabilityService) RecordCallingInvoker(ctx context.Context, event *cloudevents.Event) (context.Context, func(error)) {
+func (*observabilityService) extractInboundContext(
+	ctx context.Context,
+	message binding.Message,
+) context.Context {
+	reader, ok := message.(binding.MessageMetadataReader)
+	if !ok {
+		return ctx
+	}
+	extracted, err := tracer.Extract(messageCarrier{reader: reader})
+	if err != nil || extracted == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, extractedContextKey{}, extracted)
+}
+
+func (s *observabilityService) RecordCallingInvoker(
+	ctx context.Context,
+	event *cloudevents.Event,
+) (context.Context, func(error)) {
 	opts := s.spanOptions(instrumentation.ComponentConsumer, "process")
-	extracted, _ := ctx.Value(extractedContextKey{}).(*tracer.SpanContext)
-	if extracted == nil && event != nil {
-		// Structured messages may carry extensions in the decoded event body
-		// instead of exposing them through the original message metadata.
-		extracted, _ = tracer.Extract(messageCarrier{(*binding.EventMessage)(event)})
+	extracted := extractedContext(ctx, event)
+	if links := spanLinks(extracted); len(links) != 0 {
+		opts = append(opts, tracer.WithSpanLinks(links))
 	}
-	if extracted != nil {
-		links := extracted.SpanLinks()
-		if len(links) == 0 && (extracted.TraceIDLower() != 0 || extracted.TraceIDUpper() != 0) && extracted.SpanID() != 0 {
-			links = []tracer.SpanLink{{TraceID: extracted.TraceIDLower(), TraceIDHigh: extracted.TraceIDUpper(), SpanID: extracted.SpanID()}}
-		}
-		if len(links) != 0 {
-			opts = append(opts, tracer.WithSpanLinks(links))
-		}
-	}
+
 	span := tracer.StartSpan(instr.OperationName(instrumentation.ComponentConsumer, nil), opts...)
 	if event != nil {
 		s.tagEvent(span, event)
 	}
 	if extracted != nil {
-		extracted.ForeachBaggageItem(func(k, v string) bool { span.SetBaggageItem(k, v); return true })
+		// Span links do not carry baggage, so copy it onto the new consumer root.
+		extracted.ForeachBaggageItem(func(key, value string) bool {
+			span.SetBaggageItem(key, value)
+			return true
+		})
 	}
-	return tracer.ContextWithSpan(ctx, span), func(result error) { finish(span, result) }
+	return tracer.ContextWithSpan(ctx, span), func(result error) {
+		finishSpan(span, result)
+	}
 }
 
-func (s *observabilityService) RecordSendingEvent(ctx context.Context, event cloudevents.Event) (context.Context, func(error)) {
-	span, spanCtx := tracer.StartSpanFromContext(ctx, instr.OperationName(instrumentation.ComponentProducer, nil), s.spanOptions(instrumentation.ComponentProducer, "send")...)
-	s.tagEvent(span, &event)
-	_ = tracer.Inject(span.Context(), eventCarrier{&event})
-	return spanCtx, func(result error) { finish(span, result) }
+func extractedContext(ctx context.Context, event *cloudevents.Event) *tracer.SpanContext {
+	extracted, _ := ctx.Value(extractedContextKey{}).(*tracer.SpanContext)
+	if extracted != nil || event == nil {
+		return extracted
+	}
+
+	// Structured messages keep extensions in the decoded event body instead of
+	// exposing them through the original message metadata.
+	extracted, _ = tracer.Extract(messageCarrier{reader: (*binding.EventMessage)(event)})
+	return extracted
 }
 
-func (s *observabilityService) RecordRequestEvent(ctx context.Context, event cloudevents.Event) (context.Context, func(error, *cloudevents.Event)) {
-	span, spanCtx := tracer.StartSpanFromContext(ctx, instr.OperationName(instrumentation.ComponentProducer, nil), s.spanOptions(instrumentation.ComponentProducer, "send")...)
-	s.tagEvent(span, &event)
-	_ = tracer.Inject(span.Context(), eventCarrier{&event})
+func spanLinks(extracted *tracer.SpanContext) []tracer.SpanLink {
+	if extracted == nil {
+		return nil
+	}
+	if links := extracted.SpanLinks(); len(links) != 0 {
+		return links
+	}
+	if (extracted.TraceIDLower() == 0 && extracted.TraceIDUpper() == 0) || extracted.SpanID() == 0 {
+		return nil
+	}
+	return []tracer.SpanLink{{
+		TraceID:     extracted.TraceIDLower(),
+		TraceIDHigh: extracted.TraceIDUpper(),
+		SpanID:      extracted.SpanID(),
+	}}
+}
+
+func (s *observabilityService) RecordSendingEvent(
+	ctx context.Context,
+	event cloudevents.Event,
+) (context.Context, func(error)) {
+	span, spanCtx := s.startProducerSpan(ctx, &event)
+	return spanCtx, func(result error) {
+		finishSpan(span, result)
+	}
+}
+
+func (s *observabilityService) RecordRequestEvent(
+	ctx context.Context,
+	event cloudevents.Event,
+) (context.Context, func(error, *cloudevents.Event)) {
+	span, spanCtx := s.startProducerSpan(ctx, &event)
 	return spanCtx, func(result error, response *cloudevents.Event) {
 		if isSuccess(result) && response == nil {
 			result = errors.New("cloudevents: response conversion returned nil event")
 		}
-		finish(span, result)
+		finishSpan(span, result)
 	}
 }
 
 func (s *observabilityService) RecordReceivedMalformedEvent(_ context.Context, err error) {
-	span := tracer.StartSpan(instr.OperationName(instrumentation.ComponentConsumer, nil), s.spanOptions(instrumentation.ComponentConsumer, "process")...)
+	span := tracer.StartSpan(
+		instr.OperationName(instrumentation.ComponentConsumer, nil),
+		s.spanOptions(instrumentation.ComponentConsumer, "process")...,
+	)
 	span.SetTag(ext.ResourceName, "malformed")
-	finish(span, err)
+	finishSpan(span, err)
 }
 
-func (s *observabilityService) spanOptions(component instrumentation.Component, operation string) []tracer.StartSpanOption {
+func (s *observabilityService) startProducerSpan(
+	ctx context.Context,
+	event *cloudevents.Event,
+) (*tracer.Span, context.Context) {
+	span, spanCtx := tracer.StartSpanFromContext(
+		ctx,
+		instr.OperationName(instrumentation.ComponentProducer, nil),
+		s.spanOptions(instrumentation.ComponentProducer, "send")...,
+	)
+	s.tagEvent(span, event)
+	// Propagation is best effort and must not prevent the SDK from sending the event.
+	_ = tracer.Inject(span.Context(), eventCarrier{writer: event})
+	return span, spanCtx
+}
+
+func (s *observabilityService) spanOptions(
+	component instrumentation.Component,
+	operation string,
+) []tracer.StartSpanOption {
 	kind := ext.SpanKindProducer
 	spanType := ext.SpanTypeMessageProducer
 	if component == instrumentation.ComponentConsumer {
@@ -168,15 +247,18 @@ func (s *observabilityService) tagEvent(span *tracer.Span, event *cloudevents.Ev
 	if v := event.DataContentType(); v != "" {
 		span.SetTag("cloudevents.datacontenttype", v)
 	}
-	if s.subject {
+	if s.recordSubject {
 		if v := event.Subject(); v != "" {
 			span.SetTag("cloudevents.subject", v)
 		}
 	}
 }
 
-func isSuccess(result error) bool { return protocol.IsACK(result) }
-func finish(span *tracer.Span, result error) {
+func isSuccess(result error) bool {
+	return protocol.IsACK(result)
+}
+
+func finishSpan(span *tracer.Span, result error) {
 	if !isSuccess(result) {
 		span.Finish(tracer.WithError(result))
 		return

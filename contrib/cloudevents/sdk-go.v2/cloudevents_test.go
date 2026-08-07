@@ -58,49 +58,73 @@ func requireSpan(t *testing.T, mt mocktracer.Tracer) *mocktracer.Span {
 	return spans[0]
 }
 
-func TestCarriers(t *testing.T) {
-	e := testEvent()
-	w := eventCarrier{&e}
-	for key, value := range map[string]string{"traceparent": "parent", "tracestate": "state", "baggage": "bag", "unsupported": "drop"} {
-		w.Set(key, value)
-	}
-	for _, key := range propagationKeys {
-		if got := e.Extensions()[key]; got == nil {
-			t.Errorf("extension %q was not written", key)
+func assertSpanTags(t *testing.T, span *mocktracer.Span, wantTags map[string]any) {
+	t.Helper()
+	for key, want := range wantTags {
+		if got := span.Tag(key); got != want {
+			t.Errorf("tag %q = %#v, want %#v", key, got, want)
 		}
 	}
-	if got := e.Extensions()["unsupported"]; got != nil {
-		t.Errorf("unsupported extension was written: %v", got)
-	}
+}
 
-	e.SetExtension("baggage", 42)
-	e.SetExtension("other", "ignored")
-	reader := messageCarrier{(*binding.EventMessage)(&e)}
-	var keys []string
-	wantErr := errors.New("stop")
-	err := reader.ForeachKey(func(key, value string) error {
-		keys = append(keys, key+"="+value)
-		if key == "tracestate" {
-			return wantErr
+func TestCarriers(t *testing.T) {
+	t.Run("write propagation extensions", func(t *testing.T) {
+		e := testEvent()
+		carrier := eventCarrier{writer: &e}
+		values := map[string]string{
+			"traceparent": "parent",
+			"tracestate":  "state",
+			"baggage":     "bag",
+			"unsupported": "drop",
 		}
-		return nil
+		for key, value := range values {
+			carrier.Set(key, value)
+		}
+		for _, key := range propagationKeys {
+			if got := e.Extensions()[key]; got == nil {
+				t.Errorf("extension %q was not written", key)
+			}
+		}
+		if got := e.Extensions()["unsupported"]; got != nil {
+			t.Errorf("unsupported extension was written: %v", got)
+		}
 	})
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("ForeachKey error = %v, want %v", err, wantErr)
-	}
-	if got, want := strings.Join(keys, ","), "traceparent=parent,tracestate=state"; got != want {
-		t.Fatalf("visited keys = %q, want %q", got, want)
-	}
-	keys = nil
-	if err := reader.ForeachKey(func(key, value string) error {
-		keys = append(keys, key+"="+value)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := strings.Join(keys, ","), "traceparent=parent,tracestate=state"; got != want {
-		t.Fatalf("non-string or unsupported values were visited: got %q, want %q", got, want)
-	}
+
+	t.Run("read propagation extensions", func(t *testing.T) {
+		e := testEvent()
+		e.SetExtension("traceparent", "parent")
+		e.SetExtension("tracestate", "state")
+		e.SetExtension("baggage", 42)
+		e.SetExtension("other", "ignored")
+		carrier := messageCarrier{reader: (*binding.EventMessage)(&e)}
+
+		var keys []string
+		wantErr := errors.New("stop")
+		err := carrier.ForeachKey(func(key, value string) error {
+			keys = append(keys, key+"="+value)
+			if key == "tracestate" {
+				return wantErr
+			}
+			return nil
+		})
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("ForeachKey error = %v, want %v", err, wantErr)
+		}
+		if got, want := strings.Join(keys, ","), "traceparent=parent,tracestate=state"; got != want {
+			t.Fatalf("visited keys = %q, want %q", got, want)
+		}
+
+		keys = nil
+		if err := carrier.ForeachKey(func(key, value string) error {
+			keys = append(keys, key+"="+value)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := strings.Join(keys, ","), "traceparent=parent,tracestate=state"; got != want {
+			t.Fatalf("non-string or unsupported values were visited: got %q, want %q", got, want)
+		}
+	})
 }
 
 func TestSend(t *testing.T) {
@@ -109,11 +133,11 @@ func TestSend(t *testing.T) {
 		result  error
 		isError bool
 	}{
-		{"nil", nil, false},
-		{"ack", protocol.ResultACK, false},
-		{"wrapped ACK", fmt.Errorf("wrapped: %w", protocol.ResultACK), false},
-		{"nack", protocol.ResultNACK, true},
-		{"transport error", errors.New("transport failed"), true},
+		{name: "nil", result: nil, isError: false},
+		{name: "ack", result: protocol.ResultACK, isError: false},
+		{name: "wrapped ACK", result: fmt.Errorf("wrapped: %w", protocol.ResultACK), isError: false},
+		{name: "nack", result: protocol.ResultNACK, isError: true},
+		{name: "transport error", result: errors.New("transport failed"), isError: true},
 	}
 	for _, tc := range results {
 		t.Run(tc.name, func(t *testing.T) {
@@ -154,11 +178,7 @@ func TestSend(t *testing.T) {
 				"cloudevents.specversion":     "1.0",
 				"cloudevents.datacontenttype": "application/json",
 			}
-			for key, want := range wantTags {
-				if got := send.Tag(key); got != want {
-					t.Errorf("tag %q = %#v, want %#v", key, got, want)
-				}
-			}
+			assertSpanTags(t, send, wantTags)
 			if send.Tag("cloudevents.subject") != nil || send.Tag("cloudevents.data") != nil {
 				t.Errorf("opt-in or payload tag unexpectedly present: %#v", send.Tags())
 			}
@@ -172,27 +192,34 @@ func TestSend(t *testing.T) {
 func TestRequestCallbackResults(t *testing.T) {
 	response := testEvent()
 	tests := []struct {
-		name     string
-		result   error
-		response *cloudevents.Event
-		isError  bool
+		name      string
+		result    error
+		response  *cloudevents.Event
+		isError   bool
+		errorText string
 	}{
-		{"ACK response", protocol.ResultACK, &response, false},
-		{"NACK", protocol.ResultNACK, nil, true},
-		{"transport error", errors.New("request failed"), nil, true},
+		{name: "ACK response", result: protocol.ResultACK, response: &response},
+		{name: "NACK", result: protocol.ResultNACK, isError: true},
+		{name: "transport error", result: errors.New("request failed"), isError: true},
 		// An ACK promises delivery, so a nil converted response is a request conversion failure.
-		{"ACK nil response", protocol.ResultACK, nil, true},
+		{
+			name:      "ACK nil response",
+			result:    protocol.ResultACK,
+			isError:   true,
+			errorText: "response conversion returned nil event",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := startMockTracer(t)
-			_, finish := New().(*observabilityService).RecordRequestEvent(context.Background(), testEvent())
+			service := New().(*observabilityService)
+			_, finish := service.RecordRequestEvent(context.Background(), testEvent())
 			finish(tc.result, tc.response)
 			span := requireSpan(t, mt)
 			if got := span.Tag(ext.ErrorMsg); (got != nil) != tc.isError {
 				t.Errorf("error tag = %#v, want error=%v", got, tc.isError)
 			}
-			if tc.name == "ACK nil response" && !strings.Contains(fmt.Sprint(span.Tag(ext.ErrorMsg)), "response conversion returned nil event") {
+			if tc.errorText != "" && !strings.Contains(fmt.Sprint(span.Tag(ext.ErrorMsg)), tc.errorText) {
 				t.Errorf("conversion error = %q", span.Tag(ext.ErrorMsg))
 			}
 		})
@@ -218,13 +245,23 @@ func TestConsumer(t *testing.T) {
 		result  error
 		linked  bool
 	}{
-		{"linked nil", message, &e, nil, true},
-		{"linked ACK", message, &e, protocol.ResultACK, true},
-		{"linked NACK", message, &e, protocol.ResultNACK, true},
-		{"linked error", message, &e, errors.New("handler failed"), true},
-		{"nil event", message, nil, nil, true},
-		{"decoded event fallback", nil, &e, nil, true},
-		{"missing context", (*binding.EventMessage)(&withoutContext), &withoutContext, nil, false},
+		{name: "linked nil", message: message, event: &e, linked: true},
+		{name: "linked ACK", message: message, event: &e, result: protocol.ResultACK, linked: true},
+		{name: "linked NACK", message: message, event: &e, result: protocol.ResultNACK, linked: true},
+		{
+			name:    "linked error",
+			message: message,
+			event:   &e,
+			result:  errors.New("handler failed"),
+			linked:  true,
+		},
+		{name: "nil event", message: message, linked: true},
+		{name: "decoded event fallback", event: &e, linked: true},
+		{
+			name:    "missing context",
+			message: (*binding.EventMessage)(&withoutContext),
+			event:   &withoutContext,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -243,7 +280,11 @@ func TestConsumer(t *testing.T) {
 				t.Errorf("consumer/handler hierarchy incorrect: consumer=%s handler=%s", consumer, spans[0])
 			}
 			links := consumer.Links()
-			if len(links) != btoi(tc.linked) || tc.linked && links[0].SpanID != producer.SpanID() {
+			wantLinks := 0
+			if tc.linked {
+				wantLinks = 1
+			}
+			if len(links) != wantLinks || tc.linked && links[0].SpanID != producer.SpanID() {
 				t.Errorf("links = %#v, linked=%v producer=%d", links, tc.linked, producer.SpanID())
 			}
 			var baggage string
@@ -279,46 +320,70 @@ func TestConsumer(t *testing.T) {
 	})
 }
 
-func btoi(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
-}
-
-func TestMalformedAndOptions(t *testing.T) {
+func TestOptions(t *testing.T) {
 	mt := startMockTracer(t)
-	service := New(WithService("custom-service"), WithMessagingSystem("kafka"), WithDestinationName("orders"), WithSubject()).(*observabilityService)
+	service := New(
+		WithService("custom-service"),
+		WithMessagingSystem("kafka"),
+		WithDestinationName("orders"),
+		WithSubject(),
+	).(*observabilityService)
+
 	service.RecordReceivedMalformedEvent(context.Background(), errors.New("bad event"))
 	_, finish := service.RecordSendingEvent(context.Background(), testEvent())
 	finish(nil)
+
 	spans := mt.FinishedSpans()
 	if len(spans) != 2 {
 		t.Fatalf("got %d spans, want 2", len(spans))
 	}
-	malformed, send := spans[0], spans[1]
 	for _, span := range spans {
-		for key, want := range map[string]any{ext.ServiceName: "custom-service", ext.MessagingSystem: "kafka", ext.MessagingDestinationName: "orders"} {
-			if got := span.Tag(key); got != want {
-				t.Errorf("tag %q = %#v, want %#v", key, got, want)
-			}
-		}
+		assertSpanTags(t, span, map[string]any{
+			ext.ServiceName:              "custom-service",
+			ext.MessagingSystem:          "kafka",
+			ext.MessagingDestinationName: "orders",
+		})
 	}
-	if malformed.OperationName() != "cloudevents.consume" || malformed.ParentID() != 0 || malformed.Tag(ext.ResourceName) != "malformed" || malformed.Tag(ext.ErrorMsg) == nil || malformed.Tag(ext.SpanType) != ext.SpanTypeMessageConsumer {
-		t.Errorf("malformed span = %s", malformed)
-	}
-	if malformed.Tag("cloudevents.id") != nil || malformed.Tag("cloudevents.type") != nil || malformed.Tag("cloudevents.source") != nil {
-		t.Errorf("malformed span has event metadata: %#v", malformed.Tags())
-	}
+
+	send := spans[1]
 	if got := send.Tag("cloudevents.subject"); got != "orders/123" {
 		t.Errorf("subject = %#v, want orders/123", got)
+	}
+}
+
+func TestMalformedEvent(t *testing.T) {
+	mt := startMockTracer(t)
+	New().(*observabilityService).RecordReceivedMalformedEvent(
+		context.Background(),
+		errors.New("bad event"),
+	)
+
+	span := requireSpan(t, mt)
+	assertSpanTags(t, span, map[string]any{
+		ext.ResourceName: "malformed",
+		ext.SpanType:     ext.SpanTypeMessageConsumer,
+	})
+	if span.OperationName() != "cloudevents.consume" {
+		t.Errorf("operation name = %q, want cloudevents.consume", span.OperationName())
+	}
+	if span.ParentID() != 0 {
+		t.Errorf("parent ID = %d, want 0", span.ParentID())
+	}
+	if span.Tag(ext.ErrorMsg) == nil {
+		t.Error("malformed span does not contain an error")
+	}
+	for _, key := range []string{"cloudevents.id", "cloudevents.type", "cloudevents.source"} {
+		if value := span.Tag(key); value != nil {
+			t.Errorf("malformed span tag %q = %#v, want nil", key, value)
+		}
 	}
 }
 
 func TestAnalytics(t *testing.T) {
 	t.Setenv("DD_TRACE_CLOUDEVENTS_ANALYTICS_ENABLED", "true")
 	mt := startMockTracer(t)
-	_, finish := New().(*observabilityService).RecordSendingEvent(context.Background(), testEvent())
+	service := New().(*observabilityService)
+	_, finish := service.RecordSendingEvent(context.Background(), testEvent())
 	finish(nil)
 	if got := requireSpan(t, mt).Tag(ext.EventSampleRate); got != 1.0 {
 		t.Errorf("analytics rate = %#v, want 1", got)
