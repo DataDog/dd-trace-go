@@ -12,9 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// BenchmarkContextWithSpan guards the allocation cost of ContextWithSpan's two
-// call shapes: attaching a live span (the common StartSpanFromContext path) and
-// detaching (ContextWithSpan(ctx, nil), see TestStartSpanFromContextDetachRegression).
+// BenchmarkContextWithSpan guards the allocation cost of ContextWithSpan's
+// call shapes: attaching a live span (the common StartSpanFromContext path),
+// detaching a context that carries an ancestor snapshot (ContextWithSpan(ctx,
+// nil), see TestStartSpanFromContextDetachRegression), and detaching a context
+// that carries none — the tracer-disabled hot path that must stay
+// allocation-free (see the "don't shadow a snapshot that isn't there" fix).
 func BenchmarkContextWithSpan(b *testing.B) {
 	_, _, _, stop, err := startTestTracer(b)
 	require.NoError(b, err)
@@ -36,6 +39,14 @@ func BenchmarkContextWithSpan(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			_ = ContextWithSpan(pctx, nil)
+		}
+	})
+
+	b.Run("detach-no-snapshot", func(b *testing.B) {
+		ctx := context.Background()
+		b.ReportAllocs()
+		for b.Loop() {
+			_ = ContextWithSpan(ctx, nil)
 		}
 	})
 }
