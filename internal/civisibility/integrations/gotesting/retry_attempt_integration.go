@@ -115,6 +115,7 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 
 		execMeta = createTestMetadata(attempt.test, nil)
 		attempt.metadata = execMeta
+		execMeta.freshRetryAttemptTest = attempt.test
 		execMeta.flakyRetryBudgetReservation = execOpts.flakyRetryBudgetReservation
 		execMeta.hasAdditionalFeatureWrapper = true
 		execMeta.usesFreshRetryAttemptRuntime = true

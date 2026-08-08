@@ -17,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
@@ -24,18 +25,19 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "batch.json")
 	want := &processRetryBatchConfig{
 		Version:                processRetryBatchVersion,
+		AttemptToFixRetries:    3,
 		CollectPerTestCoverage: true,
 		ITRCoverageActive:      true,
 		ImpactedTestsEnabled:   true,
 		Tests: []processRetryBatchTestConfig{
 			{
-				TestName:          "TestA",
-				InvocationOrdinal: 11,
-				DisabledSubtests:  []string{"TestA/disabled"},
+				TestName:             "TestA",
+				InvocationOrdinal:    11,
+				DisabledSubtests:     []string{"TestA/disabled"},
+				AttemptToFixSubtests: []string{"TestA/atf"},
 				ITRSubtests: []processRetrySubtestITRConfig{{
 					TestName:                "TestA/skipped",
 					MissingLineCodeCoverage: true,
-					AttemptToFix:            true,
 				}},
 			},
 			{TestName: "TestB", InvocationOrdinal: 12},
@@ -57,7 +59,9 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	require.Equal(t, uint64(11), child.InvocationOrdinal)
 	require.True(t, child.CollectPerTestCoverage)
 	require.True(t, child.itrCoverageActive)
+	require.Equal(t, 3, child.attemptToFixRetries)
 	require.Equal(t, []string{"TestA/disabled"}, child.batchTest.DisabledSubtests)
+	require.Equal(t, []string{"TestA/atf"}, child.batchTest.AttemptToFixSubtests)
 }
 
 func TestProcessRetryNativeScheduledChildConfigUsesBatchIdentityAndGates(t *testing.T) {
@@ -117,23 +121,23 @@ func TestCurrentProcessRetryBatchInvocationStateRoundTrip(t *testing.T) {
 
 func TestApplyProcessRetryBatchFinalStatePreservesCoverageDirectory(t *testing.T) {
 	for _, test := range []struct {
-		name         string
-		apply        func(processRetryBatchInvocationState) error
-		wantCoverage bool
+		name             string
+		apply            func(processRetryBatchInvocationState) error
+		wantCoverage     bool
+		wantCIVisibility string
 	}{
-		{name: "child invocation", apply: applyProcessRetryBatchInvocationState},
-		{name: "parent final state", apply: applyProcessRetryBatchFinalState, wantCoverage: true},
+		{name: "child invocation", apply: applyProcessRetryBatchInvocationState, wantCIVisibility: "false"},
+		{name: "parent final state", apply: applyProcessRetryBatchFinalState, wantCoverage: true, wantCIVisibility: "parent"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			workingDirectory, err := os.Getwd()
 			require.NoError(t, err)
 			t.Setenv(processRetryCoverageDirectoryEnvironmentVariable, filepath.Join(t.TempDir(), "coverage"))
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "parent")
 			t.Setenv("DD_TEST_BATCH_REMOVED_STATE", "remove-me")
-			environment := slices.DeleteFunc(os.Environ(), func(entry string) bool {
+			environment := slices.DeleteFunc(sanitizeProcessRetryBaseEnv(os.Environ()), func(entry string) bool {
 				key, _, _ := strings.Cut(entry, "=")
-				return key == "DD_TEST_BATCH_REMOVED_STATE" ||
-					strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable) ||
-					isProcessRetryInternalEnvKey(key)
+				return key == "DD_TEST_BATCH_REMOVED_STATE"
 			})
 
 			require.NoError(t, test.apply(processRetryBatchInvocationState{
@@ -143,6 +147,7 @@ func TestApplyProcessRetryBatchFinalStatePreservesCoverageDirectory(t *testing.T
 			}))
 			_, coveragePresent := os.LookupEnv(processRetryCoverageDirectoryEnvironmentVariable)
 			require.Equal(t, test.wantCoverage, coveragePresent)
+			require.Equal(t, test.wantCIVisibility, os.Getenv(constants.CIVisibilityEnabledEnvironmentVariable))
 			_, removedPresent := os.LookupEnv("DD_TEST_BATCH_REMOVED_STATE")
 			require.False(t, removedPresent)
 		})
@@ -312,13 +317,17 @@ func TestNativeScheduledBatchResultSkipsUninvokedTestsBeforeWaiting(t *testing.T
 func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
 	validTest := processRetryBatchTestConfig{TestName: "TestA"}
 	tests := map[string]*processRetryBatchConfig{
-		"nil":                 nil,
-		"wrong version":       {Version: processRetryBatchVersion + 1, Tests: []processRetryBatchTestConfig{validTest}},
-		"empty":               {Version: processRetryBatchVersion},
-		"missing name":        {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{InvocationOrdinal: 1}}},
-		"duplicate test name": {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{validTest, validTest}},
-		"ITR outside test":    {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", ITRSubtests: []processRetrySubtestITRConfig{{TestName: "TestB/child"}}}}},
-		"duplicate ITR":       {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", ITRSubtests: []processRetrySubtestITRConfig{{TestName: "TestA/child"}, {TestName: "TestA/child"}}}}},
+		"nil":                  nil,
+		"wrong version":        {Version: processRetryBatchVersion + 1, Tests: []processRetryBatchTestConfig{validTest}},
+		"empty":                {Version: processRetryBatchVersion},
+		"missing name":         {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{InvocationOrdinal: 1}}},
+		"duplicate test name":  {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{validTest, validTest}},
+		"negative retries":     {Version: processRetryBatchVersion, AttemptToFixRetries: -1, Tests: []processRetryBatchTestConfig{validTest}},
+		"too many retries":     {Version: processRetryBatchVersion, AttemptToFixRetries: processRetryBatchMaxTests + 1, Tests: []processRetryBatchTestConfig{validTest}},
+		"managed outside test": {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", AttemptToFixSubtests: []string{"TestB/child"}}}},
+		"duplicate managed":    {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", DisabledSubtests: []string{"TestA/child"}, AttemptToFixSubtests: []string{"TestA/child"}}}},
+		"ITR outside test":     {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", ITRSubtests: []processRetrySubtestITRConfig{{TestName: "TestB/child"}}}}},
+		"duplicate ITR":        {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", ITRSubtests: []processRetrySubtestITRConfig{{TestName: "TestA/child"}, {TestName: "TestA/child"}}}}},
 	}
 
 	for name, cfg := range tests {
@@ -328,7 +337,7 @@ func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
 	}
 }
 
-func TestDisabledProcessRetrySubtests(t *testing.T) {
+func TestProcessRetryTestManagementSubtests(t *testing.T) {
 	identity := newTestIdentity("module", "suite", "TestA")
 	modules := &net.TestManagementTestsResponseDataModules{Modules: map[string]net.TestManagementTestsResponseDataSuites{
 		"module": {Suites: map[string]net.TestManagementTestsResponseDataTests{
@@ -341,7 +350,9 @@ func TestDisabledProcessRetrySubtests(t *testing.T) {
 		}},
 	}}
 
-	require.Equal(t, []string{"TestA/disabled"}, disabledProcessRetrySubtests(*identity, modules))
+	disabled, attemptToFix := processRetryTestManagementSubtests(*identity, modules)
+	require.Equal(t, []string{"TestA/disabled"}, disabled)
+	require.Equal(t, []string{"TestA/atf"}, attemptToFix)
 }
 
 func TestProcessRetryITRSubtests(t *testing.T) {
@@ -359,22 +370,13 @@ func TestProcessRetryITRSubtests(t *testing.T) {
 			},
 		}},
 	}
-	modules := &net.TestManagementTestsResponseDataModules{Modules: map[string]net.TestManagementTestsResponseDataSuites{
-		"module": {Suites: map[string]net.TestManagementTestsResponseDataTests{
-			"suite": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
-				"TestA/safe": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true}},
-			}},
-		}},
-	}}
-
 	require.Equal(t, []processRetrySubtestITRConfig{{
 		TestName:                "TestA/safe",
 		MissingLineCodeCoverage: true,
-		AttemptToFix:            true,
-	}}, processRetryITRSubtests(*identity, state, modules))
+	}}, processRetryITRSubtests(*identity, state))
 
 	state.settings.TestsSkipping = false
-	require.Empty(t, processRetryITRSubtests(*identity, state, modules))
+	require.Empty(t, processRetryITRSubtests(*identity, state))
 }
 
 func TestPreserveProcessRetryBatchFailure(t *testing.T) {

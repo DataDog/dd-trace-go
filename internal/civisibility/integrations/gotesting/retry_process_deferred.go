@@ -1052,7 +1052,7 @@ func prepareDeferredProcessRetryInvocation(execOpts *executionOptions) {
 		return
 	}
 	execOpts.processRetryLaunchBaseline = captureProcessRetryLaunchBaselineFromTemplate(options.processRetryLaunchTemplate)
-	if ok, _ := processRetryParallelBaselineReady(execOpts.processRetryLaunchBaseline); !ok {
+	if ok, _ := processRetryFirstAttemptIsolationReady(execOpts.processRetryLaunchBaseline); !ok {
 		return
 	}
 	options.processRetryPhaseID = options.processRetryCoordinator.observeInvocationPhase(options.processRetryIdentity)
@@ -1099,7 +1099,7 @@ func deferQuarantinedRaceFirstAttempt(options *runTestWithRetryOptions) {
 	execMeta.hasAdditionalFeatureWrapper = true
 	execOpts := &executionOptions{options: options, executionMetadata: execMeta}
 	prepareDeferredProcessRetryInvocation(execOpts)
-	if ok, _ := processRetryParallelBaselineReady(execOpts.processRetryLaunchBaseline); !ok || options.processRetryPhaseID == 0 {
+	if ok, _ := processRetryFirstAttemptIsolationReady(execOpts.processRetryLaunchBaseline); !ok || options.processRetryPhaseID == 0 {
 		runTestWithRetry(options)
 		return
 	}

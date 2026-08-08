@@ -41,6 +41,7 @@ type (
 		processRetrySkipReason       atomic.Pointer[string]
 		processRetryPanic            atomic.Pointer[processRetryErrorInfo]
 		processRetryOwner            *testExecutionMetadata
+		freshRetryAttemptTest        *testing.T
 		isARetry                     bool // flag to tag if a current test execution is a retry
 		isANewTest                   bool // flag to tag if a current test a new test
 		isAModifiedTest              bool // flag to tag if a current test a modified test
@@ -102,6 +103,7 @@ type (
 		retryAttemptObserveOutput     bool
 		retryAttemptObserveOutputSet  bool
 		retryAttemptMaskingFallback   bool
+		allowProcessRetryChildRetries bool
 		failfastEnabled               func() bool
 		nativeFailfastObserved        func() bool
 		postRetryFamilyTransition     func(*testExecutionMetadata)
@@ -991,7 +993,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	if execOpts.deferredQueued {
 		return
 	}
-	if shouldRetry && !isProcessRetryChild() {
+	if shouldRetry && (!isProcessRetryChild() || options.allowProcessRetryChildRetries) {
 		calculatedRetryCount := execOpts.retryCount
 		remainingAttempts := calculatedRetryCount + 1
 		runSequentialRetries := func() {
