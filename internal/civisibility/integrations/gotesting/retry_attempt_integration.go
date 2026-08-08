@@ -67,6 +67,9 @@ func stopRetryGroupAfterRace(execOpts *executionOptions, raceDetected bool) bool
 	if execOpts == nil || !raceDetected {
 		return false
 	}
+	if execOpts.options != nil && execOpts.options.allowRetryAfterRace {
+		return false
+	}
 	execOpts.rawAttemptFailureSeen = true
 	execOpts.retryCount = 0
 	return true

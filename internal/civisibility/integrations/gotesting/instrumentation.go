@@ -104,6 +104,7 @@ type (
 		retryAttemptObserveOutputSet  bool
 		retryAttemptMaskingFallback   bool
 		allowProcessRetryChildRetries bool
+		allowRetryAfterRace           bool
 		failfastEnabled               func() bool
 		nativeFailfastObserved        func() bool
 		postRetryFamilyTransition     func(*testExecutionMetadata)

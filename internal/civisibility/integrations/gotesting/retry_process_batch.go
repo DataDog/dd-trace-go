@@ -606,12 +606,22 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 	for {
 		if !parallel {
 			if attempt, readErr := readAttempt(); readErr == nil {
+				// Wait for the child M.Run coverage report before the parent test can finish.
+				<-batch.done
 				return attempt
 			}
 		}
 		if !parallel {
 			if _, statErr := os.Stat(parallelPath); statErr == nil {
 				parallel = true
+				// Mirror mutations made before t.Parallel before the parent continues enumeration.
+				state, stateErr := readProcessRetryBatchInvocationState(parallelPath)
+				if stateErr == nil {
+					stateErr = applyProcessRetryBatchFinalState(state)
+				}
+				if stateErr != nil {
+					return failedNativeScheduledAttempt(stateErr)
+				}
 				// The child is paused inside t.Parallel while both native schedulers
 				// enumerate. Reacquire admission before opening the bridge so the test
 				// body remains subject to the configured process concurrency limit.

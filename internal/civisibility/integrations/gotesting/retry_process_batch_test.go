@@ -170,6 +170,8 @@ func TestTransitionNativeScheduledTestToParallelUsesCapturedParentBarrier(t *tes
 }
 
 func TestWaitNativeScheduledFirstAttemptReacquiresProcessSlotBeforeParallelBody(t *testing.T) {
+	const stateKey = "DD_TEST_BATCH_CHILD_PRE_PARALLEL_STATE"
+	t.Setenv(stateKey, "parent")
 	resetProcessRetryLimiterForTesting(t)
 	limiter := getProcessRetryLimiter()
 	initialSlot := limiter.acquireWithShutdownLimit(context.Background(), nil, nil, 1)
@@ -182,6 +184,7 @@ func TestWaitNativeScheduledFirstAttemptReacquiresProcessSlotBeforeParallelBody(
 	acquireEntered := make(chan struct{})
 	signalCalled := make(chan struct{})
 	activeAtSignal := make(chan int, 1)
+	stateAtSignal := make(chan string, 1)
 	batchConfig := &processRetryBatchConfig{
 		Version:                processRetryBatchVersion,
 		Tests:                  []processRetryBatchTestConfig{testConfig},
@@ -205,6 +208,7 @@ func TestWaitNativeScheduledFirstAttemptReacquiresProcessSlotBeforeParallelBody(
 		limiter.mu.Lock()
 		activeAtSignal <- limiter.active
 		limiter.mu.Unlock()
+		stateAtSignal <- os.Getenv(stateKey)
 		close(signalCalled)
 		now := time.Now()
 		err := writeProcessRetryResultAtomically(processRetryBatchResultPath(resultRoot, 0), processRetryResult{
@@ -221,7 +225,14 @@ func TestWaitNativeScheduledFirstAttemptReacquiresProcessSlotBeforeParallelBody(
 		close(batch.done)
 		return err
 	}
-	require.NoError(t, os.WriteFile(processRetryBatchParallelPath(resultRoot, 0), nil, processRetryBatchManifestMode))
+	environment := slices.DeleteFunc(sanitizeProcessRetryBaseEnv(os.Environ()), func(entry string) bool {
+		key, _, _ := strings.Cut(entry, "=")
+		return key == stateKey
+	})
+	require.NoError(t, writeProcessRetryBatchInvocationState(processRetryBatchParallelPath(resultRoot, 0), &processRetryLaunchBaseline{
+		workingDirectory: dir,
+		environment:      append(environment, stateKey+"=child"),
+	}))
 	coordinator := &processRetryCoordinator{
 		nativeTestIndex: map[string]int{testConfig.TestName: 0},
 		nativeTests:     []processRetryBatchTestConfig{testConfig},
@@ -258,6 +269,7 @@ func TestWaitNativeScheduledFirstAttemptReacquiresProcessSlotBeforeParallelBody(
 
 	require.False(t, <-signalBeforeAdmission)
 	require.Equal(t, 1, <-activeAtSignal)
+	require.Equal(t, "child", <-stateAtSignal)
 	require.Equal(t, processRetryStatusPass, effectiveProcessRetryStatus(<-result, false).Status)
 	require.Zero(t, processRetryLimiterActiveForTesting(t, limiter))
 }
@@ -490,21 +502,44 @@ func TestProcessRetryBatchArgsPreserveSegmentedSelectors(t *testing.T) {
 		"-test.run=^TestQuarantined$/wanted$",
 		"-test.skip=destructive$",
 		"-test.testlogfile=parent-testlog.txt",
+		"-test.gocoverdir=parent-coverage",
 	})
 
 	require.Equal(t, "parent-testlog.txt", snapshot.testLogFile)
-	got, ok, reason := buildProcessRetryArgsFromSnapshot(processRetryBatchArgsSnapshot(snapshot, "child-testlog.txt"), ".", 1, time.Second)
+	got, ok, reason := buildProcessRetryArgsFromSnapshot(processRetryBatchArgsSnapshot(snapshot, "child-testlog.txt", true), ".", 1, time.Second)
 
 	require.True(t, ok, reason)
 	require.Equal(t, []string{
 		"-test.failfast=false",
 		"-test.testlogfile=child-testlog.txt",
+		"-test.gocoverdir=parent-coverage",
 		"-test.run=^TestQuarantined$/wanted$",
 		"-test.skip=destructive$",
 		"-test.count=1",
 		"-test.cpu=1",
 		"-test.timeout=1s",
 	}, got)
+	require.NotContains(t, processRetryBatchArgsSnapshot(snapshot, "", false).preserved, "-test.gocoverdir=parent-coverage")
+}
+
+func TestProcessRetryBatchOutputOmitsChildRunnerProtocol(t *testing.T) {
+	output := strings.Join([]string{
+		"\x16=== RUN   TestSelected",
+		"direct stdout",
+		"    selected_test.go:10: test log",
+		"--- FAIL: TestSelected (0.01s)",
+		"WARNING: DATA RACE",
+		"coverage: 42.0% of statements",
+		"FAIL",
+		"direct stderr",
+	}, "\n") + "\n"
+
+	require.Equal(t, strings.Join([]string{
+		"direct stdout",
+		"    selected_test.go:10: test log",
+		"WARNING: DATA RACE",
+		"direct stderr",
+	}, "\n")+"\n", filterProcessRetryBatchOutput(output))
 }
 
 func TestMergeProcessRetryTestLog(t *testing.T) {
