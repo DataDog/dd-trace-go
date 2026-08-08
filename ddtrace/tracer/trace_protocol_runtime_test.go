@@ -55,6 +55,48 @@ func TestEmptyPayloadRotatesOnProtocolDowngrade(t *testing.T) {
 	assert.Equal(t, []string{tracesAPIPath}, agent.Requests(), "the post-downgrade trace must land on /v0.4/traces")
 }
 
+// TestNonEmptyPayloadSealsOnProtocolDowngrade pins that a writer holding at
+// least one already-buffered trace does not keep absorbing new traces into
+// that stale payload after the agent withdraws /v1.0/traces.
+// rotateStalePayload only rotates a payload for free when it is empty, so a
+// non-empty stale payload needs add() to seal it with a real flush() instead
+// — otherwise every trace accepted between the downgrade and the next
+// scheduled flush would also be encoded as v1 and rejected by the agent
+// alongside the trace that was already buffered before the downgrade.
+func TestNonEmptyPayloadSealsOnProtocolDowngrade(t *testing.T) {
+	agent := startTestAgent(t)
+	tr := newTracerTest(t, agent, WithSendRetries(0))
+	defer stopTracerTest(tr)
+
+	require.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol(), "sanity check: agent must resolve to v1")
+
+	w := newAgentTraceWriter(tr.config, newPrioritySampler(), tr.statsd)
+	w.add([]*Span{makeSpan(1)})
+	require.Equal(t, traceProtocolV1, w.payload.protocol(), "payload created while v1 was in effect must be v1")
+	require.Equal(t, 1, w.payload.itemCount(), "sanity check: the pre-downgrade trace must be buffered")
+
+	// Drive the downgrade through the real /info path, not a raw agent.store,
+	// so the streak/hysteresis logic in refreshAgentFeatures is exercised too.
+	agent.SetInfo(`{"endpoints":["/v0.4/traces","/v0.6/stats"],"client_drop_p0s":true}`)
+	tr.refreshAgentFeatures()
+	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "sanity check: the poll must downgrade")
+
+	agent.Reset()
+	// The writer already holds a buffered v1 trace across the downgrade: add()
+	// must seal it via flush() before pushing this trace, rather than mixing
+	// it into the stale payload.
+	w.add([]*Span{makeSpan(2)})
+	w.wg.Wait() // wait for the seal flush spawned inside add() before ordering-sensitive assertions below
+	require.Equal(t, traceProtocolV04, w.payload.protocol(), "a trace accepted after a protocol downgrade must not land in the sealed payload")
+	require.Equal(t, 1, w.payload.itemCount(), "the sealed payload's trace must not carry over into the new one")
+
+	w.flush()
+	w.wg.Wait()
+
+	assert.Equal(t, []string{tracesAPIPathV1, tracesAPIPath}, agent.Requests(),
+		"the pre-downgrade trace must go out sealed on v1.0 and the post-downgrade trace on v0.4")
+}
+
 // TestConcurrentProtocolChangeDuringFlush runs a flush loop and an
 // agent-info-refresh loop concurrently and asserts that every observed
 // request's wire format matches its intake path. Run with -race: making the
