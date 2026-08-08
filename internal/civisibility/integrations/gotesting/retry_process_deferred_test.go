@@ -625,6 +625,7 @@ func TestDeferredProcessRetryInfrastructureFailfastStopsFollowingTest(t *testing
 		os.Args[1:],
 		"^(TestDeferredProcessRetryInfrastructureFailfastFailure|TestDeferredProcessRetryInfrastructureFailfastFollowing)$",
 		"-test.failfast=true",
+		"-test.shuffle=off", // The failfast assertion requires the failure fixture to run first.
 	)...)
 	cmd.Env = append(os.Environ(), deferredProcessRetryInfrastructureFailfastFixtureEnv+"=true", "Bypass=true")
 	output, err := cmd.CombinedOutput()
