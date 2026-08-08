@@ -215,3 +215,35 @@ func TestOTLPExportModeDoesNotOverrideRequestedProtocolTelemetry(t *testing.T) {
 	}
 	telemetrytest.CheckConfig(t, telemetryClient.Configuration, "DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 }
+
+// TestStartupLogOmitsTraceProtocolForNonAgentWriter pins that the startup
+// log's trace_protocol field never reports a Datadog wire protocol derived
+// from an unrelated agent /info response when no Datadog trace payload is
+// ever sent. Before the fix, OTLP export mode with no reachable agent at all
+// still reported "0.4" — effectiveTraceProtocol's fallback when the agent
+// doesn't advertise v1 — even though every trace goes out over OTLP.
+func TestStartupLogOmitsTraceProtocolForNonAgentWriter(t *testing.T) {
+	tp := new(log.RecordLogger)
+	tr, err := newUnstartedTracer(withNoopInfoHTTPClient(), WithLogger(tp), func(c *config) {
+		c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+	})
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	require.False(t, tr.config.usesAgentTraceWriter(), "sanity check: OTLP export mode must not select the agent writer")
+
+	tp.Reset()
+	tp.Ignore(commonLogIgnore...)
+	logStartup(tr)
+
+	var cfgLine string
+	for _, l := range tp.Logs() {
+		if strings.Contains(l, "DATADOG TRACER CONFIGURATION") {
+			cfgLine = l
+		}
+	}
+	require.NotEmpty(t, cfgLine, "expected a startup configuration line; got: %v", tp.Logs())
+	assert.Contains(t, cfgLine, `"trace_protocol":"n/a"`)
+	assert.NotContains(t, cfgLine, `"trace_protocol":"0.4"`,
+		"OTLP export mode must never report a Datadog wire protocol derived from an unrelated agent /info response")
+}
