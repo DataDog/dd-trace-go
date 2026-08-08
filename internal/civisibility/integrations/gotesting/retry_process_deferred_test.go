@@ -9,6 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -24,6 +26,11 @@ import (
 type deferredProcessRetryMutablePanic struct {
 	message string
 }
+
+const (
+	deferredProcessRetryInfrastructureFailfastFixtureEnv = "DD_TEST_DEFERRED_PROCESS_RETRY_INFRASTRUCTURE_FAILFAST"
+	deferredProcessRetryFailfastFollowingSentinel        = "deferred-process-retry-failfast-following-ran"
+)
 
 func processRetryCoordinatorRegisteredForTesting(c *processRetryCoordinator) bool {
 	processRetryCoordinatorRegistry.mu.Lock()
@@ -572,6 +579,57 @@ func TestDeferredProcessRetryCoordinatorNativeFailfastRunsAdmittedFirstAttempts(
 	require.Len(t, recorder.tests, 2)
 	require.Equal(t, 3, summary.exitCode)
 	require.True(t, summary.failfast)
+}
+
+func TestDeferredProcessRetryInfrastructureFailureClassification(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		attempt processRetryAttemptResult
+		want    bool
+	}{
+		{name: "pass", attempt: fixedProcessRetryAttempt(processRetryStatusPass, 1)},
+		{name: "test failure", attempt: fixedProcessRetryAttempt(processRetryStatusFail, 1)},
+		{name: "test race", attempt: processRetryAttemptResult{Result: processRetryResult{Status: processRetryStatusFail, Failed: true, RaceDetected: true}, ExitCode: 1}},
+		{name: "setup failure", attempt: failedNativeScheduledAttempt(errors.New("launch failed")), want: true},
+		{name: "timeout", attempt: processRetryAttemptResult{TimedOut: true}, want: true},
+		{name: "invalid result", attempt: processRetryAttemptResult{Err: errProcessRetryResultInvalid}, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, deferredProcessRetryInfrastructureFailure(test.attempt))
+		})
+	}
+}
+
+func TestDeferredProcessRetryInfrastructureFailfastFailure(t *testing.T) {
+	if os.Getenv(deferredProcessRetryInfrastructureFailfastFixtureEnv) != "true" {
+		t.Skip("failfast fixture runs only in its controller subprocess")
+	}
+	finishDeferredProcessRetryFirstAttempt(
+		&runTestWithRetryOptions{t: t},
+		deferredProcessRetryInfrastructureFailure(failedNativeScheduledAttempt(errors.New("launch failed"))),
+	)
+}
+
+func TestDeferredProcessRetryInfrastructureFailfastFollowing(t *testing.T) {
+	if os.Getenv(deferredProcessRetryInfrastructureFailfastFixtureEnv) != "true" {
+		t.Skip("failfast fixture runs only in its controller subprocess")
+	}
+	fmt.Fprint(os.Stdout, deferredProcessRetryFailfastFollowingSentinel)
+}
+
+func TestDeferredProcessRetryInfrastructureFailfastStopsFollowingTest(t *testing.T) {
+	if os.Getenv(deferredProcessRetryInfrastructureFailfastFixtureEnv) == "true" {
+		t.Skip("controller does not run inside its fixture subprocess")
+	}
+	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(
+		os.Args[1:],
+		"^(TestDeferredProcessRetryInfrastructureFailfastFailure|TestDeferredProcessRetryInfrastructureFailfastFollowing)$",
+		"-test.failfast=true",
+	)...)
+	cmd.Env = append(os.Environ(), deferredProcessRetryInfrastructureFailfastFixtureEnv+"=true", "Bypass=true")
+	output, err := cmd.CombinedOutput()
+	require.Error(t, err, string(output))
+	require.NotContains(t, string(output), deferredProcessRetryFailfastFollowingSentinel)
 }
 
 func TestDeferredProcessRetryFailfastRefundsUnconsumedFTRReservation(t *testing.T) {

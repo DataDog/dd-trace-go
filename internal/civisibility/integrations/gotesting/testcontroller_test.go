@@ -203,7 +203,9 @@ func TestMain(m *testing.M) {
 						}
 					}
 					previousProcessMax, hadProcessMax := os.LookupEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable)
-					if err := os.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1"); err != nil {
+					// The two parallel race fixtures coordinate with each other, so both
+					// bodies must be admitted just as they are under -test.parallel=2.
+					if err := os.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "2"); err != nil {
 						panic(err)
 					}
 					shuffleSeed := testControllerShuffleSeedWithOrder(*tests, orderedTests...)

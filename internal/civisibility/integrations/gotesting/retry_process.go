@@ -469,7 +469,7 @@ func sanitizeProcessRetryBaseEnv(base []string) []string {
 			result = append(result, entry)
 			continue
 		}
-		if isProcessRetryInternalEnvKey(key) || strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable) {
+		if isProcessRetryExcludedEnvKey(key) {
 			continue
 		}
 		if strings.EqualFold(key, constants.CIVisibilityEnabledEnvironmentVariable) {
@@ -481,6 +481,10 @@ func sanitizeProcessRetryBaseEnv(base []string) []string {
 		result = append(result, entry)
 	}
 	return result
+}
+
+func isProcessRetryExcludedEnvKey(key string) bool {
+	return isProcessRetryInternalEnvKey(key) || strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable)
 }
 
 func buildProcessRetryEnv(base []string, cfg processRetryChildConfig) []string {

@@ -10,6 +10,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,6 +115,40 @@ func TestCurrentProcessRetryBatchInvocationStateRoundTrip(t *testing.T) {
 	require.Contains(t, state.Environment, "DD_TEST_BATCH_PARENT_STATE=post-enumeration")
 }
 
+func TestApplyProcessRetryBatchFinalStatePreservesCoverageDirectory(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		apply        func(processRetryBatchInvocationState) error
+		wantCoverage bool
+	}{
+		{name: "child invocation", apply: applyProcessRetryBatchInvocationState},
+		{name: "parent final state", apply: applyProcessRetryBatchFinalState, wantCoverage: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			workingDirectory, err := os.Getwd()
+			require.NoError(t, err)
+			t.Setenv(processRetryCoverageDirectoryEnvironmentVariable, filepath.Join(t.TempDir(), "coverage"))
+			t.Setenv("DD_TEST_BATCH_REMOVED_STATE", "remove-me")
+			environment := slices.DeleteFunc(os.Environ(), func(entry string) bool {
+				key, _, _ := strings.Cut(entry, "=")
+				return key == "DD_TEST_BATCH_REMOVED_STATE" ||
+					strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable) ||
+					isProcessRetryInternalEnvKey(key)
+			})
+
+			require.NoError(t, test.apply(processRetryBatchInvocationState{
+				Version:          processRetryBatchGateVersion,
+				WorkingDirectory: workingDirectory,
+				Environment:      environment,
+			}))
+			_, coveragePresent := os.LookupEnv(processRetryCoverageDirectoryEnvironmentVariable)
+			require.Equal(t, test.wantCoverage, coveragePresent)
+			_, removedPresent := os.LookupEnv("DD_TEST_BATCH_REMOVED_STATE")
+			require.False(t, removedPresent)
+		})
+	}
+}
+
 func TestTransitionNativeScheduledTestToParallelUsesCapturedParentBarrier(t *testing.T) {
 	result := make(chan error, 1)
 	t.Run("parent", func(parent *testing.T) {
@@ -126,6 +162,99 @@ func TestTransitionNativeScheduledTestToParallelUsesCapturedParentBarrier(t *tes
 		*fields.barrier = barrier
 	})
 	require.NoError(t, <-result)
+}
+
+func TestWaitNativeScheduledFirstAttemptReacquiresProcessSlotBeforeParallelBody(t *testing.T) {
+	resetProcessRetryLimiterForTesting(t)
+	limiter := getProcessRetryLimiter()
+	initialSlot := limiter.acquireWithShutdownLimit(context.Background(), nil, nil, 1)
+	require.Equal(t, processRetryLimiterAcquired, initialSlot.Cause)
+	processSlotRelease := make(chan processRetryLimiterRelease, 1)
+	processSlotRelease <- initialSlot.Release
+	dir := t.TempDir()
+	resultRoot := filepath.Join(dir, "result.json")
+	testConfig := processRetryBatchTestConfig{TestName: "TestParallel"}
+	acquireEntered := make(chan struct{})
+	signalCalled := make(chan struct{})
+	activeAtSignal := make(chan int, 1)
+	batchConfig := &processRetryBatchConfig{
+		Version:                processRetryBatchVersion,
+		Tests:                  []processRetryBatchTestConfig{testConfig},
+		PreserveNativeSchedule: true,
+	}
+	batch := &nativeScheduledProcessRetryBatch{
+		rootCfg: processRetryChildConfig{
+			TestName:    processRetryBatchTestName,
+			Attempt:     1,
+			RetryReason: processRetryBatchReason,
+			Batch:       batchConfig,
+		},
+		batch:              batchConfig,
+		resultRoot:         resultRoot,
+		ctx:                &processRetryObservedDoneContext{Context: t.Context(), entered: acquireEntered},
+		done:               make(chan struct{}),
+		cancel:             func() {},
+		processSlotRelease: processSlotRelease,
+	}
+	batch.signal = func() error {
+		limiter.mu.Lock()
+		activeAtSignal <- limiter.active
+		limiter.mu.Unlock()
+		close(signalCalled)
+		now := time.Now()
+		err := writeProcessRetryResultAtomically(processRetryBatchResultPath(resultRoot, 0), processRetryResult{
+			Version:        1,
+			TestName:       testConfig.TestName,
+			Attempt:        1,
+			RetryReason:    processRetryBatchReason,
+			Status:         processRetryStatusPass,
+			RootParallel:   true,
+			StartUnixNano:  now.UnixNano(),
+			FinishUnixNano: now.Add(time.Millisecond).UnixNano(),
+			DurationNanos:  int64(time.Millisecond),
+		})
+		close(batch.done)
+		return err
+	}
+	require.NoError(t, os.WriteFile(processRetryBatchParallelPath(resultRoot, 0), nil, processRetryBatchManifestMode))
+	coordinator := &processRetryCoordinator{
+		nativeTestIndex: map[string]int{testConfig.TestName: 0},
+		nativeTests:     []processRetryBatchTestConfig{testConfig},
+		nativeBatches:   map[uint64]*nativeScheduledProcessRetryBatch{1: batch},
+		shutdown:        make(chan struct{}),
+	}
+	group := &deferredProcessRetryGroup{
+		identity:          *newTestIdentity("module", "suite", testConfig.TestName),
+		invocationOrdinal: 1,
+		launchBaseline: &processRetryLaunchBaseline{
+			workingDirectory:  dir,
+			maxConcurrency:    1,
+			maxConcurrencySet: true,
+		},
+	}
+	result := make(chan processRetryAttemptResult, 1)
+	signalBeforeAdmission := make(chan bool, 1)
+	t.Run("parent", func(parent *testing.T) {
+		parent.Run("parallel", func(child *testing.T) {
+			result <- coordinator.waitNativeScheduledFirstAttempt(group, child)
+		})
+		blockingSlot := limiter.acquireWithShutdownLimit(t.Context(), nil, nil, 1)
+		require.Equal(parent, processRetryLimiterAcquired, blockingSlot.Cause)
+		go func() {
+			select {
+			case <-acquireEntered:
+				signalBeforeAdmission <- false
+			case <-signalCalled:
+				signalBeforeAdmission <- true
+			}
+			blockingSlot.Release()
+		}()
+	})
+
+	require.False(t, <-signalBeforeAdmission)
+	require.Equal(t, 1, <-activeAtSignal)
+	require.Equal(t, processRetryStatusPass, effectiveProcessRetryStatus(<-result, false).Status)
+	require.Zero(t, processRetryLimiterActiveForTesting(t, limiter))
 }
 
 func TestProcessRetryBatchInvocationStateRejectsInvalidPayloads(t *testing.T) {

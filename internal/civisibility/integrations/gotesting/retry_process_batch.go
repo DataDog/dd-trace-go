@@ -212,7 +212,7 @@ func validateProcessRetryBatchInvocationState(state processRetryBatchInvocationS
 		key, value, ok := strings.Cut(entry, "=")
 		normalizedKey := processRetryInvocationEnvironmentKey(key)
 		if !ok || key == "" || strings.IndexByte(key, 0) >= 0 || strings.IndexByte(value, 0) >= 0 ||
-			isProcessRetryInternalEnvKey(key) || strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable) {
+			isProcessRetryExcludedEnvKey(key) {
 			return errors.New("invalid process retry invocation environment")
 		}
 		if _, duplicate := seen[normalizedKey]; duplicate {
@@ -224,6 +224,14 @@ func validateProcessRetryBatchInvocationState(state processRetryBatchInvocationS
 }
 
 func applyProcessRetryBatchInvocationState(state processRetryBatchInvocationState) error {
+	return applyProcessRetryBatchInvocationStateWithOptions(state, false)
+}
+
+func applyProcessRetryBatchFinalState(state processRetryBatchInvocationState) error {
+	return applyProcessRetryBatchInvocationStateWithOptions(state, true)
+}
+
+func applyProcessRetryBatchInvocationStateWithOptions(state processRetryBatchInvocationState, preserveExcludedEnvironment bool) error {
 	if err := validateProcessRetryBatchInvocationState(state); err != nil {
 		return err
 	}
@@ -238,6 +246,9 @@ func applyProcessRetryBatchInvocationState(state processRetryBatchInvocationStat
 	for _, entry := range os.Environ() {
 		key, _, ok := strings.Cut(entry, "=")
 		if !ok || key == "" {
+			continue
+		}
+		if preserveExcludedEnvironment && isProcessRetryExcludedEnvKey(key) {
 			continue
 		}
 		if _, ok := desired[processRetryInvocationEnvironmentKey(key)]; !ok {
@@ -413,6 +424,7 @@ type nativeScheduledProcessRetryBatch struct {
 	rootCfg            processRetryChildConfig
 	batch              *processRetryBatchConfig
 	resultRoot         string
+	ctx                context.Context
 	done               chan struct{}
 	cancel             context.CancelFunc
 	attempt            processRetryAttemptResult
@@ -492,6 +504,7 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 		rootCfg:            rootCfg,
 		batch:              batchConfig,
 		resultRoot:         resultRoot,
+		ctx:                ctx,
 		done:               make(chan struct{}),
 		cancel:             cancel,
 		processSlotRelease: processSlotRelease,
@@ -504,6 +517,8 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 	}
 	c.nativeBatches[group.invocationOrdinal] = batch
 	go func() {
+		defer close(batch.done)
+		defer cancel()
 		batch.attempt = runProcessRetryAttemptWithBaselineAndShutdown(
 			ctx,
 			rootCfg,
@@ -512,7 +527,6 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 			group.launchBaseline,
 			group.shutdown(),
 		)
-		close(batch.done)
 	}()
 	return batch, nil
 }
@@ -540,7 +554,7 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 		if result.Status != processRetryStatusNotRun && !result.RootParallel {
 			state, stateErr := readProcessRetryBatchInvocationState(processRetryBatchFinalStatePath(expected.ResultPath))
 			if stateErr == nil {
-				stateErr = applyProcessRetryBatchInvocationState(state)
+				stateErr = applyProcessRetryBatchFinalState(state)
 			}
 			if stateErr != nil {
 				return failedNativeScheduledAttempt(stateErr), nil
@@ -556,18 +570,35 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 	ticker := time.NewTicker(processRetryBatchPollInterval)
 	defer ticker.Stop()
 	for {
-		if attempt, readErr := readAttempt(); readErr == nil {
-			return attempt
+		if !parallel {
+			if attempt, readErr := readAttempt(); readErr == nil {
+				return attempt
+			}
 		}
 		if !parallel {
 			if _, statErr := os.Stat(parallelPath); statErr == nil {
 				parallel = true
-				// The parent scheduler bounds the body after the parallel transition.
-				// Release process admission first so a limit of one cannot block enumeration.
+				// The child is paused inside t.Parallel while both native schedulers
+				// enumerate. Reacquire admission before opening the bridge so the test
+				// body remains subject to the configured process concurrency limit.
 				(<-batch.processSlotRelease)()
 				if err := transitionNativeScheduledTestToParallel(t); err != nil {
 					return failedNativeScheduledAttempt(err)
 				}
+				limiterResult := acquireNativeScheduledProcessSlot(batch, group)
+				if limiterResult.Cause != processRetryLimiterAcquired {
+					if errors.Is(limiterResult.Err, context.Canceled) {
+						<-batch.done
+						return nativeScheduledBatchAttempt(batch)
+					}
+					select {
+					case <-batch.done:
+						return nativeScheduledBatchAttempt(batch)
+					default:
+						return failedNativeScheduledAttempt(limiterResult.Err)
+					}
+				}
+				defer limiterResult.Release()
 				if err := batch.signal(); err != nil {
 					return failedNativeScheduledAttempt(err)
 				}
@@ -581,15 +612,28 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 				now := time.Now()
 				return processRetryAttemptResult{Err: readErr, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
 			}
-			attempt := batch.attempt
-			attempt.Cleanup = nil
-			return attempt
+			return nativeScheduledBatchAttempt(batch)
 		case <-ticker.C:
 		case <-c.shutdown:
 			now := time.Now()
 			return processRetryAttemptResult{SetupFailure: true, Err: errProcessRetryShutdown, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
 		}
 	}
+}
+
+func nativeScheduledBatchAttempt(batch *nativeScheduledProcessRetryBatch) processRetryAttemptResult {
+	attempt := batch.attempt
+	attempt.Cleanup = nil
+	return attempt
+}
+
+func acquireNativeScheduledProcessSlot(batch *nativeScheduledProcessRetryBatch, group *deferredProcessRetryGroup) processRetryLimiterAcquireResult {
+	return getProcessRetryLimiter().acquireWithShutdownLimit(
+		batch.ctx,
+		nil,
+		group.shutdown(),
+		int(processRetryParallelMaxConcurrencyForBaseline(group.launchBaseline)),
+	)
 }
 
 func transitionNativeScheduledTestToParallel(t *testing.T) error {

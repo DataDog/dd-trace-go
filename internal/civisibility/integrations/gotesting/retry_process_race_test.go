@@ -24,3 +24,14 @@ func TestProcessRetryParityProcessChildRaceIsStructured(t *testing.T) {
 		ExitCode: exitCode,
 	}, false).FailureKind)
 }
+
+func TestProcessRetryParityProcessChildSubtestRaceIsStructured(t *testing.T) {
+	result, exitCode, output := runProcessRetryChildResultFixture(t, "subtest_race")
+	require.NotZero(t, exitCode, output)
+	require.Equal(t, processRetryStatusFail, result.Status)
+	require.True(t, result.Failed)
+	require.Len(t, result.Subtests, 1)
+	require.Equal(t, "TestProcessRetryChildResultFixture/child", result.Subtests[0].TestName)
+	require.Equal(t, processRetryStatusFail, result.Subtests[0].Status)
+	require.True(t, result.Subtests[0].Failed)
+}

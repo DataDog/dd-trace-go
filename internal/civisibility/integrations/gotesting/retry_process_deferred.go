@@ -480,9 +480,7 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 					FinishTime: time.Now(),
 				}
 			}
-			switch effectiveProcessRetryStatus(attempt, false).FailureKind {
-			case "", "test_fail", "test_panic", "test_race":
-			default:
+			if deferredProcessRetryInfrastructureFailure(attempt) {
 				batchFailed = true
 			}
 			if group.applyDeferredFirstAttempt(attempt) {
@@ -1145,14 +1143,32 @@ func deferQuarantinedRaceFirstAttempt(options *runTestWithRetryOptions) {
 	}
 	group.metadata.identity = &group.identity
 	group.testInfo.identity = &group.identity
+	infrastructureFailure := false
 	if options.quarantinedRaceNativeOrder {
 		firstAttempt := options.processRetryCoordinator.waitNativeScheduledFirstAttempt(group, options.t)
 		group.firstAttemptResult = &firstAttempt
+		infrastructureFailure = deferredProcessRetryInfrastructureFailure(firstAttempt)
 	}
 	if !admission.commit(group) {
 		lease.release()
 		runTestWithRetry(options)
 		return
+	}
+	finishDeferredProcessRetryFirstAttempt(options, infrastructureFailure)
+}
+
+func deferredProcessRetryInfrastructureFailure(attempt processRetryAttemptResult) bool {
+	switch effectiveProcessRetryStatus(attempt, false).FailureKind {
+	case "", "test_fail", "test_panic", "test_race":
+		return false
+	default:
+		return true
+	}
+}
+
+func finishDeferredProcessRetryFirstAttempt(options *runTestWithRetryOptions, infrastructureFailure bool) {
+	if infrastructureFailure && retryAttemptFailfastEnabled() {
+		options.t.FailNow()
 	}
 	options.t.SkipNow()
 }

@@ -6932,6 +6932,23 @@ func TestProcessRetryChildResultFixture(t *testing.T) {
 		<-done
 		<-done
 		runtime.KeepAlive(value)
+	case "subtest_race":
+		t.Run("child", instrumentProcessRetryChildSubtest(func(t *testing.T) {
+			var value int
+			start := make(chan struct{})
+			done := make(chan struct{}, 2)
+			for range 2 {
+				go func() {
+					<-start
+					value++
+					done <- struct{}{}
+				}()
+			}
+			close(start)
+			<-done
+			<-done
+			runtime.KeepAlive(value)
+		}))
 	case "stdin_eof":
 		stdin, err := io.ReadAll(os.Stdin)
 		require.NoError(t, err)
