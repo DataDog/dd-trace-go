@@ -45,6 +45,25 @@ func Set(ctx context.Context, key, value string) context.Context {
 	return withBaggage(ctx, bm)
 }
 
+// SetAll merges multiple key/value pairs into the baggage in a single context write.
+// Equivalent to calling Set once per entry in values, but only clones the baggage map
+// once instead of once per key. Prefer this over a Set loop when writing more than one
+// key at a time, e.g. when reconciling baggage from another source.
+func SetAll(ctx context.Context, values map[string]string) context.Context {
+	if len(values) == 0 {
+		return ctx
+	}
+
+	bm, ok := baggageMap(ctx)
+	merged := make(map[string]string, len(bm)+len(values))
+	if ok {
+		maps.Copy(merged, bm)
+	}
+	maps.Copy(merged, values)
+
+	return withBaggage(ctx, merged)
+}
+
 // Get retrieves the value associated with a baggage key.
 // If the key isn't found, it returns an empty string.
 func Get(ctx context.Context, key string) (string, bool) {

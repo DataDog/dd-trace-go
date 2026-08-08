@@ -102,9 +102,12 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 
 	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
 	mergedBag := mergeBaggageFromContext(ctx)
-	for _, m := range mergedBag.Members() {
-		ctx = baggage.Set(ctx, m.Key(), m.Value())
+	members := mergedBag.Members()
+	ddBag := make(map[string]string, len(members))
+	for _, m := range members {
+		ddBag[m.Key()] = m.Value()
 	}
+	ctx = baggage.SetAll(ctx, ddBag)
 	ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
 
 	os := oteltrace.Span(&span{
