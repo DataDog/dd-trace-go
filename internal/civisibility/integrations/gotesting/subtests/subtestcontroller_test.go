@@ -783,6 +783,9 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 			s.restore()
 		}
 	}()
+	if integrations.IsProcessRetryChild() {
+		return gotesting.RunM(m)
+	}
 
 	_, restore := startSubtestServer(subtestServerConfig{
 		managementData:      ctx.data,

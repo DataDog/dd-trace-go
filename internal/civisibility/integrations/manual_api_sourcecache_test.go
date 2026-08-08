@@ -73,6 +73,15 @@ func TestIsTestFuncModifiedUsesResolvedSourceRange(t *testing.T) {
 	require.GreaterOrEqual(t, classifier.endLine, classifier.startLine)
 }
 
+func TestIsTestFuncUnskippableUsesCachedSourceMetadata(t *testing.T) {
+	resetSourceCacheTestState(t)
+
+	require.True(t, IsTestFuncUnskippable(runtime.FuncForPC(reflect.ValueOf(declarationUnskippableFixtureFunc).Pointer())))
+	require.True(t, IsTestFuncUnskippable(runtime.FuncForPC(reflect.ValueOf(suiteUnskippableFixtureFunc).Pointer())))
+	require.False(t, IsTestFuncUnskippable(namedSourceFixtureRuntimeFunc()))
+	require.False(t, IsTestFuncUnskippable(nil))
+}
+
 // resetSourceCacheTestState installs repository metadata so sourcecache tests also work with -trimpath.
 func resetSourceCacheTestState(t *testing.T) {
 	t.Helper()

@@ -124,6 +124,9 @@ func TestMain(m *testing.M) {
 			os.Exit(0)
 		}
 		exitCode := gotesting.RunM(m)
+		if processRetryFixtureEnv(processRetryQuarantinedCoverageEnv) == "true" {
+			copyProcessRetryBatchResultForFixture()
+		}
 		if processRetryFixtureEnv(processRetryProcessExitFixtureEnv) == "true" && exitCode == 0 {
 			os.Exit(1)
 		}
@@ -157,7 +160,15 @@ func TestMain(m *testing.M) {
 
 	tracer := integrations.InitializeCIVisibilityMock()
 	runMStart := time.Now()
-	exitCode := gotesting.RunM(m)
+	var exitCode int
+	if processRetryFixtureEnv(processRetryQuarantinedCoverageEnv) == "true" {
+		// Exercise the woven M.Run call shape; this fixture package otherwise has a custom TestMain frame.
+		done := make(chan int, 1)
+		go func() { done <- gotesting.RunM(m) }()
+		exitCode = <-done
+	} else {
+		exitCode = gotesting.RunM(m)
+	}
 	if exitCode == 0 && processRetryFixtureEnv(processRetryDeferredOrderingEnv) == "true" {
 		assertDeferredProcessRetryOrder()
 	}
@@ -192,7 +203,8 @@ func TestMain(m *testing.M) {
 	}
 	requireLogs := processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) == "" &&
 		processRetryFixtureEnv(processRetryParallelEFDEnv) != "true" &&
-		processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv) == ""
+		processRetryFixtureEnv(processRetryDeferredFTRFailfastPathEnv) == "" &&
+		processRetryFixtureEnv(processRetryQuarantinedCoverageEnv) != "true"
 	assertProcessRetryFixtureRequests(requireLogs)
 	os.Exit(exitCode)
 }
@@ -369,10 +381,11 @@ func newProcessRetryFixtureServer() *httptest.Server {
 				attributes.EarlyFlakeDetection.Enabled = true
 				attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = retryCount
 			}
-			if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
+			if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" || processRetryFixtureEnv(processRetryQuarantinedCoverageEnv) == "true" {
 				attributes.TestManagement.Enabled = true
 				attributes.TestManagement.AttemptToFixRetries = 3
 			}
+			attributes.CodeCoverage = processRetryFixtureEnv(processRetryQuarantinedCoverageEnv) == "true"
 			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_settings", attributes)
 		case "/api/v2/ci/libraries/tests":
 			if processRetryFixtureEnv(processRetryParallelEFDEnv) != "true" {
@@ -384,7 +397,7 @@ func newProcessRetryFixtureServer() *httptest.Server {
 			}}
 			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_tests", attributes)
 		case "/api/v2/test/libraries/test-management/tests":
-			if processRetryFixtureEnv(processRetryAttemptToFixEnv) != "true" {
+			if processRetryFixtureEnv(processRetryAttemptToFixEnv) != "true" && processRetryFixtureEnv(processRetryQuarantinedCoverageEnv) != "true" {
 				http.NotFound(w, r)
 				return
 			}
@@ -401,10 +414,23 @@ func newProcessRetryFixtureServer() *httptest.Server {
 								},
 							},
 						},
+						"quarantined_coverage_race_test.go": {
+							Tests: map[string]civisibilitynet.TestManagementTestsResponseDataTestProperties{
+								"TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt": {
+									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true},
+								},
+								"TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt/attempt-to-fix": {
+									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+								},
+							},
+						},
 					},
 				},
 			}}
 			writeProcessRetryAPIResponse(w, "process-retry-fixture", "ci_app_libraries_tests", attributes)
+		case "/api/v2/citestcov":
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusAccepted)
 		case "/api/v2/ci/tests/skippable":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -553,7 +579,7 @@ func assertProcessRetryFixtureRequests(requireLogs bool) {
 		panic(fmt.Sprintf("expected %d parent known-tests requests, got %d", wantKnownTestsRequests, got))
 	}
 	wantTestManagementRequests := 0
-	if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
+	if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" || processRetryFixtureEnv(processRetryQuarantinedCoverageEnv) == "true" {
 		wantTestManagementRequests = 1
 	}
 	if got := processRetryFixtureRequests.counts["/api/v2/test/libraries/test-management/tests"]; got != wantTestManagementRequests {
@@ -583,9 +609,31 @@ func assertProcessRetryFixtureRequests(requireLogs bool) {
 			if requireLogs && count < 1 {
 				panic("expected at least one request to " + path)
 			}
+		case "/api/v2/citestcov":
+			if processRetryFixtureEnv(processRetryQuarantinedCoverageEnv) != "true" {
+				panic(fmt.Sprintf("unexpected coverage request path %s (%d requests)", path, count))
+			}
 		default:
 			panic(fmt.Sprintf("unexpected CI Visibility request path %s (%d requests)", path, count))
 		}
+	}
+}
+
+func copyProcessRetryBatchResultForFixture() {
+	resultRoot, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
+	if !ok {
+		panic("quarantined coverage child is missing its result root")
+	}
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(resultRoot), "batch-result-*.json"))
+	if err != nil || len(matches) != 1 {
+		panic(fmt.Sprintf("quarantined coverage child result count = %d, err = %v", len(matches), err))
+	}
+	payload, err := os.ReadFile(matches[0])
+	if err != nil {
+		panic(fmt.Sprintf("read quarantined coverage child result: %v", err))
+	}
+	if err := os.WriteFile(processRetryFixtureEnv(processRetryQuarantinedCoverageResultEnv), payload, 0o600); err != nil {
+		panic(fmt.Sprintf("copy quarantined coverage child result: %v", err))
 	}
 }
 

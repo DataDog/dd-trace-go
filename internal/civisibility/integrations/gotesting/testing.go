@@ -126,6 +126,7 @@ type (
 		testName   string
 		identity   *testIdentity
 		sourceFunc *runtime.Func
+		source     *processRetryTestSource
 	}
 
 	// testingTInfo holds information specific to tests.
@@ -317,8 +318,13 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
 		wrapperOpts.processRetryAllowed = false
 	}
+	customTestMainActive := false
 	if processModeEnabled && wrapperOpts.processRetryAllowed {
+		customTestMainActive = processRetryCustomTestMainActive()
 		wrapperOpts.processRetryLaunchTemplate = captureProcessRetryLaunchTemplate()
+		// A retry child re-enters TestMain, so bootstrap it from process-start
+		// state instead of inheriting TestMain's active setup.
+		wrapperOpts.processRetryLaunchTemplate.preserveStartup = customTestMainActive
 		coordinator := newProcessRetryCoordinator(retryAttemptFailfastEnabled, runDeferredProcessRetryAttempt)
 		if registerProcessRetryCoordinator(coordinator) {
 			wrapperOpts.processRetryCoordinator = coordinator
@@ -326,9 +332,17 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			log.Debug("instrumentTestingM: deferred process retry coordinator registration rejected")
 		}
 	}
-
 	coverageInitialized := false
 	settings := integrations.GetSettings()
+	testManagementEnabled := settings != nil && settings.TestManagement.Enabled &&
+		internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true)
+	// A batch child would re-enter a custom TestMain before its parent setup has
+	// been torn down, so keep quarantined first attempts in the native process.
+	if processModeEnabled && testManagementEnabled && retryAttemptRaceEnabled() &&
+		ProcessRetryContainmentSupported() && wrapperOpts.processRetryCoordinator != nil &&
+		!customTestMainActive {
+		wrapperOpts.quarantinedRaceIsolation = true
+	}
 	var knownTests *net.KnownTestsResponseData
 	if settings != nil && settings.EarlyFlakeDetection.Enabled && settings.EarlyFlakeDetection.FaultySessionThreshold != nil {
 		threshold := *settings.EarlyFlakeDetection.FaultySessionThreshold
@@ -343,7 +357,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			coverage.InitializeCoverage(m, true)
 			coverageInitialized = true
 		}
-		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+		if testManagementEnabled {
 			// Set the test management tag if enabled.
 			session.SetTag(constants.TestManagementEnabled, "true")
 		}
@@ -353,6 +367,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	if !coverageInitialized && testing.CoverMode() != "" {
 		coverage.InitializeCoverage(m, false)
 	}
+	wrapperOpts.quarantinedRaceNativeOrder = wrapperOpts.quarantinedRaceIsolation
 
 	ddm := (*M)(m)
 
@@ -428,6 +443,21 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			panic(deferredTerminalPanic)
 		}
 		return exitCode
+	}
+}
+
+func processRetryCustomTestMainActive() bool {
+	callers := make([]uintptr, 32)
+	count := runtime.Callers(2, callers)
+	frames := runtime.CallersFrames(callers[:count])
+	for {
+		frame, more := frames.Next()
+		if strings.HasSuffix(frame.Function, ".TestMain") {
+			return true
+		}
+		if !more {
+			return false
+		}
 	}
 }
 

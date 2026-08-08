@@ -102,6 +102,37 @@ func TestSetTestFuncUsesResolvedSourcePathForTagsAndParsing(t *testing.T) {
 	assertSourceRangeTags(t, test)
 }
 
+func TestSetTestSourceMatchesSetTestFunc(t *testing.T) {
+	configureSourcePathTestState(t, sourcePathRepositoryRoot(t))
+
+	now := time.Now()
+	session, module, suite, direct := createDDTest(now)
+	transported := suite.CreateTest("transported")
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	fn := runtime.FuncForPC(reflect.ValueOf(sourcePathFixtureFunc).Pointer())
+	require.NotNil(t, fn)
+	direct.SetTestFunc(fn)
+	runtimePath, runtimeStartLine := fn.FileLine(fn.Entry())
+	SetTestSource(transported, runtimePath, runtimeStartLine, fn.Name())
+
+	for _, tag := range []string{
+		constants.TestSourceFile,
+		constants.TestSourceStartLine,
+		constants.TestSourceEndLine,
+		constants.TestCodeOwners,
+	} {
+		directValue, directOK := direct.GetTag(tag)
+		transportedValue, transportedOK := transported.GetTag(tag)
+		assert.Equal(t, directOK, transportedOK, tag)
+		assert.Equal(t, directValue, transportedValue, tag)
+	}
+}
+
 func TestResolveTestSourcePathCanParseTrimpathModulePath(t *testing.T) {
 	workspacePath := t.TempDir()
 	configureSourcePathTestState(t, workspacePath)

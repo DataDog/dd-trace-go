@@ -7,6 +7,7 @@ package gotesting
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -31,7 +33,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -109,8 +113,37 @@ type processRetryChildConfig struct {
 	ParentDeadlineUnixNano int64
 	ParentDeadlineOK       bool
 	ObservedGOMAXPROCS     int
+	Batch                  *processRetryBatchConfig
+	BatchChild             bool
+	CollectPerTestCoverage bool
+	batchTest              *processRetryBatchTestConfig
+	attemptToFixRetries    int
+	itrCoverageActive      bool
+	impactedTestsAnalyzer  *impactedtests.ImpactedTestAnalyzer
+	batchCoverageFinalizer *processRetryBatchCoverageFinalizer
+	nativeGatePath         string
+	nativeParallelPath     string
+	nativeEnumerationPath  string
+	processSlotRelease     chan<- processRetryLimiterRelease
+	tempDir                string
 	controlConfig          processRetryControlConfig
 	controlConfigLoaded    bool
+}
+
+type processRetryBatchCoverageFinalizer struct {
+	once    sync.Once
+	profile *coverage.ProcessCoverageProfile
+	path    string
+}
+
+func (f *processRetryBatchCoverageFinalizer) run() {
+	if f != nil {
+		f.once.Do(func() {
+			if err := f.profile.WriteDelta(f.path); err != nil {
+				log.Debug("civisibility: failed to write isolated first-attempt coverage: %s", err.Error())
+			}
+		})
+	}
 }
 
 type processRetryStatus string
@@ -128,10 +161,13 @@ const (
 	processRetryErrorStackMaxBytes         = 32 * 1024
 	processRetrySkipReasonMaxBytes         = 8 * 1024
 	processRetryResultErrorMaxBytes        = 256
+	processRetryResultOutputMaxBytes       = 8 * 1024
 	processRetryResultMaxBytes             = 64 * 1024
+	processRetryResultWithSubtestsMaxBytes = 16 * 1024 * 1024
 	processRetryTruncationMarker           = "[dd-trace-go: process retry panic data truncated]"
 	processRetryMetadataTruncationMarker   = "[dd-trace-go: process retry metadata truncated]"
 	processRetryOutputTruncationMarker     = "\n[dd-trace-go: process retry output truncated]\n"
+	processRetryTestLogMagic               = "# test log\n"
 	processRetryOutputMaxBytes             = 32 * 1024
 	processRetryStreamMaxBytes             = 32 * 1024
 	processRetryExitCodeUnset              = -1
@@ -147,32 +183,86 @@ const (
 )
 
 type processRetryResult struct {
-	Version           int                `json:"version"`
-	TestName          string             `json:"test_name"`
-	Attempt           int                `json:"attempt"`
-	RetryReason       string             `json:"retry_reason"`
-	MRunEpoch         uint64             `json:"m_run_epoch,omitempty"`
-	InvocationOrdinal uint64             `json:"invocation_ordinal,omitempty"`
-	Status            processRetryStatus `json:"status"`
-	StartUnixNano     int64              `json:"start_unix_nano"`
-	FinishUnixNano    int64              `json:"finish_unix_nano"`
-	DurationNanos     int64              `json:"duration_nanos"`
-	Failed            bool               `json:"failed"`
-	Skipped           bool               `json:"skipped"`
-	Panic             bool               `json:"panic"`
-	RaceDetected      bool               `json:"race_detected,omitempty"`
-	RootParallel      bool               `json:"root_parallel,omitempty"`
-	ErrorType         string             `json:"error_type,omitempty"`
-	ErrorMessage      string             `json:"error_message,omitempty"`
-	ErrorStack        string             `json:"error_stack,omitempty"`
-	SkipReason        string             `json:"skip_reason,omitempty"`
-	ResultError       string             `json:"result_error,omitempty"`
+	Version           int                                `json:"version"`
+	TestName          string                             `json:"test_name"`
+	Attempt           int                                `json:"attempt"`
+	RetryReason       string                             `json:"retry_reason"`
+	MRunEpoch         uint64                             `json:"m_run_epoch,omitempty"`
+	InvocationOrdinal uint64                             `json:"invocation_ordinal,omitempty"`
+	Status            processRetryStatus                 `json:"status"`
+	StartUnixNano     int64                              `json:"start_unix_nano"`
+	FinishUnixNano    int64                              `json:"finish_unix_nano"`
+	DurationNanos     int64                              `json:"duration_nanos"`
+	Failed            bool                               `json:"failed"`
+	Skipped           bool                               `json:"skipped"`
+	Panic             bool                               `json:"panic"`
+	RaceDetected      bool                               `json:"race_detected,omitempty"`
+	RootParallel      bool                               `json:"root_parallel,omitempty"`
+	ErrorType         string                             `json:"error_type,omitempty"`
+	ErrorMessage      string                             `json:"error_message,omitempty"`
+	ErrorStack        string                             `json:"error_stack,omitempty"`
+	SkipReason        string                             `json:"skip_reason,omitempty"`
+	ResultError       string                             `json:"result_error,omitempty"`
+	OutputTail        string                             `json:"output_tail,omitempty"`
+	OutputTruncated   bool                               `json:"output_truncated,omitempty"`
+	Subtests          []processRetrySubtestResult        `json:"subtests,omitempty"`
+	Coverage          []coverage.ProcessTestCoverageFile `json:"coverage,omitempty"`
+}
+
+type processRetryTestSource struct {
+	RuntimePath      string `json:"runtime_path,omitempty"`
+	RuntimeStartLine int    `json:"runtime_start_line,omitempty"`
+	FunctionName     string `json:"function_name,omitempty"`
+}
+
+type processRetrySubtestResult struct {
+	TestName         string                             `json:"test_name"`
+	AttemptToFix     bool                               `json:"attempt_to_fix,omitempty"`
+	Attempt          int                                `json:"attempt,omitempty"`
+	AttemptToFixLast bool                               `json:"attempt_to_fix_last,omitempty"`
+	Status           processRetryStatus                 `json:"status"`
+	StartUnixNano    int64                              `json:"start_unix_nano"`
+	FinishUnixNano   int64                              `json:"finish_unix_nano"`
+	DurationNanos    int64                              `json:"duration_nanos"`
+	Failed           bool                               `json:"failed"`
+	Skipped          bool                               `json:"skipped"`
+	SkippedByITR     bool                               `json:"skipped_by_itr,omitempty"`
+	ITRForcedRun     bool                               `json:"itr_forced_run,omitempty"`
+	Panic            bool                               `json:"panic"`
+	ErrorType        string                             `json:"error_type,omitempty"`
+	ErrorMessage     string                             `json:"error_message,omitempty"`
+	ErrorStack       string                             `json:"error_stack,omitempty"`
+	SkipReason       string                             `json:"skip_reason,omitempty"`
+	OutputTail       string                             `json:"output_tail,omitempty"`
+	OutputTruncated  bool                               `json:"output_truncated,omitempty"`
+	Source           *processRetryTestSource            `json:"source,omitempty"`
+	Coverage         []coverage.ProcessTestCoverageFile `json:"coverage,omitempty"`
+	order            uint64
 }
 
 type processRetryErrorInfo struct {
 	Type    string
 	Message string
 	Stack   string
+}
+
+func completedProcessRetryAttempt(result processRetryResult) processRetryAttemptResult {
+	attempt := processRetryAttemptResult{
+		Result:             result,
+		OutputTail:         result.OutputTail,
+		OutputTruncated:    result.OutputTruncated,
+		ExitStatusObserved: true,
+		StartTime:          time.Unix(0, result.StartUnixNano),
+		FinishTime:         time.Unix(0, result.FinishUnixNano),
+	}
+	if result.OutputTruncated {
+		attempt.OutputTail = processRetryOutputTruncationMarker + attempt.OutputTail
+	}
+	if result.Panic {
+		attempt.ExitCode = processRetryControlledPanicExitCode
+		attempt.ControlledTerminalCommitted = true
+	}
+	return attempt
 }
 
 var (
@@ -193,6 +283,7 @@ var (
 	errProcessRetryOutputDrainTimedOut = errors.New("process retry output drain timed out")
 	errProcessRetryContainmentLost     = errors.New("process retry process-tree containment lost")
 	errProcessRetryMultipleMRun        = errors.New("process retry child invoked testing.M.Run more than once")
+	errProcessRetryTestLogMerge        = errors.New("process retry test log merge failed")
 )
 
 var lookupProcessRetryChildTransport = integrations.LookupProcessRetryChildTransport
@@ -245,6 +336,13 @@ func bootstrapProcessRetryChild() (processRetryChildConfig, error) {
 		cfg = enrichProcessRetryChildConfig(cfg, wire)
 		cfg.controlConfig = wire
 		cfg.controlConfigLoaded = true
+	}
+	if cfg.TestName == processRetryBatchTestName {
+		batch, batchErr := readProcessRetryBatchConfig(processRetryBatchManifestPath(cfg.ResultPath))
+		if batchErr != nil {
+			return cfg, batchErr
+		}
+		cfg.Batch = batch
 	}
 	if integrations.ProcessRetryChildTransportError() != nil {
 		return cfg, errors.New("retry child transport cleanup failed")
@@ -375,18 +473,28 @@ func sanitizeProcessRetryBaseEnv(base []string) []string {
 			result = append(result, entry)
 			continue
 		}
-		if isProcessRetryInternalEnvKey(key) || strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable) {
+		if isProcessRetryExcludedEnvKey(key) {
 			continue
 		}
-		if strings.EqualFold(key, constants.CIVisibilityEnabledEnvironmentVariable) {
-			if mode, valid := envconfig.ParseEnabledMode(value); valid && mode == envconfig.EnabledModeParent {
-				result = append(result, key+"=false")
-				continue
-			}
+		if isProcessRetryParentOnlyEnv(key, value) {
+			result = append(result, key+"=false")
+			continue
 		}
 		result = append(result, entry)
 	}
 	return result
+}
+
+func isProcessRetryParentOnlyEnv(key, value string) bool {
+	if !strings.EqualFold(key, constants.CIVisibilityEnabledEnvironmentVariable) {
+		return false
+	}
+	mode, valid := envconfig.ParseEnabledMode(value)
+	return valid && mode == envconfig.EnabledModeParent
+}
+
+func isProcessRetryExcludedEnvKey(key string) bool {
+	return isProcessRetryInternalEnvKey(key) || strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable)
 }
 
 func buildProcessRetryEnv(base []string, cfg processRetryChildConfig) []string {
@@ -829,6 +937,20 @@ func combineProcessRetryOutputTails(stdout, stderr *processRetryOutputCapture, m
 	return combined.String(), truncated, errors.Join(stdoutErr, stderrErr)
 }
 
+func filterProcessRetryBatchOutput(output string) string {
+	var filtered strings.Builder
+	for line := range strings.SplitAfterSeq(output, "\n") {
+		protocol := strings.TrimSpace(strings.TrimPrefix(strings.TrimSuffix(line, "\n"), "\x16"))
+		if protocol == "PASS" || protocol == "FAIL" || strings.HasPrefix(protocol, "=== ") ||
+			strings.HasPrefix(protocol, "--- PASS:") || strings.HasPrefix(protocol, "--- FAIL:") ||
+			strings.HasPrefix(protocol, "--- SKIP:") || strings.HasPrefix(protocol, "coverage:") {
+			continue
+		}
+		filtered.WriteString(line)
+	}
+	return filtered.String()
+}
+
 type processRetryAttemptResult struct {
 	Result                      processRetryResult
 	TempDir                     string
@@ -846,7 +968,14 @@ type processRetryAttemptResult struct {
 	SetupFailure                bool
 	BodyAdmitted                bool
 	ControlledTerminalCommitted bool
+	testLogMerge                *processRetryTestLogMerge
 	Cleanup                     func()
+}
+
+type processRetryTestLogMerge struct {
+	parentPath            string
+	childPath             string
+	childWorkingDirectory string
 }
 
 type processRetryEffectiveStatus struct {
@@ -887,6 +1016,7 @@ type processRetryLaunchBaseline struct {
 	maxConcurrencySet bool
 	timeout           time.Duration
 	timeoutSet        bool
+	preserveStartup   bool
 	err               error
 }
 
@@ -905,6 +1035,9 @@ type processRetryArgsSnapshot struct {
 	skipSelector     string
 	artifactOutput   string
 	artifactsEnabled bool
+	testLogFile      string
+	coverageDir      string
+	profilingEnabled bool
 	timeout          time.Duration
 	timeoutSet       bool
 	ok               bool
@@ -1180,6 +1313,14 @@ func captureProcessRetryLaunchBaselineFromTemplate(template *processRetryLaunchB
 	baseline := *template
 	if baseline.err != nil {
 		return &baseline
+	}
+	if !baseline.preserveStartup {
+		// Keep retry configuration stable while matching mutable native process state at invocation.
+		baseline.workingDirectory, baseline.err = baseline.hooks.workingDirectory()
+		if baseline.err != nil {
+			return &baseline
+		}
+		baseline.environment = sanitizeProcessRetryBaseEnv(baseline.hooks.environ())
 	}
 	baseline.currentCPU = processRetryCurrentCPU()
 	return &baseline
@@ -1721,7 +1862,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	if currentCPU < 1 {
 		currentCPU = processRetryCurrentCPU()
 	}
-	selectedTimeout := selectedProcessRetryTimeout(argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
+	selectedTimeout := selectedProcessRetryTimeout(cfg.Batch != nil, argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
 	if selectedTimeout <= 0 {
 		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
@@ -1749,6 +1890,9 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		return finishSetupFailure(limiterResult.Err, limiterResult.Cause == processRetryLimiterParentDeadline)
 	}
 	defer limiterResult.Release()
+	if cfg.processSlotRelease != nil {
+		cfg.processSlotRelease <- limiterResult.Release
+	}
 	if processRetryShutdownRequested(shutdown) || processRetryShuttingDown() {
 		return finishSetupFailure(errProcessRetryShutdown, false)
 	}
@@ -1758,7 +1902,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	if err := ctx.Err(); err != nil {
 		return finishSetupFailure(err, false)
 	}
-	selectedTimeout = selectedProcessRetryTimeout(argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
+	selectedTimeout = selectedProcessRetryTimeout(cfg.Batch != nil, argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
 	if selectedTimeout <= 0 {
 		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
@@ -1785,9 +1929,13 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 			return remainingAttemptTime() <= 0
 		}
 	}
-	tempDir, err := os.MkdirTemp("", "dd-process-retry-*")
-	if err != nil {
-		return finishSetupFailure(err, false)
+	tempDir := cfg.tempDir
+	if tempDir == "" {
+		var err error
+		tempDir, err = os.MkdirTemp("", "dd-process-retry-*")
+		if err != nil {
+			return finishSetupFailure(err, false)
+		}
 	}
 	attempt.TempDir = tempDir
 	var cleanupOnce sync.Once
@@ -1800,12 +1948,25 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 
 	resultPath := filepath.Join(tempDir, "result.json")
+	parentTestLogPath := argsSnapshot.testLogFile
+	childTestLogPath := ""
+	if cfg.Batch != nil && parentTestLogPath != "" {
+		if !filepath.IsAbs(parentTestLogPath) {
+			parentTestLogPath = filepath.Join(workingDir, parentTestLogPath)
+		}
+		childTestLogPath = filepath.Join(tempDir, "testlog.txt")
+	}
 	childCfg := cfg
 	childCfg.ResultPath = resultPath
 	childCfg.ObservedGOMAXPROCS = currentCPU
 	childCfg.ParentDeadlineOK = parentDeadlineOK
 	if parentDeadlineOK {
 		childCfg.ParentDeadlineUnixNano = parentDeadline.UnixNano()
+	}
+	if childCfg.Batch != nil {
+		if err := writeProcessRetryBatchConfig(processRetryBatchManifestPath(resultPath), childCfg.Batch); err != nil {
+			return finishSetupFailure(err, false)
+		}
 	}
 	stdoutCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	if err != nil {
@@ -1868,7 +2029,12 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	selectedTimeout = latestTimeout
 	childTestingTimeout := selectedTimeout + processRetryParentDeadlineReserve()
-	filteredArgs, ok, reason := buildProcessRetryArgsFromSnapshot(argsSnapshot, cfg.TestName, currentCPU, childTestingTimeout)
+	selector := cfg.TestName
+	if childCfg.Batch != nil {
+		selector = "."
+		argsSnapshot = processRetryBatchArgsSnapshot(argsSnapshot, childTestLogPath, childCfg.Batch.PreserveNativeSchedule)
+	}
+	filteredArgs, ok, reason := buildProcessRetryArgsFromSnapshot(argsSnapshot, selector, currentCPU, childTestingTimeout)
 	if !ok {
 		closeCapturesForSetupFailure()
 		return finishSetupFailure(errors.Join(errors.New(reason), releaseTree()), false)
@@ -1993,11 +2159,24 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		}
 	}
 	finalizeProcessRetryOutputCaptures(hooks, cmd, &attempt, stdoutCapture, stderrCapture)
+	if cfg.Batch != nil {
+		attempt.OutputTail = filterProcessRetryBatchOutput(attempt.OutputTail)
+	}
 	if attempt.ContainmentLost {
 		containmentLost = true
 	}
 	if releaseErr := releaseTree(); releaseErr != nil {
 		markContainmentLost(releaseErr)
+	}
+	if childTestLogPath != "" && !attempt.Unreaped {
+		attempt.testLogMerge = &processRetryTestLogMerge{
+			parentPath:            parentTestLogPath,
+			childPath:             childTestLogPath,
+			childWorkingDirectory: workingDir,
+		}
+		if cfg.Batch == nil || !cfg.Batch.PreserveNativeSchedule {
+			mergePendingProcessRetryTestLog(&attempt)
+		}
 	}
 	result, timingOK, resultErr := readProcessRetryResult(resultPath, childCfg)
 	if resultErr != nil {
@@ -2027,6 +2206,53 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		unregisterActiveProcessRetryChild(cmd)
 	}
 	return attempt
+}
+
+func processRetryBatchArgsSnapshot(snapshot processRetryArgsSnapshot, testLogFile string, preserveNativeSchedule bool) processRetryArgsSnapshot {
+	snapshot.preserved = append(append([]string(nil), snapshot.preserved...), "-test.failfast=false")
+	if testLogFile != "" {
+		snapshot.preserved = append(snapshot.preserved, "-test.testlogfile="+testLogFile)
+	}
+	if preserveNativeSchedule && snapshot.coverageDir != "" {
+		// The parent's coverage report merges every pod emitted here before M.Run returns.
+		snapshot.preserved = append(snapshot.preserved, "-test.gocoverdir="+snapshot.coverageDir)
+	}
+	return snapshot
+}
+
+func mergeProcessRetryTestLog(parentPath, childPath, childWorkingDirectory string) error {
+	childLog, err := os.ReadFile(childPath)
+	if err != nil {
+		return err
+	}
+	if !bytes.HasPrefix(childLog, []byte(processRetryTestLogMagic)) || childLog[len(childLog)-1] != '\n' {
+		return errors.New("invalid child test log")
+	}
+	records := childLog[len(processRetryTestLogMagic):]
+	if len(records) == 0 {
+		return nil
+	}
+	parentLog, err := os.OpenFile(parentPath, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	_, writeErr := io.WriteString(parentLog, "chdir "+childWorkingDirectory+"\n")
+	if writeErr == nil {
+		_, writeErr = parentLog.Write(records)
+	}
+	return errors.Join(writeErr, parentLog.Close())
+}
+
+func mergePendingProcessRetryTestLog(attempt *processRetryAttemptResult) {
+	if attempt == nil || attempt.testLogMerge == nil {
+		return
+	}
+	pending := attempt.testLogMerge
+	attempt.testLogMerge = nil
+	if err := mergeProcessRetryTestLog(pending.parentPath, pending.childPath, pending.childWorkingDirectory); err != nil {
+		attempt.SetupFailure = true
+		attempt.Err = errors.Join(attempt.Err, errProcessRetryTestLogMerge, err)
+	}
 }
 
 func applyProcessRetryControlledTerminalState(
@@ -2078,6 +2304,7 @@ func finalizeProcessRetryOutputCaptures(
 }
 
 func selectedProcessRetryTimeout(
+	batch bool,
 	argTimeout time.Duration,
 	argTimeoutSet bool,
 	envTimeout time.Duration,
@@ -2087,6 +2314,9 @@ func selectedProcessRetryTimeout(
 	now time.Time,
 ) time.Duration {
 	selected := processRetryDefaultTimeout
+	if batch && argTimeoutSet {
+		selected = argTimeout
+	}
 	if envTimeoutSet {
 		selected = envTimeout
 	}
@@ -2410,6 +2640,20 @@ func processRetryParallelBaselineReady(baseline *processRetryLaunchBaseline) (bo
 	return true, ""
 }
 
+func processRetryFirstAttemptIsolationReady(baseline *processRetryLaunchBaseline) (bool, string) {
+	if ok, reason := processRetryParallelBaselineReady(baseline); !ok {
+		return false, reason
+	}
+	argsSnapshot := baseline.argsSnapshot
+	if !argsSnapshot.captured {
+		argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
+	}
+	if argsSnapshot.profilingEnabled {
+		return false, "test_profiling_enabled"
+	}
+	return true, ""
+}
+
 func deferProcessRetryTestEventWithAdmission(
 	testInfo *commonInfo,
 	execMeta *testExecutionMetadata,
@@ -2438,15 +2682,30 @@ func finishProcessRetryTestEvent(
 		}
 		return effective
 	}
+	finishProcessRetrySubtestEvents(testInfo, execMeta, attempt)
 	module := session.GetOrCreateModule(testInfo.moduleName)
 	suite := module.GetOrCreateSuite(testInfo.suiteName)
 	test := suite.CreateTest(testInfo.testName, integrations.WithTestStartTime(attempt.StartTime))
 	if testInfo.sourceFunc != nil {
 		test.SetTestFunc(testInfo.sourceFunc)
+	} else if testInfo.source != nil {
+		integrations.SetTestSource(test, testInfo.source.RuntimePath, testInfo.source.RuntimeStartLine, testInfo.source.FunctionName)
 	}
 	execMeta.test = test
+	coverage.SubmitProcessTestCoverage(session.SessionID(), suite.SuiteID(), test.TestID(), attempt.Result.Coverage)
 	cancelExecution := setTestTagsFromExecutionMetadataNoClose(test, execMeta)
+	if cancelExecution && attempt.Result.Status == processRetryStatusSkip && attempt.Result.Skipped && attempt.Result.SkipReason == constants.TestDisabledSkipReason {
+		cancelExecution = false
+	}
 	test.SetTag(constants.TestRetryExecutionMode, "process")
+	if execMeta.isItrSkipped {
+		test.SetTag(constants.TestSkippedByITR, "true")
+		test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
+		telemetry.ITRSkipped(telemetry.TestEventType)
+		currentITRState().markActualSkip()
+		session.SetTag(constants.ITRTestsSkipped, "true")
+		session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
+	}
 	if execMeta.isItrForcedRun {
 		test.SetTag(constants.TestForcedToRun, "true")
 		telemetry.ITRForcedRun(telemetry.TestEventType)
@@ -2532,10 +2791,103 @@ func finishProcessRetryTestEvent(
 	return effective
 }
 
+func finishProcessRetrySubtestEvents(testInfo *commonInfo, parentMeta *testExecutionMetadata, attempt processRetryAttemptResult) {
+	if testInfo == nil || parentMeta == nil || len(attempt.Result.Subtests) == 0 {
+		return
+	}
+	parentSnapshot := snapshotProcessRetryExecutionMetadata(parentMeta)
+	if parentSnapshot == nil {
+		return
+	}
+	outcomes := make(map[string]retryOutcomeAccumulator)
+	for _, result := range attempt.Result.Subtests {
+		identity := newTestIdentity(testInfo.moduleName, testInfo.suiteName, result.TestName)
+		execMeta := &testExecutionMetadata{}
+		if !applyProcessRetryMetadataSnapshot(execMeta, parentSnapshot) {
+			continue
+		}
+		execMeta.identity = identity
+		execMeta.isARetry = parentMeta.isARetry
+		execMeta.isLastRetry = parentMeta.isLastRetry
+		execMeta.remainingRetries = parentMeta.remainingRetries
+		execMeta.initialRetryCount = parentMeta.initialRetryCount
+		execMeta.initialRetryCountSet = parentMeta.initialRetryCountSet
+		execMeta.retryContinuationDecided = parentMeta.retryContinuationDecided
+		execMeta.retryContinuationAdmitted = parentMeta.retryContinuationAdmitted
+		execMeta.shouldOrchestrateAttemptToFix = false
+		execMeta.isEarlyFlakeDetectionEnabled = false
+		execMeta.isFlakyTestRetriesEnabled = false
+		execMeta.isItrForcedRun = result.ITRForcedRun
+		execMeta.isItrSkipped = result.SkippedByITR
+		if data, matchKind, ok := getTestManagementData(identity); ok && matchKind == testManagementMatchExact && data != nil {
+			execMeta.suppressParentRetryMetadata = true
+			execMeta.isARetry = false
+			execMeta.isEfdInParallel = false
+			execMeta.isQuarantined = execMeta.isQuarantined || data.Quarantined
+			execMeta.isDisabled = execMeta.isDisabled || data.Disabled
+			execMeta.isAttemptToFix = data.AttemptToFix
+			execMeta.hasExplicitQuarantined = true
+			execMeta.hasExplicitDisabled = true
+			execMeta.hasExplicitAttemptToFix = true
+		}
+		if result.AttemptToFix {
+			prior := outcomes[result.TestName]
+			execMeta.suppressParentRetryMetadata = true
+			execMeta.hasAdditionalFeatureWrapper = true
+			execMeta.isARetry = result.Attempt > 0
+			execMeta.isLastRetry = result.AttemptToFixLast
+			execMeta.isAttemptToFix = true
+			execMeta.hasExplicitAttemptToFix = true
+			execMeta.shouldOrchestrateAttemptToFix = true
+			execMeta.retryContinuationDecided = true
+			execMeta.retryContinuationAdmitted = !result.AttemptToFixLast
+			execMeta.anyExecutionPassed = prior.anyPassed()
+			execMeta.anyExecutionFailed = prior.anyFailed()
+			execMeta.allAttemptsPassed = prior.allAttemptsPassed()
+			execMeta.allRetriesFailed = execMeta.isARetry && prior.allRetriesFailed()
+		} else {
+			execMeta.anyExecutionPassed = result.Status == processRetryStatusPass
+			execMeta.anyExecutionFailed = result.Failed
+			execMeta.allAttemptsPassed = result.Status == processRetryStatusPass
+			execMeta.allRetriesFailed = execMeta.isARetry && parentMeta.allRetriesFailed && result.Failed
+		}
+		childAttempt := completedProcessRetryAttempt(processRetryResult{
+			Version:         1,
+			TestName:        result.TestName,
+			Status:          result.Status,
+			StartUnixNano:   result.StartUnixNano,
+			FinishUnixNano:  result.FinishUnixNano,
+			DurationNanos:   result.DurationNanos,
+			Failed:          result.Failed,
+			Skipped:         result.Skipped,
+			Panic:           result.Panic,
+			ErrorType:       result.ErrorType,
+			ErrorMessage:    result.ErrorMessage,
+			ErrorStack:      result.ErrorStack,
+			SkipReason:      result.SkipReason,
+			OutputTail:      result.OutputTail,
+			OutputTruncated: result.OutputTruncated,
+			Coverage:        result.Coverage,
+		})
+		finishProcessRetryTestEvent(&commonInfo{
+			moduleName: testInfo.moduleName,
+			suiteName:  testInfo.suiteName,
+			testName:   result.TestName,
+			identity:   identity,
+			source:     result.Source,
+		}, execMeta, childAttempt, nil, nil)
+		if result.AttemptToFix {
+			prior := outcomes[result.TestName]
+			prior.observe(result.Failed, result.Skipped)
+			outcomes[result.TestName] = prior
+		}
+	}
+}
+
 func captureProcessRetryArgsSnapshot(originalArgs []string) processRetryArgsSnapshot {
 	preserved, boundary, runSelector, skipSelector, ok, reason := processRetryFilterArgs(originalArgs, true)
 	timeout, timeoutSet := processRetryTimeoutFromArgs(originalArgs)
-	artifactOutput, artifactsEnabled := processRetryArtifactPolicyFromArgs(originalArgs)
+	artifactOutput, artifactsEnabled, testLogFile, coverageDir, profilingEnabled := processRetryOutputPolicyFromArgs(originalArgs)
 	return processRetryArgsSnapshot{
 		captured:         true,
 		preserved:        append([]string(nil), preserved...),
@@ -2544,6 +2896,9 @@ func captureProcessRetryArgsSnapshot(originalArgs []string) processRetryArgsSnap
 		skipSelector:     skipSelector,
 		artifactOutput:   artifactOutput,
 		artifactsEnabled: artifactsEnabled,
+		testLogFile:      testLogFile,
+		coverageDir:      coverageDir,
+		profilingEnabled: profilingEnabled,
 		timeout:          timeout,
 		timeoutSet:       timeoutSet,
 		ok:               ok,
@@ -2590,7 +2945,7 @@ func buildProcessRetryArgsFromSnapshot(snapshot processRetryArgsSnapshot, testNa
 	return args, true, ""
 }
 
-func processRetryArtifactPolicyFromArgs(originalArgs []string) (outputDir string, enabled bool) {
+func processRetryOutputPolicyFromArgs(originalArgs []string) (outputDir string, artifactsEnabled bool, testLogFile, coverageDir string, profilingEnabled bool) {
 	for i := 0; i < len(originalArgs); i++ {
 		arg := originalArgs[i]
 		if arg == "--" || !processRetryIsFlagToken(arg) {
@@ -2605,14 +2960,20 @@ func processRetryArtifactPolicyFromArgs(originalArgs []string) (outputDir string
 		case "-test.outputdir":
 			outputDir = value
 		case "-test.artifacts":
-			enabled = true
+			artifactsEnabled = true
 			if hasValue {
 				parsed, err := strconv.ParseBool(value)
-				enabled = err == nil && parsed
+				artifactsEnabled = err == nil && parsed
 			}
+		case "-test.testlogfile":
+			testLogFile = value
+		case "-test.gocoverdir":
+			coverageDir = value
+		case "-test.cpuprofile", "-test.memprofile", "-test.blockprofile", "-test.mutexprofile", "-test.trace":
+			profilingEnabled = profilingEnabled || value != ""
 		}
 	}
-	return outputDir, enabled
+	return outputDir, artifactsEnabled, testLogFile, coverageDir, profilingEnabled
 }
 
 func processRetryTimeoutFromArgs(originalArgs []string) (time.Duration, bool) {
@@ -2767,6 +3128,9 @@ func processRetryChildRunPattern(originalRun, testName string) string {
 	if originalRun != "" {
 		return originalRun
 	}
+	if testName == "." {
+		return "."
+	}
 	return "^" + regexp.QuoteMeta(testName) + "$"
 }
 
@@ -2919,6 +3283,9 @@ func instrumentProcessRetryChild(m *testing.M, cfg processRetryChildConfig) (boo
 		return false, failureTestingMFinalizer
 	}
 	cfg = control.cfg
+	if cfg.Batch != nil && testing.CoverMode() != "" {
+		coverage.InitializeCoverage(m, false)
+	}
 	if err := control.childAdmission(); err != nil {
 		_ = control.Close()
 		writer.Write(processRetryNotRunResult(cfg, "control_protocol_failure"))
@@ -2979,6 +3346,9 @@ func configureProcessRetryChildWorkloads(
 		hardStop("testing_m_reflection_drift")
 		return finalize
 	}
+	if cfg.Batch != nil {
+		return configureProcessRetryBatchChildWorkloads(cfg, writer, finalize, tests, benchmarks, fuzzTargets, examples)
+	}
 
 	var selected testing.InternalTest
 	found := false
@@ -3004,6 +3374,64 @@ func configureProcessRetryChildWorkloads(
 	*tests = []testing.InternalTest{selected}
 	return func(exitCode int) int {
 		finalizeSelected()
+		return finalize(exitCode)
+	}
+}
+
+func configureProcessRetryBatchChildWorkloads(
+	cfg processRetryChildConfig,
+	writer *processRetryResultWriter,
+	finalize testingMFinalizer,
+	tests *[]testing.InternalTest,
+	benchmarks *[]testing.InternalBenchmark,
+	fuzzTargets *[]testing.InternalFuzzTarget,
+	examples *[]testing.InternalExample,
+) testingMFinalizer {
+	if cfg.Batch.ImpactedTestsEnabled {
+		for _, test := range cfg.Batch.Tests {
+			if len(test.ITRSubtests) > 0 {
+				cfg.impactedTestsAnalyzer, _ = impactedtests.NewImpactedTestAnalyzer()
+				break
+			}
+		}
+	}
+	processCoverageProfile, err := coverage.BeginProcessCoverageProfile()
+	if err != nil {
+		log.Debug("civisibility: failed to capture isolated first-attempt coverage baseline: %s", err.Error())
+	}
+	finalizeCoverage := &processRetryBatchCoverageFinalizer{
+		profile: processCoverageProfile,
+		path:    processRetryBatchCoveragePath(cfg.ResultPath),
+	}
+	available := make(map[string]testing.InternalTest, len(*tests))
+	for _, test := range *tests {
+		available[test.Name] = test
+	}
+	selected := make([]testing.InternalTest, 0, len(cfg.Batch.Tests))
+	finalizers := make([]func(), 0, len(cfg.Batch.Tests))
+	for index, spec := range cfg.Batch.Tests {
+		childCfg := processRetryBatchChildConfig(cfg, index, spec)
+		childCfg.batchCoverageFinalizer = finalizeCoverage
+		test, ok := available[spec.TestName]
+		if !ok {
+			newProcessRetryResultWriter(childCfg.ResultPath).Write(processRetryNotRunResult(childCfg, ""))
+			continue
+		}
+		wrapped, finalizeTest := wrapProcessRetryChildTest(test.F, childCfg, newProcessRetryResultWriter(childCfg.ResultPath), nil)
+		test.F = wrapped
+		selected = append(selected, test)
+		finalizers = append(finalizers, finalizeTest)
+	}
+	*tests = selected
+	*benchmarks = nil
+	*fuzzTargets = nil
+	*examples = nil
+	return func(exitCode int) int {
+		for _, finalizeTest := range finalizers {
+			finalizeTest()
+		}
+		finalizeCoverage.run()
+		writer.Write(processRetryNotRunResult(cfg, ""))
 		return finalize(exitCode)
 	}
 }
@@ -3119,44 +3547,115 @@ type processRetryChildObservation struct {
 func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildConfig, writer *processRetryResultWriter, control *processRetryControl) (func(*testing.T), func()) {
 	observation := &processRetryChildObservation{cfg: cfg, writer: writer}
 	wrapped := func(t *testing.T) {
+		if cfg.nativeGatePath != "" {
+			deadline, deadlineOK := time.Time{}, false
+			if cfg.ParentDeadlineOK {
+				deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
+			}
+			state, run, err := waitForProcessRetryBatchGate(cfg.nativeGatePath, deadline, deadlineOK)
+			if err != nil {
+				writer.Write(processRetryNotRunResult(cfg, "invalid_invocation_state"))
+				t.Fail()
+				return
+			}
+			if !run {
+				writer.Write(processRetryNotRunResult(cfg, "native_parent_not_run"))
+				return
+			}
+			if err := applyProcessRetryBatchInvocationState(state); err != nil {
+				writer.Write(processRetryNotRunResult(cfg, "invocation_state_apply_failed"))
+				t.Fail()
+				return
+			}
+		}
 		start := time.Now()
 		observation.test = t
 		observation.startTime = start
 
-		group, reason := newRetryAttemptGroupWithOutputObservation(t, false)
+		group, reason := newRetryAttemptGroupWithOutputObservation(t, cfg.BatchChild)
 		if reason != "" {
 			writer.Write(processRetryNotRunResult(cfg, "testing_t_reflection_drift"))
 			t.Fail()
 			return
 		}
+		if cfg.BatchChild {
+			group.outputLimit = processRetryResultOutputMaxBytes
+		}
 		observation.group = group
-		group.rootParallelBridge = control.childRootParallelBridge
+		if cfg.nativeParallelPath != "" {
+			// The parent must learn about t.Parallel before this child waits on
+			// its own package barrier, otherwise both native schedulers wait for
+			// the other process to enumerate the next test.
+			group.rootParallelAnnounce = func() error {
+				return writeCurrentProcessRetryBatchInvocationState(cfg.nativeParallelPath)
+			}
+			group.rootParallelBridge = func() error {
+				deadline, deadlineOK := time.Time{}, false
+				if cfg.ParentDeadlineOK {
+					deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
+				}
+				state, run, err := waitForProcessRetryBatchGate(cfg.nativeEnumerationPath, deadline, deadlineOK)
+				if err != nil {
+					return err
+				}
+				if !run {
+					return errors.New("missing native process retry parent state")
+				}
+				return applyProcessRetryBatchInvocationState(state)
+			}
+		} else if control != nil {
+			group.rootParallelBridge = control.childRootParallelBridge
+		}
 		defer group.retire()
 
+		var root *processRetryNoopTest
+		defer func() {
+			if root != nil {
+				root.finishCoverage()
+			}
+		}()
 		prepare := func(attempt *retryAttemptRoot) string {
-			deadline, deadlineOK := control.logicalDeadline()
+			deadline, deadlineOK := time.Time{}, false
+			if control != nil {
+				deadline, deadlineOK = control.logicalDeadline()
+			} else if cfg.ParentDeadlineOK {
+				deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
+			}
 			if !setRetryAttemptLogicalDeadline(attempt, deadline, deadlineOK) {
 				return "testing_t_reflection_drift"
 			}
 			execMeta := createTestMetadata(attempt.test, nil)
 			attempt.metadata = execMeta
+			execMeta.hasAdditionalFeatureWrapper = true
 			execMeta.identity = newTestIdentity("", "", cfg.TestName)
-			execMeta.test = newProcessRetryNoopTest(attempt.test, cfg, start, writer, control, attempt.raceBaseline)
+			root = newProcessRetryNoopTest(attempt.test, cfg, start, writer, control, attempt.raceBaseline).(*processRetryNoopTest)
+			execMeta.test = root
 			observation.execMeta = execMeta
 			return ""
 		}
-		attempt, result, reason := runFreshRetryAttemptInGroupWithCallbacks(group, prepare, original, nil)
+		childBody := original
+		if cfg.BatchChild && cfg.CollectPerTestCoverage && coverage.CanCollect() {
+			if fn := runtime.FuncForPC(reflect.ValueOf(original).Pointer()); fn != nil {
+				testFile, _ := fn.FileLine(fn.Entry())
+				childBody = func(t *testing.T) {
+					root.coverage = coverage.BeginProcessTestCoverage(testFile)
+					original(t)
+				}
+			}
+		}
+		attempt, result, reason := runFreshRetryAttemptInGroupWithCallbacks(group, prepare, childBody, nil)
 		if reason != "" || attempt == nil {
 			writer.Write(processRetryNotRunResult(cfg, "testing_t_reflection_drift"))
 			t.Fail()
 			return
 		}
 		observation.result = result
-		if status := processRetryControlledTerminalStatus(result); status != "" {
+		if status := processRetryControlledTerminalStatus(result); status != "" && control != nil {
 			observation.writeControlledTerminalResult(control, status)
 		} else {
 			observation.writeFinalResult()
 		}
+		finalizeProcessRetryBatchCoverageBeforeTerminalReplay(cfg, result)
 
 		if result.failed || result.raceDetected || result.panicData != nil || result.cleanupPanicData != nil {
 			t.Fail()
@@ -3178,6 +3677,16 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 	return wrapped, observation.writeFinalResult
 }
 
+func finalizeProcessRetryBatchCoverageBeforeTerminalReplay(cfg processRetryChildConfig, result retryAttemptResult) {
+	if requiresProcessRetryBatchCoverageFlush(result) {
+		cfg.batchCoverageFinalizer.run()
+	}
+}
+
+func requiresProcessRetryBatchCoverageFlush(result retryAttemptResult) bool {
+	return result.nativeFatalTraceReplay || result.panicData != nil || result.cleanupPanicData != nil
+}
+
 func processRetryControlledTerminalStatus(result retryAttemptResult) processRetryStatus {
 	if result.panicData == nil && result.cleanupPanicData == nil {
 		return ""
@@ -3194,31 +3703,38 @@ func asError(value any) error {
 }
 
 func (o *processRetryChildObservation) writeFinalResult() {
-	if o == nil {
-		return
-	}
-	o.finalize.Do(func() {
-		if o.test == nil || o.execMeta == nil {
-			return
-		}
-		o.writer.Write(o.buildResult(""))
-	})
+	o.writeResult("")
 }
 
 func (o *processRetryChildObservation) writeControlledTerminalResult(control *processRetryControl, status processRetryStatus) {
 	if o == nil || !isProcessRetryControlledTerminalStatus(status) {
 		return
 	}
+	if o.writeResult(status) && control != nil {
+		_ = control.childControlledTerminal(status)
+	}
+}
+
+func (o *processRetryChildObservation) writeResult(status processRetryStatus) bool {
+	if o == nil {
+		return false
+	}
 	written := false
 	o.finalize.Do(func() {
 		if o.test == nil || o.execMeta == nil {
 			return
 		}
-		written = o.writer.Write(o.buildResult(status))
+		result := o.buildResult(status)
+		// Serial tests own process-global state in parent order. Parallel state
+		// cannot be propagated without racing its peers.
+		if o.cfg.nativeGatePath != "" && !result.RootParallel {
+			if err := writeCurrentProcessRetryBatchInvocationState(processRetryBatchFinalStatePath(o.cfg.ResultPath)); err != nil {
+				result = processRetryNotRunResult(o.cfg, "final_invocation_state_write_failed")
+			}
+		}
+		written = o.writer.Write(result)
 	})
-	if written && control != nil {
-		_ = control.childControlledTerminal(status)
-	}
+	return written
 }
 
 func (o *processRetryChildObservation) buildResult(status processRetryStatus) processRetryResult {
@@ -3251,6 +3767,14 @@ func (o *processRetryChildObservation) buildResult(status processRetryStatus) pr
 		Panic:             panicData != nil,
 		RaceDetected:      o.result.raceDetected,
 		RootParallel:      rootParallel,
+	}
+	if o.cfg.BatchChild {
+		result.OutputTail, result.OutputTruncated = truncateProcessRetryOutputTail(o.result.output)
+		result.OutputTruncated = result.OutputTruncated || o.result.outputTruncated
+	}
+	if root, ok := o.execMeta.test.(*processRetryNoopTest); ok {
+		result.Subtests = root.snapshotSubtests()
+		result.Coverage = root.finishCoverage()
 	}
 	if result.Failed {
 		if panicInfo := o.execMeta.processRetryPanic.Load(); result.Panic && panicInfo != nil {
@@ -3300,12 +3824,18 @@ func processRetryChildOwnerMetadata(execMeta *testExecutionMetadata) *testExecut
 }
 
 func recordProcessRetryChildErrorInfo(tb testing.TB, errType, errMessage string, stackSkip int) {
-	if execMeta := processRetryChildOwnerMetadata(getTestMetadata(tb)); execMeta != nil {
-		execMeta.processRetryError.CompareAndSwap(nil, &processRetryErrorInfo{
-			Type:    truncateProcessRetryErrorType(errType),
-			Message: truncateProcessRetryStructuredErrorMessage(errMessage),
-			Stack:   truncateProcessRetryStructuredErrorStack(utils.GetStacktrace(stackSkip)),
-		})
+	execMeta := getTestMetadata(tb)
+	if execMeta == nil {
+		return
+	}
+	info := &processRetryErrorInfo{
+		Type:    truncateProcessRetryErrorType(errType),
+		Message: truncateProcessRetryStructuredErrorMessage(errMessage),
+		Stack:   truncateProcessRetryStructuredErrorStack(utils.GetStacktrace(stackSkip)),
+	}
+	execMeta.processRetryError.CompareAndSwap(nil, info)
+	if owner := processRetryChildOwnerMetadata(execMeta); owner != nil && owner != execMeta {
+		owner.processRetryError.CompareAndSwap(nil, info)
 	}
 }
 
@@ -3328,6 +3858,12 @@ func markProcessRetryChildFailed(tb testing.TB) {
 }
 
 func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing.T) {
+	var source *processRetryTestSource
+	sourceFunc := runtime.FuncForPC(reflect.ValueOf(original).Pointer())
+	if fn := sourceFunc; fn != nil {
+		runtimePath, runtimeStartLine := fn.FileLine(fn.Entry())
+		source = &processRetryTestSource{RuntimePath: runtimePath, RuntimeStartLine: runtimeStartLine, FunctionName: fn.Name()}
+	}
 	return func(t *testing.T) {
 		fields := getTestPrivateFields(t)
 		if fields == nil || fields.parent == nil {
@@ -3339,11 +3875,107 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 			original(t)
 			return
 		}
+		restoreChatty := bufferProcessRetrySubtestOutput(t)
 
 		execMeta := createTestMetadata(t, nil)
 		execMeta.test = owner.test
 		execMeta.processRetryOwner = owner
-		t.Cleanup(func() { deleteTestMetadata(t) })
+		var collector *processRetrySubtestCollector
+		var subtestCoverage *coverage.ProcessTestCoverage
+		var parentBarrier *chan bool
+		var oldParentBarrier chan bool
+		var order uint64
+		var start time.Time
+		root, _ := owner.test.(*processRetryNoopTest)
+		if root != nil {
+			collector = &root.subtests
+			order, start = collector.begin()
+		}
+		attemptToFix := root != nil && root.cfg.batchTest != nil && slices.Contains(root.cfg.batchTest.AttemptToFixSubtests, t.Name())
+		if attemptToFix {
+			execMeta.isAttemptToFix = true
+			execMeta.hasExplicitAttemptToFix = true
+			execMeta.shouldOrchestrateAttemptToFix = true
+		}
+		var finishOnce sync.Once
+		finish := func() {
+			finishOnce.Do(func() {
+				var files []coverage.ProcessTestCoverageFile
+				if subtestCoverage != nil {
+					files = subtestCoverage.Finish()
+				}
+				if parentBarrier != nil {
+					*parentBarrier = oldParentBarrier
+				}
+				if attemptToFix {
+					if !collector.completeAttemptToFix(t.Name()) {
+						collector.finishNativeAttemptToFix(order, start, t, execMeta, source, files)
+						collector.completeAttemptToFix(t.Name())
+					}
+				} else {
+					collector.finish(order, start, t, execMeta, source, files)
+				}
+				restoreChatty()
+				deleteTestMetadata(t)
+			})
+		}
+		directChild := getTestMetadataFromPointer(*fields.parent) == owner
+		t.Cleanup(func() {
+			finish()
+			if directChild {
+				if root, ok := owner.test.(*processRetryNoopTest); ok {
+					root.writePanicResult(owner.processRetryPanic.Load())
+				}
+			}
+		})
+		if root != nil && root.cfg.batchTest != nil && slices.Contains(root.cfg.batchTest.DisabledSubtests, t.Name()) {
+			reason := constants.TestDisabledSkipReason
+			execMeta.processRetrySkipReason.Store(&reason)
+			t.SkipNow()
+		}
+		if root != nil && root.cfg.batchTest != nil {
+			if itr, ok := processRetrySubtestITR(root.cfg.batchTest.ITRSubtests, t.Name()); ok {
+				execMeta.isAModifiedTest = root.isModifiedSubtest(t.Name(), sourceFunc)
+				decision := decideITRSkip(true, itr.MissingLineCodeCoverage, root.cfg.itrCoverageActive, execMeta, integrations.IsTestFuncUnskippable(sourceFunc))
+				execMeta.isItrForcedRun = decision.forcedRun
+				if decision.skip {
+					execMeta.isItrSkipped = true
+					reason := constants.SkippedByITRReason
+					execMeta.processRetrySkipReason.Store(&reason)
+					t.SkipNow()
+				}
+			}
+		}
+		collectCoverage := root != nil && root.cfg.CollectPerTestCoverage && source != nil && coverage.CanCollect()
+		suppressParallelCoverage := func() {
+			// Runtime coverage counters are process-global, so every covered
+			// subtest must own its complete counter delta without parallel peers.
+			if parent := getTestParentPrivateFields(t); parent != nil && parent.barrier != nil {
+				parentBarrier = parent.barrier
+				oldParentBarrier = *parentBarrier
+				*parentBarrier = nil
+			}
+		}
+		if collectCoverage && attemptToFix {
+			suppressParallelCoverage()
+		}
+		var attemptToFixGroup *retryAttemptGroup
+		if attemptToFix {
+			attemptToFixGroup, _ = newRetryAttemptGroupWithOutputObservation(t, true)
+		}
+		if collectCoverage && (!attemptToFix || attemptToFixGroup == nil) {
+			subtestCoverage = coverage.BeginProcessTestCoverage(source.RuntimePath)
+			if subtestCoverage != nil && parentBarrier == nil {
+				suppressParallelCoverage()
+			} else if subtestCoverage == nil && parentBarrier != nil {
+				*parentBarrier = oldParentBarrier
+				parentBarrier = nil
+			}
+		}
+		if attemptToFix {
+			runProcessRetryChildAttemptToFixSubtest(t, original, owner, collector, source, attemptToFixGroup, root.cfg.attemptToFixRetries, execMeta.isItrForcedRun, collectCoverage)
+			return
+		}
 
 		bodyReturned := false
 		defer func() {
@@ -3356,14 +3988,13 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 			if panicData == nil {
 				return
 			}
-			owner.processRetryPanic.CompareAndSwap(nil, &processRetryErrorInfo{
+			info := &processRetryErrorInfo{
 				Type:    "panic",
 				Message: truncateProcessRetryErrorMessage(toString(panicData)),
 				Stack:   truncateProcessRetryErrorStack(utils.GetStacktrace(1)),
-			})
-			if root, ok := owner.test.(*processRetryNoopTest); ok {
-				root.writePanicResult(owner.processRetryPanic.Load())
 			}
+			execMeta.processRetryPanic.CompareAndSwap(nil, info)
+			owner.processRetryPanic.CompareAndSwap(nil, info)
 			if unexpectedTermination {
 				return
 			}
@@ -3372,6 +4003,100 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 
 		original(t)
 		bodyReturned = true
+	}
+}
+
+func runProcessRetryChildAttemptToFixSubtest(t *testing.T, original func(*testing.T), owner *testExecutionMetadata, collector *processRetrySubtestCollector, source *processRetryTestSource, group *retryAttemptGroup, retries int, itrForcedRun, collectCoverage bool) {
+	if group == nil {
+		original(t)
+		return
+	}
+	identity := newTestIdentity("", "", t.Name())
+	var outcomes retryOutcomeAccumulator
+	preparedIndex := -1
+	runTestWithRetry(&runTestWithRetryOptions{
+		targetFunc:                    original,
+		t:                             t,
+		retryAttemptGroupFactory:      func(*testing.T) (*retryAttemptGroup, string) { return group, "" },
+		allowProcessRetryChildRetries: true,
+		allowRetryAfterRace:           true,
+		preExecMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
+			execMeta.identity = identity
+			execMeta.test = owner.test
+			execMeta.processRetryOwner = owner
+			execMeta.isAttemptToFix = true
+			execMeta.isItrForcedRun = itrForcedRun
+			execMeta.hasExplicitAttemptToFix = true
+			execMeta.shouldOrchestrateAttemptToFix = true
+			execMeta.suppressParentRetryMetadata = true
+			if preparedIndex == executionIndex {
+				return
+			}
+			preparedIndex = executionIndex
+			order, start := collector.begin()
+			var attemptCoverage *coverage.ProcessTestCoverage
+			if collectCoverage {
+				attemptCoverage = coverage.BeginProcessTestCoverage(source.RuntimePath)
+			}
+			execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
+				collector.finishAttemptToFix(order, start, execMeta.freshRetryAttemptTest, execMeta, source, attemptCoverage.Finish(), executionIndex, result)
+			}
+		},
+		preIsLastRetry: func(_ *testExecutionMetadata, _ int, remainingRetries int64) bool {
+			return remainingRetries == 1
+		},
+		postAdjustRetryCount: func(*testExecutionMetadata, time.Duration) int64 {
+			return int64(retries)
+		},
+		postPerExecution: func(attempt *testing.T, _ *testExecutionMetadata, _ int, _ time.Duration) {
+			outcomes.observe(attempt.Failed(), attempt.Skipped())
+		},
+		postShouldRetry: func(_ *testing.T, _ *testExecutionMetadata, _ int, remainingRetries int64) bool {
+			return remainingRetries > 0
+		},
+		postOnRetryEnd: func(t *testing.T, _ int, last *testing.T, result retryGroupPolicyResult) {
+			if result.failfastRawFailure || result.lateFailure || outcomes.anyFailed() {
+				t.Fail()
+			} else if last.Skipped() {
+				t.SkipNow()
+			}
+		},
+	})
+}
+
+func processRetrySubtestITR(configs []processRetrySubtestITRConfig, name string) (processRetrySubtestITRConfig, bool) {
+	for _, config := range configs {
+		if config.TestName == name {
+			return config, true
+		}
+	}
+	return processRetrySubtestITRConfig{}, false
+}
+
+func bufferProcessRetrySubtestOutput(t *testing.T) func() {
+	layout := getTestingInternalsLayout()
+	if t == nil || layout == nil || layout.disabled || !layout.chattyOK {
+		return func() {}
+	}
+	base := commonBaseForTest(t, layout)
+	if base == nil {
+		return func() {}
+	}
+	mu := fieldPtr[sync.RWMutex](base, layout.common.mu)
+	mu.Lock()
+	chatty := pointerWord(base, layout.common.chatty)
+	if chatty != nil {
+		setPrivatePointerField(layout.common.chatty.typ, fieldRawPtr(base, layout.common.chatty.unsafeField), nil)
+	}
+	mu.Unlock()
+	return func() {
+		if chatty == nil {
+			return
+		}
+		mu.Lock()
+		setPrivatePointerField(layout.common.chatty.typ, fieldRawPtr(base, layout.common.chatty.unsafeField), chatty)
+		mu.Unlock()
+		runtime.KeepAlive(t)
 	}
 }
 
@@ -3460,6 +4185,26 @@ func truncateProcessRetryString(value string, maxBytes int, marker string) strin
 	return string(runes[:low]) + marker
 }
 
+func truncateProcessRetryOutputTail(output []byte) (string, bool) {
+	raw := string(output)
+	normalized := strings.ToValidUTF8(raw, "\uFFFD")
+	truncated := normalized != raw
+	if processRetryJSONStringFits(normalized, processRetryResultOutputMaxBytes) {
+		return normalized, truncated
+	}
+	runes := []rune(normalized)
+	low, high := 0, len(runes)
+	for low < high {
+		mid := low + (high-low+1)/2
+		if processRetryJSONStringFits(string(runes[len(runes)-mid:]), processRetryResultOutputMaxBytes) {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	return string(runes[len(runes)-low:]), true
+}
+
 func processRetryJSONStringFits(value string, maxBytes int) bool {
 	if len(value) > maxBytes {
 		return false
@@ -3473,11 +4218,18 @@ func writeProcessRetryResultAtomically(resultPath string, result processRetryRes
 	if err != nil {
 		return err
 	}
-	if len(payload) > processRetryResultMaxBytes {
+	maxBytes := processRetryResultMaxBytes
+	if len(result.Subtests) > 0 || len(result.Coverage) > 0 {
+		maxBytes = processRetryResultWithSubtestsMaxBytes
+	}
+	if len(payload) > maxBytes {
 		return errors.New("process_retry_result_too_large")
 	}
-	dir := filepath.Dir(resultPath)
-	tmp, err := os.CreateTemp(dir, ".process-retry-result-*.tmp")
+	return writeProcessRetryFileAtomically(resultPath, payload, ".process-retry-result-*.tmp")
+}
+
+func writeProcessRetryFileAtomically(path string, payload []byte, pattern string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), pattern)
 	if err != nil {
 		return err
 	}
@@ -3497,7 +4249,7 @@ func writeProcessRetryResultAtomically(resultPath string, result processRetryRes
 		return err
 	}
 	closed = true
-	return os.Rename(tmpName, resultPath)
+	return os.Rename(tmpName, path)
 }
 
 func readProcessRetryResult(resultPath string, expected processRetryChildConfig) (processRetryResult, bool, error) {
@@ -3510,11 +4262,11 @@ func readProcessRetryResult(resultPath string, expected processRetryChildConfig)
 	}
 	defer file.Close()
 
-	payload, err := io.ReadAll(io.LimitReader(file, processRetryResultMaxBytes+1))
+	payload, err := io.ReadAll(io.LimitReader(file, processRetryResultWithSubtestsMaxBytes+1))
 	if err != nil {
 		return processRetryResult{}, false, fmt.Errorf("%w: result file unreadable", errProcessRetryResultInvalid)
 	}
-	if len(payload) > processRetryResultMaxBytes {
+	if len(payload) > processRetryResultWithSubtestsMaxBytes {
 		return processRetryResult{}, false, fmt.Errorf("%w: result file too large", errProcessRetryResultInvalid)
 	}
 	var result processRetryResult
@@ -3528,6 +4280,9 @@ func readProcessRetryResult(resultPath string, expected processRetryChildConfig)
 	}
 	if err := validateProcessRetryResult(result, expected); err != nil {
 		return processRetryResult{}, false, err
+	}
+	if len(result.Subtests) == 0 && len(result.Coverage) == 0 && len(payload) > processRetryResultMaxBytes {
+		return processRetryResult{}, false, fmt.Errorf("%w: result file too large", errProcessRetryResultInvalid)
 	}
 	timingOK := result.StartUnixNano != 0 && result.FinishUnixNano != 0 && result.FinishUnixNano >= result.StartUnixNano
 	if timingOK && result.DurationNanos != 0 && result.DurationNanos != result.FinishUnixNano-result.StartUnixNano {
@@ -3555,14 +4310,58 @@ func validateProcessRetryResult(result processRetryResult, expected processRetry
 		!processRetryJSONStringFits(result.ErrorMessage, processRetryErrorMessageMaxBytes) ||
 		!processRetryJSONStringFits(result.ErrorStack, processRetryErrorStackMaxBytes) ||
 		!processRetryJSONStringFits(result.SkipReason, processRetrySkipReasonMaxBytes) ||
-		!processRetryJSONStringFits(result.ResultError, processRetryResultErrorMaxBytes) {
+		!processRetryJSONStringFits(result.ResultError, processRetryResultErrorMaxBytes) ||
+		!processRetryJSONStringFits(result.OutputTail, processRetryResultOutputMaxBytes) {
 		return fmt.Errorf("%w: metadata field too large", errProcessRetryResultInvalid)
+	}
+	if result.OutputTruncated && result.OutputTail == "" {
+		return fmt.Errorf("%w: invalid output mirrors", errProcessRetryResultInvalid)
 	}
 	if result.Panic && (result.Status != processRetryStatusFail && !isProcessRetryControlledTerminalStatus(result.Status) || !result.Failed || result.ErrorType == "") {
 		return fmt.Errorf("%w: invalid panic mirrors", errProcessRetryResultInvalid)
 	}
 	if result.RaceDetected && (result.Status != processRetryStatusFail || !result.Failed) {
 		return fmt.Errorf("%w: invalid race mirrors", errProcessRetryResultInvalid)
+	}
+	if len(result.Subtests) > processRetryBatchMaxTests {
+		return fmt.Errorf("%w: too many subtest results", errProcessRetryResultInvalid)
+	}
+	seenSubtests := make(map[string]struct{}, len(result.Subtests))
+	nextAttemptToFix := make(map[string]int)
+	completedAttemptToFix := make(map[string]struct{})
+	for _, subtest := range result.Subtests {
+		if !strings.HasPrefix(subtest.TestName, result.TestName+"/") {
+			return fmt.Errorf("%w: invalid subtest identity", errProcessRetryResultInvalid)
+		}
+		if subtest.AttemptToFix {
+			if _, duplicate := seenSubtests[subtest.TestName]; duplicate || subtest.Attempt != nextAttemptToFix[subtest.TestName] {
+				return fmt.Errorf("%w: invalid attempt-to-fix subtest sequence", errProcessRetryResultInvalid)
+			}
+			if _, completed := completedAttemptToFix[subtest.TestName]; completed {
+				return fmt.Errorf("%w: completed attempt-to-fix subtest continued", errProcessRetryResultInvalid)
+			}
+			nextAttemptToFix[subtest.TestName]++
+			if subtest.AttemptToFixLast {
+				completedAttemptToFix[subtest.TestName] = struct{}{}
+			}
+		} else {
+			if _, duplicate := seenSubtests[subtest.TestName]; duplicate || nextAttemptToFix[subtest.TestName] != 0 {
+				return fmt.Errorf("%w: duplicate subtest result", errProcessRetryResultInvalid)
+			}
+			seenSubtests[subtest.TestName] = struct{}{}
+		}
+		if err := validateProcessRetrySubtestResult(subtest); err != nil {
+			return err
+		}
+	}
+	if len(completedAttemptToFix) != len(nextAttemptToFix) {
+		return fmt.Errorf("%w: incomplete attempt-to-fix subtest sequence", errProcessRetryResultInvalid)
+	}
+	if len(result.Coverage) > 0 && !expected.BatchChild {
+		return fmt.Errorf("%w: unexpected process coverage", errProcessRetryResultInvalid)
+	}
+	if err := validateProcessRetryCoverageFiles(result.Coverage); err != nil {
+		return err
 	}
 	switch result.Status {
 	case processRetryStatusPass:
@@ -3582,7 +4381,7 @@ func validateProcessRetryResult(result processRetryResult, expected processRetry
 			return fmt.Errorf("%w: invalid controlled terminal mirrors", errProcessRetryResultInvalid)
 		}
 	case processRetryStatusNotRun:
-		if result.Failed || result.Skipped || result.Panic || result.RaceDetected || result.RootParallel || result.ErrorType != "" || result.ErrorMessage != "" || result.ErrorStack != "" || result.SkipReason != "" || !validProcessRetryResultError(result.ResultError) {
+		if result.Failed || result.Skipped || result.Panic || result.RaceDetected || result.RootParallel || result.ErrorType != "" || result.ErrorMessage != "" || result.ErrorStack != "" || result.SkipReason != "" || result.OutputTail != "" || result.OutputTruncated || len(result.Coverage) > 0 || !validProcessRetryResultError(result.ResultError) {
 			return fmt.Errorf("%w: invalid not_run mirrors", errProcessRetryResultInvalid)
 		}
 	default:
@@ -3591,9 +4390,69 @@ func validateProcessRetryResult(result processRetryResult, expected processRetry
 	return nil
 }
 
+func validateProcessRetrySubtestResult(result processRetrySubtestResult) error {
+	if result.Attempt < 0 || !result.AttemptToFix && (result.Attempt != 0 || result.AttemptToFixLast) {
+		return fmt.Errorf("%w: invalid subtest attempt metadata", errProcessRetryResultInvalid)
+	}
+	if result.StartUnixNano == 0 || result.FinishUnixNano < result.StartUnixNano ||
+		(result.DurationNanos != 0 && result.DurationNanos != result.FinishUnixNano-result.StartUnixNano) {
+		return fmt.Errorf("%w: invalid subtest timing", errProcessRetryResultInvalid)
+	}
+	if !processRetryJSONStringFits(result.ErrorType, processRetryErrorTypeMaxBytes) ||
+		!processRetryJSONStringFits(result.ErrorMessage, processRetryErrorMessageMaxBytes) ||
+		!processRetryJSONStringFits(result.ErrorStack, processRetryErrorStackMaxBytes) ||
+		!processRetryJSONStringFits(result.SkipReason, processRetrySkipReasonMaxBytes) ||
+		!processRetryJSONStringFits(result.OutputTail, processRetryResultOutputMaxBytes) {
+		return fmt.Errorf("%w: subtest metadata field too large", errProcessRetryResultInvalid)
+	}
+	if result.Source != nil && (!processRetryJSONStringFits(result.Source.RuntimePath, processRetryErrorMessageMaxBytes) ||
+		!processRetryJSONStringFits(result.Source.FunctionName, processRetryErrorMessageMaxBytes) ||
+		result.Source.RuntimePath == "" || result.Source.RuntimeStartLine <= 0 || result.Source.FunctionName == "") {
+		return fmt.Errorf("%w: invalid subtest source", errProcessRetryResultInvalid)
+	}
+	if result.OutputTruncated && result.OutputTail == "" {
+		return fmt.Errorf("%w: invalid subtest output mirrors", errProcessRetryResultInvalid)
+	}
+	if result.SkippedByITR && (result.ITRForcedRun || result.Status != processRetryStatusSkip || !result.Skipped || result.SkipReason != constants.SkippedByITRReason) {
+		return fmt.Errorf("%w: invalid subtest ITR mirrors", errProcessRetryResultInvalid)
+	}
+	if err := validateProcessRetryCoverageFiles(result.Coverage); err != nil {
+		return err
+	}
+	switch result.Status {
+	case processRetryStatusPass:
+		if result.Failed || result.Skipped || result.Panic || result.ErrorType != "" || result.ErrorMessage != "" || result.ErrorStack != "" || result.SkipReason != "" {
+			return fmt.Errorf("%w: invalid subtest pass mirrors", errProcessRetryResultInvalid)
+		}
+	case processRetryStatusSkip:
+		if result.Failed || !result.Skipped || result.Panic || result.ErrorType != "" || result.ErrorMessage != "" || result.ErrorStack != "" {
+			return fmt.Errorf("%w: invalid subtest skip mirrors", errProcessRetryResultInvalid)
+		}
+	case processRetryStatusFail:
+		if !result.Failed || result.SkipReason != "" || result.Panic && result.ErrorType == "" || result.ErrorType == "" && (result.ErrorMessage != "" || result.ErrorStack != "") {
+			return fmt.Errorf("%w: invalid subtest fail mirrors", errProcessRetryResultInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: invalid subtest status", errProcessRetryResultInvalid)
+	}
+	return nil
+}
+
+func validateProcessRetryCoverageFiles(files []coverage.ProcessTestCoverageFile) error {
+	if len(files) > processRetryBatchMaxTests {
+		return fmt.Errorf("%w: too many process coverage files", errProcessRetryResultInvalid)
+	}
+	for _, file := range files {
+		if strings.TrimSpace(file.Name) == "" || !processRetryJSONStringFits(file.Name, processRetryErrorMessageMaxBytes) {
+			return fmt.Errorf("%w: invalid process coverage file", errProcessRetryResultInvalid)
+		}
+	}
+	return nil
+}
+
 func validProcessRetryResultError(reason string) bool {
 	switch reason {
-	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure":
+	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure", "native_parent_not_run", "invalid_invocation_state", "invocation_state_apply_failed", "final_invocation_state_write_failed":
 		return true
 	default:
 		return false
@@ -3601,6 +4460,135 @@ func validProcessRetryResultError(reason string) bool {
 }
 
 var _ integrations.Test = (*processRetryNoopTest)(nil)
+
+type processRetrySubtestCollector struct {
+	mu      locking.Mutex
+	next    atomic.Uint64
+	results []processRetrySubtestResult
+}
+
+func (c *processRetrySubtestCollector) begin() (uint64, time.Time) {
+	return c.next.Add(1), time.Now()
+}
+
+func (c *processRetrySubtestCollector) finish(order uint64, start time.Time, t *testing.T, execMeta *testExecutionMetadata, source *processRetryTestSource, files []coverage.ProcessTestCoverageFile) {
+	c.finishWithAttempt(order, start, t, execMeta, source, files, -1, nil)
+}
+
+func (c *processRetrySubtestCollector) finishAttemptToFix(order uint64, start time.Time, t *testing.T, execMeta *testExecutionMetadata, source *processRetryTestSource, files []coverage.ProcessTestCoverageFile, attempt int, retryResult retryAttemptResult) {
+	c.finishWithAttempt(order, start, t, execMeta, source, files, attempt, &retryResult)
+}
+
+func (c *processRetrySubtestCollector) finishNativeAttemptToFix(order uint64, start time.Time, t *testing.T, execMeta *testExecutionMetadata, source *processRetryTestSource, files []coverage.ProcessTestCoverageFile) {
+	c.finishWithAttempt(order, start, t, execMeta, source, files, 0, nil)
+}
+
+func (c *processRetrySubtestCollector) finishWithAttempt(order uint64, start time.Time, t *testing.T, execMeta *testExecutionMetadata, source *processRetryTestSource, files []coverage.ProcessTestCoverageFile, attempt int, retryResult *retryAttemptResult) {
+	if c == nil || t == nil || execMeta == nil {
+		return
+	}
+	finish := time.Now()
+	failed := t.Failed()
+	skipped := t.Skipped()
+	if retryResult != nil {
+		finish = start.Add(max(retryResult.duration, 0))
+		failed = retryResult.failed || retryResult.raceDetected || retryResult.panicData != nil || retryResult.cleanupPanicData != nil
+		skipped = retryResult.skipped
+	}
+	result := processRetrySubtestResult{
+		TestName:       t.Name(),
+		AttemptToFix:   attempt >= 0,
+		Attempt:        max(attempt, 0),
+		StartUnixNano:  start.UnixNano(),
+		FinishUnixNano: finish.UnixNano(),
+		DurationNanos:  finish.UnixNano() - start.UnixNano(),
+		Failed:         failed,
+		Skipped:        skipped,
+		SkippedByITR:   execMeta.isItrSkipped,
+		ITRForcedRun:   execMeta.isItrForcedRun,
+		Source:         source,
+		Coverage:       files,
+		order:          order,
+	}
+	if retryResult != nil {
+		result.OutputTail, result.OutputTruncated = truncateProcessRetryOutputTail(retryResult.output)
+		result.OutputTruncated = result.OutputTruncated || retryResult.outputTruncated
+	} else {
+		flushOutputWriterPartial(t)
+		if fields := getTestPrivateFields(t); fields != nil {
+			result.OutputTail, result.OutputTruncated = truncateProcessRetryOutputTail(fields.GetOutput())
+		}
+	}
+	if panicInfo := execMeta.processRetryPanic.Load(); panicInfo != nil {
+		result.Panic = true
+		result.ErrorType = panicInfo.Type
+		result.ErrorMessage = panicInfo.Message
+		result.ErrorStack = panicInfo.Stack
+	} else if retryResult != nil && (retryResult.panicData != nil || retryResult.cleanupPanicData != nil) {
+		panicData := retryResult.panicData
+		panicStack := retryResult.panicStack
+		if panicData == nil {
+			panicData = retryResult.cleanupPanicData
+			panicStack = retryResult.cleanupPanicStack
+		}
+		result.Panic = true
+		result.ErrorType = "panic"
+		result.ErrorMessage = truncateProcessRetryErrorMessage(toString(panicData))
+		result.ErrorStack = truncateProcessRetryErrorStack(string(panicStack))
+	} else if errorInfo := execMeta.processRetryError.Load(); errorInfo != nil {
+		result.ErrorType = errorInfo.Type
+		result.ErrorMessage = errorInfo.Message
+		result.ErrorStack = errorInfo.Stack
+	}
+	if skipReason := execMeta.processRetrySkipReason.Load(); skipReason != nil && result.Skipped && !result.Failed {
+		result.SkipReason = *skipReason
+	}
+	switch {
+	case result.Failed || result.Panic:
+		result.Status = processRetryStatusFail
+		result.Failed = true
+		result.Skipped = false
+		result.SkipReason = ""
+	case result.Skipped:
+		result.Status = processRetryStatusSkip
+	default:
+		result.Status = processRetryStatusPass
+	}
+	c.mu.Lock()
+	c.results = append(c.results, result)
+	c.mu.Unlock()
+}
+
+func (c *processRetrySubtestCollector) completeAttemptToFix(name string) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for index := range slices.Backward(c.results) {
+		if result := &c.results[index]; result.TestName == name && result.AttemptToFix {
+			result.AttemptToFixLast = true
+			return true
+		}
+	}
+	return false
+}
+
+func (c *processRetrySubtestCollector) snapshot() []processRetrySubtestResult {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	results := append([]processRetrySubtestResult(nil), c.results...)
+	c.mu.Unlock()
+	slices.SortFunc(results, func(a, b processRetrySubtestResult) int {
+		return cmp.Compare(a.order, b.order)
+	})
+	for index := range results {
+		results[index].order = 0
+	}
+	return results
+}
 
 type processRetryNoopTest struct {
 	integrations.Test
@@ -3610,6 +4598,36 @@ type processRetryNoopTest struct {
 	writer    *processRetryResultWriter
 	control   *processRetryControl
 	raceBase  int64
+	subtests  processRetrySubtestCollector
+	coverage  *coverage.ProcessTestCoverage
+	covOnce   sync.Once
+	covFiles  []coverage.ProcessTestCoverageFile
+}
+
+func (t *processRetryNoopTest) snapshotSubtests() []processRetrySubtestResult {
+	if t == nil {
+		return nil
+	}
+	return t.subtests.snapshot()
+}
+
+func (t *processRetryNoopTest) finishCoverage() []coverage.ProcessTestCoverageFile {
+	if t == nil {
+		return nil
+	}
+	t.covOnce.Do(func() {
+		if t.coverage != nil {
+			t.covFiles = t.coverage.Finish()
+		}
+	})
+	return t.covFiles
+}
+
+func (t *processRetryNoopTest) isModifiedSubtest(name string, fn *runtime.Func) bool {
+	if t == nil {
+		return false
+	}
+	return integrations.IsTestFuncModifiedWithAnalyzer(t.cfg.impactedTestsAnalyzer, name, fn)
 }
 
 func newProcessRetryNoopTest(root *testing.T, cfg processRetryChildConfig, startTime time.Time, writer *processRetryResultWriter, control *processRetryControl, raceBase int64) integrations.Test {
@@ -3644,6 +4662,8 @@ func (t *processRetryNoopTest) writePanicResult(info *processRetryErrorInfo) {
 		ErrorType:         info.Type,
 		ErrorMessage:      info.Message,
 		ErrorStack:        info.Stack,
+		Subtests:          t.snapshotSubtests(),
+		Coverage:          t.finishCoverage(),
 		StartUnixNano:     t.startTime.UnixNano(),
 		FinishUnixNano:    finish.UnixNano(),
 		DurationNanos:     finish.Sub(t.startTime).Nanoseconds(),

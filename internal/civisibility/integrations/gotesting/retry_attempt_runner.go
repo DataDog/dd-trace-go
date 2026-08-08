@@ -90,6 +90,7 @@ type retryAttemptResult struct {
 	schedulerSlotReleased  bool
 	terminalTrace          []retryAttemptTerminal
 	output                 []byte
+	outputTruncated        bool
 	nativeOutput           []byte
 }
 
@@ -319,8 +320,10 @@ func finalizeFreshRetryAttempt(attempt *retryAttemptRoot, resultCh chan<- retryA
 			return
 		}
 		addRetryAttemptElapsed(base, layout)
-		result.raceCheckpointCount, result.raceDetected = checkRetryAttemptRaces(base, layout)
-		if result.raceDetected && result.failureCheckpointPhase == retryAttemptNotFailed {
+		raceCheckpointCount, raceDetected := checkRetryAttemptRaces(base, layout)
+		result.raceCheckpointCount = max(result.raceCheckpointCount, raceCheckpointCount)
+		result.raceDetected = result.raceDetected || raceDetected
+		if raceDetected && result.failureCheckpointPhase == retryAttemptNotFailed {
 			result.failureCheckpointPhase = retryAttemptFailurePostCheckpoint
 		}
 		if !*fieldPtr[bool](base, layout.common.isParallel) {
@@ -334,7 +337,7 @@ func finalizeFreshRetryAttempt(attempt *retryAttemptRoot, resultCh chan<- retryA
 
 	flushRetryAttemptPartial(base, layout)
 	if attempt.group.observeOutput {
-		result.output = freezeRetryAttemptOutput(attempt, base, layout)
+		result.output, result.outputTruncated = freezeRetryAttemptOutput(attempt, base, layout)
 	}
 	reportRetryAttempt(base, layout)
 	result.reportExecuted = true
@@ -532,6 +535,11 @@ func (r *retryAttemptRoot) beginRootParallelSchedulerTransfer() {
 	r.parallelPauseDuration = *fieldPtr[time.Duration](localBase, layout.common.duration)
 	r.parallelLeaseTransfer.Store(true)
 
+	if announce := r.group.rootParallelAnnounce; announce != nil {
+		if err := announce(); err != nil {
+			panic(err)
+		}
+	}
 	transitioned := r.group.transitionOriginalToParallel()
 	if bridge := r.group.rootParallelBridge; bridge != nil {
 		if err := bridge(); err != nil {
@@ -654,19 +662,29 @@ func reportRetryAttempt(base unsafe.Pointer, layout *testingInternalsLayout) {
 	_, _ = fmt.Fprintf(*fieldPtr[io.Writer](parent, layout.common.w), format, args...)
 }
 
-func freezeRetryAttemptOutput(attempt *retryAttemptRoot, base unsafe.Pointer, layout *testingInternalsLayout) []byte {
+func freezeRetryAttemptOutput(attempt *retryAttemptRoot, base unsafe.Pointer, layout *testingInternalsLayout) ([]byte, bool) {
 	mu := fieldPtr[sync.RWMutex](base, layout.common.mu)
 	mu.RLock()
-	output := append([]byte(nil), (*fieldPtr[[]byte](base, layout.common.output))...)
+	output, truncated := collectRetryAttemptOutput(attempt, *fieldPtr[[]byte](base, layout.common.output))
 	mu.RUnlock()
+	return output, truncated
+}
+
+func collectRetryAttemptOutput(attempt *retryAttemptRoot, current []byte) ([]byte, bool) {
+	var captured []byte
+	var capturedTruncated bool
 	if attempt != nil {
-		captured := attempt.outputCapture.take()
-		if len(output) == 0 {
-			return captured
-		}
-		output = append(output, captured...)
+		captured, capturedTruncated = attempt.outputCapture.take()
 	}
-	return output
+	if attempt == nil || attempt.group.outputLimit <= 0 {
+		output := append([]byte(nil), current...)
+		return append(output, captured...), capturedTruncated
+	}
+	sink := newProcessRetryBoundedOutput(attempt.group.outputLimit)
+	_, _ = sink.Write(current)
+	_, _ = sink.Write(captured)
+	tail, truncated := sink.Tail()
+	return []byte(tail), capturedTruncated || truncated
 }
 
 func snapshotRetryAttemptResult(attempt *retryAttemptRoot, base unsafe.Pointer, layout *testingInternalsLayout, result *retryAttemptResult) {
@@ -684,13 +702,7 @@ func snapshotRetryAttemptResult(attempt *retryAttemptRoot, base unsafe.Pointer, 
 			result.nativeOutput = append([]byte(nil), currentOutput...)
 		}
 		if result.output == nil {
-			result.output = append([]byte(nil), currentOutput...)
-			captured := attempt.outputCapture.take()
-			if len(result.output) == 0 {
-				result.output = captured
-			} else {
-				result.output = append(result.output, captured...)
-			}
+			result.output, result.outputTruncated = collectRetryAttemptOutput(attempt, currentOutput)
 		}
 	}
 	*fieldPtr[[]byte](base, layout.common.output) = nil

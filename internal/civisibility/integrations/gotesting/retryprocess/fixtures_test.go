@@ -84,6 +84,8 @@ const (
 	processRetryParallelEFDEnv                = "PROCESS_RETRY_PARALLEL_EFD_FIXTURE"
 	processRetryParallelEFDCoordinationDirEnv = "PROCESS_RETRY_PARALLEL_EFD_COORDINATION_DIR"
 	processRetryAttemptToFixEnv               = "PROCESS_RETRY_ATTEMPT_TO_FIX_FIXTURE"
+	processRetryQuarantinedCoverageEnv        = "PROCESS_RETRY_QUARANTINED_COVERAGE_FIXTURE"
+	processRetryQuarantinedCoverageResultEnv  = "PROCESS_RETRY_QUARANTINED_COVERAGE_RESULT"
 	processRetryScenarioEnv                   = "PROCESS_RETRY_FIXTURE_SCENARIO"
 	processRetryControllerProbeEnv            = "PROCESS_RETRY_CONTROLLER_PROBE"
 	processRetryControllerProbePathEnv        = "PROCESS_RETRY_CONTROLLER_PROBE_PATH"

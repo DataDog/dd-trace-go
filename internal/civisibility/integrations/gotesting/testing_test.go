@@ -48,7 +48,11 @@ func TestMyTest02(gt *testing.T) {
 }
 
 func Test_Foo(gt *testing.T) {
-	assertTest(gt)
+	if os.Getenv("TestQuarantinedRace") == "true" {
+		writeQuarantinedRacePID(gt)
+	} else {
+		assertTest(gt)
+	}
 	t := (*T)(gt)
 
 	var tests = []struct {

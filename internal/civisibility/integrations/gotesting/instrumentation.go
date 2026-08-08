@@ -41,12 +41,14 @@ type (
 		processRetrySkipReason       atomic.Pointer[string]
 		processRetryPanic            atomic.Pointer[processRetryErrorInfo]
 		processRetryOwner            *testExecutionMetadata
+		freshRetryAttemptTest        *testing.T
 		isARetry                     bool // flag to tag if a current test execution is a retry
 		isANewTest                   bool // flag to tag if a current test a new test
 		isAModifiedTest              bool // flag to tag if a current test a modified test
 		isEarlyFlakeDetectionEnabled bool // flag to tag if Early Flake Detection is enabled for this execution
 		isFlakyTestRetriesEnabled    bool // flag to tag if Flaky Test Retries is enabled for this execution
 		isItrForcedRun               bool // flag to preserve ITR forced-run state across parent-owned process retries
+		isItrSkipped                 bool // flag to report an ITR skip reconstructed from an isolated process
 		flakyRetryBudgetReservation  *flakyRetryBudgetReservation
 		isQuarantined                bool          // flag to check if the test is quarantined
 		isDisabled                   bool          // flag to check if the test is disabled
@@ -95,11 +97,14 @@ type (
 		processRetryFuzzGuard         *processRetryFuzzGuardSnapshot
 		processRetryLaunchTemplate    *processRetryLaunchBaseline
 		processRetryCoordinator       *processRetryCoordinator
+		quarantinedRaceNativeOrder    bool
 		efdFaultySessionGuard         earlyFlakeDetectionFaultySession
 		retryAttemptGroupFactory      func(*testing.T) (*retryAttemptGroup, string)
 		retryAttemptObserveOutput     bool
 		retryAttemptObserveOutputSet  bool
 		retryAttemptMaskingFallback   bool
+		allowProcessRetryChildRetries bool
+		allowRetryAfterRace           bool
 		failfastEnabled               func() bool
 		nativeFailfastObserved        func() bool
 		postRetryFamilyTransition     func(*testExecutionMetadata)
@@ -133,6 +138,8 @@ type (
 		processRetryCoordinator    *processRetryCoordinator
 		efdFaultySessionGuard      earlyFlakeDetectionFaultySession
 		retryAttemptObserveOutput  bool
+		quarantinedRaceIsolation   bool
+		quarantinedRaceNativeOrder bool
 	}
 
 	// executionOptions holds the execution options for the test
@@ -655,9 +662,9 @@ func applyAdditionalFeaturesToTestFunc(
 		// Record whether the test is new so we can surface it in spans later.
 		isKnown, hasKnownData := isKnownTest(testInfo)
 		meta.isNew = hasKnownData && !isKnown
-		if !meta.isNew && settings.ImpactedTestsEnabled {
-			meta.isModified = integrations.IsTestFuncModified(testInfo.testName, testInfo.sourceFunc)
-		}
+	}
+	if !meta.isNew && settings.ImpactedTestsEnabled {
+		meta.isModified = integrations.IsTestFuncModified(testInfo.testName, testInfo.sourceFunc)
 	}
 
 	var flakyRetryCount int64
@@ -697,6 +704,15 @@ func applyAdditionalFeaturesToTestFunc(
 	case additionalFeaturePathDisabledFast:
 		return wrapWithAdditionalFeatureMetadata(f, ptrMeta, false, true)
 	}
+	if wrapperOpts.quarantinedRaceNativeOrder && ptrMeta.isQuarantined && !isSubtest && wrapperOpts.processRetryCoordinator != nil {
+		execMeta := &testExecutionMetadata{}
+		applyAdditionalFeatureMetadataToExecution(execMeta, ptrMeta)
+		info := &testingTInfo{commonInfo: *testInfo}
+		itrDecision := currentITRState().decisionFor(info, execMeta, integrations.IsTestFuncUnskippable(testInfo.sourceFunc))
+		if !itrDecision.skip {
+			wrapperOpts.processRetryCoordinator.registerNativeScheduledTest(*identity)
+		}
+	}
 
 	// Create a unified wrapper that will use a single runTestWithRetry call.
 	wrapper := func(t *testing.T) {
@@ -705,7 +721,7 @@ func applyAdditionalFeaturesToTestFunc(
 
 		var outcomes retryOutcomeAccumulator
 
-		runTestWithRetry(&runTestWithRetryOptions{
+		runOptions := &runTestWithRetryOptions{
 			targetFunc:                    f,
 			t:                             t,
 			parallelEFDAllowed:            wrapperOpts.parallelEFDAllowed,
@@ -715,6 +731,7 @@ func applyAdditionalFeaturesToTestFunc(
 			processRetryInvocationCounter: wrapperOpts.mRunInvocations,
 			processRetryLaunchTemplate:    wrapperOpts.processRetryLaunchTemplate,
 			processRetryCoordinator:       wrapperOpts.processRetryCoordinator,
+			quarantinedRaceNativeOrder:    wrapperOpts.quarantinedRaceNativeOrder,
 			efdFaultySessionGuard:         wrapperOpts.efdFaultySessionGuard,
 			processRetryFuzzGuard:         wrapperOpts.processRetryFuzzGuard,
 			retryAttemptObserveOutput:     wrapperOpts.retryAttemptObserveOutput,
@@ -918,7 +935,12 @@ func applyAdditionalFeaturesToTestFunc(
 					tParentCommonPrivates.SetFailed(true)
 				}
 			},
-		})
+		}
+		if wrapperOpts.quarantinedRaceIsolation && ptrMeta.isQuarantined {
+			deferQuarantinedRaceFirstAttempt(runOptions)
+			return
+		}
+		runTestWithRetry(runOptions)
 	}
 
 	// Mark the wrapper as instrumented.
@@ -972,7 +994,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	if execOpts.deferredQueued {
 		return
 	}
-	if shouldRetry && !isProcessRetryChild() {
+	if shouldRetry && (!isProcessRetryChild() || options.allowProcessRetryChildRetries) {
 		calculatedRetryCount := execOpts.retryCount
 		remainingAttempts := calculatedRetryCount + 1
 		runSequentialRetries := func() {

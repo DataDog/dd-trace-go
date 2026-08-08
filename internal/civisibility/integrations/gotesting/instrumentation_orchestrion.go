@@ -68,7 +68,7 @@ func instrumentCaptureFormattedSkip(tb testing.TB, skipType, reason string) stri
 		reason = strings.TrimSuffix(reason, "\n")
 	}
 	if isProcessRetryChild() {
-		if execMeta := getTestMetadata(tb); execMeta != nil && processRetryChildOwnerMetadata(execMeta) == execMeta {
+		if execMeta := getTestMetadata(tb); execMeta != nil {
 			execMeta.processRetrySkipReason.CompareAndSwap(nil, &reason)
 		}
 		return formatted

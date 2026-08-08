@@ -959,6 +959,33 @@ func TestProcessRetryParityObservesOutputWhenLogsAreEnabled(t *testing.T) {
 	require.Nil(t, *fieldPtr[[]byte](commonBaseForTest(attempt.test, attempt.layout), attempt.layout.common.output))
 }
 
+func TestProcessRetryParityBoundsObservedOutput(t *testing.T) {
+	group, reason := newRetryAttemptGroupWithOutputObservation(t, true)
+	require.Empty(t, reason)
+	group.outputLimit = 64
+	defer group.retire()
+
+	attempt, result, reason := runFreshRetryAttemptInGroup(group, func(local *testing.T) {
+		base := commonBaseForTest(local, group.layout)
+		mu := fieldPtr[sync.RWMutex](base, group.layout.common.mu)
+		mu.Lock()
+		setPrivatePointerField(
+			group.layout.common.chatty.typ,
+			fieldRawPtr(base, group.layout.common.chatty.unsafeField),
+			nil,
+		)
+		mu.Unlock()
+		_, _ = local.Output().Write(bytes.Repeat([]byte("x"), 128))
+		_, _ = local.Output().Write([]byte("per-test-output-sentinel"))
+	})
+
+	require.Empty(t, reason)
+	require.NotNil(t, attempt)
+	require.True(t, result.outputTruncated)
+	require.LessOrEqual(t, len(result.output), 64)
+	require.Contains(t, string(result.output), "per-test-output-sentinel")
+}
+
 func TestProcessRetryParityNativeOutputObservationIsExplicit(t *testing.T) {
 	group, reason := newRetryAttemptGroupWithOutputObservation(t, true)
 	require.Empty(t, reason)
@@ -1047,8 +1074,9 @@ func TestProcessRetryParityCapturesEachTerminalStackOnce(t *testing.T) {
 func TestProcessRetryParityOutputCaptureTransfersOwnership(t *testing.T) {
 	capture := &retryAttemptOutputCapture{output: []byte("attempt output")}
 
-	output := capture.take()
+	output, truncated := capture.take()
 	require.Equal(t, []byte("attempt output"), output)
+	require.False(t, truncated)
 	require.Empty(t, capture.snapshot())
 }
 

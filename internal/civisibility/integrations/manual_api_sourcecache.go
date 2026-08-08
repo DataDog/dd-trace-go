@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 )
 
 var (
@@ -40,6 +41,12 @@ type sourceFunctionCacheSlot struct {
 	entry sourceFunctionMetadata
 }
 
+type sourceFunctionIdentity struct {
+	runtimePath      string
+	runtimeStartLine int
+	functionName     string
+}
+
 type sourceFunctionMetadata struct {
 	runtimePath      string
 	runtimeStartLine int
@@ -49,6 +56,16 @@ type sourceFunctionMetadata struct {
 	fileSlot         *sourceFileCacheSlot
 	fileMetadata     sourceFileMetadata
 	resolution       sourceResolution
+}
+
+// SetTestSource applies a source identity captured in another process.
+func SetTestSource(test Test, runtimePath string, runtimeStartLine int, functionName string) {
+	if test == nil || runtimePath == "" || runtimeStartLine <= 0 || functionName == "" {
+		return
+	}
+	if test, ok := test.(*tslvTest); ok {
+		test.setTestSource(loadSourceFunctionMetadataFromIdentity(runtimePath, runtimeStartLine, functionName), 0)
+	}
 }
 
 // sourceFileMetadata contains the parsed source information needed by SetTestFunc.
@@ -94,6 +111,23 @@ func IsTestFuncModified(testName string, fn *runtime.Func) bool {
 	return isTestFuncModified(GetImpactedTestsAnalyzer(), testName, fn)
 }
 
+// IsTestFuncModifiedWithAnalyzer classifies a test with an explicitly owned
+// analyzer, allowing an isolated test process to avoid CI Visibility startup.
+func IsTestFuncModifiedWithAnalyzer(analyzer *impactedtests.ImpactedTestAnalyzer, testName string, fn *runtime.Func) bool {
+	if analyzer == nil {
+		return false
+	}
+	return isTestFuncModified(analyzer, testName, fn)
+}
+
+// IsTestFuncUnskippable reports whether source metadata marks fn or its suite
+// as unskippable without requiring a test event to be created first.
+func IsTestFuncUnskippable(fn *runtime.Func) bool {
+	metadata := loadSourceFunctionMetadata(fn)
+	return metadata.fileMetadata.parseOK &&
+		(metadata.fileMetadata.suiteUnskippable || metadata.resolution.functionUnskippable)
+}
+
 func isTestFuncModified(analyzer impactedTestClassifier, testName string, fn *runtime.Func) bool {
 	if analyzer == nil || fn == nil {
 		return false
@@ -112,6 +146,19 @@ func loadSourceFunctionMetadata(fn *runtime.Func) sourceFunctionMetadata {
 	slot := sourceFunctionSlot(fn)
 	slot.once.Do(func() {
 		slot.entry = resolveSourceFunctionMetadata(fn)
+	})
+	return slot.entry
+}
+
+func loadSourceFunctionMetadataFromIdentity(runtimePath string, runtimeStartLine int, functionName string) sourceFunctionMetadata {
+	key := sourceFunctionIdentity{runtimePath: runtimePath, runtimeStartLine: runtimeStartLine, functionName: functionName}
+	slotAny, ok := sourceFunctionMetadataCache.Load(key)
+	if !ok {
+		slotAny, _ = sourceFunctionMetadataCache.LoadOrStore(key, newSourceFunctionCacheSlot())
+	}
+	slot := slotAny.(*sourceFunctionCacheSlot)
+	slot.once.Do(func() {
+		slot.entry = resolveSourceFunctionMetadataFromIdentity(runtimePath, runtimeStartLine, functionName)
 	})
 	return slot.entry
 }
@@ -181,10 +228,13 @@ func sourceFunctionSlotForEntry(entry uintptr, newSlot func() *sourceFunctionCac
 
 func resolveSourceFunctionMetadata(fn *runtime.Func) sourceFunctionMetadata {
 	runtimePath, runtimeStartLine := fn.FileLine(fn.Entry())
+	return resolveSourceFunctionMetadataFromIdentity(runtimePath, runtimeStartLine, fn.Name())
+}
+
+func resolveSourceFunctionMetadataFromIdentity(runtimePath string, runtimeStartLine int, fullName string) sourceFunctionMetadata {
 	sourcePath := resolveTestSourcePath(runtimePath)
 	fileSlot := sourceFileSlot(sourcePath.FilesystemPath, newSourceFileCacheSlot)
 	fileMetadata := loadSourceFileMetadataFromSlot(fileSlot, sourcePath.FilesystemPath)
-	fullName := fn.Name()
 	shortName := fullName[strings.LastIndex(fullName, ".")+1:]
 	metadata := sourceFunctionMetadata{
 		runtimePath:      runtimePath,

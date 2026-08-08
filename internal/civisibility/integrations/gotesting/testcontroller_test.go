@@ -13,12 +13,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -52,9 +54,12 @@ var processRetryUnitTestPrefixes = []string{
 	"TestWriteProcessRetry",
 	"TestFinalizeProcessRetry",
 	"TestCombineProcessRetry",
+	"TestUnquarantinedRace",
 }
 
 const retryParityUnitTestPrefix = "TestProcessRetryParity"
+
+const quarantinedRaceCoverageEnabledEnv = "DD_TEST_QUARANTINED_RACE_COVERAGE_ENABLED"
 
 var retryParityFallbackUnitTests = map[string]struct{}{
 	"TestProcessRetryParityRuntimeLayoutRejectsMissingCapabilities":                 {},
@@ -67,20 +72,32 @@ var retryParityFallbackUnitTests = map[string]struct{}{
 var mTracer mocktracer.Tracer
 var logsEntries []*mockedLogEntry
 var parallelEfd bool
+var mockCoverageRequests atomic.Int32
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
+	releaseQuarantinedRaceTestMainResource := acquireQuarantinedRaceCustomTestMainResource()
+	defer releaseQuarantinedRaceTestMainResource()
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
 	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
 	const scenarioStarted = "**** [Scenario %s started] ****\n\n"
 	// We need to spawn separated test process for each scenario
 	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection", "TestFlakyTestRetriesWithTransientSettingsFailure"}
+	if quarantinedRaceScenarioAvailable() {
+		scenarios = append(scenarios, "TestQuarantinedRace", "TestQuarantinedCleanupPanic", "TestQuarantinedRaceCustomTestMain")
+	}
 	if coverageModeSupportsITRBackfill() {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
 	}
 
-	if internal.BoolEnv(scenarios[0], false) {
+	if unquarantinedRaceFixtureSelected() {
+		runUnquarantinedRaceFixture(m)
+	} else if quarantinedRaceInProcessFixtureSelected() {
+		runQuarantinedRaceTests(m, "in_process")
+	} else if isProcessRetryChild() {
+		os.Exit(runProcessRetryChild(m))
+	} else if internal.BoolEnv(scenarios[0], false) {
 		fmt.Printf(scenarioStarted, scenarios[0])
 		runFlakyTestRetriesTests(m)
 	} else if internal.BoolEnv(scenarios[1], false) {
@@ -107,6 +124,15 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv("TestIntelligentTestRunnerWithCoverageBackfill", false) {
 		fmt.Printf(scenarioStarted, "TestIntelligentTestRunnerWithCoverageBackfill")
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
+	} else if internal.BoolEnv("TestQuarantinedRace", false) {
+		fmt.Printf(scenarioStarted, "TestQuarantinedRace")
+		runQuarantinedRaceTests(m, "process")
+	} else if internal.BoolEnv("TestQuarantinedCleanupPanic", false) {
+		fmt.Printf(scenarioStarted, "TestQuarantinedCleanupPanic")
+		runQuarantinedRaceTests(m, "process")
+	} else if internal.BoolEnv("TestQuarantinedRaceCustomTestMain", false) {
+		fmt.Printf(scenarioStarted, "TestQuarantinedRaceCustomTestMain")
+		runQuarantinedRaceCustomTestMainTests(m)
 	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
 		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
 		os.Exit(runProcessRetryChild(m))
@@ -128,7 +154,84 @@ func TestMain(m *testing.M) {
 		if layoutAvailable {
 			runTestControllerSubprocess("RetryNativeParallelUnitTest", "^TestRetryAttemptNativeMaxParallelMatchesTestingFlag$", "Bypass=true", "-test.parallel=3")
 			for _, v := range scenarios {
-				runTestControllerSubprocess(v, legacyScenarioRunFilter, v+"=true")
+				runFilter := legacyScenarioRunFilter
+				if v == "TestQuarantinedRaceCustomTestMain" {
+					pidDir, err := os.MkdirTemp("", "dd-quarantined-custom-testmain-*")
+					if err != nil {
+						panic(err)
+					}
+					pidPath := filepath.Join(pidDir, "pid")
+					_ = os.Setenv(quarantinedRaceCustomTestMainEnv, "127.0.0.1:0")
+					_ = os.Setenv(quarantinedRaceCustomTestMainPIDEnv, pidPath)
+					runTestControllerSubprocess(v, "^TestQuarantinedRaceCustomTestMain$", v+"=true", "-test.parallel=1")
+					_ = os.Unsetenv(quarantinedRaceCustomTestMainEnv)
+					_ = os.Unsetenv(quarantinedRaceCustomTestMainPIDEnv)
+					_ = os.RemoveAll(pidDir)
+					continue
+				}
+				if v == "TestQuarantinedRace" || v == "TestQuarantinedCleanupPanic" {
+					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|TestQuarantinedSerialOrderProducer|TestQuarantinedSerialStateProducer|TestQuarantinedSerialStateConsumer|TestQuarantinedInvocationStateMutator|TestQuarantinedInvocationStateSecondMutator|TestQuarantinedSerialOrderConsumer|Test_Foo)$"
+					orderedTests := []string{"TestQuarantinedSerialOrderProducer", "TestQuarantinedInvocationStateMutator", "TestQuarantinedRace", "TestQuarantinedInvocationStateSecondMutator", "TestQuarantinedRaceSecond", "TestQuarantinedSerialStateProducer", "TestQuarantinedSerialStateConsumer", "TestQuarantinedSerialOrderConsumer"}
+					if v == "TestQuarantinedCleanupPanic" {
+						runFilter = "^(TestQuarantinedCleanupPanic|TestQuarantinedAfterCleanupPanic)$"
+						orderedTests = []string{"TestQuarantinedCleanupPanic", "TestQuarantinedAfterCleanupPanic"}
+					}
+					pidDir, err := os.MkdirTemp("", "dd-quarantined-race-pids-*")
+					if err != nil {
+						panic(err)
+					}
+					previousPIDDir, hadPIDDir := os.LookupEnv(quarantinedRacePIDDirEnv)
+					if err := os.Setenv(quarantinedRacePIDDirEnv, pidDir); err != nil {
+						panic(err)
+					}
+					stateDir := filepath.Join(pidDir, "invocation-state")
+					if err := os.Mkdir(stateDir, 0o700); err != nil {
+						panic(err)
+					}
+					for _, state := range []string{"first", "second", "child-final", "post-enumeration"} {
+						if err := os.Mkdir(filepath.Join(stateDir, state), 0o700); err != nil {
+							panic(err)
+						}
+					}
+					if err := os.Setenv(quarantinedRaceStateDirEnv, stateDir); err != nil {
+						panic(err)
+					}
+					previousCoverageEnabled, hadCoverageEnabled := os.LookupEnv(quarantinedRaceCoverageEnabledEnv)
+					if testing.CoverMode() != "" {
+						if err := os.Setenv(quarantinedRaceCoverageEnabledEnv, "true"); err != nil {
+							panic(err)
+						}
+					}
+					previousProcessMax, hadProcessMax := os.LookupEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable)
+					// The two parallel race fixtures coordinate with each other, so both
+					// bodies must be admitted just as they are under -test.parallel=2.
+					if err := os.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "2"); err != nil {
+						panic(err)
+					}
+					shuffleSeed := testControllerShuffleSeedWithOrder(*tests, orderedTests...)
+					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.failfast=true", "-test.parallel=2", "-test.shuffle="+strconv.FormatInt(shuffleSeed, 10), "-test.timeout=30s")
+					if hadProcessMax {
+						_ = os.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, previousProcessMax)
+					} else {
+						_ = os.Unsetenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable)
+					}
+					if hadCoverageEnabled {
+						_ = os.Setenv(quarantinedRaceCoverageEnabledEnv, previousCoverageEnabled)
+					} else {
+						_ = os.Unsetenv(quarantinedRaceCoverageEnabledEnv)
+					}
+					if hadPIDDir {
+						_ = os.Setenv(quarantinedRacePIDDirEnv, previousPIDDir)
+					} else {
+						_ = os.Unsetenv(quarantinedRacePIDDirEnv)
+					}
+					_ = os.Unsetenv(quarantinedRaceStateDirEnv)
+					if err := os.RemoveAll(pidDir); err != nil {
+						panic(err)
+					}
+					continue
+				}
+				runTestControllerSubprocess(v, runFilter, v+"=true")
 			}
 		}
 	}
@@ -162,6 +265,17 @@ func runTestControllerSubprocess(name, runFilter, environment string, extraArgs 
 	}
 	fmt.Printf("cmd.Run: %v\n", err)
 	os.Exit(1)
+}
+
+func writeQuarantinedRacePID(t *testing.T) {
+	t.Helper()
+	dir := os.Getenv(quarantinedRacePIDDirEnv)
+	if dir == "" {
+		t.Fatal("missing quarantined race PID directory")
+	}
+	if err := os.WriteFile(filepath.Join(dir, t.Name()), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func buildProcessRetryUnitRunFilter(tests []testing.InternalTest, layoutAvailable bool) string {
@@ -508,6 +622,37 @@ func buildTestControllerSubprocessArgs(originalArgs []string, runFilter string, 
 	args = append(args, "-test.run="+runFilter)
 	args = append(args, boundary...)
 	return args
+}
+
+func testControllerShuffleSeedWithOrder(tests []testing.InternalTest, ordered ...string) int64 {
+	for seed := int64(1); seed < 1_000_000; seed++ {
+		shuffled := append([]testing.InternalTest(nil), tests...)
+		rand.New(rand.NewSource(seed)).Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+		positions := make(map[string]int, len(ordered))
+		for i, test := range shuffled {
+			for _, name := range ordered {
+				if test.Name == name {
+					positions[name] = i
+				}
+			}
+		}
+		if len(positions) != len(ordered) {
+			break
+		}
+		valid := true
+		for i := 1; i < len(ordered); i++ {
+			if positions[ordered[i-1]] >= positions[ordered[i]] {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return seed
+		}
+	}
+	panic("unable to find deterministic test shuffle seed")
 }
 
 func testControllerBenchmarkSelected(args []string) bool {
@@ -874,19 +1019,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 
 	// set impacted tests variables
 	if impactedTests {
-		// set the commit sha to a known value to always have the same git diff
-		base := "b97e7cbb464aef26da8cb5c07a225f7a144f26a4"
-		head := "3808532bc719ca418b938afb680246109768f343"
-		// 3808532bc719ca418b938afb680246109768f343 (feat) internal/civisibility: impacted tests (#3389)
-		// ...
-		// b97e7cbb464aef26da8cb5c07a225f7a144f26a4 v2.0.0 (#2427)
-
-		// let's make sure we have both shas available
-		_ = exec.Command("git", "fetch", "origin", base).Run()
-		_ = exec.Command("git", "fetch", "origin", head).Run()
-
-		utils.AddCITags(constants.GitPrBaseCommit, base)
-		utils.AddCITags(constants.GitHeadCommit, head)
+		configureImpactedTestsGitDiff()
 	}
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -1003,6 +1136,16 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	checkLogs()
 
 	os.Exit(0)
+}
+
+func configureImpactedTestsGitDiff() {
+	// Use the fixed range that introduced impacted tests and modified Test_Foo.
+	const base = "b97e7cbb464aef26da8cb5c07a225f7a144f26a4"
+	const head = "3808532bc719ca418b938afb680246109768f343"
+	_ = exec.Command("git", "fetch", "origin", base).Run()
+	_ = exec.Command("git", "fetch", "origin", head).Run()
+	utils.AddCITags(constants.GitPrBaseCommit, base)
+	utils.AddCITags(constants.GitHeadCommit, head)
 }
 
 func runIntelligentTestRunnerTests(m *testing.M) {
@@ -1596,6 +1739,7 @@ func setUpHTTPServer(
 
 	// Reset the collected logs for the new server instance.
 	logsEntries = nil
+	mockCoverageRequests.Store(0)
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1621,6 +1765,7 @@ func setUpHTTPServer(
 				TestsSkipping:           itrEnabled,
 				KnownTestsEnabled:       enableKnownTests,
 				ImpactedTestsEnabled:    impactedTests,
+				CodeCoverage:            os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true",
 			}
 
 			response.Data.Attributes.TestManagement.Enabled = testManagement
@@ -1683,6 +1828,9 @@ func setUpHTTPServer(
 			}
 			log.Debug("MockApi sending response: %v", response)
 			json.NewEncoder(w).Encode(&response)
+		} else if r.URL.Path == "/api/v2/citestcov" {
+			mockCoverageRequests.Add(1)
+			w.WriteHeader(http.StatusAccepted)
 		} else if r.URL.Path == "/api/v2/logs" {
 			// Mock the logs intake endpoint.
 			reader, _ := gzip.NewReader(r.Body)

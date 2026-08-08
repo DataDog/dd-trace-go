@@ -67,6 +67,9 @@ func stopRetryGroupAfterRace(execOpts *executionOptions, raceDetected bool) bool
 	if execOpts == nil || !raceDetected {
 		return false
 	}
+	if execOpts.options != nil && execOpts.options.allowRetryAfterRace {
+		return false
+	}
 	execOpts.rawAttemptFailureSeen = true
 	execOpts.retryCount = 0
 	return true
@@ -115,6 +118,7 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 
 		execMeta = createTestMetadata(attempt.test, nil)
 		attempt.metadata = execMeta
+		execMeta.freshRetryAttemptTest = attempt.test
 		execMeta.flakyRetryBudgetReservation = execOpts.flakyRetryBudgetReservation
 		execMeta.hasAdditionalFeatureWrapper = true
 		execMeta.usesFreshRetryAttemptRuntime = true

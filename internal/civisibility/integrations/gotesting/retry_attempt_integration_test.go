@@ -215,6 +215,17 @@ func TestProcessRetryParityDetectedRaceStopsFreshRetryGroup(t *testing.T) {
 	require.False(t, stopRetryGroupAfterRace(execOpts, false))
 }
 
+func TestProcessRetryParityAttemptToFixContinuesAfterDetectedRace(t *testing.T) {
+	execOpts := &executionOptions{
+		options:    &runTestWithRetryOptions{allowRetryAfterRace: true},
+		retryCount: 3,
+	}
+
+	require.False(t, stopRetryGroupAfterRace(execOpts, true))
+	require.Equal(t, int64(3), execOpts.retryCount)
+	require.False(t, execOpts.rawAttemptFailureSeen)
+}
+
 func TestProcessRetryParityFailfastStopsAfterFirstRawFailure(t *testing.T) {
 	createTestMetadata(t, nil)
 	defer deleteTestMetadata(t)

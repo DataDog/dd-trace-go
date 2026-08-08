@@ -9,6 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -24,6 +26,11 @@ import (
 type deferredProcessRetryMutablePanic struct {
 	message string
 }
+
+const (
+	deferredProcessRetryInfrastructureFailfastFixtureEnv = "DD_TEST_DEFERRED_PROCESS_RETRY_INFRASTRUCTURE_FAILFAST"
+	deferredProcessRetryFailfastFollowingSentinel        = "deferred-process-retry-failfast-following-ran"
+)
 
 func processRetryCoordinatorRegisteredForTesting(c *processRetryCoordinator) bool {
 	processRetryCoordinatorRegistry.mu.Lock()
@@ -549,21 +556,81 @@ func TestDeferredProcessRetryCoordinatorFailfastStopsLaterGroups(t *testing.T) {
 	require.False(t, second.terminalFailure, "failfast cancellation keeps the latest real observation authoritative")
 }
 
-func TestDeferredProcessRetryCoordinatorNativeFailfastLaunchesNoGroups(t *testing.T) {
-	runner := func(context.Context, *deferredProcessRetryGroup, deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
-		t.Fatal("native package failure must latch failfast before deferred launch")
-		return processRetryAttemptResult{}
+func TestDeferredProcessRetryCoordinatorNativeFailfastRunsAdmittedFirstAttempts(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	coordinator := newProcessRetryCoordinatorForTesting(true)
+	first := newDeferredQuarantinedFirstAttemptGroupForTesting("TestFirst", 1, 1)
+	second := newDeferredQuarantinedFirstAttemptGroupForTesting("TestSecond", 1, 2)
+	require.True(t, coordinator.beginAdmission().commit(first))
+	require.True(t, coordinator.beginAdmission().commit(second))
+	var batches [][]*deferredProcessRetryGroup
+	coordinator.batchRunner = func(_ context.Context, groups []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		batches = append(batches, append([]*deferredProcessRetryGroup(nil), groups...))
+		return map[*deferredProcessRetryGroup]processRetryAttemptResult{
+			first:  fixedProcessRetryAttempt(processRetryStatusPass, 1),
+			second: fixedProcessRetryAttempt(processRetryStatusPass, 1),
+		}
 	}
-	coordinator := newProcessRetryCoordinatorForTesting(true, runner)
-	group := &deferredProcessRetryGroup{}
-	require.True(t, coordinator.beginAdmission().commit(group))
 
 	summary := coordinator.drain(3)
+
+	require.Equal(t, [][]*deferredProcessRetryGroup{{first, second}}, batches)
+	require.Len(t, recorder.tests, 2)
 	require.Equal(t, 3, summary.exitCode)
-	require.True(t, summary.packageFailed)
-	require.False(t, summary.deferredFailed)
 	require.True(t, summary.failfast)
-	require.Equal(t, "failfast", group.terminalFailureReason)
+}
+
+func TestDeferredProcessRetryInfrastructureFailureClassification(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		attempt processRetryAttemptResult
+		want    bool
+	}{
+		{name: "pass", attempt: fixedProcessRetryAttempt(processRetryStatusPass, 1)},
+		{name: "test failure", attempt: fixedProcessRetryAttempt(processRetryStatusFail, 1)},
+		{name: "test race", attempt: processRetryAttemptResult{Result: processRetryResult{Status: processRetryStatusFail, Failed: true, RaceDetected: true}, ExitCode: 1}},
+		{name: "setup failure", attempt: failedNativeScheduledAttempt(errors.New("launch failed")), want: true},
+		{name: "timeout", attempt: processRetryAttemptResult{TimedOut: true}, want: true},
+		{name: "invalid result", attempt: processRetryAttemptResult{Err: errProcessRetryResultInvalid}, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, deferredProcessRetryInfrastructureFailure(test.attempt))
+		})
+	}
+}
+
+func TestDeferredProcessRetryInfrastructureFailfastFailure(t *testing.T) {
+	if os.Getenv(deferredProcessRetryInfrastructureFailfastFixtureEnv) != "true" {
+		t.Skip("failfast fixture runs only in its controller subprocess")
+	}
+	finishDeferredProcessRetryFirstAttempt(
+		&runTestWithRetryOptions{t: t},
+		deferredProcessRetryInfrastructureFailure(failedNativeScheduledAttempt(errors.New("launch failed"))),
+	)
+}
+
+func TestDeferredProcessRetryInfrastructureFailfastFollowing(t *testing.T) {
+	if os.Getenv(deferredProcessRetryInfrastructureFailfastFixtureEnv) != "true" {
+		t.Skip("failfast fixture runs only in its controller subprocess")
+	}
+	fmt.Fprint(os.Stdout, deferredProcessRetryFailfastFollowingSentinel)
+}
+
+func TestDeferredProcessRetryInfrastructureFailfastStopsFollowingTest(t *testing.T) {
+	if os.Getenv(deferredProcessRetryInfrastructureFailfastFixtureEnv) == "true" {
+		t.Skip("controller does not run inside its fixture subprocess")
+	}
+	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(
+		os.Args[1:],
+		"^(TestDeferredProcessRetryInfrastructureFailfastFailure|TestDeferredProcessRetryInfrastructureFailfastFollowing)$",
+		"-test.failfast=true",
+		"-test.shuffle=off", // The failfast assertion requires the failure fixture to run first.
+	)...)
+	cmd.Env = append(os.Environ(), deferredProcessRetryInfrastructureFailfastFixtureEnv+"=true", "Bypass=true")
+	output, err := cmd.CombinedOutput()
+	require.Error(t, err, string(output))
+	require.NotContains(t, string(output), deferredProcessRetryFailfastFollowingSentinel)
 }
 
 func TestDeferredProcessRetryFailfastRefundsUnconsumedFTRReservation(t *testing.T) {
@@ -1193,6 +1260,227 @@ func BenchmarkDeferredProcessRetryQueueAdmission(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func TestDeferredProcessRetryBatchesFirstAttemptsByPhase(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+
+	a := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
+	b := newDeferredQuarantinedFirstAttemptGroupForTesting("TestB", 1, 2)
+	c := newDeferredQuarantinedFirstAttemptGroupForTesting("TestC", 2, 3)
+	ordinary := &deferredProcessRetryGroup{invocationOrdinal: 4}
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	var batches [][]*deferredProcessRetryGroup
+	coordinator.batchRunner = func(_ context.Context, groups []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		batches = append(batches, append([]*deferredProcessRetryGroup(nil), groups...))
+		results := make(map[*deferredProcessRetryGroup]processRetryAttemptResult, len(groups))
+		for index, group := range groups {
+			results[group] = fixedProcessRetryAttempt(processRetryStatusPass, int64(index+1))
+		}
+		return results
+	}
+
+	remaining, batchFailed := coordinator.drainDeferredFirstAttempts([]*deferredProcessRetryGroup{a, ordinary, b, c})
+
+	require.False(t, batchFailed)
+	require.Equal(t, [][]*deferredProcessRetryGroup{{a, b}, {c}}, batches)
+	require.Equal(t, []*deferredProcessRetryGroup{ordinary}, remaining)
+	require.Len(t, recorder.tests, 3)
+	for _, event := range recorder.tests {
+		require.Equal(t, processRetryStatusPass, event.status)
+		require.Equal(t, 1, event.closeCount)
+		require.Equal(t, constants.TestStatusSkip, event.tags[constants.TestFinalStatus])
+	}
+}
+
+func TestDeferredProcessRetryUsesNativeScheduledFirstAttemptResult(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
+	result := fixedProcessRetryAttempt(processRetryStatusPass, 1)
+	group.firstAttemptResult = &result
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		t.Fatal("native-scheduled first attempt was executed twice")
+		return nil
+	}
+
+	remaining, batchFailed := coordinator.drainDeferredFirstAttempts([]*deferredProcessRetryGroup{group})
+
+	require.False(t, batchFailed)
+	require.Empty(t, remaining)
+	require.Len(t, recorder.tests, 1)
+	require.Equal(t, processRetryStatusPass, recorder.tests[0].status)
+}
+
+func TestDeferredProcessRetryRelaunchesMissingNativeFirstAttemptsTogether(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	a := newDeferredQuarantinedFirstAttemptGroupForTesting("TestA", 1, 1)
+	b := newDeferredQuarantinedFirstAttemptGroupForTesting("TestB", 1, 2)
+	missing := processRetryAttemptResult{Err: errProcessRetryResultMissing, ExitCode: processRetryExitCodeUnset}
+	a.firstAttemptResult = &missing
+	b.firstAttemptResult = &missing
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		t.Fatal("missing native attempts used the ordinary batch runner")
+		return nil
+	}
+	coordinator.nativeRunner = func(_ context.Context, groups []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		require.Equal(t, []*deferredProcessRetryGroup{a, b}, groups)
+		return map[*deferredProcessRetryGroup]processRetryAttemptResult{
+			a: fixedProcessRetryAttempt(processRetryStatusPass, 1),
+			b: fixedProcessRetryAttempt(processRetryStatusPass, 2),
+		}
+	}
+
+	remaining, batchFailed := coordinator.drainDeferredFirstAttempts([]*deferredProcessRetryGroup{a, b})
+
+	require.False(t, batchFailed)
+	require.Empty(t, remaining)
+	require.Len(t, recorder.tests, 2)
+}
+
+func TestDeferredProcessRetryFirstAttemptDrainReturnsOriginalQueueWhenUnused(t *testing.T) {
+	coordinator := newProcessRetryCoordinatorForTesting(false)
+	queue := []*deferredProcessRetryGroup{{invocationOrdinal: 1}, {invocationOrdinal: 2}}
+	coordinator.batchRunner = func(context.Context, []*deferredProcessRetryGroup) map[*deferredProcessRetryGroup]processRetryAttemptResult {
+		t.Fatal("batch runner called without a deferred first attempt")
+		return nil
+	}
+
+	got, batchFailed := coordinator.drainDeferredFirstAttempts(queue)
+
+	require.False(t, batchFailed)
+	require.Equal(t, queue, got)
+	require.Same(t, &queue[0], &got[0])
+}
+
+func TestDeferredProcessRetryFirstAttemptConsumesInitialRetrySlot(t *testing.T) {
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	settings := integrations.GetSettings()
+	oldSettings := *settings
+	defer func() { *settings = oldSettings }()
+	settings.TestManagement.AttemptToFixRetries = 10
+
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestAttemptToFix", 1, 1)
+	group.metadata.isAttemptToFix = true
+	group.metadata.shouldOrchestrateAttemptToFix = true
+
+	require.True(t, group.applyDeferredFirstAttempt(fixedProcessRetryAttempt(processRetryStatusPass, 1)))
+	require.Equal(t, int64(9), group.retryCount)
+}
+
+func TestDeferredProcessRetryAttemptToFixContinuesAfterEveryRace(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	settings := integrations.GetSettings()
+	oldSettings := *settings
+	defer func() { *settings = oldSettings }()
+	settings.TestManagement.AttemptToFixRetries = 3
+
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestAttemptToFixRace", 1, 1)
+	group.metadata.isAttemptToFix = true
+	group.metadata.shouldOrchestrateAttemptToFix = true
+	raceAttempt := fixedProcessRetryAttempt(processRetryStatusFail, 1)
+	raceAttempt.Result.Failed = true
+	raceAttempt.Result.RaceDetected = true
+	require.True(t, group.applyDeferredFirstAttempt(raceAttempt))
+
+	for index, wantContinue := range []bool{true, false} {
+		prepared, ok, _ := group.prepareAttempt(true)
+		require.True(t, ok)
+		attempt := raceAttempt
+		attempt.StartTime = time.Unix(0, int64(index+2))
+		attempt.FinishTime = attempt.StartTime.Add(time.Nanosecond)
+		require.Equal(t, wantContinue, group.applyCompletedAttempt(deferredProcessRetryCompletedAttempt{
+			prepared: prepared,
+			result:   attempt,
+		}, true, false))
+	}
+	require.Zero(t, group.retryCount)
+	group.finish()
+	require.Len(t, recorder.tests, 3)
+}
+
+func TestDeferredProcessRetryAttemptToFixRaceTerminalPolicy(t *testing.T) {
+	raceAttempt := fixedProcessRetryAttempt(processRetryStatusFail, 1)
+	raceAttempt.Result.Failed = true
+	raceAttempt.Result.RaceDetected = true
+	ownedAttemptToFix := &processRetryMetadataSnapshot{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true}
+	unownedAttemptToFix := &processRetryMetadataSnapshot{isAttemptToFix: true}
+
+	require.False(t, deferredProcessRetryAttemptTerminal(ownedAttemptToFix, raceAttempt))
+	require.True(t, deferredProcessRetryAttemptTerminal(unownedAttemptToFix, raceAttempt))
+	require.True(t, deferredProcessRetryAttemptTerminal(nil, raceAttempt))
+
+	infrastructureFailure := raceAttempt
+	infrastructureFailure.ContainmentLost = true
+	require.True(t, deferredProcessRetryAttemptTerminal(ownedAttemptToFix, infrastructureFailure))
+}
+
+func TestDeferredProcessRetryFirstAttemptReservesFTRBudget(t *testing.T) {
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	restoreBudget := setProcessRetryBudgetForTesting(1, 1)
+	defer restoreBudget()
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestFTR", 1, 1)
+	group.metadata.isFlakyTestRetriesEnabled = true
+	attempt := fixedProcessRetryAttempt(processRetryStatusFail, 1)
+	attempt.Result.Failed = true
+
+	require.True(t, group.applyDeferredFirstAttempt(attempt))
+	require.NotNil(t, group.reservation)
+	require.True(t, group.reservation.reserved())
+	require.Zero(t, flakyRetryBudgetRemaining(integrations.GetFlakyRetriesSettings()))
+}
+
+func TestDeferredProcessRetryFirstAttemptAdmitsNewEFDTest(t *testing.T) {
+	_, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	settings := integrations.GetSettings()
+	oldSettings := *settings
+	defer func() { *settings = oldSettings }()
+	settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 2
+	guard := &recordingEFDFaultySessionGuard{}
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestEFD", 1, 1)
+	group.metadata.isEarlyFlakeDetectionEnabled = true
+	group.metadata.isANewTest = true
+	group.efdFaultySessionGuard = guard
+	attempt := fixedProcessRetryAttempt(processRetryStatusFail, 1)
+	attempt.Result.Failed = true
+
+	require.True(t, group.applyDeferredFirstAttempt(attempt))
+	require.Equal(t, 1, guard.admitCalls)
+	require.Zero(t, guard.retryCalls)
+}
+
+func TestDeferredProcessRetryFirstAttemptDoesNotMarkAllRetriesFailed(t *testing.T) {
+	recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+	defer restoreSession()
+	group := newDeferredQuarantinedFirstAttemptGroupForTesting("TestQuarantined", 1, 1)
+	attempt := fixedProcessRetryAttempt(processRetryStatusFail, 1)
+	attempt.Result.Failed = true
+
+	require.False(t, group.applyDeferredFirstAttempt(attempt))
+	group.finish()
+	require.Len(t, recorder.tests, 1)
+	_, tagged := recorder.tests[0].tags[constants.TestHasFailedAllRetries]
+	require.False(t, tagged)
+}
+
+func newDeferredQuarantinedFirstAttemptGroupForTesting(name string, phaseID, ordinal uint64) *deferredProcessRetryGroup {
+	identity := newTestIdentity("module", "suite", name)
+	return &deferredProcessRetryGroup{
+		identity:             *identity,
+		testInfo:             commonInfo{moduleName: identity.ModuleName, suiteName: identity.SuiteName, testName: identity.FullName, identity: identity},
+		metadata:             processRetryMetadataSnapshot{identity: identity, isQuarantined: true, hasAdditionalFeatureWrapper: true},
+		phaseID:              phaseID,
+		invocationOrdinal:    ordinal,
+		deferredFirstAttempt: true,
 	}
 }
 
