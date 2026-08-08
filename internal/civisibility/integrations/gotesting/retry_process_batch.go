@@ -842,6 +842,7 @@ func runDeferredProcessRetryBatchOnce(
 	if processAttempt.OutputTail != "" {
 		_, _ = io.WriteString(os.Stdout, processAttempt.OutputTail)
 	}
+	mergePendingProcessRetryTestLog(&processAttempt)
 	if processAttempt.TempDir == "" {
 		for _, group := range groups {
 			attempt := processAttempt

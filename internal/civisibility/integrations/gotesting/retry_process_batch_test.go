@@ -434,6 +434,34 @@ func TestNativeScheduledBatchMergesTestLogAfterParentFlush(t *testing.T) {
 	require.Equal(t, processRetryTestLogMagic+"getenv PARENT\nchdir /workspace/package\ngetenv CHILD\n", string(got))
 }
 
+func TestRelaunchedNativeScheduledBatchMergesTestLog(t *testing.T) {
+	requireProcessRetryContainmentForTesting(t)
+	resetProcessRetryLimiterForTesting(t)
+	dir := t.TempDir()
+	parentPath := filepath.Join(dir, "parent-testlog.txt")
+	counterPath := filepath.Join(dir, "cleanup-counter")
+	require.NoError(t, os.WriteFile(parentPath, []byte(processRetryTestLogMagic), 0o600))
+	t.Setenv(processRetryNativeLifecycleFixtureEnv, "true")
+	t.Setenv(processRetryChildResultScenarioEnv, "cleanup_once")
+	t.Setenv(processRetryChildCleanupCounterPathEnv, counterPath)
+
+	baseline := captureProcessRetryLaunchBaselineForTesting()
+	require.NoError(t, baseline.err)
+	baseline.args = []string{"-test.testlogfile=" + parentPath}
+	baseline.argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
+	group := deferredProcessRetryBatchGroup("TestProcessRetryChildResultFixture", 1)
+	group.launchBaseline = baseline
+
+	completed, missing := runDeferredNativeScheduledProcessRetryBatchOnce(context.Background(), []*deferredProcessRetryGroup{group})
+	require.Empty(t, missing)
+	require.NoError(t, completed[group].Err)
+	got, err := os.ReadFile(parentPath)
+	require.NoError(t, err)
+	require.Contains(t, string(got), "chdir "+baseline.workingDirectory+"\n")
+	require.Contains(t, string(got), "getenv "+processRetryChildResultScenarioEnv+"\n")
+	require.Contains(t, string(got), "open "+counterPath+"\n")
+}
+
 func TestProcessRetryBatchTimeoutUsesPackageBudget(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	deadline := now.Add(30 * time.Minute)
