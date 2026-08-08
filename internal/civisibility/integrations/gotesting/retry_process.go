@@ -123,6 +123,7 @@ type processRetryChildConfig struct {
 	nativeGatePath         string
 	nativeParallelPath     string
 	nativeEnumerationPath  string
+	processSlotRelease     chan<- processRetryLimiterRelease
 	tempDir                string
 	controlConfig          processRetryControlConfig
 	controlConfigLoaded    bool
@@ -1859,6 +1860,9 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		return finishSetupFailure(limiterResult.Err, limiterResult.Cause == processRetryLimiterParentDeadline)
 	}
 	defer limiterResult.Release()
+	if cfg.processSlotRelease != nil {
+		cfg.processSlotRelease <- limiterResult.Release
+	}
 	if processRetryShutdownRequested(shutdown) || processRetryShuttingDown() {
 		return finishSetupFailure(errProcessRetryShutdown, false)
 	}
@@ -3496,10 +3500,6 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		}
 		if cfg.BatchChild {
 			group.outputLimit = processRetryResultOutputMaxBytes
-			// Runtime coverage counters are process-global. Keep the native
-			// t.Parallel admission, but serialize covered bodies while each
-			// test owns the counter delta that becomes its coverage payload.
-			group.suppressOriginalParallelTransition = cfg.CollectPerTestCoverage
 		}
 		observation.group = group
 		if cfg.nativeParallelPath != "" {
@@ -3509,21 +3509,19 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			group.rootParallelAnnounce = func() error {
 				return os.WriteFile(cfg.nativeParallelPath, nil, processRetryBatchManifestMode)
 			}
-			if !cfg.CollectPerTestCoverage {
-				group.rootParallelBridge = func() error {
-					deadline, deadlineOK := time.Time{}, false
-					if cfg.ParentDeadlineOK {
-						deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
-					}
-					state, run, err := waitForProcessRetryBatchGate(cfg.nativeEnumerationPath, deadline, deadlineOK)
-					if err != nil {
-						return err
-					}
-					if !run {
-						return errors.New("missing native process retry parent state")
-					}
-					return applyProcessRetryBatchInvocationState(state)
+			group.rootParallelBridge = func() error {
+				deadline, deadlineOK := time.Time{}, false
+				if cfg.ParentDeadlineOK {
+					deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
 				}
+				state, run, err := waitForProcessRetryBatchGate(cfg.nativeEnumerationPath, deadline, deadlineOK)
+				if err != nil {
+					return err
+				}
+				if !run {
+					return errors.New("missing native process retry parent state")
+				}
+				return applyProcessRetryBatchInvocationState(state)
 			}
 		} else if control != nil {
 			group.rootParallelBridge = control.childRootParallelBridge
@@ -3625,31 +3623,38 @@ func asError(value any) error {
 }
 
 func (o *processRetryChildObservation) writeFinalResult() {
-	if o == nil {
-		return
-	}
-	o.finalize.Do(func() {
-		if o.test == nil || o.execMeta == nil {
-			return
-		}
-		o.writer.Write(o.buildResult(""))
-	})
+	o.writeResult("")
 }
 
 func (o *processRetryChildObservation) writeControlledTerminalResult(control *processRetryControl, status processRetryStatus) {
 	if o == nil || !isProcessRetryControlledTerminalStatus(status) {
 		return
 	}
+	if o.writeResult(status) && control != nil {
+		_ = control.childControlledTerminal(status)
+	}
+}
+
+func (o *processRetryChildObservation) writeResult(status processRetryStatus) bool {
+	if o == nil {
+		return false
+	}
 	written := false
 	o.finalize.Do(func() {
 		if o.test == nil || o.execMeta == nil {
 			return
 		}
-		written = o.writer.Write(o.buildResult(status))
+		result := o.buildResult(status)
+		// Serial tests own process-global state in parent order. Parallel state
+		// cannot be propagated without racing its peers.
+		if o.cfg.nativeGatePath != "" && !result.RootParallel {
+			if err := writeCurrentProcessRetryBatchInvocationState(processRetryBatchFinalStatePath(o.cfg.ResultPath)); err != nil {
+				result = processRetryNotRunResult(o.cfg, "final_invocation_state_write_failed")
+			}
+		}
+		written = o.writer.Write(result)
 	})
-	if written && control != nil {
-		_ = control.childControlledTerminal(status)
-	}
+	return written
 }
 
 func (o *processRetryChildObservation) buildResult(status processRetryStatus) processRetryResult {
@@ -4258,7 +4263,7 @@ func validateProcessRetryCoverageFiles(files []coverage.ProcessTestCoverageFile)
 
 func validProcessRetryResultError(reason string) bool {
 	switch reason {
-	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure", "native_parent_not_run", "invalid_invocation_state", "invocation_state_apply_failed":
+	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure", "native_parent_not_run", "invalid_invocation_state", "invocation_state_apply_failed", "final_invocation_state_write_failed":
 		return true
 	default:
 		return false

@@ -599,15 +599,6 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest, wra
 	if internalTests == nil {
 		return
 	}
-	if wrapperOpts.quarantinedRaceNativeOrder && wrapperOpts.processRetryCoordinator != nil {
-		wrapperOpts.processRetryCoordinator.setNativeTestOrder(func() []string {
-			order := make([]string, len(*internalTests))
-			for i, test := range *internalTests {
-				order[i] = test.Name
-			}
-			return order
-		})
-	}
 	if claim != nil {
 		claim.testDescriptors = internalTests
 	}

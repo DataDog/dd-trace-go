@@ -151,7 +151,6 @@ type processRetryCoordinator struct {
 	nativeRunner     deferredProcessRetryBatchRunner
 	nativeTests      []processRetryBatchTestConfig
 	nativeTestIndex  map[string]int
-	nativeTestOrder  func() []string
 	nativeBatches    map[uint64]*nativeScheduledProcessRetryBatch
 }
 
@@ -466,8 +465,10 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 		if len(missingNative) > 0 {
 			maps.Copy(results, c.nativeRunner(context.Background(), missingNative))
 		}
-		if processAttempt, ok := c.nativeScheduledBatchResult(phaseID); ok {
-			preserveProcessRetryBatchFailure(processAttempt, native, results)
+		for _, group := range native {
+			if processAttempt, ok := c.nativeScheduledBatchResult(group.invocationOrdinal); ok {
+				preserveProcessRetryBatchFailure(processAttempt, []*deferredProcessRetryGroup{group}, results)
+			}
 		}
 		for _, group := range groups {
 			attempt, ok := results[group]
@@ -492,7 +493,9 @@ func (c *processRetryCoordinator) drainDeferredFirstAttempts(queue []*deferredPr
 			group.finish()
 			group.printSummary()
 		}
-		c.cleanupNativeScheduledBatch(phaseID)
+		for _, group := range native {
+			c.cleanupNativeScheduledBatch(group.invocationOrdinal)
+		}
 	}
 	slices.SortStableFunc(remaining, func(a, b *deferredProcessRetryGroup) int {
 		return cmp.Compare(a.invocationOrdinal, b.invocationOrdinal)

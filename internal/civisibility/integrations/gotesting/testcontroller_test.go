@@ -170,8 +170,8 @@ func TestMain(m *testing.M) {
 					continue
 				}
 				if v == "TestQuarantinedRace" || v == "TestQuarantinedCleanupPanic" {
-					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|TestQuarantinedSerialOrderProducer|TestQuarantinedInvocationStateMutator|TestQuarantinedInvocationStateSecondMutator|TestQuarantinedSerialOrderConsumer|Test_Foo)$"
-					orderedTests := []string{"TestQuarantinedSerialOrderProducer", "Test_Foo", "TestQuarantinedInvocationStateMutator", "TestQuarantinedRace", "TestQuarantinedInvocationStateSecondMutator", "TestQuarantinedRaceSecond", "TestQuarantinedSerialOrderConsumer"}
+					runFilter = "^(TestQuarantinedRace|TestQuarantinedRaceSecond|TestQuarantinedSerialOrderProducer|TestQuarantinedSerialStateProducer|TestQuarantinedSerialStateConsumer|TestQuarantinedInvocationStateMutator|TestQuarantinedInvocationStateSecondMutator|TestQuarantinedSerialOrderConsumer|Test_Foo)$"
+					orderedTests := []string{"TestQuarantinedSerialOrderProducer", "TestQuarantinedInvocationStateMutator", "TestQuarantinedRace", "TestQuarantinedInvocationStateSecondMutator", "TestQuarantinedRaceSecond", "TestQuarantinedSerialStateProducer", "TestQuarantinedSerialStateConsumer", "TestQuarantinedSerialOrderConsumer"}
 					if v == "TestQuarantinedCleanupPanic" {
 						runFilter = "^(TestQuarantinedCleanupPanic|TestQuarantinedAfterCleanupPanic)$"
 						orderedTests = []string{"TestQuarantinedCleanupPanic", "TestQuarantinedAfterCleanupPanic"}
@@ -188,7 +188,7 @@ func TestMain(m *testing.M) {
 					if err := os.Mkdir(stateDir, 0o700); err != nil {
 						panic(err)
 					}
-					for _, state := range []string{"first", "second", "post-enumeration"} {
+					for _, state := range []string{"first", "second", "child-final", "post-enumeration"} {
 						if err := os.Mkdir(filepath.Join(stateDir, state), 0o700); err != nil {
 							panic(err)
 						}
@@ -202,8 +202,17 @@ func TestMain(m *testing.M) {
 							panic(err)
 						}
 					}
+					previousProcessMax, hadProcessMax := os.LookupEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable)
+					if err := os.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1"); err != nil {
+						panic(err)
+					}
 					shuffleSeed := testControllerShuffleSeedWithOrder(*tests, orderedTests...)
 					runTestControllerSubprocess(v, runFilter, v+"=true", "-test.failfast=true", "-test.parallel=2", "-test.shuffle="+strconv.FormatInt(shuffleSeed, 10), "-test.timeout=30s")
+					if hadProcessMax {
+						_ = os.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, previousProcessMax)
+					} else {
+						_ = os.Unsetenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable)
+					}
 					if hadCoverageEnabled {
 						_ = os.Setenv(quarantinedRaceCoverageEnabledEnv, previousCoverageEnabled)
 					} else {

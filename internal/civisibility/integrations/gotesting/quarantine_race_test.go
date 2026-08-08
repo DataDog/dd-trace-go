@@ -38,13 +38,10 @@ const (
 	quarantinedRaceMutableEnv               = "DD_TEST_QUARANTINED_RACE_MUTABLE"
 	quarantinedRaceParallelStartedFile      = "parallel-started"
 	quarantinedRaceParentEnumeratedFile     = "parent-enumerated"
+	quarantinedRaceSecondReadyFile          = "second-ready"
+	quarantinedRaceFinishedFile             = "race-finished"
 	quarantinedRaceCustomTestMainEnv        = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN"
 	quarantinedRaceCustomTestMainPIDEnv     = "DD_TEST_QUARANTINED_RACE_CUSTOM_TESTMAIN_PID"
-)
-
-var (
-	quarantinedRaceSecondReady = make(chan struct{})
-	quarantinedRaceFinished    = make(chan struct{})
 )
 
 func unquarantinedRaceFixtureSelected() bool {
@@ -69,6 +66,9 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 			Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true},
 		},
 		"TestQuarantinedSerialOrderProducer": {
+			Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true},
+		},
+		"TestQuarantinedSerialStateProducer": {
 			Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true},
 		},
 	}
@@ -134,9 +134,11 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 	if !isolated && exitCode == 0 {
 		panic("expected in-process race accounting to preserve the native failing exit code")
 	}
+	if isolated && !cleanupPanicScenario && os.Getenv(quarantinedRaceMutableEnv) != "post-enumeration" {
+		panic("parallel child state leaked into the parent")
+	}
 
-	var childPID, fallbackChildPID string
-	coverageEnabled := os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true"
+	childPIDs := make(map[string]string)
 	failedSpans := 0
 	finishedSpans := mTracer.FinishedSpans()
 	spanTypeCounts := map[string]int{}
@@ -155,6 +157,7 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 		"TestQuarantinedRace":                "quarantine_race_test.go.TestQuarantinedRace",
 		"TestQuarantinedRaceSecond":          "quarantine_race_test.go.TestQuarantinedRaceSecond",
 		"TestQuarantinedSerialOrderProducer": "quarantine_race_test.go.TestQuarantinedSerialOrderProducer",
+		"TestQuarantinedSerialStateProducer": "quarantine_race_test.go.TestQuarantinedSerialStateProducer",
 		"Test_Foo":                           "testing_test.go.Test_Foo",
 	}
 	if cleanupPanicScenario {
@@ -175,8 +178,7 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 			failedSpans++
 		}
 		wantStatus := any(constants.TestStatusPass)
-		if testName == "TestQuarantinedRace" || testName == "TestQuarantinedCleanupPanic" ||
-			testName == "TestQuarantinedRaceSecond" && !coverageEnabled {
+		if testName == "TestQuarantinedRace" || testName == "TestQuarantinedCleanupPanic" {
 			wantStatus = constants.TestStatusFail
 		}
 		if status != wantStatus {
@@ -190,39 +192,24 @@ func runQuarantinedRaceTests(m *testing.M, executionMode string) {
 		if pid == "" {
 			panic("missing quarantined race child PID")
 		}
-		fallback := cleanupPanicScenario && testName == "TestQuarantinedAfterCleanupPanic"
-		if isolated && fallback {
-			if fallbackChildPID == "" {
-				fallbackChildPID = pid
-			} else if fallbackChildPID != pid {
-				panic("missing quarantined tests did not share one replacement batch child")
+		if isolated {
+			if pid == strconv.Itoa(os.Getpid()) {
+				panic("process mode executed quarantined race bodies in the parent")
 			}
-		} else if childPID == "" {
-			childPID = pid
-		} else if childPID != pid {
-			panic("quarantined race tests did not share one batch child")
+			if other, duplicate := childPIDs[pid]; duplicate {
+				panic(testName + " shared an isolated process with " + other)
+			}
+			childPIDs[pid] = testName
+		} else if pid != strconv.Itoa(os.Getpid()) {
+			panic("in-process mode unexpectedly executed quarantined race bodies in a child")
 		}
 	}
-	wantFailedSpans := 1
-	if !cleanupPanicScenario && !coverageEnabled {
-		wantFailedSpans = 2
-	}
-	if failedSpans != wantFailedSpans {
-		panic(fmt.Sprintf("expected %d quarantined batch race failures, got %d", wantFailedSpans, failedSpans))
+	if failedSpans != 1 {
+		panic(fmt.Sprintf("expected one quarantined race failure, got %d", failedSpans))
 	}
 	if !cleanupPanicScenario {
 		consumerSpans := checkSpansByResourceName(finishedSpans, "quarantine_race_test.go.TestQuarantinedSerialOrderConsumer", 1)
 		checkSpansByTagValue(consumerSpans, constants.TestStatus, constants.TestStatusPass, 1)
-	}
-	parentPID := strconv.Itoa(os.Getpid())
-	if isolated && childPID == parentPID {
-		panic("process mode executed quarantined race bodies in the parent")
-	}
-	if cleanupPanicScenario && (fallbackChildPID == "" || fallbackChildPID == childPID || fallbackChildPID == parentPID) {
-		panic("test after cleanup panic did not run in a fresh batch child")
-	}
-	if !isolated && childPID != parentPID {
-		panic("in-process mode unexpectedly executed quarantined race bodies in a child")
 	}
 	if !isolated {
 		fmt.Fprint(os.Stdout, quarantinedRaceInProcessFailureSentinel)
@@ -346,17 +333,10 @@ func TestQuarantinedRace(t *testing.T) {
 	}
 	requireQuarantinedInvocationState(t, "first")
 	t.Parallel()
-
-	if os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
-		select {
-		case <-quarantinedRaceSecondReady:
-		case <-time.After(time.Second):
-			t.Fatal("parallel peer was not admitted")
-		}
-	}
+	waitForQuarantinedRaceFile(t, quarantinedRaceSecondReadyFile)
 	runRaceFixture()
-	if os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
-		close(quarantinedRaceFinished)
+	if err := os.WriteFile(filepath.Join(os.Getenv(quarantinedRacePIDDirEnv), quarantinedRaceFinishedFile), nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	writeQuarantinedRacePID(t)
 	fmt.Fprint(os.Stdout, "quarantined race fixture completed")
@@ -368,28 +348,37 @@ func TestQuarantinedRaceSecond(t *testing.T) {
 	}
 	requireQuarantinedInvocationState(t, "second")
 	t.Parallel()
-	if os.Getenv(quarantinedRaceCoverageEnabledEnv) != "true" {
-		pidDir := os.Getenv(quarantinedRacePIDDirEnv)
-		if err := os.WriteFile(filepath.Join(pidDir, quarantinedRaceParallelStartedFile), nil, 0o600); err != nil {
+	pidDir := os.Getenv(quarantinedRacePIDDirEnv)
+	if err := os.WriteFile(filepath.Join(pidDir, quarantinedRaceParallelStartedFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForQuarantinedRaceFile(t, quarantinedRaceParentEnumeratedFile)
+	requireQuarantinedInvocationState(t, "post-enumeration")
+	if err := os.Setenv(quarantinedRaceMutableEnv, "parallel-child"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pidDir, quarantinedRaceSecondReadyFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForQuarantinedRaceFile(t, quarantinedRaceFinishedFile)
+	writeQuarantinedRacePID(t)
+}
+
+func waitForQuarantinedRaceFile(t *testing.T, name string) {
+	t.Helper()
+	path := filepath.Join(os.Getenv(quarantinedRacePIDDirEnv), name)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		} else if !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
-		deadline := time.Now().Add(time.Second)
-		for {
-			if _, err := os.Stat(filepath.Join(pidDir, quarantinedRaceParentEnumeratedFile)); err == nil {
-				break
-			} else if !os.IsNotExist(err) {
-				t.Fatal(err)
-			}
-			if !time.Now().Before(deadline) {
-				t.Fatal("parallel child started before the parent completed serial enumeration")
-			}
-			time.Sleep(time.Millisecond)
+		if !time.Now().Before(deadline) {
+			t.Fatalf("timed out waiting for %s", name)
 		}
-		requireQuarantinedInvocationState(t, "post-enumeration")
-		close(quarantinedRaceSecondReady)
-		<-quarantinedRaceFinished
+		time.Sleep(time.Millisecond)
 	}
-	writeQuarantinedRacePID(t)
 }
 
 func TestQuarantinedSerialOrderProducer(t *testing.T) {
@@ -400,6 +389,24 @@ func TestQuarantinedSerialOrderProducer(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeQuarantinedRacePID(t)
+}
+
+func TestQuarantinedSerialStateProducer(t *testing.T) {
+	if execMeta := getTestMetadata(t); !isProcessRetryChild() && (execMeta == nil || !execMeta.hasAdditionalFeatureWrapper) {
+		t.Skip("no CI Visibility quarantine wrapper active; skipping state fixture")
+	}
+	setQuarantinedInvocationState(t, "child-final")
+	writeQuarantinedRacePID(t)
+}
+
+func TestQuarantinedSerialStateConsumer(t *testing.T) {
+	if os.Getenv(quarantinedRaceStateDirEnv) == "" {
+		return
+	}
+	if isProcessRetryChild() {
+		t.Fatal("serial state consumer ran in a child")
+	}
+	requireQuarantinedInvocationState(t, "child-final")
 }
 
 func TestQuarantinedInvocationStateMutator(t *testing.T) {
@@ -450,9 +457,6 @@ func TestQuarantinedSerialOrderConsumer(t *testing.T) {
 	pidDir := os.Getenv(quarantinedRacePIDDirEnv)
 	if _, err := os.Stat(filepath.Join(pidDir, "serial-order")); err != nil {
 		t.Fatalf("quarantined predecessor did not run at its native position: %v", err)
-	}
-	if os.Getenv(quarantinedRaceCoverageEnabledEnv) == "true" {
-		return
 	}
 	parallelPath := filepath.Join(pidDir, quarantinedRaceParallelStartedFile)
 	parallelErr := os.ErrNotExist

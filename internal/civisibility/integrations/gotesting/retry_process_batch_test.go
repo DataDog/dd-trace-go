@@ -113,6 +113,21 @@ func TestCurrentProcessRetryBatchInvocationStateRoundTrip(t *testing.T) {
 	require.Contains(t, state.Environment, "DD_TEST_BATCH_PARENT_STATE=post-enumeration")
 }
 
+func TestTransitionNativeScheduledTestToParallelUsesCapturedParentBarrier(t *testing.T) {
+	result := make(chan error, 1)
+	t.Run("parent", func(parent *testing.T) {
+		parent.Run("parallel", func(child *testing.T) {
+			result <- transitionNativeScheduledTestToParallel(child)
+		})
+		fields := getTestPrivateFields(parent)
+		require.NotNil(parent, fields)
+		barrier := *fields.barrier
+		*fields.barrier = nil
+		*fields.barrier = barrier
+	})
+	require.NoError(t, <-result)
+}
+
 func TestProcessRetryBatchInvocationStateRejectsInvalidPayloads(t *testing.T) {
 	for name, payload := range map[string]string{
 		"unknown field":         `{"version":1,"working_directory":"/tmp","environment":[],"unknown":true}`,
@@ -163,29 +178,6 @@ func TestNativeScheduledBatchResultSkipsUninvokedTestsBeforeWaiting(t *testing.T
 	require.False(t, decision.run)
 	require.NoFileExists(t, processRetryBatchSkipPath(resultPath, 0))
 	require.FileExists(t, processRetryBatchSkipPath(resultPath, 1))
-}
-
-func TestProcessRetryNativeScheduledTestsFollowParentOrder(t *testing.T) {
-	tests, indexes, err := nativeScheduledTestsInParentOrder(
-		[]processRetryBatchTestConfig{{TestName: "TestA"}, {TestName: "TestB"}, {TestName: "TestC"}},
-		map[string]int{"TestA": 0, "TestB": 1, "TestC": 2},
-		[]string{"TestC", "TestOther", "TestA", "TestB"},
-	)
-
-	require.NoError(t, err)
-	require.Equal(t, []processRetryBatchTestConfig{
-		{TestName: "TestC"},
-		{TestName: "TestA"},
-		{TestName: "TestB"},
-	}, tests)
-	require.Equal(t, map[string]int{"TestC": 0, "TestA": 1, "TestB": 2}, indexes)
-
-	_, _, err = nativeScheduledTestsInParentOrder(
-		[]processRetryBatchTestConfig{{TestName: "TestA"}, {TestName: "TestB"}},
-		map[string]int{"TestA": 0, "TestB": 1},
-		[]string{"TestA"},
-	)
-	require.Error(t, err)
 }
 
 func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
@@ -590,6 +582,20 @@ func TestProcessRetryBatchGlobalStopDoesNotSplitPendingWork(t *testing.T) {
 	require.Equal(t, 1, calls)
 	require.True(t, results[a].Unreaped)
 	require.True(t, results[b].Unreaped)
+}
+
+func TestNativeProcessRetryBatchRequiresOneTest(t *testing.T) {
+	a := deferredProcessRetryBatchGroup("TestA", 1)
+	b := deferredProcessRetryBatchGroup("TestB", 2)
+
+	completed, missing := runDeferredProcessRetryBatchOnce(context.Background(), []*deferredProcessRetryGroup{a, b}, true)
+
+	require.Empty(t, completed)
+	require.Len(t, missing, 2)
+	for _, group := range []*deferredProcessRetryGroup{a, b} {
+		require.True(t, missing[group].SetupFailure)
+		require.EqualError(t, missing[group].Err, "native process retry batch must contain one test")
+	}
 }
 
 func TestCompletedProcessRetryAttemptPreservesPanicSemantics(t *testing.T) {

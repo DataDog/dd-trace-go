@@ -97,6 +97,10 @@ func processRetryBatchEnumerationPath(resultPath string) string {
 	return filepath.Join(filepath.Dir(resultPath), "batch-parent-enumerated")
 }
 
+func processRetryBatchFinalStatePath(resultPath string) string {
+	return filepath.Clean(resultPath) + ".state"
+}
+
 func processRetryBatchChildConfig(root processRetryChildConfig, index int, test processRetryBatchTestConfig) processRetryChildConfig {
 	child := processRetryChildConfig{
 		ResultPath:             processRetryBatchResultPath(root.ResultPath, index),
@@ -406,40 +410,14 @@ type deferredProcessRetryBatchOnceRunner func(
 ) (map[*deferredProcessRetryGroup]processRetryAttemptResult, map[*deferredProcessRetryGroup]processRetryAttemptResult)
 
 type nativeScheduledProcessRetryBatch struct {
-	rootCfg    processRetryChildConfig
-	batch      *processRetryBatchConfig
-	testIndex  map[string]int
-	resultRoot string
-	done       chan struct{}
-	cancel     context.CancelFunc
-	attempt    processRetryAttemptResult
-	signal     func() error
-}
-
-func (c *processRetryCoordinator) setNativeTestOrder(order func() []string) {
-	if c == nil {
-		return
-	}
-	c.mu.Lock()
-	c.nativeTestOrder = order
-	c.mu.Unlock()
-}
-
-func nativeScheduledTestsInParentOrder(tests []processRetryBatchTestConfig, registeredIndexes map[string]int, parentOrder []string) ([]processRetryBatchTestConfig, map[string]int, error) {
-	ordered := make([]processRetryBatchTestConfig, 0, len(tests))
-	indexes := make(map[string]int, len(tests))
-	for _, name := range parentOrder {
-		registeredIndex, found := registeredIndexes[name]
-		if !found {
-			continue
-		}
-		indexes[name] = len(ordered)
-		ordered = append(ordered, tests[registeredIndex])
-	}
-	if len(ordered) != len(tests) {
-		return nil, nil, errors.New("native process retry test order is incomplete")
-	}
-	return ordered, indexes, nil
+	rootCfg            processRetryChildConfig
+	batch              *processRetryBatchConfig
+	resultRoot         string
+	done               chan struct{}
+	cancel             context.CancelFunc
+	attempt            processRetryAttemptResult
+	signal             func() error
+	processSlotRelease <-chan processRetryLimiterRelease
 }
 
 func (c *processRetryCoordinator) registerNativeScheduledTest(identity testIdentity) {
@@ -470,36 +448,26 @@ func (c *processRetryCoordinator) registerNativeScheduledTest(identity testIdent
 	c.nativeTests = append(c.nativeTests, spec)
 }
 
-func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProcessRetryGroup) (*nativeScheduledProcessRetryBatch, int, error) {
+func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProcessRetryGroup) (*nativeScheduledProcessRetryBatch, error) {
 	if c == nil || group == nil {
-		return nil, 0, errors.New("missing native process retry batch")
+		return nil, errors.New("missing native process retry batch")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, found := c.nativeTestIndex[group.identity.FullName]; !found || len(c.nativeTests) == 0 {
-		return nil, 0, errors.New("native process retry test was not registered")
+	registeredIndex, found := c.nativeTestIndex[group.identity.FullName]
+	if !found || registeredIndex >= len(c.nativeTests) {
+		return nil, errors.New("native process retry test was not registered")
 	}
-	if batch := c.nativeBatches[group.phaseID]; batch != nil {
-		index, found := batch.testIndex[group.identity.FullName]
-		if !found {
-			return nil, 0, errors.New("native process retry test is missing from batch")
-		}
-		return batch, index, nil
-	}
-	if c.nativeTestOrder == nil {
-		return nil, 0, errors.New("native process retry test order is unavailable")
-	}
-	tests, indexes, err := nativeScheduledTestsInParentOrder(c.nativeTests, c.nativeTestIndex, c.nativeTestOrder())
-	if err != nil {
-		return nil, 0, err
+	if batch := c.nativeBatches[group.invocationOrdinal]; batch != nil {
+		return batch, nil
 	}
 	tempDir, err := os.MkdirTemp("", "dd-process-retry-native-*")
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	batchConfig := &processRetryBatchConfig{
 		Version:                processRetryBatchVersion,
-		Tests:                  tests,
+		Tests:                  []processRetryBatchTestConfig{c.nativeTests[registeredIndex]},
 		CollectPerTestCoverage: coverage.CanCollectPerTestCoverage(),
 		PreserveNativeSchedule: true,
 	}
@@ -518,13 +486,15 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	resultRoot := filepath.Join(tempDir, "result.json")
+	processSlotRelease := make(chan processRetryLimiterRelease, 1)
+	rootCfg.processSlotRelease = processSlotRelease
 	batch := &nativeScheduledProcessRetryBatch{
-		rootCfg:    rootCfg,
-		batch:      batchConfig,
-		testIndex:  indexes,
-		resultRoot: resultRoot,
-		done:       make(chan struct{}),
-		cancel:     cancel,
+		rootCfg:            rootCfg,
+		batch:              batchConfig,
+		resultRoot:         resultRoot,
+		done:               make(chan struct{}),
+		cancel:             cancel,
+		processSlotRelease: processSlotRelease,
 		signal: sync.OnceValue(func() error {
 			return writeCurrentProcessRetryBatchInvocationState(processRetryBatchEnumerationPath(resultRoot))
 		}),
@@ -532,7 +502,7 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 	if c.nativeBatches == nil {
 		c.nativeBatches = make(map[uint64]*nativeScheduledProcessRetryBatch)
 	}
-	c.nativeBatches[group.phaseID] = batch
+	c.nativeBatches[group.invocationOrdinal] = batch
 	go func() {
 		batch.attempt = runProcessRetryAttemptWithBaselineAndShutdown(
 			ctx,
@@ -544,14 +514,15 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 		)
 		close(batch.done)
 	}()
-	return batch, indexes[group.identity.FullName], nil
+	return batch, nil
 }
 
 func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferredProcessRetryGroup, t *testing.T) processRetryAttemptResult {
-	batch, index, err := c.startNativeScheduledBatch(group)
+	batch, err := c.startNativeScheduledBatch(group)
 	if err != nil {
 		return failedNativeScheduledAttempt(err)
 	}
+	index := 0
 	if err := writeProcessRetryBatchInvocationState(processRetryBatchGatePath(batch.resultRoot, index), group.launchBaseline); err != nil {
 		return failedNativeScheduledAttempt(err)
 	}
@@ -566,6 +537,15 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 		if readErr != nil {
 			return processRetryAttemptResult{}, readErr
 		}
+		if result.Status != processRetryStatusNotRun && !result.RootParallel {
+			state, stateErr := readProcessRetryBatchInvocationState(processRetryBatchFinalStatePath(expected.ResultPath))
+			if stateErr == nil {
+				stateErr = applyProcessRetryBatchInvocationState(state)
+			}
+			if stateErr != nil {
+				return failedNativeScheduledAttempt(stateErr), nil
+			}
+		}
 		attempt := completedProcessRetryAttempt(result)
 		if timingOK {
 			attempt.StartTime = time.Unix(0, result.StartUnixNano)
@@ -579,12 +559,15 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 		if attempt, readErr := readAttempt(); readErr == nil {
 			return attempt
 		}
-		// Covered batch bodies stay serial because their counters are process-global;
-		// mirroring t.Parallel in the parent would race with coverage's barrier guard.
-		if !parallel && !batch.batch.CollectPerTestCoverage {
+		if !parallel {
 			if _, statErr := os.Stat(parallelPath); statErr == nil {
 				parallel = true
-				t.Parallel()
+				// The parent scheduler bounds the body after the parallel transition.
+				// Release process admission first so a limit of one cannot block enumeration.
+				(<-batch.processSlotRelease)()
+				if err := transitionNativeScheduledTestToParallel(t); err != nil {
+					return failedNativeScheduledAttempt(err)
+				}
 				if err := batch.signal(); err != nil {
 					return failedNativeScheduledAttempt(err)
 				}
@@ -609,17 +592,41 @@ func (c *processRetryCoordinator) waitNativeScheduledFirstAttempt(group *deferre
 	}
 }
 
+func transitionNativeScheduledTestToParallel(t *testing.T) error {
+	// Per-test coverage temporarily replaces the shared parent barrier while
+	// serial tests run. Capture it before releasing enumeration so the parallel
+	// transition cannot race with that replacement.
+	layout, reason := getRetryAttemptLayout()
+	if reason != "" {
+		return errors.New(reason)
+	}
+	base := commonBaseForTest(t, layout)
+	parentBase := pointerWord(base, layout.common.parent)
+	if base == nil || parentBase == nil {
+		return errors.New("testing_t_parent_layout_unsupported")
+	}
+	barrier := *fieldPtr[chan bool](parentBase, layout.common.barrier)
+	if barrier == nil {
+		return errors.New("testing_t_parent_barrier_unavailable")
+	}
+	group := retryAttemptGroup{original: t, layout: layout, originalParentBarrier: barrier}
+	group.transitionOriginalToParallel()
+	testingTestStateWaitParallel(getTestState(t))
+	initializeRetryAttemptStart(base, layout.common.start.unsafeField)
+	return nil
+}
+
 func failedNativeScheduledAttempt(err error) processRetryAttemptResult {
 	now := time.Now()
 	return processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now}
 }
 
-func (c *processRetryCoordinator) nativeScheduledBatchResult(phaseID uint64) (processRetryAttemptResult, bool) {
+func (c *processRetryCoordinator) nativeScheduledBatchResult(invocationOrdinal uint64) (processRetryAttemptResult, bool) {
 	if c == nil {
 		return processRetryAttemptResult{}, false
 	}
 	c.mu.Lock()
-	batch := c.nativeBatches[phaseID]
+	batch := c.nativeBatches[invocationOrdinal]
 	c.mu.Unlock()
 	if batch == nil {
 		return processRetryAttemptResult{}, false
@@ -662,13 +669,13 @@ func skipUninvokedNativeScheduledTests(batch *nativeScheduledProcessRetryBatch) 
 	return nil
 }
 
-func (c *processRetryCoordinator) cleanupNativeScheduledBatch(phaseID uint64) {
+func (c *processRetryCoordinator) cleanupNativeScheduledBatch(invocationOrdinal uint64) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
-	batch := c.nativeBatches[phaseID]
-	delete(c.nativeBatches, phaseID)
+	batch := c.nativeBatches[invocationOrdinal]
+	delete(c.nativeBatches, invocationOrdinal)
 	c.mu.Unlock()
 	if batch == nil {
 		return
@@ -690,7 +697,15 @@ func runDeferredNativeScheduledProcessRetryBatch(
 	ctx context.Context,
 	groups []*deferredProcessRetryGroup,
 ) map[*deferredProcessRetryGroup]processRetryAttemptResult {
-	return runDeferredQuarantinedProcessRetryBatchWithRunner(ctx, groups, runDeferredNativeScheduledProcessRetryBatchOnce)
+	results := make(map[*deferredProcessRetryGroup]processRetryAttemptResult, len(groups))
+	for _, group := range groups {
+		maps.Copy(results, runDeferredQuarantinedProcessRetryBatchWithRunner(
+			ctx,
+			[]*deferredProcessRetryGroup{group},
+			runDeferredNativeScheduledProcessRetryBatchOnce,
+		))
+	}
+	return results
 }
 
 func runDeferredQuarantinedProcessRetryBatchWithRunner(
@@ -776,6 +791,9 @@ func runDeferredProcessRetryBatchOnce(
 			missing[group] = attempt
 		}
 		return missing
+	}
+	if preserveNativeSchedule && len(groups) != 1 {
+		return completed, fail(errors.New("native process retry batch must contain one test"))
 	}
 	first := groups[0]
 	batch := &processRetryBatchConfig{
