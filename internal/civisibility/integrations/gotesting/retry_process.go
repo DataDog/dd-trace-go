@@ -880,9 +880,12 @@ func (c *processRetryOutputCapture) Tail() (string, bool, error) {
 	return tail, truncated || aborted, nil
 }
 
-func combineProcessRetryOutputTails(stdout, stderr *processRetryOutputCapture, maxBytes int64) (string, bool, error) {
+func combineProcessRetryOutputTails(stdout, stderr *processRetryOutputCapture, maxBytes int64, filterStdout func(string) string) (string, bool, error) {
 	stdoutTail, stdoutTruncated, stdoutErr := stdout.Tail()
 	stderrTail, stderrTruncated, stderrErr := stderr.Tail()
+	if filterStdout != nil {
+		stdoutTail = filterStdout(stdoutTail)
+	}
 	separator := stdoutTail != "" && stderrTail != ""
 	truncated := stdoutTruncated || stderrTruncated
 	combinedBytes := len(stdoutTail) + len(stderrTail)
@@ -940,10 +943,7 @@ func combineProcessRetryOutputTails(stdout, stderr *processRetryOutputCapture, m
 func filterProcessRetryBatchOutput(output string) string {
 	var filtered strings.Builder
 	for line := range strings.SplitAfterSeq(output, "\n") {
-		protocol := strings.TrimSpace(strings.TrimPrefix(strings.TrimSuffix(line, "\n"), "\x16"))
-		if protocol == "PASS" || protocol == "FAIL" || strings.HasPrefix(protocol, "=== ") ||
-			strings.HasPrefix(protocol, "--- PASS:") || strings.HasPrefix(protocol, "--- FAIL:") ||
-			strings.HasPrefix(protocol, "--- SKIP:") || strings.HasPrefix(protocol, "coverage:") {
+		if strings.HasPrefix(line, "\x16") {
 			continue
 		}
 		filtered.WriteString(line)
@@ -1078,6 +1078,11 @@ type processRetryRealTimer struct {
 
 func (t *processRetryRealTimer) C() <-chan time.Time { return t.timer.C }
 func (t *processRetryRealTimer) Stop() bool          { return t.timer.Stop() }
+
+type processRetryDisabledTimer struct{}
+
+func (processRetryDisabledTimer) C() <-chan time.Time { return nil }
+func (processRetryDisabledTimer) Stop() bool          { return true }
 
 type processRetryLimiter struct {
 	mu         locking.Mutex
@@ -1863,7 +1868,8 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		currentCPU = processRetryCurrentCPU()
 	}
 	selectedTimeout := selectedProcessRetryTimeout(cfg.Batch != nil, argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
-	if selectedTimeout <= 0 {
+	timeoutDisabled := cfg.Batch != nil && selectedTimeout == 0
+	if selectedTimeout <= 0 && !timeoutDisabled {
 		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
 	if err := ctx.Err(); err != nil {
@@ -1903,7 +1909,8 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		return finishSetupFailure(err, false)
 	}
 	selectedTimeout = selectedProcessRetryTimeout(cfg.Batch != nil, argsSnapshot.timeout, argsSnapshot.timeoutSet, baseline.timeout, baseline.timeoutSet, parentDeadline, parentDeadlineOK, hooks.now())
-	if selectedTimeout <= 0 {
+	timeoutDisabled = cfg.Batch != nil && selectedTimeout == 0
+	if selectedTimeout <= 0 && !timeoutDisabled {
 		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
 	if parentDeadlineOK {
@@ -1915,13 +1922,23 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 			return finishSetupFailure(context.DeadlineExceeded, true)
 		}
 	}
-	attemptDeadline := hooks.now().Add(selectedTimeout)
-	attemptTimer := hooks.newTimer(selectedTimeout)
+	attemptDeadline := time.Time{}
+	var attemptTimer processRetryTimer = processRetryDisabledTimer{}
+	if !timeoutDisabled {
+		attemptDeadline = hooks.now().Add(selectedTimeout)
+		attemptTimer = hooks.newTimer(selectedTimeout)
+	}
 	defer attemptTimer.Stop()
 	remainingAttemptTime := func() time.Duration {
+		if timeoutDisabled {
+			return 0
+		}
 		return attemptDeadline.Sub(hooks.now())
 	}
 	attemptDeadlineReached := func() bool {
+		if timeoutDisabled {
+			return false
+		}
 		select {
 		case <-attemptTimer.C():
 			return true
@@ -1986,7 +2003,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		return finishSetupFailure(err, false)
 	}
 	selectedTimeout = remainingAttemptTime()
-	if selectedTimeout <= 0 || attemptDeadlineReached() {
+	if (!timeoutDisabled && selectedTimeout <= 0) || attemptDeadlineReached() {
 		closeCapturesForSetupFailure()
 		return finishSetupFailure(context.DeadlineExceeded, true)
 	}
@@ -2023,12 +2040,15 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		return finishSetupFailure(errors.Join(err, releaseTree()), false)
 	}
 	latestTimeout := remainingAttemptTime()
-	if latestTimeout <= 0 || attemptDeadlineReached() {
+	if (!timeoutDisabled && latestTimeout <= 0) || attemptDeadlineReached() {
 		closeCapturesForSetupFailure()
 		return finishSetupFailure(errors.Join(context.DeadlineExceeded, releaseTree()), true)
 	}
 	selectedTimeout = latestTimeout
-	childTestingTimeout := selectedTimeout + processRetryParentDeadlineReserve()
+	childTestingTimeout := time.Duration(0)
+	if !timeoutDisabled {
+		childTestingTimeout = selectedTimeout + processRetryParentDeadlineReserve()
+	}
 	selector := cfg.TestName
 	if childCfg.Batch != nil {
 		selector = "."
@@ -2158,10 +2178,11 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 			markContainmentLost(killErr)
 		}
 	}
-	finalizeProcessRetryOutputCaptures(hooks, cmd, &attempt, stdoutCapture, stderrCapture)
+	var filterStdout func(string) string
 	if cfg.Batch != nil {
-		attempt.OutputTail = filterProcessRetryBatchOutput(attempt.OutputTail)
+		filterStdout = filterProcessRetryBatchOutput
 	}
+	finalizeProcessRetryOutputCaptures(hooks, cmd, &attempt, stdoutCapture, stderrCapture, filterStdout)
 	if attempt.ContainmentLost {
 		containmentLost = true
 	}
@@ -2276,6 +2297,7 @@ func finalizeProcessRetryOutputCaptures(
 	cmd *exec.Cmd,
 	attempt *processRetryAttemptResult,
 	stdoutCapture, stderrCapture *processRetryOutputCapture,
+	filterStdout func(string) string,
 ) {
 	if attempt == nil {
 		return
@@ -2297,7 +2319,7 @@ func finalizeProcessRetryOutputCaptures(
 			abort(stderrCapture, 0),
 		)
 	}
-	outputTail, truncated, tailErr := combineProcessRetryOutputTails(stdoutCapture, stderrCapture, processRetryOutputMaxBytes)
+	outputTail, truncated, tailErr := combineProcessRetryOutputTails(stdoutCapture, stderrCapture, processRetryOutputMaxBytes, filterStdout)
 	attempt.OutputTail = outputTail
 	attempt.OutputTruncated = truncated || attempt.CaptureErr != nil
 	attempt.CaptureErr = errors.Join(attempt.CaptureErr, tailErr)
@@ -2320,11 +2342,11 @@ func selectedProcessRetryTimeout(
 	if envTimeoutSet {
 		selected = envTimeout
 	}
-	if argTimeoutSet && (selected <= 0 || argTimeout < selected) {
+	if argTimeoutSet && argTimeout > 0 && (selected <= 0 || argTimeout < selected) {
 		selected = argTimeout
 	}
 	if parentDeadlineOK {
-		if remaining := parentDeadline.Sub(now) - processRetryParentDeadlineReserve(); remaining < selected {
+		if remaining := parentDeadline.Sub(now) - processRetryParentDeadlineReserve(); selected <= 0 || remaining < selected {
 			selected = remaining
 		}
 	}
@@ -2910,7 +2932,7 @@ func buildProcessRetryArgsFromSnapshot(snapshot processRetryArgsSnapshot, testNa
 	if currentCPU < 1 {
 		currentCPU = 1
 	}
-	if childTestingTimeout <= 0 {
+	if childTestingTimeout < 0 {
 		return nil, false, "invalid_child_timeout"
 	}
 	if !snapshot.captured || !snapshot.ok {
@@ -3017,7 +3039,7 @@ func processRetryTimeoutFromArgs(originalArgs []string) (time.Duration, bool) {
 		}
 		parsed, err := time.ParseDuration(value)
 		if err == nil {
-			if parsed > 0 {
+			if parsed >= 0 {
 				timeout = parsed
 				found = true
 			} else {

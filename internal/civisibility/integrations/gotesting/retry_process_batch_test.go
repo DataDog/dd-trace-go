@@ -527,16 +527,25 @@ func TestProcessRetryBatchOutputOmitsChildRunnerProtocol(t *testing.T) {
 		"\x16=== RUN   TestSelected",
 		"direct stdout",
 		"    selected_test.go:10: test log",
-		"--- FAIL: TestSelected (0.01s)",
-		"WARNING: DATA RACE",
-		"coverage: 42.0% of statements",
+		"PASS",
 		"FAIL",
+		"coverage: custom metric",
+		"=== application state",
+		"--- FAIL: application state",
+		"\x16--- FAIL: TestSelected (0.01s)",
+		"WARNING: DATA RACE",
 		"direct stderr",
+		"\x16FAIL",
 	}, "\n") + "\n"
 
 	require.Equal(t, strings.Join([]string{
 		"direct stdout",
 		"    selected_test.go:10: test log",
+		"PASS",
+		"FAIL",
+		"coverage: custom metric",
+		"=== application state",
+		"--- FAIL: application state",
 		"WARNING: DATA RACE",
 		"direct stderr",
 	}, "\n")+"\n", filterProcessRetryBatchOutput(output))
@@ -623,13 +632,28 @@ func TestRelaunchedNativeScheduledBatchMergesTestLog(t *testing.T) {
 func TestProcessRetryBatchTimeoutUsesPackageBudget(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	deadline := now.Add(30 * time.Minute)
+	disabled := captureProcessRetryArgsSnapshot([]string{"-test.timeout=0"})
 
+	require.True(t, disabled.timeoutSet)
+	require.Zero(t, disabled.timeout)
+	require.Zero(t, selectedProcessRetryTimeout(
+		true, disabled.timeout, disabled.timeoutSet, 0, false, time.Time{}, false, now,
+	))
+	require.Equal(t, 5*time.Minute, selectedProcessRetryTimeout(
+		true, disabled.timeout, disabled.timeoutSet, 5*time.Minute, true, time.Time{}, false, now,
+	))
+	require.Equal(t, 30*time.Minute-processRetryParentDeadlineReserve(), selectedProcessRetryTimeout(
+		true, disabled.timeout, disabled.timeoutSet, 0, false, deadline, true, now,
+	))
 	require.Equal(t, 30*time.Minute-processRetryParentDeadlineReserve(), selectedProcessRetryTimeout(
 		true, 30*time.Minute, true, 0, false, deadline, true, now,
 	))
 	require.Equal(t, 5*time.Minute, selectedProcessRetryTimeout(
 		true, 30*time.Minute, true, 5*time.Minute, true, deadline, true, now,
 	))
+	args, ok, reason := buildProcessRetryArgsFromSnapshot(disabled, ".", 1, 0)
+	require.True(t, ok, reason)
+	require.Contains(t, args, "-test.timeout=0s")
 }
 
 func TestProcessRetryBatchCoverageFlushBeforeTerminalReplay(t *testing.T) {

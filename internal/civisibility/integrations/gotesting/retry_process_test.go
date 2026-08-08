@@ -614,6 +614,9 @@ func TestProcessRetryTimeoutFromEnv(t *testing.T) {
 func TestProcessRetrySelectedTimeoutUsesDefaultUnlessShortened(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	require.Equal(t, processRetryDefaultTimeout, selectedProcessRetryTimeout(
+		false, 0, true, 0, false, time.Time{}, false, now,
+	))
+	require.Equal(t, processRetryDefaultTimeout, selectedProcessRetryTimeout(
 		false, 30*time.Minute, true, 0, false, time.Time{}, false, now,
 	))
 	require.Equal(t, 5*time.Minute, selectedProcessRetryTimeout(
@@ -2967,11 +2970,11 @@ func TestProcessRetryTimeoutFromArgs(t *testing.T) {
 		{name: "test timeout equals", args: []string{"-test.timeout=30s"}, want: 30 * time.Second, ok: true},
 		{name: "timeout space", args: []string{"-timeout", "45s"}, want: 45 * time.Second, ok: true},
 		{name: "last valid wins", args: []string{"-timeout=bad", "-test.timeout", "1m"}, want: time.Minute, ok: true},
-		{name: "later zero clears positive timeout", args: []string{"-timeout=30s", "-test.timeout=0"}},
+		{name: "later zero disables positive timeout", args: []string{"-timeout=30s", "-test.timeout=0"}, ok: true},
 		{name: "later negative clears positive timeout", args: []string{"-timeout=30s", "-test.timeout=-1s"}},
 		{name: "later positive replaces zero timeout", args: []string{"-timeout=0", "-test.timeout=45s"}, want: 45 * time.Second, ok: true},
-		{name: "zero ignored", args: []string{"-timeout=0"}},
-		{name: "test timeout zero ignored", args: []string{"-test.timeout=0"}},
+		{name: "zero disables timeout", args: []string{"-timeout=0"}, ok: true},
+		{name: "test timeout zero disables timeout", args: []string{"-test.timeout=0"}, ok: true},
 		{name: "negative ignored", args: []string{"-timeout=-1s"}},
 		{name: "after boundary ignored", args: []string{"--", "-timeout=30s"}},
 		{name: "test timeout after boundary ignored", args: []string{"user_arg", "-test.timeout=30s"}},
@@ -4277,7 +4280,7 @@ func TestCombineProcessRetryOutputTailsMarksPerStreamTruncation(t *testing.T) {
 	_, err := sink.Write([]byte("prefix-tail"))
 	require.NoError(t, err)
 
-	combined, truncated, err := combineProcessRetryOutputTails(&processRetryOutputCapture{sink: sink}, nil, 16)
+	combined, truncated, err := combineProcessRetryOutputTails(&processRetryOutputCapture{sink: sink}, nil, 16, nil)
 	require.NoError(t, err)
 	require.True(t, truncated)
 	require.Equal(t, 1, strings.Count(combined, processRetryOutputTruncationMarker))
@@ -4298,6 +4301,7 @@ func TestCombineProcessRetryOutputTailsKeepsBoundedCombinedSuffix(t *testing.T) 
 		stdout    string
 		stderr    string
 		maxBytes  int64
+		filter    func(string) string
 		want      string
 		truncated bool
 	}{
@@ -4308,10 +4312,11 @@ func TestCombineProcessRetryOutputTailsKeepsBoundedCombinedSuffix(t *testing.T) 
 		{name: "stdout only", stdout: "abcdef", maxBytes: 3, want: processRetryOutputTruncationMarker + "def", truncated: true},
 		{name: "zero limit", stdout: "stdout", stderr: "stderr", maxBytes: 0, want: processRetryOutputTruncationMarker, truncated: true},
 		{name: "unbounded", stdout: "stdout", stderr: "stderr", maxBytes: -1, want: "stdout\nstderr"},
+		{name: "filter applies only to stdout", stdout: "\x16PASS\nstdout", stderr: "\x16FAIL\nPASS", maxBytes: processRetryOutputMaxBytes, filter: filterProcessRetryBatchOutput, want: "stdout\n\x16FAIL\nPASS"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			combined, truncated, err := combineProcessRetryOutputTails(capture(t, tt.stdout), capture(t, tt.stderr), tt.maxBytes)
+			combined, truncated, err := combineProcessRetryOutputTails(capture(t, tt.stdout), capture(t, tt.stderr), tt.maxBytes, tt.filter)
 			require.NoError(t, err)
 			require.Equal(t, tt.truncated, truncated)
 			require.Equal(t, tt.want, combined)
@@ -4330,7 +4335,7 @@ func BenchmarkCombineProcessRetryOutputTailsSaturated(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		_, _, _ = combineProcessRetryOutputTails(stdout, stderr, processRetryOutputMaxBytes)
+		_, _, _ = combineProcessRetryOutputTails(stdout, stderr, processRetryOutputMaxBytes, nil)
 	}
 }
 
@@ -4410,7 +4415,7 @@ func TestFinalizeProcessRetryOutputCapturesMarksContainmentLossOnDrainTimeout(t 
 		Result:   processRetryResult{Status: processRetryStatusPass},
 		ExitCode: 0,
 	}
-	finalizeProcessRetryOutputCaptures(hooks, &exec.Cmd{}, &attempt, stdoutCapture, stderrCapture)
+	finalizeProcessRetryOutputCaptures(hooks, &exec.Cmd{}, &attempt, stdoutCapture, stderrCapture, nil)
 
 	require.Equal(t, int32(1), killCalls.Load())
 	require.ErrorIs(t, attempt.CaptureErr, errProcessRetryOutputDrainTimedOut)
@@ -4692,11 +4697,18 @@ func TestRunProcessRetryBatchMergesTestLog(t *testing.T) {
 	require.NoError(t, os.WriteFile(parentTestLog, []byte(processRetryTestLogMagic), 0o600))
 	t.Setenv(processRetryNativeLifecycleFixtureEnv, "true")
 	t.Setenv(processRetryChildResultScenarioEnv, "pass")
+	t.Setenv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "")
 
 	baseline := captureProcessRetryLaunchBaselineForTesting()
 	require.NoError(t, baseline.err)
-	baseline.args = []string{"-test.testlogfile=" + parentTestLog}
+	baseline.args = []string{"-test.testlogfile=" + parentTestLog, "-test.timeout=0"}
 	baseline.argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
+	timerCalls := atomic.Int32{}
+	newTimer := baseline.hooks.newTimer
+	baseline.hooks.newTimer = func(d time.Duration) processRetryTimer {
+		timerCalls.Add(1)
+		return newTimer(d)
+	}
 	attempt := runProcessRetryAttemptWithBaseline(context.Background(), processRetryChildConfig{
 		TestName:    processRetryBatchTestName,
 		Attempt:     1,
@@ -4713,6 +4725,7 @@ func TestRunProcessRetryBatchMergesTestLog(t *testing.T) {
 	}
 	require.False(t, attempt.SetupFailure)
 	require.NoError(t, attempt.Err)
+	require.Zero(t, timerCalls.Load())
 
 	got, err := os.ReadFile(parentTestLog)
 	require.NoError(t, err)
