@@ -781,6 +781,14 @@ func (t *tracer) refreshAgentFeatures() {
 			return f
 		})
 	}
+	// agentEnabled (which gates pollAgentInfo, and so this call) does not
+	// exclude CI Visibility or OTLP export mode, but usesAgentTraceWriter
+	// does: no Datadog trace payload is ever sent in those modes, so the
+	// protocol derived from this /info response is not worth reporting or
+	// logging.
+	if !t.config.usesAgentTraceWriter() {
+		return
+	}
 	proto := t.config.effectiveTraceProtocol()
 	if t.config.internalConfig.ReportEffectiveTraceProtocol(proto) {
 		protoStr := internalconfig.TraceProtocolVersionString(proto)
