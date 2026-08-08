@@ -499,6 +499,7 @@ func TestProcessRetryBatchConfigRejectsUnknownAndTrailingData(t *testing.T) {
 
 func TestProcessRetryBatchArgsPreserveSegmentedSelectors(t *testing.T) {
 	snapshot := captureProcessRetryArgsSnapshot([]string{
+		"-test.v=true",
 		"-test.run=^TestQuarantined$/wanted$",
 		"-test.skip=destructive$",
 		"-test.testlogfile=parent-testlog.txt",
@@ -510,6 +511,7 @@ func TestProcessRetryBatchArgsPreserveSegmentedSelectors(t *testing.T) {
 
 	require.True(t, ok, reason)
 	require.Equal(t, []string{
+		"-test.v=test2json",
 		"-test.failfast=false",
 		"-test.testlogfile=child-testlog.txt",
 		"-test.gocoverdir=parent-coverage",
@@ -519,6 +521,7 @@ func TestProcessRetryBatchArgsPreserveSegmentedSelectors(t *testing.T) {
 		"-test.cpu=1",
 		"-test.timeout=1s",
 	}, got)
+	require.Contains(t, processRetryBatchArgsSnapshot(captureProcessRetryArgsSnapshot([]string{"-test.v=false"}), "", false).preserved, "-test.v=false")
 	require.NotContains(t, processRetryBatchArgsSnapshot(snapshot, "", false).preserved, "-test.gocoverdir=parent-coverage")
 }
 

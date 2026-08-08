@@ -2231,6 +2231,12 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 
 func processRetryBatchArgsSnapshot(snapshot processRetryArgsSnapshot, testLogFile string, preserveNativeSchedule bool) processRetryArgsSnapshot {
 	snapshot.preserved = append(append([]string(nil), snapshot.preserved...), "-test.failfast=false")
+	for index, arg := range snapshot.preserved {
+		name, value, hasValue := processRetrySplitFlag(arg)
+		if name == "-test.v" && (!hasValue || value == "true") {
+			snapshot.preserved[index] = "-test.v=test2json"
+		}
+	}
 	if testLogFile != "" {
 		snapshot.preserved = append(snapshot.preserved, "-test.testlogfile="+testLogFile)
 	}

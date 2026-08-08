@@ -42,7 +42,7 @@ func TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt(t *testing.
 			t.Fatalf("quarantined coverage subprocess failed: %v\n%s", err, output)
 		}
 		if count := bytes.Count(output, []byte("=== RUN   TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt")); count != 1 {
-			t.Fatalf("quarantined test runner header count = %d, want 1\n%s", count, output)
+			t.Errorf("quarantined test runner header count = %d, want 1\n%s", count, output)
 		}
 		if !bytes.Contains(output, []byte(processRetryQuarantinedCoverageOutputSentinel)) {
 			t.Fatalf("quarantined child output was lost:\n%s", output)
@@ -51,9 +51,12 @@ func TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
+		if !bytes.HasPrefix(profile, []byte("mode: atomic\n")) {
+			t.Errorf("quarantined coverage mode is not atomic:\n%s", profile)
+		}
 		file, line := processRetryCoverageChildMarker()
-		if count, ok := processRetryCoverageCountForLine(profile, file, line); !ok || count == 0 {
-			t.Fatalf("isolated first-attempt coverage count = %d, found = %t; want positive", count, ok)
+		if count, ok := processRetryCoverageCountForLine(profile, file, line); !ok || count != 3 {
+			t.Errorf("isolated first-attempt coverage count = %d, found = %t; want 3", count, ok)
 		}
 		assertProcessRetryAttemptCoverage(t, resultPath)
 		return
