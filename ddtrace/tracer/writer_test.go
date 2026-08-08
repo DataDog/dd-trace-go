@@ -836,19 +836,19 @@ func (t *simpleTransport) endpoint(float64) string {
 func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 	testCases := []struct {
 		name        string
-		newPayload  func() payload
+		protocol    float64
 		description string
 		size        int64
 	}{
 		{
 			name:        "v0.4-protocol",
-			newPayload:  func() payload { return newPayload(traceProtocolV04) },
+			protocol:    traceProtocolV04,
 			description: "v0.4 encodes eagerly, size is accurate immediately",
 			size:        1811,
 		},
 		{
 			name:        "v1-protocol",
-			newPayload:  func() payload { return newPayload(traceProtocolV1) },
+			protocol:    traceProtocolV1,
 			description: "v1 now encodes eagerly, size is accurate immediately",
 			size:        821,
 		},
@@ -862,18 +862,27 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			assert := assert.New(t)
 			var tg statsdtest.TestStatsdClient
 
-			// Use a simple transport that always succeeds
+			// Use a simple transport that always succeeds, and pin the effective
+			// protocol to tc.protocol regardless of any real local agent: add()
+			// now rotates an idle payload that disagrees with the live config
+			// (see rotateStalePayload), so the writer's payload must agree with
+			// it up front rather than merely being overridden below.
 			cfg, err := newTestConfig(
+				withNoopInfoHTTPClient(),
 				withStatsdClient(&tg),
 				func(c *config) {
 					c.ddTransport = &simpleTransport{}
 				},
 			)
 			require.NoError(t, err)
+			if tc.protocol == traceProtocolV1 {
+				cfg.agent.store(agentFeatures{v1ProtocolAvailable: true})
+			}
+			require.Equal(t, tc.protocol, cfg.effectiveTraceProtocol(), "sanity check: effective protocol must match the case under test")
 
 			writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
 			// Override the payload with the specific protocol we want to test
-			writer.payload = tc.newPayload()
+			writer.payload = newPayload(tc.protocol)
 
 			// Add a trace (one call to add = one trace)
 			// Each trace is an array of spans

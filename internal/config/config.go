@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -189,9 +190,22 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
-	// traceProtocol is the Datadog trace protocol version (TraceProtocolV04 or TraceProtocolV1).
+	// traceProtocol is the Datadog trace protocol version the user requested
+	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
+	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
 	// Only meaningful when otlpExportMode is false.
 	traceProtocol float64
+	// traceProtocolOrigin tracks where traceProtocol came from, so callers can
+	// distinguish an explicit request from the default (e.g. to decide whether
+	// a capability downgrade deserves a warning or a debug log).
+	traceProtocolOrigin telemetry.Origin
+	// effectiveTraceProtocolBits is the last value reported via
+	// ReportEffectiveTraceProtocol, stored as float64 bits so repeated reports
+	// of the same value can be deduplicated without inflating config-telemetry
+	// seqIDs on every agent-info poll. Deliberately not under mu: it is written
+	// from the tracer's poll goroutine and must not contend with hot-path reads
+	// of unrelated fields.
+	effectiveTraceProtocolBits atomic.Uint64
 	// otlpExportMode indicates traces should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMode bool
@@ -381,7 +395,9 @@ func loadConfig() *Config {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
 	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
-	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion))
+	traceProtocolStr, traceProtocolOrigin := p.GetStringWithValidatorOrigin("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion)
+	cfg.traceProtocol = resolveTraceProtocol(traceProtocolStr)
+	cfg.traceProtocolOrigin = traceProtocolOrigin
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
 	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
@@ -1566,6 +1582,18 @@ func (c *Config) RequestedTraceProtocol() float64 {
 	return c.traceProtocol
 }
 
+// TraceProtocolOrigin reports where the requested trace protocol came from,
+// distinguishing an explicit user request from the untouched default.
+func (c *Config) TraceProtocolOrigin() telemetry.Origin {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceProtocolOrigin
+}
+
+// SetTraceProtocol sets the requested trace protocol version. It never
+// expresses an agent-capability downgrade: callers that need to report the
+// wire protocol actually in use should call ReportEffectiveTraceProtocol
+// instead, which does not mutate the requested value.
 func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1573,11 +1601,33 @@ func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin, product ..
 		return
 	}
 	c.traceProtocol = v
+	c.traceProtocolOrigin = origin
 	// Report the wire-version string, not the float64. The env-var load path
 	// reports this key through the provider as the raw string ("1.0"), so
 	// reporting a float64 here made the same telemetry key arrive with two
 	// different types depending on which source last set it.
 	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionString(v), origin)
+}
+
+// ReportEffectiveTraceProtocol records the wire protocol version actually in
+// use (the requested protocol, downgraded when the agent lacks support) for
+// DD_TRACE_AGENT_PROTOCOL_VERSION config telemetry. It reports only when the
+// value changes from the last report, so periodic re-evaluation (e.g. on an
+// agent-info poll) cannot inflate config-telemetry seqIDs. It does NOT modify
+// the value returned by RequestedTraceProtocol. Returns true if this call
+// changed the recorded value.
+func (c *Config) ReportEffectiveTraceProtocol(v float64) bool {
+	next := math.Float64bits(v)
+	for {
+		prev := c.effectiveTraceProtocolBits.Load()
+		if prev == next {
+			return false
+		}
+		if c.effectiveTraceProtocolBits.CompareAndSwap(prev, next) {
+			configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionString(v), telemetry.OriginCalculated)
+			return true
+		}
+	}
 }
 
 func (c *Config) OTLPTraceURL() string {

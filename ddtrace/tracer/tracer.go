@@ -200,6 +200,13 @@ type tracer struct {
 	// universalVersion=false so that the version write in StartSpan is a
 	// copy-on-write no-op rather than triggering an unnecessary Clone.
 	sharedAttrsForMainSvc traceinternal.SpanAttributes
+
+	// v1ProtocolStreak counts consecutive /info polls (via refreshAgentFeatures)
+	// that advertised /v1.0/traces since the last one that didn't. Used to gate
+	// re-upgrading to v1 after a downgrade; see v1ProtocolUpgradeStreak. Seeded
+	// to the threshold in newUnstartedTracer when the startup snapshot already
+	// advertises v1, so a healthy agent never has to "re-earn" v1 after boot.
+	v1ProtocolStreak atomic.Int32
 }
 
 type dynInstSubscriptions struct {
@@ -555,6 +562,13 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	}
 	t.flushHandler = t.defaultFlushHandler
 	buildSharedAttrs(c, &t.sharedAttrs, &t.sharedAttrsForMainSvc)
+	if c.agent.load().v1ProtocolAvailable {
+		// Trust the startup /info response outright: requiring it to "re-earn"
+		// v1 via v1ProtocolUpgradeStreak would make every process boot on v0.4
+		// and take several poll intervals to reach v1, a behaviour regression
+		// and a guaranteed payload-shape transition on every single boot.
+		t.v1ProtocolStreak.Store(v1ProtocolUpgradeStreak)
+	}
 	return t, nil
 }
 
@@ -642,8 +656,22 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 
 // refreshAgentFeatures fetches a fresh snapshot from /info and atomically
 // updates the dynamic agent capabilities. Static fields that are baked into
-// components at startup (transport URL, statsd address, obfuscator config, etc.)
-// are preserved from the current snapshot so a poll can never change them.
+// components at startup (statsd address, obfuscator config, etc.) are
+// preserved from the current snapshot so a poll can never change them.
+// v1ProtocolAvailable is deliberately NOT one of those static fields: nothing
+// bakes it into a component (the trace URL and payload encoding are both
+// derived at send time from the payload's own protocol), so it is safe to
+// refresh here, subject to the upgrade hysteresis below.
+//
+// v1ProtocolUpgradeStreak is how many consecutive /info responses must
+// advertise /v1.0/traces before refreshAgentFeatures allows re-upgrading to v1
+// after a downgrade. Downgrades apply on the first negative poll instead —
+// v0.4 is universally accepted, so it is the fail-safe direction. This
+// asymmetry makes a flapping agent (e.g. a mixed-version fleet behind one
+// load-balanced VIP) converge on v0.4 and stay there, rather than oscillating
+// the wire format on every poll.
+const v1ProtocolUpgradeStreak = 3
+
 func (t *tracer) refreshAgentFeatures() {
 	ctx, cancel := gocontext.WithCancel(gocontext.Background())
 	defer cancel()
@@ -656,32 +684,71 @@ func (t *tracer) refreshAgentFeatures() {
 		}
 	}()
 	newFeatures, err := fetchAgentFeatures(ctx, t.config.internalConfig.AgentURL(), t.config.httpClient)
-	if err != nil {
-		if !errors.Is(err, errAgentFeaturesNotSupported) {
-			log.Debug("agent info poll failed: %s", err.Error())
-		}
-		return // keep last-known-good
+	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
+		log.Debug("agent info poll failed: %s", err.Error())
+		// Keep last-known-good; a network or decode error is never evidence that
+		// v1 became unavailable.
+		return
 	}
-	// Atomically graft the startup-frozen static fields from the current
-	// snapshot onto the fresh dynamic snapshot. update() handles the CAS
-	// loop in case a concurrent store races this write. fn must be a pure
-	// transform — work on a local copy f so retries start fresh.
-	t.config.agent.update(func(current agentFeatures) agentFeatures {
-		// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
-		// must be overwritten from current or cloned below to avoid shared mutable
-		// backing storage across CAS retries.
-		f := newFeatures
-		f.v1ProtocolAvailable = current.v1ProtocolAvailable
-		f.StatsdPort = current.StatsdPort
-		f.evpProxyV2 = current.evpProxyV2
-		f.metaStructAvailable = current.metaStructAvailable
-		f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
-		f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
-		f.defaultEnv = current.defaultEnv
-		f.reachable = current.reachable
-		f.hasTelemetryProxy = current.hasTelemetryProxy
-		return f
-	})
+	if err != nil {
+		// errAgentFeaturesNotSupported means the agent returned 404 on /info,
+		// i.e. it doesn't support /info at all. Unlike a generic fetch error,
+		// this IS evidence v1 is unavailable: /v1.0/traces support postdates
+		// /info support, so an agent without /info cannot serve v1 either.
+		// Apply the same immediate-downgrade rule a negative poll would, but
+		// leave every other dynamic field at its last-known-good value — we
+		// have no fresh snapshot to refresh them from.
+		t.v1ProtocolStreak.Store(0)
+		t.config.agent.update(func(current agentFeatures) agentFeatures {
+			f := current
+			f.v1ProtocolAvailable = false
+			return f
+		})
+	} else {
+		// Computed once here — not inside the update() closure below, which may
+		// run more than once under CAS contention and must stay a pure transform
+		// with no observable side effects.
+		if newFeatures.v1ProtocolAvailable {
+			t.v1ProtocolStreak.Add(1)
+		} else {
+			t.v1ProtocolStreak.Store(0)
+		}
+		allowV1 := t.v1ProtocolStreak.Load() >= v1ProtocolUpgradeStreak
+		// Atomically graft the startup-frozen static fields from the current
+		// snapshot onto the fresh dynamic snapshot. update() handles the CAS
+		// loop in case a concurrent store races this write. fn must be a pure
+		// transform — work on a local copy f so retries start fresh.
+		t.config.agent.update(func(current agentFeatures) agentFeatures {
+			// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
+			// must be overwritten from current or cloned below to avoid shared mutable
+			// backing storage across CAS retries.
+			f := newFeatures
+			f.v1ProtocolAvailable = allowV1
+			f.StatsdPort = current.StatsdPort
+			f.evpProxyV2 = current.evpProxyV2
+			f.metaStructAvailable = current.metaStructAvailable
+			f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
+			f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
+			f.defaultEnv = current.defaultEnv
+			f.reachable = current.reachable
+			f.hasTelemetryProxy = current.hasTelemetryProxy
+			return f
+		})
+	}
+	// agentEnabled (which gates pollAgentInfo, and so this call) does not
+	// exclude CI Visibility or OTLP export mode, but usesAgentTraceWriter
+	// does: no Datadog trace payload is ever sent in those modes, so the
+	// protocol derived from this /info response is not worth reporting or
+	// logging.
+	if !t.config.usesAgentTraceWriter() {
+		return
+	}
+	proto := t.config.effectiveTraceProtocol()
+	if t.config.internalConfig.ReportEffectiveTraceProtocol(proto) {
+		protoStr := internalconfig.TraceProtocolVersionString(proto)
+		log.Info("trace protocol changed to %s", protoStr)
+		t.statsd.Incr("datadog.tracer.trace_protocol_changed", []string{"to:" + protoStr}, 1)
+	}
 }
 
 // pollAgentInfo polls the agent /info endpoint at the given interval until the

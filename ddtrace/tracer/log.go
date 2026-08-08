@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
@@ -87,7 +88,16 @@ type startupInfo struct {
 	OTLPTracesExportEnabled  bool `json:"otlp_traces_export_enabled"`  // Whether traces are exported over OTLP
 	OTLPMetricsExportEnabled bool `json:"otlp_metrics_export_enabled"` // Whether metrics are exported over OTLP
 	OTLPLogsExportEnabled    bool `json:"otlp_logs_export_enabled"`    // Whether logs are exported over OTLP
+
+	TraceProtocol       string `json:"trace_protocol"`        // Datadog trace protocol in use ("0.4" or "1.0"), or traceProtocolNotApplicable when no Datadog trace payload is ever sent
+	V1ProtocolAvailable bool   `json:"v1_protocol_available"` // Whether the agent advertises /v1.0/traces
 }
+
+// traceProtocolNotApplicable is reported in startupInfo.TraceProtocol when the
+// selected trace writer (OTLP export, CI Visibility, log-to-stdout) never
+// sends a Datadog v0.4/v1.0 trace payload, so there is no wire protocol "in
+// use" to derive from the agent's /info response.
+const traceProtocolNotApplicable = "n/a"
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
 // If the endpoint is not reachable, checkEndpoint returns an error
@@ -148,7 +158,18 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
-	proto := t.config.internalConfig.RequestedTraceProtocol()
+	// The agent snapshot is loaded once so agent_features and the protocol the
+	// endpoint probe targets cannot come from two different /info responses.
+	af := t.config.agent.load()
+	proto := t.config.effectiveTraceProtocolWithAgent(af)
+	// No Datadog trace payload is ever sent in OTLP export/CI Visibility/
+	// log-to-stdout mode, so the protocol derived above from an unrelated
+	// /info snapshot would misreport a value that's never in use (e.g. "0.4"
+	// with no reachable agent at all, while every trace goes out over OTLP).
+	traceProtocolStr := traceProtocolNotApplicable
+	if t.config.usesAgentTraceWriter() {
+		traceProtocolStr = internalconfig.TraceProtocolVersionString(proto)
+	}
 
 	// Determine the agent URL to use in the logs.
 	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
@@ -184,7 +205,7 @@ func logStartup(t *tracer) {
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  strconv.FormatBool(t.config.internalConfig.LogToStdout()),
-		AgentFeatures:               t.config.agent.load(),
+		AgentFeatures:               af,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         partialFlushEnabled,
@@ -199,6 +220,8 @@ func logStartup(t *tracer) {
 		OTLPTracesExportEnabled:     t.otlpExportMode,
 		OTLPMetricsExportEnabled:    t.config.otelRuntimeMetricsShouldBeEnabled,
 		OTLPLogsExportEnabled:       t.config.internalConfig.LogsOTelEnabled(),
+		TraceProtocol:               traceProtocolStr,
+		V1ProtocolAvailable:         af.v1ProtocolAvailable,
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
