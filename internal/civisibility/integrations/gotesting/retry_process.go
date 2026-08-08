@@ -4522,7 +4522,7 @@ func (c *processRetrySubtestCollector) completeAttemptToFix(name string, files [
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for index := len(c.results) - 1; index >= 0; index-- {
+	for index := range slices.Backward(c.results) {
 		if result := &c.results[index]; result.TestName == name && result.AttemptToFix {
 			result.AttemptToFixLast = true
 			result.Coverage = files
