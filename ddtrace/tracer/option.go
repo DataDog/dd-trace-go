@@ -334,9 +334,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// The wire protocol is derived per-use from the requested protocol and the
 	// agent's advertised endpoints (see (*config).effectiveTraceProtocol);
 	// nothing is baked into the transport or downgraded in config here — only
-	// a diagnostic to log and a value to report to config telemetry.
-	logTraceProtocolDowngrade(c, agentURL, agentDisabled, errors.Is(agentErr, errAgentFeaturesNotSupported))
-	c.internalConfig.ReportEffectiveTraceProtocol(c.effectiveTraceProtocol())
+	// a diagnostic to log and a value to report to config telemetry. Both are
+	// skipped when no Datadog trace payload will ever be sent (CI Visibility,
+	// log-to-stdout, OTLP export): the protocol derived from this /info
+	// response would be meaningless there and could misreport a value that
+	// contradicts the user's explicit setting.
+	logTraceProtocolDowngrade(c, agentURL, agentDisabled || !c.usesAgentTraceWriter(), errors.Is(agentErr, errAgentFeaturesNotSupported))
+	if c.usesAgentTraceWriter() {
+		c.internalConfig.ReportEffectiveTraceProtocol(c.effectiveTraceProtocol())
+	}
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -420,11 +426,13 @@ func apmTracingDisabled(c *config) {
 // /info leaves agentFeatures.reachable false just like an unreachable agent
 // does, but the two are not the same evidence. /v1.0/traces support postdates
 // /info support, so a 404 affirmatively denies v1 rather than leaving it
-// unknown.
+// unknown. agentDisabled must already fold in !(*config).usesAgentTraceWriter():
+// a denied v1 is only worth warning about when a Datadog trace payload is
+// actually going to be sent.
 func logTraceProtocolDowngrade(c *config, agentURL *url.URL, agentDisabled bool, infoNotSupported bool) {
 	if agentDisabled {
-		// No agent in this mode (Lambda, agentless, tracing disabled); a
-		// capability warning would be misleading.
+		// No agent in this mode (Lambda, agentless, tracing disabled, CI
+		// Visibility, OTLP export); a capability warning would be misleading.
 		return
 	}
 	af := c.agent.load()
@@ -706,6 +714,17 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 // tracer itself is disabled, or in CI visibility agentless mode.
 func (c *config) agentEnabled() bool {
 	return !c.internalConfig.LogToStdout() && c.internalConfig.TracingEnabled() && !c.internalConfig.CIVisibilityAgentlessActive()
+}
+
+// usesAgentTraceWriter reports whether newUnstartedTracer will select
+// agentTraceWriter as the trace writer, i.e. whether a Datadog v0.4/v1.0
+// trace payload will actually be sent to the agent. It must be kept in sync
+// with the writer-selection if/else chain there: CI Visibility, log-to-stdout,
+// and OTLP export are all selected ahead of the agent writer and never
+// encode a Datadog trace payload, so the requested/effective trace protocol
+// is meaningless in those modes.
+func (c *config) usesAgentTraceWriter() bool {
+	return !c.internalConfig.CIVisibilityEnabled() && !c.internalConfig.LogToStdout() && !c.internalConfig.OTLPExportMode()
 }
 
 // MarkIntegrationImported labels the given integration as imported
