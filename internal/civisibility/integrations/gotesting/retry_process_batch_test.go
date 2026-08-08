@@ -34,6 +34,7 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 				TestName:             "TestA",
 				InvocationOrdinal:    11,
 				DisabledSubtests:     []string{"TestA/disabled"},
+				QuarantinedSubtests:  []string{"TestA/atf", "TestA/quarantined"},
 				AttemptToFixSubtests: []string{"TestA/atf"},
 				ITRSubtests: []processRetrySubtestITRConfig{{
 					TestName:                "TestA/skipped",
@@ -61,6 +62,7 @@ func TestProcessRetryBatchConfigRoundTrip(t *testing.T) {
 	require.True(t, child.itrCoverageActive)
 	require.Equal(t, 3, child.attemptToFixRetries)
 	require.Equal(t, []string{"TestA/disabled"}, child.batchTest.DisabledSubtests)
+	require.Equal(t, []string{"TestA/atf", "TestA/quarantined"}, child.batchTest.QuarantinedSubtests)
 	require.Equal(t, []string{"TestA/atf"}, child.batchTest.AttemptToFixSubtests)
 }
 
@@ -338,6 +340,8 @@ func TestProcessRetryBatchConfigRejectsInvalidManifests(t *testing.T) {
 		"too many retries":     {Version: processRetryBatchVersion, AttemptToFixRetries: processRetryBatchMaxTests + 1, Tests: []processRetryBatchTestConfig{validTest}},
 		"managed outside test": {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", AttemptToFixSubtests: []string{"TestB/child"}}}},
 		"duplicate managed":    {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", DisabledSubtests: []string{"TestA/child"}, AttemptToFixSubtests: []string{"TestA/child"}}}},
+		"quarantine outside":   {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", QuarantinedSubtests: []string{"TestB/child"}}}},
+		"duplicate quarantine": {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", QuarantinedSubtests: []string{"TestA/child", "TestA/child"}}}},
 		"ITR outside test":     {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", ITRSubtests: []processRetrySubtestITRConfig{{TestName: "TestB/child"}}}}},
 		"duplicate ITR":        {Version: processRetryBatchVersion, Tests: []processRetryBatchTestConfig{{TestName: "TestA", ITRSubtests: []processRetrySubtestITRConfig{{TestName: "TestA/child"}, {TestName: "TestA/child"}}}}},
 	}
@@ -354,16 +358,18 @@ func TestProcessRetryTestManagementSubtests(t *testing.T) {
 	modules := &net.TestManagementTestsResponseDataModules{Modules: map[string]net.TestManagementTestsResponseDataSuites{
 		"module": {Suites: map[string]net.TestManagementTestsResponseDataTests{
 			"suite": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
-				"TestA/disabled": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
-				"TestA/enabled":  {},
-				"TestA/atf":      {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true, AttemptToFix: true}},
-				"TestB/disabled": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
+				"TestA/disabled":   {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
+				"TestA/enabled":    {},
+				"TestA/atf":        {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true, Quarantined: true, AttemptToFix: true}},
+				"TestA/quarantine": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true}},
+				"TestB/disabled":   {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
 			}},
 		}},
 	}}
 
-	disabled, attemptToFix := processRetryTestManagementSubtests(*identity, modules)
+	disabled, quarantined, attemptToFix := processRetryTestManagementSubtests(*identity, modules)
 	require.Equal(t, []string{"TestA/disabled"}, disabled)
+	require.Equal(t, []string{"TestA/atf", "TestA/quarantine"}, quarantined)
 	require.Equal(t, []string{"TestA/atf"}, attemptToFix)
 }
 

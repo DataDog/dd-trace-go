@@ -45,6 +45,7 @@ type processRetryBatchTestConfig struct {
 	TestName             string                         `json:"test_name"`
 	InvocationOrdinal    uint64                         `json:"invocation_ordinal,omitempty"`
 	DisabledSubtests     []string                       `json:"disabled_subtests,omitempty"`
+	QuarantinedSubtests  []string                       `json:"quarantined_subtests,omitempty"`
 	AttemptToFixSubtests []string                       `json:"attempt_to_fix_subtests,omitempty"`
 	ITRSubtests          []processRetrySubtestITRConfig `json:"itr_subtests,omitempty"`
 }
@@ -363,6 +364,16 @@ func validateProcessRetryBatchConfig(cfg *processRetryBatchConfig) error {
 				seenDirectives[name] = struct{}{}
 			}
 		}
+		seenQuarantined := make(map[string]struct{}, len(test.QuarantinedSubtests))
+		for _, name := range test.QuarantinedSubtests {
+			if !strings.HasPrefix(name, test.TestName+"/") {
+				return errors.New("invalid process retry quarantined subtest")
+			}
+			if _, duplicate := seenQuarantined[name]; duplicate {
+				return errors.New("duplicate process retry quarantined subtest")
+			}
+			seenQuarantined[name] = struct{}{}
+		}
 		seenITR := make(map[string]struct{}, len(test.ITRSubtests))
 		for _, subtest := range test.ITRSubtests {
 			if !strings.HasPrefix(subtest.TestName, test.TestName+"/") {
@@ -377,17 +388,17 @@ func validateProcessRetryBatchConfig(cfg *processRetryBatchConfig) error {
 	return nil
 }
 
-func processRetryTestManagementSubtests(identity testIdentity, modules *net.TestManagementTestsResponseDataModules) (disabled, attemptToFix []string) {
+func processRetryTestManagementSubtests(identity testIdentity, modules *net.TestManagementTestsResponseDataModules) (disabled, quarantined, attemptToFix []string) {
 	if modules == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	module, ok := modules.Modules[identity.ModuleName]
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 	suite, ok := module.Suites[identity.SuiteName]
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 	prefix := identity.FullName + "/"
 	for name, test := range suite.Tests {
@@ -399,10 +410,14 @@ func processRetryTestManagementSubtests(identity testIdentity, modules *net.Test
 		} else if test.Properties.Disabled {
 			disabled = append(disabled, name)
 		}
+		if test.Properties.Quarantined {
+			quarantined = append(quarantined, name)
+		}
 	}
 	slices.Sort(disabled)
+	slices.Sort(quarantined)
 	slices.Sort(attemptToFix)
-	return disabled, attemptToFix
+	return disabled, quarantined, attemptToFix
 }
 
 func processRetryAttemptToFixRetries() int {
@@ -471,10 +486,11 @@ func (c *processRetryCoordinator) registerNativeScheduledTest(identity testIdent
 	if settings := integrations.GetSettings(); settings != nil && settings.SubtestFeaturesEnabled {
 		testManagementData = integrations.GetTestManagementTestsData()
 	}
-	disabled, attemptToFix := processRetryTestManagementSubtests(identity, testManagementData)
+	disabled, quarantined, attemptToFix := processRetryTestManagementSubtests(identity, testManagementData)
 	spec := processRetryBatchTestConfig{
 		TestName:             identity.FullName,
 		DisabledSubtests:     disabled,
+		QuarantinedSubtests:  quarantined,
 		AttemptToFixSubtests: attemptToFix,
 		ITRSubtests:          processRetryITRSubtests(identity, currentITRState()),
 	}
@@ -725,7 +741,7 @@ func (c *processRetryCoordinator) nativeScheduledBatchResult(invocationOrdinal u
 	}
 	<-batch.done
 	mergePendingProcessRetryTestLog(&batch.attempt)
-	if batch.attempt.OutputTail != "" {
+	if batch.attempt.OutputTail != "" && !batch.attempt.outputStreamed {
 		_, _ = io.WriteString(os.Stdout, batch.attempt.OutputTail)
 	}
 	if err := coverage.MergeProcessCoverageProfile(processRetryBatchCoveragePath(batch.resultRoot)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -902,11 +918,12 @@ func runDeferredProcessRetryBatchOnce(
 		testManagementData = integrations.GetTestManagementTestsData()
 	}
 	for _, group := range groups {
-		disabled, attemptToFix := processRetryTestManagementSubtests(group.identity, testManagementData)
+		disabled, quarantined, attemptToFix := processRetryTestManagementSubtests(group.identity, testManagementData)
 		spec := processRetryBatchTestConfig{
 			TestName:             group.identity.FullName,
 			InvocationOrdinal:    group.invocationOrdinal,
 			DisabledSubtests:     disabled,
+			QuarantinedSubtests:  quarantined,
 			AttemptToFixSubtests: attemptToFix,
 		}
 		if preserveNativeSchedule {
@@ -948,7 +965,7 @@ func runDeferredProcessRetryBatchOnce(
 		first.launchBaseline,
 		first.shutdown(),
 	)
-	if processAttempt.OutputTail != "" {
+	if processAttempt.OutputTail != "" && !processAttempt.outputStreamed {
 		_, _ = io.WriteString(os.Stdout, processAttempt.OutputTail)
 	}
 	mergePendingProcessRetryTestLog(&processAttempt)

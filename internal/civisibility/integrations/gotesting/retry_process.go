@@ -700,7 +700,7 @@ func (c *processRetryOutputCapture) ChildWriter() *os.File {
 	return c.writePipe
 }
 
-func (c *processRetryOutputCapture) StartCopy() {
+func (c *processRetryOutputCapture) StartCopy(stream io.Writer) {
 	if c == nil {
 		return
 	}
@@ -714,12 +714,25 @@ func (c *processRetryOutputCapture) StartCopy() {
 	readPipe := c.readPipe
 	c.mu.Unlock()
 	go func() {
-		_, copyErr := io.Copy(sink, readPipe)
+		_, copyErr := io.Copy(processRetryCaptureWriter{capture: sink, stream: stream}, readPipe)
 		c.complete(errors.Join(
 			ignoreProcessRetryClosedError(copyErr),
 			ignoreProcessRetryClosedError(readPipe.Close()),
 		))
 	}()
+}
+
+type processRetryCaptureWriter struct {
+	capture io.Writer
+	stream  io.Writer
+}
+
+func (w processRetryCaptureWriter) Write(p []byte) (int, error) {
+	n, err := w.capture.Write(p)
+	if w.stream != nil {
+		_, _ = w.stream.Write(p[:n])
+	}
+	return n, err
 }
 
 func ignoreProcessRetryClosedError(err error) error {
@@ -942,13 +955,64 @@ func combineProcessRetryOutputTails(stdout, stderr *processRetryOutputCapture, m
 
 func filterProcessRetryBatchOutput(output string) string {
 	var filtered strings.Builder
-	for line := range strings.SplitAfterSeq(output, "\n") {
-		if strings.HasPrefix(line, "\x16") {
-			continue
-		}
-		filtered.WriteString(line)
-	}
+	_, _ = io.WriteString(newProcessRetryBatchOutputWriter(&filtered), output)
 	return filtered.String()
+}
+
+type processRetryBatchOutputWriter struct {
+	destination io.Writer
+	lineStart   bool
+	dropLine    bool
+}
+
+func newProcessRetryBatchOutputWriter(destination io.Writer) *processRetryBatchOutputWriter {
+	return &processRetryBatchOutputWriter{destination: destination, lineStart: true}
+}
+
+func (w *processRetryBatchOutputWriter) Write(p []byte) (int, error) {
+	written, offset, kept := 0, 0, 0
+	flush := func(end int) error {
+		if end == kept {
+			return nil
+		}
+		n, err := w.destination.Write(p[kept:end])
+		written = kept + n
+		if err != nil {
+			return err
+		}
+		if written != end {
+			return io.ErrShortWrite
+		}
+		kept = end
+		return nil
+	}
+	for offset < len(p) {
+		if w.lineStart {
+			w.dropLine = p[offset] == retryAttemptOutputMarker
+			w.lineStart = false
+		}
+		newline := bytes.IndexByte(p[offset:], '\n')
+		end := len(p)
+		if newline >= 0 {
+			end = offset + newline + 1
+		}
+		if w.dropLine {
+			if err := flush(offset); err != nil {
+				return written, err
+			}
+			written = end
+			kept = end
+		}
+		if newline >= 0 {
+			w.lineStart = true
+			w.dropLine = false
+		}
+		offset = end
+	}
+	if err := flush(len(p)); err != nil {
+		return written, err
+	}
+	return len(p), nil
 }
 
 type processRetryAttemptResult struct {
@@ -969,6 +1033,7 @@ type processRetryAttemptResult struct {
 	BodyAdmitted                bool
 	ControlledTerminalCommitted bool
 	testLogMerge                *processRetryTestLogMerge
+	outputStreamed              bool
 	Cleanup                     func()
 }
 
@@ -2061,8 +2126,14 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	cmd.Args = append([]string{executable}, filteredArgs...)
 
-	stdoutCapture.StartCopy()
-	stderrCapture.StartCopy()
+	var stdoutStream, stderrStream io.Writer
+	if childCfg.Batch != nil && childCfg.Batch.PreserveNativeSchedule {
+		stdoutStream = newProcessRetryBatchOutputWriter(os.Stdout)
+		stderrStream = os.Stderr
+		attempt.outputStreamed = true
+	}
+	stdoutCapture.StartCopy(stdoutStream)
+	stderrCapture.StartCopy(stderrStream)
 	waitCh, startErr := startProcessRetryChild(ctx, attemptTimer.C(), hooks, cmd)
 	if control != nil {
 		attempt.Err = errors.Join(attempt.Err, control.CloseChildEndpoints())
@@ -3925,6 +3996,13 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 			execMeta.hasExplicitAttemptToFix = true
 			execMeta.shouldOrchestrateAttemptToFix = true
 		}
+		quarantined := root != nil && root.cfg.batchTest != nil && slices.Contains(root.cfg.batchTest.QuarantinedSubtests, t.Name())
+		if quarantined {
+			execMeta.isQuarantined = true
+			execMeta.hasExplicitQuarantined = true
+		}
+		managed := attemptToFix || quarantined
+		managedResultCollected := false
 		var finishOnce sync.Once
 		finish := func() {
 			finishOnce.Do(func() {
@@ -3940,7 +4018,7 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 						collector.finishNativeAttemptToFix(order, start, t, execMeta, source, files)
 						collector.completeAttemptToFix(t.Name())
 					}
-				} else {
+				} else if !managedResultCollected {
 					collector.finish(order, start, t, execMeta, source, files)
 				}
 				restoreChatty()
@@ -3984,14 +4062,14 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 				*parentBarrier = nil
 			}
 		}
-		if collectCoverage && attemptToFix {
+		if collectCoverage && managed {
 			suppressParallelCoverage()
 		}
-		var attemptToFixGroup *retryAttemptGroup
-		if attemptToFix {
-			attemptToFixGroup, _ = newRetryAttemptGroupWithOutputObservation(t, true)
+		var managedGroup *retryAttemptGroup
+		if managed {
+			managedGroup, _ = newRetryAttemptGroupWithOutputObservation(t, true)
 		}
-		if collectCoverage && (!attemptToFix || attemptToFixGroup == nil) {
+		if collectCoverage && (!managed || managedGroup == nil) {
 			subtestCoverage = coverage.BeginProcessTestCoverage(source.RuntimePath)
 			if subtestCoverage != nil && parentBarrier == nil {
 				suppressParallelCoverage()
@@ -4000,8 +4078,11 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 				parentBarrier = nil
 			}
 		}
-		if attemptToFix {
-			runProcessRetryChildAttemptToFixSubtest(t, original, owner, collector, source, attemptToFixGroup, root.cfg.attemptToFixRetries, execMeta.isItrForcedRun, collectCoverage)
+		if managed {
+			runProcessRetryChildManagedSubtest(t, original, owner, collector, source, managedGroup, root.cfg.attemptToFixRetries, attemptToFix, quarantined, execMeta.isItrForcedRun, collectCoverage, &managedResultCollected)
+			if quarantined {
+				t.SkipNow()
+			}
 			return
 		}
 
@@ -4034,8 +4115,11 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 	}
 }
 
-func runProcessRetryChildAttemptToFixSubtest(t *testing.T, original func(*testing.T), owner *testExecutionMetadata, collector *processRetrySubtestCollector, source *processRetryTestSource, group *retryAttemptGroup, retries int, itrForcedRun, collectCoverage bool) {
+func runProcessRetryChildManagedSubtest(t *testing.T, original func(*testing.T), owner *testExecutionMetadata, collector *processRetrySubtestCollector, source *processRetryTestSource, group *retryAttemptGroup, retries int, attemptToFix, quarantined, itrForcedRun, collectCoverage bool, resultCollected *bool) {
 	if group == nil {
+		if quarantined {
+			t.SkipNow()
+		}
 		original(t)
 		return
 	}
@@ -4052,10 +4136,12 @@ func runProcessRetryChildAttemptToFixSubtest(t *testing.T, original func(*testin
 			execMeta.identity = identity
 			execMeta.test = owner.test
 			execMeta.processRetryOwner = owner
-			execMeta.isAttemptToFix = true
+			execMeta.isAttemptToFix = attemptToFix
+			execMeta.isQuarantined = quarantined
 			execMeta.isItrForcedRun = itrForcedRun
-			execMeta.hasExplicitAttemptToFix = true
-			execMeta.shouldOrchestrateAttemptToFix = true
+			execMeta.hasExplicitAttemptToFix = attemptToFix
+			execMeta.hasExplicitQuarantined = quarantined
+			execMeta.shouldOrchestrateAttemptToFix = attemptToFix
 			execMeta.suppressParentRetryMetadata = true
 			if preparedIndex == executionIndex {
 				return
@@ -4067,22 +4153,34 @@ func runProcessRetryChildAttemptToFixSubtest(t *testing.T, original func(*testin
 				attemptCoverage = coverage.BeginProcessTestCoverage(source.RuntimePath)
 			}
 			execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
-				collector.finishAttemptToFix(order, start, execMeta.freshRetryAttemptTest, execMeta, source, attemptCoverage.Finish(), executionIndex, result)
+				files := attemptCoverage.Finish()
+				if attemptToFix {
+					collector.finishAttemptToFix(order, start, execMeta.freshRetryAttemptTest, execMeta, source, files, executionIndex, result)
+				} else {
+					collector.finishWithAttempt(order, start, execMeta.freshRetryAttemptTest, execMeta, source, files, -1, &result)
+				}
+				*resultCollected = true
 			}
 		},
 		preIsLastRetry: func(_ *testExecutionMetadata, _ int, remainingRetries int64) bool {
 			return remainingRetries == 1
 		},
 		postAdjustRetryCount: func(*testExecutionMetadata, time.Duration) int64 {
+			if !attemptToFix {
+				return 0
+			}
 			return int64(retries)
 		},
 		postPerExecution: func(attempt *testing.T, _ *testExecutionMetadata, _ int, _ time.Duration) {
 			outcomes.observe(attempt.Failed(), attempt.Skipped())
 		},
 		postShouldRetry: func(_ *testing.T, _ *testExecutionMetadata, _ int, remainingRetries int64) bool {
-			return remainingRetries > 0
+			return attemptToFix && remainingRetries > 0
 		},
 		postOnRetryEnd: func(t *testing.T, _ int, last *testing.T, result retryGroupPolicyResult) {
+			if quarantined {
+				return
+			}
 			if result.failfastRawFailure || result.lateFailure || outcomes.anyFailed() {
 				t.Fail()
 			} else if last.Skipped() {

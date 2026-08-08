@@ -1156,6 +1156,30 @@ func TestProcessRetryChildOrchestratesExactAttemptToFixSubtest(t *testing.T) {
 	}
 }
 
+func TestProcessRetryChildMasksExactQuarantinedSubtest(t *testing.T) {
+	owner := createTestMetadata(t, nil)
+	name := t.Name() + "/quarantined"
+	root := newProcessRetryNoopTest(t, processRetryChildConfig{
+		TestName: t.Name(),
+		batchTest: &processRetryBatchTestConfig{
+			QuarantinedSubtests: []string{name},
+		},
+	}, time.Now(), nil, nil, retryAttemptRaceErrors()).(*processRetryNoopTest)
+	owner.test = root
+	defer deleteTestMetadata(t)
+
+	require.True(t, t.Run("quarantined", instrumentProcessRetryChildSubtest(func(t *testing.T) {
+		t.Error("quarantined failure")
+	})))
+
+	require.Len(t, root.snapshotSubtests(), 1)
+	result := root.snapshotSubtests()[0]
+	require.Equal(t, name, result.TestName)
+	require.Equal(t, processRetryStatusFail, result.Status)
+	require.True(t, result.Failed)
+	require.False(t, result.Skipped)
+}
+
 func TestProcessRetryChildSkipsITRSubtestBeforeBody(t *testing.T) {
 	owner := createTestMetadata(t, nil)
 	name := t.Name() + "/skipped"
@@ -4287,6 +4311,33 @@ func TestCombineProcessRetryOutputTailsMarksPerStreamTruncation(t *testing.T) {
 	require.Equal(t, processRetryOutputTruncationMarker+"tail", combined)
 }
 
+func TestProcessRetryOutputCaptureStreamsCompleteOutput(t *testing.T) {
+	capture, err := newProcessRetryOutputCapture(4)
+	require.NoError(t, err)
+	var stream strings.Builder
+	capture.StartCopy(&stream)
+
+	_, err = io.WriteString(capture.ChildWriter(), "prefix-tail")
+	require.NoError(t, err)
+	require.NoError(t, capture.CloseParentWriter())
+	require.NoError(t, capture.FinishAfterWait(time.Second))
+	tail, truncated, err := capture.Tail()
+	require.NoError(t, err)
+	require.True(t, truncated)
+	require.Equal(t, "tail", tail)
+	require.Equal(t, "prefix-tail", stream.String())
+}
+
+func TestProcessRetryBatchOutputWriterFiltersSplitProtocolLines(t *testing.T) {
+	var output strings.Builder
+	writer := newProcessRetryBatchOutputWriter(&output)
+	for _, chunk := range []string{"stdout\n\x16PA", "SS\nnext", " line\n\x16partial"} {
+		_, err := io.WriteString(writer, chunk)
+		require.NoError(t, err)
+	}
+	require.Equal(t, "stdout\nnext line\n", output.String())
+}
+
 func TestCombineProcessRetryOutputTailsKeepsBoundedCombinedSuffix(t *testing.T) {
 	capture := func(t *testing.T, value string) *processRetryOutputCapture {
 		t.Helper()
@@ -4342,7 +4393,7 @@ func BenchmarkCombineProcessRetryOutputTailsSaturated(b *testing.B) {
 func TestProcessRetryOutputCaptureAbortIsIdempotent(t *testing.T) {
 	capture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	require.NoError(t, err)
-	capture.StartCopy()
+	capture.StartCopy(nil)
 
 	firstErr := capture.AbortAfterReapedChild(time.Second)
 	secondErr := capture.AbortAfterReapedChild(time.Nanosecond)
@@ -4400,8 +4451,8 @@ func TestFinalizeProcessRetryOutputCapturesMarksContainmentLossOnDrainTimeout(t 
 	require.NoError(t, err)
 	stderrCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	require.NoError(t, err)
-	stdoutCapture.StartCopy()
-	stderrCapture.StartCopy()
+	stdoutCapture.StartCopy(nil)
+	stderrCapture.StartCopy(nil)
 
 	killCalls := atomic.Int32{}
 	hooks := processRetryRunnerHooks{

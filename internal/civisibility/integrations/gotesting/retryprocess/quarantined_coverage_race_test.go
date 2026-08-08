@@ -13,12 +13,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 )
 
-const processRetryQuarantinedCoverageOutputSentinel = "quarantined coverage child output sentinel"
+const (
+	processRetryQuarantinedCoverageOutputStart = "quarantined coverage child output start"
+	processRetryQuarantinedCoverageOutputEnd   = "quarantined coverage child output end"
+	processRetryQuarantinedCoverageErrorStart  = "quarantined coverage child error start"
+	processRetryQuarantinedCoverageErrorEnd    = "quarantined coverage child error end"
+)
 
 func TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt(t *testing.T) {
 	if !processRetryFixtureScenarioEnabled() && !processRetryFixtureChild() {
@@ -44,8 +50,12 @@ func TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt(t *testing.
 		if count := bytes.Count(output, []byte("=== RUN   TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt")); count != 1 {
 			t.Errorf("quarantined test runner header count = %d, want 1\n%s", count, output)
 		}
-		if !bytes.Contains(output, []byte(processRetryQuarantinedCoverageOutputSentinel)) {
-			t.Fatalf("quarantined child output was lost:\n%s", output)
+		assertProcessRetryAttemptCoverage(t, resultPath)
+		if !bytes.Contains(output, []byte(processRetryQuarantinedCoverageOutputStart)) ||
+			!bytes.Contains(output, []byte(processRetryQuarantinedCoverageOutputEnd)) ||
+			!bytes.Contains(output, []byte(processRetryQuarantinedCoverageErrorStart)) ||
+			!bytes.Contains(output, []byte(processRetryQuarantinedCoverageErrorEnd)) {
+			t.Fatalf("quarantined child output was truncated (bytes = %d)", len(output))
 		}
 		profile, err := os.ReadFile(coveragePath)
 		if err != nil {
@@ -58,7 +68,6 @@ func TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt(t *testing.
 		if count, ok := processRetryCoverageCountForLine(profile, file, line); !ok || count != 3 {
 			t.Errorf("isolated first-attempt coverage count = %d, found = %t; want 3", count, ok)
 		}
-		assertProcessRetryAttemptCoverage(t, resultPath)
 		return
 	}
 	if !processRetryFixtureChild() {
@@ -66,7 +75,12 @@ func TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt(t *testing.
 	}
 
 	processRetryCoverageChildMarker()
-	fmt.Println(processRetryQuarantinedCoverageOutputSentinel)
+	fmt.Println(processRetryQuarantinedCoverageOutputStart)
+	fmt.Println(strings.Repeat("x", 40*1024))
+	fmt.Println(processRetryQuarantinedCoverageOutputEnd)
+	fmt.Fprintln(os.Stderr, processRetryQuarantinedCoverageErrorStart)
+	fmt.Fprintln(os.Stderr, strings.Repeat("y", 40*1024))
+	fmt.Fprintln(os.Stderr, processRetryQuarantinedCoverageErrorEnd)
 	var attempt int
 	gotesting.GetTest(t).Run("attempt-to-fix", func(*testing.T) {
 		attempt++
@@ -74,6 +88,9 @@ func TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt(t *testing.
 		if attempt > 1 {
 			processRetryCoverageChildMarker()
 		}
+	})
+	gotesting.GetTest(t).Run("quarantined", func(t *testing.T) {
+		t.Error("quarantined subtest failure")
 	})
 }
 
@@ -85,7 +102,11 @@ func assertProcessRetryAttemptCoverage(t *testing.T, resultPath string) {
 	}
 	var result struct {
 		Subtests []struct {
-			Attempt  int `json:"attempt"`
+			TestName string `json:"test_name"`
+			Attempt  int    `json:"attempt"`
+			Status   string `json:"status"`
+			Failed   bool   `json:"failed"`
+			Skipped  bool   `json:"skipped"`
 			Coverage []struct {
 				Name   string `json:"name"`
 				Bitmap []byte `json:"bitmap"`
@@ -95,12 +116,26 @@ func assertProcessRetryAttemptCoverage(t *testing.T, resultPath string) {
 	if err := json.Unmarshal(payload, &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Subtests) != 3 {
-		t.Fatalf("attempt-to-fix result count = %d, want 3", len(result.Subtests))
+	if len(result.Subtests) != 4 {
+		t.Fatalf("managed subtest result count = %d, want 4", len(result.Subtests))
 	}
-	for attempt, subtest := range result.Subtests {
-		if subtest.Attempt != attempt || len(subtest.Coverage) == 0 {
-			t.Fatalf("attempt %d result = %+v, want matching index and non-empty coverage", attempt, subtest)
+	attempt := 0
+	for _, subtest := range result.Subtests {
+		switch {
+		case strings.HasSuffix(subtest.TestName, "/attempt-to-fix"):
+			if subtest.Attempt != attempt || len(subtest.Coverage) == 0 {
+				t.Fatalf("attempt %d result = %+v, want matching index and non-empty coverage", attempt, subtest)
+			}
+			attempt++
+		case strings.HasSuffix(subtest.TestName, "/quarantined"):
+			if subtest.Status != "fail" || !subtest.Failed || subtest.Skipped || len(subtest.Coverage) == 0 {
+				t.Fatalf("quarantined result = %+v, want raw failure with coverage", subtest)
+			}
+		default:
+			t.Fatalf("unexpected managed subtest result: %+v", subtest)
 		}
+	}
+	if attempt != 3 {
+		t.Fatalf("attempt-to-fix result count = %d, want 3", attempt)
 	}
 }

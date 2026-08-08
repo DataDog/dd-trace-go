@@ -420,7 +420,10 @@ func newProcessRetryFixtureServer() *httptest.Server {
 									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true},
 								},
 								"TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt/attempt-to-fix": {
-									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true, AttemptToFix: true},
+								},
+								"TestProcessRetryQuarantinedCoverageIncludesIsolatedFirstAttempt/quarantined": {
+									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true},
 								},
 							},
 						},
