@@ -262,6 +262,34 @@ func TestStartSpanFromContextDetachWithExplicitParent(t *testing.T) {
 		"the detached ambient parent must not leak through despite the explicit ChildOf")
 }
 
+// TestContextWithSpanDoubleDetachIdempotent guards the shadow branch added
+// alongside TestStartSpanFromContextDetachRegression: shadowing an
+// already-nil snapshot must be a no-op rather than compounding into a second
+// write, so detaching an already-detached context behaves exactly like
+// detaching it once.
+func TestContextWithSpanDoubleDetachIdempotent(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	parent, parentCtx := StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+
+	onceDetached := ContextWithSpan(parentCtx, nil)
+	twiceDetached := ContextWithSpan(onceDetached, nil)
+
+	_, ok := SpanFromContext(twiceDetached)
+	assert.False(t, ok, "double-detached context must not report an active span")
+
+	grandchild, _ := StartSpanFromContext(twiceDetached, "grandchild-should-be-root")
+	defer grandchild.Finish()
+
+	assert.NotEqual(t, parent.traceID, grandchild.traceID,
+		"span started from a double-detached context must not inherit the old trace ID")
+	assert.Zero(t, grandchild.parentID,
+		"span started from a double-detached context must not have a parentID")
+}
+
 func TestStartSpanFromNilContext(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)
