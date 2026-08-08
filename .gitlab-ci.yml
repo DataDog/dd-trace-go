@@ -1,7 +1,7 @@
 stages:
   - ci-image
   - docker-images-reliability-env
-  - config-validation
+  - shared-pipeline
   - generate
   - microbenchmarks
   - macrobenchmarks
@@ -13,39 +13,41 @@ stages:
 
 variables:
   INDEX_FILE: index.txt
+  # Only run the config-inversion jobs from one-pipeline; skip all packaging/publish/system-test jobs.
+  SKIP_SHARED_PIPELINE: "true"
+  # requirements_json_test / system_tests are gated by this separate flag, NOT by SKIP_SHARED_PIPELINE.
+  DANGEROUSLY_SKIP_SHARED_PIPELINE_TESTS: "true"
 
 workflow:
   auto_cancel:
     on_new_commit: interruptible
 
 # Config Registry CI Jobs
+# Sourced from the shared libdatadog-build one-pipeline template (versions/1.0.0) instead of the
+# previously hand-copied .gitlab/configuration-central-validation.yml. Image/scripts come from the
+# template's base-packaging-job so they stay in sync with the pinned release.
 validate_supported_configurations_v2_local_file:
-  stage: config-validation
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:100425777
   tags: ["runner:apm-k8s-tweaked-metal"]
-  rules:
-    - when: on_success
   extends: .validate_supported_configurations_v2_local_file
   variables:
     LOCAL_JSON_PATH: internal/env/supported_configurations.json
-    BACKFILLED: true
+    BACKFILLED: "true"
 
 update_central_configurations_version_range_v2:
-  stage: config-validation
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:100425777
   tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .update_central_configurations_version_range_v2
   variables:
     LOCAL_REPO_NAME: "dd-trace-go"
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
     LANGUAGE_NAME: "golang"
+    SEND_ALIASES: "true"
 
 include:
   - local: ".gitlab/benchmarks/macro/gitlab-ci.yml"
   - local: ".gitlab/benchmarks/micro/gitlab-ci.yml"
   - local: ".gitlab/benchmarks/test-apps/test-apps.yml"
   - local: ".gitlab/docker-images-reliability-env.yml"
-  - local: ".gitlab/configuration-central-validation.yml"
+  - local: ".gitlab/one-pipeline.locked.yml"
   - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
     file: '.gitlab/ci-go-go-prof-app-parallel.yml'
     ref: 'main'
