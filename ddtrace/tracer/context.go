@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -26,6 +27,42 @@ import (
 // from any snapshot inherited from an ancestor context.
 type activeSpanContextKey struct{}
 
+// spanCtx carries the active *Span and the snapshot of its *SpanContext in a
+// single context node. Two chained context.WithValue nodes would allocate twice
+// for one logical fact; one spanCtx allocates once and answers both keys.
+//
+// A nil span yields a typed-nil for both keys. That is what makes
+// ContextWithSpan(ctx, nil) a true detach: the typed-nil shadows any snapshot an
+// ancestor context left behind, so StartSpanFromContext falls through to
+// SpanFromContext, which also sees the nil span and reports no active span.
+type spanCtx struct {
+	context.Context
+	span     *Span
+	snapshot *SpanContext
+}
+
+func (c *spanCtx) Value(key any) any {
+	if _, ok := key.(activeSpanContextKey); ok {
+		return c.snapshot
+	}
+	// Interface comparison: a differing dynamic type is simply unequal, and
+	// internal.contextKey is a comparable empty struct, so this cannot panic.
+	if key == internal.ActiveSpanKey {
+		return c.span
+	}
+	return c.Context.Value(key)
+}
+
+// String lets fmt/%v render a spanCtx as a readable chain — e.g.
+// "context.Background.WithValue(internal.contextKey, Name: ...)" — matching
+// what the two context.WithValue nodes it replaces produced. Embedding
+// context.Context does not promote the parent's String method, since Stringer
+// isn't part of the Context interface, so without this a spanCtx would fall
+// back to a struct dump under %v.
+func (c *spanCtx) String() string {
+	return fmt.Sprintf("%v.WithValue(%T, %v)", c.Context, internal.ActiveSpanKey, c.span)
+}
+
 // ContextWithSpan returns a copy of the given context which includes the span s.
 // If ctx is nil, a new background context is created to avoid panicking.
 // Passing a nil span detaches ctx from any ambient span, including one
@@ -37,8 +74,10 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
 		ctx = context.Background()
 	}
-	// Plain context.WithValue. When built with orchestrion, three aspects in
-	// ddtrace/tracer/orchestrion.yml extend the span's GLS lifecycle:
+	// s and its SpanContext snapshot are carried by a single spanCtx node (see
+	// above) rather than two chained context.WithValue calls. When built with
+	// orchestrion, three aspects in ddtrace/tracer/orchestrion.yml extend the
+	// span's GLS lifecycle:
 	//   - "Span GLS fields": adds two woven fields to Span — __dd_glsPop
 	//     (GLSPopperCell, an atomic pointer to the goroutine-scoped popper) and
 	//     __dd_glsDone (GLSDoneCell, an atomic pointer to the liveness cell marked
@@ -54,20 +93,14 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	//       orchestrion.GLSDeactivate(&s.__dd_glsDone, &s.__dd_glsPop)
 	//     which pops the GLS entry exactly once, only on the goroutine that pushed.
 	// SpanFromContext is extended analogously ("Span SpanFromContext GLS read").
-	// Without orchestrion there is no GLS; this is a plain context.WithValue.
-	newCtx := context.WithValue(ctx, internal.ActiveSpanKey, s)
+	// Without orchestrion there is no GLS; ctx.Value only ever consults the
+	// spanCtx node constructed below.
+	var snapshot *SpanContext
 	if s != nil {
 		// Snapshot the SpanContext so it survives span pool recycling.
-		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, s.Context())
-	} else if sc, ok := ctx.Value(activeSpanContextKey{}).(*SpanContext); ok && sc != nil {
-		// Shadow a snapshot inherited from an ancestor context, otherwise
-		// StartSpanFromContext would keep re-parenting onto it even though
-		// ActiveSpanKey was just cleared above. Only an ancestor that actually
-		// holds a snapshot needs shadowing: ContextWithSpan(ctx, nil) is on the
-		// hot path whenever the tracer is disabled (StartSpan returns nil), so
-		// paying an allocation to shadow nothing would be wasted on every span.
-		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, (*SpanContext)(nil))
+		snapshot = s.Context()
 	}
+	newCtx := &spanCtx{Context: ctx, span: s, snapshot: snapshot}
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }
 
