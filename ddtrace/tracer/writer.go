@@ -79,6 +79,20 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 
 func (h *agentTraceWriter) add(trace []*Span) {
 	h.mu.Lock()
+	sealStale := h.payload.itemCount() > 0 && h.payload.protocol() != h.config.effectiveTraceProtocol()
+	h.mu.Unlock()
+	if sealStale {
+		// rotateStalePayload only replaces an empty payload for free; this one
+		// already holds traces, so seal it with a real flush before any more
+		// traces can land in it. A downgrade would otherwise get every trace
+		// queued between now and the next scheduled flush rejected on the old
+		// protocol's endpoint; an upgrade just costs one harmless off-cadence
+		// flush.
+		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:protocol_change"}, 1)
+		h.flush()
+	}
+
+	h.mu.Lock()
 	h.rotateStalePayload()
 	stats, err := h.payload.push(trace)
 	if err != nil {
@@ -154,8 +168,11 @@ func (h *agentTraceWriter) newPayload(hint int) payload {
 // payload, and flush is the only place that otherwise re-reads the protocol —
 // without either call, a writer that saw no traffic across an agent-info poll
 // would hold a stale payload indefinitely after the agent's advertised
-// protocol changed. The discarded payload was never handed to the transport,
-// so it is simply dropped rather than recycled through the payloadV1 pool:
+// protocol changed. A non-empty stale payload is not this function's job: add
+// seals that case itself via a real flush() before this runs, since a
+// non-empty payload cannot switch protocol for free. The discarded payload
+// was never handed to the transport, so it is simply dropped rather than
+// recycled through the payloadV1 pool:
 // handoff(pv1StateFlushDone) alone would not return it (the two-party handoff
 // also needs the transport's bit), and forcing both bits risks a double pool
 // return.
