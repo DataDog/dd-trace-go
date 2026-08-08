@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -102,6 +103,38 @@ func TestTraceProtocolDecoupling(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// TestUsesAgentTraceWriterMatchesWriterSelection guards against
+// usesAgentTraceWriter drifting from the writer-selection if/else chain in
+// newUnstartedTracer that it must mirror. A mismatch would make
+// ReportEffectiveTraceProtocol and logTraceProtocolDowngrade wrongly report
+// or warn about a wire protocol that either is, or isn't, actually in use.
+func TestUsesAgentTraceWriterMatchesWriterSelection(t *testing.T) {
+	restore := setLogWriter(io.Discard)
+	defer restore()
+
+	cases := []struct {
+		name      string
+		configure StartOption
+	}{
+		{"default", func(c *config) {}},
+		{"logToStdout", func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) }},
+		{"otlpExportMode", func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) }},
+		{"ciVisibility", func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tr, err := newUnstartedTracer(withNoopInfoHTTPClient(), tc.configure)
+			require.NoError(t, err)
+			defer tr.Stop()
+
+			_, isAgentWriter := tr.traceWriter.(*agentTraceWriter)
+			assert.Equal(t, isAgentWriter, tr.config.usesAgentTraceWriter(),
+				"usesAgentTraceWriter must agree with the writer newUnstartedTracer actually selected")
+		})
 	}
 }
 

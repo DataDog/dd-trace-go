@@ -15,7 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 // TestTraceProtocolDowngradeLog pins the log-level rule for a denied v1
@@ -130,6 +133,26 @@ func TestTraceProtocolDowngradeLog(t *testing.T) {
 		}
 	})
 
+	t.Run("OTLP export mode with denied v1 does not warn", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+		srv := v04OnlyAgent()
+		defer srv.Close()
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+
+		tp := new(log.RecordLogger)
+		trc, err := newTracer(WithAgentAddr(u.Host), WithLogger(tp), func(c *config) {
+			c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+		})
+		require.NoError(t, err)
+		defer trc.Stop()
+
+		for _, l := range tp.Logs() {
+			assert.NotContains(t, l, "trace protocol v1.0 was requested",
+				"no Datadog trace payload is ever sent in OTLP export mode, so a denied v1 must not warn")
+		}
+	})
+
 	t.Run("pre-7.28 agent (404 on /info) denies v1 and warns", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 		// A reachable Agent that 404s on /info is affirmative evidence it
@@ -157,4 +180,38 @@ func TestTraceProtocolDowngradeLog(t *testing.T) {
 		}
 		assert.True(t, found, "a 404 on /info denies v1 just like an advertised endpoint list without it; got: %v", tp.Logs())
 	})
+}
+
+// TestOTLPExportModeDoesNotOverrideRequestedProtocolTelemetry pins that
+// selecting a non-agent trace writer (here, OTLP export mode) prevents the
+// agent's /info response from ever overriding DD_TRACE_AGENT_PROTOCOL_VERSION
+// telemetry with a derived "0.4": no Datadog trace payload is sent in this
+// mode, so the agent's lack of /v1.0/traces is not evidence the requested
+// protocol was denied.
+func TestOTLPExportModeDoesNotOverrideRequestedProtocolTelemetry(t *testing.T) {
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
+
+	t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+	agent := startTestAgent(t)
+	agent.SetInfo(`{"endpoints":["/v0.4/traces","/v0.6/stats"],"client_drop_p0s":true}`)
+
+	tr := newTracerTest(t, agent, func(c *config) {
+		c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+	})
+	defer stopTracerTest(tr)
+
+	require.False(t, tr.config.usesAgentTraceWriter(), "sanity check: OTLP export mode must not select the agent writer")
+
+	// Exercise the runtime re-report path too, not just the one at startup.
+	tr.refreshAgentFeatures()
+
+	for _, c := range telemetryClient.Configuration {
+		if c.Name != "DD_TRACE_AGENT_PROTOCOL_VERSION" {
+			continue
+		}
+		assert.NotEqual(t, "0.4", c.Value,
+			"OTLP export mode sends no Datadog trace payload, so the agent's v0.4-only /info response must never override the requested protocol")
+	}
+	telemetrytest.CheckConfig(t, telemetryClient.Configuration, "DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 }
