@@ -3515,7 +3515,14 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 					if cfg.ParentDeadlineOK {
 						deadline, deadlineOK = time.Unix(0, cfg.ParentDeadlineUnixNano), true
 					}
-					return waitForProcessRetryBatchSignal(cfg.nativeEnumerationPath, deadline, deadlineOK)
+					state, run, err := waitForProcessRetryBatchGate(cfg.nativeEnumerationPath, deadline, deadlineOK)
+					if err != nil {
+						return err
+					}
+					if !run {
+						return errors.New("missing native process retry parent state")
+					}
+					return applyProcessRetryBatchInvocationState(state)
 				}
 			}
 		} else if control != nil {

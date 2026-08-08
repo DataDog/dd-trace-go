@@ -148,20 +148,6 @@ func waitForProcessRetryBatchGate(path string, deadline time.Time, deadlineOK bo
 	}
 }
 
-func waitForProcessRetryBatchSignal(path string, deadline time.Time, deadlineOK bool) error {
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if deadlineOK && !time.Now().Before(deadline) {
-			return context.DeadlineExceeded
-		}
-		time.Sleep(processRetryBatchPollInterval)
-	}
-}
-
 func writeProcessRetryBatchInvocationState(path string, baseline *processRetryLaunchBaseline) error {
 	if baseline == nil {
 		return errors.New("missing process retry invocation state")
@@ -189,6 +175,17 @@ func writeProcessRetryBatchInvocationState(path string, baseline *processRetryLa
 		return errors.New("process retry invocation state too large")
 	}
 	return writeProcessRetryFileAtomically(path, payload, ".process-retry-gate-*.tmp")
+}
+
+func writeCurrentProcessRetryBatchInvocationState(path string) error {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	return writeProcessRetryBatchInvocationState(path, &processRetryLaunchBaseline{
+		workingDirectory: workingDirectory,
+		environment:      sanitizeProcessRetryBaseEnv(os.Environ()),
+	})
 }
 
 func readProcessRetryBatchInvocationState(path string) (processRetryBatchInvocationState, error) {
@@ -529,7 +526,7 @@ func (c *processRetryCoordinator) startNativeScheduledBatch(group *deferredProce
 		done:       make(chan struct{}),
 		cancel:     cancel,
 		signal: sync.OnceValue(func() error {
-			return os.WriteFile(processRetryBatchEnumerationPath(resultRoot), nil, processRetryBatchManifestMode)
+			return writeCurrentProcessRetryBatchInvocationState(processRetryBatchEnumerationPath(resultRoot))
 		}),
 	}
 	if c.nativeBatches == nil {
@@ -830,7 +827,7 @@ func runDeferredProcessRetryBatchOnce(
 				return completed, fail(err)
 			}
 		}
-		if err := os.WriteFile(processRetryBatchEnumerationPath(resultRoot), nil, processRetryBatchManifestMode); err != nil {
+		if err := writeCurrentProcessRetryBatchInvocationState(processRetryBatchEnumerationPath(resultRoot)); err != nil {
 			return completed, fail(err)
 		}
 	}

@@ -100,6 +100,19 @@ func TestProcessRetryBatchInvocationStateRoundTrip(t *testing.T) {
 	}, state)
 }
 
+func TestCurrentProcessRetryBatchInvocationStateRoundTrip(t *testing.T) {
+	t.Setenv("DD_TEST_BATCH_PARENT_STATE", "post-enumeration")
+	path := filepath.Join(t.TempDir(), "parent-state.json")
+	workingDirectory, err := os.Getwd()
+	require.NoError(t, err)
+
+	require.NoError(t, writeCurrentProcessRetryBatchInvocationState(path))
+	state, err := readProcessRetryBatchInvocationState(path)
+	require.NoError(t, err)
+	require.Equal(t, workingDirectory, state.WorkingDirectory)
+	require.Contains(t, state.Environment, "DD_TEST_BATCH_PARENT_STATE=post-enumeration")
+}
+
 func TestProcessRetryBatchInvocationStateRejectsInvalidPayloads(t *testing.T) {
 	for name, payload := range map[string]string{
 		"unknown field":         `{"version":1,"working_directory":"/tmp","environment":[],"unknown":true}`,

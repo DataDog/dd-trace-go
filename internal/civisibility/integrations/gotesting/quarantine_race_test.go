@@ -385,6 +385,7 @@ func TestQuarantinedRaceSecond(t *testing.T) {
 			}
 			time.Sleep(time.Millisecond)
 		}
+		requireQuarantinedInvocationState(t, "post-enumeration")
 		close(quarantinedRaceSecondReady)
 		<-quarantinedRaceFinished
 	}
@@ -463,6 +464,7 @@ func TestQuarantinedSerialOrderConsumer(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+	setQuarantinedInvocationState(t, "post-enumeration")
 	if err := os.WriteFile(filepath.Join(pidDir, quarantinedRaceParentEnumeratedFile), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

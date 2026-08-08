@@ -188,7 +188,7 @@ func TestMain(m *testing.M) {
 					if err := os.Mkdir(stateDir, 0o700); err != nil {
 						panic(err)
 					}
-					for _, state := range []string{"first", "second"} {
+					for _, state := range []string{"first", "second", "post-enumeration"} {
 						if err := os.Mkdir(filepath.Join(stateDir, state), 0o700); err != nil {
 							panic(err)
 						}
