@@ -2990,7 +2990,6 @@ func instrumentProcessRetryChild(m *testing.M, cfg processRetryChildConfig) (boo
 				getInternalExampleArray(m),
 			)
 			hardStopInvalidProcessRetryChild("coverage_initialization_failed")
-			return false, failureTestingMFinalizer
 		}
 	}
 	releaseHookEpoch := activateTestingMHookEpoch(cfg.MRunEpoch)
