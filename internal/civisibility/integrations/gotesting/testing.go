@@ -353,6 +353,21 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	if !coverageInitialized && testing.CoverMode() != "" {
 		coverage.InitializeCoverage(m, false)
 	}
+	if processModeEnabled && quarantinedRaceProcessSupported() &&
+		settings != nil && settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+		// This context is deliberately narrower than the general retry backend:
+		// only explicitly opted-in quarantined tests in race binaries move their
+		// first execution out of process. The parent remains the sole owner of CI
+		// Visibility events and retries; children execute one selected subtree.
+		// Keep the context when process setup failed so an eligible test fails
+		// closed instead of silently running its body in the parent.
+		wrapperOpts.quarantinedRaceProcess = newQuarantinedRaceProcessContext(
+			wrapperOpts.processRetryLaunchTemplate,
+			wrapperOpts.mRunEpoch,
+			wrapperOpts.mRunInvocations,
+			settings.TestManagement.AttemptToFixRetries,
+		)
+	}
 
 	ddm := (*M)(m)
 
@@ -395,6 +410,14 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
 			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
+			isolatedCoverageMerged, err := coverage.FinalizeProcessCoverageProfiles()
+			if err != nil {
+				// A child profile that cannot be merged makes the parent report
+				// incomplete. Treat it as infrastructure failure, never as a
+				// quarantined test outcome.
+				log.Error("civisibility.cov: failed to merge isolated process coverage: %s", err.Error())
+				exitCode = processRetryFailureExitCode
+			}
 			uploadFinalCoverageReport(settings)
 			if !publishCoverage {
 				session.Close(exitCode)
@@ -405,7 +428,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 				}
 				return exitCode
 			}
-			if !corrected {
+			if isolatedCoverageMerged || !corrected {
 				// let's try first with our coverage package
 				cov = coverage.GetCoverage()
 			}
@@ -670,6 +693,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 			defer deleteTestMetadata(t)
 		}
 		execMeta.identity = testInfo.identity
+		execMeta.quarantinedRaceProcess = wrapperOpts.quarantinedRaceProcess
 
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModule(testInfo.moduleName)

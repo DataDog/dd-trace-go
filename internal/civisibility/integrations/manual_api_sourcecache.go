@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 )
 
 var (
@@ -92,6 +93,29 @@ type impactedTestClassifier interface {
 // classifies fn as modified without requiring a test event to be created first.
 func IsTestFuncModified(testName string, fn *runtime.Func) bool {
 	return isTestFuncModified(GetImpactedTestsAnalyzer(), testName, fn)
+}
+
+// IsTestFuncModifiedWithAnalyzer classifies a test with an explicitly owned
+// analyzer, allowing an isolated test process to avoid CI Visibility startup.
+func IsTestFuncModifiedWithAnalyzer(analyzer *impactedtests.ImpactedTestAnalyzer, testName string, fn *runtime.Func) bool {
+	if analyzer == nil {
+		return false
+	}
+	return isTestFuncModified(analyzer, testName, fn)
+}
+
+// TestFuncSourceMetadata returns the cached source metadata needed to recreate
+// an isolated test event without creating that event in the child process.
+func TestFuncSourceMetadata(fn *runtime.Func) (startLine, endLine int, unskippable bool) {
+	metadata := loadSourceFunctionMetadata(fn)
+	startLine = metadata.runtimeStartLine
+	if metadata.resolution.endLine >= metadata.resolution.startLine && metadata.resolution.startLine > 0 {
+		startLine = metadata.resolution.startLine
+		endLine = metadata.resolution.endLine
+	}
+	unskippable = metadata.fileMetadata.parseOK &&
+		(metadata.fileMetadata.suiteUnskippable || metadata.resolution.functionUnskippable)
+	return
 }
 
 func isTestFuncModified(analyzer impactedTestClassifier, testName string, fn *runtime.Func) bool {
