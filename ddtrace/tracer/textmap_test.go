@@ -2219,7 +2219,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		// Default behavior + extract-first: extraction stops after Datadog (the first
 		// configured extractor), so W3C never runs. Baggage is still propagated: it is
 		// extracted independently of the trace-context extractor loop.
-		t.Setenv(envPropagationExtractFirst, "true")
+		t.Setenv(headerPropagationExtractFirst, "true")
 		tr, err := newTracer(WithHTTPClient(c))
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -2241,7 +2241,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		// continue/unique-trace-ids, no terminated_context span link is created here,
 		// because extraction stops after Datadog and the conflicting W3C context is
 		// never seen. Baggage is still propagated.
-		t.Setenv(envPropagationExtractFirst, "true")
+		t.Setenv(headerPropagationExtractFirst, "true")
 		tr, err := newTracer(WithHTTPClient(c))
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -2402,8 +2402,8 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		// "baggage" header: the restart branch used to replace incomingCtx.baggage with
 		// a fresh extraction instead of using it, silently dropping ot-baggage-* items
 		// that only the Datadog propagator populates.
-		t.Setenv(envPropagationBehaviorExtract, "restart")
-		t.Setenv(envPropagationExtractFirst, "true")
+		t.Setenv(headerPropagationBehaviorExtract, "restart")
+		t.Setenv(headerPropagationExtractFirst, "true")
 		tr, err := newTracer(WithHTTPClient(c))
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -2857,7 +2857,7 @@ func edgeRequestHeaders() map[string]string {
 const baggageHeaderValue = "userId=amelie,session.id=789,serverNode=DF+28,region=us1"
 
 func BenchmarkExtractBaggage(b *testing.B) {
-	b.Setenv(envPropagationStyleExtract, "baggage")
+	b.Setenv(headerPropagationStyleExtract, "baggage")
 
 	b.Run("TextMapCarrier", func(b *testing.B) {
 		propagator := NewPropagator(nil)
@@ -3662,7 +3662,7 @@ func TestExtractOnlyBaggage(t *testing.T) {
 					t.Setenv("DD_TRACE_PROPAGATION_STYLE", style)
 				}
 				if extractFirst {
-					t.Setenv(envPropagationExtractFirst, "true")
+					t.Setenv(headerPropagationExtractFirst, "true")
 				}
 				headers := TextMapCarrier(map[string]string{
 					"baggage": "foo=bar,baz=qux",
@@ -3701,7 +3701,7 @@ func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 		t.Run(fmt.Sprintf("extractFirst=%v", extractFirst), func(t *testing.T) {
 			t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
 			if extractFirst {
-				t.Setenv(envPropagationExtractFirst, "true")
+				t.Setenv(headerPropagationExtractFirst, "true")
 			}
 
 			// Set up headers with both baggage and Datadog trace context
@@ -3778,7 +3778,7 @@ func TestExtractFirstContinuesPastFailedExtractor(t *testing.T) {
 	for _, extractFirst := range []bool{false, true} {
 		t.Run(fmt.Sprintf("extractFirst=%v", extractFirst), func(t *testing.T) {
 			if extractFirst {
-				t.Setenv(envPropagationExtractFirst, "true")
+				t.Setenv(headerPropagationExtractFirst, "true")
 			}
 			// Default style: datadog,tracecontext,baggage. No x-datadog-* headers.
 			headers := TextMapCarrier(map[string]string{

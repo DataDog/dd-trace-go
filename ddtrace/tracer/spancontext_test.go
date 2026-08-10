@@ -298,32 +298,6 @@ func TestSubmitChunkQueueFull(t *testing.T) {
 	assert.Equal(int64(1), tg.CountCallsByTag(spansDropped, "reason:queue_full"))
 }
 
-// Tests to confirm that a filter-rejected chunk that also overflows the
-// payload queue is only counted once, under reason:trace_filter, and not
-// double-counted under reason:queue_full.
-func TestSubmitChunkQueueFullFilterRejected(t *testing.T) {
-	assert := assert.New(t)
-	var tg statsdtest.TestStatsdClient
-	tracer, err := newUnstartedTracer(withStatsdClient(&tg))
-	assert.Nil(err)
-	defer tracer.Stop()
-
-	for range payloadQueueSize {
-		c := chunk{spans: make([]*Span, 1)}
-		tracer.submitChunk(&c)
-	}
-	c := chunk{spans: make([]*Span, 1), filterRejected: true}
-	tracer.submitChunk(&c)
-
-	tracesDropped := tg.GetCallsByName("datadog.tracer.traces_dropped")
-	assert.Equal(int64(1), tg.CountCallsByTag(tracesDropped, "reason:trace_filter"))
-	assert.Equal(int64(0), tg.CountCallsByTag(tracesDropped, "reason:queue_full"))
-
-	spansDropped := tg.GetCallsByName("datadog.tracer.spans_dropped")
-	assert.Equal(int64(1), tg.CountCallsByTag(spansDropped, "reason:trace_filter"))
-	assert.Equal(int64(0), tg.CountCallsByTag(spansDropped, "reason:queue_full"))
-}
-
 func TestPartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")

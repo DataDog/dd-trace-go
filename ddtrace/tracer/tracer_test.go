@@ -1368,7 +1368,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url+tracesAPIPath, url+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())),
+		withTransport(newHTTPTransport(url, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())),
 	)
 	assert.Nil(err)
 	defer stop()

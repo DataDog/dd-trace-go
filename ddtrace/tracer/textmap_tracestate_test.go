@@ -19,7 +19,7 @@ import (
 // recomposed for injection.
 func TestTracestateSizeBounded(t *testing.T) {
 	t.Run("extract_bounds_oversized_vendor", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "tracecontext")
+		t.Setenv(headerPropagationStyle, "tracecontext")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -40,7 +40,7 @@ func TestTracestateSizeBounded(t *testing.T) {
 	})
 
 	t.Run("extract_bounds_oversized_member_under_total_cap", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "tracecontext")
+		t.Setenv(headerPropagationStyle, "tracecontext")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -71,7 +71,7 @@ func TestTracestateSizeBounded(t *testing.T) {
 	})
 
 	t.Run("extract_keeps_valid_small_tracestate", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "tracecontext")
+		t.Setenv(headerPropagationStyle, "tracecontext")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -87,7 +87,7 @@ func TestTracestateSizeBounded(t *testing.T) {
 	})
 
 	t.Run("inject_bounds_oversized_member", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "tracecontext")
+		t.Setenv(headerPropagationStyle, "tracecontext")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -102,7 +102,7 @@ func TestTracestateSizeBounded(t *testing.T) {
 	})
 
 	t.Run("inject_bounds_total_recomposed_size", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "tracecontext")
+		t.Setenv(headerPropagationStyle, "tracecontext")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()

@@ -19,7 +19,7 @@ import (
 // path currently has no item-count or byte-size cap.
 func TestOTBaggageEnforcesItemAndByteLimits(t *testing.T) {
 	t.Run("datadog_extractor_caps_items", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "datadog")
+		t.Setenv(headerPropagationStyle, "datadog")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -43,7 +43,7 @@ func TestOTBaggageEnforcesItemAndByteLimits(t *testing.T) {
 	})
 
 	t.Run("w3c_extractor_caps_items", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "tracecontext")
+		t.Setenv(headerPropagationStyle, "tracecontext")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -66,7 +66,7 @@ func TestOTBaggageEnforcesItemAndByteLimits(t *testing.T) {
 	})
 
 	t.Run("extractor_caps_bytes", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "datadog")
+		t.Setenv(headerPropagationStyle, "datadog")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -92,7 +92,7 @@ func TestOTBaggageEnforcesItemAndByteLimits(t *testing.T) {
 	})
 
 	t.Run("datadog_injector_caps_items", func(t *testing.T) {
-		t.Setenv(envPropagationStyle, "datadog")
+		t.Setenv(headerPropagationStyle, "datadog")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -121,7 +121,7 @@ func TestOTBaggageEnforcesItemAndByteLimits(t *testing.T) {
 		// baggageMaxBytes even though this check passes.
 		const prefix = "a-fairly-long-custom-ot-baggage-prefix-"
 		propagator := NewPropagator(&PropagatorConfig{BaggagePrefix: prefix})
-		t.Setenv(envPropagationStyle, "datadog")
+		t.Setenv(headerPropagationStyle, "datadog")
 		tr, err := newTracer(WithPropagator(propagator))
 		require.NoError(t, err)
 		defer tr.Stop()
@@ -168,7 +168,7 @@ func TestOTBaggageEnforcesItemAndByteLimits(t *testing.T) {
 	t.Run("baggage_header_still_capped", func(t *testing.T) {
 		// Contrast check: the W3C "baggage" header path already enforces
 		// these limits. Only the legacy ot-baggage-* prefix path is affected.
-		t.Setenv(envPropagationStyle, "baggage")
+		t.Setenv(headerPropagationStyle, "baggage")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()

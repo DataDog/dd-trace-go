@@ -34,8 +34,8 @@ func TestBaggageControlCharsNotInjectedRaw(t *testing.T) {
 	// defaults); injection is narrowed to "datadog" -- the propagator that
 	// actually re-emits baggage without encoding -- so the test targets that
 	// component instead of tripping over unrelated injector behavior.
-	t.Setenv(envPropagationStyleExtract, "datadog,tracecontext,baggage")
-	t.Setenv(envPropagationStyleInject, "datadog")
+	t.Setenv(headerPropagationStyleExtract, "datadog,tracecontext,baggage")
+	t.Setenv(headerPropagationStyleInject, "datadog")
 
 	tests := []struct {
 		name    string
@@ -77,7 +77,7 @@ func TestBaggageControlCharsNotInjectedRaw(t *testing.T) {
 // "baggage" header round-trips. Before the extractor decoded, "key with
 // space"="Amélie DF 28" would come back as "key+with+space"="Am%C3%A9lie+DF+28".
 func TestOTBaggageRoundTripsEncodedValues(t *testing.T) {
-	t.Setenv(envPropagationStyle, "datadog")
+	t.Setenv(headerPropagationStyle, "datadog")
 	tr, err := newTracer()
 	require.NoError(t, err)
 	defer tr.Stop()
@@ -104,7 +104,7 @@ func TestOTBaggageRoundTripsEncodedValues(t *testing.T) {
 // SetBaggageItem would) must still be sanitized when re-injected under the
 // legacy ot-baggage-* prefix.
 func TestBaggageControlCharsNotInjectedRawFromDirectContext(t *testing.T) {
-	t.Setenv(envPropagationStyle, "datadog")
+	t.Setenv(headerPropagationStyle, "datadog")
 	tr, err := newTracer()
 	require.NoError(t, err)
 	defer tr.Stop()

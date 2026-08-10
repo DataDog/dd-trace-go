@@ -1912,6 +1912,7 @@ func TestWithStatsComputation(t *testing.T) {
 		// with a v1-capable agent running locally. Pin it against a stub that
 		// unambiguously advertises v1 instead.
 		assert := assert.New(t)
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 		url := mockAgentEndpoint(t, "/v1.0/traces")
 		c, err := newTestConfig(
 			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),

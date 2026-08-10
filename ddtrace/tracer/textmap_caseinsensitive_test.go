@@ -90,7 +90,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	// path (lookupBaggageHeader) rather than the ForeachKey scan the other
 	// propagators use, so it needs its own case-insensitivity coverage.
 	t.Run("baggage header, TextMapCarrier non-canonical case", func(t *testing.T) {
-		t.Setenv(envPropagationStyleExtract, "baggage")
+		t.Setenv(headerPropagationStyleExtract, "baggage")
 		p := NewPropagator(nil)
 		carrier := TextMapCarrier{"BAGGAGE": "foo=bar"}
 		ctx, err := p.Extract(carrier)
@@ -103,7 +103,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	// built by hand with an arbitrary-case key -- lookupBaggageHeader's O(1)
 	// canonical lookup must fall back to a scan in that case.
 	t.Run("baggage header, HTTPHeadersCarrier non-canonical case", func(t *testing.T) {
-		t.Setenv(envPropagationStyleExtract, "baggage")
+		t.Setenv(headerPropagationStyleExtract, "baggage")
 		p := NewPropagator(nil)
 		carrier := HTTPHeadersCarrier(http.Header{"baggage": {"foo=bar"}})
 		ctx, err := p.Extract(carrier)
@@ -115,7 +115,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	// Pins that a repeated "baggage" header keeps the same last-value-wins
 	// behavior as before this fast path existed.
 	t.Run("baggage header, HTTPHeadersCarrier multi-value", func(t *testing.T) {
-		t.Setenv(envPropagationStyleExtract, "baggage")
+		t.Setenv(headerPropagationStyleExtract, "baggage")
 		p := NewPropagator(nil)
 		h := http.Header{}
 		h.Add("baggage", "foo=bar")
@@ -132,7 +132,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	// fallback (foreachBaggageHeader) instead of the fast path above. That
 	// fallback must preserve the same last-value-wins contract.
 	t.Run("baggage header, ForeachKey fallback keeps last of duplicate keys", func(t *testing.T) {
-		t.Setenv(envPropagationStyleExtract, "baggage")
+		t.Setenv(headerPropagationStyleExtract, "baggage")
 		p := NewPropagator(nil)
 		carrier := orderedHeaderCarrier{
 			{key: "baggage", val: "foo=bar"},
