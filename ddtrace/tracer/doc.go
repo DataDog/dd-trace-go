@@ -202,7 +202,10 @@
 // One exception: on the 1.0 protocol, a trace-agent identifying as version
 // 7.77.x, 7.78.x, or an unreleased 7.79.0 pre-release predating 7.79.0-rc.6,
 // has a defect where its own stats aggregation for that protocol loses the
-// span's language dimension. The tracer detects this from the agent's
+// span's language dimension. (The same defect exists in versions 7.73.0
+// through 7.76.x, but those don't advertise /v1.0/traces by default, so the
+// protocol guard above already excludes them in practice.) The tracer
+// detects this from the agent's
 // reported version and enables client-side stats computation regardless of
 // DD_TRACE_STATS_COMPUTATION_ENABLED / WithStatsComputation(false), so that
 // the tracer computes the affected stats itself instead of relying on the
