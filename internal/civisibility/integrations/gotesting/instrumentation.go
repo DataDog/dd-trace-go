@@ -83,6 +83,7 @@ type (
 		quarantinedRaceProcess        *quarantinedRaceProcessContext
 		quarantinedRaceChild          *quarantinedRaceChildState
 		processRetryCoverageMu        *sync.Mutex
+		processRetryCoverageParallel  func() func()
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function

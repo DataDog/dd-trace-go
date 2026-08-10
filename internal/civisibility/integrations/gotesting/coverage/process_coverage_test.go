@@ -158,6 +158,34 @@ func TestProcessTestCoverageSupportsNestedInclusiveCollectors(t *testing.T) {
 	require.Equal(t, []ProcessTestCoverageFile{{Name: "pkg/outer_test.go"}, {Name: "pkg/source.go", Bitmap: []byte{0x80}}}, outerFiles)
 }
 
+func TestProcessTestCoveragePauseExcludesSuspendedCoverage(t *testing.T) {
+	oldMode, oldTearDown := mode, tearDown
+	t.Cleanup(func() { mode, tearDown = oldMode, oldTearDown })
+	mode = "count"
+	counts := [][3]int{
+		{0, 0, 0}, // first segment starts
+		{1, 0, 0}, // first segment finishes
+		{1, 1, 0}, // another test runs while this collector is paused
+		{1, 1, 1}, // resumed segment finishes
+	}
+	var snapshots int
+	tearDown = func(path, _ string) (string, error) {
+		count := counts[snapshots]
+		snapshots++
+		profile := fmt.Appendf(nil, "mode: count\npkg/source.go:1.1,1.2 1 %d\npkg/source.go:2.1,2.2 1 %d\npkg/source.go:3.1,3.2 1 %d\n", count[0], count[1], count[2])
+		return path, os.WriteFile(path, profile, 0o600)
+	}
+
+	collector := BeginProcessTestCoverage("pkg/test_file.go")
+	require.NotNil(t, collector)
+	collector.Pause()
+	collector.Resume()
+	files := collector.Finish()
+
+	require.Equal(t, 4, snapshots)
+	require.Equal(t, []ProcessTestCoverageFile{{Name: "pkg/test_file.go"}, {Name: "pkg/source.go", Bitmap: []byte{0xa0}}}, files)
+}
+
 func TestSubmitProcessTestCoverageUsesParentEventIdentifiers(t *testing.T) {
 	oldMode, oldUpload, oldWriter := mode, coverageUploadEnabled, covWriter
 	t.Cleanup(func() { mode, coverageUploadEnabled, covWriter = oldMode, oldUpload, oldWriter })

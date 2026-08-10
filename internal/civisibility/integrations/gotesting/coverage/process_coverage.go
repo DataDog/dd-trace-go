@@ -28,8 +28,10 @@ type ProcessTestCoverageFile struct {
 
 // ProcessTestCoverage owns one runtime-coverage delta.
 type ProcessTestCoverage struct {
+	testFile     string
 	coverage     *testCoverage
 	temporaryDir string
+	files        []ProcessTestCoverageFile
 	active       bool
 }
 
@@ -44,16 +46,50 @@ func BeginProcessTestCoverage(testFile string) *ProcessTestCoverage {
 	if !CanCollect() {
 		return nil
 	}
+	collector := &ProcessTestCoverage{testFile: testFile}
+	if !collector.resume() {
+		return nil
+	}
+	return collector
+}
+
+// Pause finishes the active coverage segment. A later Resume starts a new
+// baseline so coverage collected while the test is suspended is excluded.
+func (c *ProcessTestCoverage) Pause() {
+	if c == nil || !c.active {
+		return
+	}
+	c.active = false
+	processCoverageMu.Lock()
+	defer processCoverageMu.Unlock()
+	defer func() { _ = os.RemoveAll(c.temporaryDir) }()
+	if err := c.coverage.collectCoverageAfterTestExecution(); err != nil || !c.coverage.loadCoverageData() {
+		return
+	}
+	c.files = mergeProcessTestCoverageFiles(c.files, c.coverage.filesCovered)
+}
+
+// Resume starts another coverage segment after a suspended test resumes.
+func (c *ProcessTestCoverage) Resume() {
+	if c != nil {
+		c.resume()
+	}
+}
+
+func (c *ProcessTestCoverage) resume() bool {
+	if c.active {
+		return true
+	}
 	processCoverageMu.Lock()
 	defer processCoverageMu.Unlock()
 	temporaryDir, err := os.MkdirTemp("", "dd-process-coverage-*")
 	if err != nil {
 		log.Debug("civisibility.cov: error creating process coverage directory: %s", err.Error())
 		telemetry.CodeCoverageErrors()
-		return nil
+		return false
 	}
 	collector := &testCoverage{
-		testFile:             utils.GetRelativePathFromCITagsSourceRoot(testFile),
+		testFile:             utils.GetRelativePathFromCITagsSourceRoot(c.testFile),
 		preCoverageFilename:  filepath.Join(temporaryDir, "pre.out"),
 		postCoverageFilename: filepath.Join(temporaryDir, "post.out"),
 	}
@@ -61,28 +97,46 @@ func BeginProcessTestCoverage(testFile string) *ProcessTestCoverage {
 		log.Debug("civisibility.cov: error getting process coverage file: %s", err.Error())
 		telemetry.CodeCoverageErrors()
 		_ = os.RemoveAll(temporaryDir)
-		return nil
+		return false
 	}
-	return &ProcessTestCoverage{coverage: collector, temporaryDir: temporaryDir, active: true}
+	c.coverage = collector
+	c.temporaryDir = temporaryDir
+	c.active = true
+	return true
 }
 
 // Finish returns the coverage delta and releases the collector resources.
 func (c *ProcessTestCoverage) Finish() []ProcessTestCoverageFile {
-	if c == nil || !c.active {
+	if c == nil {
 		return nil
 	}
-	c.active = false
-	processCoverageMu.Lock()
-	defer processCoverageMu.Unlock()
-	defer func() { _ = os.RemoveAll(c.temporaryDir) }()
-	if err := c.coverage.collectCoverageAfterTestExecution(); err != nil || !c.coverage.loadCoverageData() {
-		return nil
-	}
-	files := make([]ProcessTestCoverageFile, 0, len(c.coverage.filesCovered))
-	for _, file := range c.coverage.filesCovered {
-		files = append(files, ProcessTestCoverageFile{Name: file.name, Bitmap: file.bitmap})
-	}
+	c.Pause()
+	files := c.files
+	c.files = nil
 	return files
+}
+
+func mergeProcessTestCoverageFiles(dst []ProcessTestCoverageFile, src []coveredFile) []ProcessTestCoverageFile {
+	indexes := make(map[string]int, len(dst)+len(src))
+	for idx := range dst {
+		indexes[dst[idx].Name] = idx
+	}
+	for _, file := range src {
+		idx, found := indexes[file.name]
+		if !found {
+			indexes[file.name] = len(dst)
+			dst = append(dst, ProcessTestCoverageFile{Name: file.name, Bitmap: file.bitmap})
+			continue
+		}
+		bitmap := &dst[idx].Bitmap
+		if missing := len(file.bitmap) - len(*bitmap); missing > 0 {
+			*bitmap = append(*bitmap, make([]byte, missing)...)
+		}
+		for idx, value := range file.bitmap {
+			(*bitmap)[idx] |= value
+		}
+	}
+	return dst
 }
 
 // ProcessCoverageProfile owns the aggregate coverage snapshot captured before

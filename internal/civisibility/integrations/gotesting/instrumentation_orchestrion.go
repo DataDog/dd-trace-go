@@ -685,15 +685,19 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 }
 
 // instrumentTestingParallel reports whether CI Visibility has replaced the
-// native Parallel implementation. Retry attempts use a fresh testing.T, so
-// Parallel remains native after an isolated subtree has notified its parent.
+// native Parallel implementation and returns work to run after native Parallel
+// resumes. Retry attempts use a fresh testing.T, so Parallel remains native
+// after an isolated subtree has notified its parent.
 //
 //go:linkname instrumentTestingParallel
-func instrumentTestingParallel(t *testing.T) bool {
+func instrumentTestingParallel(t *testing.T) (bool, func()) {
 	if execMeta := getTestMetadata(t); execMeta != nil && execMeta.processRetryOwner != nil {
 		if state := execMeta.quarantinedRaceChild; state != nil && state.cfg != nil && t.Name() == state.cfg.SelectedRoot {
 			state.startParallelBridge()
 		}
+		if pause := execMeta.processRetryCoverageParallel; pause != nil {
+			return false, pause()
+		}
 	}
-	return false
+	return false, nil
 }

@@ -567,8 +567,6 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	order, start, raceBaseline := state.begin()
 	restoreChatty := bufferQuarantinedRaceChildOutput(t)
 	var collector *coverage.ProcessTestCoverage
-	var parentBarrier *chan bool
-	var oldParentBarrier chan bool
 	coverageLocked := false
 	if state.cfg.CollectPerTest && source != nil && coverage.CanCollect() {
 		// Runtime coverage counters are global, so siblings must not collect
@@ -576,14 +574,18 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		// calls without blocking nested collectors, which lock their own parent.
 		parent.processRetryCoverageMu.Lock()
 		coverageLocked = true
-		// Clearing the barrier makes t.Parallel a no-op for this covered body.
-		// Ancestor/descendant collectors remain inclusive by design.
-		if fields := getTestParentPrivateFields(t); fields != nil && fields.barrier != nil {
-			parentBarrier = fields.barrier
-			oldParentBarrier = *parentBarrier
-			*parentBarrier = nil
-		}
 		collector = coverage.BeginProcessTestCoverage(source.RuntimePath)
+		// Native Parallel must release t.Run back to the parent. Pause coverage
+		// and release the sibling lock while testing owns that handoff, then
+		// resume both before the covered body continues.
+		execMeta.processRetryCoverageParallel = func() func() {
+			collector.Pause()
+			parent.processRetryCoverageMu.Unlock()
+			return func() {
+				parent.processRetryCoverageMu.Lock()
+				collector.Resume()
+			}
+		}
 	}
 
 	bodyReturned := false
@@ -621,9 +623,6 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			defer parent.processRetryCoverageMu.Unlock()
 		}
 		files := collector.Finish()
-		if parentBarrier != nil {
-			*parentBarrier = oldParentBarrier
-		}
 		restoreChatty()
 		finish := time.Now()
 		fields := getTestPrivateFields(t)

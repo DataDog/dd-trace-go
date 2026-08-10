@@ -94,13 +94,14 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceSubtestFeatureGateFixture/disabled": {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
 					},
-					"TestQuarantinedRaceCleanupPanicFixture":             properties(false),
-					"TestQuarantinedRaceCleanupFailNowFixture":           properties(false),
-					"TestQuarantinedRaceCleanupGoexitFixture":            properties(false),
-					"TestQuarantinedRaceFailfastRootFixture":             properties(true),
-					"TestQuarantinedRaceFailfastDescendantFixture":       properties(false),
-					"TestQuarantinedRaceFailfastDescendantFixture/child": properties(true),
-					"TestQuarantinedRaceParallelFixture/isolated":        properties(false),
+					"TestQuarantinedRaceCleanupPanicFixture":              properties(false),
+					"TestQuarantinedRaceCleanupFailNowFixture":            properties(false),
+					"TestQuarantinedRaceCleanupGoexitFixture":             properties(false),
+					"TestQuarantinedRaceFailfastRootFixture":              properties(true),
+					"TestQuarantinedRaceFailfastDescendantFixture":        properties(false),
+					"TestQuarantinedRaceFailfastDescendantFixture/child":  properties(true),
+					"TestQuarantinedRaceParallelFixture/isolated":         properties(false),
+					"TestQuarantinedRaceParallelCoverageFixture/isolated": properties(false),
 				}},
 				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
@@ -133,6 +134,20 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 		parallelSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelFixture/isolated", 1)
 		checkSpansByTagValue(parallelSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		os.Exit(0)
+	case "parallel-coverage":
+		if readPID("parallel-coverage-child") == parentPID {
+			panic("covered parallel descendant did not run in the isolated child")
+		}
+		if readPID("parallel-coverage-maximum") != "1" {
+			panic("covered parallel descendants were not serialized")
+		}
+		parallelSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelCoverageFixture/isolated", 1)
+		checkSpansByTagValue(parallelSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		for _, name := range []string{"concurrent-a", "concurrent-b"} {
+			childSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelCoverageFixture/isolated/"+name, 1)
+			checkSpansByTagValue(childSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		}
 		os.Exit(0)
 	case "testify-source":
 		if readPID("testify-source") == parentPID {
@@ -196,9 +211,6 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if readPID("paypal") != parentPID {
 		panic("non-quarantined sibling did not stay in the parent process")
 	}
-	if testing.CoverMode() != "" && readPID("coverage-serialized") == parentPID {
-		panic("covered concurrent subtests were not serialized in the child process")
-	}
 	atf0, atf1 := readPID("atf-1"), readPID("atf-2")
 	if atf0 == parentPID || atf1 == parentPID || atf0 == atf1 {
 		panic("attempt-to-fix executions did not use fresh child processes")
@@ -228,7 +240,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 	}
 	if spanTypes[constants.SpanTypeTestSession] != 1 || spanTypes[constants.SpanTypeTestModule] != 1 ||
-		spanTypes[constants.SpanTypeTestSuite] != 1 || spanTypes[constants.SpanTypeTest] != 24 {
+		spanTypes[constants.SpanTypeTestSuite] != 1 || spanTypes[constants.SpanTypeTest] != 22 {
 		panic(fmt.Sprintf("unexpected parent-owned CI Visibility span counts: %#v", spanTypes))
 	}
 	raceSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFixture", 1)
@@ -287,10 +299,6 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	checkSpansByTagName(visaSpans, constants.TestCodeOwners, 1)
 	mastercardSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/mastercard", 1)
 	checkSpansByTagValue(mastercardSpans, constants.TestStatus, constants.TestStatusFail, 1)
-	for _, name := range []string{"concurrent-a", "concurrent-b"} {
-		childSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/"+name, 1)
-		checkSpansByTagValue(childSpans, constants.TestStatus, constants.TestStatusPass, 1)
-	}
 	rootRaceReport := false
 	for _, entry := range logsEntries {
 		if entry.TestName == "TestQuarantinedRaceNestedFixture/card" && strings.Contains(entry.Message, "WARNING: DATA RACE") {
@@ -325,6 +333,13 @@ func TestQuarantinedRaceFailfastEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceParallelAdmissionEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$")
+}
+
+func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
+	if testing.CoverMode() == "" {
+		t.Skip("requires coverage instrumentation")
+	}
+	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$")
 }
 
 func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
@@ -461,7 +476,7 @@ func TestQuarantinedRaceNestedFixture(t *testing.T) {
 	t.Run("card", instrumentTestingTFunc(func(t *testing.T) {
 		writeQuarantinedRaceIsolationPID(t, "card")
 		t.Run("visa", instrumentTestingTFunc(func(t *testing.T) {
-			t.Parallel()
+			(*T)(t).Parallel()
 			writeQuarantinedRaceIsolationPID(t, "visa")
 		}))
 		t.Run("mastercard", instrumentTestingTFunc(func(t *testing.T) {
@@ -476,29 +491,6 @@ func TestQuarantinedRaceNestedFixture(t *testing.T) {
 		t.Run("disabled", instrumentTestingTFunc(func(t *testing.T) {
 			writeQuarantinedRaceIsolationPID(t, "disabled-body")
 		}))
-		var active atomic.Int32
-		var maximum atomic.Int32
-		var concurrent sync.WaitGroup
-		for _, name := range []string{"concurrent-a", "concurrent-b"} {
-			concurrent.Add(1)
-			go func() {
-				defer concurrent.Done()
-				t.Run(name, instrumentTestingTFunc(func(t *testing.T) {
-					if testing.CoverMode() != "" {
-						t.Parallel()
-					}
-					current := active.Add(1)
-					defer active.Add(-1)
-					for observed := maximum.Load(); current > observed && !maximum.CompareAndSwap(observed, current); observed = maximum.Load() {
-					}
-					time.Sleep(20 * time.Millisecond)
-				}))
-			}()
-		}
-		concurrent.Wait()
-		if testing.CoverMode() != "" && maximum.Load() == 1 {
-			writeQuarantinedRaceIsolationPID(t, "coverage-serialized")
-		}
 	}))
 	t.Run("paypal", instrumentTestingTFunc(func(t *testing.T) {
 		writeQuarantinedRaceIsolationPID(t, "paypal")
@@ -527,6 +519,39 @@ func TestQuarantinedRaceParallelFixture(t *testing.T) {
 		(*T)(t).Parallel()
 		writeQuarantinedRaceIsolationPID(t, "parallel-sibling")
 	}))
+}
+
+func TestQuarantinedRaceParallelCoverageFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	released := make(chan struct{})
+	t.Run("isolated", instrumentTestingTFunc(func(t *testing.T) {
+		(*T)(t).Parallel()
+		select {
+		case <-released:
+			writeQuarantinedRaceIsolationPID(t, "parallel-coverage-child")
+		case <-time.After(2 * time.Second):
+			t.Fatal("t.Parallel did not release t.Run back to its parent")
+		}
+		var active atomic.Int32
+		var maximum atomic.Int32
+		t.Cleanup(func() {
+			path := filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "parallel-coverage-maximum")
+			require.NoError(t, os.WriteFile(path, []byte(strconv.Itoa(int(maximum.Load()))), 0o600))
+		})
+		for _, name := range []string{"concurrent-a", "concurrent-b"} {
+			t.Run(name, instrumentTestingTFunc(func(t *testing.T) {
+				(*T)(t).Parallel()
+				current := active.Add(1)
+				defer active.Add(-1)
+				for observed := maximum.Load(); current > observed && !maximum.CompareAndSwap(observed, current); observed = maximum.Load() {
+				}
+				time.Sleep(20 * time.Millisecond)
+			}))
+		}
+	}))
+	close(released)
 }
 
 type quarantinedRaceTestifySuite struct {
