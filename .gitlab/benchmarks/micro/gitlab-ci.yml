@@ -87,7 +87,7 @@ microbenchmarks-2:
 microbenchmarks-3:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkOpenFeatureClientEvaluation|BenchmarkOpenFeatureClientConcurrentEvaluations|BenchmarkBooleanEvaluation|BenchmarkStringEvaluation|BenchmarkIntEvaluation|BenchmarkFloatEvaluation|BenchmarkEvaluation|BenchmarkEvaluationWithVaryingContextSize|BenchmarkEvaluationWithVaryingFlagCounts|BenchmarkConcurrentEvaluations|BenchmarkSubmitSpans"
+    BENCHMARKS: "BenchmarkOpenFeatureClientEvaluation|BenchmarkOpenFeatureClientConcurrentEvaluations|BenchmarkBooleanEvaluation|BenchmarkStringEvaluation|BenchmarkIntEvaluation|BenchmarkFloatEvaluation|BenchmarkEvaluation|BenchmarkEvaluationWithVaryingContextSize|BenchmarkEvaluationWithVaryingFlagCounts|BenchmarkConcurrentEvaluations|BenchmarkLLMObsExportSubmitSpans"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-3"
