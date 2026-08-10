@@ -27,7 +27,6 @@ func isV1WireByte(b byte) bool {
 // tracer POSTed a v0.4 array body to /v0.4/traces even though the agent
 // advertised /v1.0/traces.
 func TestNewConfigKeepsV1WhenCSSDisabled(t *testing.T) {
-	t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 	agent := startTestAgent(t)
 	tr := newTracerTest(t, agent, WithStatsComputation(false))
 	defer stopTracerTest(tr)
@@ -59,7 +58,7 @@ func TestTraceProtocolDecoupling(t *testing.T) {
 		{"unset", ""},
 		{"v1", "1.0"},
 		{"v04", "0.4"},
-		{"invalid", "garbage"}, // must behave exactly like "unset" (falls back to the v2.10 default, v0.4)
+		{"invalid", "garbage"}, // must behave exactly like "unset" (falls back to the default, v1)
 	}
 
 	for _, req := range requested {
@@ -83,9 +82,10 @@ func TestTraceProtocolDecoupling(t *testing.T) {
 					tr := newTracerTest(t, agent, opts...)
 					defer stopTracerTest(tr)
 
-					// The invariant under test: v1 iff it was explicitly requested
-					// and the agent advertises it. CSS state never enters into it.
-					wantV1 := req.env == "1.0" && v1Advertised
+					// The invariant under test: v1 iff v1 wasn't explicitly
+					// declined and the agent advertises it. CSS state never
+					// enters into it.
+					wantV1 := req.env != "0.4" && v1Advertised
 					wantProtocol := traceProtocolV04
 					wantPath := tracesAPIPath
 					if wantV1 {

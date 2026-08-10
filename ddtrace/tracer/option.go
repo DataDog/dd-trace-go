@@ -1405,7 +1405,7 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 }
 
 func (t *dummyTransport) endpoint(float64) string {
-	return "http://localhost:9/v0.4/traces"
+	return "http://localhost:9/v1.0/traces"
 }
 
 // discardTransport drains and discards trace payloads without decoding them.

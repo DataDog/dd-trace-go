@@ -25,7 +25,6 @@ import (
 // after it was created — the alternative (posting v1.0 bytes to /v0.4/traces)
 // is the failure this design rules out.
 func TestSendURLMatchesPayloadEvenAfterConfigChanges(t *testing.T) {
-	t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 	agent := startTestAgent(t)
 	tr := newTracerTest(t, agent)
 	defer stopTracerTest(tr)
@@ -52,7 +51,6 @@ func TestSendURLMatchesPayloadEvenAfterConfigChanges(t *testing.T) {
 // per-protocol URLs make impossible: the api.errors metric hardcoded
 // /v0.4/traces, so a v1.0 send failure was attributed to the wrong endpoint.
 func TestSendReportsAPIErrorsWithCorrectEndpointTag(t *testing.T) {
-	t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/info" {
 			w.Write([]byte(`{"endpoints":["/v1.0/traces","/v0.6/stats"],"client_drop_p0s":true}`))
