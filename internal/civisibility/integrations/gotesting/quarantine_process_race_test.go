@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,7 +39,7 @@ const (
 )
 
 func quarantinedRaceIsolationFixtureSelected() bool {
-	return os.Getenv(quarantinedRaceIsolationFixtureEnv) == "true"
+	return os.Getenv(quarantinedRaceIsolationFixtureEnv) != ""
 }
 
 func runQuarantinedRaceIsolationFixture(m *testing.M) {
@@ -52,8 +53,12 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			panic(err)
 		}
 	}
+	scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
 	requireEnv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
 	requireEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "2")
+	if scenario == "feature-gate" {
+		requireEnv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
+	}
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
@@ -76,6 +81,16 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceNestedFixture/card":         properties(false),
 					"TestQuarantinedRaceNestedATFFixture/card":      properties(false),
 					"TestQuarantinedRaceNestedATFFixture/card/visa": properties(true),
+					"TestQuarantinedRaceSubtestFeatureGateFixture":  properties(false),
+					"TestQuarantinedRaceSubtestFeatureGateFixture/disabled": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
+					},
+					"TestQuarantinedRaceCleanupPanicFixture":             properties(false),
+					"TestQuarantinedRaceCleanupFailNowFixture":           properties(false),
+					"TestQuarantinedRaceCleanupGoexitFixture":            properties(false),
+					"TestQuarantinedRaceFailfastRootFixture":             properties(true),
+					"TestQuarantinedRaceFailfastDescendantFixture":       properties(false),
+					"TestQuarantinedRaceFailfastDescendantFixture/child": properties(true),
 				}},
 			}},
 		}}, false, nil)
@@ -96,6 +111,38 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			panic(err)
 		}
 		return strings.TrimSpace(string(payload))
+	}
+	spans := mTracer.FinishedSpans()
+	switch scenario {
+	case "feature-gate":
+		if readPID("feature-gate-disabled") == parentPID {
+			panic("subtest feature gate fixture did not run in the isolated child")
+		}
+		featureSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceSubtestFeatureGateFixture/disabled", 1)
+		checkSpansByTagValue(featureSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		os.Exit(0)
+	case "cleanup":
+		panicSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceCleanupPanicFixture/child", 1)
+		checkSpansByTagValue(panicSpans, constants.TestStatus, constants.TestStatusFail, 1)
+		if message, _ := panicSpans[0].Tag(ext.ErrorMsg).(string); !strings.Contains(message, "cleanup panic sentinel") {
+			panic(fmt.Sprintf("cleanup panic was not reported on the isolated test: %q", message))
+		}
+		goexitSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceCleanupGoexitFixture/child", 1)
+		checkSpansByTagValue(goexitSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		failNowSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceCleanupFailNowFixture/child", 1)
+		checkSpansByTagValue(failNowSpans, constants.TestStatus, constants.TestStatusFail, 1)
+		os.Exit(0)
+	case "failfast":
+		for _, name := range []string{"failfast-root-2", "failfast-descendant-2"} {
+			if _, err := os.Stat(filepath.Join(pidDir, name)); err == nil || !os.IsNotExist(err) {
+				panic(name + " ran after a valid failure under -failfast")
+			}
+		}
+		readPID("failfast-root-1")
+		readPID("failfast-descendant-1")
+		checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFailfastRootFixture", 1)
+		checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFailfastDescendantFixture/child", 1)
+		os.Exit(0)
 	}
 	racePID := readPID("race")
 	secondPID := readPID("second")
@@ -133,7 +180,6 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		panic("exact quarantined leaf also executed its sibling in the child process")
 	}
 
-	spans := mTracer.FinishedSpans()
 	spanTypes := map[string]int{}
 	for _, span := range spans {
 		if spanType, ok := span.Tag(ext.SpanType).(string); ok {
@@ -214,19 +260,37 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 }
 
 func TestQuarantinedRaceProcessEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "true", "^TestQuarantined(Race(Fixture|SecondFixture|AttemptToFixFixture|LeafFixture|NestedFixture|NestedATFFixture)|PanicFixture)$")
+	if coverProfile := flag.Lookup("test.coverprofile"); coverProfile != nil && coverProfile.Value.String() != "" {
+		requireFunctionCovered(t, coverProfile.Value.String(), "bufferQuarantinedRaceChildOutput")
+	}
+}
+
+func TestQuarantinedRaceSubtestFeatureGateEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "feature-gate", "^TestQuarantinedRaceSubtestFeatureGateFixture$")
+}
+
+func TestQuarantinedRaceCleanupEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "cleanup", "^TestQuarantinedRaceCleanup(Panic|FailNow|Goexit)Fixture$")
+}
+
+func TestQuarantinedRaceFailfastEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "failfast", "^TestQuarantinedRaceFailfast(Root|Descendant)Fixture$", "-test.failfast")
+}
+
+func runQuarantinedRaceEndToEnd(t *testing.T, scenario, pattern string, extraArgs ...string) {
+	t.Helper()
 	pidDir := t.TempDir()
-	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], "^TestQuarantined(Race(Fixture|SecondFixture|AttemptToFixFixture|LeafFixture|NestedFixture|NestedATFFixture)|PanicFixture)$")...)
+	args := append(buildTestControllerSubprocessArgs(os.Args[1:], pattern), extraArgs...)
+	cmd := exec.Command(os.Args[0], args...)
 	cmd.Env = append(os.Environ(),
-		quarantinedRaceIsolationFixtureEnv+"=true",
+		quarantinedRaceIsolationFixtureEnv+"="+scenario,
 		quarantinedRaceIsolationPIDDirEnv+"="+pidDir,
 	)
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("quarantined race isolation fixture failed: %v\n%s", err, output.String())
-	}
-	if coverProfile := flag.Lookup("test.coverprofile"); coverProfile != nil && coverProfile.Value.String() != "" {
-		requireFunctionCovered(t, coverProfile.Value.String(), "bufferQuarantinedRaceChildOutput")
 	}
 }
 
@@ -395,5 +459,63 @@ func TestQuarantinedRaceNestedATFFixture(t *testing.T) {
 			require.NoError(t, err)
 			writeQuarantinedRaceIsolationPID(t, "nested-atf-visa-"+strconv.Itoa(cfg.Attempt))
 		}))
+	}))
+}
+
+func TestQuarantinedRaceSubtestFeatureGateFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("disabled", instrumentTestingTFunc(func(t *testing.T) {
+		writeQuarantinedRaceIsolationPID(t, "feature-gate-disabled")
+	}))
+}
+
+func TestQuarantinedRaceCleanupPanicFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+		t.Cleanup(func() { panic("cleanup panic sentinel") })
+	}))
+}
+
+func TestQuarantinedRaceCleanupGoexitFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+		t.Cleanup(runtime.Goexit)
+	}))
+}
+
+func TestQuarantinedRaceCleanupFailNowFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+		t.Cleanup(t.FailNow)
+	}))
+}
+
+func TestQuarantinedRaceFailfastRootFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	cfg, err := processRetryChildConfigFromEnv()
+	require.NoError(t, err)
+	writeQuarantinedRaceIsolationPID(t, "failfast-root-"+strconv.Itoa(cfg.Attempt))
+	t.Fail()
+}
+
+func TestQuarantinedRaceFailfastDescendantFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+		cfg, err := processRetryChildConfigFromEnv()
+		require.NoError(t, err)
+		writeQuarantinedRaceIsolationPID(t, "failfast-descendant-"+strconv.Itoa(cfg.Attempt))
+		t.Fail()
 	}))
 }

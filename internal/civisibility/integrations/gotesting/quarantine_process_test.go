@@ -6,12 +6,15 @@
 package gotesting
 
 import (
+	"bytes"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -165,6 +168,27 @@ func TestQuarantinedRaceRootReplayKeepsRaceDetectorOutput(t *testing.T) {
 	got := processRetrySubtreeRootFromInvocation(invocation)
 	assert.Equal(t, invocation.attempt.OutputTail, got.OutputTail)
 	assert.True(t, got.OutputTruncated)
+}
+
+func TestQuarantinedRaceSubtreeOutputUsesEncodedLimit(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		output []byte
+	}{
+		{name: "escaped", output: []byte(strings.Repeat("\n", processRetrySubtreeOutputMaxBytes))},
+		{name: "invalid UTF-8", output: bytes.Repeat([]byte{0xff, 'x'}, processRetrySubtreeOutputMaxBytes/2)},
+		{name: "raw tail", output: []byte(strings.Repeat("x", processRetrySubtreeOutputMaxBytes+1))},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, truncated := truncateProcessRetrySubtreeOutput(tt.output)
+			normalized := strings.ToValidUTF8(string(tt.output), "\uFFFD")
+
+			assert.True(t, truncated)
+			assert.True(t, utf8.ValidString(got))
+			assert.True(t, processRetryJSONStringFits(got, processRetrySubtreeOutputMaxBytes))
+			assert.True(t, strings.HasSuffix(normalized, got))
+		})
+	}
 }
 
 func TestQuarantinedRaceSubtreeConfigRejectsUntrustedDirectives(t *testing.T) {

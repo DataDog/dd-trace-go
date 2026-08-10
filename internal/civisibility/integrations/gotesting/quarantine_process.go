@@ -163,7 +163,9 @@ func buildProcessRetrySubtreeConfig(
 		CollectPerTest:      ctx.collectPerTestCoverage,
 		CollectAggregate:    ctx.collectAggregate,
 	}
+	subtestFeaturesEnabled := false
 	if settings := integrations.GetSettings(); settings != nil {
+		subtestFeaturesEnabled = settings.SubtestFeaturesEnabled
 		cfg.ImpactedTestsEnabled = settings.ImpactedTestsEnabled
 		if cfg.ImpactedTestsEnabled {
 			cfg.Root.Modified = cfg.Root.Modified || integrations.IsTestFuncModified(testInfo.testName, testInfo.sourceFunc)
@@ -173,7 +175,7 @@ func buildProcessRetrySubtreeConfig(
 		cfg.AncestorAttemptToFix = true
 	}
 
-	if data := integrations.GetTestManagementTestsData(); data != nil {
+	if data := integrations.GetTestManagementTestsData(); subtestFeaturesEnabled && data != nil {
 		if module, ok := data.Modules[identity.ModuleName]; ok {
 			if suite, ok := module.Suites[identity.SuiteName]; ok {
 				for name, properties := range suite.Tests {
@@ -361,11 +363,25 @@ func processRetrySourceFromFunc(fn *runtime.Func) *processRetryTestSource {
 }
 
 func truncateProcessRetrySubtreeOutput(output []byte) (string, bool) {
-	if len(output) <= processRetrySubtreeOutputMaxBytes {
-		return strings.ToValidUTF8(string(output), "\uFFFD"), false
+	truncated := len(output) > processRetrySubtreeOutputMaxBytes
+	if truncated {
+		output = output[len(output)-processRetrySubtreeOutputMaxBytes:]
 	}
-	tail := output[len(output)-processRetrySubtreeOutputMaxBytes:]
-	return strings.ToValidUTF8(string(tail), "\uFFFD"), true
+	normalized := strings.ToValidUTF8(string(output), "\uFFFD")
+	if processRetryJSONStringFits(normalized, processRetrySubtreeOutputMaxBytes) {
+		return normalized, truncated
+	}
+	runes := []rune(normalized)
+	low, high := 0, len(runes)
+	for low < high {
+		mid := low + (high-low+1)/2
+		if processRetryJSONStringFits(string(runes[len(runes)-mid:]), processRetrySubtreeOutputMaxBytes) {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	return string(runes[len(runes)-low:]), true
 }
 
 type quarantinedRaceChildState struct {
@@ -542,7 +558,37 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		collector = coverage.BeginProcessTestCoverage(source.RuntimePath)
 	}
 
-	t.Cleanup(func() {
+	bodyReturned := false
+	defer func() {
+		panicData := recover()
+		unexpected := panicData == nil && processRetryUnexpectedTestTermination(t, bodyReturned)
+		if panicData != nil || unexpected {
+			if panicData == nil {
+				panicData = unexpectedTestTerminationMessage
+			}
+			execMeta.processRetryPanic.CompareAndSwap(nil, &processRetryErrorInfo{
+				Type:    "panic",
+				Message: truncateProcessRetryErrorMessage(toString(panicData)),
+				Stack:   truncateProcessRetryErrorStack(utils.GetStacktrace(1)),
+			})
+		}
+
+		// Drain user cleanups before snapshotting. testing.tRunner marks a cleanup
+		// panic only after recursively running earlier cleanups, which would make a
+		// regular t.Cleanup finalizer report the descendant as passing.
+		cleanup := &testCleanupResult{}
+		runTestCleanupWithOptions(t, cleanup, true)
+		if cleanup.panicData != nil {
+			t.Fail()
+			execMeta.processRetryPanic.CompareAndSwap(nil, &processRetryErrorInfo{
+				Type:    "panic",
+				Message: truncateProcessRetryErrorMessage(toString(cleanup.panicData)),
+				Stack:   truncateProcessRetryErrorStack(cleanup.panicStacktrace),
+			})
+			// The parent replays this recorded panic. Re-panicking here would let
+			// testing terminate the child before it can write the subtree result.
+		}
+
 		if coverageLocked {
 			defer parent.processRetryCoverageMu.Unlock()
 		}
@@ -603,7 +649,11 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		}
 		state.append(result)
 		deleteTestMetadata(t)
-	})
+
+		if panicData != nil && !unexpected {
+			panic(panicData)
+		}
+	}()
 
 	if directive.Disabled && !directive.AttemptToFix {
 		reason := constants.TestDisabledSkipReason
@@ -619,25 +669,6 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		execMeta.isItrForcedRun = forced
 	}
 
-	bodyReturned := false
-	defer func() {
-		panicData := recover()
-		unexpected := panicData == nil && processRetryUnexpectedTestTermination(t, bodyReturned)
-		if panicData == nil && !unexpected {
-			return
-		}
-		if panicData == nil {
-			panicData = unexpectedTestTerminationMessage
-		}
-		execMeta.processRetryPanic.CompareAndSwap(nil, &processRetryErrorInfo{
-			Type:    "panic",
-			Message: truncateProcessRetryErrorMessage(toString(panicData)),
-			Stack:   truncateProcessRetryErrorStack(utils.GetStacktrace(1)),
-		})
-		if !unexpected {
-			panic(panicData)
-		}
-	}()
 	original(t)
 	bodyReturned = true
 }
@@ -839,6 +870,7 @@ func runQuarantinedRaceProcessIsolation(
 		rootTotal = processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries)
 	}
 	invocations := make([]quarantinedRaceInvocation, 0, rootTotal)
+	failfastStopped := false
 	for idx := 0; idx < rootTotal; idx++ {
 		attempt := runQuarantinedRaceInvocation(t, processCtx, lease, cfg, idx)
 		if processRetryInfrastructureFailure(attempt) {
@@ -848,9 +880,14 @@ func runQuarantinedRaceProcessIsolation(
 		invocations = append(invocations, quarantinedRaceInvocation{
 			cfg: cfg, attempt: attempt, attemptIndex: idx,
 		})
+		if quarantinedRaceFailfastStopsContinuation(attempt) {
+			failfastStopped = true
+			break
+		}
 	}
 
-	if !cfg.OwnsAttemptToFix && cfg.AttemptToFixRetries > 0 {
+	if !cfg.OwnsAttemptToFix && cfg.AttemptToFixRetries > 0 && !failfastStopped {
+	descendantRetries:
 		for _, result := range invocations[0].attempt.Result.Subtests {
 			if !result.AttemptToFixOwn {
 				continue
@@ -874,6 +911,9 @@ func runQuarantinedRaceProcessIsolation(
 				invocations = append(invocations, quarantinedRaceInvocation{
 					cfg: continuationCfg, attempt: attempt, attemptIndex: idx,
 				})
+				if quarantinedRaceFailfastStopsContinuation(attempt) {
+					break descendantRetries
+				}
 			}
 		}
 	}
@@ -889,6 +929,10 @@ func runQuarantinedRaceProcessIsolation(
 // in-process retry path, despite its historical name.
 func processRetryAttemptToFixExecutionCount(configured int) int {
 	return max(configured, 1)
+}
+
+func quarantinedRaceFailfastStopsContinuation(attempt processRetryAttemptResult) bool {
+	return retryAttemptFailfastEnabled() && effectiveProcessRetryStatus(attempt, false).Failed
 }
 
 func runQuarantinedRaceInvocation(
