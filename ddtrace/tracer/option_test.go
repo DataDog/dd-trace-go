@@ -2344,28 +2344,10 @@ func TestCanComputeStats(t *testing.T) {
 		assert.False(t, c.canDropP0s())
 	})
 
-	// The full decision matrix for the 7.77/7.78 v1.0 stats workaround lives
-	// in trace_protocol_selection_test.go (TestV1StatsWorkaroundDoesNotDropP0s);
-	// these two pin it here too, next to the rest of canComputeStats's cases.
-	t.Run("v1-agent-bug-forces-stats-on-despite-disabled", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.4/traces","/v1.0/traces","/v0.6/stats"],"client_drop_p0s":true,"version":"7.78.1"}`))
-		}))
-		defer srv.Close()
-		c, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithStatsComputation(false))
-		assert.NoError(t, err)
-		assert.True(t, c.canComputeStats())
-	})
-
-	t.Run("v1-agent-bug-does-not-apply-without-v1-endpoint", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.4/traces","/v0.6/stats"],"client_drop_p0s":true,"version":"7.78.1"}`))
-		}))
-		defer srv.Close()
-		c, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithStatsComputation(false))
-		assert.NoError(t, err)
-		assert.False(t, c.canComputeStats())
-	})
+	// The full decision matrix for the 7.77/7.78 v1.0 stats workaround lives in
+	// trace_protocol_selection_test.go (TestV1StatsWorkaroundForcesStatsAndP0Dropping),
+	// including the "agent doesn't advertise v1.0" case that would otherwise be
+	// duplicated here.
 }
 
 // Regression: agentless flag set without CI Visibility enabled must not disable the agent.

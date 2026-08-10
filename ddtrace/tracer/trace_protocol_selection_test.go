@@ -6,8 +6,8 @@
 package tracer
 
 import (
+	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -25,6 +25,24 @@ import (
 // shape of a v1.0 trace payload. Mirrors the sniffing logic in decode().
 func isV1WireByte(b byte) bool {
 	return b == msgpackMap16 || b == msgpackMap32 || b&0xf0 == msgpackMapFix
+}
+
+// infoJSON builds a minimal /info response body advertising endpoints and
+// client_drop_p0s, with an optional agent version. An empty version omits
+// the "version" field entirely, matching a real agent that doesn't report one.
+func infoJSON(endpoints []string, dropP0s bool, version string) string {
+	body := map[string]any{
+		"endpoints":       endpoints,
+		"client_drop_p0s": dropP0s,
+	}
+	if version != "" {
+		body["version"] = version
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		panic(err) // unreachable: body is composed of primitives only
+	}
+	return string(b)
 }
 
 // TestNewConfigKeepsV1WhenCSSDisabled is the headline regression pin for the
@@ -80,11 +98,11 @@ func TestTraceProtocolDecoupling(t *testing.T) {
 						t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", req.env)
 					}
 					agent := startTestAgent(t)
-					endpoints := `"/v0.4/traces","/v0.6/stats"`
+					endpoints := []string{"/v0.4/traces", "/v0.6/stats"}
 					if v1Advertised {
-						endpoints = `"/v0.4/traces","/v1.0/traces","/v0.6/stats"`
+						endpoints = []string{"/v0.4/traces", "/v1.0/traces", "/v0.6/stats"}
 					}
-					agent.SetInfo(`{"endpoints":[` + endpoints + `],"client_drop_p0s":true}`)
+					agent.SetInfo(infoJSON(endpoints, true, ""))
 
 					var opts []StartOption
 					if cssOff {
@@ -156,12 +174,15 @@ func TestPinTestTracerToV04RotatesWriterPayload(t *testing.T) {
 		"the writer's already-built payload must rotate off v1, not just the config")
 }
 
-// TestV1StatsWorkaroundDoesNotDropP0s is a decision-matrix pin for the
-// 7.77/7.78 v1.0 stats workaround (see agentOmitsLangInV1Stats): client-side
-// stats and P0 dropping must be forced on together — by design, not by
-// oversight — exactly when the agent is affected, the effective protocol is
-// v1.0, and the escape hatch and exclusions don't apply.
-func TestV1StatsWorkaroundDoesNotDropP0s(t *testing.T) {
+// TestV1StatsWorkaroundForcesStatsAndP0Dropping is a decision-matrix pin for
+// the 7.77/7.78 v1.0 stats workaround (see agentOmitsLangInV1Stats):
+// client-side stats and P0 dropping are forced on together — by design, not
+// by oversight — exactly when the agent is affected, the effective protocol
+// is v1.0, and the escape hatch and exclusions don't apply. wantStats is
+// asserted against both canComputeStats and canDropP0s: the two predicates
+// move together for this workaround, so one column pins that invariant
+// structurally instead of two columns repeating the same value.
+func TestV1StatsWorkaroundForcesStatsAndP0Dropping(t *testing.T) {
 	cases := []struct {
 		name              string
 		agentVersion      string // "" omits the "version" field from /info entirely
@@ -169,79 +190,73 @@ func TestV1StatsWorkaroundDoesNotDropP0s(t *testing.T) {
 		statsAdvertised   bool
 		dropP0sAdvertised bool
 		envProtocol       string // DD_TRACE_AGENT_PROTOCOL_VERSION, "" leaves it unset
-		wantComputeStats  bool
-		wantDropP0s       bool
+		wantStats         bool
 		wantProtocol      float64
 	}{
 		{
 			name: "7.77 forces stats and P0 dropping on", agentVersion: "7.77.0",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: true, wantDropP0s: true, wantProtocol: traceProtocolV1,
+			wantStats: true, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "7.78 forces stats and P0 dropping on", agentVersion: "7.78.3",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: true, wantDropP0s: true, wantProtocol: traceProtocolV1,
+			wantStats: true, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "7.79.0-rc.4 (unfixed prerelease) also forces the override on", agentVersion: "7.79.0-rc.4",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: true, wantDropP0s: true, wantProtocol: traceProtocolV1,
+			wantStats: true, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "7.79.0-rc.6 is fixed: no override", agentVersion: "7.79.0-rc.6",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV1,
+			wantStats: false, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "7.79.0 is fixed: no override", agentVersion: "7.79.0",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV1,
-		},
-		{
-			// A real 7.76.9 agent never advertises /v1.0/traces (it is gated
-			// behind apm_config.enable_v1_trace_endpoint, default off through
-			// 7.76.x), so the protocol guard alone excludes it in practice —
-			// this is the case the "true defect boundary" recommendation
-			// argued was equivalent to the literal 7.77/7.78 window.
-			name: "7.76.9 doesn't advertise v1.0 in practice: no override, protocol stays v0.4", agentVersion: "7.76.9",
-			v1Advertised: false, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV04,
+			wantStats: false, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "unldflagged 6.0.0 fallback: no override", agentVersion: "6.0.0",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV1,
+			wantStats: false, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "absent version: no override", agentVersion: "",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV1,
+			wantStats: false, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "non-Agent version string: no override", agentVersion: "datadogexporter-otelcol-0.155.0",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV1,
+			wantStats: false, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "escape hatch: DD_TRACE_AGENT_PROTOCOL_VERSION=0.4 downgrades, no override", agentVersion: "7.77.0",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true, envProtocol: "0.4",
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV04,
+			wantStats: false, wantProtocol: traceProtocolV04,
 		},
 		{
+			// Also stands in for a real 7.76.9 agent, which never advertises
+			// /v1.0/traces (gated behind apm_config.enable_v1_trace_endpoint,
+			// default off through 7.76.x) — the protocol guard alone excludes
+			// it in practice, so a dedicated lower-bound row would pin nothing
+			// beyond this one.
 			name: "agent doesn't advertise v1.0: no override (v0.4 anyway)", agentVersion: "7.77.0",
 			v1Advertised: false, statsAdvertised: true, dropP0sAdvertised: true,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV04,
+			wantStats: false, wantProtocol: traceProtocolV04,
 		},
 		{
 			name: "agent doesn't advertise /v0.6/stats: no override, no protocol downgrade", agentVersion: "7.77.0",
 			v1Advertised: true, statsAdvertised: false, dropP0sAdvertised: true,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV1,
+			wantStats: false, wantProtocol: traceProtocolV1,
 		},
 		{
 			name: "agent has the probabilistic sampler enabled (client_drop_p0s=false): no override, no protocol downgrade", agentVersion: "7.77.0",
 			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: false,
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV1,
+			wantStats: false, wantProtocol: traceProtocolV1,
 		},
 	}
 
@@ -252,25 +267,20 @@ func TestV1StatsWorkaroundDoesNotDropP0s(t *testing.T) {
 			}
 
 			agent := startTestAgent(t)
-			endpoints := []string{`"/v0.4/traces"`}
+			endpoints := []string{"/v0.4/traces"}
 			if tc.v1Advertised {
-				endpoints = append(endpoints, `"/v1.0/traces"`)
+				endpoints = append(endpoints, "/v1.0/traces")
 			}
 			if tc.statsAdvertised {
-				endpoints = append(endpoints, `"/v0.6/stats"`)
+				endpoints = append(endpoints, "/v0.6/stats")
 			}
-			body := `{"endpoints":[` + strings.Join(endpoints, ",") + `],"client_drop_p0s":` + strconv.FormatBool(tc.dropP0sAdvertised)
-			if tc.agentVersion != "" {
-				body += `,"version":"` + tc.agentVersion + `"`
-			}
-			body += `}`
-			agent.SetInfo(body)
+			agent.SetInfo(infoJSON(endpoints, tc.dropP0sAdvertised, tc.agentVersion))
 
 			tr := newTracerTest(t, agent, WithStatsComputation(false))
 			defer stopTracerTest(tr)
 
-			assert.Equal(t, tc.wantComputeStats, tr.config.canComputeStats(), "canComputeStats")
-			assert.Equal(t, tc.wantDropP0s, tr.config.canDropP0s(), "canDropP0s")
+			assert.Equal(t, tc.wantStats, tr.config.canComputeStats(), "canComputeStats")
+			assert.Equal(t, tc.wantStats, tr.config.canDropP0s(), "canDropP0s")
 			assert.Equal(t, tc.wantProtocol, tr.config.effectiveTraceProtocol(), "effectiveTraceProtocol")
 		})
 	}
@@ -285,9 +295,9 @@ func TestV1StatsWorkaroundDoesNotDropP0s(t *testing.T) {
 const v1StatsWorkaroundAffectedInfo = `{"endpoints":["/v0.4/traces","/v1.0/traces","/v0.6/stats"],"client_drop_p0s":true,"version":"7.77.0"}`
 
 // TestV1StatsWorkaroundExclusions covers the exclusion branches of
-// forcesStatsForV1Agent that TestV1StatsWorkaroundDoesNotDropP0s's table does
-// not reach — the ones that suppress the override even though the agent is
-// affected and every other gate is open:
+// forcesStatsForV1Agent that TestV1StatsWorkaroundForcesStatsAndP0Dropping's
+// table does not reach — the ones that suppress the override even though the
+// agent is affected and every other gate is open:
 //
 //   - Lambda: the Datadog Lambda extension computes trace stats server-side,
 //     and contrib/aws/datadog-lambda-go passes WithStatsComputation(false)
@@ -412,12 +422,12 @@ func TestV1StatsWorkaroundStartupOrderVsTracingAsTransport(t *testing.T) {
 }
 
 // TestV1StatsWorkaroundWireBehavior is the end-to-end companion to
-// TestV1StatsWorkaroundDoesNotDropP0s: it proves the override actually
-// changes what goes out on the wire, which is what makes the agent skip its
-// buggy v1.0 stats path in the first place.
+// TestV1StatsWorkaroundForcesStatsAndP0Dropping: it proves the override
+// actually changes what goes out on the wire, which is what makes the agent
+// skip its buggy v1.0 stats path in the first place.
 func TestV1StatsWorkaroundWireBehavior(t *testing.T) {
 	agent := startTestAgent(t)
-	agent.SetInfo(`{"endpoints":["/v0.4/traces","/v1.0/traces","/v0.6/stats"],"client_drop_p0s":true,"version":"7.77.0"}`)
+	agent.SetInfo(infoJSON([]string{"/v0.4/traces", "/v1.0/traces", "/v0.6/stats"}, true, "7.77.0"))
 	tr := newTracerTest(t, agent, WithStatsComputation(false))
 	defer stopTracerTest(tr)
 

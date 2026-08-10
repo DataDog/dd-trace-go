@@ -1317,9 +1317,13 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 
 func (t *tracer) TracerConf() TracerConf {
 	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
+	// canDropP0s is a pure alias of canComputeStats (see its doc comment);
+	// compute once so both fields, and both agent.load() calls the two
+	// methods would otherwise make, collapse into one.
+	canComputeStats := t.config.canComputeStats()
 	return TracerConf{
-		CanComputeStats:        t.config.canComputeStats(),
-		CanDropP0s:             t.config.canDropP0s(),
+		CanComputeStats:        canComputeStats,
+		CanDropP0s:             canComputeStats,
 		DebugAbandonedSpans:    t.config.internalConfig.DebugAbandonedSpans(),
 		Disabled:               !t.config.internalConfig.TracingEnabled(),
 		PartialFlush:           pfEnabled,

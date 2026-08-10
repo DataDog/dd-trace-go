@@ -442,13 +442,6 @@ type agentFeatures struct {
 	// versioning scheme.
 	AgentVersion string
 
-	// v1StatsLangUnfixed is agentOmitsLangInV1Stats(AgentVersion), precomputed
-	// so the semver comparison stays off the span-finish path. It is a pure
-	// function of the version string alone; the protocol condition is
-	// applied at read time in forcesStatsForV1Agent, so it cannot
-	// desynchronize from the trace-protocol state.
-	v1StatsLangUnfixed bool
-
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
 
@@ -481,6 +474,15 @@ type agentFeatures struct {
 	// effectiveTraceProtocol reads. Nothing else should read this field to
 	// decide the wire format.
 	v1TracesAdvertised bool
+
+	// v1StatsLangUnfixed is agentOmitsLangInV1Stats(AgentVersion), precomputed
+	// so the semver comparison stays off the span-finish path. It is a pure
+	// function of the version string alone; the protocol condition is
+	// applied at read time in forcesStatsForV1Agent, so it cannot
+	// desynchronize from v1TracesAdvertised above. Placed in this trailing
+	// bool cluster (rather than beside AgentVersion) so it lands in existing
+	// padding instead of growing the struct.
+	v1StatsLangUnfixed bool
 
 	// hasTelemetryProxy reports whether the trace-agent exposes the /telemetry/proxy/ endpoint.
 	// This is only true when the agent has telemetry forwarding enabled (the default).
@@ -753,10 +755,16 @@ func (c *config) forcesStatsForV1Agent(a agentFeatures) bool {
 		return false
 	}
 	// A no-op when Datadog-Client-Computed-Stats is already sent for another
-	// reason (see traceTransportHeaders and transport.go's per-request
-	// header logic): the agent then never enters its v1.0 concentrator path,
-	// so there is nothing to work around.
-	if c.tracingAsTransport || c.internalConfig.OTLPSpanMetricsEnabled() || c.internalConfig.OTLPExportMode() {
+	// reason (see traceTransportHeaders and transport.go's per-request header
+	// logic): the agent then never enters its v1.0 concentrator path, so
+	// there is nothing to work around.
+	if c.tracingAsTransport || c.internalConfig.OTLPSpanMetricsEnabled() {
+		return false
+	}
+	// In OTLP export mode the stats concentrator is a noopConcentrator (see
+	// newTracer), so forcing the override on would enable P0 trace dropping
+	// with nothing computing stats to compensate.
+	if c.internalConfig.OTLPExportMode() {
 		return false
 	}
 	// CI Visibility cannot use client-computed stats through this workaround
@@ -777,8 +785,12 @@ func (c *config) forcesStatsForV1Agent(a agentFeatures) bool {
 // statsOverriddenForV1Agent reports whether forcesStatsForV1Agent is the
 // reason client-side stats are on — i.e. whether it changed the answer.
 // For logging/telemetry only; canComputeStatsWithAgent is the predicate.
+//
+// Written out rather than expressed as !statsComputationRequested() &&
+// canComputeStatsWithAgent(a) to avoid evaluating statsComputationRequested
+// twice: canComputeStatsWithAgent already calls it internally.
 func (c *config) statsOverriddenForV1Agent(a agentFeatures) bool {
-	return !c.statsComputationRequested() && c.canComputeStatsWithAgent(a)
+	return !c.statsComputationRequested() && a.Stats && a.DropP0s && c.forcesStatsForV1Agent(a)
 }
 
 // surfaceStatsOverride re-evaluates the v1.0 stats workaround against a fresh
