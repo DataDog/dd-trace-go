@@ -8,6 +8,7 @@ package cloudevents
 import (
 	"github.com/cloudevents/sdk-go/v2/binding"
 	"github.com/cloudevents/sdk-go/v2/event"
+	"github.com/cloudevents/sdk-go/v2/extensions"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
@@ -15,7 +16,11 @@ import (
 // CloudEvent extensions are transport-independent metadata fields. Their names
 // cannot contain the punctuation used by Datadog propagation headers, whereas
 // the W3C propagation names are valid.
-var propagationKeys = [...]string{"traceparent", "tracestate", "baggage"}
+var propagationKeys = [...]string{
+	extensions.TraceParentExtension,
+	extensions.TraceStateExtension,
+	tracer.DefaultBaggageHeader,
+}
 
 // eventCarrier adapts a CloudEvent writer to tracer.TextMapWriter.
 type eventCarrier struct {

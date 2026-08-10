@@ -7,6 +7,11 @@
 // common event envelope that can be transported over systems such as HTTP,
 // Kafka, or Google Pub/Sub. This integration traces events as they are sent and
 // received and propagates trace context in CloudEvent extension attributes.
+//
+// Propagation requires the tracecontext propagation style, which is enabled by
+// default. The CloudEvents SDK does not invoke completion callbacks for
+// undelivered requests or receiver-handler panics, so the corresponding spans
+// cannot finish until that behavior is fixed upstream.
 package cloudevents
 
 import (
