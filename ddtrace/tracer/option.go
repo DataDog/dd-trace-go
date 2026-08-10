@@ -54,7 +54,6 @@ const (
 	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
 	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
 	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
-	envSpanPoolEnabled        = "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED"
 )
 
 var contribIntegrations = map[string]struct {
@@ -192,9 +191,6 @@ type config struct {
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
 
-	// spanPoolEnabled controls whether finished spans are recycled via sync.Pool.
-	spanPoolEnabled bool
-
 	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
 	// should be started instead of the DD statsd runtime metrics paths.
 	otelRuntimeMetricsShouldBeEnabled bool
@@ -233,7 +229,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
 		ProjectName:      env.Get(envLLMObsProjectName),
 	}
-	c.spanPoolEnabled = internal.BoolEnv(envSpanPoolEnabled, false)
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -1347,7 +1342,7 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 // This is equivalent to the DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED environment variable.
 func WithSpanPool(enabled bool) StartOption {
 	return func(c *config) {
-		c.spanPoolEnabled = enabled
+		c.internalConfig.SetSpanPoolEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 

@@ -191,6 +191,8 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// spanPoolEnabled enables the experimental span pool.
+	spanPoolEnabled bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -290,6 +292,7 @@ func loadConfig() *Config {
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
+	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
@@ -1354,4 +1357,20 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+func (c *Config) SpanPoolEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanPoolEnabled
+}
+
+func (c *Config) SetSpanPoolEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.spanPoolEnabled = enabled
+	configtelemetry.Report("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", enabled, origin)
 }

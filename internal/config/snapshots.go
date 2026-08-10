@@ -25,6 +25,7 @@ type SpanStartSnapshot struct {
 	DebugAbandonedSpans     bool
 	ProfilerHotspotsEnabled bool
 	ProfilerEndpoints       bool
+	SpanPoolEnabled         bool
 	// The map is the live internal map, shared with the config, not a copy.
 	// Callers must not mutate it; use Config.GlobalTags() to get a safe copy.
 	GlobalTags map[string]any
@@ -49,6 +50,7 @@ func (c *Config) SpanStartSnapshot() SpanStartSnapshot {
 		DebugAbandonedSpans:     c.debugAbandonedSpans,
 		ProfilerHotspotsEnabled: c.profilerHotspots,
 		ProfilerEndpoints:       c.profilerEndpoints,
+		SpanPoolEnabled:         c.spanPoolEnabled,
 		GlobalTags:              tags,
 	}
 }
