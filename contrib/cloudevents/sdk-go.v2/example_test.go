@@ -13,7 +13,7 @@ import (
 	"github.com/cloudevents/sdk-go/v2/protocol/gochan"
 )
 
-func ExampleNew() {
+func Example() {
 	observability := cloudeventstrace.New(
 		cloudeventstrace.WithMessagingSystem("kafka"),
 		cloudeventstrace.WithDestinationName("orders"),

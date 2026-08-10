@@ -268,20 +268,6 @@ var packages = map[Package]PackageInfo{
 	PackageCloudEventsSDKGoV2: {
 		TracedPackage: "github.com/cloudevents/sdk-go/v2",
 		EnvVarPrefix:  "CLOUDEVENTS",
-		naming: map[Component]componentNames{
-			ComponentConsumer: {
-				useDDServiceV0:     false,
-				buildServiceNameV0: staticName(""),
-				buildOpNameV0:      staticName("cloudevents.consume"),
-				buildOpNameV1:      staticName("cloudevents.process"),
-			},
-			ComponentProducer: {
-				useDDServiceV0:     false,
-				buildServiceNameV0: staticName(""),
-				buildOpNameV0:      staticName("cloudevents.publish"),
-				buildOpNameV1:      staticName("cloudevents.send"),
-			},
-		},
 	},
 	PackageConfluentKafkaGo: {
 		TracedPackage: "github.com/confluentinc/confluent-kafka-go",

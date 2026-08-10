@@ -167,16 +167,16 @@ func TestSend(t *testing.T) {
 				t.Errorf("traceparent %q does not identify send span %016x", traceparent, send.SpanID())
 			}
 			wantTags := map[string]any{
-				ext.SpanType:                  ext.SpanTypeMessageProducer,
-				ext.SpanKind:                  ext.SpanKindProducer,
-				ext.Component:                 "cloudevents/sdk-go.v2",
-				ext.MessagingOperationName:    "send",
-				ext.ResourceName:              "com.example.created",
-				"cloudevents.id":              "event-id",
-				"cloudevents.type":            "com.example.created",
-				"cloudevents.source":          "https://example.test/source",
-				"cloudevents.specversion":     "1.0",
-				"cloudevents.datacontenttype": "application/json",
+				ext.SpanType:                     ext.SpanTypeMessageProducer,
+				ext.SpanKind:                     ext.SpanKindProducer,
+				ext.Component:                    "cloudevents/sdk-go.v2",
+				ext.MessagingOperationName:       "send",
+				ext.ResourceName:                 "com.example.created",
+				"cloudevents.event_id":           "event-id",
+				"cloudevents.event_type":         "com.example.created",
+				"cloudevents.event_source":       "https://example.test/source",
+				"cloudevents.event_spec_version": "1.0",
+				"cloudevents.datacontenttype":    "application/json",
 			}
 			assertSpanTags(t, send, wantTags)
 			if send.Tag("cloudevents.subject") != nil || send.Tag("cloudevents.data") != nil {
@@ -239,11 +239,12 @@ func TestConsumer(t *testing.T) {
 	withoutContext := testEvent()
 
 	tests := []struct {
-		name    string
-		message binding.Message
-		event   *cloudevents.Event
-		result  error
-		linked  bool
+		name     string
+		message  binding.Message
+		event    *cloudevents.Event
+		result   error
+		linked   bool
+		resource string
 	}{
 		{name: "linked nil", message: message, event: &e, linked: true},
 		{name: "linked ACK", message: message, event: &e, result: protocol.ResultACK, linked: true},
@@ -255,7 +256,7 @@ func TestConsumer(t *testing.T) {
 			result:  errors.New("handler failed"),
 			linked:  true,
 		},
-		{name: "nil event", message: message, linked: true},
+		{name: "nil event", message: message, linked: true, resource: "unknown"},
 		{name: "decoded event fallback", event: &e, linked: true},
 		{
 			name:    "missing context",
@@ -300,6 +301,9 @@ func TestConsumer(t *testing.T) {
 			if consumer.Tag(ext.SpanType) != ext.SpanTypeMessageConsumer || consumer.Tag(ext.SpanKind) != ext.SpanKindConsumer {
 				t.Errorf("consumer tags = %#v", consumer.Tags())
 			}
+			if tc.resource != "" && consumer.Tag(ext.ResourceName) != tc.resource {
+				t.Errorf("resource = %#v, want %q", consumer.Tag(ext.ResourceName), tc.resource)
+			}
 			wantError := tc.result != nil && !protocol.IsACK(tc.result)
 			if got := consumer.Tag(ext.ErrorMsg); (got != nil) != wantError {
 				t.Errorf("error tag = %#v, want error=%v", got, wantError)
@@ -327,6 +331,7 @@ func TestOptions(t *testing.T) {
 		WithMessagingSystem("kafka"),
 		WithDestinationName("orders"),
 		WithSubject(),
+		WithCustomTag("custom.tag", "value"),
 	).(*observabilityService)
 
 	service.RecordReceivedMalformedEvent(context.Background(), errors.New("bad event"))
@@ -342,11 +347,12 @@ func TestOptions(t *testing.T) {
 			ext.ServiceName:              "custom-service",
 			ext.MessagingSystem:          "kafka",
 			ext.MessagingDestinationName: "orders",
+			"custom.tag":                 "value",
 		})
 	}
 
 	send := spans[1]
-	if got := send.Tag("cloudevents.subject"); got != "orders/123" {
+	if got := send.Tag("cloudevents.event_subject"); got != "orders/123" {
 		t.Errorf("subject = %#v, want orders/123", got)
 	}
 }
@@ -363,8 +369,8 @@ func TestMalformedEvent(t *testing.T) {
 		ext.ResourceName: "malformed",
 		ext.SpanType:     ext.SpanTypeMessageConsumer,
 	})
-	if span.OperationName() != "cloudevents.consume" {
-		t.Errorf("operation name = %q, want cloudevents.consume", span.OperationName())
+	if span.OperationName() != "cloudevents.process" {
+		t.Errorf("operation name = %q, want cloudevents.process", span.OperationName())
 	}
 	if span.ParentID() != 0 {
 		t.Errorf("parent ID = %d, want 0", span.ParentID())
@@ -372,7 +378,7 @@ func TestMalformedEvent(t *testing.T) {
 	if span.Tag(ext.ErrorMsg) == nil {
 		t.Error("malformed span does not contain an error")
 	}
-	for _, key := range []string{"cloudevents.id", "cloudevents.type", "cloudevents.source"} {
+	for _, key := range []string{"cloudevents.event_id", "cloudevents.event_type", "cloudevents.event_source"} {
 		if value := span.Tag(key); value != nil {
 			t.Errorf("malformed span tag %q = %#v, want nil", key, value)
 		}
