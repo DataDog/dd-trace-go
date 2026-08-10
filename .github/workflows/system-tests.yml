@@ -341,7 +341,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@d56b98b3595ee8b541db95472b1ca4f2154a0316
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@17a45f60c216a142ced110eb15f63a4acc2a0b4a
 
       - name: Compress artifact
         if: ${{ always() }}
