@@ -329,7 +329,7 @@ func (cfg *processRetrySubtreeConfig) itrDecision(name string, meta processRetry
 	idx, ok := slices.BinarySearchFunc(cfg.ITR, name, func(candidate processRetrySubtreeITR, name string) int {
 		return strings.Compare(candidate.TestName, name)
 	})
-	if !ok || meta.AttemptToFix {
+	if !ok || meta.AttemptToFix || meta.Modified {
 		return false, false
 	}
 	_, _, unskippable := integrations.TestFuncSourceMetadata(sourceFunc)
@@ -468,6 +468,9 @@ func (o *processRetryChildObservation) buildSubtreeResult(result processRetryRes
 	result.OutputTruncated = root.OutputTruncated
 	result.Source = root.Source
 	result.Coverage = root.Coverage
+	result.SkippedByITR = root.SkippedByITR
+	result.ITRForcedRun = root.ITRForcedRun
+	result.Modified = root.Modified
 	result.Subtests = append(results[:rootIndex:rootIndex], results[rootIndex+1:]...)
 	applyProcessRetryControlledSubtreeStatus(&result, controlled)
 	return result
@@ -495,6 +498,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	execMeta.test = parent.test
 	execMeta.processRetryOwner = parent
 	execMeta.quarantinedRaceChild = state
+	execMeta.processRetryCoverageMu = &sync.Mutex{}
 	if !processRetryNameWithinRoot(name, state.cfg.SelectedRoot) {
 		defer deleteTestMetadata(t)
 		original(t)
@@ -514,15 +518,22 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 
 	sourceFunc := runtime.FuncForPC(reflect.ValueOf(original).Pointer())
 	source := processRetrySourceFromFunc(sourceFunc)
+	execMeta.isAModifiedTest = directive.Modified || integrations.IsTestFuncModifiedWithAnalyzer(state.impacted, name, sourceFunc)
+	directive.Modified = execMeta.isAModifiedTest
 	order, start, raceBaseline := state.begin()
 	restoreChatty := bufferQuarantinedRaceChildOutput(t)
 	var collector *coverage.ProcessTestCoverage
 	var parentBarrier *chan bool
 	var oldParentBarrier chan bool
+	coverageLocked := false
 	if state.cfg.CollectPerTest && source != nil && coverage.CanCollect() {
-		// Runtime coverage counters are global. Clearing the parent barrier keeps
-		// covered bodies serial, so each event owns a deterministic delta. The
-		// intentional ancestor/descendant overlap represents their logical scopes.
+		// Runtime coverage counters are global, so siblings must not collect
+		// overlapping deltas. The parent-owned lock serializes concurrent t.Run
+		// calls without blocking nested collectors, which lock their own parent.
+		parent.processRetryCoverageMu.Lock()
+		coverageLocked = true
+		// Clearing the barrier makes t.Parallel a no-op for this covered body.
+		// Ancestor/descendant collectors remain inclusive by design.
 		if fields := getTestParentPrivateFields(t); fields != nil && fields.barrier != nil {
 			parentBarrier = fields.barrier
 			oldParentBarrier = *parentBarrier
@@ -532,12 +543,16 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	}
 
 	t.Cleanup(func() {
+		if coverageLocked {
+			defer parent.processRetryCoverageMu.Unlock()
+		}
 		files := collector.Finish()
 		if parentBarrier != nil {
 			*parentBarrier = oldParentBarrier
 		}
 		restoreChatty()
 		finish := time.Now()
+		fields := getTestPrivateFields(t)
 		result := processRetrySubtreeResult{
 			TestName:        name,
 			StartUnixNano:   start.UnixNano(),
@@ -545,19 +560,19 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			DurationNanos:   finish.UnixNano() - start.UnixNano(),
 			Failed:          t.Failed(),
 			Skipped:         t.Skipped(),
-			RaceDetected:    retryAttemptRaceErrors() > raceBaseline,
+			RaceDetected:    processRetrySubtreeRaceDetected(fields, raceBaseline, retryAttemptRaceErrors()),
 			Disabled:        directive.Disabled,
 			Quarantined:     directive.Quarantined,
 			AttemptToFix:    directive.AttemptToFix,
 			AttemptToFixOwn: attemptOwner == name,
 			ITRForcedRun:    execMeta.isItrForcedRun,
 			SkippedByITR:    execMeta.isItrSkipped,
-			Modified:        integrations.IsTestFuncModifiedWithAnalyzer(state.impacted, name, sourceFunc),
+			Modified:        execMeta.isAModifiedTest,
 			Source:          source,
 			Coverage:        files,
 			order:           order,
 		}
-		if fields := getTestPrivateFields(t); fields != nil {
+		if fields != nil {
 			result.OutputTail, result.OutputTruncated = truncateProcessRetrySubtreeOutput(fields.GetOutput())
 		}
 		if panicInfo := execMeta.processRetryPanic.Load(); panicInfo != nil {
@@ -625,6 +640,16 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	}()
 	original(t)
 	bodyReturned = true
+}
+
+func processRetrySubtreeRaceDetected(fields *commonPrivateFields, initialBaseline, current int64) bool {
+	baseline := initialBaseline
+	if fields != nil && fields.isParallel != nil && *fields.isParallel && fields.lastRaceErrors != nil {
+		// testing.T.Parallel resets this baseline after the test resumes so races
+		// reported while it was paused are not charged to the resumed subtest.
+		baseline = fields.lastRaceErrors.Load()
+	}
+	return current > baseline
 }
 
 func bufferQuarantinedRaceChildOutput(t *testing.T) func() {
@@ -811,7 +836,7 @@ func runQuarantinedRaceProcessIsolation(
 
 	rootTotal := 1
 	if cfg.OwnsAttemptToFix {
-		rootTotal += cfg.AttemptToFixRetries
+		rootTotal = processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries)
 	}
 	invocations := make([]quarantinedRaceInvocation, 0, rootTotal)
 	for idx := 0; idx < rootTotal; idx++ {
@@ -835,7 +860,7 @@ func runQuarantinedRaceProcessIsolation(
 				failQuarantinedRaceIsolation(t, testInfo, execMeta, processRetryAttemptResult{SetupFailure: true, Err: cfgErr, ExitCode: processRetryExitCodeUnset, StartTime: time.Now(), FinishTime: time.Now()})
 				return
 			}
-			for idx := 1; idx <= cfg.AttemptToFixRetries; idx++ {
+			for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
 				attempt := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, idx)
 				if processRetryInfrastructureFailure(attempt) {
 					failQuarantinedRaceIsolation(t, &commonInfo{
@@ -858,6 +883,12 @@ func runQuarantinedRaceProcessIsolation(
 	// Visibility but is intentionally masked from the package result. An
 	// infrastructure error returns above through Fail and is never quarantined.
 	t.SkipNow()
+}
+
+// AttemptToFixRetries is the configured total execution count in the existing
+// in-process retry path, despite its historical name.
+func processRetryAttemptToFixExecutionCount(configured int) int {
+	return max(configured, 1)
 }
 
 func runQuarantinedRaceInvocation(
@@ -897,10 +928,6 @@ func runQuarantinedRaceInvocation(
 		if err := coverage.MergeProcessCoverageProfile(processRetrySubtreeCoveragePath(filepath.Join(attempt.TempDir, "result.json"))); err != nil {
 			attempt.Err = errors.Join(attempt.Err, fmt.Errorf("aggregate process coverage: %w", err))
 		}
-	}
-	if attempt.Result.OutputTail != "" {
-		attempt.OutputTail = attempt.Result.OutputTail
-		attempt.OutputTruncated = attempt.Result.OutputTruncated
 	}
 	return attempt
 }
@@ -979,7 +1006,7 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 		for _, result := range invocation.attempt.Result.Subtests {
 			replayQuarantinedRaceEvent(testInfo, invocation, result, outcomes, counted)
 		}
-		root := processRetrySubtreeResultFromEnvelope(invocation.attempt.Result, invocation.cfg)
+		root := processRetrySubtreeRootFromInvocation(invocation)
 		replayQuarantinedRaceEvent(testInfo, invocation, root, outcomes, counted)
 	}
 	module := session.GetOrCreateModule(testInfo.moduleName)
@@ -987,6 +1014,20 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 	for range counted {
 		checkModuleAndSuite(module, suite)
 	}
+}
+
+func processRetrySubtreeRootFromInvocation(invocation quarantinedRaceInvocation) processRetrySubtreeResult {
+	root := processRetrySubtreeResultFromEnvelope(invocation.attempt.Result, invocation.cfg)
+	raceDetected := root.RaceDetected || slices.ContainsFunc(invocation.attempt.Result.Subtests, func(result processRetrySubtreeResult) bool {
+		return result.RaceDetected
+	})
+	if raceDetected && invocation.attempt.OutputTail != "" {
+		// The race detector writes its full report directly to child stderr. The
+		// structured subtree result only contains testing's short race message.
+		root.OutputTail = invocation.attempt.OutputTail
+		root.OutputTruncated = invocation.attempt.OutputTruncated
+	}
+	return root
 }
 
 func replayQuarantinedRaceEvent(
@@ -1009,6 +1050,7 @@ func replayQuarantinedRaceEvent(
 		counted[result.TestName] = struct{}{}
 	}
 	_, owner := invocation.cfg.resolveDirective(result.TestName)
+	ownsAttemptToFix := owner == result.TestName
 	prior := outcomes[result.TestName]
 	execMeta := &testExecutionMetadata{
 		identity:                      identity,
@@ -1023,14 +1065,14 @@ func replayQuarantinedRaceEvent(
 		hasExplicitDisabled:           true,
 		hasExplicitAttemptToFix:       true,
 		suppressParentRetryMetadata:   true,
-		shouldOrchestrateAttemptToFix: owner != "",
+		shouldOrchestrateAttemptToFix: ownsAttemptToFix,
 	}
-	if owner != "" {
-		attemptTotal := invocation.cfg.AttemptToFixRetries + 1
+	if ownsAttemptToFix {
+		attemptTotal := processRetryAttemptToFixExecutionCount(invocation.cfg.AttemptToFixRetries)
 		execMeta.isARetry = invocation.attemptIndex > 0
 		execMeta.isLastRetry = invocation.attemptIndex == attemptTotal-1
 		execMeta.remainingRetries = int64(attemptTotal - invocation.attemptIndex)
-		execMeta.initialRetryCount = int64(attemptTotal - 1)
+		execMeta.initialRetryCount = int64(invocation.cfg.AttemptToFixRetries)
 		execMeta.initialRetryCountSet = true
 		execMeta.retryContinuationDecided = true
 		execMeta.retryContinuationAdmitted = !execMeta.isLastRetry
@@ -1051,7 +1093,7 @@ func replayQuarantinedRaceEvent(
 		testName:   result.TestName,
 		identity:   identity,
 	}, execMeta, attempt, nil, nil)
-	if owner != "" {
+	if ownsAttemptToFix {
 		prior.observe(result.Failed, result.Skipped)
 		outcomes[result.TestName] = prior
 	}

@@ -51,6 +51,12 @@ func TestQuarantinedRaceDirectiveResolutionUsesNearestAttemptOwner(t *testing.T)
 	assert.Empty(t, owner)
 }
 
+func TestQuarantinedRaceAttemptToFixSettingIsTotalExecutionCount(t *testing.T) {
+	assert.Equal(t, 1, processRetryAttemptToFixExecutionCount(0))
+	assert.Equal(t, 1, processRetryAttemptToFixExecutionCount(1))
+	assert.Equal(t, 3, processRetryAttemptToFixExecutionCount(3))
+}
+
 func TestQuarantinedRaceITRDecisionPreservesSourceUnskippable(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
@@ -68,6 +74,97 @@ func TestQuarantinedRaceITRDecisionPreservesSourceUnskippable(t *testing.T) {
 			assert.Equal(t, tt.forced, forced)
 		})
 	}
+}
+
+func TestQuarantinedRaceITRDecisionExecutesModifiedTest(t *testing.T) {
+	const name = "quarantinedRaceSkippableFixture"
+	cfg := &processRetrySubtreeConfig{ITR: []processRetrySubtreeITR{{TestName: name}}}
+	fn := runtime.FuncForPC(reflect.ValueOf(quarantinedRaceSkippableFixture).Pointer())
+
+	skip, forced := cfg.itrDecision(name, processRetrySubtreeDirective{Modified: true}, fn)
+	assert.False(t, skip)
+	assert.False(t, forced)
+}
+
+func TestQuarantinedRaceUsesPostParallelRaceBaseline(t *testing.T) {
+	parallel := true
+	baseline := &atomic.Int64{}
+	baseline.Store(3)
+	fields := &commonPrivateFields{isParallel: &parallel, lastRaceErrors: baseline}
+
+	assert.False(t, processRetrySubtreeRaceDetected(fields, 1, 3), "race while paused must not be attributed after Parallel resumes")
+	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 4), "race after resume must still be attributed")
+
+	parallel = false
+	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 3), "a serial subtree root must retain descendant race attribution")
+}
+
+func TestQuarantinedRaceNestedRootEnvelopePreservesMetadata(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		skipped  bool
+		forced   bool
+		modified bool
+	}{
+		{name: "skipped by ITR", skipped: true},
+		{name: "forced by ITR", forced: true},
+		{name: "modified", modified: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &processRetrySubtreeConfig{
+				Version:      processRetrySubtreeVersion,
+				SelectedRoot: "TestCheckout/card",
+				Root:         processRetrySubtreeDirective{TestName: "TestCheckout/card", Quarantined: true},
+			}
+			status := processRetryStatusPass
+			skipReason := ""
+			if tt.skipped {
+				status = processRetryStatusSkip
+				skipReason = "itr"
+			}
+			state := newQuarantinedRaceChildState(cfg)
+			state.append(processRetrySubtreeResult{
+				TestName: "TestCheckout/card", Status: status,
+				Skipped: tt.skipped, SkipReason: skipReason,
+				SkippedByITR: tt.skipped, ITRForcedRun: tt.forced, Modified: tt.modified,
+			})
+			observation := &processRetryChildObservation{
+				cfg:     processRetryChildConfig{TestName: cfg.SelectedRoot, Subtree: cfg},
+				subtree: state,
+			}
+
+			got := observation.buildSubtreeResult(processRetryResult{TestName: cfg.SelectedRoot}, "")
+			assert.Equal(t, tt.skipped, got.SkippedByITR)
+			assert.Equal(t, tt.forced, got.ITRForcedRun)
+			assert.Equal(t, tt.modified, got.Modified)
+		})
+	}
+}
+
+func TestQuarantinedRaceRootReplayKeepsRaceDetectorOutput(t *testing.T) {
+	cfg := &processRetrySubtreeConfig{
+		SelectedRoot: "TestCheckout/card",
+		Root:         processRetrySubtreeDirective{TestName: "TestCheckout/card", Quarantined: true},
+	}
+	invocation := quarantinedRaceInvocation{
+		cfg: cfg,
+		attempt: processRetryAttemptResult{
+			OutputTail:      "WARNING: DATA RACE\nfull detector stack",
+			OutputTruncated: true,
+			Result: processRetryResult{
+				TestName: cfg.SelectedRoot, Status: processRetryStatusFail,
+				Failed: true, OutputTail: "race detected during execution of test",
+				Subtests: []processRetrySubtreeResult{{
+					TestName: cfg.SelectedRoot + "/child", Status: processRetryStatusFail,
+					Failed: true, RaceDetected: true,
+				}},
+			},
+		},
+	}
+
+	got := processRetrySubtreeRootFromInvocation(invocation)
+	assert.Equal(t, invocation.attempt.OutputTail, got.OutputTail)
+	assert.True(t, got.OutputTruncated)
 }
 
 func TestQuarantinedRaceSubtreeConfigRejectsUntrustedDirectives(t *testing.T) {

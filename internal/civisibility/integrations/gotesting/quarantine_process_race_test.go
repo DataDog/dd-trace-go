@@ -20,7 +20,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -50,7 +52,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 	}
 	requireEnv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
-	requireEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "1")
+	requireEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "2")
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
@@ -107,6 +109,9 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if readPID("paypal") != parentPID {
 		panic("non-quarantined sibling did not stay in the parent process")
 	}
+	if testing.CoverMode() != "" && readPID("coverage-serialized") == parentPID {
+		panic("covered concurrent subtests were not serialized in the child process")
+	}
 	atf0, atf1 := readPID("atf-1"), readPID("atf-2")
 	if atf0 == parentPID || atf1 == parentPID || atf0 == atf1 {
 		panic("attempt-to-fix executions did not use fresh child processes")
@@ -124,7 +129,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 	}
 	if spanTypes[constants.SpanTypeTestSession] != 1 || spanTypes[constants.SpanTypeTestModule] != 1 ||
-		spanTypes[constants.SpanTypeTestSuite] != 1 || spanTypes[constants.SpanTypeTest] != 17 {
+		spanTypes[constants.SpanTypeTestSuite] != 1 || spanTypes[constants.SpanTypeTest] != 19 {
 		panic(fmt.Sprintf("unexpected parent-owned CI Visibility span counts: %#v", spanTypes))
 	}
 	raceSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFixture", 1)
@@ -143,7 +148,9 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	checkSpansByTagValue(atfSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 	atfChildSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAttemptToFixFixture/child", 2)
 	checkSpansByTagValue(atfChildSpans, constants.TestIsAttempToFix, "true", 2)
-	checkSpansByTagValue(atfChildSpans, constants.TestIsRetry, "true", 1)
+	checkSpansByTagValue(atfChildSpans, constants.TestIsRetry, "true", 0)
+	checkSpansByTagValue(atfChildSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0)
+	checkSpansByTagValue(atfChildSpans, constants.TestAttemptToFixPassed, "true", 0)
 	nestedATFSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedATFFixture/card/visa", 2)
 	checkSpansByTagValue(nestedATFSpans, constants.TestIsAttempToFix, "true", 2)
 	checkSpansByTagValue(nestedATFSpans, constants.TestIsRetry, "true", 1)
@@ -164,10 +171,27 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	checkSpansByTagValue(skippedSpans, constants.TestStatus, constants.TestStatusSkip, 1)
 	checkSpansByTagValue(skippedSpans, constants.TestSkipReason, "fixture skip", 1)
 	visaSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/visa", 1)
+	checkSpansByTagValue(visaSpans, constants.TestStatus, constants.TestStatusPass, 1)
 	checkSpansByTagName(visaSpans, constants.TestSourceFile, 1)
 	checkSpansByTagName(visaSpans, constants.TestSourceStartLine, 1)
 	checkSpansByTagName(visaSpans, constants.TestSourceEndLine, 1)
 	checkSpansByTagName(visaSpans, constants.TestCodeOwners, 1)
+	mastercardSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/mastercard", 1)
+	checkSpansByTagValue(mastercardSpans, constants.TestStatus, constants.TestStatusFail, 1)
+	for _, name := range []string{"concurrent-a", "concurrent-b"} {
+		childSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/"+name, 1)
+		checkSpansByTagValue(childSpans, constants.TestStatus, constants.TestStatusPass, 1)
+	}
+	rootRaceReport := false
+	for _, entry := range logsEntries {
+		if entry.TestName == "TestQuarantinedRaceNestedFixture/card" && strings.Contains(entry.Message, "WARNING: DATA RACE") {
+			rootRaceReport = true
+			break
+		}
+	}
+	if !rootRaceReport {
+		panic("selected quarantined root did not preserve the child race-detector report")
+	}
 	os.Exit(0)
 }
 
@@ -229,6 +253,10 @@ func TestQuarantinedRaceFixture(t *testing.T) {
 		t.Skip("fixture subprocess only")
 	}
 	writeQuarantinedRaceIsolationPID(t, "race")
+	triggerQuarantinedRaceFixture()
+}
+
+func triggerQuarantinedRaceFixture() {
 	var value int
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -279,14 +307,37 @@ func TestQuarantinedRaceNestedFixture(t *testing.T) {
 			writeQuarantinedRaceIsolationPID(t, "visa")
 		}))
 		t.Run("mastercard", instrumentTestingTFunc(func(t *testing.T) {
-			t.Parallel()
 			writeQuarantinedRaceIsolationPID(t, "mastercard")
+			triggerQuarantinedRaceFixture()
 		}))
 		t.Run("skipped", instrumentTestingTFunc(func(t *testing.T) {
 			writeQuarantinedRaceIsolationPID(t, "skipped")
 			instrumentCaptureFormattedSkip(t, "Skip", "fixture skip\n")
 			t.Skip("fixture skip")
 		}))
+		var active atomic.Int32
+		var maximum atomic.Int32
+		var concurrent sync.WaitGroup
+		for _, name := range []string{"concurrent-a", "concurrent-b"} {
+			concurrent.Add(1)
+			go func() {
+				defer concurrent.Done()
+				t.Run(name, instrumentTestingTFunc(func(t *testing.T) {
+					if testing.CoverMode() != "" {
+						t.Parallel()
+					}
+					current := active.Add(1)
+					defer active.Add(-1)
+					for observed := maximum.Load(); current > observed && !maximum.CompareAndSwap(observed, current); observed = maximum.Load() {
+					}
+					time.Sleep(20 * time.Millisecond)
+				}))
+			}()
+		}
+		concurrent.Wait()
+		if testing.CoverMode() != "" && maximum.Load() == 1 {
+			writeQuarantinedRaceIsolationPID(t, "coverage-serialized")
+		}
 	}))
 	t.Run("paypal", instrumentTestingTFunc(func(t *testing.T) {
 		writeQuarantinedRaceIsolationPID(t, "paypal")

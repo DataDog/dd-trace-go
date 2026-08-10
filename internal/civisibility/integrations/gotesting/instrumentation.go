@@ -82,6 +82,7 @@ type (
 		deferredRetryEvent            *deferredProcessRetryEvent
 		quarantinedRaceProcess        *quarantinedRaceProcessContext
 		quarantinedRaceChild          *quarantinedRaceChildState
+		processRetryCoverageMu        *sync.Mutex
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function

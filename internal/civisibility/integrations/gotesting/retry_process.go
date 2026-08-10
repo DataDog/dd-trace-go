@@ -3216,6 +3216,7 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			if cfg.Subtree != nil {
 				observation.subtree = newQuarantinedRaceChildState(cfg.Subtree)
 				execMeta.quarantinedRaceChild = observation.subtree
+				execMeta.processRetryCoverageMu = &sync.Mutex{}
 			}
 			observation.execMeta = execMeta
 			return ""
