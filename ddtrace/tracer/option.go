@@ -297,9 +297,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	processtags.SetServiceNameTag(c.internalConfig.ServiceName(), svcIsUserDefined)
 	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
-		traceURL := resolveTraceURL(c.internalConfig)
 		headers := traceTransportHeaders(c.internalConfig)
-		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
+		c.ddTransport = newHTTPTransport(agentURL, c.httpClient, headers)
 	}
 	if c.propagator == nil {
 		extractFirst := c.internalConfig.PropagationExtractFirst()
@@ -331,15 +330,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 	agentURL := c.internalConfig.AgentURL()
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
-	// If the agent doesn't support the v1 protocol, downgrade to v0.4.
-	// Also downgrade if CSS is disabled (v1 requires CSS). TraceProtocol() additionally
-	// returns v0.4 when OTLP span metrics are enabled (see internal/config).
-	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
-		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
-		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
-			t.traceURL = agentURL.String() + tracesAPIPath
-		}
-	}
+	// The wire protocol is derived per-use from the requested protocol and the
+	// agent's advertised endpoints (see (*config).effectiveTraceProtocol);
+	// nothing is baked into the transport or downgraded in config here. Report
+	// the resolved value to config telemetry so it reflects what is on the wire.
+	c.internalConfig.ReportEffectiveTraceProtocol(c.effectiveTraceProtocol())
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -413,23 +408,10 @@ func apmTracingDisabled(c *config) {
 	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
 }
 
-// resolveTraceURL returns the trace URL for the Datadog agent transport,
-// based on the configured trace protocol version. In OTLP export mode the
-// ddTransport is not used for trace sending (otlpTransport handles that),
-// but it may still be used for stats and agent discovery, so it always
-// points at the DD agent.
-func resolveTraceURL(cfg *internalconfig.Config) string {
-	agentURL := cfg.AgentURL().String()
-	if cfg.TraceProtocol() == traceProtocolV1 {
-		return agentURL + tracesAPIPathV1
-	}
-	return agentURL + tracesAPIPath
-}
-
 // traceTransportHeaders returns the headers to send with Datadog agent trace
-// transport requests. Unlike resolveTraceURL, this does not depend on the
-// trace protocol, so callers that only need headers (e.g. the startup
-// diagnostics probe) can call this without an extra TraceProtocol() read.
+// transport requests. This does not depend on the trace protocol, so callers
+// that only need headers (e.g. the startup diagnostics probe) can call this
+// without an extra protocol read.
 func traceTransportHeaders(cfg *internalconfig.Config) map[string]string {
 	headers := datadogHeaders()
 	if cfg.OTLPSpanMetricsEnabled() {
@@ -723,6 +705,27 @@ func (c *config) canComputeStatsWithAgent(a agentFeatures) bool {
 // of the Client-Side Stats feature and cannot be enabled independently.
 func (c *config) canDropP0s() bool {
 	return c.canComputeStats()
+}
+
+// effectiveTraceProtocol returns the wire protocol in use right now: the
+// requested protocol, downgraded to v0.4 when the agent does not advertise
+// /v1.0/traces. It is a pure function of (requested config, agent features),
+// re-evaluated on every call. Client-side stats are deliberately absent from
+// this check: CSS has no bearing on the wire format — the Agent has always
+// accepted v1.0 payloads without it.
+func (c *config) effectiveTraceProtocol() float64 {
+	return c.effectiveTraceProtocolWithAgent(c.agent.load())
+}
+
+// effectiveTraceProtocolWithAgent resolves the protocol against a caller-held
+// agent snapshot, so a caller that reports several agent-derived values at
+// once can keep them all consistent with one /info response. Mirrors the
+// canComputeStats/canComputeStatsWithAgent pair above.
+func (c *config) effectiveTraceProtocolWithAgent(a agentFeatures) float64 {
+	if c.internalConfig.RequestedTraceProtocol() == traceProtocolV1 && a.v1ProtocolAvailable {
+		return traceProtocolV1
+	}
+	return traceProtocolV04
 }
 
 func statsTags(c *config) []string {
@@ -1174,6 +1177,9 @@ func WithPartialFlushing(numSpans int) StartOption {
 // traffic to the Datadog Agent, and produce more accurate stats data.
 // This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED.
 // Client-side stats is on by default.
+//
+// This option does not affect the Datadog trace protocol version used to send
+// traces; see DD_TRACE_AGENT_PROTOCOL_VERSION.
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)
@@ -1539,7 +1545,7 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 	return ok, nil
 }
 
-func (t *dummyTransport) endpoint() string {
+func (t *dummyTransport) endpoint(float64) string {
 	return "http://localhost:9/v1.0/traces"
 }
 
@@ -1565,7 +1571,7 @@ func (discardTransport) sendStats(*pb.ClientStatsPayload, int) error {
 	return nil
 }
 
-func (discardTransport) endpoint() string {
+func (discardTransport) endpoint(float64) string {
 	return "http://localhost:9/v1.0/traces"
 }
 

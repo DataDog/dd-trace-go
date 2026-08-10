@@ -746,7 +746,7 @@ func TestOTLPExportMode(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		assert.False(t, cfg.OTLPExportMode(), "otlpExportMode should be false when DD_TRACE_AGENT_PROTOCOL_VERSION is explicitly set")
-		assert.Equal(t, TraceProtocolV1, cfg.TraceProtocol())
+		assert.Equal(t, TraceProtocolV1, cfg.RequestedTraceProtocol())
 	})
 
 	t.Run("DD_TRACE_AGENT_PROTOCOL_VERSION=0.4 still overrides OTEL_TRACES_EXPORTER", func(t *testing.T) {
@@ -760,7 +760,7 @@ func TestOTLPExportMode(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		assert.False(t, cfg.OTLPExportMode(), "otlpExportMode should be false when DD_TRACE_AGENT_PROTOCOL_VERSION is explicitly set, even to the default value")
-		assert.Equal(t, TraceProtocolV04, cfg.TraceProtocol())
+		assert.Equal(t, TraceProtocolV04, cfg.RequestedTraceProtocol())
 	})
 
 	t.Run("SetOTLPExportMode toggles mode", func(t *testing.T) {
@@ -851,6 +851,50 @@ func TestOTLPSpanMetricsConfig(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("explicit false reports calculated stats-computation via setter", func(t *testing.T) {
+		// OTEL_TRACES_SPAN_METRICS_ENABLED=false with DD_TRACE_STATS_COMPUTATION_ENABLED
+		// left at its default must disable native stats computation, and — unlike
+		// the old raw field write — report the change to config telemetry.
+		resetGlobalState()
+		defer resetGlobalState()
+
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "false")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.StatsComputationEnabled())
+
+		var found bool
+		for _, c := range rec.Configuration {
+			if c.Name == "DD_TRACE_STATS_COMPUTATION_ENABLED" && c.Origin == telemetry.OriginCalculated {
+				found = true
+				assert.Equal(t, false, c.Value)
+			}
+		}
+		assert.True(t, found, "expected a calculated-origin DD_TRACE_STATS_COMPUTATION_ENABLED report")
+	})
+
+	t.Run("does not force v0.4 trace protocol", func(t *testing.T) {
+		// Regression pin: RequestedTraceProtocol used to special-case
+		// OTLPSpanMetricsEnabled and return v0.4 unconditionally. The Agent has
+		// always accepted v1.0 payloads regardless of whether OTLP span metrics
+		// are in use, so that coupling is removed.
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTLPSpanMetricsEnabled())
+		assert.Equal(t, TraceProtocolV1, cfg.RequestedTraceProtocol())
 	})
 
 	t.Run("OTelSemanticsEnabled disabled by default", func(t *testing.T) {
