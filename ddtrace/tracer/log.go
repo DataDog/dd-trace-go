@@ -140,13 +140,15 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
+	proto := t.config.internalConfig.TraceProtocol()
+
 	// Determine the agent URL to use in the logs.
 	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
 	var agentURL string
 	if srcURL := t.config.internalConfig.RawAgentURL(); srcURL != nil && srcURL.Scheme == "unix" {
 		agentURL = srcURL.String()
 	} else {
-		agentURL = t.config.ddTransport.endpoint()
+		agentURL = t.config.ddTransport.endpoint(proto)
 	}
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
@@ -194,7 +196,7 @@ func logStartup(t *tracer) {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.internalConfig.LogToStdout() {
-		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
+		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(proto), proto); err != nil {
 			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}

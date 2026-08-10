@@ -297,8 +297,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	processtags.SetServiceNameTag(c.internalConfig.ServiceName(), svcIsUserDefined)
 	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
-		traceURL, headers := resolveTraceTransport(c.internalConfig)
-		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
+		headers := datadogHeaders()
+		c.ddTransport = newHTTPTransport(agentURL, c.httpClient, headers)
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(&PropagatorConfig{
@@ -327,11 +327,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.agent.store(af)
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4
 	// Also downgrade if CSS is disabled, as v1 is not compatible without CSS.
+	//
+	// Only the config is downgraded: the transport holds a URL per protocol and
+	// picks between them from the payload's own protocol at send time, so it has
+	// nothing left to keep in sync with this decision.
 	if c.internalConfig.TraceProtocol() == traceProtocolV04 || !af.v1ProtocolAvailable || !c.internalConfig.StatsComputationEnabled() {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
-		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
-			t.traceURL = agentURL.String() + tracesAPIPath
-		}
 	}
 
 	info, ok := debug.ReadBuildInfo()
@@ -401,19 +402,6 @@ func apmTracingDisabled(c *config) {
 	// tell the agent we computed them, so it doesn't do it either.
 	c.internalConfig.SetRuntimeMetricsEnabled(false, internalconfig.OriginCalculated)
 	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
-}
-
-// resolveTraceTransport returns the trace URL and headers for the Datadog
-// agent transport. In OTLP export mode the ddTransport is not used for trace
-// sending (otlpTransport handles that), but it may still be used for stats
-// and agent discovery, so it always points at the DD agent.
-func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers map[string]string) {
-	agentURL := cfg.AgentURL().String()
-	traceURL = agentURL + tracesAPIPath
-	if cfg.TraceProtocol() == traceProtocolV1 {
-		traceURL = agentURL + tracesAPIPathV1
-	}
-	return traceURL, datadogHeaders()
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
@@ -1396,7 +1384,7 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 	return ok, nil
 }
 
-func (t *dummyTransport) endpoint() string {
+func (t *dummyTransport) endpoint(float64) string {
 	return "http://localhost:9/v0.4/traces"
 }
 
@@ -1422,7 +1410,7 @@ func (discardTransport) sendStats(*pb.ClientStatsPayload, int) error {
 	return nil
 }
 
-func (discardTransport) endpoint() string {
+func (discardTransport) endpoint(float64) string {
 	return "http://localhost:9/v1.0/traces"
 }
 
