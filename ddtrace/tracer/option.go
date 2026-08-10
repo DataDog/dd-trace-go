@@ -337,8 +337,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// is baked into the transport or downgraded in config here. Report the
 	// resolved value to config telemetry so it reflects what is on the wire.
 	c.internalConfig.ReportEffectiveTraceProtocol(c.effectiveTraceProtocol())
-	// An override the user did not ask for must never be silent.
-	c.surfaceStatsOverride(af)
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -356,6 +354,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
+	// An override the user did not ask for must never be silent. This sits after
+	// apmTracingDisabled deliberately: tracingAsTransport is one of the
+	// exclusions in forcesStatsForV1Agent and is not set until just above, so
+	// surfacing any earlier announces an override that does not actually apply.
+	// Every other input to the predicate is resolved before this point.
+	c.surfaceStatsOverride(af)
 	// Set global 128-bits trace ID generation variable
 	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
 

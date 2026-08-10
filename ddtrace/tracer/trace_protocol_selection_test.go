@@ -15,7 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 // isV1WireByte reports whether b is the first byte of a msgpack map — the
@@ -377,6 +380,37 @@ func TestV1StatsWorkaroundExclusions(t *testing.T) {
 			assert.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol(), "effectiveTraceProtocol")
 		})
 	}
+}
+
+// TestV1StatsWorkaroundStartupOrderVsTracingAsTransport pins where
+// surfaceStatsOverride sits inside newConfig. tracingAsTransport is one of the
+// exclusions in forcesStatsForV1Agent, but it is not set until
+// apmTracingDisabled runs, which is later in newConfig than the agent snapshot.
+// Surfacing the override before that point announces — in a warning and in
+// config telemetry — an override that the exclusion immediately makes untrue.
+func TestV1StatsWorkaroundStartupOrderVsTracingAsTransport(t *testing.T) {
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+	logs := new(log.RecordLogger)
+
+	t.Setenv("DD_APM_TRACING_ENABLED", "false")
+	agent := startTestAgent(t)
+	agent.SetInfo(v1StatsWorkaroundAffectedInfo)
+	tr := newTracerTest(t, agent, WithStatsComputation(false), WithLogger(logs))
+	defer stopTracerTest(tr)
+
+	require.True(t, tr.config.tracingAsTransport,
+		"guard: DD_APM_TRACING_ENABLED=false must have taken effect")
+	require.False(t, tr.config.canComputeStats(),
+		"guard: the tracing-as-transport exclusion must suppress the override")
+
+	// The structural assertion: nothing was ever reported, because the override
+	// never applied. effectiveStatsReports is shared with
+	// TestPollAgentInfoSurfacesV1StatsWorkaroundTransitions.
+	assert.Empty(t, effectiveStatsReports(rec),
+		"an override suppressed by an exclusion must not reach config telemetry")
+	assert.NotContains(t, strings.Join(logs.Logs(), "\n"), "have been enabled because",
+		"an override suppressed by an exclusion must not warn at startup")
 }
 
 // TestV1StatsWorkaroundWireBehavior is the end-to-end companion to
