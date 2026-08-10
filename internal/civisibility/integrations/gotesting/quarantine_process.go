@@ -596,6 +596,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			if panicData == nil {
 				panicData = unexpectedTestTerminationMessage
 			}
+			t.Fail()
 			execMeta.processRetryPanic.CompareAndSwap(nil, &processRetryErrorInfo{
 				Type:    "panic",
 				Message: truncateProcessRetryErrorMessage(toString(panicData)),
@@ -603,9 +604,10 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			})
 		}
 
-		// Drain user cleanups before snapshotting. testing.tRunner marks a cleanup
-		// panic only after recursively running earlier cleanups, which would make a
-		// regular t.Cleanup finalizer report the descendant as passing.
+		// Drain user cleanups before snapshotting. The helper also releases and
+		// waits for queued parallel descendants, so the selected root includes
+		// their failures, timing, and coverage. A regular t.Cleanup finalizer would
+		// run after testing has already classified a cleanup panic.
 		cleanup := &testCleanupResult{}
 		runTestCleanupWithOptions(t, cleanup, true)
 		if cleanup.panicData != nil {
@@ -677,9 +679,9 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		state.append(result)
 		deleteTestMetadata(t)
 
-		if panicData != nil && !unexpected {
-			panic(panicData)
-		}
+		// Body panics are valid test results in this child protocol. They were
+		// recorded above and t.Fail propagated them to the selected root; re-panic
+		// would let testing terminate the process before it can write the result.
 	}()
 
 	if directive.Disabled && !directive.AttemptToFix {

@@ -7,6 +7,7 @@ package gotesting
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -100,6 +101,16 @@ func TestQuarantinedRaceUsesPostParallelRaceBaseline(t *testing.T) {
 
 	parallel = false
 	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 3), "a serial subtree root must retain descendant race attribution")
+}
+
+func TestOrchestrionParallelAdviceMatchesHookContract(t *testing.T) {
+	source, err := os.ReadFile("orchestrion.yml")
+	require.NoError(t, err)
+
+	config := string(source)
+	assert.Contains(t, config, "func __dd_civisibility_instrumentTestingParallel(t *T) (bool, func())")
+	assert.Contains(t, config, "__dd_civisibility_handled, __dd_civisibility_resume := __dd_civisibility_instrumentTestingParallel")
+	assert.Contains(t, config, "defer __dd_civisibility_resume()")
 }
 
 func TestQuarantinedRaceNestedRootEnvelopePreservesMetadata(t *testing.T) {

@@ -94,14 +94,16 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceSubtestFeatureGateFixture/disabled": {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
 					},
-					"TestQuarantinedRaceCleanupPanicFixture":              properties(false),
-					"TestQuarantinedRaceCleanupFailNowFixture":            properties(false),
-					"TestQuarantinedRaceCleanupGoexitFixture":             properties(false),
-					"TestQuarantinedRaceFailfastRootFixture":              properties(true),
-					"TestQuarantinedRaceFailfastDescendantFixture":        properties(false),
-					"TestQuarantinedRaceFailfastDescendantFixture/child":  properties(true),
-					"TestQuarantinedRaceParallelFixture/isolated":         properties(false),
-					"TestQuarantinedRaceParallelCoverageFixture/isolated": properties(false),
+					"TestQuarantinedRaceCleanupPanicFixture":                 properties(false),
+					"TestQuarantinedRaceCleanupFailNowFixture":               properties(false),
+					"TestQuarantinedRaceCleanupGoexitFixture":                properties(false),
+					"TestQuarantinedRaceFailfastRootFixture":                 properties(true),
+					"TestQuarantinedRaceFailfastDescendantFixture":           properties(false),
+					"TestQuarantinedRaceFailfastDescendantFixture/child":     properties(true),
+					"TestQuarantinedRaceParallelFixture/isolated":            properties(false),
+					"TestQuarantinedRaceParallelCoverageFixture/isolated":    properties(false),
+					"TestQuarantinedRaceTerminalDescendantsFixture/parallel": properties(false),
+					"TestQuarantinedRaceTerminalDescendantsFixture/panic":    properties(false),
 				}},
 				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
@@ -147,6 +149,22 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		for _, name := range []string{"concurrent-a", "concurrent-b"} {
 			childSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelCoverageFixture/isolated/"+name, 1)
 			checkSpansByTagValue(childSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		}
+		os.Exit(0)
+	case "terminal-descendants":
+		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
+		checkSpansByTagValue(parallelRoot, constants.TestStatus, constants.TestStatusFail, 1)
+		parallelChild := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel/child", 1)
+		checkSpansByTagValue(parallelChild, constants.TestStatus, constants.TestStatusFail, 1)
+		if rootFinish, childFinish := parallelRoot[0].StartTime().Add(parallelRoot[0].Duration()), parallelChild[0].StartTime().Add(parallelChild[0].Duration()); rootFinish.Before(childFinish) {
+			panic("selected root finished before its parallel descendant")
+		}
+		panicRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/panic", 1)
+		checkSpansByTagValue(panicRoot, constants.TestStatus, constants.TestStatusFail, 1)
+		panicChild := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/panic/child", 1)
+		checkSpansByTagValue(panicChild, constants.TestStatus, constants.TestStatusFail, 1)
+		if message, _ := panicChild[0].Tag(ext.ErrorMsg).(string); !strings.Contains(message, "body panic sentinel") {
+			panic(fmt.Sprintf("body panic was not reported on the isolated descendant: %q", message))
 		}
 		os.Exit(0)
 	case "testify-source":
@@ -340,6 +358,10 @@ func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
 		t.Skip("requires coverage instrumentation")
 	}
 	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$")
+}
+
+func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "terminal-descendants", "^TestQuarantinedRaceTerminalDescendantsFixture$")
 }
 
 func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
@@ -552,6 +574,24 @@ func TestQuarantinedRaceParallelCoverageFixture(t *testing.T) {
 		}
 	}))
 	close(released)
+}
+
+func TestQuarantinedRaceTerminalDescendantsFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("parallel", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+			(*T)(t).Parallel()
+			time.Sleep(20 * time.Millisecond)
+			t.Error("parallel descendant sentinel")
+		}))
+	}))
+	t.Run("panic", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("child", instrumentTestingTFunc(func(*testing.T) {
+			panic("body panic sentinel")
+		}))
+	}))
 }
 
 type quarantinedRaceTestifySuite struct {

@@ -80,7 +80,7 @@ aspects:
             func __dd_civisibility_instrumentSkipNow(tb TB)
             
             //go:linkname __dd_civisibility_instrumentTestingParallel github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingParallel
-            func __dd_civisibility_instrumentTestingParallel(t *T) bool
+            func __dd_civisibility_instrumentTestingParallel(t *T) (bool, func())
 
       - prepend-statements:
           template: |-
@@ -189,7 +189,11 @@ aspects:
     advice:
       - prepend-statements:
           template: |-
-            if __dd_civisibility_instrumentTestingParallel({{ .Function.Receiver }}) {
+            __dd_civisibility_handled, __dd_civisibility_resume := __dd_civisibility_instrumentTestingParallel({{ .Function.Receiver }})
+            if __dd_civisibility_resume != nil {
+              defer __dd_civisibility_resume()
+            }
+            if __dd_civisibility_handled {
               return
             }
 
