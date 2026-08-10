@@ -417,9 +417,10 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 				// quarantined test outcome.
 				log.Error("civisibility.cov: failed to merge isolated process coverage: %s", err.Error())
 				exitCode = processRetryFailureExitCode
+			} else {
+				uploadFinalCoverageReport(settings)
 			}
-			uploadFinalCoverageReport(settings)
-			if !publishCoverage {
+			if err != nil || !publishCoverage {
 				session.Close(exitCode)
 				coverage.CleanupRuntimeCoverageSnapshot()
 				integrations.ExitCiVisibility()

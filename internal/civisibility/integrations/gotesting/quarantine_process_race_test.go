@@ -102,6 +102,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceFailfastDescendantFixture/child":     properties(true),
 					"TestQuarantinedRaceParallelFixture/isolated":            properties(false),
 					"TestQuarantinedRaceParallelCoverageFixture/isolated":    properties(false),
+					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/parallel": properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/panic":    properties(false),
 				}},
@@ -167,6 +168,15 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			panic(fmt.Sprintf("body panic was not reported on the isolated descendant: %q", message))
 		}
 		os.Exit(0)
+	case "race-before-parallel":
+		races := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceBeforeParallelFixture/isolated", 1)
+		checkSpansByTagValue(races, constants.TestStatus, constants.TestStatusFail, 1)
+		for _, entry := range logsEntries {
+			if entry.TestName == "TestQuarantinedRaceBeforeParallelFixture/isolated" && strings.Contains(entry.Message, "WARNING: DATA RACE") {
+				os.Exit(0)
+			}
+		}
+		panic("race before t.Parallel was not preserved in the selected root output")
 	case "testify-source":
 		if readPID("testify-source") == parentPID {
 			panic("Testify method did not run in the isolated child")
@@ -362,6 +372,10 @@ func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "terminal-descendants", "^TestQuarantinedRaceTerminalDescendantsFixture$")
+}
+
+func TestQuarantinedRaceBeforeParallelEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "race-before-parallel", "^TestQuarantinedRaceBeforeParallelFixture$")
 }
 
 func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
@@ -591,6 +605,16 @@ func TestQuarantinedRaceTerminalDescendantsFixture(t *testing.T) {
 		t.Run("child", instrumentTestingTFunc(func(*testing.T) {
 			panic("body panic sentinel")
 		}))
+	}))
+}
+
+func TestQuarantinedRaceBeforeParallelFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("isolated", instrumentTestingTFunc(func(t *testing.T) {
+		triggerQuarantinedRaceFixture()
+		(*T)(t).Parallel()
 	}))
 }
 

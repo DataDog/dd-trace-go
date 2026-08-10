@@ -93,12 +93,16 @@ func TestQuarantinedRaceITRDecisionExecutesModifiedTest(t *testing.T) {
 func TestQuarantinedRaceUsesPostParallelRaceBaseline(t *testing.T) {
 	parallel := true
 	baseline := &atomic.Int64{}
+	logged := &atomic.Bool{}
 	baseline.Store(3)
-	fields := &commonPrivateFields{isParallel: &parallel, lastRaceErrors: baseline}
+	fields := &commonPrivateFields{isParallel: &parallel, lastRaceErrors: baseline, raceErrorLogged: logged}
 
 	assert.False(t, processRetrySubtreeRaceDetected(fields, 1, 3), "race while paused must not be attributed after Parallel resumes")
 	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 4), "race after resume must still be attributed")
+	logged.Store(true)
+	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 3), "race logged before Parallel must remain attributed")
 
+	logged.Store(false)
 	parallel = false
 	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 3), "a serial subtree root must retain descendant race attribution")
 }

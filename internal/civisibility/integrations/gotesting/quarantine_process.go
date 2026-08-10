@@ -703,6 +703,11 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 }
 
 func processRetrySubtreeRaceDetected(fields *commonPrivateFields, initialBaseline, current int64) bool {
+	if fields != nil && fields.raceErrorLogged != nil && fields.raceErrorLogged.Load() {
+		// Parallel checks and records races before replacing lastRaceErrors with
+		// its post-resume baseline. Keep that already-attributed race.
+		return true
+	}
 	baseline := initialBaseline
 	if fields != nil && fields.isParallel != nil && *fields.isParallel && fields.lastRaceErrors != nil {
 		// testing.T.Parallel resets this baseline after the test resumes so races
