@@ -141,6 +141,12 @@ type config struct {
 	// (*agentTraceWriter).downgradeAfterRejectedSend).
 	protocolState atomic.Int32
 
+	// v1StatsOverrideState is the last surfaced state of the v1.0 stats
+	// override as a tri-state (0 = never surfaced, 1 = off, 2 = on), so that
+	// re-evaluating on every /info poll surfaces only transitions. See
+	// surfaceStatsOverride.
+	v1StatsOverrideState atomic.Uint32
+
 	// agentInfoPollInterval overrides the default polling interval for /info.
 	// A zero value uses defaultAgentInfoPollInterval.
 	agentInfoPollInterval time.Duration
@@ -332,16 +338,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// resolved value to config telemetry so it reflects what is on the wire.
 	c.internalConfig.ReportEffectiveTraceProtocol(c.effectiveTraceProtocol())
 	// An override the user did not ask for must never be silent.
-	if c.statsOverriddenForV1Agent(af) {
-		log.Warn("client-side stats computation and P0 trace dropping have been enabled because the "+
-			"trace-agent reports version %q, whose agent-side stats aggregation for the v1.0 trace "+
-			"protocol loses the `lang` dimension. This overrides the configured "+
-			"DD_TRACE_STATS_COMPUTATION_ENABLED=false. Upgrade the trace-agent to 7.79.0 or later, or "+
-			"set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, or set "+
-			"DD_TRACE_FEATURES=disable_v1_stats_workaround, to restore the configured behavior.",
-			af.AgentVersion)
-		c.internalConfig.ReportEffectiveStatsComputation(true)
-	}
+	c.surfaceStatsOverride(af)
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -772,6 +769,49 @@ func (c *config) forcesStatsForV1Agent(a agentFeatures) bool {
 // For logging/telemetry only; canComputeStatsWithAgent is the predicate.
 func (c *config) statsOverriddenForV1Agent(a agentFeatures) bool {
 	return !c.statsComputationRequested() && c.canComputeStatsWithAgent(a)
+}
+
+// surfaceStatsOverride re-evaluates the v1.0 stats workaround against a fresh
+// agent snapshot and surfaces it to the log and to config telemetry, but only
+// when the answer changes. It is safe — and intended — to call on every /info
+// poll: a steady state returns early, so it can neither spam the log nor
+// inflate config-telemetry seqIDs.
+//
+// Re-evaluating is required, not defensive: v1StatsLangUnfixed is deliberately
+// left out of refreshAgentFeatures's frozen-field graft list (see
+// TestPollAgentInfoLiftsV1StatsWorkaround), so an agent upgraded or rolled back
+// under a running tracer changes the answer mid-process. Reporting only at
+// startup would let the override engage, or lift, in silence.
+//
+// It must not be called from inside atomicAgentFeatures.update's transform,
+// which has to stay pure: that transform may be re-run on CAS retry.
+func (c *config) surfaceStatsOverride(a agentFeatures) {
+	next := uint32(1)
+	if c.statsOverriddenForV1Agent(a) {
+		next = 2
+	}
+	prev := c.v1StatsOverrideState.Swap(next)
+	switch {
+	case prev == next: // steady state: nothing to say
+	case next == 2:
+		c.internalConfig.ReportEffectiveStatsComputation(true)
+		log.Warn("client-side stats computation and P0 trace dropping have been enabled because the "+
+			"trace-agent reports version %q, whose agent-side stats aggregation for the v1.0 trace "+
+			"protocol loses the `lang` dimension. This overrides the configured "+
+			"DD_TRACE_STATS_COMPUTATION_ENABLED=false. Upgrade the trace-agent to 7.79.0 or later, or "+
+			"set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, or set "+
+			"DD_TRACE_FEATURES=disable_v1_stats_workaround, to restore the configured behavior.",
+			a.AgentVersion)
+	case prev == 2:
+		// Report only on the way back down. Reporting the effective value
+		// unconditionally would shadow the user's own origin for
+		// DD_TRACE_STATS_COMPUTATION_ENABLED with OriginCalculated at a higher
+		// seqID, for every tracer that never hits this workaround.
+		c.internalConfig.ReportEffectiveStatsComputation(c.canComputeStatsWithAgent(a))
+		log.Info("the v1.0 trace-protocol stats workaround no longer applies (trace-agent version %q); "+
+			"client-side stats computation and P0 trace dropping have returned to the configured behavior.",
+			a.AgentVersion)
+	}
 }
 
 // canDropP0s determines whether P0 spans can be dropped.
