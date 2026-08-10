@@ -853,6 +853,8 @@ type quarantinedRaceInvocation struct {
 	cfg          *processRetrySubtreeConfig
 	attempt      processRetryAttemptResult
 	attemptIndex int
+
+	finalBecauseOfFailfast bool
 }
 
 // runQuarantinedRaceProcessIsolation replaces only the selected quarantined
@@ -928,6 +930,7 @@ func runQuarantinedRaceProcessIsolation(
 			cfg: cfg, attempt: attempt, attemptIndex: idx,
 		})
 		if quarantinedRaceFailfastStopsContinuation(attempt) {
+			invocations[len(invocations)-1].finalBecauseOfFailfast = true
 			failfastStopped = true
 			break
 		}
@@ -959,6 +962,7 @@ func runQuarantinedRaceProcessIsolation(
 					cfg: continuationCfg, attempt: attempt, attemptIndex: idx,
 				})
 				if quarantinedRaceFailfastStopsContinuation(attempt) {
+					invocations[len(invocations)-1].finalBecauseOfFailfast = true
 					break descendantRetries
 				}
 			}
@@ -1163,7 +1167,7 @@ func replayQuarantinedRaceEvent(
 	if ownsAttemptToFix {
 		attemptTotal := processRetryAttemptToFixExecutionCount(invocation.cfg.AttemptToFixRetries)
 		execMeta.isARetry = invocation.attemptIndex > 0
-		execMeta.isLastRetry = invocation.attemptIndex == attemptTotal-1
+		execMeta.isLastRetry = invocation.finalBecauseOfFailfast || invocation.attemptIndex == attemptTotal-1
 		execMeta.remainingRetries = int64(attemptTotal - invocation.attemptIndex)
 		execMeta.initialRetryCount = int64(invocation.cfg.AttemptToFixRetries)
 		execMeta.initialRetryCountSet = true

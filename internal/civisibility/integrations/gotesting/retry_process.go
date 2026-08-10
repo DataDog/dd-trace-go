@@ -2484,6 +2484,11 @@ func finishProcessRetryTestEvent(
 	execMeta.test = test
 	coverage.SubmitProcessTestCoverage(session.SessionID(), suite.SuiteID(), test.TestID(), attempt.Result.Coverage)
 	cancelExecution := setTestTagsFromExecutionMetadataNoClose(test, execMeta)
+	// A validated process skip is already the outcome of the execution. In
+	// particular, replaying an exact disabled descendant must not turn that skip
+	// into the pre-execution metadata cancellation used by in-process tests.
+	disabledSkip := execMeta.isDisabled && !execMeta.isAttemptToFix && attempt.Result.Status == processRetryStatusSkip
+	cancelExecution = cancelExecution && !disabledSkip
 	test.SetTag(constants.TestRetryExecutionMode, "process")
 	if execMeta.isItrForcedRun {
 		test.SetTag(constants.TestForcedToRun, "true")

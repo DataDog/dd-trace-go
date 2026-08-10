@@ -56,7 +56,11 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	}
 	scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
 	requireEnv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
-	requireEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "2")
+	attempts := "2"
+	if scenario == "failfast" {
+		attempts = "3"
+	}
+	requireEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, attempts)
 	if scenario == "feature-gate" {
 		requireEnv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
 	}
@@ -75,12 +79,15 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		&net.TestManagementTestsResponseDataModules{Modules: map[string]net.TestManagementTestsResponseDataSuites{
 			module: {Suites: map[string]net.TestManagementTestsResponseDataTests{
 				suite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
-					"TestQuarantinedRaceFixture":                    properties(false),
-					"TestQuarantinedPanicFixture":                   properties(false),
-					"TestQuarantinedRaceSecondFixture":              properties(false),
-					"TestQuarantinedRaceAttemptToFixFixture":        properties(true),
-					"TestQuarantinedRaceLeafFixture/card/visa":      properties(false),
-					"TestQuarantinedRaceNestedFixture/card":         properties(false),
+					"TestQuarantinedRaceFixture":               properties(false),
+					"TestQuarantinedPanicFixture":              properties(false),
+					"TestQuarantinedRaceSecondFixture":         properties(false),
+					"TestQuarantinedRaceAttemptToFixFixture":   properties(true),
+					"TestQuarantinedRaceLeafFixture/card/visa": properties(false),
+					"TestQuarantinedRaceNestedFixture/card":    properties(false),
+					"TestQuarantinedRaceNestedFixture/card/disabled": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
+					},
 					"TestQuarantinedRaceNestedATFFixture/card":      properties(false),
 					"TestQuarantinedRaceNestedATFFixture/card/visa": properties(true),
 					"TestQuarantinedRaceSubtestFeatureGateFixture":  properties(false),
@@ -157,15 +164,22 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(failNowSpans, constants.TestStatus, constants.TestStatusFail, 1)
 		os.Exit(0)
 	case "failfast":
-		for _, name := range []string{"failfast-root-2", "failfast-descendant-2"} {
+		for _, name := range []string{"failfast-root-3", "failfast-descendant-3"} {
 			if _, err := os.Stat(filepath.Join(pidDir, name)); err == nil || !os.IsNotExist(err) {
 				panic(name + " ran after a valid failure under -failfast")
 			}
 		}
 		readPID("failfast-root-1")
+		readPID("failfast-root-2")
 		readPID("failfast-descendant-1")
-		checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFailfastRootFixture", 1)
-		checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFailfastDescendantFixture/child", 1)
+		readPID("failfast-descendant-2")
+		for _, name := range []string{"TestQuarantinedRaceFailfastRootFixture", "TestQuarantinedRaceFailfastDescendantFixture/child"} {
+			failfastSpans := checkSpansByResourceName(spans, suite+"."+name, 2)
+			checkSpansByTagValue(failfastSpans, constants.TestIsRetry, "true", 1)
+			checkSpansByTagValue(failfastSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 1)
+			checkSpansByTagValue(failfastSpans, constants.TestAttemptToFixPassed, "false", 1)
+			checkSpansByTagValue(failfastSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		}
 		os.Exit(0)
 	}
 	racePID := readPID("race")
@@ -203,6 +217,9 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if _, err := os.Stat(filepath.Join(pidDir, "leaf-mastercard-child")); err == nil || !os.IsNotExist(err) {
 		panic("exact quarantined leaf also executed its sibling in the child process")
 	}
+	if _, err := os.Stat(filepath.Join(pidDir, "disabled-body")); err == nil || !os.IsNotExist(err) {
+		panic("disabled subtree descendant executed its body")
+	}
 
 	spanTypes := map[string]int{}
 	for _, span := range spans {
@@ -211,7 +228,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 	}
 	if spanTypes[constants.SpanTypeTestSession] != 1 || spanTypes[constants.SpanTypeTestModule] != 1 ||
-		spanTypes[constants.SpanTypeTestSuite] != 1 || spanTypes[constants.SpanTypeTest] != 23 {
+		spanTypes[constants.SpanTypeTestSuite] != 1 || spanTypes[constants.SpanTypeTest] != 24 {
 		panic(fmt.Sprintf("unexpected parent-owned CI Visibility span counts: %#v", spanTypes))
 	}
 	raceSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFixture", 1)
@@ -258,6 +275,10 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	skippedSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/skipped", 1)
 	checkSpansByTagValue(skippedSpans, constants.TestStatus, constants.TestStatusSkip, 1)
 	checkSpansByTagValue(skippedSpans, constants.TestSkipReason, "fixture skip", 1)
+	disabledSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/disabled", 1)
+	checkSpansByTagValue(disabledSpans, constants.TestStatus, constants.TestStatusSkip, 1)
+	checkSpansByTagValue(disabledSpans, constants.TestIsDisabled, "true", 1)
+	checkSpansByTagValue(disabledSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 	visaSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/visa", 1)
 	checkSpansByTagValue(visaSpans, constants.TestStatus, constants.TestStatusPass, 1)
 	checkSpansByTagName(visaSpans, constants.TestSourceFile, 1)
@@ -452,6 +473,9 @@ func TestQuarantinedRaceNestedFixture(t *testing.T) {
 			instrumentCaptureFormattedSkip(t, "Skip", "fixture skip\n")
 			t.Skip("fixture skip")
 		}))
+		t.Run("disabled", instrumentTestingTFunc(func(t *testing.T) {
+			writeQuarantinedRaceIsolationPID(t, "disabled-body")
+		}))
 		var active atomic.Int32
 		var maximum atomic.Int32
 		var concurrent sync.WaitGroup
@@ -581,7 +605,9 @@ func TestQuarantinedRaceFailfastRootFixture(t *testing.T) {
 	cfg, err := processRetryChildConfigFromEnv()
 	require.NoError(t, err)
 	writeQuarantinedRaceIsolationPID(t, "failfast-root-"+strconv.Itoa(cfg.Attempt))
-	t.Fail()
+	if cfg.Attempt > 1 {
+		t.Fail()
+	}
 }
 
 func TestQuarantinedRaceFailfastDescendantFixture(t *testing.T) {
@@ -592,6 +618,8 @@ func TestQuarantinedRaceFailfastDescendantFixture(t *testing.T) {
 		cfg, err := processRetryChildConfigFromEnv()
 		require.NoError(t, err)
 		writeQuarantinedRaceIsolationPID(t, "failfast-descendant-"+strconv.Itoa(cfg.Attempt))
-		t.Fail()
+		if cfg.Attempt > 1 {
+			t.Fail()
+		}
 	}))
 }
