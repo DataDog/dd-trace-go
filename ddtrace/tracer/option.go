@@ -759,6 +759,15 @@ func (c *config) forcesStatsForV1Agent(a agentFeatures) bool {
 	if c.tracingAsTransport || c.internalConfig.OTLPSpanMetricsEnabled() || c.internalConfig.OTLPExportMode() {
 		return false
 	}
+	// CI Visibility cannot use client-computed stats through this workaround
+	// at all: even in agent mode (not agentless), ciVisibilityTransport.sendStats
+	// is an unconditional no-op, so the agent's buggy v1.0 concentrator is never
+	// reached either way. Forcing the override on here would only waste CPU
+	// building stats that get discarded, and would wrongly start dropping P0
+	// spans for a product whose customers expect full test-span retention.
+	if c.internalConfig.CIVisibilityEnabled() {
+		return false
+	}
 	// The Datadog Lambda extension computes trace stats server-side, and
 	// contrib/aws/datadog-lambda-go starts the tracer with
 	// WithStatsComputation(false) on purpose. Never reverse that.

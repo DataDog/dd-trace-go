@@ -296,6 +296,9 @@ const v1StatsWorkaroundAffectedInfo = `{"endpoints":["/v0.4/traces","/v1.0/trace
 //     (tracing-as-transport, OTLP span metrics, OTLP export mode): the agent
 //     never enters its buggy v1.0 concentrator, so forcing the override on
 //     would be a no-op.
+//   - CI Visibility: even in agent mode, ciVisibilityTransport.sendStats is
+//     an unconditional no-op, so forcing the override on would only waste
+//     CPU and wrongly start dropping P0 CI Visibility test-run spans.
 //
 // In every case the wire protocol must stay v1.0: an exclusion suppresses the
 // stats override, never the protocol.
@@ -330,6 +333,10 @@ func TestV1StatsWorkaroundExclusions(t *testing.T) {
 		{
 			name:       "OTLP export mode bypasses the agent's stats path",
 			afterStart: func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) },
+		},
+		{
+			name:     "CI Visibility never sends stats through this transport",
+			startOpt: func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) },
 		},
 	}
 
