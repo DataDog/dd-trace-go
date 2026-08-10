@@ -1297,7 +1297,8 @@ func (s *Span) String() string {
 // +checklocksignore — Reads only immutable fields (spanID, traceID, parentID) set during init.
 func (s *Span) Format(f fmt.State, c rune) {
 	if s == nil {
-		fmt.Fprintf(f, "<nil>")
+		fmt.Fprint(f, "<nil>")
+		return
 	}
 	switch c {
 	case 's':
