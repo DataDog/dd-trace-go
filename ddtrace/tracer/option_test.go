@@ -1903,11 +1903,24 @@ func TestWithStatsComputation(t *testing.T) {
 		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("disabled-via-option", func(t *testing.T) {
+		// Regression pin for the CSS<->trace-protocol decoupling: disabling
+		// client-side stats must not change the wire protocol. Previously this
+		// subtest asserted a v0.4 downgrade, but that assertion was
+		// environment-ambiguous — plain newTestConfig makes a real /info
+		// request, so it passed in CI (no local agent, v1 unavailable anyway)
+		// for a reason unrelated to CSS, and would have failed on a dev machine
+		// with a v1-capable agent running locally. Pin it against a stub that
+		// unambiguously advertises v1 instead.
 		assert := assert.New(t)
-		c, err := newTestConfig(WithStatsComputation(false))
+		url := mockAgentEndpoint(t, "/v1.0/traces")
+		c, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+			WithStatsComputation(false),
+		)
 		assert.NoError(err)
 		assert.False(c.internalConfig.StatsComputationEnabled())
-		assert.Equal(traceProtocolV04, c.internalConfig.TraceProtocol())
+		assert.False(c.canComputeStats(), "sanity check: CSS must actually be off")
+		assert.Equal(traceProtocolV1, c.effectiveTraceProtocol(), "disabling CSS must not downgrade the trace protocol")
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)
@@ -1922,6 +1935,140 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
 		assert.True(c.internalConfig.StatsComputationEnabled())
+	})
+}
+
+func TestWithStatsAdditionalTags(t *testing.T) {
+	t.Run("default-empty", func(t *testing.T) {
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Empty(t, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("set-via-option", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		c, err := newTestConfig(WithStatsAdditionalTags([]string{"region", "tenant_id"}))
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("set-via-env", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "region,tenant_id")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("env-with-spaces", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", " region , tenant_id ")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("env-empty", func(t *testing.T) {
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Empty(t, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("option-overrides-env", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "region")
+		c, err := newTestConfig(WithStatsAdditionalTags([]string{"tenant_id"}))
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+}
+
+func TestWithStatsCardinalityLimitOptions(t *testing.T) {
+	t.Run("WithStatsCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 2048, c.internalConfig.StatsWholeKeyCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsCardinalityLimit(999))
+			assert.NoError(t, err)
+			assert.Equal(t, 999, c.internalConfig.StatsWholeKeyCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_CARDINALITY_LIMIT", "888")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 888, c.internalConfig.StatsWholeKeyCardinalityLimit())
+		})
+	})
+	t.Run("WithStatsResourceCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 1024, c.internalConfig.StatsResourceCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsResourceCardinalityLimit(500))
+			assert.NoError(t, err)
+			assert.Equal(t, 500, c.internalConfig.StatsResourceCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", "400")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 400, c.internalConfig.StatsResourceCardinalityLimit())
+		})
+	})
+	t.Run("WithStatsHTTPEndpointCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 512, c.internalConfig.StatsHTTPEndpointCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsHTTPEndpointCardinalityLimit(200))
+			assert.NoError(t, err)
+			assert.Equal(t, 200, c.internalConfig.StatsHTTPEndpointCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", "150")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 150, c.internalConfig.StatsHTTPEndpointCardinalityLimit())
+		})
+	})
+	t.Run("WithStatsPeerTagsCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 512, c.internalConfig.StatsPeerTagsCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsPeerTagsCardinalityLimit(300))
+			assert.NoError(t, err)
+			assert.Equal(t, 300, c.internalConfig.StatsPeerTagsCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", "250")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 250, c.internalConfig.StatsPeerTagsCardinalityLimit())
+		})
+	})
+	t.Run("WithStatsOriginCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 20, c.internalConfig.StatsOriginCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsOriginCardinalityLimit(50))
+			assert.NoError(t, err)
+			assert.Equal(t, 50, c.internalConfig.StatsOriginCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", "30")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 30, c.internalConfig.StatsOriginCardinalityLimit())
+		})
 	})
 }
 

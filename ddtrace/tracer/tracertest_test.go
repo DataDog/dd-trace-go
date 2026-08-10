@@ -8,12 +8,14 @@
 package tracer
 
 import (
+	"bufio"
 	"encoding/binary"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,10 +30,14 @@ import (
 // DecodeMsg (msgp-generated) for v0.4 and the v1 decode machinery
 // (payloadV1.decodeBuffer, decodeTraceChunks, etc.) for v1.0.
 type testAgent struct {
-	server   *httptest.Server
-	mu       sync.Mutex
-	spans    []*Span
-	requests []string
+	server     *httptest.Server
+	mu         sync.Mutex
+	spans      []*Span
+	requests   []string
+	firstBytes []byte
+	// infoBody, when set via SetInfo, overrides the default /info response —
+	// allowing a test to change what the agent advertises between polls.
+	infoBody atomic.Pointer[string]
 }
 
 // startTestAgent creates and starts a mock agent. It is closed automatically
@@ -84,31 +90,63 @@ func (a *testAgent) Requests() []string {
 	return cp
 }
 
+// RequestFirstBytes returns the first msgpack byte of each recorded request's
+// body, in the same order as Requests(). This proves the wire-format shape
+// (map vs array) independently of how lenient a given handler is about it —
+// compare against msgpackMapFix/msgpackMapFix.. and msgpackArrayFix ranges.
+func (a *testAgent) RequestFirstBytes() []byte {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cp := make([]byte, len(a.firstBytes))
+	copy(cp, a.firstBytes)
+	return cp
+}
+
 // Reset clears all received spans and request records.
 func (a *testAgent) Reset() {
 	a.mu.Lock()
 	a.spans = a.spans[:0]
 	a.requests = a.requests[:0]
+	a.firstBytes = a.firstBytes[:0]
 	a.mu.Unlock()
 }
 
-func (a *testAgent) recordRequest(path string, spans []*Span) {
+// SetInfo overrides the /info response body. Pass "" to restore the default.
+func (a *testAgent) SetInfo(body string) {
+	if body == "" {
+		a.infoBody.Store(nil)
+		return
+	}
+	a.infoBody.Store(&body)
+}
+
+func (a *testAgent) recordRequest(path string, spans []*Span, firstByte byte) {
 	if len(spans) == 0 {
 		return
 	}
 	a.mu.Lock()
 	a.requests = append(a.requests, path)
 	a.spans = append(a.spans, spans...)
+	a.firstBytes = append(a.firstBytes, firstByte)
 	a.mu.Unlock()
 }
 
 func (a *testAgent) handleInfo(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if body := a.infoBody.Load(); body != nil {
+		w.Write([]byte(*body))
+		return
+	}
 	w.Write([]byte(`{"endpoints":["/v0.4/traces","/v1.0/traces","/v0.6/stats"],"client_drop_p0s":true,"span_events":true,"span_meta_structs":true}`))
 }
 
 func (a *testAgent) handleTracesV04(w http.ResponseWriter, r *http.Request) {
-	reader := msgp.NewReader(r.Body)
+	br := bufio.NewReader(r.Body)
+	var firstByte byte
+	if b, err := br.Peek(1); err == nil && len(b) > 0 {
+		firstByte = b[0]
+	}
+	reader := msgp.NewReader(br)
 	numTraces, err := reader.ReadArrayHeader()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -130,19 +168,23 @@ func (a *testAgent) handleTracesV04(w http.ResponseWriter, r *http.Request) {
 			spans = append(spans, s)
 		}
 	}
-	a.recordRequest(r.URL.Path, spans)
+	a.recordRequest(r.URL.Path, spans, firstByte)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"rate_by_service":{}}`))
 }
 
 func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	br := bufio.NewReader(r.Body)
+	var firstByte byte
+	if b, err := br.Peek(1); err == nil && len(b) > 0 {
+		firstByte = b[0]
 	}
+	// Copy the body directly into the payload buffer rather than buffering the
+	// whole request with io.ReadAll first: payloadV1.Write appends to p.buf,
+	// which decodeBuffer consumes in place, so a separate full-body slice would
+	// just be an extra copy.
 	p := newPayloadV1()
-	if _, err := p.Write(body); err != nil {
+	if _, err := io.Copy(p, br); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -163,7 +205,7 @@ func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
 			spans = append(spans, s)
 		}
 	}
-	a.recordRequest(r.URL.Path, spans)
+	a.recordRequest(r.URL.Path, spans, firstByte)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"rate_by_service":{}}`))
 }
@@ -179,14 +221,14 @@ var testTraceProtocols = []testTraceProtocol{
 	{name: "v1.0", version: "1.0", path: tracesAPIPathV1},
 }
 
-// newTracerTest creates a tracer with an httpTransport pointed at the mock agent.
+// newTracerTest creates a tracer that goes through WithAgentAddr negotiation with the mock agent.
 // It sets the global tracer (required for span.Finish to push chunks through the pipeline).
 func newTracerTest(tb testing.TB, agent *testAgent, opts ...StartOption) *tracer {
 	tb.Helper()
-	transport := newHTTPTransport(agent.URL()+tracesAPIPath, agent.URL()+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 	baseOpts := []StartOption{
-		withTransport(transport),
+		WithAgentAddr(agent.Addr()),
 		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+		withNoopStats(),
 	}
 	tr, err := newTracer(append(baseOpts, opts...)...)
 	require.NoError(tb, err)

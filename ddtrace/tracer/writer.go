@@ -107,7 +107,7 @@ func (h *agentTraceWriter) stop() {
 // over-prediction wastes one cycle of transient memory and self-corrects. Pass 0
 // on cold start (no prior cycle data).
 func (h *agentTraceWriter) newPayload(hint int) payload {
-	payload := newPayload(h.config.internalConfig.TraceProtocol())
+	payload := newPayload(h.config.effectiveTraceProtocol())
 	if payload.protocol() == traceProtocolV04 {
 		if hint > 0 {
 			payload.grow(hint)

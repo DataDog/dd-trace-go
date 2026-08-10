@@ -85,6 +85,81 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 		assert.Equal(t, uint64(42), ctx.TraceIDLower())
 		assert.Equal(t, uint64(7), ctx.SpanID())
 	})
+
+	// The baggage propagator matches header names via a carrier-specific fast
+	// path (lookupBaggageHeader) rather than the ForeachKey scan the other
+	// propagators use, so it needs its own case-insensitivity coverage.
+	t.Run("baggage header, TextMapCarrier non-canonical case", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "baggage")
+		p := NewPropagator(nil)
+		carrier := TextMapCarrier{"BAGGAGE": "foo=bar"}
+		ctx, err := p.Extract(carrier)
+		require.NoError(t, err)
+		require.NotNil(t, ctx)
+		assert.Equal(t, "bar", ctx.baggageItem("foo"))
+	})
+
+	// http.Header canonicalizes keys written via Set/Add, but a carrier can be
+	// built by hand with an arbitrary-case key -- lookupBaggageHeader's O(1)
+	// canonical lookup must fall back to a scan in that case.
+	t.Run("baggage header, HTTPHeadersCarrier non-canonical case", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "baggage")
+		p := NewPropagator(nil)
+		carrier := HTTPHeadersCarrier(http.Header{"baggage": {"foo=bar"}})
+		ctx, err := p.Extract(carrier)
+		require.NoError(t, err)
+		require.NotNil(t, ctx)
+		assert.Equal(t, "bar", ctx.baggageItem("foo"))
+	})
+
+	// Pins that a repeated "baggage" header keeps the same last-value-wins
+	// behavior as before this fast path existed.
+	t.Run("baggage header, HTTPHeadersCarrier multi-value", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "baggage")
+		p := NewPropagator(nil)
+		h := http.Header{}
+		h.Add("baggage", "foo=bar")
+		h.Add("baggage", "foo=baz")
+		ctx, err := p.Extract(HTTPHeadersCarrier(h))
+		require.NoError(t, err)
+		require.NotNil(t, ctx)
+		assert.Equal(t, "baz", ctx.baggageItem("foo"))
+	})
+
+	// Carriers other than TextMapCarrier/HTTPHeadersCarrier -- e.g.
+	// contrib/IBM/sarama's ProducerMessageCarrier, whose Get method documents
+	// "last occurrence wins" for a repeated key -- go through the ForeachKey
+	// fallback (foreachBaggageHeader) instead of the fast path above. That
+	// fallback must preserve the same last-value-wins contract.
+	t.Run("baggage header, ForeachKey fallback keeps last of duplicate keys", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "baggage")
+		p := NewPropagator(nil)
+		carrier := orderedHeaderCarrier{
+			{key: "baggage", val: "foo=bar"},
+			{key: "BAGGAGE", val: "foo=baz"},
+		}
+		ctx, err := p.Extract(carrier)
+		require.NoError(t, err)
+		require.NotNil(t, ctx)
+		assert.Equal(t, "baz", ctx.baggageItem("foo"))
+	})
+}
+
+// orderedHeaderCarrier is a minimal TextMapReader that emits key/value pairs
+// in a fixed slice order and can legitimately contain a duplicate key,
+// mirroring carriers like contrib/IBM/sarama's ProducerMessageCarrier -- unlike
+// TextMapCarrier, whose map iteration order is already randomized. It
+// deliberately does not implement TextMapWriter, so it always reaches the
+// ForeachKey fallback rather than a carrier-specific fast path.
+type orderedHeaderCarrier []struct{ key, val string }
+
+func (c orderedHeaderCarrier) ForeachKey(handler func(key, val string) error) error {
+	for _, kv := range c {
+		if err := handler(kv.key, kv.val); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // canonicalHTTPHeaders builds an http.Header whose keys are stored in canonical

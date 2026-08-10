@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
@@ -275,11 +276,12 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(0, len(trace.spans), "no more spans in the trace")
 }
 
-// Tests to confirm that when the payload queue is full, chunks are dropped
-// and the associated trace is counted as dropped.
+// Tests to confirm that when the payload queue is full, chunks are dropped,
+// the associated trace is counted as dropped, and the drop is reported via statsd.
 func TestSubmitChunkQueueFull(t *testing.T) {
 	assert := assert.New(t)
-	tracer, err := newUnstartedTracer()
+	var tg statsdtest.TestStatsdClient
+	tracer, err := newUnstartedTracer(withStatsdClient(&tg))
 	assert.Nil(err)
 	defer tracer.Stop()
 
@@ -288,6 +290,12 @@ func TestSubmitChunkQueueFull(t *testing.T) {
 		tracer.submitChunk(&c)
 	}
 	assert.Equal(uint32(1), tracer.totalTracesDropped)
+
+	tracesDropped := tg.GetCallsByName("datadog.tracer.traces_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(tracesDropped, "reason:queue_full"))
+
+	spansDropped := tg.GetCallsByName("datadog.tracer.spans_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(spansDropped, "reason:queue_full"))
 }
 
 func TestPartialFlush(t *testing.T) {
