@@ -46,7 +46,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.9.2
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.9.2
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.9.2
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
 	github.com/DataDog/orchestrion v1.11.0
 )
 
@@ -59,15 +59,15 @@ require (
 	cloud.google.com/go/pubsub v1.50.1 // indirect
 	cloud.google.com/go/pubsub/v2 v2.0.0 // indirect
 	github.com/99designs/gqlgen v0.17.92 // indirect
-	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0-rc.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.0-rc.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.82.0-rc.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/proto v0.82.0-rc.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.82.0-rc.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace v0.82.0-rc.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace/log v0.82.0-rc.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0-rc.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0-rc.2 // indirect
+	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.82.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/proto v0.82.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.82.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace v0.82.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace/log v0.82.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.10.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
@@ -188,7 +188,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/labstack/echo/v4 v4.13.3 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
