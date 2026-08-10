@@ -31,7 +31,7 @@ func (benchmarkHTTPTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	}, nil
 }
 
-func BenchmarkSubmitSpans(b *testing.B) {
+func BenchmarkLLMObsExportSubmitSpans(b *testing.B) {
 	b.Run("batch_50", func(b *testing.B) {
 		benchmarkSubmitSpans(b, benchmarkSpanEvents(50, strings.Repeat("x", 1024)))
 	})
