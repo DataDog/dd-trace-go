@@ -53,14 +53,20 @@ func (c *spanCtx) Value(key any) any {
 	return c.Context.Value(key)
 }
 
-// String lets fmt/%v render a spanCtx as a readable chain — e.g.
-// "context.Background.WithValue(internal.contextKey, Name: ...)" — matching
-// what the two context.WithValue nodes it replaces produced. Embedding
-// context.Context does not promote the parent's String method, since Stringer
-// isn't part of the Context interface, so without this a spanCtx would fall
-// back to a struct dump under %v.
+// String lets fmt/%v render a spanCtx as a readable chain, reproducing the two
+// context.WithValue nodes it replaces: both segments, with the span rendered via
+// its String method. Embedding context.Context does not promote the parent's
+// String method, since Stringer isn't part of the Context interface, so without
+// this a spanCtx would fall back to a struct dump under %v. The nil span is
+// spelled out rather than left to %v because (*Span).Format's nil guard is
+// missing a return, so a nil span routed through %v or %s renders "<nil><nil>".
 func (c *spanCtx) String() string {
-	return fmt.Sprintf("%v.WithValue(%T, %v)", c.Context, internal.ActiveSpanKey, c.span)
+	span := "<nil>"
+	if c.span != nil {
+		span = c.span.String()
+	}
+	return fmt.Sprintf("%v.WithValue(%T, %s).WithValue(%T, %T)",
+		c.Context, internal.ActiveSpanKey, span, activeSpanContextKey{}, c.snapshot)
 }
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
