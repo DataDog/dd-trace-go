@@ -72,6 +72,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedPanicFixture":                   properties(false),
 					"TestQuarantinedRaceSecondFixture":              properties(false),
 					"TestQuarantinedRaceAttemptToFixFixture":        properties(true),
+					"TestQuarantinedRaceLeafFixture/card/visa":      properties(false),
 					"TestQuarantinedRaceNestedFixture/card":         properties(false),
 					"TestQuarantinedRaceNestedATFFixture/card":      properties(false),
 					"TestQuarantinedRaceNestedATFFixture/card/visa": properties(true),
@@ -121,6 +122,16 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if nestedATF0 == parentPID || nestedATF1 == parentPID || nestedATF0 == nestedATF1 {
 		panic("descendant attempt-to-fix executions did not use fresh child processes")
 	}
+	leafPID := readPID("leaf-visa")
+	if leafPID == parentPID || readPID("leaf-card-child") != leafPID {
+		panic("exact quarantined leaf did not run through its ancestor in the child process")
+	}
+	if readPID("leaf-card-parent") != parentPID || readPID("leaf-mastercard-parent") != parentPID {
+		panic("exact quarantined leaf moved its non-quarantined family out of the parent process")
+	}
+	if _, err := os.Stat(filepath.Join(pidDir, "leaf-mastercard-child")); err == nil || !os.IsNotExist(err) {
+		panic("exact quarantined leaf also executed its sibling in the child process")
+	}
 
 	spans := mTracer.FinishedSpans()
 	spanTypes := map[string]int{}
@@ -130,7 +141,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 	}
 	if spanTypes[constants.SpanTypeTestSession] != 1 || spanTypes[constants.SpanTypeTestModule] != 1 ||
-		spanTypes[constants.SpanTypeTestSuite] != 1 || spanTypes[constants.SpanTypeTest] != 19 {
+		spanTypes[constants.SpanTypeTestSuite] != 1 || spanTypes[constants.SpanTypeTest] != 23 {
 		panic(fmt.Sprintf("unexpected parent-owned CI Visibility span counts: %#v", spanTypes))
 	}
 	raceSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFixture", 1)
@@ -159,6 +170,12 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	checkSpansByTagValue(nestedATFSpans, constants.TestAttemptToFixPassed, "true", 1)
 	checkSpansByTagValue(nestedATFSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 	checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedATFFixture/card", 1)
+	checkSpansByResourceName(spans, suite+".TestQuarantinedRaceLeafFixture", 1)
+	checkSpansByResourceName(spans, suite+".TestQuarantinedRaceLeafFixture/card", 1)
+	leafSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceLeafFixture/card/visa", 1)
+	checkSpansByTagValue(leafSpans, constants.TestStatus, constants.TestStatusPass, 1)
+	checkSpansByTagValue(leafSpans, constants.TestIsQuarantined, "true", 1)
+	checkSpansByResourceName(spans, suite+".TestQuarantinedRaceLeafFixture/card/mastercard", 1)
 	for _, name := range []string{
 		"TestQuarantinedRaceNestedFixture/card",
 		"TestQuarantinedRaceNestedFixture/card/visa",
@@ -198,7 +215,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 
 func TestQuarantinedRaceProcessEndToEnd(t *testing.T) {
 	pidDir := t.TempDir()
-	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], "^TestQuarantined(Race(Fixture|SecondFixture|AttemptToFixFixture|NestedFixture|NestedATFFixture)|PanicFixture)$")...)
+	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], "^TestQuarantined(Race(Fixture|SecondFixture|AttemptToFixFixture|LeafFixture|NestedFixture|NestedATFFixture)|PanicFixture)$")...)
 	cmd.Env = append(os.Environ(),
 		quarantinedRaceIsolationFixtureEnv+"=true",
 		quarantinedRaceIsolationPIDDirEnv+"="+pidDir,
@@ -249,6 +266,14 @@ func writeQuarantinedRaceIsolationPID(t *testing.T, name string) {
 	require.NoError(t, os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o600))
 }
 
+func writeQuarantinedRaceIsolationProcessPID(t *testing.T, name string) {
+	process := "parent"
+	if isProcessRetryChild() {
+		process = "child"
+	}
+	writeQuarantinedRaceIsolationPID(t, name+"-"+process)
+}
+
 func TestQuarantinedRaceFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {
 		t.Skip("fixture subprocess only")
@@ -295,6 +320,21 @@ func TestQuarantinedRaceAttemptToFixFixture(t *testing.T) {
 	require.NoError(t, err)
 	writeQuarantinedRaceIsolationPID(t, "atf-"+strconv.Itoa(cfg.Attempt))
 	t.Run("child", instrumentTestingTFunc(func(*testing.T) {}))
+}
+
+func TestQuarantinedRaceLeafFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("card", instrumentTestingTFunc(func(t *testing.T) {
+		writeQuarantinedRaceIsolationProcessPID(t, "leaf-card")
+		t.Run("visa", instrumentTestingTFunc(func(t *testing.T) {
+			writeQuarantinedRaceIsolationPID(t, "leaf-visa")
+		}))
+		t.Run("mastercard", instrumentTestingTFunc(func(t *testing.T) {
+			writeQuarantinedRaceIsolationProcessPID(t, "leaf-mastercard")
+		}))
+	}))
 }
 
 func TestQuarantinedRaceNestedFixture(t *testing.T) {
