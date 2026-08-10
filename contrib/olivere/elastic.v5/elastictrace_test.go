@@ -7,11 +7,15 @@ package elastic
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -19,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/olivere/elastic.v5"
 )
 
@@ -357,6 +362,79 @@ func TestPeek(t *testing.T) {
 			assert.Equal(tt.txt, string(all))
 		}
 	}
+}
+
+// gzipped returns b compressed as a single gzip member.
+func gzipped(t *testing.T, b []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	require.NoError(t, err)
+	_, err = zw.Write(b)
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	return buf.Bytes()
+}
+
+func TestPeekGzip(t *testing.T) {
+	t.Run("bomb fits in the peek window", func(t *testing.T) {
+		gz := gzipped(t, make([]byte, 4<<20))
+		require.Less(t, len(gz), bodyCutoff)
+
+		snip, _, err := peek(io.NopCloser(bytes.NewReader(gz)), "gzip", len(gz), bodyCutoff)
+		require.NoError(t, err)
+		assert.Len(t, snip, bodyCutoff)
+	})
+
+	t.Run("bomb exceeds the peek window", func(t *testing.T) {
+		gz := gzipped(t, make([]byte, 8<<20))
+		require.Greater(t, len(gz), bodyCutoff)
+
+		snip, _, err := peek(io.NopCloser(bytes.NewReader(gz)), "gzip", len(gz), bodyCutoff)
+		require.NoError(t, err)
+		assert.Len(t, snip, bodyCutoff)
+	})
+
+	t.Run("small body decodes in full", func(t *testing.T) {
+		body := `{"error":{"type":"index_not_found_exception"}}`
+		gz := gzipped(t, []byte(body))
+
+		snip, _, err := peek(io.NopCloser(bytes.NewReader(gz)), "gzip", len(gz), bodyCutoff)
+		require.NoError(t, err)
+		assert.Equal(t, body, snip)
+	})
+}
+
+func TestHTTPClientGzipBodyCutoff(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	bomb := gzipped(t, make([]byte, 4<<20))
+	require.Less(t, len(bomb), bodyCutoff)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Length", strconv.Itoa(len(bomb)))
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(bomb)
+	}))
+	defer srv.Close()
+
+	reqBody := `{"query":{"match_all":{}}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/twitter/_search", bytes.NewReader(gzipped(t, []byte(reqBody))))
+	require.NoError(t, err)
+	req.Header.Set("Content-Encoding", "gzip")
+	// Set explicitly: otherwise net/http adds it itself, transparently inflates the
+	// response, and strips Content-Encoding before peek() ever sees a gzip stream.
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res, err := NewHTTPClient().Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	span := mt.FinishedSpans()[0]
+	assert.Equal(t, reqBody, span.Tag("elasticsearch.body"))
+	assert.Len(t, span.Tag(ext.ErrorMsg).(string), bodyCutoff)
 }
 
 func TestAnalyticsSettings(t *testing.T) {
