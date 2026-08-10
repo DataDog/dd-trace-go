@@ -290,6 +290,68 @@ func TestContextWithSpanDoubleDetachIdempotent(t *testing.T) {
 		"span started from a double-detached context must not have a parentID")
 }
 
+// TestSpanCtxValue exercises spanCtx.Value directly (via the *spanCtx that
+// ContextWithSpan returns), pinning the four behaviors that make it the
+// load-bearing logic behind ContextWithSpan's detach guarantee: a live span
+// answers both keys, a nil span shadows both keys with a typed nil rather
+// than an absent key, and an unrelated key still falls through to the parent
+// context.
+func TestSpanCtxValue(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	t.Run("live span", func(t *testing.T) {
+		span := StartSpan("op")
+		defer span.Finish()
+
+		ctx := ContextWithSpan(context.Background(), span)
+
+		gotSpan, ok := ctx.Value(internal.ActiveSpanKey).(*Span)
+		assert.True(t, ok)
+		assert.Equal(t, span, gotSpan)
+
+		gotSnapshot, ok := ctx.Value(activeSpanContextKey{}).(*SpanContext)
+		assert.True(t, ok)
+		assert.NotNil(t, gotSnapshot)
+	})
+
+	t.Run("detach", func(t *testing.T) {
+		parent := StartSpan("parent")
+		defer parent.Finish()
+		parentCtx := ContextWithSpan(context.Background(), parent)
+
+		detachedCtx := ContextWithSpan(parentCtx, nil)
+
+		// internal.ActiveSpanKey must resolve to a non-nil interface holding a
+		// typed nil *Span, not an absent key — otherwise Value would fall
+		// through to parentCtx and resurrect the span it was meant to hide.
+		v := detachedCtx.Value(internal.ActiveSpanKey)
+		assert.True(t, v != nil, "interface value must be non-nil (a typed nil *Span)")
+		gotSpan, ok := v.(*Span)
+		assert.True(t, ok)
+		assert.Nil(t, gotSpan)
+
+		// Same two-part check for the snapshotted SpanContext.
+		sv := detachedCtx.Value(activeSpanContextKey{})
+		assert.True(t, sv != nil, "interface value must be non-nil (a typed nil *SpanContext)")
+		gotSnapshot, ok := sv.(*SpanContext)
+		assert.True(t, ok)
+		assert.Nil(t, gotSnapshot)
+	})
+
+	t.Run("unrelated key passthrough", func(t *testing.T) {
+		type unrelatedKey struct{}
+		base := context.WithValue(context.Background(), unrelatedKey{}, "unrelated-value")
+
+		span := StartSpan("op")
+		defer span.Finish()
+		ctx := ContextWithSpan(base, span)
+
+		assert.Equal(t, "unrelated-value", ctx.Value(unrelatedKey{}))
+	})
+}
+
 func TestStartSpanFromNilContext(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)
