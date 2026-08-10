@@ -16,8 +16,10 @@ import (
 // call shapes: attaching a live span (the common StartSpanFromContext path),
 // detaching a context that carries an ancestor snapshot (ContextWithSpan(ctx,
 // nil), see TestStartSpanFromContextDetachRegression), and detaching a context
-// that carries none — the tracer-disabled hot path that must stay
-// allocation-free (see the "don't shadow a snapshot that isn't there" fix).
+// that carries none — the tracer-disabled hot path, which pays one
+// allocation for the unavoidable ActiveSpanKey WithValue but must not pay a
+// second one for the shadow (see the "don't shadow a snapshot that isn't
+// there" fix).
 func BenchmarkContextWithSpan(b *testing.B) {
 	_, _, _, stop, err := startTestTracer(b)
 	require.NoError(b, err)
