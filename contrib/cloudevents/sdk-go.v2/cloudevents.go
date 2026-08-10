@@ -47,6 +47,13 @@ func New(opts ...Option) client.ObservabilityService {
 	return service
 }
 
+// NewClient creates a CloudEvents client with Datadog observability enabled.
+// It has the same signature as client.New and is used by Orchestrion.
+func NewClient(obj any, opts ...client.Option) (client.Client, error) {
+	opts = append(opts, client.WithObservabilityService(New()))
+	return client.New(obj, opts...)
+}
+
 type observabilityService struct {
 	config
 }
