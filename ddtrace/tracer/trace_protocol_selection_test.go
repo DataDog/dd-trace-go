@@ -160,7 +160,7 @@ func TestPinTestTracerToV04RotatesWriterPayload(t *testing.T) {
 // 7.77/7.78 v1.0 stats workaround (see agentOmitsLangInV1Stats): client-side
 // stats and P0 dropping must be forced on together — by design, not by
 // oversight — exactly when the agent is affected, the effective protocol is
-// v1.0, and none of the escape hatches or exclusions apply.
+// v1.0, and the escape hatch and exclusions don't apply.
 func TestV1StatsWorkaroundDoesNotDropP0s(t *testing.T) {
 	cases := []struct {
 		name              string
@@ -169,7 +169,6 @@ func TestV1StatsWorkaroundDoesNotDropP0s(t *testing.T) {
 		statsAdvertised   bool
 		dropP0sAdvertised bool
 		envProtocol       string // DD_TRACE_AGENT_PROTOCOL_VERSION, "" leaves it unset
-		envFeatures       string // DD_TRACE_FEATURES, "" leaves it unset
 		wantComputeStats  bool
 		wantDropP0s       bool
 		wantProtocol      float64
@@ -230,11 +229,6 @@ func TestV1StatsWorkaroundDoesNotDropP0s(t *testing.T) {
 			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV04,
 		},
 		{
-			name: "escape hatch: DD_TRACE_FEATURES=disable_v1_stats_workaround", agentVersion: "7.77.0",
-			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true, envFeatures: "disable_v1_stats_workaround",
-			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV1,
-		},
-		{
 			name: "agent doesn't advertise v1.0: no override (v0.4 anyway)", agentVersion: "7.77.0",
 			v1Advertised: false, statsAdvertised: true, dropP0sAdvertised: true,
 			wantComputeStats: false, wantDropP0s: false, wantProtocol: traceProtocolV04,
@@ -255,9 +249,6 @@ func TestV1StatsWorkaroundDoesNotDropP0s(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.envProtocol != "" {
 				t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", tc.envProtocol)
-			}
-			if tc.envFeatures != "" {
-				t.Setenv("DD_TRACE_FEATURES", tc.envFeatures)
 			}
 
 			agent := startTestAgent(t)
@@ -372,7 +363,7 @@ func TestV1StatsWorkaroundExclusions(t *testing.T) {
 			af := tr.config.agent.load()
 			require.True(t, af.Stats, "guard: agent must advertise /v0.6/stats")
 			require.True(t, af.DropP0s, "guard: agent must advertise client_drop_p0s")
-			require.True(t, af.v1ProtocolAvailable, "guard: agent must advertise /v1.0/traces")
+			require.True(t, af.v1TracesAdvertised, "guard: agent must advertise /v1.0/traces")
 			require.True(t, af.v1StatsLangUnfixed, "guard: agent version must be inside the affected window")
 
 			assert.False(t, tr.config.canComputeStats(), "canComputeStats")

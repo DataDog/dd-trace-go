@@ -446,7 +446,7 @@ type agentFeatures struct {
 	// so the semver comparison stays off the span-finish path. It is a pure
 	// function of the version string alone; the protocol condition is
 	// applied at read time in forcesStatsForV1Agent, so it cannot
-	// desynchronize from the startup-frozen v1ProtocolAvailable.
+	// desynchronize from the trace-protocol state.
 	v1StatsLangUnfixed bool
 
 	// featureFlags specifies all the feature flags reported by the trace-agent.
@@ -745,9 +745,6 @@ func (c *config) forcesStatsForV1Agent(a agentFeatures) bool {
 	if !a.v1StatsLangUnfixed {
 		return false
 	}
-	if c.internalConfig.HasFeature("disable_v1_stats_workaround") {
-		return false
-	}
 	// Reads only (RequestedTraceProtocol, protocolState) — effectiveTraceProtocol
 	// must stay a pure function of those and never consult a
 	// client-side-stats predicate, or this and canComputeStatsWithAgent would
@@ -803,8 +800,7 @@ func (c *config) surfaceStatsOverride(a agentFeatures) {
 			"trace-agent reports version %q, whose agent-side stats aggregation for the v1.0 trace "+
 			"protocol loses the `lang` dimension. This overrides the configured "+
 			"DD_TRACE_STATS_COMPUTATION_ENABLED=false. Upgrade the trace-agent to 7.79.0 or later, or "+
-			"set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, or set "+
-			"DD_TRACE_FEATURES=disable_v1_stats_workaround, to restore the configured behavior.",
+			"set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, to restore the configured behavior.",
 			a.AgentVersion)
 	case prev == 2:
 		// Report only on the way back down. Reporting the effective value

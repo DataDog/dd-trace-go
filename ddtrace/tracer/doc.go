@@ -208,9 +208,12 @@
 // the tracer computes the affected stats itself instead of relying on the
 // agent. This also enables P0 trace dropping, since the two capabilities are
 // not independently controllable (see WithStatsComputation). To opt out,
-// either upgrade the trace-agent to 7.79.0 or later, set
-// DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, or set
-// DD_TRACE_FEATURES=disable_v1_stats_workaround. Other trace-agent
-// implementations that do not follow this versioning scheme (for example,
-// serverless) are never affected by this override.
+// either upgrade the trace-agent to 7.79.0 or later, or set
+// DD_TRACE_AGENT_PROTOCOL_VERSION=0.4. The Datadog Lambda extension is
+// explicitly excluded from this override: it already computes trace stats
+// server-side, and contrib/aws/datadog-lambda-go starts the tracer with
+// WithStatsComputation(false) on purpose. Other trace-agent implementations
+// that do not follow this versioning scheme (for example, an OpenTelemetry
+// Collector exporter acting as a Datadog trace-agent) are never affected by
+// this override.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
