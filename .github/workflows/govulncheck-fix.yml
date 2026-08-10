@@ -21,7 +21,9 @@ jobs:
           go-version: stable
           cache-dependency-path: '**/go.sum'
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: |
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Scan and fix vulnerabilities
         id: fix
         run: ./.github/workflows/apps/govulncheck-fix.sh
