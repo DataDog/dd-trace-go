@@ -198,4 +198,19 @@
 // tracer's concurrent-connection limit worth of payloads already committed to
 // 1.0 at the moment the rejection is discovered, not just the one that
 // discovers it.
+//
+// One exception: on the 1.0 protocol, a trace-agent identifying as version
+// 7.77.x, 7.78.x, or an unreleased 7.79.0 pre-release predating 7.79.0-rc.6,
+// has a defect where its own stats aggregation for that protocol loses the
+// span's language dimension. The tracer detects this from the agent's
+// reported version and enables client-side stats computation regardless of
+// DD_TRACE_STATS_COMPUTATION_ENABLED / WithStatsComputation(false), so that
+// the tracer computes the affected stats itself instead of relying on the
+// agent. This also enables P0 trace dropping, since the two capabilities are
+// not independently controllable (see WithStatsComputation). To opt out,
+// either upgrade the trace-agent to 7.79.0 or later, set
+// DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, or set
+// DD_TRACE_FEATURES=disable_v1_stats_workaround. Other trace-agent
+// implementations that do not follow this versioning scheme (for example,
+// serverless) are never affected by this override.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

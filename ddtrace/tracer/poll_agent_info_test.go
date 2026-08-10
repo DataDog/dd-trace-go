@@ -536,3 +536,48 @@ func TestTraceProtocolChangeLoggedOncePerTransition(t *testing.T) {
 	}
 	assert.Zero(t, changes, "an unchanged effective protocol must never re-log a transition")
 }
+
+// TestPollAgentInfoLiftsV1StatsWorkaround pins a deliberate choice: unlike
+// the trace-protocol state (see trace_protocol_state.go), the agent version
+// (and the derived v1StatsLangUnfixed) is NOT added to refreshAgentFeatures's
+// frozen-field graft list. An agent upgraded in place from an affected
+// version to a fixed one therefore lifts the client-side-stats workaround
+// without a tracer restart.
+func TestPollAgentInfoLiftsV1StatsWorkaround(t *testing.T) {
+	var agentVersion atomic.Pointer[string]
+	affected := "7.77.0"
+	agentVersion.Store(&affected)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"version":         *agentVersion.Load(),
+			"endpoints":       []string{"/v0.4/traces", "/v1.0/traces", "/v0.6/stats"},
+			"client_drop_p0s": true,
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	tr, err := newTracer(
+		WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		WithAgentTimeout(2),
+		WithStatsComputation(false),
+	)
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	require.True(t, tr.config.canComputeStats(), "sanity check: the workaround must be active at startup")
+	require.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol())
+
+	// Upgrade the agent in place, then poll.
+	fixed := "7.79.0"
+	agentVersion.Store(&fixed)
+	tr.refreshAgentFeatures()
+
+	assert.False(t, tr.config.canComputeStats(),
+		"the workaround must lift without a restart once the agent reports a fixed version")
+	// The agent still advertises /v1.0/traces on this poll, so the wire
+	// protocol stays on v1 regardless of the version-string change.
+	assert.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol())
+}

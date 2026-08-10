@@ -331,6 +331,17 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// is baked into the transport or downgraded in config here. Report the
 	// resolved value to config telemetry so it reflects what is on the wire.
 	c.internalConfig.ReportEffectiveTraceProtocol(c.effectiveTraceProtocol())
+	// An override the user did not ask for must never be silent.
+	if c.statsOverriddenForV1Agent(af) {
+		log.Warn("client-side stats computation and P0 trace dropping have been enabled because the "+
+			"trace-agent reports version %q, whose agent-side stats aggregation for the v1.0 trace "+
+			"protocol loses the `lang` dimension. This overrides the configured "+
+			"DD_TRACE_STATS_COMPUTATION_ENABLED=false. Upgrade the trace-agent to 7.79.0 or later, or "+
+			"set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, or set "+
+			"DD_TRACE_FEATURES=disable_v1_stats_workaround, to restore the configured behavior.",
+			af.AgentVersion)
+		c.internalConfig.ReportEffectiveStatsComputation(true)
+	}
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -423,6 +434,19 @@ type agentFeatures struct {
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
+
+	// AgentVersion is the version string the trace-agent reports at /info.
+	// It may be empty, or not semver at all, for other trace-agent
+	// implementations (e.g. serverless) that don't follow the Agent's
+	// versioning scheme.
+	AgentVersion string
+
+	// v1StatsLangUnfixed is agentOmitsLangInV1Stats(AgentVersion), precomputed
+	// so the semver comparison stays off the span-finish path. It is a pure
+	// function of the version string alone; the protocol condition is
+	// applied at read time in forcesStatsForV1Agent, so it cannot
+	// desynchronize from the startup-frozen v1ProtocolAvailable.
+	v1StatsLangUnfixed bool
 
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
@@ -548,6 +572,7 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	}
 	updateContainerTagsHash(resp.Header)
 	type infoResponse struct {
+		Version            string   `json:"version"`
 		Endpoints          []string `json:"endpoints"`
 		ClientDropP0s      bool     `json:"client_drop_p0s"`
 		FeatureFlags       []string `json:"feature_flags"`
@@ -576,6 +601,8 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	var features agentFeatures
 	features.DropP0s = info.ClientDropP0s
 	features.StatsdPort = info.Config.StatsdPort
+	features.AgentVersion = info.Version
+	features.v1StatsLangUnfixed = agentOmitsLangInV1Stats(info.Version)
 	features.defaultEnv = info.Config.DefaultEnv
 	features.metaStructAvailable = info.SpanMetaStruct
 	features.peerTags = info.PeerTags
@@ -677,22 +704,82 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 	c.integrations = integrations
 }
 
+// statsComputationRequested reports the tracer's intent to compute
+// client-side stats, ignoring any agent-version workaround.
+func (c *config) statsComputationRequested() bool {
+	return c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled()
+}
+
 // canComputeStats determines whether Client-Side Stats can be computed, which requires:
-// - 'client_drop_p0' is enabled
-// - Trace Agent exposes 'stats' endpoint
-// - Stats Computation is enabled on the tracer (or has 'discovery' FF)
+//   - 'client_drop_p0' is enabled
+//   - Trace Agent exposes 'stats' endpoint
+//   - Stats Computation is enabled on the tracer (or has 'discovery' FF), OR the
+//     v1.0 stats workaround applies (see forcesStatsForV1Agent)
 func (c *config) canComputeStats() bool {
 	a := c.agent.load()
 	return c.canComputeStatsWithAgent(a)
 }
 
 func (c *config) canComputeStatsWithAgent(a agentFeatures) bool {
-	return a.Stats && a.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
+	if !a.Stats || !a.DropP0s {
+		// Agent capability gates. forcesStatsForV1Agent sits deliberately
+		// inside them: it relaxes the tracer's intent, never the agent's
+		// advertised capabilities. An agent that does not accept /v0.6/stats
+		// cannot receive client-computed stats at all (POSTing anyway would
+		// 404-loop), and one with the probabilistic sampler enabled
+		// (client_drop_p0s=false) must keep owning the sampling decision. On
+		// such an agent the empty-`lang` aggregation key is accepted as-is:
+		// it is a data-quality defect, not data loss, and is not worth
+		// overriding an agent capability for.
+		return false
+	}
+	return c.statsComputationRequested() || c.forcesStatsForV1Agent(a)
+}
+
+// forcesStatsForV1Agent reports whether client-side stats must be turned on
+// against the user's configuration because the tracer is on the v1.0 wire
+// protocol and this trace-agent's own v1.0 stats concentrator would aggregate
+// stats under an empty `lang` (see agentOmitsLangInV1Stats).
+func (c *config) forcesStatsForV1Agent(a agentFeatures) bool {
+	if !a.v1StatsLangUnfixed {
+		return false
+	}
+	if c.internalConfig.HasFeature("disable_v1_stats_workaround") {
+		return false
+	}
+	// Reads only (RequestedTraceProtocol, protocolState) — effectiveTraceProtocol
+	// must stay a pure function of those and never consult a
+	// client-side-stats predicate, or this and canComputeStatsWithAgent would
+	// become circular.
+	if c.effectiveTraceProtocol() != traceProtocolV1 {
+		return false
+	}
+	// A no-op when Datadog-Client-Computed-Stats is already sent for another
+	// reason (see traceTransportHeaders and transport.go's per-request
+	// header logic): the agent then never enters its v1.0 concentrator path,
+	// so there is nothing to work around.
+	if c.tracingAsTransport || c.internalConfig.OTLPSpanMetricsEnabled() || c.internalConfig.OTLPExportMode() {
+		return false
+	}
+	// The Datadog Lambda extension computes trace stats server-side, and
+	// contrib/aws/datadog-lambda-go starts the tracer with
+	// WithStatsComputation(false) on purpose. Never reverse that.
+	return !c.internalConfig.IsLambdaFunction()
+}
+
+// statsOverriddenForV1Agent reports whether forcesStatsForV1Agent is the
+// reason client-side stats are on — i.e. whether it changed the answer.
+// For logging/telemetry only; canComputeStatsWithAgent is the predicate.
+func (c *config) statsOverriddenForV1Agent(a agentFeatures) bool {
+	return !c.statsComputationRequested() && c.canComputeStatsWithAgent(a)
 }
 
 // canDropP0s determines whether P0 spans can be dropped.
 // Currently equivalent to canComputeStats() as both capabilities are part
-// of the Client-Side Stats feature and cannot be enabled independently.
+// of the Client-Side Stats feature and cannot be enabled independently. This
+// also means the v1.0 stats workaround in forcesStatsForV1Agent, once
+// enabled, drops P0 traces for agents it targets — an accepted trade-off, not
+// an oversight.
 func (c *config) canDropP0s() bool {
 	return c.canComputeStats()
 }
@@ -1163,6 +1250,14 @@ func WithPartialFlushing(numSpans int) StartOption {
 //
 // This option does not affect the Datadog trace protocol version used to send
 // traces; see DD_TRACE_AGENT_PROTOCOL_VERSION.
+//
+// WithStatsComputation(false) may still be overridden: on the 1.0 protocol,
+// against a trace-agent reporting version 7.77.x, 7.78.x, or an unreleased
+// 7.79.0 pre-release predating 7.79.0-rc.6, the tracer forces stats
+// computation (and P0 trace dropping — the two are not independently
+// controllable) on to work around a defect in that agent's own v1.0 stats
+// aggregation. See the "Trace Protocol" section of this package's doc.go for
+// how to opt out.
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)

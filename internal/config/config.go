@@ -202,6 +202,12 @@ type Config struct {
 	// from the tracer's poll goroutine and must not contend with hot-path reads
 	// of unrelated fields.
 	effectiveTraceProtocolBits atomic.Uint64
+	// effectiveStatsComputation is the last value reported via
+	// ReportEffectiveStatsComputation, as a tri-state: 0 = never reported,
+	// 1 = false, 2 = true. The tri-state (rather than an atomic.Bool) makes
+	// the first report fire even when the reported value is the zero value.
+	// Deliberately not under mu, for the same reason as effectiveTraceProtocolBits.
+	effectiveStatsComputation atomic.Uint32
 	// otlpExportMode indicates traces should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMode bool
@@ -1625,6 +1631,31 @@ func (c *Config) ReportEffectiveTraceProtocol(v float64) bool {
 		}
 		if c.effectiveTraceProtocolBits.CompareAndSwap(prev, next) {
 			configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionString(v), telemetry.OriginCalculated)
+			return true
+		}
+	}
+}
+
+// ReportEffectiveStatsComputation records whether client-side stats are
+// actually being computed — which can differ from the configured
+// DD_TRACE_STATS_COMPUTATION_ENABLED when an agent-capability workaround
+// forces them on — for DD_TRACE_STATS_COMPUTATION_ENABLED config telemetry.
+// Like ReportEffectiveTraceProtocol it reports only on change, so periodic
+// re-evaluation cannot inflate config-telemetry seqIDs. It does NOT modify
+// the value returned by StatsComputationEnabled. Returns true if this call
+// changed the recorded value.
+func (c *Config) ReportEffectiveStatsComputation(enabled bool) bool {
+	next := uint32(1)
+	if enabled {
+		next = 2
+	}
+	for {
+		prev := c.effectiveStatsComputation.Load()
+		if prev == next {
+			return false
+		}
+		if c.effectiveStatsComputation.CompareAndSwap(prev, next) {
+			configtelemetry.Report("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, telemetry.OriginCalculated)
 			return true
 		}
 	}
