@@ -277,7 +277,9 @@ func TestInternalMetricsDisabled(t *testing.T) {
 	}
 
 	t.Run("default non-Lambda: real client", func(t *testing.T) {
-		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without
+		// DNS/TCP, so no idle keep-alive connection is left for goleak to catch.
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
 		require.NoError(t, err)
 		defer tr.statsd.Close()
 		require.False(t, isNoop(tr.statsd), "statsd should be real by default, got %T", tr.statsd)
@@ -287,7 +289,7 @@ func TestInternalMetricsDisabled(t *testing.T) {
 		// In Lambda the core config layer defaults internal metrics to off so the
 		// tracer emits no statsd traffic by default.
 		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
-		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
 		require.NoError(t, err)
 		defer tr.statsd.Close()
 		require.True(t, isNoop(tr.statsd), "statsd should be a no-op in Lambda by default, got %T", tr.statsd)
@@ -298,7 +300,7 @@ func TestInternalMetricsDisabled(t *testing.T) {
 		// client is used and their setting is reported with origin env_var.
 		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
 		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "true")
-		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
 		require.NoError(t, err)
 		defer tr.statsd.Close()
 		require.False(t, isNoop(tr.statsd), "statsd should be real when user opts in, got %T", tr.statsd)
@@ -1924,11 +1926,24 @@ func TestWithStatsComputation(t *testing.T) {
 		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("disabled-via-option", func(t *testing.T) {
+		// Regression pin for the CSS<->trace-protocol decoupling: disabling
+		// client-side stats must not change the wire protocol. Previously this
+		// subtest asserted a v0.4 downgrade, but that assertion was
+		// environment-ambiguous — plain newTestConfig makes a real /info
+		// request, so it passed in CI (no local agent, v1 unavailable anyway)
+		// for a reason unrelated to CSS, and would have failed on a dev machine
+		// with a v1-capable agent running locally. Pin it against a stub that
+		// unambiguously advertises v1 instead.
 		assert := assert.New(t)
-		c, err := newTestConfig(WithStatsComputation(false))
+		url := mockAgentEndpoint(t, "/v1.0/traces")
+		c, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+			WithStatsComputation(false),
+		)
 		assert.NoError(err)
 		assert.False(c.internalConfig.StatsComputationEnabled())
-		assert.Equal(traceProtocolV04, c.internalConfig.TraceProtocol())
+		assert.False(c.canComputeStats(), "sanity check: CSS must actually be off")
+		assert.Equal(traceProtocolV1, c.effectiveTraceProtocol(), "disabling CSS must not downgrade the trace protocol")
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)

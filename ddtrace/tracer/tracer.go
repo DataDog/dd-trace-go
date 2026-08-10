@@ -49,19 +49,20 @@ import (
 )
 
 type TracerConf struct { //nolint:revive
-	CanComputeStats      bool
-	CanDropP0s           bool
-	DebugAbandonedSpans  bool
-	Disabled             bool
-	PartialFlush         bool
-	PartialFlushMinSpans int
-	PeerServiceDefaults  bool
-	PeerServiceMappings  map[string]string
-	EnvTag               string
-	VersionTag           string
-	ServiceTag           string
-	TracingAsTransport   bool
-	isLambdaFunction     bool
+	CanComputeStats        bool
+	CanDropP0s             bool
+	DebugAbandonedSpans    bool
+	Disabled               bool
+	PartialFlush           bool
+	PartialFlushMinSpans   int
+	PeerServiceDefaults    bool
+	PeerServiceMappings    map[string]string
+	EnvTag                 string
+	VersionTag             string
+	ServiceTag             string
+	TracingAsTransport     bool
+	isLambdaFunction       bool
+	OTLPSpanMetricsEnabled bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -514,9 +515,14 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
-	var sc statsConcentrator = newConcentrator(c, defaultStatsBucketSize, statsd)
-	if c.internalConfig.OTLPExportMode() {
+	var sc statsConcentrator
+	if c.internalConfig.OTLPSpanMetricsEnabled() {
+		// OTLP span metrics: SDK computes and exports stats; agent /v0.6/stats path unused.
+		sc = newOTLPMetricsConcentrator(c, statsd)
+	} else if c.internalConfig.OTLPExportMode() {
 		sc = &noopConcentrator{}
+	} else {
+		sc = newConcentrator(c, defaultStatsBucketSize, statsd)
 	}
 	t = &tracer{
 		config:           c,
@@ -729,6 +735,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.processOutChunk(trace)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
+			t.statsd.Gauge("datadog.tracer.queue.length", float64(len(t.out)), nil, 1)
 			t.traceWriter.flush()
 
 		case done := <-t.flush:
@@ -840,6 +847,12 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
+		if !trace.filterRejected {
+			// Filter-rejected chunks are already accounted for as reason:trace_filter
+			// in emitFilterDrop; counting them again here would double-count the drop.
+			t.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:queue_full"}, 1)
+			t.statsd.Count("datadog.tracer.spans_dropped", int64(len(trace.spans)), []string{"reason:queue_full"}, 1)
+		}
 		// Do NOT call releaseSpans here: pushChunk is called from within
 		// finish() while s.mu is held. clear() acquires s.mu to serialize
 		// after finish(), so calling it here deadlocks the same goroutine.
@@ -1216,19 +1229,20 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 func (t *tracer) TracerConf() TracerConf {
 	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
 	return TracerConf{
-		CanComputeStats:      t.config.canComputeStats(),
-		CanDropP0s:           t.config.canDropP0s(),
-		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.internalConfig.TracingEnabled(),
-		PartialFlush:         pfEnabled,
-		PartialFlushMinSpans: pfMin,
-		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
-		PeerServiceMappings:  t.config.internalConfig.PeerServiceMappings(),
-		EnvTag:               t.config.internalConfig.Env(),
-		VersionTag:           t.config.internalConfig.Version(),
-		ServiceTag:           t.config.internalConfig.ServiceName(),
-		TracingAsTransport:   t.config.tracingAsTransport,
-		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),
+		CanComputeStats:        t.config.canComputeStats(),
+		CanDropP0s:             t.config.canDropP0s(),
+		DebugAbandonedSpans:    t.config.internalConfig.DebugAbandonedSpans(),
+		Disabled:               !t.config.internalConfig.TracingEnabled(),
+		PartialFlush:           pfEnabled,
+		PartialFlushMinSpans:   pfMin,
+		PeerServiceDefaults:    t.config.internalConfig.PeerServiceDefaultsEnabled(),
+		PeerServiceMappings:    t.config.internalConfig.PeerServiceMappings(),
+		EnvTag:                 t.config.internalConfig.Env(),
+		VersionTag:             t.config.internalConfig.Version(),
+		ServiceTag:             t.config.internalConfig.ServiceName(),
+		TracingAsTransport:     t.config.tracingAsTransport,
+		isLambdaFunction:       t.config.internalConfig.IsLambdaFunction(),
+		OTLPSpanMetricsEnabled: t.config.internalConfig.OTLPSpanMetricsEnabled(),
 	}
 }
 
@@ -1237,7 +1251,10 @@ func (t *tracer) TracerConf() TracerConf {
 func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 	agentFeatures := t.config.agent.load()
 	span.statSpan = nil
-	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
+	// A capable agent and OTLP span metrics are independent paths to stats
+	// computation: don't let the agent-capability check gate out OTLP-only mode.
+	if !t.config.internalConfig.TracingEnabled() ||
+		(!t.config.internalConfig.OTLPSpanMetricsEnabled() && !t.config.canComputeStatsWithAgent(agentFeatures)) {
 		if span == trace.root {
 			trace.filterReject = false
 		}
@@ -1253,7 +1270,10 @@ func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 func (t *tracer) computeOversizedSpanStats(span *Span) {
 	agentFeatures := t.config.agent.load()
 	span.statSpan = nil
-	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
+	// A capable agent and OTLP span metrics are independent paths to stats
+	// computation: don't let the agent-capability check gate out OTLP-only mode.
+	if !t.config.internalConfig.TracingEnabled() ||
+		(!t.config.internalConfig.OTLPSpanMetricsEnabled() && !t.config.canComputeStatsWithAgent(agentFeatures)) {
 		return
 	}
 	// The oversized-trace path sends the stat span immediately and never
