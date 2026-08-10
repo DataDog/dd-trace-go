@@ -8,6 +8,7 @@ package tracer
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -53,6 +54,18 @@ func (c *spanCtx) Value(key any) any {
 	return c.Context.Value(key)
 }
 
+// contextName renders ctx the way the context package's own valueCtx.String
+// does: via its String method when it implements fmt.Stringer, or by its
+// concrete type name otherwise. Routing a non-Stringer ctx through %v instead
+// would fall back to a reflective field dump, which — unlike a type name —
+// can expose whatever an application chose to store in a custom context.
+func contextName(ctx context.Context) string {
+	if s, ok := ctx.(fmt.Stringer); ok {
+		return s.String()
+	}
+	return reflect.TypeOf(ctx).String()
+}
+
 // String lets fmt/%v render a spanCtx as a readable chain, reproducing the two
 // context.WithValue nodes it replaces: both segments, with the span rendered via
 // its String method. Embedding context.Context does not promote the parent's
@@ -65,8 +78,8 @@ func (c *spanCtx) String() string {
 	if c.span != nil {
 		span = c.span.String()
 	}
-	return fmt.Sprintf("%v.WithValue(%T, %s).WithValue(%T, %T)",
-		c.Context, internal.ActiveSpanKey, span, activeSpanContextKey{}, c.snapshot)
+	return fmt.Sprintf("%s.WithValue(%T, %s).WithValue(%T, %T)",
+		contextName(c.Context), internal.ActiveSpanKey, span, activeSpanContextKey{}, c.snapshot)
 }
 
 // ContextWithSpan returns a copy of the given context which includes the span s.

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -288,6 +289,38 @@ func TestContextWithSpanDoubleDetachIdempotent(t *testing.T) {
 		"span started from a double-detached context must not inherit the old trace ID")
 	assert.Zero(t, grandchild.parentID,
 		"span started from a double-detached context must not have a parentID")
+}
+
+// customCtxWithSecret is a context.Context that does not implement
+// fmt.Stringer, used to check that spanCtx.String() falls back to a type
+// name for such a parent rather than a reflective field dump. Embedding the
+// context.Context interface only promotes the interface's own methods
+// (Deadline, Done, Err, Value), not String, so this type is deliberately not
+// a fmt.Stringer.
+type customCtxWithSecret struct {
+	context.Context
+	secret string
+}
+
+// TestSpanCtxString guards the fix for a regression Codex review caught:
+// fmt.Sprintf("%v", ...) on a non-Stringer parent falls back to a reflective
+// dump of its fields, unlike the two chained context.WithValue nodes this
+// type replaces, whose String method renders a non-Stringer parent by type
+// name only (via the context package's internal contextName helper).
+func TestSpanCtxString(t *testing.T) {
+	t.Run("Stringer parent", func(t *testing.T) {
+		ctx := ContextWithSpan(context.Background(), &Span{spanID: 123})
+		s := fmt.Sprint(ctx)
+		assert.Contains(t, s, "context.Background")
+	})
+
+	t.Run("non-Stringer parent falls back to type name, not a field dump", func(t *testing.T) {
+		parent := customCtxWithSecret{Context: context.Background(), secret: "super-secret-value"}
+		ctx := ContextWithSpan(parent, &Span{spanID: 123})
+		s := fmt.Sprint(ctx)
+		assert.Contains(t, s, "customCtxWithSecret")
+		assert.NotContains(t, s, "super-secret-value")
+	})
 }
 
 // TestSpanCtxValue exercises spanCtx.Value directly (via the *spanCtx that
