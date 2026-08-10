@@ -385,15 +385,19 @@ func truncateProcessRetrySubtreeOutput(output []byte) (string, bool) {
 }
 
 type quarantinedRaceChildState struct {
-	cfg      *processRetrySubtreeConfig
-	mu       locking.Mutex
-	next     atomic.Uint64
-	results  []processRetrySubtreeResult
-	impacted *impactedtests.ImpactedTestAnalyzer
+	cfg             *processRetrySubtreeConfig
+	mu              locking.Mutex
+	next            atomic.Uint64
+	results         []processRetrySubtreeResult
+	impacted        *impactedtests.ImpactedTestAnalyzer
+	parallelBridge  func() error
+	parallelOnce    sync.Once
+	parallelStarted atomic.Bool
+	parallelDone    chan error
 }
 
 func newQuarantinedRaceChildState(cfg *processRetrySubtreeConfig) *quarantinedRaceChildState {
-	state := &quarantinedRaceChildState{cfg: cfg}
+	state := &quarantinedRaceChildState{cfg: cfg, parallelDone: make(chan error, 1)}
 	if cfg != nil && cfg.ImpactedTestsEnabled {
 		state.impacted, _ = impactedtests.NewImpactedTestAnalyzer()
 	}
@@ -427,6 +431,27 @@ func (s *quarantinedRaceChildState) snapshot() []processRetrySubtreeResult {
 		results[idx].order = 0
 	}
 	return results
+}
+
+func (s *quarantinedRaceChildState) startParallelBridge() {
+	if s == nil || s.parallelBridge == nil {
+		return
+	}
+	s.parallelOnce.Do(func() {
+		s.parallelStarted.Store(true)
+		// Do not hold up native Parallel: it must first release the selected
+		// test's child-process parent before the parent-process bridge can resume.
+		go func() {
+			s.parallelDone <- s.parallelBridge()
+		}()
+	})
+}
+
+func (s *quarantinedRaceChildState) waitParallelBridge() error {
+	if s == nil || !s.parallelStarted.Load() {
+		return nil
+	}
+	return <-s.parallelDone
 }
 
 func processRetrySubtreeCoveragePath(resultPath string) string {
@@ -533,6 +558,9 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	execMeta.shouldOrchestrateAttemptToFix = attemptOwner == name
 
 	sourceFunc := runtime.FuncForPC(reflect.ValueOf(original).Pointer())
+	if testifyData := getTestifyTest(t); testifyData != nil && testifyData.methodFunc != nil {
+		sourceFunc = testifyData.methodFunc
+	}
 	source := processRetrySourceFromFunc(sourceFunc)
 	execMeta.isAModifiedTest = directive.Modified || integrations.IsTestFuncModifiedWithAnalyzer(state.impacted, name, sourceFunc)
 	directive.Modified = execMeta.isAModifiedTest
@@ -864,6 +892,25 @@ func runQuarantinedRaceProcessIsolation(
 		return
 	}
 	defer lease.release()
+	var parallelGroup *retryAttemptGroup
+	var parallelReason string
+	var parallelOnce sync.Once
+	parallelBridge := func() error {
+		// Serial roots never pay for or depend on the private scheduler bridge.
+		parallelOnce.Do(func() {
+			parallelGroup, parallelReason = newRetryAttemptGroupWithOutputObservation(t, false)
+		})
+		if parallelReason != "" {
+			return fmt.Errorf("quarantined race parallel admission: %s", parallelReason)
+		}
+		parallelGroup.transitionOriginalToParallel()
+		return nil
+	}
+	defer func() {
+		if parallelGroup != nil {
+			parallelGroup.retire()
+		}
+	}()
 
 	rootTotal := 1
 	if cfg.OwnsAttemptToFix {
@@ -872,7 +919,7 @@ func runQuarantinedRaceProcessIsolation(
 	invocations := make([]quarantinedRaceInvocation, 0, rootTotal)
 	failfastStopped := false
 	for idx := 0; idx < rootTotal; idx++ {
-		attempt := runQuarantinedRaceInvocation(t, processCtx, lease, cfg, idx)
+		attempt := runQuarantinedRaceInvocation(t, processCtx, lease, cfg, idx, parallelBridge)
 		if processRetryInfrastructureFailure(attempt) {
 			failQuarantinedRaceIsolation(t, testInfo, execMeta, attempt)
 			return
@@ -898,7 +945,7 @@ func runQuarantinedRaceProcessIsolation(
 				return
 			}
 			for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
-				attempt := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, idx)
+				attempt := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, idx, parallelBridge)
 				if processRetryInfrastructureFailure(attempt) {
 					failQuarantinedRaceIsolation(t, &commonInfo{
 						moduleName: testInfo.moduleName,
@@ -941,6 +988,7 @@ func runQuarantinedRaceInvocation(
 	lease *processRetryGroupLease,
 	cfg *processRetrySubtreeConfig,
 	attemptIndex int,
+	parallelBridge func() error,
 ) processRetryAttemptResult {
 	deadline, deadlineOK := t.Deadline()
 	baseline := captureProcessRetryLaunchBaselineFromTemplate(processCtx.launchTemplate)
@@ -962,6 +1010,7 @@ func runQuarantinedRaceInvocation(
 		deadlineOK,
 		baseline,
 		lease.shutdown,
+		parallelBridge,
 	)
 	defer func() {
 		if attempt.Cleanup != nil {

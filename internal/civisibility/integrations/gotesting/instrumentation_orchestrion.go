@@ -633,7 +633,12 @@ func instrumentTestifySuiteRun(t *testing.T, suite any) {
 	}
 	defer release()
 	if isProcessRetryChild() {
-		return
+		execMeta := getTestMetadata(t)
+		if execMeta == nil || execMeta.quarantinedRaceChild == nil {
+			return
+		}
+		// The isolated subtree still needs the real Testify method for source,
+		// CODEOWNERS, impacted-test, and ITR metadata; it creates no child span.
 	}
 
 	log.Debug("instrumentTestifySuiteRun: instrumenting testify suite run")
@@ -680,11 +685,15 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 }
 
 // instrumentTestingParallel reports whether CI Visibility has replaced the
-// native Parallel implementation. Retry attempts now use a fresh testing.T and
-// bridge the real scheduler directly, so Parallel always remains native here.
+// native Parallel implementation. Retry attempts use a fresh testing.T, so
+// Parallel remains native after an isolated subtree has notified its parent.
 //
 //go:linkname instrumentTestingParallel
 func instrumentTestingParallel(t *testing.T) bool {
-	_ = t
+	if execMeta := getTestMetadata(t); execMeta != nil && execMeta.processRetryOwner != nil {
+		if state := execMeta.quarantinedRaceChild; state != nil && state.cfg != nil && t.Name() == state.cfg.SelectedRoot {
+			state.startParallelBridge()
+		}
+	}
 	return false
 }

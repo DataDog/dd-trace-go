@@ -1025,6 +1025,7 @@ func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessR
 		group.parentDeadlineOK,
 		group.launchBaseline,
 		group.shutdown(),
+		nil,
 	)
 }
 

@@ -1693,6 +1693,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	parentDeadlineOK bool,
 	baseline *processRetryLaunchBaseline,
 	shutdown <-chan struct{},
+	parentParallelBridge func() error,
 ) processRetryAttemptResult {
 	if ctx == nil {
 		ctx = context.Background()
@@ -1987,6 +1988,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 				attempt.Err = errors.Join(attempt.Err, errProcessRetryControlInvalid, err)
 				waitErr = forceKillAndWait(hooks.killTree)
 			} else {
+				control.parallelBridge = parentParallelBridge
 				controlErrors = control.serveParent()
 			}
 		}
@@ -3215,6 +3217,7 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			execMeta.test = newProcessRetryNoopTest(attempt.test, cfg, start, writer, control, attempt.raceBaseline)
 			if cfg.Subtree != nil {
 				observation.subtree = newQuarantinedRaceChildState(cfg.Subtree)
+				observation.subtree.parallelBridge = control.childRootParallelBridge
 				execMeta.quarantinedRaceChild = observation.subtree
 				execMeta.processRetryCoverageMu = &sync.Mutex{}
 			}
@@ -3322,7 +3325,8 @@ func (o *processRetryChildObservation) writeControlledTerminalResult(control *pr
 		if o.test == nil || o.execMeta == nil {
 			return
 		}
-		written = o.writer.Write(o.buildResult(status))
+		result := o.buildResult(status)
+		written = o.writer.Write(result) && result.Status == status
 	})
 	if written && control != nil {
 		_ = control.childControlledTerminal(status)
@@ -3330,6 +3334,11 @@ func (o *processRetryChildObservation) writeControlledTerminalResult(control *pr
 }
 
 func (o *processRetryChildObservation) buildResult(status processRetryStatus) processRetryResult {
+	if o.subtree != nil {
+		if err := o.subtree.waitParallelBridge(); err != nil {
+			return processRetryNotRunResult(o.cfg, "parallel_control_failed")
+		}
+	}
 	finish := o.startTime.Add(o.result.duration)
 	panicData := o.result.panicData
 	panicStack := o.result.panicStack

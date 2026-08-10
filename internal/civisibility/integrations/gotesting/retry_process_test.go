@@ -3063,6 +3063,7 @@ func TestRunProcessRetryAttemptStopsActiveChildOnShutdown(t *testing.T) {
 			false,
 			captureProcessRetryLaunchBaselineForTesting(),
 			shutdown,
+			nil,
 		)
 	}()
 	<-started
@@ -6166,8 +6167,14 @@ func TestProcessRetryControlAdmissionParallelAndTerminalCommit(t *testing.T) {
 	require.False(t, childExited)
 	require.NoError(t, waitErr)
 
+	var parallelBridges atomic.Int32
+	parent.parallelBridge = func() error {
+		parallelBridges.Add(1)
+		return nil
+	}
 	serveErrors := parent.serveParent()
 	require.NoError(t, child.childRootParallelBridge())
+	require.EqualValues(t, 1, parallelBridges.Load())
 	start := time.Now()
 	finish := start.Add(time.Millisecond)
 	require.NoError(t, writeProcessRetryResultAtomically(cfg.ResultPath, processRetryResult{

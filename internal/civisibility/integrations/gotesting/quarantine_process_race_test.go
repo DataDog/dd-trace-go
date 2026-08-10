@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -62,6 +63,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
+	testifySuite := suite + "/quarantinedRaceTestifySuite"
 	properties := func(attemptToFix bool) net.TestManagementTestsResponseDataTestProperties {
 		return net.TestManagementTestsResponseDataTestProperties{
 			Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
@@ -91,6 +93,10 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceFailfastRootFixture":             properties(true),
 					"TestQuarantinedRaceFailfastDescendantFixture":       properties(false),
 					"TestQuarantinedRaceFailfastDescendantFixture/child": properties(true),
+					"TestQuarantinedRaceParallelFixture/isolated":        properties(false),
+				}},
+				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
 				}},
 			}},
 		}}, false, nil)
@@ -114,6 +120,24 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	}
 	spans := mTracer.FinishedSpans()
 	switch scenario {
+	case "parallel-admission":
+		if readPID("parallel-child") == parentPID || readPID("parallel-sibling") != parentPID {
+			panic("parallel quarantined root did not overlap its parent-process sibling")
+		}
+		parallelSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelFixture/isolated", 1)
+		checkSpansByTagValue(parallelSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		os.Exit(0)
+	case "testify-source":
+		if readPID("testify-source") == parentPID {
+			panic("Testify method did not run in the isolated child")
+		}
+		testifySpans := checkSpansByResourceName(spans, testifySuite+".TestQuarantinedRaceTestifyFixture/TestSource", 1)
+		method := runtime.FuncForPC(reflect.ValueOf((*quarantinedRaceTestifySuite).TestSource).Pointer())
+		_, sourceLine := method.FileLine(method.Entry())
+		if got := fmt.Sprint(testifySpans[0].Tag(constants.TestSourceStartLine)); got != strconv.Itoa(sourceLine) {
+			panic(fmt.Sprintf("Testify source line = %s, want method line %d", got, sourceLine))
+		}
+		os.Exit(0)
 	case "feature-gate":
 		if readPID("feature-gate-disabled") == parentPID {
 			panic("subtest feature gate fixture did not run in the isolated child")
@@ -276,6 +300,14 @@ func TestQuarantinedRaceCleanupEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceFailfastEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "failfast", "^TestQuarantinedRaceFailfast(Root|Descendant)Fixture$", "-test.failfast")
+}
+
+func TestQuarantinedRaceParallelAdmissionEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$")
+}
+
+func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "testify-source", "^TestQuarantinedRaceTestifyFixture$")
 }
 
 func runQuarantinedRaceEndToEnd(t *testing.T, scenario, pattern string, extraArgs ...string) {
@@ -446,6 +478,50 @@ func TestQuarantinedRaceNestedFixture(t *testing.T) {
 	}))
 	t.Run("paypal", instrumentTestingTFunc(func(t *testing.T) {
 		writeQuarantinedRaceIsolationPID(t, "paypal")
+	}))
+}
+
+func TestQuarantinedRaceParallelFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("isolated", instrumentTestingTFunc(func(t *testing.T) {
+		(*T)(t).Parallel()
+		writeQuarantinedRaceIsolationPID(t, "parallel-child")
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "parallel-sibling")); err == nil {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("parallel sibling was not admitted while the isolated body was running")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}))
+	t.Run("sibling", instrumentTestingTFunc(func(t *testing.T) {
+		(*T)(t).Parallel()
+		writeQuarantinedRaceIsolationPID(t, "parallel-sibling")
+	}))
+}
+
+type quarantinedRaceTestifySuite struct {
+	t *testing.T
+}
+
+func (s *quarantinedRaceTestifySuite) TestSource() {
+	writeQuarantinedRaceIsolationPID(s.t, "testify-source")
+}
+
+func TestQuarantinedRaceTestifyFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	suite := &quarantinedRaceTestifySuite{}
+	instrumentTestifySuiteRun(t, suite)
+	t.Run("TestSource", instrumentTestingTFunc(func(t *testing.T) {
+		suite.t = t
+		suite.TestSource()
 	}))
 }
 

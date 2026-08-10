@@ -99,6 +99,8 @@ type processRetryControl struct {
 	terminal  processRetryControlledTerminalState
 	serveDone chan struct{}
 	wire      processRetryControlConfig
+
+	parallelBridge func() error
 }
 
 type processRetryControlledTerminalState struct {
@@ -386,6 +388,12 @@ func (c *processRetryControl) serveParent() <-chan error {
 			}
 			switch frame.Kind {
 			case processRetryControlParallelRequest:
+				if c.parallelBridge != nil {
+					if err := c.parallelBridge(); err != nil {
+						errorsCh <- err
+						return
+					}
+				}
 				if err := c.Send(processRetryControlParallelResume, ""); err != nil {
 					errorsCh <- err
 					return
