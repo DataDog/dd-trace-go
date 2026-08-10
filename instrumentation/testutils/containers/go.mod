@@ -10,6 +10,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/valkey v0.42.0
+	go.yaml.in/yaml/v3 v3.0.4
 )
 
 require (
