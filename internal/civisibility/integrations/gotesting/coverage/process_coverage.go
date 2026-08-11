@@ -145,6 +145,7 @@ func mergeProcessTestCoverageFiles(dst []ProcessTestCoverageFile, src []coveredF
 // an isolated workload starts.
 type ProcessCoverageProfile struct {
 	before *orderedCoverProfile
+	delta  *orderedCoverProfile
 }
 
 // BeginProcessCoverageProfile captures the aggregate coverage present before
@@ -162,13 +163,22 @@ func BeginProcessCoverageProfile() (*ProcessCoverageProfile, error) {
 	return &ProcessCoverageProfile{before: before}, nil
 }
 
-// WriteDelta writes only coverage added since BeginProcessCoverageProfile.
-func (p *ProcessCoverageProfile) WriteDelta(path string) error {
+// Pause finishes the active aggregate coverage segment. A later Resume starts
+// a new baseline so coverage collected while the workload is suspended is
+// excluded.
+func (p *ProcessCoverageProfile) Pause() error {
 	if p == nil {
 		return nil
 	}
 	processCoverageMu.Lock()
 	defer processCoverageMu.Unlock()
+	return p.pause()
+}
+
+func (p *ProcessCoverageProfile) pause() error {
+	if p.before == nil {
+		return nil
+	}
 	after, err := snapshotProcessCoverageProfile()
 	if err != nil {
 		return err
@@ -176,7 +186,48 @@ func (p *ProcessCoverageProfile) WriteDelta(path string) error {
 	if err := subtractProcessCoverageProfiles(p.before, after); err != nil {
 		return err
 	}
-	return after.writeAtomic(path)
+	if p.delta == nil {
+		p.delta = after
+	} else if err := mergeProcessCoverageProfiles(p.delta, after); err != nil {
+		return err
+	}
+	p.before = nil
+	return nil
+}
+
+// Resume starts another aggregate coverage segment after a suspended workload
+// resumes.
+func (p *ProcessCoverageProfile) Resume() error {
+	if p == nil {
+		return nil
+	}
+	processCoverageMu.Lock()
+	defer processCoverageMu.Unlock()
+	if p.before != nil {
+		return nil
+	}
+	before, err := snapshotProcessCoverageProfile()
+	if err != nil {
+		return err
+	}
+	p.before = before
+	return nil
+}
+
+// WriteDelta writes the aggregate coverage collected across active segments.
+func (p *ProcessCoverageProfile) WriteDelta(path string) error {
+	if p == nil {
+		return nil
+	}
+	processCoverageMu.Lock()
+	defer processCoverageMu.Unlock()
+	if err := p.pause(); err != nil {
+		return err
+	}
+	if p.delta == nil {
+		return errors.New("coverage profile missing")
+	}
+	return p.delta.writeAtomic(path)
 }
 
 func snapshotProcessCoverageProfile() (*orderedCoverProfile, error) {

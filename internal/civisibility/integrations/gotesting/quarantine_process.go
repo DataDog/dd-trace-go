@@ -399,6 +399,7 @@ type quarantinedRaceChildState struct {
 	beginAggregate  func()
 	aggregateFinish sync.Once
 	finishAggregate func()
+	pauseAggregate  func() func()
 	parallelBridge  func() error
 	parallelOnce    sync.Once
 	parallelStarted atomic.Bool
@@ -651,6 +652,12 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	execMeta.processRetryParallelPause = func() func() {
 		activeDuration += time.Since(activeStart)
 		activeStart = time.Time{}
+		// A nested selected root releases its discovery ancestor in Parallel.
+		// Exclude that ancestor's work from this root's aggregate profile.
+		var resumeAggregate func()
+		if name == state.cfg.SelectedRoot && state.pauseAggregate != nil {
+			resumeAggregate = state.pauseAggregate()
+		}
 		if collector != nil {
 			collector.Pause()
 		}
@@ -658,6 +665,9 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		coverageInterval = nil
 		return func() {
 			activeStart = time.Now()
+			if resumeAggregate != nil {
+				resumeAggregate()
+			}
 			if collectCoverage {
 				coverageInterval = state.coverage.begin(name)
 			}

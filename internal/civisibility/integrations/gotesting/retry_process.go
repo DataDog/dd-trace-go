@@ -3228,6 +3228,20 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 					observation.subtree.beginAggregate = func() {
 						observation.aggregate, observation.aggregateErr = coverage.BeginProcessCoverageProfile()
 					}
+					observation.subtree.pauseAggregate = func() func() {
+						if observation.aggregateErr != nil || observation.aggregate == nil {
+							return nil
+						}
+						if err := observation.aggregate.Pause(); err != nil {
+							observation.aggregateErr = err
+							return nil
+						}
+						return func() {
+							if observation.aggregateErr == nil && observation.aggregate != nil {
+								observation.aggregateErr = observation.aggregate.Resume()
+							}
+						}
+					}
 					observation.subtree.finishAggregate = func() {
 						if observation.aggregateErr == nil && observation.aggregate != nil {
 							observation.aggregateErr = observation.aggregate.WriteDelta(processRetrySubtreeCoveragePath(cfg.ResultPath))

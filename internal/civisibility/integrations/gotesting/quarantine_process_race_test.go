@@ -193,7 +193,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(leafSpans, constants.TestAttemptToFixPassed, "true", 4)
 		checkSpansByTagValue(leafSpans, constants.TestFinalStatus, constants.TestStatusSkip, 4)
 		os.Exit(0)
-	case "nested-aggregate-coverage", "nested-aggregate-coverage-control":
+	case "nested-aggregate-coverage", "nested-aggregate-parallel-coverage", "nested-aggregate-coverage-control":
 		os.Exit(0)
 	case "parallel-admission":
 		if readPID("parallel-child") == parentPID || readPID("parallel-sibling") != parentPID {
@@ -482,7 +482,13 @@ func TestQuarantinedRaceNestedAggregateCoverageEndToEnd(t *testing.T) {
 	profilePath := filepath.Join(t.TempDir(), "coverage.out")
 	runQuarantinedRaceEndToEnd(t, "nested-aggregate-coverage", "^TestQuarantinedRaceAggregateCoverageFixture$", "-test.coverprofile="+profilePath)
 	controlCount := processCoverageCountForFunction(t, controlPath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount")
-	require.Equal(t, controlCount+1, processCoverageCountForFunction(t, profilePath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount"))
+	serialCount := processCoverageCountForFunction(t, profilePath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount")
+	require.Equal(t, controlCount+1, serialCount)
+	// The nested subprocesses share Go's outer coverage directory, so compare
+	// successive profiles to assert that each scenario merges the marker once.
+	parallelPath := filepath.Join(t.TempDir(), "parallel.out")
+	runQuarantinedRaceEndToEnd(t, "nested-aggregate-parallel-coverage", "^TestQuarantinedRaceAggregateCoverageFixture$", "-test.coverprofile="+parallelPath)
+	require.Equal(t, serialCount+1, processCoverageCountForFunction(t, parallelPath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount"))
 }
 
 func TestQuarantinedRaceNestedAttemptFamilyEndToEnd(t *testing.T) {
@@ -784,8 +790,13 @@ func TestQuarantinedRaceAggregateCoverageFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {
 		t.Skip("fixture subprocess only")
 	}
-	t.Run("isolated", instrumentTestingTFunc(func(*testing.T) {}))
-	if os.Getenv(quarantinedRaceIsolationFixtureEnv) == "nested-aggregate-coverage" {
+	scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
+	t.Run("isolated", instrumentTestingTFunc(func(t *testing.T) {
+		if scenario == "nested-aggregate-parallel-coverage" {
+			(*T)(t).Parallel()
+		}
+	}))
+	if scenario == "nested-aggregate-coverage" || scenario == "nested-aggregate-parallel-coverage" {
 		quarantinedRaceAncestorCoverage.Store(int64(processRetryAttemptToFixExecutionCount(1)))
 	}
 }
