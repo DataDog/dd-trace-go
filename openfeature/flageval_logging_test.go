@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1189,7 +1190,7 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 			attrs[fmt.Sprintf("field-%04d", i)] = "small"
 		}
 		_, reasons := flattenAndPruneContext(attrs)
-		if !slicesContain(reasons, truncReasonMaxContextFields) || slicesContain(reasons, truncReasonMaxFieldLength) || slicesContain(reasons, truncReasonMaxKeyLength) {
+		if !slices.Contains(reasons, truncReasonMaxContextFields) || slices.Contains(reasons, truncReasonMaxFieldLength) || slices.Contains(reasons, truncReasonMaxKeyLength) {
 			t.Errorf("expected only max_context_fields, got %v", reasons)
 		}
 	})
@@ -1198,7 +1199,7 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 	t.Run("value cap alone", func(t *testing.T) {
 		attrs := map[string]any{"role": "admin", "big": overlongValue}
 		_, reasons := flattenAndPruneContext(attrs)
-		if !slicesContain(reasons, truncReasonMaxFieldLength) || slicesContain(reasons, truncReasonMaxKeyLength) || slicesContain(reasons, truncReasonMaxContextFields) {
+		if !slices.Contains(reasons, truncReasonMaxFieldLength) || slices.Contains(reasons, truncReasonMaxKeyLength) || slices.Contains(reasons, truncReasonMaxContextFields) {
 			t.Errorf("expected only max_field_length, got %v", reasons)
 		}
 	})
@@ -1207,7 +1208,7 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 	t.Run("key cap alone", func(t *testing.T) {
 		attrs := map[string]any{"role": "admin", overlongKey: "small"}
 		_, reasons := flattenAndPruneContext(attrs)
-		if !slicesContain(reasons, truncReasonMaxKeyLength) || slicesContain(reasons, truncReasonMaxContextFields) || slicesContain(reasons, truncReasonMaxFieldLength) {
+		if !slices.Contains(reasons, truncReasonMaxKeyLength) || slices.Contains(reasons, truncReasonMaxContextFields) || slices.Contains(reasons, truncReasonMaxFieldLength) {
 			t.Errorf("expected only max_key_length, got %v", reasons)
 		}
 	})
@@ -1216,12 +1217,12 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 	// so the overlong-key entry is visited before the fields cap could fire.
 	t.Run("value and key caps together", func(t *testing.T) {
 		attrs := map[string]any{
-			"aaaa" + overlongKey: "small",  // sorts first, hits key cap
+			"aaaa" + overlongKey: "small",       // sorts first, hits key cap
 			"big":                overlongValue, // sorts middle, hits value cap
 			"role":               "admin",       // sorts last, kept
 		}
 		_, reasons := flattenAndPruneContext(attrs)
-		if !slicesContain(reasons, truncReasonMaxKeyLength) || !slicesContain(reasons, truncReasonMaxFieldLength) {
+		if !slices.Contains(reasons, truncReasonMaxKeyLength) || !slices.Contains(reasons, truncReasonMaxFieldLength) {
 			t.Errorf("expected max_key_length AND max_field_length, got %v", reasons)
 		}
 	})
@@ -1234,15 +1235,6 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 			t.Errorf("expected nil reasons, got %v", reasons)
 		}
 	})
-}
-
-func slicesContain(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }
 
 // TestRecordBumpsContextTruncatedTelemetry covers the record → contextTruncatedByReason path:
