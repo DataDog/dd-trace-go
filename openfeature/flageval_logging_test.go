@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -106,7 +107,7 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Reference pipeline (the two former steps) vs the merged single-pass procedure.
 			want := pruneContext(flattenContext(tc.input))
-			got := flattenAndPruneContext(tc.input)
+			got, _ := flattenAndPruneContext(tc.input)
 
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("merged flatten+prune differs from flattenContext+pruneContext:\n got=%v\nwant=%v", got, want)
@@ -118,9 +119,11 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 			}
 
 			// Determinism: repeated calls yield an identical canonical key.
-			first := canonicalContextKey(flattenAndPruneContext(tc.input))
+			firstAttrs, _ := flattenAndPruneContext(tc.input)
+			first := canonicalContextKey(firstAttrs)
 			for range 25 {
-				if k := canonicalContextKey(flattenAndPruneContext(tc.input)); k != first {
+				attrs, _ := flattenAndPruneContext(tc.input)
+				if k := canonicalContextKey(attrs); k != first {
 					t.Fatalf("merged flatten+prune nondeterministic: canonical keys differ across calls")
 				}
 			}
@@ -1067,7 +1070,7 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	// Do NOT start the worker. stop() must still be safe (ticker==nil path) and mark stopped.
 	w.stop()
 
-	before := w.dropped.Load()
+	before := w.preQueueOverflow.Load()
 
 	// Build a minimal hook context + details to drive record().
 	hookCtx := of.NewHookContext(
@@ -1095,8 +1098,8 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	if got := len(w.events); got != 0 {
 		t.Errorf("record() after stop() enqueued %d event(s); expected 0 (no-op into never-drained channel)", got)
 	}
-	if got := w.dropped.Load(); got != before+1 {
-		t.Errorf("record() after stop() must count the event as dropped: dropped=%d, expected=%d", got, before+1)
+	if got := w.preQueueOverflow.Load(); got != before+1 {
+		t.Errorf("record() after stop() must count the event as dropped: preQueueOverflow=%d, expected=%d", got, before+1)
 	}
 }
 
@@ -1169,6 +1172,179 @@ func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("stop() returned without flushing queued flagevaluation event")
+	}
+}
+
+// TestFlattenAndPruneContextReportsTruncationReasons covers the reasons slice returned by
+// flattenAndPruneContext. Each reason must be reported at most once per call, and only when
+// the matching cap actually fired.
+func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
+	overlongValue := strings.Repeat("v", maxFieldLength+1)
+	overlongKey := strings.Repeat("k", maxKeyLength+1)
+
+	// Field-cap alone: many small fields, no oversized keys or values.
+	t.Run("fields cap alone", func(t *testing.T) {
+		attrs := map[string]any{}
+		for i := range maxContextFields + 5 {
+			attrs[fmt.Sprintf("field-%04d", i)] = "small"
+		}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slicesContain(reasons, truncReasonMaxContextFields) || slicesContain(reasons, truncReasonMaxFieldLength) || slicesContain(reasons, truncReasonMaxKeyLength) {
+			t.Errorf("expected only max_context_fields, got %v", reasons)
+		}
+	})
+
+	// Value-cap alone: one oversized string value, everything else small and in-cap.
+	t.Run("value cap alone", func(t *testing.T) {
+		attrs := map[string]any{"role": "admin", "big": overlongValue}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slicesContain(reasons, truncReasonMaxFieldLength) || slicesContain(reasons, truncReasonMaxKeyLength) || slicesContain(reasons, truncReasonMaxContextFields) {
+			t.Errorf("expected only max_field_length, got %v", reasons)
+		}
+	})
+
+	// Key-cap alone: one over-long key, everything else small.
+	t.Run("key cap alone", func(t *testing.T) {
+		attrs := map[string]any{"role": "admin", overlongKey: "small"}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slicesContain(reasons, truncReasonMaxKeyLength) || slicesContain(reasons, truncReasonMaxContextFields) || slicesContain(reasons, truncReasonMaxFieldLength) {
+			t.Errorf("expected only max_key_length, got %v", reasons)
+		}
+	})
+
+	// Value and key caps together, no field-cap. Sorting: "aaaa..."(overlong key) < "big" < "role"
+	// so the overlong-key entry is visited before the fields cap could fire.
+	t.Run("value and key caps together", func(t *testing.T) {
+		attrs := map[string]any{
+			"aaaa" + overlongKey: "small",  // sorts first, hits key cap
+			"big":                overlongValue, // sorts middle, hits value cap
+			"role":               "admin",       // sorts last, kept
+		}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slicesContain(reasons, truncReasonMaxKeyLength) || !slicesContain(reasons, truncReasonMaxFieldLength) {
+			t.Errorf("expected max_key_length AND max_field_length, got %v", reasons)
+		}
+	})
+
+	// No caps fire → nil reasons.
+	t.Run("nothing to truncate", func(t *testing.T) {
+		attrs := map[string]any{"role": "admin"}
+		_, reasons := flattenAndPruneContext(attrs)
+		if reasons != nil {
+			t.Errorf("expected nil reasons, got %v", reasons)
+		}
+	})
+}
+
+func slicesContain(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRecordBumpsContextTruncatedTelemetry covers the record → contextTruncatedByReason path:
+// a caller passing a context that trips a cap must bump the matching counter, and consent-off
+// must skip the copy entirely (so the counter stays at zero even for the same caller shape).
+func TestRecordBumpsContextTruncatedTelemetry(t *testing.T) {
+	attrs := map[string]any{}
+	for i := range maxContextFields + 3 {
+		attrs[fmt.Sprintf("field-%04d", i)] = "small"
+	}
+	hookCtx := of.NewHookContext(
+		"tel-flag",
+		of.Boolean,
+		false,
+		of.NewClientMetadata(""),
+		of.Metadata{Name: "test-provider"},
+		of.NewEvaluationContext("user-1", attrs),
+	)
+	details := func(consent bool) of.InterfaceEvaluationDetails {
+		return of.InterfaceEvaluationDetails{
+			Value: true,
+			EvaluationDetails: of.EvaluationDetails{
+				FlagKey:  "tel-flag",
+				FlagType: of.Boolean,
+				ResolutionDetail: of.ResolutionDetail{
+					Variant: "on",
+					Reason:  of.TargetingMatchReason,
+					FlagMetadata: of.FlagMetadata{
+						metadataObserveFullEvaluationDataKey: consent,
+					},
+				},
+			},
+		}
+	}
+
+	loadCounter := func(w *flagEvalLoggingWriter, reason string) int64 {
+		v, ok := w.contextTruncatedByReason.Load(reason)
+		if !ok {
+			return 0
+		}
+		return v.(*atomic.Int64).Load()
+	}
+
+	t.Run("consent-on bumps max_context_fields once", func(t *testing.T) {
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.record(hookCtx, details(true))
+		if got := loadCounter(w, truncReasonMaxContextFields); got != 1 {
+			t.Errorf("consent-on: expected max_context_fields=1, got %d", got)
+		}
+	})
+
+	t.Run("consent-off skips copy entirely — no truncation reasons bump", func(t *testing.T) {
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.record(hookCtx, details(false))
+		if got := loadCounter(w, truncReasonMaxContextFields); got != 0 {
+			t.Errorf("consent-off: max_context_fields should be 0 (no copy work), got %d", got)
+		}
+	})
+}
+
+// TestPreEnqueueBoundingReleasesCallerContext proves the context is snapshotted onto the queued
+// evalEvent by the time record() returns — mutating the caller's map after record() must not
+// affect the aggregated bucket. Under a worker-side copy this would fail: the queue would hold
+// a live reference and observe the mutation on the next flush.
+func TestPreEnqueueBoundingReleasesCallerContext(t *testing.T) {
+	w := newFlagEvalLoggingWriter(ProviderConfig{})
+	attrs := map[string]any{"role": "admin"}
+	hookCtx := of.NewHookContext(
+		"pre-flag",
+		of.Boolean,
+		false,
+		of.NewClientMetadata(""),
+		of.Metadata{Name: "test-provider"},
+		of.NewEvaluationContext("user-1", attrs),
+	)
+	details := of.InterfaceEvaluationDetails{
+		Value: true,
+		EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  "pre-flag",
+			FlagType: of.Boolean,
+			ResolutionDetail: of.ResolutionDetail{
+				Variant:      "on",
+				Reason:       of.TargetingMatchReason,
+				FlagMetadata: of.FlagMetadata{metadataObserveFullEvaluationDataKey: true},
+			},
+		},
+	}
+	w.record(hookCtx, details)
+
+	// Mutation happens AFTER record() returned. If the queue held a live reference the worker
+	// would observe "role=poisoned"; because the copy was taken pre-enqueue, the snapshot is
+	// stable.
+	attrs["role"] = "poisoned"
+
+	w.aggregate(<-w.events)
+	if len(w.aggregator.full) != 1 {
+		t.Fatalf("expected one aggregated entry, got %d", len(w.aggregator.full))
+	}
+	for _, entry := range w.aggregator.full {
+		if got := entry.contextAttrs["role"]; got != "admin" {
+			t.Errorf("expected snapshotted role=admin, got %v — the caller's mutation leaked into the aggregated bucket", got)
+		}
 	}
 }
 

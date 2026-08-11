@@ -32,9 +32,26 @@ const (
 	// flagEvalLoggingEndpoint is the EVP proxy endpoint for flag evaluation events.
 	flagEvalLoggingEndpoint = "/evp_proxy/v2/api/v2/flagevaluation"
 
-	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH.
+	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH
+	// and align with the cross-SDK RFC (see Java DDEvaluator.copyPrunedContext caps).
 	maxContextFields = 256
 	maxFieldLength   = 256
+	// maxKeyLength bounds the length of a flattened key. Deep nested keys (e.g. many-level
+	// dot-notation paths) can outgrow the value cap on the key side; this cap keeps them off
+	// the wire and out of the aggregation key.
+	maxKeyLength = 256
+
+	// MAX_LIST_ELEMENTS / MAX_STRUCTURE_PROPERTIES / MAX_SNAPSHOT_DEPTH from the cross-SDK RFC
+	// are NOT applied here yet. Go's flatten path (flattenRecursive in flatten.go) is shared
+	// with the exposure track, and bounding depth/list/struct traversal there would silently
+	// drop attributes that the exposure track today emits. Tracked as a follow-up; the field
+	// count + key length + value length caps carry the memory-safety load for now.
+
+	// Context truncation reason labels — surface via metrics so operators can tell which cap
+	// pressured the context (matches Java's countContextTruncated reason label).
+	truncReasonMaxContextFields = "max_context_fields"
+	truncReasonMaxFieldLength   = "max_field_length"
+	truncReasonMaxKeyLength     = "max_key_length"
 
 	// Aggregation cap sizing inputs.
 	evalScaleTargetFlags               = 2_500
@@ -250,19 +267,31 @@ type flagEvalLoggingWriter struct {
 
 	// Asynchronous hand-off: the Finally hook enqueues a bounded snapshot here; a single
 	// background worker (started in start()) drains it and performs aggregate/flush off the
-	// evaluation hot path. events is bounded; on overflow the hook drops
-	// the event and bumps dropped — best-effort telemetry that never blocks the request.
+	// evaluation hot path. events is bounded; on overflow the hook drops the event and bumps
+	// a counter — best-effort telemetry that never blocks the request.
 	events     chan evalEvent
-	dropped    atomic.Int64
 	workerDone chan struct{}
 	enqueueMu  sync.RWMutex
+
+	// Telemetry counters. Split so operators can tell why we lost data:
+	//  - preQueueOverflow: capacity check saw the queue full BEFORE any copy work.
+	//  - enqueueDropped:   racy loss at the send site (queue filled between check and send).
+	//  - contextTruncatedByReason: per-cap counter incremented once per truncated event with the
+	//    specific reason (max_context_fields, max_field_length, max_key_length). A single event
+	//    may bump multiple reasons; each is at most one bump per event.
+	preQueueOverflow         atomic.Int64
+	enqueueDropped           atomic.Int64
+	contextTruncatedByReason sync.Map // map[string]*atomic.Int64
 }
 
-// evalEvent is the bounded snapshot the Finally hook hands to the worker.
+// evalEvent is the bounded snapshot the Finally hook hands to the worker. The context has
+// already been flattened, pruned, and copied on the evaluation thread, so what sits in the
+// queue is already-bounded (256 fields × 256 chars) — the queue's memory footprint is
+// bounded by cap(events) × pruned context size, not by cap(events) × caller context size.
 type evalEvent struct {
-	d                 evalDetails
-	evaluationContext of.EvaluationContext
-	evaluationTimeMs  int64
+	d                evalDetails
+	contextAttrs     map[string]any
+	evaluationTimeMs int64
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
@@ -373,10 +402,22 @@ func (w *flagEvalLoggingWriter) stop() {
 
 // flush drains the aggregator, assembles per-tier events, and sends them to the agent.
 func (w *flagEvalLoggingWriter) flush() {
-	// Surface best-effort backpressure drops (queue full) as an observable signal.
-	if d := w.dropped.Swap(0); d > 0 {
-		log.Debug("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
+	// Surface best-effort backpressure drops (queue full) as observable signals. Split so
+	// operators can tell "the queue was already full at hook time" (preQueueOverflow, hot
+	// signal for undersized cap) from "the queue filled between the check and the send"
+	// (enqueueDropped, cold signal for pathological contention).
+	if d := w.preQueueOverflow.Swap(0); d > 0 {
+		log.Debug("openfeature: flag evaluation queue full at hook time — dropped %d evaluation(s) before copy (best-effort telemetry)", d)
 	}
+	if d := w.enqueueDropped.Swap(0); d > 0 {
+		log.Debug("openfeature: flag evaluation queue full at send — dropped %d evaluation(s) after copy (best-effort telemetry)", d)
+	}
+	w.contextTruncatedByReason.Range(func(k, v any) bool {
+		if c := v.(*atomic.Int64).Swap(0); c > 0 {
+			log.Debug("openfeature: flag evaluation context truncated by %s on %d evaluation(s) (best-effort telemetry)", k, c)
+		}
+		return true
+	})
 
 	events := w.buildFlushEvents(time.Now().UnixMilli())
 	if len(events) == 0 {
@@ -495,11 +536,14 @@ func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs in
 	}
 }
 
-// record runs on the evaluation hot path (the Finally hook). It does only cheap scalar
-// extraction plus an immutable context handoff, then a non-blocking enqueue — no aggregation
-// or context flattening happens here; the background worker does that. If the queue is full
-// the event is dropped and counted (best-effort), never blocking the evaluation. Called from
-// the Finally hook after every evaluation.
+// record runs on the evaluation hot path (the Finally hook). Under consent-on it flattens
+// and prunes the caller's context INTO a bounded snapshot before enqueueing, so the async
+// queue holds only already-bounded contexts (256 fields × 256 chars × ≤256-char keys). Under
+// consent-off the context is neither serialized nor keyed, so the copy is skipped entirely.
+// The pre-enqueue placement is deliberate: deferring the copy to the worker goroutine would
+// let an unbounded caller context inflate the queue and heap footprint before the drop-on-
+// full check ever fires. Non-blocking on enqueue; failure paths bump split counters so an
+// undersized cap surfaces as pre-queue overflow rather than getting hidden in a race counter.
 func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
 	w.enqueueMu.RLock()
 	defer w.enqueueMu.RUnlock()
@@ -508,11 +552,14 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
 	// lock would add hot-path contention) and count the event as dropped so it stays observable.
 	if w.stopped.Load() {
-		w.dropped.Add(1)
+		w.preQueueOverflow.Add(1)
 		return
 	}
 	if len(w.events) == cap(w.events) {
-		w.dropped.Add(1)
+		// Queue full at hook time — O(1) drop, no copy work. This is the hot signal for an
+		// undersized cap. Counted separately from the racy send-site loss below so the two
+		// causes stay distinguishable.
+		w.preQueueOverflow.Add(1)
 		return
 	}
 	d := extractEvalDetails(hookContext, details)
@@ -524,26 +571,39 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 		d:                d,
 		evaluationTimeMs: evaluationTimeMs,
 	}
-	// Skip when consent-off — the context is neither serialized nor keyed, so keeping the
-	// caller's attributes alive in the queue serves nothing.
 	if d.observeFullEvaluationData {
-		ev.evaluationContext = hookContext.EvaluationContext()
+		// Bound the context ON THE EVALUATION THREAD, before the async queue. The worker
+		// then only ever sees the pruned snapshot, and the caller's context reference is
+		// released as soon as record() returns.
+		attrs, truncReasons := flattenAndPruneContext(hookContext.EvaluationContext().Attributes())
+		ev.contextAttrs = attrs
+		for _, reason := range truncReasons {
+			w.incContextTruncated(reason)
+		}
 	}
 	select {
 	case w.events <- ev:
 	default:
-		w.dropped.Add(1)
+		w.enqueueDropped.Add(1)
 	}
 }
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
+// The caller's context has already been pruned on the evaluation thread (or omitted under
+// consent-off), so nothing else needs to happen to bound the queue's memory footprint here.
 func (w *flagEvalLoggingWriter) aggregate(ev evalEvent) {
-	// Consent-off drops context at serialization and from the bucket key, so skip flatten+prune.
-	var contextAttrs map[string]any
-	if ev.d.observeFullEvaluationData {
-		contextAttrs = flattenAndPruneContext(ev.evaluationContext.Attributes())
+	w.aggregator.add(ev.d, ev.contextAttrs, ev.evaluationTimeMs)
+}
+
+// incContextTruncated bumps the per-reason context-truncated counter. Reasons are the small
+// set of truncReason* constants; each event may bump multiple reasons but each is bumped at
+// most once per event.
+func (w *flagEvalLoggingWriter) incContextTruncated(reason string) {
+	c, ok := w.contextTruncatedByReason.Load(reason)
+	if !ok {
+		c, _ = w.contextTruncatedByReason.LoadOrStore(reason, new(atomic.Int64))
 	}
-	w.aggregator.add(ev.d, contextAttrs, ev.evaluationTimeMs)
+	c.(*atomic.Int64).Add(1)
 }
 
 // flattenAndPruneContext produces the pruned context map for EVP aggregation in a single
@@ -555,34 +615,38 @@ func (w *flagEvalLoggingWriter) aggregate(ev evalEvent) {
 //     the flatten semantics stay identical to the exposure path which still calls
 //     flattenContext directly — that caller is unchanged).
 //  2. Apply the deterministic prune: sort the flattened keys, then keep the first
-//     maxContextFields that are not oversized strings (>maxFieldLength).
+//     maxContextFields whose keys and string values pass the length caps.
 //
-// Allocation win: when the flattened context already fits the limits (the common case — fewer
-// than maxContextFields fields and no oversized string), the flattened map is returned DIRECTLY,
-// so the separate pruned-output map that the old flatten→prune pipeline always allocated is
-// elided. The pruned map is allocated only when trimming actually changes the result. Output is
-// byte-for-byte identical to the previous flattenContext+pruneContext pipeline: same surviving
-// keys, same 256/256 limits, same deterministic ordering of the cut.
-func flattenAndPruneContext(attrs map[string]any) map[string]any {
+// The second return value is the SET of truncation reasons that fired, so the caller can bump
+// telemetry counters (context-truncated by reason). Reasons in the returned slice are unique;
+// callers should treat it as at most one bump per (event, reason).
+//
+// Allocation win: when the flattened context already fits every limit (the common case — few
+// fields, short keys, no oversized string), the flattened map is returned DIRECTLY, so the
+// separate pruned-output map is elided.
+func flattenAndPruneContext(attrs map[string]any) (map[string]any, []string) {
 	if len(attrs) == 0 {
-		return nil
+		return nil, nil
 	}
 	if contextFitsWithoutFlattening(attrs) {
-		return attrs
+		return attrs, nil
 	}
 
 	flat := make(map[string]any, len(attrs))
 	flattenRecursive("", attrs, flat)
 	if len(flat) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Determine whether any pruning is actually required: an over-cap field count or any
-	// oversized string value. If neither, the flattened map already IS the pruned result —
-	// return it directly and skip allocating a second map.
+	// oversized key/value. If neither, the flattened map already IS the pruned result.
 	needsPrune := len(flat) > maxContextFields
 	if !needsPrune {
-		for _, v := range flat {
+		for k, v := range flat {
+			if len(k) > maxKeyLength {
+				needsPrune = true
+				break
+			}
 			if s, ok := v.(string); ok && len(s) > maxFieldLength {
 				needsPrune = true
 				break
@@ -590,13 +654,13 @@ func flattenAndPruneContext(attrs map[string]any) map[string]any {
 		}
 	}
 	if !needsPrune {
-		return flat
+		return flat, nil
 	}
 
 	// Deterministic prune: sort keys, then keep the first maxContextFields non-oversized values.
-	// Sorting BEFORE the oversized-string skip and the field cap makes the kept subset stable
-	// across calls (Go map iteration is randomized), so logically-identical contexts always
-	// prune to the same subset and the same canonicalContextKey.
+	// Sorting BEFORE the oversized-key/value skips and the field cap makes the kept subset
+	// stable across calls (Go map iteration is randomized), so logically-identical contexts
+	// always prune to the same subset and the same canonicalContextKey.
 	keys := make([]string, 0, len(flat))
 	for k := range flat {
 		keys = append(keys, k)
@@ -604,30 +668,56 @@ func flattenAndPruneContext(attrs map[string]any) map[string]any {
 	sort.Strings(keys)
 
 	out := make(map[string]any, min(len(flat), maxContextFields))
+	// Track which caps fired via a small bitset; the caller expands to reason strings.
+	const (
+		bitFields uint8 = 1 << iota
+		bitValue
+		bitKey
+	)
+	var truncBits uint8
 	count := 0
 	for _, k := range keys {
 		if count >= maxContextFields {
+			truncBits |= bitFields
 			break
+		}
+		if len(k) > maxKeyLength {
+			truncBits |= bitKey
+			continue
 		}
 		v := flat[k]
 		if s, ok := v.(string); ok && len(s) > maxFieldLength {
-			// Skip oversized string values (matches worker.ts pruneFields behavior).
+			truncBits |= bitValue
 			continue
 		}
 		out[k] = v
 		count++
 	}
-	if len(out) == 0 {
-		return nil
+
+	var reasons []string
+	if truncBits&bitFields != 0 {
+		reasons = append(reasons, truncReasonMaxContextFields)
 	}
-	return out
+	if truncBits&bitValue != 0 {
+		reasons = append(reasons, truncReasonMaxFieldLength)
+	}
+	if truncBits&bitKey != 0 {
+		reasons = append(reasons, truncReasonMaxKeyLength)
+	}
+	if len(out) == 0 {
+		return nil, reasons
+	}
+	return out, reasons
 }
 
 func contextFitsWithoutFlattening(attrs map[string]any) bool {
 	if len(attrs) > maxContextFields {
 		return false
 	}
-	for _, v := range attrs {
+	for k, v := range attrs {
+		if len(k) > maxKeyLength {
+			return false
+		}
 		switch x := v.(type) {
 		case string:
 			if len(x) > maxFieldLength {
