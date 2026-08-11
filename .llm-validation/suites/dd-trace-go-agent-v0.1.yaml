@@ -38,6 +38,112 @@ cases:
       - Does not mention the component tag at all
       - Gives incorrect span.kind values such as outbound or request
 
+  - id: dd-trace-go-contrib-telemetry-registration
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I've created a new contrib integration for a library at github.com/user/somelib. What do I
+      need to do to register instrumentation telemetry for it, and what other files besides the
+      integration code itself need to be updated?
+    expected_criteria:
+      - Mentions adding an init() function that calls instrumentation.Load with a matching package
+        constant (e.g. instrumentation.Load(instrumentation.PackageSomelib))
+      - States that instrumentation/packages.go must be updated with a new constant and matching
+        package info in the packages map
+      - States that contribIntegrations in ddtrace/tracer/option.go must include the new package
+      - Mentions that a corresponding PR should be opened in the Datadog/documentation repo to add
+        the integration to the compatible integrations list
+    bad_signals:
+      - Says telemetry registration is automatic and requires no extra code or file updates
+      - Omits updating instrumentation/packages.go or contribIntegrations in option.go
+      - Does not mention the documentation repo PR at all
+
+  - id: dd-trace-go-contrib-shared-instrumentation
+    only_warn: true
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm writing a new HTTP-based contrib integration and need to resolve the span's service name
+      and operation name and get a logger, consistent with how the rest of the contrib packages do
+      it. Where does this shared logic live and how should I access it instead of writing it myself?
+    expected_criteria:
+      - States that code shared across multiple contribs lives in the instrumentation/ directory
+      - Mentions that instrumentation.Load(...) returns an Instrumentation instance whose methods
+        (e.g. ServiceName, OperationName, Logger) should be used instead of reimplementing this logic
+      - Advises against duplicating naming/service-resolution logic inside the new contrib package
+    bad_signals:
+      - Recommends writing bespoke service-name/operation-name resolution logic inside the new
+        contrib package instead of using the instrumentation package
+      - Does not reference the instrumentation package/directory at all
+      - Says this shared logic lives in a different directory instead of instrumentation/
+
+  - id: dd-trace-go-contrib-httptrace-server
+    only_warn: true
+    files:
+      - contrib/AGENTS.md
+    input: |
+      My new contrib integration wraps a Go HTTP server-side framework. How should I start and
+      finish the span for each incoming request so that it's consistent with other HTTP server
+      contribs like net/http?
+    expected_criteria:
+      - Recommends using the shared httptrace package (instrumentation/httptrace) rather than
+        manually calling tracer.StartSpan for each request
+      - Mentions that the shared helper returns a wrapped ResponseWriter/Request plus a finish
+        function that must be deferred/called to finish the span
+      - Notes span.kind should be set to server for this server-side span, and the component tag
+        should be set to the integration's naming-convention value
+    bad_signals:
+      - Has the integration call tracer.StartSpan directly instead of using the shared httptrace
+        helper
+      - Fails to mention finishing the span via the returned finish/cleanup function
+      - Omits the span.kind server tag or sets an incorrect span.kind value for a server span
+
+  - id: dd-trace-go-contrib-versioned-package
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm building a contrib integration for github.com/some/queue, which has released major
+      version v3, and my integration only works against the v3.x line. What should the import path
+      and the Go package name be?
+    expected_criteria:
+      - States the import path includes a package-specific .v3 suffix in addition to the dd-trace-go
+        module's own /v2 suffix (e.g. github.com/DataDog/dd-trace-go/contrib/some/queue.v3/v2)
+      - States the Go package name itself stays unversioned (package queue, not queue.v3 or queuev3)
+    bad_signals:
+      - Omits either the package-specific .v3 suffix or the dd-trace-go module's /v2 suffix
+      - Versions the Go package name itself (e.g. package queuev3 or package queue_v3)
+
+  - id: dd-trace-go-contrib-deprecation-policy
+    files:
+      - contrib/AGENTS.md
+    input: |
+      One of our contrib integrations wraps a library that was just archived by its maintainer on
+      GitHub, with no CVE currently reported against its latest available version. Can we deprecate
+      this integration now?
+    expected_criteria:
+      - States that deprecation requires both conditions to be true -- the integrated package being
+        deprecated/archived AND a CVE reported against its latest available version
+      - Concludes that this integration does not yet qualify for deprecation since no CVE has been
+        reported
+    bad_signals:
+      - Says the integration can be deprecated based on the archived status alone
+      - Does not mention that both conditions (archived/deprecated AND a reported CVE) are required
+
+  - id: dd-trace-go-contrib-test-files
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I finished writing the new contrib package's core logic. What test file(s) do I need to add
+      for it to be automatically run by CI on new pull requests, and are there any other files
+      expected alongside it?
+    expected_criteria:
+      - States that a `<name>_test.go` file is required so tests run automatically in CI
+      - Mentions that an example_test.go file is also expected, serving as public godoc
+        documentation with an example of how to initialize and use the integration
+    bad_signals:
+      - Says tests are optional for a new contrib integration
+      - Does not mention example_test.go as an expected file
+
 # ==== Tracer Tests ====
   - id: dd-trace-go-tracer-api-break
     only_warn: true
@@ -88,6 +194,36 @@ cases:
       - Points only to the top-level project README.md or CONTRIBUTING.md instead of the tracer
         package's own doc.go
       - Does not mention reading README.md/doc.go before making the change
+
+  - id: dd-trace-go-tracer-readme-ci-stability
+    only_warn: true
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I added a new make target, `make tracer-flake-detect`, that developers run in CI to catch
+      flaky tests in the tracer package, helping keep the tracer stable in CI. Do I need to
+      document this anywhere?
+    expected_criteria:
+      - States that ddtrace/tracer/README.md should be updated with the new command, since it is
+        a script that enables tracer stability in CI
+    bad_signals:
+      - Says no documentation update is required
+      - Suggests documenting the command only in the top-level project README.md instead of the
+        tracer package's own README.md
+      - Suggests updating doc.go instead of README.md for a CI script/command
+
+  - id: dd-trace-go-tracer-doc-negative
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I'm fixing a typo in a log message string inside ddtrace/tracer/tracer.go. There is no
+      behavior change. Do I need to update doc.go or the tracer's README.md for this change?
+    expected_criteria:
+      - States that a typo fix is not a significant feature or behavior change, so no update to
+        doc.go or README.md is required
+    bad_signals:
+      - Says doc.go or README.md must be updated for a trivial typo fix with no behavior change
+      - Gives no clear answer on whether documentation is required
 
   - id: dd-trace-go-tracer-sampling-env-config
     files:
