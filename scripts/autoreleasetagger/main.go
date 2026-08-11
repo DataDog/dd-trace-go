@@ -91,8 +91,15 @@ var (
 	defaultUntaggedModules = []string{
 		"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2",
 	}
-	defaultExcludedModules = []string{}
-	defaultExcludedDirs    = []string{
+	// defaultExcludedModules lists modules skipped entirely: no go.mod update and
+	// no tag. Unlike defaultUntaggedModules, these are not dd-trace-go modules.
+	defaultExcludedModules = []string{
+		// Build fixture. It requires the root module, and tags are derived from
+		// the directory rather than the module path, so without this it would be
+		// tagged internal/apps/otelc-external-app on every release.
+		"example.com/otelcexternalapp",
+	}
+	defaultExcludedDirs = []string{
 		"_tools",
 		".claude",
 		".github",
