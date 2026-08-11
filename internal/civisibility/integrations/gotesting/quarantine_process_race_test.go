@@ -125,6 +125,9 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 
 					"TestQuarantinedRaceManagedDescendantFixture/root":           properties(false),
 					"TestQuarantinedRaceManagedDescendantFixture/root/child":     properties(false),
+					"TestQuarantinedRaceNestedRootTerminalFixture/panic":         properties(false),
+					"TestQuarantinedRaceNestedRootTerminalFixture/goexit":        properties(false),
+					"TestQuarantinedRaceNestedRootTerminalFixture/cleanup-panic": properties(false),
 					"TestQuarantinedRaceOwnerGenerationFixture/root":             properties(true),
 					"TestQuarantinedRaceOwnerGenerationFixture/root/clear":       properties(false),
 					"TestQuarantinedRaceOwnerGenerationFixture/root/clear/owner": properties(true),
@@ -284,6 +287,42 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		for _, name := range []string{"child", "sibling"} {
 			span := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root/"+name, 1)
 			checkSpansByTagValue(span, constants.TestStatus, constants.TestStatusFail, 1)
+		}
+		os.Exit(0)
+	case "managed-descendant-root-failure":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root", 1)
+		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusFail, 1)
+		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root/child", 1)
+		checkSpansByTagValue(child, constants.TestStatus, constants.TestStatusFail, 1)
+		os.Exit(0)
+	case "managed-descendant-output":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root", 1)
+		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
+		childName := "TestQuarantinedRaceManagedDescendantFixture/root/child"
+		child := checkSpansByResourceName(spans, suite+"."+childName, 1)
+		checkSpansByTagValue(child, constants.TestStatus, constants.TestStatusFail, 1)
+		stdout, stderr := false, false
+		for _, entry := range logsEntries {
+			if entry.TestName == childName {
+				stdout = stdout || strings.Contains(entry.Message, "managed descendant stdout sentinel")
+				stderr = stderr || strings.Contains(entry.Message, "managed descendant stderr sentinel")
+			}
+		}
+		if stdout && stderr {
+			os.Exit(0)
+		}
+		panic("managed descendant process output was not preserved")
+	case "nested-root-terminal":
+		for terminal, sentinel := range map[string]string{
+			"panic":         "nested root panic sentinel",
+			"goexit":        "runtime.Goexit",
+			"cleanup-panic": "nested root cleanup panic sentinel",
+		} {
+			span := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedRootTerminalFixture/"+terminal, 1)
+			checkSpansByTagValue(span, constants.TestStatus, constants.TestStatusFail, 1)
+			if message, _ := span[0].Tag(ext.ErrorMsg).(string); !strings.Contains(message, sentinel) {
+				panic(fmt.Sprintf("nested %s terminal was not reported: %q", terminal, message))
+			}
 		}
 		os.Exit(0)
 	case "owner-generation-finality":
@@ -595,6 +634,18 @@ func TestQuarantinedRaceManagedDescendantMaskingEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceManagedDescendantPreservesConcurrentFailureEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "managed-descendant-concurrent-failure", "^TestQuarantinedRaceManagedDescendantFixture$")
+}
+
+func TestQuarantinedRaceManagedDescendantPreservesRootFailureEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "managed-descendant-root-failure", "^TestQuarantinedRaceManagedDescendantFixture$")
+}
+
+func TestQuarantinedRaceManagedDescendantPreservesProcessOutputEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "managed-descendant-output", "^TestQuarantinedRaceManagedDescendantFixture$")
+}
+
+func TestQuarantinedRaceNestedRootTerminalsEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "nested-root-terminal", "^TestQuarantinedRaceNestedRootTerminalFixture$")
 }
 
 func TestQuarantinedRaceOwnerGenerationFinalityEndToEnd(t *testing.T) {
@@ -931,7 +982,8 @@ func TestQuarantinedRaceManagedDescendantFixture(t *testing.T) {
 		t.Skip("fixture subprocess only")
 	}
 	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
-		if os.Getenv(quarantinedRaceIsolationFixtureEnv) == "managed-descendant-concurrent-failure" {
+		scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
+		if scenario == "managed-descendant-concurrent-failure" {
 			t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
 				(*T)(t).Parallel()
 				time.Sleep(20 * time.Millisecond)
@@ -943,11 +995,42 @@ func TestQuarantinedRaceManagedDescendantFixture(t *testing.T) {
 			}))
 			return
 		}
+		if scenario == "managed-descendant-root-failure" {
+			t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+				(*T)(t).Parallel()
+				time.Sleep(20 * time.Millisecond)
+				t.Error("managed descendant sentinel")
+			}))
+			t.Error("selected root failure sentinel")
+			return
+		}
 		passed := t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+			if scenario == "managed-descendant-output" {
+				_, _ = fmt.Fprintln(os.Stdout, "managed descendant stdout sentinel")
+				_, _ = fmt.Fprintln(os.Stderr, "managed descendant stderr sentinel")
+			}
 			t.Error("managed descendant sentinel")
 		}))
+		if scenario == "managed-descendant-output" {
+			return
+		}
 		path := filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "managed-descendant-run-result")
 		require.NoError(t, os.WriteFile(path, []byte(strconv.FormatBool(passed)), 0o600))
+	}))
+}
+
+func TestQuarantinedRaceNestedRootTerminalFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("panic", instrumentTestingTFunc(func(*testing.T) {
+		panic("nested root panic sentinel")
+	}))
+	t.Run("goexit", instrumentTestingTFunc(func(*testing.T) {
+		runtime.Goexit()
+	}))
+	t.Run("cleanup-panic", instrumentTestingTFunc(func(t *testing.T) {
+		t.Cleanup(func() { panic("nested root cleanup panic sentinel") })
 	}))
 }
 

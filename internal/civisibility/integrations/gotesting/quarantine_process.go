@@ -478,10 +478,19 @@ func captureQuarantinedRaceManagedFailure(t *testing.T, cfg *processRetrySubtree
 }
 
 func (snapshot *quarantinedRaceFailureSnapshot) restore(unmaskedFailure bool) {
+	snapshot.restoreFrom(0, unmaskedFailure)
+}
+
+func (snapshot *quarantinedRaceFailureSnapshot) restoreAncestors(unmaskedFailure bool) {
+	snapshot.restoreFrom(1, unmaskedFailure)
+}
+
+func (snapshot *quarantinedRaceFailureSnapshot) restoreFrom(first int, unmaskedFailure bool) {
 	if snapshot == nil {
 		return
 	}
-	for idx, entry := range snapshot.entries {
+	for idx := first; idx < len(snapshot.entries); idx++ {
+		entry := snapshot.entries[idx]
 		entry.mu.Lock()
 		*entry.failed = entry.before || (idx > 0 && unmaskedFailure)
 		entry.mu.Unlock()
@@ -738,6 +747,10 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		}
 	}
 	execMeta.processRetryParallelPause = func() func() {
+		// Clear any managed failure propagated before t.Parallel releases the
+		// parent. A failure added by the selected root after that release can then
+		// be identified before its parallel descendants resume.
+		failureSnapshot.restoreAncestors(state.unmaskedFailure.Load())
 		activeDuration += time.Since(activeStart)
 		activeStart = time.Time{}
 		// A nested selected root releases its discovery ancestor in Parallel.
@@ -788,6 +801,9 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		if !activeStart.IsZero() {
 			activeDuration += time.Since(activeStart)
 			activeStart = time.Time{}
+		}
+		if name == state.cfg.SelectedRoot && t.Failed() {
+			state.unmaskedFailure.Store(true)
 		}
 		completeParallelSubtests(t, getTestPrivateFields(t), true)
 		activeStart = time.Now()
@@ -1291,6 +1307,14 @@ func runQuarantinedRaceInvocation(
 			attempt.Err = errors.Join(attempt.Err, fmt.Errorf("aggregate process coverage: %w", err))
 		}
 	}
+	if topLevelName, _ := topLevelTestName(cfg.SelectedRoot); cfg.SelectedRoot != topLevelName &&
+		attempt.Result.Panic && attempt.ExitStatusObserved && attempt.ExitCode != processRetryControlledPanicExitCode {
+		// A nested selected root commits its panic or bare Goexit in the subtree
+		// protocol, while its top-level discovery carrier does not use the
+		// controlled terminal exit code. Normalize that expected carrier exit to
+		// the status required by effectiveProcessRetryStatus.
+		attempt.ExitCode = processRetryControlledPanicExitCode
+	}
 	return attempt
 }
 
@@ -1388,7 +1412,7 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 	}
 	for _, invocation := range invocations {
 		for _, result := range invocation.attempt.Result.Subtests {
-			appendEvent(invocation, result)
+			appendEvent(invocation, processRetrySubtreeResultWithInvocationOutput(invocation, result))
 		}
 		appendEvent(invocation, processRetrySubtreeRootFromInvocation(invocation))
 	}
@@ -1411,13 +1435,19 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 
 func processRetrySubtreeRootFromInvocation(invocation quarantinedRaceInvocation) processRetrySubtreeResult {
 	root := processRetrySubtreeResultFromEnvelope(invocation.attempt.Result, invocation.cfg)
-	if root.Failed && invocation.attempt.OutputTail != "" {
-		// Direct child stdout and stderr are not present in testing's buffered
-		// subtree output. A failed selected root owns the complete process tail.
-		root.OutputTail = invocation.attempt.OutputTail
-		root.OutputTruncated = invocation.attempt.OutputTruncated
+	return processRetrySubtreeResultWithInvocationOutput(invocation, root)
+}
+
+func processRetrySubtreeResultWithInvocationOutput(invocation quarantinedRaceInvocation, result processRetrySubtreeResult) processRetrySubtreeResult {
+	if !result.Failed || invocation.attempt.OutputTail == "" ||
+		(result.TestName != invocation.cfg.SelectedRoot && !invocation.cfg.exactManagedDescendant(result.TestName)) {
+		return result
 	}
-	return root
+	// Direct stdout, stderr, and race reports are absent from testing's buffered
+	// output. Attribute the complete process tail to each failed managed boundary.
+	result.OutputTail = invocation.attempt.OutputTail
+	result.OutputTruncated = invocation.attempt.OutputTruncated
+	return result
 }
 
 func replayQuarantinedRaceEvent(
