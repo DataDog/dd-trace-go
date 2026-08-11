@@ -38,7 +38,8 @@ type RequestState struct {
 	responseBuffer *bodyBuffer
 
 	// Processing state
-	State             MessageType
+	State MessageType
+	// responseFinalized guards the once-only response analysis and span finalization.
 	responseFinalized bool
 }
 
@@ -93,7 +94,13 @@ func (rs *RequestState) PropagationHeaders() (http.Header, error) {
 
 // BlockAction marks the request as blocked and completes it.
 func (rs *RequestState) BlockAction() BlockActionOptions {
-	rs.Close()
+	rs.Mu.Lock()
+	defer rs.Mu.Unlock()
+	return rs.blockActionLocked()
+}
+
+func (rs *RequestState) blockActionLocked() BlockActionOptions {
+	_ = rs.closeLocked()
 	if rs.fakeResponseWriter.status == 0 {
 		panic("cannot block request without a status code")
 	}
@@ -131,11 +138,12 @@ func (rs *RequestState) CloseBeforeResponse() {
 
 // Close finalizes the request processing.
 func (rs *RequestState) Close() error {
-	// Allows us to be called multiple times without deadlocking
-	if rs.Mu.TryLock() {
-		defer rs.Mu.Unlock()
-	}
+	rs.Mu.Lock()
+	defer rs.Mu.Unlock()
+	return rs.closeLocked()
+}
 
+func (rs *RequestState) closeLocked() error {
 	rs.finalizeResponse()
 
 	if rs.State.Ongoing() {
@@ -145,6 +153,7 @@ func (rs *RequestState) Close() error {
 	return nil
 }
 
+// finalizeResponse runs deferred response analysis exactly once. The caller must hold rs.Mu.
 func (rs *RequestState) finalizeResponse() {
 	if rs.responseFinalized {
 		return

@@ -10,7 +10,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -189,4 +192,58 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRequestStateCloseConcurrentWithLockedFinalize(t *testing.T) {
+	var afterHandleCalls atomic.Int64
+	insideAfterHandle := make(chan struct{})
+	rs := &RequestState{
+		Mu:    new(sync.Mutex),
+		State: MessageTypeResponseBody,
+		afterHandle: func() {
+			if afterHandleCalls.Add(1) == 1 {
+				close(insideAfterHandle)
+				time.Sleep(200 * time.Millisecond)
+			}
+		},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		rs.Mu.Lock()
+		defer rs.Mu.Unlock()
+		rs.finalizeResponse()
+	}()
+	go func() {
+		defer wg.Done()
+		<-insideAfterHandle
+		_ = rs.Close()
+	}()
+	wg.Wait()
+
+	require.EqualValues(t, 1, afterHandleCalls.Load())
+}
+
+func TestOnResponseBodyMisconfigurationAcknowledgesMessage(t *testing.T) {
+	continueCalls := 0
+	mp := NewProcessor(ProcessorConfig{
+		ContinueMessageFunc: func(context.Context, ContinueActionOptions) error {
+			continueCalls++
+			return nil
+		},
+	}, instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane))
+	defer mp.Close()
+
+	state := RequestState{
+		Mu:          new(sync.Mutex),
+		Context:     context.Background(),
+		afterHandle: func() {},
+		State:       MessageTypeResponseBody,
+	}
+	err := mp.OnResponseBody(fakeBody{eos: true}, &state)
+
+	require.ErrorIs(t, err, io.EOF)
+	require.Equal(t, 1, continueCalls)
 }

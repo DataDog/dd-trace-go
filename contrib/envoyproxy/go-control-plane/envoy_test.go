@@ -576,6 +576,8 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
+		var blockBody map[string]any
+		require.NoError(t, json.Unmarshal(res.GetImmediateResponse().GetBody(), &blockBody))
 		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 2)
 		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
@@ -628,6 +630,8 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
+		var blockBody map[string]any
+		require.NoError(t, json.Unmarshal(res.GetImmediateResponse().GetBody(), &blockBody))
 		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 2)
 		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
@@ -675,6 +679,14 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.NoError(t, err)
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, response.GetResponse())
 		require.Equal(t, envoytypes.StatusCode(418), response.GetImmediateResponse().GetStatus().Code)
+		var blockBody map[string]any
+		require.NoError(t, json.Unmarshal(response.GetImmediateResponse().GetBody(), &blockBody))
+		require.NoError(t, stream.CloseSend())
+		_, _ = stream.Recv()
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"headers-003": 1})
+		require.Equal(t, "true", finished[0].Tag("appsec.blocked"))
 	})
 
 	t.Run("no-monitoring-event-on-request-body-bad-content-type", func(t *testing.T) {
@@ -1141,6 +1153,7 @@ func TestResponseBodyEndOfStreamIsAcknowledged(t *testing.T) {
 	response, err = stream.Recv()
 	require.Nil(t, response)
 	require.ErrorIs(t, err, io.EOF)
+	require.Len(t, mt.FinishedSpans(), 1)
 }
 
 func TestResponseBodyTruncationIsAcknowledgedUntilEndOfStream(t *testing.T) {
@@ -1166,6 +1179,7 @@ func TestResponseBodyTruncationIsAcknowledgedUntilEndOfStream(t *testing.T) {
 	require.NoError(t, err)
 
 	assertContinue := func(body []byte, endOfStream bool) {
+		t.Helper()
 		require.NoError(t, stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_ResponseBody{
 				ResponseBody: &envoyextproc.HttpBody{Body: body, EndOfStream: endOfStream},
@@ -1185,6 +1199,7 @@ func TestResponseBodyTruncationIsAcknowledgedUntilEndOfStream(t *testing.T) {
 	response, err := stream.Recv()
 	require.Nil(t, response)
 	require.ErrorIs(t, err, io.EOF)
+	require.Len(t, mt.FinishedSpans(), 1)
 }
 
 func TestGeneratedSpan(t *testing.T) {
