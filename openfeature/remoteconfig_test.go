@@ -351,6 +351,25 @@ func TestValidateFlag(t *testing.T) {
 		}
 	})
 
+	t.Run("nil shard in split", func(t *testing.T) {
+		flag := &flag{
+			Key:           "test-flag",
+			VariationType: valueTypeBoolean,
+			Variations: map[string]*variant{
+				"on": {Key: "on", Value: true},
+			},
+			Allocations: []*allocation{
+				{
+					Splits: []*split{
+						{Shards: []*shard{nil}, VariationKey: "on"},
+					},
+				},
+			},
+		}
+
+		require.ErrorContains(t, validateFlag("test-flag", flag), "shard 0 is nil")
+	})
+
 	t.Run("split references non-existent variation", func(t *testing.T) {
 		flag := &flag{
 			Key:           "test-flag",
@@ -412,6 +431,18 @@ func TestValidateFlag(t *testing.T) {
 				t.Errorf("expected %s to be valid, got error: %v", testCase.typeName, err)
 			}
 		}
+	})
+
+	t.Run("variation key mismatch", func(t *testing.T) {
+		flag := &flag{
+			Key:           "test-flag",
+			VariationType: valueTypeBoolean,
+			Variations: map[string]*variant{
+				"on": {Key: "off", Value: true},
+			},
+		}
+
+		require.ErrorContains(t, validateFlag("test-flag", flag), "variation key mismatch")
 	})
 }
 

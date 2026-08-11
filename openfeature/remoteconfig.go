@@ -153,7 +153,10 @@ func validateFlag(flagKey string, flag *flag) error {
 				return fmt.Errorf("flag %q allocation %d split %d is nil", flagKey, i, j)
 			}
 
-			for _, shard := range split.Shards {
+			for k, shard := range split.Shards {
+				if shard == nil {
+					return fmt.Errorf("flag %q allocation %d split %d shard %d is nil", flagKey, i, j, k)
+				}
 				if shard.TotalShards <= 0 || uint64(shard.TotalShards) > uint64(^uint32(0)) {
 					return fmt.Errorf("flag %q allocation %d split %d has shard with invalid TotalShards %d",
 						flagKey, i, j, shard.TotalShards)
@@ -257,6 +260,9 @@ func validateFlag(flagKey string, flag *flag) error {
 	for variationKey, variation := range flag.Variations {
 		if variation == nil {
 			return fmt.Errorf("flag %q variation %q is nil", flagKey, variationKey)
+		}
+		if variation.Key != variationKey {
+			return fmt.Errorf("flag %q variation key mismatch: map key %q != variation.Key %q", flagKey, variationKey, variation.Key)
 		}
 		if err := validateVariantType(variation.Value, flag.VariationType); err != nil {
 			return fmt.Errorf("flag %q variation %q has invalid value: %w", flagKey, variationKey, err)
