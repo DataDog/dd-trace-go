@@ -433,6 +433,7 @@ func CleanupRuntimeCoverageSnapshot() {
 func ResetForTesting() {
 	processCoverageMu.Lock()
 	processAggregateCoverage = nil
+	processAggregateCoverageErr = nil
 	processCoverageMu.Unlock()
 
 	coverageStateMu.Lock()

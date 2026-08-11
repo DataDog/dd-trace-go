@@ -77,6 +77,23 @@ func TestFinalizeProcessCoverageProfilesWaitsForParentProfile(t *testing.T) {
 	require.False(t, merged)
 }
 
+func TestFinalizeProcessCoverageProfilesRetainsInvocationMergeFailure(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+	mode = "count"
+	tearDown = func(_, _ string) (string, error) {
+		return "", errors.New("runtime snapshot must not be published")
+	}
+	childPath := filepath.Join(t.TempDir(), "malformed-child.out")
+	require.NoError(t, os.WriteFile(childPath, []byte("not a coverage profile\n"), 0o600))
+
+	mergeErr := MergeProcessCoverageProfile(childPath)
+	require.Error(t, mergeErr)
+	merged, err := FinalizeProcessCoverageProfiles()
+	require.False(t, merged)
+	require.EqualError(t, err, mergeErr.Error())
+}
+
 func TestProcessCoverageProfileWritesOnlyWorkloadDelta(t *testing.T) {
 	oldMode, oldTearDown := mode, tearDown
 	t.Cleanup(func() { mode, tearDown = oldMode, oldTearDown })

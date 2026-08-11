@@ -3268,10 +3268,17 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			return
 		}
 		observation.result = result
-		if status := processRetryControlledTerminalStatus(result); status != "" {
+		status := processRetryControlledTerminalStatus(result)
+		if status != "" {
 			observation.writeControlledTerminalResult(control, status)
 		} else {
 			observation.writeFinalResult()
+		}
+		if cfg.Subtree != nil && cfg.Subtree.SelectedRoot != topLevelName && status != "" {
+			// A controlled terminal here belongs to a discovery ancestor. The
+			// nested result (including not_run) is recorded independently, and the
+			// parent-process ancestor executes separately.
+			return
 		}
 
 		if result.failed || result.raceDetected || result.panicData != nil || result.cleanupPanicData != nil {

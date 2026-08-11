@@ -36,8 +36,9 @@ type ProcessTestCoverage struct {
 }
 
 var (
-	processCoverageMu        sync.Mutex
-	processAggregateCoverage *orderedCoverProfile
+	processCoverageMu           sync.Mutex
+	processAggregateCoverage    *orderedCoverProfile
+	processAggregateCoverageErr error
 )
 
 // BeginProcessTestCoverage starts a coverage delta. Callers serialize covered
@@ -231,15 +232,23 @@ func MergeProcessCoverageProfile(childPath string) error {
 	}
 	processCoverageMu.Lock()
 	defer processCoverageMu.Unlock()
+	if processAggregateCoverageErr != nil {
+		return processAggregateCoverageErr
+	}
 	child, err := parseOrderedCoverProfile(childPath)
 	if err != nil {
+		processAggregateCoverageErr = err
 		return err
 	}
 	if processAggregateCoverage == nil {
 		processAggregateCoverage = child
 		return nil
 	}
-	return mergeProcessCoverageProfiles(processAggregateCoverage, child)
+	if err := mergeProcessCoverageProfiles(processAggregateCoverage, child); err != nil {
+		processAggregateCoverageErr = err
+		return err
+	}
+	return nil
 }
 
 // FinalizeProcessCoverageProfiles merges all isolated coverage once, after
@@ -251,6 +260,9 @@ func FinalizeProcessCoverageProfiles() (bool, error) {
 	}
 	processCoverageMu.Lock()
 	defer processCoverageMu.Unlock()
+	if processAggregateCoverageErr != nil {
+		return false, processAggregateCoverageErr
+	}
 	if processAggregateCoverage == nil {
 		return false, nil
 	}

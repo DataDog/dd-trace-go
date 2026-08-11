@@ -513,7 +513,8 @@ func (o *processRetryChildObservation) buildSubtreeResult(result processRetryRes
 	result.ITRForcedRun = root.ITRForcedRun
 	result.Modified = root.Modified
 	result.Subtests = append(results[:rootIndex:rootIndex], results[rootIndex+1:]...)
-	applyProcessRetryControlledSubtreeStatus(&result, controlled)
+	// A controlled terminal on the top-level carrier belongs to an ancestor of
+	// this nested root; the copied root keeps its independently recorded status.
 	return result
 }
 
@@ -709,9 +710,10 @@ func processRetrySubtreeRaceDetected(fields *commonPrivateFields, initialBaselin
 		return true
 	}
 	baseline := initialBaseline
-	if fields != nil && fields.isParallel != nil && *fields.isParallel && fields.lastRaceErrors != nil {
-		// testing.T.Parallel resets this baseline after the test resumes so races
-		// reported while it was paused are not charged to the resumed subtest.
+	if fields != nil && fields.lastRaceErrors != nil {
+		// testing advances this baseline on the reporting test and its ancestors;
+		// Parallel also resets it after resume. In both cases, only newer races
+		// belong to this test unless raceErrorLogged already records its own race.
 		baseline = fields.lastRaceErrors.Load()
 	}
 	return current > baseline
@@ -1152,8 +1154,8 @@ func replayQuarantinedRaceEvent(
 		}
 		counted[result.TestName] = struct{}{}
 	}
-	_, owner := invocation.cfg.resolveDirective(result.TestName)
-	ownsAttemptToFix := owner == result.TestName
+	_, attemptOwner := invocation.cfg.resolveDirective(result.TestName)
+	ownsAttemptToFix := attemptOwner == result.TestName
 	prior := outcomes[result.TestName]
 	execMeta := &testExecutionMetadata{
 		identity:                      identity,
@@ -1170,7 +1172,7 @@ func replayQuarantinedRaceEvent(
 		suppressParentRetryMetadata:   true,
 		shouldOrchestrateAttemptToFix: ownsAttemptToFix,
 	}
-	if ownsAttemptToFix {
+	if attemptOwner != "" {
 		attemptTotal := processRetryAttemptToFixExecutionCount(invocation.cfg.AttemptToFixRetries)
 		execMeta.isARetry = invocation.attemptIndex > 0
 		execMeta.isLastRetry = invocation.finalBecauseOfFailfast || invocation.attemptIndex == attemptTotal-1
@@ -1196,7 +1198,7 @@ func replayQuarantinedRaceEvent(
 		testName:   result.TestName,
 		identity:   identity,
 	}, execMeta, attempt, nil, nil)
-	if ownsAttemptToFix {
+	if attemptOwner != "" {
 		prior.observe(result.Failed, result.Skipped)
 		outcomes[result.TestName] = prior
 	}

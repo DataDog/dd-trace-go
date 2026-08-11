@@ -103,6 +103,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceParallelFixture/isolated":            properties(false),
 					"TestQuarantinedRaceParallelCoverageFixture/isolated":    properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
+					"TestQuarantinedRaceAncestorPanicFixture/isolated":       properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/parallel": properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/panic":    properties(false),
 				}},
@@ -177,6 +178,11 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			}
 		}
 		panic("race before t.Parallel was not preserved in the selected root output")
+	case "ancestor-terminal":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAncestorPanicFixture/isolated", 1)
+		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
+		checkSpansByTagValue(root, ext.ErrorType, "test_panic", 0)
+		os.Exit(0)
 	case "testify-source":
 		if readPID("testify-source") == parentPID {
 			panic("Testify method did not run in the isolated child")
@@ -287,9 +293,10 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	checkSpansByTagValue(atfSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 	atfChildSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAttemptToFixFixture/child", 2)
 	checkSpansByTagValue(atfChildSpans, constants.TestIsAttempToFix, "true", 2)
-	checkSpansByTagValue(atfChildSpans, constants.TestIsRetry, "true", 0)
-	checkSpansByTagValue(atfChildSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0)
-	checkSpansByTagValue(atfChildSpans, constants.TestAttemptToFixPassed, "true", 0)
+	checkSpansByTagValue(atfChildSpans, constants.TestIsRetry, "true", 1)
+	checkSpansByTagValue(atfChildSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 1)
+	checkSpansByTagValue(atfChildSpans, constants.TestAttemptToFixPassed, "true", 1)
+	checkSpansByTagValue(atfChildSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 	nestedATFSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedATFFixture/card/visa", 2)
 	checkSpansByTagValue(nestedATFSpans, constants.TestIsAttempToFix, "true", 2)
 	checkSpansByTagValue(nestedATFSpans, constants.TestIsRetry, "true", 1)
@@ -327,6 +334,9 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	checkSpansByTagName(visaSpans, constants.TestCodeOwners, 1)
 	mastercardSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card/mastercard", 1)
 	checkSpansByTagValue(mastercardSpans, constants.TestStatus, constants.TestStatusFail, 1)
+	checkSpansByTagValue(mastercardSpans, ext.ErrorType, "test_race", 1)
+	cardSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceNestedFixture/card", 1)
+	checkSpansByTagValue(cardSpans, ext.ErrorType, "test_race", 0)
 	rootRaceReport := false
 	for _, entry := range logsEntries {
 		if entry.TestName == "TestQuarantinedRaceNestedFixture/card" && strings.Contains(entry.Message, "WARNING: DATA RACE") {
@@ -376,6 +386,10 @@ func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceBeforeParallelEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "race-before-parallel", "^TestQuarantinedRaceBeforeParallelFixture$")
+}
+
+func TestQuarantinedRaceAncestorPanicEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "ancestor-terminal", "^TestQuarantinedRaceAncestorPanicFixture$")
 }
 
 func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
@@ -616,6 +630,16 @@ func TestQuarantinedRaceBeforeParallelFixture(t *testing.T) {
 		triggerQuarantinedRaceFixture()
 		(*T)(t).Parallel()
 	}))
+}
+
+func TestQuarantinedRaceAncestorPanicFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("isolated", instrumentTestingTFunc(func(*testing.T) {}))
+	if isProcessRetryChild() {
+		panic("ancestor panic sentinel")
+	}
 }
 
 type quarantinedRaceTestifySuite struct {

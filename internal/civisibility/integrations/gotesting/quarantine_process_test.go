@@ -90,21 +90,16 @@ func TestQuarantinedRaceITRDecisionExecutesModifiedTest(t *testing.T) {
 	assert.False(t, forced)
 }
 
-func TestQuarantinedRaceUsesPostParallelRaceBaseline(t *testing.T) {
-	parallel := true
+func TestQuarantinedRaceUsesTestingRaceOwnership(t *testing.T) {
 	baseline := &atomic.Int64{}
 	logged := &atomic.Bool{}
 	baseline.Store(3)
-	fields := &commonPrivateFields{isParallel: &parallel, lastRaceErrors: baseline, raceErrorLogged: logged}
+	fields := &commonPrivateFields{lastRaceErrors: baseline, raceErrorLogged: logged}
 
-	assert.False(t, processRetrySubtreeRaceDetected(fields, 1, 3), "race while paused must not be attributed after Parallel resumes")
+	assert.False(t, processRetrySubtreeRaceDetected(fields, 1, 3), "an advanced testing baseline must not be re-attributed")
 	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 4), "race after resume must still be attributed")
 	logged.Store(true)
-	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 3), "race logged before Parallel must remain attributed")
-
-	logged.Store(false)
-	parallel = false
-	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 3), "a serial subtree root must retain descendant race attribution")
+	assert.True(t, processRetrySubtreeRaceDetected(fields, 1, 3), "a race owned by the test must remain attributed")
 }
 
 func TestOrchestrionParallelAdviceMatchesHookContract(t *testing.T) {
@@ -117,16 +112,18 @@ func TestOrchestrionParallelAdviceMatchesHookContract(t *testing.T) {
 	assert.Contains(t, config, "defer __dd_civisibility_resume()")
 }
 
-func TestQuarantinedRaceNestedRootEnvelopePreservesMetadata(t *testing.T) {
+func TestQuarantinedRaceNestedRootEnvelopePreservesRecordedResult(t *testing.T) {
 	for _, tt := range []struct {
-		name     string
-		skipped  bool
-		forced   bool
-		modified bool
+		name       string
+		skipped    bool
+		forced     bool
+		modified   bool
+		controlled processRetryStatus
 	}{
 		{name: "skipped by ITR", skipped: true},
 		{name: "forced by ITR", forced: true},
 		{name: "modified", modified: true},
+		{name: "ancestor controlled terminal", controlled: processRetryStatusControlledPanicReady},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &processRetrySubtreeConfig{
@@ -151,7 +148,10 @@ func TestQuarantinedRaceNestedRootEnvelopePreservesMetadata(t *testing.T) {
 				subtree: state,
 			}
 
-			got := observation.buildSubtreeResult(processRetryResult{TestName: cfg.SelectedRoot}, "")
+			got := observation.buildSubtreeResult(processRetryResult{TestName: cfg.SelectedRoot}, tt.controlled)
+			assert.Equal(t, status, got.Status)
+			assert.False(t, got.Failed)
+			assert.False(t, got.Panic)
 			assert.Equal(t, tt.skipped, got.SkippedByITR)
 			assert.Equal(t, tt.forced, got.ITRForcedRun)
 			assert.Equal(t, tt.modified, got.Modified)
