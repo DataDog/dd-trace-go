@@ -172,6 +172,9 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 	}
 
 	blocked := processBody(reqState.Context, reqState.requestBuffer, req.GetBody(), req.GetEndOfStream(), appsec.MonitorParsedHTTPBody, "request")
+	if reqState.requestBuffer.analyzed {
+		reqState.requestBuffer.buffer = nil
+	}
 	if blocked != nil && !mp.BlockingUnavailable {
 		mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
 		actionOpts := reqState.BlockAction()
@@ -259,15 +262,27 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 
 	blocked := processBody(reqState.Context, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody, "response")
 	if reqState.responseBuffer.analyzed {
-		reqState.Close() // Call Close to ensure the response headers are analyzed
+		reqState.responseBuffer.buffer = nil
+		reqState.finalizeResponse()
 
 		if (reqState.State == MessageTypeBlocked || blocked != nil) && !mp.BlockingUnavailable {
 			mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
 			if err := mp.BlockMessageFunc(reqState.Context, reqState.BlockAction()); err != nil {
 				return fmt.Errorf("error creating block message: %w", err)
 			}
+			return io.EOF
 		}
-		return io.EOF
+		if resp.GetEndOfStream() {
+			reqState.Close()
+		}
+
+		if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
+			return err
+		}
+		if resp.GetEndOfStream() {
+			return io.EOF
+		}
+		return nil
 	}
 
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody})

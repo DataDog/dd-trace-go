@@ -38,7 +38,8 @@ type RequestState struct {
 	responseBuffer *bodyBuffer
 
 	// Processing state
-	State MessageType
+	State             MessageType
+	responseFinalized bool
 }
 
 // newRequestState creates a new request state. clientIP carries an identity the
@@ -135,13 +136,21 @@ func (rs *RequestState) Close() error {
 		defer rs.Mu.Unlock()
 	}
 
-	rs.afterHandle()
+	rs.finalizeResponse()
 
 	if rs.State.Ongoing() {
 		rs.State = MessageTypeFinished
 	}
 
 	return nil
+}
+
+func (rs *RequestState) finalizeResponse() {
+	if rs.responseFinalized {
+		return
+	}
+	rs.afterHandle()
+	rs.responseFinalized = true
 }
 
 func (rs *RequestState) Span() (*tracer.Span, bool) {
