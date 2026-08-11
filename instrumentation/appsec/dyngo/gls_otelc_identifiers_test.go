@@ -17,11 +17,8 @@ import (
 )
 
 // TestGLSOtelcInjectedIdentifiers guards the identifiers that gls.otelc.yaml
-// writes literally into this package. See the equivalent test in
-// ddtrace/tracer for the full rationale; in short, otelc's inject_code has no
-// template variables, so the rules spell these names out, and this test reports a
-// rename as a plain `go test` failure naming the yaml instead of a compile error
-// inside an instrumented copy of this package.
+// writes literally into this package. See the equivalent test in ddtrace/tracer
+// for the full rationale.
 //
 // Keep in sync with instrumentation/appsec/dyngo/gls.otelc.yaml. All three targets
 // are plain functions, so only parameters need checking.

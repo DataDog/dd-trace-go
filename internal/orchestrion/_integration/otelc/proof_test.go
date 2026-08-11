@@ -28,6 +28,6 @@ func TestBuiltWithOtelc(t *testing.T) {
 	if !otelc.Enabled() {
 		t.Fatal("not built with otelc: run this package under `otelc go test`. " +
 			"A plain `go test` cannot prove anything here, and a failure means " +
-			"the assign_value rule in internal/otelc/otelc.yaml did not apply")
+			"the assign_value rule in ddtrace/tracer/otelc.yaml did not apply")
 	}
 }

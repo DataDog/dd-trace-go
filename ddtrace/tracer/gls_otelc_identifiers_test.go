@@ -22,13 +22,11 @@ import (
 // orchestrion (which resolves parameters positionally through .Function.Argument)
 // the rules must name the receiver and parameters exactly as the source does.
 //
-// Renaming one normally breaks the otelc build rather than passing silently, since
-// the injected code then refers to an identifier that no longer exists. What this
-// test buys is where and how that failure shows up: here it is a plain `go test`
-// naming the yaml and the parameter, instead of a compile error inside an
-// instrumented copy of this package that only appears in the otelc CI lane. It
-// also covers the one case that would not fail loudly, where an unrelated symbol
-// of the same name happens to be in scope at the injection site.
+// A rename normally breaks the otelc build anyway. What this test buys is where
+// the failure shows up: a plain `go test` naming the yaml and the parameter,
+// instead of a compile error in the otelc CI lane. It also covers the one case
+// that would not fail loudly, where an unrelated symbol of the same name happens
+// to be in scope at the injection site.
 //
 // Keep in sync with ddtrace/tracer/otelc.yaml.
 func TestGLSOtelcInjectedIdentifiers(t *testing.T) {

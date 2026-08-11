@@ -5,7 +5,7 @@
 ---
 # AppSec/dyngo GLS lifecycle, the otelc port of the dyngo aspects in
 # ../../../internal/orchestrion/gls.orchestrion.yml. See that file for the
-# reasoning behind each injection; it is not duplicated here.
+# reasoning behind each injection.
 #
 # dyngo's source is GLS-agnostic (plain context.WithValue / ctx.Value), so a plain
 # build pays nothing. Unlike spans, dyngo operations are always registered and
@@ -14,7 +14,7 @@
 #
 # IDENTIFIER COUPLING: inject_code has no template variables, so the parameter
 # names below (`ctx`, `op`) are literal and must match dyngo's source. See the
-# same note in ../../../ddtrace/tracer/gls.otelc.yaml.
+# same note in ../../../ddtrace/tracer/otelc.yaml.
 
 dyngo_operation_gls_field:
   target: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo

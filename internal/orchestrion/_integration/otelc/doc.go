@@ -5,9 +5,7 @@
 
 // Package otelc holds the build-mode proof for the otelc lane. See proof_test.go.
 //
-// This file carries no code, but it has to exist. With only _test.go files the
-// package has no Go files to build, so otelc's setup skips it, and when it is the
-// package under test nothing is matched at all (.otelc-build/matched.json is
-// null), not even rules targeting other packages. The proof test then fails
-// claiming the build was not otelc, which is true but for the wrong reason.
+// This file carries no code, but it has to exist: with only _test.go files the
+// package has nothing to build, so otelc skips it and applies no rules at all,
+// making the proof test fail for the wrong reason.
 package otelc
