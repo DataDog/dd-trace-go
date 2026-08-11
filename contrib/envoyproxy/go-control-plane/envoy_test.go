@@ -647,6 +647,36 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 
+	t.Run("blocking-event-on-response-headers-with-truncated-body", func(t *testing.T) {
+		bodySize := 2
+		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, &bodySize)
+		require.NoError(t, err)
+		defer rig.Close()
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		stream, err := rig.client.Process(context.Background())
+		require.NoError(t, err)
+		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Chrome"}, "OPTION", "/", false)
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		sendProcessingResponseHeaders(t, stream, map[string]string{"test": "match-response-header", "Content-Type": "application/json"}, "200", true)
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		require.NoError(t, stream.Send(&envoyextproc.ProcessingRequest{
+			Request: &envoyextproc.ProcessingRequest_ResponseBody{
+				ResponseBody: &envoyextproc.HttpBody{Body: []byte("body")},
+			},
+		}))
+
+		response, err := stream.Recv()
+		require.NoError(t, err)
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, response.GetResponse())
+		require.Equal(t, envoytypes.StatusCode(418), response.GetImmediateResponse().GetStatus().Code)
+	})
+
 	t.Run("no-monitoring-event-on-request-body-bad-content-type", func(t *testing.T) {
 		client, mt, cleanup := setup()
 		defer cleanup()
@@ -1070,6 +1100,91 @@ func TestAppSecBodyParsingActivation(t *testing.T) {
 		require.NotContains(t, span.Tags(), "appsec.event")
 		require.NotContains(t, span.Tags(), "_dd.appsec.json")
 	})
+}
+
+func TestResponseBodyEndOfStreamIsAcknowledged(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	testutils.StartAppSec(t)
+
+	// Given
+	bodySize := 256
+	rig, err := newEnvoyAppsecRig(t, GCPServiceExtensionIntegration, false, &bodySize)
+	require.NoError(t, err)
+	defer rig.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	stream, err := rig.client.Process(context.Background())
+	require.NoError(t, err)
+	sendProcessingRequestHeaders(t, stream, nil, "GET", "/", false)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	sendProcessingResponseHeaders(t, stream, map[string]string{"Content-Type": "application/json"}, "200", true)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	// When
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_ResponseBody{
+			ResponseBody: &envoyextproc.HttpBody{Body: []byte("{}"), EndOfStream: true},
+		},
+	})
+	require.NoError(t, err)
+
+	// Then
+	response, err := stream.Recv()
+	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_ResponseBody{}, response.GetResponse())
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, response.GetResponseBody().GetResponse().GetStatus())
+
+	response, err = stream.Recv()
+	require.Nil(t, response)
+	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestResponseBodyTruncationIsAcknowledgedUntilEndOfStream(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	testutils.StartAppSec(t)
+
+	// Given
+	bodySize := 2
+	rig, err := newEnvoyAppsecRig(t, GCPServiceExtensionIntegration, false, &bodySize)
+	require.NoError(t, err)
+	defer rig.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	stream, err := rig.client.Process(context.Background())
+	require.NoError(t, err)
+	sendProcessingRequestHeaders(t, stream, nil, "GET", "/", false)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	sendProcessingResponseHeaders(t, stream, map[string]string{"Content-Type": "application/json"}, "200", true)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	assertContinue := func(body []byte, endOfStream bool) {
+		require.NoError(t, stream.Send(&envoyextproc.ProcessingRequest{
+			Request: &envoyextproc.ProcessingRequest_ResponseBody{
+				ResponseBody: &envoyextproc.HttpBody{Body: body, EndOfStream: endOfStream},
+			},
+		}))
+		response, recvErr := stream.Recv()
+		require.NoError(t, recvErr)
+		require.IsType(t, &envoyextproc.ProcessingResponse_ResponseBody{}, response.GetResponse())
+		require.Equal(t, envoyextproc.CommonResponse_CONTINUE, response.GetResponseBody().GetResponse().GetStatus())
+	}
+
+	// When / Then
+	assertContinue([]byte("too large"), false)
+	assertContinue([]byte("ignored"), false)
+	assertContinue(nil, true)
+
+	response, err := stream.Recv()
+	require.Nil(t, response)
+	require.ErrorIs(t, err, io.EOF)
 }
 
 func TestGeneratedSpan(t *testing.T) {
@@ -1612,9 +1727,12 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 	// 2- Send the response body
 	msgResponseBodySent := sendProcessingResponseBodyStreamed(t, stream, []byte(responseBody), 1)
 
-	// minus 1 because the last message is the end of stream, and the connection will be closed after that
-	// because no appsec event will be found
-	for i := 0; i < msgResponseBodySent-1; i++ {
+	responsesToRead := msgResponseBodySent
+	if blockOnResponseBody {
+		// Leave the blocking response for the caller to assert.
+		responsesToRead--
+	}
+	for i := 0; i < responsesToRead; i++ {
 		res, err = stream.Recv()
 		require.NoError(t, err)
 		require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetResponseBody().GetResponse().GetStatus())

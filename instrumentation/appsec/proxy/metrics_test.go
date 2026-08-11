@@ -157,6 +157,7 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 					if direction == "request" {
 						err = mp.OnRequestBody(fakeBody{b: tt.body, eos: tt.eos}, &reqState)
 						require.NoError(t, err)
+						require.Empty(t, reqState.requestBuffer.buffer)
 					}
 
 					err = mp.OnResponseHeaders(fakeResponseHeaders{eos: direction != "response", headers: map[string][]string{"Content-Type": {"application/json"}}}, &reqState)
@@ -164,6 +165,11 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 					if direction == "response" {
 						require.NoError(t, err)
 						err = mp.OnResponseBody(fakeBody{b: tt.body, eos: tt.eos}, &reqState)
+						if !tt.eos {
+							require.NoError(t, err)
+							require.Empty(t, reqState.responseBuffer.buffer)
+							err = mp.OnResponseBody(fakeBody{eos: true}, &reqState)
+						}
 					}
 					require.ErrorIs(t, err, io.EOF)
 
