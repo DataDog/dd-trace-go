@@ -106,6 +106,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceAncestorPanicFixture/isolated":       properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/parallel": properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/panic":    properties(false),
+					"TestQuarantinedRaceTerminalDescendantsFixture/goexit":   properties(false),
 				}},
 				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
@@ -167,6 +168,13 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(panicChild, constants.TestStatus, constants.TestStatusFail, 1)
 		if message, _ := panicChild[0].Tag(ext.ErrorMsg).(string); !strings.Contains(message, "body panic sentinel") {
 			panic(fmt.Sprintf("body panic was not reported on the isolated descendant: %q", message))
+		}
+		goexitRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/goexit", 1)
+		checkSpansByTagValue(goexitRoot, constants.TestStatus, constants.TestStatusFail, 1)
+		goexitChild := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/goexit/child", 1)
+		checkSpansByTagValue(goexitChild, constants.TestStatus, constants.TestStatusFail, 1)
+		if message, _ := goexitChild[0].Tag(ext.ErrorMsg).(string); !strings.Contains(message, "runtime.Goexit") {
+			panic(fmt.Sprintf("bare Goexit was not reported on the isolated descendant: %q", message))
 		}
 		os.Exit(0)
 	case "race-before-parallel":
@@ -618,6 +626,11 @@ func TestQuarantinedRaceTerminalDescendantsFixture(t *testing.T) {
 	t.Run("panic", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("child", instrumentTestingTFunc(func(*testing.T) {
 			panic("body panic sentinel")
+		}))
+	}))
+	t.Run("goexit", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("child", instrumentTestingTFunc(func(*testing.T) {
+			runtime.Goexit()
 		}))
 	}))
 }

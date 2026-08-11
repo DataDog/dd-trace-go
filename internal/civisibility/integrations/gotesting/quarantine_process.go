@@ -678,6 +678,14 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			result.Status = processRetryStatusPass
 		}
 		state.append(result)
+		if unexpected && fields != nil && fields.mu != nil && fields.finished != nil {
+			// runtime.Goexit bypasses the normal return to testing.tRunner. The
+			// subtree result is committed, so consume that terminal before the
+			// native runner can turn it into a process-ending panic.
+			fields.mu.Lock()
+			*fields.finished = true
+			fields.mu.Unlock()
+		}
 		deleteTestMetadata(t)
 
 		// Body panics are valid test results in this child protocol. They were
