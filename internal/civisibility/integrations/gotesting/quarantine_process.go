@@ -390,6 +390,8 @@ type quarantinedRaceChildState struct {
 	next            atomic.Uint64
 	results         []processRetrySubtreeResult
 	impacted        *impactedtests.ImpactedTestAnalyzer
+	aggregateOnce   sync.Once
+	beginAggregate  func()
 	parallelBridge  func() error
 	parallelOnce    sync.Once
 	parallelStarted atomic.Bool
@@ -406,6 +408,13 @@ func newQuarantinedRaceChildState(cfg *processRetrySubtreeConfig) *quarantinedRa
 
 func (s *quarantinedRaceChildState) begin() (uint64, time.Time, int64) {
 	return s.next.Add(1), time.Now(), retryAttemptRaceErrors()
+}
+
+func (s *quarantinedRaceChildState) beginAggregateCoverage(name string) {
+	if s == nil || s.cfg == nil || name != s.cfg.SelectedRoot || s.beginAggregate == nil {
+		return
+	}
+	s.aggregateOnce.Do(s.beginAggregate)
 }
 
 func (s *quarantinedRaceChildState) append(result processRetrySubtreeResult) {
@@ -546,6 +555,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		original(t)
 		return
 	}
+	state.beginAggregateCoverage(name)
 
 	directive, attemptOwner := state.cfg.resolveDirective(name)
 	execMeta.identity = newTestIdentity("", "", name)
@@ -1131,12 +1141,9 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 
 func processRetrySubtreeRootFromInvocation(invocation quarantinedRaceInvocation) processRetrySubtreeResult {
 	root := processRetrySubtreeResultFromEnvelope(invocation.attempt.Result, invocation.cfg)
-	raceDetected := root.RaceDetected || slices.ContainsFunc(invocation.attempt.Result.Subtests, func(result processRetrySubtreeResult) bool {
-		return result.RaceDetected
-	})
-	if raceDetected && invocation.attempt.OutputTail != "" {
-		// The race detector writes its full report directly to child stderr. The
-		// structured subtree result only contains testing's short race message.
+	if root.Failed && invocation.attempt.OutputTail != "" {
+		// Direct child stdout and stderr are not present in testing's buffered
+		// subtree output. A failed selected root owns the complete process tail.
 		root.OutputTail = invocation.attempt.OutputTail
 		root.OutputTruncated = invocation.attempt.OutputTruncated
 	}

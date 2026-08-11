@@ -61,6 +61,20 @@ func TestQuarantinedRaceAttemptToFixSettingIsTotalExecutionCount(t *testing.T) {
 	assert.Equal(t, 3, processRetryAttemptToFixExecutionCount(3))
 }
 
+func TestQuarantinedRaceAggregateCoverageStartsAtSelectedRoot(t *testing.T) {
+	calls := 0
+	state := newQuarantinedRaceChildState(&processRetrySubtreeConfig{SelectedRoot: "TestCheckout/card"})
+	state.beginAggregate = func() { calls++ }
+
+	state.beginAggregateCoverage("TestCheckout")
+	state.beginAggregateCoverage("TestCheckout/card/visa")
+	assert.Zero(t, calls)
+
+	state.beginAggregateCoverage("TestCheckout/card")
+	state.beginAggregateCoverage("TestCheckout/card")
+	assert.Equal(t, 1, calls)
+}
+
 func TestQuarantinedRaceITRDecisionPreservesSourceUnskippable(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
@@ -183,6 +197,24 @@ func TestQuarantinedRaceRootReplayKeepsRaceDetectorOutput(t *testing.T) {
 	got := processRetrySubtreeRootFromInvocation(invocation)
 	assert.Equal(t, invocation.attempt.OutputTail, got.OutputTail)
 	assert.True(t, got.OutputTruncated)
+}
+
+func TestQuarantinedRaceRootReplayKeepsNonRaceProcessOutput(t *testing.T) {
+	cfg := &processRetrySubtreeConfig{
+		SelectedRoot: "TestCheckout/card",
+		Root:         processRetrySubtreeDirective{TestName: "TestCheckout/card", Quarantined: true},
+	}
+	invocation := quarantinedRaceInvocation{
+		cfg: cfg,
+		attempt: processRetryAttemptResult{
+			OutputTail: "direct stdout\ndirect stderr",
+			Result: processRetryResult{
+				TestName: cfg.SelectedRoot, Status: processRetryStatusFail, Failed: true,
+			},
+		},
+	}
+
+	assert.Equal(t, invocation.attempt.OutputTail, processRetrySubtreeRootFromInvocation(invocation).OutputTail)
 }
 
 func TestQuarantinedRaceSubtreeOutputUsesEncodedLimit(t *testing.T) {

@@ -104,9 +104,11 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceParallelCoverageFixture/isolated":    properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
 					"TestQuarantinedRaceAncestorPanicFixture/isolated":       properties(false),
+					"TestQuarantinedRaceAncestorFailureFixture/isolated":     properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/parallel": properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/panic":    properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/goexit":   properties(false),
+					"TestQuarantinedRaceTerminalDescendantsFixture/output":   properties(false),
 				}},
 				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
@@ -176,7 +178,22 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		if message, _ := goexitChild[0].Tag(ext.ErrorMsg).(string); !strings.Contains(message, "runtime.Goexit") {
 			panic(fmt.Sprintf("bare Goexit was not reported on the isolated descendant: %q", message))
 		}
-		os.Exit(0)
+		outputRootName := "TestQuarantinedRaceTerminalDescendantsFixture/output"
+		outputRoot := checkSpansByResourceName(spans, suite+"."+outputRootName, 1)
+		checkSpansByTagValue(outputRoot, constants.TestStatus, constants.TestStatusFail, 1)
+		outputChild := checkSpansByResourceName(spans, suite+"."+outputRootName+"/child", 1)
+		checkSpansByTagValue(outputChild, constants.TestStatus, constants.TestStatusFail, 1)
+		stdout, stderr := false, false
+		for _, entry := range logsEntries {
+			if entry.TestName == outputRootName {
+				stdout = stdout || strings.Contains(entry.Message, "direct stdout sentinel")
+				stderr = stderr || strings.Contains(entry.Message, "direct stderr sentinel")
+			}
+		}
+		if stdout && stderr {
+			os.Exit(0)
+		}
+		panic("non-race child process output was not preserved on the selected root")
 	case "race-before-parallel":
 		races := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceBeforeParallelFixture/isolated", 1)
 		checkSpansByTagValue(races, constants.TestStatus, constants.TestStatusFail, 1)
@@ -187,9 +204,11 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 		panic("race before t.Parallel was not preserved in the selected root output")
 	case "ancestor-terminal":
-		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAncestorPanicFixture/isolated", 1)
-		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
-		checkSpansByTagValue(root, ext.ErrorType, "test_panic", 0)
+		for _, fixture := range []string{"Panic", "Failure"} {
+			root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAncestor"+fixture+"Fixture/isolated", 1)
+			checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
+			checkSpansByTagValue(root, ext.ErrorType, "test_panic", 0)
+		}
 		os.Exit(0)
 	case "testify-source":
 		if readPID("testify-source") == parentPID {
@@ -397,7 +416,7 @@ func TestQuarantinedRaceBeforeParallelEndToEnd(t *testing.T) {
 }
 
 func TestQuarantinedRaceAncestorPanicEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "ancestor-terminal", "^TestQuarantinedRaceAncestorPanicFixture$")
+	runQuarantinedRaceEndToEnd(t, "ancestor-terminal", "^TestQuarantinedRaceAncestor(Panic|Failure)Fixture$")
 }
 
 func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
@@ -633,6 +652,13 @@ func TestQuarantinedRaceTerminalDescendantsFixture(t *testing.T) {
 			runtime.Goexit()
 		}))
 	}))
+	t.Run("output", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+			_, _ = fmt.Fprintln(os.Stdout, "direct stdout sentinel")
+			_, _ = fmt.Fprintln(os.Stderr, "direct stderr sentinel")
+			t.Error("non-race failure sentinel")
+		}))
+	}))
 }
 
 func TestQuarantinedRaceBeforeParallelFixture(t *testing.T) {
@@ -652,6 +678,16 @@ func TestQuarantinedRaceAncestorPanicFixture(t *testing.T) {
 	t.Run("isolated", instrumentTestingTFunc(func(*testing.T) {}))
 	if isProcessRetryChild() {
 		panic("ancestor panic sentinel")
+	}
+}
+
+func TestQuarantinedRaceAncestorFailureFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("isolated", instrumentTestingTFunc(func(*testing.T) {}))
+	if isProcessRetryChild() {
+		t.Error("ancestor failure sentinel")
 	}
 }
 

@@ -3197,7 +3197,8 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		observation.test = t
 		observation.startTime = start
 		observation.source = processRetrySourceFromFunc(runtime.FuncForPC(reflect.ValueOf(original).Pointer()))
-		if cfg.Subtree != nil && cfg.Subtree.CollectAggregate {
+		topLevelName, _ := topLevelTestName(cfg.TestName)
+		if cfg.Subtree != nil && cfg.Subtree.CollectAggregate && cfg.Subtree.SelectedRoot == topLevelName {
 			observation.aggregate, observation.aggregateErr = coverage.BeginProcessCoverageProfile()
 		}
 
@@ -3222,6 +3223,11 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			execMeta.test = newProcessRetryNoopTest(attempt.test, cfg, start, writer, control, attempt.raceBaseline)
 			if cfg.Subtree != nil {
 				observation.subtree = newQuarantinedRaceChildState(cfg.Subtree)
+				if cfg.Subtree.CollectAggregate && cfg.Subtree.SelectedRoot != topLevelName {
+					observation.subtree.beginAggregate = func() {
+						observation.aggregate, observation.aggregateErr = coverage.BeginProcessCoverageProfile()
+					}
+				}
 				observation.subtree.parallelBridge = control.childRootParallelBridge
 				execMeta.quarantinedRaceChild = observation.subtree
 				execMeta.processRetryCoverageMu = &sync.Mutex{}
@@ -3230,7 +3236,6 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			return ""
 		}
 		childBody := original
-		topLevelName, _ := topLevelTestName(cfg.TestName)
 		if cfg.Subtree != nil && cfg.Subtree.SelectedRoot == topLevelName {
 			childBody = func(t *testing.T) {
 				rootDirective := cfg.Subtree.Root
@@ -3274,10 +3279,10 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		} else {
 			observation.writeFinalResult()
 		}
-		if cfg.Subtree != nil && cfg.Subtree.SelectedRoot != topLevelName && status != "" {
-			// A controlled terminal here belongs to a discovery ancestor. The
-			// nested result (including not_run) is recorded independently, and the
-			// parent-process ancestor executes separately.
+		if cfg.Subtree != nil && cfg.Subtree.SelectedRoot != topLevelName {
+			// The top-level test is only a discovery carrier for a nested selected
+			// root. Its native status belongs to the ancestor, which executes and
+			// reports separately in the parent process.
 			return
 		}
 
