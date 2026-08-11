@@ -14,9 +14,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 )
 
 func TestMergeProcessCoverageProfilesAddsIsolatedCounts(t *testing.T) {
@@ -85,8 +86,8 @@ func TestFinalizeProcessCoverageProfilesBeforeBackfillPreservesRealCounts(t *tes
 	parentPath := filepath.Join(dir, "parent.out")
 	childPath := filepath.Join(dir, "child.out")
 	const profile = "mode: atomic\ngithub.com/example/project/pkg/file.go:1.1,1.2 1 %d\n"
-	require.NoError(t, os.WriteFile(parentPath, []byte(fmt.Sprintf(profile, 0)), 0o600))
-	require.NoError(t, os.WriteFile(childPath, []byte(fmt.Sprintf(profile, 1)), 0o600))
+	require.NoError(t, os.WriteFile(parentPath, fmt.Appendf(nil, profile, 0), 0o600))
+	require.NoError(t, os.WriteFile(childPath, fmt.Appendf(nil, profile, 1), 0o600))
 	mode = "atomic"
 	modulePath = "github.com/example/project"
 	tearDown = func(_, _ string) (string, error) {
