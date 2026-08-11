@@ -41,8 +41,9 @@ var (
 	processAggregateCoverageErr error
 )
 
-// BeginProcessTestCoverage starts a coverage delta. Callers serialize covered
-// test bodies because Go's runtime coverage counters are process-global.
+// BeginProcessTestCoverage starts a coverage delta. Because Go's runtime
+// coverage counters are process-global, callers must serialize covered test
+// bodies or discard deltas whose bodies overlap.
 func BeginProcessTestCoverage(testFile string) *ProcessTestCoverage {
 	if !CanCollect() {
 		return nil

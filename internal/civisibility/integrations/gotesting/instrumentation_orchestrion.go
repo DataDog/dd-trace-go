@@ -695,7 +695,7 @@ func instrumentTestingParallel(t *testing.T) (bool, func()) {
 		if state := execMeta.quarantinedRaceChild; state != nil && state.cfg != nil && t.Name() == state.cfg.SelectedRoot {
 			state.startParallelBridge()
 		}
-		if pause := execMeta.processRetryCoverageParallel; pause != nil {
+		if pause := execMeta.processRetryParallelPause; pause != nil {
 			return false, pause()
 		}
 	}

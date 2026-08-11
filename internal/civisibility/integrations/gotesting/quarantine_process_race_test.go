@@ -86,6 +86,11 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceIndependentATFFixture":             properties(true),
 					"TestQuarantinedRaceIndependentATFFixture/clear":       properties(false),
 					"TestQuarantinedRaceIndependentATFFixture/clear/owner": properties(true),
+					"TestQuarantinedRaceDeepFixture":                       properties(true),
+					"TestQuarantinedRaceDeepFixture/clear":                 properties(false),
+					"TestQuarantinedRaceDeepFixture/clear/owner":           properties(true),
+					"TestQuarantinedRaceDeepFixture/clear/owner/none":      properties(false),
+					"TestQuarantinedRaceDeepFixture/clear/owner/none/deep": properties(true),
 					"TestQuarantinedRaceLeafFixture/card/visa":             properties(false),
 					"TestQuarantinedRaceNestedFixture/card":                properties(false),
 					"TestQuarantinedRaceNestedFixture/card/disabled": {
@@ -105,6 +110,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceFailfastDescendantFixture/child":     properties(true),
 					"TestQuarantinedRaceParallelFixture/isolated":            properties(false),
 					"TestQuarantinedRaceParallelCoverageFixture/isolated":    properties(false),
+					"TestQuarantinedRaceParallelDurationFixture/isolated":    properties(false),
 					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
 					"TestQuarantinedRaceAncestorPanicFixture/isolated":       properties(false),
@@ -163,6 +169,30 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(ownerSpans, constants.TestAttemptToFixPassed, "true", 2)
 		checkSpansByTagValue(ownerSpans, constants.TestFinalStatus, constants.TestStatusSkip, 2)
 		os.Exit(0)
+	case "deep-nested-attempt-family":
+		pids := map[string]struct{}{}
+		entries, err := os.ReadDir(pidDir)
+		if err != nil {
+			panic(err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "deep-nested-attempt-leaf-") {
+				pids[readPID(entry.Name())] = struct{}{}
+			}
+		}
+		delete(pids, parentPID)
+		if len(pids) != 8 {
+			panic(fmt.Sprintf("deep nested attempt family used %d fresh child processes, want 8", len(pids)))
+		}
+		ownerSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeepFixture/clear/owner", 4)
+		checkSpansByTagValue(ownerSpans, constants.TestIsRetry, "true", 2)
+		checkSpansByTagValue(ownerSpans, constants.TestAttemptToFixPassed, "true", 2)
+		leafSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeepFixture/clear/owner/none/deep", 8)
+		checkSpansByTagValue(leafSpans, constants.TestIsRetry, "true", 4)
+		checkSpansByTagValue(leafSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 4)
+		checkSpansByTagValue(leafSpans, constants.TestAttemptToFixPassed, "true", 4)
+		checkSpansByTagValue(leafSpans, constants.TestFinalStatus, constants.TestStatusSkip, 4)
+		os.Exit(0)
 	case "nested-aggregate-coverage", "nested-aggregate-coverage-control":
 		os.Exit(0)
 	case "parallel-admission":
@@ -176,14 +206,20 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		if readPID("parallel-coverage-child") == parentPID {
 			panic("covered parallel descendant did not run in the isolated child")
 		}
-		if readPID("parallel-coverage-maximum") != "1" {
-			panic("covered parallel descendants were not serialized")
+		if readPID("parallel-coverage-maximum") != "2" {
+			panic("covered parallel descendants did not run concurrently")
 		}
 		parallelSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelCoverageFixture/isolated", 1)
 		checkSpansByTagValue(parallelSpans, constants.TestStatus, constants.TestStatusPass, 1)
 		for _, name := range []string{"concurrent-a", "concurrent-b"} {
 			childSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelCoverageFixture/isolated/"+name, 1)
 			checkSpansByTagValue(childSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		}
+		os.Exit(0)
+	case "parallel-duration":
+		childSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelDurationFixture/isolated/suspended", 1)
+		if got := childSpans[0].Duration(); got >= 250*time.Millisecond {
+			panic(fmt.Sprintf("parallel suspension leaked into replayed duration: %s", got))
 		}
 		os.Exit(0)
 	case "terminal-descendants":
@@ -453,6 +489,14 @@ func TestQuarantinedRaceNestedAttemptFamilyEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "nested-attempt-family", "^TestQuarantinedRaceIndependentATFFixture$")
 }
 
+func TestQuarantinedRaceDeepNestedAttemptFamilyEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "deep-nested-attempt-family", "^TestQuarantinedRaceDeepFixture$")
+}
+
+func TestQuarantinedRaceParallelDurationEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "parallel-duration", "^TestQuarantinedRaceParallelDurationFixture$")
+}
+
 func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "terminal-descendants", "^TestQuarantinedRaceTerminalDescendantsFixture$")
 }
@@ -597,6 +641,21 @@ func TestQuarantinedRaceIndependentATFFixture(t *testing.T) {
 	}))
 }
 
+func TestQuarantinedRaceDeepFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("clear", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("owner", instrumentTestingTFunc(func(t *testing.T) {
+			t.Run("none", instrumentTestingTFunc(func(t *testing.T) {
+				t.Run("deep", instrumentTestingTFunc(func(t *testing.T) {
+					writeQuarantinedRaceIsolationPID(t, "deep-nested-attempt-leaf-"+strconv.Itoa(os.Getpid()))
+				}))
+			}))
+		}))
+	}))
+}
+
 func TestQuarantinedRaceLeafFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {
 		t.Skip("fixture subprocess only")
@@ -677,6 +736,13 @@ func TestQuarantinedRaceParallelCoverageFixture(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("t.Parallel did not release t.Run back to its parent")
 		}
+		ready := make(chan struct{}, 2)
+		allReady := make(chan struct{})
+		go func() {
+			<-ready
+			<-ready
+			close(allReady)
+		}()
 		var active atomic.Int32
 		var maximum atomic.Int32
 		t.Cleanup(func() {
@@ -690,11 +756,28 @@ func TestQuarantinedRaceParallelCoverageFixture(t *testing.T) {
 				defer active.Add(-1)
 				for observed := maximum.Load(); current > observed && !maximum.CompareAndSwap(observed, current); observed = maximum.Load() {
 				}
-				time.Sleep(20 * time.Millisecond)
+				ready <- struct{}{}
+				select {
+				case <-allReady:
+				case <-time.After(2 * time.Second):
+					t.Fatal("covered parallel descendants could not rendezvous")
+				}
 			}))
 		}
 	}))
 	close(released)
+}
+
+func TestQuarantinedRaceParallelDurationFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("isolated", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("suspended", instrumentTestingTFunc(func(t *testing.T) {
+			(*T)(t).Parallel()
+		}))
+		time.Sleep(500 * time.Millisecond)
+	}))
 }
 
 func TestQuarantinedRaceAggregateCoverageFixture(t *testing.T) {

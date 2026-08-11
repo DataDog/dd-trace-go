@@ -82,8 +82,7 @@ type (
 		deferredRetryEvent            *deferredProcessRetryEvent
 		quarantinedRaceProcess        *quarantinedRaceProcessContext
 		quarantinedRaceChild          *quarantinedRaceChildState
-		processRetryCoverageMu        *sync.Mutex
-		processRetryCoverageParallel  func() func()
+		processRetryParallelPause     func() func()
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function

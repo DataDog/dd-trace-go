@@ -32,6 +32,58 @@ func TestQuarantinedRaceExactRunPatternAnchorsEveryComponent(t *testing.T) {
 	assert.Equal(t, "TestCheckout/.*", processRetryChildRunPattern("TestCheckout/.*", "TestCheckout/card"))
 }
 
+func TestQuarantinedRaceCoverageCoordinatorDiscardsOnlySiblingOverlap(t *testing.T) {
+	var coordinator quarantinedRaceCoverageCoordinator
+	parent := coordinator.begin("TestCheckout/card")
+	child := coordinator.begin("TestCheckout/card/visa")
+	assert.True(t, coordinator.finish(child))
+	assert.True(t, coordinator.finish(parent))
+
+	first := coordinator.begin("TestCheckout/card/visa")
+	second := coordinator.begin("TestCheckout/card/mastercard")
+	assert.False(t, coordinator.finish(first))
+	assert.False(t, coordinator.finish(second))
+
+	isolated := coordinator.begin("TestCheckout/card/amex")
+	assert.True(t, coordinator.finish(isolated))
+}
+
+func TestDirectQuarantinedRaceAttemptOwnersReturnsOnlyNearestFamilies(t *testing.T) {
+	result := func(name string) processRetrySubtreeResult {
+		return processRetrySubtreeResult{TestName: name, AttemptToFixOwn: true}
+	}
+	owners := directQuarantinedRaceAttemptOwners([]processRetrySubtreeResult{
+		result("TestCheckout/card"),
+		result("TestCheckout/card/owner"),
+		result("TestCheckout/card/owner/clear/deep"),
+		result("TestCheckout/card/sibling"),
+	}, "TestCheckout/card")
+	require.Len(t, owners, 2)
+	assert.Equal(t, "TestCheckout/card/owner", owners[0].TestName)
+	assert.Equal(t, "TestCheckout/card/sibling", owners[1].TestName)
+}
+
+func TestQuarantinedRaceContinuationConfigPreservesDeeperAttemptOwner(t *testing.T) {
+	cfg := &processRetrySubtreeConfig{
+		Version:      processRetrySubtreeVersion,
+		SelectedRoot: "TestCheckout",
+		Root: processRetrySubtreeDirective{
+			TestName: "TestCheckout", Quarantined: true, AttemptToFix: true,
+		},
+		OwnsAttemptToFix: true,
+		Directives: []processRetrySubtreeDirective{
+			{TestName: "TestCheckout/clear", Quarantined: true},
+			{TestName: "TestCheckout/clear/owner", Quarantined: true, AttemptToFix: true},
+			{TestName: "TestCheckout/clear/owner/clear", Quarantined: true},
+			{TestName: "TestCheckout/clear/owner/clear/deep", Quarantined: true, AttemptToFix: true},
+		},
+	}
+	continuation, err := cfg.forSelectedRoot("TestCheckout/clear/owner")
+	require.NoError(t, err)
+	_, owner := continuation.resolveDirective("TestCheckout/clear/owner/clear/deep")
+	assert.Equal(t, "TestCheckout/clear/owner/clear/deep", owner)
+}
+
 func TestQuarantinedRaceDirectiveResolutionUsesNearestAttemptOwner(t *testing.T) {
 	cfg := &processRetrySubtreeConfig{
 		Version:      processRetrySubtreeVersion,

@@ -403,6 +403,52 @@ type quarantinedRaceChildState struct {
 	parallelOnce    sync.Once
 	parallelStarted atomic.Bool
 	parallelDone    chan error
+	coverage        quarantinedRaceCoverageCoordinator
+}
+
+type quarantinedRaceCoverageInterval struct {
+	id    uint64
+	name  string
+	valid bool
+}
+
+// quarantinedRaceCoverageCoordinator never serializes user code. Runtime
+// coverage counters are process-global, so overlapping sibling branches cannot
+// be attributed safely; their per-test deltas are discarded instead. Nested
+// collectors remain valid because their inclusive overlap is deterministic.
+type quarantinedRaceCoverageCoordinator struct {
+	mu     sync.Mutex
+	next   uint64
+	active map[uint64]*quarantinedRaceCoverageInterval
+}
+
+func (c *quarantinedRaceCoverageCoordinator) begin(name string) *quarantinedRaceCoverageInterval {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.active == nil {
+		c.active = make(map[uint64]*quarantinedRaceCoverageInterval)
+	}
+	c.next++
+	interval := &quarantinedRaceCoverageInterval{id: c.next, name: name, valid: true}
+	for _, current := range c.active {
+		if processRetryNameWithinRoot(name, current.name) || processRetryNameWithinRoot(current.name, name) {
+			continue
+		}
+		current.valid = false
+		interval.valid = false
+	}
+	c.active[interval.id] = interval
+	return interval
+}
+
+func (c *quarantinedRaceCoverageCoordinator) finish(interval *quarantinedRaceCoverageInterval) bool {
+	if interval == nil {
+		return true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.active, interval.id)
+	return interval.valid
 }
 
 func newQuarantinedRaceChildState(cfg *processRetrySubtreeConfig) *quarantinedRaceChildState {
@@ -563,7 +609,6 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	execMeta.test = parent.test
 	execMeta.processRetryOwner = parent
 	execMeta.quarantinedRaceChild = state
-	execMeta.processRetryCoverageMu = &sync.Mutex{}
 	if !processRetryNameWithinRoot(name, state.cfg.SelectedRoot) {
 		defer deleteTestMetadata(t)
 		original(t)
@@ -590,24 +635,33 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	execMeta.isAModifiedTest = directive.Modified || integrations.IsTestFuncModifiedWithAnalyzer(state.impacted, name, sourceFunc)
 	directive.Modified = execMeta.isAModifiedTest
 	order, start, raceBaseline := state.begin()
+	activeStart := start
+	activeDuration := time.Duration(0)
 	restoreChatty := bufferQuarantinedRaceChildOutput(t)
 	var collector *coverage.ProcessTestCoverage
-	coverageLocked := false
-	if state.cfg.CollectPerTest && source != nil && coverage.CanCollect() {
-		// Runtime coverage counters are global, so siblings must not collect
-		// overlapping deltas. The parent-owned lock serializes concurrent t.Run
-		// calls without blocking nested collectors, which lock their own parent.
-		parent.processRetryCoverageMu.Lock()
-		coverageLocked = true
-		collector = coverage.BeginProcessTestCoverage(source.RuntimePath)
-		// Native Parallel must release t.Run back to the parent. Pause coverage
-		// and release the sibling lock while testing owns that handoff, then
-		// resume both before the covered body continues.
-		execMeta.processRetryCoverageParallel = func() func() {
+	var coverageInterval *quarantinedRaceCoverageInterval
+	coverageValid := true
+	collectCoverage := state.cfg.CollectPerTest && coverage.CanCollect()
+	if collectCoverage {
+		coverageInterval = state.coverage.begin(name)
+		if source != nil {
+			collector = coverage.BeginProcessTestCoverage(source.RuntimePath)
+		}
+	}
+	execMeta.processRetryParallelPause = func() func() {
+		activeDuration += time.Since(activeStart)
+		activeStart = time.Time{}
+		if collector != nil {
 			collector.Pause()
-			parent.processRetryCoverageMu.Unlock()
-			return func() {
-				parent.processRetryCoverageMu.Lock()
+		}
+		coverageValid = state.coverage.finish(coverageInterval) && coverageValid
+		coverageInterval = nil
+		return func() {
+			activeStart = time.Now()
+			if collectCoverage {
+				coverageInterval = state.coverage.begin(name)
+			}
+			if collector != nil {
 				collector.Resume()
 			}
 		}
@@ -647,18 +701,23 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		}
 		state.finishAggregateCoverage(name)
 
-		if coverageLocked {
-			defer parent.processRetryCoverageMu.Unlock()
+		if !activeStart.IsZero() {
+			activeDuration += time.Since(activeStart)
+			activeStart = time.Time{}
 		}
 		files := collector.Finish()
+		coverageValid = state.coverage.finish(coverageInterval) && coverageValid
+		if !coverageValid {
+			files = nil
+		}
 		restoreChatty()
-		finish := time.Now()
+		finish := start.Add(activeDuration)
 		fields := getTestPrivateFields(t)
 		result := processRetrySubtreeResult{
 			TestName:        name,
 			StartUnixNano:   start.UnixNano(),
 			FinishUnixNano:  finish.UnixNano(),
-			DurationNanos:   finish.UnixNano() - start.UnixNano(),
+			DurationNanos:   activeDuration.Nanoseconds(),
 			Failed:          t.Failed(),
 			Skipped:         t.Skipped(),
 			RaceDetected:    processRetrySubtreeRaceDetected(fields, raceBaseline, retryAttemptRaceErrors()),
@@ -961,7 +1020,6 @@ func runQuarantinedRaceProcessIsolation(
 	}
 	invocations := make([]quarantinedRaceInvocation, 0, rootTotal)
 
-attempts:
 	for idx := 0; idx < rootTotal; idx++ {
 		attempt := runQuarantinedRaceInvocation(t, processCtx, lease, cfg, idx, parallelBridge)
 		if processRetryInfrastructureFailure(attempt) {
@@ -978,36 +1036,14 @@ attempts:
 		if cfg.AttemptToFixRetries <= 0 {
 			continue
 		}
-		// Continue independently owned descendant families inside every
-		// enclosing root execution, not as part of the root's retry sequence.
-		for _, result := range attempt.Result.Subtests {
-			if !result.AttemptToFixOwn {
-				continue
-			}
-			continuationCfg, cfgErr := cfg.forSelectedRoot(result.TestName)
-			if cfgErr != nil {
-				failQuarantinedRaceIsolation(t, testInfo, execMeta, processRetryAttemptResult{SetupFailure: true, Err: cfgErr, ExitCode: processRetryExitCodeUnset, StartTime: time.Now(), FinishTime: time.Now()})
-				return
-			}
-			for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
-				attempt := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, idx, parallelBridge)
-				if processRetryInfrastructureFailure(attempt) {
-					failQuarantinedRaceIsolation(t, &commonInfo{
-						moduleName: testInfo.moduleName,
-						suiteName:  testInfo.suiteName,
-						testName:   result.TestName,
-						identity:   newTestIdentity(testInfo.moduleName, testInfo.suiteName, result.TestName),
-					}, execMeta, attempt)
-					return
-				}
-				invocations = append(invocations, quarantinedRaceInvocation{
-					cfg: continuationCfg, attempt: attempt, attemptIndex: idx,
-				})
-				if quarantinedRaceFailfastStopsContinuation(attempt) {
-					invocations[len(invocations)-1].finalBecauseOfFailfast = true
-					break attempts
-				}
-			}
+		stop, failed := continueQuarantinedRaceDescendantFamilies(
+			t, testInfo, execMeta, processCtx, lease, cfg, attempt, parallelBridge, &invocations,
+		)
+		if failed {
+			return
+		}
+		if stop {
+			break
 		}
 	}
 
@@ -1016,6 +1052,87 @@ attempts:
 	// Visibility but is intentionally masked from the package result. An
 	// infrastructure error returns above through Fail and is never quarantined.
 	t.SkipNow()
+}
+
+// continueQuarantinedRaceDescendantFamilies completes each independently owned
+// Attempt-to-Fix family before continuing its ancestor. This depth-first order
+// keeps a deeper owner's retry adjacent to the initial execution from the same
+// enclosing invocation, so replay cannot associate it with a later family.
+func continueQuarantinedRaceDescendantFamilies(
+	t *testing.T,
+	testInfo *commonInfo,
+	execMeta *testExecutionMetadata,
+	processCtx *quarantinedRaceProcessContext,
+	lease *processRetryGroupLease,
+	cfg *processRetrySubtreeConfig,
+	attempt processRetryAttemptResult,
+	parallelBridge func() error,
+	invocations *[]quarantinedRaceInvocation,
+) (stop, failed bool) {
+	for _, result := range directQuarantinedRaceAttemptOwners(attempt.Result.Subtests, cfg.SelectedRoot) {
+		continuationCfg, err := cfg.forSelectedRoot(result.TestName)
+		if err != nil {
+			failQuarantinedRaceIsolation(t, testInfo, execMeta, processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: time.Now(), FinishTime: time.Now()})
+			return false, true
+		}
+		if stop, failed := continueQuarantinedRaceDescendantFamilies(
+			t, testInfo, execMeta, processCtx, lease, continuationCfg, attempt, parallelBridge, invocations,
+		); stop || failed {
+			return stop, failed
+		}
+		for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
+			next := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, idx, parallelBridge)
+			if processRetryInfrastructureFailure(next) {
+				failQuarantinedRaceIsolation(t, &commonInfo{
+					moduleName: testInfo.moduleName,
+					suiteName:  testInfo.suiteName,
+					testName:   result.TestName,
+					identity:   newTestIdentity(testInfo.moduleName, testInfo.suiteName, result.TestName),
+				}, execMeta, next)
+				return false, true
+			}
+			*invocations = append(*invocations, quarantinedRaceInvocation{
+				cfg: continuationCfg, attempt: next, attemptIndex: idx,
+			})
+			if quarantinedRaceFailfastStopsContinuation(next) {
+				(*invocations)[len(*invocations)-1].finalBecauseOfFailfast = true
+				return true, false
+			}
+			if stop, failed := continueQuarantinedRaceDescendantFamilies(
+				t, testInfo, execMeta, processCtx, lease, continuationCfg, next, parallelBridge, invocations,
+			); stop || failed {
+				return stop, failed
+			}
+		}
+	}
+	return false, false
+}
+
+func directQuarantinedRaceAttemptOwners(results []processRetrySubtreeResult, root string) []processRetrySubtreeResult {
+	ownerNames := make(map[string]struct{}, len(results))
+	for _, result := range results {
+		if result.AttemptToFixOwn && result.TestName != root && processRetryNameWithinRoot(result.TestName, root) {
+			ownerNames[result.TestName] = struct{}{}
+		}
+	}
+	owners := make([]processRetrySubtreeResult, 0, len(ownerNames))
+	for _, result := range results {
+		if _, ok := ownerNames[result.TestName]; !ok {
+			continue
+		}
+		direct := true
+		for ancestor := result.TestName; len(ancestor) > len(root); {
+			ancestor = ancestor[:strings.LastIndexByte(ancestor, '/')]
+			if _, ok := ownerNames[ancestor]; ok {
+				direct = false
+				break
+			}
+		}
+		if direct {
+			owners = append(owners, result)
+		}
+	}
+	return owners
 }
 
 // AttemptToFixRetries is the configured total execution count in the existing

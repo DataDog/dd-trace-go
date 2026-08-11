@@ -3237,7 +3237,6 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 				}
 				observation.subtree.parallelBridge = control.childRootParallelBridge
 				execMeta.quarantinedRaceChild = observation.subtree
-				execMeta.processRetryCoverageMu = &sync.Mutex{}
 			}
 			observation.execMeta = execMeta
 			return ""
