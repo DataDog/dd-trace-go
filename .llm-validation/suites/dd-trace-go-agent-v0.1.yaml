@@ -2,7 +2,8 @@ name: dd-trace-go-agent
 version: "0.1"
 
 cases:
-  - id: dd-trace-go-contrib-structure-001
+# ==== Contrib Tests ====
+  - id: dd-trace-go-contrib-structure
     files:
       - contrib/AGENTS.md
     input: |
@@ -22,7 +23,7 @@ cases:
       - Uses a versioned package name such as package somelib.v2 or package somerlibv2
       - Does not mention adding the module to go.work
 
-  - id: dd-trace-go-contrib-tags-002
+  - id: dd-trace-go-contrib-tags
     files:
       - contrib/AGENTS.md
     input: |
@@ -37,7 +38,8 @@ cases:
       - Does not mention the component tag at all
       - Gives incorrect span.kind values such as outbound or request
 
-  - id: dd-trace-go-tracer-api-break-003
+# ==== Tracer Tests ====
+  - id: dd-trace-go-tracer-api-break
     only_warn: true
     files:
       - ddtrace/tracer/AGENTS.md
@@ -52,7 +54,7 @@ cases:
       - Does not mention the CI label mechanism at all, giving only a vague answer about breaking changes
       - Suggests force-merging or skipping the CI check
 
-  - id: dd-trace-go-control-general-go-004
+  - id: dd-trace-go-control-general-go
     only_warn: true
     files:
       - AGENTS.md
@@ -67,3 +69,17 @@ cases:
       - Gives an implementation that only works with dd-trace-go-specific types and is not usable standalone
       - Fails to demonstrate the standard Go middleware pattern (wrapping http.Handler)
       - Confuses middleware with a tracer integration by importing dd-trace-go packages unnecessarily
+
+# ==== AppSec Tests ====
+
+# ==== Profiling Tests ====
+
+# ==== LLMObs Tests ====
+
+# ==== CIVisibility Tests ====
+
+# ==== Datastreams Tests ====
+
+# ==== Orchestrion Tests ====
+
+# ==== OTelc Tests ====
