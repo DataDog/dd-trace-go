@@ -132,6 +132,7 @@ const (
 	processRetrySkipReasonMaxBytes         = 8 * 1024
 	processRetryResultErrorMaxBytes        = 256
 	processRetryResultMaxBytes             = 64 * 1024
+	processRetryResultErrorSubtreeTooLarge = "subtree_result_too_large"
 	processRetryTruncationMarker           = "[dd-trace-go: process retry panic data truncated]"
 	processRetryMetadataTruncationMarker   = "[dd-trace-go: process retry metadata truncated]"
 	processRetryOutputTruncationMarker     = "\n[dd-trace-go: process retry output truncated]\n"
@@ -3623,12 +3624,9 @@ func processRetryJSONStringFits(value string, maxBytes int) bool {
 }
 
 func writeProcessRetryResultAtomically(resultPath string, result processRetryResult) error {
-	payload, err := json.Marshal(result)
+	payload, err := marshalProcessRetryResult(result)
 	if err != nil {
 		return err
-	}
-	if len(payload) > processRetryWireMaxBytes(len(result.Subtests) > 0 || len(result.Coverage) > 0 || result.Source != nil) {
-		return errors.New("process_retry_result_too_large")
 	}
 	dir := filepath.Dir(resultPath)
 	tmp, err := os.CreateTemp(dir, ".process-retry-result-*.tmp")
@@ -3652,6 +3650,113 @@ func writeProcessRetryResultAtomically(resultPath string, result processRetryRes
 	}
 	closed = true
 	return os.Rename(tmpName, resultPath)
+}
+
+func marshalProcessRetryResult(result processRetryResult) ([]byte, error) {
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	subtree := len(result.Subtests) > 0 || len(result.Coverage) > 0 || result.Source != nil
+	limit := processRetryWireMaxBytes(subtree)
+	if len(payload) <= limit {
+		return payload, nil
+	}
+	if !subtree {
+		return nil, errors.New("process_retry_result_too_large")
+	}
+	if payload, ok, err := marshalBoundedProcessRetrySubtreeEnvelope(result, limit); err != nil {
+		return nil, err
+	} else if ok {
+		return payload, nil
+	}
+	// Preserve a valid protocol result when even the mandatory event structure
+	// cannot fit. The parent then fails closed with the explicit reason instead
+	// of misclassifying an absent file as a child-process failure.
+	fallback, err := json.Marshal(processRetryResult{
+		Version: result.Version, TestName: result.TestName, Attempt: result.Attempt, RetryReason: result.RetryReason,
+		MRunEpoch: result.MRunEpoch, InvocationOrdinal: result.InvocationOrdinal,
+		Status: processRetryStatusNotRun, ResultError: processRetryResultErrorSubtreeTooLarge,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(fallback) > limit {
+		return nil, errors.New("process_retry_result_too_large")
+	}
+	return fallback, nil
+}
+
+func marshalBoundedProcessRetrySubtreeEnvelope(result processRetryResult, maxBytes int) ([]byte, bool, error) {
+	const metadataFields = 4
+	// Keep every event and first fit diagnostics around the existing source and
+	// coverage data. Those optional fields are omitted only when that core alone
+	// exceeds the wire limit.
+	for _, preserveSourceAndCoverage := range [...]bool{true, false} {
+		core := cloneProcessRetrySubtreeEnvelope(result, preserveSourceAndCoverage)
+		truncateProcessRetryAggregateMetadata(&core, 0)
+		corePayload, err := json.Marshal(core)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(corePayload) > maxBytes {
+			continue
+		}
+
+		perEventBudget := (maxBytes - len(corePayload)) / (len(result.Subtests) + 1)
+		fieldLimit := perEventBudget / metadataFields
+		for {
+			bounded := cloneProcessRetrySubtreeEnvelope(result, preserveSourceAndCoverage)
+			truncateProcessRetryAggregateMetadata(&bounded, fieldLimit)
+			payload, err := json.Marshal(bounded)
+			if err != nil {
+				return nil, false, err
+			}
+			if len(payload) <= maxBytes {
+				return payload, true, nil
+			}
+			if fieldLimit == 0 {
+				break
+			}
+			fieldLimit /= 2
+		}
+	}
+	return nil, false, nil
+}
+
+func cloneProcessRetrySubtreeEnvelope(result processRetryResult, preserveSourceAndCoverage bool) processRetryResult {
+	result.Subtests = slices.Clone(result.Subtests)
+	if preserveSourceAndCoverage {
+		return result
+	}
+	result.Source = nil
+	result.Coverage = nil
+	for idx := range result.Subtests {
+		result.Subtests[idx].Source = nil
+		result.Subtests[idx].Coverage = nil
+	}
+	return result
+}
+
+func truncateProcessRetryAggregateMetadata(result *processRetryResult, maxBytes int) {
+	truncate := func(message, stack, skipReason, output string, outputTruncated, skippedByITR bool) (string, string, string, string, bool) {
+		message = truncateProcessRetryString(message, min(maxBytes, processRetryErrorMessageMaxBytes), processRetryMetadataTruncationMarker)
+		stack = truncateProcessRetryString(stack, min(maxBytes, processRetryErrorStackMaxBytes), processRetryMetadataTruncationMarker)
+		if !skippedByITR {
+			skipReason = truncateProcessRetryString(skipReason, min(maxBytes, processRetrySkipReasonMaxBytes), processRetryMetadataTruncationMarker)
+		}
+		output, truncated := truncateProcessRetrySubtreeOutputTo(output, min(maxBytes, processRetrySubtreeOutputMaxBytes))
+		return message, stack, skipReason, output, output != "" && (outputTruncated || truncated)
+	}
+	result.ErrorMessage, result.ErrorStack, result.SkipReason, result.OutputTail, result.OutputTruncated = truncate(
+		result.ErrorMessage, result.ErrorStack, result.SkipReason, result.OutputTail, result.OutputTruncated, result.SkippedByITR,
+	)
+	for idx := range result.Subtests {
+		subtest := &result.Subtests[idx]
+		subtest.ErrorMessage, subtest.ErrorStack, subtest.SkipReason, subtest.OutputTail, subtest.OutputTruncated = truncate(
+			subtest.ErrorMessage, subtest.ErrorStack, subtest.SkipReason, subtest.OutputTail, subtest.OutputTruncated, subtest.SkippedByITR,
+		)
+	}
 }
 
 func readProcessRetryResult(resultPath string, expected processRetryChildConfig) (processRetryResult, bool, error) {
@@ -3706,6 +3811,9 @@ func validateProcessRetryResult(result processRetryResult, expected processRetry
 	if (result.MRunEpoch == 0) != (result.InvocationOrdinal == 0) {
 		return fmt.Errorf("%w: invalid invocation identity", errProcessRetryResultInvalid)
 	}
+	if result.ResultError == processRetryResultErrorSubtreeTooLarge && expected.Subtree == nil {
+		return fmt.Errorf("%w: unexpected subtree result error", errProcessRetryResultInvalid)
+	}
 	if !processRetryJSONStringFits(result.ErrorType, processRetryErrorTypeMaxBytes) ||
 		!processRetryJSONStringFits(result.ErrorMessage, processRetryErrorMessageMaxBytes) ||
 		!processRetryJSONStringFits(result.ErrorStack, processRetryErrorStackMaxBytes) ||
@@ -3756,7 +3864,7 @@ func validateProcessRetryResultStatus(result processRetryResult) error {
 
 func validProcessRetryResultError(reason string) bool {
 	switch reason {
-	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure", "selected_root_not_run", "coverage_initialization_failed", "coverage_finalization_failed":
+	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure", "selected_root_not_run", "coverage_initialization_failed", "coverage_finalization_failed", processRetryResultErrorSubtreeTooLarge:
 		return true
 	default:
 		return false

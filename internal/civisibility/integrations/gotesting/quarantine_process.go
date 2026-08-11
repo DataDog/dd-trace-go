@@ -363,19 +363,24 @@ func processRetrySourceFromFunc(fn *runtime.Func) *processRetryTestSource {
 }
 
 func truncateProcessRetrySubtreeOutput(output []byte) (string, bool) {
-	truncated := len(output) > processRetrySubtreeOutputMaxBytes
+	return truncateProcessRetrySubtreeOutputTo(string(output), processRetrySubtreeOutputMaxBytes)
+}
+
+func truncateProcessRetrySubtreeOutputTo(output string, maxBytes int) (string, bool) {
+	maxBytes = max(maxBytes, 0)
+	truncated := len(output) > maxBytes
 	if truncated {
-		output = output[len(output)-processRetrySubtreeOutputMaxBytes:]
+		output = output[len(output)-maxBytes:]
 	}
-	normalized := strings.ToValidUTF8(string(output), "\uFFFD")
-	if processRetryJSONStringFits(normalized, processRetrySubtreeOutputMaxBytes) {
+	normalized := strings.ToValidUTF8(output, "\uFFFD")
+	if processRetryJSONStringFits(normalized, maxBytes) {
 		return normalized, truncated
 	}
 	runes := []rune(normalized)
 	low, high := 0, len(runes)
 	for low < high {
 		mid := low + (high-low+1)/2
-		if processRetryJSONStringFits(string(runes[len(runes)-mid:]), processRetrySubtreeOutputMaxBytes) {
+		if processRetryJSONStringFits(string(runes[len(runes)-mid:]), maxBytes) {
 			low = mid
 		} else {
 			high = mid - 1

@@ -7,6 +7,8 @@ package gotesting
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,6 +21,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 )
 
 func quarantinedRaceSkippableFixture(*testing.T) {}
@@ -236,6 +240,137 @@ func TestQuarantinedRaceSubtreeOutputUsesEncodedLimit(t *testing.T) {
 			assert.True(t, strings.HasSuffix(normalized, got))
 		})
 	}
+}
+
+func TestQuarantinedRaceAggregatePayloadFitsWireLimit(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		count    int
+		populate func(*processRetrySubtreeResult)
+		check    func(*testing.T, processRetrySubtreeResult)
+	}{
+		{
+			name:  "output",
+			count: 2 * 1024,
+			populate: func(result *processRetrySubtreeResult) {
+				result.OutputTail = strings.Repeat("x", processRetrySubtreeOutputMaxBytes)
+			},
+			check: func(t *testing.T, result processRetrySubtreeResult) {
+				assert.True(t, result.OutputTruncated)
+				assert.Less(t, len(result.OutputTail), processRetrySubtreeOutputMaxBytes)
+			},
+		},
+		{
+			name:  "error stack",
+			count: 512,
+			populate: func(result *processRetrySubtreeResult) {
+				result.ErrorStack = strings.Repeat("x", processRetryErrorStackMaxBytes)
+			},
+			check: func(t *testing.T, result processRetrySubtreeResult) {
+				assert.Contains(t, result.ErrorStack, processRetryMetadataTruncationMarker)
+				assert.Less(t, len(result.ErrorStack), processRetryErrorStackMaxBytes)
+			},
+		},
+		{
+			name:  "coverage",
+			count: 1,
+			populate: func(result *processRetrySubtreeResult) {
+				result.Coverage = []coverage.ProcessTestCoverageFile{{
+					Name: "file.go", Bitmap: bytes.Repeat([]byte{'x'}, processRetrySubtreeWireMaxBytes),
+				}}
+			},
+			check: func(t *testing.T, result processRetrySubtreeResult) {
+				assert.Empty(t, result.Coverage)
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := "TestAggregate/root"
+			cfg := processRetryChildConfig{
+				ResultPath: filepath.Join(t.TempDir(), "result.json"),
+				TestName:   root, Attempt: 1, RetryReason: processRetrySubtreeReason,
+				Subtree: &processRetrySubtreeConfig{
+					Version: processRetrySubtreeVersion, SelectedRoot: root,
+					Root: processRetrySubtreeDirective{TestName: root, Quarantined: true},
+				},
+			}
+			result := processRetryResult{
+				Version: 1, TestName: root, Attempt: 1, RetryReason: processRetrySubtreeReason,
+				Status: processRetryStatusFail, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1, Failed: true,
+				Subtests: make([]processRetrySubtreeResult, tt.count),
+			}
+			for idx := range result.Subtests {
+				result.Subtests[idx] = processRetrySubtreeResult{
+					TestName: fmt.Sprintf("%s/child-%04d", root, idx),
+					Status:   processRetryStatusFail, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
+					Failed: true, Quarantined: true, ErrorType: "error",
+				}
+				tt.populate(&result.Subtests[idx])
+			}
+
+			require.NoError(t, writeProcessRetryResultAtomically(cfg.ResultPath, result))
+			payload, err := os.ReadFile(cfg.ResultPath)
+			require.NoError(t, err)
+			require.LessOrEqual(t, len(payload), processRetrySubtreeWireMaxBytes)
+			got, _, err := readProcessRetryResult(cfg.ResultPath, cfg)
+			require.NoError(t, err)
+			require.Len(t, got.Subtests, tt.count)
+			assert.Equal(t, root+"/child-0000", got.Subtests[0].TestName)
+			assert.Equal(t, processRetryStatusFail, got.Subtests[0].Status)
+			assert.True(t, got.Subtests[0].Failed)
+			tt.check(t, got.Subtests[0])
+			tt.check(t, got.Subtests[len(got.Subtests)-1])
+		})
+	}
+}
+
+func TestQuarantinedRaceSmallPayloadSerializationIsUnchanged(t *testing.T) {
+	resultPath := filepath.Join(t.TempDir(), "result.json")
+	result := processRetryResult{
+		Version: 1, TestName: "TestSmall/root", Attempt: 1, RetryReason: processRetrySubtreeReason,
+		Status: processRetryStatusPass, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
+		Subtests: []processRetrySubtreeResult{{
+			TestName: "TestSmall/root/child", Status: processRetryStatusPass,
+			StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
+		}},
+	}
+	want, err := json.Marshal(result)
+	require.NoError(t, err)
+
+	require.NoError(t, writeProcessRetryResultAtomically(resultPath, result))
+	got, err := os.ReadFile(resultPath)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+}
+
+func TestQuarantinedRaceUnrepresentableCoreWritesExplicitResult(t *testing.T) {
+	root := "TestOversized/root"
+	cfg := processRetryChildConfig{
+		ResultPath: filepath.Join(t.TempDir(), "result.json"),
+		TestName:   root, Attempt: 1, RetryReason: processRetrySubtreeReason,
+		Subtree: &processRetrySubtreeConfig{
+			Version: processRetrySubtreeVersion, SelectedRoot: root,
+			Root: processRetrySubtreeDirective{TestName: root, Quarantined: true},
+		},
+	}
+	result := processRetryResult{
+		Version: 1, TestName: root, Attempt: 1, RetryReason: processRetrySubtreeReason,
+		Status: processRetryStatusPass, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
+		Subtests: []processRetrySubtreeResult{{
+			TestName: root + "/" + strings.Repeat("x", processRetrySubtreeWireMaxBytes),
+			Status:   processRetryStatusPass, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
+		}},
+	}
+
+	require.NoError(t, writeProcessRetryResultAtomically(cfg.ResultPath, result))
+	got, timingOK, err := readProcessRetryResult(cfg.ResultPath, cfg)
+	require.NoError(t, err)
+	assert.False(t, timingOK)
+	assert.Equal(t, processRetryStatusNotRun, got.Status)
+	assert.Equal(t, processRetryResultErrorSubtreeTooLarge, got.ResultError)
+	ordinary := cfg
+	ordinary.Subtree = nil
+	require.ErrorIs(t, validateProcessRetryResult(got, ordinary), errProcessRetryResultInvalid)
 }
 
 func TestQuarantinedRaceSubtreeConfigRejectsUntrustedDirectives(t *testing.T) {
