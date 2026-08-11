@@ -918,16 +918,27 @@ func pruneContext(raw map[string]any) map[string]any {
 // flageval_metrics.go (that file is left untouched to preserve the OTel path).
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
-	// Prefer OpenFeature's human-readable ErrorMessage; fall back to the ErrorCode string only
-	// when ErrorMessage is empty (some providers populate just the code).
-	errMsg := details.ErrorMessage
-	if errMsg == "" && details.ErrorCode != "" {
-		errMsg = string(details.ErrorCode)
-	}
 	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
 	// Fail closed: a missing or non-bool consent stamp yields false, so an evaluation that
 	// never passed through the evaluator cannot emit raw PII.
 	observeFullEvaluationData, _ := details.FlagMetadata[metadataObserveFullEvaluationDataKey].(bool)
+	// error.message can carry raw evaluation-context values verbatim: our own evaluator wraps
+	// user-supplied attributes in error strings (variant/type mismatches, regex/version parse
+	// errors), and third-party providers can do the same. Under consent-off we drop the raw
+	// text and substitute ErrorCode so operators keep a stable, non-PII signal. Redacted here
+	// so the raw string never enters the aggregation key or the async writer queue — both live
+	// beyond the evaluation call and would leak PII if we deferred redaction to emit time.
+	errMsg := details.ErrorMessage
+	if !observeFullEvaluationData {
+		if details.ErrorCode != "" {
+			errMsg = string(details.ErrorCode)
+		} else {
+			errMsg = ""
+		}
+	} else if errMsg == "" && details.ErrorCode != "" {
+		// Consent-on fallback preserved: some providers populate only ErrorCode.
+		errMsg = string(details.ErrorCode)
+	}
 	return evalDetails{
 		flagKey:                   hookContext.FlagKey(),
 		variant:                   details.Variant,

@@ -1221,8 +1221,9 @@ func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
 	}
 }
 
-// TestExtractEvalDetailsPrefersErrorMessage verifies ErrorMessage is preferred when present;
-// ErrorCode is the fallback only when ErrorMessage is empty.
+// TestExtractEvalDetailsPrefersErrorMessage verifies ErrorMessage is preferred when present
+// under consent-on; under consent-off ErrorMessage is dropped and ErrorCode is substituted so
+// the wire never carries raw evaluation-context values echoed back through error strings.
 func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 	mkHookCtx := func() of.HookContext {
 		return of.NewHookContext(
@@ -1235,14 +1236,22 @@ func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 		)
 	}
 
+	consentOn := func(d of.InterfaceEvaluationDetails) of.InterfaceEvaluationDetails {
+		if d.FlagMetadata == nil {
+			d.FlagMetadata = of.FlagMetadata{}
+		}
+		d.FlagMetadata[metadataObserveFullEvaluationDataKey] = true
+		return d
+	}
+
 	tests := []struct {
 		name             string
 		details          of.InterfaceEvaluationDetails
 		wantErrorMessage string
 	}{
 		{
-			name: "ErrorMessage present is preferred over ErrorCode",
-			details: of.InterfaceEvaluationDetails{
+			name: "consent-on: ErrorMessage preferred over ErrorCode",
+			details: consentOn(of.InterfaceEvaluationDetails{
 				EvaluationDetails: of.EvaluationDetails{
 					ResolutionDetail: of.ResolutionDetail{
 						Reason:       of.ErrorReason,
@@ -1250,27 +1259,52 @@ func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 						ErrorMessage: "boom",
 					},
 				},
-			},
+			}),
 			wantErrorMessage: "boom",
 		},
 		{
-			name: "empty ErrorMessage falls back to ErrorCode",
-			details: of.InterfaceEvaluationDetails{
+			name: "consent-on: empty ErrorMessage falls back to ErrorCode",
+			details: consentOn(of.InterfaceEvaluationDetails{
 				EvaluationDetails: of.EvaluationDetails{
 					ResolutionDetail: of.ResolutionDetail{
 						Reason:    of.ErrorReason,
 						ErrorCode: of.TypeMismatchCode,
 					},
 				},
+			}),
+			wantErrorMessage: string(of.TypeMismatchCode),
+		},
+		{
+			name: "consent-on: both empty yields empty errorMessage",
+			details: consentOn(of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason: of.TargetingMatchReason,
+					},
+				},
+			}),
+			wantErrorMessage: "",
+		},
+		{
+			name: "consent-off: raw ErrorMessage is dropped, ErrorCode substituted",
+			details: of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason:       of.ErrorReason,
+						ErrorCode:    of.TypeMismatchCode,
+						ErrorMessage: `variant type mismatch: "jane.doe@datadoghq.com"`,
+					},
+				},
 			},
 			wantErrorMessage: string(of.TypeMismatchCode),
 		},
 		{
-			name: "both empty yields empty errorMessage",
+			name: "consent-off: raw ErrorMessage with no ErrorCode is dropped entirely",
 			details: of.InterfaceEvaluationDetails{
 				EvaluationDetails: of.EvaluationDetails{
 					ResolutionDetail: of.ResolutionDetail{
-						Reason: of.TargetingMatchReason,
+						Reason:       of.ErrorReason,
+						ErrorMessage: `For input string: "jane.doe@datadoghq.com"`,
 					},
 				},
 			},
@@ -1282,6 +1316,80 @@ func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := extractEvalDetails(mkHookCtx(), tc.details).errorMessage; got != tc.wantErrorMessage {
 				t.Errorf("errorMessage = %q, want %q", got, tc.wantErrorMessage)
+			}
+		})
+	}
+}
+
+// TestErrorMessageNeverCarriesRawContextUnderConsentOff is the wire-level negative test the
+// cross-SDK contract requires: given an evaluation whose ErrorMessage embeds a PII-shaped raw
+// value (as our own evaluator and third-party providers both can produce), the serialized
+// flagevaluation payload must not contain that raw value anywhere under consent-off, even
+// though the same raw string would ride through untouched on the consent-on path.
+func TestErrorMessageNeverCarriesRawContextUnderConsentOff(t *testing.T) {
+	const rawPII = "jane.doe@datadoghq.com"
+	const errMsgWithPII = `For input string: "` + rawPII + `"`
+
+	mkHookCtx := func() of.HookContext {
+		return of.NewHookContext(
+			"payment_flag",
+			of.String,
+			"default",
+			of.NewClientMetadata(""),
+			of.Metadata{Name: "test-provider"},
+			of.NewEvaluationContext(rawPII, nil),
+		)
+	}
+
+	newWriterUnderTest := func() *flagEvalLoggingWriter {
+		w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, nil)
+		w.aggregator.globalCap = 100
+		w.aggregator.perFlagCap = 10
+		w.aggregator.degradedCap = 10
+		return w
+	}
+
+	for _, tc := range []struct {
+		name    string
+		consent bool
+	}{
+		{"consent-off drops raw ErrorMessage", false},
+		{"consent-on preserves raw ErrorMessage (control)", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			details := of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason:       of.ErrorReason,
+						ErrorCode:    of.TypeMismatchCode,
+						ErrorMessage: errMsgWithPII,
+						FlagMetadata: of.FlagMetadata{
+							metadataObserveFullEvaluationDataKey: tc.consent,
+						},
+					},
+				},
+			}
+			w := newWriterUnderTest()
+			w.record(mkHookCtx(), details)
+			if len(w.events) != 1 {
+				t.Fatalf("expected one queued event, got %d", len(w.events))
+			}
+			w.aggregate(<-w.events)
+
+			events := w.buildFlushEvents(time.Now().UnixMilli())
+			if len(events) != 1 {
+				t.Fatalf("expected one flush event, got %d", len(events))
+			}
+			payload, err := json.Marshal(events[0])
+			if err != nil {
+				t.Fatalf("marshal payload: %v", err)
+			}
+			gotContainsPII := strings.Contains(string(payload), rawPII)
+			if tc.consent && !gotContainsPII {
+				t.Errorf("consent-on control failed: payload should still contain raw ErrorMessage. payload=%s", payload)
+			}
+			if !tc.consent && gotContainsPII {
+				t.Errorf("consent-off leaked raw PII in payload: %s", payload)
 			}
 		})
 	}
