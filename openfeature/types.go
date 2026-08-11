@@ -33,12 +33,18 @@ type universalFlagsConfiguration struct {
 // UnmarshalJSON parses flags independently so one invalid flag does not reject
 // the complete configuration. The shadow struct is the sole populator: any new field on
 // universalFlagsConfiguration must be added and copied here or it reads as zero forever.
+//
+// observeFullEvaluationData is taken as json.RawMessage and then interpreted leniently:
+// null, absent, or a wrong-typed value all fall to false. Rejecting the whole UFC on a
+// malformed consent value would fail closed on availability — agentless swallows the parse
+// error, leaving a fresh pod with no last-known-good UFC and stranding every flag on the
+// SDK default. Fail-closed on privacy must not cascade into fail-closed on availability.
 func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		CreatedAt                 time.Time                  `json:"createdAt"`
 		Format                    string                     `json:"format"`
 		Environment               environment                `json:"environment"`
-		ObserveFullEvaluationData bool                       `json:"observeFullEvaluationData"`
+		ObserveFullEvaluationData json.RawMessage            `json:"observeFullEvaluationData"`
 		Flags                     map[string]json.RawMessage `json:"flags"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -48,7 +54,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.CreatedAt = raw.CreatedAt
 	config.Format = raw.Format
 	config.Environment = raw.Environment
-	config.ObserveFullEvaluationData = raw.ObserveFullEvaluationData
+	config.ObserveFullEvaluationData = parseLenientBool(raw.ObserveFullEvaluationData)
 	config.Flags = make(map[string]*flag, len(raw.Flags))
 	config.invalidFlags = make(map[string]error)
 

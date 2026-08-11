@@ -121,6 +121,30 @@ func TestUFCObserveFullEvaluationDataParsing(t *testing.T) {
 			raw:  `{"format":"SERVER","environment":{"name":"Staging","observeFullEvaluationData":true},"flags":{}}`,
 			want: false,
 		},
+		// Wrong-typed values must fail closed to false WITHOUT rejecting the whole UFC.
+		// Fail-closed on privacy must not cascade into fail-closed on availability: agentless
+		// swallows the parse error, so rejecting the config strands a fresh pod on the SDK
+		// default for every flag until a well-formed UFC arrives.
+		{
+			name: "stringified true fails closed, config still parses",
+			raw:  `{"format":"SERVER","observeFullEvaluationData":"true","environment":{"name":"Staging"},"flags":{}}`,
+			want: false,
+		},
+		{
+			name: "numeric 1 fails closed, config still parses",
+			raw:  `{"format":"SERVER","observeFullEvaluationData":1,"environment":{"name":"Staging"},"flags":{}}`,
+			want: false,
+		},
+		{
+			name: "array fails closed, config still parses",
+			raw:  `{"format":"SERVER","observeFullEvaluationData":[],"environment":{"name":"Staging"},"flags":{}}`,
+			want: false,
+		},
+		{
+			name: "object fails closed, config still parses",
+			raw:  `{"format":"SERVER","observeFullEvaluationData":{},"environment":{"name":"Staging"},"flags":{}}`,
+			want: false,
+		},
 	}
 
 	for _, tc := range tests {

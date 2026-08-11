@@ -6,9 +6,29 @@
 package openfeature
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 )
+
+// parseLenientBool reads an observeFullEvaluationData-shaped RawMessage from the UFC and
+// interprets it as a consent boolean. Anything that isn't a well-typed `true` — absent,
+// null, wrong-typed (`"true"`, `1`, `[]`, `{}`) — falls to false. The privacy-preserving
+// default wins over any parse ambiguity, but a wrong-typed value MUST NOT reject the whole
+// UFC: agentless swallows the parse error, so rejection would strand a fresh pod on the
+// SDK default forever.
+func parseLenientBool(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return false
+	}
+	var b bool
+	if err := json.Unmarshal(trimmed, &b); err != nil {
+		return false
+	}
+	return b
+}
 
 // targetingKeyHashPrefix marks a targeting key as a fingerprint. Part of the wire contract:
 // bare digests are rejected downstream.
