@@ -2176,10 +2176,12 @@ func TestLLMObsLifecycle(t *testing.T) {
 		// When agent supports evp_proxy/v2, should default to agentless=false
 		agent, err := tracertest.StartAgent(t)
 		require.NoError(t, err)
-		// Advertise evp_proxy/v2 support directly on the agent (not via
-		// llmobstest.Collector, which would set TestBaseURL and bypass
-		// resolution entirely).
+		// tracertest.StartAgent pins /info's endpoints to ["/v0.4/traces"] via
+		// SetInfoEndpoints (to keep the wire-protocol gate stable for other
+		// suites), which overrides anything registered via HandleTraces.
+		// Override it again here to also advertise evp_proxy/v2 support.
 		agent.HandleTraces("/evp_proxy/v2/", func(io.Reader) []*agenttest.Span { return nil })
+		agent.SetInfoEndpoints([]string{"/v0.4/traces", "/evp_proxy/v2/"})
 		_, err = tracertest.Start(t, agent,
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp("agentless-test"),
