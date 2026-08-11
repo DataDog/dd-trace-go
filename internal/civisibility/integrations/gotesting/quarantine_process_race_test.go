@@ -68,6 +68,9 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
 		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "5s")
 	}
+	if scenario == "parallel-atf-sibling" {
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "2s")
+	}
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
@@ -106,19 +109,28 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceSubtestFeatureGateFixture/disabled": {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
 					},
-					"TestQuarantinedRaceCleanupPanicFixture":                 properties(false),
-					"TestQuarantinedRaceCleanupFailNowFixture":               properties(false),
-					"TestQuarantinedRaceCleanupGoexitFixture":                properties(false),
-					"TestQuarantinedRaceFailfastRootFixture":                 properties(true),
-					"TestQuarantinedRaceFailfastDescendantFixture":           properties(false),
-					"TestQuarantinedRaceFailfastDescendantFixture/child":     properties(true),
-					"TestQuarantinedRaceParallelFixture/isolated":            properties(false),
-					"TestQuarantinedRaceParallelRootsFixture/one":            properties(false),
-					"TestQuarantinedRaceParallelRootsFixture/two":            properties(false),
-					"TestQuarantinedRaceParallelCoverageFixture/isolated":    properties(false),
-					"TestQuarantinedRaceParallelDurationFixture/isolated":    properties(false),
-					"TestQuarantinedRaceParallelWaitDurationFixture/root":    properties(false),
-					"TestQuarantinedRaceDynamicDescendantFixture/root":       properties(true),
+					"TestQuarantinedRaceCleanupPanicFixture":              properties(false),
+					"TestQuarantinedRaceCleanupFailNowFixture":            properties(false),
+					"TestQuarantinedRaceCleanupGoexitFixture":             properties(false),
+					"TestQuarantinedRaceFailfastRootFixture":              properties(true),
+					"TestQuarantinedRaceFailfastDescendantFixture":        properties(false),
+					"TestQuarantinedRaceFailfastDescendantFixture/child":  properties(true),
+					"TestQuarantinedRaceParallelFixture/isolated":         properties(false),
+					"TestQuarantinedRaceParallelRootsFixture/one":         properties(false),
+					"TestQuarantinedRaceParallelRootsFixture/two":         properties(false),
+					"TestQuarantinedRaceParallelCoverageFixture/isolated": properties(false),
+					"TestQuarantinedRaceParallelDurationFixture/isolated": properties(false),
+					"TestQuarantinedRaceParallelWaitDurationFixture/root": properties(false),
+					"TestQuarantinedRaceDynamicDescendantFixture/root":    properties(true),
+
+					"TestQuarantinedRaceManagedDescendantFixture/root":           properties(false),
+					"TestQuarantinedRaceManagedDescendantFixture/root/child":     properties(false),
+					"TestQuarantinedRaceOwnerGenerationFixture/root":             properties(true),
+					"TestQuarantinedRaceOwnerGenerationFixture/root/clear":       properties(false),
+					"TestQuarantinedRaceOwnerGenerationFixture/root/clear/owner": properties(true),
+					"TestQuarantinedRaceParallelATFFixture/root":                 properties(false),
+					"TestQuarantinedRaceParallelATFFixture/root/owner":           properties(true),
+
 					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
 					"TestQuarantinedRaceAncestorPanicFixture/isolated":       properties(false),
@@ -256,6 +268,33 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(dynamic, constants.TestIsAttempToFix, "true", 1)
 		checkSpansByTagValue(dynamic, constants.TestIsRetry, "true", 0)
 		checkSpansByTagValue(dynamic, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		os.Exit(0)
+	case "managed-descendant-masking":
+		if readPID("managed-descendant-run-result") != "true" {
+			panic("managed descendant failure changed the enclosing t.Run result")
+		}
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root", 1)
+		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
+		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root/child", 1)
+		checkSpansByTagValue(child, constants.TestStatus, constants.TestStatusFail, 1)
+		os.Exit(0)
+	case "managed-descendant-concurrent-failure":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root", 1)
+		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusFail, 1)
+		for _, name := range []string{"child", "sibling"} {
+			span := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root/"+name, 1)
+			checkSpansByTagValue(span, constants.TestStatus, constants.TestStatusFail, 1)
+		}
+		os.Exit(0)
+	case "owner-generation-finality":
+		inherited := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceOwnerGenerationFixture/root/clear/owner/inherited", 2)
+		checkSpansByTagValue(inherited, constants.TestFinalStatus, constants.TestStatusSkip, 2)
+		checkSpansByTagValue(inherited, constants.TestAttemptToFixPassed, "true", 2)
+		os.Exit(0)
+	case "parallel-atf-sibling":
+		owner := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelATFFixture/root/owner", 2)
+		checkSpansByTagValue(owner, constants.TestAttemptToFixPassed, "true", 1)
+		checkSpansByTagValue(owner, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 		os.Exit(0)
 	case "terminal-descendants":
 		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
@@ -548,6 +587,22 @@ func TestQuarantinedRaceParallelWaitDurationEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceDynamicDescendantFinalityEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "dynamic-descendant-finality", "^TestQuarantinedRaceDynamicDescendantFixture$")
+}
+
+func TestQuarantinedRaceManagedDescendantMaskingEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "managed-descendant-masking", "^TestQuarantinedRaceManagedDescendantFixture$")
+}
+
+func TestQuarantinedRaceManagedDescendantPreservesConcurrentFailureEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "managed-descendant-concurrent-failure", "^TestQuarantinedRaceManagedDescendantFixture$")
+}
+
+func TestQuarantinedRaceOwnerGenerationFinalityEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "owner-generation-finality", "^TestQuarantinedRaceOwnerGenerationFixture$")
+}
+
+func TestQuarantinedRaceParallelATFSiblingEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "parallel-atf-sibling", "^TestQuarantinedRaceParallelATFFixture$", "-test.timeout=15s")
 }
 
 func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
@@ -868,6 +923,65 @@ func TestQuarantinedRaceDynamicDescendantFixture(t *testing.T) {
 		}
 		require.NoError(t, os.WriteFile(marker, []byte("seen"), 0o600))
 		t.Run("dynamic", instrumentTestingTFunc(func(*testing.T) {}))
+	}))
+}
+
+func TestQuarantinedRaceManagedDescendantFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
+		if os.Getenv(quarantinedRaceIsolationFixtureEnv) == "managed-descendant-concurrent-failure" {
+			t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+				(*T)(t).Parallel()
+				time.Sleep(20 * time.Millisecond)
+				t.Error("managed descendant sentinel")
+			}))
+			t.Run("sibling", instrumentTestingTFunc(func(t *testing.T) {
+				(*T)(t).Parallel()
+				t.Error("unmanaged sibling sentinel")
+			}))
+			return
+		}
+		passed := t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+			t.Error("managed descendant sentinel")
+		}))
+		path := filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "managed-descendant-run-result")
+		require.NoError(t, os.WriteFile(path, []byte(strconv.FormatBool(passed)), 0o600))
+	}))
+}
+
+func TestQuarantinedRaceOwnerGenerationFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("clear", instrumentTestingTFunc(func(t *testing.T) {
+			t.Run("owner", instrumentTestingTFunc(func(t *testing.T) {
+				cfg, err := processRetryChildConfigFromEnv()
+				require.NoError(t, err)
+				if strings.HasSuffix(cfg.TestName, "/clear/owner") {
+					t.Run("inherited", instrumentTestingTFunc(func(*testing.T) {}))
+				}
+			}))
+		}))
+	}))
+}
+
+func TestQuarantinedRaceParallelATFFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
+		ready := make(chan struct{})
+		t.Run("owner", instrumentTestingTFunc(func(t *testing.T) {
+			(*T)(t).Parallel()
+			<-ready
+		}))
+		t.Run("sibling", instrumentTestingTFunc(func(t *testing.T) {
+			(*T)(t).Parallel()
+			close(ready)
+		}))
 	}))
 }
 

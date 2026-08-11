@@ -123,6 +123,7 @@ type processRetrySubtreeResult struct {
 	Source          *processRetryTestSource            `json:"source,omitempty"`
 	Coverage        []coverage.ProcessTestCoverageFile `json:"coverage,omitempty"`
 	order           uint64
+	masked          bool
 }
 
 func newQuarantinedRaceProcessContext(
@@ -327,6 +328,31 @@ func (cfg *processRetrySubtreeConfig) resolveDirective(name string) (processRetr
 	return resolved, attemptOwner
 }
 
+func (cfg *processRetrySubtreeConfig) exactManagedDescendant(name string) bool {
+	if cfg == nil || name == cfg.SelectedRoot {
+		return false
+	}
+	directive, ok := cfg.exactDirective(name)
+	return ok && (directive.Disabled || directive.Quarantined || directive.AttemptToFix)
+}
+
+func (cfg *processRetrySubtreeConfig) withinManagedDescendant(name string) bool {
+	if cfg == nil {
+		return false
+	}
+	for candidate := name; candidate != cfg.SelectedRoot && processRetryNameWithinRoot(candidate, cfg.SelectedRoot); {
+		if cfg.exactManagedDescendant(candidate) {
+			return true
+		}
+		separator := strings.LastIndexByte(candidate, '/')
+		if separator < 0 {
+			break
+		}
+		candidate = candidate[:separator]
+	}
+	return false
+}
+
 func (cfg *processRetrySubtreeConfig) itrDecision(name string, meta processRetrySubtreeDirective, sourceFunc *runtime.Func) (skip, forced bool) {
 	idx, ok := slices.BinarySearchFunc(cfg.ITR, name, func(candidate processRetrySubtreeITR, name string) int {
 		return strings.Compare(candidate.TestName, name)
@@ -405,6 +431,61 @@ type quarantinedRaceChildState struct {
 	parallelStarted atomic.Bool
 	parallelDone    chan error
 	coverage        quarantinedRaceCoverageCoordinator
+	unmaskedFailure atomic.Bool
+}
+
+type quarantinedRaceFailureEntry struct {
+	mu     *sync.RWMutex
+	failed *bool
+	before bool
+}
+
+type quarantinedRaceFailureSnapshot struct {
+	entries []quarantinedRaceFailureEntry
+}
+
+// captureQuarantinedRaceManagedFailure records the native failure bits which an
+// exact managed descendant may set through testing.common.Fail. Restoring them
+// lets the descendant remain failed in CI Visibility without changing its
+// enclosing t.Run result; independently owned failures remain sticky in state.
+func captureQuarantinedRaceManagedFailure(t *testing.T, cfg *processRetrySubtreeConfig) *quarantinedRaceFailureSnapshot {
+	if t == nil || cfg == nil || !cfg.exactManagedDescendant(t.Name()) {
+		return nil
+	}
+	layout := getTestingInternalsLayout()
+	if layout == nil || layout.disabled || !layout.testFieldsOK {
+		return nil
+	}
+	snapshot := &quarantinedRaceFailureSnapshot{}
+	for base := commonBaseForTest(t, layout); base != nil; base = pointerWord(base, layout.common.parent) {
+		entry := quarantinedRaceFailureEntry{
+			mu:     fieldPtr[sync.RWMutex](base, layout.common.mu),
+			failed: fieldPtr[bool](base, layout.common.failed),
+		}
+		name := fieldPtr[string](base, layout.common.name)
+		entry.mu.RLock()
+		entry.before = *entry.failed
+		currentName := *name
+		entry.mu.RUnlock()
+		snapshot.entries = append(snapshot.entries, entry)
+		if currentName == cfg.SelectedRoot {
+			runtime.KeepAlive(t)
+			return snapshot
+		}
+	}
+	runtime.KeepAlive(t)
+	return nil
+}
+
+func (snapshot *quarantinedRaceFailureSnapshot) restore(unmaskedFailure bool) {
+	if snapshot == nil {
+		return
+	}
+	for idx, entry := range snapshot.entries {
+		entry.mu.Lock()
+		*entry.failed = entry.before || (idx > 0 && unmaskedFailure)
+		entry.mu.Unlock()
+	}
 }
 
 type quarantinedRaceCoverageInterval struct {
@@ -478,13 +559,18 @@ func (s *quarantinedRaceChildState) finishAggregateCoverage(name string) {
 	s.aggregateFinish.Do(s.finishAggregate)
 }
 
-func (s *quarantinedRaceChildState) append(result processRetrySubtreeResult) {
+func (s *quarantinedRaceChildState) append(result processRetrySubtreeResult) bool {
 	if s == nil {
-		return
+		return false
+	}
+	unmaskedFailure := result.Failed && !result.masked
+	if unmaskedFailure {
+		s.unmaskedFailure.Store(true)
 	}
 	s.mu.Lock()
 	s.results = append(s.results, result)
 	s.mu.Unlock()
+	return unmaskedFailure
 }
 
 func (s *quarantinedRaceChildState) snapshot() []processRetrySubtreeResult {
@@ -606,6 +692,8 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		return
 	}
 	name := t.Name()
+	failureSnapshot := captureQuarantinedRaceManagedFailure(t, state.cfg)
+	maskedByManagedDescendant := state.cfg.withinManagedDescendant(name)
 	execMeta := createTestMetadata(t, nil)
 	execMeta.test = parent.test
 	execMeta.processRetryOwner = parent
@@ -746,6 +834,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			Source:          source,
 			Coverage:        files,
 			order:           order,
+			masked:          maskedByManagedDescendant,
 		}
 		if fields != nil {
 			result.OutputTail, result.OutputTruncated = truncateProcessRetrySubtreeOutput(fields.GetOutput())
@@ -776,7 +865,12 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		default:
 			result.Status = processRetryStatusPass
 		}
-		state.append(result)
+		if state.append(result) {
+			// A managed sibling may concurrently restore its own propagated failure.
+			// Reapply this independently owned failure in either completion order.
+			t.Fail()
+		}
+		failureSnapshot.restore(state.unmaskedFailure.Load())
 		if unexpected && fields != nil && fields.mu != nil && fields.finished != nil {
 			// runtime.Goexit bypasses the normal return to testing.tRunner. The
 			// subtree result is committed, so consume that terminal before the
@@ -1034,7 +1128,7 @@ func runQuarantinedRaceProcessIsolation(
 	invocations := make([]quarantinedRaceInvocation, 0, rootTotal)
 
 	for idx := 0; idx < rootTotal; idx++ {
-		attempt := runQuarantinedRaceInvocation(t, processCtx, lease, cfg, idx, parallelBridge)
+		attempt := runQuarantinedRaceInvocation(t, processCtx, lease, cfg, cfg.SelectedRoot, idx, parallelBridge)
 		if processRetryInfrastructureFailure(attempt) {
 			failQuarantinedRaceIsolation(t, testInfo, execMeta, attempt)
 			return
@@ -1093,7 +1187,7 @@ func continueQuarantinedRaceDescendantFamilies(
 			return stop, failed
 		}
 		for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
-			next := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, idx, parallelBridge)
+			next := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, cfg.SelectedRoot, idx, parallelBridge)
 			if processRetryInfrastructureFailure(next) {
 				failQuarantinedRaceIsolation(t, &commonInfo{
 					moduleName: testInfo.moduleName,
@@ -1161,15 +1255,16 @@ func runQuarantinedRaceInvocation(
 	processCtx *quarantinedRaceProcessContext,
 	lease *processRetryGroupLease,
 	cfg *processRetrySubtreeConfig,
+	runRoot string,
 	attemptIndex int,
 	parallelBridge func() error,
 ) processRetryAttemptResult {
 	deadline, deadlineOK := t.Deadline()
 	baseline := captureProcessRetryLaunchBaselineFromTemplate(processCtx.launchTemplate)
-	// The parent already admitted this root. Replacing only this invocation's
-	// selector lets the child re-enter required ancestors without executing a
-	// sibling that happened to match the user's broader -run expression.
-	baseline.argsSnapshot.runSelector = processRetryExactRunPattern(cfg.SelectedRoot)
+	// Initial roots use their exact selector. Descendant-owned ATF continuations
+	// re-enter their enclosing root so parallel scheduling siblings exist, while
+	// cfg.SelectedRoot still limits recording to the managed descendant subtree.
+	baseline.argsSnapshot.runSelector = processRetryExactRunPattern(runRoot)
 	attempt := runProcessRetryAttemptWithBaselineAndShutdown(
 		context.Background(),
 		processRetryChildConfig{
@@ -1282,12 +1377,12 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 	events := make([]replayEvent, 0, len(invocations))
 	appendEvent := func(invocation quarantinedRaceInvocation, result processRetrySubtreeResult) {
 		_, attemptOwner := invocation.cfg.resolveDirective(result.TestName)
-		if attemptOwner != "" && attemptOwner != invocation.cfg.SelectedRoot {
+		if result.TestName == attemptOwner && attemptOwner != invocation.cfg.SelectedRoot {
 			// A descendant-owned family starts fresh each time its enclosing
 			// selected root discovers it.
-			generations[result.TestName]++
+			generations[attemptOwner]++
 		}
-		family := familyKey{name: result.TestName, generation: generations[result.TestName]}
+		family := familyKey{name: result.TestName, generation: generations[attemptOwner]}
 		lastOccurrence[family] = len(events)
 		events = append(events, replayEvent{invocation: invocation, result: result, family: family, attemptOwner: attemptOwner})
 	}

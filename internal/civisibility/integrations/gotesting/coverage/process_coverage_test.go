@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 )
@@ -75,6 +76,40 @@ func TestFinalizeProcessCoverageProfilesWaitsForParentProfile(t *testing.T) {
 	merged, err = FinalizeProcessCoverageProfiles()
 	require.NoError(t, err)
 	require.False(t, merged)
+}
+
+func TestFinalizeProcessCoverageProfilesBeforeBackfillPreservesRealCounts(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+	dir := t.TempDir()
+	parentPath := filepath.Join(dir, "parent.out")
+	childPath := filepath.Join(dir, "child.out")
+	const profile = "mode: atomic\ngithub.com/example/project/pkg/file.go:1.1,1.2 1 %d\n"
+	require.NoError(t, os.WriteFile(parentPath, []byte(fmt.Sprintf(profile, 0)), 0o600))
+	require.NoError(t, os.WriteFile(childPath, []byte(fmt.Sprintf(profile, 1)), 0o600))
+	mode = "atomic"
+	modulePath = "github.com/example/project"
+	tearDown = func(_, _ string) (string, error) {
+		return "", errors.New("runtime snapshot should already exist")
+	}
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: parentPath}
+
+	require.NoError(t, MergeProcessCoverageProfile(childPath))
+	merged, err := FinalizeProcessCoverageProfiles()
+	require.NoError(t, err)
+	require.True(t, merged)
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"pkg/file.go": filebitmap.FromActiveRange(1, 1),
+		},
+		ActualSkips: 1,
+	})
+	result := FinalizeBackfill()
+	require.Empty(t, result.Reason)
+
+	parent, err := parseOrderedCoverProfile(parentPath)
+	require.NoError(t, err)
+	require.Equal(t, 1, parent.lines[1].block.count)
 }
 
 func TestFinalizeProcessCoverageProfilesRetainsInvocationMergeFailure(t *testing.T) {

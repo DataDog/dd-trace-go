@@ -409,8 +409,8 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
 			isolatedCoverageMerged, err := coverage.FinalizeProcessCoverageProfiles()
+			cov, corrected, publishCoverage := 0.0, false, true
 			if err != nil {
 				// A child profile that cannot be merged makes the parent report
 				// incomplete. Treat it as infrastructure failure, never as a
@@ -418,6 +418,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 				log.Error("civisibility.cov: failed to merge isolated process coverage: %s", err.Error())
 				exitCode = processRetryFailureExitCode
 			} else {
+				cov, corrected, publishCoverage = finalizeITRCoverageBackfill()
 				uploadFinalCoverageReport(settings)
 			}
 			if err != nil || !publishCoverage {
