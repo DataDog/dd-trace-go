@@ -70,6 +70,77 @@ cases:
       - Fails to demonstrate the standard Go middleware pattern (wrapping http.Handler)
       - Confuses middleware with a tracer integration by importing dd-trace-go packages unnecessarily
 
+  - id: dd-trace-go-tracer-doc-update-trigger
+    only_warn: true
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I'm adding a new tracer option, WithAdaptiveSampling, which lets users enable an adaptive
+      rate-sampling algorithm that adjusts itself based on traffic volume. Which files do I need
+      to read before making this change, and where should I document the new behavior once it's done?
+    expected_criteria:
+      - States that ddtrace/tracer/README.md must be read first for handling API changes, and
+        ddtrace/tracer/doc.go must be read for the tracer's existing abilities
+      - Identifies this as a significant feature (it changes tracer sampling behavior) and states
+        that doc.go must be updated to document it
+    bad_signals:
+      - Says no documentation update is required for this change
+      - Points only to the top-level project README.md or CONTRIBUTING.md instead of the tracer
+        package's own doc.go
+      - Does not mention reading README.md/doc.go before making the change
+
+  - id: dd-trace-go-tracer-sampling-env-config
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      Without changing any code, how can I configure the Go tracer at runtime to apply a 100%
+      sampling rate to spans named "web.request" from service "test-service", and how does this
+      interact with sampling rules already set via tracer.WithSamplingRules in code?
+    expected_criteria:
+      - Mentions the DD_TRACE_SAMPLING_RULES environment variable, set to a JSON array of objects
+      - States that setting this environment variable overrides sampling rules set programmatically
+        via tracer.WithSamplingRules
+    bad_signals:
+      - Says there is no way to configure sampling rules without changing code
+      - Gives an incorrect environment variable name
+      - Fails to mention that the environment variable takes precedence over WithSamplingRules
+
+  - id: dd-trace-go-tracer-span-limit
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      What happens in the Go tracer if a single trace accumulates an extremely large number of
+      spans, such as over 100,000?
+    expected_criteria:
+      - States that each trace has a hard limit of 100,000 spans
+      - States that once the limit is exceeded, the trace is dropped and a diagnostic log message
+        is emitted
+    bad_signals:
+      - Says there is no limit on the number of spans per trace
+      - Gives an incorrect limit value
+      - Says the trace is silently dropped with no diagnostic log message
+
+  - id: dd-trace-go-tracer-stats-cardinality-limits
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I have a high-cardinality service using client-side stats computation (WithStatsComputation)
+      in the Go tracer. What cardinality limits exist to protect memory usage, and what happens to
+      spans that exceed one of these limits?
+    expected_criteria:
+      - Mentions at least two of the specific cardinality limit controls (e.g. the whole-key limit
+        DD_TRACE_STATS_CARDINALITY_LIMIT / WithStatsCardinalityLimit, default 2048, and/or the
+        per-resource limit DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT / WithStatsResourceCardinalityLimit,
+        default 1024)
+      - States that spans exceeding a limit are still counted, but their grouping dimension is
+        replaced with a sentinel/placeholder value rather than the span being dropped
+      - Mentions the datadog.tracer.stats.collapsed_spans statsd metric used to observe when
+        collapsing occurs
+    bad_signals:
+      - Says spans exceeding a cardinality limit are dropped entirely
+      - Does not mention any specific cardinality limit env var or option
+      - Gives incorrect default values for the limits
+
 # ==== AppSec Tests ====
 
 # ==== Profiling Tests ====
