@@ -148,13 +148,18 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
+	// The agent snapshot is loaded once so agent_features and the protocol the
+	// endpoint probe targets cannot come from two different /info responses.
+	af := t.config.agent.load()
+	proto := t.config.effectiveTraceProtocolWithAgent(af)
+
 	// Determine the agent URL to use in the logs.
 	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
 	var agentURL string
 	if srcURL := t.config.internalConfig.RawAgentURL(); srcURL != nil && srcURL.Scheme == "unix" {
 		agentURL = srcURL.String()
 	} else {
-		agentURL = t.config.ddTransport.endpoint()
+		agentURL = t.config.ddTransport.endpoint(proto)
 	}
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
@@ -182,7 +187,7 @@ func logStartup(t *tracer) {
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  strconv.FormatBool(t.config.internalConfig.LogToStdout()),
-		AgentFeatures:               t.config.agent.load(),
+		AgentFeatures:               af,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         partialFlushEnabled,
@@ -203,7 +208,7 @@ func logStartup(t *tracer) {
 	}
 	if !t.config.internalConfig.LogToStdout() {
 		startupHeaders := traceTransportHeaders(t.config.internalConfig)
-		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol(), startupHeaders); err != nil {
+		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(proto), proto, startupHeaders); err != nil {
 			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}
