@@ -57,15 +57,17 @@ func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
 	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
 }
 
-// AgentNameWireSafe reports whether name can safely be written as a
-// propagating-tag value. The rules match the shared cross-language contract:
+// AgentNameWireSafe reports whether name can safely be written as a propagating-tag value.
 //
 //   - reject any byte outside the printable ASCII range [0x20, 0x7E]
-//   - reject comma (tagset delimiter) and semicolon / tilde (W3C tracestate
-//     characters sanitized by composeTracestate, which would corrupt attribution)
+//   - reject comma (x-datadog-tags entry delimiter)
+//   - reject semicolon and tilde (W3C tracestate characters that composeTracestate sanitizes
+//     to "_", which would corrupt the attribution name seen by the downstream service)
 //
-// The length check is omitted here; callers are responsible for verifying that
-// adding the name tag does not exceed the x-datadog-tags budget.
+// Note: dd-trace-js does not reject semicolons or tildes — it relies on the x-datadog-tags
+// encoder alone. Go applies the stricter rule because names may also travel via W3C tracestate.
+//
+// The length check is delegated to callers.
 func AgentNameWireSafe(name string) bool {
 	for i := 0; i < len(name); i++ {
 		b := name[i]
