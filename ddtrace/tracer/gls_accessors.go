@@ -10,10 +10,10 @@
 // getg() and the injected g.__dd_gls_v2 field exist. otelc rewrites the package
 // clause and drops the build constraint on the way in.
 //
-// The symbol names stay "orchestrion"-prefixed on purpose: the consumer is
-// internal/orchestrion/gls.go, which declares the matching //go:linkname vars and
-// is shared unmodified between orchestrion and otelc builds. Renaming either side
-// silently breaks the link, leaving the GLS permanently empty.
+// The "orchestrion" prefix on the symbols is load-bearing: they are linked
+// against the matching //go:linkname vars in internal/orchestrion/gls.go, which
+// is shared unmodified between orchestrion and otelc builds. Renaming either
+// side silently breaks the link, leaving the GLS permanently empty.
 package tracer
 
 import _ "unsafe" // for go:linkname

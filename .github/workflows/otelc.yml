@@ -105,11 +105,9 @@ jobs:
       # GitHub runs this on a candidate merge commit, so dependency updates landed
       # on main since the branch was cut can leave go.mod/go.sum stale.
       #
-      # otelc/all is tidied too, unlike the orchestrion lane which only needs the
-      # test module. Auto-pin walks tool files recursively and loads each hop from
-      # the directory of the tool file that declared it, so following
-      # _integration/otel.instrumentation.go into otelc/all runs a read-only
-      # `go list` inside otelc/all; a stale go.mod there fails the whole lane with
+      # otelc/all is tidied too, unlike the orchestrion lane. Auto-pin follows
+      # _integration/otel.instrumentation.go into otelc/all and runs a read-only
+      # `go list` there, so a stale go.mod in otelc/all fails the whole lane with
       # "updates to go.mod needed".
       - name: Run 'go mod tidy'
         shell: bash
@@ -125,11 +123,9 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           otelc version
 
-          # Explicit rather than discovered. Only the foundation lanes exist today,
-          # and every one of them is verifiable here; a discovery loop would have
-          # to map _integration directory names onto contrib paths, which is not a
-          # mechanical transformation (e.g. _integration/redigo lives at
-          # contrib/gomodule/redigo). Each migrated contrib adds its package below.
+          # Listed explicitly: _integration directory names do not map mechanically
+          # onto contrib paths (_integration/redigo lives at contrib/gomodule/redigo),
+          # so this cannot be discovered. Each migrated contrib adds its package here.
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
           export PACKAGE_NAMES="\
             ${PREFIX}/otelc \
@@ -192,10 +188,8 @@ jobs:
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
-  # A single join point, so branch protection has one check to require.
-  # Catches breakage the suites above cannot see, because they are all
-  # applications inside this module: otelc pulling an internal package into the
-  # file it generates, and anything else that only fails for a real user.
+  # Catches breakage the suites above cannot see, since they are all applications
+  # inside this module. See scripts/build_otelc_external_app.sh.
   external-app:
     name: External Application Build
     env:
@@ -234,6 +228,7 @@ jobs:
         shell: bash
         run: ./scripts/build_otelc_external_app.sh
 
+  # A single join point, so branch protection has one check to require.
   integration-test-done:
     name: OTelc Integration Tests
     needs:

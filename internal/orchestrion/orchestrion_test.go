@@ -14,12 +14,11 @@ import (
 )
 
 // TestGLSActive pins the split between the two predicates: Enabled names the
-// specific tool (it feeds the orchestrion_enabled telemetry config, so it must
-// stay false under otelc), while glsActive answers the question every gate in
-// this package actually asks, which is whether the GLS was woven in at all.
+// specific tool and must stay false under otelc, while glsActive reports whether
+// the GLS was woven in at all.
 //
 // Only the orchestrion input is settable from here, since otelc's flag lives in
-// another package. The otelc side is covered end to end by
+// another package. The otelc side is covered by
 // internal/orchestrion/_integration/gls under `otelc go test`.
 func TestGLSActive(t *testing.T) {
 	orig := enabled

@@ -33,15 +33,13 @@ enable_otelc_flag:
 # Goroutine-local storage: the storage layer, woven into the runtime package
 # ---------------------------------------------------------------------------
 
-# Goroutine Local Storage (GLS) storage layer. This is not meant to be used
-# directly by end users: it exists so tracer internals can forward trace context
-# through call sites that have no context.Context to carry it.
+# Goroutine Local Storage (GLS) storage layer, so tracer internals can forward
+# trace context through call sites that have no context.Context to carry it.
 #
 # The otelc port of the runtime aspects in
 # ../../internal/orchestrion/gls.orchestrion.yml. Consumed by
 # ../../internal/orchestrion/gls.go, which links to the accessors in
-# gls_accessors.go and falls back to no-ops when they are absent (a plain,
-# non-instrumented build).
+# gls_accessors.go and falls back to no-ops when they are absent.
 #
 # Storage alone does nothing. It also needs the gate in internal/orchestrion
 # (glsActive) and the span lifecycle rules below, which are what push spans.
@@ -79,21 +77,16 @@ gls_goexit1_reset:
 # ---------------------------------------------------------------------------
 
 # GLS lifecycle for active spans, the otelc port of the `tracer-internal` aspects
-# in orchestrion.yml. Read that file for why each injection is where it is; the
-# reasoning is identical and is not duplicated here.
+# in orchestrion.yml. See that file for why each injection sits where it does.
 #
 # The tracer source stays GLS-agnostic, so a plain build pays nothing. These rules
-# weave the push, the read fallback, the pop, and the liveness cell. Without them
-# the storage rules above are inert, because nothing ever puts a span into them.
+# weave the push, the read fallback, the pop, and the liveness cell.
 #
 # IDENTIFIER COUPLING: otelc's inject_code takes a raw string with no template
 # variables, unlike orchestrion's templates which resolve parameters positionally
 # via `.Function.Argument`. The receiver and parameter names below (`s`, `ctx`)
-# are therefore written literally and must match the tracer source. Renaming one
-# there normally breaks the otelc build, because the injected code then names an
-# identifier that no longer exists; gls_otelc_identifiers_test.go exists to turn
-# that into a plain `go test` failure that points here, rather than a compile
-# error inside an instrumented copy of the tracer.
+# are therefore literal and must match the tracer source.
+# gls_otelc_identifiers_test.go pins them.
 
 span_gls_fields:
   target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
@@ -178,20 +171,16 @@ span_gls_clear:
 # init has run, so a span emitted from an init is lost here but captured under
 # orchestrion. Everything after main begins is identical.
 #
-# The faithful version was tried and reverted. Injecting a `func init()` needs
-# add_file, and add_file has no selectors: it applies to the target package as a
-# whole, which under `otelc go test` includes the generated test-main. Two things
-# then go wrong. otelc emits an empty `package` clause into that compile unit, so
-# the build fails outright, and even if it did not, the injected init would start
-# a second tracer underneath the integration harness, which bootstraps its own.
-# `where: file: {is_test: false}` does not help, because file predicates are not
-# honored for add_file. Both are upstream issues; revisit when they are fixed.
+# Injecting a `func init()` instead would need add_file, which has no selectors:
+# it applies to the whole target package, which under `otelc go test` includes the
+# generated test-main. That both fails the build (otelc emits an empty `package`
+# clause there) and would start a second tracer underneath the integration
+# harness. `where: file: {is_test: false}` is not honored for add_file. Upstream
+# issues; revisit when fixed.
 #
-# A point-selector rule like the one below does not have that problem: `target:
-# main` combined with `where.func` does not match a test-main compile unit, so
-# this never fires under `otelc go test`. The regression gate for that is
-# internal/orchestrion/_integration/otelc-autostart, since a silent double start
-# would be hard to spot.
+# `target: main` plus `where.func` does not match a test-main compile unit, so the
+# rule below never fires under `otelc go test`.
+# internal/orchestrion/_integration/otelc-autostart guards that.
 
 create_tracer:
   target: main
