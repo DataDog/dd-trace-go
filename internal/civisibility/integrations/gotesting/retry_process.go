@@ -3228,6 +3228,12 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 					observation.subtree.beginAggregate = func() {
 						observation.aggregate, observation.aggregateErr = coverage.BeginProcessCoverageProfile()
 					}
+					observation.subtree.finishAggregate = func() {
+						if observation.aggregateErr == nil && observation.aggregate != nil {
+							observation.aggregateErr = observation.aggregate.WriteDelta(processRetrySubtreeCoveragePath(cfg.ResultPath))
+						}
+						observation.aggregate = nil
+					}
 				}
 				observation.subtree.parallelBridge = control.childRootParallelBridge
 				execMeta.quarantinedRaceChild = observation.subtree

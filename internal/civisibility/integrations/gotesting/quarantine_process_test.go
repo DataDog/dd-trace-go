@@ -66,17 +66,24 @@ func TestQuarantinedRaceAttemptToFixSettingIsTotalExecutionCount(t *testing.T) {
 }
 
 func TestQuarantinedRaceAggregateCoverageStartsAtSelectedRoot(t *testing.T) {
-	calls := 0
+	starts, finishes := 0, 0
 	state := newQuarantinedRaceChildState(&processRetrySubtreeConfig{SelectedRoot: "TestCheckout/card"})
-	state.beginAggregate = func() { calls++ }
+	state.beginAggregate = func() { starts++ }
+	state.finishAggregate = func() { finishes++ }
 
 	state.beginAggregateCoverage("TestCheckout")
 	state.beginAggregateCoverage("TestCheckout/card/visa")
-	assert.Zero(t, calls)
+	state.finishAggregateCoverage("TestCheckout")
+	state.finishAggregateCoverage("TestCheckout/card/visa")
+	assert.Zero(t, starts)
+	assert.Zero(t, finishes)
 
 	state.beginAggregateCoverage("TestCheckout/card")
 	state.beginAggregateCoverage("TestCheckout/card")
-	assert.Equal(t, 1, calls)
+	state.finishAggregateCoverage("TestCheckout/card")
+	state.finishAggregateCoverage("TestCheckout/card")
+	assert.Equal(t, 1, starts)
+	assert.Equal(t, 1, finishes)
 }
 
 func TestQuarantinedRaceITRDecisionPreservesSourceUnskippable(t *testing.T) {

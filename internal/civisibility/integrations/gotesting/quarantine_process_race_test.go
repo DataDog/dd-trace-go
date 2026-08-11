@@ -79,12 +79,15 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		&net.TestManagementTestsResponseDataModules{Modules: map[string]net.TestManagementTestsResponseDataSuites{
 			module: {Suites: map[string]net.TestManagementTestsResponseDataTests{
 				suite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
-					"TestQuarantinedRaceFixture":               properties(false),
-					"TestQuarantinedPanicFixture":              properties(false),
-					"TestQuarantinedRaceSecondFixture":         properties(false),
-					"TestQuarantinedRaceAttemptToFixFixture":   properties(true),
-					"TestQuarantinedRaceLeafFixture/card/visa": properties(false),
-					"TestQuarantinedRaceNestedFixture/card":    properties(false),
+					"TestQuarantinedRaceFixture":                           properties(false),
+					"TestQuarantinedPanicFixture":                          properties(false),
+					"TestQuarantinedRaceSecondFixture":                     properties(false),
+					"TestQuarantinedRaceAttemptToFixFixture":               properties(true),
+					"TestQuarantinedRaceIndependentATFFixture":             properties(true),
+					"TestQuarantinedRaceIndependentATFFixture/clear":       properties(false),
+					"TestQuarantinedRaceIndependentATFFixture/clear/owner": properties(true),
+					"TestQuarantinedRaceLeafFixture/card/visa":             properties(false),
+					"TestQuarantinedRaceNestedFixture/card":                properties(false),
 					"TestQuarantinedRaceNestedFixture/card/disabled": {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
 					},
@@ -102,6 +105,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceFailfastDescendantFixture/child":     properties(true),
 					"TestQuarantinedRaceParallelFixture/isolated":            properties(false),
 					"TestQuarantinedRaceParallelCoverageFixture/isolated":    properties(false),
+					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
 					"TestQuarantinedRaceAncestorPanicFixture/isolated":       properties(false),
 					"TestQuarantinedRaceAncestorFailureFixture/isolated":     properties(false),
@@ -135,6 +139,32 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	}
 	spans := mTracer.FinishedSpans()
 	switch scenario {
+	case "nested-attempt-family":
+		pids := map[string]struct{}{}
+		entries, err := os.ReadDir(pidDir)
+		if err != nil {
+			panic(err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "nested-attempt-owner-") {
+				pids[readPID(entry.Name())] = struct{}{}
+			}
+		}
+		if len(pids) != 4 {
+			panic(fmt.Sprintf("independent nested attempt family used %d child processes, want 4", len(pids)))
+		}
+		delete(pids, parentPID)
+		if len(pids) != 4 {
+			panic("independent nested attempt family ran in the parent process")
+		}
+		ownerSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceIndependentATFFixture/clear/owner", 4)
+		checkSpansByTagValue(ownerSpans, constants.TestIsRetry, "true", 2)
+		checkSpansByTagValue(ownerSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2)
+		checkSpansByTagValue(ownerSpans, constants.TestAttemptToFixPassed, "true", 2)
+		checkSpansByTagValue(ownerSpans, constants.TestFinalStatus, constants.TestStatusSkip, 2)
+		os.Exit(0)
+	case "nested-aggregate-coverage", "nested-aggregate-coverage-control":
+		os.Exit(0)
 	case "parallel-admission":
 		if readPID("parallel-child") == parentPID || readPID("parallel-sibling") != parentPID {
 			panic("parallel quarantined root did not overlap its parent-process sibling")
@@ -407,6 +437,22 @@ func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$")
 }
 
+func TestQuarantinedRaceNestedAggregateCoverageEndToEnd(t *testing.T) {
+	if testing.CoverMode() == "" {
+		t.Skip("requires coverage instrumentation")
+	}
+	controlPath := filepath.Join(t.TempDir(), "control.out")
+	runQuarantinedRaceEndToEnd(t, "nested-aggregate-coverage-control", "^TestQuarantinedRaceAggregateCoverageFixture$", "-test.coverprofile="+controlPath)
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	runQuarantinedRaceEndToEnd(t, "nested-aggregate-coverage", "^TestQuarantinedRaceAggregateCoverageFixture$", "-test.coverprofile="+profilePath)
+	controlCount := processCoverageCountForFunction(t, controlPath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount")
+	require.Equal(t, controlCount+1, processCoverageCountForFunction(t, profilePath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount"))
+}
+
+func TestQuarantinedRaceNestedAttemptFamilyEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "nested-attempt-family", "^TestQuarantinedRaceIndependentATFFixture$")
+}
+
 func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "terminal-descendants", "^TestQuarantinedRaceTerminalDescendantsFixture$")
 }
@@ -441,8 +487,16 @@ func runQuarantinedRaceEndToEnd(t *testing.T, scenario, pattern string, extraArg
 
 func requireFunctionCovered(t *testing.T, profilePath, functionName string) {
 	t.Helper()
+	if processCoverageCountForFunction(t, profilePath, "quarantine_process.go", functionName) > 0 {
+		return
+	}
+	t.Fatalf("%s has no covered block in merged profile %s", functionName, profilePath)
+}
+
+func processCoverageCountForFunction(t *testing.T, profilePath, sourcePath, functionName string) int {
+	t.Helper()
 	fset := token.NewFileSet()
-	parsed, err := parser.ParseFile(fset, "quarantine_process.go", nil, 0)
+	parsed, err := parser.ParseFile(fset, sourcePath, nil, 0)
 	require.NoError(t, err)
 	start, finish := 0, 0
 	for _, declaration := range parsed.Decls {
@@ -455,18 +509,19 @@ func requireFunctionCovered(t *testing.T, profilePath, functionName string) {
 	require.NotZero(t, start)
 	profile, err := os.ReadFile(profilePath)
 	require.NoError(t, err)
+	total := 0
 	for _, line := range strings.Split(string(profile), "\n") {
 		separator := strings.LastIndexByte(line, ':')
-		if separator < 0 || !strings.HasSuffix(filepath.ToSlash(line[:separator]), "/gotesting/quarantine_process.go") {
+		if separator < 0 || !strings.HasSuffix(filepath.ToSlash(line[:separator]), "/gotesting/"+filepath.Base(sourcePath)) {
 			continue
 		}
 		var startLine, startColumn, endLine, endColumn, statements, count int
 		if _, err := fmt.Sscanf(line[separator+1:], "%d.%d,%d.%d %d %d", &startLine, &startColumn, &endLine, &endColumn, &statements, &count); err == nil &&
 			startLine <= finish && endLine >= start && count > 0 {
-			return
+			total += count
 		}
 	}
-	t.Fatalf("%s has no covered block in merged profile %s", functionName, profilePath)
+	return total
 }
 
 func writeQuarantinedRaceIsolationPID(t *testing.T, name string) {
@@ -529,6 +584,17 @@ func TestQuarantinedRaceAttemptToFixFixture(t *testing.T) {
 	require.NoError(t, err)
 	writeQuarantinedRaceIsolationPID(t, "atf-"+strconv.Itoa(cfg.Attempt))
 	t.Run("child", instrumentTestingTFunc(func(*testing.T) {}))
+}
+
+func TestQuarantinedRaceIndependentATFFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("clear", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("owner", instrumentTestingTFunc(func(t *testing.T) {
+			writeQuarantinedRaceIsolationPID(t, "nested-attempt-owner-"+strconv.Itoa(os.Getpid()))
+		}))
+	}))
 }
 
 func TestQuarantinedRaceLeafFixture(t *testing.T) {
@@ -630,6 +696,18 @@ func TestQuarantinedRaceParallelCoverageFixture(t *testing.T) {
 	}))
 	close(released)
 }
+
+func TestQuarantinedRaceAggregateCoverageFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("isolated", instrumentTestingTFunc(func(*testing.T) {}))
+	if os.Getenv(quarantinedRaceIsolationFixtureEnv) == "nested-aggregate-coverage" {
+		quarantinedRaceAncestorCoverage.Store(int64(processRetryAttemptToFixExecutionCount(1)))
+	}
+}
+
+var quarantinedRaceAncestorCoverage atomic.Int64
 
 func TestQuarantinedRaceTerminalDescendantsFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {

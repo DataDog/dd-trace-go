@@ -397,6 +397,8 @@ type quarantinedRaceChildState struct {
 	impacted        *impactedtests.ImpactedTestAnalyzer
 	aggregateOnce   sync.Once
 	beginAggregate  func()
+	aggregateFinish sync.Once
+	finishAggregate func()
 	parallelBridge  func() error
 	parallelOnce    sync.Once
 	parallelStarted atomic.Bool
@@ -420,6 +422,13 @@ func (s *quarantinedRaceChildState) beginAggregateCoverage(name string) {
 		return
 	}
 	s.aggregateOnce.Do(s.beginAggregate)
+}
+
+func (s *quarantinedRaceChildState) finishAggregateCoverage(name string) {
+	if s == nil || s.cfg == nil || name != s.cfg.SelectedRoot || s.finishAggregate == nil {
+		return
+	}
+	s.aggregateFinish.Do(s.finishAggregate)
 }
 
 func (s *quarantinedRaceChildState) append(result processRetrySubtreeResult) {
@@ -636,6 +645,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			// The parent replays this recorded panic. Re-panicking here would let
 			// testing terminate the child before it can write the subtree result.
 		}
+		state.finishAggregateCoverage(name)
 
 		if coverageLocked {
 			defer parent.processRetryCoverageMu.Unlock()
@@ -950,7 +960,8 @@ func runQuarantinedRaceProcessIsolation(
 		rootTotal = processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries)
 	}
 	invocations := make([]quarantinedRaceInvocation, 0, rootTotal)
-	failfastStopped := false
+
+attempts:
 	for idx := 0; idx < rootTotal; idx++ {
 		attempt := runQuarantinedRaceInvocation(t, processCtx, lease, cfg, idx, parallelBridge)
 		if processRetryInfrastructureFailure(attempt) {
@@ -962,14 +973,14 @@ func runQuarantinedRaceProcessIsolation(
 		})
 		if quarantinedRaceFailfastStopsContinuation(attempt) {
 			invocations[len(invocations)-1].finalBecauseOfFailfast = true
-			failfastStopped = true
 			break
 		}
-	}
-
-	if !cfg.OwnsAttemptToFix && cfg.AttemptToFixRetries > 0 && !failfastStopped {
-	descendantRetries:
-		for _, result := range invocations[0].attempt.Result.Subtests {
+		if cfg.AttemptToFixRetries <= 0 {
+			continue
+		}
+		// Continue independently owned descendant families inside every
+		// enclosing root execution, not as part of the root's retry sequence.
+		for _, result := range attempt.Result.Subtests {
 			if !result.AttemptToFixOwn {
 				continue
 			}
@@ -994,7 +1005,7 @@ func runQuarantinedRaceProcessIsolation(
 				})
 				if quarantinedRaceFailfastStopsContinuation(attempt) {
 					invocations[len(invocations)-1].finalBecauseOfFailfast = true
-					break descendantRetries
+					break attempts
 				}
 			}
 		}
@@ -1177,6 +1188,13 @@ func replayQuarantinedRaceEvent(
 	_, attemptOwner := invocation.cfg.resolveDirective(result.TestName)
 	ownsAttemptToFix := attemptOwner == result.TestName
 	prior := outcomes[result.TestName]
+	attemptIndex := invocation.attemptIndex
+	if attemptOwner != "" && attemptOwner != invocation.cfg.SelectedRoot {
+		// A descendant that cleared an inherited directive and started its own
+		// family is on its first execution in this enclosing invocation.
+		prior = retryOutcomeAccumulator{}
+		attemptIndex = 0
+	}
 	execMeta := &testExecutionMetadata{
 		identity:                      identity,
 		isQuarantined:                 result.Quarantined,
@@ -1194,9 +1212,9 @@ func replayQuarantinedRaceEvent(
 	}
 	if attemptOwner != "" {
 		attemptTotal := processRetryAttemptToFixExecutionCount(invocation.cfg.AttemptToFixRetries)
-		execMeta.isARetry = invocation.attemptIndex > 0
-		execMeta.isLastRetry = invocation.finalBecauseOfFailfast || invocation.attemptIndex == attemptTotal-1
-		execMeta.remainingRetries = int64(attemptTotal - invocation.attemptIndex)
+		execMeta.isARetry = attemptIndex > 0
+		execMeta.isLastRetry = invocation.finalBecauseOfFailfast || attemptIndex == attemptTotal-1
+		execMeta.remainingRetries = int64(attemptTotal - attemptIndex)
 		execMeta.initialRetryCount = int64(invocation.cfg.AttemptToFixRetries)
 		execMeta.initialRetryCountSet = true
 		execMeta.retryContinuationDecided = true
