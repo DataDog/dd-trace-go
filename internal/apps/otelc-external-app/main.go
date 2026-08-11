@@ -4,8 +4,7 @@
 // Copyright 2026-present Datadog, Inc.
 
 // Command otelc-external-app stands in for a customer application built with
-// otelc. Built by scripts/build_otelc_external_app.sh, which explains what it
-// catches. Not a scenario, so it is not registered in scenario_test.go.
+// otelc. Built by scripts/build_otelc_external_app.sh.
 package main
 
 import (
@@ -15,9 +14,8 @@ import (
 )
 
 func main() {
-	// Referencing the tracer keeps the dependency real rather than a bare
-	// require, so the build exercises the same package graph a customer
-	// application pulls in.
+	// Referencing the tracer keeps the dependency real rather than a bare require,
+	// so the build pulls in the same package graph a customer application would.
 	span := tracer.StartSpan("otelc.external.check")
 	span.Finish()
 

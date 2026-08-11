@@ -13,10 +13,6 @@ import (
 
 // glsWoven reports whether this build has the goroutine-local storage woven in,
 // by either orchestrion or otelc. Both inject the same runtime.g field, the same
-// pair of linknamed accessors, and the same span lifecycle calls, so everything
-// the tests in this package assert about GLS behaviour has to hold identically
-// under both. Gating on one tool would silently stop covering the other.
-//
-// The orchestrion-specific signal stays available as orchestrionEnabled, which
-// TestBuiltWithOrchestrion cross-checks against built.WithOrchestrion.
+// pair of linknamed accessors, and the same span lifecycle calls, so the tests in
+// this package must hold identically under either one.
 var glsWoven = built.WithOrchestrion || otelc.Enabled()

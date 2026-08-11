@@ -6,10 +6,10 @@
 // Command otelc-autostart proves that otelc starts the tracer on its own, the
 // way it must for a real application.
 //
-// The integration harness cannot show this: it calls tracertest.Bootstrap
-// itself, so a tracer is always running there regardless of whether the build
-// injected one. This command deliberately never calls tracer.Start, so the only
-// way the span below reaches an agent is if the build injected the start for it.
+// The integration harness cannot show this: it calls tracertest.Bootstrap itself,
+// so a tracer is always running there regardless of what the build injected. This
+// command never calls tracer.Start, so the span below only reaches an agent if
+// the build injected the start for it.
 //
 //	# nothing is emitted: no tracer was ever started
 //	go run ./otelc-autostart
@@ -17,9 +17,9 @@
 //	# the span is emitted: otelc injected tracer.Start into main
 //	otelc go run ./otelc-autostart
 //
-// The companion test drives both of those and asserts on what a stub agent
-// received, so the negative build is what distinguishes "otelc injected the
-// tracer" from "the app traced itself".
+// The companion test drives both and asserts on what a stub agent received. The
+// negative build is what separates "otelc injected the tracer" from "the app
+// traced itself".
 package main
 
 import (
@@ -34,16 +34,15 @@ import (
 const spanName = "otelc.autostart"
 
 func main() {
-	// Reported on stdout so the test can tell a failed injection apart from a
-	// failed flush: no span AND enabled=false means the rules never applied,
-	// while no span with enabled=true points at the tracer-start rule.
+	// Lets the test tell a failed injection apart from a failed flush: no span
+	// with enabled=false means no rule applied, no span with enabled=true points
+	// at the tracer-start rule alone.
 	fmt.Printf("otelc.Enabled=%t\n", otelc.Enabled())
 
 	span := tracer.StartSpan(spanName)
 	span.Finish()
 
-	// The tracer is stopped by the injected `defer tracer.Stop()`, which is what
-	// flushes the span. Returning from main normally is therefore required;
-	// os.Exit here would skip the deferred stop and drop the span.
+	// The injected `defer tracer.Stop()` is what flushes the span, so main has to
+	// return normally. os.Exit here would skip it and drop the span.
 	fmt.Fprintln(os.Stderr, "otelc-autostart: done")
 }

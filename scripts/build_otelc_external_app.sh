@@ -6,11 +6,11 @@
 
 # Builds internal/apps/otelc-external-app with otelc.
 #
-# Every otelc suite in this repository is an application under
-# github.com/DataDog/dd-trace-go/v2/..., so they all miss anything that only
-# breaks for users outside it, such as otelc pulling an internal package into
-# the file it generates in the application's main package. That app's module
-# path is third-party, so this catches it.
+# Every other otelc suite here is an application under
+# github.com/DataDog/dd-trace-go/v2/..., so none of them catch what only breaks
+# outside it, such as otelc pulling an internal package into the file it
+# generates in the application's main package. This app's module path is
+# third-party.
 
 set -euo pipefail
 

@@ -7,15 +7,12 @@
 // time by otelc, the OpenTelemetry Go compile-time instrumentation tool
 // (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation).
 //
-// It is the otelc counterpart of internal/orchestrion's Enabled, and exists for
-// the same reason: code that only makes sense in an auto-instrumented build has
-// to be able to tell, at runtime, whether the weaving actually happened.
+// It is the otelc counterpart of internal/orchestrion's Enabled.
 package otelc
 
 // enabled is flipped to true at build time by the assign_value rule in
-// otelc.yaml. Orchestrion does the equivalent through its //orchestrion:enabled
-// directive; otelc has no directive mechanism for this, so the rule matches the
-// variable by name instead. Renaming it silently disables every otelc build.
+// ddtrace/tracer/otelc.yaml. The rule matches this variable by name, so renaming
+// it silently disables every otelc build.
 var enabled = false
 
 // Enabled reports whether the current build was compiled with otelc.

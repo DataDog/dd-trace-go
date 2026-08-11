@@ -28,12 +28,10 @@ func Enabled() bool {
 
 // glsActive reports whether this build has the goroutine-local storage woven in,
 // under either orchestrion or otelc. Both tools inject the same runtime.g field
-// and the same pair of linknamed accessors that gls.go consumes, so everything in
-// this package works identically once either one is present.
+// and the same pair of linknamed accessors that gls.go consumes.
 //
-// Kept separate from [Enabled] deliberately: Enabled also drives
-// orchestrion-specific reporting (the orchestrion_enabled telemetry config), and
-// making it true for otelc builds would misreport which tool was used.
+// It stays separate from [Enabled], which feeds the orchestrion_enabled telemetry
+// config and would misreport the tool if it were true under otelc.
 func glsActive() bool {
 	return enabled || otelc.Enabled()
 }
