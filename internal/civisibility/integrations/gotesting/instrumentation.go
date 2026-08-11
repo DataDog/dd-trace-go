@@ -1290,6 +1290,10 @@ func runTestCleanup(t *testing.T, result *testCleanupResult) {
 
 func runTestCleanupWithOptions(t *testing.T, result *testCleanupResult, neutralizeNativeParallelRelease bool) {
 	completeParallelSubtests(t, getTestPrivateFields(t), neutralizeNativeParallelRelease)
+	runTestCleanupCallbacks(t, result)
+}
+
+func runTestCleanupCallbacks(t *testing.T, result *testCleanupResult) {
 	result.ran = true
 	done := make(chan struct{})
 	go func() {

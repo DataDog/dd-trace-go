@@ -64,6 +64,10 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if scenario == "feature-gate" {
 		requireEnv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
 	}
+	if scenario == "parallel-root-slots" {
+		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "5s")
+	}
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
@@ -109,8 +113,12 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceFailfastDescendantFixture":           properties(false),
 					"TestQuarantinedRaceFailfastDescendantFixture/child":     properties(true),
 					"TestQuarantinedRaceParallelFixture/isolated":            properties(false),
+					"TestQuarantinedRaceParallelRootsFixture/one":            properties(false),
+					"TestQuarantinedRaceParallelRootsFixture/two":            properties(false),
 					"TestQuarantinedRaceParallelCoverageFixture/isolated":    properties(false),
 					"TestQuarantinedRaceParallelDurationFixture/isolated":    properties(false),
+					"TestQuarantinedRaceParallelWaitDurationFixture/root":    properties(false),
+					"TestQuarantinedRaceDynamicDescendantFixture/root":       properties(true),
 					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
 					"TestQuarantinedRaceAncestorPanicFixture/isolated":       properties(false),
@@ -202,6 +210,16 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		parallelSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelFixture/isolated", 1)
 		checkSpansByTagValue(parallelSpans, constants.TestStatus, constants.TestStatusPass, 1)
 		os.Exit(0)
+	case "parallel-root-slots":
+		one, two := readPID("parallel-root-one-child"), readPID("parallel-root-two-child")
+		if one == parentPID || two == parentPID || one == two {
+			panic("parallel quarantined roots did not use distinct child processes")
+		}
+		for _, name := range []string{"one", "two"} {
+			root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelRootsFixture/"+name, 1)
+			checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
+		}
+		os.Exit(0)
 	case "parallel-coverage":
 		if readPID("parallel-coverage-child") == parentPID {
 			panic("covered parallel descendant did not run in the isolated child")
@@ -222,13 +240,30 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			panic(fmt.Sprintf("parallel suspension leaked into replayed duration: %s", got))
 		}
 		os.Exit(0)
+	case "parallel-wait-duration":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root", 1)
+		if got := root[0].Duration(); got >= 250*time.Millisecond {
+			panic(fmt.Sprintf("parallel descendant wait leaked into root duration: %s", got))
+		}
+		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root/slow", 1)
+		if got := child[0].Duration(); got < 400*time.Millisecond {
+			panic(fmt.Sprintf("slow parallel descendant duration = %s, want at least 400ms", got))
+		}
+		os.Exit(0)
+	case "dynamic-descendant-finality":
+		checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDynamicDescendantFixture/root", 2)
+		dynamic := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDynamicDescendantFixture/root/dynamic", 1)
+		checkSpansByTagValue(dynamic, constants.TestIsAttempToFix, "true", 1)
+		checkSpansByTagValue(dynamic, constants.TestIsRetry, "true", 0)
+		checkSpansByTagValue(dynamic, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		os.Exit(0)
 	case "terminal-descendants":
 		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
 		checkSpansByTagValue(parallelRoot, constants.TestStatus, constants.TestStatusFail, 1)
 		parallelChild := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel/child", 1)
 		checkSpansByTagValue(parallelChild, constants.TestStatus, constants.TestStatusFail, 1)
-		if rootFinish, childFinish := parallelRoot[0].StartTime().Add(parallelRoot[0].Duration()), parallelChild[0].StartTime().Add(parallelChild[0].Duration()); rootFinish.Before(childFinish) {
-			panic("selected root finished before its parallel descendant")
+		if rootFinish, childFinish := parallelRoot[0].StartTime().Add(parallelRoot[0].Duration()), parallelChild[0].StartTime().Add(parallelChild[0].Duration()); !rootFinish.Before(childFinish) {
+			panic("parallel descendant wait leaked into selected root duration")
 		}
 		panicRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/panic", 1)
 		checkSpansByTagValue(panicRoot, constants.TestStatus, constants.TestStatusFail, 1)
@@ -466,6 +501,10 @@ func TestQuarantinedRaceParallelAdmissionEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$")
 }
 
+func TestQuarantinedRaceParallelRootsReleaseProcessSlotsEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "parallel-root-slots", "^TestQuarantinedRaceParallelRootsFixture$", "-test.timeout=15s")
+}
+
 func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
 	if testing.CoverMode() == "" {
 		t.Skip("requires coverage instrumentation")
@@ -501,6 +540,14 @@ func TestQuarantinedRaceDeepNestedAttemptFamilyEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceParallelDurationEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "parallel-duration", "^TestQuarantinedRaceParallelDurationFixture$")
+}
+
+func TestQuarantinedRaceParallelWaitDurationEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "parallel-wait-duration", "^TestQuarantinedRaceParallelWaitDurationFixture$")
+}
+
+func TestQuarantinedRaceDynamicDescendantFinalityEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "dynamic-descendant-finality", "^TestQuarantinedRaceDynamicDescendantFixture$")
 }
 
 func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
@@ -729,6 +776,18 @@ func TestQuarantinedRaceParallelFixture(t *testing.T) {
 	}))
 }
 
+func TestQuarantinedRaceParallelRootsFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	for _, name := range []string{"one", "two"} {
+		t.Run(name, instrumentTestingTFunc(func(t *testing.T) {
+			(*T)(t).Parallel()
+			writeQuarantinedRaceIsolationProcessPID(t, "parallel-root-"+name)
+		}))
+	}
+}
+
 func TestQuarantinedRaceParallelCoverageFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {
 		t.Skip("fixture subprocess only")
@@ -783,6 +842,32 @@ func TestQuarantinedRaceParallelDurationFixture(t *testing.T) {
 			(*T)(t).Parallel()
 		}))
 		time.Sleep(500 * time.Millisecond)
+	}))
+}
+
+func TestQuarantinedRaceParallelWaitDurationFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("slow", instrumentTestingTFunc(func(t *testing.T) {
+			(*T)(t).Parallel()
+			time.Sleep(500 * time.Millisecond)
+		}))
+	}))
+}
+
+func TestQuarantinedRaceDynamicDescendantFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
+		marker := filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "dynamic-descendant-seen")
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			return
+		}
+		require.NoError(t, os.WriteFile(marker, []byte("seen"), 0o600))
+		t.Run("dynamic", instrumentTestingTFunc(func(*testing.T) {}))
 	}))
 }
 

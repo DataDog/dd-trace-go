@@ -693,12 +693,17 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			})
 		}
 
-		// Drain user cleanups before snapshotting. The helper also releases and
-		// waits for queued parallel descendants, so the selected root includes
-		// their failures, timing, and coverage. A regular t.Cleanup finalizer would
-		// run after testing has already classified a cleanup panic.
+		// Drain queued parallel descendants before user cleanups so the selected
+		// root includes their failures and coverage. Native testing excludes this
+		// scheduler wait from the parent's duration, but cleanup remains active time.
 		cleanup := &testCleanupResult{}
-		runTestCleanupWithOptions(t, cleanup, true)
+		if !activeStart.IsZero() {
+			activeDuration += time.Since(activeStart)
+			activeStart = time.Time{}
+		}
+		completeParallelSubtests(t, getTestPrivateFields(t), true)
+		activeStart = time.Now()
+		runTestCleanupCallbacks(t, cleanup)
 		if cleanup.panicData != nil {
 			t.Fail()
 			execMeta.processRetryPanic.CompareAndSwap(nil, &processRetryErrorInfo{
@@ -963,8 +968,6 @@ type quarantinedRaceInvocation struct {
 	cfg          *processRetrySubtreeConfig
 	attempt      processRetryAttemptResult
 	attemptIndex int
-
-	finalBecauseOfFailfast bool
 }
 
 // runQuarantinedRaceProcessIsolation replaces only the selected quarantined
@@ -1040,7 +1043,6 @@ func runQuarantinedRaceProcessIsolation(
 			cfg: cfg, attempt: attempt, attemptIndex: idx,
 		})
 		if quarantinedRaceFailfastStopsContinuation(attempt) {
-			invocations[len(invocations)-1].finalBecauseOfFailfast = true
 			break
 		}
 		if cfg.AttemptToFixRetries <= 0 {
@@ -1105,7 +1107,6 @@ func continueQuarantinedRaceDescendantFamilies(
 				cfg: continuationCfg, attempt: next, attemptIndex: idx,
 			})
 			if quarantinedRaceFailfastStopsContinuation(next) {
-				(*invocations)[len(*invocations)-1].finalBecauseOfFailfast = true
 				return true, false
 			}
 			if stop, failed := continueQuarantinedRaceDescendantFamilies(
@@ -1266,14 +1267,45 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 	if testInfo == nil {
 		return
 	}
-	outcomes := make(map[string]retryOutcomeAccumulator)
-	counted := make(map[string]struct{})
+	type familyKey struct {
+		name       string
+		generation int
+	}
+	type replayEvent struct {
+		invocation   quarantinedRaceInvocation
+		result       processRetrySubtreeResult
+		family       familyKey
+		attemptOwner string
+	}
+	generations := make(map[string]int)
+	lastOccurrence := make(map[familyKey]int)
+	events := make([]replayEvent, 0, len(invocations))
+	appendEvent := func(invocation quarantinedRaceInvocation, result processRetrySubtreeResult) {
+		_, attemptOwner := invocation.cfg.resolveDirective(result.TestName)
+		if attemptOwner != "" && attemptOwner != invocation.cfg.SelectedRoot {
+			// A descendant-owned family starts fresh each time its enclosing
+			// selected root discovers it.
+			generations[result.TestName]++
+		}
+		family := familyKey{name: result.TestName, generation: generations[result.TestName]}
+		lastOccurrence[family] = len(events)
+		events = append(events, replayEvent{invocation: invocation, result: result, family: family, attemptOwner: attemptOwner})
+	}
 	for _, invocation := range invocations {
 		for _, result := range invocation.attempt.Result.Subtests {
-			replayQuarantinedRaceEvent(testInfo, invocation, result, outcomes, counted)
+			appendEvent(invocation, result)
 		}
-		root := processRetrySubtreeRootFromInvocation(invocation)
-		replayQuarantinedRaceEvent(testInfo, invocation, root, outcomes, counted)
+		appendEvent(invocation, processRetrySubtreeRootFromInvocation(invocation))
+	}
+	outcomes := make(map[familyKey]retryOutcomeAccumulator)
+	counted := make(map[string]struct{})
+	for idx, event := range events {
+		prior := outcomes[event.family]
+		replayQuarantinedRaceEvent(testInfo, event.invocation, event.result, event.attemptOwner, lastOccurrence[event.family] == idx, prior, counted)
+		if event.attemptOwner != "" {
+			prior.observe(event.result.Failed, event.result.Skipped)
+			outcomes[event.family] = prior
+		}
 	}
 	module := session.GetOrCreateModule(testInfo.moduleName)
 	suite := module.GetOrCreateSuite(testInfo.suiteName)
@@ -1297,7 +1329,9 @@ func replayQuarantinedRaceEvent(
 	testInfo *commonInfo,
 	invocation quarantinedRaceInvocation,
 	result processRetrySubtreeResult,
-	outcomes map[string]retryOutcomeAccumulator,
+	attemptOwner string,
+	lastOccurrence bool,
+	prior retryOutcomeAccumulator,
 	counted map[string]struct{},
 ) {
 	identity := newTestIdentity(testInfo.moduleName, testInfo.suiteName, result.TestName)
@@ -1312,14 +1346,11 @@ func replayQuarantinedRaceEvent(
 		}
 		counted[result.TestName] = struct{}{}
 	}
-	_, attemptOwner := invocation.cfg.resolveDirective(result.TestName)
 	ownsAttemptToFix := attemptOwner == result.TestName
-	prior := outcomes[result.TestName]
 	attemptIndex := invocation.attemptIndex
 	if attemptOwner != "" && attemptOwner != invocation.cfg.SelectedRoot {
 		// A descendant that cleared an inherited directive and started its own
 		// family is on its first execution in this enclosing invocation.
-		prior = retryOutcomeAccumulator{}
 		attemptIndex = 0
 	}
 	execMeta := &testExecutionMetadata{
@@ -1340,7 +1371,7 @@ func replayQuarantinedRaceEvent(
 	if attemptOwner != "" {
 		attemptTotal := processRetryAttemptToFixExecutionCount(invocation.cfg.AttemptToFixRetries)
 		execMeta.isARetry = attemptIndex > 0
-		execMeta.isLastRetry = invocation.finalBecauseOfFailfast || attemptIndex == attemptTotal-1
+		execMeta.isLastRetry = lastOccurrence
 		execMeta.remainingRetries = int64(attemptTotal - attemptIndex)
 		execMeta.initialRetryCount = int64(invocation.cfg.AttemptToFixRetries)
 		execMeta.initialRetryCountSet = true
@@ -1363,10 +1394,6 @@ func replayQuarantinedRaceEvent(
 		testName:   result.TestName,
 		identity:   identity,
 	}, execMeta, attempt, nil, nil)
-	if attemptOwner != "" {
-		prior.observe(result.Failed, result.Skipped)
-		outcomes[result.TestName] = prior
-	}
 }
 
 func processRetrySubtreeResultFromEnvelope(result processRetryResult, cfg *processRetrySubtreeConfig) processRetrySubtreeResult {

@@ -1758,16 +1758,58 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		parentDeadlineHardCap = parentDeadlineTimer.C()
 		defer parentDeadlineTimer.Stop()
 	}
-	limiterResult := getProcessRetryLimiter().acquireWithShutdownLimit(
+	limiter := getProcessRetryLimiter()
+	limiterMaxConcurrency := processRetryMaxConcurrencyForBaseline(baseline, currentCPU)
+	limiterResult := limiter.acquireWithShutdownLimit(
 		ctx,
 		parentDeadlineHardCap,
 		shutdown,
-		processRetryMaxConcurrencyForBaseline(baseline, currentCPU),
+		limiterMaxConcurrency,
 	)
 	if limiterResult.Cause != processRetryLimiterAcquired {
 		return finishSetupFailure(limiterResult.Err, limiterResult.Cause == processRetryLimiterParentDeadline)
 	}
-	defer limiterResult.Release()
+	// The control bridge reacquires from its goroutine while teardown can run
+	// on the caller, so slot ownership and late release must change atomically.
+	var limiterReleaseMu sync.Mutex
+	limiterRelease := limiterResult.Release
+	limiterStopped := false
+	releaseLimiterSlot := func() {
+		limiterReleaseMu.Lock()
+		release := limiterRelease
+		limiterRelease = nil
+		limiterReleaseMu.Unlock()
+		if release != nil {
+			release()
+		}
+	}
+	setLimiterRelease := func(release processRetryLimiterRelease) {
+		limiterReleaseMu.Lock()
+		if limiterStopped {
+			limiterReleaseMu.Unlock()
+			release()
+			return
+		}
+		limiterRelease = release
+		limiterReleaseMu.Unlock()
+	}
+	stopLimiter := func() {
+		limiterReleaseMu.Lock()
+		limiterStopped = true
+		release := limiterRelease
+		limiterRelease = nil
+		limiterReleaseMu.Unlock()
+		if release != nil {
+			release()
+		}
+	}
+	defer stopLimiter()
+	limiterCtx := ctx
+	cancelLimiter := func() {}
+	if parentParallelBridge != nil {
+		limiterCtx, cancelLimiter = context.WithCancel(ctx)
+	}
+	defer cancelLimiter()
 	if processRetryShutdownRequested(shutdown) || processRetryShuttingDown() {
 		return finishSetupFailure(errProcessRetryShutdown, false)
 	}
@@ -1989,7 +2031,28 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 				attempt.Err = errors.Join(attempt.Err, errProcessRetryControlInvalid, err)
 				waitErr = forceKillAndWait(hooks.killTree)
 			} else {
-				control.parallelBridge = parentParallelBridge
+				if parentParallelBridge != nil {
+					control.parallelBridge = func() error {
+						// A child blocked in t.Parallel is not executing test code.
+						// Release its process slot so another isolated sibling can
+						// reach the same parent barrier, then reacquire before resume.
+						releaseLimiterSlot()
+						if err := parentParallelBridge(); err != nil {
+							return err
+						}
+						reacquired := limiter.acquireWithShutdownLimit(
+							limiterCtx,
+							parentDeadlineHardCap,
+							shutdown,
+							limiterMaxConcurrency,
+						)
+						if reacquired.Cause != processRetryLimiterAcquired {
+							return reacquired.Err
+						}
+						setLimiterRelease(reacquired.Release)
+						return nil
+					}
+				}
 				controlErrors = control.serveParent()
 			}
 		}
