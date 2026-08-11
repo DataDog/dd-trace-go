@@ -7,6 +7,8 @@ instruction_files:
   - contrib/AGENTS.md
   - ddtrace/tracer/AGENTS.md
   - internal/AGENTS.md
+  - profiler/AGENTS.md
+  - orchestrion/AGENTS.md
 
 default_level: minimum
 presets:
