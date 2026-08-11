@@ -162,9 +162,9 @@ func validateFlag(flagKey string, flag *flag) error {
 					if shardRange == nil {
 						return fmt.Errorf("flag %q allocation %d split %d has nil shard range", flagKey, i, j)
 					}
-					if shardRange.Start < 0 || shardRange.End < 0 {
-						return fmt.Errorf("flag %q allocation %d split %d has shard with negative range bounds",
-							flagKey, i, j)
+					if shardRange.Start < 0 || shardRange.Start >= shardRange.End || shardRange.End > shard.TotalShards {
+						return fmt.Errorf("flag %q allocation %d split %d has invalid shard range [%d, %d) for total %d",
+							flagKey, i, j, shardRange.Start, shardRange.End, shard.TotalShards)
 					}
 				}
 			}
@@ -214,6 +214,28 @@ func validateFlag(flagKey string, flag *flag) error {
 				}
 
 				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE:
+					if err := validateVariantType(condition.Value, valueTypeNumeric); err != nil {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires numeric value: %w",
+							flagKey, i, condition.Operator, err)
+					}
+				case operatorOneOf, operatorNotOneOf:
+					values, ok := condition.Value.([]any)
+					if !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires a string array",
+							flagKey, i, condition.Operator)
+					}
+					for _, value := range values {
+						if _, ok := value.(string); !ok {
+							return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires a string array",
+								flagKey, i, condition.Operator)
+						}
+					}
+				case operatorIsNull:
+					if _, ok := condition.Value.(bool); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires boolean value",
+							flagKey, i, condition.Operator)
+					}
 				case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
 					operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
 					comparand, ok := condition.Value.(string)
@@ -231,6 +253,16 @@ func validateFlag(flagKey string, flag *flag) error {
 			}
 		}
 	}
+
+	for variationKey, variation := range flag.Variations {
+		if variation == nil {
+			return fmt.Errorf("flag %q variation %q is nil", flagKey, variationKey)
+		}
+		if err := validateVariantType(variation.Value, flag.VariationType); err != nil {
+			return fmt.Errorf("flag %q variation %q has invalid value: %w", flagKey, variationKey, err)
+		}
+	}
+
 	return nil
 }
 

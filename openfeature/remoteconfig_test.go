@@ -387,26 +387,29 @@ func TestValidateFlag(t *testing.T) {
 	})
 
 	t.Run("all variation types are valid", func(t *testing.T) {
-		validTypes := []valueType{
-			valueTypeBoolean,
-			valueTypeString,
-			valueTypeInteger,
-			valueTypeNumeric,
-			valueTypeJSON,
+		validTypes := []struct {
+			typeName valueType
+			value    any
+		}{
+			{typeName: valueTypeBoolean, value: true},
+			{typeName: valueTypeString, value: "test-value"},
+			{typeName: valueTypeInteger, value: 1},
+			{typeName: valueTypeNumeric, value: 1.5},
+			{typeName: valueTypeJSON, value: map[string]any{"key": "value"}},
 		}
 
-		for _, vType := range validTypes {
+		for _, testCase := range validTypes {
 			flag := &flag{
 				Key:           "test-flag",
-				VariationType: vType,
+				VariationType: testCase.typeName,
 				Variations: map[string]*variant{
-					"v1": {Key: "v1", Value: "test-value"},
+					"v1": {Key: "v1", Value: testCase.value},
 				},
 			}
 
 			err := validateFlag("test-flag", flag)
 			if err != nil {
-				t.Errorf("expected %s to be valid, got error: %v", vType, err)
+				t.Errorf("expected %s to be valid, got error: %v", testCase.typeName, err)
 			}
 		}
 	})
@@ -594,7 +597,57 @@ func TestProcessConfigUpdate(t *testing.T) {
 
 		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now())
 		require.Equal(t, false, invalidResult.Value)
-		require.Equal(t, "DEFAULT", string(invalidResult.Reason))
+		require.Equal(t, "ERROR", string(invalidResult.Reason))
+		require.ErrorIs(t, invalidResult.Error, errParseError)
+	})
+
+	t.Run("configuration replacement clears rejected flags", func(t *testing.T) {
+		provider := newDatadogProvider(ProviderConfig{})
+		first := []byte(`{
+			"format": "SERVER",
+			"flags": {
+				"rejected-old": {
+					"key": "rejected-old",
+					"enabled": true,
+					"variationType": "BOOLEAN",
+					"variations": {"on": {"key": "on", "value": true}},
+					"allocations": "invalid"
+				},
+				"active-old": {
+					"key": "active-old",
+					"enabled": true,
+					"variationType": "BOOLEAN",
+					"variations": {"on": {"key": "on", "value": true}},
+					"allocations": []
+				}
+			}
+		}`)
+		require.Equal(t, rc.ApplyStateAcknowledged, processConfigUpdate(provider, "test-path", first).State)
+		require.Contains(t, provider.getConfiguration().invalidFlags, "rejected-old")
+
+		second := []byte(`{
+			"format": "SERVER",
+			"flags": {
+				"active-new": {
+					"key": "active-new",
+					"enabled": true,
+					"variationType": "BOOLEAN",
+					"variations": {"on": {"key": "on", "value": true}},
+					"allocations": []
+				}
+			}
+		}`)
+		require.Equal(t, rc.ApplyStateAcknowledged, processConfigUpdate(provider, "test-path", second).State)
+
+		updatedConfig := provider.getConfiguration()
+		require.NotContains(t, updatedConfig.Flags, "active-old")
+		require.NotContains(t, updatedConfig.invalidFlags, "rejected-old")
+
+		oldRejectedResult := evaluateConfiguredFlag(updatedConfig, "rejected-old", false, nil, time.Now())
+		require.Equal(t, false, oldRejectedResult.Value)
+		require.Equal(t, "ERROR", string(oldRejectedResult.Reason))
+		require.ErrorIs(t, oldRejectedResult.Error, errFlagNotFound)
+		require.NotErrorIs(t, oldRejectedResult.Error, errParseError)
 	})
 
 	t.Run("configuration deletion", func(t *testing.T) {
