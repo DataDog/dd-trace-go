@@ -70,8 +70,6 @@ func Start(opts ...config.StartOption) {
 		return
 	}
 
-	internalconfig.RecordProductStart(internalconfig.ProductAppsec)
-
 	// Check whether libddwaf - required for Threats Detection - is ok or not
 	if ok, err := libddwaf.Usable(); !ok && err != nil {
 		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
@@ -124,6 +122,7 @@ func Start(opts ...config.StartOption) {
 		return
 	}
 
+	internalconfig.RecordProductStart(internalconfig.ProductAppsec)
 	setActiveAppSec(appsec)
 }
 
