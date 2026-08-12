@@ -685,36 +685,34 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 }
 
 // instrumentTestingParallel reports whether CI Visibility has replaced the
-// native Parallel implementation and returns work to run after native Parallel
-// resumes. Retry attempts use a fresh testing.T, so Parallel remains native
-// after an isolated subtree has notified its parent.
+// native Parallel implementation. Only an isolated quarantined race subtree
+// takes ownership; every other call keeps the existing native fast path.
 //
 //go:linkname instrumentTestingParallel
-func instrumentTestingParallel(t *testing.T) (bool, func()) {
-	if execMeta := getTestMetadata(t); execMeta != nil && execMeta.processRetryOwner != nil {
-		willSuspend := testingParallelWillSuspend(t)
-		if state := execMeta.quarantinedRaceChild; state != nil && state.cfg != nil && t.Name() == state.cfg.SelectedRoot {
-			// The hook runs before testing.T.Parallel. Start the parent bridge only
-			// when the native method will reach its suspension point; invalid calls
-			// must retain testing's panic instead of waiting for an unused bridge.
-			if willSuspend {
-				state.startParallelBridge()
-			}
-		}
-		// Orchestrion can enter this hook through both our T wrapper and the
-		// woven testing.T.Parallel before native testing marks the test parallel.
-		// Only the first entry may own the matching pause/resume pair.
-		if pause := execMeta.processRetryParallelPause; pause != nil && willSuspend && execMeta.processRetryParallelPaused.CompareAndSwap(false, true) {
-			resume := pause()
-			return false, func() {
-				defer execMeta.processRetryParallelPaused.Store(false)
-				if resume != nil {
-					resume()
-				}
-			}
-		}
+func instrumentTestingParallel(t *testing.T) bool {
+	if !quarantinedRaceParallelHookActive {
+		return false
 	}
-	return false, nil
+	execMeta := getTestMetadata(t)
+	if execMeta == nil || execMeta.processRetryParallelPause == nil || execMeta.processRetryParallelPaused.Load() || !testingParallelWillSuspend(t) {
+		return false
+	}
+	if !execMeta.processRetryParallelPaused.CompareAndSwap(false, true) {
+		return false
+	}
+	defer execMeta.processRetryParallelPaused.Store(false)
+
+	if state := execMeta.quarantinedRaceChild; state != nil && state.cfg != nil && t.Name() == state.cfg.SelectedRoot {
+		state.startParallelBridge()
+	}
+	resume := execMeta.processRetryParallelPause()
+	if resume != nil {
+		defer resume()
+	}
+	// Parallel is already woven with this hook. The guard above makes that
+	// nested entry return false so exactly one native call suspends the test.
+	t.Parallel()
+	return true
 }
 
 func testingParallelWillSuspend(t *testing.T) bool {

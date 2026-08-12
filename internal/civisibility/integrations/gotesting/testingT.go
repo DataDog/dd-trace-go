@@ -173,11 +173,7 @@ func (ddt *T) SkipNow() {
 // parallel with each other.
 func (ddt *T) Parallel() {
 	t := (*testing.T)(ddt)
-	handled, resume := instrumentTestingParallel(t)
-	if resume != nil {
-		defer resume()
-	}
-	if !handled {
+	if !instrumentTestingParallel(t) {
 		t.Parallel()
 	}
 }

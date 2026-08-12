@@ -3010,6 +3010,11 @@ func instrumentProcessRetryChild(m *testing.M, cfg processRetryChildConfig) (boo
 		hardStopInvalidProcessRetryChild("control_protocol_failure")
 		return false, failureTestingMFinalizer
 	}
+	if cfg.Subtree != nil {
+		// This happens before M.Run starts test goroutines. The hook remains off
+		// in parent processes and ordinary retry children for their whole lifetime.
+		activateQuarantinedRaceParallelHook()
+	}
 	if cfg.Subtree != nil && (cfg.Subtree.CollectPerTest || cfg.Subtree.CollectAggregate) {
 		// The process child deliberately skips CI Visibility initialization,
 		// so initialize only Go's runtime coverage hooks. Coverage is returned

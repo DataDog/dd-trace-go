@@ -302,9 +302,9 @@ func TestOrchestrionParallelAdviceMatchesHookContract(t *testing.T) {
 	require.NoError(t, err)
 
 	config := string(source)
-	assert.Contains(t, config, "func __dd_civisibility_instrumentTestingParallel(t *T) (bool, func())")
-	assert.Contains(t, config, "__dd_civisibility_handled, __dd_civisibility_resume := __dd_civisibility_instrumentTestingParallel")
-	assert.Contains(t, config, "defer __dd_civisibility_resume()")
+	assert.Contains(t, config, "func __dd_civisibility_instrumentTestingParallel(t *T) bool")
+	assert.Contains(t, config, "if __dd_civisibility_instrumentTestingParallel({{ .Function.Receiver }})")
+	assert.NotContains(t, config, "__dd_civisibility_resume")
 }
 
 func TestQuarantinedRaceParallelBridgeRequiresNativeAdmission(t *testing.T) {
@@ -317,29 +317,14 @@ func TestQuarantinedRaceParallelBridgeRequiresNativeAdmission(t *testing.T) {
 	})
 }
 
-func TestQuarantinedRaceParallelPauseIsIdempotentAcrossWrapperAndHook(t *testing.T) {
+func TestQuarantinedRaceParallelHookDisabledOutsideRaceSubtree(t *testing.T) {
 	meta := createTestMetadata(t, nil)
 	defer deleteTestMetadata(t)
-	meta.processRetryOwner = meta
-	var pauses, resumes atomic.Int32
 	meta.processRetryParallelPause = func() func() {
-		pauses.Add(1)
-		return func() { resumes.Add(1) }
+		t.Fatal("disabled hook must not inspect subtree metadata")
+		return nil
 	}
-
-	_, outerResume := instrumentTestingParallel(t)
-	_, nestedResume := instrumentTestingParallel(t)
-	require.NotNil(t, outerResume)
-	require.Nil(t, nestedResume)
-	outerResume()
-	require.EqualValues(t, 1, pauses.Load())
-	require.EqualValues(t, 1, resumes.Load())
-
-	_, nextResume := instrumentTestingParallel(t)
-	require.NotNil(t, nextResume)
-	nextResume()
-	require.EqualValues(t, 2, pauses.Load())
-	require.EqualValues(t, 2, resumes.Load())
+	assert.False(t, instrumentTestingParallel(t))
 }
 
 func TestQuarantinedRaceNestedRootEnvelopePreservesRecordedResult(t *testing.T) {

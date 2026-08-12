@@ -7,4 +7,8 @@
 
 package gotesting
 
+var quarantinedRaceParallelHookActive bool
+
 func quarantinedRaceProcessSupported() bool { return true }
+
+func activateQuarantinedRaceParallelHook() { quarantinedRaceParallelHookActive = true }
