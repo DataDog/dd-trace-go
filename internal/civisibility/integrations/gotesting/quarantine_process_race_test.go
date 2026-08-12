@@ -429,7 +429,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(failNowSpans, constants.TestStatus, constants.TestStatusFail, 1)
 		os.Exit(0)
 	case "failfast":
-		for _, name := range []string{"failfast-root-3", "failfast-descendant-3"} {
+		for _, name := range []string{"failfast-root-3", "failfast-descendant-2", "failfast-descendant-3"} {
 			if _, err := os.Stat(filepath.Join(pidDir, name)); err == nil || !os.IsNotExist(err) {
 				panic(name + " ran after a valid failure under -failfast")
 			}
@@ -437,14 +437,15 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		readPID("failfast-root-1")
 		readPID("failfast-root-2")
 		readPID("failfast-descendant-1")
-		readPID("failfast-descendant-2")
-		for _, name := range []string{"TestQuarantinedRaceFailfastRootFixture", "TestQuarantinedRaceFailfastDescendantFixture/child"} {
-			failfastSpans := checkSpansByResourceName(spans, suite+"."+name, 2)
-			checkSpansByTagValue(failfastSpans, constants.TestIsRetry, "true", 1)
-			checkSpansByTagValue(failfastSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 1)
-			checkSpansByTagValue(failfastSpans, constants.TestAttemptToFixPassed, "false", 1)
-			checkSpansByTagValue(failfastSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
-		}
+		rootSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFailfastRootFixture", 2)
+		checkSpansByTagValue(rootSpans, constants.TestIsRetry, "true", 1)
+		checkSpansByTagValue(rootSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 1)
+		checkSpansByTagValue(rootSpans, constants.TestAttemptToFixPassed, "false", 1)
+		checkSpansByTagValue(rootSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		descendantSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFailfastDescendantFixture/child", 1)
+		checkSpansByTagValue(descendantSpans, constants.TestIsRetry, "true", 0)
+		checkSpansByTagValue(descendantSpans, constants.TestAttemptToFixPassed, "false", 0)
+		checkSpansByTagValue(descendantSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 		os.Exit(0)
 	}
 	racePID := readPID("race")
@@ -1280,8 +1281,6 @@ func TestQuarantinedRaceFailfastDescendantFixture(t *testing.T) {
 		cfg, err := processRetryChildConfigFromEnv()
 		require.NoError(t, err)
 		writeQuarantinedRaceIsolationPID(t, "failfast-descendant-"+strconv.Itoa(cfg.Attempt))
-		if cfg.Attempt > 1 {
-			t.Fail()
-		}
+		t.Fail()
 	}))
 }

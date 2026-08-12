@@ -1229,6 +1229,9 @@ func continueQuarantinedRaceDescendantFamilies(
 	invocations *[]quarantinedRaceInvocation,
 ) (stop, failed bool) {
 	for _, result := range directQuarantinedRaceAttemptOwners(attempt.Result.Subtests, cfg.SelectedRoot) {
+		if retryAttemptFailfastEnabled() && result.Failed {
+			return true, false
+		}
 		continuationCfg, err := cfg.forSelectedRoot(result.TestName)
 		if err != nil {
 			failQuarantinedRaceIsolation(t, testInfo, execMeta, processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: time.Now(), FinishTime: time.Now()})
