@@ -1,0 +1,93 @@
+name: Formal Verification
+
+on:
+  pull_request:
+    paths:
+      - 'formal-verification/**'
+  push:
+    branches:
+      - main
+      - release-v*
+    paths:
+      - 'formal-verification/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TLA2TOOLS_VERSION: "1.7.4"
+  TLA2TOOLS_URL: "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar"
+  GOTOOLCHAIN: local
+
+jobs:
+  tlc-model-check:
+    name: TLC Model Checking
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache tla2tools.jar
+        id: cache-tla2tools
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: /tmp/tla2tools.jar
+          key: tla2tools-${{ env.TLA2TOOLS_VERSION }}
+
+      - name: Download tla2tools.jar
+        if: steps.cache-tla2tools.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o /tmp/tla2tools.jar "$TLA2TOOLS_URL"
+          # Verify the jar is a valid Java archive
+          jar tf /tmp/tla2tools.jar > /dev/null
+
+      - name: Run TLC — Phase 1 (Span Lifecycle)
+        working-directory: formal-verification/specs/span_lifecycle
+        run: |
+          echo "::group::TLC output"
+          java -XX:+UseParallelGC \
+            -cp /tmp/tla2tools.jar tlc2.TLC \
+            -workers auto \
+            -deadlock \
+            -config SpanLifecycle.cfg \
+            SpanLifecycle.tla
+          echo "::endgroup::"
+
+      - name: Run TLC — Phase 2 (GLS Push/Pop)
+        working-directory: formal-verification/specs/gls_context
+        run: |
+          echo "::group::TLC output"
+          java -XX:+UseParallelGC \
+            -cp /tmp/tla2tools.jar tlc2.TLC \
+            -workers auto \
+            -deadlock \
+            -config GLSContext.cfg \
+            GLSContext.tla
+          echo "::endgroup::"
+
+  source-validation:
+    name: Go Source Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version: stable
+
+      - name: Build extracted source
+        working-directory: formal-verification/source
+        run: GOWORK=off go build ./...
+
+      - name: Vet extracted source
+        working-directory: formal-verification/source
+        run: GOWORK=off go vet ./...
