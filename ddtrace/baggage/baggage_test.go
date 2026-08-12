@@ -219,6 +219,33 @@ func TestBaggageMapAccessorsMakeCopies(t *testing.T) {
 	})
 }
 
+// TestSetAllAllocationsDoNotScaleWithKeyCount is a regression test for a bug where
+// callers looped Set() once per key to merge a batch of baggage (see #5158): each
+// Set() call clones the entire map, so merging N keys did N clones instead of one.
+// SetAll's allocation count per call should stay flat as the batch size grows; if it
+// starts scaling linearly again (e.g. SetAll gets reimplemented as a Set loop), this
+// test should fail.
+func TestSetAllAllocationsDoNotScaleWithKeyCount(t *testing.T) {
+	base := Set(context.Background(), "existing", "value")
+
+	allocsForBatch := func(n int) float64 {
+		values := make(map[string]string, n)
+		for i := range n {
+			values[fmt.Sprintf("key%d", i)] = "v"
+		}
+		return testing.AllocsPerRun(20, func() {
+			_ = SetAll(base, values)
+		})
+	}
+
+	small := allocsForBatch(2)
+	large := allocsForBatch(200)
+
+	assert.LessOrEqual(t, large, small*2,
+		"SetAll allocations scaled with batch size (%v allocs for 2 keys vs %v allocs for 200 keys); "+
+			"expected a single clone per call regardless of key count", small, large)
+}
+
 // guarantees we also test the Clear→Set path
 func TestConcurrentAccessAndClear(t *testing.T) {
 	base := Set(context.Background(), "init", "val")
