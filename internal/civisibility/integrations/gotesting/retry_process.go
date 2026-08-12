@@ -3952,7 +3952,7 @@ func validateProcessRetryResultStatus(result processRetryResult) error {
 
 func validProcessRetryResultError(reason string) bool {
 	switch reason {
-	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure", "selected_root_not_run", "coverage_initialization_failed", "coverage_finalization_failed", processRetryResultErrorSubtreeTooLarge:
+	case "", "missing_result_path", "missing_test_name", "missing_attempt", "invalid_attempt", "missing_retry_reason", "invalid_child_config", "testing_m_reflection_drift", "testing_t_reflection_drift", "control_protocol_failure", "parallel_control_failed", "selected_root_not_run", "coverage_initialization_failed", "coverage_finalization_failed", processRetryResultErrorSubtreeTooLarge:
 		return true
 	default:
 		return false

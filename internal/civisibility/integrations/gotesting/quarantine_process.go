@@ -1278,8 +1278,28 @@ type quarantinedRaceContinuationFailure struct {
 }
 
 type quarantinedRaceFamilyKey struct {
-	name       string
+	identity   quarantinedRaceReplayIdentity
 	generation int
+}
+
+func quarantinedRaceFamilyKeyFor(testInfo *commonInfo, result processRetrySubtreeResult, generation int) quarantinedRaceFamilyKey {
+	return quarantinedRaceFamilyKey{
+		identity:   quarantinedRaceReplayIdentityFor(testInfo, result),
+		generation: generation,
+	}
+}
+
+func quarantinedRaceReplayIdentityFor(testInfo *commonInfo, result processRetrySubtreeResult) quarantinedRaceReplayIdentity {
+	moduleName, suiteName := result.ModuleName, result.SuiteName
+	if testInfo != nil {
+		if moduleName == "" {
+			moduleName = testInfo.moduleName
+		}
+		if suiteName == "" {
+			suiteName = testInfo.suiteName
+		}
+	}
+	return quarantinedRaceReplayIdentity{moduleName: moduleName, suiteName: suiteName, testName: result.TestName}
 }
 
 type quarantinedRaceReplayEvent struct {
@@ -1430,13 +1450,21 @@ func continueQuarantinedRaceDescendantFamilies(
 			return stop, failure
 		}
 		runRoot := continuationCfg.SelectedRoot
+		runCfg := continuationCfg
 		if result.Parallel {
 			// A parallel owner needs the enclosing scheduler siblings recreated.
 			// Serial owners use their exact selector and do not repeat side effects.
+			// Process coverage counters are global, so the owner's aggregate profile
+			// cannot be separated from those scheduling siblings and must be omitted.
 			runRoot = cfg.SelectedRoot
+			if continuationCfg.CollectAggregate {
+				next := *continuationCfg
+				next.CollectAggregate = false
+				runCfg = &next
+			}
 		}
 		for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
-			next := run(continuationCfg, runRoot, idx)
+			next := run(runCfg, runRoot, idx)
 			*invocations = append(*invocations, quarantinedRaceInvocation{
 				cfg: continuationCfg, attempt: next, attemptIndex: idx,
 			})
@@ -1661,7 +1689,7 @@ func replayQuarantinedRaceResults(
 			generations[attemptOwner]++
 		}
 		inherited := invocation.cfg.AncestorAttemptToFix && result.AttemptToFix && attemptOwner == ""
-		family := quarantinedRaceFamilyKey{name: result.TestName, generation: generations[attemptOwner]}
+		family := quarantinedRaceFamilyKeyFor(testInfo, result, generations[attemptOwner])
 		lastOccurrence[family] = len(events)
 		events = append(events, quarantinedRaceReplayEvent{invocation: invocation, result: result, family: family, attemptOwner: attemptOwner, inherited: inherited})
 	}
@@ -1679,7 +1707,7 @@ func replayQuarantinedRaceResults(
 	for idx, event := range events {
 		prior := outcomes[event.family]
 		last := lastOccurrence[event.family] == idx
-		identityKey := quarantinedRaceReplayIdentity{moduleName: event.result.ModuleName, suiteName: event.result.SuiteName, testName: event.result.TestName}
+		identityKey := quarantinedRaceReplayIdentityFor(testInfo, event.result)
 		if event.inherited && deferred != nil {
 			deferred.deferInherited(testInfo, processCtx, event, counted)
 			continue
@@ -1719,7 +1747,7 @@ func (s *quarantinedRaceReplayState) deferInherited(testInfo *commonInfo, proces
 	// Deferred ancestor attempts arrive one at a time. Publish the previous
 	// occurrence as non-final and retain only the newest one until group finish
 	// proves the family's actual last occurrence, including disappearance.
-	key := quarantinedRaceReplayIdentity{moduleName: event.result.ModuleName, suiteName: event.result.SuiteName, testName: event.result.TestName}
+	key := quarantinedRaceReplayIdentityFor(testInfo, event.result)
 	prior := retryOutcomeAccumulator{}
 	if pending, ok := s.pending[key]; ok {
 		replayQuarantinedRaceEvent(&pending.testInfo, pending.event.invocation, pending.event.result, pending.event.attemptOwner, true, false, pending.prior, counted)
@@ -1788,15 +1816,9 @@ func replayQuarantinedRaceEvent(
 	prior retryOutcomeAccumulator,
 	counted map[quarantinedRaceReplayIdentity]*testIdentity,
 ) {
-	moduleName, suiteName := result.ModuleName, result.SuiteName
-	if moduleName == "" {
-		moduleName = testInfo.moduleName
-	}
-	if suiteName == "" {
-		suiteName = testInfo.suiteName
-	}
+	identityKey := quarantinedRaceReplayIdentityFor(testInfo, result)
+	moduleName, suiteName := identityKey.moduleName, identityKey.suiteName
 	identity := newTestIdentity(moduleName, suiteName, result.TestName)
-	identityKey := quarantinedRaceReplayIdentity{moduleName: moduleName, suiteName: suiteName, testName: result.TestName}
 	if _, ok := counted[identityKey]; !ok {
 		// The parent already counted a top-level test before entering its
 		// wrapper. Subtests bypass the normal runSubtest path, so only they

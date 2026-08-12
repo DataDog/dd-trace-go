@@ -1219,6 +1219,9 @@ func TestProcessRetryResultErrorValidation(t *testing.T) {
 	}
 	base := processRetryNotRunResult(cfg, "invalid_child_config")
 	require.NoError(t, validateProcessRetryResult(base, cfg))
+	parallelControl := base
+	parallelControl.ResultError = "parallel_control_failed"
+	require.NoError(t, validateProcessRetryResult(parallelControl, cfg))
 
 	unknown := base
 	unknown.ResultError = "unknown_reason"

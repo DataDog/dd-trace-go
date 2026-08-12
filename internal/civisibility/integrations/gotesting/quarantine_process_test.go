@@ -49,6 +49,21 @@ func TestQuarantinedRaceCoverageCoordinatorDiscardsOnlySiblingOverlap(t *testing
 	assert.True(t, coordinator.finish(isolated))
 }
 
+func TestQuarantinedRaceReplayFamilyUsesCompleteIdentity(t *testing.T) {
+	testInfo := &commonInfo{moduleName: "module", suiteName: "suite.go"}
+	base := processRetrySubtreeResult{TestName: "TestCheckout/card", ModuleName: "module", SuiteName: "suite.go"}
+	for _, distinct := range []processRetrySubtreeResult{
+		{TestName: base.TestName, ModuleName: "other-module", SuiteName: base.SuiteName},
+		{TestName: base.TestName, ModuleName: base.ModuleName, SuiteName: "other-suite.go"},
+	} {
+		assert.NotEqual(t, quarantinedRaceFamilyKeyFor(testInfo, base, 1), quarantinedRaceFamilyKeyFor(testInfo, distinct, 1))
+	}
+	assert.Equal(t,
+		quarantinedRaceFamilyKeyFor(testInfo, base, 1),
+		quarantinedRaceFamilyKeyFor(testInfo, processRetrySubtreeResult{TestName: base.TestName}, 1),
+	)
+}
+
 func TestDirectQuarantinedRaceAttemptOwnersReturnsOnlyNearestFamilies(t *testing.T) {
 	result := func(name string) processRetrySubtreeResult {
 		return processRetrySubtreeResult{TestName: name, AttemptToFixOwn: true}
@@ -62,6 +77,30 @@ func TestDirectQuarantinedRaceAttemptOwnersReturnsOnlyNearestFamilies(t *testing
 	require.Len(t, owners, 2)
 	assert.Equal(t, "TestCheckout/card/owner", owners[0].TestName)
 	assert.Equal(t, "TestCheckout/card/sibling", owners[1].TestName)
+}
+
+func TestQuarantinedRaceParallelContinuationDisablesAggregateCoverage(t *testing.T) {
+	const root, owner = "TestCheckout/root", "TestCheckout/root/owner"
+	for _, parallel := range []bool{false, true} {
+		t.Run(fmt.Sprintf("parallel=%t", parallel), func(t *testing.T) {
+			cfg := &processRetrySubtreeConfig{
+				Version: processRetrySubtreeVersion, SelectedRoot: root, AttemptToFixRetries: 2, CollectAggregate: true,
+				Root: processRetrySubtreeDirective{TestName: root, ModuleName: "module", SuiteName: "suite", Quarantined: true},
+			}
+			attempt := processRetryAttemptResult{Result: processRetryResult{Subtests: []processRetrySubtreeResult{{
+				TestName: owner, ModuleName: "module", SuiteName: "suite", Parallel: parallel, AttemptToFix: true, AttemptToFixOwn: true,
+			}}}}
+			var runCfg *processRetrySubtreeConfig
+			_, failure := continueQuarantinedRaceDescendantFamilies(cfg, attempt, &[]quarantinedRaceInvocation{}, func(got *processRetrySubtreeConfig, runRoot string, _ int) processRetryAttemptResult {
+				runCfg = got
+				assert.Equal(t, map[bool]string{false: owner, true: root}[parallel], runRoot)
+				return processRetryAttemptResult{Result: processRetryResult{Status: processRetryStatusPass}, ExitStatusObserved: true}
+			})
+			require.Nil(t, failure)
+			require.NotNil(t, runCfg)
+			assert.Equal(t, !parallel, runCfg.CollectAggregate)
+		})
+	}
 }
 
 func TestQuarantinedRaceContinuationConfigPreservesDeeperAttemptOwner(t *testing.T) {
