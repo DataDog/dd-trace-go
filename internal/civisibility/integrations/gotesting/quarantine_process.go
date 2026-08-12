@@ -1317,6 +1317,7 @@ type quarantinedRacePendingReplay struct {
 }
 
 type quarantinedRaceReplayState struct {
+	mu      sync.Mutex
 	pending map[quarantinedRaceReplayIdentity]quarantinedRacePendingReplay
 	order   []quarantinedRaceReplayIdentity
 }
@@ -1419,7 +1420,11 @@ func runQuarantinedRaceProcessIsolation(
 		}
 	}
 
-	replayQuarantinedRaceInvocations(testInfo, processCtx, invocations)
+	var deferred *quarantinedRaceReplayState
+	if cfg.AncestorAttemptToFix {
+		deferred = quarantinedRaceReplayStateFor(parentExecMeta)
+	}
+	replayQuarantinedRaceResults(testInfo, processCtx, invocations, true, deferred)
 	// A valid quarantined failure, panic, or race remains visible in CI
 	// Visibility but is intentionally masked from the package result. An
 	// infrastructure error returns above through Fail and is never quarantined.
@@ -1454,11 +1459,12 @@ func continueQuarantinedRaceDescendantFamilies(
 		if result.Parallel {
 			// A parallel owner needs the enclosing scheduler siblings recreated.
 			// Serial owners use their exact selector and do not repeat side effects.
-			// Process coverage counters are global, so the owner's aggregate profile
-			// cannot be separated from those scheduling siblings and must be omitted.
+			// Process coverage counters are global, so neither per-test intervals nor
+			// aggregate coverage can be separated from those scheduling siblings.
 			runRoot = cfg.SelectedRoot
-			if continuationCfg.CollectAggregate {
+			if continuationCfg.CollectPerTest || continuationCfg.CollectAggregate {
 				next := *continuationCfg
+				next.CollectPerTest = false
 				next.CollectAggregate = false
 				runCfg = &next
 			}
@@ -1564,11 +1570,6 @@ func runQuarantinedRaceInvocation(
 }
 
 func finalizeQuarantinedRaceInvocation(cfg *processRetrySubtreeConfig, attempt processRetryAttemptResult) processRetryAttemptResult {
-	defer func() {
-		if attempt.Cleanup != nil {
-			attempt.Cleanup()
-		}
-	}()
 	if cfg.CollectAggregate && attempt.Result.Status != "" && attempt.Result.Status != processRetryStatusNotRun {
 		if err := coverage.MergeProcessCoverageProfile(processRetrySubtreeCoveragePath(filepath.Join(attempt.TempDir, "result.json"))); err != nil {
 			attempt.Err = errors.Join(attempt.Err, fmt.Errorf("aggregate process coverage: %w", err))
@@ -1581,6 +1582,10 @@ func finalizeQuarantinedRaceInvocation(cfg *processRetrySubtreeConfig, attempt p
 		// controlled terminal exit code. Normalize that expected carrier exit to
 		// the status required by effectiveProcessRetryStatus.
 		attempt.ExitCode = processRetryControlledPanicExitCode
+	}
+	if attempt.Cleanup != nil {
+		attempt.Cleanup()
+		attempt.Cleanup = nil
 	}
 	return attempt
 }
@@ -1664,10 +1669,6 @@ func (cfg *processRetrySubtreeConfig) forSelectedRoot(result processRetrySubtree
 	return next, validateProcessRetrySubtreeConfig(next, result.TestName)
 }
 
-func replayQuarantinedRaceInvocations(testInfo *commonInfo, processCtx *quarantinedRaceProcessContext, invocations []quarantinedRaceInvocation) {
-	replayQuarantinedRaceResults(testInfo, processCtx, invocations, true, nil)
-}
-
 func replayQuarantinedRaceResults(
 	testInfo *commonInfo,
 	processCtx *quarantinedRaceProcessContext,
@@ -1741,6 +1742,8 @@ func replayQuarantinedRaceResults(
 }
 
 func (s *quarantinedRaceReplayState) deferInherited(testInfo *commonInfo, processCtx *quarantinedRaceProcessContext, event quarantinedRaceReplayEvent, counted map[quarantinedRaceReplayIdentity]*testIdentity) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.pending == nil {
 		s.pending = make(map[quarantinedRaceReplayIdentity]quarantinedRacePendingReplay)
 	}
@@ -1765,7 +1768,12 @@ func (s *quarantinedRaceReplayState) deferInherited(testInfo *commonInfo, proces
 }
 
 func (s *quarantinedRaceReplayState) finish() {
-	if s == nil || len(s.pending) == 0 {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.pending) == 0 {
 		return
 	}
 	counted := make(map[quarantinedRaceReplayIdentity]*testIdentity)
@@ -1779,6 +1787,20 @@ func (s *quarantinedRaceReplayState) finish() {
 	closeQuarantinedRaceReplayCounters(counted)
 	s.pending = nil
 	s.order = nil
+}
+
+func quarantinedRaceReplayStateFor(execMeta *testExecutionMetadata) *quarantinedRaceReplayState {
+	if execMeta == nil {
+		return nil
+	}
+	if state := execMeta.quarantinedRaceReplay.Load(); state != nil {
+		return state
+	}
+	state := &quarantinedRaceReplayState{}
+	if execMeta.quarantinedRaceReplay.CompareAndSwap(nil, state) {
+		return state
+	}
+	return execMeta.quarantinedRaceReplay.Load()
 }
 
 func closeQuarantinedRaceReplayCounters(counted map[quarantinedRaceReplayIdentity]*testIdentity) {

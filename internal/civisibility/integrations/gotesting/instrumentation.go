@@ -82,6 +82,7 @@ type (
 		deferredRetryEvent            *deferredProcessRetryEvent
 		quarantinedRaceProcess        *quarantinedRaceProcessContext
 		quarantinedRaceChild          *quarantinedRaceChildState
+		quarantinedRaceReplay         atomic.Pointer[quarantinedRaceReplayState]
 		processRetryAttemptOwner      string
 		processRetryManagedDescendant bool
 		processRetryParallelPause     func() func()

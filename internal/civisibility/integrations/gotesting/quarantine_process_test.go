@@ -79,12 +79,12 @@ func TestDirectQuarantinedRaceAttemptOwnersReturnsOnlyNearestFamilies(t *testing
 	assert.Equal(t, "TestCheckout/card/sibling", owners[1].TestName)
 }
 
-func TestQuarantinedRaceParallelContinuationDisablesAggregateCoverage(t *testing.T) {
+func TestQuarantinedRaceParallelContinuationDisablesCoverage(t *testing.T) {
 	const root, owner = "TestCheckout/root", "TestCheckout/root/owner"
 	for _, parallel := range []bool{false, true} {
 		t.Run(fmt.Sprintf("parallel=%t", parallel), func(t *testing.T) {
 			cfg := &processRetrySubtreeConfig{
-				Version: processRetrySubtreeVersion, SelectedRoot: root, AttemptToFixRetries: 2, CollectAggregate: true,
+				Version: processRetrySubtreeVersion, SelectedRoot: root, AttemptToFixRetries: 2, CollectPerTest: true, CollectAggregate: true,
 				Root: processRetrySubtreeDirective{TestName: root, ModuleName: "module", SuiteName: "suite", Quarantined: true},
 			}
 			attempt := processRetryAttemptResult{Result: processRetryResult{Subtests: []processRetrySubtreeResult{{
@@ -98,9 +98,19 @@ func TestQuarantinedRaceParallelContinuationDisablesAggregateCoverage(t *testing
 			})
 			require.Nil(t, failure)
 			require.NotNil(t, runCfg)
+			assert.Equal(t, !parallel, runCfg.CollectPerTest)
 			assert.Equal(t, !parallel, runCfg.CollectAggregate)
 		})
 	}
+}
+
+func TestFinalizeQuarantinedRaceInvocationConsumesCleanup(t *testing.T) {
+	cleanups := 0
+	attempt := finalizeQuarantinedRaceInvocation(&processRetrySubtreeConfig{}, processRetryAttemptResult{
+		Cleanup: func() { cleanups++ },
+	})
+	require.Nil(t, attempt.Cleanup)
+	require.Equal(t, 1, cleanups)
 }
 
 func TestQuarantinedRaceContinuationConfigPreservesDeeperAttemptOwner(t *testing.T) {

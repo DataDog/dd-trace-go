@@ -169,6 +169,14 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					},
 					"TestQuarantinedRaceDeferredDynamicDescendantFixture/quarantined": properties(false),
 					"TestQuarantinedRaceDeferredDynamicDescendantFixture/dynamic":     properties(true),
+					"TestQuarantinedRaceInitialInheritedFixture": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+					},
+					"TestQuarantinedRaceInitialInheritedFixture/initial": properties(false),
+					"TestQuarantinedRaceDeferredAggregateCoverageFixture": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+					},
+					"TestQuarantinedRaceDeferredAggregateCoverageFixture/quarantined": properties(false),
 
 					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
@@ -455,6 +463,12 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(dynamic, constants.TestIsAttempToFix, "true", 1)
 		checkSpansByTagValue(dynamic, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 		checkSpansByTagValue(dynamic, constants.TestAttemptToFixPassed, "true", 1)
+		os.Exit(0)
+	case "initial-inherited-finality":
+		initial := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceInitialInheritedFixture/initial", 1)
+		checkSpansByTagValue(initial, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		os.Exit(0)
+	case "deferred-aggregate-coverage", "deferred-aggregate-coverage-control":
 		os.Exit(0)
 	case "terminal-descendants":
 		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
@@ -801,6 +815,23 @@ func TestQuarantinedRaceDeferredDynamicDescendantFinalityEndToEnd(t *testing.T) 
 	runQuarantinedRaceEndToEnd(t, "deferred-dynamic-descendant-finality", "^TestQuarantinedRaceDeferredDynamicDescendantFixture$")
 }
 
+func TestQuarantinedRaceInitialInheritedFinalityEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "initial-inherited-finality", "^TestQuarantinedRaceInitialInheritedFixture$")
+}
+
+func TestQuarantinedRaceDeferredAggregateCoverageEndToEnd(t *testing.T) {
+	if testing.CoverMode() == "" {
+		t.Skip("requires coverage instrumentation")
+	}
+	controlPath := filepath.Join(t.TempDir(), "control.out")
+	runQuarantinedRaceEndToEnd(t, "deferred-aggregate-coverage-control", "^TestQuarantinedRaceDeferredAggregateCoverageFixture$", "-test.coverprofile="+controlPath, "-test.gocoverdir="+t.TempDir())
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	runQuarantinedRaceEndToEnd(t, "deferred-aggregate-coverage", "^TestQuarantinedRaceDeferredAggregateCoverageFixture$", "-test.coverprofile="+profilePath, "-test.gocoverdir="+t.TempDir())
+	controlCount := processCoverageCountForFunctionBody(t, controlPath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount")
+	coveredCount := processCoverageCountForFunctionBody(t, profilePath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount")
+	require.Equal(t, controlCount+1, coveredCount)
+}
+
 func TestQuarantinedRaceNestedRootTerminalsEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "nested-root-terminal", "^TestQuarantinedRaceNestedRootTerminalFixture$")
 }
@@ -844,7 +875,7 @@ func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
 func runQuarantinedRaceEndToEnd(t *testing.T, scenario, pattern string, extraArgs ...string) {
 	t.Helper()
 	pidDir := t.TempDir()
-	args := append(buildTestControllerSubprocessArgs(os.Args[1:], pattern), extraArgs...)
+	args := buildTestControllerSubprocessArgs(os.Args[1:], pattern, extraArgs...)
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Env = append(os.Environ(),
 		quarantinedRaceIsolationFixtureEnv+"="+scenario,
@@ -894,6 +925,36 @@ func processCoverageCountForFunction(t *testing.T, profilePath, sourcePath, func
 		}
 	}
 	return total
+}
+
+func processCoverageCountForFunctionBody(t *testing.T, profilePath, sourcePath, functionName string) int {
+	t.Helper()
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, sourcePath, nil, 0)
+	require.NoError(t, err)
+	var start, finish token.Position
+	for _, declaration := range parsed.Decls {
+		if fn, ok := declaration.(*ast.FuncDecl); ok && fn.Name.Name == functionName {
+			start, finish = fset.Position(fn.Body.Pos()), fset.Position(fn.Body.End())
+			break
+		}
+	}
+	require.NotZero(t, start.Line)
+	profile, err := os.ReadFile(profilePath)
+	require.NoError(t, err)
+	for _, line := range strings.Split(string(profile), "\n") {
+		separator := strings.LastIndexByte(line, ':')
+		if separator < 0 || !strings.HasSuffix(filepath.ToSlash(line[:separator]), "/gotesting/"+filepath.Base(sourcePath)) {
+			continue
+		}
+		var startLine, startColumn, endLine, endColumn, statements, count int
+		if _, err := fmt.Sscanf(line[separator+1:], "%d.%d,%d.%d %d %d", &startLine, &startColumn, &endLine, &endColumn, &statements, &count); err == nil &&
+			startLine == start.Line && startColumn == start.Column && endLine == finish.Line && endColumn == finish.Column {
+			return count
+		}
+	}
+	t.Fatalf("coverage block for %s not found", functionName)
+	return 0
 }
 
 func writeQuarantinedRaceIsolationPID(t *testing.T, name string) {
@@ -1562,5 +1623,35 @@ func TestQuarantinedRaceDeferredDynamicDescendantFixture(t *testing.T) {
 	require.NoError(t, err)
 	if cfg.Attempt == 1 {
 		t.Run("dynamic", instrumentTestingTFunc(func(*testing.T) {}))
+	}
+}
+
+func TestQuarantinedRaceInitialInheritedFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	if !isProcessRetryChild() {
+		t.Run("initial", instrumentTestingTFunc(func(*testing.T) {}))
+		return
+	}
+	cfg, err := processRetryChildConfigFromEnv()
+	require.NoError(t, err)
+	if strings.HasSuffix(cfg.TestName, "/initial") {
+		t.Run("initial", instrumentTestingTFunc(func(*testing.T) {}))
+	}
+}
+
+func TestQuarantinedRaceDeferredAggregateCoverageFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("quarantined", instrumentTestingTFunc(func(*testing.T) {}))
+	if !isProcessRetryChild() {
+		return
+	}
+	cfg, err := processRetryChildConfigFromEnv()
+	require.NoError(t, err)
+	if cfg.TestName == "TestQuarantinedRaceDeferredAggregateCoverageFixture" && os.Getenv(quarantinedRaceIsolationFixtureEnv) == "deferred-aggregate-coverage" {
+		require.Equal(t, 1, processRetryAttemptToFixExecutionCount(1))
 	}
 }

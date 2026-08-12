@@ -108,7 +108,7 @@ type deferredProcessRetryGroup struct {
 	raceProcess           *quarantinedRaceProcessContext
 	raceSubtree           *processRetrySubtreeConfig
 	raceDescendantFailed  bool
-	raceReplay            quarantinedRaceReplayState
+	raceReplay            *quarantinedRaceReplayState
 }
 
 type deferredProcessRetryEvent struct {
@@ -975,6 +975,10 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 		raceProcess:           execOpts.executionMetadata.quarantinedRaceProcess,
 		raceSubtree:           quarantinedRaceSubtree,
 	}
+	group.raceReplay = execOpts.executionMetadata.quarantinedRaceReplay.Swap(nil)
+	if quarantinedRaceSubtree != nil && group.raceReplay == nil {
+		group.raceReplay = &quarantinedRaceReplayState{}
+	}
 	group.metadata.identity = &group.identity
 	group.testInfo.identity = &group.identity
 	group.tailEvent = &deferredProcessRetryEvent{
@@ -1043,6 +1047,9 @@ func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessR
 		group.shutdown(),
 		nil,
 	)
+	if subtree != nil {
+		attempt = finalizeQuarantinedRaceInvocation(subtree, attempt)
+	}
 	if subtree == nil || processRetryInfrastructureFailure(attempt) || subtree.AttemptToFixRetries <= 0 || quarantinedRaceFailfastStopsContinuation(attempt) {
 		return attempt
 	}
@@ -1132,7 +1139,7 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		g.tailEvent = nextTail
 	}
 	if len(raceInvocations) > 0 {
-		replayQuarantinedRaceResults(&g.testInfo, g.raceProcess, raceInvocations, false, &g.raceReplay)
+		replayQuarantinedRaceResults(&g.testInfo, g.raceProcess, raceInvocations, false, g.raceReplay)
 	}
 	g.latest = retryAttemptObservation{
 		executionIndex: completed.prepared.index,
@@ -1289,7 +1296,9 @@ func (g *deferredProcessRetryGroup) finish() {
 	if g == nil {
 		return
 	}
-	g.raceReplay.finish()
+	if g.raceReplay != nil {
+		g.raceReplay.finish()
+	}
 	g.closeTailEvent(true)
 	if g.raceProcess != nil {
 		g.raceProcess.clearAncestorOutcomes(g.raceSubtree)
@@ -1361,7 +1370,13 @@ func deferOrCloseInstrumentedTestEvent(
 }
 
 func completeDeferredProcessRetryEvent(execMeta *testExecutionMetadata) {
-	if execMeta == nil || execMeta.deferredRetryEvent == nil {
+	if execMeta == nil {
+		return
+	}
+	if execMeta.deferredRetryEvent == nil {
+		if replay := execMeta.quarantinedRaceReplay.Swap(nil); replay != nil {
+			replay.finish()
+		}
 		return
 	}
 	event := execMeta.deferredRetryEvent
@@ -1377,6 +1392,9 @@ func completeDeferredProcessRetryEvent(execMeta *testExecutionMetadata) {
 	}
 	admission.abort()
 	if group != nil {
+		if group.raceReplay != nil {
+			group.raceReplay.finish()
+		}
 		if group.reservation != nil {
 			group.reservation.refund()
 			group.reservation = nil
