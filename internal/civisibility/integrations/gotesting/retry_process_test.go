@@ -1567,7 +1567,7 @@ func TestProcessRetryNoopTestContextAndSessionChain(t *testing.T) {
 		Attempt:     1,
 		RetryReason: constants.AutoTestRetriesRetryReason,
 	}
-	ciTest := newProcessRetryNoopTest(t, cfg, time.Now(), nil, nil, retryAttemptRaceErrors())
+	ciTest := newProcessRetryNoopTest(t, cfg, nil, time.Now(), nil, nil, retryAttemptRaceErrors())
 
 	require.Equal(t, context.Background(), ciTest.Context())
 	require.Equal(t, "TestSelected", ciTest.Name())

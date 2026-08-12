@@ -354,14 +354,14 @@ func TestQuarantinedRaceAggregatePayloadFitsWireLimit(t *testing.T) {
 				},
 			}
 			result := processRetryResult{
-				Version: 1, TestName: root, Attempt: 1, RetryReason: processRetrySubtreeReason,
+				Version: 1, TestName: root, ModuleName: "module", SuiteName: "suite", Attempt: 1, RetryReason: processRetrySubtreeReason,
 				Status: processRetryStatusFail, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1, Failed: true,
 				Subtests: make([]processRetrySubtreeResult, tt.count),
 			}
 			for idx := range result.Subtests {
 				result.Subtests[idx] = processRetrySubtreeResult{
-					TestName: fmt.Sprintf("%s/child-%04d", root, idx),
-					Status:   processRetryStatusFail, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
+					TestName: fmt.Sprintf("%s/child-%04d", root, idx), ModuleName: "module", SuiteName: "suite",
+					Status: processRetryStatusFail, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
 					Failed: true, Quarantined: true, ErrorType: "error",
 				}
 				tt.populate(&result.Subtests[idx])
@@ -470,6 +470,8 @@ func TestQuarantinedRaceSubtreeResultValidationIsFailClosed(t *testing.T) {
 	valid := processRetryResult{
 		Version:           1,
 		TestName:          cfg.SelectedRoot,
+		ModuleName:        "module",
+		SuiteName:         "suite",
 		Attempt:           1,
 		RetryReason:       processRetrySubtreeReason,
 		MRunEpoch:         1,
@@ -480,6 +482,8 @@ func TestQuarantinedRaceSubtreeResultValidationIsFailClosed(t *testing.T) {
 		DurationNanos:     10,
 		Subtests: []processRetrySubtreeResult{{
 			TestName:       "TestCheckout/card/visa",
+			ModuleName:     "module",
+			SuiteName:      "suite",
 			Status:         processRetryStatusPass,
 			StartUnixNano:  now + 1,
 			FinishUnixNano: now + 9,
@@ -492,6 +496,15 @@ func TestQuarantinedRaceSubtreeResultValidationIsFailClosed(t *testing.T) {
 		MRunEpoch: 1, InvocationOrdinal: 1, Subtree: cfg,
 	}
 	require.NoError(t, validateProcessRetryResult(valid, expected))
+
+	missingIdentity := valid
+	missingIdentity.ModuleName = ""
+	require.Error(t, validateProcessRetryResult(missingIdentity, expected))
+
+	missingSubtestIdentity := valid
+	missingSubtestIdentity.Subtests = append([]processRetrySubtreeResult(nil), valid.Subtests...)
+	missingSubtestIdentity.Subtests[0].SuiteName = ""
+	require.Error(t, validateProcessRetryResult(missingSubtestIdentity, expected))
 
 	duplicate := valid
 	duplicate.Subtests = append(append([]processRetrySubtreeResult(nil), valid.Subtests...), valid.Subtests[0])
@@ -547,6 +560,8 @@ func TestQuarantinedRaceAcceptsOnlyExplainedTestFailures(t *testing.T) {
 	}
 	assert.True(t, processRetryInfrastructureFailure(inconsistent))
 }
+
+func quarantinedRaceForeignSuiteCallback(*testing.T) {}
 
 func TestQuarantinedRaceReplayMarksTruncatedOutput(t *testing.T) {
 	attempt := processRetryAttemptFromSubtreeResult(processRetrySubtreeResult{

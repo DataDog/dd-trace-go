@@ -99,6 +99,8 @@ type processRetryTestSource struct {
 // use the same status contract for the root itself.
 type processRetrySubtreeResult struct {
 	TestName        string                             `json:"test_name"`
+	ModuleName      string                             `json:"module_name"`
+	SuiteName       string                             `json:"suite_name"`
 	Status          processRetryStatus                 `json:"status"`
 	StartUnixNano   int64                              `json:"start_unix_nano"`
 	FinishUnixNano  int64                              `json:"finish_unix_nano"`
@@ -107,6 +109,7 @@ type processRetrySubtreeResult struct {
 	Skipped         bool                               `json:"skipped"`
 	Panic           bool                               `json:"panic"`
 	RaceDetected    bool                               `json:"race_detected,omitempty"`
+	Parallel        bool                               `json:"parallel,omitempty"`
 	Disabled        bool                               `json:"disabled,omitempty"`
 	Quarantined     bool                               `json:"quarantined,omitempty"`
 	AttemptToFix    bool                               `json:"attempt_to_fix,omitempty"`
@@ -692,6 +695,8 @@ func (o *processRetryChildObservation) buildSubtreeResult(result processRetryRes
 	}
 	root := results[rootIndex]
 	result.Status = root.Status
+	result.ModuleName = root.ModuleName
+	result.SuiteName = root.SuiteName
 	result.StartUnixNano = root.StartUnixNano
 	result.FinishUnixNano = root.FinishUnixNano
 	result.DurationNanos = root.DurationNanos
@@ -699,6 +704,7 @@ func (o *processRetryChildObservation) buildSubtreeResult(result processRetryRes
 	result.Skipped = root.Skipped
 	result.Panic = root.Panic
 	result.RaceDetected = root.RaceDetected
+	result.RootParallel = root.Parallel
 	result.ErrorType = root.ErrorType
 	result.ErrorMessage = root.ErrorMessage
 	result.ErrorStack = root.ErrorStack
@@ -748,7 +754,6 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	state.beginAggregateCoverage(name)
 
 	directive, attemptOwner := state.cfg.resolveDirective(name)
-	execMeta.identity = newTestIdentity("", "", name)
 	execMeta.isDisabled = directive.Disabled
 	execMeta.isQuarantined = directive.Quarantined
 	execMeta.isAttemptToFix = directive.AttemptToFix
@@ -758,10 +763,15 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	execMeta.hasExplicitAttemptToFix = true
 	execMeta.shouldOrchestrateAttemptToFix = attemptOwner == name
 
-	sourceFunc := runtime.FuncForPC(reflect.ValueOf(original).Pointer())
+	callbackPC := reflect.ValueOf(original).Pointer()
+	moduleName, suiteName := utils.GetModuleAndSuiteName(callbackPC)
+	sourceFunc := runtime.FuncForPC(callbackPC)
 	if testifyData := getTestifyTest(t); testifyData != nil && testifyData.methodFunc != nil {
+		moduleName = testifyData.moduleName
+		suiteName = testifyData.suiteName
 		sourceFunc = testifyData.methodFunc
 	}
+	execMeta.identity = newTestIdentity(moduleName, suiteName, name)
 	source := processRetrySourceFromFunc(sourceFunc)
 	execMeta.isAModifiedTest = directive.Modified || integrations.IsTestFuncModifiedWithAnalyzer(state.impacted, name, sourceFunc)
 	directive.Modified = execMeta.isAModifiedTest
@@ -772,6 +782,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	var collector *coverage.ProcessTestCoverage
 	var coverageInterval *quarantinedRaceCoverageInterval
 	coverageValid := true
+	parallel := false
 	collectCoverage := state.cfg.CollectPerTest && coverage.CanCollect()
 	if collectCoverage {
 		coverageInterval = state.coverage.begin(name)
@@ -780,6 +791,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		}
 	}
 	execMeta.processRetryParallelPause = func() func() {
+		parallel = true
 		// Clear any managed failure propagated before t.Parallel releases the
 		// parent. A failure added by the selected root after that release can then
 		// be identified before its parallel descendants resume.
@@ -871,12 +883,15 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		fields := getTestPrivateFields(t)
 		result := processRetrySubtreeResult{
 			TestName:        name,
+			ModuleName:      execMeta.identity.ModuleName,
+			SuiteName:       execMeta.identity.SuiteName,
 			StartUnixNano:   start.UnixNano(),
 			FinishUnixNano:  finish.UnixNano(),
 			DurationNanos:   activeDuration.Nanoseconds(),
 			Failed:          t.Failed(),
 			Skipped:         t.Skipped(),
 			RaceDetected:    processRetrySubtreeRaceDetected(fields, raceBaseline, retryAttemptRaceErrors()),
+			Parallel:        parallel,
 			Disabled:        directive.Disabled,
 			Quarantined:     directive.Quarantined,
 			AttemptToFix:    directive.AttemptToFix,
@@ -1002,7 +1017,7 @@ func bufferQuarantinedRaceChildOutput(t *testing.T) func() {
 
 func validateProcessRetrySubtreeResultEnvelope(result processRetryResult, expected processRetryChildConfig) error {
 	if expected.Subtree == nil {
-		if result.OutputTail != "" || result.OutputTruncated || result.Source != nil || len(result.Coverage) > 0 || len(result.Subtests) > 0 ||
+		if result.ModuleName != "" || result.SuiteName != "" || result.OutputTail != "" || result.OutputTruncated || result.Source != nil || len(result.Coverage) > 0 || len(result.Subtests) > 0 ||
 			result.SkippedByITR || result.ITRForcedRun || result.Modified {
 			return fmt.Errorf("%w: unexpected subtree data", errProcessRetryResultInvalid)
 		}
@@ -1010,6 +1025,11 @@ func validateProcessRetrySubtreeResultEnvelope(result processRetryResult, expect
 	}
 	if result.Status == processRetryStatusNotRun {
 		return nil
+	}
+	if result.ModuleName == "" || result.SuiteName == "" ||
+		!processRetryJSONStringFits(result.ModuleName, processRetryErrorMessageMaxBytes) ||
+		!processRetryJSONStringFits(result.SuiteName, processRetryErrorMessageMaxBytes) {
+		return fmt.Errorf("%w: invalid subtree root identity", errProcessRetryResultInvalid)
 	}
 	if result.StartUnixNano == 0 || result.FinishUnixNano < result.StartUnixNano ||
 		result.DurationNanos != result.FinishUnixNano-result.StartUnixNano {
@@ -1050,6 +1070,11 @@ func validateProcessRetrySubtreeResult(result processRetrySubtreeResult, cfg *pr
 	if result.StartUnixNano == 0 || result.FinishUnixNano < result.StartUnixNano ||
 		result.DurationNanos != result.FinishUnixNano-result.StartUnixNano {
 		return fmt.Errorf("%w: invalid subtree timing", errProcessRetryResultInvalid)
+	}
+	if result.ModuleName == "" || result.SuiteName == "" ||
+		!processRetryJSONStringFits(result.ModuleName, processRetryErrorMessageMaxBytes) ||
+		!processRetryJSONStringFits(result.SuiteName, processRetryErrorMessageMaxBytes) {
+		return fmt.Errorf("%w: invalid subtree identity", errProcessRetryResultInvalid)
 	}
 	if !processRetryJSONStringFits(result.ErrorType, processRetryErrorTypeMaxBytes) ||
 		!processRetryJSONStringFits(result.ErrorMessage, processRetryErrorMessageMaxBytes) ||
@@ -1115,6 +1140,12 @@ type quarantinedRaceInvocation struct {
 	cfg          *processRetrySubtreeConfig
 	attempt      processRetryAttemptResult
 	attemptIndex int
+}
+
+type quarantinedRaceReplayIdentity struct {
+	moduleName string
+	suiteName  string
+	testName   string
 }
 
 // runQuarantinedRaceProcessIsolation replaces only the selected quarantined
@@ -1229,9 +1260,6 @@ func continueQuarantinedRaceDescendantFamilies(
 	invocations *[]quarantinedRaceInvocation,
 ) (stop, failed bool) {
 	for _, result := range directQuarantinedRaceAttemptOwners(attempt.Result.Subtests, cfg.SelectedRoot) {
-		if retryAttemptFailfastEnabled() && result.Failed {
-			return true, false
-		}
 		continuationCfg, err := cfg.forSelectedRoot(result.TestName)
 		if err != nil {
 			failQuarantinedRaceIsolation(t, testInfo, execMeta, processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: time.Now(), FinishTime: time.Now()})
@@ -1242,8 +1270,14 @@ func continueQuarantinedRaceDescendantFamilies(
 		); stop || failed {
 			return stop, failed
 		}
+		runRoot := continuationCfg.SelectedRoot
+		if result.Parallel {
+			// A parallel owner needs the enclosing scheduler siblings recreated.
+			// Serial owners use their exact selector and do not repeat side effects.
+			runRoot = cfg.SelectedRoot
+		}
 		for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
-			next := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, cfg.SelectedRoot, idx, parallelBridge)
+			next := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, runRoot, idx, parallelBridge)
 			if processRetryInfrastructureFailure(next) {
 				failQuarantinedRaceIsolation(t, &commonInfo{
 					moduleName: testInfo.moduleName,
@@ -1303,7 +1337,15 @@ func processRetryAttemptToFixExecutionCount(configured int) int {
 }
 
 func quarantinedRaceFailfastStopsContinuation(attempt processRetryAttemptResult) bool {
-	return retryAttemptFailfastEnabled() && effectiveProcessRetryStatus(attempt, false).Failed
+	if !retryAttemptFailfastEnabled() {
+		return false
+	}
+	if effectiveProcessRetryStatus(attempt, false).Failed {
+		return true
+	}
+	return slices.ContainsFunc(attempt.Result.Subtests, func(result processRetrySubtreeResult) bool {
+		return result.Failed
+	})
 }
 
 func runQuarantinedRaceInvocation(
@@ -1457,7 +1499,7 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 		appendEvent(invocation, processRetrySubtreeRootFromInvocation(invocation))
 	}
 	outcomes := make(map[familyKey]retryOutcomeAccumulator)
-	counted := make(map[string]struct{})
+	counted := make(map[quarantinedRaceReplayIdentity]*testIdentity)
 	for idx, event := range events {
 		prior := outcomes[event.family]
 		replayQuarantinedRaceEvent(testInfo, event.invocation, event.result, event.attemptOwner, lastOccurrence[event.family] == idx, prior, counted)
@@ -1466,9 +1508,9 @@ func replayQuarantinedRaceInvocations(testInfo *commonInfo, invocations []quaran
 			outcomes[event.family] = prior
 		}
 	}
-	module := session.GetOrCreateModule(testInfo.moduleName)
-	suite := module.GetOrCreateSuite(testInfo.suiteName)
-	for range counted {
+	for _, identity := range counted {
+		module := session.GetOrCreateModule(identity.ModuleName)
+		suite := module.GetOrCreateSuite(identity.SuiteName)
 		checkModuleAndSuite(module, suite)
 	}
 }
@@ -1497,19 +1539,27 @@ func replayQuarantinedRaceEvent(
 	attemptOwner string,
 	lastOccurrence bool,
 	prior retryOutcomeAccumulator,
-	counted map[string]struct{},
+	counted map[quarantinedRaceReplayIdentity]*testIdentity,
 ) {
-	identity := newTestIdentity(testInfo.moduleName, testInfo.suiteName, result.TestName)
-	if _, ok := counted[result.TestName]; !ok {
+	moduleName, suiteName := result.ModuleName, result.SuiteName
+	if moduleName == "" {
+		moduleName = testInfo.moduleName
+	}
+	if suiteName == "" {
+		suiteName = testInfo.suiteName
+	}
+	identity := newTestIdentity(moduleName, suiteName, result.TestName)
+	identityKey := quarantinedRaceReplayIdentity{moduleName: moduleName, suiteName: suiteName, testName: result.TestName}
+	if _, ok := counted[identityKey]; !ok {
 		// The parent already counted a top-level test before entering its
 		// wrapper. Subtests bypass the normal runSubtest path, so only they
 		// need a matching increment; every unique event still needs one
 		// matching checkModuleAndSuite call after replay.
 		if len(identity.Segments) > 1 {
-			addModulesCounters(testInfo.moduleName, 1)
-			addSuitesCounters(testInfo.suiteName, 1)
+			addModulesCounters(moduleName, 1)
+			addSuitesCounters(suiteName, 1)
 		}
-		counted[result.TestName] = struct{}{}
+		counted[identityKey] = identity
 	}
 	ownsAttemptToFix := attemptOwner == result.TestName
 	attemptIndex := invocation.attemptIndex
@@ -1554,8 +1604,8 @@ func replayQuarantinedRaceEvent(
 	}
 	attempt := processRetryAttemptFromSubtreeResult(result)
 	finishProcessRetryTestEvent(&commonInfo{
-		moduleName: testInfo.moduleName,
-		suiteName:  testInfo.suiteName,
+		moduleName: moduleName,
+		suiteName:  suiteName,
 		testName:   result.TestName,
 		identity:   identity,
 	}, execMeta, attempt, nil, nil)
@@ -1565,6 +1615,8 @@ func processRetrySubtreeResultFromEnvelope(result processRetryResult, cfg *proce
 	directive, owner := cfg.resolveDirective(result.TestName)
 	return processRetrySubtreeResult{
 		TestName:        result.TestName,
+		ModuleName:      result.ModuleName,
+		SuiteName:       result.SuiteName,
 		Status:          normalizedProcessRetrySubtreeStatus(result.Status),
 		StartUnixNano:   result.StartUnixNano,
 		FinishUnixNano:  result.FinishUnixNano,
@@ -1573,6 +1625,7 @@ func processRetrySubtreeResultFromEnvelope(result processRetryResult, cfg *proce
 		Skipped:         result.Skipped,
 		Panic:           result.Panic,
 		RaceDetected:    result.RaceDetected,
+		Parallel:        result.RootParallel,
 		Disabled:        directive.Disabled,
 		Quarantined:     directive.Quarantined,
 		AttemptToFix:    directive.AttemptToFix,
@@ -1627,6 +1680,8 @@ func processRetryResultFromSubtree(result processRetrySubtreeResult) processRetr
 	return processRetryResult{
 		Version:         1,
 		TestName:        result.TestName,
+		ModuleName:      result.ModuleName,
+		SuiteName:       result.SuiteName,
 		Status:          result.Status,
 		StartUnixNano:   result.StartUnixNano,
 		FinishUnixNano:  result.FinishUnixNano,
@@ -1635,6 +1690,7 @@ func processRetryResultFromSubtree(result processRetrySubtreeResult) processRetr
 		Skipped:         result.Skipped,
 		Panic:           result.Panic,
 		RaceDetected:    result.RaceDetected,
+		RootParallel:    result.Parallel,
 		ErrorType:       result.ErrorType,
 		ErrorMessage:    result.ErrorMessage,
 		ErrorStack:      result.ErrorStack,

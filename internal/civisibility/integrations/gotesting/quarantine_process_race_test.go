@@ -115,6 +115,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceFailfastRootFixture":              properties(true),
 					"TestQuarantinedRaceFailfastDescendantFixture":        properties(false),
 					"TestQuarantinedRaceFailfastDescendantFixture/child":  properties(true),
+					"TestQuarantinedRaceFailfastMaskedChildFixture":       properties(true),
+					"TestQuarantinedRaceFailfastMaskedChildFixture/child": properties(false),
 					"TestQuarantinedRaceParallelFixture/isolated":         properties(false),
 					"TestQuarantinedRaceParallelRootsFixture/one":         properties(false),
 					"TestQuarantinedRaceParallelRootsFixture/two":         properties(false),
@@ -135,6 +137,9 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceOwnerGenerationFixture/root/clear/owner": properties(true),
 					"TestQuarantinedRaceParallelATFFixture/root":                 properties(false),
 					"TestQuarantinedRaceParallelATFFixture/root/owner":           properties(true),
+					"TestQuarantinedRaceSerialATFFixture/root":                   properties(false),
+					"TestQuarantinedRaceSerialATFFixture/root/owner":             properties(true),
+					"TestQuarantinedRaceForeignSuiteFixture/root":                properties(false),
 
 					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
@@ -345,6 +350,20 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(owner, constants.TestAttemptToFixPassed, "true", 1)
 		checkSpansByTagValue(owner, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 		os.Exit(0)
+	case "serial-atf-sibling":
+		payload, err := os.ReadFile(filepath.Join(pidDir, "serial-atf-sibling-runs"))
+		if err != nil || len(payload) != 1 {
+			panic(fmt.Sprintf("serial sibling ran %d times, want 1: %v", len(payload), err))
+		}
+		owner := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceSerialATFFixture/root/owner", 2)
+		checkSpansByTagValue(owner, constants.TestAttemptToFixPassed, "true", 1)
+		checkSpansByTagValue(owner, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		os.Exit(0)
+	case "foreign-suite":
+		foreignSuite := "quarantine_process_test.go"
+		foreign := checkSpansByResourceName(spans, foreignSuite+".TestQuarantinedRaceForeignSuiteFixture/root/foreign", 1)
+		checkSpansByTagValue(foreign, constants.TestStatus, constants.TestStatusPass, 1)
+		os.Exit(0)
 	case "terminal-descendants":
 		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
 		checkSpansByTagValue(parallelRoot, constants.TestStatus, constants.TestStatusFail, 1)
@@ -429,7 +448,11 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(failNowSpans, constants.TestStatus, constants.TestStatusFail, 1)
 		os.Exit(0)
 	case "failfast":
-		for _, name := range []string{"failfast-root-3", "failfast-descendant-2", "failfast-descendant-3"} {
+		for _, name := range []string{
+			"failfast-root-3",
+			"failfast-descendant-2", "failfast-descendant-3",
+			"failfast-masked-root-2", "failfast-masked-root-3",
+		} {
 			if _, err := os.Stat(filepath.Join(pidDir, name)); err == nil || !os.IsNotExist(err) {
 				panic(name + " ran after a valid failure under -failfast")
 			}
@@ -437,6 +460,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		readPID("failfast-root-1")
 		readPID("failfast-root-2")
 		readPID("failfast-descendant-1")
+		readPID("failfast-masked-root-1")
 		rootSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFailfastRootFixture", 2)
 		checkSpansByTagValue(rootSpans, constants.TestIsRetry, "true", 1)
 		checkSpansByTagValue(rootSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 1)
@@ -446,6 +470,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(descendantSpans, constants.TestIsRetry, "true", 0)
 		checkSpansByTagValue(descendantSpans, constants.TestAttemptToFixPassed, "false", 0)
 		checkSpansByTagValue(descendantSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		maskedChild := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceFailfastMaskedChildFixture/child", 1)
+		checkSpansByTagValue(maskedChild, constants.TestStatus, constants.TestStatusFail, 1)
 		os.Exit(0)
 	}
 	racePID := readPID("race")
@@ -583,7 +609,7 @@ func TestQuarantinedRaceCleanupEndToEnd(t *testing.T) {
 }
 
 func TestQuarantinedRaceFailfastEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "failfast", "^TestQuarantinedRaceFailfast(Root|Descendant)Fixture$", "-test.failfast")
+	runQuarantinedRaceEndToEnd(t, "failfast", "^TestQuarantinedRaceFailfast(Root|Descendant|MaskedChild)Fixture$", "-test.failfast")
 }
 
 func TestQuarantinedRaceParallelAdmissionEndToEnd(t *testing.T) {
@@ -669,6 +695,14 @@ func TestQuarantinedRaceOwnerGenerationFinalityEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceParallelATFSiblingEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "parallel-atf-sibling", "^TestQuarantinedRaceParallelATFFixture$", "-test.timeout=15s")
+}
+
+func TestQuarantinedRaceSerialATFDoesNotRepeatSiblingEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "serial-atf-sibling", "^TestQuarantinedRaceSerialATFFixture$")
+}
+
+func TestQuarantinedRacePreservesDescendantSuiteEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "foreign-suite", "^TestQuarantinedRaceForeignSuiteFixture$")
 }
 
 func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
@@ -1282,5 +1316,43 @@ func TestQuarantinedRaceFailfastDescendantFixture(t *testing.T) {
 		require.NoError(t, err)
 		writeQuarantinedRaceIsolationPID(t, "failfast-descendant-"+strconv.Itoa(cfg.Attempt))
 		t.Fail()
+	}))
+}
+
+func TestQuarantinedRaceFailfastMaskedChildFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	cfg, err := processRetryChildConfigFromEnv()
+	require.NoError(t, err)
+	writeQuarantinedRaceIsolationPID(t, "failfast-masked-root-"+strconv.Itoa(cfg.Attempt))
+	t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+		t.Fail()
+	}))
+}
+
+func TestQuarantinedRaceSerialATFFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("sibling", instrumentTestingTFunc(func(t *testing.T) {
+			path := filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "serial-atf-sibling-runs")
+			file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			require.NoError(t, err)
+			_, err = file.WriteString("x")
+			require.NoError(t, err)
+			require.NoError(t, file.Close())
+		}))
+		t.Run("owner", instrumentTestingTFunc(func(*testing.T) {}))
+	}))
+}
+
+func TestQuarantinedRaceForeignSuiteFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("foreign", instrumentTestingTFunc(quarantinedRaceForeignSuiteCallback))
 	}))
 }

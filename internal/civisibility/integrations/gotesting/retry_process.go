@@ -153,6 +153,8 @@ const (
 type processRetryResult struct {
 	Version           int                                `json:"version"`
 	TestName          string                             `json:"test_name"`
+	ModuleName        string                             `json:"module_name,omitempty"`
+	SuiteName         string                             `json:"suite_name,omitempty"`
 	Attempt           int                                `json:"attempt"`
 	RetryReason       string                             `json:"retry_reason"`
 	MRunEpoch         uint64                             `json:"m_run_epoch,omitempty"`
@@ -3283,8 +3285,12 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 			}
 			execMeta := createTestMetadata(attempt.test, nil)
 			attempt.metadata = execMeta
-			execMeta.identity = newTestIdentity("", "", cfg.TestName)
-			execMeta.test = newProcessRetryNoopTest(attempt.test, cfg, start, writer, control, attempt.raceBaseline)
+			moduleName, suiteName := "", ""
+			if cfg.Subtree != nil {
+				moduleName, suiteName = utils.GetModuleAndSuiteName(reflect.ValueOf(original).Pointer())
+			}
+			execMeta.identity = newTestIdentity(moduleName, suiteName, cfg.TestName)
+			execMeta.test = newProcessRetryNoopTest(attempt.test, cfg, execMeta.identity, start, writer, control, attempt.raceBaseline)
 			if cfg.Subtree != nil {
 				observation.subtree = newQuarantinedRaceChildState(cfg.Subtree)
 				if cfg.Subtree.CollectAggregate && cfg.Subtree.SelectedRoot != topLevelName {
@@ -3456,6 +3462,8 @@ func (o *processRetryChildObservation) buildResult(status processRetryStatus) pr
 	result := processRetryResult{
 		Version:           1,
 		TestName:          o.cfg.TestName,
+		ModuleName:        o.execMeta.identity.ModuleName,
+		SuiteName:         o.execMeta.identity.SuiteName,
 		Attempt:           o.cfg.Attempt,
 		RetryReason:       o.cfg.RetryReason,
 		MRunEpoch:         o.cfg.MRunEpoch,
@@ -3985,17 +3993,19 @@ type processRetryNoopTest struct {
 	integrations.Test
 	root      *testing.T
 	cfg       processRetryChildConfig
+	identity  *testIdentity
 	startTime time.Time
 	writer    *processRetryResultWriter
 	control   *processRetryControl
 	raceBase  int64
 }
 
-func newProcessRetryNoopTest(root *testing.T, cfg processRetryChildConfig, startTime time.Time, writer *processRetryResultWriter, control *processRetryControl, raceBase int64) integrations.Test {
+func newProcessRetryNoopTest(root *testing.T, cfg processRetryChildConfig, identity *testIdentity, startTime time.Time, writer *processRetryResultWriter, control *processRetryControl, raceBase int64) integrations.Test {
 	return &processRetryNoopTest{
 		Test:      integrations.NewProcessRetryNoopTest(cfg.TestName, startTime),
 		root:      root,
 		cfg:       cfg,
+		identity:  identity,
 		startTime: startTime,
 		writer:    writer,
 		control:   control,
@@ -4008,7 +4018,7 @@ func (t *processRetryNoopTest) writePanicResult(info *processRetryErrorInfo) {
 		return
 	}
 	finish := time.Now()
-	if t.writer.Write(processRetryResult{
+	result := processRetryResult{
 		Version:           1,
 		TestName:          t.cfg.TestName,
 		Attempt:           t.cfg.Attempt,
@@ -4026,7 +4036,12 @@ func (t *processRetryNoopTest) writePanicResult(info *processRetryErrorInfo) {
 		StartUnixNano:     t.startTime.UnixNano(),
 		FinishUnixNano:    finish.UnixNano(),
 		DurationNanos:     finish.Sub(t.startTime).Nanoseconds(),
-	}) && t.control != nil {
+	}
+	if t.identity != nil {
+		result.ModuleName = t.identity.ModuleName
+		result.SuiteName = t.identity.SuiteName
+	}
+	if t.writer.Write(result) && t.control != nil {
 		_ = t.control.childControlledTerminal(processRetryStatusControlledPanicReady)
 	}
 }
