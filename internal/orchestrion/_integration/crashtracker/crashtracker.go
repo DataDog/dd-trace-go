@@ -6,6 +6,7 @@
 package crashtracker
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -52,7 +53,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
-		body, _ := io.ReadAll(r.Body)
+		body := decompressGzipBody(t, r)
 		select {
 		case tc.received <- body:
 		default:
@@ -117,6 +118,25 @@ func filterOrchEnv(env []string) []string {
 func isCrashtrackerRequest(r *http.Request) bool {
 	return r.URL.Path == "/evp_proxy/v4/api/v2/errorsintake" &&
 		r.Header.Get("X-Datadog-EVP-Subdomain") == "error-tracking-intake"
+}
+
+// decompressGzipBody reads and gunzips a request body. uploadReport
+// (crashtracker/upload.go) always gzips the report and sets
+// Content-Encoding: gzip; reading the raw body without this step fails with
+// "invalid character '\x1f'" — the first byte of the gzip magic number,
+// mistaken for the start of a JSON value.
+func decompressGzipBody(t *testing.T, r *http.Request) []byte {
+	t.Helper()
+	gz, err := gzip.NewReader(r.Body)
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	defer gz.Close()
+	body, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatalf("read gzip stream: %v", err)
+	}
+	return body
 }
 
 // assertOrchCrashReport validates the key fields of the received crash report.

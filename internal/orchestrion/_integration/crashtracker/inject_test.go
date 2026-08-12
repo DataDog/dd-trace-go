@@ -42,7 +42,7 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
-		body, _ := io.ReadAll(r.Body)
+		body := decompressGzipBody(t, r)
 		select {
 		case received <- body:
 		default:
