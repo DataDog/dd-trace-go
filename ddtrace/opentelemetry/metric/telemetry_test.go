@@ -175,13 +175,13 @@ func TestMetricsExportTelemetry(t *testing.T) {
 
 	// Check that metrics were recorded
 	attemptsKey := telemetrytest.MetricKey{
-		Namespace: telemetry.NamespaceGeneral,
+		Namespace: telemetry.NamespaceTracers,
 		Name:      "otel.metrics_export_attempts",
 		Tags:      "encoding:protobuf,protocol:http",
 		Kind:      "count",
 	}
 	successesKey := telemetrytest.MetricKey{
-		Namespace: telemetry.NamespaceGeneral,
+		Namespace: telemetry.NamespaceTracers,
 		Name:      "otel.metrics_export_successes",
 		Tags:      "encoding:protobuf,protocol:http",
 		Kind:      "count",
@@ -211,13 +211,13 @@ func TestMetricsExportTelemetryGRPC(t *testing.T) {
 
 	// Check that metrics were recorded with correct tags
 	attemptsKey := telemetrytest.MetricKey{
-		Namespace: telemetry.NamespaceGeneral,
+		Namespace: telemetry.NamespaceTracers,
 		Name:      "otel.metrics_export_attempts",
 		Tags:      "encoding:protobuf,protocol:grpc",
 		Kind:      "count",
 	}
 	successesKey := telemetrytest.MetricKey{
-		Namespace: telemetry.NamespaceGeneral,
+		Namespace: telemetry.NamespaceTracers,
 		Name:      "otel.metrics_export_successes",
 		Tags:      "encoding:protobuf,protocol:grpc",
 		Kind:      "count",
