@@ -153,6 +153,14 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
 					},
 					"TestQuarantinedRaceAncestorATFFixture/child": properties(true),
+					"TestQuarantinedRaceDeferredDescendantATFFixture": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+					},
+					"TestQuarantinedRaceDeferredDescendantATFFixture/quarantined": properties(false),
+					"TestQuarantinedRaceDeferredDescendantATFFixture/clear":       {},
+					"TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+					},
 
 					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
@@ -178,7 +186,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
 	exitCode := RunM(m)
-	if exitCode != 0 {
+	expectFailure := scenario == "deferred-descendant-atf-failure"
+	if (exitCode != 0) != expectFailure {
 		panic(fmt.Sprintf("quarantined race isolation fixture exit code = %d", exitCode))
 	}
 
@@ -337,12 +346,14 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	case "managed-descendant-output":
 		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root", 1)
 		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
-		childName := "TestQuarantinedRaceManagedDescendantFixture/root/child"
-		child := checkSpansByResourceName(spans, suite+"."+childName, 1)
-		checkSpansByTagValue(child, constants.TestStatus, constants.TestStatusFail, 1)
+		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root/child", 1)
+		checkSpansByTagValue(child, constants.TestStatus, constants.TestStatusPass, 1)
+		grandchildName := "TestQuarantinedRaceManagedDescendantFixture/root/child/grandchild"
+		grandchild := checkSpansByResourceName(spans, suite+"."+grandchildName, 1)
+		checkSpansByTagValue(grandchild, constants.TestStatus, constants.TestStatusFail, 1)
 		stdout, stderr := false, false
 		for _, entry := range logsEntries {
-			if entry.TestName == childName {
+			if entry.TestName == grandchildName {
 				stdout = stdout || strings.Contains(entry.Message, "managed descendant stdout sentinel")
 				stderr = stderr || strings.Contains(entry.Message, "managed descendant stderr sentinel")
 			}
@@ -403,6 +414,13 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(child, constants.TestRetryReason, constants.AttemptToFixRetryReason, 1)
 		checkSpansByTagValue(child, constants.TestAttemptToFixPassed, "false", 1)
 		checkSpansByTagValue(child, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		os.Exit(0)
+	case "deferred-descendant-atf-failure":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDescendantATFFixture", 2)
+		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 2)
+		owner := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner", 1)
+		checkSpansByTagValue(owner, constants.TestStatus, constants.TestStatusFail, 1)
+		checkSpansByTagValue(owner, constants.TestIsAttempToFix, "true", 1)
 		os.Exit(0)
 	case "terminal-descendants":
 		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
@@ -727,6 +745,10 @@ func TestQuarantinedRaceManagedDescendantPreservesRootFailureEndToEnd(t *testing
 
 func TestQuarantinedRaceManagedDescendantPreservesProcessOutputEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "managed-descendant-output", "^TestQuarantinedRaceManagedDescendantFixture$")
+}
+
+func TestQuarantinedRaceDeferredDescendantATFFailureFailsPackageEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "deferred-descendant-atf-failure", "^TestQuarantinedRaceDeferredDescendantATFFixture$")
 }
 
 func TestQuarantinedRaceNestedRootTerminalsEndToEnd(t *testing.T) {
@@ -1135,8 +1157,12 @@ func TestQuarantinedRaceManagedDescendantFixture(t *testing.T) {
 		}
 		passed := t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
 			if scenario == "managed-descendant-output" {
-				_, _ = fmt.Fprintln(os.Stdout, "managed descendant stdout sentinel")
-				_, _ = fmt.Fprintln(os.Stderr, "managed descendant stderr sentinel")
+				t.Run("grandchild", instrumentTestingTFunc(func(t *testing.T) {
+					_, _ = fmt.Fprintln(os.Stdout, "managed descendant stdout sentinel")
+					_, _ = fmt.Fprintln(os.Stderr, "managed descendant stderr sentinel")
+					t.Error("managed descendant sentinel")
+				}))
+				return
 			}
 			t.Error("managed descendant sentinel")
 		}))
@@ -1430,6 +1456,20 @@ func TestQuarantinedRaceAncestorATFFixture(t *testing.T) {
 		require.NoError(t, err)
 		if cfg.RetryReason == processRetrySubtreeReason {
 			t.Fail()
+		}
+	}))
+}
+
+func TestQuarantinedRaceDeferredDescendantATFFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("quarantined", instrumentTestingTFunc(func(*testing.T) {}))
+	t.Run("clear", instrumentTestingTFunc(func(t *testing.T) {
+		if isProcessRetryChild() {
+			t.Run("owner", instrumentTestingTFunc(func(t *testing.T) {
+				t.Error("deferred descendant attempt-to-fix sentinel")
+			}))
 		}
 	}))
 }

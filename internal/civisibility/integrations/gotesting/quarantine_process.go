@@ -96,6 +96,9 @@ type processRetrySubtreeITR struct {
 type processRetryResolvedDirective struct {
 	directive    processRetrySubtreeDirective
 	attemptOwner string
+	// managed remains true below the first test-management boundary so the
+	// parent can mask and report the whole isolated descendant subtree.
+	managed bool
 }
 
 type processRetryTestSource struct {
@@ -410,6 +413,7 @@ func (cfg *processRetrySubtreeConfig) resolveChildDirective(parent processRetryR
 	if !ok {
 		return resolved
 	}
+	resolved.managed = resolved.managed || exact.Disabled || exact.Quarantined || exact.AttemptToFix
 	resolved.directive.Disabled = resolved.directive.Disabled || exact.Disabled
 	resolved.directive.Quarantined = resolved.directive.Quarantined || exact.Quarantined
 	if exact.AttemptToFix {
@@ -863,9 +867,6 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		suiteName = testifyData.suiteName
 		sourceFunc = testifyData.methodFunc
 	}
-	managedByDescendant := parent.processRetryManagedDescendant || state.cfg.exactManagedDescendant(moduleName, suiteName, name)
-	failureSnapshot := captureQuarantinedRaceManagedFailure(t, state.cfg, managedByDescendant)
-	maskedByManagedDescendant := managedByDescendant
 	execMeta := createTestMetadata(t, nil)
 	execMeta.test = parent.test
 	execMeta.processRetryOwner = parent
@@ -882,9 +883,12 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		resolved = state.cfg.resolveChildDirective(processRetryResolvedDirective{
 			directive:    processRetryDirectiveFromMetadata(parent.identity, parent),
 			attemptOwner: parent.processRetryAttemptOwner,
+			managed:      parent.processRetryManagedDescendant,
 		}, moduleName, suiteName, name)
 	}
 	directive, attemptOwner := resolved.directive, resolved.attemptOwner
+	failureSnapshot := captureQuarantinedRaceManagedFailure(t, state.cfg, resolved.managed)
+	maskedByManagedDescendant := resolved.managed
 	execMeta.isDisabled = directive.Disabled
 	execMeta.isQuarantined = directive.Quarantined
 	execMeta.isAttemptToFix = directive.AttemptToFix
@@ -894,7 +898,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	execMeta.hasExplicitAttemptToFix = true
 	execMeta.shouldOrchestrateAttemptToFix = attemptOwner == name
 	execMeta.processRetryAttemptOwner = attemptOwner
-	execMeta.processRetryManagedDescendant = managedByDescendant
+	execMeta.processRetryManagedDescendant = resolved.managed
 
 	execMeta.identity = newTestIdentity(moduleName, suiteName, name)
 	source := processRetrySourceFromFunc(sourceFunc)
@@ -1634,7 +1638,7 @@ func replayQuarantinedRaceResults(
 	for _, invocation := range invocations {
 		resolved, _ := invocation.cfg.resolveSubtreeResults(invocation.attempt.Result.Subtests)
 		for idx, result := range invocation.attempt.Result.Subtests {
-			appendEvent(invocation, processRetrySubtreeResultWithInvocationOutput(invocation, result), resolved[idx])
+			appendEvent(invocation, processRetrySubtreeResultWithInvocationOutput(invocation, result, resolved[idx]), resolved[idx])
 		}
 		if includeRoot {
 			appendEvent(invocation, processRetrySubtreeRootFromInvocation(invocation), invocation.cfg.resolvedRootDirective())
@@ -1680,12 +1684,12 @@ func replayQuarantinedRaceResults(
 
 func processRetrySubtreeRootFromInvocation(invocation quarantinedRaceInvocation) processRetrySubtreeResult {
 	root := processRetrySubtreeResultFromEnvelope(invocation.attempt.Result, invocation.cfg)
-	return processRetrySubtreeResultWithInvocationOutput(invocation, root)
+	return processRetrySubtreeResultWithInvocationOutput(invocation, root, invocation.cfg.resolvedRootDirective())
 }
 
-func processRetrySubtreeResultWithInvocationOutput(invocation quarantinedRaceInvocation, result processRetrySubtreeResult) processRetrySubtreeResult {
+func processRetrySubtreeResultWithInvocationOutput(invocation quarantinedRaceInvocation, result processRetrySubtreeResult, resolved processRetryResolvedDirective) processRetrySubtreeResult {
 	if !result.Failed || invocation.attempt.OutputTail == "" ||
-		(result.TestName != invocation.cfg.SelectedRoot && !invocation.cfg.exactManagedDescendant(result.ModuleName, result.SuiteName, result.TestName)) {
+		result.TestName != invocation.cfg.SelectedRoot && !resolved.managed {
 		return result
 	}
 	// Direct stdout, stderr, and race reports are absent from testing's buffered

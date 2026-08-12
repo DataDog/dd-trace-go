@@ -338,6 +338,34 @@ func TestQuarantinedRaceRootReplayKeepsNonRaceProcessOutput(t *testing.T) {
 	assert.Equal(t, invocation.attempt.OutputTail, processRetrySubtreeRootFromInvocation(invocation).OutputTail)
 }
 
+func TestQuarantinedRaceManagedDescendantReplayKeepsNonRaceProcessOutput(t *testing.T) {
+	cfg := &processRetrySubtreeConfig{
+		SelectedRoot: "TestCheckout/card",
+		Root:         processRetrySubtreeDirective{TestName: "TestCheckout/card"},
+		Directives: []processRetrySubtreeDirective{{
+			TestName: "TestCheckout/card/child", Quarantined: true,
+		}},
+	}
+	invocation := quarantinedRaceInvocation{
+		cfg: cfg,
+		attempt: processRetryAttemptResult{
+			OutputTail: "direct stdout\ndirect stderr",
+			Result: processRetryResult{
+				TestName: cfg.SelectedRoot,
+				Subtests: []processRetrySubtreeResult{
+					{TestName: cfg.SelectedRoot + "/child", Status: processRetryStatusPass},
+					{TestName: cfg.SelectedRoot + "/child/grandchild", Status: processRetryStatusFail, Failed: true},
+				},
+			},
+		},
+	}
+
+	resolved, err := cfg.resolveSubtreeResults(invocation.attempt.Result.Subtests)
+	require.NoError(t, err)
+	got := processRetrySubtreeResultWithInvocationOutput(invocation, invocation.attempt.Result.Subtests[1], resolved[1])
+	assert.Equal(t, invocation.attempt.OutputTail, got.OutputTail)
+}
+
 func TestQuarantinedRaceSubtreeOutputUsesEncodedLimit(t *testing.T) {
 	for _, tt := range []struct {
 		name   string

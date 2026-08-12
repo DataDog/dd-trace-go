@@ -107,6 +107,7 @@ type deferredProcessRetryGroup struct {
 	efdFaultySessionGuard earlyFlakeDetectionFaultySession
 	raceProcess           *quarantinedRaceProcessContext
 	raceSubtree           *processRetrySubtreeConfig
+	raceDescendantFailed  bool
 }
 
 type deferredProcessRetryEvent struct {
@@ -1077,6 +1078,7 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		g.tailEvent = nextTail
 	}
 	if g.raceSubtree != nil {
+		g.observeQuarantinedRaceSubtree(attempt.Result.Subtests)
 		replayQuarantinedRaceResults(&g.testInfo, g.raceProcess, []quarantinedRaceInvocation{{
 			cfg: g.quarantinedRaceSubtreeForAttempt(completed.prepared.index), attempt: attempt, attemptIndex: completed.prepared.index,
 		}}, false)
@@ -1098,6 +1100,17 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		attempt.Cleanup()
 	}
 	return continueGroup
+}
+
+func (g *deferredProcessRetryGroup) observeQuarantinedRaceSubtree(results []processRetrySubtreeResult) {
+	if g == nil || g.raceDescendantFailed {
+		return
+	}
+	// Independently owned, non-quarantined Attempt-to-Fix descendants retain
+	// their normal package-failure semantics even when the deferred root passes.
+	g.raceDescendantFailed = slices.ContainsFunc(results, func(result processRetrySubtreeResult) bool {
+		return result.Failed && result.AttemptToFixOwn && !result.Quarantined && !result.Disabled
+	})
 }
 
 func (g *deferredProcessRetryGroup) quarantinedRaceSubtreeForAttempt(index int) *processRetrySubtreeConfig {
@@ -1184,6 +1197,9 @@ func (g *deferredProcessRetryGroup) packageFailed() bool {
 		return false
 	}
 	if g.terminalFailure {
+		return true
+	}
+	if g.raceDescendantFailed {
 		return true
 	}
 	if g.metadata.isAttemptToFix {
