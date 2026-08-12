@@ -88,8 +88,14 @@ type processRetrySubtreeDirective struct {
 }
 
 type processRetrySubtreeITR struct {
+	SuiteName               string `json:"suite_name"`
 	TestName                string `json:"test_name"`
 	MissingLineCodeCoverage bool   `json:"missing_line_code_coverage,omitempty"`
+}
+
+type processRetryResolvedDirective struct {
+	directive    processRetrySubtreeDirective
+	attemptOwner string
 }
 
 type processRetryTestSource struct {
@@ -214,12 +220,12 @@ func buildProcessRetrySubtreeConfig(
 	if itr != nil {
 		cfg.ITRCoverageActive = itr.coverageActive
 		if itr.response != nil {
-			if tests, ok := itr.response.Skippables[identity.SuiteName]; ok {
+			for suiteName, tests := range itr.response.Skippables {
 				for name, candidates := range tests {
 					if name != cfg.SelectedRoot && !strings.HasPrefix(name, cfg.SelectedRoot+"/") {
 						continue
 					}
-					entry := processRetrySubtreeITR{TestName: name}
+					entry := processRetrySubtreeITR{SuiteName: suiteName, TestName: name}
 					matched := false
 					for _, candidate := range candidates {
 						if strings.TrimSpace(candidate.Parameters) != "" {
@@ -236,7 +242,7 @@ func buildProcessRetrySubtreeConfig(
 		}
 	}
 	slices.SortFunc(cfg.ITR, func(a, b processRetrySubtreeITR) int {
-		return strings.Compare(a.TestName, b.TestName)
+		return compareProcessRetrySubtreeITR(a, b)
 	})
 	if err := validateProcessRetrySubtreeConfig(cfg, cfg.SelectedRoot); err != nil {
 		return nil, err
@@ -291,12 +297,13 @@ func validateProcessRetrySubtreeConfig(cfg *processRetrySubtreeConfig, selectedR
 		}
 		previousDirective = directive
 	}
-	previous := ""
-	for _, candidate := range cfg.ITR {
-		if !processRetryNameWithinRoot(candidate.TestName, cfg.SelectedRoot) || candidate.TestName <= previous {
+	var previousITR processRetrySubtreeITR
+	for idx, candidate := range cfg.ITR {
+		if strings.TrimSpace(candidate.SuiteName) == "" || !processRetryNameWithinRoot(candidate.TestName, cfg.SelectedRoot) ||
+			idx > 0 && compareProcessRetrySubtreeITR(previousITR, candidate) >= 0 {
 			return errors.New("invalid process retry subtree ITR directive")
 		}
-		previous = candidate.TestName
+		previousITR = candidate
 	}
 	return nil
 }
@@ -345,6 +352,13 @@ func compareProcessRetryDirectives(a, b processRetrySubtreeDirective) int {
 	return strings.Compare(a.TestName, b.TestName)
 }
 
+func compareProcessRetrySubtreeITR(a, b processRetrySubtreeITR) int {
+	if cmp := strings.Compare(a.SuiteName, b.SuiteName); cmp != 0 {
+		return cmp
+	}
+	return strings.Compare(a.TestName, b.TestName)
+}
+
 func (cfg *processRetrySubtreeConfig) exactDirective(moduleName, suiteName, name string) (processRetrySubtreeDirective, bool) {
 	target := processRetrySubtreeDirective{ModuleName: moduleName, SuiteName: suiteName, TestName: name}
 	idx, ok := slices.BinarySearchFunc(cfg.Directives, target, func(a, b processRetrySubtreeDirective) int {
@@ -375,39 +389,60 @@ func (ctx *quarantinedRaceProcessContext) clearAncestorOutcomes(cfg *processRetr
 	}
 }
 
-func (cfg *processRetrySubtreeConfig) resolveDirective(moduleName, suiteName, name string) (processRetrySubtreeDirective, string) {
-	resolved := cfg.Root
-	resolved.TestName = name
-	resolved.ModuleName = moduleName
-	resolved.SuiteName = suiteName
-	attemptOwner := ""
+func (cfg *processRetrySubtreeConfig) resolvedRootDirective() processRetryResolvedDirective {
+	resolved := processRetryResolvedDirective{directive: cfg.Root}
 	if cfg.OwnsAttemptToFix {
-		attemptOwner = cfg.SelectedRoot
+		resolved.attemptOwner = cfg.SelectedRoot
 	}
-	if name == cfg.SelectedRoot {
-		return resolved, attemptOwner
+	return resolved
+}
+
+// resolveChildDirective preserves the effective state already resolved for the
+// immediate parent. Callback source files can change at every t.Run boundary,
+// so re-resolving all path components with the child's suite would lose an
+// ancestor directive from another suite.
+func (cfg *processRetrySubtreeConfig) resolveChildDirective(parent processRetryResolvedDirective, moduleName, suiteName, name string) processRetryResolvedDirective {
+	resolved := parent
+	resolved.directive.TestName = name
+	resolved.directive.ModuleName = moduleName
+	resolved.directive.SuiteName = suiteName
+	exact, ok := cfg.exactDirective(moduleName, suiteName, name)
+	if !ok {
+		return resolved
 	}
-	rootParts := strings.Split(cfg.SelectedRoot, "/")
-	parts := strings.Split(name, "/")
-	for idx := len(rootParts) + 1; idx <= len(parts); idx++ {
-		candidate := strings.Join(parts[:idx], "/")
-		exact, ok := cfg.exactDirective(moduleName, suiteName, candidate)
+	resolved.directive.Disabled = resolved.directive.Disabled || exact.Disabled
+	resolved.directive.Quarantined = resolved.directive.Quarantined || exact.Quarantined
+	if exact.AttemptToFix {
+		if !parent.directive.AttemptToFix {
+			resolved.attemptOwner = name
+		}
+		resolved.directive.AttemptToFix = true
+	} else {
+		resolved.directive.AttemptToFix = false
+		resolved.attemptOwner = ""
+	}
+	return resolved
+}
+
+func (cfg *processRetrySubtreeConfig) resolveSubtreeResults(results []processRetrySubtreeResult) ([]processRetryResolvedDirective, error) {
+	resolved := make([]processRetryResolvedDirective, len(results))
+	seen := map[string]processRetryResolvedDirective{cfg.SelectedRoot: cfg.resolvedRootDirective()}
+	for idx, result := range results {
+		if result.TestName == cfg.SelectedRoot || !processRetryNameWithinRoot(result.TestName, cfg.SelectedRoot) {
+			return nil, fmt.Errorf("%w: subtree identity outside selected root", errProcessRetryResultInvalid)
+		}
+		if _, duplicate := seen[result.TestName]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate subtree result", errProcessRetryResultInvalid)
+		}
+		separator := strings.LastIndexByte(result.TestName, '/')
+		parent, ok := seen[result.TestName[:separator]]
 		if !ok {
-			continue
+			return nil, fmt.Errorf("%w: subtree parent result missing", errProcessRetryResultInvalid)
 		}
-		resolved.Disabled = resolved.Disabled || exact.Disabled
-		resolved.Quarantined = resolved.Quarantined || exact.Quarantined
-		if exact.AttemptToFix {
-			if !resolved.AttemptToFix {
-				attemptOwner = candidate
-			}
-			resolved.AttemptToFix = true
-		} else {
-			resolved.AttemptToFix = false
-			attemptOwner = ""
-		}
+		resolved[idx] = cfg.resolveChildDirective(parent, result.ModuleName, result.SuiteName, result.TestName)
+		seen[result.TestName] = resolved[idx]
 	}
-	return resolved, attemptOwner
+	return resolved, nil
 }
 
 func (cfg *processRetrySubtreeConfig) exactManagedDescendant(moduleName, suiteName, name string) bool {
@@ -435,9 +470,10 @@ func (cfg *processRetrySubtreeConfig) withinManagedDescendant(moduleName, suiteN
 	return false
 }
 
-func (cfg *processRetrySubtreeConfig) itrDecision(name string, meta processRetrySubtreeDirective, sourceFunc *runtime.Func) (skip, forced bool) {
-	idx, ok := slices.BinarySearchFunc(cfg.ITR, name, func(candidate processRetrySubtreeITR, name string) int {
-		return strings.Compare(candidate.TestName, name)
+func (cfg *processRetrySubtreeConfig) itrDecision(suiteName, name string, meta processRetrySubtreeDirective, sourceFunc *runtime.Func) (skip, forced bool) {
+	target := processRetrySubtreeITR{SuiteName: suiteName, TestName: name}
+	idx, ok := slices.BinarySearchFunc(cfg.ITR, target, func(a, b processRetrySubtreeITR) int {
+		return compareProcessRetrySubtreeITR(a, b)
 	})
 	if !ok || meta.AttemptToFix || meta.Modified {
 		return false, false
@@ -531,8 +567,8 @@ type quarantinedRaceFailureSnapshot struct {
 // exact managed descendant may set through testing.common.Fail. Restoring them
 // lets the descendant remain failed in CI Visibility without changing its
 // enclosing t.Run result; independently owned failures remain sticky in state.
-func captureQuarantinedRaceManagedFailure(t *testing.T, cfg *processRetrySubtreeConfig, moduleName, suiteName string) *quarantinedRaceFailureSnapshot {
-	if t == nil || cfg == nil || !cfg.exactManagedDescendant(moduleName, suiteName, t.Name()) {
+func captureQuarantinedRaceManagedFailure(t *testing.T, cfg *processRetrySubtreeConfig, managed bool) *quarantinedRaceFailureSnapshot {
+	if t == nil || cfg == nil || !managed {
 		return nil
 	}
 	layout := getTestingInternalsLayout()
@@ -827,8 +863,9 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		suiteName = testifyData.suiteName
 		sourceFunc = testifyData.methodFunc
 	}
-	failureSnapshot := captureQuarantinedRaceManagedFailure(t, state.cfg, moduleName, suiteName)
-	maskedByManagedDescendant := state.cfg.withinManagedDescendant(moduleName, suiteName, name)
+	managedByDescendant := parent.processRetryManagedDescendant || state.cfg.exactManagedDescendant(moduleName, suiteName, name)
+	failureSnapshot := captureQuarantinedRaceManagedFailure(t, state.cfg, managedByDescendant)
+	maskedByManagedDescendant := managedByDescendant
 	execMeta := createTestMetadata(t, nil)
 	execMeta.test = parent.test
 	execMeta.processRetryOwner = parent
@@ -840,7 +877,14 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	}
 	state.beginAggregateCoverage(name)
 
-	directive, attemptOwner := state.cfg.resolveDirective(moduleName, suiteName, name)
+	resolved := state.cfg.resolvedRootDirective()
+	if name != state.cfg.SelectedRoot {
+		resolved = state.cfg.resolveChildDirective(processRetryResolvedDirective{
+			directive:    processRetryDirectiveFromMetadata(parent.identity, parent),
+			attemptOwner: parent.processRetryAttemptOwner,
+		}, moduleName, suiteName, name)
+	}
+	directive, attemptOwner := resolved.directive, resolved.attemptOwner
 	execMeta.isDisabled = directive.Disabled
 	execMeta.isQuarantined = directive.Quarantined
 	execMeta.isAttemptToFix = directive.AttemptToFix
@@ -849,6 +893,8 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	execMeta.hasExplicitQuarantined = true
 	execMeta.hasExplicitAttemptToFix = true
 	execMeta.shouldOrchestrateAttemptToFix = attemptOwner == name
+	execMeta.processRetryAttemptOwner = attemptOwner
+	execMeta.processRetryManagedDescendant = managedByDescendant
 
 	execMeta.identity = newTestIdentity(moduleName, suiteName, name)
 	source := processRetrySourceFromFunc(sourceFunc)
@@ -1038,7 +1084,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		execMeta.processRetrySkipReason.Store(&reason)
 		t.SkipNow()
 	}
-	if skip, forced := state.cfg.itrDecision(name, directive, sourceFunc); skip {
+	if skip, forced := state.cfg.itrDecision(suiteName, name, directive, sourceFunc); skip {
 		execMeta.isItrSkipped = true
 		reason := constants.SkippedByITRReason
 		execMeta.processRetrySkipReason.Store(&reason)
@@ -1129,23 +1175,19 @@ func validateProcessRetrySubtreeResultEnvelope(result processRetryResult, expect
 	if len(result.Subtests) > processRetrySubtreeMaxResults {
 		return fmt.Errorf("%w: too many subtree results", errProcessRetryResultInvalid)
 	}
-	seen := make(map[string]struct{}, len(result.Subtests))
-	for _, subtest := range result.Subtests {
-		if subtest.TestName == expected.Subtree.SelectedRoot || !processRetryNameWithinRoot(subtest.TestName, expected.Subtree.SelectedRoot) {
-			return fmt.Errorf("%w: subtree identity outside selected root", errProcessRetryResultInvalid)
-		}
-		if _, duplicate := seen[subtest.TestName]; duplicate {
-			return fmt.Errorf("%w: duplicate subtree result", errProcessRetryResultInvalid)
-		}
-		seen[subtest.TestName] = struct{}{}
-		if err := validateProcessRetrySubtreeResult(subtest, expected.Subtree); err != nil {
+	resolved, err := expected.Subtree.resolveSubtreeResults(result.Subtests)
+	if err != nil {
+		return err
+	}
+	for idx, subtest := range result.Subtests {
+		if err := validateProcessRetrySubtreeResult(subtest, resolved[idx]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateProcessRetrySubtreeResult(result processRetrySubtreeResult, cfg *processRetrySubtreeConfig) error {
+func validateProcessRetrySubtreeResult(result processRetrySubtreeResult, resolved processRetryResolvedDirective) error {
 	if result.StartUnixNano == 0 || result.FinishUnixNano < result.StartUnixNano ||
 		result.DurationNanos != result.FinishUnixNano-result.StartUnixNano {
 		return fmt.Errorf("%w: invalid subtree timing", errProcessRetryResultInvalid)
@@ -1171,7 +1213,7 @@ func validateProcessRetrySubtreeResult(result processRetrySubtreeResult, cfg *pr
 	if err := validateProcessRetryCoverageFiles(result.Coverage); err != nil {
 		return err
 	}
-	directive, owner := cfg.resolveDirective(result.ModuleName, result.SuiteName, result.TestName)
+	directive, owner := resolved.directive, resolved.attemptOwner
 	if result.Disabled != directive.Disabled || result.Quarantined != directive.Quarantined ||
 		result.AttemptToFix != directive.AttemptToFix || result.AttemptToFixOwn != (owner == result.TestName) {
 		return fmt.Errorf("%w: subtree directive mismatch", errProcessRetryResultInvalid)
@@ -1339,7 +1381,7 @@ func continueQuarantinedRaceDescendantFamilies(
 	invocations *[]quarantinedRaceInvocation,
 ) (stop, failed bool) {
 	for _, result := range directQuarantinedRaceAttemptOwners(attempt.Result.Subtests, cfg.SelectedRoot) {
-		continuationCfg, err := cfg.forSelectedRoot(result.ModuleName, result.SuiteName, result.TestName)
+		continuationCfg, err := cfg.forSelectedRoot(result)
 		if err != nil {
 			failQuarantinedRaceIsolation(t, testInfo, execMeta, processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: time.Now(), FinishTime: time.Now()})
 			return false, true
@@ -1358,12 +1400,7 @@ func continueQuarantinedRaceDescendantFamilies(
 		for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
 			next := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, runRoot, idx, parallelBridge)
 			if processRetryInfrastructureFailure(next) {
-				failQuarantinedRaceIsolation(t, &commonInfo{
-					moduleName: testInfo.moduleName,
-					suiteName:  testInfo.suiteName,
-					testName:   result.TestName,
-					identity:   newTestIdentity(testInfo.moduleName, testInfo.suiteName, result.TestName),
-				}, execMeta, next)
+				failQuarantinedRaceIsolation(t, processRetryCommonInfoFromSubtreeResult(result), execMeta, next)
 				return false, true
 			}
 			*invocations = append(*invocations, quarantinedRaceInvocation{
@@ -1517,30 +1554,42 @@ func failQuarantinedRaceIsolation(t *testing.T, testInfo *commonInfo, execMeta *
 	t.Fail()
 }
 
-func (cfg *processRetrySubtreeConfig) forSelectedRoot(moduleName, suiteName, name string) (*processRetrySubtreeConfig, error) {
-	directive, _ := cfg.resolveDirective(moduleName, suiteName, name)
+func processRetryCommonInfoFromSubtreeResult(result processRetrySubtreeResult) *commonInfo {
+	return &commonInfo{
+		moduleName: result.ModuleName,
+		suiteName:  result.SuiteName,
+		testName:   result.TestName,
+		identity:   newTestIdentity(result.ModuleName, result.SuiteName, result.TestName),
+	}
+}
+
+func (cfg *processRetrySubtreeConfig) forSelectedRoot(result processRetrySubtreeResult) (*processRetrySubtreeConfig, error) {
+	directive := processRetrySubtreeDirective{
+		TestName: result.TestName, ModuleName: result.ModuleName, SuiteName: result.SuiteName,
+		Disabled: result.Disabled, Quarantined: result.Quarantined, AttemptToFix: result.AttemptToFix, Modified: result.Modified,
+	}
 	next := &processRetrySubtreeConfig{
 		Version:              processRetrySubtreeVersion,
-		SelectedRoot:         name,
+		SelectedRoot:         result.TestName,
 		Root:                 directive,
 		AttemptToFixRetries:  cfg.AttemptToFixRetries,
-		OwnsAttemptToFix:     directive.AttemptToFix,
+		OwnsAttemptToFix:     result.AttemptToFixOwn,
 		CollectPerTest:       cfg.CollectPerTest,
 		CollectAggregate:     cfg.CollectAggregate,
 		ITRCoverageActive:    cfg.ITRCoverageActive,
 		ImpactedTestsEnabled: cfg.ImpactedTestsEnabled,
 	}
 	for _, candidate := range cfg.Directives {
-		if candidate.TestName != name && processRetryNameWithinRoot(candidate.TestName, name) {
+		if candidate.TestName != result.TestName && processRetryNameWithinRoot(candidate.TestName, result.TestName) {
 			next.Directives = append(next.Directives, candidate)
 		}
 	}
 	for _, candidate := range cfg.ITR {
-		if processRetryNameWithinRoot(candidate.TestName, name) {
+		if processRetryNameWithinRoot(candidate.TestName, result.TestName) {
 			next.ITR = append(next.ITR, candidate)
 		}
 	}
-	return next, validateProcessRetrySubtreeConfig(next, name)
+	return next, validateProcessRetrySubtreeConfig(next, result.TestName)
 }
 
 func replayQuarantinedRaceInvocations(testInfo *commonInfo, processCtx *quarantinedRaceProcessContext, invocations []quarantinedRaceInvocation) {
@@ -1570,8 +1619,8 @@ func replayQuarantinedRaceResults(
 	generations := make(map[string]int)
 	lastOccurrence := make(map[familyKey]int)
 	events := make([]replayEvent, 0, len(invocations))
-	appendEvent := func(invocation quarantinedRaceInvocation, result processRetrySubtreeResult) {
-		_, attemptOwner := invocation.cfg.resolveDirective(result.ModuleName, result.SuiteName, result.TestName)
+	appendEvent := func(invocation quarantinedRaceInvocation, result processRetrySubtreeResult, resolved processRetryResolvedDirective) {
+		attemptOwner := resolved.attemptOwner
 		if result.TestName == attemptOwner && attemptOwner != invocation.cfg.SelectedRoot {
 			// A descendant-owned family starts fresh each time its enclosing
 			// selected root discovers it.
@@ -1583,11 +1632,12 @@ func replayQuarantinedRaceResults(
 		events = append(events, replayEvent{invocation: invocation, result: result, family: family, attemptOwner: attemptOwner, inherited: inherited})
 	}
 	for _, invocation := range invocations {
-		for _, result := range invocation.attempt.Result.Subtests {
-			appendEvent(invocation, processRetrySubtreeResultWithInvocationOutput(invocation, result))
+		resolved, _ := invocation.cfg.resolveSubtreeResults(invocation.attempt.Result.Subtests)
+		for idx, result := range invocation.attempt.Result.Subtests {
+			appendEvent(invocation, processRetrySubtreeResultWithInvocationOutput(invocation, result), resolved[idx])
 		}
 		if includeRoot {
-			appendEvent(invocation, processRetrySubtreeRootFromInvocation(invocation))
+			appendEvent(invocation, processRetrySubtreeRootFromInvocation(invocation), invocation.cfg.resolvedRootDirective())
 		}
 	}
 	outcomes := make(map[familyKey]retryOutcomeAccumulator)
@@ -1729,7 +1779,8 @@ func replayQuarantinedRaceEvent(
 }
 
 func processRetrySubtreeResultFromEnvelope(result processRetryResult, cfg *processRetrySubtreeConfig) processRetrySubtreeResult {
-	directive, owner := cfg.resolveDirective(result.ModuleName, result.SuiteName, result.TestName)
+	resolved := cfg.resolvedRootDirective()
+	directive, owner := resolved.directive, resolved.attemptOwner
 	return processRetrySubtreeResult{
 		TestName:        result.TestName,
 		ModuleName:      result.ModuleName,

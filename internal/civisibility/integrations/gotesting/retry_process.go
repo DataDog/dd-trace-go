@@ -3320,6 +3320,9 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 				}
 				observation.subtree.parallelBridge = control.childRootParallelBridge
 				execMeta.quarantinedRaceChild = observation.subtree
+				if cfg.Subtree.OwnsAttemptToFix {
+					execMeta.processRetryAttemptOwner = cfg.Subtree.SelectedRoot
+				}
 			}
 			observation.execMeta = execMeta
 			return ""
@@ -3344,7 +3347,7 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 					observation.execMeta.processRetrySkipReason.Store(&reason)
 					t.SkipNow()
 				}
-				if skip, forced := cfg.Subtree.itrDecision(cfg.Subtree.SelectedRoot, rootDirective, runtime.FuncForPC(reflect.ValueOf(original).Pointer())); skip {
+				if skip, forced := cfg.Subtree.itrDecision(rootDirective.SuiteName, cfg.Subtree.SelectedRoot, rootDirective, runtime.FuncForPC(reflect.ValueOf(original).Pointer())); skip {
 					observation.execMeta.isItrSkipped = true
 					reason := constants.SkippedByITRReason
 					observation.execMeta.processRetrySkipReason.Store(&reason)
@@ -3559,7 +3562,7 @@ func markProcessRetryChildFailed(tb testing.TB) {
 	}
 	current := getTestMetadata(t)
 	if execMeta := processRetryChildOwnerMetadata(current); execMeta != nil && execMeta.quarantinedRaceChild != nil &&
-		!processRetryChildFailureIsPropagated() {
+		!processRetryChildFailureIsPropagated() && (current == nil || !current.processRetryManagedDescendant) {
 		moduleName, suiteName := "", ""
 		if current != nil && current.identity != nil {
 			moduleName, suiteName = current.identity.ModuleName, current.identity.SuiteName
@@ -3606,13 +3609,14 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 			original(t)
 			return
 		}
-		owner := processRetryChildOwnerMetadata(getTestMetadataFromPointer(*fields.parent))
+		parent := getTestMetadataFromPointer(*fields.parent)
+		owner := processRetryChildOwnerMetadata(parent)
 		if owner == nil {
 			original(t)
 			return
 		}
 		if owner.quarantinedRaceChild != nil {
-			runQuarantinedRaceChildSubtest(t, original, owner)
+			runQuarantinedRaceChildSubtest(t, original, parent)
 			return
 		}
 

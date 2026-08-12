@@ -68,13 +68,20 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
 		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "5s")
 	}
-	if scenario == "parallel-atf-sibling" {
+	if scenario == "parallel-atf-sibling" || scenario == "parallel-denied" {
 		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "2s")
 	}
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
 	testifySuite := suite + "/quarantinedRaceTestifySuite"
+	itrEnabled := scenario == "foreign-suite"
+	var itrData []net.SkippableResponseDataAttributes
+	if itrEnabled {
+		itrData = []net.SkippableResponseDataAttributes{{
+			Suite: "quarantine_process_test.go", Name: "TestQuarantinedRaceForeignSuiteFixture/root/itr",
+		}}
+	}
 	properties := func(attemptToFix bool) net.TestManagementTestsResponseDataTestProperties {
 		return net.TestManagementTestsResponseDataTestProperties{
 			Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
@@ -82,7 +89,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			},
 		}
 	}
-	server := setUpHTTPServer(false, false, false, nil, false, nil, true,
+	server := setUpHTTPServer(false, false, false, nil, itrEnabled, itrData, true,
 		&net.TestManagementTestsResponseDataModules{Modules: map[string]net.TestManagementTestsResponseDataSuites{
 			module: {Suites: map[string]net.TestManagementTestsResponseDataTests{
 				suite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
@@ -140,6 +147,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceSerialATFFixture/root":                   properties(false),
 					"TestQuarantinedRaceSerialATFFixture/root/owner":             properties(true),
 					"TestQuarantinedRaceForeignSuiteFixture/root":                properties(false),
+					"TestQuarantinedRaceForeignSuiteFixture/root/parent":         properties(true),
+					"TestQuarantinedRaceParallelDeniedFixture/isolated":          properties(false),
 					"TestQuarantinedRaceAncestorATFFixture": {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
 					},
@@ -240,6 +249,12 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 		parallelSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelFixture/isolated", 1)
 		checkSpansByTagValue(parallelSpans, constants.TestStatus, constants.TestStatusPass, 1)
+		os.Exit(0)
+	case "parallel-denied":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelDeniedFixture/isolated", 1)
+		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusFail, 1)
+		checkSpansByTagValue(root, ext.ErrorType, "panic", 1)
+		checkSpansByTagValue(root, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 		os.Exit(0)
 	case "parallel-root-slots":
 		one, two := readPID("parallel-root-one-child"), readPID("parallel-root-two-child")
@@ -373,6 +388,13 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		foreign := checkSpansByResourceName(spans, foreignSuite+".TestQuarantinedRaceForeignSuiteFixture/root/foreign", 1)
 		checkSpansByTagValue(foreign, constants.TestStatus, constants.TestStatusSkip, 1)
 		checkSpansByTagValue(foreign, constants.TestIsDisabled, "true", 1)
+		itr := checkSpansByResourceName(spans, foreignSuite+".TestQuarantinedRaceForeignSuiteFixture/root/itr", 1)
+		checkSpansByTagValue(itr, constants.TestSkippedByITR, "true", 1)
+		parent := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceForeignSuiteFixture/root/parent", 2)
+		checkSpansByTagValue(parent, constants.TestIsAttempToFix, "true", 2)
+		child := checkSpansByResourceName(spans, foreignSuite+".TestQuarantinedRaceForeignSuiteFixture/root/parent/child", 2)
+		checkSpansByTagValue(child, constants.TestIsAttempToFix, "true", 2)
+		checkSpansByTagValue(child, constants.TestIsRetry, "true", 1)
 		os.Exit(0)
 	case "ancestor-atf":
 		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAncestorATFFixture/child", 2)
@@ -632,6 +654,10 @@ func TestQuarantinedRaceFailfastEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceParallelAdmissionEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$")
+}
+
+func TestQuarantinedRaceParallelDeniedEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "parallel-denied", "^TestQuarantinedRaceParallelDeniedFixture$", "-test.timeout=10s")
 }
 
 func TestQuarantinedRaceParallelRootsReleaseProcessSlotsEndToEnd(t *testing.T) {
@@ -1376,6 +1402,22 @@ func TestQuarantinedRaceForeignSuiteFixture(t *testing.T) {
 	}
 	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("foreign", instrumentTestingTFunc(quarantinedRaceForeignSuiteCallback))
+		t.Run("itr", instrumentTestingTFunc(quarantinedRaceForeignSuiteITRCallback))
+		t.Run("parent", instrumentTestingTFunc(quarantinedRaceForeignSuiteParentCallback))
+	}))
+}
+
+func quarantinedRaceForeignSuiteParentCallback(t *testing.T) {
+	t.Run("child", instrumentTestingTFunc(quarantinedRaceHomeSuiteCallback))
+}
+
+func TestQuarantinedRaceParallelDeniedFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("isolated", instrumentTestingTFunc(func(t *testing.T) {
+		t.Setenv("DD_TEST_PARALLEL_ADMISSION", "denied")
+		t.Parallel()
 	}))
 }
 

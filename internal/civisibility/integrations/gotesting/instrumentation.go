@@ -82,6 +82,8 @@ type (
 		deferredRetryEvent            *deferredProcessRetryEvent
 		quarantinedRaceProcess        *quarantinedRaceProcessContext
 		quarantinedRaceChild          *quarantinedRaceChildState
+		processRetryAttemptOwner      string
+		processRetryManagedDescendant bool
 		processRetryParallelPause     func() func()
 	}
 

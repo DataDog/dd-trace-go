@@ -80,10 +80,14 @@ func TestQuarantinedRaceContinuationConfigPreservesDeeperAttemptOwner(t *testing
 			{TestName: "TestCheckout/clear/owner/clear/deep", ModuleName: module, SuiteName: suite, Quarantined: true, AttemptToFix: true},
 		},
 	}
-	continuation, err := cfg.forSelectedRoot(module, suite, "TestCheckout/clear/owner")
+	continuation, err := cfg.forSelectedRoot(processRetrySubtreeResult{
+		TestName: "TestCheckout/clear/owner", ModuleName: module, SuiteName: suite,
+		Quarantined: true, AttemptToFix: true, AttemptToFixOwn: true,
+	})
 	require.NoError(t, err)
-	_, owner := continuation.resolveDirective(module, suite, "TestCheckout/clear/owner/clear/deep")
-	assert.Equal(t, "TestCheckout/clear/owner/clear/deep", owner)
+	parent := continuation.resolveChildDirective(continuation.resolvedRootDirective(), module, suite, "TestCheckout/clear/owner/clear")
+	resolved := continuation.resolveChildDirective(parent, module, suite, "TestCheckout/clear/owner/clear/deep")
+	assert.Equal(t, "TestCheckout/clear/owner/clear/deep", resolved.attemptOwner)
 }
 
 func TestQuarantinedRaceDirectiveResolutionUsesNearestAttemptOwner(t *testing.T) {
@@ -103,17 +107,36 @@ func TestQuarantinedRaceDirectiveResolutionUsesNearestAttemptOwner(t *testing.T)
 		},
 	}
 
-	directive, owner := cfg.resolveDirective(module, suite, "TestCheckout/card/visa")
-	require.True(t, directive.AttemptToFix)
-	assert.Equal(t, "TestCheckout/card/visa", owner)
+	visa := cfg.resolveChildDirective(cfg.resolvedRootDirective(), module, suite, "TestCheckout/card/visa")
+	require.True(t, visa.directive.AttemptToFix)
+	assert.Equal(t, "TestCheckout/card/visa", visa.attemptOwner)
 
-	directive, owner = cfg.resolveDirective(module, suite, "TestCheckout/card/visa/debit")
-	require.True(t, directive.AttemptToFix)
-	assert.Equal(t, "TestCheckout/card/visa", owner)
+	debit := cfg.resolveChildDirective(visa, module, suite, "TestCheckout/card/visa/debit")
+	require.True(t, debit.directive.AttemptToFix)
+	assert.Equal(t, "TestCheckout/card/visa", debit.attemptOwner)
 
-	directive, owner = cfg.resolveDirective(module, suite, "TestCheckout/card/visa/credit")
-	assert.False(t, directive.AttemptToFix)
-	assert.Empty(t, owner)
+	credit := cfg.resolveChildDirective(visa, module, suite, "TestCheckout/card/visa/credit")
+	assert.False(t, credit.directive.AttemptToFix)
+	assert.Empty(t, credit.attemptOwner)
+}
+
+func TestQuarantinedRaceDirectiveResolutionPreservesCrossSuiteParent(t *testing.T) {
+	const module = "module"
+	cfg := &processRetrySubtreeConfig{
+		SelectedRoot: "TestCheckout/card",
+		Root: processRetrySubtreeDirective{
+			TestName: "TestCheckout/card", ModuleName: module, SuiteName: "root.go", Quarantined: true,
+		},
+		Directives: []processRetrySubtreeDirective{{
+			TestName: "TestCheckout/card/parent", ModuleName: module, SuiteName: "parent.go", AttemptToFix: true,
+		}},
+	}
+	parent := cfg.resolveChildDirective(cfg.resolvedRootDirective(), module, "parent.go", "TestCheckout/card/parent")
+	child := cfg.resolveChildDirective(parent, module, "child.go", "TestCheckout/card/parent/child")
+
+	assert.True(t, child.directive.Quarantined)
+	assert.True(t, child.directive.AttemptToFix)
+	assert.Equal(t, "TestCheckout/card/parent", child.attemptOwner)
 }
 
 func TestQuarantinedRaceAttemptToFixSettingIsTotalExecutionCount(t *testing.T) {
@@ -153,9 +176,9 @@ func TestQuarantinedRaceITRDecisionPreservesSourceUnskippable(t *testing.T) {
 		{name: "quarantinedRaceSkippableFixture", fn: quarantinedRaceSkippableFixture},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &processRetrySubtreeConfig{ITR: []processRetrySubtreeITR{{TestName: tt.name}}}
+			cfg := &processRetrySubtreeConfig{ITR: []processRetrySubtreeITR{{SuiteName: "suite", TestName: tt.name}}}
 			fn := runtime.FuncForPC(reflect.ValueOf(tt.fn).Pointer())
-			skip, forced := cfg.itrDecision(tt.name, processRetrySubtreeDirective{}, fn)
+			skip, forced := cfg.itrDecision("suite", tt.name, processRetrySubtreeDirective{}, fn)
 			assert.Equal(t, !tt.forced, skip)
 			assert.Equal(t, tt.forced, forced)
 		})
@@ -164,12 +187,32 @@ func TestQuarantinedRaceITRDecisionPreservesSourceUnskippable(t *testing.T) {
 
 func TestQuarantinedRaceITRDecisionExecutesModifiedTest(t *testing.T) {
 	const name = "quarantinedRaceSkippableFixture"
-	cfg := &processRetrySubtreeConfig{ITR: []processRetrySubtreeITR{{TestName: name}}}
+	cfg := &processRetrySubtreeConfig{ITR: []processRetrySubtreeITR{{SuiteName: "suite", TestName: name}}}
 	fn := runtime.FuncForPC(reflect.ValueOf(quarantinedRaceSkippableFixture).Pointer())
 
-	skip, forced := cfg.itrDecision(name, processRetrySubtreeDirective{Modified: true}, fn)
+	skip, forced := cfg.itrDecision("suite", name, processRetrySubtreeDirective{Modified: true}, fn)
 	assert.False(t, skip)
 	assert.False(t, forced)
+}
+
+func TestQuarantinedRaceITRDecisionUsesSuiteIdentity(t *testing.T) {
+	const name = "quarantinedRaceSkippableFixture"
+	cfg := &processRetrySubtreeConfig{ITR: []processRetrySubtreeITR{{SuiteName: "foreign.go", TestName: name}}}
+	fn := runtime.FuncForPC(reflect.ValueOf(quarantinedRaceSkippableFixture).Pointer())
+
+	skip, _ := cfg.itrDecision("root.go", name, processRetrySubtreeDirective{}, fn)
+	assert.False(t, skip)
+	skip, _ = cfg.itrDecision("foreign.go", name, processRetrySubtreeDirective{}, fn)
+	assert.True(t, skip)
+}
+
+func TestQuarantinedRaceContinuationFailureUsesDescendantIdentity(t *testing.T) {
+	result := processRetrySubtreeResult{TestName: "TestCheckout/card/child", ModuleName: "module", SuiteName: "child.go"}
+	info := processRetryCommonInfoFromSubtreeResult(result)
+
+	assert.Equal(t, result.ModuleName, info.moduleName)
+	assert.Equal(t, result.SuiteName, info.suiteName)
+	assert.Equal(t, result.TestName, info.identity.FullName)
 }
 
 func TestQuarantinedRaceUsesTestingRaceOwnership(t *testing.T) {
@@ -192,6 +235,16 @@ func TestOrchestrionParallelAdviceMatchesHookContract(t *testing.T) {
 	assert.Contains(t, config, "func __dd_civisibility_instrumentTestingParallel(t *T) (bool, func())")
 	assert.Contains(t, config, "__dd_civisibility_handled, __dd_civisibility_resume := __dd_civisibility_instrumentTestingParallel")
 	assert.Contains(t, config, "defer __dd_civisibility_resume()")
+}
+
+func TestQuarantinedRaceParallelBridgeRequiresNativeAdmission(t *testing.T) {
+	t.Run("eligible", func(t *testing.T) {
+		assert.True(t, testingParallelWillSuspend(t))
+	})
+	t.Run("denied by Setenv", func(t *testing.T) {
+		t.Setenv("DD_TEST_PARALLEL_ADMISSION", "denied")
+		assert.False(t, testingParallelWillSuspend(t))
+	})
 }
 
 func TestQuarantinedRaceNestedRootEnvelopePreservesRecordedResult(t *testing.T) {
@@ -587,6 +640,12 @@ func TestQuarantinedRaceAcceptsOnlyExplainedTestFailures(t *testing.T) {
 func quarantinedRaceForeignSuiteCallback(*testing.T) {
 	panic("disabled foreign-suite callback ran")
 }
+
+func quarantinedRaceForeignSuiteITRCallback(*testing.T) {
+	panic("ITR-skipped foreign-suite callback ran")
+}
+
+func quarantinedRaceHomeSuiteCallback(*testing.T) {}
 
 func TestQuarantinedRaceReplayMarksTruncatedOutput(t *testing.T) {
 	attempt := processRetryAttemptFromSubtreeResult(processRetrySubtreeResult{
