@@ -68,8 +68,13 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
 		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "5s")
 	}
-	if scenario == "parallel-atf-sibling" || scenario == "parallel-denied" {
-		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "2s")
+	// These fixture limits detect protocol deadlocks, not instrumentation speed:
+	// race and coverage teardown can legitimately take several seconds in CI.
+	if scenario == "parallel-atf-sibling" {
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "10s")
+	}
+	if scenario == "parallel-denied" {
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "5s")
 	}
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
@@ -749,14 +754,14 @@ func TestQuarantinedRaceNestedAggregateCoverageEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "nested-aggregate-coverage-control", "^TestQuarantinedRaceAggregateCoverageFixture$", "-test.coverprofile="+controlPath)
 	profilePath := filepath.Join(t.TempDir(), "coverage.out")
 	runQuarantinedRaceEndToEnd(t, "nested-aggregate-coverage", "^TestQuarantinedRaceAggregateCoverageFixture$", "-test.coverprofile="+profilePath)
-	controlCount := processCoverageCountForFunction(t, controlPath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount")
-	serialCount := processCoverageCountForFunction(t, profilePath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount")
+	controlCount := processCoverageCountForFunctionBody(t, controlPath, "quarantine_process.go", "processRetryCommonInfoFromSubtreeResult")
+	serialCount := processCoverageCountForFunctionBody(t, profilePath, "quarantine_process.go", "processRetryCommonInfoFromSubtreeResult")
 	require.Equal(t, controlCount+1, serialCount)
 	// The nested subprocesses share Go's outer coverage directory, so compare
 	// successive profiles to assert that each scenario merges the marker once.
 	parallelPath := filepath.Join(t.TempDir(), "parallel.out")
 	runQuarantinedRaceEndToEnd(t, "nested-aggregate-parallel-coverage", "^TestQuarantinedRaceAggregateCoverageFixture$", "-test.coverprofile="+parallelPath)
-	require.Equal(t, serialCount+1, processCoverageCountForFunction(t, parallelPath, "quarantine_process.go", "processRetryAttemptToFixExecutionCount"))
+	require.Equal(t, serialCount+1, processCoverageCountForFunctionBody(t, parallelPath, "quarantine_process.go", "processRetryCommonInfoFromSubtreeResult"))
 }
 
 func TestQuarantinedRaceNestedAttemptFamilyEndToEnd(t *testing.T) {
@@ -1361,7 +1366,8 @@ func TestQuarantinedRaceAggregateCoverageFixture(t *testing.T) {
 		}
 	}))
 	if scenario == "nested-aggregate-coverage" || scenario == "nested-aggregate-parallel-coverage" {
-		quarantinedRaceAncestorCoverage.Store(int64(processRetryAttemptToFixExecutionCount(1)))
+		marker := processRetryCommonInfoFromSubtreeResult(processRetrySubtreeResult{TestName: "aggregate-coverage-marker"})
+		quarantinedRaceAncestorCoverage.Store(int64(len(marker.testName)))
 	}
 }
 
@@ -1374,7 +1380,10 @@ func TestQuarantinedRaceTerminalDescendantsFixture(t *testing.T) {
 	t.Run("parallel", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
 			(*T)(t).Parallel()
-			time.Sleep(20 * time.Millisecond)
+			// Keep the body longer than race/coverage instrumentation overhead so
+			// the root-versus-child finish ordering checks the excluded scheduler
+			// wait instead of depending on machine speed.
+			time.Sleep(500 * time.Millisecond)
 			t.Error("parallel descendant sentinel")
 		}))
 	}))

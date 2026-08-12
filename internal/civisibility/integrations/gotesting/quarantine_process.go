@@ -168,6 +168,8 @@ func buildProcessRetrySubtreeConfig(
 	execMeta *testExecutionMetadata,
 	parentExecMeta *testExecutionMetadata,
 ) (*processRetrySubtreeConfig, error) {
+	// Callers validate after applying ownership flags specific to the initial or
+	// deferred isolation path.
 	if ctx == nil || testInfo == nil || execMeta == nil || execMeta.identity == nil {
 		return nil, errors.New("missing quarantined race process context")
 	}
@@ -247,9 +249,6 @@ func buildProcessRetrySubtreeConfig(
 	slices.SortFunc(cfg.ITR, func(a, b processRetrySubtreeITR) int {
 		return compareProcessRetrySubtreeITR(a, b)
 	})
-	if err := validateProcessRetrySubtreeConfig(cfg, cfg.SelectedRoot); err != nil {
-		return nil, err
-	}
 	return cfg, nil
 }
 
@@ -990,6 +989,8 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		completeParallelSubtests(t, getTestPrivateFields(t), true)
 		activeStart = time.Now()
 		runTestCleanupCallbacks(t, cleanup)
+		activeDuration += time.Since(activeStart)
+		activeStart = time.Time{}
 		if cleanup.panicData != nil {
 			t.Fail()
 			execMeta.processRetryPanic.CompareAndSwap(nil, &processRetryErrorInfo{
@@ -1001,11 +1002,6 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			// testing terminate the child before it can write the subtree result.
 		}
 		state.finishAggregateCoverage(name)
-
-		if !activeStart.IsZero() {
-			activeDuration += time.Since(activeStart)
-			activeStart = time.Time{}
-		}
 		files := collector.Finish()
 		coverageValid = state.coverage.finish(coverageInterval) && coverageValid
 		if !coverageValid {
@@ -1354,6 +1350,9 @@ func runQuarantinedRaceProcessIsolation(
 	execMeta.hasAdditionalFeatureWrapper = true
 
 	cfg, err := buildProcessRetrySubtreeConfig(processCtx, testInfo, execMeta, parentExecMeta)
+	if err == nil {
+		err = validateProcessRetrySubtreeConfig(cfg, cfg.SelectedRoot)
+	}
 	if err != nil {
 		failQuarantinedRaceIsolation(t, testInfo, execMeta, processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: time.Now(), FinishTime: time.Now()})
 		return
