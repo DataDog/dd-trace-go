@@ -64,7 +64,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if scenario == "feature-gate" {
 		requireEnv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
 	}
-	if scenario == "parallel-root-slots" {
+	if scenario == "parallel-root-slots" || scenario == "parallel-root-coordination" {
 		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
 		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "5s")
 	}
@@ -275,6 +275,12 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
 		}
 		os.Exit(0)
+	case "parallel-root-coordination":
+		for _, name := range []string{"one", "two"} {
+			root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelRootsFixture/"+name, 1)
+			checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
+		}
+		os.Exit(0)
 	case "parallel-coverage":
 		if readPID("parallel-coverage-child") == parentPID {
 			panic("covered parallel descendant did not run in the isolated child")
@@ -418,9 +424,10 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	case "deferred-descendant-atf-failure":
 		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDescendantATFFixture", 2)
 		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 2)
-		owner := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner", 1)
-		checkSpansByTagValue(owner, constants.TestStatus, constants.TestStatusFail, 1)
-		checkSpansByTagValue(owner, constants.TestIsAttempToFix, "true", 1)
+		owner := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner", 2)
+		checkSpansByTagValue(owner, constants.TestStatus, constants.TestStatusFail, 2)
+		checkSpansByTagValue(owner, constants.TestIsAttempToFix, "true", 2)
+		checkSpansByTagValue(owner, constants.TestIsRetry, "true", 1)
 		os.Exit(0)
 	case "terminal-descendants":
 		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
@@ -682,6 +689,10 @@ func TestQuarantinedRaceParallelRootsReleaseProcessSlotsEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "parallel-root-slots", "^TestQuarantinedRaceParallelRootsFixture$", "-test.timeout=15s")
 }
 
+func TestQuarantinedRaceParallelRootsCoordinateAfterResumeEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "parallel-root-coordination", "^TestQuarantinedRaceParallelRootsFixture$", "-test.timeout=15s")
+}
+
 func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
 	if testing.CoverMode() == "" {
 		t.Skip("requires coverage instrumentation")
@@ -747,7 +758,7 @@ func TestQuarantinedRaceManagedDescendantPreservesProcessOutputEndToEnd(t *testi
 	runQuarantinedRaceEndToEnd(t, "managed-descendant-output", "^TestQuarantinedRaceManagedDescendantFixture$")
 }
 
-func TestQuarantinedRaceDeferredDescendantATFFailureFailsPackageEndToEnd(t *testing.T) {
+func TestQuarantinedRaceDeferredDescendantATFFamilyCompletesAndFailsPackageEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "deferred-descendant-atf-failure", "^TestQuarantinedRaceDeferredDescendantATFFixture$")
 }
 
@@ -1009,6 +1020,22 @@ func TestQuarantinedRaceParallelRootsFixture(t *testing.T) {
 		t.Run(name, instrumentTestingTFunc(func(t *testing.T) {
 			(*T)(t).Parallel()
 			writeQuarantinedRaceIsolationProcessPID(t, "parallel-root-"+name)
+			if os.Getenv(quarantinedRaceIsolationFixtureEnv) == "parallel-root-coordination" && isProcessRetryChild() {
+				peer := "two"
+				if name == "two" {
+					peer = "one"
+				}
+				deadline := time.Now().Add(3 * time.Second)
+				for {
+					if _, err := os.Stat(filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "parallel-root-"+peer+"-child")); err == nil {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatalf("parallel root %s did not resume", peer)
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
 		}))
 	}
 }

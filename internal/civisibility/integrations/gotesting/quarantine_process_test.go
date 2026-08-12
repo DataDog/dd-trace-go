@@ -90,6 +90,27 @@ func TestQuarantinedRaceContinuationConfigPreservesDeeperAttemptOwner(t *testing
 	assert.Equal(t, "TestCheckout/clear/owner/clear/deep", resolved.attemptOwner)
 }
 
+func TestQuarantinedRaceContinuationConfigAcceptsClearAttemptOwner(t *testing.T) {
+	const module, suite = "module", "suite"
+	cfg := &processRetrySubtreeConfig{
+		Version:      processRetrySubtreeVersion,
+		SelectedRoot: "TestCheckout",
+		Root: processRetrySubtreeDirective{
+			TestName: "TestCheckout", ModuleName: module, SuiteName: suite, Quarantined: true,
+		},
+		AttemptToFixRetries: 2,
+	}
+
+	continuation, err := cfg.forSelectedRoot(processRetrySubtreeResult{
+		TestName: "TestCheckout/clear/owner", ModuleName: module, SuiteName: suite,
+		AttemptToFix: true, AttemptToFixOwn: true,
+	})
+	require.NoError(t, err)
+	assert.True(t, continuation.DescendantContinuation)
+	assert.False(t, continuation.Root.Quarantined)
+	assert.Empty(t, continuation.Directives)
+}
+
 func TestQuarantinedRaceDirectiveResolutionUsesNearestAttemptOwner(t *testing.T) {
 	const module, suite = "module", "suite"
 	cfg := &processRetrySubtreeConfig{
@@ -245,6 +266,31 @@ func TestQuarantinedRaceParallelBridgeRequiresNativeAdmission(t *testing.T) {
 		t.Setenv("DD_TEST_PARALLEL_ADMISSION", "denied")
 		assert.False(t, testingParallelWillSuspend(t))
 	})
+}
+
+func TestQuarantinedRaceParallelPauseIsIdempotentAcrossWrapperAndHook(t *testing.T) {
+	meta := createTestMetadata(t, nil)
+	defer deleteTestMetadata(t)
+	meta.processRetryOwner = meta
+	var pauses, resumes atomic.Int32
+	meta.processRetryParallelPause = func() func() {
+		pauses.Add(1)
+		return func() { resumes.Add(1) }
+	}
+
+	_, outerResume := instrumentTestingParallel(t)
+	_, nestedResume := instrumentTestingParallel(t)
+	require.NotNil(t, outerResume)
+	require.Nil(t, nestedResume)
+	outerResume()
+	require.EqualValues(t, 1, pauses.Load())
+	require.EqualValues(t, 1, resumes.Load())
+
+	_, nextResume := instrumentTestingParallel(t)
+	require.NotNil(t, nextResume)
+	nextResume()
+	require.EqualValues(t, 2, pauses.Load())
+	require.EqualValues(t, 2, resumes.Load())
 }
 
 func TestQuarantinedRaceNestedRootEnvelopePreservesRecordedResult(t *testing.T) {
@@ -542,6 +588,10 @@ func TestQuarantinedRaceSubtreeConfigRejectsUntrustedDirectives(t *testing.T) {
 	mismatched := *valid
 	mismatched.SelectedRoot = "TestCheckout/other"
 	require.Error(t, validateProcessRetrySubtreeConfig(&mismatched, valid.SelectedRoot))
+
+	invalidContinuation := *valid
+	invalidContinuation.DescendantContinuation = true
+	require.Error(t, validateProcessRetrySubtreeConfig(&invalidContinuation, invalidContinuation.SelectedRoot))
 }
 
 func TestQuarantinedRaceSubtreeResultValidationIsFailClosed(t *testing.T) {

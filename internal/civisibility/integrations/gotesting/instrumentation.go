@@ -85,6 +85,7 @@ type (
 		processRetryAttemptOwner      string
 		processRetryManagedDescendant bool
 		processRetryParallelPause     func() func()
+		processRetryParallelPaused    atomic.Bool
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function

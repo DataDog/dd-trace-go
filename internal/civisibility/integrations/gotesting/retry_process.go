@@ -867,6 +867,7 @@ type processRetryAttemptResult struct {
 	BodyAdmitted                bool
 	ControlledTerminalCommitted bool
 	Cleanup                     func()
+	quarantinedRaceInvocations  []quarantinedRaceInvocation
 }
 
 type processRetryEffectiveStatus struct {
@@ -1771,11 +1772,10 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	if limiterResult.Cause != processRetryLimiterAcquired {
 		return finishSetupFailure(limiterResult.Err, limiterResult.Cause == processRetryLimiterParentDeadline)
 	}
-	// The control bridge reacquires from its goroutine while teardown can run
-	// on the caller, so slot ownership and late release must change atomically.
+	// The control bridge can release from its goroutine while teardown runs on
+	// the caller, so slot ownership must change atomically.
 	var limiterReleaseMu sync.Mutex
 	limiterRelease := limiterResult.Release
-	limiterStopped := false
 	releaseLimiterSlot := func() {
 		limiterReleaseMu.Lock()
 		release := limiterRelease
@@ -1785,33 +1785,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 			release()
 		}
 	}
-	setLimiterRelease := func(release processRetryLimiterRelease) {
-		limiterReleaseMu.Lock()
-		if limiterStopped {
-			limiterReleaseMu.Unlock()
-			release()
-			return
-		}
-		limiterRelease = release
-		limiterReleaseMu.Unlock()
-	}
-	stopLimiter := func() {
-		limiterReleaseMu.Lock()
-		limiterStopped = true
-		release := limiterRelease
-		limiterRelease = nil
-		limiterReleaseMu.Unlock()
-		if release != nil {
-			release()
-		}
-	}
-	defer stopLimiter()
-	limiterCtx := ctx
-	cancelLimiter := func() {}
-	if parentParallelBridge != nil {
-		limiterCtx, cancelLimiter = context.WithCancel(ctx)
-	}
-	defer cancelLimiter()
+	defer releaseLimiterSlot()
 	if processRetryShutdownRequested(shutdown) || processRetryShuttingDown() {
 		return finishSetupFailure(errProcessRetryShutdown, false)
 	}
@@ -2036,23 +2010,12 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 				if parentParallelBridge != nil {
 					control.parallelBridge = func() error {
 						// A child blocked in t.Parallel is not executing test code.
-						// Release its process slot so another isolated sibling can
-						// reach the same parent barrier, then reacquire before resume.
+						// Release its process slot so every isolated sibling can reach
+						// the same parent barrier. After release, Go's native parallel
+						// scheduler owns concurrency; reacquiring this limiter before
+						// resume would deadlock siblings that coordinate in their bodies.
 						releaseLimiterSlot()
-						if err := parentParallelBridge(); err != nil {
-							return err
-						}
-						reacquired := limiter.acquireWithShutdownLimit(
-							limiterCtx,
-							parentDeadlineHardCap,
-							shutdown,
-							limiterMaxConcurrency,
-						)
-						if reacquired.Cause != processRetryLimiterAcquired {
-							return reacquired.Err
-						}
-						setLimiterRelease(reacquired.Release)
-						return nil
+						return parentParallelBridge()
 					}
 				}
 				controlErrors = control.serveParent()

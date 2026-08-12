@@ -62,19 +62,20 @@ type quarantinedRaceProcessContext struct {
 }
 
 type processRetrySubtreeConfig struct {
-	Version              int                            `json:"version"`
-	SelectedRoot         string                         `json:"selected_root"`
-	Root                 processRetrySubtreeDirective   `json:"root"`
-	Directives           []processRetrySubtreeDirective `json:"directives,omitempty"`
-	ITR                  []processRetrySubtreeITR       `json:"itr,omitempty"`
-	AttemptToFixRetries  int                            `json:"attempt_to_fix_retries,omitempty"`
-	OwnsAttemptToFix     bool                           `json:"owns_attempt_to_fix,omitempty"`
-	AncestorAttemptToFix bool                           `json:"ancestor_attempt_to_fix,omitempty"`
-	AncestorAttemptIndex int                            `json:"ancestor_attempt_index,omitempty"`
-	CollectPerTest       bool                           `json:"collect_per_test_coverage,omitempty"`
-	CollectAggregate     bool                           `json:"collect_aggregate_coverage,omitempty"`
-	ITRCoverageActive    bool                           `json:"itr_coverage_active,omitempty"`
-	ImpactedTestsEnabled bool                           `json:"impacted_tests_enabled,omitempty"`
+	Version                int                            `json:"version"`
+	SelectedRoot           string                         `json:"selected_root"`
+	Root                   processRetrySubtreeDirective   `json:"root"`
+	Directives             []processRetrySubtreeDirective `json:"directives,omitempty"`
+	ITR                    []processRetrySubtreeITR       `json:"itr,omitempty"`
+	AttemptToFixRetries    int                            `json:"attempt_to_fix_retries,omitempty"`
+	OwnsAttemptToFix       bool                           `json:"owns_attempt_to_fix,omitempty"`
+	AncestorAttemptToFix   bool                           `json:"ancestor_attempt_to_fix,omitempty"`
+	DescendantContinuation bool                           `json:"descendant_continuation,omitempty"`
+	AncestorAttemptIndex   int                            `json:"ancestor_attempt_index,omitempty"`
+	CollectPerTest         bool                           `json:"collect_per_test_coverage,omitempty"`
+	CollectAggregate       bool                           `json:"collect_aggregate_coverage,omitempty"`
+	ITRCoverageActive      bool                           `json:"itr_coverage_active,omitempty"`
+	ImpactedTestsEnabled   bool                           `json:"impacted_tests_enabled,omitempty"`
 }
 
 type processRetrySubtreeDirective struct {
@@ -275,7 +276,10 @@ func validateProcessRetrySubtreeConfig(cfg *processRetrySubtreeConfig, selectedR
 	if cfg == nil {
 		return nil
 	}
-	rootIsolated := cfg.Root.Quarantined ||
+	// A descendant continuation can be a clear ATF owner discovered inside an
+	// already isolated subtree; its validated ownership keeps this opt-in path
+	// from becoming a general process retry mechanism.
+	rootIsolated := cfg.Root.Quarantined || cfg.DescendantContinuation ||
 		cfg.Root.AttemptToFix && (cfg.OwnsAttemptToFix || cfg.AncestorAttemptToFix) && cfg.hasQuarantinedDescendant()
 	if cfg.Version != processRetrySubtreeVersion || cfg.SelectedRoot != selectedRoot ||
 		strings.TrimSpace(cfg.SelectedRoot) == "" || cfg.Root.TestName != cfg.SelectedRoot ||
@@ -284,6 +288,7 @@ func validateProcessRetrySubtreeConfig(cfg *processRetrySubtreeConfig, selectedR
 		return errors.New("invalid process retry subtree configuration")
 	}
 	if cfg.OwnsAttemptToFix && !cfg.Root.AttemptToFix || cfg.AncestorAttemptToFix && cfg.OwnsAttemptToFix ||
+		cfg.DescendantContinuation && (!cfg.OwnsAttemptToFix || !cfg.Root.AttemptToFix) ||
 		cfg.AncestorAttemptIndex < 0 || cfg.AncestorAttemptIndex >= processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries) ||
 		!cfg.AncestorAttemptToFix && cfg.AncestorAttemptIndex != 0 {
 		return errors.New("invalid process retry subtree attempt ownership")
@@ -1267,6 +1272,11 @@ type quarantinedRaceInvocation struct {
 	attemptIndex int
 }
 
+type quarantinedRaceContinuationFailure struct {
+	result  processRetrySubtreeResult
+	attempt processRetryAttemptResult
+}
+
 type quarantinedRaceReplayIdentity struct {
 	moduleName string
 	suiteName  string
@@ -1351,10 +1361,13 @@ func runQuarantinedRaceProcessIsolation(
 		if cfg.AttemptToFixRetries <= 0 {
 			continue
 		}
-		stop, failed := continueQuarantinedRaceDescendantFamilies(
-			t, testInfo, execMeta, processCtx, lease, cfg, attempt, parallelBridge, &invocations,
+		stop, failure := continueQuarantinedRaceDescendantFamilies(
+			cfg, attempt, &invocations, func(continuationCfg *processRetrySubtreeConfig, runRoot string, idx int) processRetryAttemptResult {
+				return runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, runRoot, idx, parallelBridge)
+			},
 		)
-		if failed {
+		if failure != nil {
+			failQuarantinedRaceIsolation(t, processRetryCommonInfoFromSubtreeResult(failure.result), execMeta, failure.attempt)
 			return
 		}
 		if stop {
@@ -1374,26 +1387,23 @@ func runQuarantinedRaceProcessIsolation(
 // keeps a deeper owner's retry adjacent to the initial execution from the same
 // enclosing invocation, so replay cannot associate it with a later family.
 func continueQuarantinedRaceDescendantFamilies(
-	t *testing.T,
-	testInfo *commonInfo,
-	execMeta *testExecutionMetadata,
-	processCtx *quarantinedRaceProcessContext,
-	lease *processRetryGroupLease,
 	cfg *processRetrySubtreeConfig,
 	attempt processRetryAttemptResult,
-	parallelBridge func() error,
 	invocations *[]quarantinedRaceInvocation,
-) (stop, failed bool) {
+	run func(*processRetrySubtreeConfig, string, int) processRetryAttemptResult,
+) (bool, *quarantinedRaceContinuationFailure) {
 	for _, result := range directQuarantinedRaceAttemptOwners(attempt.Result.Subtests, cfg.SelectedRoot) {
 		continuationCfg, err := cfg.forSelectedRoot(result)
 		if err != nil {
-			failQuarantinedRaceIsolation(t, testInfo, execMeta, processRetryAttemptResult{SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: time.Now(), FinishTime: time.Now()})
-			return false, true
+			now := time.Now()
+			return false, &quarantinedRaceContinuationFailure{result: result, attempt: processRetryAttemptResult{
+				SetupFailure: true, Err: err, ExitCode: processRetryExitCodeUnset, StartTime: now, FinishTime: now,
+			}}
 		}
-		if stop, failed := continueQuarantinedRaceDescendantFamilies(
-			t, testInfo, execMeta, processCtx, lease, continuationCfg, attempt, parallelBridge, invocations,
-		); stop || failed {
-			return stop, failed
+		if stop, failure := continueQuarantinedRaceDescendantFamilies(
+			continuationCfg, attempt, invocations, run,
+		); stop || failure != nil {
+			return stop, failure
 		}
 		runRoot := continuationCfg.SelectedRoot
 		if result.Parallel {
@@ -1402,25 +1412,24 @@ func continueQuarantinedRaceDescendantFamilies(
 			runRoot = cfg.SelectedRoot
 		}
 		for idx := 1; idx < processRetryAttemptToFixExecutionCount(cfg.AttemptToFixRetries); idx++ {
-			next := runQuarantinedRaceInvocation(t, processCtx, lease, continuationCfg, runRoot, idx, parallelBridge)
-			if processRetryInfrastructureFailure(next) {
-				failQuarantinedRaceIsolation(t, processRetryCommonInfoFromSubtreeResult(result), execMeta, next)
-				return false, true
-			}
+			next := run(continuationCfg, runRoot, idx)
 			*invocations = append(*invocations, quarantinedRaceInvocation{
 				cfg: continuationCfg, attempt: next, attemptIndex: idx,
 			})
-			if quarantinedRaceFailfastStopsContinuation(next) {
-				return true, false
+			if processRetryInfrastructureFailure(next) {
+				return false, &quarantinedRaceContinuationFailure{result: result, attempt: next}
 			}
-			if stop, failed := continueQuarantinedRaceDescendantFamilies(
-				t, testInfo, execMeta, processCtx, lease, continuationCfg, next, parallelBridge, invocations,
-			); stop || failed {
-				return stop, failed
+			if quarantinedRaceFailfastStopsContinuation(next) {
+				return true, nil
+			}
+			if stop, failure := continueQuarantinedRaceDescendantFamilies(
+				continuationCfg, next, invocations, run,
+			); stop || failure != nil {
+				return stop, failure
 			}
 		}
 	}
-	return false, false
+	return false, nil
 }
 
 func directQuarantinedRaceAttemptOwners(results []processRetrySubtreeResult, root string) []processRetrySubtreeResult {
@@ -1499,6 +1508,10 @@ func runQuarantinedRaceInvocation(
 		lease.shutdown,
 		parallelBridge,
 	)
+	return finalizeQuarantinedRaceInvocation(cfg, attempt)
+}
+
+func finalizeQuarantinedRaceInvocation(cfg *processRetrySubtreeConfig, attempt processRetryAttemptResult) processRetryAttemptResult {
 	defer func() {
 		if attempt.Cleanup != nil {
 			attempt.Cleanup()
@@ -1573,15 +1586,18 @@ func (cfg *processRetrySubtreeConfig) forSelectedRoot(result processRetrySubtree
 		Disabled: result.Disabled, Quarantined: result.Quarantined, AttemptToFix: result.AttemptToFix, Modified: result.Modified,
 	}
 	next := &processRetrySubtreeConfig{
-		Version:              processRetrySubtreeVersion,
-		SelectedRoot:         result.TestName,
-		Root:                 directive,
-		AttemptToFixRetries:  cfg.AttemptToFixRetries,
-		OwnsAttemptToFix:     result.AttemptToFixOwn,
-		CollectPerTest:       cfg.CollectPerTest,
-		CollectAggregate:     cfg.CollectAggregate,
-		ITRCoverageActive:    cfg.ITRCoverageActive,
-		ImpactedTestsEnabled: cfg.ImpactedTestsEnabled,
+		Version:             processRetrySubtreeVersion,
+		SelectedRoot:        result.TestName,
+		Root:                directive,
+		AttemptToFixRetries: cfg.AttemptToFixRetries,
+		OwnsAttemptToFix:    result.AttemptToFixOwn,
+		// This family was discovered inside an already isolated subtree. Keep
+		// that provenance explicit: the owner need not itself be quarantined.
+		DescendantContinuation: true,
+		CollectPerTest:         cfg.CollectPerTest,
+		CollectAggregate:       cfg.CollectAggregate,
+		ITRCoverageActive:      cfg.ITRCoverageActive,
+		ImpactedTestsEnabled:   cfg.ImpactedTestsEnabled,
 	}
 	for _, candidate := range cfg.Directives {
 		if candidate.TestName != result.TestName && processRetryNameWithinRoot(candidate.TestName, result.TestName) {
@@ -1604,7 +1620,7 @@ func replayQuarantinedRaceResults(
 	testInfo *commonInfo,
 	processCtx *quarantinedRaceProcessContext,
 	invocations []quarantinedRaceInvocation,
-	includeRoot bool,
+	includeTopLevelRoot bool,
 ) {
 	if testInfo == nil {
 		return
@@ -1640,7 +1656,7 @@ func replayQuarantinedRaceResults(
 		for idx, result := range invocation.attempt.Result.Subtests {
 			appendEvent(invocation, processRetrySubtreeResultWithInvocationOutput(invocation, result, resolved[idx]), resolved[idx])
 		}
-		if includeRoot {
+		if includeTopLevelRoot || invocation.cfg.SelectedRoot != testInfo.testName {
 			appendEvent(invocation, processRetrySubtreeRootFromInvocation(invocation), invocation.cfg.resolvedRootDirective())
 		}
 	}

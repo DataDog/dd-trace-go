@@ -701,8 +701,17 @@ func instrumentTestingParallel(t *testing.T) (bool, func()) {
 				state.startParallelBridge()
 			}
 		}
-		if pause := execMeta.processRetryParallelPause; pause != nil && willSuspend {
-			return false, pause()
+		// Orchestrion can enter this hook through both our T wrapper and the
+		// woven testing.T.Parallel before native testing marks the test parallel.
+		// Only the first entry may own the matching pause/resume pair.
+		if pause := execMeta.processRetryParallelPause; pause != nil && willSuspend && execMeta.processRetryParallelPaused.CompareAndSwap(false, true) {
+			resume := pause()
+			return false, func() {
+				defer execMeta.processRetryParallelPaused.Store(false)
+				if resume != nil {
+					resume()
+				}
+			}
 		}
 	}
 	return false, nil
