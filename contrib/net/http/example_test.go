@@ -6,6 +6,7 @@
 package http_test
 
 import (
+	"log"
 	"net/http"
 	"net/http/httptest"
 
@@ -34,6 +35,33 @@ func Example_withServiceName() {
 		w.Write([]byte("Hello World!\n"))
 	})
 	http.ListenAndServe(":8080", mux)
+}
+
+// Example_withServeMux shows how to make the traced ServeMux the outermost handler in a
+// chain of wrapped handlers, by having it wrap a *http.ServeMux that was already configured
+// elsewhere (here, with its own logging middleware). Since the traced mux runs first, it has
+// already added trace context to the request by the time logMiddleware runs, so the logger
+// can include dd.trace_id and dd.span_id.
+func Example_withServeMux() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	appMux := http.NewServeMux()
+	appMux.Handle("/", logMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})))
+
+	mux := httptrace.NewServeMux(httptrace.WithServeMux(appMux))
+	http.ListenAndServe(":8080", mux)
+}
+
+func logMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if span, ok := tracer.SpanFromContext(r.Context()); ok {
+			log.Printf("dd.trace_id=%s dd.span_id=%d", span.Context().TraceID(), span.Context().SpanID())
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 func ExampleTraceAndServe() {

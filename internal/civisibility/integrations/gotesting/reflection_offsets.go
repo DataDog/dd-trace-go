@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // unsafeField describes a private field discovered from a runtime type.
@@ -249,7 +251,7 @@ func buildTestingInternalsLayout(tType, bType reflect.Type) (layout *testingInte
 	l.common.cancelCtx, _ = optionalExactField(commonType, "cancelCtx", reflect.TypeFor[context.CancelFunc]())
 	l.common.o, _ = optionalPointerToStructField(commonType, "o")
 
-	l.denyParallel, _ = optionalExactField(tType, "denyParallel", reflect.TypeFor[bool]())
+	l.denyParallel, _ = denyParallelField(tType)
 	l.tstate, _ = optionalWordField(tType, "tstate")
 	l.benchmark.benchFunc, _ = exactField(bType, "benchFunc", reflect.TypeFor[func(*testing.B)](), false)
 	l.benchmark.result, _ = exactField(bType, "result", reflect.TypeFor[testing.BenchmarkResult](), false)
@@ -398,6 +400,18 @@ func (l *testingInternalsLayout) computeSectionFlags() {
 		l.common.tempDir, l.common.tempDirErr, l.common.tempDirSeq,
 		l.common.ctx, l.common.cancelCtx, l.tstate.unsafeField, l.denyParallel,
 	) && l.testStateOK
+}
+
+func denyParallelField(owner reflect.Type) (unsafeField, bool) {
+	field, ok := exactField(owner, "denyParallel", nil, true)
+	if !ok || !field.available {
+		return field, ok
+	}
+	if field.typ != reflect.TypeFor[bool]() && field.typ != reflect.TypeFor[string]() {
+		log.Debug("civisibility: testing.T.denyParallel has unexpected type %s; disabling retry fast path", field.typ)
+		return unsafeField{name: "denyParallel", optional: true}, false
+	}
+	return field, true
 }
 
 // exactField validates that a struct contains a field with the expected type.
@@ -566,6 +580,17 @@ func commonBaseForBenchmark(b *testing.B, l *testingInternalsLayout) unsafe.Poin
 // write barriers remain intact.
 func copyTypedField[T any](sourceBase, targetBase unsafe.Pointer, field unsafeField) {
 	*fieldPtr[T](targetBase, field) = *fieldPtr[T](sourceBase, field)
+}
+
+func copyDenyParallelField(sourceBase, targetBase unsafe.Pointer, field unsafeField) {
+	switch field.typ {
+	case reflect.TypeFor[bool]():
+		copyTypedField[bool](sourceBase, targetBase, field)
+	case reflect.TypeFor[string]():
+		copyTypedField[string](sourceBase, targetBase, field)
+	default:
+		panic("unsupported testing.T.denyParallel field type")
+	}
 }
 
 // copyConvertedField copies a typed field through a conversion function. It is
