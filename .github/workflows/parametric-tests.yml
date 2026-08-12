@@ -21,15 +21,18 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'System Tests ref/tag/branch'
-        required: true
-        default: main
+        description: 'System Tests ref/tag/branch (defaults to the pinned SYSTEM_TESTS_REF)'
+        required: false
+        default: ''
         type: string
   schedule:
     - cron:  '00 04 * * 2-6'
 
 permissions:
   contents: read
+
+env:
+  SYSTEM_TESTS_REF: 9aa3c7d0fc5fdd05ca39a99f614b2e9d8c9b8f20 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   parametric-tests:
@@ -44,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || env.SYSTEM_TESTS_REF }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
