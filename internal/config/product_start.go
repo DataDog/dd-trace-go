@@ -3,13 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-// This file is temporary data-gathering instrumentation for the "multiple Start
-// calls" config problem (see the cross-product-Start design doc). It measures how
-// often a product's Start call would observe a changed environment relative to the
-// last recorded Start call, across all products, so we can scope customer blast
-// radius before changing how the shared Config singleton reacts to repeat Start
-// calls. Remove this file once that migration decision is made and the data is no
-// longer needed.
+// Temporary data-gathering instrumentation for the cross-product-Start config
+// problem; remove once the migration decision is made.
 
 package config
 
@@ -23,24 +18,20 @@ import (
 )
 
 var (
-	// startMu protects lastEnvHash and lastProduct, kept separate from mu since
-	// Start-call history isn't tied to the Config singleton itself.
+	// startMu is separate from mu because it protects Start-call bookkeeping,
+	// not the Config singleton itself.
 	startMu     sync.Mutex
 	lastEnvHash uint64
-	// lastProduct is "" until the first recorded Start call; no Product constant
-	// is empty, so that doubles as the "no prior call recorded yet" sentinel.
+	// lastProduct is "" until the first recorded Start call.
 	lastProduct Product
 )
 
-// RecordProductStart reports telemetry when the DD_*/OTEL_* environment has changed
-// since the last recorded call, by any product. Call it once near the top of a
-// product's Start function (tracer.Start, profiler.Start, etc.), regardless of
-// whether that product's own configuration is backed by internal/config yet.
+// RecordProductStart reports telemetry when the env has changed since the last
+// recorded call by any product. Call near the top of a product's Start function.
 //
-// Known limitation: this can't distinguish a customer/dependency-driven env change
-// from dd-trace-go's own code mutating env vars as part of a product's bootstrap
-// (e.g. CI Visibility setting DD_CIVISIBILITY_ENABLED before calling tracer.Start),
-// so recorded diffs are an upper bound on real cross-product blast radius.
+// Known limitation: it can't distinguish a customer-driven env change from
+// dd-trace-go's own bootstrap mutations, so diffs are an upper bound on real
+// cross-product blast radius.
 func RecordProductStart(product Product) {
 	hash := envSnapshotHash()
 
@@ -55,9 +46,8 @@ func RecordProductStart(product Product) {
 	lastEnvHash, lastProduct = hash, product
 }
 
-// envSnapshotHash covers the full supported-configuration surface rather than just
-// the keys the calling product's Config reads, so it stays meaningful as more
-// products migrate onto internal/config.
+// envSnapshotHash covers the full supported-configuration surface, not just the
+// calling product's keys, so it stays meaningful as more products migrate.
 func envSnapshotHash() uint64 {
 	keys := make([]string, 0, len(env.SupportedConfigurations))
 	for k := range env.SupportedConfigurations {
