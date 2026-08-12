@@ -389,6 +389,21 @@ jobs:
       push: ${{ github.ref == 'refs/heads/main' }}
       platforms: '["linux/amd64"]'
 
+  # Pushing an image tagged with "dev" only on commit to main,
+  # otherwise build and use the image from the artifact.
+  build-apim-callout:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/apim-callout
+      dockerfile: ./contrib/azure/apim-callout/cmd/apim-callout/Dockerfile
+      artifact_prefix: apim-callout-image
+      commit_sha: ${{ github.sha }}
+      tags: >-
+        dev
+      push: ${{ github.ref == 'refs/heads/main' }}
+      platforms: '["linux/amd64"]'
+
   tracer-release:
     if: github.event_name == 'schedule'
     uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
