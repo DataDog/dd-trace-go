@@ -1235,6 +1235,201 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 			t.Errorf("expected nil reasons, got %v", reasons)
 		}
 	})
+
+	// List-element cap: a single list with more than maxListElements scalar elements. Only the
+	// list cap fires; depth/structure/field caps do not (the kept elements stay under the field cap).
+	t.Run("list elements cap", func(t *testing.T) {
+		elems := make([]any, maxListElements+5)
+		for i := range elems {
+			elems[i] = fmt.Sprintf("e%d", i)
+		}
+		attrs := map[string]any{"tags": elems}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxListElements) {
+			t.Errorf("expected max_list_elements, got %v", reasons)
+		}
+		// Exactly maxListElements list entries are retained.
+		count := 0
+		for k := range got {
+			if strings.HasPrefix(k, "tags.") {
+				count++
+			}
+		}
+		if count != maxListElements {
+			t.Errorf("retained %d list elements, want %d", count, maxListElements)
+		}
+	})
+
+	// Structure-property cap: a single structure with more than maxStructureProperties properties.
+	t.Run("structure properties cap", func(t *testing.T) {
+		nested := make(map[string]any, maxStructureProperties+5)
+		for i := range maxStructureProperties + 5 {
+			nested[fmt.Sprintf("p%04d", i)] = i
+		}
+		attrs := map[string]any{"obj": nested}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxStructureProperties) {
+			t.Errorf("expected max_structure_properties, got %v", reasons)
+		}
+		count := 0
+		for k := range got {
+			if strings.HasPrefix(k, "obj.") {
+				count++
+			}
+		}
+		if count != maxStructureProperties {
+			t.Errorf("retained %d structure properties, want %d", count, maxStructureProperties)
+		}
+	})
+
+	// Snapshot-depth cap: a chain of nested maps deeper than maxSnapshotDepth, each with a
+	// scalar sibling so shallower scalars are retained while the depth-4 container is truncated.
+	t.Run("snapshot depth cap", func(t *testing.T) {
+		var node any = map[string]any{"val": "bottom"}
+		for i := 0; i < maxSnapshotDepth+2; i++ {
+			node = map[string]any{"val": fmt.Sprintf("L%d", i), "n": node}
+		}
+		attrs := map[string]any{"root": node}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxSnapshotDepth) {
+			t.Errorf("expected max_snapshot_depth, got %v", reasons)
+		}
+		// Deepest retained scalar is root.n.n.n.val (4 dots); the container at depth 4 is truncated.
+		maxDepth := 0
+		for k := range got {
+			if d := strings.Count(k, "."); d > maxDepth {
+				maxDepth = d
+			}
+		}
+		if maxDepth != maxSnapshotDepth {
+			t.Errorf("deepest retained key has %d dots, want %d (maxSnapshotDepth)", maxDepth, maxSnapshotDepth)
+		}
+	})
+
+	// Cycle cap: a map that contains itself as a descendant. The walker must terminate and
+	// report the cycle reason rather than infinite-looping.
+	t.Run("cycle", func(t *testing.T) {
+		cyclic := map[string]any{"name": "x"}
+		cyclic["self"] = cyclic // self-reference
+		attrs := map[string]any{"ctx": cyclic}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonCycle) {
+			t.Errorf("expected cycle reason, got %v", reasons)
+		}
+		// The non-cyclic sibling is retained; the cycle is truncated.
+		if got["ctx.name"] != "x" {
+			t.Errorf("expected ctx.name retained, got %v", got)
+		}
+	})
+}
+
+// TestFlattenAndPruneContextBoundedTraversal verifies the inline-bounding contract that mirrors
+// Java's DDEvaluator.copyPrunedContext: the walker's retained output (and therefore its hot-path
+// cost) is bounded by the caps regardless of how large or pathological the caller's input is.
+// Each case constructs an adversarial input and asserts the retained set is capped, the matching
+// reason fires, and the call terminates (no infinite recursion / stack overflow).
+func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
+	t.Run("deep chain is truncated at maxSnapshotDepth", func(t *testing.T) {
+		var node any = map[string]any{"val": "bottom"}
+		for i := 0; i < 100; i++ { // far deeper than maxSnapshotDepth
+			node = map[string]any{"val": fmt.Sprintf("L%d", i), "n": node}
+		}
+		attrs := map[string]any{"root": node}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxSnapshotDepth) {
+			t.Fatalf("expected max_snapshot_depth, got %v", reasons)
+		}
+		maxDepth := 0
+		for k := range got {
+			if d := strings.Count(k, "."); d > maxDepth {
+				maxDepth = d
+			}
+		}
+		if maxDepth != maxSnapshotDepth {
+			t.Errorf("deepest retained key has %d dots, want %d", maxDepth, maxSnapshotDepth)
+		}
+	})
+
+	t.Run("huge list retains at most maxListElements", func(t *testing.T) {
+		elems := make([]any, 10_000)
+		for i := range elems {
+			elems[i] = i
+		}
+		attrs := map[string]any{"tags": elems}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxListElements) {
+			t.Fatalf("expected max_list_elements, got %v", reasons)
+		}
+		count := 0
+		for k := range got {
+			if strings.HasPrefix(k, "tags.") {
+				count++
+			}
+		}
+		if count != maxListElements {
+			t.Errorf("retained %d list elements, want %d", count, maxListElements)
+		}
+	})
+
+	t.Run("huge structure retains at most maxStructureProperties", func(t *testing.T) {
+		nested := make(map[string]any, 10_000)
+		for i := 0; i < 10_000; i++ {
+			nested[fmt.Sprintf("p%05d", i)] = i
+		}
+		attrs := map[string]any{"obj": nested}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxStructureProperties) {
+			t.Fatalf("expected max_structure_properties, got %v", reasons)
+		}
+		count := 0
+		for k := range got {
+			if strings.HasPrefix(k, "obj.") {
+				count++
+			}
+		}
+		if count != maxStructureProperties {
+			t.Errorf("retained %d structure properties, want %d", count, maxStructureProperties)
+		}
+	})
+
+	t.Run("retained field count never exceeds maxContextFields", func(t *testing.T) {
+		attrs := make(map[string]any, 5_000)
+		for i := 0; i < 5_000; i++ {
+			attrs[fmt.Sprintf("k%05d", i)] = fmt.Sprintf("v%d", i)
+		}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxContextFields) {
+			t.Fatalf("expected max_context_fields, got %v", reasons)
+		}
+		if len(got) > maxContextFields {
+			t.Errorf("retained %d fields, exceeds maxContextFields %d", len(got), maxContextFields)
+		}
+	})
+
+	t.Run("cyclic structure terminates", func(t *testing.T) {
+		cyclic := map[string]any{"name": "x"}
+		cyclic["self"] = cyclic
+		attrs := map[string]any{"ctx": cyclic}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonCycle) {
+			t.Fatalf("expected cycle reason, got %v", reasons)
+		}
+		if got["ctx.name"] != "x" {
+			t.Errorf("expected ctx.name retained, got %v", got)
+		}
+	})
+
+	t.Run("mutual cycle terminates", func(t *testing.T) {
+		a := map[string]any{"id": 1}
+		b := map[string]any{"id": 2}
+		a["b"] = b
+		b["a"] = a // a -> b -> a cycle
+		attrs := map[string]any{"root": a}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonCycle) {
+			t.Errorf("expected cycle reason, got %v", reasons)
+		}
+	})
 }
 
 // TestRecordBumpsContextTruncatedTelemetry covers the record → contextTruncatedByReason path:

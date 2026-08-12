@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"testing"
@@ -546,6 +547,107 @@ func BenchmarkFlagEvaluationOTelPlusEVPParallel(b *testing.B) {
 			evalCtx := openfeature.NewEvaluationContext("bench-user-"+strconv.Itoa(i%p.numUsers), attrs)
 			_ = client.Boolean(ctx, flagKeys[i%len(flagKeys)], false, evalCtx)
 			i++
+		}
+	})
+}
+
+// BenchmarkFlattenAndPruneContext measures the synchronous evaluation-thread cost of the
+// consent-on context copy (copyPrunedContext, the Go mirror of Java's
+// DDEvaluator.copyPrunedContext). The sub-benchmarks span the common case and the adversarial
+// inputs the inline caps exist to bound: a 10k-element list, a 10k-property structure, a
+// 100-deep chain, and a cyclic structure. The adversarial sub-benchmarks demonstrate that the
+// per-evaluation cost is proportional to what is KEPT (≤256 fields × ≤256 width × depth 4),
+// not to what the caller supplied — the whole point of the inline-bounding contract.
+//
+// Run command:
+//
+//	GOFLAGS=-mod=readonly go test ./openfeature -run='^$' \
+//	  -bench='^BenchmarkFlattenAndPruneContext$' -benchmem -count=3
+func BenchmarkFlattenAndPruneContext(b *testing.B) {
+	b.Run("flat_small", func(b *testing.B) {
+		attrs := map[string]any{
+			"role": "admin", "team": "platform", "env": "staging",
+			"version": "1.2.3", "region": "us", "tenant": "acme",
+			"feature": "beta", "quota": 42, "paid": true,
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("flat_at_cap_256", func(b *testing.B) {
+		attrs := make(map[string]any, maxContextFields)
+		for i := range maxContextFields {
+			attrs[fmt.Sprintf("k%04d", i)] = fmt.Sprintf("v%d", i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("flat_over_cap_5000", func(b *testing.B) {
+		attrs := make(map[string]any, 5000)
+		for i := range 5000 {
+			attrs[fmt.Sprintf("k%05d", i)] = fmt.Sprintf("v%d", i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("wide_list_10000", func(b *testing.B) {
+		elems := make([]any, 10_000)
+		for i := range elems {
+			elems[i] = i
+		}
+		attrs := map[string]any{"tags": elems}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("wide_structure_10000", func(b *testing.B) {
+		nested := make(map[string]any, 10_000)
+		for i := range 10_000 {
+			nested[fmt.Sprintf("p%05d", i)] = i
+		}
+		attrs := map[string]any{"obj": nested}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("deep_chain_100", func(b *testing.B) {
+		var node any = map[string]any{"val": "bottom"}
+		for i := range 100 {
+			node = map[string]any{"val": fmt.Sprintf("L%d", i), "n": node}
+		}
+		attrs := map[string]any{"root": node}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("cyclic", func(b *testing.B) {
+		cyclic := map[string]any{"name": "x", "role": "admin"}
+		cyclic["self"] = cyclic
+		attrs := map[string]any{"ctx": cyclic}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
 		}
 	})
 }

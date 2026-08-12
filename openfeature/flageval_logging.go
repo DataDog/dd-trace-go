@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"sync"
@@ -40,18 +41,29 @@ const (
 	// dot-notation paths) can outgrow the value cap on the key side; this cap keeps them off
 	// the wire and out of the aggregation key.
 	maxKeyLength = 256
+	// maxListElements bounds the number of elements walked per list during copyPrunedContext.
+	// Bounds the fan-out of a single wide list at capture time so one caller cannot inflate the
+	// hot path with a huge but shallow structure. Aligned with the cross-SDK RFC.
+	maxListElements = 256
+	// maxStructureProperties bounds the number of properties walked per structure during
+	// copyPrunedContext. Same intent as maxListElements for structures.
+	maxStructureProperties = 256
+	// maxSnapshotDepth bounds the nesting depth captured on the hot path. Recursion runs on the
+	// caller's evaluation thread over a caller-owned tree, so an arbitrarily deep list/structure
+	// would overflow that thread's stack (a StackOverflow is not caught by the guards that keep
+	// telemetry from breaking an evaluation). Aligned with the cross-SDK RFC (4).
+	maxSnapshotDepth = 4
 
-	// MAX_LIST_ELEMENTS / MAX_STRUCTURE_PROPERTIES / MAX_SNAPSHOT_DEPTH from the cross-SDK RFC
-	// are NOT applied here yet. Go's flatten path (flattenRecursive in flatten.go) is shared
-	// with the exposure track, and bounding depth/list/struct traversal there would silently
-	// drop attributes that the exposure track today emits. Tracked as a follow-up; the field
-	// count + key length + value length caps carry the memory-safety load for now.
-
-	// Context truncation reason labels — surface via metrics so operators can tell which cap
-	// pressured the context (matches Java's countContextTruncated reason label).
-	truncReasonMaxContextFields = "max_context_fields"
-	truncReasonMaxFieldLength   = "max_field_length"
-	truncReasonMaxKeyLength     = "max_key_length"
+	// Context truncation reason labels — surface via telemetry so operators can tell which cap
+	// pressured the context. Matches Java's DDEvaluator reason labels, ordered by bit position
+	// (see truncReasonNames).
+	truncReasonMaxContextFields       = "max_context_fields"
+	truncReasonMaxKeyLength           = "max_key_length"
+	truncReasonMaxFieldLength         = "max_field_length"
+	truncReasonMaxListElements        = "max_list_elements"
+	truncReasonMaxStructureProperties = "max_structure_properties"
+	truncReasonMaxSnapshotDepth       = "max_snapshot_depth"
+	truncReasonCycle                  = "cycle"
 
 	// Aggregation cap sizing inputs.
 	evalScaleTargetFlags               = 2_500
@@ -536,10 +548,16 @@ func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs in
 	}
 }
 
-// record runs on the evaluation hot path (the Finally hook). Under consent-on it flattens
-// and prunes the caller's context INTO a bounded snapshot before enqueueing, so the async
-// queue holds only already-bounded contexts (256 fields × 256 chars × ≤256-char keys). Under
-// consent-off the context is neither serialized nor keyed, so the copy is skipped entirely.
+// record runs on the evaluation hot path (the Finally hook). Under consent-on it copies the
+// caller's context INTO a bounded snapshot before enqueueing, so the async queue holds only
+// already-bounded contexts. The copy is a single-pass bounded walk (copyPrunedContext, the
+// Go mirror of Java's DDEvaluator.copyPrunedContext): every retained-size dimension — field
+// count (256), key length (256), string value length (256), list width (256), structure
+// width (256), nesting depth (4), and cycles — is capped INLINE, so the work the evaluation
+// thread performs is proportional to what is KEPT, never to what the caller supplied. Under
+// consent-off the context is neither serialized nor keyed, so the copy is skipped entirely
+// and the hot path is scalar-only.
+//
 // The pre-enqueue placement is deliberate: deferring the copy to the worker goroutine would
 // let an unbounded caller context inflate the queue and heap footprint before the drop-on-
 // full check ever fires. Non-blocking on enqueue; failure paths bump split counters so an
@@ -606,131 +624,300 @@ func (w *flagEvalLoggingWriter) incContextTruncated(reason string) {
 	c.(*atomic.Int64).Add(1)
 }
 
-// flattenAndPruneContext produces the pruned context map for EVP aggregation in a single
-// traversal of the flattened keyspace. It merges the
-// two former steps — flattenContext (flatten.go) + pruneContext — into one pass with the SAME
-// pruned output:
+// flattenAndPruneContext produces the pruned, flattened context map for EVP aggregation in a
+// single bounded traversal. It is the Go mirror of Java's DDEvaluator.copyPrunedContext: every
+// retained-size dimension is capped INLINE so the work the evaluation thread performs is
+// proportional to what is KEPT, never to what the caller supplied. The exposure track's
+// flattenContext (flatten.go) is untouched and remains unbounded for its own contract.
 //
-//  1. Flatten nested objects into a single-level dot-notation map (reusing flattenRecursive, so
-//     the flatten semantics stay identical to the exposure path which still calls
-//     flattenContext directly — that caller is unchanged).
-//  2. Apply the deterministic prune: sort the flattened keys, then keep the first
-//     maxContextFields whose keys and string values pass the length caps.
+// Caps enforced during traversal (all aligned to the cross-SDK RFC, matching Java):
+//   - maxContextFields (256):       at most 256 retained fields total
+//   - maxKeyLength (256):           a key longer than 256 chars is skipped
+//   - maxFieldLength (256):         a string value longer than 256 chars is skipped
+//   - maxListElements (256):        at most 256 elements walked per list
+//   - maxStructureProperties (256): at most 256 properties walked per structure
+//   - maxSnapshotDepth (4):         containers nested deeper than 4 are truncated
+//   - cycle detection:              identity-based; a container reachable from its own descendant
+//     is truncated, preventing infinite recursion over a caller-built cyclic structure (which
+//     the unbounded flattenRecursive used by the exposure path would infinite-loop on).
 //
 // The second return value is the SET of truncation reasons that fired, so the caller can bump
-// telemetry counters (context-truncated by reason). Reasons in the returned slice are unique;
+// telemetry counters (context-truncated by reason). Reasons are unique and in a stable order;
 // callers should treat it as at most one bump per (event, reason).
 //
-// Allocation win: when the flattened context already fits every limit (the common case — few
-// fields, short keys, no oversized string), the flattened map is returned DIRECTLY, so the
-// separate pruned-output map is elided.
+// Key format matches the existing exposure flatten path (dot notation: "a.b.c" for nested maps,
+// "tags.0" for list indices) so wire output is unchanged for in-bounds inputs.
+//
+// Determinism: top-level keys and each structure's property keys are sorted before walking, so
+// the kept subset is stable across calls (Go map iteration is randomized) and logically-
+// identical contexts always prune to the same canonicalContextKey. A depth-first traversal over
+// per-level sorted keys produces the same global ordering as sorting the fully-flattened key
+// set, so this is byte-for-byte identical to the former flattenContext+pruneContext pipeline for
+// every input that stays within the new depth/list/structure caps.
+//
+// The per-level sort is the one remaining input-proportional cost: a single container with K
+// properties costs O(K log K) to sort even though only ≤256 are retained. This is the price of
+// Go's stronger-than-Java determinism guarantee (Java iterates HashMap.keySet() unsorted and
+// accepts a nondeterministic kept subset when the cap fires). It is no worse than the prior
+// pipeline — which sorted the entire flattened keyset — and real contexts stay well under the
+// 256-property cap so the sort is O(256 log 256) in practice. Bounding the sort itself (partial
+// selection) is a possible follow-up if an adversarial wide-container profile shows it matters.
 func flattenAndPruneContext(attrs map[string]any) (map[string]any, []string) {
 	if len(attrs) == 0 {
 		return nil, nil
 	}
-	if contextFitsWithoutFlattening(attrs) {
-		return attrs, nil
-	}
-
-	flat := make(map[string]any, len(attrs))
-	flattenRecursive("", attrs, flat)
-	if len(flat) == 0 {
-		return nil, nil
-	}
-
-	// Determine whether any pruning is actually required: an over-cap field count or any
-	// oversized key/value. If neither, the flattened map already IS the pruned result.
-	needsPrune := len(flat) > maxContextFields
-	if !needsPrune {
-		for k, v := range flat {
-			if len(k) > maxKeyLength {
-				needsPrune = true
-				break
-			}
-			if s, ok := v.(string); ok && len(s) > maxFieldLength {
-				needsPrune = true
-				break
-			}
-		}
-	}
-	if !needsPrune {
-		return flat, nil
-	}
-
-	// Deterministic prune: sort keys, then keep the first maxContextFields non-oversized values.
-	// Sorting BEFORE the oversized-key/value skips and the field cap makes the kept subset
-	// stable across calls (Go map iteration is randomized), so logically-identical contexts
-	// always prune to the same subset and the same canonicalContextKey.
-	keys := make([]string, 0, len(flat))
-	for k := range flat {
+	// Sort top-level keys so the field-count cap keeps a deterministic subset. Without this,
+	// Go's randomized map iteration would keep a different 256-field subset each call and
+	// fragment aggregation buckets.
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	out := make(map[string]any, min(len(flat), maxContextFields))
-	// Track which caps fired via a small bitset; the caller expands to reason strings.
-	const (
-		bitFields uint8 = 1 << iota
-		bitValue
-		bitKey
-	)
-	var truncBits uint8
-	count := 0
+	out := make(map[string]any, min(len(attrs), maxContextFields))
+	seen := make(map[uintptr]struct{})
+	var mask truncReasonMask
 	for _, k := range keys {
-		if count >= maxContextFields {
-			truncBits |= bitFields
+		if len(out) >= maxContextFields {
+			mask.add(bitMaxContextFields)
 			break
 		}
-		if len(k) > maxKeyLength {
-			truncBits |= bitKey
-			continue
-		}
-		v := flat[k]
-		if s, ok := v.(string); ok && len(s) > maxFieldLength {
-			truncBits |= bitValue
-			continue
-		}
-		out[k] = v
-		count++
+		copyPrunedValue(out, k, attrs[k], seen, 0, &mask)
 	}
-
-	var reasons []string
-	if truncBits&bitFields != 0 {
-		reasons = append(reasons, truncReasonMaxContextFields)
-	}
-	if truncBits&bitValue != 0 {
-		reasons = append(reasons, truncReasonMaxFieldLength)
-	}
-	if truncBits&bitKey != 0 {
-		reasons = append(reasons, truncReasonMaxKeyLength)
-	}
+	reasons := mask.reasons()
 	if len(out) == 0 {
 		return nil, reasons
 	}
 	return out, reasons
 }
 
-func contextFitsWithoutFlattening(attrs map[string]any) bool {
-	if len(attrs) > maxContextFields {
-		return false
+// copyPrunedValue writes one (key, value) entry into out, bounding depth, list/structure width,
+// key/value length, and total field count inline. It recurses into containers (maps and slices)
+// with depth+1 and identity-based cycle detection via seen. mask records which caps fired.
+// Runs on the evaluation thread.
+func copyPrunedValue(out map[string]any, key string, val any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) {
+	if len(out) >= maxContextFields {
+		mask.add(bitMaxContextFields)
+		return
 	}
-	for k, v := range attrs {
-		if len(k) > maxKeyLength {
-			return false
+	if len(key) > maxKeyLength {
+		mask.add(bitMaxKeyLength)
+		return
+	}
+	if val == nil {
+		out[key] = nil
+		return
+	}
+	switch v := val.(type) {
+	case string:
+		if len(v) > maxFieldLength {
+			mask.add(bitMaxFieldLength)
+			return
 		}
-		switch x := v.(type) {
-		case string:
-			if len(x) > maxFieldLength {
-				return false
+		out[key] = v
+	case bool:
+		out[key] = v
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		out[key] = v
+	case []byte:
+		s := string(v)
+		if len(s) > maxFieldLength {
+			mask.add(bitMaxFieldLength)
+			return
+		}
+		out[key] = s
+	case fmt.Stringer:
+		s := v.String()
+		if len(s) > maxFieldLength {
+			mask.add(bitMaxFieldLength)
+			return
+		}
+		out[key] = s
+	case map[string]any:
+		copyPrunedMap(out, key, v, seen, depth, mask)
+	case []any:
+		copyPrunedList(out, key, v, seen, depth, mask)
+	default:
+		if !copyPrunedReflect(out, key, val, seen, depth, mask) {
+			log.Debug("openfeature: skipping unsupported attribute type for key %q: %T", key, val)
+		}
+	}
+}
+
+// copyPrunedMap walks a map[string]any structure, bounding depth, structure-property width, and
+// total field count inline. Property keys are sorted so the kept subset is deterministic when a
+// cap fires mid-structure.
+func copyPrunedMap(out map[string]any, key string, m map[string]any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) {
+	if depth >= maxSnapshotDepth {
+		mask.add(bitMaxSnapshotDepth)
+		return
+	}
+	p := reflect.ValueOf(m).Pointer()
+	if _, ok := seen[p]; ok {
+		mask.add(bitCycle)
+		return
+	}
+	seen[p] = struct{}{}
+	defer delete(seen, p)
+
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	walked := 0
+	for _, k := range keys {
+		if walked >= maxStructureProperties {
+			mask.add(bitMaxStructureProperties)
+			break
+		}
+		if len(out) >= maxContextFields {
+			mask.add(bitMaxContextFields)
+			break
+		}
+		walked++
+		copyPrunedValue(out, key+"."+k, m[k], seen, depth+1, mask)
+	}
+}
+
+// copyPrunedList walks an []any list, bounding depth, list-element width, and total field count
+// inline. List indices are already ordered, so no sort is needed.
+func copyPrunedList(out map[string]any, key string, l []any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) {
+	if depth >= maxSnapshotDepth {
+		mask.add(bitMaxSnapshotDepth)
+		return
+	}
+	p := reflect.ValueOf(l).Pointer()
+	if _, ok := seen[p]; ok {
+		mask.add(bitCycle)
+		return
+	}
+	seen[p] = struct{}{}
+	defer delete(seen, p)
+
+	limit := len(l)
+	if limit > maxListElements {
+		mask.add(bitMaxListElements)
+		limit = maxListElements
+	}
+	for i := 0; i < limit; i++ {
+		if len(out) >= maxContextFields {
+			mask.add(bitMaxContextFields)
+			break
+		}
+		copyPrunedValue(out, key+"."+strconv.Itoa(i), l[i], seen, depth+1, mask)
+	}
+}
+
+// copyPrunedReflect handles the remaining container types (typed maps/slices beyond map[string]any
+// and []any) via reflect so the bounded walker covers the same input space as the exposure track's
+// flattenRecursive without enumerating every concrete type. Returns true if val was a recognized
+// container (handled), false otherwise (caller logs and skips).
+func copyPrunedReflect(out map[string]any, key string, val any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) bool {
+	rv := reflect.ValueOf(val)
+	switch rv.Kind() {
+	case reflect.Map:
+		if depth >= maxSnapshotDepth {
+			mask.add(bitMaxSnapshotDepth)
+			return true
+		}
+		p := rv.Pointer()
+		if _, ok := seen[p]; ok {
+			mask.add(bitCycle)
+			return true
+		}
+		seen[p] = struct{}{}
+		defer delete(seen, p)
+		keys := make([]string, 0, rv.Len())
+		for _, k := range rv.MapKeys() {
+			keys = append(keys, k.String())
+		}
+		sort.Strings(keys)
+		walked := 0
+		for _, k := range keys {
+			if walked >= maxStructureProperties {
+				mask.add(bitMaxStructureProperties)
+				break
 			}
-		case int, int8, int16, int32, int64,
-			uint, uint8, uint16, uint32, uint64,
-			float32, float64, bool:
-		default:
-			return false
+			if len(out) >= maxContextFields {
+				mask.add(bitMaxContextFields)
+				break
+			}
+			walked++
+			copyPrunedValue(out, key+"."+k, rv.MapIndex(reflect.ValueOf(k)).Interface(), seen, depth+1, mask)
+		}
+		return true
+	case reflect.Slice, reflect.Array:
+		if depth >= maxSnapshotDepth {
+			mask.add(bitMaxSnapshotDepth)
+			return true
+		}
+		p := rv.Pointer()
+		if _, ok := seen[p]; ok {
+			mask.add(bitCycle)
+			return true
+		}
+		seen[p] = struct{}{}
+		defer delete(seen, p)
+		limit := rv.Len()
+		if limit > maxListElements {
+			mask.add(bitMaxListElements)
+			limit = maxListElements
+		}
+		for i := 0; i < limit; i++ {
+			if len(out) >= maxContextFields {
+				mask.add(bitMaxContextFields)
+				break
+			}
+			copyPrunedValue(out, key+"."+strconv.Itoa(i), rv.Index(i).Interface(), seen, depth+1, mask)
+		}
+		return true
+	}
+	return false
+}
+
+// truncReasonMask is a bitset of the truncation reasons that fired during one copyPrunedContext
+// walk. Each cap sets its bit at most once per walk; reasons() expands the set into a stable-order
+// slice, returning nil when no bit is set so callers can skip the telemetry path with one check.
+type truncReasonMask uint8
+
+const (
+	bitMaxContextFields       truncReasonMask = 1 << iota // 1 << 0
+	bitMaxKeyLength                                       // 1 << 1
+	bitMaxFieldLength                                     // 1 << 2
+	bitMaxListElements                                    // 1 << 3
+	bitMaxStructureProperties                             // 1 << 4
+	bitMaxSnapshotDepth                                   // 1 << 5
+	bitCycle                                              // 1 << 6
+)
+
+func (m *truncReasonMask) add(b truncReasonMask) { *m |= b }
+
+// truncReasonNames maps each bit position to its reason label. Order matches the bit constants
+// above and Java's DDEvaluator.REASON_NAMES.
+var truncReasonNames = [...]string{
+	truncReasonMaxContextFields,
+	truncReasonMaxKeyLength,
+	truncReasonMaxFieldLength,
+	truncReasonMaxListElements,
+	truncReasonMaxStructureProperties,
+	truncReasonMaxSnapshotDepth,
+	truncReasonCycle,
+}
+
+// reasons expands the mask into a sorted slice of reason labels. Returns nil when no bit is set.
+func (m truncReasonMask) reasons() []string {
+	if m == 0 {
+		return nil
+	}
+	var r []string
+	for i := 0; i < len(truncReasonNames); i++ {
+		if m&(1<<i) != 0 {
+			r = append(r, truncReasonNames[i])
 		}
 	}
-	return true
+	return r
 }
 
 // drainAndFlush processes any buffered events and performs a final flush. Called by the
