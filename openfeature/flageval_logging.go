@@ -59,7 +59,7 @@ const (
 	// (see truncReasonNames).
 	truncReasonMaxContextFields       = "max_context_fields"
 	truncReasonMaxKeyLength           = "max_key_length"
-	truncReasonMaxFieldLength         = "max_field_length"
+	truncReasonMaxValueLength         = "max_value_length"
 	truncReasonMaxListElements        = "max_list_elements"
 	truncReasonMaxStructureProperties = "max_structure_properties"
 	truncReasonMaxSnapshotDepth       = "max_snapshot_depth"
@@ -289,7 +289,7 @@ type flagEvalLoggingWriter struct {
 	//  - preQueueOverflow: capacity check saw the queue full BEFORE any copy work.
 	//  - enqueueDropped:   racy loss at the send site (queue filled between check and send).
 	//  - contextTruncatedByReason: per-cap counter incremented once per truncated event with the
-	//    specific reason (max_context_fields, max_field_length, max_key_length). A single event
+	//    specific reason (max_context_fields, max_value_length, max_key_length). A single event
 	//    may bump multiple reasons; each is at most one bump per event.
 	preQueueOverflow         atomic.Int64
 	enqueueDropped           atomic.Int64
@@ -712,7 +712,7 @@ func copyPrunedValue(out map[string]any, key string, val any, seen map[uintptr]s
 	switch v := val.(type) {
 	case string:
 		if len(v) > maxFieldLength {
-			mask.add(bitMaxFieldLength)
+			mask.add(bitMaxValueLength)
 			return
 		}
 		out[key] = v
@@ -723,14 +723,14 @@ func copyPrunedValue(out map[string]any, key string, val any, seen map[uintptr]s
 	case []byte:
 		s := string(v)
 		if len(s) > maxFieldLength {
-			mask.add(bitMaxFieldLength)
+			mask.add(bitMaxValueLength)
 			return
 		}
 		out[key] = s
 	case fmt.Stringer:
 		s := v.String()
 		if len(s) > maxFieldLength {
-			mask.add(bitMaxFieldLength)
+			mask.add(bitMaxValueLength)
 			return
 		}
 		out[key] = s
@@ -885,7 +885,7 @@ type truncReasonMask uint8
 const (
 	bitMaxContextFields       truncReasonMask = 1 << iota // 1 << 0
 	bitMaxKeyLength                                       // 1 << 1
-	bitMaxFieldLength                                     // 1 << 2
+	bitMaxValueLength                                     // 1 << 2
 	bitMaxListElements                                    // 1 << 3
 	bitMaxStructureProperties                             // 1 << 4
 	bitMaxSnapshotDepth                                   // 1 << 5
@@ -899,7 +899,7 @@ func (m *truncReasonMask) add(b truncReasonMask) { *m |= b }
 var truncReasonNames = [...]string{
 	truncReasonMaxContextFields,
 	truncReasonMaxKeyLength,
-	truncReasonMaxFieldLength,
+	truncReasonMaxValueLength,
 	truncReasonMaxListElements,
 	truncReasonMaxStructureProperties,
 	truncReasonMaxSnapshotDepth,
@@ -912,7 +912,7 @@ func (m truncReasonMask) reasons() []string {
 		return nil
 	}
 	var r []string
-	for i := 0; i < len(truncReasonNames); i++ {
+	for i := range truncReasonNames {
 		if m&(1<<i) != 0 {
 			r = append(r, truncReasonNames[i])
 		}

@@ -37,17 +37,19 @@ type evaluationResult struct {
 }
 
 const (
-	metadataAllocationKey = "dd.allocation.key"
-	metadataDoLogKey      = "dd.doLog"
-	metadataSerialIDKey   = "dd.serialId"
+	metadataAllocationKey    = "dd.allocation.key"
+	metadataDoLogKey         = "__dd_do_log"
+	metadataSplitSerialIDKey = "__dd_split_serial_id"
 	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
-	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time.
-	metadataEvalTimeKey = "dd.eval.timestamp_ms"
+	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time. The
+	// __dd_ prefix marks it as internal-only (never serialized to the wire); matches Java's
+	// DDEvaluator.METADATA_EVAL_TIMESTAMP_MS.
+	metadataEvalTimeKey = "__dd_eval_timestamp_ms"
 	// metadataObserveFullEvaluationDataKey carries the environment's consent snapshot, stamped
 	// in DatadogProvider.evaluate. Travels with the evaluation so a later Remote Config update
-	// cannot retroactively change the policy at flush time. Unprefixed snake_case because it
-	// is the cross-SDK contract key.
-	metadataObserveFullEvaluationDataKey = "observe_full_evaluation_data"
+	// cannot retroactively change the policy at flush time. The dd. prefix marks it as
+	// Datadog-internal; matches Java's DDEvaluator.METADATA_OBSERVE_FULL_EVALUATION_DATA.
+	metadataObserveFullEvaluationDataKey = "dd.observe_full_evaluation_data"
 )
 
 // evaluateFlag evaluates a feature flag with the given context. The caller supplies the
@@ -109,7 +111,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 			metadata[metadataDoLogKey] = doLog
 
 			if split.SerialID != nil {
-				metadata[metadataSerialIDKey] = *split.SerialID
+				metadata[metadataSplitSerialIDKey] = *split.SerialID
 			}
 
 			// Determine reason:

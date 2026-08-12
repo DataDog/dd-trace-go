@@ -1190,7 +1190,7 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 			attrs[fmt.Sprintf("field-%04d", i)] = "small"
 		}
 		_, reasons := flattenAndPruneContext(attrs)
-		if !slices.Contains(reasons, truncReasonMaxContextFields) || slices.Contains(reasons, truncReasonMaxFieldLength) || slices.Contains(reasons, truncReasonMaxKeyLength) {
+		if !slices.Contains(reasons, truncReasonMaxContextFields) || slices.Contains(reasons, truncReasonMaxValueLength) || slices.Contains(reasons, truncReasonMaxKeyLength) {
 			t.Errorf("expected only max_context_fields, got %v", reasons)
 		}
 	})
@@ -1199,8 +1199,8 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 	t.Run("value cap alone", func(t *testing.T) {
 		attrs := map[string]any{"role": "admin", "big": overlongValue}
 		_, reasons := flattenAndPruneContext(attrs)
-		if !slices.Contains(reasons, truncReasonMaxFieldLength) || slices.Contains(reasons, truncReasonMaxKeyLength) || slices.Contains(reasons, truncReasonMaxContextFields) {
-			t.Errorf("expected only max_field_length, got %v", reasons)
+		if !slices.Contains(reasons, truncReasonMaxValueLength) || slices.Contains(reasons, truncReasonMaxKeyLength) || slices.Contains(reasons, truncReasonMaxContextFields) {
+			t.Errorf("expected only max_value_length, got %v", reasons)
 		}
 	})
 
@@ -1208,7 +1208,7 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 	t.Run("key cap alone", func(t *testing.T) {
 		attrs := map[string]any{"role": "admin", overlongKey: "small"}
 		_, reasons := flattenAndPruneContext(attrs)
-		if !slices.Contains(reasons, truncReasonMaxKeyLength) || slices.Contains(reasons, truncReasonMaxContextFields) || slices.Contains(reasons, truncReasonMaxFieldLength) {
+		if !slices.Contains(reasons, truncReasonMaxKeyLength) || slices.Contains(reasons, truncReasonMaxContextFields) || slices.Contains(reasons, truncReasonMaxValueLength) {
 			t.Errorf("expected only max_key_length, got %v", reasons)
 		}
 	})
@@ -1222,8 +1222,8 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 			"role":               "admin",       // sorts last, kept
 		}
 		_, reasons := flattenAndPruneContext(attrs)
-		if !slices.Contains(reasons, truncReasonMaxKeyLength) || !slices.Contains(reasons, truncReasonMaxFieldLength) {
-			t.Errorf("expected max_key_length AND max_field_length, got %v", reasons)
+		if !slices.Contains(reasons, truncReasonMaxKeyLength) || !slices.Contains(reasons, truncReasonMaxValueLength) {
+			t.Errorf("expected max_key_length AND max_value_length, got %v", reasons)
 		}
 	})
 
@@ -1286,7 +1286,7 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 	// scalar sibling so shallower scalars are retained while the depth-4 container is truncated.
 	t.Run("snapshot depth cap", func(t *testing.T) {
 		var node any = map[string]any{"val": "bottom"}
-		for i := 0; i < maxSnapshotDepth+2; i++ {
+		for i := range maxSnapshotDepth + 2 {
 			node = map[string]any{"val": fmt.Sprintf("L%d", i), "n": node}
 		}
 		attrs := map[string]any{"root": node}
@@ -1331,7 +1331,7 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
 	t.Run("deep chain is truncated at maxSnapshotDepth", func(t *testing.T) {
 		var node any = map[string]any{"val": "bottom"}
-		for i := 0; i < 100; i++ { // far deeper than maxSnapshotDepth
+		for i := range 100 { // far deeper than maxSnapshotDepth
 			node = map[string]any{"val": fmt.Sprintf("L%d", i), "n": node}
 		}
 		attrs := map[string]any{"root": node}
@@ -1373,7 +1373,7 @@ func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
 
 	t.Run("huge structure retains at most maxStructureProperties", func(t *testing.T) {
 		nested := make(map[string]any, 10_000)
-		for i := 0; i < 10_000; i++ {
+		for i := range 10_000 {
 			nested[fmt.Sprintf("p%05d", i)] = i
 		}
 		attrs := map[string]any{"obj": nested}
@@ -1394,7 +1394,7 @@ func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
 
 	t.Run("retained field count never exceeds maxContextFields", func(t *testing.T) {
 		attrs := make(map[string]any, 5_000)
-		for i := 0; i < 5_000; i++ {
+		for i := range 5_000 {
 			attrs[fmt.Sprintf("k%05d", i)] = fmt.Sprintf("v%d", i)
 		}
 		got, reasons := flattenAndPruneContext(attrs)
