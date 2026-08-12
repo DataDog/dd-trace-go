@@ -139,6 +139,9 @@ func mergeBaggageFromContext(ctx context.Context) (otelbaggage.Baggage, map[stri
 		}
 	}
 	members := otelBag.Members()
+	if len(members) == 0 {
+		return otelBag, nil
+	}
 	ddBag := make(map[string]string, len(members))
 	for _, m := range members {
 		ddBag[m.Key()] = m.Value()
