@@ -232,7 +232,6 @@ var commonMetrics = []Declaration{
 	{Namespace: "tracers", Type: "count", Name: "otel.env.invalid"},
 	{Namespace: "tracers", Type: "count", Name: "otel.env.unsupported"},
 	{Namespace: "tracers", Type: "count", Name: "otel.log_records"},
-	{Namespace: "tracers", Type: "count", Name: "otel.metrics.export_failures"},
 	{Namespace: "tracers", Type: "count", Name: "otel.metrics_export_attempts"},
 	{Namespace: "tracers", Type: "count", Name: "otel.metrics_export_failures"},
 	{Namespace: "tracers", Type: "count", Name: "otel.metrics_export_partial_successes"},

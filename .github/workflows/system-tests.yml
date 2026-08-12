@@ -40,7 +40,7 @@ jobs:
       sha: ${{ steps.pin.outputs.sha }}
     steps:
       - name: Checkout system-tests
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
@@ -91,14 +91,14 @@ jobs:
       # Fall back in case of a cache miss, which can occur when retrying old runs.
       - name: Checkout system tests (cache miss)
         if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
@@ -264,14 +264,14 @@ jobs:
       # Fall back in case of a cache miss, which can occur when retrying old runs.
       - name: Checkout system tests (cache miss)
         if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
@@ -341,7 +341,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@3182fb451f754cc2f830547b889a266bcd7bbed0
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@6fa83580dfdb27e6932c7498d0dbda7b9363ed62
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -383,6 +383,21 @@ jobs:
       image: ghcr.io/datadog/dd-trace-go/haproxy-spoa
       dockerfile: ./contrib/haproxy/stream-processing-offload/cmd/spoa/Dockerfile
       artifact_prefix: haproxy-spoa-image
+      commit_sha: ${{ github.sha }}
+      tags: >-
+        dev
+      push: ${{ github.ref == 'refs/heads/main' }}
+      platforms: '["linux/amd64"]'
+
+  # Pushing an image tagged with "dev" only on commit to main,
+  # otherwise build and use the image from the artifact.
+  build-apim-callout:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/apim-callout
+      dockerfile: ./contrib/azure/apim-callout/cmd/apim-callout/Dockerfile
+      artifact_prefix: apim-callout-image
       commit_sha: ${{ github.sha }}
       tags: >-
         dev

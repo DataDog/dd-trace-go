@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -193,9 +194,18 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
-	// traceProtocol is the Datadog trace protocol version (TraceProtocolV04 or TraceProtocolV1).
+	// traceProtocol is the Datadog trace protocol version the user requested
+	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
+	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
 	// Only meaningful when otlpExportMode is false.
 	traceProtocol float64
+	// effectiveTraceProtocolBits is the last value reported via
+	// ReportEffectiveTraceProtocol, stored as float64 bits so repeated reports
+	// of the same value can be deduplicated without inflating config-telemetry
+	// seqIDs on every agent-info poll. Deliberately not under mu: it is written
+	// from the tracer's poll goroutine and must not contend with hot-path reads
+	// of unrelated fields.
+	effectiveTraceProtocolBits atomic.Uint64
 	// otlpExportMode indicates traces should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMode bool
@@ -253,6 +263,14 @@ type Config struct {
 	experimentalFlaggingProviderEnabled bool
 	// spanPoolEnabled enables the experimental span pool.
 	spanPoolEnabled bool
+	// llmObsEnabled controls if LLM Observability is enabled
+	llmObsEnabled bool
+	// llmObsMLApp is the ML App for LLM Observability
+	llmObsMLApp string
+	// llmObsProjectName is the project name for LLM Observability
+	llmObsProjectName string
+	// llmObsAgentlessEnabled controls if LLM Observability is enabled in agentless mode
+	llmObsAgentlessEnabled *bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -400,10 +418,10 @@ func loadConfig() *Config {
 		// DD_TRACE_STATS_COMPUTATION_ENABLED was not explicitly configured,
 		// disable native stats too: the user has signalled they want no SDK-side
 		// span metrics, and the Datadog-Client-Computed-Stats header should
-		// therefore be absent (FR15).
+		// therefore be absent.
 		if !v {
 			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
-				cfg.statsComputationEnabled = false
+				cfg.SetStatsComputationEnabled(false, telemetry.OriginCalculated)
 			}
 		}
 	}
@@ -518,6 +536,13 @@ func loadConfig() *Config {
 	cfg.spanSamplingRules = spanRules
 	cfg.spanSamplingRulesOrigin = spanOrigin
 	configtelemetry.ReportDefault("span_sample_rules", spanRules)
+
+	cfg.llmObsEnabled = p.GetBool("DD_LLMOBS_ENABLED", false)
+	cfg.llmObsMLApp = p.GetString("DD_LLMOBS_ML_APP", "")
+	cfg.llmObsProjectName = p.GetString("DD_LLMOBS_PROJECT_NAME", "")
+	if v, origin := p.GetBoolWithOrigin("DD_LLMOBS_AGENTLESS_ENABLED", false); origin != telemetry.OriginDefault {
+		cfg.llmObsAgentlessEnabled = &v
+	}
 
 	return cfg
 }
@@ -1555,12 +1580,25 @@ func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, 
 	configtelemetry.Report("DD_TRACE_OTEL_SEMANTICS_ENABLED", enabled, origin)
 }
 
-func (c *Config) TraceProtocol() float64 {
+// RequestedTraceProtocol returns the Datadog trace protocol version to use for
+// /vX/traces (TraceProtocolV04 or TraceProtocolV1). It reflects what has been
+// asked for, by the user or by a derived override; it carries no information
+// about whether the trace-agent actually supports that protocol. Callers that
+// need the protocol in effect on the wire must combine this with agent
+// capability. It is independent of stats computation: both native Client-Side
+// Stats and OTLP span metrics are signalled out-of-band (the
+// Datadog-Client-Computed-Stats header and the separate /v0.6/stats endpoint)
+// and are handled identically by the Agent on either protocol.
+func (c *Config) RequestedTraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.traceProtocol
 }
 
+// SetTraceProtocol sets the requested trace protocol version. It never
+// expresses an agent-capability downgrade: callers that need to report the
+// wire protocol actually in use should call ReportEffectiveTraceProtocol
+// instead, which does not mutate the requested value.
 func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1568,7 +1606,32 @@ func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin, product ..
 		return
 	}
 	c.traceProtocol = v
-	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", v, origin)
+	// Report the wire-version string, not the float64. The env-var load path
+	// reports this key through the provider as the raw string ("1.0"), so
+	// reporting a float64 here made the same telemetry key arrive with two
+	// different types depending on which source last set it.
+	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionString(v), origin)
+}
+
+// ReportEffectiveTraceProtocol records the wire protocol version actually in
+// use (the requested protocol, downgraded when the agent lacks support) for
+// DD_TRACE_AGENT_PROTOCOL_VERSION config telemetry. It reports only when the
+// value changes from the last report, so periodic re-evaluation (e.g. on an
+// agent-info poll) cannot inflate config-telemetry seqIDs. It does NOT modify
+// the value returned by RequestedTraceProtocol. Returns true if this call
+// changed the recorded value.
+func (c *Config) ReportEffectiveTraceProtocol(v float64) bool {
+	next := math.Float64bits(v)
+	for {
+		prev := c.effectiveTraceProtocolBits.Load()
+		if prev == next {
+			return false
+		}
+		if c.effectiveTraceProtocolBits.CompareAndSwap(prev, next) {
+			configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionString(v), telemetry.OriginCalculated)
+			return true
+		}
+	}
 }
 
 func (c *Config) OTLPTraceURL() string {
@@ -1631,6 +1694,17 @@ func (c *Config) OTLPSpanMetricsEnabled() bool {
 		return *c.otlpSpanMetricsEnabled
 	}
 	return c.otlpExportMode && c.runtimeMetricsOtel
+}
+
+func (c *Config) SetOTLPSpanMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("OTEL_TRACES_SPAN_METRICS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	v := enabled
+	c.otlpSpanMetricsEnabled = &v
+	configtelemetry.Report("OTEL_TRACES_SPAN_METRICS_ENABLED", enabled, origin)
 }
 
 func (c *Config) OTLPMetricsURL() string {
@@ -1808,4 +1882,82 @@ func (c *Config) SetSpanPoolEnabled(enabled bool, origin telemetry.Origin, produ
 	}
 	c.spanPoolEnabled = enabled
 	configtelemetry.Report("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", enabled, origin)
+}
+
+// LLMObsEnabled returns DD_LLMOBS_ENABLED.
+func (c *Config) LLMObsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsEnabled
+}
+
+// SetLLMObsEnabled sets DD_LLMOBS_ENABLED.
+func (c *Config) SetLLMObsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LLMOBS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.llmObsEnabled = enabled
+	configtelemetry.Report("DD_LLMOBS_ENABLED", enabled, origin)
+}
+
+// LLMObsMLApp returns DD_LLMOBS_ML_APP.
+func (c *Config) LLMObsMLApp() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsMLApp
+}
+
+// SetLLMObsMLApp sets DD_LLMOBS_ML_APP.
+func (c *Config) SetLLMObsMLApp(mlApp string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LLMOBS_ML_APP", origin, mlApp, product...) {
+		return
+	}
+	c.llmObsMLApp = mlApp
+	configtelemetry.Report("DD_LLMOBS_ML_APP", mlApp, origin)
+}
+
+// LLMObsProjectName returns DD_LLMOBS_PROJECT_NAME.
+func (c *Config) LLMObsProjectName() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsProjectName
+}
+
+// SetLLMObsProjectName sets DD_LLMOBS_PROJECT_NAME.
+func (c *Config) SetLLMObsProjectName(name string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LLMOBS_PROJECT_NAME", origin, name, product...) {
+		return
+	}
+	c.llmObsProjectName = name
+	configtelemetry.Report("DD_LLMOBS_PROJECT_NAME", name, origin)
+}
+
+// LLMObsAgentlessEnabled returns DD_LLMOBS_AGENTLESS_ENABLED. It returns nil
+// when unset, allowing callers to distinguish an explicit false from unset.
+func (c *Config) LLMObsAgentlessEnabled() *bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsAgentlessEnabled
+}
+
+// SetLLMObsAgentlessEnabled sets DD_LLMOBS_AGENTLESS_ENABLED. A nil value
+// indicates the setting is unset (tri-state).
+func (c *Config) SetLLMObsAgentlessEnabled(v *bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	conflictValue := "unset"
+	if v != nil {
+		conflictValue = strconv.FormatBool(*v)
+	}
+	if c.checkProductConflict("DD_LLMOBS_AGENTLESS_ENABLED", origin, conflictValue, product...) {
+		return
+	}
+	c.llmObsAgentlessEnabled = v
+	configtelemetry.Report("DD_LLMOBS_AGENTLESS_ENABLED", conflictValue, origin)
 }

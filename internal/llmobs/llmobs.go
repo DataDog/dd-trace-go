@@ -168,33 +168,8 @@ type LLMObs struct {
 }
 
 func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
-	if cfg.TestBaseURL != "" {
-		// TestBaseURL overrides all transport URL construction and bypasses
-		// agent-mode/agentless-mode detection. Used in tests only.
-		cfg.ResolvedAgentlessEnabled = false
-	} else {
-		agentSupportsLLMObs := cfg.AgentFeatures.EVPProxyV2
-		if !agentSupportsLLMObs {
-			log.Debug("llmobs: agent not available or does not support llmobs")
-		}
-		if cfg.AgentlessEnabled != nil {
-			if !*cfg.AgentlessEnabled && !agentSupportsLLMObs {
-				return nil, errAgentModeNotSupported
-			}
-			cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
-		} else {
-			// if agentlessEnabled is not set and evp_proxy is supported in the agent, default to use the agent
-			cfg.ResolvedAgentlessEnabled = !agentSupportsLLMObs
-			if cfg.ResolvedAgentlessEnabled {
-				log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agentless mode")
-			} else {
-				log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agent mode")
-			}
-		}
-
-		if cfg.ResolvedAgentlessEnabled && !isAPIKeyValid(cfg.TracerConfig.APIKey) {
-			return nil, errAgentlessRequiresAPIKey
-		}
+	if cfg.TestBaseURL == "" && cfg.AgentlessEnabled && !isAPIKeyValid(cfg.TracerConfig.APIKey) {
+		return nil, errAgentlessRequiresAPIKey
 	}
 	if cfg.MLApp == "" {
 		return nil, errMLAppRequired
@@ -216,9 +191,32 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 	}, nil
 }
 
+// ResolveAgentlessEnabled resolves the tri-state agentless configuration
+// (nil = not explicitly set) against the agent's advertised LLMObs support.
+// Callers should invoke this before constructing a config.Config to pass
+// into Start.
+func ResolveAgentlessEnabled(agentlessEnabled *bool, agentSupportsLLMObs bool) (bool, error) {
+	if !agentSupportsLLMObs {
+		log.Debug("llmobs: agent not available or does not support llmobs")
+	}
+	if agentlessEnabled != nil {
+		if !*agentlessEnabled && !agentSupportsLLMObs {
+			return false, errAgentModeNotSupported
+		}
+		return *agentlessEnabled, nil
+	}
+	resolved := !agentSupportsLLMObs
+	if resolved {
+		log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agentless mode")
+	} else {
+		log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agent mode")
+	}
+	return resolved, nil
+}
+
 // Start starts the global LLMObs instance with the given configuration and tracer.
 // Returns an error if LLMObs is already running or if configuration is invalid.
-func Start(cfg config.Config, tracer Tracer) (err error) {
+func Start(cfg config.Config, tracer Tracer, startErr error) (err error) {
 	internalconfig.RecordProductStart(internalconfig.ProductLLMObs)
 
 	startTime := time.Now()
@@ -227,9 +225,11 @@ func Start(cfg config.Config, tracer Tracer) (err error) {
 	}()
 	mu.Lock()
 	defer mu.Unlock()
-
 	if activeLLMObs != nil {
 		activeLLMObs.Stop()
+	}
+	if startErr != nil {
+		return startErr
 	}
 	if !cfg.Enabled {
 		return nil

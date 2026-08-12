@@ -43,7 +43,7 @@ jobs:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -116,7 +116,7 @@ jobs:
     env:
       TEST_RESULTS: ${{ github.workspace }}/test-results
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -186,7 +186,7 @@ jobs:
         # local action is invoked.
         id: recheckout
         if: always()
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ steps.trusted.outputs.sha }}
@@ -244,7 +244,7 @@ jobs:
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -292,7 +292,7 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -384,7 +384,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -427,7 +427,7 @@ jobs:
       GOSUMDB: "off"
     steps:
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.25" # lowest supported version, so this checks the floor
       - name: Resolve orchestrion/all as an external consumer would

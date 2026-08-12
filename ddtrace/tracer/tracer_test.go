@@ -1231,7 +1231,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() ddTransport {
-	return newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
+	return newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 }
 
 func TestNewSpan(t *testing.T) {
@@ -2880,6 +2880,11 @@ loop:
 	assert.Len(t, transport.Stats(), 1)
 }
 
+//go:noinline
+func captureStacktraceForTest(depth, skip uint) string {
+	return takeStacktrace(depth, skip)
+}
+
 func TestTakeStackTrace(t *testing.T) {
 	t.Run("n=12", func(t *testing.T) {
 		val := takeStacktrace(12, 0)
@@ -2889,12 +2894,12 @@ func TestTakeStackTrace(t *testing.T) {
 		assert.Contains(t, val, "tracer.TestTakeStackTrace")
 	})
 
-	t.Run("n=15,skip=2", func(t *testing.T) {
-		val := takeStacktrace(3, 2)
-		// top frame should be runtime.main or runtime.goexit, in case of tests that's goexit
+	t.Run("n=3,skip=1", func(t *testing.T) {
+		val := captureStacktraceForTest(3, 1)
+		assert.NotContains(t, val, "captureStacktraceForTest")
+		assert.Contains(t, val, "tracer.TestTakeStackTrace")
 		assert.Contains(t, val, "runtime.goexit")
-		numFrames := strings.Count(val, "\n\t")
-		assert.Equal(t, 3, numFrames)
+		assert.Equal(t, 3, strings.Count(val, "\n\t"))
 	})
 
 	t.Run("n=1", func(t *testing.T) {
