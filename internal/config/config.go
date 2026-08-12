@@ -52,12 +52,10 @@ const (
 type Product string
 
 const (
-	ProductTracer       Product = "tracer"
-	ProductProfiler     Product = "profiler"
-	ProductAppsec       Product = "appsec"
-	ProductLLMObs       Product = "llmobs"
-	ProductCIVisibility Product = "civisibility"
-	ProductDataStreams  Product = "datastreams"
+	ProductTracer   Product = "tracer"
+	ProductProfiler Product = "profiler"
+	ProductAppsec   Product = "appsec"
+	ProductLLMObs   Product = "llmobs"
 )
 
 // programmaticOverride records which product claimed a field via programmatic API.
