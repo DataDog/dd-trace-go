@@ -21,7 +21,7 @@ variables:
     value: ""
     description: "[Optional] Name of the job to retrieve artifacts for CuSim"
   RELIABILITY_ENV_BRANCH:
-    value: "erikayasuda/auto-run-go"
+    value: "master"
     description: "Run a specific datadog-reliability-env branch downstream"
 
 workflow:
