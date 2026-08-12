@@ -140,6 +140,10 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceSerialATFFixture/root":                   properties(false),
 					"TestQuarantinedRaceSerialATFFixture/root/owner":             properties(true),
 					"TestQuarantinedRaceForeignSuiteFixture/root":                properties(false),
+					"TestQuarantinedRaceAncestorATFFixture": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+					},
+					"TestQuarantinedRaceAncestorATFFixture/child": properties(true),
 
 					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
@@ -149,6 +153,11 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceTerminalDescendantsFixture/panic":    properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/goexit":   properties(false),
 					"TestQuarantinedRaceTerminalDescendantsFixture/output":   properties(false),
+				}},
+				"quarantine_process_test.go": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+					"TestQuarantinedRaceForeignSuiteFixture/root/foreign": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
+					},
 				}},
 				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
@@ -362,7 +371,16 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	case "foreign-suite":
 		foreignSuite := "quarantine_process_test.go"
 		foreign := checkSpansByResourceName(spans, foreignSuite+".TestQuarantinedRaceForeignSuiteFixture/root/foreign", 1)
-		checkSpansByTagValue(foreign, constants.TestStatus, constants.TestStatusPass, 1)
+		checkSpansByTagValue(foreign, constants.TestStatus, constants.TestStatusSkip, 1)
+		checkSpansByTagValue(foreign, constants.TestIsDisabled, "true", 1)
+		os.Exit(0)
+	case "ancestor-atf":
+		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAncestorATFFixture/child", 2)
+		checkSpansByTagValue(child, constants.TestIsAttempToFix, "true", 2)
+		checkSpansByTagValue(child, constants.TestIsRetry, "true", 1)
+		checkSpansByTagValue(child, constants.TestRetryReason, constants.AttemptToFixRetryReason, 1)
+		checkSpansByTagValue(child, constants.TestAttemptToFixPassed, "false", 1)
+		checkSpansByTagValue(child, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 		os.Exit(0)
 	case "terminal-descendants":
 		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
@@ -703,6 +721,10 @@ func TestQuarantinedRaceSerialATFDoesNotRepeatSiblingEndToEnd(t *testing.T) {
 
 func TestQuarantinedRacePreservesDescendantSuiteEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "foreign-suite", "^TestQuarantinedRaceForeignSuiteFixture$")
+}
+
+func TestQuarantinedRacePreservesAncestorATFMetadataEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "ancestor-atf", "^TestQuarantinedRaceAncestorATFFixture$")
 }
 
 func TestQuarantinedRaceTerminalDescendantsEndToEnd(t *testing.T) {
@@ -1354,5 +1376,18 @@ func TestQuarantinedRaceForeignSuiteFixture(t *testing.T) {
 	}
 	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("foreign", instrumentTestingTFunc(quarantinedRaceForeignSuiteCallback))
+	}))
+}
+
+func TestQuarantinedRaceAncestorATFFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
+		cfg, err := processRetryChildConfigFromEnv()
+		require.NoError(t, err)
+		if cfg.RetryReason == processRetrySubtreeReason {
+			t.Fail()
+		}
 	}))
 }

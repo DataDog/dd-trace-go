@@ -105,6 +105,8 @@ type deferredProcessRetryGroup struct {
 	rootParallel          bool
 	nativeMaxParallel     int
 	efdFaultySessionGuard earlyFlakeDetectionFaultySession
+	raceProcess           *quarantinedRaceProcessContext
+	raceSubtree           *processRetrySubtreeConfig
 }
 
 type deferredProcessRetryEvent struct {
@@ -910,6 +912,14 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 	}
 	metadataCopy := *metadata
 	testInfo := *options.testInfo
+	quarantinedRaceSubtree, err := buildDeferredQuarantinedRaceSubtreeConfig(
+		execOpts.executionMetadata.quarantinedRaceProcess,
+		&testInfo,
+		execOpts.executionMetadata,
+	)
+	if err != nil {
+		return false
+	}
 	panicMessage := execOpts.lastObservation.panicMessage
 	if execOpts.lastObservation.panicData != nil && panicMessage == "" {
 		panicMessage = fmt.Sprint(execOpts.lastObservation.panicData)
@@ -960,6 +970,8 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 		rootParallel:          execOpts.lastObservation.rootParallel,
 		nativeMaxParallel:     nativeMaxParallel,
 		efdFaultySessionGuard: options.efdFaultySessionGuard,
+		raceProcess:           execOpts.executionMetadata.quarantinedRaceProcess,
+		raceSubtree:           quarantinedRaceSubtree,
 	}
 	group.metadata.identity = &group.identity
 	group.testInfo.identity = &group.identity
@@ -1012,6 +1024,7 @@ func (g *deferredProcessRetryGroup) prepareAttempt(allowEFDTransition bool) (def
 }
 
 func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessRetryGroup, prepared deferredProcessRetryPreparedAttempt) processRetryAttemptResult {
+	subtree := group.quarantinedRaceSubtreeForAttempt(prepared.index)
 	return runProcessRetryAttemptWithBaselineAndShutdown(
 		ctx,
 		processRetryChildConfig{
@@ -1020,6 +1033,7 @@ func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessR
 			RetryReason:       prepared.retryReason,
 			MRunEpoch:         group.mRunEpoch,
 			InvocationOrdinal: group.invocationOrdinal,
+			Subtree:           subtree,
 		},
 		group.parentDeadline,
 		group.parentDeadlineOK,
@@ -1062,6 +1076,11 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		g.closeTailEvent(false)
 		g.tailEvent = nextTail
 	}
+	if g.raceSubtree != nil {
+		replayQuarantinedRaceResults(&g.testInfo, g.raceProcess, []quarantinedRaceInvocation{{
+			cfg: g.quarantinedRaceSubtreeForAttempt(completed.prepared.index), attempt: attempt, attemptIndex: completed.prepared.index,
+		}}, false)
+	}
 	g.latest = retryAttemptObservation{
 		executionIndex: completed.prepared.index,
 		failed:         effective.Failed,
@@ -1079,6 +1098,15 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		attempt.Cleanup()
 	}
 	return continueGroup
+}
+
+func (g *deferredProcessRetryGroup) quarantinedRaceSubtreeForAttempt(index int) *processRetrySubtreeConfig {
+	if g == nil || g.raceSubtree == nil {
+		return nil
+	}
+	cfg := *g.raceSubtree
+	cfg.AncestorAttemptIndex = index
+	return &cfg
 }
 
 func (g *deferredProcessRetryGroup) admitEarlyFlakeDetectionContinuation() bool {
@@ -1194,6 +1222,9 @@ func (g *deferredProcessRetryGroup) finish() {
 		return
 	}
 	g.closeTailEvent(true)
+	if g.raceProcess != nil {
+		g.raceProcess.clearAncestorOutcomes(g.raceSubtree)
+	}
 	if g.suite != nil && g.module != nil {
 		checkModuleAndSuite(g.module, g.suite)
 		g.suite = nil

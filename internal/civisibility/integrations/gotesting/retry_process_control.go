@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
@@ -600,7 +601,7 @@ func readProcessRetryControlConfig(path string, expected processRetryChildConfig
 		return processRetryControlConfig{}, err
 	}
 	defer file.Close()
-	limit := processRetryWireMaxBytes(expected.RetryReason == processRetrySubtreeReason)
+	limit := processRetryWireMaxBytes(expected.RetryReason == processRetrySubtreeReason || expected.RetryReason == constants.AttemptToFixRetryReason)
 	payload, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
 	if err != nil {
 		return processRetryControlConfig{}, err
@@ -640,8 +641,8 @@ func validateProcessRetryControlConfig(cfg processRetryControlConfig, expected p
 	if cfg.ObservedGOMAXPROCS < 1 || (!cfg.ParentDeadlineOK && cfg.ParentDeadlineUnixNano != 0) {
 		return errProcessRetryControlInvalid
 	}
-	if (cfg.Subtree != nil && cfg.RetryReason != processRetrySubtreeReason) ||
-		(cfg.Subtree == nil && cfg.RetryReason == processRetrySubtreeReason) {
+	if cfg.Subtree == nil && cfg.RetryReason == processRetrySubtreeReason ||
+		cfg.Subtree != nil && cfg.RetryReason != processRetrySubtreeReason && cfg.RetryReason != constants.AttemptToFixRetryReason {
 		return errProcessRetryControlInvalid
 	}
 	if err := validateProcessRetrySubtreeConfig(cfg.Subtree, cfg.TestName); err != nil {

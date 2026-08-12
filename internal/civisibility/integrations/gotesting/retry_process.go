@@ -3557,9 +3557,14 @@ func markProcessRetryChildFailed(tb testing.TB) {
 	if !ok {
 		return
 	}
-	if execMeta := processRetryChildOwnerMetadata(getTestMetadata(t)); execMeta != nil && execMeta.quarantinedRaceChild != nil &&
+	current := getTestMetadata(t)
+	if execMeta := processRetryChildOwnerMetadata(current); execMeta != nil && execMeta.quarantinedRaceChild != nil &&
 		!processRetryChildFailureIsPropagated() {
-		execMeta.quarantinedRaceChild.markUnmaskedFailure(t.Name())
+		moduleName, suiteName := "", ""
+		if current != nil && current.identity != nil {
+			moduleName, suiteName = current.identity.ModuleName, current.identity.SuiteName
+		}
+		execMeta.quarantinedRaceChild.markUnmaskedFailure(moduleName, suiteName, t.Name())
 	}
 	fields := getTestPrivateFields(t)
 	ancestry := make([]*commonPrivateFields, 0, 4)

@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 )
 
@@ -64,49 +65,53 @@ func TestDirectQuarantinedRaceAttemptOwnersReturnsOnlyNearestFamilies(t *testing
 }
 
 func TestQuarantinedRaceContinuationConfigPreservesDeeperAttemptOwner(t *testing.T) {
+	const module, suite = "module", "suite"
 	cfg := &processRetrySubtreeConfig{
 		Version:      processRetrySubtreeVersion,
 		SelectedRoot: "TestCheckout",
 		Root: processRetrySubtreeDirective{
-			TestName: "TestCheckout", Quarantined: true, AttemptToFix: true,
+			TestName: "TestCheckout", ModuleName: module, SuiteName: suite, Quarantined: true, AttemptToFix: true,
 		},
 		OwnsAttemptToFix: true,
 		Directives: []processRetrySubtreeDirective{
-			{TestName: "TestCheckout/clear", Quarantined: true},
-			{TestName: "TestCheckout/clear/owner", Quarantined: true, AttemptToFix: true},
-			{TestName: "TestCheckout/clear/owner/clear", Quarantined: true},
-			{TestName: "TestCheckout/clear/owner/clear/deep", Quarantined: true, AttemptToFix: true},
+			{TestName: "TestCheckout/clear", ModuleName: module, SuiteName: suite, Quarantined: true},
+			{TestName: "TestCheckout/clear/owner", ModuleName: module, SuiteName: suite, Quarantined: true, AttemptToFix: true},
+			{TestName: "TestCheckout/clear/owner/clear", ModuleName: module, SuiteName: suite, Quarantined: true},
+			{TestName: "TestCheckout/clear/owner/clear/deep", ModuleName: module, SuiteName: suite, Quarantined: true, AttemptToFix: true},
 		},
 	}
-	continuation, err := cfg.forSelectedRoot("TestCheckout/clear/owner")
+	continuation, err := cfg.forSelectedRoot(module, suite, "TestCheckout/clear/owner")
 	require.NoError(t, err)
-	_, owner := continuation.resolveDirective("TestCheckout/clear/owner/clear/deep")
+	_, owner := continuation.resolveDirective(module, suite, "TestCheckout/clear/owner/clear/deep")
 	assert.Equal(t, "TestCheckout/clear/owner/clear/deep", owner)
 }
 
 func TestQuarantinedRaceDirectiveResolutionUsesNearestAttemptOwner(t *testing.T) {
+	const module, suite = "module", "suite"
 	cfg := &processRetrySubtreeConfig{
 		Version:      processRetrySubtreeVersion,
 		SelectedRoot: "TestCheckout/card",
 		Root: processRetrySubtreeDirective{
 			TestName:    "TestCheckout/card",
+			ModuleName:  module,
+			SuiteName:   suite,
 			Quarantined: true,
 		},
 		Directives: []processRetrySubtreeDirective{
-			{TestName: "TestCheckout/card/visa", Quarantined: true, AttemptToFix: true},
-			{TestName: "TestCheckout/card/visa/credit", Quarantined: true},
+			{TestName: "TestCheckout/card/visa", ModuleName: module, SuiteName: suite, Quarantined: true, AttemptToFix: true},
+			{TestName: "TestCheckout/card/visa/credit", ModuleName: module, SuiteName: suite, Quarantined: true},
 		},
 	}
 
-	directive, owner := cfg.resolveDirective("TestCheckout/card/visa")
+	directive, owner := cfg.resolveDirective(module, suite, "TestCheckout/card/visa")
 	require.True(t, directive.AttemptToFix)
 	assert.Equal(t, "TestCheckout/card/visa", owner)
 
-	directive, owner = cfg.resolveDirective("TestCheckout/card/visa/debit")
+	directive, owner = cfg.resolveDirective(module, suite, "TestCheckout/card/visa/debit")
 	require.True(t, directive.AttemptToFix)
 	assert.Equal(t, "TestCheckout/card/visa", owner)
 
-	directive, owner = cfg.resolveDirective("TestCheckout/card/visa/credit")
+	directive, owner = cfg.resolveDirective(module, suite, "TestCheckout/card/visa/credit")
 	assert.False(t, directive.AttemptToFix)
 	assert.Empty(t, owner)
 }
@@ -433,19 +438,20 @@ func TestQuarantinedRaceUnrepresentableCoreWritesExplicitResult(t *testing.T) {
 }
 
 func TestQuarantinedRaceSubtreeConfigRejectsUntrustedDirectives(t *testing.T) {
+	const module, suite = "module", "suite"
 	valid := &processRetrySubtreeConfig{
 		Version:      processRetrySubtreeVersion,
 		SelectedRoot: "TestCheckout/card",
 		Root: processRetrySubtreeDirective{
-			TestName:    "TestCheckout/card",
+			TestName: "TestCheckout/card", ModuleName: module, SuiteName: suite,
 			Quarantined: true,
 		},
-		Directives: []processRetrySubtreeDirective{{TestName: "TestCheckout/card/visa", Quarantined: true}},
+		Directives: []processRetrySubtreeDirective{{TestName: "TestCheckout/card/visa", ModuleName: module, SuiteName: suite, Quarantined: true}},
 	}
 	require.NoError(t, validateProcessRetrySubtreeConfig(valid, valid.SelectedRoot))
 
 	outside := *valid
-	outside.Directives = []processRetrySubtreeDirective{{TestName: "TestCheckout/paypal", Quarantined: true}}
+	outside.Directives = []processRetrySubtreeDirective{{TestName: "TestCheckout/paypal", ModuleName: module, SuiteName: suite, Quarantined: true}}
 	require.Error(t, validateProcessRetrySubtreeConfig(&outside, outside.SelectedRoot))
 
 	duplicate := *valid
@@ -526,7 +532,9 @@ func TestQuarantinedRaceControlConfigCarriesValidatedSnapshot(t *testing.T) {
 	subtree := &processRetrySubtreeConfig{
 		Version:      processRetrySubtreeVersion,
 		SelectedRoot: "TestCheckout/card",
-		Root:         processRetrySubtreeDirective{TestName: "TestCheckout/card", Quarantined: true},
+		Root: processRetrySubtreeDirective{
+			TestName: "TestCheckout/card", ModuleName: "module", SuiteName: "suite", Quarantined: true,
+		},
 	}
 	cfg := processRetryControlConfig{
 		Version: processRetryControlVersion, Transport: processRetryControlTransportUnixPipes,
@@ -542,6 +550,21 @@ func TestQuarantinedRaceControlConfigCarriesValidatedSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, subtree, got.Subtree)
+
+	attemptToFix := cfg
+	attemptToFix.RetryReason = constants.AttemptToFixRetryReason
+	attemptToFix.Subtree.AncestorAttemptToFix = true
+	attemptToFix.Subtree.OwnsAttemptToFix = false
+	require.NoError(t, writeProcessRetryControlConfig(path, attemptToFix))
+	_, err = readProcessRetryControlConfig(path, processRetryChildConfig{
+		TestName: attemptToFix.TestName, Attempt: attemptToFix.Attempt, RetryReason: attemptToFix.RetryReason,
+		MRunEpoch: attemptToFix.MRunEpoch, InvocationOrdinal: attemptToFix.InvocationOrdinal, Subtree: attemptToFix.Subtree,
+	})
+	require.NoError(t, err)
+
+	invalid := attemptToFix
+	invalid.RetryReason = constants.AutoTestRetriesRetryReason
+	require.Error(t, writeProcessRetryControlConfig(path, invalid))
 }
 
 func TestQuarantinedRaceAcceptsOnlyExplainedTestFailures(t *testing.T) {
@@ -561,7 +584,9 @@ func TestQuarantinedRaceAcceptsOnlyExplainedTestFailures(t *testing.T) {
 	assert.True(t, processRetryInfrastructureFailure(inconsistent))
 }
 
-func quarantinedRaceForeignSuiteCallback(*testing.T) {}
+func quarantinedRaceForeignSuiteCallback(*testing.T) {
+	panic("disabled foreign-suite callback ran")
+}
 
 func TestQuarantinedRaceReplayMarksTruncatedOutput(t *testing.T) {
 	attempt := processRetryAttemptFromSubtreeResult(processRetrySubtreeResult{
