@@ -42,8 +42,6 @@ func RASPEnabled() bool {
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(opts ...config.StartOption) {
-	internalconfig.RecordProductStart(internalconfig.ProductAppsec)
-
 	// TODO: Add support to configure the tracer via a public interface
 	if globalinternal.BoolEnv("_DD_APPSEC_BLOCKING_UNAVAILABLE", false) {
 		opts = append(opts, config.WithBlockingUnavailable(true))
@@ -71,6 +69,8 @@ func Start(opts ...config.StartOption) {
 		log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
 		return
 	}
+
+	internalconfig.RecordProductStart(internalconfig.ProductAppsec)
 
 	// Check whether libddwaf - required for Threats Detection - is ok or not
 	if ok, err := libddwaf.Usable(); !ok && err != nil {
