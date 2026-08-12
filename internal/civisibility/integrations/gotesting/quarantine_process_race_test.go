@@ -125,6 +125,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 
 					"TestQuarantinedRaceManagedDescendantFixture/root":           properties(false),
 					"TestQuarantinedRaceManagedDescendantFixture/root/child":     properties(false),
+					"TestQuarantinedRaceManagedDescendantFixture/root/first":     properties(false),
+					"TestQuarantinedRaceManagedDescendantFixture/root/second":    properties(false),
 					"TestQuarantinedRaceNestedRootTerminalFixture/panic":         properties(false),
 					"TestQuarantinedRaceNestedRootTerminalFixture/goexit":        properties(false),
 					"TestQuarantinedRaceNestedRootTerminalFixture/cleanup-panic": properties(false),
@@ -288,6 +290,14 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			span := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root/"+name, 1)
 			checkSpansByTagValue(span, constants.TestStatus, constants.TestStatusFail, 1)
 		}
+		os.Exit(0)
+	case "managed-descendant-concurrent-managed":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root", 1)
+		checkSpansByTagValue(root, constants.TestStatus, constants.TestStatusPass, 1)
+		first := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root/first", 1)
+		checkSpansByTagValue(first, constants.TestStatus, constants.TestStatusFail, 1)
+		second := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root/second", 1)
+		checkSpansByTagValue(second, constants.TestStatus, constants.TestStatusPass, 1)
 		os.Exit(0)
 	case "managed-descendant-root-failure":
 		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceManagedDescendantFixture/root", 1)
@@ -634,6 +644,10 @@ func TestQuarantinedRaceManagedDescendantMaskingEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceManagedDescendantPreservesConcurrentFailureEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "managed-descendant-concurrent-failure", "^TestQuarantinedRaceManagedDescendantFixture$")
+}
+
+func TestQuarantinedRaceManagedDescendantsDoNotLeakConcurrentFailureEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "managed-descendant-concurrent-managed", "^TestQuarantinedRaceManagedDescendantFixture$")
 }
 
 func TestQuarantinedRaceManagedDescendantPreservesRootFailureEndToEnd(t *testing.T) {
@@ -983,6 +997,38 @@ func TestQuarantinedRaceManagedDescendantFixture(t *testing.T) {
 	}
 	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
 		scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
+		if scenario == "managed-descendant-concurrent-managed" {
+			failed := make(chan struct{})
+			firstRelease := make(chan struct{})
+			firstDone := make(chan struct{})
+			secondStarted := make(chan struct{})
+			secondRelease := make(chan struct{})
+			var runs sync.WaitGroup
+			runs.Add(2)
+			go func() {
+				defer runs.Done()
+				t.Run("first", instrumentTestingTFunc(func(t *testing.T) {
+					t.Error("first managed descendant sentinel")
+					close(failed)
+					<-firstRelease
+				}))
+				close(firstDone)
+			}()
+			<-failed
+			go func() {
+				defer runs.Done()
+				t.Run("second", instrumentTestingTFunc(func(*testing.T) {
+					close(secondStarted)
+					<-secondRelease
+				}))
+			}()
+			<-secondStarted
+			close(firstRelease)
+			<-firstDone
+			close(secondRelease)
+			runs.Wait()
+			return
+		}
 		if scenario == "managed-descendant-concurrent-failure" {
 			t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
 				(*T)(t).Parallel()

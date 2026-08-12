@@ -431,12 +431,13 @@ type quarantinedRaceChildState struct {
 	parallelStarted atomic.Bool
 	parallelDone    chan error
 	coverage        quarantinedRaceCoverageCoordinator
-	unmaskedFailure atomic.Bool
+	unmasked        map[string]struct{}
 }
 
 type quarantinedRaceFailureEntry struct {
 	mu     *sync.RWMutex
 	failed *bool
+	name   string
 	before bool
 }
 
@@ -465,10 +466,10 @@ func captureQuarantinedRaceManagedFailure(t *testing.T, cfg *processRetrySubtree
 		name := fieldPtr[string](base, layout.common.name)
 		entry.mu.RLock()
 		entry.before = *entry.failed
-		currentName := *name
+		entry.name = *name
 		entry.mu.RUnlock()
 		snapshot.entries = append(snapshot.entries, entry)
-		if currentName == cfg.SelectedRoot {
+		if entry.name == cfg.SelectedRoot {
 			runtime.KeepAlive(t)
 			return snapshot
 		}
@@ -477,22 +478,26 @@ func captureQuarantinedRaceManagedFailure(t *testing.T, cfg *processRetrySubtree
 	return nil
 }
 
-func (snapshot *quarantinedRaceFailureSnapshot) restore(unmaskedFailure bool) {
-	snapshot.restoreFrom(0, unmaskedFailure)
+func (snapshot *quarantinedRaceFailureSnapshot) restore(state *quarantinedRaceChildState) {
+	snapshot.restoreFrom(0, state)
 }
 
-func (snapshot *quarantinedRaceFailureSnapshot) restoreAncestors(unmaskedFailure bool) {
-	snapshot.restoreFrom(1, unmaskedFailure)
+func (snapshot *quarantinedRaceFailureSnapshot) restoreAncestors(state *quarantinedRaceChildState) {
+	snapshot.restoreFrom(1, state)
 }
 
-func (snapshot *quarantinedRaceFailureSnapshot) restoreFrom(first int, unmaskedFailure bool) {
+func (snapshot *quarantinedRaceFailureSnapshot) restoreFrom(first int, state *quarantinedRaceChildState) {
 	if snapshot == nil {
 		return
 	}
 	for idx := first; idx < len(snapshot.entries); idx++ {
 		entry := snapshot.entries[idx]
+		failed := entry.before
+		if idx > 0 {
+			failed = state.hasUnmaskedFailure(entry.name)
+		}
 		entry.mu.Lock()
-		*entry.failed = entry.before || (idx > 0 && unmaskedFailure)
+		*entry.failed = failed
 		entry.mu.Unlock()
 	}
 }
@@ -568,13 +573,41 @@ func (s *quarantinedRaceChildState) finishAggregateCoverage(name string) {
 	s.aggregateFinish.Do(s.finishAggregate)
 }
 
+func (s *quarantinedRaceChildState) markUnmaskedFailure(name string) {
+	if s == nil || s.cfg == nil || !processRetryNameWithinRoot(name, s.cfg.SelectedRoot) || s.cfg.withinManagedDescendant(name) {
+		return
+	}
+	s.mu.Lock()
+	if s.unmasked == nil {
+		s.unmasked = make(map[string]struct{})
+	}
+	for candidate := name; ; {
+		s.unmasked[candidate] = struct{}{}
+		if candidate == s.cfg.SelectedRoot {
+			break
+		}
+		candidate = candidate[:strings.LastIndexByte(candidate, '/')]
+	}
+	s.mu.Unlock()
+}
+
+func (s *quarantinedRaceChildState) hasUnmaskedFailure(name string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	_, ok := s.unmasked[name]
+	s.mu.Unlock()
+	return ok
+}
+
 func (s *quarantinedRaceChildState) append(result processRetrySubtreeResult) bool {
 	if s == nil {
 		return false
 	}
 	unmaskedFailure := result.Failed && !result.masked
 	if unmaskedFailure {
-		s.unmaskedFailure.Store(true)
+		s.markUnmaskedFailure(result.TestName)
 	}
 	s.mu.Lock()
 	s.results = append(s.results, result)
@@ -750,7 +783,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		// Clear any managed failure propagated before t.Parallel releases the
 		// parent. A failure added by the selected root after that release can then
 		// be identified before its parallel descendants resume.
-		failureSnapshot.restoreAncestors(state.unmaskedFailure.Load())
+		failureSnapshot.restoreAncestors(state)
 		activeDuration += time.Since(activeStart)
 		activeStart = time.Time{}
 		// A nested selected root releases its discovery ancestor in Parallel.
@@ -802,8 +835,12 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			activeDuration += time.Since(activeStart)
 			activeStart = time.Time{}
 		}
-		if name == state.cfg.SelectedRoot && t.Failed() {
-			state.unmaskedFailure.Store(true)
+		if !maskedByManagedDescendant && t.Failed() {
+			// Serial and concurrently started t.Run calls have returned before
+			// their parent body returns. Parallel managed descendants restored
+			// their propagated bits before releasing it, so a remaining failure
+			// belongs to this unmanaged branch.
+			state.markUnmaskedFailure(name)
 		}
 		completeParallelSubtests(t, getTestPrivateFields(t), true)
 		activeStart = time.Now()
@@ -886,7 +923,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			// Reapply this independently owned failure in either completion order.
 			t.Fail()
 		}
-		failureSnapshot.restore(state.unmaskedFailure.Load())
+		failureSnapshot.restore(state)
 		if unexpected && fields != nil && fields.mu != nil && fields.finished != nil {
 			// runtime.Goexit bypasses the normal return to testing.tRunner. The
 			// subtree result is committed, so consume that terminal before the

@@ -3549,6 +3549,10 @@ func markProcessRetryChildFailed(tb testing.TB) {
 	if !ok {
 		return
 	}
+	if execMeta := processRetryChildOwnerMetadata(getTestMetadata(t)); execMeta != nil && execMeta.quarantinedRaceChild != nil &&
+		!processRetryChildFailureIsPropagated() {
+		execMeta.quarantinedRaceChild.markUnmaskedFailure(t.Name())
+	}
 	fields := getTestPrivateFields(t)
 	ancestry := make([]*commonPrivateFields, 0, 4)
 	for fields != nil {
@@ -3557,6 +3561,28 @@ func markProcessRetryChildFailed(tb testing.TB) {
 	}
 	for _, fields := range slices.Backward(ancestry) {
 		fields.SetFailed(true)
+	}
+}
+
+// processRetryChildFailureIsPropagated distinguishes the original Fail call
+// from testing.common.Fail recursively propagating it through parent tests.
+func processRetryChildFailureIsPropagated() bool {
+	var pcs [16]uintptr
+	frames := runtime.CallersFrames(pcs[:runtime.Callers(2, pcs[:])])
+	failFrames := 0
+	for {
+		frame, more := frames.Next()
+		if frame.Function == "testing.(*common).Fail" {
+			failFrames++
+			if failFrames > 1 {
+				return true
+			}
+		} else if failFrames > 0 {
+			return false
+		}
+		if !more {
+			return false
+		}
 	}
 }
 
