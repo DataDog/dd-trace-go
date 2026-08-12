@@ -34,7 +34,6 @@ const (
 	processRetrySubtreeReason         = "quarantined_race"
 	processRetrySubtreeMaxDirectives  = 4 * 1024
 	processRetrySubtreeMaxResults     = 4 * 1024
-	processRetrySubtreeResultMaxBytes = 16 * 1024 * 1024
 	processRetrySubtreeOutputMaxBytes = 8 * 1024
 	processRetrySubtreeWireMaxBytes   = 16 * 1024 * 1024
 )
