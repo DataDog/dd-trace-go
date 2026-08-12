@@ -108,6 +108,7 @@ type deferredProcessRetryGroup struct {
 	raceProcess           *quarantinedRaceProcessContext
 	raceSubtree           *processRetrySubtreeConfig
 	raceDescendantFailed  bool
+	raceReplay            quarantinedRaceReplayState
 }
 
 type deferredProcessRetryEvent struct {
@@ -1042,7 +1043,7 @@ func runDeferredProcessRetryAttempt(ctx context.Context, group *deferredProcessR
 		group.shutdown(),
 		nil,
 	)
-	if subtree == nil || processRetryInfrastructureFailure(attempt) || subtree.AttemptToFixRetries <= 0 {
+	if subtree == nil || processRetryInfrastructureFailure(attempt) || subtree.AttemptToFixRetries <= 0 || quarantinedRaceFailfastStopsContinuation(attempt) {
 		return attempt
 	}
 	invocations := []quarantinedRaceInvocation{{cfg: subtree, attempt: attempt, attemptIndex: prepared.index}}
@@ -1088,7 +1089,20 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 	// time a late setup failure is observable, native M.Run and the original
 	// testing.T have completed, so represent the admitted continuation exactly once.
 	terminal := deferredProcessRetryAttemptTerminal(attempt)
+	stopAfterSubtreeFailure := g.raceSubtree != nil && quarantinedRaceFailfastStopsContinuation(attempt)
 	continueGroup := continuationAdmitted && !terminal
+	var raceInvocations []quarantinedRaceInvocation
+	if g.raceSubtree != nil {
+		raceInvocations = attempt.quarantinedRaceInvocations
+		if len(raceInvocations) == 0 {
+			raceInvocations = []quarantinedRaceInvocation{{
+				cfg: g.quarantinedRaceSubtreeForAttempt(completed.prepared.index), attempt: attempt, attemptIndex: completed.prepared.index,
+			}}
+		}
+		for _, invocation := range raceInvocations {
+			g.observeQuarantinedRaceSubtree(invocation.attempt.Result.Subtests)
+		}
+	}
 	effective, nextTail := deferProcessRetryTestEventWithAdmission(&g.testInfo, execMeta, attempt, func(effective processRetryEffectiveStatus) {
 		g.retryCount--
 		g.outcomes.observe(effective.Failed, effective.Skipped)
@@ -1098,6 +1112,9 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		execMeta.anyExecutionFailed = g.outcomes.anyFailed()
 		if decideContinuation {
 			continueGroup = !terminal && deferredProcessRetryShouldContinue(execMeta, effective.Failed, effective.Skipped, g.retryCount)
+			if continueGroup && stopAfterSubtreeFailure {
+				continueGroup = false
+			}
 			if continueGroup {
 				continueGroup = g.admitEarlyFlakeDetectionContinuation()
 			}
@@ -1114,17 +1131,8 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 		g.closeTailEvent(false)
 		g.tailEvent = nextTail
 	}
-	if g.raceSubtree != nil {
-		invocations := attempt.quarantinedRaceInvocations
-		if len(invocations) == 0 {
-			invocations = []quarantinedRaceInvocation{{
-				cfg: g.quarantinedRaceSubtreeForAttempt(completed.prepared.index), attempt: attempt, attemptIndex: completed.prepared.index,
-			}}
-		}
-		for _, invocation := range invocations {
-			g.observeQuarantinedRaceSubtree(invocation.attempt.Result.Subtests)
-		}
-		replayQuarantinedRaceResults(&g.testInfo, g.raceProcess, invocations, false)
+	if len(raceInvocations) > 0 {
+		replayQuarantinedRaceResults(&g.testInfo, g.raceProcess, raceInvocations, false, &g.raceReplay)
 	}
 	g.latest = retryAttemptObservation{
 		executionIndex: completed.prepared.index,
@@ -1149,10 +1157,11 @@ func (g *deferredProcessRetryGroup) observeQuarantinedRaceSubtree(results []proc
 	if g == nil || g.raceDescendantFailed {
 		return
 	}
-	// Independently owned, non-quarantined Attempt-to-Fix descendants retain
-	// their normal package-failure semantics even when the deferred root passes.
+	// Non-quarantined descendants in an independently owned Attempt-to-Fix
+	// family retain normal package-failure semantics even when their owner and
+	// the deferred root pass.
 	g.raceDescendantFailed = slices.ContainsFunc(results, func(result processRetrySubtreeResult) bool {
-		return result.Failed && result.AttemptToFixOwn && !result.Quarantined && !result.Disabled
+		return result.Failed && (result.AttemptToFixOwn || result.AttemptToFix) && !result.Quarantined && !result.Disabled
 	})
 }
 
@@ -1280,6 +1289,7 @@ func (g *deferredProcessRetryGroup) finish() {
 	if g == nil {
 		return
 	}
+	g.raceReplay.finish()
 	g.closeTailEvent(true)
 	if g.raceProcess != nil {
 		g.raceProcess.clearAncestorOutcomes(g.raceSubtree)

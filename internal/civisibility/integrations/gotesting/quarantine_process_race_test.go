@@ -57,7 +57,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
 	requireEnv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
 	attempts := "2"
-	if scenario == "failfast" {
+	if scenario == "failfast" || scenario == "deferred-descendant-atf-failfast" || scenario == "deferred-dynamic-descendant-finality" {
 		attempts = "3"
 	}
 	requireEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, attempts)
@@ -161,6 +161,14 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 					"TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner": {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
 					},
+					"TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner/inherited": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+					},
+					"TestQuarantinedRaceDeferredDynamicDescendantFixture": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+					},
+					"TestQuarantinedRaceDeferredDynamicDescendantFixture/quarantined": properties(false),
+					"TestQuarantinedRaceDeferredDynamicDescendantFixture/dynamic":     properties(true),
 
 					"TestQuarantinedRaceAggregateCoverageFixture/isolated":   properties(false),
 					"TestQuarantinedRaceBeforeParallelFixture/isolated":      properties(false),
@@ -186,7 +194,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
 	exitCode := RunM(m)
-	expectFailure := scenario == "deferred-descendant-atf-failure"
+	expectFailure := scenario == "deferred-descendant-atf-failure" || scenario == "deferred-descendant-inherited-failure" || scenario == "deferred-descendant-atf-failfast"
 	if (exitCode != 0) != expectFailure {
 		panic(fmt.Sprintf("quarantined race isolation fixture exit code = %d", exitCode))
 	}
@@ -428,6 +436,25 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(owner, constants.TestStatus, constants.TestStatusFail, 2)
 		checkSpansByTagValue(owner, constants.TestIsAttempToFix, "true", 2)
 		checkSpansByTagValue(owner, constants.TestIsRetry, "true", 1)
+		os.Exit(0)
+	case "deferred-descendant-inherited-failure":
+		owner := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner", 2)
+		checkSpansByTagValue(owner, constants.TestStatus, constants.TestStatusPass, 2)
+		inherited := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner/inherited", 2)
+		checkSpansByTagValue(inherited, constants.TestStatus, constants.TestStatusFail, 2)
+		os.Exit(0)
+	case "deferred-descendant-atf-failfast":
+		if _, err := os.Stat(filepath.Join(pidDir, "deferred-owner-continuation-2")); err == nil || !os.IsNotExist(err) {
+			panic("deferred descendant retry ran after a failure under -failfast")
+		}
+		owner := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDescendantATFFixture/clear/owner", 1)
+		checkSpansByTagValue(owner, constants.TestStatus, constants.TestStatusFail, 1)
+		os.Exit(0)
+	case "deferred-dynamic-descendant-finality":
+		dynamic := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceDeferredDynamicDescendantFixture/dynamic", 1)
+		checkSpansByTagValue(dynamic, constants.TestIsAttempToFix, "true", 1)
+		checkSpansByTagValue(dynamic, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+		checkSpansByTagValue(dynamic, constants.TestAttemptToFixPassed, "true", 1)
 		os.Exit(0)
 	case "terminal-descendants":
 		parallelRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel", 1)
@@ -760,6 +787,18 @@ func TestQuarantinedRaceManagedDescendantPreservesProcessOutputEndToEnd(t *testi
 
 func TestQuarantinedRaceDeferredDescendantATFFamilyCompletesAndFailsPackageEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "deferred-descendant-atf-failure", "^TestQuarantinedRaceDeferredDescendantATFFixture$")
+}
+
+func TestQuarantinedRaceDeferredInheritedATFFailureFailsPackageEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "deferred-descendant-inherited-failure", "^TestQuarantinedRaceDeferredDescendantATFFixture$")
+}
+
+func TestQuarantinedRaceDeferredDescendantATFFailfastEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "deferred-descendant-atf-failfast", "^TestQuarantinedRaceDeferredDescendantATFFixture$", "-test.failfast")
+}
+
+func TestQuarantinedRaceDeferredDynamicDescendantFinalityEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "deferred-dynamic-descendant-finality", "^TestQuarantinedRaceDeferredDynamicDescendantFixture$")
 }
 
 func TestQuarantinedRaceNestedRootTerminalsEndToEnd(t *testing.T) {
@@ -1495,8 +1534,33 @@ func TestQuarantinedRaceDeferredDescendantATFFixture(t *testing.T) {
 	t.Run("clear", instrumentTestingTFunc(func(t *testing.T) {
 		if isProcessRetryChild() {
 			t.Run("owner", instrumentTestingTFunc(func(t *testing.T) {
+				scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
+				cfg, err := processRetryChildConfigFromEnv()
+				require.NoError(t, err)
+				if scenario == "deferred-descendant-atf-failfast" && strings.HasSuffix(cfg.TestName, "/clear/owner") {
+					writeQuarantinedRaceIsolationPID(t, "deferred-owner-continuation-"+strconv.Itoa(cfg.Attempt))
+				}
+				if scenario == "deferred-descendant-inherited-failure" {
+					t.Run("inherited", instrumentTestingTFunc(func(t *testing.T) { t.Error("inherited failure sentinel") }))
+					return
+				}
 				t.Error("deferred descendant attempt-to-fix sentinel")
 			}))
 		}
 	}))
+}
+
+func TestQuarantinedRaceDeferredDynamicDescendantFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("quarantined", instrumentTestingTFunc(func(*testing.T) {}))
+	if !isProcessRetryChild() {
+		return
+	}
+	cfg, err := processRetryChildConfigFromEnv()
+	require.NoError(t, err)
+	if cfg.Attempt == 1 {
+		t.Run("dynamic", instrumentTestingTFunc(func(*testing.T) {}))
+	}
 }

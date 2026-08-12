@@ -1277,6 +1277,30 @@ type quarantinedRaceContinuationFailure struct {
 	attempt processRetryAttemptResult
 }
 
+type quarantinedRaceFamilyKey struct {
+	name       string
+	generation int
+}
+
+type quarantinedRaceReplayEvent struct {
+	invocation   quarantinedRaceInvocation
+	result       processRetrySubtreeResult
+	family       quarantinedRaceFamilyKey
+	attemptOwner string
+	inherited    bool
+}
+
+type quarantinedRacePendingReplay struct {
+	testInfo commonInfo
+	event    quarantinedRaceReplayEvent
+	prior    retryOutcomeAccumulator
+}
+
+type quarantinedRaceReplayState struct {
+	pending map[quarantinedRaceReplayIdentity]quarantinedRacePendingReplay
+	order   []quarantinedRaceReplayIdentity
+}
+
 type quarantinedRaceReplayIdentity struct {
 	moduleName string
 	suiteName  string
@@ -1613,7 +1637,7 @@ func (cfg *processRetrySubtreeConfig) forSelectedRoot(result processRetrySubtree
 }
 
 func replayQuarantinedRaceInvocations(testInfo *commonInfo, processCtx *quarantinedRaceProcessContext, invocations []quarantinedRaceInvocation) {
-	replayQuarantinedRaceResults(testInfo, processCtx, invocations, true)
+	replayQuarantinedRaceResults(testInfo, processCtx, invocations, true, nil)
 }
 
 func replayQuarantinedRaceResults(
@@ -1621,24 +1645,14 @@ func replayQuarantinedRaceResults(
 	processCtx *quarantinedRaceProcessContext,
 	invocations []quarantinedRaceInvocation,
 	includeTopLevelRoot bool,
+	deferred *quarantinedRaceReplayState,
 ) {
 	if testInfo == nil {
 		return
 	}
-	type familyKey struct {
-		name       string
-		generation int
-	}
-	type replayEvent struct {
-		invocation   quarantinedRaceInvocation
-		result       processRetrySubtreeResult
-		family       familyKey
-		attemptOwner string
-		inherited    bool
-	}
 	generations := make(map[string]int)
-	lastOccurrence := make(map[familyKey]int)
-	events := make([]replayEvent, 0, len(invocations))
+	lastOccurrence := make(map[quarantinedRaceFamilyKey]int)
+	events := make([]quarantinedRaceReplayEvent, 0, len(invocations))
 	appendEvent := func(invocation quarantinedRaceInvocation, result processRetrySubtreeResult, resolved processRetryResolvedDirective) {
 		attemptOwner := resolved.attemptOwner
 		if result.TestName == attemptOwner && attemptOwner != invocation.cfg.SelectedRoot {
@@ -1647,9 +1661,9 @@ func replayQuarantinedRaceResults(
 			generations[attemptOwner]++
 		}
 		inherited := invocation.cfg.AncestorAttemptToFix && result.AttemptToFix && attemptOwner == ""
-		family := familyKey{name: result.TestName, generation: generations[attemptOwner]}
+		family := quarantinedRaceFamilyKey{name: result.TestName, generation: generations[attemptOwner]}
 		lastOccurrence[family] = len(events)
-		events = append(events, replayEvent{invocation: invocation, result: result, family: family, attemptOwner: attemptOwner, inherited: inherited})
+		events = append(events, quarantinedRaceReplayEvent{invocation: invocation, result: result, family: family, attemptOwner: attemptOwner, inherited: inherited})
 	}
 	for _, invocation := range invocations {
 		resolved, _ := invocation.cfg.resolveSubtreeResults(invocation.attempt.Result.Subtests)
@@ -1660,12 +1674,16 @@ func replayQuarantinedRaceResults(
 			appendEvent(invocation, processRetrySubtreeRootFromInvocation(invocation), invocation.cfg.resolvedRootDirective())
 		}
 	}
-	outcomes := make(map[familyKey]retryOutcomeAccumulator)
+	outcomes := make(map[quarantinedRaceFamilyKey]retryOutcomeAccumulator)
 	counted := make(map[quarantinedRaceReplayIdentity]*testIdentity)
 	for idx, event := range events {
 		prior := outcomes[event.family]
 		last := lastOccurrence[event.family] == idx
 		identityKey := quarantinedRaceReplayIdentity{moduleName: event.result.ModuleName, suiteName: event.result.SuiteName, testName: event.result.TestName}
+		if event.inherited && deferred != nil {
+			deferred.deferInherited(testInfo, processCtx, event, counted)
+			continue
+		}
 		if event.inherited && processCtx != nil {
 			processCtx.replayMu.Lock()
 			prior = processCtx.ancestorOutcomes[identityKey]
@@ -1691,6 +1709,51 @@ func replayQuarantinedRaceResults(
 			}
 		}
 	}
+	closeQuarantinedRaceReplayCounters(counted)
+}
+
+func (s *quarantinedRaceReplayState) deferInherited(testInfo *commonInfo, processCtx *quarantinedRaceProcessContext, event quarantinedRaceReplayEvent, counted map[quarantinedRaceReplayIdentity]*testIdentity) {
+	if s.pending == nil {
+		s.pending = make(map[quarantinedRaceReplayIdentity]quarantinedRacePendingReplay)
+	}
+	// Deferred ancestor attempts arrive one at a time. Publish the previous
+	// occurrence as non-final and retain only the newest one until group finish
+	// proves the family's actual last occurrence, including disappearance.
+	key := quarantinedRaceReplayIdentity{moduleName: event.result.ModuleName, suiteName: event.result.SuiteName, testName: event.result.TestName}
+	prior := retryOutcomeAccumulator{}
+	if pending, ok := s.pending[key]; ok {
+		replayQuarantinedRaceEvent(&pending.testInfo, pending.event.invocation, pending.event.result, pending.event.attemptOwner, true, false, pending.prior, counted)
+		prior = pending.prior
+		prior.observe(pending.event.result.Failed, pending.event.result.Skipped)
+	} else {
+		s.order = append(s.order, key)
+		if processCtx != nil {
+			processCtx.replayMu.Lock()
+			prior = processCtx.ancestorOutcomes[key]
+			processCtx.replayMu.Unlock()
+		}
+	}
+	s.pending[key] = quarantinedRacePendingReplay{testInfo: *testInfo, event: event, prior: prior}
+}
+
+func (s *quarantinedRaceReplayState) finish() {
+	if s == nil || len(s.pending) == 0 {
+		return
+	}
+	counted := make(map[quarantinedRaceReplayIdentity]*testIdentity)
+	for _, key := range s.order {
+		pending, ok := s.pending[key]
+		if !ok {
+			continue
+		}
+		replayQuarantinedRaceEvent(&pending.testInfo, pending.event.invocation, pending.event.result, pending.event.attemptOwner, true, true, pending.prior, counted)
+	}
+	closeQuarantinedRaceReplayCounters(counted)
+	s.pending = nil
+	s.order = nil
+}
+
+func closeQuarantinedRaceReplayCounters(counted map[quarantinedRaceReplayIdentity]*testIdentity) {
 	for _, identity := range counted {
 		module := session.GetOrCreateModule(identity.ModuleName)
 		suite := module.GetOrCreateSuite(identity.SuiteName)

@@ -317,6 +317,7 @@ func TestDeferredProcessRetryAggregatePolicy(t *testing.T) {
 		{name: "ftr final fail", metadata: processRetryMetadataSnapshot{isFlakyTestRetriesEnabled: true}, observations: [][2]bool{{true, false}, {true, false}}, failed: true},
 		{name: "a2f any failure", metadata: processRetryMetadataSnapshot{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true}, observations: [][2]bool{{true, false}, {false, false}}, failed: true},
 		{name: "a2f descendant failure", metadata: processRetryMetadataSnapshot{isAttemptToFix: true}, observations: [][2]bool{{false, false}}, descendants: []processRetrySubtreeResult{{Failed: true, AttemptToFixOwn: true}}, failed: true},
+		{name: "inherited a2f descendant failure", metadata: processRetryMetadataSnapshot{isAttemptToFix: true}, observations: [][2]bool{{false, false}}, descendants: []processRetrySubtreeResult{{Failed: true, AttemptToFix: true}}, failed: true},
 		{name: "quarantined a2f descendant masks failure", metadata: processRetryMetadataSnapshot{isAttemptToFix: true}, observations: [][2]bool{{false, false}}, descendants: []processRetrySubtreeResult{{Failed: true, AttemptToFixOwn: true, Quarantined: true}}},
 		{name: "quarantined masks failure", metadata: processRetryMetadataSnapshot{isQuarantined: true}, observations: [][2]bool{{true, false}}},
 	}
