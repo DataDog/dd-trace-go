@@ -21,10 +21,17 @@ import (
 // recycled and its s.context field replaced. This does NOT protect the
 // underlying trace from being finished or flushed; callers must ensure the
 // parent's trace lifetime exceeds child span creation.
+// ContextWithSpan(ctx, nil) clears this snapshot too, not just
+// internal.ActiveSpanKey, so detaching from an ambient span also detaches
+// from any snapshot inherited from an ancestor context.
 type activeSpanContextKey struct{}
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 // If ctx is nil, a new background context is created to avoid panicking.
+// Passing a nil span detaches ctx from any ambient span, including one
+// inherited from an ancestor context, so a subsequent [StartSpanFromContext]
+// starts a new root span — unless the caller also passes an explicit parent
+// (e.g. ChildOf) to that call, which is honored as usual.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	if ctx == nil {
 		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
@@ -34,14 +41,17 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	// ddtrace/tracer/orchestrion.yml extend the span's GLS lifecycle:
 	//   - "Span GLS fields": adds two woven fields to Span — __dd_glsPop
 	//     (GLSPopperCell, an atomic pointer to the goroutine-scoped popper) and
-	//     __dd_glsReclaimable (atomic.Bool, set on finish so cross-goroutine GLS
-	//     entries can be lazily reclaimed on the next push).
+	//     __dd_glsDone (GLSDoneCell, an atomic pointer to the liveness cell marked
+	//     on finish so a cross-goroutine GLS entry is never handed out as the
+	//     active span and is dropped by the next push). The cell is reached through
+	//     a pointer rather than stored inline so the signal survives the span being
+	//     recycled by the span pool.
 	//   - "Span ContextWithSpan GLS push": prepends before this line:
-	//       orchestrion.GLSActivate(nil, ActiveSpanKey, s, &s.__dd_glsPop)
+	//       orchestrion.GLSActivate(nil, ActiveSpanKey, s, &s.__dd_glsPop, &s.__dd_glsDone)
 	//     which pushes s onto the goroutine-local stack and records a goroutine-
 	//     scoped popper in __dd_glsPop (first push wins; no-op when disabled).
 	//   - "Span Finish GLS deactivate": prepends at the top of Span.Finish:
-	//       orchestrion.GLSDeactivate(&s.__dd_glsReclaimable, &s.__dd_glsPop)
+	//       orchestrion.GLSDeactivate(&s.__dd_glsDone, &s.__dd_glsPop)
 	//     which pops the GLS entry exactly once, only on the goroutine that pushed.
 	// SpanFromContext is extended analogously ("Span SpanFromContext GLS read").
 	// Without orchestrion there is no GLS; this is a plain context.WithValue.
@@ -49,6 +59,14 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	if s != nil {
 		// Snapshot the SpanContext so it survives span pool recycling.
 		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, s.Context())
+	} else if sc, ok := ctx.Value(activeSpanContextKey{}).(*SpanContext); ok && sc != nil {
+		// Shadow a snapshot inherited from an ancestor context, otherwise
+		// StartSpanFromContext would keep re-parenting onto it even though
+		// ActiveSpanKey was just cleared above. Only an ancestor that actually
+		// holds a snapshot needs shadowing: ContextWithSpan(ctx, nil) is on the
+		// hot path whenever the tracer is disabled (StartSpan returns nil), so
+		// paying an allocation to shadow nothing would be wasted on every span.
+		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, (*SpanContext)(nil))
 	}
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }

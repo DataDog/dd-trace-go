@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
@@ -42,6 +43,8 @@ type (
 		derivatives map[string]any
 		// supportedAddresses is the set of addresses supported by the WAF.
 		supportedAddresses config.AddressSet
+		// stackTrace is the configuration used when constructing stack-trace actions.
+		stackTrace config.StackTraceConfig
 		// metrics the place that manages reporting for the current execution
 		metrics *ContextMetrics
 		// requestBlocked is used to track if the request has been requestBlocked by the WAF or not.
@@ -99,6 +102,17 @@ func (op *ContextOperation) SwapContext(ctx *libddwaf.Context) *libddwaf.Context
 
 func (op *ContextOperation) SetLimiter(limiter limiter.Limiter) {
 	op.limiter = limiter
+}
+
+func (op *ContextOperation) SetStackTraceConfig(cfg config.StackTraceConfig) {
+	op.stackTrace = cfg
+}
+
+func (op *ContextOperation) actionConfig() actions.Config {
+	return actions.Config{
+		StackTraceDisabled: op.stackTrace.Disabled,
+		StackTraceDepth:    op.stackTrace.MaxDepth,
+	}
 }
 
 func (op *ContextOperation) SetMetricsInstance(metrics *ContextMetrics) {

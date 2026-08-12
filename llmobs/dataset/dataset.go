@@ -116,7 +116,7 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 	}
 
 	// Validate required fields
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 
@@ -172,7 +172,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 	}
 
 	// Validate required fields
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 
@@ -305,7 +305,7 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 	}
 
 	// Validate required fields
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 

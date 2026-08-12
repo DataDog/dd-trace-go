@@ -19,9 +19,19 @@ type (
 	Action interface {
 		EmitData(op dyngo.Operation)
 	}
+
+	// Config contains configuration needed while constructing WAF actions. Its
+	// zero value enables stack-trace actions with the default capture depth.
+	Config struct {
+		// StackTraceDisabled prevents stack-trace action creation.
+		StackTraceDisabled bool
+		// StackTraceDepth is the maximum number of frames captured by a stack-trace
+		// action. A non-positive value uses the default depth.
+		StackTraceDepth int
+	}
 )
 
-type actionHandler func(map[string]any) []Action
+type actionHandler func(map[string]any, Config) []Action
 
 // actionHandlers is a map of action types to their respective handler functions
 // It is populated by the init functions of the actions packages
@@ -35,11 +45,23 @@ func registerActionHandler(aType string, handler actionHandler) {
 	actionHandlers[aType] = handler
 }
 
+func withoutConfig(handler func(map[string]any) []Action) actionHandler {
+	return func(params map[string]any, _ Config) []Action {
+		return handler(params)
+	}
+}
+
 // SendActionEvents sends the relevant actions to the operation's data listener.
+// The first optional config controls action construction.
 // It returns true if at least one of those actions require interrupting the request handler
 // When SDKError is not nil, this error is sent to the op with EmitData so that the invoked SDK can return it
 // returns whenever the request should be interrupted
-func SendActionEvents(op dyngo.Operation, actions map[string]any) bool {
+func SendActionEvents(op dyngo.Operation, actions map[string]any, configs ...Config) bool {
+	var cfg Config
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+
 	var blocked bool
 	for aType, params := range actions {
 		log.Debug("appsec: processing %q action with params %v", aType, params) //nolint:gocritic
@@ -57,7 +79,7 @@ func SendActionEvents(op dyngo.Operation, actions map[string]any) bool {
 			continue
 		}
 
-		for _, a := range actionHandler(params) {
+		for _, a := range actionHandler(params, cfg) {
 			a.EmitData(op)
 		}
 	}

@@ -115,7 +115,7 @@ func TestDatasetCreation(t *testing.T) {
 		t.Setenv("DD_APP_KEY", "")
 
 		// Use agentless mode to trigger app key requirement.
-		// Note: coll.TracerOption() forces ResolvedAgentlessEnabled=false, so we
+		// Note: coll.TracerOption() forces AgentlessEnabled=false, so we
 		// intentionally skip it here to allow true agentless mode validation.
 		agent, err := tracertest.StartAgent(t)
 		require.NoError(t, err)
@@ -545,7 +545,7 @@ func TestDatasetPull(t *testing.T) {
 		t.Setenv("DD_APP_KEY", "")
 
 		// Use agentless mode to trigger app key requirement.
-		// Note: coll.TracerOption() forces ResolvedAgentlessEnabled=false, so we
+		// Note: coll.TracerOption() forces AgentlessEnabled=false, so we
 		// intentionally skip it here to allow true agentless mode validation.
 		agent, err := tracertest.StartAgent(t)
 		require.NoError(t, err)
@@ -1072,7 +1072,7 @@ func TestDDAppKeyHeader(t *testing.T) {
 			createMockHandler()(w, r)
 		})
 
-		// Note: coll.TracerOption() sets testBaseURL which forces ResolvedAgentlessEnabled=false.
+		// Note: coll.TracerOption() sets testBaseURL which forces AgentlessEnabled=false.
 		// In the coll-based setup all requests go through the collector in agent mode.
 		_, err = tracertest.Start(t, agent,
 			tracer.WithLLMObsEnabled(true),

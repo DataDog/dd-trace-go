@@ -73,7 +73,7 @@ jobs:
       key: ${{ steps.cfg.outputs.key }}
       path: ${{ steps.cfg.outputs.path }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -118,7 +118,7 @@ jobs:
         go-version: [ "1.26.4", "1.25" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -174,6 +174,7 @@ jobs:
                   # shellcheck disable=SC2086
                   if ! env CGO_ENABLED="$cgo" $appsec_enabled_env $goexp_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${cgo}-${appsec_enabled_env:-default}-${goexp_label}.xml" -- -v $PACKAGES; then
                     echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $goexp_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${cgo}-${appsec_enabled_env:-default}-${goexp_label}.xml\" -- -v $PACKAGES"
+                    report_error=1
                   fi
 
                   # shellcheck disable=SC2086
@@ -228,7 +229,7 @@ jobs:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest-16-cores ]
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -320,7 +321,7 @@ jobs:
 
       fail-fast: false
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
@@ -165,25 +164,6 @@ func TestSpanPoolSnapshotTracksConfig(t *testing.T) {
 	}
 }
 
-// TestSpanPoolOrchestrionGateWiring covers the reachable branch of the
-// Orchestrion incompatibility gate at newConfig's call site: orchestrion.Enabled()
-// is a build-time constant that is always false under plain `go test`, so
-// WithSpanPool(true) must stay enabled and no warning should be logged. The
-// gate predicate itself is table-tested directly in span_pool_gate_test.go.
-// The on-branch (pooling actually forced off) is only reachable in a woven
-// build; see internal/orchestrion/_integration/gls/span_pool_gate_test.go.
-func TestSpanPoolOrchestrionGateWiring(t *testing.T) {
-	tp := new(log.RecordLogger)
-	defer log.UseLogger(tp)()
-
-	cfg, err := newTestConfig(WithSpanPool(true))
-	require.NoError(t, err)
-	assert.True(t, cfg.internalConfig.SpanPoolEnabled())
-	for _, l := range tp.Logs() {
-		assert.NotContains(t, l, "incompatible with Orchestrion")
-	}
-}
-
 // TestSpanPoolActivationReachesHotPath is the deterministic proof that the
 // resolved flag actually reaches acquireSpan/releaseSpans, not just that the
 // config value is correct. releaseSpans is the only caller of Span.clear(),
@@ -232,16 +212,19 @@ func TestSpanPoolActivationReachesHotPath(t *testing.T) {
 // guard for a reported production symptom: a service set
 // DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true alongside
 // DD_TRACE_STATS_COMPUTATION_ENABLED=false and DD_DATA_STREAMS_ENABLED=true,
-// and observed the trace protocol downgrade to v0.4 — a real, intentional
-// consequence of disabling stats computation (see newConfig: "v1 is not
-// compatible without CSS") — and suspected the span pool was disabled too.
-// It wasn't, and can't be by this config: SetSpanPoolEnabled has exactly two
-// call sites in the whole repo (the env-var load in internal/config and the
-// WithSpanPool/Orchestrion-gate pair in this package's newConfig), and
-// neither references stats computation, trace protocol, or DSM. The one
-// documented mechanism that does force pooling off is the Orchestrion gate
-// (TestSpanPoolOrchestrionGateWiring above; the on-branch requires a woven
-// build, see internal/orchestrion/_integration/gls/span_pool_gate_test.go).
+// and suspected the span pool was disabled by that combination. (Disabling
+// stats computation was once believed to also force the trace protocol down
+// to v0.4; it doesn't — client-side stats and the wire protocol are
+// independent, see effectiveTraceProtocol.) The span pool wasn't disabled
+// either, and can't be by this config: SetSpanPoolEnabled has exactly two
+// call sites in the whole repo (the env-var load in internal/config and
+// WithSpanPool in this package's newConfig), and neither references stats
+// computation, trace protocol, or DSM. There is now no mechanism that forces
+// pooling off behind the caller's back: the Orchestrion incompatibility gate
+// that used to be the one exception is gone, since the GLS liveness bit moved
+// off the span onto the stack entry and recycling can no longer strand it. The
+// woven build asserts that directly in
+// internal/orchestrion/_integration/gls/span_pool_test.go.
 func TestSpanPoolUnaffectedByStatsComputationAndDataStreams(t *testing.T) {
 	t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "true")
 	t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")

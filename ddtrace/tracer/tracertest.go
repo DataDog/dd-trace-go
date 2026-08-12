@@ -82,7 +82,13 @@ func handleV1Traces(r io.Reader) []*agenttest.Span {
 	if err != nil {
 		return spans
 	}
-	p := &payloadV1{buf: body}
+	// Must go through newPayloadV1: decodeBuffer calls updateHeader, which
+	// reslices header to its capacity and writes header[7]. A bare
+	// &payloadV1{} leaves header nil, so decoding panicked with an
+	// index-out-of-range. This went unnoticed because the handler was
+	// unreachable — the protocol gate always selected v0.4 here.
+	p := newPayloadV1()
+	p.buf = body
 	if _, err := p.decodeBuffer(); err != nil {
 		return spans
 	}
@@ -106,6 +112,14 @@ func startAgentTest(tb testing.TB) (agenttest.Agent, error) {
 	agent := agenttest.New()
 	agent.HandleTraces("/v0.4/traces", handleV04Traces)
 	agent.HandleTraces("/v1.0/traces", handleV1Traces)
+	// Suites built on bootstrapInspectableTracer/startInspectableTracer already
+	// run on v0.4, but only by accident: this mock advertises no /v0.6/stats, so
+	// client-side stats are unavailable and the tracer's protocol gate downgrades
+	// v1.0 -> v0.4 as a side effect. Pin the wire format on purpose instead —
+	// v1's chunk-level attribute hoisting (env, version, sampling priority) is
+	// not something every one of those suites has been audited against, and they
+	// should not flip encoders the next time that gate is touched.
+	agent.SetInfoEndpoints([]string{"/v0.4/traces"})
 	if err := agent.Start(tb); err != nil {
 		return nil, err
 	}
@@ -181,8 +195,9 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 	// background goroutines and process-global side effects that break the
 	// inspectable tracer's synctest/no-network guarantees.
 	tracer.startAppSec()
-	if tracer.config.llmobs.Enabled {
-		if err := llmobs.Start(tracer.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+	if tracer.config.internalConfig.LLMObsEnabled() {
+		cfg, resolveErr := buildLLMObsConfig(tracer.config)
+		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}, resolveErr); err != nil {
 			return nil, fmt.Errorf("failed to start llmobs: %w", err)
 		}
 		tb.Cleanup(llmobs.Stop)
