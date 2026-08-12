@@ -64,12 +64,12 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if scenario == "feature-gate" {
 		requireEnv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
 	}
-	if scenario == "parallel-root-slots" || scenario == "parallel-root-coordination" {
-		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
-		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "5s")
-	}
 	// These fixture limits detect protocol deadlocks, not instrumentation speed:
 	// race and coverage teardown can legitimately take several seconds in CI.
+	if scenario == "parallel-root-slots" || scenario == "parallel-root-coordination" {
+		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "10s")
+	}
 	if scenario == "parallel-atf-sibling" {
 		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "10s")
 	}
