@@ -94,12 +94,12 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 
 	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 	if extractErr == nil && parentCtx != nil {
-		ctx2 := r.Context()
+		items := make(map[string]string)
 		parentCtx.ForeachBaggageItem(func(k, v string) bool {
-			ctx2 = baggage.Set(ctx2, k, v)
+			items[k] = v
 			return true
 		})
-		r = r.WithContext(ctx2)
+		r = r.WithContext(baggage.SetAll(r.Context(), items))
 	}
 
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
