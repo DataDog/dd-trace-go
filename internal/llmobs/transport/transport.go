@@ -127,7 +127,7 @@ func New(cfg *config.Config) *Transport {
 	}
 
 	defaultHeaders := make(map[string]string)
-	if cfg.ResolvedAgentlessEnabled {
+	if cfg.AgentlessEnabled {
 		defaultHeaders["DD-API-KEY"] = cfg.TracerConfig.APIKey
 	}
 
@@ -145,7 +145,7 @@ func New(cfg *config.Config) *Transport {
 		defaultHeaders: defaultHeaders,
 		site:           site,
 		agentURL:       cfg.TracerConfig.AgentURL,
-		agentless:      cfg.ResolvedAgentlessEnabled,
+		agentless:      cfg.AgentlessEnabled,
 		appKey:         cfg.TracerConfig.APPKey,
 		testBaseURL:    cfg.TestBaseURL,
 	}
