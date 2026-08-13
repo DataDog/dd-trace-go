@@ -6,6 +6,7 @@
 package config
 
 import (
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -84,6 +85,22 @@ func TestEnvSnapshotHash(t *testing.T) {
 		after := envSnapshotHash()
 
 		assert.NotEqual(t, before, after)
+	})
+
+	t.Run("does not collide when a value contains the field-separator characters", func(t *testing.T) {
+		// DD_SERVICE_MAPPING sorts immediately after DD_SERVICE, so a naive
+		// "k=v;" join would make these two environments indistinguishable.
+		t.Setenv("DD_SERVICE", "x")
+		t.Setenv("DD_SERVICE_MAPPING", "y")
+		merged := envSnapshotHash()
+
+		t.Setenv("DD_SERVICE", "x;DD_SERVICE_MAPPING=y")
+		// t.Setenv above still restores the pre-test value on cleanup even
+		// though we unset it directly here.
+		require.NoError(t, os.Unsetenv("DD_SERVICE_MAPPING"))
+		split := envSnapshotHash()
+
+		assert.NotEqual(t, merged, split)
 	})
 
 	t.Run("ignores sensitive configuration values", func(t *testing.T) {
