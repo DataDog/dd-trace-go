@@ -47,9 +47,10 @@ const (
 	metadataEvalTimeKey = "__dd_eval_timestamp_ms"
 	// metadataObserveFullEvaluationDataKey carries the environment's consent snapshot, stamped
 	// in DatadogProvider.evaluate. Travels with the evaluation so a later Remote Config update
-	// cannot retroactively change the policy at flush time. The dd. prefix marks it as
-	// Datadog-internal; matches Java's DDEvaluator.METADATA_OBSERVE_FULL_EVALUATION_DATA.
-	metadataObserveFullEvaluationDataKey = "dd.observe_full_evaluation_data"
+	// cannot retroactively change the policy at flush time. Unprefixed snake_case — this is the
+	// cross-SDK contract key (confirmed in the PII RFC and the Java pilot); every SDK stamps and
+	// reads consent under this exact key so the same identifier appears across SDK sources.
+	metadataObserveFullEvaluationDataKey = "observe_full_evaluation_data"
 )
 
 // evaluateFlag evaluates a feature flag with the given context. The caller supplies the
