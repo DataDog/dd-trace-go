@@ -83,14 +83,20 @@ func (w *wrappedDispatcher) Run() {
 		if clusterID := w.cfg.ClusterID(); clusterID != "" {
 			tags[ext.MessagingKafkaClusterID] = clusterID
 		}
-		if len(w.cfg.consumerCustomTags) > 0 {
-			for tag, tagValueFn := range w.cfg.consumerCustomTags {
-				tags[tag] = tagValueFn(msg)
-			}
-		}
 		opts := []tracer.StartSpanOption{
 			tracer.WithTags(tags),
 			tracer.WithStartSpanConfig(w.spanCfg),
+		}
+		if len(w.cfg.consumerCustomTags) > 0 {
+			customTags := make(map[string]any, len(w.cfg.consumerCustomTags))
+			for tag, tagValueFn := range w.cfg.consumerCustomTags {
+				customTags[tag] = tagValueFn(msg)
+			}
+			// Applied last so a custom tag wins over both the cached
+			// static base and the tags above on key collision, matching
+			// pre-migration behavior where custom-tag options were
+			// appended last.
+			opts = append(opts, tracer.WithTags(customTags))
 		}
 		// kafka supports headers, so try to extract a span context
 		carrier := NewConsumerMessageCarrier(msg)

@@ -254,14 +254,19 @@ func startProducerSpan(cfg *config, spanCfg *tracer.StartSpanConfig, version sar
 	if clusterID := cfg.ClusterID(); clusterID != "" {
 		tags[ext.MessagingKafkaClusterID] = clusterID
 	}
-	if len(cfg.producerCustomTags) > 0 {
-		for tag, tagValueFn := range cfg.producerCustomTags {
-			tags[tag] = tagValueFn(msg)
-		}
-	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),
 		tracer.WithStartSpanConfig(spanCfg),
+	}
+	if len(cfg.producerCustomTags) > 0 {
+		customTags := make(map[string]any, len(cfg.producerCustomTags))
+		for tag, tagValueFn := range cfg.producerCustomTags {
+			customTags[tag] = tagValueFn(msg)
+		}
+		// Applied last so a custom tag wins over both the cached static
+		// base and the tags above on key collision, matching pre-migration
+		// behavior where custom-tag options were appended last.
+		opts = append(opts, tracer.WithTags(customTags))
 	}
 	// if there's a span context in the headers, use that as the parent
 	if spanctx, err := tracer.Extract(carrier); err == nil {
