@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"bytes"
 	"cmp"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -96,6 +98,26 @@ const (
 	// Finally hook and the background aggregation worker. On overflow the hook drops the
 	// event and increments a counter rather than blocking the evaluation.
 	defaultEvalEventBufferSize = 4096
+
+	// payloadSizeLimitBytes bounds the encoded body size of one EVP flagevaluation POST.
+	// Matches the Agent's EVP proxy intake limit (Java EvpProxy.PAYLOAD_SIZE_LIMIT_BYTES =
+	// 5 MiB). A flush that exceeds this is split into multiple payloads; an event that won't
+	// fit even as a degraded row is dropped and counted.
+	payloadSizeLimitBytes = 5 * 1024 * 1024
+
+	// Telemetry metric names + reason tags — mirror Java's FlagEvaluationWriterImpl so Go's
+	// counters are queryable alongside Java's. Emitted via internal/telemetry.Count under
+	// NamespaceGeneral.
+	metricFlagEvalDropped          = "flagevaluation.rows.dropped"
+	metricFlagEvalDegraded         = "flagevaluation.rows.degraded"
+	metricFlagEvalSplits           = "flagevaluation.payload.splits"
+	metricFlagEvalContextTruncated = "flagevaluation.context.truncated"
+	dropReasonQueueOverflow        = "queue_overflow"
+	dropReasonClosed               = "closed"
+	dropReasonDegradedCap          = "degraded_cap"
+	dropReasonPayloadLimit         = "payload_limit"
+	degradedReasonCardinality      = "cardinality_cap"
+	degradedReasonPayloadLimit     = "payload_limit"
 )
 
 // evaluationAggregationKey identifies one full-tier aggregation bucket. Every field is an
@@ -203,6 +225,10 @@ type flagEvalLoggingAggregator struct {
 	// dropped and that degradedCap should be raised. It is distinct from flagEvalLoggingWriter.dropped
 	// (which counts async-queue backpressure drops).
 	droppedDegradedOverflow int64
+	// degradedRows counts evaluations routed INTO the degraded tier because a full-tier cap
+	// (per-flag or global) was full. Surfaced as flagevaluation.rows.degraded reason:cardinality_cap.
+	// Atomic so flush() can drain it lock-free alongside the other counters.
+	degradedRows atomic.Int64
 }
 
 // flagEvalLoggingEvent matches flagevaluation.json — required fields always present;
@@ -288,11 +314,13 @@ type flagEvalLoggingWriter struct {
 	// Telemetry counters. Split so operators can tell why we lost data:
 	//  - preQueueOverflow: capacity check saw the queue full BEFORE any copy work.
 	//  - enqueueDropped:   racy loss at the send site (queue filled between check and send).
+	//  - closedDrop:       enqueue attempted after stop() (post-shutdown residue).
 	//  - contextTruncatedByReason: per-cap counter incremented once per truncated event with the
-	//    specific reason (max_context_fields, max_value_length, max_key_length). A single event
-	//    may bump multiple reasons; each is at most one bump per event.
+	//    specific reason (max_context_fields, max_value_length, max_key_length, ...). A single
+	//    event may bump multiple reasons; each is at most one bump per event.
 	preQueueOverflow         atomic.Int64
 	enqueueDropped           atomic.Int64
+	closedDrop               atomic.Int64
 	contextTruncatedByReason sync.Map // map[string]*atomic.Int64
 }
 
@@ -414,18 +442,25 @@ func (w *flagEvalLoggingWriter) stop() {
 
 // flush drains the aggregator, assembles per-tier events, and sends them to the agent.
 func (w *flagEvalLoggingWriter) flush() {
-	// Surface best-effort backpressure drops (queue full) as observable signals. Split so
-	// operators can tell "the queue was already full at hook time" (preQueueOverflow, hot
-	// signal for undersized cap) from "the queue filled between the check and the send"
-	// (enqueueDropped, cold signal for pathological contention).
+	// Drain the backpressure counters and surface them as telemetry metrics + best-effort debug
+	// logs. Each counter maps to a Java metric (FlagEvaluationWriterImpl) so Go's counts are
+	// queryable alongside Java's. Metrics are emitted under NamespaceGeneral with a "reason:"
+	// tag matching Java's countMetric(reason) convention.
 	if d := w.preQueueOverflow.Swap(0); d > 0 {
+		countMetric(metricFlagEvalDropped, d, dropReasonQueueOverflow)
 		log.Debug("openfeature: flag evaluation queue full at hook time — dropped %d evaluation(s) before copy (best-effort telemetry)", d)
 	}
 	if d := w.enqueueDropped.Swap(0); d > 0 {
+		countMetric(metricFlagEvalDropped, d, dropReasonQueueOverflow)
 		log.Debug("openfeature: flag evaluation queue full at send — dropped %d evaluation(s) after copy (best-effort telemetry)", d)
+	}
+	if d := w.closedDrop.Swap(0); d > 0 {
+		countMetric(metricFlagEvalDropped, d, dropReasonClosed)
+		log.Debug("openfeature: flag evaluation writer closed — dropped %d evaluation(s) after stop (best-effort telemetry)", d)
 	}
 	w.contextTruncatedByReason.Range(func(k, v any) bool {
 		if c := v.(*atomic.Int64).Swap(0); c > 0 {
+			countMetric(metricFlagEvalContextTruncated, c, k.(string))
 			log.Debug("openfeature: flag evaluation context truncated by %s on %d evaluation(s) (best-effort telemetry)", k, c)
 		}
 		return true
@@ -436,16 +471,39 @@ func (w *flagEvalLoggingWriter) flush() {
 		return
 	}
 
-	payload := flagEvalLoggingPayload{
-		Context:         w.ddContext,
-		FlagEvaluations: events,
+	// Cardinality-cap degradation: count evaluations routed into the degraded tier by the
+	// aggregator (per-flag/global cap pressure), distinct from payload-limit degradation
+	// applied at encode time below.
+	if d := w.aggregator.swapDegradedRows(); d > 0 {
+		countMetric(metricFlagEvalDegraded, d, degradedReasonCardinality)
 	}
 
-	if err := w.sendToAgent(payload); err != nil {
-		log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
-	} else {
-		log.Debug("openfeature: successfully sent %d flag evaluation events", len(events))
+	payloads, droppedPayloadLimit, degradedPayloadLimit, err := w.buildFlagEvalPayloads(events)
+	if err != nil {
+		log.Error("openfeature: failed to encode flag evaluation payload: %v", err.Error())
+		return
 	}
+	if degradedPayloadLimit > 0 {
+		countMetric(metricFlagEvalDegraded, degradedPayloadLimit, degradedReasonPayloadLimit)
+		log.Warn("openfeature: flag evaluation payload too large — degraded %d evaluation(s) to fit (best-effort telemetry)", degradedPayloadLimit)
+	}
+	if droppedPayloadLimit > 0 {
+		countMetric(metricFlagEvalDropped, droppedPayloadLimit, dropReasonPayloadLimit)
+		log.Warn("openfeature: flag evaluation payload too large — dropped %d evaluation(s) (best-effort telemetry)", droppedPayloadLimit)
+	}
+	if len(payloads) > 1 {
+		countMetric(metricFlagEvalSplits, int64(len(payloads)-1), "")
+	}
+
+	sent := 0
+	for _, body := range payloads {
+		if err := w.evp.postRaw(flagEvalLoggingEndpoint, "flag evaluation", body); err != nil {
+			log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
+			return
+		}
+		sent++
+	}
+	log.Debug("openfeature: successfully sent %d flag evaluation event(s) in %d payload(s)", len(events), sent)
 }
 
 // buildFlushEvents drains both tiers and renders them as wire events stamped with flushTimeMs.
@@ -568,9 +626,10 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 
 	// Post-stop no-op: after stop() the worker no longer drains w.events, so enqueuing would
 	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
-	// lock would add hot-path contention) and count the event as dropped so it stays observable.
+	// lock would add hot-path contention) and count the event as a closed drop (distinct from
+	// queue-overflow) so shutdown loss stays observable with its own reason tag.
 	if w.stopped.Load() {
-		w.preQueueOverflow.Add(1)
+		w.closedDrop.Add(1)
 		return
 	}
 	if len(w.events) == cap(w.events) {
@@ -934,10 +993,141 @@ func (w *flagEvalLoggingWriter) drainAndFlush() {
 	}
 }
 
-// sendToAgent sends the flag evaluation payload to the Datadog Agent via EVP proxy.
-// Reuses evpSubdomainHeader / evpSubdomainValue constants from exposure.go.
-func (w *flagEvalLoggingWriter) sendToAgent(payload flagEvalLoggingPayload) error {
-	return w.evp.post(flagEvalLoggingEndpoint, "flag evaluation", payload)
+// countMetric emits a flagevaluation telemetry count under NamespaceGeneral, mirroring Java's
+// FlagEvaluationWriterImpl.countMetric. A non-empty reason is forwarded as a "reason:<value>" tag
+// so Go's counters join with Java's across SDKs. No-op when value <= 0 (callers gate on > 0, but
+// this keeps the helper safe for any future caller).
+func countMetric(name string, value int64, reason string) {
+	if value <= 0 {
+		return
+	}
+	var tags []string
+	if reason != "" {
+		tags = []string{"reason:" + reason}
+	}
+	telemetry.Count(telemetry.NamespaceGeneral, name, tags).Submit(float64(value))
+}
+
+// buildFlagEvalPayloads encodes the flush's wire events into one or more size-bounded JSON
+// payloads, each a complete {"context":...,"flagEvaluations":[...]} envelope no larger than
+// payloadSizeLimitBytes. It mirrors Java's FlagEvaluationPayloads.buildPayloads:
+//
+//  1. Split: when the next encoded event would exceed the limit, close the current payload and
+//     start a new one. The splits metric counts (payloads - 1).
+//  2. Degraded fallback: if a single event is too large to fit even in an empty payload, retry
+//     it as a degraded event (drop targeting_key + context — the bulky fields). Counted as
+//     rows.degraded reason:payload_limit.
+//  3. Drop: if the degraded event still doesn't fit, drop it. Counted as rows.dropped
+//     reason:payload_limit.
+//
+// The returned slices are the encoded payload bodies ready for postRaw. droppedPayloadLimit and
+// degradedPayloadLimit carry the evaluation_count totals for the two payload-limit tiers so the
+// caller can emit the matching metrics.
+func (w *flagEvalLoggingWriter) buildFlagEvalPayloads(events []flagEvalLoggingEvent) (payloads [][]byte, droppedPayloadLimit, degradedPayloadLimit int64, err error) {
+	// Encode the envelope prefix (context object + array opener) once; every payload shares it.
+	prefix, perr := w.evp.marshalJSON(struct {
+		Context         flagEvalDDContext      `json:"context"`
+		FlagEvaluations []flagEvalLoggingEvent `json:"flagEvaluations"`
+	}{Context: w.ddContext, FlagEvaluations: nil})
+	if perr != nil {
+		return nil, 0, 0, perr
+	}
+	// prefix is `{"context":{...},"flagEvaluations":null}\n`; rebuild as the opener
+	// `{"context":{...},"flagEvaluations":[` and precompute the closer `]}`.
+	opener, closer := envelopeFraming(prefix)
+
+	// suffixLen is the bytes needed to close the envelope: `]}` plus jsoniter's trailing newline.
+	suffixLen := len(closer) + 1
+
+	var current []byte
+	startPayload := func() {
+		current = append(current[:0], opener...)
+	}
+	closePayload := func() {
+		current = append(current, closer...)
+		current = append(current, '\n')
+		payloads = append(payloads, current)
+		current = nil
+	}
+	startPayload()
+
+	for _, ev := range events {
+		eventBytes, eerr := w.evp.marshalJSON(ev)
+		if eerr != nil {
+			return nil, 0, 0, eerr
+		}
+
+		// Needs a leading comma if this isn't the first event in the current payload.
+		sep := 0
+		if len(current) > len(opener) {
+			sep = 1
+		}
+		fits := len(current)+sep+len(eventBytes)+suffixLen <= payloadSizeLimitBytes
+
+		if !fits && len(current) > len(opener) {
+			// Close the current payload and start a fresh one for this event.
+			closePayload()
+			startPayload()
+			sep = 0
+			fits = len(current)+len(eventBytes)+suffixLen <= payloadSizeLimitBytes
+		}
+
+		if fits {
+			if sep == 1 {
+				current = append(current, ',')
+			}
+			current = append(current, eventBytes...)
+			continue
+		}
+
+		// Single event too large for an empty payload: retry as degraded (drop targeting_key +
+		// context, the bulky fields). This is the encode-time payload-limit degradation path.
+		degraded := ev
+		degraded.TargetingKey = ""
+		degraded.Context = nil
+		eventBytes, eerr = w.evp.marshalJSON(degraded)
+		if eerr != nil {
+			return nil, 0, 0, eerr
+		}
+		if len(current) > len(opener) {
+			// Close current and start fresh before the degraded retry.
+			closePayload()
+			startPayload()
+		}
+		if len(current)+len(eventBytes)+suffixLen <= payloadSizeLimitBytes {
+			current = append(current, eventBytes...)
+			degradedPayloadLimit += ev.EvaluationCount
+			continue
+		}
+
+		// Even the degraded event doesn't fit: drop it and count the lost evaluations.
+		droppedPayloadLimit += ev.EvaluationCount
+	}
+
+	// Flush the final payload if it has any events.
+	if len(current) > len(opener) {
+		closePayload()
+	}
+	return payloads, droppedPayloadLimit, degradedPayloadLimit, nil
+}
+
+// envelopeFraming rewrites a jsoniter-encoded `{"context":{...},"flagEvaluations":null}`
+// envelope into the opener `{"context":{...},"flagEvaluations":[` and returns it alongside the
+// closer `]}`. The opener is reused as the prefix of every split payload; the closer terminates
+// each one. jsoniter appends a trailing newline to the encoded envelope, which is stripped here
+// and re-added by closePayload.
+func envelopeFraming(envelope []byte) (opener, closer []byte) {
+	const needle = `"flagEvaluations":null`
+	idx := bytes.Index(envelope, []byte(needle))
+	if idx < 0 {
+		// Should not happen with the struct above; fall back to a safe minimal envelope.
+		opener = []byte(`{"context":{},"flagEvaluations":[`)
+		closer = []byte(`]}`)
+		return opener, closer
+	}
+	opener = append(envelope[:idx], []byte(`"flagEvaluations":[`)...)
+	closer = []byte(`]}`)
+	return opener, closer
 }
 
 // add records one evaluation observation into the appropriate aggregation tier.
@@ -1035,6 +1225,11 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeM
 		errorMessage:   d.errorMessage,
 	}
 
+	// Count every evaluation routed into the degraded tier (cardinality-cap pressure) so the
+	// flagevaluation.rows.degraded reason:cardinality_cap metric reflects the volume degraded
+	// for cardinality reasons (distinct from payload-limit degradation applied at encode time).
+	a.degradedRows.Add(1)
+
 	if e, ok := a.degraded[degKey]; ok {
 		e.observe(evaluationTimeMs)
 		return
@@ -1052,6 +1247,12 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeM
 	e.runtimeDefault = d.runtimeDefault
 	e.errorMessage = d.errorMessage
 	a.degraded[degKey] = e
+}
+
+// swapDegradedRows atomically drains the cardinality-cap degraded-rows counter, returning the
+// count and resetting it to zero. Called by flush() alongside the other telemetry counters.
+func (a *flagEvalLoggingAggregator) swapDegradedRows() int64 {
+	return a.degradedRows.Swap(0)
 }
 
 // context value type discriminators for the canonical key encoding. Each distinct Go type

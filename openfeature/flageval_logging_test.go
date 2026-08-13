@@ -1071,7 +1071,7 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	// Do NOT start the worker. stop() must still be safe (ticker==nil path) and mark stopped.
 	w.stop()
 
-	before := w.preQueueOverflow.Load()
+	before := w.closedDrop.Load()
 
 	// Build a minimal hook context + details to drive record().
 	hookCtx := of.NewHookContext(
@@ -1099,9 +1099,138 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	if got := len(w.events); got != 0 {
 		t.Errorf("record() after stop() enqueued %d event(s); expected 0 (no-op into never-drained channel)", got)
 	}
-	if got := w.preQueueOverflow.Load(); got != before+1 {
-		t.Errorf("record() after stop() must count the event as dropped: preQueueOverflow=%d, expected=%d", got, before+1)
+	if got := w.closedDrop.Load(); got != before+1 {
+		t.Errorf("record() after stop() must count the event as a closed drop: closedDrop=%d, expected=%d", got, before+1)
 	}
+}
+
+// TestBuildFlagEvalPayloads covers the size-bounded payload splitter (the Go mirror of
+// Java's FlagEvaluationPayloads.buildPayloads): small flushes produce one payload, a flush
+// over payloadSizeLimitBytes is split into multiple payloads, a single oversized event is
+// degraded (targeting_key + context dropped) to fit, and an event too large even when degraded
+// is dropped and counted.
+func TestBuildFlagEvalPayloads(t *testing.T) {
+	w := newFlagEvalLoggingWriter(ProviderConfig{})
+
+	t.Run("small flush yields one payload", func(t *testing.T) {
+		events := []flagEvalLoggingEvent{
+			{Flag: flagEvalFlag{Key: "f1"}, EvaluationCount: 1},
+			{Flag: flagEvalFlag{Key: "f2"}, EvaluationCount: 1},
+		}
+		payloads, dropped, degraded, err := w.buildFlagEvalPayloads(events)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payloads) != 1 {
+			t.Fatalf("got %d payloads, want 1", len(payloads))
+		}
+		if dropped != 0 || degraded != 0 {
+			t.Errorf("dropped=%d degraded=%d, want 0/0", dropped, degraded)
+		}
+		// The single payload must be a valid envelope with both events.
+		var p flagEvalLoggingPayload
+		if err := json.Unmarshal(payloads[0], &p); err != nil {
+			t.Fatalf("payload is not valid JSON: %v", err)
+		}
+		if len(p.FlagEvaluations) != 2 {
+			t.Errorf("payload has %d events, want 2", len(p.FlagEvaluations))
+		}
+	})
+
+	t.Run("oversized flush splits into multiple payloads", func(t *testing.T) {
+		// Build enough events that their combined encoding exceeds payloadSizeLimitBytes.
+		big := strings.Repeat("x", 64*1024) // 64 KiB context value each
+		var events []flagEvalLoggingEvent
+		// ~256 events × 64 KiB ≈ 16 MiB > 5 MiB limit → must split.
+		for i := range 256 {
+			events = append(events, flagEvalLoggingEvent{
+				Flag:            flagEvalFlag{Key: fmt.Sprintf("f%d", i)},
+				EvaluationCount: 1,
+				TargetingKey:    fmt.Sprintf("user-%d", i),
+				Context:         &flagEvalEventContext{Evaluation: map[string]any{"blob": big}},
+			})
+		}
+		payloads, dropped, degraded, err := w.buildFlagEvalPayloads(events)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payloads) < 2 {
+			t.Fatalf("got %d payloads, want >=2 (flush must split)", len(payloads))
+		}
+		if dropped != 0 || degraded != 0 {
+			t.Errorf("dropped=%d degraded=%d, want 0/0 for split-only", dropped, degraded)
+		}
+		// Every payload must be under the limit and be a valid envelope.
+		totalEvents := 0
+		for i, body := range payloads {
+			if len(body) > payloadSizeLimitBytes {
+				t.Errorf("payload %d is %d bytes, exceeds limit %d", i, len(body), payloadSizeLimitBytes)
+			}
+			var p flagEvalLoggingPayload
+			if err := json.Unmarshal(body, &p); err != nil {
+				t.Errorf("payload %d is not valid JSON: %v", i, err)
+			}
+			totalEvents += len(p.FlagEvaluations)
+		}
+		if totalEvents != len(events) {
+			t.Errorf("payloads hold %d events, want %d (all retained across splits)", totalEvents, len(events))
+		}
+	})
+
+	t.Run("single oversized event is degraded to fit", func(t *testing.T) {
+		// One event whose full form (with context) exceeds the limit but whose degraded form
+		// (no targeting_key + context) fits. Must be retained as degraded, not dropped.
+		big := strings.Repeat("y", payloadSizeLimitBytes) // ~5 MiB context value
+		events := []flagEvalLoggingEvent{{
+			Flag:            flagEvalFlag{Key: "big-flag"},
+			EvaluationCount: 7,
+			TargetingKey:    "user-oversized",
+			Context:         &flagEvalEventContext{Evaluation: map[string]any{"blob": big}},
+		}}
+		payloads, dropped, degraded, err := w.buildFlagEvalPayloads(events)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payloads) != 1 {
+			t.Fatalf("got %d payloads, want 1 (degraded event fits)", len(payloads))
+		}
+		if degraded != 7 {
+			t.Errorf("degraded=%d, want 7 (the event's evaluation_count)", degraded)
+		}
+		if dropped != 0 {
+			t.Errorf("dropped=%d, want 0 (degraded event fits)", dropped)
+		}
+		var p flagEvalLoggingPayload
+		if err := json.Unmarshal(payloads[0], &p); err != nil {
+			t.Fatalf("payload is not valid JSON: %v", err)
+		}
+		if len(p.FlagEvaluations) != 1 || p.FlagEvaluations[0].TargetingKey != "" || p.FlagEvaluations[0].Context != nil {
+			t.Errorf("degraded event must have no targeting_key/context, got %+v", p.FlagEvaluations)
+		}
+	})
+
+	t.Run("event too large even degraded is dropped", func(t *testing.T) {
+		// Even the degraded form (flag key alone) can't fit if the flag key itself exceeds the
+		// limit. Use a flag key larger than payloadSizeLimitBytes so no form fits.
+		hugeKey := strings.Repeat("k", payloadSizeLimitBytes+1)
+		events := []flagEvalLoggingEvent{{
+			Flag:            flagEvalFlag{Key: hugeKey},
+			EvaluationCount: 3,
+		}}
+		payloads, dropped, degraded, err := w.buildFlagEvalPayloads(events)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payloads) != 0 {
+			t.Fatalf("got %d payloads, want 0 (event can't fit even degraded)", len(payloads))
+		}
+		if dropped != 3 {
+			t.Errorf("dropped=%d, want 3 (the event's evaluation_count)", dropped)
+		}
+		if degraded != 0 {
+			t.Errorf("degraded=%d, want 0 (degraded form also too large)", degraded)
+		}
+	})
 }
 
 func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
