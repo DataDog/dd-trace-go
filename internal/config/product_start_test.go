@@ -103,7 +103,7 @@ func TestEnvSnapshotHash(t *testing.T) {
 		assert.NotEqual(t, merged, split)
 	})
 
-	t.Run("ignores sensitive configuration values", func(t *testing.T) {
+	t.Run("changes when a sensitive configuration value changes", func(t *testing.T) {
 		var sensitiveKey string
 		for k := range env.SensitiveConfigurations {
 			if _, ok := env.SupportedConfigurations[k]; ok {
@@ -119,7 +119,7 @@ func TestEnvSnapshotHash(t *testing.T) {
 		t.Setenv(sensitiveKey, "super-secret-value")
 		after := envSnapshotHash()
 
-		assert.Equal(t, before, after)
+		assert.NotEqual(t, before, after)
 	})
 }
 

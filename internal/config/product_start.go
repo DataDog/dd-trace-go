@@ -49,12 +49,13 @@ func RecordProductStart(product Product) {
 
 // envSnapshotHash covers the full supported-configuration surface, not just the
 // calling product's keys, so it stays meaningful as more products migrate.
+//
+// Sensitive keys are included: a rotated credential is a real config change
+// that a stale singleton would miss, and only the resulting hash - never the
+// underlying values - is kept in memory, never transmitted.
 func envSnapshotHash() uint64 {
 	keys := make([]string, 0, len(env.SupportedConfigurations))
 	for k := range env.SupportedConfigurations {
-		if env.IsSensitive(k) {
-			continue
-		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
