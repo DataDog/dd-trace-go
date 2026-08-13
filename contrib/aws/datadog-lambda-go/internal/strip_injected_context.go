@@ -29,14 +29,6 @@ var (
 	datadogCarrierEscapedKey        = []byte(`\"_datadog\"`)
 )
 
-type carrierKeyForm struct {
-	key []byte
-}
-
-var datadogCarrierForms = []carrierKeyForm{
-	{key: datadogCarrierKeyBytes},
-}
-
 // StripInjectedContext removes injected _datadog propagation carriers from the
 // Lambda payload before it reaches the user handler when
 // DD_LAMBDA_STRIP_INJECTED_CONTEXT=true.
@@ -79,12 +71,6 @@ func stripInjectedContextEnabled() bool {
 	return stripInjectedContextEnabledVal
 }
 
-// ResetStripInjectedContextCacheForTest clears the env cache so tests can change DD_LAMBDA_STRIP_INJECTED_CONTEXT.
-func ResetStripInjectedContextCacheForTest() {
-	stripInjectedContextEnabledOnce = sync.Once{}
-	stripInjectedContextEnabledVal = false
-}
-
 // stripInjectedContextBytes removes every _datadog carrier from msg and reports whether the bytes changed.
 func stripInjectedContextBytes(msg json.RawMessage) (json.RawMessage, bool) {
 	out, objectChanged := stripObjectCarriers(msg)
@@ -112,14 +98,15 @@ func stripObjectCarriers(msg json.RawMessage) (json.RawMessage, bool) {
 	if len(ranges) == 0 {
 		return msg, false
 	}
-
-	out := make([]byte, 0, len(msg))
-	prev := 0
-	for _, r := range ranges {
-		out = append(out, msg[prev:r.start]...)
-		prev = r.end
+	if len(ranges) == 1 {
+		r := ranges[0]
+		return append(msg[:r.start], msg[r.end:]...), true
 	}
-	out = append(out, msg[prev:]...)
+	out := msg
+	for i := len(ranges) - 1; i >= 0; i-- {
+		r := ranges[i]
+		out = append(out[:r.start], out[r.end:]...)
+	}
 	return out, true
 }
 
@@ -179,32 +166,28 @@ func stripStringEncodedCarriers(msg json.RawMessage) (json.RawMessage, bool) {
 
 // findCarrierRange returns the byte span of the first removable _datadog key/value pair in b at or after searchFrom.
 func findCarrierRange(b []byte, searchFrom int) (start, end int, ok bool) {
-	for _, form := range datadogCarrierForms {
-		formSearchFrom := searchFrom
-		keyLen := len(form.key)
-		for {
-			keyIdx := bytes.Index(b[formSearchFrom:], form.key)
-			if keyIdx < 0 {
-				break
-			}
-			keyIdx += formSearchFrom
-
-			if !isCarrierKeyAt(b, keyIdx, keyLen) {
-				formSearchFrom = keyIdx + 1
-				continue
-			}
-
-			valueEnd, ok := jsonCarrierValueEnd(b, keyIdx+keyLen)
-			if !ok {
-				formSearchFrom = keyIdx + 1
-				continue
-			}
-
-			removeStart, removeEnd := expandRemovalRange(b, keyIdx, valueEnd)
-			return removeStart, removeEnd, true
+	keyLen := len(datadogCarrierKeyBytes)
+	for {
+		keyIdx := bytes.Index(b[searchFrom:], datadogCarrierKeyBytes)
+		if keyIdx < 0 {
+			return 0, 0, false
 		}
+		keyIdx += searchFrom
+
+		if !isCarrierKeyAt(b, keyIdx, keyLen) {
+			searchFrom = keyIdx + 1
+			continue
+		}
+
+		valueEnd, ok := jsonCarrierValueEnd(b, keyIdx+keyLen)
+		if !ok {
+			searchFrom = keyIdx + 1
+			continue
+		}
+
+		removeStart, removeEnd := expandRemovalRange(b, keyIdx, valueEnd)
+		return removeStart, removeEnd, true
 	}
-	return 0, 0, false
 }
 
 // isCarrierKeyAt reports whether keyIdx starts a JSON object key (preceded by '{' or ',', not a string value).
