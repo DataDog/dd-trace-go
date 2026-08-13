@@ -1118,14 +1118,14 @@ func (w *flagEvalLoggingWriter) buildFlagEvalPayloads(events []flagEvalLoggingEv
 // and re-added by closePayload.
 func envelopeFraming(envelope []byte) (opener, closer []byte) {
 	const needle = `"flagEvaluations":null`
-	idx := bytes.Index(envelope, []byte(needle))
-	if idx < 0 {
+	before, _, found := bytes.Cut(envelope, []byte(needle))
+	if !found {
 		// Should not happen with the struct above; fall back to a safe minimal envelope.
 		opener = []byte(`{"context":{},"flagEvaluations":[`)
 		closer = []byte(`]}`)
 		return opener, closer
 	}
-	opener = append(envelope[:idx], []byte(`"flagEvaluations":[`)...)
+	opener = append(before, []byte(`"flagEvaluations":[`)...)
 	closer = []byte(`]}`)
 	return opener, closer
 }
