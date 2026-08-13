@@ -88,14 +88,19 @@ func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
 	if tr.ClusterID() != "" {
 		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
 	}
-	if tr.tagFns != nil {
-		for key, tagFn := range tr.tagFns {
-			tags[key] = tagFn(msg)
-		}
-	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),
 		tracer.WithStartSpanConfig(tr.consumerSpanCfg),
+	}
+	if tr.tagFns != nil {
+		customTags := make(map[string]any, len(tr.tagFns))
+		for key, tagFn := range tr.tagFns {
+			customTags[key] = tagFn(msg)
+		}
+		// Applied last so a custom tag wins over both the cached static
+		// base and the tags above on key collision, matching pre-migration
+		// behavior where custom-tag options were appended last.
+		opts = append(opts, tracer.WithTags(customTags))
 	}
 	// kafka supports headers, so try to extract a span context
 	carrier := MessageCarrier{msg: msg}
