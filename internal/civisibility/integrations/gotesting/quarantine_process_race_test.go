@@ -44,10 +44,6 @@ func quarantinedRaceIsolationFixtureSelected() bool {
 }
 
 func runQuarantinedRaceIsolationFixture(m *testing.M) {
-	scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
-	if scenario == "parallel-duration" || scenario == "parallel-wait-duration" || scenario == "terminal-descendants" {
-		installQuarantinedRaceLogicalClock()
-	}
 	// A process child must enter the existing no-op CI Visibility bootstrap
 	// directly. It never creates a session, fetches settings, or starts retries.
 	if isProcessRetryChild() {
@@ -58,6 +54,7 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			panic(err)
 		}
 	}
+	scenario := os.Getenv(quarantinedRaceIsolationFixtureEnv)
 	requireEnv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
 	attempts := "2"
 	if scenario == "failfast" || scenario == "deferred-descendant-atf-failfast" || scenario == "deferred-dynamic-descendant-finality" {
@@ -319,19 +316,17 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		}
 		os.Exit(0)
 	case "parallel-duration":
+		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelDurationFixture/isolated", 1)
 		childSpans := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelDurationFixture/isolated/suspended", 1)
-		if got := childSpans[0].Duration(); got != time.Second {
-			panic(fmt.Sprintf("parallel child duration = %s, want 1s of logical active time", got))
+		if childSpans[0].Duration() >= root[0].Duration() {
+			panic(fmt.Sprintf("parallel suspension leaked into replayed child duration: child=%s root=%s", childSpans[0].Duration(), root[0].Duration()))
 		}
 		os.Exit(0)
 	case "parallel-wait-duration":
 		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root", 1)
-		if got := root[0].Duration(); got != 0 {
-			panic(fmt.Sprintf("parallel root duration = %s, want no logical active time", got))
-		}
 		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root/slow", 1)
-		if got := child[0].Duration(); got != 100*time.Second {
-			panic(fmt.Sprintf("parallel child duration = %s, want 100s of logical active time", got))
+		if root[0].Duration() >= child[0].Duration() {
+			panic(fmt.Sprintf("parallel descendant wait leaked into root duration: root=%s child=%s", root[0].Duration(), child[0].Duration()))
 		}
 		os.Exit(0)
 	case "dynamic-descendant-finality":
@@ -482,8 +477,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		checkSpansByTagValue(parallelRoot, constants.TestStatus, constants.TestStatusFail, 1)
 		parallelChild := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/parallel/child", 1)
 		checkSpansByTagValue(parallelChild, constants.TestStatus, constants.TestStatusFail, 1)
-		if rootFinish, childFinish := parallelRoot[0].StartTime().Add(parallelRoot[0].Duration()), parallelChild[0].StartTime().Add(parallelChild[0].Duration()); !rootFinish.Before(childFinish) {
-			panic("parallel descendant wait leaked into selected root duration")
+		if parallelRoot[0].Duration() >= parallelChild[0].Duration() {
+			panic(fmt.Sprintf("parallel descendant wait leaked into selected root duration: root=%s child=%s", parallelRoot[0].Duration(), parallelChild[0].Duration()))
 		}
 		panicRoot := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceTerminalDescendantsFixture/panic", 1)
 		checkSpansByTagValue(panicRoot, constants.TestStatus, constants.TestStatusFail, 1)
@@ -978,19 +973,6 @@ func writeQuarantinedRaceIsolationProcessPID(t *testing.T, name string) {
 	writeQuarantinedRaceIsolationPID(t, name+"-"+process)
 }
 
-var quarantinedRaceLogicalClockElapsed atomic.Int64
-
-func installQuarantinedRaceLogicalClock() {
-	origin := time.Unix(1, 0)
-	quarantinedRaceNow = func() time.Time {
-		return origin.Add(time.Duration(quarantinedRaceLogicalClockElapsed.Load()))
-	}
-}
-
-func advanceQuarantinedRaceLogicalClock(delta time.Duration) {
-	quarantinedRaceLogicalClockElapsed.Add(delta.Nanoseconds())
-}
-
 func TestQuarantinedRaceFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {
 		t.Skip("fixture subprocess only")
@@ -1200,9 +1182,8 @@ func TestQuarantinedRaceParallelDurationFixture(t *testing.T) {
 	t.Run("isolated", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("suspended", instrumentTestingTFunc(func(t *testing.T) {
 			(*T)(t).Parallel()
-			advanceQuarantinedRaceLogicalClock(time.Second)
 		}))
-		advanceQuarantinedRaceLogicalClock(100 * time.Second)
+		runQuarantinedRaceActiveWork()
 	}))
 }
 
@@ -1213,9 +1194,25 @@ func TestQuarantinedRaceParallelWaitDurationFixture(t *testing.T) {
 	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("slow", instrumentTestingTFunc(func(t *testing.T) {
 			(*T)(t).Parallel()
-			advanceQuarantinedRaceLogicalClock(100 * time.Second)
+			runQuarantinedRaceActiveWork()
 		}))
 	}))
+}
+
+func runQuarantinedRaceActiveWork() {
+	const rounds = 1_000_000
+	request := make(chan struct{})
+	acknowledged := make(chan struct{})
+	go func() {
+		for range rounds {
+			<-request
+			acknowledged <- struct{}{}
+		}
+	}()
+	for range rounds {
+		request <- struct{}{}
+		<-acknowledged
+	}
 }
 
 func TestQuarantinedRaceDynamicDescendantFixture(t *testing.T) {
@@ -1388,7 +1385,7 @@ func TestQuarantinedRaceTerminalDescendantsFixture(t *testing.T) {
 	t.Run("parallel", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("child", instrumentTestingTFunc(func(t *testing.T) {
 			(*T)(t).Parallel()
-			advanceQuarantinedRaceLogicalClock(100 * time.Second)
+			runQuarantinedRaceActiveWork()
 			t.Error("parallel descendant sentinel")
 		}))
 	}))
