@@ -9,6 +9,7 @@
 package config
 
 import (
+	"encoding/binary"
 	"hash/fnv"
 	"sort"
 	"sync"
@@ -59,12 +60,16 @@ func envSnapshotHash() uint64 {
 	sort.Strings(keys)
 
 	h := fnv.New64a()
+	var lenBuf [8]byte
+	writeField := func(s string) {
+		binary.BigEndian.PutUint64(lenBuf[:], uint64(len(s)))
+		h.Write(lenBuf[:])
+		h.Write([]byte(s))
+	}
 	for _, k := range keys {
 		if v, ok := env.Lookup(k); ok {
-			h.Write([]byte(k))
-			h.Write([]byte{'='})
-			h.Write([]byte(v))
-			h.Write([]byte{';'})
+			writeField(k)
+			writeField(v)
 		}
 	}
 	return h.Sum64()
