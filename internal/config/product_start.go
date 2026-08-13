@@ -33,10 +33,10 @@ var (
 // dd-trace-go's own bootstrap mutations, so diffs are an upper bound on real
 // cross-product blast radius.
 func RecordProductStart(product Product) {
-	hash := envSnapshotHash()
-
 	startMu.Lock()
 	defer startMu.Unlock()
+
+	hash := envSnapshotHash()
 	if lastProduct != "" && hash != lastEnvHash {
 		telemetry.Count(telemetry.NamespaceGeneral, "config.repeat_start_env_diff", []string{
 			"trigger_product:" + string(product),
