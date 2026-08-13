@@ -559,6 +559,10 @@ type quarantinedRaceChildState struct {
 	unmasked        map[string]struct{}
 }
 
+// This indirection keeps duration accounting on the wall clock in production
+// while allowing tests to supply a logical clock instead of sleeping.
+var quarantinedRaceNow = time.Now
+
 type quarantinedRaceFailureEntry struct {
 	mu     *sync.RWMutex
 	failed *bool
@@ -681,7 +685,7 @@ func newQuarantinedRaceChildState(cfg *processRetrySubtreeConfig) *quarantinedRa
 }
 
 func (s *quarantinedRaceChildState) begin() (uint64, time.Time, int64) {
-	return s.next.Add(1), time.Now(), retryAttemptRaceErrors()
+	return s.next.Add(1), quarantinedRaceNow(), retryAttemptRaceErrors()
 }
 
 func (s *quarantinedRaceChildState) beginAggregateCoverage(name string) {
@@ -928,7 +932,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		// parent. A failure added by the selected root after that release can then
 		// be identified before its parallel descendants resume.
 		failureSnapshot.restoreAncestors(state)
-		activeDuration += time.Since(activeStart)
+		activeDuration += quarantinedRaceNow().Sub(activeStart)
 		activeStart = time.Time{}
 		// A nested selected root releases its discovery ancestor in Parallel.
 		// Exclude that ancestor's work from this root's aggregate profile.
@@ -942,7 +946,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		coverageValid = state.coverage.finish(coverageInterval) && coverageValid
 		coverageInterval = nil
 		return func() {
-			activeStart = time.Now()
+			activeStart = quarantinedRaceNow()
 			if resumeAggregate != nil {
 				resumeAggregate()
 			}
@@ -976,7 +980,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		// scheduler wait from the parent's duration, but cleanup remains active time.
 		cleanup := &testCleanupResult{}
 		if !activeStart.IsZero() {
-			activeDuration += time.Since(activeStart)
+			activeDuration += quarantinedRaceNow().Sub(activeStart)
 			activeStart = time.Time{}
 		}
 		if !maskedByManagedDescendant && t.Failed() {
@@ -987,9 +991,9 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 			state.markUnmaskedFailure(moduleName, suiteName, name)
 		}
 		completeParallelSubtests(t, getTestPrivateFields(t), true)
-		activeStart = time.Now()
+		activeStart = quarantinedRaceNow()
 		runTestCleanupCallbacks(t, cleanup)
-		activeDuration += time.Since(activeStart)
+		activeDuration += quarantinedRaceNow().Sub(activeStart)
 		activeStart = time.Time{}
 		if cleanup.panicData != nil {
 			t.Fail()
