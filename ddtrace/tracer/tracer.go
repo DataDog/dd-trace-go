@@ -33,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
@@ -306,11 +307,13 @@ func Start(opts ...StartOption) error {
 	// client is appropriately configured.
 	t.startAppSec()
 
-	if t.config.llmobs.Enabled {
-		if err := llmobs.Start(t.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+	if t.config.internalConfig.LLMObsEnabled() {
+		cfg, resolveErr := buildLLMObsConfig(t.config)
+		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}, resolveErr); err != nil {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
 	}
+
 	if t.config.internalConfig.LogStartup() {
 		logStartup(t)
 	}
@@ -326,6 +329,49 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// buildLLMObsConfig assembles the llmobsconfig.Config used to start LLMObs,
+// resolving agentless mode against the agent's advertised features. Callers
+// must only invoke this when c.internalConfig.LLMObsEnabled() is true.
+func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
+	af := c.agent.load()
+	var resolvedAgentless bool
+	if c.llmobsTestBaseURL != "" {
+		// TestBaseURL bypasses agent/agentless selection and validation entirely.
+		resolvedAgentless = false
+	} else {
+		var err error
+		resolvedAgentless, err = llmobs.ResolveAgentlessEnabled(
+			c.internalConfig.LLMObsAgentlessEnabled(),
+			af.evpProxyV2,
+		)
+		if err != nil {
+			return llmobsconfig.Config{}, err
+		}
+	}
+	cfg := llmobsconfig.Config{
+		Enabled:          true,
+		MLApp:            c.internalConfig.LLMObsMLApp(),
+		AgentlessEnabled: resolvedAgentless,
+		ProjectName:      c.internalConfig.LLMObsProjectName(),
+		TracerConfig: llmobsconfig.TracerConfig{
+			DDTags:     c.internalConfig.GlobalTags(),
+			Env:        c.internalConfig.Env(),
+			Service:    c.internalConfig.ServiceName(),
+			Version:    c.internalConfig.Version(),
+			AgentURL:   c.internalConfig.AgentURL(),
+			APIKey:     c.internalConfig.APIKey(),
+			APPKey:     c.internalConfig.AppKey(),
+			HTTPClient: c.httpClient,
+			Site:       c.internalConfig.Site(),
+		},
+		TestBaseURL: c.llmobsTestBaseURL,
+	}
+	if c.llmobsHTTPClient != nil {
+		cfg.TracerConfig.HTTPClient = c.llmobsHTTPClient
+	}
+	return cfg, nil
 }
 
 // startAppSec builds the remote-config client config and AppSec start options,

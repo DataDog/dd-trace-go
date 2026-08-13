@@ -212,8 +212,8 @@ func NewMetricsExportTelemetry(protocol, encoding string) *MetricsExportTelemetr
 	}
 
 	return &MetricsExportTelemetry{
-		attemptsHandle:  telemetry.Count(telemetry.NamespaceGeneral, "otel.metrics_export_attempts", tags),
-		successesHandle: telemetry.Count(telemetry.NamespaceGeneral, "otel.metrics_export_successes", tags),
+		attemptsHandle:  telemetry.Count(telemetry.NamespaceTracers, "otel.metrics_export_attempts", tags),
+		successesHandle: telemetry.Count(telemetry.NamespaceTracers, "otel.metrics_export_successes", tags),
 	}
 }
 
