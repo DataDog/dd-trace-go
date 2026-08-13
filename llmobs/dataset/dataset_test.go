@@ -584,8 +584,11 @@ func TestDatasetPull(t *testing.T) {
 			"data": [
 				{
 					"id": "record-1",
-					"input": "This is a simple string input, not a map",
-					"expected_output": "Some output"
+					"type": "datasets",
+					"attributes": {
+						"input": "This is a simple string input, not a map",
+						"expected_output": "Some output"
+					}
 				}
 			]
 		}`
@@ -660,9 +663,12 @@ func TestDatasetPull(t *testing.T) {
 			"data": [
 				{
 					"id": "record-1",
-					"input": {"question": "What is AI?"},
-					"expected_output": "Artificial Intelligence",
-					"metadata": "simple string metadata from UI"
+					"type": "datasets",
+					"attributes": {
+						"input": {"question": "What is AI?"},
+						"expected_output": "Artificial Intelligence",
+						"metadata": "simple string metadata from UI"
+					}
 				}
 			]
 		}`
@@ -750,22 +756,22 @@ func TestDatasetPull(t *testing.T) {
 				case 1:
 					rawJSON = `{
 						"data": [
-							{"id":"record-1","input":{"question":"Q1"},"expected_output":"A1","metadata":{}},
-							{"id":"record-2","input":{"question":"Q2"},"expected_output":"A2","metadata":{}}
+							{"id":"record-1","type":"datasets","attributes":{"input":{"question":"Q1"},"expected_output":"A1","metadata":{}}},
+							{"id":"record-2","type":"datasets","attributes":{"input":{"question":"Q2"},"expected_output":"A2","metadata":{}}}
 						],
 						"meta": {"after": "cursor-page-2"}
 					}`
 				case 2:
 					rawJSON = `{
 						"data": [
-							{"id":"record-3","input":{"question":"Q3"},"expected_output":"A3","metadata":{}}
+							{"id":"record-3","type":"datasets","attributes":{"input":{"question":"Q3"},"expected_output":"A3","metadata":{}}}
 						],
 						"meta": {"after": "cursor-page-3"}
 					}`
 				default:
 					rawJSON = `{
 						"data": [
-							{"id":"record-4","input":{"question":"Q4"},"expected_output":"A4","metadata":{}}
+							{"id":"record-4","type":"datasets","attributes":{"input":{"question":"Q4"},"expected_output":"A4","metadata":{}}}
 						],
 						"meta": {}
 					}`
@@ -851,7 +857,7 @@ func TestDatasetPull(t *testing.T) {
 				capturedHeaders = r.Header.Clone()
 				rawJSON := `{
 					"data": [
-						{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans"}
+						{"id":"record-1","type":"datasets","attributes":{"input":{"q":"v2 record"},"expected_output":"ans"}}
 					],
 					"meta": {}
 				}`
@@ -1393,12 +1399,12 @@ func handleMockDatasetGet(r *http.Request, state *mockDatasetState) *http.Respon
 		}
 	}
 
-	// Check if this is a request for dataset records (v2 flat format)
+	// Check if this is a request for dataset records (v2 JSON:API format)
 	if strings.Contains(r.URL.Path, "/records") {
 		rawJSON := `{
 			"data": [
-				{"id":"record-1","input":{"question":"What is AI?"},"expected_output":"Artificial Intelligence"},
-				{"id":"record-2","input":{"question":"What is ML?"},"expected_output":"Machine Learning"}
+				{"id":"record-1","type":"datasets","attributes":{"input":{"question":"What is AI?"},"expected_output":"Artificial Intelligence"}},
+				{"id":"record-2","type":"datasets","attributes":{"input":{"question":"What is ML?"},"expected_output":"Machine Learning"}}
 			],
 			"meta": {}
 		}`
