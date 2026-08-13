@@ -1140,7 +1140,7 @@ func TestBuildFlagEvalPayloads(t *testing.T) {
 	t.Run("oversized flush splits into multiple payloads", func(t *testing.T) {
 		// Build enough events that their combined encoding exceeds payloadSizeLimitBytes.
 		big := strings.Repeat("x", 64*1024) // 64 KiB context value each
-		var events []flagEvalLoggingEvent
+		events := make([]flagEvalLoggingEvent, 0, 256)
 		// ~256 events × 64 KiB ≈ 16 MiB > 5 MiB limit → must split.
 		for i := range 256 {
 			events = append(events, flagEvalLoggingEvent{
