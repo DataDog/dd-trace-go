@@ -18,6 +18,8 @@ import (
 const (
 	// TagKeySessionID is the tag key used to set the session ID for LLMObs spans.
 	TagKeySessionID = "session_id"
+	// TagKeyAgentVersion is the tag key used to set the user-supplied agent version on agent spans.
+	TagKeyAgentVersion = "agent_version"
 )
 
 // StartSpanConfig contains configuration options for starting an LLMObs span.
@@ -34,6 +36,8 @@ type StartSpanConfig struct {
 	StartTime time.Time
 	// Name of the tracing integration.
 	Integration string
+	// AgentVersion sets the user-supplied agent version. Only applies to agent spans.
+	AgentVersion string
 }
 
 // FinishSpanConfig contains configuration options for finishing an LLMObs span.
@@ -216,6 +220,10 @@ type SpanAnnotations struct {
 
 	// AgentManifest is the agent manifest for agent spans.
 	AgentManifest string
+
+	// AgentVersion is the user-supplied agent version for agent spans. It is set as an
+	// agent_version tag on the agent span only, never on its children.
+	AgentVersion string
 
 	// Metadata contains arbitrary metadata key-value pairs.
 	Metadata map[string]any
@@ -412,6 +420,14 @@ func (s *Span) Annotate(a SpanAnnotations) {
 			log.Warn("llmobs: agent manifest can only be annotated on agent spans, ignoring")
 		} else {
 			s.llmCtx.agentManifest = a.AgentManifest
+		}
+	}
+
+	if a.AgentVersion != "" {
+		if s.spanKind != SpanKindAgent {
+			log.Warn("llmobs: agent version can only be annotated on agent spans, ignoring")
+		} else {
+			s.llmCtx.tags = updateMapKeys(s.llmCtx.tags, map[string]string{TagKeyAgentVersion: a.AgentVersion})
 		}
 	}
 

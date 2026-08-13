@@ -848,6 +848,14 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		}
 	}
 
+	if cfg.AgentVersion != "" {
+		if kind != SpanKindAgent {
+			log.Warn("llmobs: agent version can only be set on agent spans, ignoring")
+		} else {
+			span.llmCtx.tags = updateMapKeys(span.llmCtx.tags, map[string]string{TagKeyAgentVersion: cfg.AgentVersion})
+		}
+	}
+
 	if span.sessionID == "" {
 		span.sessionID = span.propagatedSessionID()
 	}

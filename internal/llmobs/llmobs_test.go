@@ -865,6 +865,66 @@ func TestSpanAnnotate(t *testing.T) {
 			},
 		},
 		{
+			name: "agent-span-with-version-from-config",
+			kind: llmobs.SpanKindAgent,
+			config: llmobs.StartSpanConfig{
+				AgentVersion: "v3",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "agent",
+			},
+			wantTags: []string{
+				"agent_version:v3",
+			},
+		},
+		{
+			name: "agent-span-with-annotated-version",
+			kind: llmobs.SpanKindAgent,
+			annotations: llmobs.SpanAnnotations{
+				AgentVersion: "v3",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "agent",
+			},
+			wantTags: []string{
+				"agent_version:v3",
+			},
+		},
+		{
+			name: "agent-span-annotated-version-overrides-config",
+			kind: llmobs.SpanKindAgent,
+			config: llmobs.StartSpanConfig{
+				AgentVersion: "v1",
+			},
+			annotations: llmobs.SpanAnnotations{
+				AgentVersion: "v2",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "agent",
+			},
+			wantTags: []string{
+				"agent_version:v2",
+			},
+		},
+		{
+			// A version supplied for a non-agent span is dropped, so the tag stays absent
+			// (findTag returns "" for a missing key).
+			name: "non-agent-span-drops-version",
+			kind: llmobs.SpanKindTool,
+			config: llmobs.StartSpanConfig{
+				AgentVersion: "v3",
+			},
+			annotations: llmobs.SpanAnnotations{
+				AgentVersion: "v3",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "tool",
+			},
+			wantTags: []string{
+				"agent_version:",
+			},
+		},
+		{
 			name: "llm-span-with-full-prompt",
 			kind: llmobs.SpanKindLLM,
 			annotations: llmobs.SpanAnnotations{
