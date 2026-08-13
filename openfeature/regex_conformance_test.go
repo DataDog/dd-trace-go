@@ -45,7 +45,7 @@ func TestTargetingRegexConformance(t *testing.T) {
 		t.Fatalf("parse targeting regex conformance fixture: %v", err)
 	}
 	if fixture.Schema != "datadog.ffe.targeting-regex-conformance/v1" ||
-		fixture.SchemaVersion != 1 || fixture.ContractVersion != "targeting-regex-v1" {
+		fixture.SchemaVersion != 1 || fixture.ContractVersion != "targeting-regex-v2" {
 		t.Fatalf("unsupported targeting regex conformance fixture: schema=%q schemaVersion=%d contractVersion=%q",
 			fixture.Schema, fixture.SchemaVersion, fixture.ContractVersion)
 	}
