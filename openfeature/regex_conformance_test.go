@@ -49,11 +49,20 @@ func TestTargetingRegexConformance(t *testing.T) {
 		t.Fatalf("unsupported targeting regex conformance fixture: schema=%q schemaVersion=%d contractVersion=%q",
 			fixture.Schema, fixture.SchemaVersion, fixture.ContractVersion)
 	}
-	if len(fixture.Cases) == 0 {
-		t.Fatal("targeting regex conformance fixture has no cases")
+	if len(fixture.Cases) != 75 {
+		t.Fatalf("targeting regex conformance fixture has %d cases, want 75", len(fixture.Cases))
 	}
 
+	seenIDs := make(map[string]struct{}, len(fixture.Cases))
 	for _, tc := range fixture.Cases {
+		if tc.ID == "" {
+			t.Fatal("targeting regex conformance fixture has a case with an empty id")
+		}
+		if _, exists := seenIDs[tc.ID]; exists {
+			t.Fatalf("targeting regex conformance fixture has duplicate id %q", tc.ID)
+		}
+		seenIDs[tc.ID] = struct{}{}
+
 		t.Run(tc.ID, func(t *testing.T) {
 			wantCompile := tc.ExpectedCompile
 			wantMatch := tc.ExpectedMatch
