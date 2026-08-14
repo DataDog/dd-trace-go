@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -303,6 +304,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	if st02EndTime.Before(st03.StartTime()) {
 		panic("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_3' starts")
 	}
+	checkParallelTimingSpans(finishedSpans, []*mocktracer.Span{st01, st02, st03})
 
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
@@ -1511,6 +1513,12 @@ func checkSpansByTagValue(finishedSpans []*mocktracer.Span, tagName, tagValue st
 func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	tests := getSpansWithType(finishedSpans, constants.SpanTypeTest)
 	numOfTests := len(tests)
+	if len(getSpansWithTagName(tests, constants.TestActiveDuration)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.TestActiveDuration))
+	}
+	if len(getSpansWithTagName(tests, constants.TestIsParallel)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.TestIsParallel))
+	}
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestImpactAnalysis)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestImpactAnalysis))
 	}
@@ -1531,6 +1539,62 @@ func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	}
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementAttemptToFix)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementAttemptToFix))
+	}
+}
+
+func checkParallelTimingSpans(finishedSpans, parallelTests []*mocktracer.Span) {
+	tests := getSpansWithType(finishedSpans, constants.SpanTypeTest)
+	if got := len(getSpansWithTagNameAndValue(tests, constants.TestIsParallel, "true")); got != len(parallelTests) {
+		panic(fmt.Sprintf("expected exactly %d parallel test spans, got %d", len(parallelTests), got))
+	}
+	for _, tag := range []string{
+		constants.TestParallelPauseStartOffset,
+		constants.TestParallelPauseEndOffset,
+		constants.TestParallelPauseDuration,
+	} {
+		if got := len(getSpansWithTagName(tests, tag)); got != len(parallelTests) {
+			panic(fmt.Sprintf("expected exactly %d test spans with %s, got %d", len(parallelTests), tag, got))
+		}
+	}
+
+	waits := getSpansWithResourceName(finishedSpans, parallelWaitResourceName)
+	if len(waits) != len(parallelTests) {
+		panic(fmt.Sprintf("expected exactly %d parallel wait spans, got %d", len(parallelTests), len(waits)))
+	}
+	waitsByParent := make(map[uint64]*mocktracer.Span, len(waits))
+	for _, wait := range waits {
+		if wait.OperationName() != parallelWaitOperationName || wait.Tag(ext.Component) != "go-testing" || wait.Tag(parallelWaitTag) != "true" || wait.Tag(ext.SpanType) != "" {
+			panic(fmt.Sprintf("unexpected parallel wait span: %s", wait))
+		}
+		waitsByParent[wait.ParentID()] = wait
+	}
+
+	for _, test := range parallelTests {
+		wait := waitsByParent[test.SpanID()]
+		if wait == nil || wait.TraceID() != test.TraceID() {
+			panic(fmt.Sprintf("parallel test %d has no wait child in trace %d", test.SpanID(), test.TraceID()))
+		}
+		startOffset := durationTag(test, constants.TestParallelPauseStartOffset)
+		endOffset := durationTag(test, constants.TestParallelPauseEndOffset)
+		pauseDuration := durationTag(test, constants.TestParallelPauseDuration)
+		activeDuration := durationTag(test, constants.TestActiveDuration)
+		if startOffset < 0 || endOffset < startOffset || pauseDuration != endOffset-startOffset || activeDuration < 0 || activeDuration > test.Duration() {
+			panic(fmt.Sprintf("invalid timing tags on parallel test span: %s", test))
+		}
+		if wait.StartTime() != test.StartTime().Add(startOffset) || wait.Duration() != pauseDuration {
+			panic(fmt.Sprintf("parallel wait span does not match its parent timing tags: %s", wait))
+		}
+	}
+}
+
+func durationTag(span *mocktracer.Span, tag string) time.Duration {
+	switch value := span.Tag(tag).(type) {
+	case float64:
+		return time.Duration(value)
+	case int64:
+		return time.Duration(value)
+	default:
+		panic(fmt.Sprintf("expected numeric %s tag, got %T", tag, value))
 	}
 }
 

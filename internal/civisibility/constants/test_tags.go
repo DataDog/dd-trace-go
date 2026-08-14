@@ -34,6 +34,24 @@ const (
 	// This constant is used to tag traces with the execution status of the test.
 	TestStatus = "test.status"
 
+	// TestActiveDuration is the observed test-body duration, excluding the
+	// duration-excluded interval around testing.T.Parallel.
+	TestActiveDuration = "test.active_duration"
+
+	// TestIsParallel indicates whether the test entered Go's parallel scheduler.
+	TestIsParallel = "test.is_parallel"
+
+	// TestParallelPauseStartOffset is the start of the duration-excluded
+	// testing.T.Parallel interval relative to the test event start.
+	TestParallelPauseStartOffset = "test.parallel.pause.start_offset"
+
+	// TestParallelPauseEndOffset is the end of the duration-excluded
+	// testing.T.Parallel interval relative to the test event start.
+	TestParallelPauseEndOffset = "test.parallel.pause.end_offset"
+
+	// TestParallelPauseDuration is the duration-excluded testing.T.Parallel interval.
+	TestParallelPauseDuration = "test.parallel.pause.duration"
+
 	// TestFinalStatus indicates the final adjusted status for a test after considering retries.
 	// This constant is used to tag the final execution span with the overall test result.
 	TestFinalStatus = "test.final_status"
