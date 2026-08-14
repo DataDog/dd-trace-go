@@ -24,6 +24,13 @@ type wrappedDispatcher struct {
 	messages chan *sarama.ConsumerMessage
 
 	cfg *config
+	// spanCfg holds the tags that are constant for every message consumed
+	// through this dispatcher (component, span kind, messaging system,
+	// service name, measured, and any static analytics rate). It is built
+	// once when the dispatcher is created (see newConsumerSpanConfig) and
+	// merged into each message span via WithStartSpanConfig, instead of
+	// rebuilding a Tag() closure per tag on every message.
+	spanCfg *tracer.StartSpanConfig
 }
 
 func wrapDispatcher(d dispatcher, cfg *config) *wrappedDispatcher {
@@ -31,7 +38,26 @@ func wrapDispatcher(d dispatcher, cfg *config) *wrappedDispatcher {
 		d:        d,
 		messages: make(chan *sarama.ConsumerMessage),
 		cfg:      cfg,
+		spanCfg:  newConsumerSpanConfig(cfg),
 	}
+}
+
+// newConsumerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every message consumed through a dispatcher with
+// the given config, so per-message calls don't need to rebuild them.
+func newConsumerSpanConfig(cfg *config) *tracer.StartSpanConfig {
+	opts := []tracer.StartSpanOption{
+		instrumentation.ServiceNameWithSource(cfg.consumerServiceName, cfg.serviceSource),
+		tracer.SpanType(ext.SpanTypeMessageConsumer),
+		tracer.Tag(ext.Component, instrumentation.PackageIBMSarama),
+		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
+		tracer.Measured(),
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
 }
 
 func (w *wrappedDispatcher) Messages() <-chan *sarama.ConsumerMessage {
@@ -43,29 +69,28 @@ func (w *wrappedDispatcher) Run() {
 	var prev *tracer.Span
 
 	for msg := range msgs {
-		// create the next span from the message
-		opts := []tracer.StartSpanOption{
-			instrumentation.ServiceNameWithSource(w.cfg.consumerServiceName, w.cfg.serviceSource),
-			tracer.ResourceName("Consume Topic " + msg.Topic),
-			tracer.SpanType(ext.SpanTypeMessageConsumer),
-			tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
-			tracer.Tag("offset", msg.Offset),
-			tracer.Tag(ext.Component, instrumentation.PackageIBMSarama),
-			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
-			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-			tracer.Tag(ext.MessagingDestinationName, msg.Topic),
-			tracer.Measured(),
+		// create the next span from the message. Partition/offset/topic and
+		// the cluster ID (fetched asynchronously in the background after the
+		// dispatcher is created, see startClusterIDFetch) are genuinely
+		// per-message/mutable, so they stay dynamic instead of moving into
+		// the static spanCfg base.
+		tags := map[string]any{
+			ext.ResourceName:             "Consume Topic " + msg.Topic,
+			ext.MessagingKafkaPartition:  msg.Partition,
+			"offset":                     msg.Offset,
+			ext.MessagingDestinationName: msg.Topic,
 		}
 		if clusterID := w.cfg.ClusterID(); clusterID != "" {
-			opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, clusterID))
-		}
-		if !math.IsNaN(w.cfg.analyticsRate) {
-			opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
+			tags[ext.MessagingKafkaClusterID] = clusterID
 		}
 		if len(w.cfg.consumerCustomTags) > 0 {
 			for tag, tagValueFn := range w.cfg.consumerCustomTags {
-				opts = append(opts, tracer.Tag(tag, tagValueFn(msg)))
+				tags[tag] = tagValueFn(msg)
 			}
+		}
+		opts := []tracer.StartSpanOption{
+			tracer.WithTags(tags),
+			tracer.WithStartSpanConfig(w.spanCfg),
 		}
 		// kafka supports headers, so try to extract a span context
 		carrier := NewConsumerMessageCarrier(msg)
