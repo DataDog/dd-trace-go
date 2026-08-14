@@ -1241,8 +1241,12 @@ func WithTags(tags map[string]any) StartSpanOption {
 	maps.Copy(snapshot, tags)
 	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = snapshot
-			return
+			// Copy out of snapshot rather than aliasing it: the returned
+			// option is meant to be cached and applied to many spans, and
+			// cfg.Tags = snapshot would hand every span whose cfg.Tags
+			// started nil the same map, so a later Tag() on one span
+			// would leak into the others.
+			cfg.Tags = make(map[string]any, len(snapshot))
 		}
 		maps.Copy(cfg.Tags, snapshot)
 	}

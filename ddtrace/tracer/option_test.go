@@ -2248,6 +2248,30 @@ func TestWithTags(t *testing.T) {
 		assert.Equal("original", v)
 	})
 
+	t.Run("cached_option_does_not_leak_across_spans", func(t *testing.T) {
+		var assert = assert.New(t)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		// A single WithTags call, cached and reused across spans, as
+		// documented as safe in CONTRIBUTING.md.
+		opt := WithTags(map[string]any{"component": "client"})
+
+		s1 := tracer.StartSpan("test", opt, Tag("request", "id1"))
+		s1.Finish()
+
+		s2 := tracer.StartSpan("test", opt)
+		defer s2.Finish()
+
+		// The per-span Tag call on s1 must not leak into s2 through a
+		// map shared by the cached opt.
+		v, _ := s2.meta.Get("component")
+		assert.Equal("client", v)
+		_, ok := s2.meta.Get("request")
+		assert.False(ok)
+	})
+
 	t.Run("empty_tags_still_prevents_base_aliasing", func(t *testing.T) {
 		var assert = assert.New(t)
 		base := NewStartSpanConfig(Tag("static1", "s1"))
