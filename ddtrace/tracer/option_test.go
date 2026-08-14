@@ -2232,6 +2232,39 @@ func TestWithTags(t *testing.T) {
 	})
 }
 
+// TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst documents a real
+// footgun rather than desired behavior: WithStartSpanConfig only copies its
+// Tags into the live config when the live config already has a non-nil Tags
+// map; otherwise it aliases the base config's map directly (see
+// WithStartSpanConfig). If WithStartSpanConfig(base) runs before any
+// Tag/WithTags call, the live config's Tags *is* base.Tags, and a later
+// Tag/WithTags call mutates the shared, cached base in place. This is why
+// CONTRIBUTING.md requires Tag/WithTags to precede WithStartSpanConfig(base)
+// in the option list, never the reverse, whenever base is reused across
+// calls.
+func TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst(t *testing.T) {
+	assert := assert.New(t)
+	base := NewStartSpanConfig(Tag("static1", "s1"))
+
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	// Wrong order: WithStartSpanConfig(base) first, dynamic Tag second.
+	s := tracer.StartSpan("test",
+		WithStartSpanConfig(base),
+		Tag("dynamic", "d1"),
+	)
+	s.Finish()
+
+	// The per-call dynamic tag leaked into the cached base config, which
+	// would corrupt every future span built from it.
+	assert.Len(base.Tags, 2)
+	v, ok := base.Tags["dynamic"]
+	assert.True(ok, "base.Tags was mutated by a later Tag call because WithStartSpanConfig ran first and aliased it")
+	assert.Equal("d1", v)
+}
+
 func TestNewFinishConfig(t *testing.T) {
 	var (
 		assert = assert.New(t)
@@ -2312,53 +2345,142 @@ func BenchmarkConfig(b *testing.B) {
 	})
 }
 
-// BenchmarkTagsVsWithTags mimics a typical contrib call site (e.g. valkey,
-// mongo) that sets a handful of tags per span: some static across every call
-// on a given client (Component, SpanKind, DBSystem, TargetHost, TargetPort)
-// and one dynamic per-call value (ResourceName). It goes through a real
-// tracer.StartSpan call, like the contrib code does through
-// tracer.StartSpanFromContext, so option values escape to the heap the same
-// way they do in production instead of being optimized away by inlining.
+// BenchmarkTagsVsWithTags mimics real contrib call sites that mix a handful
+// of tags cached once per client/hook (Component, SpanKind, DBSystem,
+// TargetHost, TargetPort) with a batch of dynamic, per-call tags built fresh
+// on every span. The dynamic-tag counts below are taken directly from
+// production contrib code, not made up:
+//
+//   - n=1: rueidis/valkey's startSpan in the default configuration (just
+//     ResourceName). contrib/redis/rueidis/rueidis.go,
+//     contrib/valkey-io/valkey-go/valkey.go.
+//   - n=2: the same call sites with the opt-in raw-command tag enabled.
+//   - n=4: franz-go/segmentio-kafka-go/sarama's consumer spans (ResourceName,
+//     partition, offset, destination name). contrib/twmb/franz-go/kgo.go,
+//     contrib/segmentio/kafka-go/internal/tracing/tracing.go.
+//   - n=6: mongo-driver's Started handler with query capture enabled
+//     (ResourceName, DBInstance, PeerHostname, NetworkDestinationName,
+//     PeerPort, plus the captured query).
+//     contrib/go.mongodb.org/mongo-driver/mongo/mongo.go.
+//
+// Each scenario goes through a real tracer.StartSpan call, like contribs do
+// through tracer.StartSpanFromContext, so option values escape to the heap
+// the same way they do in production instead of being optimized away by
+// inlining. "NewStartSpanConfig_per_call_misuse" is not a recommended
+// pattern - NewStartSpanConfig exists to build a config once and reuse it,
+// per its own doc comment - it's included to measure the cost of using it
+// as a per-call substitute for WithTags instead.
 func BenchmarkTagsVsWithTags(b *testing.B) {
-	b.Run("scenario_Tag_per_call", func(b *testing.B) {
-		tracer, err := newTracer()
-		defer tracer.Stop()
-		assert.NoError(b, err)
-		b.ReportAllocs()
-		b.ResetTimer()
-		for range b.N {
-			s := tracer.StartSpan("test",
-				Tag(ext.Component, "some-component"),
-				Tag(ext.SpanKind, ext.SpanKindClient),
-				Tag(ext.DBSystem, "some-db"),
-				Tag(ext.TargetHost, "localhost"),
-				Tag(ext.TargetPort, "1234"),
-				Tag(ext.ResourceName, "some-resource"),
-			)
-			s.Finish()
-		}
-	})
-	b.Run("scenario_WithTags_and_static_base", func(b *testing.B) {
-		tracer, err := newTracer()
-		defer tracer.Stop()
-		assert.NoError(b, err)
-		base := NewStartSpanConfig(
-			Tag(ext.Component, "some-component"),
-			Tag(ext.SpanKind, ext.SpanKindClient),
-			Tag(ext.DBSystem, "some-db"),
-			Tag(ext.TargetHost, "localhost"),
-			Tag(ext.TargetPort, "1234"),
-		)
-		b.ReportAllocs()
-		b.ResetTimer()
-		for range b.N {
-			s := tracer.StartSpan("test",
-				WithTags(map[string]any{ext.ResourceName: "some-resource"}),
-				WithStartSpanConfig(base),
-			)
-			s.Finish()
-		}
-	})
+	dynamicKeys := []string{
+		ext.ResourceName,
+		ext.RedisRawCommand,
+		ext.MessagingKafkaPartition,
+		"offset",
+		ext.MessagingDestinationName,
+		ext.DBInstance,
+	}
+	staticBase := NewStartSpanConfig(
+		Tag(ext.Component, "some-component"),
+		Tag(ext.SpanKind, ext.SpanKindClient),
+		Tag(ext.DBSystem, "some-db"),
+		Tag(ext.TargetHost, "localhost"),
+		Tag(ext.TargetPort, "1234"),
+	)
+
+	for _, n := range []int{1, 2, 4, 6} {
+		keys := dynamicKeys[:n]
+
+		// Baseline: no caching at all, every tag (static and dynamic) goes
+		// through its own Tag() call every span. This is what the 12
+		// migrated contribs looked like before this PR.
+		b.Run(fmt.Sprintf("n=%d/Tag_per_call_no_caching", n), func(b *testing.B) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				opts := make([]StartSpanOption, 0, 5+n)
+				opts = append(opts,
+					Tag(ext.Component, "some-component"),
+					Tag(ext.SpanKind, ext.SpanKindClient),
+					Tag(ext.DBSystem, "some-db"),
+					Tag(ext.TargetHost, "localhost"),
+					Tag(ext.TargetPort, "1234"),
+				)
+				for _, k := range keys {
+					opts = append(opts, Tag(k, "some-value"))
+				}
+				s := tracer.StartSpan("test", opts...)
+				s.Finish()
+			}
+		})
+
+		// Isolates WithTags' own marginal effect: the static base is
+		// already cached in both this scenario and the next one, so the
+		// only difference is how the n dynamic tags are set.
+		b.Run(fmt.Sprintf("n=%d/Tag_per_call_with_cached_base", n), func(b *testing.B) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				opts := make([]StartSpanOption, 0, n+1)
+				for _, k := range keys {
+					opts = append(opts, Tag(k, "some-value"))
+				}
+				opts = append(opts, WithStartSpanConfig(staticBase))
+				s := tracer.StartSpan("test", opts...)
+				s.Finish()
+			}
+		})
+
+		b.Run(fmt.Sprintf("n=%d/WithTags_and_static_base", n), func(b *testing.B) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				tags := make(map[string]any, n)
+				for _, k := range keys {
+					tags[k] = "some-value"
+				}
+				s := tracer.StartSpan("test",
+					WithTags(tags),
+					WithStartSpanConfig(staticBase),
+				)
+				s.Finish()
+			}
+		})
+
+		b.Run(fmt.Sprintf("n=%d/NewStartSpanConfig_per_call_misuse", n), func(b *testing.B) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				opts := make([]StartSpanOption, 0, n)
+				for _, k := range keys {
+					opts = append(opts, Tag(k, "some-value"))
+				}
+				// Order matters here for correctness, not just cost: the
+				// freshly built per-call config must be merged in before
+				// staticBase, or WithStartSpanConfig would alias
+				// staticBase.Tags onto the live config and the next line
+				// would corrupt the shared, reused base. See
+				// TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst.
+				dynamic := NewStartSpanConfig(opts...)
+				s := tracer.StartSpan("test",
+					WithStartSpanConfig(dynamic),
+					WithStartSpanConfig(staticBase),
+				)
+				s.Finish()
+			}
+		})
+	}
 }
 
 func BenchmarkStartSpanConfig(b *testing.B) {
