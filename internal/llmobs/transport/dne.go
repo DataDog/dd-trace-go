@@ -67,9 +67,13 @@ type ExperimentView struct {
 }
 
 type DatasetRecordCreate struct {
-	Input          any `json:"input,omitempty"`
-	ExpectedOutput any `json:"expected_output,omitempty"`
-	Metadata       any `json:"metadata,omitempty"`
+	// ID is supplied by the client and persisted by the backend as the record's
+	// id. Sending it means the caller already knows the id of everything it
+	// inserted and does not have to recover it from the response.
+	ID             string `json:"id,omitempty"`
+	Input          any    `json:"input,omitempty"`
+	ExpectedOutput any    `json:"expected_output,omitempty"`
+	Metadata       any    `json:"metadata,omitempty"`
 }
 
 type DatasetRecordUpdate struct {
@@ -303,7 +307,7 @@ func (c *Transport) BatchUpdateDataset(
 	insert []DatasetRecordCreate,
 	update []DatasetRecordUpdate,
 	delete []string,
-) (int, []string, error) {
+) (int, error) {
 	path := fmt.Sprintf("%s/datasets/%s/batch_update", endpointPrefixDNE, url.PathEscape(datasetID))
 	method := http.MethodPost
 	body := BatchUpdateDatasetRequest{
@@ -320,37 +324,30 @@ func (c *Transport) BatchUpdateDataset(
 
 	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
-		return -1, nil, err
+		return -1, err
 	}
 	if result.statusCode != http.StatusOK {
-		return -1, nil, fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+		return -1, fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
 	var resp BatchUpdateDatasetResponse
 	if err := json.Unmarshal(result.body, &resp); err != nil {
-		return -1, nil, fmt.Errorf("failed to decode json response: %w", err)
+		return -1, fmt.Errorf("failed to decode json response: %w", err)
 	}
 
-	// FIXME: we don't get version numbers in responses to deletion requests
-	// TODO(rarguelloF): the backend could return a better response here...
-	var (
-		newDatasetVersion = -1
-		newRecordIDs      []string
-	)
-	if len(resp.Data) > 0 {
-		if resp.Data[0].Attributes.Version > 0 {
-			newDatasetVersion = resp.Data[0].Attributes.Version
-		}
+	// The response carries one entry per affected record, deletions included:
+	// those come back with deleted_at and ttl set. Nothing here correlates
+	// entries with what was sent, because inserts already carry a client-supplied
+	// id, so the only thing worth reading is the new version. Every entry in a
+	// batch shares it, so the first will do.
+	//
+	// A deletes-only batch returns no version, in which case the caller falls
+	// back to incrementing.
+	newDatasetVersion := -1
+	if len(resp.Data) > 0 && resp.Data[0].Attributes.Version > 0 {
+		newDatasetVersion = resp.Data[0].Attributes.Version
 	}
-	if len(resp.Data) == len(insert)+len(update) {
-		// new records are at the end of the slice
-		for _, rec := range resp.Data[len(update):] {
-			newRecordIDs = append(newRecordIDs, rec.ID)
-		}
-	} else {
-		log.Warn("llmobs/internal/transport: BatchUpdateDataset: expected %d records in response, got %d", len(insert)+len(update), len(resp.Data))
-	}
-	return newDatasetVersion, newRecordIDs, nil
+	return newDatasetVersion, nil
 }
 
 // GetDatasetRecordsPage fetches a single page of records for the given dataset.
