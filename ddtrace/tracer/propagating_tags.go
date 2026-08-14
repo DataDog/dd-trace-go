@@ -202,40 +202,26 @@ func (t *trace) propagatingTagsLen() int {
 	return len(t.loadPropagatingTags())
 }
 
-// propagatingTagsByteLen returns the byte length of the serialized propagating-tags
-// header value (format: "k1=v1,k2=v2,..."), matching the measurement used by
-// marshalPropagatingTags so callers can pre-check whether a new tag fits in the budget.
-// Like marshalPropagatingTags, it excludes tracestate/traceparent — those are stored in
-// the same map for W3C propagation but are never written to the x-datadog-tags header.
-// The propagating tags map is bounded (< 10 entries by spec), so linear iteration is cheap.
-func (t *trace) propagatingTagsByteLen() int {
-	n := 0
+// propagatingTagsByteLens returns the byte lengths of the propagating tags in
+// both the x-datadog-tags header and the tracestate dd= entry in a single pass.
+// xTagsLen uses "k1=v1,k2=v2,..." format (excluding tracestate/traceparent keys).
+// tracestateLen counts only _dd.p.* tags as (stripped-key + value + 4) bytes,
+// matching composeTracestate (";t." prefix + ":" separator = 4 bytes); the fixed
+// dd= header is not included.
+func (t *trace) propagatingTagsByteLens() (xTagsLen, tracestateLen int) {
 	for k, v := range t.loadPropagatingTags() {
 		if k == tracestateHeader || k == traceparentHeader {
 			continue
 		}
-		if n > 0 {
-			n++ // comma separator
+		if xTagsLen > 0 {
+			xTagsLen++ // comma separator
 		}
-		n += len(k) + 1 + len(v) // key=value
-	}
-	return n
-}
-
-// propagatingTagsTracestateByteLen returns the byte length that the current
-// _dd.p.* propagating tags would consume inside the tracestate dd= entry.
-// Each tag contributes (stripped-key-len + value-len + 4) bytes, matching the
-// check used by composeTracestate (";t." prefix + ":" separator = 4 bytes).
-// The fixed dd= header (e.g. "dd=s:1;p:<hex>") is NOT included.
-func (t *trace) propagatingTagsTracestateByteLen() int {
-	n := 0
-	for k, v := range t.loadPropagatingTags() {
-		if !strings.HasPrefix(k, "_dd.p.") {
-			continue
+		xTagsLen += len(k) + 1 + len(v)
+		if strings.HasPrefix(k, "_dd.p.") {
+			tracestateLen += len(k) - len("_dd.p.") + len(v) + 4
 		}
-		n += len(k) - len("_dd.p.") + len(v) + 4
 	}
-	return n
+	return
 }
 
 // parseDecisionMaker parses the decision maker string (e.g. "-4") into

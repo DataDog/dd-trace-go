@@ -1401,8 +1401,7 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 			return
 		}
 		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
-		used := spanCtx.trace.propagatingTagsByteLen()
-		tsUsed := spanCtx.trace.propagatingTagsTracestateByteLen()
+		used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
 		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
 		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
 			used += 27
