@@ -213,21 +213,6 @@ type (
 	CreateExperimentResponse = Response[ExperimentView]
 )
 
-// DatasetRecordItemV2 is the wire format for a single item in the v2 dataset-records list response.
-// The v2 endpoint returns a flat object (id, input, expected_output, metadata at the top level),
-// unlike the unstable endpoint which wraps fields under "attributes".
-type DatasetRecordItemV2 struct {
-	ID             string `json:"id"`
-	Input          any    `json:"input"`
-	ExpectedOutput any    `json:"expected_output"`
-	Metadata       any    `json:"metadata"`
-}
-
-type GetDatasetRecordsResponseV2 struct {
-	Data []DatasetRecordItemV2 `json:"data"`
-	Meta ResponseMeta          `json:"meta"`
-}
-
 func (c *Transport) GetDatasetByName(ctx context.Context, name, projectID string) (*DatasetView, error) {
 	q := url.Values{}
 	q.Set("filter[name]", name)
@@ -395,19 +380,19 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datase
 		return nil, "", fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
-	var recordsResp GetDatasetRecordsResponseV2
+	// The v2 records endpoint speaks JSON:API like the rest of these endpoints:
+	// each item carries id at the top level and the record fields under
+	// "attributes".
+	var recordsResp GetDatasetRecordsResponse
 	if err := json.Unmarshal(result.body, &recordsResp); err != nil {
 		return nil, "", fmt.Errorf("failed to decode json response: %w", err)
 	}
 
 	records := make([]DatasetRecordView, 0, len(recordsResp.Data))
 	for _, r := range recordsResp.Data {
-		records = append(records, DatasetRecordView{
-			ID:             r.ID,
-			Input:          r.Input,
-			ExpectedOutput: r.ExpectedOutput,
-			Metadata:       r.Metadata,
-		})
+		rec := r.Attributes
+		rec.ID = r.ID
+		records = append(records, rec)
 	}
 
 	return records, recordsResp.Meta.After, nil

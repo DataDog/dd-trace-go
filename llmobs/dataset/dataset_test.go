@@ -628,8 +628,11 @@ func TestDatasetPull(t *testing.T) {
 				"data": [
 					{
 						"id": "record-1",
-						"input": "This is a simple string input, not a map",
-						"expected_output": "Some output"
+						"type": "datasets",
+						"attributes": {
+							"input": "This is a simple string input, not a map",
+							"expected_output": "Some output"
+						}
 					}
 				],
 				"meta": {}
@@ -711,9 +714,12 @@ func TestDatasetPull(t *testing.T) {
 				"data": [
 					{
 						"id": "record-1",
-						"input": {"question": "What is AI?"},
-						"expected_output": "Artificial Intelligence",
-						"metadata": "simple string metadata from UI"
+						"type": "datasets",
+						"attributes": {
+							"input": {"question": "What is AI?"},
+							"expected_output": "Artificial Intelligence",
+							"metadata": "simple string metadata from UI"
+						}
 					}
 				],
 				"meta": {}
@@ -808,15 +814,13 @@ func TestDatasetPull(t *testing.T) {
 					"data": [
 						{
 							"id": "record-1",
-							"input": {"question": "Q1"},
-							"expected_output": "A1",
-							"metadata": {}
+							"type": "datasets",
+							"attributes": {"input": {"question": "Q1"}, "expected_output": "A1", "metadata": {}}
 						},
 						{
 							"id": "record-2",
-							"input": {"question": "Q2"},
-							"expected_output": "A2",
-							"metadata": {}
+							"type": "datasets",
+							"attributes": {"input": {"question": "Q2"}, "expected_output": "A2", "metadata": {}}
 						}
 					],
 					"meta": {
@@ -829,9 +833,8 @@ func TestDatasetPull(t *testing.T) {
 					"data": [
 						{
 							"id": "record-3",
-							"input": {"question": "Q3"},
-							"expected_output": "A3",
-							"metadata": {}
+							"type": "datasets",
+							"attributes": {"input": {"question": "Q3"}, "expected_output": "A3", "metadata": {}}
 						}
 					],
 					"meta": {
@@ -844,9 +847,8 @@ func TestDatasetPull(t *testing.T) {
 					"data": [
 						{
 							"id": "record-4",
-							"input": {"question": "Q4"},
-							"expected_output": "A4",
-							"metadata": {}
+							"type": "datasets",
+							"attributes": {"input": {"question": "Q4"}, "expected_output": "A4", "metadata": {}}
 						}
 					],
 					"meta": {}
@@ -932,7 +934,11 @@ func TestDatasetPull(t *testing.T) {
 			capturedHeaders = r.Header.Clone()
 			rawJSON := `{
 				"data": [
-					{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans"}
+					{
+						"id": "record-1",
+						"type": "datasets",
+						"attributes": {"input": {"q": "v2 record"}, "expected_output": "ans"}
+					}
 				],
 				"meta": {}
 			}`
@@ -1276,32 +1282,42 @@ func registerMockHandlers(coll *llmobstest.Collector) {
 	coll.HandleFunc("/api/v2/llm-obs/v1/", handleMockDatasetRecordsV2)
 }
 
-// handleMockDatasetRecordsV2 serves the v2 dataset-records endpoint. The v2 wire
-// format is a flat record object (id, input, expected_output, metadata) with no
-// "attributes" wrapper and no per-record version field.
+// handleMockDatasetRecordsV2 serves the v2 dataset-records endpoint. Its wire
+// format is JSON:API: id at the top level of each item, record fields under
+// "attributes", and no per-record version field.
+//
+// The body is a literal rather than something marshalled from the transport's
+// own types. A fixture built from the types under test keeps passing when those
+// types stop matching the API, which is what hid this bug.
 func handleMockDatasetRecordsV2(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	recordsResponse := llmobstransport.GetDatasetRecordsResponseV2{
-		Data: []llmobstransport.DatasetRecordItemV2{
+	const rawJSON = `{
+		"data": [
 			{
-				ID:             "record-1",
-				Input:          map[string]any{"question": "What is AI?"},
-				ExpectedOutput: "Artificial Intelligence",
+				"id": "record-1",
+				"type": "datasets",
+				"attributes": {
+					"input": {"question": "What is AI?"},
+					"expected_output": "Artificial Intelligence"
+				}
 			},
 			{
-				ID:             "record-2",
-				Input:          map[string]any{"question": "What is ML?"},
-				ExpectedOutput: "Machine Learning",
-			},
-		},
-	}
-	respData, _ := json.Marshal(recordsResponse)
+				"id": "record-2",
+				"type": "datasets",
+				"attributes": {
+					"input": {"question": "What is ML?"},
+					"expected_output": "Machine Learning"
+				}
+			}
+		],
+		"meta": {}
+	}`
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(respData)
+	w.Write([]byte(rawJSON))
 }
 
 // createMockHandler creates a mock handler for dataset-related requests
