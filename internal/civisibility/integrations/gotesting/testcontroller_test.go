@@ -70,6 +70,11 @@ var mTracer mocktracer.Tracer
 var logsEntries []*mockedLogEntry
 var parallelEfd bool
 
+const (
+	benchmarkTimingScenario        = "TestBenchmarkTiming"
+	parallelSubtestBlockerDuration = 75 * time.Millisecond
+)
+
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
@@ -114,6 +119,8 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
 		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
 		os.Exit(runProcessRetryChild(m))
+	} else if internal.BoolEnv(benchmarkTimingScenario, false) {
+		runBenchmarkTimingTests(m)
 	} else if testControllerBenchmarkSelected(os.Args[1:]) {
 		os.Exit(m.Run())
 	} else if internal.BoolEnv("Bypass", false) {
@@ -131,10 +138,65 @@ func TestMain(m *testing.M) {
 		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
 		if layoutAvailable {
 			runTestControllerSubprocess("RetryNativeParallelUnitTest", "^TestRetryAttemptNativeMaxParallelMatchesTestingFlag$", "Bypass=true", "-test.parallel=3")
+			runTestControllerSubprocess("BenchmarkTiming", "^$", benchmarkTimingScenario+"=true", "-test.bench=^BenchmarkFirst$", "-test.benchtime=1x")
 			for _, v := range scenarios {
 				runTestControllerSubprocess(v, legacyScenarioRunFilter, v+"=true")
 			}
 		}
+	}
+
+	os.Exit(0)
+}
+
+func runBenchmarkTimingTests(m *testing.M) {
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	if exitCode := RunM(m); exitCode != 0 {
+		panic("expected benchmark timing scenario to pass, got exit code: " + strconv.Itoa(exitCode))
+	}
+
+	finishedSpans := mTracer.FinishedSpans()
+	tests := getSpansWithType(finishedSpans, constants.SpanTypeTest)
+	expectedResources := []string{
+		"testing_test.go.BenchmarkFirst",
+		"testing_test.go.BenchmarkFirst/child01",
+		"testing_test.go.BenchmarkFirst/child02",
+		"testing_test.go.BenchmarkFirst/child03",
+	}
+	if len(tests) != len(expectedResources) {
+		panic(fmt.Sprintf("expected %d benchmark spans, got %d", len(expectedResources), len(tests)))
+	}
+	for _, resource := range expectedResources {
+		checkSpansByResourceName(finishedSpans, resource, 1)
+	}
+	for _, test := range tests {
+		if activeDuration := durationTag(test, constants.TestActiveDuration); activeDuration < 0 {
+			panic(fmt.Sprintf("benchmark has negative %s: %s", constants.TestActiveDuration, test))
+		}
+		if got := test.Tag(constants.TestType); got != constants.TestTypeBenchmark {
+			panic(fmt.Sprintf("expected benchmark %s=%s, got %v: %s", constants.TestType, constants.TestTypeBenchmark, got, test))
+		}
+		if got := test.Tag(constants.TestIsParallel); got != "false" {
+			panic(fmt.Sprintf("expected benchmark %s=false, got %v: %s", constants.TestIsParallel, got, test))
+		}
+		for _, tag := range []string{
+			constants.TestParallelPauseStartOffset,
+			constants.TestParallelPauseEndOffset,
+			constants.TestParallelPauseDuration,
+		} {
+			if got := test.Tag(tag); got != nil {
+				panic(fmt.Sprintf("benchmark unexpectedly has %s=%v: %s", tag, got, test))
+			}
+		}
+	}
+
+	skipped := checkSpansByResourceName(finishedSpans, "testing_test.go.BenchmarkFirst/child03", 1)[0]
+	if got := skipped.Tag(constants.TestStatus); got != constants.TestStatusSkip {
+		panic(fmt.Sprintf("expected skipped sub-benchmark status, got %v", got))
+	}
+	if got := skipped.Tag(constants.TestSkipReason); got != "The reason..." {
+		panic(fmt.Sprintf("expected skipped sub-benchmark reason, got %v", got))
 	}
 
 	os.Exit(0)
@@ -1566,6 +1628,9 @@ func checkParallelTimingSpans(finishedSpans, parallelTests []*mocktracer.Span) {
 		if wait.OperationName() != parallelWaitOperationName || wait.Tag(ext.Component) != "go-testing" || wait.Tag(parallelWaitTag) != "true" || wait.Tag(ext.SpanType) != "" {
 			panic(fmt.Sprintf("unexpected parallel wait span: %s", wait))
 		}
+		if waitsByParent[wait.ParentID()] != nil {
+			panic(fmt.Sprintf("parallel test %d has multiple wait children", wait.ParentID()))
+		}
 		waitsByParent[wait.ParentID()] = wait
 	}
 
@@ -1583,6 +1648,23 @@ func checkParallelTimingSpans(finishedSpans, parallelTests []*mocktracer.Span) {
 		}
 		if wait.StartTime() != test.StartTime().Add(startOffset) || wait.Duration() != pauseDuration {
 			panic(fmt.Sprintf("parallel wait span does not match its parent timing tags: %s", wait))
+		}
+		if pauseDuration < parallelSubtestBlockerDuration-25*time.Millisecond {
+			panic(fmt.Sprintf("parallel pause did not include the serial blocker: pause=%s blocker=%s span=%s", pauseDuration, parallelSubtestBlockerDuration, test))
+		}
+		expectedActive := map[string]time.Duration{
+			"testing_test.go.TestParallelSubTests/parallel_subtest_1": 300 * time.Millisecond,
+			"testing_test.go.TestParallelSubTests/parallel_subtest_2": 200 * time.Millisecond,
+			"testing_test.go.TestParallelSubTests/parallel_subtest_3": 100 * time.Millisecond,
+		}[test.Tag(ext.ResourceName).(string)]
+		if activeDuration+parallelTimingSkewTolerance < expectedActive {
+			panic(fmt.Sprintf("parallel active duration is shorter than the test work: active=%s work=%s span=%s", activeDuration, expectedActive, test))
+		}
+		if activeDuration+pauseDuration > test.Duration()+parallelTimingSkewTolerance {
+			panic(fmt.Sprintf("parallel active and pause durations exceed wall time: active=%s pause=%s wall=%s span=%s", activeDuration, pauseDuration, test.Duration(), test))
+		}
+		if test.Duration()-activeDuration < parallelSubtestBlockerDuration-25*time.Millisecond {
+			panic(fmt.Sprintf("parallel active duration still includes the serial blocker: active=%s wall=%s span=%s", activeDuration, test.Duration(), test))
 		}
 	}
 }

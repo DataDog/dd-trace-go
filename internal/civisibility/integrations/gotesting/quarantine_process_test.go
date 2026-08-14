@@ -668,6 +668,9 @@ func TestQuarantinedRaceSubtreeResultValidationIsFailClosed(t *testing.T) {
 		MRunEpoch: 1, InvocationOrdinal: 1, Subtree: cfg,
 	}
 	require.NoError(t, validateProcessRetryResult(valid, expected))
+	independentPolicyDuration := valid
+	independentPolicyDuration.DurationNanos = 3
+	require.NoError(t, validateProcessRetryResult(independentPolicyDuration, expected))
 
 	missingIdentity := valid
 	missingIdentity.ModuleName = ""

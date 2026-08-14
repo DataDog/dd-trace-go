@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 func exerciseParallelTiming(t *testing.T) {
@@ -59,6 +61,23 @@ func exerciseParallelTiming(t *testing.T) {
 	require.True(t, invalidProjection.activeDurationOK)
 	require.Equal(t, 12*time.Millisecond, invalidProjection.activeDuration)
 	require.False(t, invalidProjection.pauseProjectionOK)
+
+	policyTiming := calculateTestExecutionTiming(6*time.Second, parallelTimingSample{
+		preDuration:      time.Second,
+		baselineToResume: 3 * time.Second,
+		pauseClockValid:  true,
+	})
+	require.True(t, policyTiming.activeDurationOK)
+	require.Equal(t, 4*time.Second, policyTiming.activeDuration)
+	settings := &civisibilitynet.SettingsResponseData{}
+	settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 11
+	settings.EarlyFlakeDetection.SlowTestRetries.TenS = 5
+	activeRetries, activeOK := efdRetryCountForDuration(settings, policyTiming.activeDuration)
+	wallRetries, wallOK := efdRetryCountForDuration(settings, 6*time.Second)
+	require.True(t, activeOK)
+	require.True(t, wallOK)
+	require.EqualValues(t, 11, activeRetries)
+	require.EqualValues(t, 5, wallRetries)
 
 	hookedNonParallel := observeHookedTestExecutionTiming(nil, &testExecutionMetadata{}, 2*time.Millisecond, time.Time{})
 	require.False(t, hookedNonParallel.isParallel)
