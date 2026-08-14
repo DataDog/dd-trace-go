@@ -51,32 +51,51 @@ func WrapConsumeEventsChannel[E any, TE Event](tr *Tracer, in chan E, consumer C
 	return out
 }
 
-func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
+// newConsumerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every message consumed through a Tracer with the
+// given config, so per-message calls don't need to rebuild them.
+func newConsumerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 	opts := []tracer.StartSpanOption{
 		instrumentation.ServiceNameWithSource(tr.consumerServiceName, tr.serviceSource),
-		tracer.ResourceName("Consume Topic " + msg.GetTopicPartition().GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, msg.GetTopicPartition().GetPartition()),
-		tracer.Tag("offset", msg.GetTopicPartition().GetOffset()),
 		tracer.Tag(ext.Component, ComponentName(tr.ckgoVersion)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, msg.GetTopicPartition().GetTopic()),
 		tracer.Measured(),
 	}
 	if tr.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.bootstrapServers))
 	}
+	if !math.IsNaN(tr.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
+}
+
+func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
+	// Partition, offset, topic, and the Kafka cluster ID (fetched
+	// asynchronously in the background after the Tracer is created, see
+	// startClusterIDFetch in the calling kafka package) are genuinely
+	// per-message/mutable, so they stay dynamic instead of moving into the
+	// static consumerSpanCfg base. tagFns are user-supplied per-message
+	// callbacks and are dynamic by nature.
+	tags := map[string]any{
+		ext.ResourceName:             "Consume Topic " + msg.GetTopicPartition().GetTopic(),
+		ext.MessagingKafkaPartition:  msg.GetTopicPartition().GetPartition(),
+		"offset":                     msg.GetTopicPartition().GetOffset(),
+		ext.MessagingDestinationName: msg.GetTopicPartition().GetTopic(),
+	}
 	if tr.ClusterID() != "" {
-		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
+		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
 	}
 	if tr.tagFns != nil {
 		for key, tagFn := range tr.tagFns {
-			opts = append(opts, tracer.Tag(key, tagFn(msg)))
+			tags[key] = tagFn(msg)
 		}
 	}
-	if !math.IsNaN(tr.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(tr.consumerSpanCfg),
 	}
 	// kafka supports headers, so try to extract a span context
 	carrier := MessageCarrier{msg: msg}
