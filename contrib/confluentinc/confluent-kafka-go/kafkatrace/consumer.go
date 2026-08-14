@@ -54,6 +54,12 @@ func WrapConsumeEventsChannel[E any, TE Event](tr *Tracer, in chan E, consumer C
 // newConsumerSpanConfig builds the base StartSpanConfig holding the tags
 // that stay constant for every message consumed through a Tracer with the
 // given config, so per-message calls don't need to rebuild them.
+//
+// The analytics rate is deliberately NOT included here: StartConsumeSpan
+// applies it as a separate, later Tag() call instead, so it's guaranteed to
+// run after any WithCustomTag callback and win a key collision with one
+// targeting ext.EventSampleRate — matching pre-migration behavior, where
+// this Tag() call was always appended after the tagFns loop.
 func newConsumerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 	opts := []tracer.StartSpanOption{
 		instrumentation.ServiceNameWithSource(tr.consumerServiceName, tr.serviceSource),
@@ -65,9 +71,6 @@ func newConsumerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 	}
 	if tr.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.bootstrapServers))
-	}
-	if !math.IsNaN(tr.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
 	return tracer.NewStartSpanConfig(opts...)
 }
@@ -97,10 +100,17 @@ func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
 		for key, tagFn := range tr.tagFns {
 			customTags[key] = tagFn(msg)
 		}
-		// Applied last so a custom tag wins over both the cached static
-		// base and the tags above on key collision, matching pre-migration
-		// behavior where custom-tag options were appended last.
+		// Applied after the cached static base so a custom tag wins over
+		// it on key collision, matching pre-migration behavior where
+		// custom-tag options were appended last.
 		opts = append(opts, tracer.WithTags(customTags))
+	}
+	if !math.IsNaN(tr.analyticsRate) {
+		// Applied last, after any custom tag, so the configured analytics
+		// rate always wins a collision with a custom tag targeting
+		// ext.EventSampleRate. Pre-migration, this Tag() call was always
+		// appended after the tagFns loop for the same reason.
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
 	// kafka supports headers, so try to extract a span context
 	carrier := MessageCarrier{msg: msg}
