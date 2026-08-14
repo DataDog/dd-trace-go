@@ -207,6 +207,7 @@ func (t *trace) propagatingTagsLen() int {
 // marshalPropagatingTags so callers can pre-check whether a new tag fits in the budget.
 // Like marshalPropagatingTags, it excludes tracestate/traceparent — those are stored in
 // the same map for W3C propagation but are never written to the x-datadog-tags header.
+// The propagating tags map is bounded (< 10 entries by spec), so linear iteration is cheap.
 func (t *trace) propagatingTagsByteLen() int {
 	n := 0
 	for k, v := range t.loadPropagatingTags() {

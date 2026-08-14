@@ -1383,49 +1383,46 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	} else {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
-	setPropagatingPAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
+	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
 }
 
-// setPropagatingPAgentTags writes the pagent attribution tags onto the trace's propagating tag set.
-// Both tags are trace-scoped, so they are always explicitly set or unset to prevent stale values
-// from a previous sibling from leaking to downstream services (sequential case only — concurrent
-// siblings can still race, same caveat as session_id).
-func setPropagatingPAgentTags(spanCtx *SpanContext, pagentID, name string) {
-	if pagentID == "" {
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentSpanID)
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
-		return
-	}
-	// span_id is always propagated: id-only attribution is still useful to the backend.
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentSpanID, pagentID)
-	if name == "" || !illmobs.AgentNameWireSafe(name) {
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
-		return
-	}
-	// Only propagate the name when it fits within both the x-datadog-tags and W3C tracestate budgets.
-	const tracestateHeaderReserve = 28 // fixed "dd=s:X;p:<hex>" prefix written by composeTracestate
-	used := spanCtx.trace.propagatingTagsByteLen()
-	tsUsed := spanCtx.trace.propagatingTagsTracestateByteLen()
-	// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
-	if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
-		used += 27
-		tsUsed += 23
-	}
-	// Avoid double-counting when replacing an existing pagent_name entry.
-	var nameXTagsLen int
-	if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsPAgentName); prior != "" {
-		nameXTagsLen = used - len(prior) + len(name)
-		tsUsed -= len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(prior) + 4
+// setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's
+// propagating tag set. Tags are trace-scoped so they are always explicitly set or unset,
+// preventing stale values from a sibling from leaking to downstream services.
+func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name string) {
+	if parentAgentSpanID == "" {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentSpanID)
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
 	} else {
-		nameXTagsLen = used + len(keyPropagatedLLMObsPAgentName) + len(name) + 2
-	}
-	nameTracestateLen := len(keyPropagatedLLMObsPAgentName) - len("_dd.p.") + len(name) + 4
-	if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
-		tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsPAgentName, name)
-	} else {
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsPAgentName)
-		log.Debug("LLMObs: pagent name dropped from propagation — x-datadog-tags budget exceeded (name=%q)", name)
+		// Span ID is always propagated; id-only attribution is still useful to the backend.
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentSpanID, parentAgentSpanID)
+		if name == "" || !illmobs.AgentNameWireSafe(name) {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+			return
+		}
+		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
+		used := spanCtx.trace.propagatingTagsByteLen()
+		tsUsed := spanCtx.trace.propagatingTagsTracestateByteLen()
+		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
+		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+			used += 27
+			tsUsed += 23
+		}
+		var nameXTagsLen int
+		if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentAgentName); prior != "" {
+			nameXTagsLen = used - len(prior) + len(name)
+			tsUsed -= len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(prior) + 4
+		} else {
+			nameXTagsLen = used + len(keyPropagatedLLMObsParentAgentName) + len(name) + 2
+		}
+		nameTracestateLen := len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(name) + 4
+		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
+			tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
+			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
+		} else {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+			log.Debug("LLMObs: parent agent name dropped from propagation — x-datadog-tags budget exceeded (name=%q)", name)
+		}
 	}
 }
 
@@ -1496,10 +1493,11 @@ const (
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
 	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
-	// keyPropagatedLLMObsPAgentSpanID contains the propagated parent-agent span ID.
-	keyPropagatedLLMObsPAgentSpanID = "_dd.p.llmobs_pagent_span_id"
-	// keyPropagatedLLMObsPAgentName contains the propagated parent-agent name.
-	keyPropagatedLLMObsPAgentName = "_dd.p.llmobs_pagent_name"
+	// keyPropagatedLLMObsParentAgentSpanID contains the propagated parent-agent span ID.
+	// The wire key uses the abbreviated form "pagent" per the cross-SDK propagation protocol.
+	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"
+	// keyPropagatedLLMObsParentAgentName contains the propagated parent-agent name.
+	keyPropagatedLLMObsParentAgentName = "_dd.p.llmobs_pagent_name"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"
