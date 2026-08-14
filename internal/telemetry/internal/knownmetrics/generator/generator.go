@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/format"
 	"net/http"
 	"net/url"
 	"os"
@@ -87,17 +88,24 @@ func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames
 		return strings.Compare(i.Name, j.Name)
 	})
 
-	fp, err := os.Create(localPath)
-	if err != nil {
-		return err
-	}
-	defer fp.Close()
-
+	var rendered bytes.Buffer
 	codegen := template.Must(template.New("").Parse(codegenTemplate))
-	return codegen.Execute(fp, map[string]any{
+	if err := codegen.Execute(&rendered, map[string]any{
 		"symbolName": symbolName,
 		"metrics":    metricNames,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// The template is not gofmt-clean on its own, so format the rendered source
+	// before writing it out. Otherwise every run rewrites the whole file and the
+	// real changes are lost in a sea of whitespace noise.
+	formatted, err := format.Source(rendered.Bytes())
+	if err != nil {
+		return fmt.Errorf("formatting generated source for %s: %w", localPath, err)
+	}
+
+	return os.WriteFile(localPath, formatted, 0644)
 }
 
 func getCommonMetricNames(input map[string]any) []knownmetrics.Declaration {
