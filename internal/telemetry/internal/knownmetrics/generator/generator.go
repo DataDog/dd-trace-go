@@ -30,8 +30,8 @@ import (
 // This represents the base64-encoded URL of api.github.com to download the configuration file.
 // This can be easily decoded manually, but it is encoded to prevent the URL from being scanned by bots.
 const (
-	commonMetricsURL = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9EYXRhRG9nL2RkLWdvL2NvbnRlbnRzL3RyYWNlL2FwcHMvdHJhY2VyLXRlbGVtZXRyeS1pbnRha2UvdGVsZW1ldHJ5LW1ldHJpY3Mvc3RhdGljL2NvbW1vbl9tZXRyaWNzLmpzb24="
-	goMetricsURL     = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9EYXRhRG9nL2RkLWdvL2NvbnRlbnRzL3RyYWNlL2FwcHMvdHJhY2VyLXRlbGVtZXRyeS1pbnRha2UvdGVsZW1ldHJ5LW1ldHJpY3Mvc3RhdGljL2dvbGFuZ19tZXRyaWNzLmpzb24="
+	commonMetricsURL = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9kZG9naHEvZGQtZ28vY29udGVudHMvdHJhY2UvYXBwcy90cmFjZXItdGVsZW1ldHJ5LWludGFrZS90ZWxlbWV0cnktbWV0cmljcy9zdGF0aWMvY29tbW9uX21ldHJpY3MuanNvbg=="
+	goMetricsURL     = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9kZG9naHEvZGQtZ28vY29udGVudHMvdHJhY2UvYXBwcy90cmFjZXItdGVsZW1ldHJ5LWludGFrZS90ZWxlbWV0cnktbWV0cmljcy9zdGF0aWMvZ29sYW5nX21ldHJpY3MuanNvbg=="
 )
 
 //go:embed template.tmpl
@@ -61,6 +61,10 @@ func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames
 	}
 
 	defer response.Body.Close()
+
+	if response.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("%s: %s (the dd-go repository is private to the ddoghq organization; make sure the token you provide is authorized for it)", response.Status, remoteURL)
+	}
 
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %s", response.Status)
