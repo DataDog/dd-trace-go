@@ -55,6 +55,35 @@ type params struct {
 	network string
 	host    string
 	port    string
+	// spanCfg holds the tags that are constant for every command issued
+	// through this connection (component, span kind, db system, service
+	// name, analytics rate, and the network/host/port of the dialled
+	// address). It is built once per connection (in DialContext/
+	// DialURLContext) and merged into each request via WithStartSpanConfig,
+	// instead of rebuilding a Tag() closure per tag and re-setting the same
+	// three tags via SetTag on every call.
+	spanCfg *tracer.StartSpanConfig
+}
+
+// newSpanConfig builds the base StartSpanConfig holding the tags that stay
+// constant for every command issued through a connection with the given
+// dial config and network/host/port, so per-command calls don't need to
+// rebuild them.
+func newSpanConfig(cfg *dialConfig, network, host, port string) *tracer.StartSpanConfig {
+	opts := []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeRedis),
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+		tracer.Tag("out.network", network),
+		tracer.Tag(ext.TargetPort, port),
+		tracer.Tag(ext.TargetHost, host),
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
 }
 
 // parseOptions parses a set of arbitrary options (which can be of type redis.DialOption
@@ -111,7 +140,9 @@ func DialContext(ctx context.Context, network, address string, options ...interf
 	if err != nil {
 		return nil, err
 	}
-	tc := wrapConn(c, &params{cfg, network, host, port})
+	p := &params{config: cfg, network: network, host: host, port: port}
+	p.spanCfg = newSpanConfig(cfg, network, host, port)
+	tc := wrapConn(c, p)
 	return tc, nil
 }
 
@@ -144,26 +175,18 @@ func DialURLContext(ctx context.Context, rawurl string, options ...interface{}) 
 	}
 	network := "tcp"
 	c, err := redis.DialURLContext(ctx, rawurl, dialOpts...)
-	tc := wrapConn(c, &params{cfg, network, host, port})
+	p := &params{config: cfg, network: network, host: host, port: port}
+	p.spanCfg = newSpanConfig(cfg, network, host, port)
+	tc := wrapConn(c, p)
 	return tc, err
 }
 
-// newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
+// newChildSpan creates a span inheriting from the given context. Every tag it
+// sets (component, span kind, db system, service name, analytics rate,
+// network/host/port) is constant for the lifetime of the connection, so the
+// span starts directly from p.spanCfg with no per-call tag map.
 func newChildSpan(ctx context.Context, p *params) *tracer.Span {
-	opts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeRedis),
-		instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
-	}
-	if !math.IsNaN(p.config.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
-	}
-	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
-	span.SetTag("out.network", p.network)
-	span.SetTag(ext.TargetPort, p.port)
-	span.SetTag(ext.TargetHost, p.host)
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, tracer.WithStartSpanConfig(p.spanCfg))
 	return span
 }
 
