@@ -306,17 +306,29 @@ Every `tracer.Tag(k, v)` call (and the wrappers built on it: `ServiceName`, `Res
 - **Tags that differ on every call** (a resource name, a message offset, a Kafka partition, ...) cannot be hoisted into that cached config — build them where the call happens. If it's a single dynamic tag, plain `Tag(k, v)` is simplest. If a call site sets **two or more** dynamic tags, gather them into a `map[string]any` and set them in one call with `tracer.WithTags(tags)` instead of one `Tag()` call per entry. `WithTags` copies the map's entries into the span's tag map — it never retains or mutates the map you pass in, so the same map can be safely reused or discarded by the caller.
 - Do **not** reach for `NewStartSpanConfig` as a substitute for `WithTags` on the per-call path. `NewStartSpanConfig` is a build-once-reuse-many tool (see its doc comment); constructing one fresh on every call adds a `StartSpanConfig` allocation on top of the same per-tag closures `WithTags` avoids, for no benefit (measured below).
 
-**Ordering is a correctness requirement, not a style preference.** `Tag`/`WithTags` calls must precede `WithStartSpanConfig(cachedBase)` in the option list, never follow it:
+**Ordering is a correctness requirement, not a style preference.** At least one `Tag`/`WithTags` call must precede `WithStartSpanConfig(cachedBase)` in the option list — never call `WithStartSpanConfig(cachedBase)` as the *first* tag-setting option:
 
 ```go
-// Correct: dynamic tags first, cached base second.
+// Correct: a dynamic tag call runs before the cached base.
 tracer.StartSpanFromContext(ctx, "op.name",
     tracer.WithTags(map[string]any{ext.ResourceName: name}),
     tracer.WithStartSpanConfig(cachedBase),
 )
 ```
 
-`WithStartSpanConfig`'s tag merge *aliases* the base config's `Tags` map onto the span's live config when that config doesn't have one yet, instead of copying it. If `WithStartSpanConfig(cachedBase)` runs first, the live config's tags map *is* `cachedBase`'s map, and the next `Tag`/`WithTags` call mutates the cached, shared base in place — corrupting every future span built from it. `TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst` in `ddtrace/tracer/option_test.go` reproduces this concretely.
+`WithStartSpanConfig`'s tag merge *aliases* the base config's `Tags` map onto the span's live config when that config doesn't have one yet, instead of copying it. If `WithStartSpanConfig(cachedBase)` is the first tag-setting option, the live config's tags map *is* `cachedBase`'s map, and the next `Tag`/`WithTags` call mutates the cached, shared base in place — corrupting every future span built from it. `TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst` in `ddtrace/tracer/option_test.go` reproduces this concretely.
+
+Once a `Tag`/`WithTags` call has run first, the live tags map is a fresh, distinct map, and `WithStartSpanConfig(cachedBase)` copies the base into it instead of aliasing it. From that point on, a *further* `Tag`/`WithTags` call is both safe and useful: it can run *after* `WithStartSpanConfig(cachedBase)` to override a cached tag on key collision, which is otherwise impossible, since the cached base wins collisions during its own merge. This is how per-message custom tags (`WithConsumerCustomTag`/`WithProducerCustomTag` in `contrib/IBM/sarama` and `contrib/confluentinc/confluent-kafka-go/kafkatrace`) are guaranteed to win over the cached static tags:
+
+```go
+// Also correct: a second WithTags call after the cached base, so a
+// caller-supplied custom tag overrides a same-key cached tag.
+tracer.StartSpanFromContext(ctx, "op.name",
+    tracer.WithTags(dynamicTags),        // non-nil tags map before the base
+    tracer.WithStartSpanConfig(cachedBase),
+    tracer.WithTags(customTags),         // wins over cachedBase on collision
+)
+```
 
 **Measured cost** (`BenchmarkTagsVsWithTags` in `ddtrace/tracer/option_test.go`; allocs/op — the stable, hardware-independent signal, unlike ns/op which was noisy on the measuring machine). `n` is the number of dynamic tags set per call, taken from real contrib call sites: n=1 is rueidis/valkey's default case, n=2 is the same with their opt-in raw-command tag, n=4 is franz-go/kafka-go/sarama's consumer spans, n=6 is mongo-driver's `Started` handler with query capture:
 
