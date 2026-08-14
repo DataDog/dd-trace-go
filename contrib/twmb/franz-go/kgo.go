@@ -41,6 +41,15 @@ type tracingHook struct {
 	client        *kgo.Client
 	activeSpans   []*tracer.Span
 	activeSpansMu sync.Mutex
+	// consumerSpanCfg and producerSpanCfg hold the tags that are constant
+	// for every record consumed/produced through this hook (component,
+	// span kind, messaging system, service name, measured). They are built
+	// once when the hook is created (see newConsumerSpanConfig/
+	// newProducerSpanConfig) and merged into each record's span via
+	// WithStartSpanConfig, instead of rebuilding a Tag() closure per tag on
+	// every record.
+	consumerSpanCfg *tracer.StartSpanConfig
+	producerSpanCfg *tracer.StartSpanConfig
 }
 
 func newTracingHook(opts ...Option) *tracingHook {
@@ -49,7 +58,11 @@ func newTracingHook(opts ...Option) *tracingHook {
 	for _, o := range opts {
 		o.apply(&cfg)
 	}
-	return &tracingHook{cfg: cfg}
+	return &tracingHook{
+		cfg:             cfg,
+		consumerSpanCfg: newConsumerSpanConfig(&cfg),
+		producerSpanCfg: newProducerSpanConfig(&cfg),
+	}
 }
 
 // WithTracing creates return a kgo.Hook enabling
@@ -135,18 +148,30 @@ func (h *tracingHook) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 	h.activeSpansMu.Unlock()
 }
 
-func (h *tracingHook) startConsumeSpan(ctx context.Context, r *kgo.Record) *tracer.Span {
-	opts := []tracer.StartSpanOption{
-		instrumentation.ServiceNameWithSource(h.cfg.consumerServiceName, h.cfg.serviceSource),
-		tracer.ResourceName("Consume Topic " + r.Topic),
+// newConsumerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every record consumed through a hook with the
+// given config, so per-record calls don't need to rebuild them.
+func newConsumerSpanConfig(cfg *config) *tracer.StartSpanConfig {
+	return tracer.NewStartSpanConfig(
+		instrumentation.ServiceNameWithSource(cfg.consumerServiceName, cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, r.Partition),
-		tracer.Tag("offset", r.Offset),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, r.Topic),
 		tracer.Measured(),
+	)
+}
+
+func (h *tracingHook) startConsumeSpan(ctx context.Context, r *kgo.Record) *tracer.Span {
+	tags := map[string]any{
+		ext.ResourceName:             "Consume Topic " + r.Topic,
+		ext.MessagingKafkaPartition:  r.Partition,
+		"offset":                     r.Offset,
+		ext.MessagingDestinationName: r.Topic,
+	}
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(h.consumerSpanCfg),
 	}
 
 	carrier := newKafkaHeadersCarrier(r)
@@ -165,15 +190,27 @@ func (h *tracingHook) startConsumeSpan(ctx context.Context, r *kgo.Record) *trac
 	return span
 }
 
-func (h *tracingHook) startProduceSpan(ctx context.Context, r *kgo.Record) *tracer.Span {
-	opts := []tracer.StartSpanOption{
-		instrumentation.ServiceNameWithSource(h.cfg.producerServiceName, h.cfg.serviceSource),
-		tracer.ResourceName("Produce Topic " + r.Topic),
+// newProducerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every record produced through a hook with the
+// given config, so per-record calls don't need to rebuild them.
+func newProducerSpanConfig(cfg *config) *tracer.StartSpanConfig {
+	return tracer.NewStartSpanConfig(
+		instrumentation.ServiceNameWithSource(cfg.producerServiceName, cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, r.Topic),
+	)
+}
+
+func (h *tracingHook) startProduceSpan(ctx context.Context, r *kgo.Record) *tracer.Span {
+	tags := map[string]any{
+		ext.ResourceName:             "Produce Topic " + r.Topic,
+		ext.MessagingDestinationName: r.Topic,
+	}
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(h.producerSpanCfg),
 	}
 
 	carrier := newKafkaHeadersCarrier(r)
