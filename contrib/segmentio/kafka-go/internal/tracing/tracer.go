@@ -9,6 +9,7 @@ import (
 	"math"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
@@ -28,6 +29,15 @@ type Tracer struct {
 	dataStreamsEnabled  bool
 	kafkaCfg            KafkaConfig
 	clusterID           atomic.Value // +checkatomic
+	// consumerSpanCfg and producerSpanCfg hold the tags that are constant
+	// for every message consumed/produced through this Tracer (component,
+	// span kind, messaging system, service name, bootstrap servers, and any
+	// static analytics rate). They are built once the options have been
+	// applied (see newConsumerSpanConfig/newProducerSpanConfig) and merged
+	// into each message span via WithStartSpanConfig, instead of rebuilding
+	// a Tag() closure per tag on every message.
+	consumerSpanCfg *tracer.StartSpanConfig
+	producerSpanCfg *tracer.StartSpanConfig
 }
 
 // Option describes options for the Kafka integration.
@@ -49,6 +59,8 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	for _, opt := range opts {
 		opt.apply(tr)
 	}
+	tr.consumerSpanCfg = newConsumerSpanConfig(tr)
+	tr.producerSpanCfg = newProducerSpanConfig(tr)
 	return tr
 }
 
