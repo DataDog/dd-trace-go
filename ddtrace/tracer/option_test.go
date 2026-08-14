@@ -2230,6 +2230,46 @@ func TestWithTags(t *testing.T) {
 		_, ok = dynamic["extra"]
 		assert.False(ok)
 	})
+
+	t.Run("snapshots_input_at_call_time", func(t *testing.T) {
+		var assert = assert.New(t)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		tags := map[string]any{"key": "original"}
+		opt := WithTags(tags)
+		tags["key"] = "mutated-after-call"
+
+		s := tracer.StartSpan("test", opt)
+		defer s.Finish()
+
+		v, _ := s.meta.Get("key")
+		assert.Equal("original", v)
+	})
+
+	t.Run("empty_tags_still_prevents_base_aliasing", func(t *testing.T) {
+		var assert = assert.New(t)
+		base := NewStartSpanConfig(Tag("static1", "s1"))
+
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		s := tracer.StartSpan("test",
+			WithTags(map[string]any{}),
+			WithStartSpanConfig(base),
+			Tag("extra", "e1"),
+		)
+		defer s.Finish()
+
+		// base.Tags must remain untouched even when the preceding WithTags call
+		// carried an empty map — it must still force a non-nil, distinct Tags
+		// map before WithStartSpanConfig runs.
+		assert.Len(base.Tags, 1)
+		_, ok := base.Tags["extra"]
+		assert.False(ok)
+	})
 }
 
 // TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst documents a real

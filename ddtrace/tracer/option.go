@@ -1220,22 +1220,31 @@ func Tag(k string, v any) StartSpanOption {
 }
 
 // WithTags sets the given key/value pairs as tags on the started Span in a
-// single call. It copies the entries into the span's tag map and never
-// retains or mutates the provided map, so the same map may be safely reused
-// across spans. It is equivalent to calling Tag for every entry of tags, but
-// avoids allocating one closure per tag, which matters when a caller needs to
-// set several tags per span on a hot path (e.g. per-request contrib tags).
+// single call. It clones tags at the moment WithTags is called: mutating
+// the map afterward does not change what gets applied, and the same map may
+// be safely reused (or mutated) by the caller once WithTags returns. It is
+// equivalent to calling Tag for every entry of tags, but avoids allocating
+// one closure per tag, which matters when a caller needs to set several
+// tags per span on a hot path (e.g. per-request contrib tags).
 //
 // When used together with WithStartSpanConfig, place WithTags (and any Tag
 // call) before WithStartSpanConfig in the option list: WithStartSpanConfig
 // aliases the base config's Tags map when no per-call tags have been set
 // yet, so a tag write after it would mutate the shared base config's map.
 func WithTags(tags map[string]any) StartSpanOption {
+	// Snapshot immediately, never nil even for a nil/empty input, so a
+	// later WithStartSpanConfig(base) in the same option list always sees a
+	// non-nil, distinct Tags map and merges into it (copy) instead of
+	// aliasing base's map — see
+	// TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst.
+	snapshot := make(map[string]any, len(tags))
+	maps.Copy(snapshot, tags)
 	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = make(map[string]any, len(tags))
+			cfg.Tags = snapshot
+			return
 		}
-		maps.Copy(cfg.Tags, tags)
+		maps.Copy(cfg.Tags, snapshot)
 	}
 }
 
