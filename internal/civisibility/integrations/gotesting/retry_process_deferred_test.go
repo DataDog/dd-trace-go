@@ -760,7 +760,7 @@ func TestDeferredProcessRetryLeaseFailureAbortsAdmission(t *testing.T) {
 		identity:                  identity,
 		isFlakyTestRetriesEnabled: true,
 		test:                      newProcessRetryRecordingTestForTesting(identity.FullName),
-		retryAttemptFinalizer:     func(retryAttemptResult) {},
+		retryAttemptFinalizer:     func(*retryAttemptResult, bool) {},
 	}
 	coordinator := newProcessRetryCoordinatorForTesting(false)
 	execOpts := &executionOptions{
@@ -1258,7 +1258,7 @@ func newDeferredProcessRetryPendingGroupForTesting(
 		isFlakyTestRetriesEnabled: true,
 		test:                      event,
 	}
-	execMeta.retryAttemptFinalizer = func(retryAttemptResult) {}
+	execMeta.retryAttemptFinalizer = func(*retryAttemptResult, bool) {}
 	coordinator := newProcessRetryCoordinatorForTesting(false, runners...)
 	options := &runTestWithRetryOptions{
 		t:                       t,

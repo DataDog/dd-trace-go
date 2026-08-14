@@ -55,7 +55,7 @@ func GetTest(t *testing.T) *T {
 // Run may be called simultaneously from multiple goroutines, but all such calls
 // must return before the outer test function for t returns.
 func (ddt *T) Run(name string, f func(*testing.T)) bool {
-	f = instrumentTestingTFunc(f)
+	f = instrumentTestingTFuncWithOptions(f, true)
 	t := (*testing.T)(ddt)
 	return t.Run(name, f)
 }

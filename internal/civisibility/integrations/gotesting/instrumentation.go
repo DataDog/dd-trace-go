@@ -78,7 +78,7 @@ type (
 		isFreshRetryAttemptDescendant bool
 		suppressCoverageCollection    bool
 		suppressUserTestBody          bool
-		retryAttemptFinalizer         func(retryAttemptResult)
+		retryAttemptFinalizer         func(*retryAttemptResult, bool)
 		deferredRetryEvent            *deferredProcessRetryEvent
 		quarantinedRaceProcess        *quarantinedRaceProcessContext
 		quarantinedRaceChild          *quarantinedRaceChildState
@@ -87,6 +87,7 @@ type (
 		processRetryManagedDescendant bool
 		processRetryParallelPause     func() func()
 		processRetryParallelPaused    atomic.Bool
+		parallelTiming                *parallelTimingState
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
