@@ -98,7 +98,16 @@ func (p *Provider) GetStringWithOrigin(key string, def string) (string, telemetr
 }
 
 func (p *Provider) GetStringWithValidator(key string, def string, validate func(string) bool) string {
-	return get(p, key, def, func(v string) (string, bool) {
+	v, _ := p.GetStringWithValidatorOrigin(key, def, validate)
+	return v
+}
+
+// GetStringWithValidatorOrigin is like GetStringWithValidator but also returns
+// the origin of the winning configuration source. Use this when the caller
+// needs to know where the value came from (e.g. to distinguish a default from
+// an explicit user request).
+func (p *Provider) GetStringWithValidatorOrigin(key, def string, validate func(string) bool) (string, telemetry.Origin) {
+	return getWithOrigin(p, key, def, func(v string) (string, bool) {
 		if validate != nil && !validate(v) {
 			return "", false
 		}
