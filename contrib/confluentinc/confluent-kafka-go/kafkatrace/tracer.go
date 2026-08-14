@@ -85,6 +85,15 @@ type Tracer struct {
 	ckgoVersion         CKGoVersion
 	librdKafkaVersion   int
 	dsmTagCache         dsmEdgeTagCache
+	// consumerSpanCfg and producerSpanCfg hold the tags that are constant
+	// for every message consumed/produced through this Tracer (component,
+	// span kind, messaging system, service name, bootstrap servers, and any
+	// static analytics rate). They are built once the options have been
+	// applied (see newConsumerSpanConfig/newProducerSpanConfig) and merged
+	// into each message span via WithStartSpanConfig, instead of rebuilding
+	// a Tag() closure per tag on every message.
+	consumerSpanCfg *tracer.StartSpanConfig
+	producerSpanCfg *tracer.StartSpanConfig
 }
 
 func (tr *Tracer) DSMEnabled() bool {
@@ -143,6 +152,8 @@ func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVers
 		}
 		opt.apply(tr)
 	}
+	tr.consumerSpanCfg = newConsumerSpanConfig(tr)
+	tr.producerSpanCfg = newProducerSpanConfig(tr)
 	return tr
 }
 
