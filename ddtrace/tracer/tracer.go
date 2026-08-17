@@ -688,8 +688,25 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 
 // refreshAgentFeatures fetches a fresh snapshot from /info and atomically
 // updates the dynamic agent capabilities. Static fields that are baked into
-// components at startup (transport URL, statsd address, obfuscator config, etc.)
-// are preserved from the current snapshot so a poll can never change them.
+// components at startup (statsd address, obfuscator config, etc.) are
+// preserved from the current snapshot so a poll can never change them.
+//
+// The trace-protocol decision is NOT part of that snapshot: it lives in
+// config.protocolState (see trace_protocol_state.go), a monotone lattice that
+// only ever moves protoUnknown -> protoV1 -> protoV04 (terminal). A poll's
+// evidence here and a rejected v1 send's evidence (see
+// (*agentTraceWriter).downgradeAfterRejectedSend) both feed the same state
+// through advanceTraceProtocolState, so however the poll goroutine and a send
+// goroutine interleave, they converge on the same result — there is no
+// streak or hysteresis to reason about.
+//
+// This also means re-upgrading to v1 after a downgrade requires a process
+// restart, not just a healthy poll. A poll-count-based hysteresis was tried
+// and rejected: /info polls and trace sends are independent requests that a
+// load-balanced fleet can route to different backends, so no number of
+// consecutive positive polls proves anything about where the next send
+// lands. Sticking to v0.4 is the fail-safe direction, since it is
+// universally accepted; see doc.go for the resulting trade-off.
 func (t *tracer) refreshAgentFeatures() {
 	ctx, cancel := gocontext.WithCancel(gocontext.Background())
 	defer cancel()
@@ -702,32 +719,52 @@ func (t *tracer) refreshAgentFeatures() {
 		}
 	}()
 	newFeatures, err := fetchAgentFeatures(ctx, t.config.internalConfig.AgentURL(), t.config.httpClient)
-	if err != nil {
-		if !errors.Is(err, errAgentFeaturesNotSupported) {
-			log.Debug("agent info poll failed: %s", err.Error())
-		}
-		return // keep last-known-good
+	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
+		log.Debug("agent info poll failed: %s", err.Error())
+		// Keep last-known-good; a network or decode error is never evidence that
+		// v1 became unavailable.
+		return
 	}
-	// Atomically graft the startup-frozen static fields from the current
-	// snapshot onto the fresh dynamic snapshot. update() handles the CAS
-	// loop in case a concurrent store races this write. fn must be a pure
-	// transform — work on a local copy f so retries start fresh.
-	t.config.agent.update(func(current agentFeatures) agentFeatures {
-		// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
-		// must be overwritten from current or cloned below to avoid shared mutable
-		// backing storage across CAS retries.
-		f := newFeatures
-		f.v1ProtocolAvailable = current.v1ProtocolAvailable
-		f.StatsdPort = current.StatsdPort
-		f.evpProxyV2 = current.evpProxyV2
-		f.metaStructAvailable = current.metaStructAvailable
-		f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
-		f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
-		f.defaultEnv = current.defaultEnv
-		f.reachable = current.reachable
-		f.hasTelemetryProxy = current.hasTelemetryProxy
-		return f
-	})
+	if err != nil {
+		// errAgentFeaturesNotSupported means the agent returned 404 on /info,
+		// i.e. it doesn't support /info at all. Unlike a generic fetch error,
+		// this IS evidence v1 is unavailable: /v1.0/traces support postdates
+		// /info support, so an agent without /info cannot serve v1 either.
+		// Leave every other dynamic field at its last-known-good value — we
+		// have no fresh snapshot to refresh them from.
+		t.config.advanceTraceProtocolState(protoV04)
+	} else {
+		if newFeatures.v1TracesAdvertised {
+			t.config.advanceTraceProtocolState(protoV1)
+		} else {
+			t.config.advanceTraceProtocolState(protoV04)
+		}
+		// Atomically graft the startup-frozen static fields from the current
+		// snapshot onto the fresh dynamic snapshot. update() handles the CAS
+		// loop in case a concurrent store races this write. fn must be a pure
+		// transform — work on a local copy f so retries start fresh.
+		t.config.agent.update(func(current agentFeatures) agentFeatures {
+			// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
+			// must be overwritten from current or cloned below to avoid shared mutable
+			// backing storage across CAS retries.
+			f := newFeatures
+			f.StatsdPort = current.StatsdPort
+			f.evpProxyV2 = current.evpProxyV2
+			f.metaStructAvailable = current.metaStructAvailable
+			f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
+			f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
+			f.defaultEnv = current.defaultEnv
+			f.reachable = current.reachable
+			f.hasTelemetryProxy = current.hasTelemetryProxy
+			return f
+		})
+	}
+	proto := t.config.effectiveTraceProtocol()
+	if t.config.internalConfig.ReportEffectiveTraceProtocol(proto) {
+		protoStr := internalconfig.TraceProtocolVersionString(proto)
+		log.Info("trace protocol changed to %s", protoStr)
+		t.statsd.Incr("datadog.tracer.trace_protocol_changed", []string{"to:" + protoStr}, 1)
+	}
 }
 
 // pollAgentInfo polls the agent /info endpoint at the given interval until the
