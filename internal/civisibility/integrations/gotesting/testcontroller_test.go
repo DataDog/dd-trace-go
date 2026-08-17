@@ -52,6 +52,7 @@ var processRetryUnitTestPrefixes = []string{
 	"TestWriteProcessRetry",
 	"TestFinalizeProcessRetry",
 	"TestCombineProcessRetry",
+	"TestQuarantinedRace",
 }
 
 const retryParityUnitTestPrefix = "TestProcessRetryParity"
@@ -107,6 +108,8 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv("TestIntelligentTestRunnerWithCoverageBackfill", false) {
 		fmt.Printf(scenarioStarted, "TestIntelligentTestRunnerWithCoverageBackfill")
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
+	} else if quarantinedRaceIsolationFixtureSelected() {
+		runQuarantinedRaceIsolationFixture(m)
 	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
 		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
 		os.Exit(runProcessRetryChild(m))
@@ -1621,6 +1624,7 @@ func setUpHTTPServer(
 				TestsSkipping:           itrEnabled,
 				KnownTestsEnabled:       enableKnownTests,
 				ImpactedTestsEnabled:    impactedTests,
+				CodeCoverage:            quarantinedRaceIsolationFixtureSelected(),
 			}
 
 			response.Data.Attributes.TestManagement.Enabled = testManagement

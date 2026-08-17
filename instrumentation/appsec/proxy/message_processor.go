@@ -172,9 +172,13 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 	}
 
 	blocked := processBody(reqState.Context, reqState.requestBuffer, req.GetBody(), req.GetEndOfStream(), appsec.MonitorParsedHTTPBody, "request")
+	if reqState.requestBuffer.analyzed {
+		// The WAF analysis is synchronous, so the retained prefix is no longer needed.
+		reqState.requestBuffer.buffer = nil
+	}
 	if blocked != nil && !mp.BlockingUnavailable {
 		mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
-		actionOpts := reqState.BlockAction()
+		actionOpts := reqState.blockActionLocked()
 		if err := mp.BlockMessageFunc(reqState.Context, actionOpts); err != nil {
 			return fmt.Errorf("error creating block message: %w", err)
 		}
@@ -220,15 +224,16 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 
 	// Run the waf on the response headers only when we are sure to not receive a response body
 	if res.GetEndOfStream() || !mp.isBodySupported(reqState.wrappedResponseWriter.Header().Get("Content-Type")) {
-		reqState.Close()
+		_ = reqState.closeLocked()
 		if !mp.BlockingUnavailable && reqState.State == MessageTypeBlocked {
-			if err := mp.BlockMessageFunc(reqState.Context, reqState.BlockAction()); err != nil {
+			if err := mp.BlockMessageFunc(reqState.Context, reqState.blockActionLocked()); err != nil {
 				return fmt.Errorf("error creating block message: %w", err)
 			}
 			return io.EOF
 		}
 
 		mp.instr.Logger().Debug("message_processor: finishing request with status code: %v\n", reqState.fakeResponseWriter.status)
+		// No body message is in flight, so the ext_proc stream can close after response headers.
 		return io.EOF
 	}
 
@@ -254,20 +259,43 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 	if mp.computedBodyParsingSizeLimit.Load() <= 0 || reqState.State != MessageTypeResponseBody {
 		mp.instr.Logger().Error("message_processor: the body parsing has been wrongly configured. " +
 			"Please refer to the official documentation for guidance on the proper settings or contact support.")
+		reqState.finalizeResponse()
+		if resp.GetEndOfStream() {
+			_ = reqState.closeLocked()
+		}
+		if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
+			return fmt.Errorf("error creating continue response for response body: %w", err)
+		}
+		if !resp.GetEndOfStream() {
+			return nil
+		}
 		return io.EOF
 	}
 
 	blocked := processBody(reqState.Context, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody, "response")
 	if reqState.responseBuffer.analyzed {
-		reqState.Close() // Call Close to ensure the response headers are analyzed
+		// The WAF analysis is synchronous, so the retained prefix is no longer needed.
+		reqState.responseBuffer.buffer = nil
+		reqState.finalizeResponse()
 
 		if (reqState.State == MessageTypeBlocked || blocked != nil) && !mp.BlockingUnavailable {
 			mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
-			if err := mp.BlockMessageFunc(reqState.Context, reqState.BlockAction()); err != nil {
+			if err := mp.BlockMessageFunc(reqState.Context, reqState.blockActionLocked()); err != nil {
 				return fmt.Errorf("error creating block message: %w", err)
 			}
+			return io.EOF
 		}
-		return io.EOF
+		if resp.GetEndOfStream() {
+			_ = reqState.closeLocked()
+		}
+
+		if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
+			return fmt.Errorf("error creating continue response for response body: %w", err)
+		}
+		if resp.GetEndOfStream() {
+			return io.EOF
+		}
+		return nil
 	}
 
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody})

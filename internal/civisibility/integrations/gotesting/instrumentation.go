@@ -47,6 +47,7 @@ type (
 		isEarlyFlakeDetectionEnabled bool // flag to tag if Early Flake Detection is enabled for this execution
 		isFlakyTestRetriesEnabled    bool // flag to tag if Flaky Test Retries is enabled for this execution
 		isItrForcedRun               bool // flag to preserve ITR forced-run state across parent-owned process retries
+		isItrSkipped                 bool
 		flakyRetryBudgetReservation  *flakyRetryBudgetReservation
 		isQuarantined                bool          // flag to check if the test is quarantined
 		isDisabled                   bool          // flag to check if the test is disabled
@@ -79,6 +80,13 @@ type (
 		suppressUserTestBody          bool
 		retryAttemptFinalizer         func(retryAttemptResult)
 		deferredRetryEvent            *deferredProcessRetryEvent
+		quarantinedRaceProcess        *quarantinedRaceProcessContext
+		quarantinedRaceChild          *quarantinedRaceChildState
+		quarantinedRaceReplay         atomic.Pointer[quarantinedRaceReplayState]
+		processRetryAttemptOwner      string
+		processRetryManagedDescendant bool
+		processRetryParallelPause     func() func()
+		processRetryParallelPaused    atomic.Bool
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -131,6 +139,7 @@ type (
 		mRunInvocations            *atomic.Uint64
 		processRetryLaunchTemplate *processRetryLaunchBaseline
 		processRetryCoordinator    *processRetryCoordinator
+		quarantinedRaceProcess     *quarantinedRaceProcessContext
 		efdFaultySessionGuard      earlyFlakeDetectionFaultySession
 		retryAttemptObserveOutput  bool
 	}
@@ -688,6 +697,17 @@ func applyAdditionalFeaturesToTestFunc(
 
 	// get the pointer to use the reference in the wrapper
 	ptrMeta := &meta
+	quarantineProcess := wrapperOpts.quarantinedRaceProcess
+	if quarantineProcess == nil && parentExecMeta != nil {
+		quarantineProcess = parentExecMeta.quarantinedRaceProcess
+	}
+	if selection.path == additionalFeaturePathRetryWrapper && ptrMeta.isQuarantined && quarantineProcess != nil {
+		wrapper := func(t *testing.T) {
+			runQuarantinedRaceProcessIsolation(t, testInfo, parentExecMeta, ptrMeta, quarantineProcess)
+		}
+		setInstrumentationMetadata(runtime.FuncForPC(reflect.ValueOf(wrapper).Pointer()), &instrumentationMetadata{IsInternal: true})
+		return wrapper
+	}
 
 	switch selection.path {
 	case additionalFeaturePathNone:
@@ -1274,6 +1294,10 @@ func runTestCleanup(t *testing.T, result *testCleanupResult) {
 
 func runTestCleanupWithOptions(t *testing.T, result *testCleanupResult, neutralizeNativeParallelRelease bool) {
 	completeParallelSubtests(t, getTestPrivateFields(t), neutralizeNativeParallelRelease)
+	runTestCleanupCallbacks(t, result)
+}
+
+func runTestCleanupCallbacks(t *testing.T, result *testCleanupResult) {
 	result.ran = true
 	done := make(chan struct{})
 	go func() {
@@ -1389,6 +1413,9 @@ func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, origin
 	execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || originalExecMeta.isFlakyTestRetriesEnabled
 	if execMeta.flakyRetryBudgetReservation == nil {
 		execMeta.flakyRetryBudgetReservation = originalExecMeta.flakyRetryBudgetReservation
+	}
+	if execMeta.quarantinedRaceProcess == nil {
+		execMeta.quarantinedRaceProcess = originalExecMeta.quarantinedRaceProcess
 	}
 	execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
 	execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
