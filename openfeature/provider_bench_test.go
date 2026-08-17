@@ -556,8 +556,9 @@ func BenchmarkFlagEvaluationOTelPlusEVPParallel(b *testing.B) {
 // DDEvaluator.copyPrunedContext). The sub-benchmarks span the common case and the adversarial
 // inputs the inline caps exist to bound: a 10k-element list, a 10k-property structure, a
 // 100-deep chain, and a cyclic structure. The adversarial sub-benchmarks demonstrate that the
-// per-evaluation cost is proportional to what is KEPT (≤256 fields × ≤256 width × depth 4),
-// not to what the caller supplied — the whole point of the inline-bounding contract.
+// per-evaluation cost is bounded by the KEPT set (≤256 fields × ≤256 width × depth 4) and is
+// NOT proportional to what the caller supplied: over-cap maps are omitted entirely (O(1) len()
+// check) rather than sorted and trimmed, and over-cap lists stop at maxListElements.
 //
 // Run command:
 //
@@ -644,6 +645,17 @@ func BenchmarkFlattenAndPruneContext(b *testing.B) {
 		cyclic := map[string]any{"name": "x", "role": "admin"}
 		cyclic["self"] = cyclic
 		attrs := map[string]any{"ctx": cyclic}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	// An oversized []byte value must be dropped WITHOUT copying it: the length is checked
+	// before the string(v) conversion, so the cost is O(1) rather than O(len(blob)).
+	b.Run("oversized_byteslice_1MB", func(b *testing.B) {
+		attrs := map[string]any{"role": "admin", "blob": make([]byte, 1<<20)}
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {

@@ -714,27 +714,36 @@ func (w *flagEvalLoggingWriter) incContextTruncated(reason string) {
 // set, so this is byte-for-byte identical to the former flattenContext+pruneContext pipeline for
 // every input that stays within the new depth/list/structure caps.
 //
-// The per-level sort is the one remaining input-proportional cost: a single container with K
-// properties costs O(K log K) to sort even though only ≤256 are retained. This is the price of
-// Go's stronger-than-Java determinism guarantee (Java iterates HashMap.keySet() unsorted and
-// accepts a nondeterministic kept subset when the cap fires). It is no worse than the prior
-// pipeline — which sorted the entire flattened keyset — and real contexts stay well under the
-// 256-property cap so the sort is O(256 log 256) in practice. Bounding the sort itself (partial
-// selection) is a possible follow-up if an adversarial wide-container profile shows it matters.
+// Bounding map width: a map (top-level or nested) whose key count exceeds the corresponding
+// cap is OMITTED ENTIRELY rather than collected, sorted, and trimmed. This keeps the
+// evaluation-thread cost proportional to the KEPT set (≤ maxContextFields / ≤
+// maxStructureProperties, each ≤256), never to the supplied map width: the over-cap case is a
+// single O(1) len() check. The trade-off is a cliff at the cap — a 257-property structure is
+// dropped wholesale where a 256-property structure is kept in full — but real contexts stay
+// well under the caps and the truncation reason is recorded for telemetry. This matches the
+// reviewer's recommendation and avoids the O(K log K) sort-then-trim that made the prior
+// implementation proportional to the caller's input.
 func flattenAndPruneContext(attrs map[string]any) (map[string]any, []string) {
 	if len(attrs) == 0 {
 		return nil, nil
 	}
+	// Omit the entire context when the top-level map itself exceeds the field cap, so the
+	// evaluation-thread cost is bounded by the cap rather than by the supplied width. Sorting
+	// every key only to keep the first ≤256 would be O(K log K) in K.
+	if len(attrs) > maxContextFields {
+		return nil, []string{truncReasonMaxContextFields}
+	}
 	// Sort top-level keys so the field-count cap keeps a deterministic subset. Without this,
 	// Go's randomized map iteration would keep a different 256-field subset each call and
-	// fragment aggregation buckets.
+	// fragment aggregation buckets. The sort is bounded to ≤ maxContextFields keys by the
+	// check above.
 	keys := make([]string, 0, len(attrs))
 	for k := range attrs {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	out := make(map[string]any, min(len(attrs), maxContextFields))
+	out := make(map[string]any, len(attrs))
 	seen := make(map[uintptr]struct{})
 	var mask truncReasonMask
 	for _, k := range keys {
@@ -780,12 +789,13 @@ func copyPrunedValue(out map[string]any, key string, val any, seen map[uintptr]s
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
 		out[key] = v
 	case []byte:
-		s := string(v)
-		if len(s) > maxFieldLength {
+		// Check the (O(1)) slice length BEFORE the string(v) conversion, which would copy the
+		// entire byte slice. An oversized []byte value is dropped without allocating a copy.
+		if len(v) > maxFieldLength {
 			mask.add(bitMaxValueLength)
 			return
 		}
-		out[key] = s
+		out[key] = string(v)
 	case fmt.Stringer:
 		s := v.String()
 		if len(s) > maxFieldLength {
@@ -805,8 +815,9 @@ func copyPrunedValue(out map[string]any, key string, val any, seen map[uintptr]s
 }
 
 // copyPrunedMap walks a map[string]any structure, bounding depth, structure-property width, and
-// total field count inline. Property keys are sorted so the kept subset is deterministic when a
-// cap fires mid-structure.
+// total field count inline. A structure wider than maxStructureProperties is omitted entirely
+// (not sorted or walked) so the evaluation-thread cost stays bounded by the cap; the sort that
+// remains only ever runs over ≤ maxStructureProperties keys.
 func copyPrunedMap(out map[string]any, key string, m map[string]any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) {
 	if depth >= maxSnapshotDepth {
 		mask.add(bitMaxSnapshotDepth)
@@ -820,22 +831,23 @@ func copyPrunedMap(out map[string]any, key string, m map[string]any, seen map[ui
 	seen[p] = struct{}{}
 	defer delete(seen, p)
 
+	// Omit structures wider than the property cap rather than collecting and sorting every key,
+	// keeping the evaluation-thread cost proportional to the kept set, not the supplied width.
+	if len(m) > maxStructureProperties {
+		mask.add(bitMaxStructureProperties)
+		return
+	}
+
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	walked := 0
 	for _, k := range keys {
-		if walked >= maxStructureProperties {
-			mask.add(bitMaxStructureProperties)
-			break
-		}
 		if len(out) >= maxContextFields {
 			mask.add(bitMaxContextFields)
 			break
 		}
-		walked++
 		copyPrunedValue(out, key+"."+k, m[k], seen, depth+1, mask)
 	}
 }
@@ -888,22 +900,22 @@ func copyPrunedReflect(out map[string]any, key string, val any, seen map[uintptr
 		}
 		seen[p] = struct{}{}
 		defer delete(seen, p)
+		// Omit structures wider than the property cap rather than sorting every key, keeping
+		// evaluation-thread work proportional to the kept set.
+		if rv.Len() > maxStructureProperties {
+			mask.add(bitMaxStructureProperties)
+			return true
+		}
 		keys := make([]string, 0, rv.Len())
 		for _, k := range rv.MapKeys() {
 			keys = append(keys, k.String())
 		}
 		sort.Strings(keys)
-		walked := 0
 		for _, k := range keys {
-			if walked >= maxStructureProperties {
-				mask.add(bitMaxStructureProperties)
-				break
-			}
 			if len(out) >= maxContextFields {
 				mask.add(bitMaxContextFields)
 				break
 			}
-			walked++
 			copyPrunedValue(out, key+"."+k, rv.MapIndex(reflect.ValueOf(k)).Interface(), seen, depth+1, mask)
 		}
 		return true

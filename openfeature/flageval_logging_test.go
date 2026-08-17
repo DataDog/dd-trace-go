@@ -59,17 +59,10 @@ func TestDefaultEvalCapSizing(t *testing.T) {
 
 // TestFlattenAndPruneContextEquivalence verifies the merged single-pass
 // flattenAndPruneContext must produce a pruned result byte-for-byte identical to the prior
-// two-step flattenContext + pruneContext pipeline across nested, oversized, and >256-field
-// inputs (and the determinism + 256/256 limits are preserved).
+// two-step flattenContext + pruneContext pipeline across nested and oversized inputs that
+// stay within the caps. Inputs that exceed a cap intentionally diverge (omitted entirely)
+// and are covered in TestFlattenAndPruneContextBoundedTraversal.
 func TestFlattenAndPruneContextEquivalence(t *testing.T) {
-	bigFields := func() map[string]any {
-		m := make(map[string]any, 400)
-		for i := range 400 {
-			m[fmt.Sprintf("key%04d", i)] = fmt.Sprintf("value%04d", i)
-		}
-		return m
-	}
-
 	cases := []struct {
 		name  string
 		input map[string]any
@@ -86,10 +79,10 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 			name:  "oversized string value is skipped",
 			input: map[string]any{"short": "ok", "long": strings.Repeat("x", maxFieldLength+10)},
 		},
-		{
-			name:  "more than 256 fields truncated to 256",
-			input: bigFields(),
-		},
+		// NOTE: the over-cap case (>256 top-level fields) is covered separately in
+		// TestFlattenAndPruneContextBoundedTraversal. flattenAndPruneContext intentionally
+		// diverges from the old flattenContext+pruneContext pipeline there: it omits the
+		// entire context (O(1)) instead of sorting every key and trimming to 256 (O(K log K)).
 		{
 			name:  "nested oversized string among many fields",
 			input: map[string]any{"u": map[string]any{"bio": strings.Repeat("y", maxFieldLength+1), "id": 7}},
@@ -1333,6 +1326,34 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 		}
 	})
 
+	// Value-cap on an oversized []byte: the byte slice is dropped WITHOUT copying it (the
+	// length is checked before the string(v) conversion), and the value-length reason fires.
+	t.Run("value cap on oversized []byte", func(t *testing.T) {
+		attrs := map[string]any{"role": "admin", "blob": make([]byte, maxFieldLength+1)}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxValueLength) {
+			t.Errorf("expected max_value_length, got %v", reasons)
+		}
+		if _, ok := got["blob"]; ok {
+			t.Error("expected oversized []byte to be dropped")
+		}
+		if got["role"] != "admin" {
+			t.Errorf("expected role retained, got %v", got["role"])
+		}
+	})
+
+	// In-bounds []byte is retained as a string.
+	t.Run("in-bounds []byte retained as string", func(t *testing.T) {
+		attrs := map[string]any{"role": []byte("admin")}
+		got, reasons := flattenAndPruneContext(attrs)
+		if reasons != nil {
+			t.Errorf("expected nil reasons, got %v", reasons)
+		}
+		if s, ok := got["role"].(string); !ok || s != "admin" {
+			t.Errorf("expected role retained as string \"admin\", got %v", got["role"])
+		}
+	})
+
 	// Key-cap alone: one over-long key, everything else small.
 	t.Run("key cap alone", func(t *testing.T) {
 		attrs := map[string]any{"role": "admin", overlongKey: "small"}
@@ -1389,7 +1410,9 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 		}
 	})
 
-	// Structure-property cap: a single structure with more than maxStructureProperties properties.
+	// Structure-property cap: a single structure with more than maxStructureProperties properties
+	// is omitted entirely (not sorted or walked) so the evaluation-thread cost stays bounded by
+	// the cap. The reason fires and zero properties are retained.
 	t.Run("structure properties cap", func(t *testing.T) {
 		nested := make(map[string]any, maxStructureProperties+5)
 		for i := range maxStructureProperties + 5 {
@@ -1406,8 +1429,8 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 				count++
 			}
 		}
-		if count != maxStructureProperties {
-			t.Errorf("retained %d structure properties, want %d", count, maxStructureProperties)
+		if count != 0 {
+			t.Errorf("retained %d structure properties, want 0 (omitted entirely)", count)
 		}
 	})
 
@@ -1500,7 +1523,7 @@ func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
 		}
 	})
 
-	t.Run("huge structure retains at most maxStructureProperties", func(t *testing.T) {
+	t.Run("huge structure is omitted entirely", func(t *testing.T) {
 		nested := make(map[string]any, 10_000)
 		for i := range 10_000 {
 			nested[fmt.Sprintf("p%05d", i)] = i
@@ -1516,12 +1539,14 @@ func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
 				count++
 			}
 		}
-		if count != maxStructureProperties {
-			t.Errorf("retained %d structure properties, want %d", count, maxStructureProperties)
+		// The structure is omitted entirely (not sorted or walked) so the evaluation-thread
+		// cost is O(1) rather than O(K log K) in the supplied width.
+		if count != 0 {
+			t.Errorf("retained %d structure properties, want 0 (omitted entirely)", count)
 		}
 	})
 
-	t.Run("retained field count never exceeds maxContextFields", func(t *testing.T) {
+	t.Run("over-cap top-level context is omitted entirely", func(t *testing.T) {
 		attrs := make(map[string]any, 5_000)
 		for i := range 5_000 {
 			attrs[fmt.Sprintf("k%05d", i)] = fmt.Sprintf("v%d", i)
@@ -1530,8 +1555,10 @@ func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
 		if !slices.Contains(reasons, truncReasonMaxContextFields) {
 			t.Fatalf("expected max_context_fields, got %v", reasons)
 		}
-		if len(got) > maxContextFields {
-			t.Errorf("retained %d fields, exceeds maxContextFields %d", len(got), maxContextFields)
+		// The top-level map exceeds the field cap, so the entire context is omitted (O(1))
+		// rather than sorting 5 000 keys and trimming to 256 (O(K log K)).
+		if len(got) != 0 {
+			t.Errorf("retained %d fields, want 0 (omitted entirely)", len(got))
 		}
 	})
 
@@ -1704,8 +1731,11 @@ func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
 		t.Fatalf("expected one aggregated entry, got %d", len(w.aggregator.full))
 	}
 	for _, entry := range w.aggregator.full {
-		if got := len(entry.contextAttrs); got != maxContextFields {
-			t.Fatalf("aggregated context should be pruned to %d fields, got %d", maxContextFields, got)
+		// The top-level map (307 fields) exceeds maxContextFields, so the entire context is
+		// omitted on the evaluation thread (O(1) len() check) rather than sorted and trimmed
+		// to 256. The aggregated bucket therefore carries no context attributes.
+		if got := len(entry.contextAttrs); got != 0 {
+			t.Fatalf("aggregated context should be omitted entirely (over-cap top-level), got %d fields", got)
 		}
 		if _, ok := entry.contextAttrs["zzz-oversized"]; ok {
 			t.Fatal("aggregated context should not contain oversized string values")
