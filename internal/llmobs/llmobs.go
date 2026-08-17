@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -154,7 +154,7 @@ type LLMObs struct {
 }
 
 func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
-	if cfg.TestBaseURL == "" && cfg.AgentlessEnabled && !internalconfig.IsAPIKeyValid(cfg.TracerConfig.APIKey) {
+	if cfg.TestBaseURL == "" && cfg.AgentlessEnabled && !internal.IsAPIKeyValid(cfg.TracerConfig.APIKey) {
 		return nil, errAgentlessRequiresAPIKey
 	}
 	if cfg.MLApp == "" {

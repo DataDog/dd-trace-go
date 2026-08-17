@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -162,7 +161,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	// Agentless upload is disabled by default as of v1.30.0, but
 	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
-		if !internalconfig.IsAPIKeyValid(cfg.apiKey) {
+		if !internal.IsAPIKeyValid(cfg.apiKey) {
 			return nil, errAgentlessUploadRequiresAPIKey
 		}
 		// Always warn people against using this mode for now. All customers should

@@ -12,31 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIsAPIKeyValid(t *testing.T) {
-	tests := []struct {
-		name string
-		key  string
-		want bool
-	}{
-		{name: "empty", key: "", want: false},
-		{name: "too short", key: "1234567890123456789012345678901", want: false},
-		{name: "too long", key: "123456789012345678901234567890123", want: false},
-		{name: "numeric", key: "12345678901234567890123456789012", want: true},
-		{name: "lowercase", key: "abcdefabcdabcdefabcdefabcdefabcd", want: true},
-		{name: "alphanumeric", key: "abcdefabcdabcdef7890abcdef789012", want: true},
-		{name: "uppercase", key: "abcdefabcdabcdef7890Abcdef789012", want: false},
-		{name: "symbol", key: "abcdefabcdabcdef7890@bcdef789012", want: false},
-		{name: "non-ASCII over length", key: "abcdefabcdabcdef7890ábcdef789012", want: false},
-		{name: "non-ASCII exact byte length", key: "abcdefabcdabcdef7890ábcdef78901", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, IsAPIKeyValid(tt.key))
-		})
-	}
-}
-
 func TestResolveOTLPTraceURL(t *testing.T) {
 	httpAgent := &url.URL{Scheme: "http", Host: "myhost:8126"}
 	defaultWithAgent := "http://myhost:4318/v1/traces"

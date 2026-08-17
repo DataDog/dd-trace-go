@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	llmconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
@@ -134,7 +135,7 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 
 	cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
 	if cfg.ResolvedAgentlessEnabled {
-		if !internalconfig.IsAPIKeyValid(tc.APIKey) {
+		if !internal.IsAPIKeyValid(tc.APIKey) {
 			return nil, errors.New("llmobs/export: WithDatadogIntake requires a valid API key (argument or DD_API_KEY); use WithAgentURL to route via the Agent")
 		}
 	}
