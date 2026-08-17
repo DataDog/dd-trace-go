@@ -6,6 +6,10 @@
 // Package export submits completed LLM Observability spans and evaluations
 // directly to Datadog or through an Agent without starting a tracer.
 //
+// Its public span types intentionally alias the canonical payload types used by
+// the live tracer. This prevents the live and offline representations from
+// drifting, but intake-driven field changes may therefore affect this API.
+//
 // EXPERIMENTAL: This package may change or be removed without notice.
 package export
 
