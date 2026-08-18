@@ -10,13 +10,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 
-	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 	"github.com/aws/aws-lambda-go/lambda"
-
-	"reflect"
 )
 
 var (
@@ -27,7 +25,7 @@ var (
 type (
 	// HandlerListener is a point where listener logic can be injected into a handler
 	HandlerListener interface {
-		HandlerStarted(ctx context.Context, msg json.RawMessage) context.Context
+		HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage)
 		HandlerFinished(ctx context.Context, err error)
 	}
 
@@ -53,11 +51,10 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 		//nolint
 		ctx = context.WithValue(ctx, "cold_start", coldStart)
 		for _, listener := range listeners {
-			ctx = listener.HandlerStarted(ctx, msg)
+			ctx, msg = listener.HandlerStarted(ctx, msg)
 		}
 		CurrentContext = ctx
-		stripMsg := internal.StripInjectedContext(msg) // Strip _datadog context from the message
-		result, err := callHandler(ctx, stripMsg, handler)
+		result, err := callHandler(ctx, msg, handler)
 		for _, listener := range listeners {
 			ctx = context.WithValue(ctx, extension.DdLambdaResponse, result)
 			listener.HandlerFinished(ctx, err)
@@ -74,14 +71,12 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 	msg := json.RawMessage(payload)
 
 	for _, listener := range h.listeners {
-		ctx = listener.HandlerStarted(ctx, msg)
+		ctx, msg = listener.HandlerStarted(ctx, msg)
 	}
 
 	CurrentContext = ctx
 
-	handlerPayload := []byte(internal.StripInjectedContext(msg))
-
-	result, err := h.handler.Invoke(ctx, handlerPayload)
+	result, err := h.handler.Invoke(ctx, []byte(msg))
 	for _, listener := range h.listeners {
 		listener.HandlerFinished(ctx, err)
 	}

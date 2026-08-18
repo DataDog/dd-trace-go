@@ -3,28 +3,22 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package internal
+package payload
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func resetStripInjectedContextCacheForTest() {
-	// This resets the sync.Once env cache between tests.
-	stripInjectedContextEnabledOnce = sync.Once{}
-	stripInjectedContextEnabledVal = false
-}
-
 func loadFixture(tb testing.TB, name string) json.RawMessage {
 	tb.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", name))
+	data, err := os.ReadFile(filepath.Join("..", "testdata", name))
 	require.NoError(tb, err)
 	if name == "invalid.json" {
 		return json.RawMessage(data) // raw bytes for fail-open
@@ -34,10 +28,16 @@ func loadFixture(tb testing.TB, name string) json.RawMessage {
 	return msg
 }
 
+func strip(enabled bool, in json.RawMessage) json.RawMessage {
+	l := MakeListener(Config{StripInjectedContext: enabled})
+	_, out := l.HandlerStarted(context.Background(), in)
+	return out
+}
+
 func TestStripInjectedContext(t *testing.T) {
 	tests := []struct {
 		name          string
-		envValue      string
+		enabled       bool
 		fixture       string
 		wantStrip     bool
 		wantNoop      bool
@@ -48,7 +48,7 @@ func TestStripInjectedContext(t *testing.T) {
 	}{
 		{
 			name:          "enabled strips object detail",
-			envValue:      "true",
+			enabled:       true,
 			fixture:       "eventbridge-with-datadog-object.json",
 			wantStrip:     true,
 			assertFooBar:  true,
@@ -56,67 +56,58 @@ func TestStripInjectedContext(t *testing.T) {
 		},
 		{
 			name:         "enabled strips string detail",
-			envValue:     "true",
+			enabled:      true,
 			fixture:      "eventbridge-with-datadog-string-detail.json",
 			wantStrip:    true,
 			assertFooBar: true,
 		},
 		{
 			name:     "disabled leaves payload unchanged",
-			envValue: "false",
-			fixture:  "eventbridge-with-datadog-object.json",
-			wantNoop: true,
-		},
-		{
-			name:     "unset leaves payload unchanged",
-			envValue: "",
+			enabled:  false,
 			fixture:  "eventbridge-with-datadog-object.json",
 			wantNoop: true,
 		},
 		{
 			name:     "enabled no-op without datadog key",
-			envValue: "true",
+			enabled:  true,
 			fixture:  "eventbridge-without-datadog.json",
 			wantNoop: true,
 		},
 		{
 			name:         "enabled strips scheduled events with datadog",
-			envValue:     "true",
+			enabled:      true,
 			fixture:      "eventbridge-scheduled-with-datadog.json",
 			wantStrip:    true,
 			assertFooBar: false,
 		},
 		{
 			name:     "enabled no-op for sqs",
-			envValue: "true",
+			enabled:  true,
 			fixture:  "sqs-event.json",
 			wantNoop: true,
 		},
 		{
 			name:     "enabled no-op for invalid json",
-			envValue: "true",
+			enabled:  true,
 			fixture:  "invalid.json",
 			wantNoop: true,
 		},
 		{
-			name:     "regression object detail Bug E",
-			envValue: "true",
-			inline:   `{"foo":"a,}b","_datadog":{"x":1}}`,
-			verify:   verifyBugEObject,
+			name:    "regression object detail Bug E",
+			enabled: true,
+			inline:  `{"foo":"a,}b","_datadog":{"x":1}}`,
+			verify:  verifyBugEObject,
 		},
 		{
-			name:     "regression string detail Bug E",
-			envValue: "true",
-			inline:   `{"detail":"{\"foo\":\"bar\",\"_datadog\":{\"k\":\"v}z\"}}"}`,
-			verify:   verifyBugEStringDetail,
+			name:    "regression string detail Bug E",
+			enabled: true,
+			inline:  `{"detail":"{\"foo\":\"bar\",\"_datadog\":{\"k\":\"v}z\"}}"}`,
+			verify:  verifyBugEStringDetail,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resetStripInjectedContextCacheForTest()
-			t.Setenv(StripInjectedContextEnvVar, tt.envValue)
-
 			var in json.RawMessage
 			switch {
 			case tt.inline != "":
@@ -124,7 +115,7 @@ func TestStripInjectedContext(t *testing.T) {
 			default:
 				in = loadFixture(t, tt.fixture)
 			}
-			out := StripInjectedContext(in)
+			out := strip(tt.enabled, in)
 
 			if tt.verify != nil {
 				tt.verify(t, out)
@@ -199,43 +190,6 @@ func verifyBugEObject(t *testing.T, out json.RawMessage) {
 	assert.NotContains(t, obj, datadogCarrierKey)
 }
 
-func BenchmarkStripInjectedContext(b *testing.B) {
-	cases := []struct {
-		name    string
-		env     string
-		fixture string
-	}{
-		{
-			name:    "disabled",
-			env:     "false",
-			fixture: "eventbridge-with-datadog-object.json",
-		},
-		{
-			name:    "enabled_strip",
-			env:     "true",
-			fixture: "eventbridge-with-datadog-object.json",
-		},
-		{
-			name:    "enabled_noop_sqs",
-			env:     "true",
-			fixture: "sqs-event.json",
-		},
-	}
-
-	for _, tc := range cases {
-		b.Run(tc.name, func(b *testing.B) {
-			resetStripInjectedContextCacheForTest()
-			b.Setenv(StripInjectedContextEnvVar, tc.env)
-			msg := loadFixture(b, tc.fixture)
-
-			b.ReportAllocs()
-			for b.Loop() {
-				StripInjectedContext(msg)
-			}
-		})
-	}
-}
-
 func verifyBugEStringDetail(t *testing.T, out json.RawMessage) {
 	t.Helper()
 	var envelope map[string]json.RawMessage
@@ -246,4 +200,28 @@ func verifyBugEStringDetail(t *testing.T, out json.RawMessage) {
 	require.NoError(t, json.Unmarshal([]byte(detailStr), &detail))
 	assert.Equal(t, "bar", detail["foo"])
 	assert.NotContains(t, detail, datadogCarrierKey)
+}
+
+func BenchmarkStripInjectedContext(b *testing.B) {
+	cases := []struct {
+		name    string
+		enabled bool
+		fixture string
+	}{
+		{name: "disabled", enabled: false, fixture: "eventbridge-with-datadog-object.json"},
+		{name: "enabled_strip", enabled: true, fixture: "eventbridge-with-datadog-object.json"},
+		{name: "enabled_noop_sqs", enabled: true, fixture: "sqs-event.json"},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			msg := loadFixture(b, tc.fixture)
+			l := MakeListener(Config{StripInjectedContext: tc.enabled})
+
+			b.ReportAllocs()
+			for b.Loop() {
+				l.HandlerStarted(context.Background(), msg)
+			}
+		})
+	}
 }

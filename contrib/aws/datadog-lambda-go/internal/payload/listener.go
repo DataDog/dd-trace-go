@@ -3,73 +3,70 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package internal
+package payload
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"strconv"
-	"sync"
-
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 const (
 	StripInjectedContextEnvVar = "DD_LAMBDA_STRIP_INJECTED_CONTEXT"
 )
 
-var (
-	// Datadog injects _datadog as a flat JSON object carrier in one of two shapes:
-	//  1. Object detail:  "_datadog": {"x-datadog-trace-id":"...", ...}  — stripped via byte scan
-	//  2. String detail:  detail field contains "{\"...\",\"_datadog\":{...}}"  — stripped via json unmarshal/remarshal
-	stripInjectedContextEnabledOnce sync.Once
-	stripInjectedContextEnabledVal  bool
-	datadogCarrierKeyBytes          = []byte(`"_datadog"`)
-	datadogCarrierSubstrBytes       = []byte("_datadog")
-	datadogCarrierEscapedKey        = []byte(`\"_datadog\"`)
+type (
+	// Listener implements wrapper.HandlerListener, stripping injected _datadog
+	// propagation carriers from the Lambda payload before it reaches the user handler, when enabled.
+	Listener struct {
+		enabled bool
+	}
+	// Config gives options for how the listener should work
+	Config struct {
+		StripInjectedContext bool
+	}
 )
 
-// StripInjectedContext removes injected _datadog propagation carriers from the
-// Lambda payload before it reaches the user handler when
-// DD_LAMBDA_STRIP_INJECTED_CONTEXT=true.
+// MakeListener creates a new Listener with the given Config
+func MakeListener(config Config) Listener {
+	return Listener{enabled: config.StripInjectedContext}
+}
+
+// HandlerStarted strips injected _datadog carriers from msg for the handler when enabled.
 //
-// Extension listeners must receive the raw payload first so APM trace extraction
-// is unchanged. Returns the original message when the env var is unset/false,
-// the payload contains no _datadog carrier, or stripping would produce invalid
-// JSON (fail-open).
-func StripInjectedContext(msg json.RawMessage) json.RawMessage {
-	if !stripInjectedContextEnabled() {
-		return msg
-	}
-	if len(msg) == 0 {
-		return msg
+// Extension listeners must run before this one so APM trace extraction sees
+// the raw payload; stripping only affects what reaches the user handler.
+// Returns msg unchanged if disabled, no carrier is present, or stripping
+// would produce invalid JSON (fail-open).
+func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage) {
+	if !l.enabled || len(msg) == 0 {
+		return ctx, msg
 	}
 	if !bytes.Contains(msg, datadogCarrierSubstrBytes) {
-		return msg
+		return ctx, msg
 	}
 
 	out, changed := stripInjectedContextBytes(msg)
 	if !changed {
-		return msg
+		return ctx, msg
 	}
 	if !json.Valid(out) {
-		return msg // fail-open
+		return ctx, msg // fail-open
 	}
-	return out
+	return ctx, out
 }
 
-// stripInjectedContextEnabled reports whether stripping is enabled, caching the env lookup for the process lifetime.
-func stripInjectedContextEnabled() bool {
-	stripInjectedContextEnabledOnce.Do(func() {
-		v, ok := env.Lookup(StripInjectedContextEnvVar)
-		if !ok {
-			return // unset -> opt-in off
-		}
-		enabled, err := strconv.ParseBool(v)
-		stripInjectedContextEnabledVal = err == nil && enabled
-	})
-	return stripInjectedContextEnabledVal
-}
+// HandlerFinished implemented as part of the wrapper.HandlerListener interface
+func (l *Listener) HandlerFinished(ctx context.Context, err error) {}
+
+var (
+	// Datadog injects _datadog as a flat JSON object carrier in one of two shapes:
+	//  1. Object detail:  "_datadog": {"x-datadog-trace-id":"...", ...}  — stripped via byte scan
+	//  2. String detail:  detail field contains "{\"...\",\"_datadog\":{...}}"  — stripped via json unmarshal/remarshal
+	datadogCarrierKeyBytes    = []byte(`"_datadog"`)
+	datadogCarrierSubstrBytes = []byte("_datadog")
+	datadogCarrierEscapedKey  = []byte(`\"_datadog\"`)
+)
 
 // stripInjectedContextBytes removes every _datadog carrier from msg and reports whether the bytes changed.
 func stripInjectedContextBytes(msg json.RawMessage) (json.RawMessage, bool) {
