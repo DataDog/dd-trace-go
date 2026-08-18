@@ -24,6 +24,10 @@ const (
 )
 
 // EvaluationMetric is a caller-built LLM Obs evaluation metric.
+//
+// TimestampMS takes precedence over Timestamp; when neither is set, submission
+// time is used. A non-empty MLApp takes precedence over [WithCallMLApp] and the
+// client's ML app for that row.
 type EvaluationMetric = illmobs.EvaluationConfig
 
 // SubmitEvaluations submits LLM Obs evaluation metrics.

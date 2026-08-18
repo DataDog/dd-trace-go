@@ -196,6 +196,7 @@ func TestBuildExportEvaluation(t *testing.T) {
 		Label:            "quality",
 		CategoricalValue: &categorical,
 		TimestampMS:      123,
+		Timestamp:        time.UnixMilli(456),
 		Tags:             []string{"team:ml", "ddtrace.version:stale"},
 		Assessment:       "pass",
 		Reasoning:        "matched",
