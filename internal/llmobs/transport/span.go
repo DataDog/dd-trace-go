@@ -37,10 +37,10 @@ const (
 	SpanStatusError SpanStatus = "error"
 )
 
-// SpanLink links a span using decimal-string IDs.
+// SpanLink links a span using the ID types required by the LLM Obs intake.
 type SpanLink struct {
 	TraceID     string            `json:"trace_id"`
-	TraceIDHigh string            `json:"trace_id_high,omitempty"`
+	TraceIDHigh uint64            `json:"trace_id_high,omitempty"`
 	SpanID      string            `json:"span_id"`
 	Attributes  map[string]string `json:"attributes,omitempty"`
 	Tracestate  string            `json:"tracestate,omitempty"`

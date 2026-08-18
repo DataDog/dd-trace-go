@@ -3187,6 +3187,40 @@ func TestFlushSync(t *testing.T) {
 	})
 }
 
+func TestSpanLinkJSONTags(t *testing.T) {
+	b, err := json.Marshal(llmobs.SpanLink{TraceID: 111, SpanID: 222})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"span_id":222}`, string(b))
+
+	b, err = json.Marshal(llmobs.SpanLink{
+		TraceID: 111, TraceIDHigh: 333, SpanID: 222,
+		Attributes: map[string]string{"a": "b"}, Tracestate: "ts", Flags: 1,
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"trace_id_high":333,"span_id":222,"attributes":{"a":"b"},"tracestate":"ts","flags":1}`, string(b))
+}
+
+func TestSpanLinkWire(t *testing.T) {
+	_, coll, ll := testTracer(t)
+
+	span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "llm-links", llmobs.StartSpanConfig{})
+	span.AddLink(llmobs.SpanLink{TraceID: 111, SpanID: 222})
+	span.AddLink(llmobs.SpanLink{TraceID: 333, TraceIDHigh: 444, SpanID: 555, Attributes: map[string]string{"a": "b"}})
+	span.Finish(llmobs.FinishSpanConfig{})
+	tracer.Flush()
+
+	l := coll.RequireSpan(t, "llm-links")
+	require.Len(t, l.SpanLinks, 2)
+
+	b, err := json.Marshal(l.SpanLinks[0])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":"111","span_id":"222"}`, string(b))
+
+	b, err = json.Marshal(l.SpanLinks[1])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":"333","trace_id_high":444,"span_id":"555","attributes":{"a":"b"}}`, string(b))
+}
+
 func TestResolveAgentlessEnabled(t *testing.T) {
 	trueVal, falseVal := true, false
 

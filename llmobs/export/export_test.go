@@ -985,23 +985,33 @@ func TestSubmitSpans_ValidatesCanonicalSpanLinkIDs(t *testing.T) {
 		spanEvent("t0", "s0", export.KindLLM, withSpanLinks(
 			export.SpanLink{
 				TraceID:     "18446744073709551615",
-				TraceIDHigh: "0",
+				TraceIDHigh: 7,
 				SpanID:      "42",
 			},
 		)),
 		spanEvent("t1", "s1", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "01", SpanID: "2"})),
 		spanEvent("t2", "s2", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "1", SpanID: "+2"})),
-		spanEvent("t3", "s3", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "1", SpanID: "2", TraceIDHigh: "18446744073709551616"})),
-		spanEvent("t4", "s4", export.KindLLM, withSpanLinks(export.SpanLink{SpanID: "2"})),
-		spanEvent("t5", "s5", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "1"})),
+		spanEvent("t3", "s3", export.KindLLM, withSpanLinks(export.SpanLink{SpanID: "2"})),
+		spanEvent("t4", "s4", export.KindLLM, withSpanLinks(export.SpanLink{TraceID: "1"})),
 	})
 	require.NoError(t, err)
-	require.Len(t, res.ValidationErrors, 5)
+	require.Len(t, res.ValidationErrors, 4)
 	assert.Equal(t, 1, res.Sent)
-	assert.Equal(t, 5, res.Dropped)
+	assert.Equal(t, 4, res.Dropped)
 	for _, validation := range res.ValidationErrors {
 		assert.Equal(t, export.CodeInvalidLink, validation.Code)
 	}
+
+	requests := fake.captured()
+	require.Len(t, requests, 1)
+	spans := allSpans(t, requests[0].body)
+	require.Len(t, spans, 1)
+	links := spans[0]["span_links"].([]any)
+	require.Len(t, links, 1)
+	link := links[0].(map[string]any)
+	assert.Equal(t, "18446744073709551615", link["trace_id"])
+	assert.Equal(t, float64(7), link["trace_id_high"])
+	assert.Equal(t, "42", link["span_id"])
 }
 
 func TestDefaultSizeGuardMatchesLiveLimit(t *testing.T) {

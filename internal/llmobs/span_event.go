@@ -344,6 +344,8 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	return ev
 }
 
+// toTransportSpanLinks keeps the high trace ID numeric while encoding the
+// low trace and span IDs as decimal strings, as required by intake.
 func toTransportSpanLinks(links []SpanLink) []transport.SpanLink {
 	if len(links) == 0 {
 		return nil
@@ -351,14 +353,12 @@ func toTransportSpanLinks(links []SpanLink) []transport.SpanLink {
 	out := make([]transport.SpanLink, len(links))
 	for i, link := range links {
 		out[i] = transport.SpanLink{
-			TraceID:    strconv.FormatUint(link.TraceID, 10),
-			SpanID:     strconv.FormatUint(link.SpanID, 10),
-			Attributes: link.Attributes,
-			Tracestate: link.Tracestate,
-			Flags:      link.Flags,
-		}
-		if link.TraceIDHigh != 0 {
-			out[i].TraceIDHigh = strconv.FormatUint(link.TraceIDHigh, 10)
+			TraceID:     strconv.FormatUint(link.TraceID, 10),
+			TraceIDHigh: link.TraceIDHigh,
+			SpanID:      strconv.FormatUint(link.SpanID, 10),
+			Attributes:  link.Attributes,
+			Tracestate:  link.Tracestate,
+			Flags:       link.Flags,
 		}
 	}
 	return out

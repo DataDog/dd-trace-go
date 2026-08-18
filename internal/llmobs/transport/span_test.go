@@ -7,6 +7,7 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,12 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
+
+func TestSpanLinkJSON(t *testing.T) {
+	body, err := json.Marshal(SpanLink{TraceID: "111", TraceIDHigh: 333, SpanID: "222"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":"111","trace_id_high":333,"span_id":"222"}`, string(body))
+}
 
 func TestNewPushSpanEventsRequests(t *testing.T) {
 	events := []*LLMObsSpanEvent{

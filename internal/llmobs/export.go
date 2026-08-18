@@ -77,11 +77,6 @@ func ValidateExportSpan(event transport.LLMObsSpanEvent) *ExportValidationError 
 				Code:   ExportCodeInvalidLink,
 				Reason: fmt.Sprintf("span_links[%d].span_id must be a canonical decimal uint64", i),
 			}
-		case link.TraceIDHigh != "" && !canonicalDecimalID(link.TraceIDHigh):
-			return &ExportValidationError{
-				Code:   ExportCodeInvalidLink,
-				Reason: fmt.Sprintf("span_links[%d].trace_id_high must be a canonical decimal uint64", i),
-			}
 		}
 	}
 	return nil

@@ -28,7 +28,7 @@ func validExportSpan(kind transport.SpanKind) transport.LLMObsSpanEvent {
 		Meta:    llmobs.NewSpanEventMeta(kind),
 		SpanLinks: []transport.SpanLink{{
 			TraceID:     "18446744073709551615",
-			TraceIDHigh: "0",
+			TraceIDHigh: 18446744073709551615,
 			SpanID:      "42",
 		}},
 	}
@@ -104,14 +104,6 @@ func TestValidateExportSpan(t *testing.T) {
 			},
 			code:   llmobs.ExportCodeInvalidLink,
 			reason: "span_id",
-		},
-		{
-			name: "invalid link high trace ID",
-			mutate: func(event *transport.LLMObsSpanEvent) {
-				event.SpanLinks[0].TraceIDHigh = "18446744073709551616"
-			},
-			code:   llmobs.ExportCodeInvalidLink,
-			reason: "trace_id_high",
 		},
 	}
 
