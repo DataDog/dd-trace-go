@@ -344,8 +344,9 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	return ev
 }
 
-// toTransportSpanLinks keeps the high trace ID numeric while encoding the
-// low trace and span IDs as decimal strings, as required by intake.
+// toTransportSpanLinks converts the public uint64 span-link IDs to the
+// decimal-string form the LLM Obs span intake expects (matching the
+// dd-trace-py reference SDK); see llmobs.SpanLink for the public uint64 type.
 func toTransportSpanLinks(links []SpanLink) []transport.SpanLink {
 	if len(links) == 0 {
 		return nil
