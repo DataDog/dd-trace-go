@@ -150,6 +150,9 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 						Framework:           "test-framework",
 						ContinueMessageFunc: func(_ context.Context, _ ContinueActionOptions) error { return nil },
 						BlockMessageFunc:    func(_ context.Context, _ BlockActionOptions) error { return nil },
+						// The truncated case below asserts that the stream survives the
+						// analyzed chunk and only ends at end-of-stream.
+						AckBodyMessagesUntilEndOfStream: true,
 					}, instr)
 					defer mp.Close()
 
@@ -227,23 +230,46 @@ func TestRequestStateCloseConcurrentWithLockedFinalize(t *testing.T) {
 }
 
 func TestOnResponseBodyMisconfigurationAcknowledgesMessage(t *testing.T) {
-	continueCalls := 0
-	mp := NewProcessor(ProcessorConfig{
-		ContinueMessageFunc: func(context.Context, ContinueActionOptions) error {
-			continueCalls++
-			return nil
-		},
-	}, instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane))
-	defer mp.Close()
-
-	state := RequestState{
-		Mu:          new(sync.Mutex),
-		Context:     context.Background(),
-		afterHandle: func() {},
-		State:       MessageTypeResponseBody,
+	// The message is always acknowledged; only the decision to keep the stream open
+	// depends on AckBodyMessagesUntilEndOfStream.
+	tests := []struct {
+		name            string
+		endOfStream     bool
+		ackUntilEOS     bool
+		wantStreamEnded bool
+	}{
+		{name: "end-of-stream-ends-the-stream", endOfStream: true, wantStreamEnded: true},
+		{name: "early-close-when-draining-is-off", endOfStream: false, wantStreamEnded: true},
+		{name: "stays-open-when-draining-is-on", endOfStream: false, ackUntilEOS: true},
+		{name: "end-of-stream-ends-the-stream-while-draining", endOfStream: true, ackUntilEOS: true, wantStreamEnded: true},
 	}
-	err := mp.OnResponseBody(fakeBody{eos: true}, &state)
 
-	require.ErrorIs(t, err, io.EOF)
-	require.Equal(t, 1, continueCalls)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			continueCalls := 0
+			mp := NewProcessor(ProcessorConfig{
+				ContinueMessageFunc: func(context.Context, ContinueActionOptions) error {
+					continueCalls++
+					return nil
+				},
+				AckBodyMessagesUntilEndOfStream: tt.ackUntilEOS,
+			}, instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane))
+			defer mp.Close()
+
+			state := RequestState{
+				Mu:          new(sync.Mutex),
+				Context:     context.Background(),
+				afterHandle: func() {},
+				State:       MessageTypeResponseBody,
+			}
+			err := mp.OnResponseBody(fakeBody{eos: tt.endOfStream}, &state)
+
+			if tt.wantStreamEnded {
+				require.ErrorIs(t, err, io.EOF)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, 1, continueCalls)
+		})
+	}
 }

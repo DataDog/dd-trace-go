@@ -260,16 +260,7 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 		mp.instr.Logger().Error("message_processor: the body parsing has been wrongly configured. " +
 			"Please refer to the official documentation for guidance on the proper settings or contact support.")
 		reqState.finalizeResponse()
-		if resp.GetEndOfStream() {
-			_ = reqState.closeLocked()
-		}
-		if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
-			return fmt.Errorf("error creating continue response for response body: %w", err)
-		}
-		if !resp.GetEndOfStream() {
-			return nil
-		}
-		return io.EOF
+		return mp.acknowledgeResponseBody(reqState, resp.GetEndOfStream())
 	}
 
 	blocked := processBody(reqState.Context, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody, "response")
@@ -285,20 +276,37 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 			}
 			return io.EOF
 		}
-		if resp.GetEndOfStream() {
-			_ = reqState.closeLocked()
-		}
 
-		if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
-			return fmt.Errorf("error creating continue response for response body: %w", err)
-		}
-		if resp.GetEndOfStream() {
-			return io.EOF
-		}
-		return nil
+		return mp.acknowledgeResponseBody(reqState, resp.GetEndOfStream())
 	}
 
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody})
+}
+
+// acknowledgeResponseBody acknowledges a response body message that needs no further
+// analysis and reports whether the processing stream is now finished, returning io.EOF
+// when it is. The caller must hold reqState.Mu and must have finalized the response
+// beforehand.
+//
+// The acknowledgement is unconditional because the gateway is owed exactly one response
+// per message it sent while the stream is open. Whether the stream may then close
+// immediately or has to stay open for the rest of the body is gateway-specific, hence
+// [ProcessorConfig.AckBodyMessagesUntilEndOfStream].
+func (mp *Processor) acknowledgeResponseBody(reqState *RequestState, endOfStream bool) error {
+	lastMessage := endOfStream || !mp.AckBodyMessagesUntilEndOfStream
+	if lastMessage {
+		_ = reqState.closeLocked()
+	}
+
+	if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
+		return fmt.Errorf("error creating continue response for response body: %w", err)
+	}
+
+	if lastMessage {
+		return io.EOF
+	}
+
+	return nil
 }
 
 // OnRequestTrailers handles incoming request trailers

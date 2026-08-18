@@ -42,6 +42,31 @@ type ProcessorConfig struct {
 	BodyParsingSizeLimit *int
 	Framework            string
 
+	// AckBodyMessagesUntilEndOfStream keeps the processing stream open until the gateway
+	// signals end-of-stream, acknowledging every body message even after the analysis is
+	// complete and the retained payload has been released.
+	//
+	// It exists because gateways disagree on what happens when the callout closes the
+	// stream while body messages are still in flight. Upstream Envoy documents the early
+	// close as a valid outcome, so the default (false) closes as soon as there is nothing
+	// left to analyze:
+	//
+	//	"if the server closes the gRPC stream cleanly, then the data plane proceeds
+	//	without consulting the server"
+	//	- api/envoy/service/ext_proc/v3/external_processor.proto
+	//
+	// Google Cloud Service Extensions instead expects an acknowledgement per chunk for the
+	// whole body and times the callout out otherwise, so that integration must enable this:
+	//
+	//	"STREAMED ... expects a single response for each chunk ... must acknowledge chunks
+	//	as soon as possible"
+	//	- https://docs.cloud.google.com/service-extensions/docs/callouts-overview
+	//
+	// Enabling it is never a protocol error, only slower: in STREAMED mode the gateway
+	// withholds each chunk from the rest of the filter chain until its acknowledgement
+	// comes back, so the remaining chunks of an oversized body each pay a round trip.
+	AckBodyMessagesUntilEndOfStream bool
+
 	// ContinueMessageFunc is a function that generates a continue message of type O based on the provided ContinueActionOptions.
 	ContinueMessageFunc func(context.Context, ContinueActionOptions) error
 
