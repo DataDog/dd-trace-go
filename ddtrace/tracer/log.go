@@ -140,10 +140,8 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
-	// The agent snapshot is loaded once so agent_features and the protocol the
-	// endpoint probe targets cannot come from two different /info responses.
 	af := t.config.agent.load()
-	proto := t.config.effectiveTraceProtocolWithAgent(af)
+	proto := t.config.effectiveTraceProtocol()
 
 	// Determine the agent URL to use in the logs.
 	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).

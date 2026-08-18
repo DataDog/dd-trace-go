@@ -139,6 +139,16 @@ type config struct {
 	// periodic polling can refresh it without locking the hot path.
 	agent atomicAgentFeatures
 
+	// protocolState tracks what the tracer has learned about the Agent's
+	// support for /v1.0/traces, as a monotone lattice; see
+	// trace_protocol_state.go. (*config).advanceTraceProtocolState is its
+	// only mutator. Lives on config rather than tracer so that
+	// agentTraceWriter can also advance it: a live send rejected specifically
+	// for lacking v1 support is authoritative evidence, on the same footing
+	// as a negative /info poll (see
+	// (*agentTraceWriter).downgradeAfterRejectedSend).
+	protocolState atomic.Int32
+
 	// agentInfoPollInterval overrides the default polling interval for /info.
 	// A zero value uses defaultAgentInfoPollInterval.
 	agentInfoPollInterval time.Duration
@@ -318,12 +328,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.internalConfig.CIVisibilityAgentlessActive()
 	agentURL := c.internalConfig.AgentURL()
-	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
+	af, protoState := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
+	c.advanceTraceProtocolState(protoState)
 	// The wire protocol is derived per-use from the requested protocol and the
-	// agent's advertised endpoints (see (*config).effectiveTraceProtocol);
-	// nothing is baked into the transport or downgraded in config here. Report
-	// the resolved value to config telemetry so it reflects what is on the wire.
+	// resolved protocol state (see (*config).effectiveTraceProtocol); nothing
+	// is baked into the transport or downgraded in config here. Report the
+	// resolved value to config telemetry so it reflects what is on the wire.
 	c.internalConfig.ReportEffectiveTraceProtocol(c.effectiveTraceProtocol())
 
 	info, ok := debug.ReadBuildInfo()
@@ -448,8 +459,14 @@ type agentFeatures struct {
 	// evpProxyV2 reports if the trace-agent can receive payloads on the /evp_proxy/v2 endpoint.
 	evpProxyV2 bool
 
-	// v1ProtocolAvailable reports whether the trace-agent and tracer are configured to use the v1 protocol.
-	v1ProtocolAvailable bool
+	// v1TracesAdvertised reports whether the trace-agent's /info response
+	// listed /v1.0/traces. This is a raw observation, refreshed on every poll
+	// (see refreshAgentFeatures) — it is NOT itself the wire-format decision.
+	// refreshAgentFeatures feeds it into (*config).advanceTraceProtocolState
+	// (see trace_protocol_state.go), which is the only thing
+	// effectiveTraceProtocol reads. Nothing else should read this field to
+	// decide the wire format.
+	v1TracesAdvertised bool
 
 	// hasTelemetryProxy reports whether the trace-agent exposes the /telemetry/proxy/ endpoint.
 	// This is only true when the agent has telemetry forwarding enabled (the default).
@@ -573,7 +590,7 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 		case "/evp_proxy/v2/":
 			features.evpProxyV2 = true
 		case "/v1.0/traces":
-			features.v1ProtocolAvailable = true
+			features.v1TracesAdvertised = true
 		case "/telemetry/proxy/":
 			features.hasTelemetryProxy = true
 		case "/v0.7/config":
@@ -588,18 +605,32 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	return features, nil
 }
 
-// loadAgentFeatures queries the trace-agent for its capabilities at startup and
-// stores the result. It handles the agentDisabled case and logs errors.
-func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) agentFeatures {
+// loadAgentFeatures queries the trace-agent for its capabilities at startup
+// and returns the snapshot together with the trace-protocol state it implies:
+//   - agent disabled: no agent will ever be asked, so protoV04 is conclusive.
+//   - a transient fetch error: no evidence either way, protoUnknown — a later
+//     poll can still resolve this in either direction.
+//   - a 404 on /info (errAgentFeaturesNotSupported): conclusive, protoV04 —
+//     /v1.0/traces support postdates /info support.
+//   - a successful response: protoV1 or protoV04 from whether it advertised
+//     /v1.0/traces.
+func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) (agentFeatures, traceProtocolState) {
 	if agentDisabled {
 		// there is no agent; all features off
-		return agentFeatures{}
+		return agentFeatures{}, protoV04
 	}
 	features, err := fetchAgentFeatures(context.Background(), agentURL, httpClient)
-	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
+	if err != nil {
+		if errors.Is(err, errAgentFeaturesNotSupported) {
+			return features, protoV04
+		}
 		log.Error("%s", err.Error())
+		return features, protoUnknown
 	}
-	return features
+	if features.v1TracesAdvertised {
+		return features, protoV1
+	}
+	return features, protoV04
 }
 
 // agentEnabled reports whether the tracer should communicate with the agent.
@@ -658,21 +689,14 @@ func (c *config) canDropP0s() bool {
 }
 
 // effectiveTraceProtocol returns the wire protocol in use right now: the
-// requested protocol, downgraded to v0.4 when the agent does not advertise
-// /v1.0/traces. It is a pure function of (requested config, agent features),
-// re-evaluated on every call. Client-side stats are deliberately absent from
-// this check: CSS has no bearing on the wire format — the Agent has always
-// accepted v1.0 payloads without it.
+// requested protocol, downgraded to v0.4 unless the tracer has conclusive
+// evidence the Agent accepts /v1.0/traces (see traceProtocolState). It is a
+// pure function of (requested config, protocol state), re-evaluated on every
+// call. Client-side stats are deliberately absent from this check: CSS has no
+// bearing on the wire format — the Agent has always accepted v1.0 payloads
+// without it.
 func (c *config) effectiveTraceProtocol() float64 {
-	return c.effectiveTraceProtocolWithAgent(c.agent.load())
-}
-
-// effectiveTraceProtocolWithAgent resolves the protocol against a caller-held
-// agent snapshot, so a caller that reports several agent-derived values at
-// once can keep them all consistent with one /info response. Mirrors the
-// canComputeStats/canComputeStatsWithAgent pair above.
-func (c *config) effectiveTraceProtocolWithAgent(a agentFeatures) float64 {
-	if c.internalConfig.RequestedTraceProtocol() == traceProtocolV1 && a.v1ProtocolAvailable {
+	if c.internalConfig.RequestedTraceProtocol() == traceProtocolV1 && traceProtocolState(c.protocolState.Load()) == protoV1 {
 		return traceProtocolV1
 	}
 	return traceProtocolV04
