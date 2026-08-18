@@ -1017,7 +1017,7 @@ func TestDefaultSizeGuardMatchesLiveLimit(t *testing.T) {
 	require.Len(t, res.Requests, 1)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
-	assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", span["meta"].(map[string]any)["input"].(map[string]any)["value"])
+	assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", span["meta"].(map[string]any)["input"].(map[string]any)["value"])
 }
 
 func TestSubmitSpans_DropsOversizedSpanWithoutIO(t *testing.T) {

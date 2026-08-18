@@ -24,7 +24,7 @@ const (
 	DefaultParentID = "undefined"
 
 	collectionErrorDroppedIO = "dropped_io"
-	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
+	droppedValueText         = "[This value has been dropped because this span's size exceeds the 5MB size limit.]"
 
 	tagKeySource        = "source"
 	tagKeyLanguage      = "language"

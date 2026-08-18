@@ -1491,13 +1491,13 @@ func TestSpanTruncation(t *testing.T) {
 		// Check that input and output were truncated
 		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
 			if inputValue, exists := inputMap["value"]; exists {
-				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputValue)
+				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", inputValue)
 			}
 		}
 
 		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
 			if outputValue, exists := outputMap["value"]; exists {
-				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputValue)
+				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", outputValue)
 			}
 		}
 
@@ -1534,12 +1534,12 @@ func TestSpanTruncation(t *testing.T) {
 
 		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
 		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", inputMap["value"])
 			assert.NotContains(t, inputMap, "messages", "Original messages should be replaced")
 		}
 
 		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", outputMap["value"])
 			assert.NotContains(t, outputMap, "messages", "Original messages should be replaced")
 		}
 
@@ -1568,12 +1568,12 @@ func TestSpanTruncation(t *testing.T) {
 
 		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
 		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", inputMap["value"])
 			assert.NotContains(t, inputMap, "documents", "Original documents should be replaced")
 		}
 
 		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", outputMap["value"])
 		}
 
 		assert.Contains(t, l0.CollectionErrors, "dropped_io")
@@ -1601,11 +1601,11 @@ func TestSpanTruncation(t *testing.T) {
 
 		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
 		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", inputMap["value"])
 		}
 
 		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", outputMap["value"])
 			assert.NotContains(t, outputMap, "documents", "Original documents should be replaced")
 		}
 
