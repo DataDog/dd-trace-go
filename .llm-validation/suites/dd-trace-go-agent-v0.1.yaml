@@ -264,9 +264,180 @@ cases:
       - Does not mention any specific cardinality limit env var or option
       - Gives incorrect default values for the limits
 
-# ==== AppSec Tests ====
-
 # ==== Profiling Tests ====
+
+  - id: dd-trace-go-profiler-cpu-duration-clamp
+    files:
+      - profiler/AGENTS.md
+    input: |
+      I configured profiler.CPUDuration(5*time.Minute) but left the profiling period at its
+      1-minute default. How long will the CPU profile actually sample for each cycle, and will I
+      get a warning or error if the values conflict like this?
+    expected_criteria:
+      - States that cpuDuration is clamped down to equal the period when it exceeds the period, so
+        the CPU profile will only sample for 1 minute, not 5
+      - States that this clamping happens silently, with no error or warning logged
+    bad_signals:
+      - Says the CPU profile will run for the full 5 minutes configured, spanning multiple periods
+      - Says Start will return an error because cpuDuration exceeds period
+
+  - id: dd-trace-go-profiler-upload-queue-full-behavior
+    files:
+      - profiler/AGENTS.md
+    input: |
+      Our upload endpoint has been slow and profile batches are being produced faster than they can
+      be sent. What happens once the internal upload queue fills up -- does collection block, does
+      the queue grow unbounded, and which batch (oldest or newest) is discarded?
+    expected_criteria:
+      - States the upload queue is a small bounded/buffered channel (not unbounded)
+      - States that when it's full, the profiler evicts the oldest queued batch to make room for the
+        newest one rather than blocking collection
+      - Mentions that a warning is logged and/or a queue-full metric is incremented when this eviction
+        happens
+    bad_signals:
+      - Says the collection goroutine blocks until queue space frees up
+      - Says the newest batch is dropped while older queued batches are kept
+      - Says the queue grows without bound, risking unbounded memory growth
+
+  - id: dd-trace-go-profiler-upload-retry-backoff
+    files:
+      - profiler/AGENTS.md
+    input: |
+      When a profile upload to the agent fails with a retriable error (like a 5xx response), what
+      backoff strategy is used between retry attempts, and how many times will it retry before
+      giving up?
+    expected_criteria:
+      - States retries are capped at a small fixed number (2 retries) rather than being unbounded
+      - States the wait between retries is a random duration bounded by the profiling period
+        (not a fixed or exponentially-doubling backoff)
+      - Mentions that only retriable errors (server 5xx/transport errors) trigger a retry, while
+        non-retriable errors (e.g. 4xx) fail immediately without retrying
+    bad_signals:
+      - Says the profiler uses exponential backoff (e.g. doubling delay starting at 1s)
+      - Says uploads retry indefinitely until they succeed
+      - Says all upload errors, including 4xx client errors, are retried the same way
+
+  - id: dd-trace-go-profiler-stop-flush-on-exit
+    files:
+      - profiler/AGENTS.md
+    input: |
+      If profiler.Stop() is called while a profile batch is mid-collection or queued for upload,
+      is that in-progress data flushed and uploaded before Stop returns, or is it discarded? Does
+      this depend on any configuration?
+    expected_criteria:
+      - States that by default (flushOnExit disabled/false), in-flight/queued profile data is
+        discarded rather than uploaded when Stop is called
+      - Mentions that this behavior is controlled by the DD_PROFILING_FLUSH_ON_EXIT environment
+        variable / flushOnExit setting, which defaults to false
+      - States that enabling flush-on-exit causes the current batch to be completed and the queue
+        drained/uploaded before Stop returns
+    bad_signals:
+      - Says Stop always waits for and uploads any in-progress or queued profile data regardless of
+        configuration
+      - Does not mention the flush-on-exit setting/env var at all
+
+  - id: dd-trace-go-profiler-heap-partial-delta
+    files:
+      - profiler/AGENTS.md
+    input: |
+      The heap profile exposes four sample values: alloc_objects, alloc_space, inuse_objects, and
+      inuse_space. When delta profiling is enabled, are all four converted into per-interval delta
+      values, or only some of them?
+    expected_criteria:
+      - States that only alloc_objects and alloc_space are delta-encoded, since they are cumulative
+        counters over the process lifetime
+      - States that inuse_objects and inuse_space are left as absolute/snapshot values representing
+        current heap state, since delta-encoding them would not make sense
+    bad_signals:
+      - Says all four heap sample values are delta-encoded the same way
+      - Says none of the heap values are delta-encoded
+
+  - id: dd-trace-go-profiler-goroutine-leak-forced-on
+    files:
+      - profiler/AGENTS.md
+    input: |
+      Our Go binary is built with GOEXPERIMENT=goroutineleakprofile. Can we disable the
+      goroutine-leak profile for a given profiler.Start call by simply not including it in a
+      WithProfileTypes(...) option call?
+    expected_criteria:
+      - States that when the goroutine-leak profile is available (detected via build info /
+        GOEXPERIMENT at build time), it is added unconditionally after user options (including
+        WithProfileTypes) have already been applied
+      - Concludes that omitting it from WithProfileTypes does not disable it in this case -- there is
+        currently no supported option to opt out when the GOEXPERIMENT is enabled at build time
+    bad_signals:
+      - Says passing WithProfileTypes without listing the goroutine-leak profile will disable it
+      - Says the goroutine-leak profile is only enabled when explicitly requested via WithProfileTypes
+
+  - id: dd-trace-go-profiler-execution-trace-not-a-profile-type
+    files:
+      - profiler/AGENTS.md
+    input: |
+      I want to programmatically check whether execution tracing is enabled and control it the same
+      way as other profile types, e.g. by checking or setting it through WithProfileTypes/cfg.types.
+      Will that work for execution traces?
+    expected_criteria:
+      - States that execution trace is deliberately excluded from the normal profile-types map used
+        by WithProfileTypes, and is instead controlled by its own separate configuration
+        (e.g. an executionTraceConfig / DD_PROFILING_EXECUTION_TRACE_ENABLED-style setting)
+      - States that whether an execution trace runs in a given collection cycle is decided
+        dynamically/probabilistically at collection time rather than via the static profile-types set
+    bad_signals:
+      - Says execution trace can be enabled or disabled via WithProfileTypes like any other profile
+        type
+      - Says execution trace is always collected every cycle once enabled, with no separate
+        per-cycle decision logic
+
+  - id: dd-trace-go-profiler-withprofiletypes-forces-metrics
+    files:
+      - profiler/AGENTS.md
+    input: |
+      I want to disable every profile type except CPU, including the metrics profile, by calling
+      profiler.WithProfileTypes(profiler.CPUProfile). Will this leave only the CPU profile enabled?
+    expected_criteria:
+      - States that WithProfileTypes always force-adds MetricsProfile in addition to whatever types
+        are explicitly passed, so metrics profiling cannot be disabled through this option
+      - Concludes that after this call both CPUProfile and MetricsProfile are enabled, not just CPU
+    bad_signals:
+      - Says WithProfileTypes(profiler.CPUProfile) results in only the CPU profile being enabled
+      - Says metrics profiling can be fully disabled by omitting it from WithProfileTypes
+
+  - id: dd-trace-go-profiler-aws-lambda-disabled
+    files:
+      - profiler/AGENTS.md
+    input: |
+      We're deploying our Go service as an AWS Lambda function and still want to call profiler.Start
+      with our usual options at init time. Will the profiler run there, or is there special handling
+      for the Lambda environment?
+    expected_criteria:
+      - States that when the AWS_LAMBDA_FUNCTION_NAME environment variable is set, Start returns an
+        error and profiling is not supported/started in AWS Lambda runtimes at all
+      - States this check happens unconditionally, regardless of what other options are passed to
+        Start
+    bad_signals:
+      - Says the profiler runs normally in Lambda with no special-casing
+      - Says Lambda support just requires a different upload URL/agentless configuration rather than
+        being entirely disabled
+
+  - id: dd-trace-go-profiler-shared-zstd-encoder-forgotten-close
+    files:
+      - profiler/AGENTS.md
+    input: |
+      Multiple profile types (e.g. CPU and Heap) can end up sharing the same cached zstd encoder
+      instance when they compress at the same level. If some code path acquires that shared encoder
+      via Reset() but fails to call Close() on it (e.g. due to an early return on error), what
+      happens to other profile types that later need the same encoder?
+    expected_criteria:
+      - States the shared encoder uses a size-1 channel acting as a semaphore/lock, acquired in
+        Reset() and released in Close()
+      - States that skipping Close() after Reset() leaves the semaphore permanently held, so any
+        later Reset() call for that same cached encoder blocks forever (a deadlock), rather than
+        erroring or silently proceeding
+    bad_signals:
+      - Says each profile type gets its own independent encoder instance so a missing Close() only
+        affects that one profile type
+      - Says a missing Close() call causes an error to be returned on the next Reset() rather than a
+        blocking deadlock
 
 # ==== LLMObs Tests ====
 
