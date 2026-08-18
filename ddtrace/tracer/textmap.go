@@ -836,6 +836,26 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 		}
 	}
 	if s.traceID.Empty() || (s.spanID == 0 && s.origin != "synthetics") {
+		// No usable Datadog trace/span identity — e.g. an intermediary
+		// discarded x-datadog-trace-id/parent-id while forwarding
+		// x-datadog-tags unchanged. Still surface any propagating tags
+		// (LLMObs lineage, _dd.p.ts, _dd.p.usr.id, ...) via a carrier-only
+		// context, so the new span gets a genuine root identity instead of
+		// silently losing tags that arrived intact.
+		if s.tr != nil {
+			// The 128-bit upper trace ID belongs to a trace we have no
+			// identity for; keeping it would graft it onto an unrelated
+			// freshly generated trace ID.
+			s.tr.unsetPropagatingTag(keyTraceID128)
+			if len(s.tr.loadPropagatingTags()) > 0 {
+				ctx := &SpanContext{baggageOnly: true, trace: s.tr}
+				if len(s.baggage) > 0 {
+					ctx.baggage = s.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+					atomic.StoreUint32(&ctx.hasBaggage, 1)
+				}
+				return ctx, nil
+			}
+		}
 		return nil, ErrSpanContextNotFound
 	}
 	s.traceID.cacheHex()

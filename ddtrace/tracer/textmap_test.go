@@ -454,6 +454,63 @@ func TestExtractOriginSynthetics(t *testing.T) {
 	assert.Equal(t, ctx.origin, "synthetics")
 }
 
+// TestExtractTraceTagsWithoutIdentity covers an intermediary that discards
+// x-datadog-trace-id/parent-id (e.g. because it re-samples independently of
+// an upstream decision) but forwards x-datadog-tags unchanged. Propagating
+// tags such as LLMObs lineage must still reach the new root span, which must
+// itself get a genuine fresh identity rather than being treated as a child.
+func TestExtractTraceTagsWithoutIdentity(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	// keyTraceID128 must be dropped: it describes the upper bits of a trace
+	// we have no lower-bit identity for, so it must not attach to whatever
+	// unrelated trace ID the new root ends up minting.
+	src := TextMapCarrier(map[string]string{
+		traceTagsHeader: keyPropagatedLLMObsParentID + "=1234," + keyPropagatedLLMObsTraceID + "=5678," + keyTraceID128 + "=1234567890abcdef",
+	})
+
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+	assert.True(t, ctx.baggageOnly)
+	assert.Equal(t, "1234", ctx.trace.propagatingTag(keyPropagatedLLMObsParentID))
+	assert.Equal(t, "5678", ctx.trace.propagatingTag(keyPropagatedLLMObsTraceID))
+	assert.Empty(t, ctx.trace.propagatingTag(keyTraceID128))
+
+	root := tracer.StartSpan("web.request", ChildOf(ctx))
+	defer root.Finish()
+
+	// Genuine root: no inherited parent, and a trace ID unrelated to the
+	// carrier-only context's absent identity.
+	assert.Equal(t, uint64(0), root.parentID)
+	assert.NotZero(t, root.Context().TraceIDLower())
+
+	// The propagating tags still reached the new root, so LLMObs (and any
+	// other propagating-tag consumer) can resolve lineage.
+	assert.Equal(t, "1234", root.Context().trace.propagatingTag(keyPropagatedLLMObsParentID))
+	assert.Equal(t, "5678", root.Context().trace.propagatingTag(keyPropagatedLLMObsTraceID))
+}
+
+// TestExtractNoIdentityNoPropagatingTags is the regression guard for the
+// pre-existing behavior: without any propagating tags to rescue, a missing
+// trace/span identity is still a hard extraction failure.
+func TestExtractNoIdentityNoPropagatingTags(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	src := TextMapCarrier(map[string]string{
+		DefaultPriorityHeader: "1",
+	})
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	assert.Equal(t, ErrSpanContextNotFound, err)
+	assert.Nil(t, ctx)
+}
+
 func Test257CharacterDDTracestateLengh(t *testing.T) {
 	t.Setenv(envPropagationStyle, "tracecontext")
 
