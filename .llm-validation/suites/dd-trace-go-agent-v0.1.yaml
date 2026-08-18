@@ -453,6 +453,155 @@ cases:
 
 # ==== Orchestrion Tests ====
 
+  - id: dd-trace-go-orchestrion-yml-structure
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      I'm writing a new orchestrion.yml file for a contrib integration. What are the required
+      top-level sections in this file, and what does the "aspects" section actually define?
+    expected_criteria:
+      - States the file has a meta section (with at least a name and description) and an aspects
+        section as its top-level keys
+      - States each entry in aspects has an id, a join-point (where in the AST orchestrion should
+        match code), and advice (what code/instrumentation gets injected at that match)
+    bad_signals:
+      - Omits the join-point/advice structure entirely or describes aspects as unstructured free text
+      - Says the meta section is optional or unused
+
+  - id: dd-trace-go-orchestrion-build-time-enabled-check
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      How can Go code check at runtime whether the current binary was actually compiled with
+      Orchestrion (auto-instrumented), as opposed to a plain go build?
+    expected_criteria:
+      - Mentions the orchestrion.Enabled() function, backed by a package-level boolean variable
+        that Orchestrion overwrites at build time via a //orchestrion:enabled directive comment
+      - States this defaults to false when the binary was not built using Orchestrion
+    bad_signals:
+      - Says this can only be inferred indirectly, e.g. via environment variables
+      - Says Enabled() always returns true merely because the orchestrion package is imported
+      - Says there is no supported way to detect this at runtime
+
+  - id: dd-trace-go-orchestrion-template-function-fields
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Inside an orchestrion.yml advice template, I want to reference the name of the matched
+      function's first argument and the name of its second return value. What expressions should I use?
+    expected_criteria:
+      - Gives `{{ .Function.Argument 0 }}` for the first argument, using 0-based indexing
+      - Gives `{{ .Function.Result 1 }}` for the second return value, using 0-based indexing
+    bad_signals:
+      - Uses 1-based indexing for Argument/Result (e.g. `.Function.Argument 1` for the first argument)
+      - Invents template syntax not documented for this purpose
+      - Says Function.Argument/Result return an index/position rather than the identifier name
+
+  - id: dd-trace-go-orchestrion-integration-test-harness
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      I'm adding a new orchestrion integration test under internal/orchestrion/_integration. What
+      interface must my test case struct implement, what is each method responsible for, and what
+      do I need to run afterward so the suite picks it up?
+    expected_criteria:
+      - States the struct must implement harness.TestCase, with Setup, Run, and ExpectedTraces methods
+      - States Setup prepares dependencies (e.g. starting services) before the tracer is started,
+        while Run performs the instrumented actions after the tracer has started
+      - States ExpectedTraces returns the traces expected to be produced, matched against what the
+        mock agent actually receives
+      - Mentions running `go generate ./...` afterward to register the new test case
+    bad_signals:
+      - Says Setup runs after the tracer has already started
+      - Omits ExpectedTraces from the required interface methods
+      - Fails to mention running go generate to wire the new test into the generated test suite
+
+  - id: dd-trace-go-orchestrion-peek-skips-finished-cross-goroutine
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      A span is pushed onto the per-goroutine context stack (GLS) on goroutine A, but it finishes on
+      goroutine B, flipping its "done" cell to true there. Back on goroutine A, does
+      contextStack.Peek() still return this finished span as the active parent context?
+    expected_criteria:
+      - States Peek walks the stack from the top and skips any entry whose done cell reads true,
+        returning only the innermost still-live entry (or nil if none are live)
+      - Explains this exists specifically so a span finished elsewhere can't be adopted as a parent,
+        which would otherwise collapse unrelated traces together
+    bad_signals:
+      - Says Peek always returns the literal top of the stack regardless of whether it has finished
+      - Says Peek and Pop behave identically with respect to finished entries
+
+  - id: dd-trace-go-orchestrion-popentry-vs-popscope
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Two different call sites push plain boolean overrides under the same GLS key (one marks
+      "execution traced", the other marks a scoped "not traced" override), and each has its own
+      paired pop function. Why would one of these pops need to use a PopEntry-style removal instead
+      of a PopScope-style removal from the context stack?
+    expected_criteria:
+      - States PopScope removes the target entry and everything pushed above it, which is only
+        correct for genuinely nested scopes
+      - States PopEntry removes exactly the one entry matching its token and leaves entries above it
+        untouched, which is required when two overrides under the same key are independent rather
+        than strictly nested, so closing one doesn't wrongly discard an unrelated entry above it
+    bad_signals:
+      - Says PopScope and PopEntry behave identically since they operate on the same key
+      - Says using PopScope in place of PopEntry here would be equally correct
+
+  - id: dd-trace-go-orchestrion-token-not-index
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Why does pushing a value onto the context stack return a monotonically-increasing token to
+      identify that scope, rather than just using the entry's index in the underlying slice?
+    expected_criteria:
+      - States that an index cannot reliably identify a scope over time -- a push, pop, and another
+        push can land an unrelated new value at the exact same index, so an index captured earlier
+        could end up naming a completely different scope by the time its exit runs
+      - States a monotonically increasing token never repeats, so a stale token can never accidentally
+        match a new, unrelated scope
+    bad_signals:
+      - Says the slice index is used directly to identify and later remove entries
+      - Says tokens exist only for logging/debugging purposes and play no role in correctness
+
+  - id: dd-trace-go-orchestrion-push-drains-finished-entries
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Before appending a new entry under a key, does the context stack's Push do anything with
+      entries already sitting on that key's stack, or does it purely append?
+    expected_criteria:
+      - States Push first drops any trailing entries at the top of that key's stack whose done cell
+        already reads true, before appending the new entry
+      - Explains this bounds GLS growth for values pushed on one goroutine whose lifecycle (and pop)
+        completes on a different goroutine, so the pop never actually runs on the original goroutine
+    bad_signals:
+      - Says Push only ever appends, and that shrinking the stack is exclusively the job of
+        Pop/PopScope
+      - Says finished entries are left in place indefinitely until an explicit pop removes them
+
+  - id: dd-trace-go-orchestrion-pooled-span-liveness-cell
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Each context stack entry captures its own separate done *atomic.Bool cell at push time. Why not
+      just check a "finished" flag directly on the pushed value itself (e.g. a field on *tracer.Span)
+      whenever liveness needs to be checked, instead of capturing a separate cell?
+    expected_criteria:
+      - States that finished spans are returned to a sync.Pool and can be recycled into a completely
+        unrelated, newly active span
+      - Explains that if liveness were read directly off the recycled object, a bit being reset for
+        the new span would make the stack incorrectly think the old, already-finished scope is live
+        again, whereas a cell captured at push time freezes that specific scope's liveness
+        independent of what happens to the underlying pooled object afterward
+    bad_signals:
+      - Says reading a finished flag directly off the pooled span object is equally safe since spans
+        are only ever reused after Finish is called
+      - Says the separate done cell exists purely for performance/caching reasons unrelated to
+        object pooling
+
 
 # ==== OTelc Tests ====
 # TODO: OTelc does not currently have any AGENTS.md files. Add some in order to start testing.
