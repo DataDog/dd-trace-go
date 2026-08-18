@@ -78,11 +78,6 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 			Context:              config.Context,
 			ContinueMessageFunc:  continueActionFunc,
 			BlockMessageFunc:     blockActionFunc,
-			// Only Google Cloud load balancers require an acknowledgement for every body
-			// message; self-managed Envoy, Istio and Envoy Gateway let us close the stream as
-			// soon as the analysis is done. Integration is normalized above, so an unset or
-			// unknown value lands on GCP and keeps the conservative behaviour.
-			AckBodyMessagesUntilEndOfStream: config.Integration == GCPServiceExtensionIntegration,
 		}, instr),
 	}
 }

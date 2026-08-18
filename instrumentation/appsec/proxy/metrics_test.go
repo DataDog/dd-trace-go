@@ -31,15 +31,19 @@ var _ ResponseHeaders = (*fakeResponseHeaders)(nil)
 var _ HTTPBody = (*fakeBody)(nil)
 
 type fakeRequestHeaders struct {
-	eos     bool
-	limit   int
-	headers map[string][]string
+	eos         bool
+	limit       int
+	headers     map[string][]string
+	ackUntilEOS bool
 }
 
 func (f fakeRequestHeaders) GetEndOfStream() bool                                 { return f.eos }
 func (f fakeRequestHeaders) MessageType() MessageType                             { return MessageTypeRequestHeaders }
 func (f fakeRequestHeaders) SpanOptions(context.Context) []tracer.StartSpanOption { return nil }
 func (f fakeRequestHeaders) BodyParsingSizeLimit(context.Context) int             { return f.limit }
+func (f fakeRequestHeaders) AckBodyMessagesUntilEndOfStream(context.Context) bool {
+	return f.ackUntilEOS
+}
 func (f fakeRequestHeaders) ExtractRequest(context.Context) (PseudoRequest, error) {
 	return PseudoRequest{
 		Scheme:     "https",
@@ -150,13 +154,13 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 						Framework:           "test-framework",
 						ContinueMessageFunc: func(_ context.Context, _ ContinueActionOptions) error { return nil },
 						BlockMessageFunc:    func(_ context.Context, _ BlockActionOptions) error { return nil },
-						// The truncated case below asserts that the stream survives the
-						// analyzed chunk and only ends at end-of-stream.
-						AckBodyMessagesUntilEndOfStream: true,
 					}, instr)
 					defer mp.Close()
 
-					reqHeaders := fakeRequestHeaders{eos: direction != "request", limit: tt.limit, headers: map[string][]string{"Content-Type": {"application/json"}}}
+					// ackUntilEOS keeps the stream open past the analyzed chunk so this test can
+					// stay focused on the reported body size. Stream lifetime itself is covered by
+					// TestOnResponseBodyTruncationStreamLifetime.
+					reqHeaders := fakeRequestHeaders{eos: direction != "request", limit: tt.limit, headers: map[string][]string{"Content-Type": {"application/json"}}, ackUntilEOS: true}
 					reqState, err := mp.OnRequestHeaders(context.Background(), reqHeaders)
 					require.NoError(t, err)
 
@@ -193,6 +197,59 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 					require.True(t, found, "expected instrum.body_size metric to be recorded with correct tags")
 				})
 			}
+		})
+	}
+}
+
+// TestOnResponseBodyTruncationStreamLifetime covers the analyzed-before-end-of-stream
+// branch under both gateway policies: the analysis is complete once the body overflows the
+// parsing limit, so the only difference is whether the stream survives to acknowledge the
+// rest of the body.
+func TestOnResponseBodyTruncationStreamLifetime(t *testing.T) {
+	tests := []struct {
+		name            string
+		ackUntilEOS     bool
+		wantStreamEnded bool
+	}{
+		{name: "closes-early-when-draining-is-off", ackUntilEOS: false, wantStreamEnded: true},
+		{name: "stays-open-when-draining-is-on", ackUntilEOS: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			appsec.Start()
+			defer appsec.Stop()
+
+			continueCalls := 0
+			mp := NewProcessor(ProcessorConfig{
+				Framework:           "test-framework",
+				ContinueMessageFunc: func(_ context.Context, _ ContinueActionOptions) error { continueCalls++; return nil },
+				BlockMessageFunc:    func(_ context.Context, _ BlockActionOptions) error { return nil },
+			}, instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane))
+			defer mp.Close()
+
+			jsonHeaders := map[string][]string{"Content-Type": {"application/json"}}
+			reqState, err := mp.OnRequestHeaders(context.Background(), fakeRequestHeaders{eos: true, limit: 5, headers: jsonHeaders, ackUntilEOS: tt.ackUntilEOS})
+			require.NoError(t, err)
+			require.NoError(t, mp.OnResponseHeaders(fakeResponseHeaders{eos: false, headers: jsonHeaders}, &reqState))
+
+			// A single chunk overflows the limit, so the analysis completes before EOS.
+			continueCalls = 0
+			err = mp.OnResponseBody(fakeBody{b: []byte("0123456789"), eos: false}, &reqState)
+
+			require.Equal(t, 1, continueCalls, "the message must be acknowledged either way")
+			require.Empty(t, reqState.responseBuffer.buffer, "the analyzed payload must be released")
+			if tt.wantStreamEnded {
+				require.ErrorIs(t, err, io.EOF, "the stream must end once nothing is left to analyze")
+				require.Equal(t, MessageTypeFinished, reqState.State)
+				return
+			}
+
+			require.NoError(t, err, "the stream must stay open to acknowledge the rest of the body")
+			require.True(t, reqState.State.Ongoing())
+			require.ErrorIs(t, mp.OnResponseBody(fakeBody{eos: true}, &reqState), io.EOF)
 		})
 	}
 }
@@ -252,15 +309,15 @@ func TestOnResponseBodyMisconfigurationAcknowledgesMessage(t *testing.T) {
 					continueCalls++
 					return nil
 				},
-				AckBodyMessagesUntilEndOfStream: tt.ackUntilEOS,
 			}, instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane))
 			defer mp.Close()
 
 			state := RequestState{
-				Mu:          new(sync.Mutex),
-				Context:     context.Background(),
-				afterHandle: func() {},
-				State:       MessageTypeResponseBody,
+				Mu:                              new(sync.Mutex),
+				Context:                         context.Background(),
+				afterHandle:                     func() {},
+				State:                           MessageTypeResponseBody,
+				ackBodyMessagesUntilEndOfStream: tt.ackUntilEOS,
 			}
 			err := mp.OnResponseBody(fakeBody{eos: tt.endOfStream}, &state)
 

@@ -179,6 +179,17 @@ func (m messageRequestHeaders) BodyParsingSizeLimit(ctx context.Context) int {
 	}
 }
 
+// AckBodyMessagesUntilEndOfStream reports whether the gateway requires an acknowledgement
+// for every response body message. Only Google Cloud load balancers do; self-managed Envoy,
+// Istio and Envoy Gateway accept a clean close as soon as the analysis is done.
+//
+// This resolves the gateway the same way as [messageRequestHeaders.BodyParsingSizeLimit],
+// because the published callout container reports GCPServiceExtensionIntegration for every
+// TCP deployment: the actual gateway is only identifiable per request.
+func (m messageRequestHeaders) AckBodyMessagesUntilEndOfStream(ctx context.Context) bool {
+	return m.component(ctx) == componentNameGCPServiceExtension
+}
+
 func (m messageRequestHeaders) SpanOptions(ctx context.Context) []tracer.StartSpanOption {
 	return []tracer.StartSpanOption{tracer.Tag(ext.Component, m.component(ctx))}
 }

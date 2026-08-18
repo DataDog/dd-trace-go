@@ -41,8 +41,10 @@ import (
 //	  → ResponseBody      response has a body (EOS=false, supported Content-Type)
 //	  → Finished          EOS or body not supported (stream ends here)
 //
-//	ResponseBody          one or more OnResponseBody calls until EOS
-//	  → Finished          EOS received (body fully consumed)
+//	ResponseBody          one or more OnResponseBody calls
+//	  → Finished          EOS received (body fully consumed), or the analysis finished
+//	                      early and the gateway does not require the remaining body
+//	                      messages to be acknowledged
 //
 //	Any ongoing state
 //	  → Blocked           dyngo blocking callback fired inside Close/afterHandle
@@ -111,6 +113,9 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 		pseudoRequest.ClientIP,
 		int(mp.computedBodyParsingSizeLimit.Load()),
 		mp.Framework,
+		// Resolved per request rather than cached: the gateway is identified from the request
+		// headers, so a single processor can serve several kinds of gateway.
+		req.AckBodyMessagesUntilEndOfStream(ctx),
 		req.SpanOptions(ctx)...,
 	)
 
@@ -291,9 +296,9 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 // The acknowledgement is unconditional because the gateway is owed exactly one response
 // per message it sent while the stream is open. Whether the stream may then close
 // immediately or has to stay open for the rest of the body is gateway-specific, hence
-// [ProcessorConfig.AckBodyMessagesUntilEndOfStream].
+// [RequestHeaders.AckBodyMessagesUntilEndOfStream].
 func (mp *Processor) acknowledgeResponseBody(reqState *RequestState, endOfStream bool) error {
-	lastMessage := endOfStream || !mp.AckBodyMessagesUntilEndOfStream
+	lastMessage := endOfStream || !reqState.ackBodyMessagesUntilEndOfStream
 	if lastMessage {
 		_ = reqState.closeLocked()
 	}
