@@ -25,6 +25,7 @@ const (
 	ExportCodeMissingKind   ExportValidationCode = "missing_kind"
 	ExportCodeInvalidKind   ExportValidationCode = "invalid_kind"
 	ExportCodeInvalidStatus ExportValidationCode = "invalid_status"
+	ExportCodeInvalidTiming ExportValidationCode = "invalid_timing"
 	ExportCodeInvalidLink   ExportValidationCode = "invalid_link"
 	ExportCodeMissingLabel  ExportValidationCode = "missing_label"
 	ExportCodeInvalidJoin   ExportValidationCode = "invalid_join"
@@ -64,6 +65,12 @@ func ValidateExportSpan(event transport.LLMObsSpanEvent) *ExportValidationError 
 	}
 	if event.Status != "" && !isValidSpanStatus(event.Status) {
 		return &ExportValidationError{Code: ExportCodeInvalidStatus, Reason: fmt.Sprintf("invalid status %q", event.Status)}
+	}
+	if event.StartNS <= 0 {
+		return &ExportValidationError{Code: ExportCodeInvalidTiming, Reason: "start_ns must be greater than zero"}
+	}
+	if event.Duration < 0 {
+		return &ExportValidationError{Code: ExportCodeInvalidTiming, Reason: "duration must not be negative"}
 	}
 	for i, link := range event.SpanLinks {
 		switch {

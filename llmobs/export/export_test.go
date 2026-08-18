@@ -195,6 +195,7 @@ func tagsOf(t *testing.T, span map[string]any) []string {
 func ptr[T any](v T) *T { return &v }
 
 func spanEvent(traceID, spanID string, kind export.Kind, opts ...export.SpanEventOption) export.SpanEvent {
+	opts = append([]export.SpanEventOption{export.WithTiming(time.Unix(0, 1), 0)}, opts...)
 	return export.NewSpanEvent(traceID, spanID, kind, opts...)
 }
 
@@ -534,6 +535,7 @@ func TestSubmitSpans_DefaultsExistingSpanRepresentation(t *testing.T) {
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
 		TraceID: "trace",
 		SpanID:  "span",
+		StartNS: 1,
 		Meta:    map[string]any{"span.kind": string(export.KindLLM)},
 	}})
 	require.NoError(t, err)
@@ -591,7 +593,7 @@ func TestNewSpanEvent_DefaultsToOKWithoutErrorMeta(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		spanEvent("t", "s", export.KindLLM, export.WithTiming(time.Time{}, 0)),
+		spanEvent("t", "s", export.KindLLM),
 	})
 	require.NoError(t, err)
 
@@ -826,6 +828,7 @@ func TestSubmitSpans_EncodesSuccessfulBatchOnce(t *testing.T) {
 	encodes := 0
 
 	event := export.NewSpanEvent("t", "s", export.KindLLM,
+		export.WithTiming(time.Unix(0, 1), 0),
 		export.WithMetadata(map[string]any{
 			"value": countingJSONValue{encodes: &encodes},
 		}),
@@ -1722,17 +1725,47 @@ func TestSubmitEvaluations_RejectsTypeValueMismatch(t *testing.T) {
 	assert.Empty(t, fake.captured())
 }
 
-func TestSubmitSpans_ZeroStartAndDurationOmitFields(t *testing.T) {
+func TestSubmitSpans_RejectsInvalidTiming(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, "test-app")
 
-	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		spanEvent("t1", "s1", export.KindLLM, export.WithTiming(time.Time{}, 0)),
+		spanEvent("t2", "s2", export.KindLLM, export.WithTiming(time.Unix(0, -1), 0)),
+		spanEvent("t3", "s3", export.KindLLM, export.WithTiming(time.Unix(0, 1), -time.Nanosecond)),
+	})
+	require.NoError(t, err)
+	require.Len(t, res.ValidationErrors, 3)
+	assert.Equal(t, 3, res.Dropped)
+	assert.Zero(t, res.Sent)
+	assert.Zero(t, res.Failed)
+	assert.Equal(t, []export.ErrorCode{
+		export.CodeInvalidTiming,
+		export.CodeInvalidTiming,
+		export.CodeInvalidTiming,
+	}, []export.ErrorCode{
+		res.ValidationErrors[0].Code,
+		res.ValidationErrors[1].Code,
+		res.ValidationErrors[2].Code,
+	})
+	assert.Contains(t, res.ValidationErrors[0].Reason, "start_ns")
+	assert.Contains(t, res.ValidationErrors[1].Reason, "start_ns")
+	assert.Contains(t, res.ValidationErrors[2].Reason, "duration")
+	assert.Empty(t, fake.captured())
+}
+
+func TestSubmitSpans_ZeroDurationOmitted(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
 		spanEvent("t", "s", export.KindLLM),
 	})
 	require.NoError(t, err)
+	assert.Equal(t, 1, res.Sent)
 
 	span := allSpans(t, fake.captured()[0].body)[0]
-	assert.NotContains(t, span, "start_ns")
+	assert.Equal(t, float64(1), span["start_ns"])
 	assert.NotContains(t, span, "duration")
 }
 

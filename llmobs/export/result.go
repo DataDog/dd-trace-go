@@ -80,6 +80,7 @@ const (
 	CodeMissingKind   ErrorCode = illmobs.ExportCodeMissingKind
 	CodeInvalidKind   ErrorCode = illmobs.ExportCodeInvalidKind
 	CodeInvalidStatus ErrorCode = illmobs.ExportCodeInvalidStatus
+	CodeInvalidTiming ErrorCode = illmobs.ExportCodeInvalidTiming
 	CodeInvalidLink   ErrorCode = illmobs.ExportCodeInvalidLink
 	CodeMissingLabel  ErrorCode = illmobs.ExportCodeMissingLabel
 	CodeInvalidJoin   ErrorCode = illmobs.ExportCodeInvalidJoin

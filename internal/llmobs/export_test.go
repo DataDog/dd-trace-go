@@ -24,6 +24,7 @@ func validExportSpan(kind transport.SpanKind) transport.LLMObsSpanEvent {
 	return transport.LLMObsSpanEvent{
 		TraceID: "trace",
 		SpanID:  "span",
+		StartNS: 1,
 		Status:  transport.SpanStatusOK,
 		Meta:    llmobs.NewSpanEventMeta(kind),
 		SpanLinks: []transport.SpanLink{{
@@ -88,6 +89,30 @@ func TestValidateExportSpan(t *testing.T) {
 				event.Status = "pending"
 			},
 			code: llmobs.ExportCodeInvalidStatus,
+		},
+		{
+			name: "missing start",
+			mutate: func(event *transport.LLMObsSpanEvent) {
+				event.StartNS = 0
+			},
+			code:   llmobs.ExportCodeInvalidTiming,
+			reason: "start_ns",
+		},
+		{
+			name: "negative start",
+			mutate: func(event *transport.LLMObsSpanEvent) {
+				event.StartNS = -1
+			},
+			code:   llmobs.ExportCodeInvalidTiming,
+			reason: "start_ns",
+		},
+		{
+			name: "negative duration",
+			mutate: func(event *transport.LLMObsSpanEvent) {
+				event.Duration = -1
+			},
+			code:   llmobs.ExportCodeInvalidTiming,
+			reason: "duration",
 		},
 		{
 			name: "invalid link trace ID",
