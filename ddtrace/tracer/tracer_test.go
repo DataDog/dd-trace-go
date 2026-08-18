@@ -38,6 +38,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	tracertest "github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -45,6 +46,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -3273,6 +3275,255 @@ func TestPprofLabels(t *testing.T) {
 		span.Finish()
 		wasteC(time.Second)
 	})
+}
+
+// TestApplyPPROFLabelsTraceID verifies that profiling features do not emit the
+// AppSec-only "trace id" label. "span id" stays hotspots-only, "trace endpoint"
+// stays endpoints-only, and nothing is emitted when no feature is enabled.
+func TestApplyPPROFLabelsTraceID(t *testing.T) {
+	// WithAppSecEnabled(false) disables AppSec so the code-hotspots and endpoints
+	// gates can be tested deterministically; assert the global state to be safe.
+	tr, err := newTracer(WithAppSecEnabled(false))
+	require.NoError(t, err)
+	defer tr.Stop()
+	require.False(t, appsec.Enabled(), "appsec must be off for the deterministic gating cases")
+
+	span := tr.StartSpan("web.request", ResourceName("/things"), SpanType(ext.SpanTypeWeb))
+	defer span.Finish()
+
+	spanID := strconv.FormatUint(span.spanID, 10)
+
+	// apply resets the label context and (re)applies the labels for snap.
+	apply := func(snap internalconfig.SpanStartSnapshot) context.Context {
+		span.pprofCtxActive = nil
+		tr.applyPPROFLabels(context.Background(), span, snap)
+		return span.pprofCtxActive
+	}
+	present := func(t *testing.T, ctx context.Context, key, want string) {
+		t.Helper()
+		got, ok := pprof.Label(ctx, key)
+		require.Truef(t, ok, "label %q should be present", key)
+		require.Equalf(t, want, got, "value of label %q", key)
+	}
+	absent := func(t *testing.T, ctx context.Context, keys ...string) {
+		t.Helper()
+		for _, key := range keys {
+			_, ok := pprof.Label(ctx, key)
+			require.Falsef(t, ok, "label %q should be absent", key)
+		}
+	}
+
+	t.Run("hotspots", func(t *testing.T) {
+		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerHotspotsEnabled: true})
+		require.NotNil(t, ctx)
+		present(t, ctx, traceprof.SpanID, spanID)
+		absent(t, ctx, traceprof.TraceID, traceprof.TraceEndpoint, legacyLocalRootSpanIDLabel)
+	})
+	t.Run("endpoints-only", func(t *testing.T) {
+		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerEndpoints: true})
+		require.NotNil(t, ctx)
+		present(t, ctx, traceprof.TraceEndpoint, "/things")
+		absent(t, ctx, traceprof.TraceID, traceprof.SpanID, legacyLocalRootSpanIDLabel)
+	})
+	t.Run("hotspots and endpoints", func(t *testing.T) {
+		ctx := apply(internalconfig.SpanStartSnapshot{ProfilerHotspotsEnabled: true, ProfilerEndpoints: true})
+		require.NotNil(t, ctx)
+		present(t, ctx, traceprof.SpanID, spanID)
+		present(t, ctx, traceprof.TraceEndpoint, "/things")
+		absent(t, ctx, traceprof.TraceID, legacyLocalRootSpanIDLabel)
+	})
+	t.Run("none", func(t *testing.T) {
+		require.Nil(t, apply(internalconfig.SpanStartSnapshot{}))
+	})
+}
+
+// legacyLocalRootSpanIDLabel is the pprof label removed by #5087. It is spelled
+// out here so the tests fail if it is ever reintroduced.
+const legacyLocalRootSpanIDLabel = "local root span id"
+
+// TestApplyPPROFLabelsTraceIDFormat pins the wire format of the "trace id"
+// label against a known 128-bit trace ID: 32 lowercase hexadecimal characters,
+// zero-padded, and identical for every span of the trace.
+func TestApplyPPROFLabelsTraceIDFormat(t *testing.T) {
+	tr, err := newTracer()
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	for _, tc := range []struct {
+		name  string
+		upper uint64
+		lower uint64
+		want  string
+	}{
+		{name: "letters", upper: 0xabcdef0123456789, lower: 0xfedcba9876543210, want: "abcdef0123456789fedcba9876543210"},
+		{name: "zero padded", upper: 0, lower: 1, want: "0000000000000000" + "0000000000000001"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := tr.StartSpan("web.request")
+			defer root.Finish()
+			root.context.traceID.SetUpper(tc.upper)
+			root.context.traceID.SetLower(tc.lower)
+			root.context.traceID.cacheHex()
+
+			child := tr.StartSpan("child", ChildOf(root.context))
+			defer child.Finish()
+
+			require.Equal(t, tc.want, root.context.traceID.HexEncoded())
+			require.Equal(t, tc.want, child.context.traceID.HexEncoded(), "the whole trace shares one trace ID")
+			require.Equal(t, strings.ToLower(tc.want), root.context.traceID.HexEncoded(), "must be lowercase hex")
+			require.Len(t, root.context.traceID.HexEncoded(), 32)
+		})
+	}
+}
+
+// TestApplyPPROFLabelsTraceIDAppSec covers the AppSec half of the gating matrix
+// end to end: "trace id" is emitted for every AppSec configuration, while
+// "span id" and "trace endpoint" stay bound to their own profiler features.
+func TestApplyPPROFLabelsTraceIDAppSec(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		hotspots  bool
+		endpoints bool
+	}{
+		{name: "appsec only"},
+		{name: "appsec and hotspots", hotspots: true},
+		{name: "appsec and endpoints", endpoints: true},
+		{name: "appsec and hotspots and endpoints", hotspots: true, endpoints: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, Start(
+				WithAppSecEnabled(true),
+				WithProfilerCodeHotspots(tc.hotspots),
+				WithProfilerEndpoints(tc.endpoints),
+			))
+			defer Stop()
+			if !appsec.Enabled() {
+				t.Skip("appsec is not enabled on this platform; skipping appsec pprof label test")
+			}
+
+			span := StartSpan("web.request", ResourceName("/things"), SpanType(ext.SpanTypeWeb))
+			defer span.Finish()
+
+			ctx := span.pprofCtxActive
+			require.NotNil(t, ctx)
+
+			traceID, ok := pprof.Label(ctx, traceprof.TraceID)
+			require.True(t, ok, "trace id must be present whenever appsec is enabled")
+			require.Equal(t, span.context.TraceID(), traceID)
+			require.Len(t, traceID, 32)
+
+			spanID, ok := pprof.Label(ctx, traceprof.SpanID)
+			require.Equalf(t, tc.hotspots, ok, "span id presence must follow code hotspots")
+			if tc.hotspots {
+				require.Equal(t, strconv.FormatUint(span.spanID, 10), spanID)
+			}
+
+			endpoint, ok := pprof.Label(ctx, traceprof.TraceEndpoint)
+			require.Equalf(t, tc.endpoints, ok, "trace endpoint presence must follow endpoint profiling")
+			if tc.endpoints {
+				require.Equal(t, "/things", endpoint)
+			}
+
+			_, ok = pprof.Label(ctx, legacyLocalRootSpanIDLabel)
+			require.False(t, ok, "the local root span id label was removed")
+		})
+	}
+}
+
+// TestSetResourceNameDoesNotLeakEndpointLabel verifies that overriding the
+// resource name only relabels "trace endpoint" when endpoint profiling is on.
+// AppSec also populates pprofCtxActive, which must not imply endpoint labels.
+func TestSetResourceNameDoesNotLeakEndpointLabel(t *testing.T) {
+	require.NoError(t, Start(
+		WithAppSecEnabled(true),
+		WithProfilerCodeHotspots(false),
+		WithProfilerEndpoints(false),
+	))
+	defer Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec is not enabled on this platform; skipping appsec endpoint leak test")
+	}
+
+	span := StartSpan("web.request", SpanType(ext.SpanTypeWeb))
+	defer span.Finish()
+	require.NotNil(t, span.pprofCtxActive, "appsec labels the span")
+
+	span.SetTag(ext.ResourceName, "/updated")
+
+	_, ok := pprof.Label(span.pprofCtxActive, traceprof.TraceEndpoint)
+	require.False(t, ok, "endpoint profiling is disabled, so no endpoint label may be added")
+}
+
+// publishingSampler hands every sampled span to a channel, emulating a custom
+// Sampler that publishes the span to another goroutine. tracer.StartSpan calls
+// Sample before it applies the pprof labels, so anything the label path writes
+// to the SpanContext afterwards races with readers of the published span.
+type publishingSampler struct {
+	t       *testing.T
+	readers sync.WaitGroup
+}
+
+// Sample emulates a custom Sampler that publishes the span to another
+// goroutine. StartSpan invokes it after the span context is built, so the
+// reader it starts overlaps with the remainder of StartSpan.
+func (s *publishingSampler) Sample(span *Span) bool {
+	// The hex cache must already be finalized here: everything after this point
+	// runs concurrently with the reader below, so a later write would race.
+	if got := span.context.traceID.hexEncoded; len(got) != 32 {
+		s.t.Errorf("hex cache = %q at sampler time, want it finalized to 32 characters", got)
+	}
+	s.readers.Go(func() {
+		for range 200 {
+			if got := span.Context().TraceID(); len(got) != 32 {
+				s.t.Errorf("trace id = %q, want 32 hex characters", got)
+			}
+		}
+	})
+	return true
+}
+
+// TestApplyPPROFLabelsTraceIDNoCacheWriteAfterPublish verifies that the AppSec
+// "trace id" label needs no write once the span is published. Under -race, a
+// write would collide with the concurrent TraceID() reads started from Sample.
+func TestApplyPPROFLabelsTraceIDNoCacheWriteAfterPublish(t *testing.T) {
+	sampler := &publishingSampler{t: t}
+	require.NoError(t, Start(
+		WithAppSecEnabled(true),
+		WithProfilerCodeHotspots(false),
+		WithProfilerEndpoints(false),
+		WithSampler(sampler),
+	))
+	defer Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec is not enabled on this platform; skipping appsec-only pprof label race test")
+	}
+
+	for range 64 {
+		StartSpan("web.request").Finish()
+	}
+	sampler.readers.Wait()
+}
+
+// TestNewSpanContextInheritsTraceIDHexCache verifies that a child context reuses
+// its parent's trace ID hex cache instead of re-encoding it, so a whole trace
+// pays a single hex allocation.
+func TestNewSpanContextInheritsTraceIDHexCache(t *testing.T) {
+	tr, err := newTracer(WithAppSecEnabled(false))
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	// Extracted contexts finalize the hex cache, so the parent starts warm.
+	parent, err := tr.Extract(TextMapCarrier{
+		DefaultTraceIDHeader:  "1234",
+		DefaultParentIDHeader: "5678",
+	})
+	require.NoError(t, err)
+	want := parent.traceID.hexEncoded
+	require.Len(t, want, 32)
+
+	child := tr.StartSpan("child", ChildOf(parent))
+	defer child.Finish()
+	require.Equal(t, want, child.context.traceID.hexEncoded, "child must inherit the parent hex cache")
 }
 
 func TestNoopTracerStartSpan(t *testing.T) {

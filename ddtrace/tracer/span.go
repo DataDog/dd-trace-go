@@ -529,9 +529,13 @@ func (s *Span) setTagLocked(key string, value any) {
 		return
 	}
 	if v, ok := value.(string); ok {
-		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) && hasEndpointLabel(s.pprofCtxActive) {
 			// If the user overrides the resource name for the span,
 			// update the endpoint label for the runtime profilers.
+			//
+			// Only spans that already carry an endpoint label are updated:
+			// AppSec also populates pprofCtxActive, and endpoint labels must
+			// stay tied to endpoint profiling.
 			//
 			// We don't change s.pprofCtxRestore since that should
 			// stay as the original parent span context regardless
