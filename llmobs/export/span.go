@@ -66,7 +66,8 @@ func NewSpanEvent(traceID, spanID string, kind Kind, opts ...SpanEventOption) Sp
 	return event
 }
 
-// WithTiming sets the span start time and duration.
+// WithTiming sets the span start time and duration. A zero start clears StartNS
+// and a zero duration clears Duration; zero fields are omitted from the payload.
 func WithTiming(start time.Time, duration time.Duration) SpanEventOption {
 	return func(event *SpanEvent) {
 		if start.IsZero() {

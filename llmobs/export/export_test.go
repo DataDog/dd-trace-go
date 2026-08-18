@@ -591,7 +591,7 @@ func TestNewSpanEvent_DefaultsToOKWithoutErrorMeta(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
-		spanEvent("t", "s", export.KindLLM),
+		spanEvent("t", "s", export.KindLLM, export.WithTiming(time.Time{}, 0)),
 	})
 	require.NoError(t, err)
 
