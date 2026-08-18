@@ -196,9 +196,17 @@ type Config struct {
 	// from the tracer's poll goroutine and must not contend with hot-path reads
 	// of unrelated fields.
 	effectiveTraceProtocolBits atomic.Uint64
+	// effectiveStatsComputation is the last value reported via
+	// ReportEffectiveStatsComputation, as a tri-state: 0 = never reported,
+	// 1 = false, 2 = true. The tri-state (rather than an atomic.Bool) makes
+	// the first report fire even when the reported value is the zero value.
+	// Deliberately not under mu, for the same reason as effectiveTraceProtocolBits.
+	effectiveStatsComputation atomic.Uint32
 	// otlpExportMode indicates traces should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMode bool
+	// otlpSpanMetricsEnabled controls OTLP span metrics export; nil auto-enables when otlpExportMode && runtimeMetricsOtel.
+	otlpSpanMetricsEnabled *bool
 	// otlpExportMetricsMode indicates metrics should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMetricsMode bool
@@ -1460,6 +1468,31 @@ func (c *Config) ReportEffectiveTraceProtocol(v float64) bool {
 	}
 }
 
+// ReportEffectiveStatsComputation records whether client-side stats are
+// actually being computed — which can differ from the configured
+// DD_TRACE_STATS_COMPUTATION_ENABLED when an agent-capability workaround
+// forces them on — for DD_TRACE_STATS_COMPUTATION_ENABLED config telemetry.
+// Like ReportEffectiveTraceProtocol it reports only on change, so periodic
+// re-evaluation cannot inflate config-telemetry seqIDs. It does NOT modify
+// the value returned by StatsComputationEnabled. Returns true if this call
+// changed the recorded value.
+func (c *Config) ReportEffectiveStatsComputation(enabled bool) bool {
+	next := uint32(1)
+	if enabled {
+		next = 2
+	}
+	for {
+		prev := c.effectiveStatsComputation.Load()
+		if prev == next {
+			return false
+		}
+		if c.effectiveStatsComputation.CompareAndSwap(prev, next) {
+			configtelemetry.Report("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, telemetry.OriginCalculated)
+			return true
+		}
+	}
+}
+
 func (c *Config) OTLPTraceURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1504,6 +1537,27 @@ func (c *Config) OTLPHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return maps.Clone(c.otlpHeaders)
+}
+
+// OTLPSpanMetricsEnabled reports whether span metrics export is active; auto-enables when OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true.
+func (c *Config) OTLPSpanMetricsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.otlpSpanMetricsEnabled != nil {
+		return *c.otlpSpanMetricsEnabled
+	}
+	return c.otlpExportMode && c.runtimeMetricsOtel
+}
+
+func (c *Config) SetOTLPSpanMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("OTEL_TRACES_SPAN_METRICS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	v := enabled
+	c.otlpSpanMetricsEnabled = &v
+	configtelemetry.Report("OTEL_TRACES_SPAN_METRICS_ENABLED", enabled, origin)
 }
 
 func (c *Config) TraceID128BitEnabled() bool {

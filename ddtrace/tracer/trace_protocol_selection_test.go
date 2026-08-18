@@ -6,20 +6,43 @@
 package tracer
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 // isV1WireByte reports whether b is the first byte of a msgpack map — the
 // shape of a v1.0 trace payload. Mirrors the sniffing logic in decode().
 func isV1WireByte(b byte) bool {
 	return b == msgpackMap16 || b == msgpackMap32 || b&0xf0 == msgpackMapFix
+}
+
+// infoJSON builds a minimal /info response body advertising endpoints and
+// client_drop_p0s, with an optional agent version. An empty version omits
+// the "version" field entirely, matching a real agent that doesn't report one.
+func infoJSON(endpoints []string, dropP0s bool, version string) string {
+	body := map[string]any{
+		"endpoints":       endpoints,
+		"client_drop_p0s": dropP0s,
+	}
+	if version != "" {
+		body["version"] = version
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		panic(err) // unreachable: body is composed of primitives only
+	}
+	return string(b)
 }
 
 // TestNewConfigKeepsV1WhenCSSDisabled is the headline regression pin for the
@@ -75,11 +98,11 @@ func TestTraceProtocolDecoupling(t *testing.T) {
 						t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", req.env)
 					}
 					agent := startTestAgent(t)
-					endpoints := `"/v0.4/traces","/v0.6/stats"`
+					endpoints := []string{"/v0.4/traces", "/v0.6/stats"}
 					if v1Advertised {
-						endpoints = `"/v0.4/traces","/v1.0/traces","/v0.6/stats"`
+						endpoints = []string{"/v0.4/traces", "/v1.0/traces", "/v0.6/stats"}
 					}
-					agent.SetInfo(`{"endpoints":[` + endpoints + `],"client_drop_p0s":true}`)
+					agent.SetInfo(infoJSON(endpoints, true, ""))
 
 					var opts []StartOption
 					if cssOff {
@@ -149,4 +172,278 @@ func TestPinTestTracerToV04RotatesWriterPayload(t *testing.T) {
 	assert.Equal(t, traceProtocolV04, tr.config.internalConfig.RequestedTraceProtocol())
 	assert.Equal(t, traceProtocolV04, w.payload.protocol(),
 		"the writer's already-built payload must rotate off v1, not just the config")
+}
+
+// TestV1StatsWorkaroundForcesStatsAndP0Dropping is a decision-matrix pin for
+// the 7.77/7.78 v1.0 stats workaround (see agentOmitsLangInV1Stats):
+// client-side stats and P0 dropping are forced on together — by design, not
+// by oversight — exactly when the agent is affected, the effective protocol
+// is v1.0, and the escape hatch and exclusions don't apply. wantStats is
+// asserted against both canComputeStats and canDropP0s: the two predicates
+// move together for this workaround, so one column pins that invariant
+// structurally instead of two columns repeating the same value.
+func TestV1StatsWorkaroundForcesStatsAndP0Dropping(t *testing.T) {
+	cases := []struct {
+		name              string
+		agentVersion      string // "" omits the "version" field from /info entirely
+		v1Advertised      bool
+		statsAdvertised   bool
+		dropP0sAdvertised bool
+		envProtocol       string // DD_TRACE_AGENT_PROTOCOL_VERSION, "" leaves it unset
+		wantStats         bool
+		wantProtocol      float64
+	}{
+		{
+			name: "7.77 forces stats and P0 dropping on", agentVersion: "7.77.0",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: true, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "7.78 forces stats and P0 dropping on", agentVersion: "7.78.3",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: true, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "7.79.0-rc.4 (unfixed prerelease) also forces the override on", agentVersion: "7.79.0-rc.4",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: true, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "7.79.0-rc.6 is fixed: no override", agentVersion: "7.79.0-rc.6",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: false, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "7.79.0 is fixed: no override", agentVersion: "7.79.0",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: false, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "unldflagged 6.0.0 fallback: no override", agentVersion: "6.0.0",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: false, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "absent version: no override", agentVersion: "",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: false, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "non-Agent version string: no override", agentVersion: "datadogexporter-otelcol-0.155.0",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: false, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "escape hatch: DD_TRACE_AGENT_PROTOCOL_VERSION=0.4 downgrades, no override", agentVersion: "7.77.0",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: true, envProtocol: "0.4",
+			wantStats: false, wantProtocol: traceProtocolV04,
+		},
+		{
+			// Also stands in for a real 7.76.9 agent, which never advertises
+			// /v1.0/traces (gated behind apm_config.enable_v1_trace_endpoint,
+			// default off through 7.76.x) — the protocol guard alone excludes
+			// it in practice, so a dedicated lower-bound row would pin nothing
+			// beyond this one.
+			name: "agent doesn't advertise v1.0: no override (v0.4 anyway)", agentVersion: "7.77.0",
+			v1Advertised: false, statsAdvertised: true, dropP0sAdvertised: true,
+			wantStats: false, wantProtocol: traceProtocolV04,
+		},
+		{
+			name: "agent doesn't advertise /v0.6/stats: no override, no protocol downgrade", agentVersion: "7.77.0",
+			v1Advertised: true, statsAdvertised: false, dropP0sAdvertised: true,
+			wantStats: false, wantProtocol: traceProtocolV1,
+		},
+		{
+			name: "agent has the probabilistic sampler enabled (client_drop_p0s=false): no override, no protocol downgrade", agentVersion: "7.77.0",
+			v1Advertised: true, statsAdvertised: true, dropP0sAdvertised: false,
+			wantStats: false, wantProtocol: traceProtocolV1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.envProtocol != "" {
+				t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", tc.envProtocol)
+			}
+
+			agent := startTestAgent(t)
+			endpoints := []string{"/v0.4/traces"}
+			if tc.v1Advertised {
+				endpoints = append(endpoints, "/v1.0/traces")
+			}
+			if tc.statsAdvertised {
+				endpoints = append(endpoints, "/v0.6/stats")
+			}
+			agent.SetInfo(infoJSON(endpoints, tc.dropP0sAdvertised, tc.agentVersion))
+
+			tr := newTracerTest(t, agent, WithStatsComputation(false))
+			defer stopTracerTest(tr)
+
+			assert.Equal(t, tc.wantStats, tr.config.canComputeStats(), "canComputeStats")
+			assert.Equal(t, tc.wantStats, tr.config.canDropP0s(), "canDropP0s")
+			assert.Equal(t, tc.wantProtocol, tr.config.effectiveTraceProtocol(), "effectiveTraceProtocol")
+		})
+	}
+}
+
+// v1StatsWorkaroundAffectedInfo is an /info body with every gate in
+// forcesStatsForV1Agent lined up in favour of the override: an affected agent
+// version, both /v1.0/traces and /v0.6/stats advertised, and client_drop_p0s
+// on. Each case in TestV1StatsWorkaroundExclusions trips exactly one
+// exclusion on top of it, so the exclusion is necessarily what changed the
+// answer.
+const v1StatsWorkaroundAffectedInfo = `{"endpoints":["/v0.4/traces","/v1.0/traces","/v0.6/stats"],"client_drop_p0s":true,"version":"7.77.0"}`
+
+// TestV1StatsWorkaroundExclusions covers the exclusion branches of
+// forcesStatsForV1Agent that TestV1StatsWorkaroundForcesStatsAndP0Dropping's
+// table does not reach — the ones that suppress the override even though the
+// agent is affected and every other gate is open:
+//
+//   - Lambda: the Datadog Lambda extension computes trace stats server-side,
+//     and contrib/aws/datadog-lambda-go passes WithStatsComputation(false)
+//     deliberately, so the override must not reverse that choice.
+//   - Datadog-Client-Computed-Stats already sent for another reason
+//     (tracing-as-transport, OTLP span metrics, OTLP export mode): the agent
+//     never enters its buggy v1.0 concentrator, so forcing the override on
+//     would be a no-op.
+//   - CI Visibility: even in agent mode, ciVisibilityTransport.sendStats is
+//     an unconditional no-op, so forcing the override on would only waste
+//     CPU and wrongly start dropping P0 CI Visibility test-run spans.
+//
+// In every case the wire protocol must stay v1.0: an exclusion suppresses the
+// stats override, never the protocol.
+func TestV1StatsWorkaroundExclusions(t *testing.T) {
+	cases := []struct {
+		name string
+		// env is applied before the tracer is built, for exclusions whose
+		// config is resolved during newConfig.
+		env map[string]string
+		// startOpt is applied before the agent snapshot is taken, matching a
+		// real deployment where the flag is already set at startup.
+		startOpt StartOption
+		// afterStart is applied to the live config once the tracer is built.
+		// The OTLP flags use this because setting them up front would swap the
+		// trace writer and stats concentrator for real OTLP exporters (see
+		// newTracer), which this test has no endpoint for. forcesStatsForV1Agent
+		// reads both flags live, so the exclusion is exercised either way.
+		afterStart func(*config)
+	}{
+		{
+			name:     "lambda extension computes stats server-side",
+			startOpt: func(c *config) { c.internalConfig.SetIsLambdaFunction(true, internalconfig.OriginCode) },
+		},
+		{
+			name: "tracing-as-transport already sends the CSS header",
+			env:  map[string]string{"DD_APM_TRACING_ENABLED": "false"},
+		},
+		{
+			name:       "OTLP span metrics already send the CSS header",
+			afterStart: func(c *config) { c.internalConfig.SetOTLPSpanMetricsEnabled(true, internalconfig.OriginCode) },
+		},
+		{
+			name:       "OTLP export mode bypasses the agent's stats path",
+			afterStart: func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) },
+		},
+		{
+			name:     "CI Visibility never sends stats through this transport",
+			startOpt: func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			agent := startTestAgent(t)
+			agent.SetInfo(v1StatsWorkaroundAffectedInfo)
+
+			opts := []StartOption{WithStatsComputation(false)}
+			if tc.startOpt != nil {
+				opts = append(opts, tc.startOpt)
+			}
+			tr := newTracerTest(t, agent, opts...)
+			defer stopTracerTest(tr)
+
+			if tc.afterStart != nil {
+				tc.afterStart(tr.config)
+			}
+
+			// Guard against a vacuous pass: every agent-side gate must still be
+			// open, so canComputeStats can only be false because of the
+			// exclusion under test, not because the agent-capability gate in
+			// canComputeStatsWithAgent tripped first. Setting
+			// AWS_LAMBDA_FUNCTION_NAME instead of isLambdaFunction, for
+			// instance, would also set logToStdout and disable the agent
+			// outright — which these guards would catch.
+			af := tr.config.agent.load()
+			require.True(t, af.Stats, "guard: agent must advertise /v0.6/stats")
+			require.True(t, af.DropP0s, "guard: agent must advertise client_drop_p0s")
+			require.True(t, af.v1TracesAdvertised, "guard: agent must advertise /v1.0/traces")
+			require.True(t, af.v1StatsLangUnfixed, "guard: agent version must be inside the affected window")
+
+			assert.False(t, tr.config.canComputeStats(), "canComputeStats")
+			assert.False(t, tr.config.canDropP0s(), "canDropP0s")
+			assert.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol(), "effectiveTraceProtocol")
+		})
+	}
+}
+
+// TestV1StatsWorkaroundStartupOrderVsTracingAsTransport pins where
+// surfaceStatsOverride sits inside newConfig. tracingAsTransport is one of the
+// exclusions in forcesStatsForV1Agent, but it is not set until
+// apmTracingDisabled runs, which is later in newConfig than the agent snapshot.
+// Surfacing the override before that point announces — in a warning and in
+// config telemetry — an override that the exclusion immediately makes untrue.
+func TestV1StatsWorkaroundStartupOrderVsTracingAsTransport(t *testing.T) {
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+	logs := new(log.RecordLogger)
+
+	t.Setenv("DD_APM_TRACING_ENABLED", "false")
+	agent := startTestAgent(t)
+	agent.SetInfo(v1StatsWorkaroundAffectedInfo)
+	tr := newTracerTest(t, agent, WithStatsComputation(false), WithLogger(logs))
+	defer stopTracerTest(tr)
+
+	require.True(t, tr.config.tracingAsTransport,
+		"guard: DD_APM_TRACING_ENABLED=false must have taken effect")
+	require.False(t, tr.config.canComputeStats(),
+		"guard: the tracing-as-transport exclusion must suppress the override")
+
+	// The structural assertion: nothing was ever reported, because the override
+	// never applied. effectiveStatsReports is shared with
+	// TestPollAgentInfoSurfacesV1StatsWorkaroundTransitions.
+	assert.Empty(t, effectiveStatsReports(rec),
+		"an override suppressed by an exclusion must not reach config telemetry")
+	assert.NotContains(t, strings.Join(logs.Logs(), "\n"), "have been enabled because",
+		"an override suppressed by an exclusion must not warn at startup")
+}
+
+// TestV1StatsWorkaroundWireBehavior is the end-to-end companion to
+// TestV1StatsWorkaroundForcesStatsAndP0Dropping: it proves the override
+// actually changes what goes out on the wire, which is what makes the agent
+// skip its buggy v1.0 stats path in the first place.
+func TestV1StatsWorkaroundWireBehavior(t *testing.T) {
+	agent := startTestAgent(t)
+	agent.SetInfo(infoJSON([]string{"/v0.4/traces", "/v1.0/traces", "/v0.6/stats"}, true, "7.77.0"))
+	tr := newTracerTest(t, agent, WithStatsComputation(false))
+	defer stopTracerTest(tr)
+
+	require.True(t, tr.config.canComputeStats(), "sanity check: the workaround must be active")
+
+	span := tr.StartSpan("op")
+	span.Finish()
+	flushAgentTracerTest(t, tr, agent, 1)
+
+	assert.Equal(t, []string{tracesAPIPathV1}, agent.Requests(), "the request must still land on /v1.0/traces")
+	firstBytes := agent.RequestFirstBytes()
+	require.Len(t, firstBytes, 1)
+	assert.True(t, isV1WireByte(firstBytes[0]), "expected a msgpack map (v1) body, got byte 0x%02x", firstBytes[0])
+
+	headers := agent.RequestHeaders()
+	require.Len(t, headers, 1)
+	assert.Equal(t, "yes", headers[0].Get("Datadog-Client-Computed-Stats"),
+		"the agent only skips its own v1.0 stats concentrator when this header is set")
 }

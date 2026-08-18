@@ -15,10 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // withAgentInfoPollInterval is a test-only StartOption that overrides the
@@ -503,4 +505,169 @@ func TestTraceProtocolChangeLoggedOncePerTransition(t *testing.T) {
 		}
 	}
 	assert.Zero(t, changes, "an unchanged effective protocol must never re-log a transition")
+}
+
+// TestPollAgentInfoLiftsV1StatsWorkaround pins a deliberate choice: unlike
+// the trace-protocol state (see trace_protocol_state.go), the agent version
+// (and the derived v1StatsLangUnfixed) is NOT added to refreshAgentFeatures's
+// frozen-field graft list. An agent upgraded in place from an affected
+// version to a fixed one therefore lifts the client-side-stats workaround
+// without a tracer restart.
+func TestPollAgentInfoLiftsV1StatsWorkaround(t *testing.T) {
+	var agentVersion atomic.Pointer[string]
+	affected := "7.77.0"
+	agentVersion.Store(&affected)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"version":         *agentVersion.Load(),
+			"endpoints":       []string{"/v0.4/traces", "/v1.0/traces", "/v0.6/stats"},
+			"client_drop_p0s": true,
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	tr, err := newTracer(
+		WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		WithAgentTimeout(2),
+		WithStatsComputation(false),
+	)
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	require.True(t, tr.config.canComputeStats(), "sanity check: the workaround must be active at startup")
+	require.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol())
+
+	// Upgrade the agent in place, then poll.
+	fixed := "7.79.0"
+	agentVersion.Store(&fixed)
+	tr.refreshAgentFeatures()
+
+	assert.False(t, tr.config.canComputeStats(),
+		"the workaround must lift without a restart once the agent reports a fixed version")
+	// The agent still advertises /v1.0/traces on this poll, so the wire
+	// protocol stays on v1 regardless of the version-string change.
+	assert.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol())
+}
+
+// v1StatsWorkaroundAgent serves /info with a swappable version string, so a
+// test can upgrade or roll back the agent under a running tracer.
+func v1StatsWorkaroundAgent(t *testing.T, initial string) (*httptest.Server, func(string)) {
+	t.Helper()
+	var version atomic.Pointer[string]
+	version.Store(&initial)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"version":         *version.Load(),
+			"endpoints":       []string{"/v0.4/traces", "/v1.0/traces", "/v0.6/stats"},
+			"client_drop_p0s": true,
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func(v string) { version.Store(&v) }
+}
+
+// effectiveStatsReports returns every calculated-origin report of
+// DD_TRACE_STATS_COMPUTATION_ENABLED, in order.
+func effectiveStatsReports(rec *telemetrytest.RecordClient) []bool {
+	var out []bool
+	for _, c := range rec.Configuration {
+		if c.Name == "DD_TRACE_STATS_COMPUTATION_ENABLED" && c.Origin == telemetry.OriginCalculated {
+			out = append(out, c.Value.(bool))
+		}
+	}
+	return out
+}
+
+// TestPollAgentInfoSurfacesV1StatsWorkaroundTransitions is the observability
+// half of TestPollAgentInfoLiftsV1StatsWorkaround. Because the agent version is
+// re-read on every poll, the override can engage or lift mid-process — so
+// reporting it only from newConfig would let it do either in silence, against
+// the intent stated there ("an override the user did not ask for must never be
+// silent"). Both directions must reach the log and config telemetry, and a
+// steady state must stay quiet so a 5s poll cannot spam either.
+func TestPollAgentInfoSurfacesV1StatsWorkaroundTransitions(t *testing.T) {
+	t.Run("engages on a later poll", func(t *testing.T) {
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		logs := new(log.RecordLogger)
+
+		srv, setVersion := v1StatsWorkaroundAgent(t, "7.79.0") // unaffected at startup
+		tr, err := newTracer(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentTimeout(2),
+			WithStatsComputation(false),
+			WithLogger(logs),
+		)
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		require.False(t, tr.config.canComputeStats(), "sanity check: no override at startup")
+		require.Empty(t, effectiveStatsReports(rec),
+			"an override that never engaged must not report anything")
+
+		logs.Reset()
+		setVersion("7.77.0") // agent rolled back under a running tracer
+		tr.refreshAgentFeatures()
+
+		require.True(t, tr.config.canComputeStats(), "the override must engage on the poll")
+		assert.Equal(t, []bool{true}, effectiveStatsReports(rec),
+			"engaging mid-process must reach config telemetry")
+		assert.Contains(t, strings.Join(logs.Logs(), "\n"), "7.77.0",
+			"engaging mid-process must not be silent")
+	})
+
+	t.Run("lifts on a later poll", func(t *testing.T) {
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		logs := new(log.RecordLogger)
+
+		srv, setVersion := v1StatsWorkaroundAgent(t, "7.77.0") // affected at startup
+		tr, err := newTracer(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentTimeout(2),
+			WithStatsComputation(false),
+			WithLogger(logs),
+		)
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		require.True(t, tr.config.canComputeStats(), "sanity check: the override is active at startup")
+		require.Equal(t, []bool{true}, effectiveStatsReports(rec))
+
+		logs.Reset()
+		setVersion("7.79.0") // agent upgraded under a running tracer
+		tr.refreshAgentFeatures()
+
+		require.False(t, tr.config.canComputeStats(), "the override must lift on the poll")
+		assert.Equal(t, []bool{true, false}, effectiveStatsReports(rec),
+			"lifting must correct the previously reported value, not leave it stale")
+		assert.Contains(t, strings.Join(logs.Logs(), "\n"), "no longer applies",
+			"lifting mid-process must not be silent")
+	})
+
+	t.Run("steady state is silent", func(t *testing.T) {
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+
+		srv, _ := v1StatsWorkaroundAgent(t, "7.77.0")
+		tr, err := newTracer(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentTimeout(2),
+			WithStatsComputation(false),
+		)
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		require.Equal(t, []bool{true}, effectiveStatsReports(rec))
+		for range 3 {
+			tr.refreshAgentFeatures()
+		}
+		assert.Equal(t, []bool{true}, effectiveStatsReports(rec),
+			"an unchanged answer must not re-report on every poll")
+	})
 }
