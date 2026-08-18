@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
@@ -36,6 +37,7 @@ func TestNewConfigKeepsV1WhenCSSDisabled(t *testing.T) {
 	assert.Equal(t, agent.URL()+tracesAPIPathV1, tr.config.ddTransport.endpoint(tr.config.effectiveTraceProtocol()))
 
 	span := tr.StartSpan("op")
+	wantTraceID := span.Context().TraceIDLower()
 	span.Finish()
 	flushAgentTracerTest(t, tr, agent, 1)
 
@@ -43,6 +45,10 @@ func TestNewConfigKeepsV1WhenCSSDisabled(t *testing.T) {
 	firstBytes := agent.RequestFirstBytes()
 	require.Len(t, firstBytes, 1)
 	assert.True(t, isV1WireByte(firstBytes[0]), "expected a msgpack map (v1) body, got byte 0x%02x", firstBytes[0])
+
+	spans := agent.Spans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, wantTraceID, spans[0].traceID, "the trace ID must round-trip through the v1 chunk-level encoding")
 }
 
 // TestTraceProtocolDecoupling is the decision matrix: the effective protocol
@@ -102,4 +108,45 @@ func TestTraceProtocolDecoupling(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestPinTestTracerToV04RotatesWriterPayload pins a gap flagged in review:
+// startTestTracer's v1-capability override used to run after newTracer had already
+// built the writer's initial payload, so on a developer machine where a real Agent at
+// the default address advertises v1, that payload had already latched onto v1 before
+// the override ran. Overriding config alone does not retroactively change an
+// already-built payload — only an empty-payload flush re-reads the effective protocol
+// — so without one, the first real trace would still encode as v1 despite the
+// override's intent to force v0.4.
+//
+// A real v1-capable Agent at the default address isn't reproducible in CI, so simulate
+// the precondition directly: force the writer's payload to v1 and the agent snapshot
+// back to "v1 available", then confirm pinTestTracerToV04 corrects both.
+func TestPinTestTracerToV04RotatesWriterPayload(t *testing.T) {
+	tr, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	w, ok := tr.traceWriter.(*agentTraceWriter)
+	require.True(t, ok)
+
+	w.mu.Lock()
+	w.payload = newPayload(traceProtocolV1)
+	w.mu.Unlock()
+	// A real v1-capable Agent at the default address isn't reproducible in CI
+	// (startTestTracer's own pinTestTracerToV04 call has already forced this
+	// tracer's protocol state to protoV04, the lattice's terminal value), so
+	// force the precondition directly rather than trying to drive it through
+	// a poll.
+	setTraceProtocolStateForTest(tr.config, protoV1)
+	af := tr.config.agent.load()
+	tr.config.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
+	require.Equal(t, traceProtocolV1, w.payload.protocol(), "sanity check: simulated precondition")
+
+	pinTestTracerToV04(tr, af)
+
+	assert.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol())
+	assert.Equal(t, traceProtocolV04, tr.config.internalConfig.RequestedTraceProtocol())
+	assert.Equal(t, traceProtocolV04, w.payload.protocol(),
+		"the writer's already-built payload must rotate off v1, not just the config")
 }

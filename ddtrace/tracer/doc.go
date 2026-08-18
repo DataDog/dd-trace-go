@@ -173,4 +173,29 @@
 // version does not enable or disable stats computation. The protocol falls
 // back from 1.0 to 0.4 only when the Datadog Agent does not advertise the
 // /v1.0/traces endpoint.
+//
+// Agent capabilities are re-checked periodically, so this fallback is applied
+// at runtime and not only at startup: if a running Agent stops advertising
+// /v1.0/traces (for example after a rollback), the tracer switches to 0.4
+// without needing a restart. A live send that the Agent rejects outright
+// triggers the same switch immediately, without waiting for the next check.
+//
+// Either way, the downgrade is permanent for the life of the process: once
+// the tracer has conclusive evidence 1.0 is unavailable, it never
+// re-upgrades on its own, even if a later check reports 1.0 support again.
+// This is deliberate: in a load-balanced fleet, a capability check and a
+// trace send are independent requests that can land on different backends,
+// so no number of healthy checks proves anything about where the next send
+// goes. Re-upgrading to 1.0 requires restarting the process.
+//
+// A downgrade can cost already-buffered traces: a payload built while 1.0 was
+// still in effect keeps going to /v1.0/traces, since it was already
+// committed to that wire format, and may be rejected there; a payload the
+// Agent rejects outright is dropped rather than re-encoded and redelivered on
+// 0.4. Under concurrent flush traffic this is not limited to a single
+// payload: several payloads can be in flight (or queued waiting for a
+// connection slot) at once, so a real Agent-side rollback can cost up to the
+// tracer's concurrent-connection limit worth of payloads already committed to
+// 1.0 at the moment the rejection is discovered, not just the one that
+// discovers it.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
