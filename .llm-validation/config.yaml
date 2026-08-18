@@ -26,3 +26,9 @@ policy:
   pairwise_win_floor: 0.45
   blocking_fail_floor: 0.45
   blocking_fail_ci_upper: 0.55
+
+defaults:
+  expected_criteria:
+    - Recommends adding test coverage for new code.
+  bad_signals:
+    - Recommends skipping, disabling, or deleting tests.
