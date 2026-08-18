@@ -835,16 +835,31 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			s.tr.unsetPropagatingTag(keyTraceID128)
 		}
 	}
+	var ctx *SpanContext
 	if s.traceID.Empty() || (s.spanID == 0 && s.origin != "synthetics") {
-		return nil, ErrSpanContextNotFound
-	}
-	s.traceID.cacheHex()
-	ctx := &SpanContext{
-		traceID: s.traceID,
-		spanID:  s.spanID,
-		origin:  s.origin, // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-		trace:   s.tr,
-		updated: s.updated,
+		// No usable trace/span identity: an intermediary dropped
+		// x-datadog-trace-id/parent-id but forwarded x-datadog-tags. Rather
+		// than dropping those tags with ErrSpanContextNotFound, hand back a
+		// carrier-only context so they travel onto a fresh root span (see
+		// newSpanContext). _dd.p.tid is dropped along the way, since it holds
+		// the upper bits of a trace we have no lower-bit identity for.
+		if s.tr == nil {
+			return nil, ErrSpanContextNotFound
+		}
+		s.tr.unsetPropagatingTag(keyTraceID128)
+		if len(s.tr.loadPropagatingTags()) == 0 {
+			return nil, ErrSpanContextNotFound
+		}
+		ctx = &SpanContext{baggageOnly: true, trace: s.tr}
+	} else {
+		s.traceID.cacheHex()
+		ctx = &SpanContext{
+			traceID: s.traceID,
+			spanID:  s.spanID,
+			origin:  s.origin, // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			trace:   s.tr,
+			updated: s.updated,
+		}
 	}
 	if len(s.baggage) > 0 {
 		ctx.baggage = s.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
