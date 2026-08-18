@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
-	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 // isV04WireByte reports whether b is the first byte of a msgpack array — the

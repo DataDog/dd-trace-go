@@ -245,7 +245,8 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 		if tc.TracingAsTransport || tc.CanComputeStats {
 			// tracingAsTransport uses this header to disable the trace agent's stats computation
 			// while making canComputeStats() always false to also disable client stats computation.
-			req.Header.Set("Datadog-Client-Computed-Stats", "t")
+			// "yes" is the spec-correct value; the agent also accepts "t" but "yes" is canonical.
+			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
 		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
 		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))
