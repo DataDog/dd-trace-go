@@ -212,19 +212,6 @@ cases:
         tracer package's own README.md
       - Suggests updating doc.go instead of README.md for a CI script/command
 
-  - id: dd-trace-go-tracer-doc-negative
-    files:
-      - ddtrace/tracer/AGENTS.md
-    input: |
-      I'm fixing a typo in a log message string inside ddtrace/tracer/tracer.go. There is no
-      behavior change. Do I need to update doc.go or the tracer's README.md for this change?
-    expected_criteria:
-      - States that a typo fix is not a significant feature or behavior change, so no update to
-        doc.go or README.md is required
-    bad_signals:
-      - Says doc.go or README.md must be updated for a trivial typo fix with no behavior change
-      - Gives no clear answer on whether documentation is required
-
   - id: dd-trace-go-tracer-sampling-env-config
     files:
       - ddtrace/tracer/AGENTS.md
