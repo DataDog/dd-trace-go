@@ -765,6 +765,12 @@ func (t *tracer) refreshAgentFeatures() {
 		log.Info("trace protocol changed to %s", protoStr)
 		t.statsd.Incr("datadog.tracer.trace_protocol_changed", []string{"to:" + protoStr}, 1)
 	}
+	// Outside the agent.update() graft above, whose transform must stay pure.
+	// The agent version is not grafted, so an agent upgraded or rolled back
+	// under a running tracer can engage or lift the v1.0 stats override here;
+	// surface that transition rather than letting it change behaviour
+	// silently.
+	t.config.surfaceStatsOverride(t.config.agent.load())
 }
 
 // pollAgentInfo polls the agent /info endpoint at the given interval until the
@@ -1311,9 +1317,13 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 
 func (t *tracer) TracerConf() TracerConf {
 	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
+	// canDropP0s is a pure alias of canComputeStats (see its doc comment);
+	// compute once so both fields, and both agent.load() calls the two
+	// methods would otherwise make, collapse into one.
+	canComputeStats := t.config.canComputeStats()
 	return TracerConf{
-		CanComputeStats:        t.config.canComputeStats(),
-		CanDropP0s:             t.config.canDropP0s(),
+		CanComputeStats:        canComputeStats,
+		CanDropP0s:             canComputeStats,
 		DebugAbandonedSpans:    t.config.internalConfig.DebugAbandonedSpans(),
 		Disabled:               !t.config.internalConfig.TracingEnabled(),
 		PartialFlush:           pfEnabled,
