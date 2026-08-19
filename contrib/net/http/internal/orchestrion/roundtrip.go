@@ -14,7 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
@@ -30,6 +29,7 @@ var (
 
 func defaultRoundTripperConfig() *config.RoundTripperConfig {
 	cfgOnce.Do(func() {
+		otelSemantics := config.Instrumentation.OTelSemanticsEnabled()
 		cfg = &config.RoundTripperConfig{
 			CommonConfig: config.CommonConfig{
 				AnalyticsRate: func() float64 {
@@ -41,6 +41,13 @@ func defaultRoundTripperConfig() *config.RoundTripperConfig {
 				}(),
 				IgnoreRequest: func(*http.Request) bool { return false },
 				ResourceNamer: func() func(req *http.Request) string {
+					if otelSemantics {
+						return func(req *http.Request) string {
+							// spanName is the HTTP method, or the literal "HTTP" for unknown methods.
+							_, spanName, _ := config.NormalizeClientRequestMethod(req)
+							return spanName
+						}
+					}
 					if options.GetBoolEnv("DD_TRACE_HTTP_CLIENT_RESOURCE_NAME_QUANTIZE", false) {
 						return func(req *http.Request) string {
 							return fmt.Sprintf("%s %s", req.Method, httptrace.QuantizeURL(req.URL.Path))
@@ -49,17 +56,12 @@ func defaultRoundTripperConfig() *config.RoundTripperConfig {
 
 					return func(req *http.Request) string { return fmt.Sprintf("%s %s", req.Method, req.URL.Path) }
 				}(),
-				IsStatusError: func() func(int) bool {
-					envVal := env.Get(config.EnvClientErrorStatuses)
-					if fn := httptrace.GetErrorCodesFromInput(envVal); fn != nil {
-						return fn
-					}
-					return func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 }
-				}(),
-				ServiceName: config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
+				IsStatusError: config.ClientErrorCheck(otelSemantics),
+				ServiceName:   config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
 			},
-			Propagation: true,
-			QueryString: options.GetBoolEnv(config.EnvClientQueryStringEnabled, true),
+			Propagation:          true,
+			QueryString:          options.GetBoolEnv(config.EnvClientQueryStringEnabled, true),
+			OTelSemanticsEnabled: otelSemantics,
 			SpanNamer: func(*http.Request) string {
 				return config.Instrumentation.OperationName(instrumentation.ComponentClient, nil)
 			},
