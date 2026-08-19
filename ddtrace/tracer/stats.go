@@ -271,7 +271,13 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	} else {
 		c.spanConcentrator.SetObfuscationEnabled(false, false)
 	}
-	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
+	httpMethod := ""
+	if c.cfg.internalConfig.OTelSemanticsEnabled() {
+		httpMethod, _ = s.meta.Get(ext.HTTPRequestMethod)
+	}
+	if httpMethod == "" {
+		httpMethod, _ = s.meta.Get(ext.HTTPMethod)
+	}
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
 	if httpEndpoint == "" && c.sender.httpRouteFallback() {
 		// http.endpoint (net/http, mux, httptreemux, httprouter) and http.route
