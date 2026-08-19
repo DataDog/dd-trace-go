@@ -1,9 +1,27 @@
 # Note: Later matches take precedence
 
-# default owner
-*                               @DataDog/apm-go
-
 # shared modules and repository tooling
+/.claude                        @DataDog/dd-trace-go-guild
+/.llm-validation                @DataDog/dd-trace-go-guild
+/_docs                          @DataDog/dd-trace-go-guild
+/_eval                          @DataDog/dd-trace-go-guild
+/.checkmake                     @DataDog/dd-trace-go-guild
+/.gitattributes                 @DataDog/dd-trace-go-guild
+/.gitignore                     @DataDog/dd-trace-go-guild
+/.gitmodules                    @DataDog/dd-trace-go-guild
+/.idea                          @DataDog/dd-trace-go-guild
+/.orchestrion-version           @DataDog/dd-trace-go-guild
+/.pre-commit-config.yaml        @DataDog/dd-trace-go-guild
+/*.md                           @DataDog/dd-trace-go-guild
+/LICENSE*                       @DataDog/dd-trace-go-guild
+/NOTICE                         @DataDog/dd-trace-go-guild
+/codecov.yml                    @DataDog/dd-trace-go-guild
+/crashtracker                   @DataDog/dd-trace-go-guild
+/instrumentation                @DataDog/dd-trace-go-guild
+/latests.txt                    @DataDog/dd-trace-go-guild
+/otelc                          @DataDog/dd-trace-go-guild
+/otlp                           @DataDog/dd-trace-go-guild
+/v2/.canary                     @DataDog/dd-trace-go-guild
 /.github                        @DataDog/dd-trace-go-guild
 /.gitlab                        @DataDog/dd-trace-go-guild
 /_tools                         @DataDog/dd-trace-go-guild
@@ -19,8 +37,6 @@
 /code-coverage.datadog.yml      @DataDog/dd-trace-go-guild
 /docker-compose.yaml            @DataDog/dd-trace-go-guild
 /gosum.go                       @DataDog/dd-trace-go-guild
-/go.work                        @DataDog/dd-trace-go-guild
-/go.work.sum                    @DataDog/dd-trace-go-guild
 /repository.datadog.yml         @DataDog/dd-trace-go-guild
 /static-analysis.datadog.yml    @DataDog/dd-trace-go-guild
 
@@ -49,17 +65,19 @@
 /internal/synctest              @DataDog/dd-trace-go-guild
 
 # capabilities - config, dynamic config, remote config
-/internal/config                     @DataDog/apm-sdk-capabilities-go
-/internal/env                        @DataDog/apm-sdk-capabilities-go
-/internal/stableconfig               @DataDog/apm-sdk-capabilities-go
-/internal/globalconfig               @DataDog/apm-sdk-capabilities-go
-/internal/remoteconfig               @DataDog/apm-sdk-capabilities-go
-/scripts/configaudit                 @DataDog/apm-sdk-capabilities-go
-/scripts/configinverter              @DataDog/apm-sdk-capabilities-go
-/.github/workflows/config-audit.yml  @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/dynamic_config.go    @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/remote_config.go     @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/otel_dd_mappings.go  @DataDog/apm-sdk-capabilities-go
+/internal/config                               @DataDog/apm-sdk-capabilities-go
+/internal/env                                  @DataDog/apm-sdk-capabilities-go
+/internal/stableconfig                         @DataDog/apm-sdk-capabilities-go
+/internal/globalconfig                         @DataDog/apm-sdk-capabilities-go
+/internal/remoteconfig                         @DataDog/apm-sdk-capabilities-go
+/scripts/configaudit                           @DataDog/apm-sdk-capabilities-go
+/scripts/configinverter                        @DataDog/apm-sdk-capabilities-go
+/.github/workflows/config-audit.yml            @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/dynamic_config.go              @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/remote_config.go               @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/otel_dd_mappings.go            @DataDog/apm-sdk-capabilities-go
+/internal/env/supported_configurations.gen.go  @DataDog/apm-sdk-capabilities-go
+/internal/env/supported_configurations.json    @DataDog/apm-sdk-capabilities-go
 # capabilities - telemetry
 /internal/telemetry                  @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/telemetry.go         @DataDog/apm-sdk-capabilities-go
@@ -121,6 +139,8 @@
 ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 
-# centralized dependency-file review
-**/go.mod                       @DataDog/dd-trace-go-guild
-**/go.sum                       @DataDog/dd-trace-go-guild
+# dependency-file review
+**/go.mod                       @DataDog/apm-go
+**/go.sum                       @DataDog/apm-go
+/go.work                        @DataDog/apm-go
+/go.work.sum                    @DataDog/apm-go
