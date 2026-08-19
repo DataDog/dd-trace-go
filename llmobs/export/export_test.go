@@ -1398,6 +1398,12 @@ func TestNewClient_RequiresExactlyOneRoute(t *testing.T) {
 		export.WithAgentURL("http://localhost:8126"),
 	)
 	assert.Error(t, err)
+
+	_, err = export.NewClient("app",
+		export.WithAgentURL("http://localhost:8126"),
+		export.WithDatadogIntake("datadoghq.com", testAPIKey),
+	)
+	assert.Error(t, err)
 }
 
 func TestSubmitSpans_ConcurrentDoesNotMutateCaller(t *testing.T) {

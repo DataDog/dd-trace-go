@@ -124,7 +124,7 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 		}
 	}
 
-	if cfg.AgentlessEnabled == nil {
+	if !cfg.AgentlessEnabled && cfg.TracerConfig.AgentURL == nil {
 		return nil, errors.New("llmobs/export: a route is required: set WithDatadogIntake (direct) or WithAgentURL (via the Agent)")
 	}
 
@@ -137,8 +137,7 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 		tc.APIKey = global.APIKey()
 	}
 
-	cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
-	if cfg.ResolvedAgentlessEnabled {
+	if cfg.AgentlessEnabled {
 		if !internal.IsAPIKeyValid(tc.APIKey) {
 			return nil, errors.New("llmobs/export: WithDatadogIntake requires a valid API key (argument or DD_API_KEY); use WithAgentURL to route via the Agent")
 		}
@@ -155,10 +154,10 @@ func NewClient(mlApp string, opts ...ClientOption) (*Client, error) {
 }
 
 func setAgentless(cfg *clientConfig, enabled bool) error {
-	if cfg.AgentlessEnabled != nil && *cfg.AgentlessEnabled != enabled {
+	if (enabled && cfg.TracerConfig.AgentURL != nil) || (!enabled && cfg.AgentlessEnabled) {
 		return errors.New("llmobs/export: set exactly one route: WithDatadogIntake or WithAgentURL, not both")
 	}
-	cfg.AgentlessEnabled = &enabled
+	cfg.AgentlessEnabled = enabled
 	return nil
 }
 
