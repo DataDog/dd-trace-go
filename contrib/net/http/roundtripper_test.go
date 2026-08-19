@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,6 +31,39 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
+
+func setOTelSemantics(t *testing.T, value string) {
+	t.Helper()
+	oldValue, wasSet := os.LookupEnv("DD_TRACE_OTEL_SEMANTICS_ENABLED")
+	if value == "" {
+		require.NoError(t, os.Unsetenv("DD_TRACE_OTEL_SEMANTICS_ENABLED"))
+	} else {
+		require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", value))
+	}
+	require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+	t.Cleanup(func() {
+		if wasSet {
+			require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", oldValue))
+		} else {
+			require.NoError(t, os.Unsetenv("DD_TRACE_OTEL_SEMANTICS_ENABLED"))
+		}
+		require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+		tracer.Stop()
+	})
+}
+
+func roundTripSpan(t *testing.T, base http.RoundTripper, req *http.Request, opts ...RoundTripperOption) (*mocktracer.Span, *http.Response) {
+	t.Helper()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	resp, err := WrapRoundTripper(base, opts...).RoundTrip(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	return spans[0], resp
+}
 
 func TestWrapRoundTripperAllowNilTransport(t *testing.T) {
 	assert := assert.New(t)
@@ -542,6 +576,207 @@ func TestServiceName(t *testing.T) {
 	})
 }
 
+func TestRoundTripperConfigUsesOTelSemanticDefaults(t *testing.T) {
+	setOTelSemantics(t, "true")
+
+	t.Run("uses default status range and resource names", func(t *testing.T) {
+		cfg := newRoundTripperConfig()
+		require.True(t, cfg.OTelSemanticsEnabled)
+		assert.True(t, cfg.IsStatusError(500))
+		assert.Equal(t, "GET", cfg.ResourceNamer(httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)))
+		assert.Equal(t, "HTTP", cfg.ResourceNamer(httptest.NewRequest("PROPFIND", "http://example.com/path", nil)))
+	})
+
+	t.Run("custom resource namer overrides semantic default", func(t *testing.T) {
+		cfg := newRoundTripperConfig()
+		cfg.ApplyOpts(WithResourceNamer(func(*http.Request) string { return "custom" }))
+		assert.Equal(t, "custom", cfg.ResourceNamer(httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)))
+	})
+
+}
+
+func TestRoundTripperConfigPreservesLegacyDefaults(t *testing.T) {
+	setOTelSemantics(t, "false")
+	cfg := newRoundTripperConfig()
+	assert.False(t, cfg.OTelSemanticsEnabled)
+	assert.False(t, cfg.IsStatusError(500))
+	assert.Equal(t, "http.request", cfg.ResourceNamer(httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)))
+}
+
+func TestRoundTripperOTelSemanticsDisabledByDefault(t *testing.T) {
+	setOTelSemantics(t, "")
+	assert.False(t, newRoundTripperConfig().OTelSemanticsEnabled)
+}
+
+func TestRoundTripperEmitsOTelSemanticRequestAttributes(t *testing.T) {
+	setOTelSemantics(t, "true")
+	req, err := http.NewRequest("PROPFIND", "http://alice:secret@example.com:8080/path?something=fun#fragment", nil)
+	require.NoError(t, err)
+	originalURL := req.URL.String()
+	originalUser := req.URL.User
+
+	span, _ := roundTripSpan(t, &emptyRoundTripper{}, req)
+	assert.Equal(t, "HTTP", span.Tag(ext.ResourceName))
+	assert.Equal(t, "_OTHER", span.Tag("http.request.method"))
+	assert.Equal(t, "PROPFIND", span.Tag("http.request.method_original"))
+	assert.Equal(t, "http://REDACTED:REDACTED@example.com:8080/path?something=fun#fragment", span.Tag("url.full"))
+	assert.Equal(t, "example.com", span.Tag("server.address"))
+	assert.Equal(t, float64(8080), span.Tag("server.port"))
+	assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal(t, "net/http", span.Tag(ext.Component))
+
+	for _, legacyTag := range []string{
+		ext.HTTPMethod,
+		ext.HTTPURL,
+		"out.host",
+		"out.port",
+		ext.PeerHostname,
+		ext.NetworkDestinationName,
+		ext.NetworkDestinationPort,
+		"url.path",
+		"url.scheme",
+		"url.query",
+	} {
+		assert.NotContains(t, span.Tags(), legacyTag)
+	}
+	assert.Equal(t, originalURL, req.URL.String())
+	assert.Same(t, originalUser, req.URL.User)
+}
+
+func TestRoundTripperHonorsRequestOptionsWithOTelSemantics(t *testing.T) {
+	setOTelSemantics(t, "true")
+
+	t.Run("query is omitted when disabled", func(t *testing.T) {
+		t.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "false")
+		span, _ := roundTripSpan(t, &emptyRoundTripper{}, httptest.NewRequest(http.MethodGet, "http://example.com/path?something=fun", nil))
+		assert.Equal(t, "http://example.com/path", span.Tag("url.full"))
+		assert.Equal(t, "GET", span.Tag(ext.ResourceName))
+		assert.Nil(t, span.Tag("http.request.method_original"))
+	})
+
+	t.Run("empty method uses GET without mutating request", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)
+		req.Method = ""
+
+		span, _ := roundTripSpan(t, &emptyRoundTripper{}, req)
+		assert.Equal(t, "GET", span.Tag(ext.HTTPRequestMethod))
+		assert.Equal(t, "GET", span.Tag(ext.ResourceName))
+		assert.Nil(t, span.Tag(ext.HTTPRequestMethodOriginal))
+		assert.Empty(t, req.Method)
+	})
+
+	t.Run("request Host overrides server address only", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://origin.example:8443/path?keep=value", nil)
+		req.Host = "override.example:9443"
+
+		span, _ := roundTripSpan(t, &emptyRoundTripper{}, req)
+		assert.Equal(t, "https://origin.example:8443/path?keep=value", span.Tag(ext.URLFull))
+		assert.Equal(t, "override.example", span.Tag(ext.ServerAddress))
+		assert.Equal(t, float64(9443), span.Tag(ext.ServerPort))
+	})
+
+	t.Run("recognized QUERY method remains unchanged", func(t *testing.T) {
+		span, _ := roundTripSpan(t, &emptyRoundTripper{}, httptest.NewRequest("QUERY", "http://example.com/users/123", nil))
+		assert.Equal(t, "QUERY", span.Tag("http.request.method"))
+		assert.Equal(t, "QUERY", span.Tag(ext.ResourceName))
+		assert.Nil(t, span.Tag("http.request.method_original"))
+	})
+
+	t.Run("custom resource namer overrides semantic default", func(t *testing.T) {
+		span, _ := roundTripSpan(
+			t,
+			&emptyRoundTripper{},
+			httptest.NewRequest(http.MethodGet, "http://example.com/users/123", nil),
+			WithResourceNamer(func(*http.Request) string { return "custom" }),
+		)
+		assert.Equal(t, "custom", span.Tag(ext.ResourceName))
+	})
+
+	t.Run("sensitive query values are obfuscated", func(t *testing.T) {
+		span, _ := roundTripSpan(t, &emptyRoundTripper{}, httptest.NewRequest(http.MethodGet, "http://example.com/path?token=secret&keep=value", nil))
+		assert.Equal(t, "http://example.com/path?<redacted>&keep=value", span.Tag("url.full"))
+	})
+
+	t.Run("caller span option overrides default", func(t *testing.T) {
+		span, _ := roundTripSpan(
+			t,
+			&emptyRoundTripper{},
+			httptest.NewRequest(http.MethodGet, "http://example.com/path", nil),
+			WithSpanOptions(tracer.Tag("server.address", "override.example")),
+		)
+		assert.Equal(t, "override.example", span.Tag("server.address"))
+	})
+}
+
+func TestRoundTripperRecordsSemanticResponseStatusAndError(t *testing.T) {
+	setOTelSemantics(t, "true")
+
+	tests := []struct {
+		name        string
+		status      int
+		customCheck bool
+		wantError   bool
+	}{
+		{name: "200 remains successful", status: http.StatusOK},
+		{name: "500 is an error by default", status: http.StatusInternalServerError, wantError: true},
+		{name: "uninterpretable status is an error", status: 600, wantError: true},
+		{name: "custom check can mark 200 as an error", status: http.StatusOK, customCheck: true, wantError: true},
+		{name: "custom check can exclude 500", status: http.StatusInternalServerError, customCheck: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls int
+			var opts []RoundTripperOption
+			if tt.customCheck {
+				opts = append(opts, WithStatusCheck(func(status int) bool {
+					calls++
+					assert.Equal(t, tt.status, status)
+					return tt.wantError
+				}))
+			}
+			recorder := httptest.NewRecorder()
+			recorder.WriteHeader(tt.status)
+			span, resp := roundTripSpan(t,
+				&emptyRoundTripper{customResponse: recorder.Result()},
+				httptest.NewRequest(http.MethodGet, "http://example.com/path", nil), opts...)
+			if tt.customCheck {
+				assert.Equal(t, 1, calls)
+			}
+			statusCode := strconv.Itoa(tt.status)
+			assert.Equal(t, statusCode, span.Tag("http.response.status_code"))
+			assert.NotContains(t, span.Tags(), ext.HTTPCode)
+			assert.Equal(t, tt.wantError, span.Unwrap().AsMap()[ext.MapSpanError] == int32(1))
+			if tt.wantError {
+				assert.Equal(t, statusCode, span.Tag(ext.ErrorType))
+				assert.Equal(t, resp.Status, span.Tag("http.errors"))
+				assert.Equal(t, fmt.Sprintf("%d: %s", tt.status, http.StatusText(tt.status)), span.Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, span.Tag(ext.ErrorType))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
+				assert.Nil(t, span.Tag("http.errors"))
+			}
+		})
+	}
+}
+
+func TestRoundTripperOmitsResponseStatusForTransportErrors(t *testing.T) {
+	setOTelSemantics(t, "true")
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	transportErr := &roundTripperTestError{}
+	rt := WrapRoundTripper(&emptyRoundTripper{customError: transportErr})
+	resp, err := rt.RoundTrip(httptest.NewRequest(http.MethodGet, "http://example.com/path", nil))
+	assert.Nil(t, resp)
+	assert.ErrorIs(t, err, transportErr)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.NotContains(t, spans[0].Tags(), ext.HTTPResponseStatusCode)
+	assert.NotContains(t, spans[0].Tags(), ext.HTTPCode)
+}
+
 func TestResourceNamer(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World"))
@@ -820,11 +1055,19 @@ func TestRoundTripperPropagation(t *testing.T) {
 	defer resp.Body.Close()
 }
 
+type roundTripperTestError struct{}
+
+func (*roundTripperTestError) Error() string { return "transport failed" }
+
 type emptyRoundTripper struct {
 	customResponse *http.Response
+	customError    error
 }
 
 func (rt *emptyRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
+	if rt.customError != nil {
+		return nil, rt.customError
+	}
 	if rt.customResponse != nil {
 		return rt.customResponse, nil
 	}
@@ -832,6 +1075,33 @@ func (rt *emptyRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) 
 	recorder := httptest.NewRecorder()
 	recorder.WriteHeader(200)
 	return recorder.Result(), nil
+}
+
+func BenchmarkRoundTripperOTelSemantics(b *testing.B) {
+	require.NoError(b, tracer.Start(tracer.WithTraceEnabled(false)))
+	b.Cleanup(tracer.Stop)
+
+	for _, enabled := range []bool{false, true} {
+		b.Run(strconv.FormatBool(enabled), func(b *testing.B) {
+			cfg := newRoundTripperConfig()
+			cfg.OTelSemanticsEnabled = enabled
+			cfg.ResourceNamer = func(*http.Request) string { return "GET" }
+			rt := &roundTripper{base: &emptyRoundTripper{}, cfg: cfg}
+			req := httptest.NewRequest(http.MethodGet, "http://example.com:8080/path?keep=value", nil)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				resp, err := rt.RoundTrip(req)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if err := resp.Body.Close(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
 
 func TestRoundTripperWithBaggage(t *testing.T) {
