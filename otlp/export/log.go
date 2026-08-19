@@ -13,24 +13,9 @@ import (
 	logspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 )
 
-// LogClient exports offline OTLP log requests.
-type LogClient struct {
-	t *rawTransport
-}
-
-// NewLogClient builds a LogClient for the /v1/logs endpoint from cfg.
-func NewLogClient(cfg Config) (*LogClient, error) {
-	t, err := newRawTransport(cfg, pathLogs, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &LogClient{t: t}, nil
-}
-
-// ExportLogs posts each request atomically. It returns a non-nil error if any
-// request failed; per-request detail is in the result.
-func (c *LogClient) ExportLogs(ctx context.Context, requests []*logspb.ExportLogsServiceRequest) (*ExportResult, error) {
-	return exportEach(ctx, c.t, requests, logPartialSuccess)
+// SubmitLogs submits completed OTLP log requests.
+func (c *Client) SubmitLogs(ctx context.Context, requests []*logspb.ExportLogsServiceRequest) (*Result, error) {
+	return submitEach(ctx, c.transport, pathLogs, requests, logPartialSuccess)
 }
 
 func logPartialSuccess(body []byte) (int64, string, error) {

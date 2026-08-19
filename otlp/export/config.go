@@ -6,61 +6,179 @@
 package export
 
 import (
+	"errors"
+	"fmt"
+	"maps"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
+
+const defaultMaxAttempts uint = 3
+
+type route uint8
 
 const (
-	defaultSite             = "datadoghq.com"
-	defaultMaxAttempts uint = 3
-
-	pathTraces  = "/v1/traces"
-	pathMetrics = "/v1/metrics"
-	pathLogs    = "/v1/logs"
-
-	headerContentType = "Content-Type"
-	contentTypeProto  = "application/x-protobuf"
-	headerAPIKey      = "dd-api-key"
-
-	// headerMetricConfig pins Datadog's OTLP metric intake to emit exponential
-	// histograms as distributions (DDSketch percentiles). Metrics + Datadog
-	// route only.
-	headerMetricConfig        = "dd-otel-metric-config"
-	metricConfigDistributions = `{"histograms":{"mode":"distributions"}}`
+	routeUnset route = iota
+	routeDatadog
+	routeCollector
 )
 
-// Config configures an OTLP export client. A client targets exactly one
-// destination and signal; build several clients for multi-destination export.
-//
-// Routing:
-//   - Datadog route (default): leave Endpoint empty and set Site + APIKey. The
-//     client derives https://otlp.<site>/v1/<signal> and injects the dd-api-key
-//     header.
-//   - Collector/Agent route: set Endpoint to a base OTLP URL (the client
-//     appends /v1/<signal>). No Datadog auth is injected unless APIKey is also
-//     set (for a Datadog-compatible endpoint override).
-type Config struct {
-	// Site is the Datadog site (e.g. "datadoghq.com"). Defaults to datadoghq.com.
-	// It is ignored when Endpoint is set.
-	Site string
-	// APIKey is the Datadog API key. Required for the Datadog route; when set it
-	// injects the dd-api-key header regardless of Endpoint.
-	APIKey string
-	// Endpoint is a base OTLP URL (scheme://host[:port]); the client appends the
-	// signal path. When empty, the endpoint is derived from Site. When set, it
-	// takes precedence over Site (the collector/Agent route).
-	Endpoint string
+type clientConfig struct {
+	route                 route
+	site                  string
+	apiKey                string
+	endpoint              *url.URL
+	httpClient            *http.Client
+	headers               map[string]string
+	maxAttempts           uint
+	requestTimeout        time.Duration
+	defaultRequestTimeout time.Duration
+}
 
-	// HTTPClient overrides the default HTTP client.
-	HTTPClient *http.Client
-	// Headers are extra request headers, applied last (they override defaults).
-	Headers map[string]string
-	// MaxAttempts bounds the total number of HTTP attempts per request, including
-	// the first (default 3, minimum 1). Set to 1 to disable retries.
-	MaxAttempts uint
-	// RequestTimeout bounds each individual HTTP attempt. When >0 it is applied to
-	// every attempt. When 0, a 10s default is applied only if the caller's context
-	// has no deadline of its own, so a caller passing a longer ctx deadline (for a
-	// large export or a slow collector) is not silently shortened.
-	RequestTimeout time.Duration
+// ClientOption configures a [Client] built by [NewClient].
+type ClientOption func(*clientConfig) error
+
+// WithDatadogIntake selects direct Datadog intake routing. Empty values use the
+// global site and API key configuration.
+func WithDatadogIntake(site, apiKey string) ClientOption {
+	return func(cfg *clientConfig) error {
+		if err := setRoute(cfg, routeDatadog); err != nil {
+			return err
+		}
+		cfg.site = strings.TrimSpace(site)
+		cfg.apiKey = strings.TrimSpace(apiKey)
+		return nil
+	}
+}
+
+// WithCollectorEndpoint selects an OTLP/HTTP collector or Agent base URL. The
+// client appends the standard signal paths to this URL. Use [WithHeaders] for
+// collector authentication.
+func WithCollectorEndpoint(endpoint string) ClientOption {
+	return func(cfg *clientConfig) error {
+		if err := setRoute(cfg, routeCollector); err != nil {
+			return err
+		}
+		u, err := parseEndpoint(endpoint)
+		if err != nil {
+			return err
+		}
+		cfg.endpoint = u
+		return nil
+	}
+}
+
+// WithHTTPClient overrides the default HTTP client.
+func WithHTTPClient(client *http.Client) ClientOption {
+	return func(cfg *clientConfig) error {
+		cfg.httpClient = client
+		return nil
+	}
+}
+
+// WithHeaders adds headers to each request. Protocol and Datadog routing headers
+// take precedence over values with the same names.
+func WithHeaders(headers map[string]string) ClientOption {
+	return func(cfg *clientConfig) error {
+		if cfg.headers == nil {
+			cfg.headers = make(map[string]string, len(headers))
+		}
+		maps.Copy(cfg.headers, headers)
+		return nil
+	}
+}
+
+// WithMaxAttempts sets the maximum number of HTTP attempts per request,
+// including the initial attempt. The default is three.
+func WithMaxAttempts(attempts uint) ClientOption {
+	return func(cfg *clientConfig) error {
+		if attempts == 0 {
+			return errors.New("otlp/export: max attempts must be at least 1")
+		}
+		cfg.maxAttempts = attempts
+		return nil
+	}
+}
+
+// WithRequestTimeout sets a timeout for each HTTP attempt. Without it, an
+// existing context deadline is preserved, and the global Agent timeout applies
+// when the context has no deadline.
+func WithRequestTimeout(timeout time.Duration) ClientOption {
+	return func(cfg *clientConfig) error {
+		if timeout <= 0 {
+			return errors.New("otlp/export: request timeout must be positive")
+		}
+		cfg.requestTimeout = timeout
+		return nil
+	}
+}
+
+func resolveClientConfig(opts []ClientOption) (*clientConfig, error) {
+	global := internalconfig.Get()
+	cfg := &clientConfig{
+		maxAttempts:           defaultMaxAttempts,
+		defaultRequestTimeout: global.AgentTimeout(),
+	}
+	for _, opt := range opts {
+		if err := opt(cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	switch cfg.route {
+	case routeDatadog:
+		if cfg.site == "" {
+			cfg.site = global.Site()
+		}
+		if cfg.apiKey == "" {
+			cfg.apiKey = global.APIKey()
+		}
+		if !internal.IsAPIKeyValid(cfg.apiKey) {
+			return nil, errors.New("otlp/export: WithDatadogIntake requires a valid API key (argument or DD_API_KEY)")
+		}
+		endpoint, err := parseEndpoint("https://otlp." + cfg.site)
+		if err != nil || endpoint.Path != "" || endpoint.Host != "otlp."+cfg.site {
+			return nil, fmt.Errorf("otlp/export: invalid Datadog site %q", cfg.site)
+		}
+		cfg.endpoint = endpoint
+	case routeCollector:
+		if cfg.endpoint == nil {
+			return nil, errors.New("otlp/export: WithCollectorEndpoint requires an endpoint")
+		}
+	default:
+		return nil, errors.New("otlp/export: a route is required: set WithDatadogIntake or WithCollectorEndpoint")
+	}
+
+	if cfg.httpClient == nil {
+		cfg.httpClient = internal.DefaultHTTPClient(0, false)
+	}
+	client := *cfg.httpClient
+	client.CheckRedirect = noRedirect
+	cfg.httpClient = &client
+	return cfg, nil
+}
+
+func setRoute(cfg *clientConfig, selected route) error {
+	if cfg.route != routeUnset && cfg.route != selected {
+		return errors.New("otlp/export: set exactly one route: WithDatadogIntake or WithCollectorEndpoint, not both")
+	}
+	cfg.route = selected
+	return nil
+}
+
+func parseEndpoint(endpoint string) (*url.URL, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	u, err := url.Parse(endpoint)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return nil, fmt.Errorf("otlp/export: invalid endpoint %q: must be an http(s) URL with a host", endpoint)
+	}
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return nil, fmt.Errorf("otlp/export: invalid endpoint %q: query and fragment are not allowed", endpoint)
+	}
+	return u, nil
 }

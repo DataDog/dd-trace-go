@@ -5,41 +5,74 @@
 
 package export
 
-// ExportResult reports the outcome of an ExportTraces/ExportMetrics/ExportLogs
-// call. Each input request maps to exactly one RequestResult, by index.
-type ExportResult struct {
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
+
+const responseSnippetMaxBytes = 512
+
+// Result reports a submission outcome.
+type Result struct {
+	// Requests contains one result for each input request, in input order.
 	Requests []RequestResult
+	// Sent and Failed partition the input requests.
+	Sent   int
+	Failed int
 }
 
-// RequestResult reports the outcome of a single request's POST.
+func (r *Result) finalize() {
+	r.Sent, r.Failed = 0, 0
+	for _, request := range r.Requests {
+		if request.Err != nil {
+			r.Failed++
+			continue
+		}
+		r.Sent++
+	}
+}
+
+// RequestResult reports one input request's outcome.
 type RequestResult struct {
-	// Index is the position of this request in the input slice.
+	// Index identifies the request in the input slice.
 	Index int
-	// StatusCode is the final HTTP status code (0 if no response was received).
+	// StatusCode is the final HTTP status, or zero when no response was received.
 	StatusCode int
-	// Attempts is the number of HTTP attempts made, including retries.
+	// Attempts includes the initial request and any retries.
 	Attempts int
-	// Retriable reports whether the failure class was transient. It is only
-	// meaningful when Err is non-nil.
+	// Retriable reports whether the failure is transient.
 	Retriable bool
-	// ResponseSnippet is a bounded, UTF-8-safe excerpt of the response body.
+	// RejectedItems is the partial-success count reported by the OTLP endpoint.
+	RejectedItems int64
+	// ResponseSnippet is a bounded diagnostic excerpt of the response body.
 	ResponseSnippet string
-	// Err is the error for this request, or nil on success.
+	// Err is nil only when the entire input request was accepted.
 	Err error
 }
 
-// Failed returns the number of requests that did not succeed.
-func (r *ExportResult) Failed() int {
-	n := 0
-	for _, req := range r.Requests {
-		if req.Err != nil {
-			n++
-		}
+func responseSnippet(body []byte) string {
+	snippet := strings.ToValidUTF8(strings.TrimSpace(string(body)), "")
+	if len(snippet) <= responseSnippetMaxBytes {
+		return snippet
 	}
-	return n
+	cut := responseSnippetMaxBytes
+	for cut > 0 && !utf8.RuneStart(snippet[cut]) {
+		cut--
+	}
+	return snippet[:cut]
 }
 
-// OK reports whether every request succeeded.
-func (r *ExportResult) OK() bool {
-	return r.Failed() == 0
+func aggregateFailures(result *Result) error {
+	requestErrors := make([]error, 0, result.Failed)
+	for _, request := range result.Requests {
+		if request.Err != nil {
+			requestErrors = append(requestErrors, request.Err)
+		}
+	}
+	if len(requestErrors) == 0 {
+		return nil
+	}
+	return fmt.Errorf("otlp/export: %d of %d request(s) failed: %w", result.Failed, len(result.Requests), errors.Join(requestErrors...))
 }

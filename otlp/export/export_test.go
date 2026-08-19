@@ -23,8 +23,11 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/otlp/export"
 )
+
+const testAPIKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 type fakeTransport struct {
 	mu        sync.Mutex
@@ -38,38 +41,64 @@ type capturedRequest struct {
 	body    []byte
 }
 
-func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if err := req.Context().Err(); err != nil {
+func (f *fakeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if err := request.Context().Err(); err != nil {
 		return nil, err
 	}
 	f.mu.Lock()
 	attempt := len(f.requests)
-	var body []byte
-	if req.Body != nil {
-		body, _ = io.ReadAll(req.Body)
-		_ = req.Body.Close()
-	}
-	f.requests = append(f.requests, capturedRequest{url: req.URL.String(), headers: req.Header.Clone(), body: body})
+	body, _ := io.ReadAll(request.Body)
+	_ = request.Body.Close()
+	f.requests = append(f.requests, capturedRequest{url: request.URL.String(), headers: request.Header.Clone(), body: body})
 	f.mu.Unlock()
 
-	code, respBody := 200, ""
+	status, responseBody := http.StatusOK, ""
 	if f.responder != nil {
-		code, respBody = f.responder(attempt)
+		status, responseBody = f.responder(attempt)
 	}
 	return &http.Response{
-		StatusCode: code,
-		Body:       io.NopCloser(strings.NewReader(respBody)),
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader(responseBody)),
+		Header:     http.Header{"Content-Type": []string{"application/x-protobuf"}},
 	}, nil
 }
 
 func (f *fakeTransport) captured() []capturedRequest {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.requests
+	return append([]capturedRequest(nil), f.requests...)
 }
 
-func httpClient(f *fakeTransport) *http.Client { return &http.Client{Transport: f} }
+func newDatadogClient(t *testing.T, fake *fakeTransport, opts ...export.ClientOption) *export.Client {
+	t.Helper()
+	options := append([]export.ClientOption{
+		export.WithDatadogIntake("datadoghq.com", testAPIKey),
+		export.WithHTTPClient(&http.Client{Transport: fake}),
+	}, opts...)
+	client, err := export.NewClient(options...)
+	require.NoError(t, err)
+	return client
+}
+
+func newCollectorClient(t *testing.T, fake *fakeTransport, endpoint string, opts ...export.ClientOption) *export.Client {
+	t.Helper()
+	options := append([]export.ClientOption{
+		export.WithCollectorEndpoint(endpoint),
+		export.WithHTTPClient(&http.Client{Transport: fake}),
+	}, opts...)
+	client, err := export.NewClient(options...)
+	require.NoError(t, err)
+	return client
+}
+
+func useFreshGlobalConfig(t *testing.T) {
+	t.Helper()
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() {
+		internalconfig.SetUseFreshConfig(false)
+		internalconfig.CreateNew()
+	})
+}
 
 func sampleTrace() *tracepb.ExportTraceServiceRequest {
 	return &tracepb.ExportTraceServiceRequest{
@@ -85,299 +114,314 @@ func sampleTrace() *tracepb.ExportTraceServiceRequest {
 	}
 }
 
-func TestExportTraces_DatadogRoute(t *testing.T) {
+func TestSubmitTraces_DatadogRoute(t *testing.T) {
 	fake := &fakeTransport{}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
+	client := newDatadogClient(t, fake)
+	request := sampleTrace()
 
-	req := sampleTrace()
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{req})
+	result, err := client.SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{request})
 	require.NoError(t, err)
-	require.True(t, res.OK())
-	require.Len(t, res.Requests, 1)
-	assert.Equal(t, 0, res.Requests[0].Index)
-	assert.Equal(t, 200, res.Requests[0].StatusCode)
-	assert.Equal(t, 1, res.Requests[0].Attempts)
+	assert.Equal(t, 1, result.Sent)
+	assert.Equal(t, 0, result.Failed)
+	require.Len(t, result.Requests, 1)
+	assert.Equal(t, 0, result.Requests[0].Index)
+	assert.Equal(t, http.StatusOK, result.Requests[0].StatusCode)
+	assert.Equal(t, 1, result.Requests[0].Attempts)
 
-	reqs := fake.captured()
-	require.Len(t, reqs, 1)
-	assert.Equal(t, "https://otlp.datadoghq.com/v1/traces", reqs[0].url)
-	assert.Equal(t, "key", reqs[0].headers.Get("dd-api-key"))
-	assert.Equal(t, "application/x-protobuf", reqs[0].headers.Get("Content-Type"))
-	assert.Empty(t, reqs[0].headers.Get("dd-otel-metric-config"))
+	requests := fake.captured()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "https://otlp.datadoghq.com/v1/traces", requests[0].url)
+	assert.Equal(t, testAPIKey, requests[0].headers.Get("dd-api-key"))
+	assert.Equal(t, "application/x-protobuf", requests[0].headers.Get("Content-Type"))
+	assert.Empty(t, requests[0].headers.Get("dd-otel-metric-config"))
 
 	var got tracepb.ExportTraceServiceRequest
-	require.NoError(t, proto.Unmarshal(reqs[0].body, &got))
-	assert.True(t, proto.Equal(req, &got))
+	require.NoError(t, proto.Unmarshal(requests[0].body, &got))
+	assert.True(t, proto.Equal(request, &got))
 }
 
-func TestExportMetrics_AddsMetricConfigOnDatadogRoute(t *testing.T) {
+func TestSubmitMetrics_DatadogRoute(t *testing.T) {
 	fake := &fakeTransport{}
-	c, err := export.NewMetricClient(export.Config{Site: "us5.datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
+	client, err := export.NewClient(
+		export.WithDatadogIntake("us5.datadoghq.com", testAPIKey),
+		export.WithHTTPClient(&http.Client{Transport: fake}),
+		export.WithHeaders(map[string]string{
+			"Content-Type":          "text/plain",
+			"dd-api-key":            "wrong-key",
+			"dd-otel-metric-config": "wrong-config",
+		}),
+	)
 	require.NoError(t, err)
 
-	_, err = c.ExportMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
+	_, err = client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
 	require.NoError(t, err)
 
-	reqs := fake.captured()
-	require.Len(t, reqs, 1)
-	assert.Equal(t, "https://otlp.us5.datadoghq.com/v1/metrics", reqs[0].url)
-	assert.Equal(t, `{"histograms":{"mode":"distributions"}}`, reqs[0].headers.Get("dd-otel-metric-config"))
-	assert.Equal(t, "key", reqs[0].headers.Get("dd-api-key"))
+	request := fake.captured()[0]
+	assert.Equal(t, "https://otlp.us5.datadoghq.com/v1/metrics", request.url)
+	assert.Equal(t, testAPIKey, request.headers.Get("dd-api-key"))
+	assert.Equal(t, `{"histograms":{"mode":"distributions"}}`, request.headers.Get("dd-otel-metric-config"))
 }
 
-func TestExportMetrics_CollectorRouteNoAuthNoMetricConfig(t *testing.T) {
+func TestSubmitMetrics_CollectorRoute(t *testing.T) {
 	fake := &fakeTransport{}
-	c, err := export.NewMetricClient(export.Config{Endpoint: "http://collector:4318", HTTPClient: httpClient(fake)})
+	client := newCollectorClient(t, fake, "http://collector:4318/prefix/",
+		export.WithHeaders(map[string]string{
+			"Authorization": "Bearer token",
+			"Content-Type":  "text/plain",
+		}),
+	)
+
+	_, err := client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
 	require.NoError(t, err)
 
-	_, err = c.ExportMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
-	require.NoError(t, err)
-
-	reqs := fake.captured()
-	require.Len(t, reqs, 1)
-	assert.Equal(t, "http://collector:4318/v1/metrics", reqs[0].url)
-	assert.Empty(t, reqs[0].headers.Get("dd-api-key"))
-	assert.Empty(t, reqs[0].headers.Get("dd-otel-metric-config"))
+	request := fake.captured()[0]
+	assert.Equal(t, "http://collector:4318/prefix/v1/metrics", request.url)
+	assert.Equal(t, "Bearer token", request.headers.Get("Authorization"))
+	assert.Equal(t, "application/x-protobuf", request.headers.Get("Content-Type"))
+	assert.Empty(t, request.headers.Get("dd-api-key"))
+	assert.Empty(t, request.headers.Get("dd-otel-metric-config"))
 }
 
-func TestExportMetrics_EndpointOverrideWithAPIKeyNoMetricConfig(t *testing.T) {
+func TestSubmitLogs_DatadogRoute(t *testing.T) {
 	fake := &fakeTransport{}
-	c, err := export.NewMetricClient(export.Config{Endpoint: "http://collector:4318", APIKey: "key", HTTPClient: httpClient(fake)})
+	client := newDatadogClient(t, fake)
+
+	result, err := client.SubmitLogs(context.Background(), []*logspb.ExportLogsServiceRequest{{}})
 	require.NoError(t, err)
-
-	_, err = c.ExportMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
-	require.NoError(t, err)
-
-	reqs := fake.captured()
-	require.Len(t, reqs, 1)
-	assert.Equal(t, "key", reqs[0].headers.Get("dd-api-key"))
-	assert.Empty(t, reqs[0].headers.Get("dd-otel-metric-config"))
-}
-
-func TestNew_RejectsSchemelessEndpoint(t *testing.T) {
-	_, err := export.NewTraceClient(export.Config{Endpoint: "collector:4318"})
-	assert.Error(t, err)
-}
-
-func TestNew_RejectsNonHTTPScheme(t *testing.T) {
-	_, err := export.NewTraceClient(export.Config{Endpoint: "grpc://collector:4317"})
-	assert.Error(t, err)
-}
-
-func TestExportTraces_PartialSuccessReportsError(t *testing.T) {
-	resp := &tracepb.ExportTraceServiceResponse{
-		PartialSuccess: &tracepb.ExportTracePartialSuccess{RejectedSpans: 2, ErrorMessage: "2 spans dropped"},
-	}
-	b, err := proto.Marshal(resp)
-	require.NoError(t, err)
-	fake := &fakeTransport{responder: func(int) (int, string) { return 200, string(b) }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	assert.Equal(t, 200, res.Requests[0].StatusCode)
-	require.Error(t, res.Requests[0].Err)
-	assert.Contains(t, res.Requests[0].Err.Error(), "partial success")
-}
-
-func TestExportLogs_Endpoint(t *testing.T) {
-	fake := &fakeTransport{}
-	c, err := export.NewLogClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	_, err = c.ExportLogs(context.Background(), []*logspb.ExportLogsServiceRequest{{}})
-	require.NoError(t, err)
+	assert.Equal(t, 1, result.Sent)
 	assert.Equal(t, "https://otlp.datadoghq.com/v1/logs", fake.captured()[0].url)
 }
 
-func TestExportTraces_Non200IsFailure(t *testing.T) {
-	fake := &fakeTransport{responder: func(int) (int, string) { return 202, "" }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	require.Error(t, res.Requests[0].Err)
-	assert.Equal(t, 202, res.Requests[0].StatusCode)
-}
-
-func TestExportTraces_UndecodableBodyIsFailure(t *testing.T) {
-	fake := &fakeTransport{responder: func(int) (int, string) { return 200, "\x08\xff" }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	require.Error(t, res.Requests[0].Err)
-	assert.Contains(t, res.Requests[0].Err.Error(), "not a valid OTLP response")
-}
-
-func TestExportTraces_ForwardCompatibleResponseSucceeds(t *testing.T) {
-	var response []byte
-	response = protowire.AppendTag(response, 15, protowire.VarintType)
-	response = protowire.AppendVarint(response, 1)
-	fake := &fakeTransport{responder: func(int) (int, string) { return 200, string(response) }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.NoError(t, err)
-	require.Len(t, res.Requests, 1)
-	require.NoError(t, res.Requests[0].Err)
-}
-
-func TestExportMetrics_PartialSuccessReportsError(t *testing.T) {
-	resp := &metricspb.ExportMetricsServiceResponse{
-		PartialSuccess: &metricspb.ExportMetricsPartialSuccess{RejectedDataPoints: 4, ErrorMessage: "4 points dropped"},
+func TestNewClient_RoutingValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []export.ClientOption
+	}{
+		{name: "route required"},
+		{name: "routes conflict", opts: []export.ClientOption{export.WithDatadogIntake("datadoghq.com", testAPIKey), export.WithCollectorEndpoint("http://collector:4318")}},
+		{name: "invalid API key", opts: []export.ClientOption{export.WithDatadogIntake("datadoghq.com", "key")}},
+		{name: "schemeless endpoint", opts: []export.ClientOption{export.WithCollectorEndpoint("collector:4318")}},
+		{name: "gRPC endpoint", opts: []export.ClientOption{export.WithCollectorEndpoint("grpc://collector:4317")}},
+		{name: "endpoint query", opts: []export.ClientOption{export.WithCollectorEndpoint("http://collector:4318?token=x")}},
+		{name: "endpoint user info", opts: []export.ClientOption{export.WithCollectorEndpoint("http://user:pass@collector:4318")}},
+		{name: "site with path", opts: []export.ClientOption{export.WithDatadogIntake("datadoghq.com/path", testAPIKey)}},
+		{name: "zero attempts", opts: []export.ClientOption{export.WithCollectorEndpoint("http://collector:4318"), export.WithMaxAttempts(0)}},
+		{name: "negative timeout", opts: []export.ClientOption{export.WithCollectorEndpoint("http://collector:4318"), export.WithRequestTimeout(-1)}},
 	}
-	b, err := proto.Marshal(resp)
-	require.NoError(t, err)
-	fake := &fakeTransport{responder: func(int) (int, string) { return 200, string(b) }}
-	c, err := export.NewMetricClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	res, err := c.ExportMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
-	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	require.Error(t, res.Requests[0].Err)
-	assert.Contains(t, res.Requests[0].Err.Error(), "partial success")
-}
-
-func TestExportLogs_PartialSuccessReportsError(t *testing.T) {
-	resp := &logspb.ExportLogsServiceResponse{
-		PartialSuccess: &logspb.ExportLogsPartialSuccess{RejectedLogRecords: 3, ErrorMessage: "3 logs dropped"},
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := export.NewClient(test.opts...)
+			assert.Error(t, err)
+		})
 	}
-	b, err := proto.Marshal(resp)
-	require.NoError(t, err)
-	fake := &fakeTransport{responder: func(int) (int, string) { return 200, string(b) }}
-	c, err := export.NewLogClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	res, err := c.ExportLogs(context.Background(), []*logspb.ExportLogsServiceRequest{{}})
-	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	require.Error(t, res.Requests[0].Err)
-	assert.Contains(t, res.Requests[0].Err.Error(), "partial success")
 }
 
-func TestExportTraces_PerRequestRows(t *testing.T) {
+func TestNewClient_InheritsGlobalDatadogConfig(t *testing.T) {
+	useFreshGlobalConfig(t)
+	t.Setenv("DD_SITE", "datadoghq.eu")
+	t.Setenv("DD_API_KEY", testAPIKey)
 	fake := &fakeTransport{}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
+
+	client, err := export.NewClient(
+		export.WithDatadogIntake("", ""),
+		export.WithHTTPClient(&http.Client{Transport: fake}),
+	)
+	require.NoError(t, err)
+	_, err = client.SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
 	require.NoError(t, err)
 
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace(), sampleTrace(), sampleTrace()})
-	require.NoError(t, err)
-	require.Len(t, res.Requests, 3)
-	assert.Len(t, fake.captured(), 3)
-	for i, rr := range res.Requests {
-		assert.Equal(t, i, rr.Index)
+	request := fake.captured()[0]
+	assert.Equal(t, "https://otlp.datadoghq.eu/v1/traces", request.url)
+	assert.Equal(t, testAPIKey, request.headers.Get("dd-api-key"))
+}
+
+func TestSubmit_PartialSuccess(t *testing.T) {
+	t.Run("traces", func(t *testing.T) {
+		body, err := proto.Marshal(&tracepb.ExportTraceServiceResponse{PartialSuccess: &tracepb.ExportTracePartialSuccess{RejectedSpans: 2, ErrorMessage: "dropped"}})
+		require.NoError(t, err)
+		fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusOK, string(body) }}
+		result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+		require.Error(t, err)
+		assert.Equal(t, 0, result.Sent)
+		assert.Equal(t, 1, result.Failed)
+		assert.Equal(t, int64(2), result.Requests[0].RejectedItems)
+	})
+
+	t.Run("metrics", func(t *testing.T) {
+		body, err := proto.Marshal(&metricspb.ExportMetricsServiceResponse{PartialSuccess: &metricspb.ExportMetricsPartialSuccess{RejectedDataPoints: 4, ErrorMessage: "dropped"}})
+		require.NoError(t, err)
+		fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusOK, string(body) }}
+		result, err := newDatadogClient(t, fake).SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
+		require.Error(t, err)
+		assert.Equal(t, int64(4), result.Requests[0].RejectedItems)
+	})
+
+	t.Run("logs", func(t *testing.T) {
+		body, err := proto.Marshal(&logspb.ExportLogsServiceResponse{PartialSuccess: &logspb.ExportLogsPartialSuccess{RejectedLogRecords: 3, ErrorMessage: "dropped"}})
+		require.NoError(t, err)
+		fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusOK, string(body) }}
+		result, err := newDatadogClient(t, fake).SubmitLogs(context.Background(), []*logspb.ExportLogsServiceRequest{{}})
+		require.Error(t, err)
+		assert.Equal(t, int64(3), result.Requests[0].RejectedItems)
+	})
+}
+
+func TestSubmitTraces_ResponseValidation(t *testing.T) {
+	t.Run("non-200", func(t *testing.T) {
+		fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusAccepted, "" }}
+		result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+		require.Error(t, err)
+		assert.Equal(t, http.StatusAccepted, result.Requests[0].StatusCode)
+	})
+
+	t.Run("malformed body", func(t *testing.T) {
+		fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusOK, "\x08\xff" }}
+		result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+		require.Error(t, err)
+		assert.Contains(t, result.Requests[0].Err.Error(), "not a valid OTLP response")
+	})
+
+	t.Run("unknown response field", func(t *testing.T) {
+		response := protowire.AppendTag(nil, 15, protowire.VarintType)
+		response = protowire.AppendVarint(response, 1)
+		fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusOK, string(response) }}
+		result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Sent)
+	})
+}
+
+func TestSubmitTraces_ResultsFollowInputOrder(t *testing.T) {
+	fake := &fakeTransport{}
+	client := newDatadogClient(t, fake)
+	result, err := client.SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace(), nil, sampleTrace()})
+	require.Error(t, err)
+	require.Len(t, result.Requests, 3)
+	assert.Equal(t, 2, result.Sent)
+	assert.Equal(t, 1, result.Failed)
+	assert.Len(t, fake.captured(), 2)
+	for index, request := range result.Requests {
+		assert.Equal(t, index, request.Index)
+	}
+	assert.Error(t, result.Requests[1].Err)
+}
+
+func TestSubmitTraces_RetryClassification(t *testing.T) {
+	tests := []struct {
+		name         string
+		status       int
+		wantAttempts int
+		wantRetry    bool
+	}{
+		{name: "service unavailable", status: http.StatusServiceUnavailable, wantAttempts: 3, wantRetry: true},
+		{name: "bad gateway", status: http.StatusBadGateway, wantAttempts: 3, wantRetry: true},
+		{name: "internal server error", status: http.StatusInternalServerError, wantAttempts: 1, wantRetry: false},
+		{name: "bad request", status: http.StatusBadRequest, wantAttempts: 1, wantRetry: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &fakeTransport{responder: func(int) (int, string) { return test.status, "failed" }}
+			client := newDatadogClient(t, fake, export.WithMaxAttempts(3))
+			result, err := client.SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+			require.Error(t, err)
+			assert.Equal(t, test.wantAttempts, result.Requests[0].Attempts)
+			assert.Equal(t, test.wantRetry, result.Requests[0].Retriable)
+		})
 	}
 }
 
-func TestExportTraces_RetryTransient(t *testing.T) {
-	fake := &fakeTransport{responder: func(int) (int, string) { return 503, "unavailable" }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake), MaxAttempts: 3})
-	require.NoError(t, err)
+func TestSubmitTraces_RetrySucceeds(t *testing.T) {
+	fake := &fakeTransport{responder: func(attempt int) (int, string) {
+		if attempt == 0 {
+			return http.StatusServiceUnavailable, "busy"
+		}
+		return http.StatusOK, ""
+	}}
 
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	assert.Equal(t, 3, res.Requests[0].Attempts)
-	assert.True(t, res.Requests[0].Retriable)
-	assert.Equal(t, 503, res.Requests[0].StatusCode)
+	result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Sent)
+	assert.Equal(t, 2, result.Requests[0].Attempts)
+	assert.False(t, result.Requests[0].Retriable)
 }
 
-func TestExportTraces_PermanentError(t *testing.T) {
-	fake := &fakeTransport{responder: func(int) (int, string) { return 400, "bad" }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake), MaxAttempts: 3})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.Error(t, err)
-	assert.Equal(t, 1, res.Requests[0].Attempts)
-	assert.False(t, res.Requests[0].Retriable)
-	assert.Equal(t, 400, res.Requests[0].StatusCode)
-}
-
-func TestExportTraces_NonRetryableServerErrorNotRetried(t *testing.T) {
-	fake := &fakeTransport{responder: func(int) (int, string) { return 500, "boom" }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake), MaxAttempts: 3})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.Error(t, err)
-	assert.Equal(t, 1, res.Requests[0].Attempts)
-	assert.False(t, res.Requests[0].Retriable)
-	assert.Equal(t, 500, res.Requests[0].StatusCode)
-}
-
-func TestExportTraces_RetriesBadGateway(t *testing.T) {
-	fake := &fakeTransport{responder: func(int) (int, string) { return 502, "" }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake), MaxAttempts: 2})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.Error(t, err)
-	assert.Equal(t, 2, res.Requests[0].Attempts)
-	assert.True(t, res.Requests[0].Retriable)
-}
-
-func TestExportTraces_SurfacesDecodedStatusMessage(t *testing.T) {
-	var status []byte
-	status = protowire.AppendTag(status, 1, protowire.VarintType)
+func TestSubmitTraces_SurfacesStatusMessage(t *testing.T) {
+	status := protowire.AppendTag(nil, 1, protowire.VarintType)
 	status = protowire.AppendVarint(status, 3)
 	status = protowire.AppendTag(status, 2, protowire.BytesType)
 	status = protowire.AppendBytes(status, []byte("resource_spans[0] rejected: bad trace_id"))
+	fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusBadRequest, string(status) }}
 
-	fake := &fakeTransport{responder: func(int) (int, string) { return 400, string(status) }}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+	result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
 	require.Error(t, err)
-	assert.Equal(t, "resource_spans[0] rejected: bad trace_id", res.Requests[0].ResponseSnippet)
+	assert.Equal(t, "resource_spans[0] rejected: bad trace_id", result.Requests[0].ResponseSnippet)
 }
 
-func TestExportTraces_NilRequest(t *testing.T) {
-	fake := &fakeTransport{}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-
-	res, err := c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{nil})
-	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	assert.Error(t, res.Requests[0].Err)
-	assert.Empty(t, fake.captured())
-}
-
-func TestExportTraces_ContextCancelNotRetriable(t *testing.T) {
-	fake := &fakeTransport{}
-	c, err := export.NewTraceClient(export.Config{Site: "datadoghq.com", APIKey: "key", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
+func TestSubmitTraces_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-
-	res, err := c.ExportTraces(ctx, []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+	result, err := newDatadogClient(t, &fakeTransport{}).SubmitTraces(ctx, []*tracepb.ExportTraceServiceRequest{sampleTrace(), sampleTrace()})
 	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	assert.False(t, res.Requests[0].Retriable)
+	assert.Equal(t, 0, result.Sent)
+	assert.Equal(t, 2, result.Failed)
+	assert.Equal(t, 0, result.Requests[0].Attempts)
+	assert.True(t, result.Requests[0].Retriable)
 }
 
-func TestNew_RequiresAPIKeyOrEndpoint(t *testing.T) {
-	_, err := export.NewTraceClient(export.Config{Site: "datadoghq.com"})
-	assert.Error(t, err)
+func TestSubmitTraces_CancelAfterLastRequestIsNotAnError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	fake := &fakeTransport{responder: func(int) (int, string) {
+		cancel()
+		return http.StatusOK, ""
+	}}
+
+	result, err := newDatadogClient(t, fake).SubmitTraces(ctx, []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Sent)
 }
 
-func TestNew_EndpointTrimsTrailingSlash(t *testing.T) {
+func TestClientsKeepDestinationsIsolated(t *testing.T) {
+	firstTransport, secondTransport := &fakeTransport{}, &fakeTransport{}
+	first := newCollectorClient(t, firstTransport, "http://first:4318", export.WithHeaders(map[string]string{"Authorization": "Bearer first"}))
+	second := newCollectorClient(t, secondTransport, "http://second:4318", export.WithHeaders(map[string]string{"Authorization": "Bearer second"}))
+
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		_, _ = first.SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+	}()
+	go func() {
+		defer wait.Done()
+		_, _ = second.SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+	}()
+	wait.Wait()
+
+	assert.Equal(t, "http://first:4318/v1/traces", firstTransport.captured()[0].url)
+	assert.Equal(t, "Bearer first", firstTransport.captured()[0].headers.Get("Authorization"))
+	assert.Equal(t, "http://second:4318/v1/traces", secondTransport.captured()[0].url)
+	assert.Equal(t, "Bearer second", secondTransport.captured()[0].headers.Get("Authorization"))
+}
+
+func TestClientConcurrentUse(t *testing.T) {
 	fake := &fakeTransport{}
-	c, err := export.NewTraceClient(export.Config{Endpoint: "http://collector:4318/", HTTPClient: httpClient(fake)})
-	require.NoError(t, err)
-	_, err = c.ExportTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
-	require.NoError(t, err)
-	assert.Equal(t, "http://collector:4318/v1/traces", fake.captured()[0].url)
+	client := newCollectorClient(t, fake, "http://collector:4318")
+
+	var wait sync.WaitGroup
+	wait.Add(3)
+	go func() {
+		defer wait.Done()
+		_, _ = client.SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+	}()
+	go func() {
+		defer wait.Done()
+		_, _ = client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
+	}()
+	go func() {
+		defer wait.Done()
+		_, _ = client.SubmitLogs(context.Background(), []*logspb.ExportLogsServiceRequest{{}})
+	}()
+	wait.Wait()
+
+	assert.Len(t, fake.captured(), 3)
 }

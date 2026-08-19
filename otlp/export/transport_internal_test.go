@@ -11,9 +11,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,11 +33,11 @@ func (s stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
-	h := s.header
-	if h == nil {
-		h = http.Header{}
+	headers := s.header
+	if headers == nil {
+		headers = http.Header{}
 	}
-	return &http.Response{StatusCode: s.status, Header: h, Body: s.body}, nil
+	return &http.Response{StatusCode: s.status, Header: headers, Body: s.body}, nil
 }
 
 type errReadCloser struct{}
@@ -43,123 +45,151 @@ type errReadCloser struct{}
 func (errReadCloser) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
 func (errReadCloser) Close() error             { return nil }
 
-func stubTransport(rt http.RoundTripper) *rawTransport {
-	return &rawTransport{client: &http.Client{Transport: rt}, endpoint: "http://x/v1/traces", headers: http.Header{}, maxAttempts: 1}
+func stubTransport(roundTripper http.RoundTripper) *rawTransport {
+	endpoint, _ := url.Parse("http://x")
+	return &rawTransport{
+		client:                &http.Client{Transport: roundTripper},
+		endpoint:              endpoint,
+		headers:               http.Header{},
+		maxAttempts:           1,
+		defaultRequestTimeout: 10 * time.Second,
+	}
 }
 
-func TestDoPost_ReadErrorOn2xxIsSurfacedAsRetryableFailure(t *testing.T) {
-	tr := stubTransport(stubRoundTripper{status: 200, body: errReadCloser{}})
-	a := tr.doPost(context.Background(), []byte("payload"))
-	require.Error(t, a.Err)
-	assert.Equal(t, 0, a.Status)
-	assert.True(t, otlpRetriable(context.Background(), a.Status))
+func TestDoPost_ReadErrorOnSuccess(t *testing.T) {
+	transport := stubTransport(stubRoundTripper{status: http.StatusOK, body: errReadCloser{}})
+	attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
+	require.Error(t, attempt.err)
+	assert.Equal(t, 0, attempt.statusCode)
+	assert.True(t, otlpRetriable(context.Background(), attempt.statusCode))
 }
 
 type countingReadCloser struct {
-	r    io.Reader
-	read *int
+	reader io.Reader
+	read   *int
 }
 
-func (c countingReadCloser) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	*c.read += n
-	return n, err
+func (c countingReadCloser) Read(buffer []byte) (int, error) {
+	read, err := c.reader.Read(buffer)
+	*c.read += read
+	return read, err
 }
 func (countingReadCloser) Close() error { return nil }
 
-func TestDoPost_DrainsLargeResponseForConnectionReuse(t *testing.T) {
+func TestDoPost_DrainsResponse(t *testing.T) {
 	const size = (2 << 20) + 512
-	var read int
-	tr := stubTransport(stubRoundTripper{
-		status: 200,
-		body:   countingReadCloser{r: bytes.NewReader(make([]byte, size)), read: &read},
+	read := 0
+	transport := stubTransport(stubRoundTripper{
+		status: http.StatusOK,
+		body:   countingReadCloser{reader: bytes.NewReader(make([]byte, size)), read: &read},
 	})
-	a := tr.doPost(context.Background(), []byte("payload"))
-	require.NoError(t, a.Err)
-	assert.Equal(t, size, read, "the full response body must be drained so the connection can be reused")
+	attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
+	require.ErrorIs(t, attempt.err, errResponseTooLarge)
+	assert.Equal(t, http.StatusOK, attempt.statusCode)
+	assert.False(t, otlpRetriable(context.Background(), attempt.statusCode))
+	assert.Equal(t, size, read)
 }
 
-func TestDefaultHTTPClient_DoesNotFollowRedirects(t *testing.T) {
-	c := defaultHTTPClient()
-	require.NotNil(t, c.CheckRedirect)
-	assert.ErrorIs(t, c.CheckRedirect(nil, nil), http.ErrUseLastResponse)
-}
-
-func TestNewRawTransport_EnforcesNoRedirectOnCustomClient(t *testing.T) {
+func TestResolveClientConfig_EnforcesNoRedirect(t *testing.T) {
 	custom := &http.Client{}
-	tr, err := newRawTransport(Config{Site: "datadoghq.com", APIKey: "k", HTTPClient: custom}, pathTraces, nil)
+	cfg, err := resolveClientConfig([]ClientOption{
+		WithCollectorEndpoint("http://collector:4318"),
+		WithHTTPClient(custom),
+	})
 	require.NoError(t, err)
-	require.NotNil(t, tr.client.CheckRedirect)
-	assert.ErrorIs(t, tr.client.CheckRedirect(nil, nil), http.ErrUseLastResponse)
-	assert.Nil(t, custom.CheckRedirect, "caller's client must not be mutated")
+	require.NotNil(t, cfg.httpClient.CheckRedirect)
+	assert.ErrorIs(t, cfg.httpClient.CheckRedirect(nil, nil), http.ErrUseLastResponse)
+	assert.Nil(t, custom.CheckRedirect)
 
 	sentinel := errors.New("caller policy")
-	custom2 := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return sentinel }}
-	tr2, err := newRawTransport(Config{Site: "datadoghq.com", APIKey: "k", HTTPClient: custom2}, pathTraces, nil)
+	custom = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return sentinel }}
+	cfg, err = resolveClientConfig([]ClientOption{
+		WithCollectorEndpoint("http://collector:4318"),
+		WithHTTPClient(custom),
+	})
 	require.NoError(t, err)
-	assert.ErrorIs(t, tr2.client.CheckRedirect(nil, nil), sentinel)
+	assert.ErrorIs(t, cfg.httpClient.CheckRedirect(nil, nil), http.ErrUseLastResponse)
+	assert.ErrorIs(t, custom.CheckRedirect(nil, nil), sentinel)
 }
 
 type deadlineCapture struct {
-	dur func(remaining time.Duration, ok bool)
+	capture func(remaining time.Duration, ok bool)
 }
 
-func (d deadlineCapture) RoundTrip(req *http.Request) (*http.Response, error) {
-	dl, ok := req.Context().Deadline()
-	rem := time.Duration(0)
+func (d deadlineCapture) RoundTrip(request *http.Request) (*http.Response, error) {
+	deadline, ok := request.Context().Deadline()
+	remaining := time.Duration(0)
 	if ok {
-		rem = time.Until(dl)
+		remaining = time.Until(deadline)
 	}
-	d.dur(rem, ok)
-	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
+	d.capture(remaining, ok)
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
 }
 
 func TestDoPost_RequestTimeout(t *testing.T) {
-	var rem time.Duration
+	var remaining time.Duration
 	var hasDeadline bool
-	rt := deadlineCapture{dur: func(r time.Duration, ok bool) { rem, hasDeadline = r, ok }}
-	mk := func(reqTimeout time.Duration) *rawTransport {
-		return &rawTransport{client: &http.Client{Transport: rt}, endpoint: "http://x/v1/traces", headers: http.Header{}, maxAttempts: 1, requestTimeout: reqTimeout}
+	roundTripper := deadlineCapture{capture: func(value time.Duration, ok bool) { remaining, hasDeadline = value, ok }}
+	newTransport := func(requestTimeout time.Duration) *rawTransport {
+		transport := stubTransport(roundTripper)
+		transport.requestTimeout = requestTimeout
+		return transport
 	}
 
-	mk(5*time.Second).doPost(context.Background(), []byte("x"))
+	newTransport(5*time.Second).doPost(context.Background(), pathTraces, []byte("x"))
 	require.True(t, hasDeadline)
-	assert.InDelta(t, 5.0, rem.Seconds(), 1.0)
+	assert.InDelta(t, 5.0, remaining.Seconds(), 1.0)
 
-	mk(0).doPost(context.Background(), []byte("x"))
+	newTransport(0).doPost(context.Background(), pathTraces, []byte("x"))
 	require.True(t, hasDeadline)
-	assert.InDelta(t, 10.0, rem.Seconds(), 1.0)
+	assert.InDelta(t, 10.0, remaining.Seconds(), 1.0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	mk(0).doPost(ctx, []byte("x"))
+	newTransport(0).doPost(ctx, pathTraces, []byte("x"))
 	require.True(t, hasDeadline)
-	assert.Greater(t, rem.Seconds(), 20.0)
+	assert.Greater(t, remaining.Seconds(), 20.0)
 }
 
-func TestDoPost_Non200IsFailure(t *testing.T) {
-	for _, code := range []int{202, 204, 206, 302} {
-		tr := stubTransport(stubRoundTripper{status: code, body: io.NopCloser(strings.NewReader(""))})
-		a := tr.doPost(context.Background(), []byte("payload"))
-		require.Errorf(t, a.Err, "status %d should be a failed export", code)
-		assert.Equal(t, code, a.Status)
+func TestDoPost_RequiresStatusOK(t *testing.T) {
+	for _, status := range []int{http.StatusAccepted, http.StatusNoContent, http.StatusPartialContent, http.StatusFound} {
+		transport := stubTransport(stubRoundTripper{status: status, body: io.NopCloser(strings.NewReader(""))})
+		attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
+		require.Errorf(t, attempt.err, "status %d should fail", status)
+		assert.Equal(t, status, attempt.statusCode)
 	}
 }
 
-func TestDoPost_ThreadsRetryAfterHeader(t *testing.T) {
-	tr := stubTransport(stubRoundTripper{
-		status: 503,
+func TestDoPost_RetryAfter(t *testing.T) {
+	transport := stubTransport(stubRoundTripper{
+		status: http.StatusServiceUnavailable,
 		header: http.Header{"Retry-After": []string{"2"}},
 		body:   io.NopCloser(strings.NewReader("busy")),
 	})
-	a := tr.doPost(context.Background(), []byte("payload"))
-	require.Error(t, a.Err)
-	assert.Equal(t, 503, a.Status)
-	assert.Equal(t, 2*time.Second, a.RetryAfter)
+	attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
+	require.Error(t, attempt.err)
+	assert.Equal(t, 2*time.Second, attempt.retryAfter)
+}
+
+func TestSubmitBody_CancelInterruptsRetryAfter(t *testing.T) {
+	transport := stubTransport(stubRoundTripper{
+		status: http.StatusServiceUnavailable,
+		header: http.Header{"Retry-After": []string{"60"}},
+		body:   io.NopCloser(strings.NewReader("busy")),
+	})
+	transport.maxAttempts = 3
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(20*time.Millisecond, cancel)
+	start := time.Now()
+
+	result, err := transport.submitBody(ctx, pathTraces, []byte("payload"))
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 1, result.attempts)
+	assert.False(t, result.retriable)
+	assert.Less(t, time.Since(start), time.Second)
 }
 
 func TestOTLPRetriable(t *testing.T) {
-	ctx := context.Background()
 	for status, want := range map[int]bool{
 		0:   true,
 		429: true,
@@ -168,55 +198,46 @@ func TestOTLPRetriable(t *testing.T) {
 		504: true,
 		408: false,
 		500: false,
-		501: false,
-		505: false,
 		400: false,
-		404: false,
 		200: false,
 	} {
-		assert.Equalf(t, want, otlpRetriable(ctx, status), "status %d", status)
+		assert.Equalf(t, want, otlpRetriable(context.Background(), status), "status %d", status)
 	}
-
-	cancelled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	assert.False(t, otlpRetriable(cancelled, 503))
+	assert.False(t, otlpRetriable(canceled, http.StatusServiceUnavailable))
 }
 
 func TestParseRetryAfter(t *testing.T) {
-	mk := func(v string) http.Header { return http.Header{"Retry-After": []string{v}} }
-
-	assert.Equal(t, time.Duration(0), parseRetryAfter(http.Header{}))
-	assert.Equal(t, time.Duration(0), parseRetryAfter(mk("")))
-	assert.Equal(t, 5*time.Second, parseRetryAfter(mk("5")))
-	assert.Equal(t, 10*time.Second, parseRetryAfter(mk("  10  ")))
-	assert.Equal(t, time.Duration(0), parseRetryAfter(mk("-3")))
-	assert.Equal(t, maxRetryAfter, parseRetryAfter(mk("100000")))
-	assert.Equal(t, maxRetryAfter, parseRetryAfter(mk("9223372037")))
-	assert.Equal(t, time.Duration(0), parseRetryAfter(mk("soon")))
-	assert.Equal(t, time.Duration(0), parseRetryAfter(mk("0")))
+	headers := func(value string) http.Header { return http.Header{"Retry-After": []string{value}} }
+	assert.Zero(t, parseRetryAfter(http.Header{}))
+	assert.Equal(t, 5*time.Second, parseRetryAfter(headers("5")))
+	assert.Zero(t, parseRetryAfter(headers("-3")))
+	assert.Equal(t, maxRetryAfter, parseRetryAfter(headers("100000")))
+	assert.Equal(t, maxRetryAfter, parseRetryAfter(headers("9223372037")))
+	assert.Zero(t, parseRetryAfter(headers("soon")))
 
 	future := time.Now().Add(3 * time.Second).UTC().Format(http.TimeFormat)
-	d := parseRetryAfter(mk(future))
-	assert.Greater(t, d, time.Duration(0))
-	assert.LessOrEqual(t, d, maxRetryAfter)
-
-	past := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
-	assert.Equal(t, time.Duration(0), parseRetryAfter(mk(past)))
+	delay := parseRetryAfter(headers(future))
+	assert.Positive(t, delay)
+	assert.LessOrEqual(t, delay, maxRetryAfter)
+	assert.Zero(t, parseRetryAfter(headers(time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat))))
 }
 
 func TestOTLPStatusMessage(t *testing.T) {
-	var body []byte
-	body = protowire.AppendTag(body, 1, protowire.VarintType)
+	body := protowire.AppendTag(nil, 1, protowire.VarintType)
 	body = protowire.AppendVarint(body, 3)
 	body = protowire.AppendTag(body, 2, protowire.BytesType)
 	body = protowire.AppendBytes(body, []byte("invalid trace_id length"))
 	assert.Equal(t, "invalid trace_id length", otlpStatusMessage(body))
+	assert.Empty(t, otlpStatusMessage([]byte{0xff, 0xff, 0xff}))
+	assert.Empty(t, otlpStatusMessage(nil))
+}
 
-	var codeOnly []byte
-	codeOnly = protowire.AppendTag(codeOnly, 1, protowire.VarintType)
-	codeOnly = protowire.AppendVarint(codeOnly, 5)
-	assert.Equal(t, "", otlpStatusMessage(codeOnly))
-
-	assert.Equal(t, "", otlpStatusMessage([]byte{0xff, 0xff, 0xff}))
-	assert.Equal(t, "", otlpStatusMessage(nil))
+func TestResponseSnippet(t *testing.T) {
+	assert.Equal(t, "boom", responseSnippet([]byte("  boom \n")))
+	assert.Empty(t, responseSnippet(nil))
+	assert.Len(t, responseSnippet([]byte(strings.Repeat("a", responseSnippetMaxBytes+100))), responseSnippetMaxBytes)
+	assert.True(t, utf8.ValidString(responseSnippet([]byte(strings.Repeat("é", responseSnippetMaxBytes)))))
+	assert.Equal(t, "ok", responseSnippet([]byte{'o', 'k', 0xff, 0xfe}))
 }

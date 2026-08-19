@@ -27,11 +27,11 @@ func (discardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
 }
 
-func BenchmarkExportTraces(b *testing.B) {
-	c, err := export.NewTraceClient(export.Config{
-		Site: "datadoghq.com", APIKey: "k",
-		HTTPClient: &http.Client{Transport: discardTransport{}},
-	})
+func BenchmarkSubmitTraces(b *testing.B) {
+	c, err := export.NewClient(
+		export.WithDatadogIntake("datadoghq.com", testAPIKey),
+		export.WithHTTPClient(&http.Client{Transport: discardTransport{}}),
+	)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func BenchmarkExportTraces(b *testing.B) {
 	ctx := context.Background()
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := c.ExportTraces(ctx, reqs); err != nil {
+		if _, err := c.SubmitTraces(ctx, reqs); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -13,24 +13,9 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 )
 
-// TraceClient exports offline OTLP trace requests.
-type TraceClient struct {
-	t *rawTransport
-}
-
-// NewTraceClient builds a TraceClient for the /v1/traces endpoint from cfg.
-func NewTraceClient(cfg Config) (*TraceClient, error) {
-	t, err := newRawTransport(cfg, pathTraces, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &TraceClient{t: t}, nil
-}
-
-// ExportTraces posts each request atomically. It returns a non-nil error if any
-// request failed; per-request detail is in the result.
-func (c *TraceClient) ExportTraces(ctx context.Context, requests []*tracepb.ExportTraceServiceRequest) (*ExportResult, error) {
-	return exportEach(ctx, c.t, requests, tracePartialSuccess)
+// SubmitTraces submits completed OTLP trace requests.
+func (c *Client) SubmitTraces(ctx context.Context, requests []*tracepb.ExportTraceServiceRequest) (*Result, error) {
+	return submitEach(ctx, c.transport, pathTraces, requests, tracePartialSuccess)
 }
 
 func tracePartialSuccess(body []byte) (int64, string, error) {
