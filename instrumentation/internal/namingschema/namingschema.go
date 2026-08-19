@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -41,19 +42,21 @@ func init() {
 
 func LoadFromEnv() {
 	schemaVersionStr := env.Get("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
-	if v, ok := parseVersionString(schemaVersionStr); ok {
-		setVersion(v)
-	} else {
-		setVersion(VersionV0)
+	if v, ok := parseVersionString(schemaVersionStr); !ok {
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}
+	LoadFromConfig(internalconfig.Get())
+}
+
+func LoadFromConfig(cfg *internalconfig.Config) {
+	setVersion(Version(cfg.SpanAttributeSchemaVersion()))
 	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
 	// These default service names are always disabled for v1 onwards.
 	removeFakeServiceNames = internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
 }
 
 func ReloadConfig() {
-	LoadFromEnv()
+	LoadFromConfig(internalconfig.CreateNew())
 	globalconfig.SetServiceName(env.Get("DD_SERVICE"))
 }
 
