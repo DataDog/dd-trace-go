@@ -9,6 +9,9 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"runtime/pprof"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -85,6 +88,68 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
 	assert.Equal(parent.Context().TraceID(), child.SpanContext().TraceID().String())
+}
+
+func TestStartPreservesPprofLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		remoteParent bool
+	}{
+		{name: "root"},
+		{name: "remote parent", remoteParent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+			defer tp.Shutdown()
+			tr := tp.Tracer("")
+
+			const labelKey = "otel_bridge_test_label"
+			pprof.Do(context.Background(), pprof.Labels(labelKey, "expected"), func(ctx context.Context) {
+				if tc.remoteParent {
+					ctx = oteltrace.ContextWithRemoteSpanContext(ctx, oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+						TraceID: oteltrace.TraceID{1},
+						SpanID:  oteltrace.SpanID{1},
+						Remote:  true,
+					}))
+				}
+				_, span := tr.Start(ctx, "operation")
+				assert.Contains(t, goroutineLabels(labelKey), `"otel_bridge_test_label":"expected"`)
+
+				span.End()
+				assert.Contains(t, goroutineLabels(labelKey), `"otel_bridge_test_label":"expected"`)
+			})
+		})
+	}
+}
+
+func TestStartRestoresParentPprofLabels(t *testing.T) {
+	tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+	defer tp.Shutdown()
+	tr := tp.Tracer("")
+
+	ctx, parent := tr.Start(context.Background(), "parent")
+	parentID := strconv.FormatUint(parent.(*span).DD.Context().SpanID(), 10)
+	_, child := tr.Start(ctx, "child")
+	child.End()
+
+	assert.Contains(t, goroutineLabels("span id"), `"span id":"`+parentID+`"`)
+	parent.End()
+}
+
+func goroutineLabels(key string) string {
+	done := make(chan string, 1)
+	go func() {
+		var profile strings.Builder
+		_ = pprof.Lookup("goroutine").WriteTo(&profile, 1)
+		for _, line := range strings.Split(profile.String(), "\n") {
+			if strings.Contains(line, "# labels:") && strings.Contains(line, key) {
+				done <- line
+				return
+			}
+		}
+		done <- ""
+	}()
+	return <-done
 }
 
 func TestTracerOptions(t *testing.T) {

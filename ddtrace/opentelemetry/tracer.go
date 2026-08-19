@@ -39,11 +39,13 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	// OTel name is akin to resource name in Datadog
 	var ddopts = []tracer.StartSpanOption{tracer.ResourceName(spanName)}
+	hasLocalParent := false
 	if !ssConfig.NewRoot() {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			// if the span originates from the Datadog tracer,
 			// inherit given span context as a parent
 			ddopts = append(ddopts, tracer.ChildOf(s.Context()))
+			hasLocalParent = true
 		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
@@ -94,6 +96,9 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 			})
 		}
 		ddopts = append(ddopts, tracer.WithSpanLinks(links))
+	}
+	if !hasLocalParent {
+		ddopts = append(ddopts, tracer.WithStartSpanConfig(&tracer.StartSpanConfig{Context: ctx}))
 	}
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
