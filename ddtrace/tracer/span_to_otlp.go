@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -79,7 +80,7 @@ func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptr
 		Attributes:        convertSpanAttributes(s, defaultServiceName, otelSemantics),
 		Events:            convertEvents(s),
 		Links:             convertSpanLinks(s.spanLinks),
-		Status:            convertSpanStatus(s),
+		Status:            convertSpanStatus(s, otelSemantics),
 		TraceState:        convertTraceState(s.context, p),
 	}
 	// Mirror the W3C sampled trace-flag we set on wire injection: kept spans
@@ -91,8 +92,15 @@ func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptr
 }
 
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
-func convertSpanStatus(s *Span) *otlptrace.Status {
+func convertSpanStatus(s *Span, otelSemantics bool) *otlptrace.Status {
 	message, _ := s.meta.Get(ext.ErrorMsg)
+	if otelSemantics {
+		statusCode, hasStatusCode := s.meta.Get(ext.HTTPResponseStatusCode)
+		errorType, _ := s.meta.Get(ext.ErrorType)
+		if hasStatusCode && errorType == statusCode {
+			message = ""
+		}
+	}
 	status := &otlptrace.Status{
 		Code:    otlptrace.Status_STATUS_CODE_UNSET,
 		Message: message,
@@ -193,23 +201,23 @@ func addAttribute(attrs *[]*otlpcommon.KeyValue, key string, val *otlpcommon.Any
 // Datadog stores numeric tags as float64, so these are re-encoded as OTLP intValue
 // rather than doubleValue to conform to the data model.
 var otelIntMetricKeys = map[string]struct{}{
-	"http.response.status_code": {},
-	"http.response.body.size":   {},
-	"http.request.body.size":    {},
-	"server.port":               {},
-	"network.peer.port":         {},
-	"network.destination.port":  {},
-	"client.port":               {},
+	ext.HTTPResponseStatusCode: {},
+	ext.HTTPResponseBodySize:   {},
+	ext.HTTPRequestBodySize:    {},
+	ext.ServerPort:             {},
+	ext.NetworkPeerPort:        {},
+	ext.NetworkDestinationPort: {},
+	ext.ClientPort:             {},
 }
 
-// ddOnlyMetaKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
+// ddOnlyAttributeKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
 // they have no OTel equivalent. span.kind is already carried by the OTLP SpanKind field.
 // error.type is intentionally excluded: it is a stable OTel span attribute that
 // instrumentation sets directly (e.g. otelhttp on failed requests), independent of
 // RecordError's "exception" event (exception.type/message/stacktrace). #4889 originally
 // suppressed it on the assumption it lived on the exception event instead; it doesn't,
 // so it passes through here.
-var ddOnlyMetaKeys = map[string]struct{}{
+var ddOnlyAttributeKeys = map[string]struct{}{
 	ext.ErrorMsg:           {},
 	ext.ErrorStack:         {},
 	ext.ErrorHandlingStack: {},
@@ -242,15 +250,31 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 	}
 	for key, value := range s.meta.All() {
 		if otelSemantics {
-			if _, skip := ddOnlyMetaKeys[key]; skip {
+			if _, skip := ddOnlyAttributeKeys[key]; skip {
 				continue
 			}
 		}
-		if !addAttribute(&attrs, key, otlpStringValue(value)) {
+		av := otlpStringValue(value)
+		if otelSemantics {
+			if _, isInt := otelIntMetricKeys[key]; isInt {
+				if value, err := strconv.ParseInt(value, 10, 64); err == nil {
+					av = otlpIntValue(value)
+				}
+			}
+		}
+		if !addAttribute(&attrs, key, av) {
 			return attrs
 		}
 	}
 	for key, value := range s.metrics {
+		if otelSemantics {
+			if _, skip := ddOnlyAttributeKeys[key]; skip {
+				continue
+			}
+			if _, exists := s.meta.Get(key); exists {
+				continue
+			}
+		}
 		var av *otlpcommon.AnyValue
 		if _, isInt := otelIntMetricKeys[key]; isInt {
 			av = otlpIntValue(int64(value))

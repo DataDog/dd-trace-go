@@ -32,6 +32,9 @@ const (
 	// NetworkDestinationPort is the remote port number of the outbound connection.
 	NetworkDestinationPort = "network.destination.port"
 
+	// NetworkPeerPort is the peer port number observed at the transport layer.
+	NetworkPeerPort = "network.peer.port"
+
 	// SQLType sets the sql type tag.
 	SQLType = "sql"
 
@@ -49,6 +52,38 @@ const (
 
 	// HTTPURL sets the HTTP URL for a span.
 	HTTPURL = "http.url"
+
+	// HTTPRequestMethod is the case-sensitive known method name. Unknown methods use "_OTHER";
+	// HTTPRequestMethodOriginal preserves their original value.
+	HTTPRequestMethod = "http.request.method"
+
+	// HTTPRequestMethodOriginal is the method as received when it differs from HTTPRequestMethod.
+	HTTPRequestMethodOriginal = "http.request.method_original"
+
+	// HTTPResponseStatusCode is the numeric status code returned by the server.
+	HTTPResponseStatusCode = "http.response.status_code"
+
+	// HTTPRequestBodySize is the size of the request body in bytes.
+	HTTPRequestBodySize = "http.request.body.size"
+
+	// HTTPResponseBodySize is the size of the response body in bytes.
+	HTTPResponseBodySize = "http.response.body.size"
+
+	// URLFull is an absolute URL when one can be reconstructed.
+	// It must omit user credentials and should redact sensitive query values.
+	URLFull = "url.full"
+
+	// ServerAddress is the logical destination domain, IP address, or Unix socket name. Domain names
+	// must not be obtained through reverse DNS.
+	// Behind a proxy, it represents the backend address when known.
+	ServerAddress = "server.address"
+
+	// ServerPort is the logical destination port, represented as an integer.
+	// Behind a proxy, it represents the backend port when known.
+	ServerPort = "server.port"
+
+	// ClientPort is the client port number.
+	ClientPort = "client.port"
 
 	// HTTPUserAgent is the user agent header value of the HTTP request.
 	HTTPUserAgent = "http.useragent"
