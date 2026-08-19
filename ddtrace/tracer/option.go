@@ -224,7 +224,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	namingschema.LoadFromEnv()
+	namingschema.LoadFromConfig(c.internalConfig)
 
 	for _, fn := range opts {
 		if fn == nil {

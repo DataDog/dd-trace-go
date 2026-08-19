@@ -27,6 +27,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
 
@@ -216,11 +217,14 @@ type Config struct {
 	otlpExportMetricsMode bool
 	// otlpEndpoint is the resolved OTEL_EXPORTER_OTLP_ENDPOINT base URL; always non-empty.
 	otlpEndpoint string
-	// otelSemanticsEnabled makes OTLP-exported spans match the pure OTel SDK
-	// by omitting Datadog-specific attributes. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
+	// otelSemanticsEnabled enables OpenTelemetry semantic conventions and
+	// their required global configuration overrides. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
 	otelSemanticsEnabled bool
-	// otlpTraceURL is the OTLP collector endpoint for traces
+	// otlpTraceURL is the OTLP collector endpoint for traces.
 	otlpTraceURL string
+	// otlpTraceURLDerivedFromAgent reports whether otlpTraceURL should follow
+	// programmatic changes to agentURL.
+	otlpTraceURLDerivedFromAgent bool
 	// otlpHeaders holds the resolved OTLP trace headers from
 	// OTEL_EXPORTER_OTLP_TRACES_HEADERS plus Content-Type: application/x-protobuf.
 	otlpHeaders map[string]string
@@ -400,7 +404,8 @@ func loadConfig() *Config {
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
 	otelSemantics, otelSemanticsOrigin := p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
-	cfg.SetOTelSemanticsEnabled(otelSemantics, otelSemanticsOrigin)
+	cfg.otelSemanticsEnabled = otelSemantics
+	configtelemetry.Report("DD_TRACE_OTEL_SEMANTICS_ENABLED", otelSemantics, otelSemanticsOrigin)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -411,7 +416,9 @@ func loadConfig() *Config {
 	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
 		cfg.otlpExportMode = false
 	}
-	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
+	otlpTracesEndpoint := p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, otlpTracesEndpoint)
+	cfg.otlpTraceURLDerivedFromAgent = otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
@@ -486,11 +493,14 @@ func loadConfig() *Config {
 	if schemaStr := p.GetString("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", ""); schemaStr != "" {
 		if v, ok := parseSpanAttributeSchema(schemaStr); ok {
 			cfg.spanAttributeSchemaVersion = v
+		} else {
+			log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v0", schemaStr)
 		}
 	}
 	if cfg.spanAttributeSchemaVersion >= 1 {
 		cfg.peerServiceDefaultsEnabled = true
 	}
+	cfg.applyOTelSemanticsOverrides()
 
 	cfg.maxTagsHeaderLen = resolveMaxTagsHeaderLen(p.GetInt("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", DefaultMaxTagsHeaderLen))
 
@@ -563,6 +573,14 @@ func Get() *Config {
 	return instance
 }
 
+// New returns a new configuration loaded from the current configuration sources without
+// replacing the global configuration instance.
+func New() *Config {
+	mu.Lock()
+	defer mu.Unlock()
+	return loadConfig()
+}
+
 // CreateNew returns a new global configuration instance.
 // This function should be used when we need to create a new configuration instance.
 // It build a new configuration instance and override the existing one
@@ -610,6 +628,9 @@ func (c *Config) SetAgentURL(u *url.URL, origin telemetry.Origin, product ...Pro
 		return
 	}
 	c.agentURL = u
+	if c.otlpTraceURLDerivedFromAgent {
+		c.otlpTraceURL = resolveOTLPTraceURL(u, "")
+	}
 	if u != nil {
 		configtelemetry.Report("DD_TRACE_AGENT_URL", u.String(), origin)
 	}
@@ -1419,6 +1440,11 @@ func (c *Config) PeerServiceDefaultsEnabled() bool {
 func (c *Config) SetPeerServiceDefaultsEnabled(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.otelSemanticsEnabled && enabled {
+		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false")
+		configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false, telemetry.OriginCalculated)
+		return
+	}
 	c.peerServiceDefaultsEnabled = enabled
 	configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", enabled, origin)
 }
@@ -1580,6 +1606,28 @@ func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, 
 	}
 	c.otelSemanticsEnabled = enabled
 	configtelemetry.Report("DD_TRACE_OTEL_SEMANTICS_ENABLED", enabled, origin)
+	c.applyOTelSemanticsOverrides()
+}
+
+// applyOTelSemanticsOverrides applies settings required by OpenTelemetry
+// semantic conventions after their raw values have been resolved.
+// The caller must hold c.mu after configuration initialization.
+func (c *Config) applyOTelSemanticsOverrides() {
+	if !c.otelSemanticsEnabled {
+		return
+	}
+	c.otlpExportMode = true
+	configtelemetry.Report("OTEL_TRACES_EXPORTER", "otlp", telemetry.OriginCalculated)
+	if c.spanAttributeSchemaVersion != 0 {
+		c.spanAttributeSchemaVersion = 0
+		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0")
+		configtelemetry.Report("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0", telemetry.OriginCalculated)
+	}
+	if c.peerServiceDefaultsEnabled {
+		c.peerServiceDefaultsEnabled = false
+		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false")
+		configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false, telemetry.OriginCalculated)
+	}
 }
 
 // RequestedTraceProtocol returns the Datadog trace protocol version to use for
@@ -1683,6 +1731,10 @@ func (c *Config) SetOTLPExportMode(v bool, origin telemetry.Origin, product ...P
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.checkProductConflict("OTEL_TRACES_EXPORTER", origin, v, product...) {
+		return
+	}
+	if c.otelSemanticsEnabled && !v {
+		configtelemetry.Report("OTEL_TRACES_EXPORTER", "otlp", telemetry.OriginCalculated)
 		return
 	}
 	c.otlpExportMode = v
