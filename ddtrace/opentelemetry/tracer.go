@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log/slog"
+	"runtime/pprof"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -97,8 +98,12 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		}
 		ddopts = append(ddopts, tracer.WithSpanLinks(links))
 	}
-	if !hasLocalParent {
-		ddopts = append(ddopts, tracer.WithStartSpanConfig(&tracer.StartSpanConfig{Context: ctx}))
+	if !hasLocalParent && cfg.Parent == nil && hasPprofLabels(ctx) {
+		ddopts = append(ddopts, func(cfg *tracer.StartSpanConfig) {
+			if cfg.Context == nil {
+				cfg.Context = ctx
+			}
+		})
 	}
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
@@ -122,6 +127,15 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values
 	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
 	return ctx, os
+}
+
+func hasPprofLabels(ctx context.Context) bool {
+	found := false
+	pprof.ForLabels(ctx, func(_, _ string) bool {
+		found = true
+		return false
+	})
+	return found
 }
 
 // mergeBaggageFromContext merges Datadog baggage found on the context into the OpenTelemetry baggage found on the context,

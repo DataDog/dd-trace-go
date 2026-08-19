@@ -123,17 +123,38 @@ func TestStartPreservesPprofLabels(t *testing.T) {
 }
 
 func TestStartRestoresParentPprofLabels(t *testing.T) {
-	tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
-	defer tp.Shutdown()
-	tr := tp.Tracer("")
+	for _, tc := range []struct {
+		name         string
+		childContext func(context.Context, *span) context.Context
+	}{
+		{
+			name: "context",
+			childContext: func(ctx context.Context, _ *span) context.Context {
+				return ctx
+			},
+		},
+		{
+			name: "start option",
+			childContext: func(_ context.Context, parent *span) context.Context {
+				return ContextWithStartOptions(context.Background(), tracer.ChildOf(parent.DD.Context()))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+			defer tp.Shutdown()
+			tr := tp.Tracer("")
 
-	ctx, parent := tr.Start(context.Background(), "parent")
-	parentID := strconv.FormatUint(parent.(*span).DD.Context().SpanID(), 10)
-	_, child := tr.Start(ctx, "child")
-	child.End()
+			ctx, parent := tr.Start(context.Background(), "parent")
+			parentSpan := parent.(*span)
+			parentID := strconv.FormatUint(parentSpan.DD.Context().SpanID(), 10)
+			_, child := tr.Start(tc.childContext(ctx, parentSpan), "child")
+			child.End()
 
-	assert.Contains(t, goroutineLabels("span id"), `"span id":"`+parentID+`"`)
-	parent.End()
+			assert.Contains(t, goroutineLabels("span id"), `"span id":"`+parentID+`"`)
+			parent.End()
+		})
+	}
 }
 
 func goroutineLabels(key string) string {
@@ -141,7 +162,7 @@ func goroutineLabels(key string) string {
 	go func() {
 		var profile strings.Builder
 		_ = pprof.Lookup("goroutine").WriteTo(&profile, 1)
-		for _, line := range strings.Split(profile.String(), "\n") {
+		for line := range strings.SplitSeq(profile.String(), "\n") {
 			if strings.Contains(line, "# labels:") && strings.Contains(line, key) {
 				done <- line
 				return
