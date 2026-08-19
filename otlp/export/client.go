@@ -5,8 +5,9 @@
 
 // Package export submits completed OTLP trace, metric, and log requests without
 // starting a tracer. A Client targets one Datadog intake or OTLP collector and
-// is safe for concurrent use. Each Submit call sends its inputs sequentially;
-// callers can issue calls concurrently when needed.
+// is safe for concurrent use. Each input request is sent atomically as one POST
+// and one result; inputs are not merged or split. A Submit call sends its inputs
+// sequentially, but callers can issue calls concurrently.
 //
 // EXPERIMENTAL: This package may change or be removed without notice.
 package export
@@ -56,13 +57,24 @@ func submitEach[T proto.Message](ctx context.Context, transport *rawTransport, p
 		requestResult.Index = i
 		if requestResult.Err == nil {
 			rejected, message, err := partial(body)
+			diagnostic := ""
+			if message != "" {
+				diagnostic = responseSnippet([]byte(message))
+				requestResult.ResponseSnippet = diagnostic
+			}
 			switch {
 			case err != nil:
+				requestResult.ResponseSnippet = responseSnippet(body)
 				requestResult.Err = fmt.Errorf("otlp/export: response body is not a valid OTLP response: %w", err)
+			case rejected < 0:
+				requestResult.Err = fmt.Errorf("otlp/export: response contains a negative rejected-item count: %d", rejected)
 			case rejected > 0:
 				requestResult.RejectedItems = rejected
-				requestResult.ResponseSnippet = responseSnippet([]byte(message))
-				requestResult.Err = fmt.Errorf("otlp/export: intake rejected %d item(s): %s", rejected, message)
+				if diagnostic == "" {
+					requestResult.Err = fmt.Errorf("otlp/export: intake rejected %d item(s)", rejected)
+				} else {
+					requestResult.Err = fmt.Errorf("otlp/export: intake rejected %d item(s): %s", rejected, diagnostic)
+				}
 			}
 		}
 		result.Requests = append(result.Requests, requestResult)

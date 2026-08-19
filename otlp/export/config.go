@@ -18,7 +18,10 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
-const defaultMaxAttempts uint = 3
+const (
+	defaultMaxAttempts    uint = 3
+	defaultMaxRequestSize      = 64 << 20
+)
 
 type route uint8
 
@@ -36,6 +39,7 @@ type clientConfig struct {
 	httpClient            *http.Client
 	headers               map[string]string
 	maxAttempts           uint
+	maxRequestSize        int
 	requestTimeout        time.Duration
 	defaultRequestTimeout time.Duration
 }
@@ -73,10 +77,20 @@ func WithCollectorEndpoint(endpoint string) ClientOption {
 	}
 }
 
-// WithHTTPClient overrides the default HTTP client.
+// WithHTTPClient overrides the default HTTP client. The client is copied, and
+// redirects are disabled to prevent forwarding credentials to another host.
 func WithHTTPClient(client *http.Client) ClientOption {
 	return func(cfg *clientConfig) error {
 		cfg.httpClient = client
+		return nil
+	}
+}
+
+// WithMaxRequestSize sets the maximum serialized size of one request in bytes.
+// The default is 64 MiB. A non-positive size disables the limit.
+func WithMaxRequestSize(size int) ClientOption {
+	return func(cfg *clientConfig) error {
+		cfg.maxRequestSize = size
 		return nil
 	}
 }
@@ -122,6 +136,7 @@ func resolveClientConfig(opts []ClientOption) (*clientConfig, error) {
 	global := internalconfig.Get()
 	cfg := &clientConfig{
 		maxAttempts:           defaultMaxAttempts,
+		maxRequestSize:        defaultMaxRequestSize,
 		defaultRequestTimeout: global.AgentTimeout(),
 	}
 	for _, opt := range opts {

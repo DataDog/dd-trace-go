@@ -77,7 +77,7 @@ func (c countingReadCloser) Read(buffer []byte) (int, error) {
 func (countingReadCloser) Close() error { return nil }
 
 func TestDoPost_DrainsResponse(t *testing.T) {
-	const size = (2 << 20) + 512
+	const size = responseLimit + 512
 	read := 0
 	transport := stubTransport(stubRoundTripper{
 		status: http.StatusOK,
@@ -86,8 +86,22 @@ func TestDoPost_DrainsResponse(t *testing.T) {
 	attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
 	require.ErrorIs(t, attempt.err, errResponseTooLarge)
 	assert.Equal(t, http.StatusOK, attempt.statusCode)
-	assert.False(t, otlpRetriable(context.Background(), attempt.statusCode))
+	assert.True(t, attempt.terminal)
 	assert.Equal(t, size, read)
+}
+
+func TestSubmitBody_DoesNotRetryOversizedResponse(t *testing.T) {
+	transport := stubTransport(stubRoundTripper{
+		status: http.StatusServiceUnavailable,
+		body:   io.NopCloser(bytes.NewReader(make([]byte, responseLimit+1))),
+	})
+	transport.maxAttempts = 3
+
+	result, err := transport.submitBody(context.Background(), pathTraces, []byte("payload"))
+	require.ErrorIs(t, err, errResponseTooLarge)
+	assert.Equal(t, http.StatusServiceUnavailable, result.statusCode)
+	assert.Equal(t, 1, result.attempts)
+	assert.False(t, result.retriable)
 }
 
 func TestResolveClientConfig_EnforcesNoRedirect(t *testing.T) {
@@ -110,6 +124,19 @@ func TestResolveClientConfig_EnforcesNoRedirect(t *testing.T) {
 	require.NoError(t, err)
 	assert.ErrorIs(t, cfg.httpClient.CheckRedirect(nil, nil), http.ErrUseLastResponse)
 	assert.ErrorIs(t, custom.CheckRedirect(nil, nil), sentinel)
+}
+
+func TestResolveClientConfig_MaxRequestSize(t *testing.T) {
+	cfg, err := resolveClientConfig([]ClientOption{WithCollectorEndpoint("http://collector:4318")})
+	require.NoError(t, err)
+	assert.Equal(t, defaultMaxRequestSize, cfg.maxRequestSize)
+
+	cfg, err = resolveClientConfig([]ClientOption{
+		WithCollectorEndpoint("http://collector:4318"),
+		WithMaxRequestSize(-1),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, -1, cfg.maxRequestSize)
 }
 
 type deadlineCapture struct {
@@ -187,6 +214,30 @@ func TestSubmitBody_CancelInterruptsRetryAfter(t *testing.T) {
 	assert.Equal(t, 1, result.attempts)
 	assert.False(t, result.retriable)
 	assert.Less(t, time.Since(start), time.Second)
+}
+
+type failOnceRoundTripper struct {
+	attempts int
+}
+
+func (f *failOnceRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	f.attempts++
+	if f.attempts == 1 {
+		return nil, errors.New("connection refused")
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
+}
+
+func TestSubmitBody_RetriesNetworkFailure(t *testing.T) {
+	roundTripper := &failOnceRoundTripper{}
+	transport := stubTransport(roundTripper)
+	transport.maxAttempts = 2
+
+	result, err := transport.submitBody(context.Background(), pathTraces, []byte("payload"))
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.attempts)
+	assert.Equal(t, 2, roundTripper.attempts)
+	assert.False(t, result.retriable)
 }
 
 func TestOTLPRetriable(t *testing.T) {

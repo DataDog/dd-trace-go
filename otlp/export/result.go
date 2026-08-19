@@ -46,7 +46,8 @@ type RequestResult struct {
 	Retriable bool
 	// RejectedItems is the partial-success count reported by the OTLP endpoint.
 	RejectedItems int64
-	// ResponseSnippet is a bounded diagnostic excerpt of the response body.
+	// ResponseSnippet is a bounded server diagnostic. It may contain a warning
+	// even when Err is nil.
 	ResponseSnippet string
 	// Err is nil only when the entire input request was accepted.
 	Err error

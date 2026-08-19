@@ -39,10 +39,6 @@ Examples:
 
 All new code is expected to be covered by tests.
 
-## Offline Export Clients
-
-The experimental [`llmobs/export`](./llmobs/export) and [`otlp/export`](./otlp/export) packages submit completed payloads without starting a tracer. Keep these public packages thin: reuse the repository's canonical configuration, validation, payload, and transport code whenever the protocol permits it.
-
 ## Continuous Integration on Pull Requests
 
 We expect all PR checks to pass before we merge a PR.

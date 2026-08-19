@@ -21,6 +21,9 @@ import (
 	logspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -114,6 +117,33 @@ func sampleTrace() *tracepb.ExportTraceServiceRequest {
 	}
 }
 
+func sampleMetric() *metricspb.ExportMetricsServiceRequest {
+	return &metricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*metricsv1.ResourceMetrics{{
+			ScopeMetrics: []*metricsv1.ScopeMetrics{{
+				Metrics: []*metricsv1.Metric{{
+					Name: "requests",
+					Data: &metricsv1.Metric_Gauge{Gauge: &metricsv1.Gauge{
+						DataPoints: []*metricsv1.NumberDataPoint{{Value: &metricsv1.NumberDataPoint_AsInt{AsInt: 1}}},
+					}},
+				}},
+			}},
+		}},
+	}
+}
+
+func sampleLogs() *logspb.ExportLogsServiceRequest {
+	return &logspb.ExportLogsServiceRequest{
+		ResourceLogs: []*logsv1.ResourceLogs{{
+			ScopeLogs: []*logsv1.ScopeLogs{{
+				LogRecords: []*logsv1.LogRecord{{
+					Body: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "completed"}},
+				}},
+			}},
+		}},
+	}
+}
+
 func TestSubmitTraces_DatadogRoute(t *testing.T) {
 	fake := &fakeTransport{}
 	client := newDatadogClient(t, fake)
@@ -140,6 +170,63 @@ func TestSubmitTraces_DatadogRoute(t *testing.T) {
 	assert.True(t, proto.Equal(request, &got))
 }
 
+func TestSubmitTraces_RequestSizeLimit(t *testing.T) {
+	request := sampleTrace()
+	size := proto.Size(request)
+	require.Positive(t, size)
+
+	t.Run("at limit", func(t *testing.T) {
+		fake := &fakeTransport{}
+		result, err := newDatadogClient(t, fake, export.WithMaxRequestSize(size)).SubmitTraces(
+			context.Background(),
+			[]*tracepb.ExportTraceServiceRequest{request},
+		)
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Sent)
+		assert.Len(t, fake.captured(), 1)
+	})
+
+	t.Run("over limit", func(t *testing.T) {
+		fake := &fakeTransport{}
+		result, err := newDatadogClient(t, fake, export.WithMaxRequestSize(size-1)).SubmitTraces(
+			context.Background(),
+			[]*tracepb.ExportTraceServiceRequest{request},
+		)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, export.ErrRequestTooLarge)
+		assert.Equal(t, 1, result.Failed)
+		require.Len(t, result.Requests, 1)
+		assert.Zero(t, result.Requests[0].Attempts)
+		assert.Zero(t, result.Requests[0].StatusCode)
+		assert.False(t, result.Requests[0].Retriable)
+		assert.Empty(t, fake.captured())
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		fake := &fakeTransport{}
+		result, err := newDatadogClient(t, fake, export.WithMaxRequestSize(0)).SubmitTraces(
+			context.Background(),
+			[]*tracepb.ExportTraceServiceRequest{request},
+		)
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Sent)
+		assert.Len(t, fake.captured(), 1)
+	})
+}
+
+func TestSubmitTraces_MarshalFailure(t *testing.T) {
+	request := sampleTrace()
+	request.ResourceSpans[0].ScopeSpans[0].Spans[0].Name = string([]byte{0xff})
+	fake := &fakeTransport{}
+
+	result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{request})
+	require.Error(t, err)
+	require.Len(t, result.Requests, 1)
+	assert.Contains(t, result.Requests[0].Err.Error(), "marshal")
+	assert.Zero(t, result.Requests[0].Attempts)
+	assert.Empty(t, fake.captured())
+}
+
 func TestSubmitMetrics_DatadogRoute(t *testing.T) {
 	fake := &fakeTransport{}
 	client, err := export.NewClient(
@@ -153,13 +240,17 @@ func TestSubmitMetrics_DatadogRoute(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, err = client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
+	metric := sampleMetric()
+	_, err = client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{metric})
 	require.NoError(t, err)
 
 	request := fake.captured()[0]
 	assert.Equal(t, "https://otlp.us5.datadoghq.com/v1/metrics", request.url)
 	assert.Equal(t, testAPIKey, request.headers.Get("dd-api-key"))
 	assert.Equal(t, `{"histograms":{"mode":"distributions"}}`, request.headers.Get("dd-otel-metric-config"))
+	var got metricspb.ExportMetricsServiceRequest
+	require.NoError(t, proto.Unmarshal(request.body, &got))
+	assert.True(t, proto.Equal(metric, &got))
 }
 
 func TestSubmitMetrics_CollectorRoute(t *testing.T) {
@@ -171,7 +262,7 @@ func TestSubmitMetrics_CollectorRoute(t *testing.T) {
 		}),
 	)
 
-	_, err := client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
+	_, err := client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{sampleMetric()})
 	require.NoError(t, err)
 
 	request := fake.captured()[0]
@@ -185,11 +276,16 @@ func TestSubmitMetrics_CollectorRoute(t *testing.T) {
 func TestSubmitLogs_DatadogRoute(t *testing.T) {
 	fake := &fakeTransport{}
 	client := newDatadogClient(t, fake)
+	logs := sampleLogs()
 
-	result, err := client.SubmitLogs(context.Background(), []*logspb.ExportLogsServiceRequest{{}})
+	result, err := client.SubmitLogs(context.Background(), []*logspb.ExportLogsServiceRequest{logs})
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Sent)
-	assert.Equal(t, "https://otlp.datadoghq.com/v1/logs", fake.captured()[0].url)
+	request := fake.captured()[0]
+	assert.Equal(t, "https://otlp.datadoghq.com/v1/logs", request.url)
+	var got logspb.ExportLogsServiceRequest
+	require.NoError(t, proto.Unmarshal(request.body, &got))
+	assert.True(t, proto.Equal(logs, &got))
 }
 
 func TestNewClient_RoutingValidation(t *testing.T) {
@@ -245,6 +341,7 @@ func TestSubmit_PartialSuccess(t *testing.T) {
 		assert.Equal(t, 0, result.Sent)
 		assert.Equal(t, 1, result.Failed)
 		assert.Equal(t, int64(2), result.Requests[0].RejectedItems)
+		assert.Len(t, fake.captured(), 1)
 	})
 
 	t.Run("metrics", func(t *testing.T) {
@@ -264,6 +361,29 @@ func TestSubmit_PartialSuccess(t *testing.T) {
 		require.Error(t, err)
 		assert.Equal(t, int64(3), result.Requests[0].RejectedItems)
 	})
+
+	t.Run("warning", func(t *testing.T) {
+		body, err := proto.Marshal(&tracepb.ExportTraceServiceResponse{PartialSuccess: &tracepb.ExportTracePartialSuccess{ErrorMessage: "collector warning"}})
+		require.NoError(t, err)
+		fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusOK, string(body) }}
+		result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Sent)
+		assert.Equal(t, "collector warning", result.Requests[0].ResponseSnippet)
+		assert.Equal(t, 1, result.Requests[0].Attempts)
+		assert.Len(t, fake.captured(), 1)
+	})
+
+	t.Run("negative count", func(t *testing.T) {
+		body, err := proto.Marshal(&tracepb.ExportTraceServiceResponse{PartialSuccess: &tracepb.ExportTracePartialSuccess{RejectedSpans: -1}})
+		require.NoError(t, err)
+		fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusOK, string(body) }}
+		result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
+		require.Error(t, err)
+		assert.Equal(t, 1, result.Failed)
+		assert.Contains(t, result.Requests[0].Err.Error(), "negative rejected-item count")
+		assert.Len(t, fake.captured(), 1)
+	})
 }
 
 func TestSubmitTraces_ResponseValidation(t *testing.T) {
@@ -279,6 +399,7 @@ func TestSubmitTraces_ResponseValidation(t *testing.T) {
 		result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
 		require.Error(t, err)
 		assert.Contains(t, result.Requests[0].Err.Error(), "not a valid OTLP response")
+		assert.Len(t, fake.captured(), 1)
 	})
 
 	t.Run("unknown response field", func(t *testing.T) {
@@ -288,6 +409,7 @@ func TestSubmitTraces_ResponseValidation(t *testing.T) {
 		result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Sent)
+		assert.Empty(t, result.Requests[0].ResponseSnippet)
 	})
 }
 
@@ -343,6 +465,9 @@ func TestSubmitTraces_RetrySucceeds(t *testing.T) {
 	assert.Equal(t, 1, result.Sent)
 	assert.Equal(t, 2, result.Requests[0].Attempts)
 	assert.False(t, result.Requests[0].Retriable)
+	requests := fake.captured()
+	require.Len(t, requests, 2)
+	assert.Equal(t, requests[0].body, requests[1].body)
 }
 
 func TestSubmitTraces_SurfacesStatusMessage(t *testing.T) {
@@ -415,11 +540,11 @@ func TestClientConcurrentUse(t *testing.T) {
 	}()
 	go func() {
 		defer wait.Done()
-		_, _ = client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{{}})
+		_, _ = client.SubmitMetrics(context.Background(), []*metricspb.ExportMetricsServiceRequest{sampleMetric()})
 	}()
 	go func() {
 		defer wait.Done()
-		_, _ = client.SubmitLogs(context.Background(), []*logspb.ExportLogsServiceRequest{{}})
+		_, _ = client.SubmitLogs(context.Background(), []*logspb.ExportLogsServiceRequest{sampleLogs()})
 	}()
 	wait.Wait()
 

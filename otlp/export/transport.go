@@ -37,10 +37,15 @@ const (
 	initialBackoff = 100 * time.Millisecond
 	maxBackoff     = time.Second
 	maxRetryAfter  = 60 * time.Second
-	responseLimit  = 1 << 20
+	responseLimit  = 4 << 20
 )
 
-var errResponseTooLarge = errors.New("otlp/export: response exceeds 1 MiB")
+var (
+	// ErrRequestTooLarge identifies a request rejected before an HTTP attempt
+	// because its encoded size exceeded the configured limit.
+	ErrRequestTooLarge  = errors.New("otlp/export: request exceeds maximum encoded size")
+	errResponseTooLarge = errors.New("otlp/export: response exceeds 4 MiB")
+)
 
 type rawTransport struct {
 	client                *http.Client
@@ -49,6 +54,7 @@ type rawTransport struct {
 	datadog               bool
 	apiKey                string
 	maxAttempts           uint
+	maxRequestSize        int
 	requestTimeout        time.Duration
 	defaultRequestTimeout time.Duration
 }
@@ -65,6 +71,7 @@ func newRawTransport(cfg *clientConfig) *rawTransport {
 		datadog:               cfg.route == routeDatadog,
 		apiKey:                cfg.apiKey,
 		maxAttempts:           cfg.maxAttempts,
+		maxRequestSize:        cfg.maxRequestSize,
 		requestTimeout:        cfg.requestTimeout,
 		defaultRequestTimeout: cfg.defaultRequestTimeout,
 	}
@@ -75,14 +82,19 @@ func (t *rawTransport) submit(ctx context.Context, path string, message proto.Me
 	if err != nil {
 		return RequestResult{Err: fmt.Errorf("otlp/export: marshal: %w", err)}, nil
 	}
+	if t.maxRequestSize > 0 && len(body) > t.maxRequestSize {
+		return RequestResult{Err: fmt.Errorf("%w: %d bytes, maximum %d", ErrRequestTooLarge, len(body), t.maxRequestSize)}, nil
+	}
 
 	result, err := t.submitBody(ctx, path, body)
 	requestResult := RequestResult{
-		StatusCode:      result.statusCode,
-		Attempts:        result.attempts,
-		Retriable:       result.retriable,
-		ResponseSnippet: responseSnippet(result.body),
-		Err:             err,
+		StatusCode: result.statusCode,
+		Attempts:   result.attempts,
+		Retriable:  result.retriable,
+		Err:        err,
+	}
+	if err != nil {
+		requestResult.ResponseSnippet = responseSnippet(result.body)
 	}
 	if statusMessage := otlpStatusMessage(result.body); err != nil && statusMessage != "" {
 		requestResult.ResponseSnippet = responseSnippet([]byte(statusMessage))
@@ -101,13 +113,14 @@ type attemptResult struct {
 	statusCode int
 	body       []byte
 	retryAfter time.Duration
+	terminal   bool
 	err        error
 }
 
 func (t *rawTransport) submitBody(ctx context.Context, path string, body []byte) (submitResult, error) {
 	result := submitResult{}
 	backoff := initialBackoff
-	for attempt := uint(1); attempt <= t.maxAttempts; attempt++ {
+	for attempt := uint(1); ; attempt++ {
 		result.attempts = int(attempt)
 		current := t.doPost(ctx, path, body)
 		result.statusCode = current.statusCode
@@ -117,8 +130,8 @@ func (t *rawTransport) submitBody(ctx context.Context, path string, body []byte)
 			return result, nil
 		}
 
-		result.retriable = otlpRetriable(ctx, current.statusCode)
-		if !result.retriable || attempt == t.maxAttempts {
+		result.retriable = !current.terminal && otlpRetriable(ctx, current.statusCode)
+		if !result.retriable || attempt >= t.maxAttempts {
 			return result, current.err
 		}
 
@@ -136,7 +149,6 @@ func (t *rawTransport) submitBody(ctx context.Context, path string, body []byte)
 		}
 		backoff = min(backoff*2, maxBackoff)
 	}
-	return result, nil
 }
 
 func (t *rawTransport) doPost(ctx context.Context, path string, body []byte) attemptResult {
@@ -172,13 +184,17 @@ func (t *rawTransport) doPost(ctx context.Context, path string, body []byte) att
 	}
 	_, drainErr := io.Copy(io.Discard, response.Body)
 	readErr = errors.Join(readErr, drainErr)
+	if responseTooLarge {
+		return attemptResult{
+			statusCode: response.StatusCode,
+			body:       responseBody,
+			terminal:   true,
+			err:        fmt.Errorf("otlp/export: read response body: %w", readErr),
+		}
+	}
 	if response.StatusCode == http.StatusOK {
 		if readErr != nil {
-			statusCode := 0
-			if responseTooLarge {
-				statusCode = response.StatusCode
-			}
-			return attemptResult{statusCode: statusCode, body: responseBody, err: fmt.Errorf("otlp/export: read response body: %w", readErr)}
+			return attemptResult{body: responseBody, err: fmt.Errorf("otlp/export: read response body: %w", readErr)}
 		}
 		return attemptResult{statusCode: response.StatusCode, body: responseBody}
 	}
