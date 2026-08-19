@@ -64,7 +64,7 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 	for _, bucket := range payload.Stats {
 		bucketEnd := bucket.Start + bucket.Duration
 		for _, gs := range bucket.Stats {
-			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd)
+			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd, cfg.OTelSemanticsEnabled())
 			allPoints = append(allPoints, pts...)
 		}
 	}
@@ -118,22 +118,22 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, reportHostname bool, h
 }
 
 // buildGroupDataPoints produces up to two OTLP histogram data points (ok + error) from a ClientGroupedStats.
-func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64) []*otlpmetrics.HistogramDataPoint {
+func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, otelSemantics bool) []*otlpmetrics.HistogramDataPoint {
 	var pts []*otlpmetrics.HistogramDataPoint
 	if len(gs.OkSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, otelSemantics); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	if len(gs.ErrorSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, otelSemantics); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	return pts
 }
 
-func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool) *otlpmetrics.HistogramDataPoint {
+func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError, otelSemantics bool) *otlpmetrics.HistogramDataPoint {
 	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
 	if err != nil {
 		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
@@ -153,13 +153,13 @@ func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, star
 		Max:               &maxSec,
 		ExplicitBounds:    spanMetricBounds[:],
 		BucketCounts:      bucketCounts,
-		Attributes:        buildDataPointAttributes(gs, isError),
+		Attributes:        buildDataPointAttributes(gs, isError, otelSemantics),
 	}
 	return dp
 }
 
 // buildDataPointAttributes returns OTLP data-point attributes.
-func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool) []*otlpcommon.KeyValue {
+func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError, otelSemantics bool) []*otlpcommon.KeyValue {
 	var attrs []*otlpcommon.KeyValue
 
 	// OTel semantic-convention attributes.
@@ -194,11 +194,11 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool) []*otlpco
 		// Non-numeric values are malformed for gRPC and are silently dropped rather than
 		// emitting a value that would change the attribute's type.
 	}
-	statusCode := statusCodeOK
 	if isError {
-		statusCode = statusCodeError
+		attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue(statusCodeError)))
+	} else if !otelSemantics {
+		attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue(statusCodeOK)))
 	}
-	attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue(statusCode)))
 
 	attrs = append(attrs, otlpKeyValue("service.name", otlpStringValue(gs.Service)))
 
