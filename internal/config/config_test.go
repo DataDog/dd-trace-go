@@ -28,6 +28,22 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
+func TestNew(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	global := Get()
+	require.False(t, global.Debug())
+
+	t.Setenv("DD_TRACE_DEBUG", "true")
+	fresh := New()
+
+	assert.NotSame(t, global, fresh)
+	assert.True(t, fresh.Debug())
+	assert.Same(t, global, Get())
+	assert.False(t, Get().Debug())
+}
+
 func TestGet(t *testing.T) {
 	t.Run("returns non-nil config", func(t *testing.T) {
 		resetGlobalState()
@@ -632,6 +648,29 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 
 		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
 	})
+
+	t.Run("independent OTLP export does not follow programmatic agent URL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+
+		cfg := Get()
+		original := cfg.OTLPTraceURL()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+
+		assert.Equal(t, original, cfg.OTLPTraceURL())
+	})
+
+	t.Run("semantic OTLP export follows programmatic agent URL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+
+		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+	})
 }
 
 func TestOTLPHeaders(t *testing.T) {
@@ -782,6 +821,117 @@ func TestOTLPExportMode(t *testing.T) {
 
 		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
 		assert.False(t, cfg.OTLPExportMode())
+	})
+}
+
+func TestInvalidSpanAttributeSchemaFallsBackWithoutSharedWarning(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "invalid")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	cfg := Get()
+	assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+	const warning = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=invalid is not a valid value, setting to default of v0"
+	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), warning)
+}
+
+func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
+	const (
+		schemaOverrideLog = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0"
+		peerOverrideLog   = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false"
+	)
+
+	t.Run("forces OTLP export", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		assert.True(t, cfg.OTLPExportMode())
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "OTEL_TRACES_EXPORTER" && c.Value == "otlp" && c.Origin == telemetry.OriginCalculated
+		}))
+		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
+		assert.True(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("wins over Datadog trace protocol", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
+
+		cfg := Get()
+		assert.True(t, cfg.OTLPExportMode())
+		assert.Equal(t, TraceProtocolV04, cfg.RequestedTraceProtocol())
+	})
+
+	t.Run("calculates conflicting schema and peer service defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+		t.Setenv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", "true")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_OTEL_SEMANTICS_ENABLED" && c.Value == true && c.Origin == telemetry.OriginEnvVar
+		}))
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA" && c.Value == "v0" && c.Origin == telemetry.OriginCalculated
+		}))
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED" && c.Value == false && c.Origin == telemetry.OriginCalculated
+		}))
+	})
+
+	t.Run("schema v1 implication also calculates peer defaults false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+	})
+
+	t.Run("does not log non-conflicting defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+	})
+
+	t.Run("programmatic peer defaults cannot re-enable", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		cfg.SetPeerServiceDefaultsEnabled(true, telemetry.OriginCode)
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
 	})
 }
 
