@@ -189,7 +189,7 @@ func setRoute(cfg *clientConfig, selected route) error {
 func parseEndpoint(endpoint string) (*url.URL, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	u, err := url.Parse(endpoint)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+	if err != nil || (u.Scheme != internalconfig.URLSchemeHTTP && u.Scheme != internalconfig.URLSchemeHTTPS) || u.Host == "" || u.User != nil {
 		return nil, fmt.Errorf("otlp/export: invalid endpoint %q: must be an http(s) URL with a host", endpoint)
 	}
 	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {

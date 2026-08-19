@@ -19,7 +19,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/encoding/protowire"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type stubRoundTripper struct {
@@ -276,10 +277,8 @@ func TestParseRetryAfter(t *testing.T) {
 }
 
 func TestOTLPStatusMessage(t *testing.T) {
-	body := protowire.AppendTag(nil, 1, protowire.VarintType)
-	body = protowire.AppendVarint(body, 3)
-	body = protowire.AppendTag(body, 2, protowire.BytesType)
-	body = protowire.AppendBytes(body, []byte("invalid trace_id length"))
+	body, err := proto.Marshal(&statuspb.Status{Message: "invalid trace_id length"})
+	require.NoError(t, err)
 	assert.Equal(t, "invalid trace_id length", otlpStatusMessage(body))
 	assert.Empty(t, otlpStatusMessage([]byte{0xff, 0xff, 0xff}))
 	assert.Empty(t, otlpStatusMessage(nil))

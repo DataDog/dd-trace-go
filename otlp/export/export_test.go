@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
@@ -62,7 +63,7 @@ func (f *fakeTransport) RoundTrip(request *http.Request) (*http.Response, error)
 	return &http.Response{
 		StatusCode: status,
 		Body:       io.NopCloser(strings.NewReader(responseBody)),
-		Header:     http.Header{"Content-Type": []string{"application/x-protobuf"}},
+		Header:     http.Header{"Content-Type": []string{internalconfig.OTLPContentTypeHeader}},
 	}, nil
 }
 
@@ -162,7 +163,7 @@ func TestSubmitTraces_DatadogRoute(t *testing.T) {
 	require.Len(t, requests, 1)
 	assert.Equal(t, "https://otlp.datadoghq.com/v1/traces", requests[0].url)
 	assert.Equal(t, testAPIKey, requests[0].headers.Get("dd-api-key"))
-	assert.Equal(t, "application/x-protobuf", requests[0].headers.Get("Content-Type"))
+	assert.Equal(t, internalconfig.OTLPContentTypeHeader, requests[0].headers.Get("Content-Type"))
 	assert.Empty(t, requests[0].headers.Get("dd-otel-metric-config"))
 
 	var got tracepb.ExportTraceServiceRequest
@@ -268,7 +269,7 @@ func TestSubmitMetrics_CollectorRoute(t *testing.T) {
 	request := fake.captured()[0]
 	assert.Equal(t, "http://collector:4318/prefix/v1/metrics", request.url)
 	assert.Equal(t, "Bearer token", request.headers.Get("Authorization"))
-	assert.Equal(t, "application/x-protobuf", request.headers.Get("Content-Type"))
+	assert.Equal(t, internalconfig.OTLPContentTypeHeader, request.headers.Get("Content-Type"))
 	assert.Empty(t, request.headers.Get("dd-api-key"))
 	assert.Empty(t, request.headers.Get("dd-otel-metric-config"))
 }
@@ -471,10 +472,8 @@ func TestSubmitTraces_RetrySucceeds(t *testing.T) {
 }
 
 func TestSubmitTraces_SurfacesStatusMessage(t *testing.T) {
-	status := protowire.AppendTag(nil, 1, protowire.VarintType)
-	status = protowire.AppendVarint(status, 3)
-	status = protowire.AppendTag(status, 2, protowire.BytesType)
-	status = protowire.AppendBytes(status, []byte("resource_spans[0] rejected: bad trace_id"))
+	status, marshalErr := proto.Marshal(&statuspb.Status{Message: "resource_spans[0] rejected: bad trace_id"})
+	require.NoError(t, marshalErr)
 	fake := &fakeTransport{responder: func(int) (int, string) { return http.StatusBadRequest, string(status) }}
 
 	result, err := newDatadogClient(t, fake).SubmitTraces(context.Background(), []*tracepb.ExportTraceServiceRequest{sampleTrace()})

@@ -18,8 +18,10 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protowire"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/proto"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 const (
@@ -28,7 +30,6 @@ const (
 	pathLogs    = "/v1/logs"
 
 	headerContentType = "Content-Type"
-	contentTypeProto  = "application/x-protobuf"
 	headerAPIKey      = "dd-api-key"
 
 	headerMetricConfig        = "dd-otel-metric-config"
@@ -212,7 +213,7 @@ func (t *rawTransport) signalURL(path string) string {
 
 func (t *rawTransport) requestHeaders(path string) http.Header {
 	headers := t.headers.Clone()
-	headers.Set(headerContentType, contentTypeProto)
+	headers.Set(headerContentType, internalconfig.OTLPContentTypeHeader)
 	if t.datadog {
 		headers.Set(headerAPIKey, t.apiKey)
 		if path == pathMetrics {
@@ -273,26 +274,11 @@ func clampRetryAfter(delay time.Duration) time.Duration {
 }
 
 func otlpStatusMessage(body []byte) string {
-	for len(body) > 0 {
-		field, fieldType, tagSize := protowire.ConsumeTag(body)
-		if tagSize < 0 {
-			return ""
-		}
-		body = body[tagSize:]
-		if field == 2 && fieldType == protowire.BytesType {
-			value, valueSize := protowire.ConsumeBytes(body)
-			if valueSize < 0 {
-				return ""
-			}
-			return string(value)
-		}
-		fieldSize := protowire.ConsumeFieldValue(field, fieldType, body)
-		if fieldSize < 0 {
-			return ""
-		}
-		body = body[fieldSize:]
+	var status statuspb.Status
+	if err := proto.Unmarshal(body, &status); err != nil {
+		return ""
 	}
-	return ""
+	return status.GetMessage()
 }
 
 // Go can replay a redirected POST as a GET and forward credentials to the new host.
