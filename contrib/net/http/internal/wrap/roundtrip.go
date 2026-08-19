@@ -142,26 +142,41 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 
 	resourceName := cfg.ResourceNamer(req)
 	spanName := cfg.SpanNamer(req)
-	// Make a copy of the URL so we don't modify the outgoing request
-	url := *req.URL
-	url.User = nil // Do not include userinfo in the HTTPURL tag.
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
-		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, instrumentationhttptrace.URLFromClientRequest(req, cfg.QueryString)),
 		tracer.Tag(ext.Component, config.ComponentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
+	}
+	if cfg.OTelSemanticsEnabled {
+		method, _, originalMethod := config.NormalizeClientRequestMethod(req)
+		opts = append(opts,
+			tracer.Tag(ext.HTTPRequestMethod, method),
+			tracer.Tag(ext.URLFull, instrumentationhttptrace.URLFullFromClientRequest(req, cfg.QueryString)),
+		)
+		if originalMethod != "" {
+			opts = append(opts, tracer.Tag(ext.HTTPRequestMethodOriginal, originalMethod))
+		}
+		address, port := instrumentationhttptrace.ServerAddressPortFromClientRequest(req)
+		opts = append(opts, tracer.Tag(ext.ServerAddress, address))
+		if port != -1 {
+			opts = append(opts, tracer.Tag(ext.ServerPort, port))
+		}
+	} else {
+		opts = append(opts,
+			tracer.Tag(ext.HTTPMethod, req.Method),
+			tracer.Tag(ext.HTTPURL, instrumentationhttptrace.URLFromClientRequest(req, cfg.QueryString)),
+			tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()),
+		)
+		if port, err := strconv.Atoi(req.URL.Port()); err == nil {
+			opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, port))
+		}
 	}
 	if !math.IsNaN(cfg.AnalyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.AnalyticsRate))
 	}
 	if cfg.ServiceName != "" {
 		opts = append(opts, instrumentation.ServiceNameWithSource(cfg.ServiceName, cfg.ServiceSource))
-	}
-	if port, err := strconv.Atoi(url.Port()); err == nil {
-		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, port))
 	}
 	if len(cfg.SpanOpts) > 0 {
 		opts = append(opts, cfg.SpanOpts...)
@@ -220,10 +235,18 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 				span.SetTag(ext.Error, err)
 			}
 		} else {
-			span.SetTag(ext.HTTPCode, strconv.Itoa(resp.StatusCode))
+			statusCode := strconv.Itoa(resp.StatusCode)
+			if cfg.OTelSemanticsEnabled {
+				span.SetTag(ext.HTTPResponseStatusCode, statusCode)
+			} else {
+				span.SetTag(ext.HTTPCode, statusCode)
+			}
 			if cfg.IsStatusError(resp.StatusCode) {
 				span.SetTag("http.errors", resp.Status)
 				span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
+				if cfg.OTelSemanticsEnabled {
+					span.SetTag(ext.ErrorType, statusCode)
+				}
 			}
 		}
 
