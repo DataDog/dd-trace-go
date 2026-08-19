@@ -100,6 +100,28 @@ func TestConvertSpan(t *testing.T) {
 	assert.Equal(t, 42.5, attrs["metric.key"])
 }
 
+func TestConvertSpanOTelSemanticHTTPError(t *testing.T) {
+	s := newSpan("http.request", "svc", "POST", 100, 200, 0)
+	s.error = 1
+	s.meta.Set(ext.SpanKind, ext.SpanKindClient)
+	s.meta.Set("http.request.method", "POST")
+	s.meta.Set("http.response.status_code", "500")
+	s.meta.Set(ext.ErrorType, "500")
+	s.meta.Set(ext.ErrorMsg, "500: Internal Server Error")
+
+	otlp := convertSpan(s, "svc", true)
+	require.NotNil(t, otlp)
+	assert.Equal(t, "POST", otlp.Name)
+	assert.Equal(t, otlptrace.Span_SPAN_KIND_CLIENT, otlp.Kind)
+	assert.Equal(t, otlptrace.Status_STATUS_CODE_ERROR, otlp.Status.Code)
+
+	attrs := keyValuesToMap(otlp.Attributes)
+	assert.Equal(t, "POST", attrs["http.request.method"])
+	assert.Equal(t, int64(500), attrs["http.response.status_code"])
+	assert.Equal(t, "500", attrs[ext.ErrorType])
+	assert.NotContains(t, attrs, ext.ErrorMsg)
+}
+
 func TestConvertSpanParentSpanId(t *testing.T) {
 	t.Run("set when parent_id is non-zero", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 100, 200, 50)
@@ -245,31 +267,109 @@ func TestConvertSpanAttributesIntEncoding(t *testing.T) {
 	assert.Equal(t, 1.5, m["custom.metric"])
 }
 
+// TestConvertSpanAttributesOtelSemanticStringIntEncoding verifies that semantic
+// integer attributes stored as metadata strings are typed during OTLP conversion.
+func TestConvertSpanAttributesOtelSemanticStringIntEncoding(t *testing.T) {
+	s := newBasicSpan("op")
+	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{
+		"http.response.status_code": "500",
+		"server.port":               "8443",
+		"http.request.body.size":    "unknown",
+	})
+	s.metrics = map[string]float64{
+		"http.response.status_code": 200,
+		"server.port":               9443,
+	}
+
+	attrs := convertSpanAttributes(s, "", true)
+	m := keyValuesToMap(attrs)
+	assert.Equal(t, int64(500), m["http.response.status_code"])
+	assert.Equal(t, int64(8443), m["server.port"])
+	assert.Equal(t, "unknown", m["http.request.body.size"], "unparsable values remain strings")
+
+	counts := make(map[string]int)
+	for _, attr := range attrs {
+		counts[attr.Key]++
+	}
+	assert.Equal(t, 1, counts["http.response.status_code"])
+	assert.Equal(t, 1, counts["server.port"])
+
+	legacySpan := newBasicSpan("op")
+	legacySpan.meta.Set("http.response.status_code", "500")
+	legacy := keyValuesToMap(convertSpanAttributes(legacySpan, "", false))
+	assert.Equal(t, "500", legacy["http.response.status_code"], "legacy metadata remains a string")
+}
+
 // TestConvertSpanAttributesOtelSemantics verifies that under OTel semantics the OTLP
-// exporter omits Datadog-specific attributes (span identity, error.*, span.kind).
+// exporter omits Datadog-specific attributes while preserving semantic error.type.
 func TestConvertSpanAttributesOtelSemantics(t *testing.T) {
 	s := newBasicSpan("op")
 	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{
 		"http.request.method":  "GET",
 		ext.ErrorMsg:           "boom",
-		ext.ErrorType:          "*errors.errorString",
+		ext.ErrorType:          "500",
+		"peer.service":         "explicit-peer",
 		ext.ErrorStack:         "goroutine 1 ...",
 		ext.ErrorHandlingStack: "goroutine 1 ...",
 		ext.SpanKind:           ext.SpanKindServer,
 	})
 	m := keyValuesToMap(convertSpanAttributes(s, "", true))
 
-	// DD-only span-identity, error, and span.kind attributes are suppressed.
+	// DD-only span-identity, error details, and span.kind attributes are suppressed.
 	for _, k := range []string{
 		"operation.name", "resource.name", "span.type",
-		ext.ErrorMsg, ext.ErrorType, ext.ErrorStack, ext.ErrorHandlingStack, ext.SpanKind,
+		ext.ErrorMsg, ext.ErrorStack, ext.ErrorHandlingStack, ext.SpanKind,
 	} {
 		_, ok := m[k]
 		assert.Falsef(t, ok, "%q should be suppressed when OTel semantics is enabled", k)
 	}
 
-	// Non-DD-only meta is preserved unchanged.
+	// Semantic and explicitly supplied attributes are preserved unchanged.
 	assert.Equal(t, "GET", m["http.request.method"])
+	assert.Equal(t, "500", m[ext.ErrorType])
+	assert.Equal(t, "explicit-peer", m["peer.service"])
+}
+
+func TestConvertSpanAttributesOtelSemanticsFiltersDatadogOnlyMetrics(t *testing.T) {
+	keys := []string{ext.ErrorMsg, ext.ErrorStack, ext.ErrorHandlingStack, ext.SpanKind}
+
+	t.Run("metric only", func(t *testing.T) {
+		s := newBasicSpan("op")
+		for i, key := range keys {
+			s.SetTag(key, i+1)
+		}
+
+		m := keyValuesToMap(convertSpanAttributes(s, "", true))
+		for _, key := range keys {
+			assert.NotContains(t, m, key)
+		}
+	})
+
+	t.Run("metadata and metric", func(t *testing.T) {
+		s := newBasicSpan("op")
+		s.metrics = make(map[string]float64, len(keys))
+		for i, key := range keys {
+			s.meta.Set(key, "datadog-only")
+			s.metrics[key] = float64(i + 1)
+		}
+
+		m := keyValuesToMap(convertSpanAttributes(s, "", true))
+		for _, key := range keys {
+			assert.NotContains(t, m, key)
+		}
+	})
+
+	t.Run("Datadog semantics preserve metrics", func(t *testing.T) {
+		s := newBasicSpan("op")
+		for i, key := range keys {
+			s.SetTag(key, i+1)
+		}
+
+		m := keyValuesToMap(convertSpanAttributes(s, "", false))
+		for i, key := range keys {
+			assert.Equal(t, float64(i+1), m[key])
+		}
+	})
 }
 
 func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {

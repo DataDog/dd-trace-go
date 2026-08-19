@@ -509,6 +509,61 @@ func TestURLTag(t *testing.T) {
 	}
 }
 
+func TestURLFullFromClientRequestFallsBackToRequestHost(t *testing.T) {
+	r := &http.Request{
+		URL: &url.URL{
+			Scheme: "https",
+			Path:   "/test",
+		},
+		Host: "example.com:8443",
+	}
+
+	require.Equal(t, "https://example.com:8443/test", URLFullFromClientRequest(r, false))
+}
+
+func TestClientRequestURLAuthority(t *testing.T) {
+	r := &http.Request{
+		URL: &url.URL{
+			Scheme:   "https",
+			User:     url.UserPassword("alice", "secret"),
+			Host:     "origin.example:8443",
+			Path:     "/test",
+			RawQuery: "keep=value",
+		},
+		Host: "override.example:9443",
+	}
+
+	require.Equal(t, "https://override.example:9443/test?keep=value", URLFromClientRequest(r, true))
+	require.Equal(t, "https://REDACTED:REDACTED@origin.example:8443/test?keep=value", URLFullFromClientRequest(r, true))
+
+	r.URL.User = url.User("alice")
+	require.Equal(t, "https://REDACTED:REDACTED@origin.example:8443/test?keep=value", URLFullFromClientRequest(r, true))
+}
+
+func TestURLFullFromClientRequestEscapesAuthority(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		host string
+		want string
+	}{
+		{
+			name: "IPv6 zone",
+			host: "[fe80::1%eth0]:8080",
+			want: "http://[fe80::1%25eth0]:8080/test",
+		},
+		{
+			name: "non-ASCII hostname",
+			host: "münich.example",
+			want: "http://m%C3%BCnich.example/test",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &http.Request{URL: &url.URL{Scheme: "http", Host: tc.host, Path: "/test"}}
+			require.Equal(t, tc.want, URLFullFromClientRequest(r, false))
+		})
+	}
+}
+
 func TestURLTagWithAllowlist(t *testing.T) {
 	oldCfg := cfg
 	defer func() { cfg = oldCfg }()

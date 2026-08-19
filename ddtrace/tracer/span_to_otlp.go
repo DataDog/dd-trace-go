@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -193,20 +194,20 @@ func addAttribute(attrs *[]*otlpcommon.KeyValue, key string, val *otlpcommon.Any
 // Datadog stores numeric tags as float64, so these are re-encoded as OTLP intValue
 // rather than doubleValue to conform to the data model.
 var otelIntMetricKeys = map[string]struct{}{
-	"http.response.status_code": {},
-	"http.response.body.size":   {},
-	"http.request.body.size":    {},
-	"server.port":               {},
-	"network.peer.port":         {},
-	"network.destination.port":  {},
-	"client.port":               {},
+	ext.HTTPResponseStatusCode: {},
+	ext.HTTPResponseBodySize:   {},
+	ext.HTTPRequestBodySize:    {},
+	ext.ServerPort:             {},
+	ext.NetworkPeerPort:        {},
+	ext.NetworkDestinationPort: {},
+	ext.ClientPort:             {},
 }
 
-// ddOnlyMetaKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
+// ddOnlyAttributeKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
 // they have no OTel equivalent. span.kind is already carried by the OTLP SpanKind field.
-var ddOnlyMetaKeys = map[string]struct{}{
+// error.type remains an attribute because it is part of the OTel semantic conventions.
+var ddOnlyAttributeKeys = map[string]struct{}{
 	ext.ErrorMsg:           {},
-	ext.ErrorType:          {},
 	ext.ErrorStack:         {},
 	ext.ErrorHandlingStack: {},
 	ext.SpanKind:           {},
@@ -238,15 +239,31 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 	}
 	for key, value := range s.meta.All() {
 		if otelSemantics {
-			if _, skip := ddOnlyMetaKeys[key]; skip {
+			if _, skip := ddOnlyAttributeKeys[key]; skip {
 				continue
 			}
 		}
-		if !addAttribute(&attrs, key, otlpStringValue(value)) {
+		av := otlpStringValue(value)
+		if otelSemantics {
+			if _, isInt := otelIntMetricKeys[key]; isInt {
+				if value, err := strconv.ParseInt(value, 10, 64); err == nil {
+					av = otlpIntValue(value)
+				}
+			}
+		}
+		if !addAttribute(&attrs, key, av) {
 			return attrs
 		}
 	}
 	for key, value := range s.metrics {
+		if otelSemantics {
+			if _, skip := ddOnlyAttributeKeys[key]; skip {
+				continue
+			}
+			if _, exists := s.meta.Get(key); exists {
+				continue
+			}
+		}
 		var av *otlpcommon.AnyValue
 		if _, isInt := otelIntMetricKeys[key]; isInt {
 			av = otlpIntValue(int64(value))
