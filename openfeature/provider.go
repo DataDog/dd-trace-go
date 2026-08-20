@@ -89,6 +89,11 @@ type DatadogProvider struct {
 	deliveryErr error
 	// writersStarted makes Init idempotent. // +checklocks:mu
 	writersStarted bool
+
+	// eventCh is returned unchanged by every EventChannel call.
+	eventCh chan openfeature.Event
+	// firstConfigSeen reports whether ProviderReady has already fired. // +checklocks:mu
+	firstConfigSeen bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -187,6 +192,7 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
 		source:                source,
+		eventCh:               make(chan openfeature.Event, eventChannelBufferSize),
 	}
 	p.configChange.L = &p.mu
 
@@ -258,6 +264,7 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 	}
 	p.configuration = config
 	p.configChange.Broadcast()
+	p.emitFirstOrChangeEvent(config)
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
