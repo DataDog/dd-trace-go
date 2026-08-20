@@ -14,7 +14,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +29,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -107,6 +112,106 @@ func configureObservabilityMode(mode bool) error {
 	return nil
 }
 
+const (
+	// Where the container memory limit lives under cgroup v2 and cgroup v1. Paths are
+	// relative so tests can resolve them against a fixture tree.
+	cgroupV2MemoryLimitPath = "sys/fs/cgroup/memory.max"
+	cgroupV1MemoryLimitPath = "sys/fs/cgroup/memory/memory.limit_in_bytes"
+
+	// goMemLimitRatio is the share of the container memory limit handed to the Go
+	// runtime. The remainder covers what GOMEMLIMIT cannot account for: the binary's
+	// own mappings, kernel memory held on our behalf, and — the reason this sits below
+	// the 90% commonly used elsewhere — libddwaf's C allocations, since this binary is
+	// built with cgo and that memory is invisible to the Go runtime yet still counts
+	// against the cgroup.
+	goMemLimitRatio = 0.85
+
+	// cgroup v1 reports "unlimited" as a huge sentinel rather than a keyword, so treat
+	// implausibly large values as absent.
+	cgroupMemoryUnlimited = int64(1) << 62
+)
+
+// configureGoMemoryLimit derives GOMEMLIMIT from the container memory limit.
+//
+// The Go runtime does not read cgroup memory limits, in any version up to and
+// including Go 1.26: with GOMEMLIMIT unset the limit is math.MaxInt64, so the garbage
+// collector paces itself purely off heap growth and never learns that a ceiling
+// exists. The kernel then OOM-kills the process while the runtime still believes it
+// has room. Deriving the limit here turns that hard kill into GC pressure.
+//
+// An explicitly configured GOMEMLIMIT always wins, and an unreadable or unlimited
+// cgroup leaves the runtime default untouched.
+func configureGoMemoryLimit() {
+	if _, ok := os.LookupEnv("GOMEMLIMIT"); ok {
+		return
+	}
+
+	limit, ok := cgroupMemoryLimit("/")
+	if !ok {
+		return
+	}
+
+	budget := int64(float64(limit) * goMemLimitRatio)
+	if budget <= 0 {
+		return
+	}
+
+	debug.SetMemoryLimit(budget)
+	log.Info("service_extension: GOMEMLIMIT set to %d bytes, derived from a %d byte container memory limit\n", budget, limit)
+}
+
+// cgroupMemoryLimit reports the container memory limit in bytes, preferring cgroup v2
+// over v1. root is the filesystem root to resolve the cgroup paths against.
+func cgroupMemoryLimit(root string) (int64, bool) {
+	for _, path := range []string{cgroupV2MemoryLimitPath, cgroupV1MemoryLimitPath} {
+		if limit, ok := readCgroupMemoryLimit(filepath.Join(root, path)); ok {
+			return limit, true
+		}
+	}
+
+	return 0, false
+}
+
+// readCgroupMemoryLimit reads a single cgroup memory limit file, reporting false when
+// the file is absent, unparseable, or denotes no limit.
+func readCgroupMemoryLimit(path string) (int64, bool) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+
+	// cgroup v2 spells "no limit" as the literal "max".
+	raw := strings.TrimSpace(string(content))
+	if raw == "max" {
+		return 0, false
+	}
+
+	limit, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || limit <= 0 || limit >= cgroupMemoryUnlimited {
+		return 0, false
+	}
+
+	return limit, true
+}
+
+// logRuntimeEnvelope reports the resource envelope the process actually resolved.
+//
+// Every one of these is derived rather than declared — GOMEMLIMIT from the cgroup
+// above, GOMAXPROCS from the cgroup CPU quota by the runtime itself since Go 1.25,
+// and the body parsing limit from configuration. When a deployment runs out of
+// memory, these three numbers are the first thing worth knowing, and they are
+// otherwise invisible from outside the container.
+func logRuntimeEnvelope(config serviceExtensionConfig) {
+	bodyParsingSizeLimit := proxy.DefaultBodyParsingSizeLimit
+	if config.bodyParsingSizeLimit != nil {
+		bodyParsingSizeLimit = *config.bodyParsingSizeLimit
+	}
+
+	// A negative argument retrieves the limit without adjusting it.
+	log.Info("service_extension: runtime envelope: GOMEMLIMIT=%d bytes, GOMAXPROCS=%d, body parsing size limit=%d bytes\n",
+		debug.SetMemoryLimit(-1), runtime.GOMAXPROCS(0), bodyParsingSizeLimit)
+}
+
 // loadConfig loads the configuration from the environment variables
 func loadConfig() serviceExtensionConfig {
 	extensionPortInt := intEnv("DD_SERVICE_EXTENSION_PORT", 443)
@@ -143,8 +248,10 @@ func loadConfig() serviceExtensionConfig {
 
 func main() {
 	initializeEnvironment()
+	configureGoMemoryLimit()
 
 	config := loadConfig()
+	logRuntimeEnvelope(config)
 
 	if err := configureObservabilityMode(config.observabilityMode); err != nil {
 		log.Error("service_extension: %s\n", err.Error())

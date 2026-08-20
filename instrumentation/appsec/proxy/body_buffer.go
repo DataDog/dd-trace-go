@@ -36,9 +36,30 @@ func (b *bodyBuffer) append(chunk []byte) {
 		b.truncated = true
 	}
 
-	if b.buffer == nil {
-		b.buffer = make([]byte, 0, bytesToAdd)
+	b.grow(currentSize + bytesToAdd)
+	b.buffer = append(b.buffer, chunk[:bytesToAdd]...)
+}
+
+// minBodyBufferCapacity is the smallest allocation worth making. A streamed body
+// arrives in many small chunks, and starting at the size of the first one costs a
+// reallocation and a full copy for every chunk that follows.
+const minBodyBufferCapacity = 4096
+
+// grow ensures the buffer can hold size bytes without reallocating.
+//
+// Capacity is doubled to keep appends amortized, then clamped to sizeLimit, which
+// append cannot do on its own: left to itself it rounds the final chunk of a large
+// body up past the limit we promised to respect. Bodies never exceed sizeLimit, so
+// clamping only ever removes waste.
+func (b *bodyBuffer) grow(size int) {
+	if cap(b.buffer) >= size {
+		return
 	}
 
-	b.buffer = append(b.buffer, chunk[:bytesToAdd]...)
+	capacity := max(2*cap(b.buffer), size, minBodyBufferCapacity)
+	capacity = min(capacity, b.sizeLimit)
+
+	grown := make([]byte, len(b.buffer), capacity)
+	copy(grown, b.buffer)
+	b.buffer = grown
 }

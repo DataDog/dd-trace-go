@@ -7,9 +7,13 @@ package main
 
 import (
 	"os"
+	"path/filepath"
+	"runtime/debug"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 )
@@ -207,4 +211,99 @@ func setEnv(env map[string]string) {
 			panic(err)
 		}
 	}
+}
+
+func TestCgroupMemoryLimit(t *testing.T) {
+	tests := []struct {
+		name string
+		// files maps a path relative to the fixture root to its contents.
+		files     map[string]string
+		wantLimit int64
+		wantOK    bool
+	}{
+		{
+			name:      "cgroup-v2",
+			files:     map[string]string{cgroupV2MemoryLimitPath: "536870912\n"},
+			wantLimit: 536870912,
+			wantOK:    true,
+		},
+		{
+			name:  "cgroup-v2-unlimited-is-the-literal-max",
+			files: map[string]string{cgroupV2MemoryLimitPath: "max\n"},
+		},
+		{
+			name:      "cgroup-v1",
+			files:     map[string]string{cgroupV1MemoryLimitPath: "268435456"},
+			wantLimit: 268435456,
+			wantOK:    true,
+		},
+		{
+			name: "cgroup-v1-unlimited-is-a-huge-sentinel",
+			// The value cgroup v1 reports when no limit is set.
+			files: map[string]string{cgroupV1MemoryLimitPath: "9223372036854771712"},
+		},
+		{
+			name: "v2-wins-over-v1",
+			files: map[string]string{
+				cgroupV2MemoryLimitPath: "111",
+				cgroupV1MemoryLimitPath: "222",
+			},
+			wantLimit: 111,
+			wantOK:    true,
+		},
+		{
+			name: "falls-back-to-v1-when-v2-is-unlimited",
+			files: map[string]string{
+				cgroupV2MemoryLimitPath: "max",
+				cgroupV1MemoryLimitPath: "222",
+			},
+			wantLimit: 222,
+			wantOK:    true,
+		},
+		{
+			name: "no-cgroup-files-at-all",
+		},
+		{
+			name:  "unparseable",
+			files: map[string]string{cgroupV2MemoryLimitPath: "not-a-number"},
+		},
+		{
+			name:  "zero-is-not-a-usable-limit",
+			files: map[string]string{cgroupV2MemoryLimitPath: "0"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for path, content := range tt.files {
+				full := filepath.Join(root, path)
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+			}
+
+			limit, ok := cgroupMemoryLimit(root)
+
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.wantLimit, limit)
+		})
+	}
+}
+
+// The runtime default is math.MaxInt64, which is precisely the state that lets the
+// kernel OOM-kill us, so leaving it in place must be a deliberate decision rather
+// than an accident.
+func TestConfigureGoMemoryLimitLeavesAnExplicitSettingAlone(t *testing.T) {
+	before := currentGoMemoryLimit()
+	t.Setenv("GOMEMLIMIT", strconv.FormatInt(before, 10))
+
+	configureGoMemoryLimit()
+
+	require.Equal(t, before, currentGoMemoryLimit())
+}
+
+// currentGoMemoryLimit reads the limit without changing it: a negative argument to
+// SetMemoryLimit is documented as a pure retrieval.
+func currentGoMemoryLimit() int64 {
+	return debug.SetMemoryLimit(-1)
 }

@@ -6,6 +6,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -246,4 +247,81 @@ func TestOnResponseBodyMisconfigurationAcknowledgesMessage(t *testing.T) {
 
 	require.ErrorIs(t, err, io.EOF)
 	require.Equal(t, 1, continueCalls)
+}
+
+func TestBodyBufferAppend(t *testing.T) {
+	t.Run("retains-everything-under-the-limit", func(t *testing.T) {
+		b := newBodyBuffer(64)
+
+		b.append([]byte("hello "))
+		b.append([]byte("world"))
+
+		require.Equal(t, "hello world", string(b.buffer))
+		require.False(t, b.truncated)
+	})
+
+	t.Run("truncates-at-the-limit", func(t *testing.T) {
+		b := newBodyBuffer(4)
+
+		b.append([]byte("ab"))
+		b.append([]byte("cdef"))
+
+		require.Equal(t, "abcd", string(b.buffer))
+		require.True(t, b.truncated)
+	})
+
+	t.Run("ignores-chunks-once-truncated", func(t *testing.T) {
+		b := newBodyBuffer(2)
+		b.append([]byte("abcd"))
+		require.True(t, b.truncated)
+
+		b.append([]byte("efgh"))
+
+		require.Equal(t, "ab", string(b.buffer))
+	})
+
+	t.Run("empty-chunk-allocates-nothing", func(t *testing.T) {
+		b := newBodyBuffer(64)
+
+		b.append(nil)
+		b.append([]byte{})
+
+		require.Nil(t, b.buffer)
+		require.Zero(t, cap(b.buffer))
+	})
+}
+
+// A streamed body arrives in many small chunks. Growth has to stay amortized without
+// ever reserving more than the limit the caller was promised.
+func TestBodyBufferGrowthStaysWithinTheLimit(t *testing.T) {
+	const (
+		// Deliberately not a power of two: append's doubling lands exactly on a
+		// power-of-two limit, which would hide the overshoot this guards against. Real
+		// limits look like the 10485760 default, not 65536.
+		sizeLimit = 100_000
+		chunkSize = 512
+	)
+
+	b := newBodyBuffer(sizeLimit)
+	chunk := bytes.Repeat([]byte("x"), chunkSize)
+
+	// Overshoot the limit deliberately so the final chunk straddles it, which is where
+	// append's own rounding would have reserved past sizeLimit.
+	for range (sizeLimit / chunkSize) + 10 {
+		b.append(chunk)
+		require.LessOrEqual(t, cap(b.buffer), sizeLimit, "capacity must never exceed the size limit")
+	}
+
+	require.True(t, b.truncated)
+	require.Len(t, b.buffer, sizeLimit)
+}
+
+func TestBodyBufferSmallBodyDoesNotReserveTheWholeLimit(t *testing.T) {
+	b := newBodyBuffer(10 * 1024 * 1024)
+
+	b.append([]byte("{}"))
+
+	require.Equal(t, "{}", string(b.buffer))
+	require.LessOrEqual(t, cap(b.buffer), minBodyBufferCapacity,
+		"a tiny body must not reserve the full parsing limit")
 }
