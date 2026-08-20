@@ -79,7 +79,6 @@
 /scripts/configaudit/                          @DataDog/apm-sdk-capabilities-go
 /scripts/configinverter/                       @DataDog/apm-sdk-capabilities-go
 /.github/workflows/config-audit.yml            @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/dynamic_config.go              @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/remote_config.go               @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/otel_dd_mappings.go            @DataDog/apm-sdk-capabilities-go
 /internal/env/supported_configurations.gen.go  @DataDog/apm-sdk-capabilities-go
