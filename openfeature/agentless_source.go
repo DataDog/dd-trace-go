@@ -8,9 +8,11 @@ package openfeature
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +84,13 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 		warned:     make(map[string]bool),
 		stopCh:     make(chan struct{}),
 		doneCh:     make(chan struct{}),
+	}
+	// A fixed configuration endpoint has no legitimate reason to redirect.
+	// Refusing to follow redirects avoids forwarding DD-API-KEY to a
+	// different host: Go's client only strips Authorization/Cookie headers
+	// on a cross-origin redirect, not our custom DD-API-KEY header.
+	s.httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
 	s.retryDelay = func(attempt int) time.Duration {
 		return retryDelay(s.pollInterval, attempt, rand.Float64())
@@ -197,7 +206,7 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.endpoint, nil)
 	if err != nil {
 		if s.warnOnce("request") {
-			log.Warn("openfeature: agentless: failed to build request: %v", err.Error())
+			log.Warn("openfeature: agentless: failed to build request: %s", sanitizeTransportError(err))
 		}
 		return pollOutcomeStop
 	}
@@ -214,7 +223,7 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		if s.warnOnce("http") {
-			log.Warn("openfeature: agentless: request failed: %v", err.Error())
+			log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err))
 		}
 		return pollOutcomeRetryable
 	}
@@ -310,6 +319,19 @@ func readAgentlessResponseBody(resp *http.Response) ([]byte, error) {
 		reader = gz
 	}
 	return io.ReadAll(io.LimitReader(reader, maxResponseBodyBytes))
+}
+
+// sanitizeTransportError strips the request URL out of a transport error
+// before it is logged. http.Client.Do and http.NewRequestWithContext both
+// return a *url.Error whose Error() text embeds the full request URL, which
+// for a custom endpoint may carry credentials — s.endpoint must never appear
+// in a log line.
+func sanitizeTransportError(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		return urlErr.Err.Error()
+	}
+	return "request failed"
 }
 
 // isRetryablePollStatus reports whether status warrants retrying within the

@@ -8,8 +8,10 @@ package openfeature
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -318,6 +320,48 @@ func TestAgentlessSource_NoOverlap(t *testing.T) {
 
 	_, maxInFlight, _, _ := backend.status()
 	assert.Equal(t, 1, maxInFlight, "no two polls may be in flight at once")
+}
+
+func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
+	var redirectTargetRequests int
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectTargetRequests++
+		if r.Header.Get("DD-API-KEY") != "" {
+			t.Error("the redirect target must never receive DD-API-KEY")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirectTarget.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	defer backend.Close()
+
+	src, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: backend.URL,
+		APIKey:           "secret-api-key",
+		PollInterval:     time.Hour,
+		RequestTimeout:   2 * time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+
+	src.start()
+
+	assert.Equal(t, 0, redirectTargetRequests, "a redirect must never be followed")
+}
+
+func TestSanitizeTransportError_DoesNotLeakSecrets(t *testing.T) {
+	const secret = "s3cr3t-token"
+	err := &url.Error{
+		Op:  "Get",
+		URL: "https://user:" + secret + "@example.com/path",
+		Err: errors.New("connection refused"),
+	}
+
+	got := sanitizeTransportError(err)
+	assert.False(t, strings.Contains(got, secret))
+	assert.Equal(t, "connection refused", got)
 }
 
 func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
