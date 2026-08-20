@@ -46,7 +46,7 @@ func TestBuildEvaluation(t *testing.T) {
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "experiment-flag",
-				SerialID: uint32Ptr(42),
+				SerialID: new(uint32(42)),
 				Subject:  "user-123",
 			},
 		},
@@ -68,7 +68,7 @@ func TestBuildEvaluation(t *testing.T) {
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "no-log-flag",
-				SerialID: uint32Ptr(101),
+				SerialID: new(uint32(101)),
 			},
 		},
 		{
@@ -88,7 +88,7 @@ func TestBuildEvaluation(t *testing.T) {
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "missing-do-log-flag",
-				SerialID: uint32Ptr(7),
+				SerialID: new(uint32(7)),
 			},
 		},
 		{

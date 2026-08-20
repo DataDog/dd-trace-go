@@ -178,8 +178,8 @@ func NewErrorMessage(err error) *ErrorMessage {
 
 func errType(err error) string {
 	var originalErr error
-	var wErr *errortrace.TracerError
-	if !errors.As(err, &wErr) {
+	wErr, ok := errors.AsType[*errortrace.TracerError](err)
+	if !ok {
 		originalErr = err
 	} else {
 		originalErr = wErr.Unwrap()

@@ -112,7 +112,6 @@ func registerTestifySuite(t *testing.T, suite any) {
 
 	// iterate over the methods of the suite to find the Test methods
 	for method := range methodFinder.Methods() {
-		method := method
 
 		// get the name for the method
 		methodName := method.Name

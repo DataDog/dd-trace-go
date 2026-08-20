@@ -286,7 +286,6 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 
 	for method := range configType.Methods() {
 		// Capture method
-		method := method
 		methodName := method.Name
 
 		// Skip if not a Set method

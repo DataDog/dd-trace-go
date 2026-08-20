@@ -99,7 +99,7 @@ func TestDereference(t *testing.T) {
 		{new(float64(1.25)), float64(1.25)},
 		{new(true), true},
 		{new(false), false},
-		{makePointer(samplernames.SingleSpan), samplernames.SingleSpan},
+		{new(samplernames.SingleSpan), samplernames.SingleSpan},
 		{(*int)(nil), 0},
 		{(*byte)(nil), byte(0)},
 		{(*int16)(nil), int16(0)},
@@ -131,9 +131,4 @@ func TestDereference(t *testing.T) {
 			}
 		})
 	}
-}
-
-//go:fix inline
-func makePointer[T any](value T) *T {
-	return new(value)
 }
