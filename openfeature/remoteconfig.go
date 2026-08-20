@@ -21,7 +21,7 @@ import (
 var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
-	provider := newDatadogProvider(config)
+	provider := newDatadogProviderWithSource(config, internalffe.SourceRemoteConfig)
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
@@ -32,6 +32,7 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 
 	if !tracerOwnsSubscription {
 		log.Debug("openfeature: successfully subscribed to Remote Config updates")
+		provider.markActivated()
 		return provider, nil
 	}
 	if !attachProvider(provider) {
@@ -39,6 +40,7 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 		return nil, errors.New("failed to attach to tracer's RC subscription")
 	}
 	log.Debug("openfeature: attached to tracer's RC subscription")
+	provider.markActivated()
 	return provider, nil
 }
 

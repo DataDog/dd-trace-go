@@ -16,6 +16,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
 
 var _ openfeature.FeatureProvider = (*DatadogProvider)(nil)
@@ -79,6 +80,19 @@ type DatadogProvider struct {
 	// Named distinctly from flagEvalHook (OTel) to avoid collisions.
 	flagEvalLoggingWriter *flagEvalLoggingWriter
 	flagEvalLoggingHook   *flagEvalLoggingHook
+
+	// source is fixed at construction. // +checklocks:mu
+	source internalffe.Source
+	// agentless is non-nil only once startWithAgentless has registered it. // +checklocks:mu
+	agentless *agentlessSource
+	// activated reports whether a delivery source has been registered. // +checklocks:mu
+	activated bool
+	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
+	shutdownCalled bool
+	// deliveryErr is set when no delivery source could start; permanent for the process. // +checklocks:mu
+	deliveryErr error
+	// writersStarted makes Init idempotent. // +checklocks:mu
+	writersStarted bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -99,7 +113,15 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 	return startWithRemoteConfig(config)
 }
 
+// newDatadogProvider builds a provider defaulting to the Remote Config
+// source. It exists so the ~60 existing tests exercising evaluation, hooks,
+// and metrics — none of which care about the delivery source — don't need to
+// be touched; production code paths call newDatadogProviderWithSource.
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {
+	return newDatadogProviderWithSource(config, internalffe.SourceRemoteConfig)
+}
+
+func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Source) *DatadogProvider {
 	evp := newEVPClient()
 
 	// Create exposure writer
@@ -157,6 +179,7 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		flagEvalMetricsHook:   evalMetricsHook,
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
+		source:                source,
 	}
 	p.configChange.L = &p.mu
 
@@ -165,6 +188,17 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 
 // updateConfiguration updates the provider's flag configuration.
 // This is called by the Remote Config callback when new configuration is received.
+// markActivated records that a delivery source has been registered, unless
+// Shutdown already ran.
+func (p *DatadogProvider) markActivated() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shutdownCalled {
+		return
+	}
+	p.activated = true
+}
+
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
