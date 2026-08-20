@@ -236,6 +236,12 @@ func TestProfileTypeSoundness(t *testing.T) {
 		require.NoError(t, err)
 		types := p.enabledProfileTypes()
 		require.ElementsMatch(t, types, allProfileTypes)
+
+		for _, pt := range allProfileTypes {
+			// This will panic if we didn't register a legacy
+			// compression configuration for the profile type.
+			legacyOutputCompression(pt, false)
+		}
 	})
 
 	t.Run("profileTypes", func(t *testing.T) {
