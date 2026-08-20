@@ -168,14 +168,17 @@ make format/shell
 Analyzes lock usage patterns to detect potential deadlocks and race conditions.
 
 ```shell
+# Install the managed checklocks binary
+make tools-install
+
 # Run checklocks on the default target (./ddtrace/tracer)
 ./scripts/checklocks.sh
 
 # Run checklocks on a specific directory
 ./scripts/checklocks.sh ./path/to/target
 
-# Run checklocks and ignore errors
-./scripts/checklocks.sh --ignore-errors
+# Run checklocks and ignore known issues
+./scripts/checklocks.sh --ignore-known-issues
 ```
 
 ### Module Management Scripts
