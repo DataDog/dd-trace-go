@@ -519,8 +519,8 @@ func TestDeferredProcessRetryFamilyPrecedenceAndSlowEFDFallback(t *testing.T) {
 
 func TestDeferredProcessRetryGroupRetainsNoAttemptRuntime(t *testing.T) {
 	groupType := reflect.TypeFor[deferredProcessRetryGroup]()
-	for index := range groupType.NumField() {
-		field := groupType.Field(index)
+	for field := range groupType.Fields() {
+		field := field
 		require.NotEqual(t, reflect.Func, field.Type.Kind(), "queue field %s must not retain a callback", field.Name)
 		require.NotEqual(t, reflect.TypeFor[*testing.T](), field.Type, "queue field %s must not retain testing.T", field.Name)
 		require.NotEqual(t, reflect.TypeFor[*retryAttemptGroup](), field.Type, "queue field %s must not retain the fresh-attempt runtime", field.Name)

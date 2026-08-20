@@ -370,4 +370,5 @@ func TestSpanEnrichment_AfterRootFinished(t *testing.T) {
 	}
 }
 
-func uint32Ptr(v uint32) *uint32 { return &v }
+//go:fix inline
+func uint32Ptr(v uint32) *uint32 { return new(v) }

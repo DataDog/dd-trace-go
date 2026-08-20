@@ -19,8 +19,8 @@ func Run(t *testing.T, suite *MySuite) {
 
 	tests := []testing.InternalTest{}
 	methodFinder := reflect.TypeFor[*MySuite]()
-	for i := 0; i < methodFinder.NumMethod(); i++ {
-		method := methodFinder.Method(i)
+	for method := range methodFinder.Methods() {
+		method := method
 
 		parentT := t
 		test := testing.InternalTest{
