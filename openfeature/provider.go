@@ -15,6 +15,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
@@ -33,13 +34,10 @@ var (
 )
 
 const (
-	// ffeProductEnvVar is the environment variable to enable the experimental flagging provider
-	ffeProductEnvVar     = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
 	spanEnrichmentEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED"
 	// flagEvalCountsEnabledEnvVar is the operator killswitch for the EVP flagevaluation emission path.
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
-	// Mirrors the internal.BoolEnv convention used by ffeProductEnvVar.
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
 	// Default timeout for provider initialization
 	defaultInitTimeout = 30 * time.Second
@@ -102,16 +100,27 @@ type DatadogProvider struct {
 // The provider will be ready to use immediately, but flag evaluations will return errors
 // until the first configuration is received from Remote Config.
 //
-// Returns an error if the default configuration of the Remote Config client is NOT working
+// Returns an error if the default configuration of the Remote Config client is NOT working.
 // In this case, please call tracer.Start before creating the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
-	if !internal.BoolEnv(ffeProductEnvVar, false) {
-		log.Error("openfeature: experimental flagging provider is not enabled, please set %s=true to enable it", ffeProductEnvVar)
-		return &openfeature.NoopProvider{}, nil
+	settings := internalffe.ResolveSettings(internalconfig.Get())
+	if settings.LegacyKeyDecided {
+		warnLegacyFlaggingProviderOnce()
 	}
 
-	return startWithRemoteConfig(config)
+	switch settings.Source {
+	case internalffe.SourceRemoteConfig:
+		return startWithRemoteConfig(config)
+	case internalffe.SourceAgentless:
+		return startWithAgentless(config, settings)
+	default:
+		return &openfeature.NoopProvider{}, nil
+	}
 }
+
+var warnLegacyFlaggingProviderOnce = sync.OnceFunc(func() {
+	log.Warn("openfeature: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED is deprecated; use DD_FEATURE_FLAGS_CONFIGURATION_SOURCE instead")
+})
 
 // newDatadogProvider builds a provider defaulting to the Remote Config
 // source. It exists so the ~60 existing tests exercising evaluation, hooks,
@@ -188,6 +197,38 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 
 // updateConfiguration updates the provider's flag configuration.
 // This is called by the Remote Config callback when new configuration is received.
+// startWithAgentless registers an Agentless configuration source as the
+// provider's activated delivery source. Claiming activation and registering
+// the source happen under the same lock as the shutdownCalled check, so a
+// poller can never be registered after Shutdown — that would otherwise leak
+// a billable poller for the process lifetime. src.start() runs outside the
+// lock since it issues the first request synchronously.
+func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*DatadogProvider, error) {
+	p := newDatadogProviderWithSource(config, internalffe.SourceAgentless)
+
+	src, err := newAgentlessSource(settings, p.updateConfiguration)
+	if err != nil {
+		// err never contains the configured endpoint or credentials.
+		log.Error("openfeature: failed to start agentless configuration source: %v", err.Error())
+		p.mu.Lock()
+		p.deliveryErr = err
+		p.mu.Unlock()
+		return p, nil
+	}
+
+	p.mu.Lock()
+	if p.shutdownCalled {
+		p.mu.Unlock()
+		return p, nil
+	}
+	p.agentless = src
+	p.activated = true
+	p.mu.Unlock()
+
+	src.start()
+	return p, nil
+}
+
 // markActivated records that a delivery source has been registered, unless
 // Shutdown already ran.
 func (p *DatadogProvider) markActivated() {
@@ -202,6 +243,11 @@ func (p *DatadogProvider) markActivated() {
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.shutdownCalled {
+		// A poll or RC callback already in flight must not resurrect
+		// configuration after Shutdown.
+		return
+	}
 	p.configuration = config
 	p.configChange.Broadcast()
 }
