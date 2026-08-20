@@ -1870,6 +1870,13 @@ func TestFeatureFlagsAgentlessRequestTimeout(t *testing.T) {
 		{"-5", 5 * time.Second},
 		{"x", 5 * time.Second},
 		{"10", 10 * time.Second},
+		{"300", 300 * time.Second},
+		{"301", 5 * time.Second},
+		// Regression guard: without an upper bound, this value overflows int64
+		// once converted to a time.Duration and multiplied by time.Second,
+		// wrapping to a negative duration that would disable the HTTP client's
+		// timeout enforcement entirely.
+		{"9223372037", 5 * time.Second},
 	} {
 		t.Run(tt.value, func(t *testing.T) {
 			resetGlobalState()
