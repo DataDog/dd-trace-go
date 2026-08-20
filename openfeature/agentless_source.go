@@ -45,6 +45,8 @@ type agentlessSource struct {
 	requestTimeout time.Duration
 	httpClient     *http.Client
 	apply          func(*universalFlagsConfiguration)
+	// retryDelay is overridden by tests to skip real waiting.
+	retryDelay func(attempt int) time.Duration
 
 	mu     sync.Mutex
 	etag   string          // +checklocks:mu
@@ -67,7 +69,7 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 		apiKey = settings.APIKey
 	}
 
-	return &agentlessSource{
+	s := &agentlessSource{
 		endpoint:       endpoint.url,
 		apiKey:         apiKey,
 		pollInterval:   settings.PollInterval,
@@ -80,7 +82,11 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 		warned:     make(map[string]bool),
 		stopCh:     make(chan struct{}),
 		doneCh:     make(chan struct{}),
-	}, nil
+	}
+	s.retryDelay = func(attempt int) time.Duration {
+		return retryDelay(s.pollInterval, attempt, rand.Float64())
+	}
+	return s, nil
 }
 
 // start issues the first poll synchronously, then hands off to the
@@ -145,7 +151,7 @@ func (s *agentlessSource) poll() {
 			return
 		}
 
-		delay := retryDelay(s.pollInterval, attempt, rand.Float64())
+		delay := s.retryDelay(attempt)
 		select {
 		case <-time.After(delay):
 		case <-s.stopCh:
