@@ -182,7 +182,7 @@ func TestExposureWriter_AppendCarriesSerialIDIntoCache(t *testing.T) {
 	writer.append(event)
 
 	withSerialID := event
-	withSerialID.SerialID = uint32Ptr(340132)
+	withSerialID.SerialID = new(uint32(340132))
 	writer.append(withSerialID)
 	writer.append(withSerialID)
 
@@ -217,8 +217,8 @@ func TestExposureEvent_SerialIDWireShape(t *testing.T) {
 		expected any
 		present  bool
 	}{
-		{name: "serial id present", serialID: uint32Ptr(340132), expected: float64(340132), present: true},
-		{name: "serial id of zero is sent", serialID: uint32Ptr(0), expected: float64(0), present: true},
+		{name: "serial id present", serialID: new(uint32(340132)), expected: float64(340132), present: true},
+		{name: "serial id of zero is sent", serialID: new(uint32(0)), expected: float64(0), present: true},
 		{name: "absent serial id is omitted", serialID: nil, present: false},
 	}
 
@@ -560,7 +560,7 @@ func TestExposureHook_After(t *testing.T) {
 			},
 			expectEvent:       true,
 			expectedSubjectID: "user-123",
-			expectedSerialID:  uint32Ptr(340132),
+			expectedSerialID:  new(uint32(340132)),
 		},
 		{
 			name:         "with serial id of zero",
@@ -575,7 +575,7 @@ func TestExposureHook_After(t *testing.T) {
 			},
 			expectEvent:       true,
 			expectedSubjectID: "user-123",
-			expectedSerialID:  uint32Ptr(0),
+			expectedSerialID:  new(uint32(0)),
 		},
 		{
 			name:         "without serial id",
