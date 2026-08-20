@@ -47,10 +47,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CHECKLOCKS_PATH="${CHECKLOCKS_BIN:-$(command -v checklocks || true)}"
-if [ -z "$CHECKLOCKS_PATH" ]; then
-  CHECKLOCKS_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bin/checklocks"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_CHECKLOCKS_BIN="$REPO_ROOT/bin/checklocks"
+
+if [ -n "$CHECKLOCKS_BIN" ]; then
+  # Explicit override always wins.
+  CHECKLOCKS_PATH="$CHECKLOCKS_BIN"
+elif [ -f "$REPO_CHECKLOCKS_BIN" ]; then
+  # Prefer the repo-pinned binary (installed via `make tools-install`) over
+  # anything on PATH, so a stale floating checklocks build can't silently
+  # reintroduce bugs it was pinned to avoid.
+  CHECKLOCKS_PATH="$REPO_CHECKLOCKS_BIN"
+else
+  CHECKLOCKS_PATH="$(command -v checklocks || true)"
 fi
+# --ignore-known-issues does not apply here. It tolerates issues that checklocks
+# finds in the code, not a broken tool setup.
 if [ ! -f "$CHECKLOCKS_PATH" ]; then
   if [ -n "$CHECKLOCKS_BIN" ]; then
     echo "Error: Specified checklocks binary does not exist: $CHECKLOCKS_PATH"
@@ -60,7 +72,11 @@ if [ ! -f "$CHECKLOCKS_PATH" ]; then
   exit 1
 fi
 if [ ! -x "$CHECKLOCKS_PATH" ]; then
-  echo "Error: Specified checklocks binary is not executable: $CHECKLOCKS_PATH"
+  if [ -n "$CHECKLOCKS_BIN" ]; then
+    echo "Error: Specified checklocks binary is not executable: $CHECKLOCKS_PATH"
+  else
+    echo "Error: checklocks binary at $CHECKLOCKS_PATH is not executable"
+  fi
   exit 1
 fi
 echo "Using existing checklocks binary at $CHECKLOCKS_PATH"
