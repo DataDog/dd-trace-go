@@ -21,7 +21,8 @@ func TestClaudeContainerAuthUsesManagedHelperAsAuthToken(t *testing.T) {
 		"apiKeyHelper": "printf managed-token",
 		"env": {
 			"ANTHROPIC_BASE_URL": "https://gateway.example",
-			"ANTHROPIC_CUSTOM_HEADERS": "X-Test: value"
+			"ANTHROPIC_CUSTOM_HEADERS": "X-Test: value",
+			"DISABLE_AUTOUPDATER": 1
 		}
 	}`), 0o600); err != nil {
 		t.Fatal(err)

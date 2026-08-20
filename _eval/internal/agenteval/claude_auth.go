@@ -23,8 +23,8 @@ var claudeForwardedEnv = []string{
 }
 
 type claudeManagedSettings struct {
-	APIKeyHelper string            `json:"apiKeyHelper"`
-	Env          map[string]string `json:"env"`
+	APIKeyHelper string         `json:"apiKeyHelper"`
+	Env          map[string]any `json:"env"`
 }
 
 func claudeContainerAuth(ctx context.Context) (map[string]string, error) {
@@ -56,7 +56,7 @@ func claudeContainerAuth(ctx context.Context) (map[string]string, error) {
 	}
 	env["ANTHROPIC_AUTH_TOKEN"] = token
 	for _, key := range []string{"ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS"} {
-		if value := settings.Env[key]; value != "" {
+		if value, ok := settings.Env[key].(string); ok && value != "" {
 			env[key] = value
 		}
 	}
