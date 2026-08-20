@@ -8,8 +8,10 @@ package openfeature
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -107,6 +109,9 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 	case "server_error":
 		w.WriteHeader(http.StatusInternalServerError)
+	case "throttled":
+		w.Header().Set("Retry-After", "2")
+		w.WriteHeader(http.StatusTooManyRequests)
 	case "valid_no_etag":
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -262,6 +267,45 @@ func TestAgentlessSource_RetriesExhausted(t *testing.T) {
 	assert.Equal(t, 0, applied)
 }
 
+func TestAgentlessSource_PollOnceReturnsRetryAfter(t *testing.T) {
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("throttled")
+
+	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+	outcome, retryAfter := src.pollOnce()
+	assert.Equal(t, pollOutcomeRetryable, outcome)
+	assert.Equal(t, 2*time.Second, retryAfter)
+}
+
+func TestAgentlessSource_NoWarningOnGracefulShutdownCancel(t *testing.T) {
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("delayed_valid") // 150ms handler sleep
+
+	logger, undo := newCapturingLogger()
+	defer undo()
+
+	src, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: backend.server.URL,
+		PollInterval:     time.Hour,
+		RequestTimeout:   5 * time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		src.start()
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let the request start before stopping
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	src.Stop(ctx)
+	<-done
+
+	assert.Equal(t, 0, logger.countContaining("request failed"), "a Stop-triggered cancellation must not warn")
+}
+
 func TestAgentlessSource_NonRetryableStopsImmediately(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("unauthorized")
@@ -318,6 +362,48 @@ func TestAgentlessSource_NoOverlap(t *testing.T) {
 
 	_, maxInFlight, _, _ := backend.status()
 	assert.Equal(t, 1, maxInFlight, "no two polls may be in flight at once")
+}
+
+func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
+	var redirectTargetRequests int
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectTargetRequests++
+		if r.Header.Get("DD-API-KEY") != "" {
+			t.Error("the redirect target must never receive DD-API-KEY")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirectTarget.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	defer backend.Close()
+
+	src, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: backend.URL,
+		APIKey:           "secret-api-key",
+		PollInterval:     time.Hour,
+		RequestTimeout:   2 * time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+
+	src.start()
+
+	assert.Equal(t, 0, redirectTargetRequests, "a redirect must never be followed")
+}
+
+func TestSanitizeTransportError_DoesNotLeakSecrets(t *testing.T) {
+	const secret = "s3cr3t-token"
+	err := &url.Error{
+		Op:  "Get",
+		URL: "https://user:" + secret + "@example.com/path",
+		Err: errors.New("connection refused"),
+	}
+
+	got := sanitizeTransportError(err)
+	assert.False(t, strings.Contains(got, secret))
+	assert.Equal(t, "connection refused", got)
 }
 
 func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {

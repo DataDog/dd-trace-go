@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -60,4 +61,38 @@ func TestIsRetryablePollStatus(t *testing.T) {
 			assert.Equal(t, want, isRetryablePollStatus(status), "status %d", status)
 		})
 	}
+}
+
+func TestRetryAfterDuration(t *testing.T) {
+	newHeader := func(name string, value string) http.Header {
+		h := http.Header{}
+		if name != "" {
+			h.Set(name, value)
+		}
+		return h
+	}
+
+	for name, tt := range map[string]struct {
+		header string
+		value  string
+		want   time.Duration
+	}{
+		"absent":            {"", "", 0},
+		"delta seconds":     {"Retry-After", "5", 5 * time.Second},
+		"zero is ignored":   {"Retry-After", "0", 0},
+		"negative ignored":  {"Retry-After", "-5", 0},
+		"garbage ignored":   {"Retry-After", "not-a-value", 0},
+		"past date ignored": {"Retry-After", time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat), 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := retryAfterDuration(newHeader(tt.header, tt.value))
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
+	t.Run("future HTTP-date", func(t *testing.T) {
+		future := time.Now().Add(30 * time.Second).UTC()
+		got := retryAfterDuration(newHeader("Retry-After", future.Format(http.TimeFormat)))
+		assert.InDelta(t, 30*time.Second, got, float64(2*time.Second))
+	})
 }
