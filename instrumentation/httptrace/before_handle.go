@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	appsectrace "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -68,7 +69,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
 	}
-	endpointOpt, endpointFn := handleHTTPEndpoint(cfg, r)
+	endpointOpt, endpointFn := handleHTTPEndpoint(cfg.Route, r)
 	opts = append(opts, endpointOpt)
 
 	appsecEnabled := appsec.Enabled()
@@ -100,7 +101,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 			ClientIP:    clientIP,
 		}
 
-		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, appsecConfig)
+		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, AppSecSpanTagSetter(span), appsecConfig)
 		afterHandle = func() {
 			secAfterHandle()
 			closeSpan()
@@ -112,16 +113,47 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	return rw, rt, afterHandle, handled
 }
 
+type otelAppSecSpanTagSetter struct {
+	span *tracer.Span
+}
+
+func (s otelAppSecSpanTagSetter) SetTag(key string, value any) {
+	switch key {
+	case ext.HTTPClientIP:
+		key = ext.ClientAddress
+	case ext.NetworkClientIP:
+		key = ext.NetworkPeerAddress
+	}
+	s.span.SetTag(key, value)
+}
+
+// AppSecSpanTagSetter returns a setter for AppSec span tags. Under OpenTelemetry semantics,
+// it translates HTTP client and network peer addresses to their semantic attribute names;
+// all other tags and Datadog semantics remain unchanged.
+func AppSecSpanTagSetter(span *tracer.Span) appsectrace.TagSetter {
+	if cfg.otelSemanticsEnabled {
+		return otelAppSecSpanTagSetter{span: span}
+	}
+	return span
+}
+
+// HTTPEndpointTag returns a start option that applies http.endpoint resource-renaming configuration.
+// A non-empty route is also set as http.route and is preferred as the endpoint unless simplified endpoints are enabled.
+func HTTPEndpointTag(route string, r *http.Request) tracer.StartSpanOption {
+	opt, _ := handleHTTPEndpoint(route, r)
+	return opt
+}
+
 // handleHTTPEndpoint tags the span with http.endpoint based on the resource renaming configuration and returns the computed endpoint.
-func handleHTTPEndpoint(serveCfg *ServeConfig, r *http.Request) (tracer.StartSpanOption, func() string) {
+func handleHTTPEndpoint(route string, r *http.Request) (tracer.StartSpanOption, func() string) {
 	var endpoint string
 
 	return func(sc *tracer.StartSpanConfig) {
 			if sc.Tags == nil {
 				return
 			}
-			if serveCfg.Route != "" {
-				sc.Tags[ext.HTTPRoute] = serveCfg.Route
+			if route != "" {
+				sc.Tags[ext.HTTPRoute] = route
 			}
 
 			// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
@@ -137,8 +169,8 @@ func handleHTTPEndpoint(serveCfg *ServeConfig, r *http.Request) (tracer.StartSpa
 				return
 			}
 
-			if serveCfg.Route != "" {
-				endpoint = serveCfg.Route
+			if route != "" {
+				endpoint = route
 			} else {
 				endpoint = simplifyHTTPUrl(httpURL)
 			}

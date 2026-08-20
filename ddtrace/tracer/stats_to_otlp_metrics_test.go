@@ -103,6 +103,20 @@ func assertOTLPBoolAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key strin
 	require.Fail(t, "missing OTLP bool attribute", key)
 }
 
+func assertOTLPIntAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key string, want int64) {
+	t.Helper()
+	for _, kv := range kvs {
+		if kv.Key != key {
+			continue
+		}
+		value, ok := kv.Value.Value.(*otlpcommon.AnyValue_IntValue)
+		require.True(t, ok, "%s must use an OTLP integer value", key)
+		assert.Equal(t, want, value.IntValue)
+		return
+	}
+	require.Fail(t, "missing OTLP integer attribute", key)
+}
+
 // ---- sketchToHistogram ----
 
 func TestSketchToHistogramEmpty(t *testing.T) {
@@ -325,7 +339,7 @@ func TestDataPointAttributesIncludeOTelAndDatadogAttributes(t *testing.T) {
 	assert.Equal(t, "SPAN_KIND_SERVER", m["span.kind"])
 	assert.Equal(t, "GET", m["http.request.method"])
 	assert.Equal(t, "200", m["http.response.status_code"])
-	assert.Equal(t, "STATUS_CODE_OK", m["status.code"])
+	assert.NotContains(t, m, "status.code")
 	assert.Equal(t, "api", m["service.name"])
 	assert.Equal(t, "gold", m["customer.tier"])
 	assert.Equal(t, "web.request", m["datadog.operation.name"])
@@ -366,7 +380,7 @@ func TestDataPointAttributesTopLevelFalse(t *testing.T) {
 func TestDataPointAttributesStatusCode(t *testing.T) {
 	gs := &pb.ClientGroupedStats{Resource: "/ok"}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false /* isError */))
-	assert.Equal(t, "STATUS_CODE_OK", m["status.code"])
+	assert.NotContains(t, m, "status.code")
 
 	gs = &pb.ClientGroupedStats{Resource: "/err"}
 	m = kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */))

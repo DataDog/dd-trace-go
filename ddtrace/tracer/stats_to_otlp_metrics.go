@@ -48,11 +48,8 @@ var otelSpanKindByDDSpanKind = map[string]string{
 	ext.SpanKindInternal: "SPAN_KIND_INTERNAL",
 }
 
-// statusCode* are the OTel Span Metrics Connector's string convention for the status.code attribute.
-const (
-	statusCodeOK    = "STATUS_CODE_OK"
-	statusCodeError = "STATUS_CODE_ERROR"
-)
+// statusCodeError is the OTel Span Metrics Connector's string convention for an error status.code attribute.
+const statusCodeError = "STATUS_CODE_ERROR"
 
 // spanMetricBounds are histogram bucket boundaries (seconds), matching OTel Span Metrics Connector defaults.
 var spanMetricBounds = [16]float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
@@ -194,11 +191,9 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool) []*otlpco
 		// Non-numeric values are malformed for gRPC and are silently dropped rather than
 		// emitting a value that would change the attribute's type.
 	}
-	statusCode := statusCodeOK
 	if isError {
-		statusCode = statusCodeError
+		attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue(statusCodeError)))
 	}
-	attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue(statusCode)))
 
 	attrs = append(attrs, otlpKeyValue("service.name", otlpStringValue(gs.Service)))
 
