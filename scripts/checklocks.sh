@@ -49,11 +49,14 @@ done
 
 CHECKLOCKS_PATH="${CHECKLOCKS_BIN:-$(command -v checklocks || true)}"
 if [ -z "$CHECKLOCKS_PATH" ]; then
-  echo "Error: checklocks was not found in PATH. Run 'make tools-install' first."
-  exit 1
+  CHECKLOCKS_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bin/checklocks"
 fi
 if [ ! -f "$CHECKLOCKS_PATH" ]; then
-  echo "Error: Specified checklocks binary does not exist: $CHECKLOCKS_PATH"
+  if [ -n "$CHECKLOCKS_BIN" ]; then
+    echo "Error: Specified checklocks binary does not exist: $CHECKLOCKS_PATH"
+  else
+    echo "Error: checklocks was not found. Run 'make tools-install' first."
+  fi
   exit 1
 fi
 if [ ! -x "$CHECKLOCKS_PATH" ]; then
