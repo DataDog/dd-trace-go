@@ -321,6 +321,101 @@ func TestBeforeHandleSecurityTestingHeadersWithAppSec(t *testing.T) {
 	assert.Equal(t, "test-uuid", spans[0].Tag(securityTestingHeaders[1].tag))
 }
 
+func TestBeforeHandleClientAddressesWithAppSec(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
+	for _, tt := range []struct {
+		name string
+		otel bool
+	}{
+		{name: "Datadog"},
+		{name: "OpenTelemetry", otel: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			oldCfg := cfg
+			defer func() { cfg = oldCfg }()
+			t.Cleanup(clientip.ResetConfig)
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			t.Setenv("DD_APPSEC_ENABLED", "true")
+			t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", strconv.FormatBool(tt.otel))
+			appsec.Start()
+			defer appsec.Stop()
+			clientip.ResetConfig()
+			ResetCfg()
+			cfg.otelSemanticsEnabled = tt.otel
+
+			r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+			r.RemoteAddr = "192.0.2.1:1234"
+			r.Header.Set("X-Forwarded-For", "203.0.113.10")
+
+			rw, rt, after, handled := BeforeHandle(&ServeConfig{Route: "/test"}, httptest.NewRecorder(), r)
+			require.False(t, handled)
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+			after()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			span := spans[0]
+			if tt.otel {
+				assert.Equal(t, "203.0.113.10", span.Tag(ext.ClientAddress))
+				assert.Equal(t, "192.0.2.1", span.Tag(ext.NetworkPeerAddress))
+				assert.Nil(t, span.Tag(ext.HTTPClientIP))
+				assert.Nil(t, span.Tag(ext.NetworkClientIP))
+				return
+			}
+			assert.Equal(t, "203.0.113.10", span.Tag(ext.HTTPClientIP))
+			assert.Equal(t, "192.0.2.1", span.Tag(ext.NetworkClientIP))
+			assert.Nil(t, span.Tag(ext.ClientAddress))
+			assert.Nil(t, span.Tag(ext.NetworkPeerAddress))
+		})
+	}
+}
+
+func TestAppSecSpanTagSetter(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		otel bool
+	}{
+		{name: "Datadog"},
+		{name: "OpenTelemetry", otel: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			oldEnabled := cfg.otelSemanticsEnabled
+			defer func() { cfg.otelSemanticsEnabled = oldEnabled }()
+			cfg.otelSemanticsEnabled = tt.otel
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			span := tracer.StartSpan("request")
+			setter := AppSecSpanTagSetter(span)
+			setter.SetTag(ext.HTTPClientIP, "203.0.113.10")
+			setter.SetTag(ext.NetworkClientIP, "192.0.2.1")
+			setter.SetTag("appsec.custom", "value")
+			span.Finish()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			if tt.otel {
+				assert.Equal(t, "203.0.113.10", spans[0].Tag(ext.ClientAddress))
+				assert.Equal(t, "192.0.2.1", spans[0].Tag(ext.NetworkPeerAddress))
+				assert.Nil(t, spans[0].Tag(ext.HTTPClientIP))
+				assert.Nil(t, spans[0].Tag(ext.NetworkClientIP))
+			} else {
+				assert.Equal(t, "203.0.113.10", spans[0].Tag(ext.HTTPClientIP))
+				assert.Equal(t, "192.0.2.1", spans[0].Tag(ext.NetworkClientIP))
+				assert.Nil(t, spans[0].Tag(ext.ClientAddress))
+				assert.Nil(t, spans[0].Tag(ext.NetworkPeerAddress))
+			}
+			assert.Equal(t, "value", spans[0].Tag("appsec.custom"))
+		})
+	}
+}
+
 func TestStartRequestSpan(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -1179,7 +1274,17 @@ func BenchmarkObfuscateAdversarial(b *testing.B) {
 }
 
 func BenchmarkStartRequestSpan(b *testing.B) {
-	b.ReportAllocs()
+	benchmarkStartRequestSpan(b, false)
+}
+
+func BenchmarkStartRequestSpanOTelSemantics(b *testing.B) {
+	benchmarkStartRequestSpan(b, true)
+}
+
+func benchmarkStartRequestSpan(b *testing.B, otelSemanticsEnabled bool) {
+	oldCfg := cfg
+	b.Cleanup(func() { cfg = oldCfg })
+	cfg.otelSemanticsEnabled = otelSemanticsEnabled
 	r, err := http.NewRequest("GET", "http://example.com", nil)
 	if err != nil {
 		b.Errorf("Failed to create request: %v", err)
@@ -1191,6 +1296,7 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 		tracer.ResourceName("SomeResource"),
 		tracer.Tag(ext.HTTPRoute, "/some/route/?"),
 	}
+	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		StartRequestSpan(r, opts...)
@@ -1326,6 +1432,22 @@ func TestBeforeHandleHTTPEndpoint(t *testing.T) {
 			mt.Reset()
 		})
 	}
+}
+
+func TestHTTPEndpointTag(t *testing.T) {
+	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", "true")
+	ResetCfg()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/api/v1/users/123", nil)
+	_, _, finish := StartRequestSpan(r, HTTPEndpointTag("/api/v1/users/{id}", r))
+	finish(http.StatusOK, nil)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "/api/v1/users/{id}", spans[0].Tag(ext.HTTPRoute))
+	assert.Equal(t, "/api/v1/users/{id}", spans[0].Tag(ext.HTTPEndpoint))
 }
 
 func TestResourceRenamingActivation(t *testing.T) {
