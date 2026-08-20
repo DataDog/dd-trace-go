@@ -10,7 +10,7 @@ instruction_files:
   - profiler/AGENTS.md
   - orchestrion/AGENTS.md
 
-default_level: minimum
+default_level: full
 presets:
   minimum:
     cases: ["dd-trace-go-contrib-structure", "dd-trace-go-contrib-tags"]
@@ -28,7 +28,5 @@ policy:
   blocking_fail_ci_upper: 0.55
 
 defaults:
-  expected_criteria:
-    - Recommends adding test coverage for new code.
   bad_signals:
     - Recommends skipping, disabling, or deleting tests.
