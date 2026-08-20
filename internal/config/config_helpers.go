@@ -130,6 +130,14 @@ func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
 	return true
 }
 
+func validateFlaggingProviderInitTimeout(ms int) bool {
+	if ms <= 0 {
+		log.Warn("ignoring DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: non-positive value %d", ms)
+		return false
+	}
+	return true
+}
+
 func validateSendRetries(retries int) bool {
 	if retries < 0 {
 		log.Warn("ignoring DD_TRACE_SEND_RETRIES: negative value %d", retries)
