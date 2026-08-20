@@ -620,20 +620,63 @@ func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	// Try to set the provider with context and wait - should timeout
+	// A timeout while a delivery source is still running (no deliveryErr) is
+	// deliberately not an error: Go's ErrorState doesn't block evaluation, and
+	// configuration arriving later promotes the provider. See InitWithContext.
 	err := openfeature.SetProviderWithContextAndWait(ctx, provider)
-
-	// Verify that we get a timeout error
-	if err == nil {
-		t.Fatal("expected timeout error, got nil")
+	if err != nil {
+		t.Errorf("expected nil (init timeout is transient, not an error), got: %v", err)
 	}
+}
 
-	// Check that the error is due to context deadline exceeded
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded error, got: %v", err)
+func TestInitWithContext_DeliveryErrFailsImmediately(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.mu.Lock()
+	provider.deliveryErr = errors.New("no delivery source could be started")
+	provider.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	elapsed := time.Since(start)
+
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) {
+		t.Fatalf("expected *openfeature.ProviderInitError, got: %v", err)
 	}
+	if initErr.ErrorCode != openfeature.ProviderNotReadyCode {
+		t.Errorf("expected ProviderNotReadyCode, got: %v", initErr.ErrorCode)
+	}
+	if elapsed >= time.Second {
+		t.Errorf("a permanent delivery failure must fail immediately, not wait out the timeout; took %v", elapsed)
+	}
+}
 
-	t.Logf("Successfully got timeout error as expected: %v", err)
+func TestInitWithContext_ShutdownDuringWaitReturnsPromptly(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = provider.ShutdownWithContext(ctx)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Errorf("expected nil error, got: %v", err)
+	}
+	if elapsed >= time.Second {
+		t.Errorf("Init must return promptly once Shutdown runs, not wait out its own timeout; took %v", elapsed)
+	}
 }
 
 func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {

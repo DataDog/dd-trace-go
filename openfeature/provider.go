@@ -39,8 +39,6 @@ const (
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
-	// Default timeout for provider initialization
-	defaultInitTimeout = 30 * time.Second
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
 )
@@ -278,7 +276,7 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 // this is waiting for the first configuration to be loaded.
 func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) error {
 	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), defaultInitTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), internalconfig.Get().FlaggingProviderInitTimeout())
 	defer cancel()
 	return p.InitWithContext(ctx, evaluationContext)
 }
@@ -323,9 +321,25 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.deliveryErr != nil {
+		// Permanent: no delivery source could be started, so waiting out the
+		// timeout would only delay startup for configuration that can never arrive.
+		return &openfeature.ProviderInitError{
+			ErrorCode: openfeature.ProviderNotReadyCode,
+			Message:   "no feature-flag delivery source could be started",
+		}
+	}
+
 	for p.configuration == nil {
+		if p.shutdownCalled {
+			return nil
+		}
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
-			return err
+			// Timed out or canceled with delivery still running. This is not an
+			// error: Go's ErrorState does not block evaluation, and configuration
+			// arriving later promotes the provider to ReadyState.
+			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives")
+			return nil
 		}
 	}
 
