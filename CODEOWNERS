@@ -1,5 +1,6 @@
 # Note: Later matches take precedence
 # Note: directory owners need a trailing "/" to apply recursively (no bare GitHub-style dir globs)
+# Note: CIVis suffix matches only support a single leading "*"
 
 # shared modules and repository tooling
 /.claude/                       @DataDog/dd-trace-go-guild
@@ -13,8 +14,11 @@
 /.idea/                         @DataDog/dd-trace-go-guild
 /.orchestrion-version           @DataDog/dd-trace-go-guild
 /.pre-commit-config.yaml        @DataDog/dd-trace-go-guild
-/*.md                           @DataDog/dd-trace-go-guild
-/LICENSE*                       @DataDog/dd-trace-go-guild
+*.md                            @DataDog/dd-trace-go-guild
+/LICENSE                        @DataDog/dd-trace-go-guild
+/LICENSE-3rdparty.csv           @DataDog/dd-trace-go-guild
+/LICENSE-APACHE                 @DataDog/dd-trace-go-guild
+/LICENSE-BSD3                   @DataDog/dd-trace-go-guild
 /NOTICE                         @DataDog/dd-trace-go-guild
 /codecov.yml                    @DataDog/dd-trace-go-guild
 /crashtracker/                  @DataDog/dd-trace-go-guild
@@ -53,7 +57,8 @@
 /appsec/                        @DataDog/asm-go
 /internal/appsec/               @DataDog/asm-go
 /instrumentation/appsec/        @DataDog/asm-go
-/contrib/**/*appsec*.go         @DataDog/asm-go
+*appsec.go                      @DataDog/asm-go
+*appsec_test.go                 @DataDog/asm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go
 /contrib/azure/                 @DataDog/asm-go
 /contrib/envoyproxy/            @DataDog/asm-go
@@ -128,7 +133,7 @@
 # orchestrion
 /internal/orchestrion/          @DataDog/apm-orchestrion
 /orchestrion/                   @DataDog/apm-orchestrion
-/**/orchestrion.yml             @DataDog/apm-orchestrion
+*orchestrion.yml                @DataDog/apm-orchestrion
 
 # serverless
 /contrib/aws/datadog-lambda-go/ @DataDog/apm-serverless @DataDog/serverless-aws
@@ -138,11 +143,12 @@
 /openfeature/                   @DataDog/feature-flagging-and-experimentation-sdk
 
 # database monitoring
-ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
-contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
+/ddtrace/tracer/sqlcomment.go       @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
+/ddtrace/tracer/sqlcomment_test.go  @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
+contrib/database/sql/               @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 
 # dependency-file review
-**/go.mod                       @DataDog/apm-go
-**/go.sum                       @DataDog/apm-go
+*go.mod                         @DataDog/apm-go
+*go.sum                         @DataDog/apm-go
 /go.work                        @DataDog/apm-go
 /go.work.sum                    @DataDog/apm-go
