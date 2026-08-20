@@ -131,11 +131,16 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	propagatedLLMObs := propagatedLLMSpanFromTags(s)
-	if propagatedLLMObs.SpanID == "" || propagatedLLMObs.TraceID == "" {
+	// Fast path: peek at the two required tags before allocating.
+	// Most spans carry no LLMObs propagation, so we skip the heap allocation on that hot path.
+	if s.context == nil || s.context.trace == nil {
 		return ctx
 	}
-	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMObs)
+	if s.context.trace.propagatingTag(keyPropagatedLLMObsParentID) == "" ||
+		s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID) == "" {
+		return ctx
+	}
+	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMSpanFromTags(s))
 }
 
 // propagatedLLMSpanFromTags extracts LLMObs propagation information from the trace propagating tags.
@@ -156,6 +161,10 @@ func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
 	}
 	if sessionID := s.context.trace.propagatingTag(keyPropagatedLLMObsSessionID); sessionID != "" {
 		propagatedLLMObs.SessionID = sessionID
+	}
+	if parentAgentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentSpanID); parentAgentID != "" {
+		propagatedLLMObs.ParentAgentSpanID = parentAgentID
+		propagatedLLMObs.ParentAgentName = s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentName)
 	}
 	return propagatedLLMObs
 }
