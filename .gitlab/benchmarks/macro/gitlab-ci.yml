@@ -89,12 +89,12 @@ variables:
 .go-stable-benchmarks:
   extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.26.0"
+    GO_VERSION: "1.27.0"
 
 .go-oldstable-benchmarks:
   extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.25.7"
+    GO_VERSION: "1.26.7"
 
 #
 # Specific macrobenchmark configurations extending 
