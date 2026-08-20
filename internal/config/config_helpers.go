@@ -122,9 +122,15 @@ func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
 	return true
 }
 
+// validateFeatureFlagsAgentlessRequestTimeout rejects a non-positive value and caps the upper
+// bound at 300s: without an upper bound, a large-but-plausible-looking value (e.g. 9223372037)
+// overflows int64 once converted to a time.Duration in nanoseconds and multiplied by
+// time.Second, wrapping to a negative duration. http.Client treats a non-positive Timeout as
+// "no timeout", so an overflowed value would silently disable request timeout enforcement
+// entirely instead of surfacing the misconfiguration.
 func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
-	if seconds <= 0 {
-		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: non-positive value %d", seconds)
+	if seconds <= 0 || seconds > 300 {
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: value %d out of range (0, 300]", seconds)
 		return false
 	}
 	return true
