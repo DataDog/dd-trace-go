@@ -279,17 +279,6 @@ func syncTaskDatasets(ctx context.Context, c *commonFlags, tasks []agenteval.Tas
 }
 
 func syncDataset(ctx context.Context, name, project, description string, records []dataset.Record) (*dataset.Dataset, bool, error) {
-	desired := make(map[string]dataset.Record, len(records))
-	order := make([]string, 0, len(records))
-	for _, rec := range records {
-		key, err := datasetRecordKey(rec)
-		if err != nil {
-			return nil, false, err
-		}
-		desired[key] = rec
-		order = append(order, key)
-	}
-
 	ds, err := dataset.Pull(ctx, name, dataset.WithPullProjectName(project))
 	if err != nil {
 		ds, err = dataset.Create(ctx, name, records,
@@ -299,11 +288,18 @@ func syncDataset(ctx context.Context, name, project, description string, records
 		if err != nil {
 			return nil, false, fmt.Errorf("create dataset: %w", err)
 		}
-		ds, err = waitForDatasetRecords(ctx, name, project, desired)
-		if err != nil {
-			return nil, false, fmt.Errorf("validate created dataset: %w", err)
-		}
 		return ds, true, nil
+	}
+
+	desired := make(map[string]dataset.Record, len(records))
+	order := make([]string, 0, len(records))
+	for _, rec := range records {
+		key, err := datasetRecordKey(rec)
+		if err != nil {
+			return nil, false, err
+		}
+		desired[key] = rec
+		order = append(order, key)
 	}
 
 	seen := make(map[string]struct{}, len(records))
@@ -363,45 +359,27 @@ func syncDataset(ctx context.Context, name, project, description string, records
 	if err := ds.Push(ctx); err != nil {
 		return nil, false, fmt.Errorf("push dataset: %w", err)
 	}
-	ds, err = waitForDatasetRecords(ctx, name, project, desired)
-	if err != nil {
-		return nil, false, fmt.Errorf("validate synchronized dataset: %w", err)
-	}
-	return ds, false, nil
-}
-
-type pullDatasetFunc func(context.Context, string, ...dataset.PullOption) (*dataset.Dataset, error)
-
-func waitForDatasetRecords(ctx context.Context, name, project string, desired map[string]dataset.Record) (*dataset.Dataset, error) {
-	return pullUntilDatasetRecords(ctx, name, project, desired, dataset.Pull, 8, func(attempt int) time.Duration {
-		return time.Duration(1<<attempt) * 250 * time.Millisecond
-	})
-}
-
-// pullUntilDatasetRecords waits for newly created or updated records to become
-// visible before an experiment pins the dataset version.
-func pullUntilDatasetRecords(ctx context.Context, name, project string, desired map[string]dataset.Record, pull pullDatasetFunc, attempts int, retryDelay func(int) time.Duration) (*dataset.Dataset, error) {
+	// Dataset reads can briefly lag behind a successful batch update. Wait until
+	// the current version exposes the exact records compare is about to pin.
 	var validateErr error
-	for attempt := 0; attempt < attempts; attempt++ {
-		ds, err := pull(ctx, name, dataset.WithPullProjectName(project))
+	for attempt := 0; attempt < 5; attempt++ {
+		ds, err = dataset.Pull(ctx, name, dataset.WithPullProjectName(project))
 		if err == nil {
 			validateErr = validateDatasetRecords(ds, desired)
 			if validateErr == nil {
-				return ds, nil
+				return ds, false, nil
 			}
 		} else {
 			validateErr = err
 		}
-		if attempt == attempts-1 {
-			break
-		}
+		wait := time.Duration(1<<attempt) * 250 * time.Millisecond
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(retryDelay(attempt)):
+			return nil, false, ctx.Err()
+		case <-time.After(wait):
 		}
 	}
-	return nil, fmt.Errorf("after retries: %w", validateErr)
+	return nil, false, fmt.Errorf("validate synchronized dataset after retries: %w", validateErr)
 }
 
 func validateDatasetRecords(ds *dataset.Dataset, desired map[string]dataset.Record) error {
