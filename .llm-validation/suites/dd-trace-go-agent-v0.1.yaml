@@ -67,3 +67,24 @@ cases:
       - Gives an implementation that only works with dd-trace-go-specific types and is not usable standalone
       - Fails to demonstrate the standard Go middleware pattern (wrapping http.Handler)
       - Confuses middleware with a tracer integration by importing dd-trace-go packages unnecessarily
+
+  - id: dd-trace-go-config-new-env-var-005
+    files:
+      - internal/AGENTS.md
+    input: |
+      I need to add a new environment variable, DD_TRACE_SOME_NEW_FEATURE_ENABLED, that turns on
+      a new tracer feature. Walk me through how I should read this configuration value end to end
+      -- which module owns it, how do I wire it up, and what else do I need to update?
+    expected_criteria:
+      - Directs the value to be added as a new private field on internal/config.Config, not read directly with os.Getenv/os.LookupEnv in the tracer package
+      - Says the field is initialized in loadConfig() via the config provider, which resolves it in descending priority order -- programmatic API, managed declarative config, DD_* env var, OTEL env var, then local declarative config -- falling back to a default
+      - Says to add a getter (ConfigName()-style accessor) on Config, and a setter if the value must be updatable at runtime
+      - States the setter must call c.checkProductConflict(...) as its first action after acquiring the lock, before applying the change
+      - States the setter (or the calculated/default path) must call configtelemetry.Report(...) with the correct origin
+      - Mentions registering the new key so it's tracked (e.g. via the configinverter tool / internal/env/supported_configurations.json), not just introducing an untracked ad-hoc lookup
+    bad_signals:
+      - Tells the developer to read the variable directly via os.Getenv/os.LookupEnv in tracer/option.go or another package outside internal/config
+      - Reads the value with a legacy helper such as internal.BoolEnv/internal.IntEnv or a local "env.Get" wrapper instead of adding it to internal/config
+      - Never mentions internal/config, loadConfig(), or the provider/precedence order at all
+      - Omits the cross-product gate (checkProductConflict) or telemetry reporting (configtelemetry.Report) from the setter
+      - Says the config value's origin/precedence doesn't matter, or that env vars are the only source consulted
