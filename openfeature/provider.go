@@ -340,16 +340,34 @@ func (p *DatadogProvider) Shutdown() {
 // This method respects context cancellation and timeouts, allowing users
 // to control how long the shutdown process should take.
 func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
-	// Create a channel to signal completion
-	done := make(chan error, 1)
+	// Claim shutdown and copy out the components to tear down while still
+	// holding the lock, then Broadcast so a parked Init wakes up instead of
+	// waiting out its timeout. The teardown itself must run without the
+	// lock held: agentless.Stop joins the poll goroutine, which itself calls
+	// updateConfiguration and takes p.mu, so holding the lock across it
+	// would deadlock.
+	p.mu.Lock()
+	p.shutdownCalled = true
+	source := p.source
+	agentless := p.agentless
+	p.configuration = nil
+	p.configChange.Broadcast()
+	p.mu.Unlock()
 
+	done := make(chan error, 1)
 	go func() {
-		// Perform the shutdown operations
-		err := stopRemoteConfig()
+		var err error
+		// An agentless provider never registered an RC capability, so it
+		// must not unregister one.
+		if source == internalffe.SourceRemoteConfig {
+			err = stopRemoteConfig()
+		}
+		if agentless != nil {
+			agentless.Stop(ctx)
+		}
 
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		p.configuration = nil
 		// Stop the exposure writer
 		if p.exposureWriter != nil {
 			p.exposureWriter.flush()
