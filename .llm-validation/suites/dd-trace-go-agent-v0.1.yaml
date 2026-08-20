@@ -2,7 +2,8 @@ name: dd-trace-go-agent
 version: "0.1"
 
 cases:
-  - id: dd-trace-go-contrib-structure-001
+# ==== Contrib Tests ====
+  - id: dd-trace-go-contrib-structure
     files:
       - contrib/AGENTS.md
     input: |
@@ -22,7 +23,7 @@ cases:
       - Uses a versioned package name such as package somelib.v2 or package somerlibv2
       - Does not mention adding the module to go.work
 
-  - id: dd-trace-go-contrib-tags-002
+  - id: dd-trace-go-contrib-tags
     files:
       - contrib/AGENTS.md
     input: |
@@ -37,7 +38,114 @@ cases:
       - Does not mention the component tag at all
       - Gives incorrect span.kind values such as outbound or request
 
-  - id: dd-trace-go-tracer-api-break-003
+  - id: dd-trace-go-contrib-telemetry-registration
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I've created a new contrib integration for a library at github.com/user/somelib. What do I
+      need to do to register instrumentation telemetry for it, and what other files besides the
+      integration code itself need to be updated?
+    expected_criteria:
+      - Mentions adding an init() function that calls instrumentation.Load with a matching package
+        constant (e.g. instrumentation.Load(instrumentation.PackageSomelib))
+      - States that instrumentation/packages.go must be updated with a new constant and matching
+        package info in the packages map
+      - States that contribIntegrations in ddtrace/tracer/option.go must include the new package
+      - Mentions that a corresponding PR should be opened in the Datadog/documentation repo to add
+        the integration to the compatible integrations list
+    bad_signals:
+      - Says telemetry registration is automatic and requires no extra code or file updates
+      - Omits updating instrumentation/packages.go or contribIntegrations in option.go
+      - Does not mention the documentation repo PR at all
+
+  - id: dd-trace-go-contrib-shared-instrumentation
+    only_warn: true
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm writing a new HTTP-based contrib integration and need to resolve the span's service name
+      and operation name and get a logger, consistent with how the rest of the contrib packages do
+      it. Where does this shared logic live and how should I access it instead of writing it myself?
+    expected_criteria:
+      - States that code shared across multiple contribs lives in the instrumentation/ directory
+      - Mentions that instrumentation.Load(...) returns an Instrumentation instance whose methods
+        (e.g. ServiceName, OperationName, Logger) should be used instead of reimplementing this logic
+      - Advises against duplicating naming/service-resolution logic inside the new contrib package
+    bad_signals:
+      - Recommends writing bespoke service-name/operation-name resolution logic inside the new
+        contrib package instead of using the instrumentation package
+      - Does not reference the instrumentation package/directory at all
+      - Says this shared logic lives in a different directory instead of instrumentation/
+
+  - id: dd-trace-go-contrib-httptrace-server
+    only_warn: true
+    files:
+      - contrib/AGENTS.md
+    input: |
+      My new contrib integration wraps a Go HTTP server-side framework. How should I start and
+      finish the span for each incoming request so that it's consistent with other HTTP server
+      contribs like net/http?
+    expected_criteria:
+      - Recommends using the shared httptrace package (instrumentation/httptrace) rather than
+        manually calling tracer.StartSpan for each request
+      - Mentions that the shared helper returns a wrapped ResponseWriter/Request plus a finish
+        function that must be deferred/called to finish the span
+      - Notes span.kind should be set to server for this server-side span, and the component tag
+        should be set to the integration's naming-convention value
+    bad_signals:
+      - Has the integration call tracer.StartSpan directly instead of using the shared httptrace
+        helper
+      - Fails to mention finishing the span via the returned finish/cleanup function
+      - Omits the span.kind server tag or sets an incorrect span.kind value for a server span
+
+  - id: dd-trace-go-contrib-versioned-package
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm building a contrib integration for github.com/some/queue, which has released major
+      version v3, and my integration only works against the v3.x line. What should the import path
+      and the Go package name be?
+    expected_criteria:
+      - States the import path includes a package-specific .v3 suffix in addition to the dd-trace-go
+        module's own /v2 suffix (e.g. github.com/DataDog/dd-trace-go/contrib/some/queue.v3/v2)
+      - States the Go package name itself stays unversioned (package queue, not queue.v3 or queuev3)
+    bad_signals:
+      - Omits either the package-specific .v3 suffix or the dd-trace-go module's /v2 suffix
+      - Versions the Go package name itself (e.g. package queuev3 or package queue_v3)
+
+  - id: dd-trace-go-contrib-deprecation-policy
+    files:
+      - contrib/AGENTS.md
+    input: |
+      One of our contrib integrations wraps a library that was just archived by its maintainer on
+      GitHub, with no CVE currently reported against its latest available version. Can we deprecate
+      this integration now?
+    expected_criteria:
+      - States that deprecation requires both conditions to be true -- the integrated package being
+        deprecated/archived AND a CVE reported against its latest available version
+      - Concludes that this integration does not yet qualify for deprecation since no CVE has been
+        reported
+    bad_signals:
+      - Says the integration can be deprecated based on the archived status alone
+      - Does not mention that both conditions (archived/deprecated AND a reported CVE) are required
+
+  - id: dd-trace-go-contrib-test-files
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I finished writing the new contrib package's core logic. What test file(s) do I need to add
+      for it to be automatically run by CI on new pull requests, and are there any other files
+      expected alongside it?
+    expected_criteria:
+      - States that a `<name>_test.go` file is required so tests run automatically in CI
+      - Mentions that an example_test.go file is also expected, serving as public godoc
+        documentation with an example of how to initialize and use the integration
+    bad_signals:
+      - Says tests are optional for a new contrib integration
+      - Does not mention example_test.go as an expected file
+
+# ==== Tracer Tests ====
+  - id: dd-trace-go-tracer-api-break
     only_warn: true
     files:
       - ddtrace/tracer/AGENTS.md
@@ -52,7 +160,7 @@ cases:
       - Does not mention the CI label mechanism at all, giving only a vague answer about breaking changes
       - Suggests force-merging or skipping the CI check
 
-  - id: dd-trace-go-control-general-go-004
+  - id: dd-trace-go-control-general-go
     only_warn: true
     files:
       - AGENTS.md
@@ -67,3 +175,433 @@ cases:
       - Gives an implementation that only works with dd-trace-go-specific types and is not usable standalone
       - Fails to demonstrate the standard Go middleware pattern (wrapping http.Handler)
       - Confuses middleware with a tracer integration by importing dd-trace-go packages unnecessarily
+
+  - id: dd-trace-go-tracer-doc-update-trigger
+    only_warn: true
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I'm adding a new tracer option, WithAdaptiveSampling, which lets users enable an adaptive
+      rate-sampling algorithm that adjusts itself based on traffic volume. Which files do I need
+      to read before making this change, and where should I document the new behavior once it's done?
+    expected_criteria:
+      - States that ddtrace/tracer/README.md must be read first for handling API changes, and
+        ddtrace/tracer/doc.go must be read for the tracer's existing abilities
+      - Identifies this as a significant feature (it changes tracer sampling behavior) and states
+        that doc.go must be updated to document it
+    bad_signals:
+      - Says no documentation update is required for this change
+      - Points only to the top-level project README.md or CONTRIBUTING.md instead of the tracer
+        package's own doc.go
+      - Does not mention reading README.md/doc.go before making the change
+
+  - id: dd-trace-go-tracer-readme-ci-stability
+    only_warn: true
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I added a new make target, `make tracer-flake-detect`, that developers run in CI to catch
+      flaky tests in the tracer package, helping keep the tracer stable in CI. Do I need to
+      document this anywhere?
+    expected_criteria:
+      - States that ddtrace/tracer/README.md should be updated with the new command, since it is
+        a script that enables tracer stability in CI
+    bad_signals:
+      - Says no documentation update is required
+      - Suggests documenting the command only in the top-level project README.md instead of the
+        tracer package's own README.md
+      - Suggests updating doc.go instead of README.md for a CI script/command
+
+  - id: dd-trace-go-tracer-sampling-env-config
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      Without changing any code, how can I configure the Go tracer at runtime to apply a 100%
+      sampling rate to spans named "web.request" from service "test-service", and how does this
+      interact with sampling rules already set via tracer.WithSamplingRules in code?
+    expected_criteria:
+      - Mentions the DD_TRACE_SAMPLING_RULES environment variable, set to a JSON array of objects
+      - States that setting this environment variable overrides sampling rules set programmatically
+        via tracer.WithSamplingRules
+    bad_signals:
+      - Says there is no way to configure sampling rules without changing code
+      - Gives an incorrect environment variable name
+      - Fails to mention that the environment variable takes precedence over WithSamplingRules
+
+  - id: dd-trace-go-tracer-span-limit
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      What happens in the Go tracer if a single trace accumulates an extremely large number of
+      spans, such as over 100,000?
+    expected_criteria:
+      - States that each trace has a hard limit of 100,000 spans
+      - States that once the limit is exceeded, the trace is dropped and a diagnostic log message
+        is emitted
+    bad_signals:
+      - Says there is no limit on the number of spans per trace
+      - Gives an incorrect limit value
+      - Says the trace is silently dropped with no diagnostic log message
+
+  - id: dd-trace-go-tracer-stats-cardinality-limits
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I have a high-cardinality service using client-side stats computation (WithStatsComputation)
+      in the Go tracer. What cardinality limits exist to protect memory usage, and what happens to
+      spans that exceed one of these limits?
+    expected_criteria:
+      - Mentions at least two of the specific cardinality limit controls (e.g. the whole-key limit
+        DD_TRACE_STATS_CARDINALITY_LIMIT / WithStatsCardinalityLimit, default 2048, and/or the
+        per-resource limit DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT / WithStatsResourceCardinalityLimit,
+        default 1024)
+      - States that spans exceeding a limit are still counted, but their grouping dimension is
+        replaced with a sentinel/placeholder value rather than the span being dropped
+      - Mentions the datadog.tracer.stats.collapsed_spans statsd metric used to observe when
+        collapsing occurs
+    bad_signals:
+      - Says spans exceeding a cardinality limit are dropped entirely
+      - Does not mention any specific cardinality limit env var or option
+      - Gives incorrect default values for the limits
+
+# ==== Profiling Tests ====
+
+  - id: dd-trace-go-profiler-cpu-duration-clamp
+    files:
+      - profiler/AGENTS.md
+    input: |
+      I configured profiler.CPUDuration(5*time.Minute) but left the profiling period at its
+      1-minute default. How long will the CPU profile actually sample for each cycle, and will I
+      get a warning or error if the values conflict like this?
+    expected_criteria:
+      - States that cpuDuration is clamped down to equal the period when it exceeds the period, so
+        the CPU profile will only sample for 1 minute, not 5
+      - States that this clamping happens silently, with no error or warning logged
+    bad_signals:
+      - Says the CPU profile will run for the full 5 minutes configured, spanning multiple periods
+      - Says Start will return an error because cpuDuration exceeds period
+
+  - id: dd-trace-go-profiler-upload-queue-full-behavior
+    files:
+      - profiler/AGENTS.md
+    input: |
+      Our upload endpoint has been slow and profile batches are being produced faster than they can
+      be sent. What happens once the internal upload queue fills up -- does collection block, does
+      the queue grow unbounded, and which batch (oldest or newest) is discarded?
+    expected_criteria:
+      - States the upload queue is a small bounded/buffered channel (not unbounded)
+      - States that when it's full, the profiler evicts the oldest queued batch to make room for the
+        newest one rather than blocking collection
+      - Mentions that a warning is logged and/or a queue-full metric is incremented when this eviction
+        happens
+    bad_signals:
+      - Says the collection goroutine blocks until queue space frees up
+      - Says the newest batch is dropped while older queued batches are kept
+      - Says the queue grows without bound, risking unbounded memory growth
+
+  - id: dd-trace-go-profiler-upload-retry-backoff
+    files:
+      - profiler/AGENTS.md
+    input: |
+      When a profile upload to the agent fails with a retriable error (like a 5xx response), what
+      backoff strategy is used between retry attempts, and how many times will it retry before
+      giving up?
+    expected_criteria:
+      - States retries are capped at a small fixed number (2 retries) rather than being unbounded
+      - States the wait between retries is a random duration bounded by the profiling period
+        (not a fixed or exponentially-doubling backoff)
+      - Mentions that only retriable errors (server 5xx/transport errors) trigger a retry, while
+        non-retriable errors (e.g. 4xx) fail immediately without retrying
+    bad_signals:
+      - Says the profiler uses exponential backoff (e.g. doubling delay starting at 1s)
+      - Says uploads retry indefinitely until they succeed
+      - Says all upload errors, including 4xx client errors, are retried the same way
+
+  - id: dd-trace-go-profiler-stop-flush-on-exit
+    files:
+      - profiler/AGENTS.md
+    input: |
+      If profiler.Stop() is called while a profile batch is mid-collection or queued for upload,
+      is that in-progress data flushed and uploaded before Stop returns, or is it discarded? Does
+      this depend on any configuration?
+    expected_criteria:
+      - States that by default (flushOnExit disabled/false), in-flight/queued profile data is
+        discarded rather than uploaded when Stop is called
+      - Mentions that this behavior is controlled by the DD_PROFILING_FLUSH_ON_EXIT environment
+        variable / flushOnExit setting, which defaults to false
+      - States that enabling flush-on-exit causes the current batch to be completed and the queue
+        drained/uploaded before Stop returns
+    bad_signals:
+      - Says Stop always waits for and uploads any in-progress or queued profile data regardless of
+        configuration
+      - Does not mention the flush-on-exit setting/env var at all
+
+  - id: dd-trace-go-profiler-heap-partial-delta
+    files:
+      - profiler/AGENTS.md
+    input: |
+      The heap profile exposes four sample values: alloc_objects, alloc_space, inuse_objects, and
+      inuse_space. When delta profiling is enabled, are all four converted into per-interval delta
+      values, or only some of them?
+    expected_criteria:
+      - States that only alloc_objects and alloc_space are delta-encoded, since they are cumulative
+        counters over the process lifetime
+      - States that inuse_objects and inuse_space are left as absolute/snapshot values representing
+        current heap state, since delta-encoding them would not make sense
+    bad_signals:
+      - Says all four heap sample values are delta-encoded the same way
+      - Says none of the heap values are delta-encoded
+
+  - id: dd-trace-go-profiler-goroutine-leak-forced-on
+    files:
+      - profiler/AGENTS.md
+    input: |
+      Our Go binary is built with GOEXPERIMENT=goroutineleakprofile. Can we disable the
+      goroutine-leak profile for a given profiler.Start call by simply not including it in a
+      WithProfileTypes(...) option call?
+    expected_criteria:
+      - States that when the goroutine-leak profile is available (detected via build info /
+        GOEXPERIMENT at build time), it is added unconditionally after user options (including
+        WithProfileTypes) have already been applied
+      - Concludes that omitting it from WithProfileTypes does not disable it in this case -- there is
+        currently no supported option to opt out when the GOEXPERIMENT is enabled at build time
+    bad_signals:
+      - Says passing WithProfileTypes without listing the goroutine-leak profile will disable it
+      - Says the goroutine-leak profile is only enabled when explicitly requested via WithProfileTypes
+
+  - id: dd-trace-go-profiler-execution-trace-not-a-profile-type
+    files:
+      - profiler/AGENTS.md
+    input: |
+      I want to programmatically check whether execution tracing is enabled and control it the same
+      way as other profile types, e.g. by checking or setting it through WithProfileTypes/cfg.types.
+      Will that work for execution traces?
+    expected_criteria:
+      - States that execution trace is deliberately excluded from the normal profile-types map used
+        by WithProfileTypes, and is instead controlled by its own separate configuration
+        (e.g. an executionTraceConfig / DD_PROFILING_EXECUTION_TRACE_ENABLED-style setting)
+      - States that whether an execution trace runs in a given collection cycle is decided
+        dynamically/probabilistically at collection time rather than via the static profile-types set
+    bad_signals:
+      - Says execution trace can be enabled or disabled via WithProfileTypes like any other profile
+        type
+      - Says execution trace is always collected every cycle once enabled, with no separate
+        per-cycle decision logic
+
+  - id: dd-trace-go-profiler-withprofiletypes-forces-metrics
+    files:
+      - profiler/AGENTS.md
+    input: |
+      I want to disable every profile type except CPU, including the metrics profile, by calling
+      profiler.WithProfileTypes(profiler.CPUProfile). Will this leave only the CPU profile enabled?
+    expected_criteria:
+      - States that WithProfileTypes always force-adds MetricsProfile in addition to whatever types
+        are explicitly passed, so metrics profiling cannot be disabled through this option
+      - Concludes that after this call both CPUProfile and MetricsProfile are enabled, not just CPU
+    bad_signals:
+      - Says WithProfileTypes(profiler.CPUProfile) results in only the CPU profile being enabled
+      - Says metrics profiling can be fully disabled by omitting it from WithProfileTypes
+
+  - id: dd-trace-go-profiler-aws-lambda-disabled
+    files:
+      - profiler/AGENTS.md
+    input: |
+      We're deploying our Go service as an AWS Lambda function and still want to call profiler.Start
+      with our usual options at init time. Will the profiler run there, or is there special handling
+      for the Lambda environment?
+    expected_criteria:
+      - States that when the AWS_LAMBDA_FUNCTION_NAME environment variable is set, Start returns an
+        error and profiling is not supported/started in AWS Lambda runtimes at all
+      - States this check happens unconditionally, regardless of what other options are passed to
+        Start
+    bad_signals:
+      - Says the profiler runs normally in Lambda with no special-casing
+      - Says Lambda support just requires a different upload URL/agentless configuration rather than
+        being entirely disabled
+
+  - id: dd-trace-go-profiler-shared-zstd-encoder-forgotten-close
+    files:
+      - profiler/AGENTS.md
+    input: |
+      Multiple profile types (e.g. CPU and Heap) can end up sharing the same cached zstd encoder
+      instance when they compress at the same level. If some code path acquires that shared encoder
+      via Reset() but fails to call Close() on it (e.g. due to an early return on error), what
+      happens to other profile types that later need the same encoder?
+    expected_criteria:
+      - States the shared encoder uses a size-1 channel acting as a semaphore/lock, acquired in
+        Reset() and released in Close()
+      - States that skipping Close() after Reset() leaves the semaphore permanently held, so any
+        later Reset() call for that same cached encoder blocks forever (a deadlock), rather than
+        erroring or silently proceeding
+    bad_signals:
+      - Says each profile type gets its own independent encoder instance so a missing Close() only
+        affects that one profile type
+      - Says a missing Close() call causes an error to be returned on the next Reset() rather than a
+        blocking deadlock
+
+# ==== Appsec Tests ====
+# TODO: Appsec does not currently have any AGENTS.md files. Add some in order to start testing.
+
+# ==== LLMObs Tests ====
+# TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
+
+# ==== CIVisibility Tests ====
+# TODO: CIVisibility does not currently have any AGENTS.md files. Add some in order to start testing.
+
+# ==== Datastreams Tests ====
+# TODO: Datastreams does not currently have any AGENTS.md files. Add some in order to start testing.
+
+# ==== Orchestrion Tests ====
+
+  - id: dd-trace-go-orchestrion-yml-structure
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      I'm writing a new orchestrion.yml file for a contrib integration. What are the required
+      top-level sections in this file, and what does the "aspects" section actually define?
+    expected_criteria:
+      - States the file has a meta section (with at least a name and description) and an aspects
+        section as its top-level keys
+      - States each entry in aspects has an id, a join-point (where in the AST orchestrion should
+        match code), and advice (what code/instrumentation gets injected at that match)
+    bad_signals:
+      - Omits the join-point/advice structure entirely or describes aspects as unstructured free text
+      - Says the meta section is optional or unused
+
+  - id: dd-trace-go-orchestrion-build-time-enabled-check
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      How can Go code check at runtime whether the current binary was actually compiled with
+      Orchestrion (auto-instrumented), as opposed to a plain go build?
+    expected_criteria:
+      - Mentions the orchestrion.Enabled() function, backed by a package-level boolean variable
+        that Orchestrion overwrites at build time via a //orchestrion:enabled directive comment
+      - States this defaults to false when the binary was not built using Orchestrion
+    bad_signals:
+      - Says this can only be inferred indirectly, e.g. via environment variables
+      - Says Enabled() always returns true merely because the orchestrion package is imported
+      - Says there is no supported way to detect this at runtime
+
+  - id: dd-trace-go-orchestrion-template-function-fields
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Inside an orchestrion.yml advice template, I want to reference the name of the matched
+      function's first argument and the name of its second return value. What expressions should I use?
+    expected_criteria:
+      - Gives `{{ .Function.Argument 0 }}` for the first argument, using 0-based indexing
+      - Gives `{{ .Function.Result 1 }}` for the second return value, using 0-based indexing
+    bad_signals:
+      - Uses 1-based indexing for Argument/Result (e.g. `.Function.Argument 1` for the first argument)
+      - Invents template syntax not documented for this purpose
+      - Says Function.Argument/Result return an index/position rather than the identifier name
+
+  - id: dd-trace-go-orchestrion-integration-test-harness
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      I'm adding a new orchestrion integration test under internal/orchestrion/_integration. What
+      interface must my test case struct implement, what is each method responsible for, and what
+      do I need to run afterward so the suite picks it up?
+    expected_criteria:
+      - States the struct must implement harness.TestCase, with Setup, Run, and ExpectedTraces methods
+      - States Setup prepares dependencies (e.g. starting services) before the tracer is started,
+        while Run performs the instrumented actions after the tracer has started
+      - States ExpectedTraces returns the traces expected to be produced, matched against what the
+        mock agent actually receives
+      - Mentions running `go generate ./...` afterward to register the new test case
+    bad_signals:
+      - Says Setup runs after the tracer has already started
+      - Omits ExpectedTraces from the required interface methods
+      - Fails to mention running go generate to wire the new test into the generated test suite
+
+  - id: dd-trace-go-orchestrion-peek-skips-finished-cross-goroutine
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      A span is pushed onto the per-goroutine context stack (GLS) on goroutine A, but it finishes on
+      goroutine B, flipping its "done" cell to true there. Back on goroutine A, does
+      contextStack.Peek() still return this finished span as the active parent context?
+    expected_criteria:
+      - States Peek walks the stack from the top and skips any entry whose done cell reads true,
+        returning only the innermost still-live entry (or nil if none are live)
+      - Explains this exists specifically so a span finished elsewhere can't be adopted as a parent,
+        which would otherwise collapse unrelated traces together
+    bad_signals:
+      - Says Peek always returns the literal top of the stack regardless of whether it has finished
+      - Says Peek and Pop behave identically with respect to finished entries
+
+  - id: dd-trace-go-orchestrion-popentry-vs-popscope
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Two different call sites push plain boolean overrides under the same GLS key (one marks
+      "execution traced", the other marks a scoped "not traced" override), and each has its own
+      paired pop function. Why would one of these pops need to use a PopEntry-style removal instead
+      of a PopScope-style removal from the context stack?
+    expected_criteria:
+      - States PopScope removes the target entry and everything pushed above it, which is only
+        correct for genuinely nested scopes
+      - States PopEntry removes exactly the one entry matching its token and leaves entries above it
+        untouched, which is required when two overrides under the same key are independent rather
+        than strictly nested, so closing one doesn't wrongly discard an unrelated entry above it
+    bad_signals:
+      - Says PopScope and PopEntry behave identically since they operate on the same key
+      - Says using PopScope in place of PopEntry here would be equally correct
+
+  - id: dd-trace-go-orchestrion-token-not-index
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Why does pushing a value onto the context stack return a monotonically-increasing token to
+      identify that scope, rather than just using the entry's index in the underlying slice?
+    expected_criteria:
+      - States that an index cannot reliably identify a scope over time -- a push, pop, and another
+        push can land an unrelated new value at the exact same index, so an index captured earlier
+        could end up naming a completely different scope by the time its exit runs
+      - States a monotonically increasing token never repeats, so a stale token can never accidentally
+        match a new, unrelated scope
+    bad_signals:
+      - Says the slice index is used directly to identify and later remove entries
+      - Says tokens exist only for logging/debugging purposes and play no role in correctness
+
+  - id: dd-trace-go-orchestrion-push-drains-finished-entries
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Before appending a new entry under a key, does the context stack's Push do anything with
+      entries already sitting on that key's stack, or does it purely append?
+    expected_criteria:
+      - States Push first drops any trailing entries at the top of that key's stack whose done cell
+        already reads true, before appending the new entry
+      - Explains this bounds GLS growth for values pushed on one goroutine whose lifecycle (and pop)
+        completes on a different goroutine, so the pop never actually runs on the original goroutine
+    bad_signals:
+      - Says Push only ever appends, and that shrinking the stack is exclusively the job of
+        Pop/PopScope
+      - Says finished entries are left in place indefinitely until an explicit pop removes them
+
+  - id: dd-trace-go-orchestrion-pooled-span-liveness-cell
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Each context stack entry captures its own separate done *atomic.Bool cell at push time. Why not
+      just check a "finished" flag directly on the pushed value itself (e.g. a field on *tracer.Span)
+      whenever liveness needs to be checked, instead of capturing a separate cell?
+    expected_criteria:
+      - States that finished spans are returned to a sync.Pool and can be recycled into a completely
+        unrelated, newly active span
+      - Explains that if liveness were read directly off the recycled object, a bit being reset for
+        the new span would make the stack incorrectly think the old, already-finished scope is live
+        again, whereas a cell captured at push time freezes that specific scope's liveness
+        independent of what happens to the underlying pooled object afterward
+    bad_signals:
+      - Says reading a finished flag directly off the pooled span object is equally safe since spans
+        are only ever reused after Finish is called
+      - Says the separate done cell exists purely for performance/caching reasons unrelated to
+        object pooling
+
+
+# ==== OTelc Tests ====
+# TODO: OTelc does not currently have any AGENTS.md files. Add some in order to start testing.
