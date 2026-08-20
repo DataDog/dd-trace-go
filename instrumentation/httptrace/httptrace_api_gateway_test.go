@@ -7,6 +7,7 @@ package httptrace
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -194,4 +195,72 @@ func TestInferredProxySpans(t *testing.T) {
 
 		assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
 	})
+}
+
+func TestInferredProxySpansOTelSemantics(t *testing.T) {
+	oldCfg := cfg
+	t.Cleanup(func() { cfg = oldCfg })
+	cfg.inferredProxyServicesEnabled = true
+	cfg.otelSemanticsEnabled = true
+	cfg.traceClientIP = true
+
+	startTime := time.Now().Add(-5 * time.Second)
+	inferredHeaders := map[string]string{
+		ProxyHeaderSystem:      "aws-apigateway",
+		ProxyHeaderStartTimeMs: strconv.FormatInt(startTime.UnixMilli(), 10),
+		ProxyHeaderPath:        "/test/{id}",
+		ProxyHeaderHTTPMethod:  "CUSTOM",
+		ProxyHeaderDomain:      "example.com",
+		ProxyHeaderStage:       "dev",
+	}
+
+	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req := httptest.NewRequest(http.MethodGet, "https://example.com/test/123?page=2", nil)
+			req.Header.Set("User-Agent", "test-agent")
+			req.Header.Set("X-Forwarded-For", "203.0.113.1")
+			for key, value := range inferredHeaders {
+				req.Header.Set(key, value)
+			}
+
+			_, _, finishSpans := StartRequestSpan(req)
+			finishSpans(status, nil)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			gwSpan := spans[1]
+			webReqSpan := spans[0]
+
+			assert.Equal(t, "aws.apigateway", gwSpan.OperationName())
+			assert.Equal(t, "HTTP /test/{id}", gwSpan.Tag(ext.ResourceName))
+			assert.Equal(t, ext.SpanKindServer, gwSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "_OTHER", gwSpan.Tag(ext.HTTPRequestMethod))
+			assert.Equal(t, "CUSTOM", gwSpan.Tag(ext.HTTPRequestMethodOriginal))
+			assert.Equal(t, "https", gwSpan.Tag(ext.URLScheme))
+			assert.Equal(t, "/test/123", gwSpan.Tag(ext.URLPath))
+			assert.Equal(t, "page=2", gwSpan.Tag(ext.URLQuery))
+			assert.Equal(t, "/test/{id}", gwSpan.Tag(ext.HTTPRoute))
+			assert.Equal(t, "example.com", gwSpan.Tag(ext.ServerAddress))
+			assert.Equal(t, "test-agent", gwSpan.Tag(ext.UserAgentOriginal))
+			assert.Equal(t, "203.0.113.1", gwSpan.Tag(ext.ClientAddress))
+			assert.Equal(t, "192.0.2.1", gwSpan.Tag(ext.NetworkPeerAddress))
+			assert.Equal(t, strconv.Itoa(status), gwSpan.Tag(ext.HTTPResponseStatusCode))
+			assert.Nil(t, gwSpan.Tag(ext.HTTPMethod))
+			assert.Nil(t, gwSpan.Tag(ext.HTTPURL))
+			assert.Nil(t, gwSpan.Tag(ext.HTTPCode))
+			assert.Equal(t, webReqSpan.Tag(ext.HTTPResponseStatusCode), gwSpan.Tag(ext.HTTPResponseStatusCode))
+			assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
+
+			if status == http.StatusInternalServerError {
+				assert.Equal(t, "500", gwSpan.Tag(ext.ErrorType))
+				assert.Equal(t, "500: Internal Server Error", gwSpan.Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, gwSpan.Tag(ext.ErrorType))
+				assert.Nil(t, gwSpan.Tag(ext.ErrorMsg))
+			}
+		})
+	}
 }
