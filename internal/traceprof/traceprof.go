@@ -6,6 +6,8 @@
 // Package traceprof contains shared logic for cross-cutting tracer/profiler features.
 package traceprof
 
+import "context"
+
 // pprof labels applied by the tracer to show up in the profiler's profiles.
 const (
 	SpanID          = "span id"
@@ -19,3 +21,18 @@ const (
 	EndpointEnvVar      = "DD_PROFILING_ENDPOINT_COLLECTION_ENABLED"      // aka endpoint profiling
 	EndpointCountEnvVar = "DD_PROFILING_ENDPOINT_COUNT_ENABLED"           // aka unit of work
 )
+
+type fallbackContext struct {
+	context.Context
+}
+
+// ContextWithFallback marks ctx as a profiling context that yields to a local parent context.
+func ContextWithFallback(ctx context.Context) context.Context {
+	return fallbackContext{Context: ctx}
+}
+
+// IsFallbackContext reports whether ContextWithFallback marked ctx.
+func IsFallbackContext(ctx context.Context) bool {
+	_, ok := ctx.(fallbackContext)
+	return ok
+}

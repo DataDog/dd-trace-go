@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelbaggage "go.opentelemetry.io/otel/baggage"
@@ -92,11 +93,12 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 
 func TestStartPreservesPprofLabels(t *testing.T) {
 	for _, tc := range []struct {
-		name         string
-		remoteParent bool
+		name   string
+		parent string
 	}{
 		{name: "root"},
-		{name: "remote parent", remoteParent: true},
+		{name: "OTel remote parent", parent: "otel"},
+		{name: "Datadog remote parent", parent: "datadog"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
@@ -105,12 +107,19 @@ func TestStartPreservesPprofLabels(t *testing.T) {
 
 			const labelKey = "otel_bridge_test_label"
 			pprof.Do(context.Background(), pprof.Labels(labelKey, "expected"), func(ctx context.Context) {
-				if tc.remoteParent {
+				switch tc.parent {
+				case "otel":
 					ctx = oteltrace.ContextWithRemoteSpanContext(ctx, oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
 						TraceID: oteltrace.TraceID{1},
 						SpanID:  oteltrace.SpanID{1},
 						Remote:  true,
 					}))
+				case "datadog":
+					parent, err := tracer.Extract(tracer.TextMapCarrier{
+						"traceparent": "00-00000000000000000000000000000001-0000000000000001-01",
+					})
+					require.NoError(t, err)
+					ctx = ContextWithStartOptions(ctx, tracer.ChildOf(parent))
 				}
 				_, span := tr.Start(ctx, "operation")
 				assert.Contains(t, goroutineLabels(labelKey), `"otel_bridge_test_label":"expected"`)

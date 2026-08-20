@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	otelbaggage "go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -40,13 +41,11 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	// OTel name is akin to resource name in Datadog
 	var ddopts = []tracer.StartSpanOption{tracer.ResourceName(spanName)}
-	hasLocalParent := false
 	if !ssConfig.NewRoot() {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			// if the span originates from the Datadog tracer,
 			// inherit given span context as a parent
 			ddopts = append(ddopts, tracer.ChildOf(s.Context()))
-			hasLocalParent = true
 		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
@@ -98,10 +97,10 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		}
 		ddopts = append(ddopts, tracer.WithSpanLinks(links))
 	}
-	if !hasLocalParent && cfg.Parent == nil && hasPprofLabels(ctx) {
+	if hasPprofLabels(ctx) {
 		ddopts = append(ddopts, func(cfg *tracer.StartSpanConfig) {
 			if cfg.Context == nil {
-				cfg.Context = ctx
+				cfg.Context = traceprof.ContextWithFallback(ctx)
 			}
 		})
 	}

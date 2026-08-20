@@ -992,7 +992,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		// Inherit the context.Context from parent span if it was propagated
 		// using ChildOf() rather than StartSpanFromContext(), see
 		// applyPPROFLabels() below.
-		if pprofContext == nil {
+		if spanSnapshot.pprofCtx != nil && (pprofContext == nil || traceprof.IsFallbackContext(pprofContext)) {
 			pprofContext = spanSnapshot.pprofCtx
 		}
 	}
