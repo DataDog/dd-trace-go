@@ -6,7 +6,9 @@
 package main
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/_eval/suites"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
@@ -34,6 +36,40 @@ func TestDefaultModel(t *testing.T) {
 
 	if _, err := defaultModel("unknown"); err == nil {
 		t.Fatal("defaultModel accepted an unknown agent")
+	}
+}
+
+func TestPullUntilDatasetRecordsRetriesIncompleteDataset(t *testing.T) {
+	records := []dataset.Record{
+		{Input: map[string]any{"task_id": "task", "prompt_id": "one", "prompt": "first"}},
+		{Input: map[string]any{"task_id": "task", "prompt_id": "two", "prompt": "second"}},
+	}
+	desired := make(map[string]dataset.Record, len(records))
+	for _, record := range records {
+		key, err := datasetRecordKey(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		desired[key] = record
+	}
+
+	var pulls int
+	pull := func(context.Context, string, ...dataset.PullOption) (*dataset.Dataset, error) {
+		pulls++
+		ds := &dataset.Dataset{}
+		if pulls == 1 {
+			ds.Append(records[0], dataset.Record{Input: map[string]any{"prompt_id": "two", "prompt": "second"}})
+		} else {
+			ds.Append(records...)
+		}
+		return ds, nil
+	}
+	ds, err := pullUntilDatasetRecords(context.Background(), "dataset", "project", desired, pull, 2, func(int) time.Duration { return 0 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pulls != 2 || ds.Len() != 2 {
+		t.Fatalf("pulls = %d, records = %d, want 2 pulls and 2 records", pulls, ds.Len())
 	}
 }
 
