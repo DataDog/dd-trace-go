@@ -1,36 +1,37 @@
 # Note: Later matches take precedence
+# Note: directory owners need a trailing "/" to apply recursively (no bare GitHub-style dir globs)
 
 # shared modules and repository tooling
-/.claude                        @DataDog/dd-trace-go-guild
-/.llm-validation                @DataDog/dd-trace-go-guild
-/_docs                          @DataDog/dd-trace-go-guild
-/_eval                          @DataDog/dd-trace-go-guild
+/.claude/                       @DataDog/dd-trace-go-guild
+/.llm-validation/               @DataDog/dd-trace-go-guild
+/_docs/                         @DataDog/dd-trace-go-guild
+/_eval/                         @DataDog/dd-trace-go-guild
 /.checkmake                     @DataDog/dd-trace-go-guild
 /.gitattributes                 @DataDog/dd-trace-go-guild
 /.gitignore                     @DataDog/dd-trace-go-guild
 /.gitmodules                    @DataDog/dd-trace-go-guild
-/.idea                          @DataDog/dd-trace-go-guild
+/.idea/                         @DataDog/dd-trace-go-guild
 /.orchestrion-version           @DataDog/dd-trace-go-guild
 /.pre-commit-config.yaml        @DataDog/dd-trace-go-guild
 /*.md                           @DataDog/dd-trace-go-guild
 /LICENSE*                       @DataDog/dd-trace-go-guild
 /NOTICE                         @DataDog/dd-trace-go-guild
 /codecov.yml                    @DataDog/dd-trace-go-guild
-/crashtracker                   @DataDog/dd-trace-go-guild
-/instrumentation                @DataDog/dd-trace-go-guild
+/crashtracker/                  @DataDog/dd-trace-go-guild
+/instrumentation/               @DataDog/dd-trace-go-guild
 /latests.txt                    @DataDog/dd-trace-go-guild
-/otelc                          @DataDog/dd-trace-go-guild
-/otlp                           @DataDog/dd-trace-go-guild
+/otelc/                         @DataDog/dd-trace-go-guild
+/otlp/                          @DataDog/dd-trace-go-guild
 /v2/.canary                     @DataDog/dd-trace-go-guild
-/.github                        @DataDog/dd-trace-go-guild
-/.gitlab                        @DataDog/dd-trace-go-guild
-/_tools                         @DataDog/dd-trace-go-guild
-/internal                       @DataDog/dd-trace-go-guild
-/instrumentation/internal       @DataDog/dd-trace-go-guild
-/instrumentation/testutils      @DataDog/dd-trace-go-guild
-/rules                          @DataDog/dd-trace-go-guild
-/scripts                        @DataDog/dd-trace-go-guild
-/tools                          @DataDog/dd-trace-go-guild
+/.github/                       @DataDog/dd-trace-go-guild
+/.gitlab/                       @DataDog/dd-trace-go-guild
+/_tools/                        @DataDog/dd-trace-go-guild
+/internal/                      @DataDog/dd-trace-go-guild
+/instrumentation/internal/      @DataDog/dd-trace-go-guild
+/instrumentation/testutils/     @DataDog/dd-trace-go-guild
+/rules/                         @DataDog/dd-trace-go-guild
+/scripts/                       @DataDog/dd-trace-go-guild
+/tools/                         @DataDog/dd-trace-go-guild
 /CODEOWNERS                     @DataDog/dd-trace-go-guild
 /Makefile                       @DataDog/dd-trace-go-guild
 /.golangci.yml                  @DataDog/dd-trace-go-guild
@@ -41,37 +42,37 @@
 /static-analysis.datadog.yml    @DataDog/dd-trace-go-guild
 
 # tracing
-/contrib                        @DataDog/apm-go @DataDog/apm-idm-go
-/ddtrace                        @DataDog/apm-go
+/contrib/                       @DataDog/apm-go @DataDog/apm-idm-go
+/ddtrace/                       @DataDog/apm-go
 
 # profiling
-/profiler                       @DataDog/profiling-go
-/internal/traceprof             @DataDog/profiling-go
+/profiler/                      @DataDog/profiling-go
+/internal/traceprof/            @DataDog/profiling-go
 
 # appsec
-/appsec                         @DataDog/asm-go
-/internal/appsec                @DataDog/asm-go
-/instrumentation/appsec         @DataDog/asm-go
+/appsec/                        @DataDog/asm-go
+/internal/appsec/               @DataDog/asm-go
+/instrumentation/appsec/        @DataDog/asm-go
 /contrib/**/*appsec*.go         @DataDog/asm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go
-/contrib/azure                  @DataDog/asm-go
-/contrib/envoyproxy             @DataDog/asm-go
-/contrib/haproxy                @DataDog/asm-go
-/contrib/k8s.io/gateway-api     @DataDog/asm-go
+/contrib/azure/                 @DataDog/asm-go
+/contrib/envoyproxy/            @DataDog/asm-go
+/contrib/haproxy/               @DataDog/asm-go
+/contrib/k8s.io/gateway-api/    @DataDog/asm-go
 
 # internal shared packages
-/internal/log                   @DataDog/dd-trace-go-guild
-/internal/stacktrace            @DataDog/dd-trace-go-guild
-/internal/synctest              @DataDog/dd-trace-go-guild
+/internal/log/                  @DataDog/dd-trace-go-guild
+/internal/stacktrace/           @DataDog/dd-trace-go-guild
+/internal/synctest/             @DataDog/dd-trace-go-guild
 
 # capabilities - config, dynamic config, remote config
-/internal/config                               @DataDog/apm-sdk-capabilities-go
-/internal/env                                  @DataDog/apm-sdk-capabilities-go
-/internal/stableconfig                         @DataDog/apm-sdk-capabilities-go
-/internal/globalconfig                         @DataDog/apm-sdk-capabilities-go
-/internal/remoteconfig                         @DataDog/apm-sdk-capabilities-go
-/scripts/configaudit                           @DataDog/apm-sdk-capabilities-go
-/scripts/configinverter                        @DataDog/apm-sdk-capabilities-go
+/internal/config/                              @DataDog/apm-sdk-capabilities-go
+/internal/env/                                 @DataDog/apm-sdk-capabilities-go
+/internal/stableconfig/                        @DataDog/apm-sdk-capabilities-go
+/internal/globalconfig/                        @DataDog/apm-sdk-capabilities-go
+/internal/remoteconfig/                        @DataDog/apm-sdk-capabilities-go
+/scripts/configaudit/                          @DataDog/apm-sdk-capabilities-go
+/scripts/configinverter/                       @DataDog/apm-sdk-capabilities-go
 /.github/workflows/config-audit.yml            @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/dynamic_config.go              @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/remote_config.go               @DataDog/apm-sdk-capabilities-go
@@ -79,62 +80,62 @@
 /internal/env/supported_configurations.gen.go  @DataDog/apm-sdk-capabilities-go
 /internal/env/supported_configurations.json    @DataDog/apm-sdk-capabilities-go
 # capabilities - telemetry
-/internal/telemetry                  @DataDog/apm-sdk-capabilities-go
+/internal/telemetry/                 @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/telemetry.go         @DataDog/apm-sdk-capabilities-go
 # capabilities - sampling
 /ddtrace/tracer/tracer.go            @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/sampler.go           @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/rules_sampler.go     @DataDog/apm-sdk-capabilities-go
-/internal/samplernames               @DataDog/apm-sdk-capabilities-go
+/internal/samplernames/              @DataDog/apm-sdk-capabilities-go
 # capabilities - context, propagation, injection/extraction
-/ddtrace/baggage                     @DataDog/apm-sdk-capabilities-go
+/ddtrace/baggage/                    @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/textmap.go           @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/spancontext.go       @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/context.go           @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/propagator.go        @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/propagating_tags.go  @DataDog/apm-sdk-capabilities-go
 # capabilities- OTel integration
-/ddtrace/opentelemetry               @DataDog/apm-sdk-capabilities-go
+/ddtrace/opentelemetry/              @DataDog/apm-sdk-capabilities-go
 
 # data streams monitoring
-/datastreams                                @DataDog/data-streams-monitoring
-/internal/datastreams                       @DataDog/data-streams-monitoring
+/datastreams/                               @DataDog/data-streams-monitoring
+/internal/datastreams/                      @DataDog/data-streams-monitoring
 /ddtrace/tracer/data_streams.go             @DataDog/data-streams-monitoring
-/contrib/IBM/sarama                         @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
-/contrib/Shopify/sarama                     @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
-/contrib/confluentinc/confluent-kafka-go    @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
-/contrib/segmentio/kafka-go                 @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
+/contrib/IBM/sarama/                        @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
+/contrib/Shopify/sarama/                    @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
+/contrib/confluentinc/confluent-kafka-go/   @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
+/contrib/segmentio/kafka-go/                @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
 
 # civisibility
-/civisibility                   @DataDog/ci-app-libraries
-/internal/civisibility          @DataDog/ci-app-libraries
+/civisibility/                  @DataDog/ci-app-libraries
+/internal/civisibility/         @DataDog/ci-app-libraries
 
 # llm observability
-/llmobs                                    @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
-/llmobs/export                             @DataDog/trajectory @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
-/internal/llmobs                           @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
-/contrib/mark3labs/mcp-go                  @DataDog/ml-observability @DataDog/apm-idm-go
-/contrib/modelcontextprotocol/go-sdk       @DataDog/ml-observability @DataDog/apm-idm-go
+/llmobs/                                   @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
+/llmobs/export/                            @DataDog/trajectory @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
+/internal/llmobs/                          @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
+/contrib/mark3labs/mcp-go/                 @DataDog/ml-observability @DataDog/apm-idm-go
+/contrib/modelcontextprotocol/go-sdk/      @DataDog/ml-observability @DataDog/apm-idm-go
 
 # gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability @DataDog/apm-ecosystems-performance
 /.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
-/.gitlab/benchmarks             @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
-/.gitlab/benchmarks/macro       @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
-/.gitlab/benchmarks/micro       @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
-/.gitlab/benchmarks/test-apps   @DataDog/dd-trace-go-guild
+/.gitlab/benchmarks/            @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
+/.gitlab/benchmarks/macro/      @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
+/.gitlab/benchmarks/micro/      @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
+/.gitlab/benchmarks/test-apps/  @DataDog/dd-trace-go-guild
 
 # orchestrion
-/internal/orchestrion           @DataDog/apm-orchestrion
-/orchestrion                    @DataDog/apm-orchestrion
+/internal/orchestrion/          @DataDog/apm-orchestrion
+/orchestrion/                   @DataDog/apm-orchestrion
 /**/orchestrion.yml             @DataDog/apm-orchestrion
 
 # serverless
-/contrib/aws/datadog-lambda-go  @DataDog/apm-serverless @DataDog/serverless-aws
+/contrib/aws/datadog-lambda-go/ @DataDog/apm-serverless @DataDog/serverless-aws
 
 # feature flagging experiments
-/internal/openfeature           @DataDog/feature-flagging-and-experimentation-sdk
-/openfeature                    @DataDog/feature-flagging-and-experimentation-sdk
+/internal/openfeature/          @DataDog/feature-flagging-and-experimentation-sdk
+/openfeature/                   @DataDog/feature-flagging-and-experimentation-sdk
 
 # database monitoring
 ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
