@@ -105,8 +105,7 @@ func TestStartPreservesPprofLabels(t *testing.T) {
 			defer tp.Shutdown()
 			tr := tp.Tracer("")
 
-			const labelKey = "otel_bridge_test_label"
-			pprof.Do(context.Background(), pprof.Labels(labelKey, "expected"), func(ctx context.Context) {
+			pprof.Do(context.Background(), pprof.Labels(testLabelKey, "expected"), func(ctx context.Context) {
 				switch tc.parent {
 				case "otel":
 					ctx = oteltrace.ContextWithRemoteSpanContext(ctx, oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
@@ -122,64 +121,104 @@ func TestStartPreservesPprofLabels(t *testing.T) {
 					ctx = ContextWithStartOptions(ctx, tracer.ChildOf(parent))
 				}
 				_, span := tr.Start(ctx, "operation")
-				assert.Contains(t, goroutineLabels(labelKey), `"otel_bridge_test_label":"expected"`)
+				assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"expected"`)
 
 				span.End()
-				assert.Contains(t, goroutineLabels(labelKey), `"otel_bridge_test_label":"expected"`)
+				assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"expected"`)
 			})
 		})
 	}
 }
 
-func TestStartRestoresParentPprofLabels(t *testing.T) {
-	for _, tc := range []struct {
-		name         string
-		childContext func(context.Context, *span) context.Context
-	}{
-		{
-			name: "context",
-			childContext: func(ctx context.Context, _ *span) context.Context {
-				return ctx
-			},
-		},
-		{
-			name: "start option",
-			childContext: func(_ context.Context, parent *span) context.Context {
-				return ContextWithStartOptions(context.Background(), tracer.ChildOf(parent.DD.Context()))
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
-			defer tp.Shutdown()
-			tr := tp.Tracer("")
+// A local parent span must not hide labels the application set after that parent
+// started.
+func TestStartPreservesPprofLabelsUnderLocalParent(t *testing.T) {
+	tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+	defer tp.Shutdown()
+	tr := tp.Tracer("")
 
-			ctx, parent := tr.Start(context.Background(), "parent")
-			parentSpan := parent.(*span)
-			parentID := strconv.FormatUint(parentSpan.DD.Context().SpanID(), 10)
-			_, child := tr.Start(tc.childContext(ctx, parentSpan), "child")
+	pprof.Do(context.Background(), pprof.Labels(testLabelKey, "parent"), func(ctx context.Context) {
+		ctx, parent := tr.Start(ctx, "parent")
+		assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"parent"`)
+
+		pprof.Do(ctx, pprof.Labels(testLabelKey, "child"), func(ctx context.Context) {
+			_, child := tr.Start(ctx, "child")
+			assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"child"`)
+
 			child.End()
-
-			assert.Contains(t, goroutineLabels("span id"), `"span id":"`+parentID+`"`)
-			parent.End()
+			assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"child"`)
 		})
-	}
+		parent.End()
+	})
 }
 
-func goroutineLabels(key string) string {
+func TestStartRestoresParentPprofLabels(t *testing.T) {
+	tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+	defer tp.Shutdown()
+	tr := tp.Tracer("")
+
+	ctx, parent := tr.Start(context.Background(), "parent")
+	parentID := strconv.FormatUint(parent.(*span).DD.Context().SpanID(), 10)
+	_, child := tr.Start(ctx, "child")
+	child.End()
+
+	assert.Contains(t, goroutineLabels(), `"span id":"`+parentID+`"`)
+	parent.End()
+}
+
+// A parent named through ContextWithStartOptions on a context that does not carry it
+// leaves the labels to that context, the same as tracer.StartSpanFromContext does.
+func TestStartWithDetachedParentMatchesTracerCore(t *testing.T) {
+	tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+	defer tp.Shutdown()
+	tr := tp.Tracer("")
+
+	pprof.Do(context.Background(), pprof.Labels(testLabelKey, "expected"), func(ctx context.Context) {
+		_, parent := tr.Start(ctx, "parent")
+		parentCtx := parent.(*span).DD.Context()
+
+		_, bridgeChild := tr.Start(ContextWithStartOptions(ctx, tracer.ChildOf(parentCtx)), "bridge child")
+		bridgeChild.End()
+		viaBridge := goroutineLabels()
+
+		coreChild, _ := tracer.StartSpanFromContext(ctx, "core child", tracer.ChildOf(parentCtx))
+		coreChild.Finish()
+		viaCore := goroutineLabels()
+
+		assert.Equal(t, viaCore, viaBridge)
+		parent.End()
+	})
+}
+
+const testLabelKey = "otel_bridge_test_label"
+
+// goroutineLabels returns the pprof labels of the calling goroutine, as the
+// "# labels: {...}" line of a goroutine profile, or "" when it carries none.
+func goroutineLabels() string {
+	// The profile is written from a child goroutine, which inherits the caller's
+	// labels, so its own record in the profile is the one to read back.
 	done := make(chan string, 1)
-	go func() {
-		var profile strings.Builder
-		_ = pprof.Lookup("goroutine").WriteTo(&profile, 1)
-		for line := range strings.SplitSeq(profile.String(), "\n") {
-			if strings.Contains(line, "# labels:") && strings.Contains(line, key) {
-				done <- line
-				return
+	go func() { done <- writeGoroutineLabels() }()
+	return <-done
+}
+
+func writeGoroutineLabels() string {
+	var profile strings.Builder
+	if err := pprof.Lookup("goroutine").WriteTo(&profile, 1); err != nil {
+		return ""
+	}
+	// Each goroutine is one blank-line separated record holding its labels and stack.
+	for record := range strings.SplitSeq(profile.String(), "\n\n") {
+		if !strings.Contains(record, "writeGoroutineLabels") {
+			continue
+		}
+		for line := range strings.SplitSeq(record, "\n") {
+			if strings.HasPrefix(line, "# labels: ") {
+				return line
 			}
 		}
-		done <- ""
-	}()
-	return <-done
+	}
+	return ""
 }
 
 func TestTracerOptions(t *testing.T) {

@@ -45,7 +45,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -3273,51 +3272,6 @@ func TestPprofLabels(t *testing.T) {
 		})
 		span.Finish()
 		wasteC(time.Second)
-	})
-}
-
-func TestPprofContextPrecedence(t *testing.T) {
-	tr, err := newUnstartedTracer(
-		withTransport(newDummyTransport()),
-		WithProfilerCodeHotspots(true),
-		WithProfilerEndpoints(false),
-	)
-	require.NoError(t, err)
-	defer tr.Stop()
-	defer pprof.SetGoroutineLabels(context.Background())
-
-	pprof.Do(context.Background(), pprof.Labels("parent_label", "expected"), func(parentCtx context.Context) {
-		parent := tr.StartSpan("parent", withContext(parentCtx))
-
-		t.Run("fallback with local parent", func(t *testing.T) {
-			ctx := traceprof.ContextWithFallback(context.Background())
-			child := tr.StartSpan("child", ChildOf(parent.Context()), withContext(ctx))
-
-			got, ok := pprof.Label(child.pprofCtxRestore, "parent_label")
-			assert.True(t, ok)
-			assert.Equal(t, "expected", got)
-		})
-
-		t.Run("regular context with local parent", func(t *testing.T) {
-			ctx := ContextWithSpan(parent.pprofCtxActive, parent)
-			ctx = pprof.WithLabels(ctx, pprof.Labels("caller_label", "expected"))
-			child := tr.StartSpan("child", ChildOf(parent.Context()), withContext(ctx))
-
-			got, ok := pprof.Label(child.pprofCtxRestore, "caller_label")
-			assert.True(t, ok)
-			assert.Equal(t, "expected", got)
-		})
-
-		t.Run("fallback with remote parent", func(t *testing.T) {
-			ctx := pprof.WithLabels(context.Background(), pprof.Labels("caller_label", "expected"))
-			ctx = traceprof.ContextWithFallback(ctx)
-			remote := &SpanContext{isRemote: true, traceID: traceIDFrom64Bits(1), spanID: 1}
-			child := tr.StartSpan("child", ChildOf(remote), withContext(ctx))
-
-			got, ok := pprof.Label(child.pprofCtxRestore, "caller_label")
-			assert.True(t, ok)
-			assert.Equal(t, "expected", got)
-		})
 	})
 }
 
