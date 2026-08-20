@@ -216,17 +216,27 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 		return p, nil
 	}
 
-	p.mu.Lock()
-	if p.shutdownCalled {
-		p.mu.Unlock()
+	if !p.tryRegisterAgentless(src) {
 		return p, nil
 	}
-	p.agentless = src
-	p.activated = true
-	p.mu.Unlock()
 
 	src.start()
 	return p, nil
+}
+
+// tryRegisterAgentless registers src as the provider's active delivery
+// source unless Shutdown has already run, in which case it registers
+// nothing so a poller can never outlive Shutdown. Returns whether it
+// registered src.
+func (p *DatadogProvider) tryRegisterAgentless(src *agentlessSource) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shutdownCalled {
+		return false
+	}
+	p.agentless = src
+	p.activated = true
+	return true
 }
 
 // markActivated records that a delivery source has been registered, unless
@@ -319,11 +329,14 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 		}
 	}
 
-	// Start periodic flushing for exposure writer.
-	p.exposureWriter.start()
-	// Start periodic flushing for EVP flag evaluation writer (nil when killswitch disabled).
-	if p.flagEvalLoggingWriter != nil {
-		p.flagEvalLoggingWriter.start()
+	if !p.writersStarted {
+		// Start periodic flushing for exposure writer.
+		p.exposureWriter.start()
+		// Start periodic flushing for EVP flag evaluation writer (nil when killswitch disabled).
+		if p.flagEvalLoggingWriter != nil {
+			p.flagEvalLoggingWriter.start()
+		}
+		p.writersStarted = true
 	}
 	return nil
 }
