@@ -109,6 +109,9 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 	case "server_error":
 		w.WriteHeader(http.StatusInternalServerError)
+	case "throttled":
+		w.Header().Set("Retry-After", "2")
+		w.WriteHeader(http.StatusTooManyRequests)
 	case "valid_no_etag":
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -262,6 +265,45 @@ func TestAgentlessSource_RetriesExhausted(t *testing.T) {
 	requests, _, _, _ := backend.status()
 	assert.Equal(t, 3, requests)
 	assert.Equal(t, 0, applied)
+}
+
+func TestAgentlessSource_PollOnceReturnsRetryAfter(t *testing.T) {
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("throttled")
+
+	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+	outcome, retryAfter := src.pollOnce()
+	assert.Equal(t, pollOutcomeRetryable, outcome)
+	assert.Equal(t, 2*time.Second, retryAfter)
+}
+
+func TestAgentlessSource_NoWarningOnGracefulShutdownCancel(t *testing.T) {
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("delayed_valid") // 150ms handler sleep
+
+	logger, undo := newCapturingLogger()
+	defer undo()
+
+	src, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: backend.server.URL,
+		PollInterval:     time.Hour,
+		RequestTimeout:   5 * time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		src.start()
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let the request start before stopping
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	src.Stop(ctx)
+	<-done
+
+	assert.Equal(t, 0, logger.countContaining("request failed"), "a Stop-triggered cancellation must not warn")
 }
 
 func TestAgentlessSource_NonRetryableStopsImmediately(t *testing.T) {

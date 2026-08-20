@@ -13,6 +13,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -153,14 +154,18 @@ func (s *agentlessSource) run() {
 // times with backoff before giving up until the next tick.
 func (s *agentlessSource) poll() {
 	for attempt := 1; attempt <= maxPollAttempts; attempt++ {
-		if s.pollOnce() != pollOutcomeRetryable {
+		outcome, retryAfter := s.pollOnce()
+		if outcome != pollOutcomeRetryable {
 			return
 		}
 		if attempt == maxPollAttempts {
 			return
 		}
 
-		delay := s.retryDelay(attempt)
+		// Honor a server-requested Retry-After (e.g. on 429) when it asks for
+		// longer than our own jittered backoff, rather than intensifying
+		// throttling across a fleet by ignoring it.
+		delay := max(s.retryDelay(attempt), retryAfter)
 		select {
 		case <-time.After(delay):
 		case <-s.stopCh:
@@ -186,8 +191,10 @@ const (
 // pollOnce issues a single HTTP request and applies its result. Configuration
 // is only ever accepted from a 200 response; the ETag only advances after
 // both parsing and apply have succeeded, so a malformed payload can never be
-// acknowledged as received.
-func (s *agentlessSource) pollOnce() pollOutcome {
+// acknowledged as received. The returned time.Duration is a server-requested
+// Retry-After to honor on the next attempt; it is zero unless the response
+// carried one.
+func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
 	defer cancel()
 
@@ -208,7 +215,7 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 		if s.warnOnce("request") {
 			log.Warn("openfeature: agentless: failed to build request: %s", sanitizeTransportError(err))
 		}
-		return pollOutcomeStop
+		return pollOutcomeStop, 0
 	}
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("DD-Client-Library-Language", "go")
@@ -222,10 +229,16 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		select {
+		case <-s.stopCh:
+			// Stop canceled this request; not a real failure worth warning about.
+			return pollOutcomeStop, 0
+		default:
+		}
 		if s.warnOnce("http") {
 			log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err))
 		}
-		return pollOutcomeRetryable
+		return pollOutcomeRetryable, 0
 	}
 	defer resp.Body.Close()
 
@@ -237,12 +250,12 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 
 	switch resp.StatusCode {
 	case http.StatusNotModified:
-		return pollOutcomeSuccess
+		return pollOutcomeSuccess, 0
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if s.warnOnce("authentication") {
 			log.Warn("openfeature: agentless: received status %d, verify endpoint authentication", resp.StatusCode)
 		}
-		return pollOutcomeStop
+		return pollOutcomeStop, 0
 	case http.StatusOK:
 		// handled below
 	default:
@@ -250,12 +263,12 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 			if s.warnOnce("http") {
 				log.Warn("openfeature: agentless: received retryable status %d", resp.StatusCode)
 			}
-			return pollOutcomeRetryable
+			return pollOutcomeRetryable, retryAfterDuration(resp.Header)
 		}
 		if s.warnOnce("http") {
 			log.Warn("openfeature: agentless: received unexpected status %d", resp.StatusCode)
 		}
-		return pollOutcomeStop
+		return pollOutcomeStop, 0
 	}
 
 	body, err := readAgentlessResponseBody(resp)
@@ -263,7 +276,7 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 		if s.warnOnce("http") {
 			log.Warn("openfeature: agentless: failed to read response body: %v", err.Error())
 		}
-		return pollOutcomeRetryable
+		return pollOutcomeRetryable, 0
 	}
 
 	config, err := parseUFCEnvelope(body)
@@ -271,12 +284,12 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 		if s.warnOnce("request") {
 			log.Warn("openfeature: agentless: received malformed configuration: %v", err.Error())
 		}
-		return pollOutcomeStop
+		return pollOutcomeStop, 0
 	}
 
 	s.apply(config)
 	s.setETag(strings.TrimSpace(resp.Header.Get("ETag")))
-	return pollOutcomeSuccess
+	return pollOutcomeSuccess, 0
 }
 
 func (s *agentlessSource) currentETag() string {
@@ -326,6 +339,28 @@ func readAgentlessResponseBody(resp *http.Response) ([]byte, error) {
 // return a *url.Error whose Error() text embeds the full request URL, which
 // for a custom endpoint may carry credentials — s.endpoint must never appear
 // in a log line.
+// retryAfterDuration parses a Retry-After response header per RFC 7231
+// §7.1.3: either delta-seconds or an HTTP-date. Returns 0 when absent,
+// unparseable, non-positive, or already in the past.
+func retryAfterDuration(header http.Header) time.Duration {
+	v := header.Get("Retry-After")
+	if v == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(v); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if when, err := http.ParseTime(v); err == nil {
+		if d := time.Until(when); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
 func sanitizeTransportError(err error) string {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) && urlErr.Err != nil {
