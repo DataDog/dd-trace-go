@@ -14,7 +14,7 @@
 
 services:
   agent:
-    image: datadog/agent:7.82.0@sha256:5c0fd49a485f100f37beab1969ed68b8027e906acaf81cfec12c16d11e8d9b4e
+    image: datadog/agent:7.82.1@sha256:c778490306882f4ed64ff61f5fe8d841ed9061ab52c19edf2afe0f3ba84ab650
     container_name: staleidle-soak-agent
     # Run as root inside the container so the UDS socket the agent creates
     # under /var/run/datadog/ is host-readable/writable regardless of the

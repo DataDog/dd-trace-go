@@ -11,7 +11,7 @@ services:
       agent:
         condition: service_healthy
   agent:
-    image: datadog/agent:latest@sha256:5c0fd49a485f100f37beab1969ed68b8027e906acaf81cfec12c16d11e8d9b4e
+    image: datadog/agent:latest@sha256:c778490306882f4ed64ff61f5fe8d841ed9061ab52c19edf2afe0f3ba84ab650
     network_mode: host
     healthcheck:
       interval: 1s # default is 30s which would slow "app", see https://github.com/DataDog/datadog-agent/blob/5533bb9c0c23dab6ff2166f75a7ff244ae65f237/Dockerfiles/agent/amd64/Dockerfile#LL200C14-L200C27
