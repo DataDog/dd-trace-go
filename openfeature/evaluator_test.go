@@ -361,8 +361,9 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				TargetingKey *string        `json:"targetingKey"`
 				Attributes   map[string]any `json:"attributes"`
 				Result       struct {
-					Value  any    `json:"value"`
-					Reason string `json:"reason"`
+					Value     any          `json:"value"`
+					Reason    string       `json:"reason"`
+					ErrorCode of.ErrorCode `json:"errorCode"`
 				} `json:"result"`
 			}
 			if err := json.Unmarshal(data, &cases); err != nil {
@@ -387,6 +388,12 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 					}
 					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
 						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+					actualErrorCode := of.ProviderResolutionDetail{
+						ResolutionError: toResolutionError(result.Error),
+					}.ResolutionDetail().ErrorCode
+					if tc.Result.ErrorCode != "" && actualErrorCode != tc.Result.ErrorCode {
+						t.Errorf("error code: got %q, want %q", actualErrorCode, tc.Result.ErrorCode)
 					}
 				})
 			}
