@@ -69,14 +69,20 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			request := c.Request()
 			route := c.Path()
 			resource := request.Method + " " + route
+			if cfg.otelEnabled {
+				resource = httptrace.ServerSpanName(request.Method, route)
+			}
 			opts := options.Copy(spanOpts) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			opts = append(opts,
-				tracer.ResourceName(resource),
-				tracer.Tag(ext.HTTPRoute, route),
-				httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
+			opts = append(opts, tracer.ResourceName(resource))
+			if cfg.otelEnabled {
+				opts = append(opts, httptrace.HTTPEndpointTag(route, request))
+			} else {
+				opts = append(opts, tracer.Tag(ext.HTTPRoute, route))
+			}
+			opts = append(opts, httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
 
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
@@ -89,7 +95,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			c.SetRequest(request.WithContext(ctx))
 
 			if instr.AppSecEnabled() {
-				next = withAppSec(next, span)
+				next = withAppSec(next, httptrace.AppSecSpanTagSetter(span))
 			}
 			// serve the request to the next middleware
 			err := next(c)
@@ -112,14 +118,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				}
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
-					if statusErr := errorFromStatusCode(status); !shouldIgnoreError(cfg, statusErr) {
+					if statusErr := errorFromStatusCode(status); !shouldIgnoreError(cfg, statusErr) && !cfg.otelEnabled {
 						finishOpts = append(finishOpts, tracer.WithError(statusErr))
 					}
 				}
 				echoStatus = status
 			} else {
 				if cfg.isStatusError(200) {
-					if statusErr := errorFromStatusCode(200); !shouldIgnoreError(cfg, statusErr) {
+					if statusErr := errorFromStatusCode(200); !shouldIgnoreError(cfg, statusErr) && !cfg.otelEnabled {
 						finishOpts = append(finishOpts, tracer.WithError(statusErr))
 					}
 				}
