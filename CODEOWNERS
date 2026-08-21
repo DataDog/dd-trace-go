@@ -50,7 +50,7 @@
 /ddtrace/                       @DataDog/apm-go
 
 # profiling
-/profiler/                      @DataDog/profiling-go
+/profiler/*                     @DataDog/profiling-go
 /internal/traceprof/            @DataDog/profiling-go
 
 # appsec
