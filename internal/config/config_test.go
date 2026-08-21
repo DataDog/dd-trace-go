@@ -1890,3 +1890,27 @@ func TestFeatureFlagsAgentlessRequestTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestFlaggingProviderInitTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 10000 * time.Millisecond},
+		{"0", 10000 * time.Millisecond},
+		{"-1", 10000 * time.Millisecond},
+		{"abc", 10000 * time.Millisecond},
+		{"5000", 5000 * time.Millisecond},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FlaggingProviderInitTimeout())
+		})
+	}
+}

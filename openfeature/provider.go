@@ -39,8 +39,6 @@ const (
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
-	// Default timeout for provider initialization
-	defaultInitTimeout = 30 * time.Second
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
 )
@@ -91,6 +89,11 @@ type DatadogProvider struct {
 	deliveryErr error
 	// writersStarted makes Init idempotent. // +checklocks:mu
 	writersStarted bool
+
+	// eventCh is returned unchanged by every EventChannel call.
+	eventCh chan openfeature.Event
+	// firstConfigSeen reports whether ProviderReady has already fired. // +checklocks:mu
+	firstConfigSeen bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -191,6 +194,7 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
 		source:                source,
+		eventCh:               make(chan openfeature.Event, eventChannelBufferSize),
 	}
 	p.configChange.L = &p.mu
 
@@ -262,6 +266,7 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 	}
 	p.configuration = config
 	p.configChange.Broadcast()
+	p.emitFirstOrChangeEvent(config)
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
@@ -280,7 +285,7 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 // this is waiting for the first configuration to be loaded.
 func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) error {
 	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), defaultInitTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), internalconfig.Get().FlaggingProviderInitTimeout())
 	defer cancel()
 	return p.InitWithContext(ctx, evaluationContext)
 }
@@ -341,7 +346,11 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 			return nil
 		}
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
-			return err
+			// Timed out or canceled with delivery still running. This is not an
+			// error: Go's ErrorState does not block evaluation, and configuration
+			// arriving later promotes the provider to ReadyState.
+			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives")
+			return nil
 		}
 	}
 
