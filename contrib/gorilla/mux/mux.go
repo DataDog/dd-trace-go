@@ -107,7 +107,16 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, instrhttptrace.HeaderTagsFromRequest(req, r.config.headerTags))
-	resource := r.config.resourceNamer(r, req)
+	var resource string
+	if r.config.resourceNamer != nil {
+		resource = r.config.resourceNamer(r, req)
+	} else if r.config.otelEnabled {
+		resource = instrhttptrace.ServerSpanName(req.Method, route)
+	} else if route != "" {
+		resource = req.Method + " " + route
+	} else {
+		resource = req.Method + " unknown"
+	}
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Framework:     "github.com/gorilla/mux",
 		Service:       r.config.serviceName,
@@ -133,17 +142,4 @@ func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 		Router: router,
 		config: cfg,
 	}
-}
-
-// defaultResourceNamer attempts to quantize the resource for an HTTP request by
-// retrieving the path template associated with the route from the request.
-func defaultResourceNamer(router *Router, req *http.Request) string {
-	var match mux.RouteMatch
-	// get the resource associated with the given request
-	if router.Match(req, &match) && match.Route != nil {
-		if r, err := match.Route.GetPathTemplate(); err == nil {
-			return req.Method + " " + r
-		}
-	}
-	return req.Method + " unknown"
 }
