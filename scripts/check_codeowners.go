@@ -19,7 +19,11 @@
 //	*suffix         suffix match at any depth
 //
 // Patterns outside that subset are rejected, so ownership cannot silently
-// diverge between the two consumers.
+// diverge between the two consumers. In particular: gitignore wildcards
+// beyond a single leading suffix "*" ("?", "[", "]", "\") are rejected
+// because GitHub interprets them but CI Visibility treats them as literal
+// characters, and "@" is rejected because CI Visibility's parser treats any
+// pattern token containing it as an owner rather than part of the path.
 package main
 
 import (
@@ -66,7 +70,20 @@ func (r rule) matches(path string) bool {
 	case kindFile:
 		return path == r.match
 	case kindSuffix:
-		return strings.HasSuffix(path, r.match)
+		if strings.HasSuffix(path, r.match) {
+			return true
+		}
+		// gitignore matches an unanchored pattern against every path
+		// component, and matching a directory implies matching its entire
+		// subtree. A suffix pattern can therefore match a directory name
+		// partway through the path, not just the final filename: "*special"
+		// must own "foo/special/child.go" the same way GitHub does.
+		for i := 0; i < len(path); i++ {
+			if path[i] == '/' && strings.HasSuffix(path[:i], r.match) {
+				return true
+			}
+		}
+		return false
 	}
 	return false
 }
@@ -120,13 +137,15 @@ func run() error {
 		// CI Visibility matches against absolute repository paths.
 		entry, matched := civis.Match("/" + f)
 		var civisOwners []string
+		civisPattern := "(none)"
 		if matched {
 			civisOwners = entry.Owners
+			civisPattern = entry.Pattern
 		}
 		if normalize(owners) != normalize(civisOwners) {
 			diverged = append(diverged, fmt.Sprintf(
 				"  %s\n      GitHub         (%s): %s\n      CI Visibility  (%s): %s",
-				f, pattern, normalize(owners), entry.Pattern, normalize(civisOwners)))
+				f, pattern, normalize(owners), civisPattern, normalize(civisOwners)))
 		}
 	}
 
@@ -201,29 +220,46 @@ func parse(path string) ([]rule, error) {
 	return rules, nil
 }
 
+// unsupportedWildcards are gitignore metacharacters, beyond a single leading
+// suffix "*", that GitHub interprets but the CI Visibility matcher treats as
+// literal characters.
+const unsupportedWildcards = "*?[]\\"
+
 // classify validates a pattern and reduces it to its comparison form.
 func classify(pattern string) (kind, string, error) {
+	// The CI Visibility parser treats any pattern token containing "@" as an
+	// owner, not part of the path (see internal/civisibility/utils), so a
+	// path containing "@" can never be reliably matched there regardless of
+	// formatting.
+	if strings.Contains(pattern, "@") {
+		return 0, "", errors.New(`"@" in a path is parsed as an owner by CI Visibility rather than the pattern; rename the path or use a directory-level rule instead`)
+	}
+
 	switch {
 	case strings.HasPrefix(pattern, "*"):
 		suffix := pattern[1:]
 		switch {
 		case suffix == "":
 			return 0, "", errors.New(`the "*" catch-all is not allowed; every path must have an explicit owner`)
-		case strings.Contains(suffix, "*"):
-			return 0, "", errors.New(`only a single leading "*" is supported by the CI Visibility matcher`)
 		case strings.Contains(suffix, "/"):
 			return 0, "", errors.New(`a "*" pattern must be a bare suffix containing no "/", e.g. "*appsec.go"`)
+		case strings.ContainsAny(suffix, unsupportedWildcards):
+			return 0, "", errors.New(`"*", "?", "[", "]", and "\" are gitignore wildcards that CI Visibility treats as literal characters; use a plain suffix`)
 		}
 		return kindSuffix, suffix, nil
 
 	case strings.HasPrefix(pattern, "/"):
-		if strings.Contains(pattern, "*") {
+		if strings.ContainsAny(pattern, unsupportedWildcards) {
 			return 0, "", errors.New(`wildcards are not supported in anchored paths; use a "/dir/" or "*suffix" pattern instead`)
 		}
+		match := pattern[1:]
 		if strings.HasSuffix(pattern, "/") {
-			return kindDir, pattern[1:], nil
+			if match == "" {
+				return 0, "", errors.New(`the "/" catch-all is not allowed; every path must have an explicit owner`)
+			}
+			return kindDir, match, nil
 		}
-		return kindFile, pattern[1:], nil
+		return kindFile, match, nil
 
 	default:
 		return 0, "", errors.New(`pattern must be anchored with a leading "/" or be a "*suffix" pattern`)
