@@ -660,6 +660,7 @@ func generatedThirdPartyLibraries() []string {
 		"go.opentelemetry.io/otel/sdk/metric",
 		"go.opentelemetry.io/otel/trace",
 		"go.opentelemetry.io/proto/otlp",
+		"go.opentelemetry.io/proto/otlp/processcontext/v1development",
 		"go.opentelemetry.io/proto/slim/otlp",
 		"go.opentelemetry.io/proto/slim/otlp/collector/profiles/v1development",
 		"go.opentelemetry.io/proto/slim/otlp/profiles/v1development",
