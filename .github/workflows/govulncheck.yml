@@ -70,7 +70,7 @@ jobs:
           repo-checkout: false
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
@@ -137,7 +137,7 @@ jobs:
           git clean -fdx -e govulncheck-contribs.sarif
       - name: Upload contrib SARIF to GitHub Code Scanning
         if: always() && steps.restore.outcome == 'success' && hashFiles('govulncheck-contribs.sarif') != ''
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           sarif_file: govulncheck-contribs.sarif
           category: govulncheck-contribs
