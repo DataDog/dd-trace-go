@@ -17,6 +17,7 @@ import (
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -121,6 +122,7 @@ func Start(opts ...config.StartOption) {
 		return
 	}
 
+	internalconfig.RecordProductStart(internalconfig.ProductAppsec)
 	setActiveAppSec(appsec)
 }
 
