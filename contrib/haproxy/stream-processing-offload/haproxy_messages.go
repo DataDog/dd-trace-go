@@ -63,6 +63,12 @@ func (m *messageRequestHeaders) BodyParsingSizeLimit(_ context.Context) int {
 	return proxy.DefaultBodyParsingSizeLimit
 }
 
+// AckBodyMessagesUntilEndOfStream is irrelevant here: SPOE delivers a complete body in a
+// single message, so [messageBody.GetEndOfStream] always reports the end of the stream.
+func (m *messageRequestHeaders) AckBodyMessagesUntilEndOfStream(_ context.Context) bool {
+	return false
+}
+
 func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoRequest, error) {
 	headers, err := parseHAProxyReqHdrsBin(m.msg.Bytes(VarHeaders))
 	if err != nil {

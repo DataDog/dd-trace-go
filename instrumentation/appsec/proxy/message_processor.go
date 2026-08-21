@@ -41,8 +41,10 @@ import (
 //	  → ResponseBody      response has a body (EOS=false, supported Content-Type)
 //	  → Finished          EOS or body not supported (stream ends here)
 //
-//	ResponseBody          one or more OnResponseBody calls until EOS
-//	  → Finished          EOS received (body fully consumed)
+//	ResponseBody          one or more OnResponseBody calls
+//	  → Finished          EOS received (body fully consumed), or the analysis finished
+//	                      early and the gateway does not require the remaining body
+//	                      messages to be acknowledged
 //
 //	Any ongoing state
 //	  → Blocked           dyngo blocking callback fired inside Close/afterHandle
@@ -111,6 +113,9 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 		pseudoRequest.ClientIP,
 		int(mp.computedBodyParsingSizeLimit.Load()),
 		mp.Framework,
+		// Resolved per request rather than cached: the gateway is identified from the request
+		// headers, so a single processor can serve several kinds of gateway.
+		req.AckBodyMessagesUntilEndOfStream(ctx),
 		req.SpanOptions(ctx)...,
 	)
 
@@ -260,16 +265,7 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 		mp.instr.Logger().Error("message_processor: the body parsing has been wrongly configured. " +
 			"Please refer to the official documentation for guidance on the proper settings or contact support.")
 		reqState.finalizeResponse()
-		if resp.GetEndOfStream() {
-			_ = reqState.closeLocked()
-		}
-		if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
-			return fmt.Errorf("error creating continue response for response body: %w", err)
-		}
-		if !resp.GetEndOfStream() {
-			return nil
-		}
-		return io.EOF
+		return mp.acknowledgeResponseBody(reqState, resp.GetEndOfStream())
 	}
 
 	blocked := processBody(reqState.Context, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody, "response")
@@ -285,20 +281,37 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 			}
 			return io.EOF
 		}
-		if resp.GetEndOfStream() {
-			_ = reqState.closeLocked()
-		}
 
-		if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
-			return fmt.Errorf("error creating continue response for response body: %w", err)
-		}
-		if resp.GetEndOfStream() {
-			return io.EOF
-		}
-		return nil
+		return mp.acknowledgeResponseBody(reqState, resp.GetEndOfStream())
 	}
 
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody})
+}
+
+// acknowledgeResponseBody acknowledges a response body message that needs no further
+// analysis and reports whether the processing stream is now finished, returning io.EOF
+// when it is. The caller must hold reqState.Mu and must have finalized the response
+// beforehand.
+//
+// The acknowledgement is unconditional because the gateway is owed exactly one response
+// per message it sent while the stream is open. Whether the stream may then close
+// immediately or has to stay open for the rest of the body is gateway-specific, hence
+// [RequestHeaders.AckBodyMessagesUntilEndOfStream].
+func (mp *Processor) acknowledgeResponseBody(reqState *RequestState, endOfStream bool) error {
+	lastMessage := endOfStream || !reqState.ackBodyMessagesUntilEndOfStream
+	if lastMessage {
+		_ = reqState.closeLocked()
+	}
+
+	if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
+		return fmt.Errorf("error creating continue response for response body: %w", err)
+	}
+
+	if lastMessage {
+		return io.EOF
+	}
+
+	return nil
 }
 
 // OnRequestTrailers handles incoming request trailers
