@@ -50,6 +50,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
+			if cfg.otelEnabled {
+				opts = append(opts, httptrace.HTTPEndpointTag("", r))
+			}
 			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
 			span, ctx, finishSpans := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
@@ -63,7 +66,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() && !cfg.appsecDisabled {
-				next = withAppsec(next, r, span, cfg)
+				next = withAppsec(next, r, httptrace.AppSecSpanTagSetter(span), cfg)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
@@ -72,10 +75,14 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 
 			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
-			span.SetTag(ext.HTTPRoute, routePattern)
+			if routePattern != "" || !cfg.otelEnabled {
+				span.SetTag(ext.HTTPRoute, routePattern)
+			}
 			var resourceName string
 			if cfg.resourceNamer != nil {
 				resourceName = cfg.resourceNamer(r)
+			} else if cfg.otelEnabled {
+				resourceName = httptrace.ServerSpanName(r.Method, routePattern)
 			} else {
 				resourceName = routePattern
 				if resourceName == "" {
