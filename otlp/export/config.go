@@ -87,7 +87,8 @@ func WithHTTPClient(client *http.Client) ClientOption {
 }
 
 // WithMaxRequestSize sets the maximum serialized size of one request in bytes.
-// The default is 64 MiB. A non-positive size disables the limit.
+// The default is 64 MiB, but destinations may enforce a lower limit. A
+// non-positive size disables this client-side limit.
 func WithMaxRequestSize(size int) ClientOption {
 	return func(cfg *clientConfig) error {
 		cfg.maxRequestSize = size

@@ -79,7 +79,7 @@ func (c countingReadCloser) Read(buffer []byte) (int, error) {
 func (countingReadCloser) Close() error { return nil }
 
 func TestDoPost_DrainsResponse(t *testing.T) {
-	const size = responseLimit + 512
+	const size = maxResponseBodySize + 512
 	read := 0
 	transport := stubTransport(stubRoundTripper{
 		status: http.StatusOK,
@@ -95,7 +95,7 @@ func TestDoPost_DrainsResponse(t *testing.T) {
 func TestSubmitBody_DoesNotRetryOversizedResponse(t *testing.T) {
 	transport := stubTransport(stubRoundTripper{
 		status: http.StatusServiceUnavailable,
-		body:   io.NopCloser(bytes.NewReader(make([]byte, responseLimit+1))),
+		body:   io.NopCloser(bytes.NewReader(make([]byte, maxResponseBodySize+1))),
 	})
 	transport.maxAttempts = 3
 

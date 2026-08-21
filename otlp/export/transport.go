@@ -36,17 +36,17 @@ const (
 	headerMetricConfig        = "dd-otel-metric-config"
 	metricConfigDistributions = `{"histograms":{"mode":"distributions"}}`
 
-	initialBackoff = 100 * time.Millisecond
-	maxBackoff     = time.Second
-	maxRetryAfter  = 60 * time.Second
-	responseLimit  = 4 << 20
+	initialBackoff      = 100 * time.Millisecond
+	maxBackoff          = time.Second
+	maxRetryAfter       = 60 * time.Second
+	maxResponseBodySize = 4 << 20
 )
 
 var (
 	// ErrRequestTooLarge identifies a request rejected before an HTTP attempt
 	// because its encoded size exceeded the configured limit.
 	ErrRequestTooLarge  = errors.New("otlp/export: request exceeds maximum encoded size")
-	errResponseTooLarge = errors.New("otlp/export: response exceeds 4 MiB")
+	errResponseTooLarge = errors.New("otlp/export: response body exceeds maximum size")
 )
 
 type rawTransport struct {
@@ -153,10 +153,10 @@ func (t *rawTransport) doPost(ctx context.Context, path string, body []byte) exp
 	}
 	defer response.Body.Close()
 
-	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
-	responseTooLarge := len(responseBody) > responseLimit
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, maxResponseBodySize+1))
+	responseTooLarge := len(responseBody) > maxResponseBodySize
 	if responseTooLarge {
-		responseBody = responseBody[:responseLimit]
+		responseBody = responseBody[:maxResponseBodySize]
 		readErr = errors.Join(readErr, errResponseTooLarge)
 	}
 	_, drainErr := io.Copy(io.Discard, response.Body)
