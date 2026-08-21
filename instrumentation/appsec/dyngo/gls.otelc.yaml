@@ -12,9 +12,9 @@
 # finished on the same goroutine, so there is no liveness cell: the `done`
 # argument to GLSActivate/GLSDeactivate is nil.
 #
-# IDENTIFIER COUPLING: inject_code has no template variables, so the parameter
-# names below (`ctx`, `op`) are literal and must match dyngo's source. See the
-# same note in ../../../ddtrace/tracer/otelc.yaml.
+# All three targets are plain functions, so the rules resolve their arguments
+# through the function template variables and survive a rename. Contrast the
+# receiver-based rules in ../../../ddtrace/tracer/otelc.yaml.
 
 dyngo_operation_gls_field:
   target: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
@@ -38,9 +38,11 @@ dyngo_register_operation_gls_push:
   do:
     - inject_code:
         raw: |
+          {{- $ctx := .FuncArgument 0 -}}
+          {{- $op := .FuncArgument 1 -}}
           {
-            __dd_o := op.unwrap()
-            orchestrion.GLSActivate(&ctx, contextKey{}, op, &__dd_o.__dd_glsPop, nil)
+            __dd_o := {{ $op }}.unwrap()
+            orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop, nil)
           }
   imports:
     orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
@@ -56,7 +58,9 @@ dyngo_from_context_gls_read:
     func: FromContext
   do:
     - inject_code:
-        raw: "ctx = orchestrion.WrapContext(ctx)"
+        raw: |
+          {{- $ctx := .FuncArgument 0 -}}
+          {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
   imports:
     orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
 
@@ -70,8 +74,9 @@ dyngo_finish_operation_gls_deactivate:
   do:
     - inject_code:
         raw: |
+          {{- $op := .FuncArgument 0 -}}
           defer func() {
-            __dd_o := op.unwrap()
+            __dd_o := {{ $op }}.unwrap()
             orchestrion.GLSDeactivate(nil, &__dd_o.__dd_glsPop)
           }()
   imports:
