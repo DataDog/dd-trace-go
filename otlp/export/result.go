@@ -8,11 +8,7 @@ package export
 import (
 	"errors"
 	"fmt"
-	"strings"
-	"unicode/utf8"
 )
-
-const responseSnippetMaxBytes = 512
 
 // Result reports a submission outcome.
 type Result struct {
@@ -51,18 +47,6 @@ type RequestResult struct {
 	ResponseSnippet string
 	// Err is nil only when the entire input request was accepted.
 	Err error
-}
-
-func responseSnippet(body []byte) string {
-	snippet := strings.ToValidUTF8(strings.TrimSpace(string(body)), "")
-	if len(snippet) <= responseSnippetMaxBytes {
-		return snippet
-	}
-	cut := responseSnippetMaxBytes
-	for cut > 0 && !utf8.RuneStart(snippet[cut]) {
-		cut--
-	}
-	return snippet[:cut]
 }
 
 func aggregateFailures(result *Result) error {

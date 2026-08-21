@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,12 +56,14 @@ func stubTransport(roundTripper http.RoundTripper) *rawTransport {
 	}
 }
 
-func TestDoPost_ReadErrorOnSuccess(t *testing.T) {
+func TestSubmitBody_ReadErrorOnSuccessPreservesStatus(t *testing.T) {
 	transport := stubTransport(stubRoundTripper{status: http.StatusOK, body: errReadCloser{}})
-	attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
-	require.Error(t, attempt.err)
-	assert.Equal(t, 0, attempt.statusCode)
-	assert.True(t, otlpRetriable(context.Background(), attempt.statusCode))
+	transport.maxAttempts = 2
+	result, err := transport.submitBody(context.Background(), pathTraces, []byte("payload"))
+	require.Error(t, err)
+	assert.Equal(t, http.StatusOK, result.StatusCode)
+	assert.Equal(t, 2, result.Attempts)
+	assert.True(t, result.Retriable)
 }
 
 type countingReadCloser struct {
@@ -85,9 +86,9 @@ func TestDoPost_DrainsResponse(t *testing.T) {
 		body:   countingReadCloser{reader: bytes.NewReader(make([]byte, size)), read: &read},
 	})
 	attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
-	require.ErrorIs(t, attempt.err, errResponseTooLarge)
-	assert.Equal(t, http.StatusOK, attempt.statusCode)
-	assert.True(t, attempt.terminal)
+	require.ErrorIs(t, attempt.Err, errResponseTooLarge)
+	assert.Equal(t, http.StatusOK, attempt.StatusCode)
+	assert.False(t, attempt.Retriable)
 	assert.Equal(t, size, read)
 }
 
@@ -100,9 +101,9 @@ func TestSubmitBody_DoesNotRetryOversizedResponse(t *testing.T) {
 
 	result, err := transport.submitBody(context.Background(), pathTraces, []byte("payload"))
 	require.ErrorIs(t, err, errResponseTooLarge)
-	assert.Equal(t, http.StatusServiceUnavailable, result.statusCode)
-	assert.Equal(t, 1, result.attempts)
-	assert.False(t, result.retriable)
+	assert.Equal(t, http.StatusServiceUnavailable, result.StatusCode)
+	assert.Equal(t, 1, result.Attempts)
+	assert.False(t, result.Retriable)
 }
 
 func TestResolveClientConfig_EnforcesNoRedirect(t *testing.T) {
@@ -183,8 +184,8 @@ func TestDoPost_RequiresStatusOK(t *testing.T) {
 	for _, status := range []int{http.StatusAccepted, http.StatusNoContent, http.StatusPartialContent, http.StatusFound} {
 		transport := stubTransport(stubRoundTripper{status: status, body: io.NopCloser(strings.NewReader(""))})
 		attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
-		require.Errorf(t, attempt.err, "status %d should fail", status)
-		assert.Equal(t, status, attempt.statusCode)
+		require.Errorf(t, attempt.Err, "status %d should fail", status)
+		assert.Equal(t, status, attempt.StatusCode)
 	}
 }
 
@@ -195,8 +196,8 @@ func TestDoPost_RetryAfter(t *testing.T) {
 		body:   io.NopCloser(strings.NewReader("busy")),
 	})
 	attempt := transport.doPost(context.Background(), pathTraces, []byte("payload"))
-	require.Error(t, attempt.err)
-	assert.Equal(t, 2*time.Second, attempt.retryAfter)
+	require.Error(t, attempt.Err)
+	assert.Equal(t, 2*time.Second, attempt.RetryAfter)
 }
 
 func TestSubmitBody_CancelInterruptsRetryAfter(t *testing.T) {
@@ -212,8 +213,8 @@ func TestSubmitBody_CancelInterruptsRetryAfter(t *testing.T) {
 
 	result, err := transport.submitBody(ctx, pathTraces, []byte("payload"))
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Equal(t, 1, result.attempts)
-	assert.False(t, result.retriable)
+	assert.Equal(t, 1, result.Attempts)
+	assert.False(t, result.Retriable)
 	assert.Less(t, time.Since(start), time.Second)
 }
 
@@ -236,9 +237,9 @@ func TestSubmitBody_RetriesNetworkFailure(t *testing.T) {
 
 	result, err := transport.submitBody(context.Background(), pathTraces, []byte("payload"))
 	require.NoError(t, err)
-	assert.Equal(t, 2, result.attempts)
+	assert.Equal(t, 2, result.Attempts)
 	assert.Equal(t, 2, roundTripper.attempts)
-	assert.False(t, result.retriable)
+	assert.False(t, result.Retriable)
 }
 
 func TestOTLPRetriable(t *testing.T) {
@@ -282,12 +283,4 @@ func TestOTLPStatusMessage(t *testing.T) {
 	assert.Equal(t, "invalid trace_id length", otlpStatusMessage(body))
 	assert.Empty(t, otlpStatusMessage([]byte{0xff, 0xff, 0xff}))
 	assert.Empty(t, otlpStatusMessage(nil))
-}
-
-func TestResponseSnippet(t *testing.T) {
-	assert.Equal(t, "boom", responseSnippet([]byte("  boom \n")))
-	assert.Empty(t, responseSnippet(nil))
-	assert.Len(t, responseSnippet([]byte(strings.Repeat("a", responseSnippetMaxBytes+100))), responseSnippetMaxBytes)
-	assert.True(t, utf8.ValidString(responseSnippet([]byte(strings.Repeat("é", responseSnippetMaxBytes)))))
-	assert.Equal(t, "ok", responseSnippet([]byte{'o', 'k', 0xff, 0xfe}))
 }

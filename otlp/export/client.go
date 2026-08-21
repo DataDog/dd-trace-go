@@ -19,6 +19,8 @@ import (
 	"reflect"
 
 	"google.golang.org/protobuf/proto"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/exporttransport"
 )
 
 var errNilRequest = errors.New("otlp/export: nil request")
@@ -59,12 +61,12 @@ func submitEach[T proto.Message](ctx context.Context, transport *rawTransport, p
 			rejected, message, err := partial(body)
 			diagnostic := ""
 			if message != "" {
-				diagnostic = responseSnippet([]byte(message))
+				diagnostic = exporttransport.ResponseSnippet([]byte(message))
 				requestResult.ResponseSnippet = diagnostic
 			}
 			switch {
 			case err != nil:
-				requestResult.ResponseSnippet = responseSnippet(body)
+				requestResult.ResponseSnippet = exporttransport.ResponseSnippet(body)
 				requestResult.Err = fmt.Errorf("otlp/export: response body is not a valid OTLP response: %w", err)
 			case rejected < 0:
 				requestResult.Err = fmt.Errorf("otlp/export: response contains a negative rejected-item count: %d", rejected)

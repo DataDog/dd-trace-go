@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/exporttransport"
 )
 
 const (
@@ -89,70 +90,45 @@ func (t *rawTransport) submit(ctx context.Context, path string, message proto.Me
 
 	result, err := t.submitBody(ctx, path, body)
 	requestResult := RequestResult{
-		StatusCode: result.statusCode,
-		Attempts:   result.attempts,
-		Retriable:  result.retriable,
+		StatusCode: result.StatusCode,
+		Attempts:   result.Attempts,
+		Retriable:  result.Retriable,
 		Err:        err,
 	}
 	if err != nil {
-		requestResult.ResponseSnippet = responseSnippet(result.body)
+		requestResult.ResponseSnippet = exporttransport.ResponseSnippet(result.Body)
 	}
-	if statusMessage := otlpStatusMessage(result.body); err != nil && statusMessage != "" {
-		requestResult.ResponseSnippet = responseSnippet([]byte(statusMessage))
+	if statusMessage := otlpStatusMessage(result.Body); err != nil && statusMessage != "" {
+		requestResult.ResponseSnippet = exporttransport.ResponseSnippet([]byte(statusMessage))
 	}
-	return requestResult, result.body
+	return requestResult, result.Body
 }
 
-type submitResult struct {
-	statusCode int
-	attempts   int
-	body       []byte
-	retriable  bool
+type otlpBackOff struct {
+	interval time.Duration
 }
 
-type attemptResult struct {
-	statusCode int
-	body       []byte
-	retryAfter time.Duration
-	terminal   bool
-	err        error
+func (b *otlpBackOff) Reset() {
+	b.interval = initialBackoff
 }
 
-func (t *rawTransport) submitBody(ctx context.Context, path string, body []byte) (submitResult, error) {
-	result := submitResult{}
-	backoff := initialBackoff
-	for attempt := uint(1); ; attempt++ {
-		result.attempts = int(attempt)
-		current := t.doPost(ctx, path, body)
-		result.statusCode = current.statusCode
-		result.body = current.body
-		if current.err == nil {
-			result.retriable = false
-			return result, nil
-		}
-
-		result.retriable = !current.terminal && otlpRetriable(ctx, current.statusCode)
-		if !result.retriable || attempt >= t.maxAttempts {
-			return result, current.err
-		}
-
-		wait := jitter(backoff)
-		if current.retryAfter > 0 {
-			wait = current.retryAfter
-		}
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			result.retriable = false
-			return result, ctx.Err()
-		case <-timer.C:
-		}
-		backoff = min(backoff*2, maxBackoff)
-	}
+func (b *otlpBackOff) NextBackOff() time.Duration {
+	delay := jitter(b.interval)
+	b.interval = min(b.interval*2, maxBackoff)
+	return delay
 }
 
-func (t *rawTransport) doPost(ctx context.Context, path string, body []byte) attemptResult {
+func (t *rawTransport) submitBody(ctx context.Context, path string, body []byte) (exporttransport.Result, error) {
+	return exporttransport.Retry(ctx, exporttransport.RetryOptions{
+		MaxAttempts: t.maxAttempts,
+		BackOff:     &otlpBackOff{},
+	}, func(ctx context.Context) exporttransport.Attempt {
+		return t.doPost(ctx, path, body)
+	})
+}
+
+func (t *rawTransport) doPost(ctx context.Context, path string, body []byte) exporttransport.Attempt {
+	retryCtx := ctx
 	timeout := t.requestTimeout
 	if timeout == 0 {
 		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
@@ -167,13 +143,13 @@ func (t *rawTransport) doPost(ctx context.Context, path string, body []byte) att
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, t.signalURL(path), bytes.NewReader(body))
 	if err != nil {
-		return attemptResult{err: err}
+		return exporttransport.Attempt{Retriable: otlpRetriable(retryCtx, 0), Err: err}
 	}
 	request.Header = t.requestHeaders(path)
 
 	response, err := t.client.Do(request)
 	if err != nil {
-		return attemptResult{err: err}
+		return exporttransport.Attempt{Retriable: otlpRetriable(retryCtx, 0), Err: err}
 	}
 	defer response.Body.Close()
 
@@ -186,24 +162,26 @@ func (t *rawTransport) doPost(ctx context.Context, path string, body []byte) att
 	_, drainErr := io.Copy(io.Discard, response.Body)
 	readErr = errors.Join(readErr, drainErr)
 	if responseTooLarge {
-		return attemptResult{
-			statusCode: response.StatusCode,
-			body:       responseBody,
-			terminal:   true,
-			err:        fmt.Errorf("otlp/export: read response body: %w", readErr),
+		return exporttransport.Attempt{
+			Response: exporttransport.Response{StatusCode: response.StatusCode, Body: responseBody},
+			Err:      fmt.Errorf("otlp/export: read response body: %w", readErr),
 		}
 	}
 	if response.StatusCode == http.StatusOK {
 		if readErr != nil {
-			return attemptResult{body: responseBody, err: fmt.Errorf("otlp/export: read response body: %w", readErr)}
+			return exporttransport.Attempt{
+				Response:  exporttransport.Response{StatusCode: response.StatusCode, Body: responseBody},
+				Retriable: retryCtx.Err() == nil,
+				Err:       fmt.Errorf("otlp/export: read response body: %w", readErr),
+			}
 		}
-		return attemptResult{statusCode: response.StatusCode, body: responseBody}
+		return exporttransport.Attempt{Response: exporttransport.Response{StatusCode: response.StatusCode, Body: responseBody}}
 	}
-	return attemptResult{
-		statusCode: response.StatusCode,
-		body:       responseBody,
-		retryAfter: parseRetryAfter(response.Header),
-		err:        fmt.Errorf("otlp/export: unexpected status %d", response.StatusCode),
+	return exporttransport.Attempt{
+		Response:   exporttransport.Response{StatusCode: response.StatusCode, Body: responseBody},
+		RetryAfter: parseRetryAfter(response.Header),
+		Retriable:  otlpRetriable(retryCtx, response.StatusCode),
+		Err:        fmt.Errorf("otlp/export: unexpected status %d", response.StatusCode),
 	}
 }
 
