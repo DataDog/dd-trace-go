@@ -604,7 +604,7 @@ func createE2EBooleanConfig() universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "us-rollout",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -655,7 +655,7 @@ func createE2EStringConfig() *universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "premium-users",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -706,7 +706,7 @@ func createE2EIntegerConfig() *universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "high-traffic-users",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -757,7 +757,7 @@ func createE2EFloatConfig() *universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "test-group",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -821,7 +821,7 @@ func createE2EObjectConfig() *universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "advanced-users",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -983,8 +983,10 @@ func generateUserID(i int) string {
 }
 
 // boolPtr returns a pointer to a bool value
+//
+//go:fix inline
 func boolPtr(b bool) *bool {
-	return &b
+	return new(b)
 }
 
 // getExposureWriter returns the exposure writer from a provider for testing
@@ -1629,7 +1631,7 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 				Allocations: []*allocation{
 					{
 						Key:   "test-allocation",
-						DoLog: boolPtr(false), // Disable logging
+						DoLog: new(false), // Disable logging
 						Rules: []*rule{},
 						Splits: []*split{
 							{

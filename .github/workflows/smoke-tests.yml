@@ -55,7 +55,7 @@ jobs:
           # Pinned off `stable` (currently 1.26.5), which intermittently corrupts
           # its own heap mid-build (golang/go#77168) and fails these sandboxed
           # smoke jobs. Restore `stable` once a fixed 1.26.x ships.
-          go-version: "1.26.4"
+          go-version: "1.27"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
@@ -131,7 +131,7 @@ jobs:
           # Pinned off `stable` (currently 1.26.5), which intermittently corrupts
           # its own heap mid-build (golang/go#77168) and fails this sandboxed
           # go-get-u smoke job. Restore `stable` once a fixed 1.26.x ships.
-          go-version: "1.26.4"
+          go-version: "1.27"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Capture trusted commit SHA
@@ -252,7 +252,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run tests
@@ -278,7 +278,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
-          tags: go:1.25,arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:1.26,arch:${{ runner.arch }},os:${{ runner.os }}
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.
@@ -299,7 +299,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run generate scripts and check diff
@@ -325,7 +325,7 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.26", "1.25" ]
+        go: [ "1.27", "1.26" ]
         build-env: [ alpine, trixie, bookworm ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian12, debian13, al2, al2023, busybox, scratchy ]
@@ -429,7 +429,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.25" # lowest supported version, so this checks the floor
+          go-version: "1.26" # lowest supported version, so this checks the floor
       - name: Resolve orchestrion/all as an external consumer would
         id: resolve
         run: |-

@@ -341,14 +341,14 @@ func TestBuildExportEvaluationValidation(t *testing.T) {
 		{
 			name: "NaN score",
 			metric: llmobs.EvaluationConfig{
-				SpanID: "span", TraceID: "trace", Label: "quality", ScoreValue: exportFloatPtr(math.NaN()),
+				SpanID: "span", TraceID: "trace", Label: "quality", ScoreValue: new(math.NaN()),
 			},
 			code: llmobs.ExportCodeInvalidValue,
 		},
 		{
 			name: "infinite score",
 			metric: llmobs.EvaluationConfig{
-				SpanID: "span", TraceID: "trace", Label: "quality", ScoreValue: exportFloatPtr(math.Inf(1)),
+				SpanID: "span", TraceID: "trace", Label: "quality", ScoreValue: new(math.Inf(1)),
 			},
 			code: llmobs.ExportCodeInvalidValue,
 		},
@@ -393,6 +393,7 @@ func TestSubmitEvaluationTypeValidation(t *testing.T) {
 	assert.NoError(t, errors.Unwrap(err))
 }
 
+//go:fix inline
 func exportFloatPtr(value float64) *float64 {
-	return &value
+	return new(value)
 }
