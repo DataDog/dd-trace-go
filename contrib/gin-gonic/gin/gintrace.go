@@ -45,20 +45,38 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
+		var resource string
+		if cfg.resourceNamerSet {
+			resource = cfg.resourceNamer(c)
+		}
+		route := c.FullPath()
+		if !cfg.resourceNamerSet {
+			if cfg.otelEnabled {
+				resource = httptrace.ServerSpanName(c.Request.Method, route)
+			} else {
+				resource = defaultResourceNamer(c)
+			}
+		}
 		opts := options.Expand(spanOpts, 0, 4) // opts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
-		opts = append(opts, tracer.ResourceName(cfg.resourceNamer(c)))
+		opts = append(opts, tracer.ResourceName(resource))
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
+		if cfg.otelEnabled {
+			opts = append(opts, httptrace.HTTPEndpointTag(route, c.Request))
+		} else {
+			opts = append(opts, tracer.Tag(ext.HTTPRoute, route))
+		}
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
 			status := c.Writer.Status()
-			if cfg.useGinErrors && cfg.isStatusError(status) && len(c.Errors) > 0 {
-				finishSpans(status, cfg.isStatusError, tracer.WithError(errors.New(c.Errors.String())))
+			statusError := cfg.isStatusError(status)
+			var finishOpts []tracer.FinishOption
+			if cfg.useGinErrors && statusError && len(c.Errors) > 0 {
+				finishOpts = append(finishOpts, tracer.WithError(errors.New(c.Errors.String())))
 			}
-			finishSpans(status, cfg.isStatusError)
+			finishSpans(status, func(int) bool { return statusError }, finishOpts...)
 		}()
 
 		// pass the span through the request context
@@ -66,7 +84,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// Use AppSec if enabled by user
 		if instr.AppSecEnabled() {
-			useAppSec(c, span)
+			useAppSec(c, httptrace.AppSecSpanTagSetter(span))
 		}
 
 		// serve the request to the next middleware
