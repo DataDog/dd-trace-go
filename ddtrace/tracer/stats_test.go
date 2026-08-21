@@ -727,6 +727,7 @@ func TestPerSpanVersionInStats(t *testing.T) {
 func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	uniqueMethod := "POST"
 	uniqueEndpoint := "/__unique_endpoint__"
+	const statusCode = 201
 
 	bucketSize := int64(500_000)
 	s := Span{
@@ -736,6 +737,7 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 		metrics:  map[string]float64{keyMeasured: 1},
 		meta: tinternal.NewSpanMetaFromMap(map[string]string{
 			ext.HTTPMethod:   uniqueMethod,
+			ext.HTTPCode:     "201",
 			ext.HTTPEndpoint: uniqueEndpoint,
 		}),
 	}
@@ -755,7 +757,70 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
 	group := actualStats[0].Stats[0].Stats[0]
 	assert.Equal(t, uniqueMethod, group.GetHTTPMethod())
+	assert.Equal(t, uint32(statusCode), group.GetHTTPStatusCode())
 	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
+}
+
+func TestStatsIncludeOTelHTTPAttributes(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+	tests := []struct {
+		name       string
+		meta       map[string]string
+		wantMethod string
+		wantStatus uint32
+	}{
+		{
+			name: "successful response",
+			meta: map[string]string{
+				"http.request.method":       "GET",
+				"http.response.status_code": "200",
+				ext.HTTPMethod:              "LEGACY",
+			},
+			wantMethod: "GET",
+			wantStatus: 200,
+		},
+		{
+			name: "legacy method fallback",
+			meta: map[string]string{
+				ext.HTTPMethod:              "PATCH",
+				"http.response.status_code": "204",
+			},
+			wantMethod: "PATCH",
+			wantStatus: 204,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := newDummyTransport()
+			cfg := newTestConfigWithTransport(t, transport)
+			require.True(t, cfg.internalConfig.OTelSemanticsEnabled())
+			c := newConcentrator(cfg, int64(500_000), &statsd.NoOpClientDirect{})
+			s := Span{
+				name:     "http.request",
+				resource: tt.wantMethod,
+				start:    time.Now().UnixNano(),
+				duration: int64(time.Millisecond),
+				metrics:  map[string]float64{keyMeasured: 1},
+				meta:     tinternal.NewSpanMetaFromMap(tt.meta),
+			}
+
+			ss, ok := c.newTracerStatSpan(&s, nil)
+			require.True(t, ok)
+			c.Start()
+			c.In <- []*tracerStatSpan{ss}
+			c.Stop()
+
+			actualStats := transport.Stats()
+			require.Len(t, actualStats, 1)
+			require.Len(t, actualStats[0].Stats, 1)
+			require.Len(t, actualStats[0].Stats[0].Stats, 1)
+			group := actualStats[0].Stats[0].Stats[0]
+			assert.Equal(t, tt.wantMethod, group.GetHTTPMethod())
+			assert.Equal(t, tt.wantStatus, group.GetHTTPStatusCode())
+		})
+	}
 }
 
 func TestStatsIncludeServiceSource(t *testing.T) {
