@@ -91,13 +91,13 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, pttrn := mux.Handler(r)
 	route := pattern.Route(pttrn)
 	resource := mux.cfg.ResourceNamer(r)
-	if resource == "" {
+	if resource == "" && !mux.cfg.OTelSemanticsEnabled {
 		resource = r.Method + " " + route
 	}
 	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
-	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
+	traceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
 		Service:       mux.cfg.ServiceName,
 		ServiceSource: mux.cfg.ServiceSource,
 		Framework:     "net/http",
@@ -105,5 +105,5 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		SpanOpts:      so,
 		Route:         route,
 		IsStatusError: mux.cfg.IsStatusError,
-	})
+	}, mux.cfg.OTelSemanticsEnabled)
 }
