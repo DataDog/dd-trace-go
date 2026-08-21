@@ -17,3 +17,31 @@ aspects:
           imports:
             echotrace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2
           template: echotrace.Wrap({{ . }})
+
+  - id: '//dd:ignore-echo-route'
+    join-point:
+      all-of:
+        - directive: 'dd:ignore-echo-route'
+        - one-of:
+            - function-call: CONNECT
+            - function-call: DELETE
+            - function-call: GET
+            - function-call: HEAD
+            - function-call: OPTIONS
+            - function-call: PATCH
+            - function-call: POST
+            - function-call: PUT
+            - function-call: TRACE
+            - function-call: Any
+            - function-call: Match
+            - function-call: RouteNotFound
+            - function-call: Add
+            - function-call: File
+            - function-call: FileFS
+            - function-call: Static
+            - function-call: StaticFS
+    advice:
+      - wrap-expression:
+          imports:
+            echotrace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2
+          template: echotrace.IgnoreRoute({{ . }})
