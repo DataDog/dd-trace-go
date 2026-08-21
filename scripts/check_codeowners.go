@@ -49,7 +49,7 @@ const codeownersPath = "CODEOWNERS"
 // silently can't resolve such a token to a reviewer.
 var ownerPattern = regexp.MustCompile(
 	`^@[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?(?:/[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)?$` +
-		`|^[^\s@]+@[^\s@]+\.[^\s@]+$`,
+		`|^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$`,
 )
 
 // kind is the category of a CODEOWNERS pattern within the supported subset.
