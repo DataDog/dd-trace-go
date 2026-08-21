@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 )
 
-// WrapContext returns the GLS-wrapped context if orchestrion is enabled, otherwise it returns the given parameter.
+// WrapContext returns the GLS-wrapped context if the GLS is woven in, otherwise it returns the given parameter.
 func WrapContext(ctx context.Context) context.Context {
 	if !glsActive() {
 		return ctx
@@ -30,7 +30,7 @@ func WrapContext(ctx context.Context) context.Context {
 }
 
 // CtxWithValue runs context.WithValue, adds the result to the GLS slot of orchestrion, and returns it.
-// If orchestrion is not enabled, it will run context.WithValue and return the result.
+// If the GLS is not woven in, it will run context.WithValue and return the result.
 // Since we don't support cross-goroutine switch of the GLS we still run context.WithValue in the case
 // we are switching goroutines.
 func CtxWithValue(parent context.Context, key, val any) context.Context {
@@ -55,7 +55,7 @@ func CtxWithValue(parent context.Context, key, val any) context.Context {
 // once is harmless — after the first call the token is gone and the rest are
 // no-ops.
 //
-// When orchestrion is disabled this degrades to context.WithValue and a cleanup
+// When the GLS is not woven in, this degrades to context.WithValue and a cleanup
 // that does nothing.
 func CtxWithScopedValue(parent context.Context, key, val any) (context.Context, func()) {
 	if !glsActive() {
@@ -177,7 +177,7 @@ var doneSentinel = func() *atomic.Bool {
 //
 // When ctxp is non-nil the parent context is wrapped (via WrapContext) so the
 // returned context is also GLS-aware, matching the former in-source CtxWithValue.
-// Everything is a no-op when orchestrion is disabled.
+// Everything is a no-op when the GLS is not woven in.
 //
 // Grouping the wrap, push, popper-capture and cell allocation here keeps the
 // injected templates a single call and the logic unit-testable in plain go test.
@@ -370,7 +370,7 @@ func GLSPopEntryFunc(key any, token uint64) func() {
 var glsNoop = func() {}
 
 // GLSStackDepth returns the total number of entries in the current goroutine's
-// GLS context stack. Returns 0 if orchestrion is not enabled. This is intended
+// GLS context stack. Returns 0 if the GLS is not woven in. This is intended
 // for use in tests to detect GLS leaks.
 func GLSStackDepth() int {
 	if !glsActive() {
