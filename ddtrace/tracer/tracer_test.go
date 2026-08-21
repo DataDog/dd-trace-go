@@ -1478,6 +1478,67 @@ func TestOTLPExportMode(t *testing.T) {
 	})
 }
 
+func TestOTLPSpanMetricsWithAgentTraceWriter(t *testing.T) {
+	tr, err := newUnstartedTracer(func(c *config) {
+		c.internalConfig.SetOTLPSpanMetricsEnabled(true, internalconfig.OriginCode)
+	})
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	assert.IsType(t, &agentTraceWriter{}, tr.traceWriter)
+	conc, ok := tr.stats.(*concentrator)
+	require.True(t, ok)
+	assert.IsType(t, &otlpStatsSender{}, conc.sender)
+}
+
+func TestOTLPStatsSelectionUsesEffectiveTraceWriter(t *testing.T) {
+	tests := []struct {
+		name          string
+		spanMetrics   bool
+		configure     func(*config)
+		wantTraceType traceWriter
+	}{
+		{
+			name:          "log writer without span metrics",
+			configure:     func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) },
+			wantTraceType: &logTraceWriter{},
+		},
+		{
+			name:          "log writer with span metrics",
+			spanMetrics:   true,
+			configure:     func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) },
+			wantTraceType: &logTraceWriter{},
+		},
+		{
+			name:          "CI Visibility writer without span metrics",
+			configure:     func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) },
+			wantTraceType: &ciVisibilityTraceWriter{},
+		},
+		{
+			name:          "CI Visibility writer with span metrics",
+			spanMetrics:   true,
+			configure:     func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) },
+			wantTraceType: &ciVisibilityTraceWriter{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr, err := newUnstartedTracer(func(c *config) {
+				c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+				c.internalConfig.SetOTLPSpanMetricsEnabled(tt.spanMetrics, internalconfig.OriginCode)
+				tt.configure(c)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+
+			assert.IsType(t, tt.wantTraceType, tr.traceWriter)
+			conc, ok := tr.stats.(*concentrator)
+			require.True(t, ok, "non-OTLP writers must use the native stats concentrator")
+			assert.IsType(t, &ddStatsSender{}, conc.sender)
+		})
+	}
+}
+
 func TestOTLPExportModeStatsSkipped(t *testing.T) {
 	srv := newTestOTLPServer()
 	defer srv.Close()

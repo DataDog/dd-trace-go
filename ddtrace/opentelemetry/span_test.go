@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -23,11 +24,15 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
+	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type traces [][]map[string]any
@@ -90,6 +95,75 @@ func waitForPayload(payloads chan traces) (traces, error) {
 	}
 }
 
+type otlpPayload struct {
+	traces *otlptrace.TracesData
+	err    error
+}
+
+func mockOTLPTracerProvider(t *testing.T, opts ...tracer.StartOption) (*TracerProvider, <-chan otlpPayload, func()) {
+	payloads := make(chan otlpPayload, 1)
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/traces" {
+			err := fmt.Errorf("unexpected OTLP request: %s %s", r.Method, r.URL.Path)
+			payloads <- otlpPayload{err: err}
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			payloads <- otlpPayload{err: err}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var data otlptrace.TracesData
+		if err := proto.Unmarshal(body, &data); err != nil {
+			payloads <- otlpPayload{err: err}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		payloads <- otlpPayload{traces: &data}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", collector.URL+"/v1/traces")
+
+	tp := NewTracerProvider(opts...)
+	otel.SetTracerProvider(tp)
+	return tp, payloads, func() {
+		if err := tp.Shutdown(); err != nil {
+			t.Fatalf("Tracer Provider shutdown failure: %v", err)
+		}
+		collector.Close()
+	}
+}
+
+func waitForOTLPPayload(payloads <-chan otlpPayload) (*otlptrace.TracesData, error) {
+	select {
+	case payload := <-payloads:
+		return payload.traces, payload.err
+	case <-time.After(10 * time.Second):
+		return nil, errors.New("timed out waiting for OTLP traces")
+	}
+}
+
+func spansFromOTLPPayload(payload *otlptrace.TracesData) []*otlptrace.Span {
+	var spans []*otlptrace.Span
+	for _, resourceSpans := range payload.ResourceSpans {
+		for _, scopeSpans := range resourceSpans.ScopeSpans {
+			spans = append(spans, scopeSpans.Spans...)
+		}
+	}
+	return spans
+}
+
+func findOTLPAttribute(span *otlptrace.Span, key string) (*otlpcommon.AnyValue, bool) {
+	for _, attribute := range span.Attributes {
+		if attribute.Key == key {
+			return attribute.Value, true
+		}
+	}
+	return nil, false
+}
+
 func TestSpanResourceNameDefault(t *testing.T) {
 	assert := assert.New(t)
 	ctx := context.Background()
@@ -134,16 +208,14 @@ func TestSpanSetName(t *testing.T) {
 }
 
 // TestSpanSetNameUpdatesResourceOtelSemantics verifies that under OTel semantics SetName
-// updates the resource (the OTLP span name) — e.g. otelhttp renames "GET" to "GET /users/{id}".
+// determines the exported OTLP span name, as when otelhttp renames "GET" to "GET /users/{id}".
 func TestSpanSetNameUpdatesResourceOtelSemantics(t *testing.T) {
-	assert := assert.New(t)
 	// The flag is resolved when the provider is created; reload on cleanup so it
 	// doesn't leak (LIFO order runs this after t.Setenv restores the env).
 	t.Cleanup(func() { internalconfig.CreateNew() })
 	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
-	internalconfig.CreateNew()
 
-	_, payloads, cleanup := mockTracerProvider(t)
+	_, payloads, cleanup := mockOTLPTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
@@ -154,16 +226,11 @@ func TestSpanSetNameUpdatesResourceOtelSemantics(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(payloads)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	p := traces[0]
-	// Resource follows the rename. Under OTel semantics the operation-name logic is
-	// skipped entirely (no remap, no computed default), so the operation name is left
-	// as it was set at Start and the span attributes pass through unchanged.
-	assert.Equal("GET /users/{id}", p[0]["resource"])
-	assert.Equal("GET", p[0]["name"])
+	payload, err := waitForOTLPPayload(payloads)
+	require.NoError(t, err)
+	spans := spansFromOTLPPayload(payload)
+	require.Len(t, spans, 1)
+	assert.Equal(t, "GET /users/{id}", spans[0].Name)
 }
 
 func TestSpanLink(t *testing.T) {
@@ -1011,15 +1078,12 @@ func TestToReservedAttributesOtelSemantics(t *testing.T) {
 // TestRemapStatusCodeOtelSemantics verifies that under OTel semantics the bridge keeps
 // http.response.status_code instead of remapping it to the legacy http.status_code tag.
 func TestRemapStatusCodeOtelSemantics(t *testing.T) {
-	assert := assert.New(t)
-
 	// Reload global config on cleanup so the flag doesn't leak; LIFO order runs this
 	// after t.Setenv restores the env.
 	t.Cleanup(func() { internalconfig.CreateNew() })
 	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
-	internalconfig.CreateNew()
 
-	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	_, payloads, cleanup := mockOTLPTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
 	tr := otel.Tracer("")
 	defer cleanup()
 
@@ -1029,14 +1093,16 @@ func TestRemapStatusCodeOtelSemantics(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(payloads)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	p := traces[0]
-	meta := fmt.Sprintf("%v", p[0]["meta"])
-	metrics := fmt.Sprintf("%v", p[0]["metrics"])
-	// No legacy string remap; OTel key retained as a numeric tag.
-	assert.NotContains(meta, "http.status_code")
-	assert.Contains(metrics, "http.response.status_code:200")
+	payload, err := waitForOTLPPayload(payloads)
+	require.NoError(t, err)
+	spans := spansFromOTLPPayload(payload)
+	require.Len(t, spans, 1)
+
+	statusCode, found := findOTLPAttribute(spans[0], "http.response.status_code")
+	require.True(t, found)
+	integer, ok := statusCode.Value.(*otlpcommon.AnyValue_IntValue)
+	require.True(t, ok, "http.response.status_code must be an OTLP integer")
+	assert.Equal(t, int64(200), integer.IntValue)
+	_, found = findOTLPAttribute(spans[0], "http.status_code")
+	assert.False(t, found)
 }

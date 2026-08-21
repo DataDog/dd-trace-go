@@ -649,6 +649,32 @@ func TestSpanFinishPriority(t *testing.T) {
 	assert.Fail("span not found")
 }
 
+func TestSpanPeerServiceOTelSemantics(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+	t.Run("defaults remain disabled", func(t *testing.T) {
+		tracer, err := newUnstartedTracer(
+			withNoopInfoHTTPClient(),
+			withNoopStats(),
+			WithPeerServiceDefaults(true),
+		)
+		require.NoError(t, err)
+		assert.False(t, tracer.config.internalConfig.PeerServiceDefaultsEnabled())
+		setGlobalTracer(tracer)
+		t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+
+		span := tracer.StartSpan("HTTP",
+			Tag(ext.SpanKind, ext.SpanKindClient),
+			Tag("server.address", "example.com"),
+			Tag("out.host", "legacy.example.com"),
+		)
+		span.Finish()
+
+		assert.False(t, span.meta.Has(ext.PeerService))
+		assert.False(t, span.meta.Has(keyPeerServiceSource))
+	})
+}
+
 func TestSpanPeerService(t *testing.T) {
 	testCases := []struct {
 		name                        string

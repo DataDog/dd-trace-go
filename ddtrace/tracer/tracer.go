@@ -535,6 +535,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	// and log-to-stdout are selected ahead of OTLP, and those writers do not serialize
 	// native span events, so they must keep events string-tagged.
 	var otlpExportMode bool
+	var supportsOTLPSpanMetrics bool
 	ps := newPrioritySampler()
 	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
@@ -545,8 +546,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 		otlpExportMode = true
+		supportsOTLPSpanMetrics = true
 	} else {
 		writer = newAgentTraceWriter(c, ps, statsd)
+		supportsOTLPSpanMetrics = true
 	}
 	rulesSampler := newRulesSampler(c.internalConfig.TraceSamplingRules(), c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 	var dataStreamsProcessor *datastreams.Processor
@@ -562,10 +565,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		}
 	}
 	var sc statsConcentrator
-	if c.internalConfig.OTLPSpanMetricsEnabled() {
+	if c.internalConfig.OTLPSpanMetricsEnabled() && supportsOTLPSpanMetrics {
 		// OTLP span metrics: SDK computes and exports stats; agent /v0.6/stats path unused.
 		sc = newOTLPMetricsConcentrator(c, statsd)
-	} else if c.internalConfig.OTLPExportMode() {
+	} else if otlpExportMode {
 		sc = &noopConcentrator{}
 	} else {
 		sc = newConcentrator(c, defaultStatsBucketSize, statsd)
