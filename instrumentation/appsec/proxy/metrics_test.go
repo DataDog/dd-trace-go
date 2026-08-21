@@ -316,12 +316,37 @@ func TestBodyBufferGrowthStaysWithinTheLimit(t *testing.T) {
 	require.Len(t, b.buffer, sizeLimit)
 }
 
-func TestBodyBufferSmallBodyDoesNotReserveTheWholeLimit(t *testing.T) {
+// Most bodies arrive in a single chunk and are released straight after analysis, so
+// the first allocation must be exact. Rounding those up to a page would add allocation
+// traffic at request rate for no amortization in return.
+func TestBodyBufferSingleChunkAllocatesExactly(t *testing.T) {
 	b := newBodyBuffer(10 * 1024 * 1024)
 
 	b.append([]byte("{}"))
 
 	require.Equal(t, "{}", string(b.buffer))
-	require.LessOrEqual(t, cap(b.buffer), minBodyBufferCapacity,
-		"a tiny body must not reserve the full parsing limit")
+	require.Equal(t, 2, cap(b.buffer), "a single-chunk body must not over-allocate")
+}
+
+// Once a second chunk proves the body is streamed, reallocating per chunk costs more
+// than the slack, so growth takes over.
+func TestBodyBufferSecondChunkGrowsToThePageFloor(t *testing.T) {
+	b := newBodyBuffer(10 * 1024 * 1024)
+
+	b.append([]byte("{"))
+	b.append([]byte("}"))
+
+	require.Equal(t, "{}", string(b.buffer))
+	require.Equal(t, minBodyBufferCapacity, cap(b.buffer))
+}
+
+// The floor must never push capacity past a size limit smaller than a page.
+func TestBodyBufferFloorRespectsATinyLimit(t *testing.T) {
+	b := newBodyBuffer(8)
+
+	b.append([]byte("ab"))
+	b.append([]byte("cd"))
+
+	require.Equal(t, "abcd", string(b.buffer))
+	require.LessOrEqual(t, cap(b.buffer), 8)
 }

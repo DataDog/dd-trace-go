@@ -29,7 +29,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -113,10 +112,12 @@ func configureObservabilityMode(mode bool) error {
 }
 
 const (
-	// Where the container memory limit lives under cgroup v2 and cgroup v1. Paths are
-	// relative so tests can resolve them against a fixture tree.
-	cgroupV2MemoryLimitPath = "sys/fs/cgroup/memory.max"
-	cgroupV1MemoryLimitPath = "sys/fs/cgroup/memory/memory.limit_in_bytes"
+	// The cgroup filesystem, and the memory limit file within a v2 and a v1 hierarchy.
+	// Paths are relative so tests can resolve them against a fixture tree.
+	cgroupMountPath     = "sys/fs/cgroup"
+	cgroupV2MemoryLimit = "memory.max"
+	cgroupV1MemoryLimit = "memory/memory.limit_in_bytes"
+	procSelfCgroupPath  = "proc/self/cgroup"
 
 	// goMemLimitRatio is the share of the container memory limit handed to the Go
 	// runtime. The remainder covers what GOMEMLIMIT cannot account for: the binary's
@@ -142,7 +143,11 @@ const (
 // An explicitly configured GOMEMLIMIT always wins, and an unreadable or unlimited
 // cgroup leaves the runtime default untouched.
 func configureGoMemoryLimit() {
-	if _, ok := os.LookupEnv("GOMEMLIMIT"); ok {
+	// An empty value is not an opt-out: the runtime treats GOMEMLIMIT="" exactly like an
+	// unset variable and keeps math.MaxInt64, so a manifest that templates the variable
+	// to an empty string would otherwise silently disable this. A non-empty value,
+	// including "off", is a deliberate choice and is left alone.
+	if value, ok := os.LookupEnv("GOMEMLIMIT"); ok && value != "" {
 		return
 	}
 
@@ -162,14 +167,62 @@ func configureGoMemoryLimit() {
 
 // cgroupMemoryLimit reports the container memory limit in bytes, preferring cgroup v2
 // over v1. root is the filesystem root to resolve the cgroup paths against.
+//
+// The limit is not necessarily at the root of the cgroup mount. With a private cgroup
+// namespace — the common container case — the process sees its own cgroup as "/" and
+// the mount root is correct. Running in the host cgroup namespace, as some Kubernetes
+// runtimes still do, the mount root is the host's cgroup and reading it would report
+// no limit at all or the whole machine's. /proc/self/cgroup names the path this
+// process actually lives under, so try that first and walk up towards the root, since
+// the limit may be set on an ancestor such as the pod rather than the container.
 func cgroupMemoryLimit(root string) (int64, bool) {
-	for _, path := range []string{cgroupV2MemoryLimitPath, cgroupV1MemoryLimitPath} {
-		if limit, ok := readCgroupMemoryLimit(filepath.Join(root, path)); ok {
-			return limit, true
+	for _, limitFile := range []string{cgroupV2MemoryLimit, cgroupV1MemoryLimit} {
+		mount := filepath.Join(root, cgroupMountPath)
+		// The v1 memory controller is mounted in its own subdirectory, which the relative
+		// cgroup path is expressed underneath.
+		base := filepath.Join(mount, filepath.Dir(limitFile))
+		name := filepath.Base(limitFile)
+
+		for _, relative := range cgroupSelfPaths(root) {
+			if limit, ok := readCgroupMemoryLimit(filepath.Join(base, relative, name)); ok {
+				return limit, true
+			}
 		}
 	}
 
 	return 0, false
+}
+
+// cgroupSelfPaths returns the cgroup paths to try, from the process's own cgroup up to
+// the mount root. The root is always included so a missing or unreadable
+// /proc/self/cgroup degrades to the previous behaviour rather than to nothing.
+func cgroupSelfPaths(root string) []string {
+	content, err := os.ReadFile(filepath.Join(root, procSelfCgroupPath))
+	if err != nil {
+		return []string{"/"}
+	}
+
+	// Lines are "hierarchy:controllers:path"; cgroup v2 uses the single "0::<path>".
+	var self string
+	for _, line := range strings.Split(string(content), "\n") {
+		fields := strings.SplitN(strings.TrimSpace(line), ":", 3)
+		if len(fields) != 3 || fields[2] == "" {
+			continue
+		}
+		// Prefer the v2 unified entry or the v1 memory controller; anything else describes
+		// a hierarchy that does not carry the memory limit.
+		if fields[0] == "0" || strings.Contains(fields[1], "memory") {
+			self = fields[2]
+			break
+		}
+	}
+
+	paths := []string{}
+	for current := self; current != "" && current != "/" && current != "."; current = filepath.Dir(current) {
+		paths = append(paths, current)
+	}
+
+	return append(paths, "/")
 }
 
 // readCgroupMemoryLimit reads a single cgroup memory limit file, reporting false when
@@ -202,13 +255,17 @@ func readCgroupMemoryLimit(path string) (int64, bool) {
 // memory, these three numbers are the first thing worth knowing, and they are
 // otherwise invisible from outside the container.
 func logRuntimeEnvelope(config serviceExtensionConfig) {
-	bodyParsingSizeLimit := proxy.DefaultBodyParsingSizeLimit
+	// Only report a number when one was actually configured. Left unset, the limit is
+	// resolved per request from the gateway integration — and GCP Service Extensions
+	// resolves it to 0, disabling body parsing entirely — so printing the proxy-wide
+	// default here would misreport the primary deployment this diagnostic exists for.
+	bodyParsingSizeLimit := "unset (resolved per gateway integration)"
 	if config.bodyParsingSizeLimit != nil {
-		bodyParsingSizeLimit = *config.bodyParsingSizeLimit
+		bodyParsingSizeLimit = strconv.Itoa(*config.bodyParsingSizeLimit) + " bytes"
 	}
 
 	// A negative argument retrieves the limit without adjusting it.
-	log.Info("service_extension: runtime envelope: GOMEMLIMIT=%d bytes, GOMAXPROCS=%d, body parsing size limit=%d bytes\n",
+	log.Info("service_extension: runtime envelope: GOMEMLIMIT=%d bytes, GOMAXPROCS=%d, body parsing size limit=%s\n",
 		debug.SetMemoryLimit(-1), runtime.GOMAXPROCS(0), bodyParsingSizeLimit)
 }
 

@@ -40,9 +40,9 @@ func (b *bodyBuffer) append(chunk []byte) {
 	b.buffer = append(b.buffer, chunk[:bytesToAdd]...)
 }
 
-// minBodyBufferCapacity is the smallest allocation worth making. A streamed body
-// arrives in many small chunks, and starting at the size of the first one costs a
-// reallocation and a full copy for every chunk that follows.
+// minBodyBufferCapacity is the smallest allocation worth making once a body has shown
+// it arrives in more than one chunk, at which point reallocating per chunk costs more
+// than the slack does.
 const minBodyBufferCapacity = 4096
 
 // grow ensures the buffer can hold size bytes without reallocating.
@@ -51,12 +51,19 @@ const minBodyBufferCapacity = 4096
 // append cannot do on its own: left to itself it rounds the final chunk of a large
 // body up past the limit we promised to respect. Bodies never exceed sizeLimit, so
 // clamping only ever removes waste.
+//
+// The first allocation is sized exactly to the chunk. Most bodies arrive whole and are
+// released right after analysis, so rounding those up to a page would add allocation
+// traffic at request rate for no amortization in return.
 func (b *bodyBuffer) grow(size int) {
 	if cap(b.buffer) >= size {
 		return
 	}
 
-	capacity := max(2*cap(b.buffer), size, minBodyBufferCapacity)
+	capacity := max(2*cap(b.buffer), size)
+	if cap(b.buffer) > 0 {
+		capacity = max(capacity, minBodyBufferCapacity)
+	}
 	capacity = min(capacity, b.sizeLimit)
 
 	grown := make([]byte, len(b.buffer), capacity)

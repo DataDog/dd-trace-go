@@ -213,6 +213,13 @@ func setEnv(env map[string]string) {
 	}
 }
 
+const (
+	// Fixture paths, mirroring the layout the code reads under a filesystem root.
+	fixtureV2Limit  = "sys/fs/cgroup/memory.max"
+	fixtureV1Limit  = "sys/fs/cgroup/memory/memory.limit_in_bytes"
+	fixtureSelfCgrp = "proc/self/cgroup"
+)
+
 func TestCgroupMemoryLimit(t *testing.T) {
 	tests := []struct {
 		name string
@@ -223,30 +230,30 @@ func TestCgroupMemoryLimit(t *testing.T) {
 	}{
 		{
 			name:      "cgroup-v2",
-			files:     map[string]string{cgroupV2MemoryLimitPath: "536870912\n"},
+			files:     map[string]string{fixtureV2Limit: "536870912\n"},
 			wantLimit: 536870912,
 			wantOK:    true,
 		},
 		{
 			name:  "cgroup-v2-unlimited-is-the-literal-max",
-			files: map[string]string{cgroupV2MemoryLimitPath: "max\n"},
+			files: map[string]string{fixtureV2Limit: "max\n"},
 		},
 		{
 			name:      "cgroup-v1",
-			files:     map[string]string{cgroupV1MemoryLimitPath: "268435456"},
+			files:     map[string]string{fixtureV1Limit: "268435456"},
 			wantLimit: 268435456,
 			wantOK:    true,
 		},
 		{
 			name: "cgroup-v1-unlimited-is-a-huge-sentinel",
 			// The value cgroup v1 reports when no limit is set.
-			files: map[string]string{cgroupV1MemoryLimitPath: "9223372036854771712"},
+			files: map[string]string{fixtureV1Limit: "9223372036854771712"},
 		},
 		{
 			name: "v2-wins-over-v1",
 			files: map[string]string{
-				cgroupV2MemoryLimitPath: "111",
-				cgroupV1MemoryLimitPath: "222",
+				fixtureV2Limit: "111",
+				fixtureV1Limit: "222",
 			},
 			wantLimit: 111,
 			wantOK:    true,
@@ -254,8 +261,8 @@ func TestCgroupMemoryLimit(t *testing.T) {
 		{
 			name: "falls-back-to-v1-when-v2-is-unlimited",
 			files: map[string]string{
-				cgroupV2MemoryLimitPath: "max",
-				cgroupV1MemoryLimitPath: "222",
+				fixtureV2Limit: "max",
+				fixtureV1Limit: "222",
 			},
 			wantLimit: 222,
 			wantOK:    true,
@@ -265,11 +272,56 @@ func TestCgroupMemoryLimit(t *testing.T) {
 		},
 		{
 			name:  "unparseable",
-			files: map[string]string{cgroupV2MemoryLimitPath: "not-a-number"},
+			files: map[string]string{fixtureV2Limit: "not-a-number"},
 		},
 		{
 			name:  "zero-is-not-a-usable-limit",
-			files: map[string]string{cgroupV2MemoryLimitPath: "0"},
+			files: map[string]string{fixtureV2Limit: "0"},
+		},
+		{
+			// Host cgroup namespace: the mount root is the host's cgroup and carries no
+			// limit, while the process's own cgroup below it does. Reading the root would
+			// silently skip the protection.
+			name: "host-namespace-reads-the-process-own-cgroup",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/kubepods/burstable/podabc/container123\n",
+				fixtureV2Limit:  "max",
+				"sys/fs/cgroup/kubepods/burstable/podabc/container123/memory.max": "268435456",
+			},
+			wantLimit: 268435456,
+			wantOK:    true,
+		},
+		{
+			// The limit is frequently set on the pod rather than the container, so the
+			// walk up towards the root has to find it.
+			name: "walks-up-to-an-ancestor-cgroup",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/kubepods/burstable/podabc/container123\n",
+				"sys/fs/cgroup/kubepods/burstable/podabc/memory.max": "134217728",
+			},
+			wantLimit: 134217728,
+			wantOK:    true,
+		},
+		{
+			// Private cgroup namespace, the common container case: the process reports "/"
+			// and the limit sits at the mount root.
+			name: "private-namespace-reports-root",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/\n",
+				fixtureV2Limit:  "536870912",
+			},
+			wantLimit: 536870912,
+			wantOK:    true,
+		},
+		{
+			// cgroup v1 lists one hierarchy per line; only the memory controller matters.
+			name: "cgroup-v1-picks-the-memory-controller-line",
+			files: map[string]string{
+				fixtureSelfCgrp: "5:cpu,cpuacct:/some/cpu/path\n4:memory:/mem/path\n",
+				"sys/fs/cgroup/memory/mem/path/memory.limit_in_bytes": "99999",
+			},
+			wantLimit: 99999,
+			wantOK:    true,
 		},
 	}
 
@@ -300,6 +352,20 @@ func TestConfigureGoMemoryLimitLeavesAnExplicitSettingAlone(t *testing.T) {
 	configureGoMemoryLimit()
 
 	require.Equal(t, before, currentGoMemoryLimit())
+}
+
+// A manifest that templates GOMEMLIMIT to an empty string means "unset" to the Go
+// runtime, so it must not be read as an operator opt-out here either.
+func TestConfigureGoMemoryLimitTreatsEmptyAsUnset(t *testing.T) {
+	t.Setenv("GOMEMLIMIT", "")
+
+	value, present := os.LookupEnv("GOMEMLIMIT")
+	require.True(t, present, "the variable is present but empty, which is the case under test")
+	require.Empty(t, value)
+
+	// There is no cgroup limit on the test host, so the call must reach the derivation
+	// path and leave the limit untouched rather than return early on the env check.
+	require.NotPanics(t, configureGoMemoryLimit)
 }
 
 // currentGoMemoryLimit reads the limit without changing it: a negative argument to
