@@ -250,8 +250,8 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	metadata := provider.Metadata()
-	if metadata.Name != "Datadog Remote Config Provider" {
-		t.Errorf("expected provider name to be 'Datadog Remote Config Provider', got %q", metadata.Name)
+	if metadata.Name != "Datadog Provider" {
+		t.Errorf("expected provider name to be 'Datadog Provider', got %q", metadata.Name)
 	}
 
 	hooks := provider.Hooks()
