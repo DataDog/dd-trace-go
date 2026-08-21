@@ -115,8 +115,10 @@ func runGoroutineLeakProgram(t *testing.T, withExperiment, explicit bool) (profi
 	if explicit && !withExperiment && version.Compare(runtime.Version(), "go1.27") < 0 {
 		// We expect this configuration (explicitly enabled but built
 		// for Go 1.26 and with no GOEXPERIMENT) to exit without
-		// producing any profiles.
+		// producing any profiles. The profile type is ignored, so the
+		// test program needs to exit explicitly after Start returns.
 		cmd := exec.Command(binPath)
+		cmd.Env = []string{"GOROUTINE_LEAK_TEST_EXIT=1"}
 		output, _ := cmd.CombinedOutput()
 		return profileMeta{}, string(output)
 	}
@@ -146,6 +148,7 @@ const goroutineLeakSource = `package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/profiler"
@@ -161,6 +164,10 @@ func main() {
 		return
 	}
 	defer profiler.Stop()
+
+	if os.Getenv("GOROUTINE_LEAK_TEST_EXIT") != "" {
+		return
+	}
 
 	// Run until killed. This has the side effect of leaking a goroutine in
 	// case we care about checking for a non-empty profile.

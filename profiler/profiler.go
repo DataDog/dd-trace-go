@@ -156,7 +156,8 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 
 	if _, ok := cfg.types[GoroutineLeakProfile]; ok && version.Compare(runtime.Version(), "go1.27") < 0 && !goroutineLeakExperiment() {
-		return nil, errors.New("goroutine leak profile requires Go 1.27 or later, or GOEXPERIMENT=goroutineleakprofile")
+		log.Warn("goroutine leak profile requires Go 1.27 or later, or GOEXPERIMENT=goroutineleakprofile")
+		delete(cfg.types, GoroutineLeakProfile)
 	}
 	if goroutineLeakExperiment() {
 		cfg.addProfileType(GoroutineLeakProfile)
