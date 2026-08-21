@@ -6,9 +6,8 @@ package tracer
 
 import (
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	processcontextv1 "go.opentelemetry.io/proto/otlp/processcontext/v1development"
 	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
 )
 
 // Metadata represents the configuration of the tracer.
@@ -39,9 +38,9 @@ type Metadata struct {
 	ContainerID string `msg:"container_id"`
 }
 
-// toProcessContext builds a *otelprocesscontext.ProcessContext from the Metadata fields,
+// toProcessContext builds a *processcontextv1.ProcessContext from the Metadata fields,
 // making Metadata the single source of truth for both the msgpack memfd and the proto mmap.
-func (m Metadata) toProcessContext() *otelprocesscontext.ProcessContext {
+func (m Metadata) toProcessContext() *processcontextv1.ProcessContext {
 	attrs := []struct{ key, val string }{
 		{"deployment.environment.name", m.ServiceEnvironment},
 		{"host.name", m.Hostname},
@@ -73,8 +72,8 @@ func (m Metadata) toProcessContext() *otelprocesscontext.ProcessContext {
 			},
 		},
 	}
-	return &otelprocesscontext.ProcessContext{
-		Resource:        &resourcev1.Resource{Attributes: kvs},
-		ExtraAttributes: extraAttrs,
+	return &processcontextv1.ProcessContext{
+		Resource:   &resourcev1.Resource{Attributes: kvs},
+		Attributes: extraAttrs,
 	}
 }
