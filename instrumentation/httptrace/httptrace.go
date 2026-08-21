@@ -27,14 +27,9 @@ import (
 )
 
 var (
-	cfg = newConfig()
-)
-
-var instr *instrumentation.Instrumentation
-
-func init() {
 	instr = instrumentation.Load(instrumentation.PackageNetHTTP)
-}
+	cfg   = newConfig()
+)
 
 var reportTelemetryConfigOnce sync.Once
 
@@ -43,19 +38,18 @@ type inferredSpanCreatedCtxKey struct{}
 type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.FinishOption)
 
 // requestSpanTagsSizeHint pre-sizes the tag map built for every request span.
-// SpanType, HTTPMethod, HTTPURL, HTTPUserAgent, and "_dd.measured" are always
-// set (5), "http.host" is set when present (6), and AppSec header tags, IP
-// tags, and baggage tags add a variable amount on top — this only needs to
-// cover the common case to avoid the first few map growths, not be exact.
+// Both semantic modes set several fixed tags; request attributes, AppSec header
+// tags, IP tags, and baggage tags add a variable amount. This only needs to
+// cover the common case to avoid early map growth, not be exact.
 //
 // The value must be at least 9: the runtime rounds any map hint of 8 or less
 // down to a single 8-slot group, so make(map, 8) is identical to make(map) and
-// reserves nothing. 9 is the smallest hint that reserves a second group, so
-// spans that end up with 9+ tags (IP/AppSec/baggage) skip a growth and rehash.
+// reserves nothing. 9 is the smallest hint that reserves a second group.
 const requestSpanTagsSizeHint = 9
 
-// StartRequestSpan starts a server-side HTTP request span with the standard list of HTTP request span tags
-// (http.method, http.url, http.useragent). Any further span start option can be added with opts.
+// StartRequestSpan starts a server-side HTTP request span. When DD_TRACE_OTEL_SEMANTICS_ENABLED is true,
+// it uses OpenTelemetry HTTP attributes and a normalized method resource; otherwise, it uses Datadog HTTP tags.
+// Options in opts take precedence over these defaults.
 func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
 	var ipTags map[string]string
 	if cfg.traceClientIP {
@@ -79,6 +73,7 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 	})
 
 	var inferredProxySpan *tracer.Span
+	otelSemanticsEnabled := cfg.otelSemanticsEnabled
 
 	if cfg.inferredProxyServicesEnabled {
 		inferredProxySpanCreated := false
@@ -109,12 +104,19 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 				ssCfg.Tags = make(map[string]any, requestSpanTagsSizeHint)
 			}
 			ssCfg.Tags[ext.SpanType] = ext.SpanTypeWeb
-			ssCfg.Tags[ext.HTTPMethod] = r.Method
-			ssCfg.Tags[ext.HTTPURL] = URLFromRequest(r, cfg.queryString)
-			ssCfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
 			ssCfg.Tags["_dd.measured"] = 1
-			if r.Host != "" {
-				ssCfg.Tags["http.host"] = r.Host
+			if otelSemanticsEnabled {
+				setOTelServerRequestTags(ssCfg.Tags, r, ipTags)
+			} else {
+				ssCfg.Tags[ext.HTTPMethod] = r.Method
+				ssCfg.Tags[ext.HTTPURL] = URLFromRequest(r, cfg.queryString)
+				ssCfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
+				if r.Host != "" {
+					ssCfg.Tags["http.host"] = r.Host
+				}
+				for k, v := range ipTags {
+					ssCfg.Tags[k] = v
+				}
 			}
 			appsechttpsec.SetSecurityTestingHeaderTags(ssCfg.Tags, r.Header)
 
@@ -134,9 +136,6 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 				return true
 			})
 
-			for k, v := range ipTags {
-				ssCfg.Tags[k] = v
-			}
 		})
 	nopts = append(nopts, opts...)
 
@@ -147,26 +146,29 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
 	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
-		FinishRequestSpan(span, status, errorFn, opts...)
+		finishRequestSpan(span, status, errorFn, otelSemanticsEnabled, opts...)
 		if inferredProxySpan != nil {
-			FinishRequestSpan(inferredProxySpan, status, errorFn, opts...)
+			finishRequestSpan(inferredProxySpan, status, errorFn, false, opts...)
 		}
 	}
 }
 
-// FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
-// code. If not nil, errorFn will override the isStatusError method on httptrace for determining error codes. Any further span finish option can be added with opts.
+// FinishRequestSpan finishes an HTTP request span. When DD_TRACE_OTEL_SEMANTICS_ENABLED is true, it sets
+// http.response.status_code and sets error.type to the status code for responses classified as errors; otherwise,
+// it sets http.status_code. A non-nil errorFn replaces the configured server status check.
 func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
+	finishRequestSpan(s, status, errorFn, cfg.otelSemanticsEnabled, opts...)
+}
+
+func finishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, otelSemanticsEnabled bool, opts ...tracer.FinishOption) {
 	var statusStr string
-	var fn func(int) bool
 	if errorFn == nil {
-		fn = cfg.isStatusError
-	} else {
-		fn = errorFn
+		errorFn = cfg.isStatusError
 	}
+	statusError := errorFn(status)
 	// if status is 0, treat it like 200 unless 0 was called out in DD_TRACE_HTTP_SERVER_ERROR_STATUSES
 	if status == 0 {
-		if fn(status) {
+		if statusError {
 			statusStr = "0"
 			s.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		} else {
@@ -174,7 +176,7 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 		}
 	} else {
 		statusStr = strconv.Itoa(status)
-		if fn(status) {
+		if statusError {
 			s.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		}
 	}
@@ -194,7 +196,14 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 		// the error stack generation per span that happens in `FinishRequestSpan` before calling `s.Finish`.
 		s.SetTag("error.stack", "")
 	}
-	s.SetTag(ext.HTTPCode, statusStr)
+	if otelSemanticsEnabled {
+		s.SetTag(ext.HTTPResponseStatusCode, statusStr)
+		if statusError {
+			s.SetTag(ext.ErrorType, statusStr)
+		}
+	} else {
+		s.SetTag(ext.HTTPCode, statusStr)
+	}
 	s.Finish(tracer.WithFinishConfig(fc))
 }
 
@@ -253,27 +262,31 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool, authority 
 	} else {
 		url = path
 	}
-	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
-	if queryString && r.URL.RawQuery != "" {
-		query := r.URL.RawQuery
-		allowlist := cfg.getQueryStringAllowlist(isClient)
-		if allowlist != nil {
-			// When an allowlist is configured, only keep the specified parameter keys.
-			// This avoids running the expensive obfuscation regex entirely.
-			query = filterQueryStringByAllowlist(query, allowlist)
-		} else if cfg.useDefaultObfuscator {
-			query = obfuscateQueryStringDefault(query)
-		} else if cfg.queryStringRegexp != nil {
-			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
-		}
-		if query != "" {
-			url = url + "?" + query
-		}
+	if query := queryStringFromRequest(r, queryString, isClient); query != "" {
+		url = url + "?" + query
 	}
 	if frag := r.URL.EscapedFragment(); frag != "" {
 		url = url + "#" + frag
 	}
 	return url
+}
+
+func queryStringFromRequest(r *http.Request, queryString, isClient bool) string {
+	if !queryString || r.URL == nil || r.URL.RawQuery == "" {
+		return ""
+	}
+	query := r.URL.RawQuery
+	allowlist := cfg.getQueryStringAllowlist(isClient)
+	if allowlist != nil {
+		return filterQueryStringByAllowlist(query, allowlist)
+	}
+	if cfg.useDefaultObfuscator {
+		return obfuscateQueryStringDefault(query)
+	}
+	if cfg.queryStringRegexp != nil {
+		return cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
+	}
+	return query
 }
 
 // filterQueryStringByAllowlist parses a raw query string and returns only the key=value

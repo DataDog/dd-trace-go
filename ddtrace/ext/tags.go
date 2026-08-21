@@ -73,6 +73,15 @@ const (
 	// It must omit user credentials and should redact sensitive query values.
 	URLFull = "url.full"
 
+	// URLPath is the request URL path.
+	URLPath = "url.path"
+
+	// URLScheme is the request URL scheme.
+	URLScheme = "url.scheme"
+
+	// URLQuery is the request URL query without the leading question mark.
+	URLQuery = "url.query"
+
 	// ServerAddress is the logical destination domain, IP address, or Unix socket name. Domain names
 	// must not be obtained through reverse DNS.
 	// Behind a proxy, it represents the backend address when known.
@@ -84,6 +93,15 @@ const (
 
 	// ClientPort is the client port number.
 	ClientPort = "client.port"
+
+	// ClientAddress is the original client address, independent of proxying.
+	ClientAddress = "client.address"
+
+	// NetworkPeerAddress is the address of the network peer directly connected to this service.
+	NetworkPeerAddress = "network.peer.address"
+
+	// UserAgentOriginal is the original User-Agent header value.
+	UserAgentOriginal = "user_agent.original"
 
 	// HTTPUserAgent is the user agent header value of the HTTP request.
 	HTTPUserAgent = "http.useragent"

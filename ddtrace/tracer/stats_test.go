@@ -8,6 +8,7 @@ package tracer
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -761,49 +762,53 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
 }
 
-func TestStatsIncludeOTelHTTPAttributes(t *testing.T) {
+func TestStatsIncludeOTelHTTPServerAttributes(t *testing.T) {
 	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
 
 	tests := []struct {
-		name       string
-		meta       map[string]string
-		wantMethod string
-		wantStatus uint32
+		name          string
+		method        string
+		datadogMethod string
+		status        uint32
+		spanError     int32
+		wantErrors    uint64
 	}{
-		{
-			name: "successful response",
-			meta: map[string]string{
-				"http.request.method":       "GET",
-				"http.response.status_code": "200",
-				ext.HTTPMethod:              "LEGACY",
-			},
-			wantMethod: "GET",
-			wantStatus: 200,
-		},
-		{
-			name: "legacy method fallback",
-			meta: map[string]string{
-				ext.HTTPMethod:              "PATCH",
-				"http.response.status_code": "204",
-			},
-			wantMethod: "PATCH",
-			wantStatus: 204,
-		},
+		{name: "successful response", method: "GET", datadogMethod: "DATADOG", status: 200},
+		{name: "default server error", method: "POST", status: 500, spanError: 1, wantErrors: 1},
+		{name: "custom inclusion", method: "PUT", status: 400, spanError: 1, wantErrors: 1},
+		{name: "custom exclusion", method: "DELETE", status: 500},
+		{name: "Datadog method fallback", datadogMethod: "PATCH", status: 204},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			method := tt.method
+			if method == "" {
+				method = tt.datadogMethod
+			}
+			meta := map[string]string{
+				ext.SpanKind:               ext.SpanKindServer,
+				ext.HTTPResponseStatusCode: strconv.FormatUint(uint64(tt.status), 10),
+			}
+			if tt.method != "" {
+				meta[ext.HTTPRequestMethod] = tt.method
+			}
+			if tt.datadogMethod != "" {
+				meta[ext.HTTPMethod] = tt.datadogMethod
+			}
+
 			transport := newDummyTransport()
 			cfg := newTestConfigWithTransport(t, transport)
 			require.True(t, cfg.internalConfig.OTelSemanticsEnabled())
 			c := newConcentrator(cfg, int64(500_000), &statsd.NoOpClientDirect{})
 			s := Span{
 				name:     "http.request",
-				resource: tt.wantMethod,
+				resource: method + " /users/{id}",
 				start:    time.Now().UnixNano(),
 				duration: int64(time.Millisecond),
+				error:    tt.spanError,
 				metrics:  map[string]float64{keyMeasured: 1},
-				meta:     tinternal.NewSpanMetaFromMap(tt.meta),
+				meta:     tinternal.NewSpanMetaFromMap(meta),
 			}
 
 			ss, ok := c.newTracerStatSpan(&s, nil)
@@ -817,8 +822,20 @@ func TestStatsIncludeOTelHTTPAttributes(t *testing.T) {
 			require.Len(t, actualStats[0].Stats, 1)
 			require.Len(t, actualStats[0].Stats[0].Stats, 1)
 			group := actualStats[0].Stats[0].Stats[0]
-			assert.Equal(t, tt.wantMethod, group.GetHTTPMethod())
-			assert.Equal(t, tt.wantStatus, group.GetHTTPStatusCode())
+			assert.Equal(t, method, group.HTTPMethod)
+			assert.Equal(t, tt.status, group.HTTPStatusCode)
+			assert.Equal(t, tt.wantErrors, group.Errors)
+
+			otelAttrs := buildDataPointAttributes(group, group.Errors > 0)
+			assertOTLPIntAttribute(t, otelAttrs, ext.HTTPResponseStatusCode, int64(tt.status))
+			attrs := kvAttrsToMap(otelAttrs)
+			assert.Equal(t, "SPAN_KIND_SERVER", attrs["span.kind"])
+			assert.Equal(t, method, attrs[ext.HTTPRequestMethod])
+			if tt.wantErrors > 0 {
+				assert.Equal(t, "STATUS_CODE_ERROR", attrs["status.code"])
+			} else {
+				assert.NotContains(t, attrs, "status.code")
+			}
 		})
 	}
 }
