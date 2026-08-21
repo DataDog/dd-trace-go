@@ -401,9 +401,13 @@ func TestAgentlessSource_NoOverlap(t *testing.T) {
 }
 
 func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
-	var redirectTargetRequests int
+	var mu sync.Mutex
+	var backendRequests, redirectTargetRequests int
+
 	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		redirectTargetRequests++
+		mu.Unlock()
 		if r.Header.Get("DD-API-KEY") != "" {
 			t.Error("the redirect target must never receive DD-API-KEY")
 		}
@@ -412,6 +416,9 @@ func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
 	defer redirectTarget.Close()
 
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		backendRequests++
+		mu.Unlock()
 		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
 	}))
 	defer backend.Close()
@@ -426,6 +433,17 @@ func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
 
 	src.start()
 
+	// Wait for the poll to actually reach the backend before asserting the
+	// redirect target was never hit — start() only schedules the poll
+	// goroutine and returns immediately, so this must not race it.
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return backendRequests >= 1
+	}, 2*time.Second, time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
 	assert.Equal(t, 0, redirectTargetRequests, "a redirect must never be followed")
 }
 
