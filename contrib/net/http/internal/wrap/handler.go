@@ -51,8 +51,6 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 			resc := resource
 			if r := cfg.ResourceNamer(req); r != "" {
 				resc = r
-			} else if cfg.OTelSemanticsEnabled && resc == "" {
-				resc = httptrace.ServerSpanName(req.Method, route)
 			}
 			so := make([]tracer.StartSpanOption, len(cfg.SpanOpts), len(cfg.SpanOpts)+1)
 			copy(so, cfg.SpanOpts)

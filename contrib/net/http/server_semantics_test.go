@@ -88,6 +88,20 @@ func TestServeMuxOTelSemantics(t *testing.T) {
 		assert.Equal(t, "PROPFIND", span.Tag(ext.HTTPRequestMethodOriginal))
 	})
 
+	t.Run("host-qualified route", func(t *testing.T) {
+		for _, pattern := range []string{"example.com/users/{id}", "GET example.com/users/{id}"} {
+			t.Run(pattern, func(t *testing.T) {
+				span := serverSpan(t, func() {
+					mux := NewServeMux()
+					mux.HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
+					mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://example.com/users/123", nil))
+				})
+				assert.Equal(t, "GET /users/{id}", span.Tag(ext.ResourceName))
+				assert.Equal(t, "/users/{id}", span.Tag(ext.HTTPRoute))
+			})
+		}
+	})
+
 	t.Run("custom resource namer", func(t *testing.T) {
 		span := serverSpan(t, func() {
 			mux := NewServeMux(WithResourceNamer(func(*http.Request) string { return "custom-resource" }))
@@ -95,6 +109,16 @@ func TestServeMuxOTelSemantics(t *testing.T) {
 			mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users/123", nil))
 		})
 		assert.Equal(t, "custom-resource", span.Tag(ext.ResourceName))
+		assert.Equal(t, "/users/{id}", span.Tag(ext.HTTPRoute))
+	})
+
+	t.Run("caller resource option", func(t *testing.T) {
+		span := serverSpan(t, func() {
+			mux := NewServeMux(WithSpanOptions(tracer.ResourceName("caller-resource")))
+			mux.HandleFunc("/users/{id}", func(http.ResponseWriter, *http.Request) {})
+			mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users/123", nil))
+		})
+		assert.Equal(t, "caller-resource", span.Tag(ext.ResourceName))
 		assert.Equal(t, "/users/{id}", span.Tag(ext.HTTPRoute))
 	})
 }
@@ -109,6 +133,7 @@ func TestWrapHandlerOTelSemantics(t *testing.T) {
 		wantResource string
 	}{
 		{name: "route default", wantResource: "GET /wrapped/{id}"},
+		{name: "caller resource option", opts: []Option{WithSpanOptions(tracer.ResourceName("caller-resource"))}, wantResource: "caller-resource"},
 		{name: "explicit resource", resource: "explicit-resource", wantResource: "explicit-resource"},
 		{name: "resource namer overrides explicit", resource: "explicit-resource", opts: []Option{WithResourceNamer(func(*http.Request) string { return "named-resource" })}, wantResource: "named-resource"},
 	} {

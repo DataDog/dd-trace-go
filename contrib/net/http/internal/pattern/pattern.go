@@ -16,15 +16,16 @@ import (
 	"github.com/puzpuzpuz/xsync/v4"
 )
 
-// Route returns the route part of a go1.22 style ServeMux pattern. I.e.
-// it returns "/foo" for the pattern "/foo" as well as the pattern "GET /foo".
+// Route returns the path part of a Go 1.22 ServeMux pattern. For example,
+// it returns "/foo" for "/foo", "GET /foo", and "GET example.com/foo".
 func Route(s string) string {
-	// Support go1.22 serve mux patterns: [METHOD ][HOST]/[PATH]
-	// Consider any text before a space or tab to be the method of the pattern.
-	// See net/http.parsePattern and the link below for more information.
-	// https://pkg.go.dev/net/http#hdr-Patterns-ServeMux
-	if i := strings.IndexAny(s, " \t"); i > 0 && len(s) >= i+1 {
-		return strings.TrimLeft(s[i+1:], " \t")
+	// Go 1.22 ServeMux patterns use [METHOD ][HOST]/[PATH].
+	// See net/http.parsePattern and https://pkg.go.dev/net/http#hdr-Patterns-ServeMux.
+	if i := strings.IndexAny(s, " \t"); i > 0 {
+		s = strings.TrimLeft(s[i+1:], " \t")
+	}
+	if i := strings.IndexByte(s, '/'); i > 0 {
+		return s[i:]
 	}
 	return s
 }
