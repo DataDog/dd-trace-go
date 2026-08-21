@@ -97,14 +97,16 @@ type DatadogProvider struct {
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
-// It subscribes to Remote Config updates and automatically updates the provider's configuration
-// when new flag configurations are received.
+// Depending on DD_FEATURE_FLAGS_CONFIGURATION_SOURCE (default: agentless), it either polls
+// Datadog directly over HTTPS or subscribes to Remote Config updates, and automatically updates
+// the provider's configuration when new flag configurations are received.
 //
 // The provider will be ready to use immediately, but flag evaluations will return errors
-// until the first configuration is received from Remote Config.
+// until the first configuration is received.
 //
-// Returns an error if the default configuration of the Remote Config client is NOT working.
-// In this case, please call tracer.Start before creating the provider.
+// Returns an error if the remote_config source is selected and the default configuration of the
+// Remote Config client is NOT working. In this case, please call tracer.Start before creating
+// the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
 	settings := internalffe.ResolveSettings(internalconfig.Get())
 	if settings.LegacyKeyDecided {
@@ -184,7 +186,7 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
-			Name: "Datadog Remote Config Provider",
+			Name: "Datadog Provider",
 		},
 		hooks:                 hooks,
 		exposureWriter:        writer,

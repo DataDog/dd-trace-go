@@ -8,9 +8,12 @@ package openfeature
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -83,23 +86,22 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 		stopCh:     make(chan struct{}),
 		doneCh:     make(chan struct{}),
 	}
+	// A fixed configuration endpoint has no legitimate reason to redirect.
+	// Refusing to follow redirects avoids forwarding DD-API-KEY to a
+	// different host: Go's client only strips Authorization/Cookie headers
+	// on a cross-origin redirect, not our custom DD-API-KEY header.
+	s.httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	s.retryDelay = func(attempt int) time.Duration {
 		return retryDelay(s.pollInterval, attempt, rand.Float64())
 	}
 	return s, nil
 }
 
-// start issues the first poll synchronously, then hands off to the
-// background loop. Checking stopCh first means nothing billable is issued
-// once the source has been stopped.
+// start launches the poll loop in the background. It never blocks: see run
+// for why.
 func (s *agentlessSource) start() {
-	select {
-	case <-s.stopCh:
-		close(s.doneCh)
-		return
-	default:
-	}
-	s.poll()
 	go s.run()
 }
 
@@ -113,11 +115,24 @@ func (s *agentlessSource) Stop(ctx context.Context) {
 	}
 }
 
-// run is the background poll loop. It uses a Timer reset after each poll
-// completes, rather than a Ticker, so a slow poll cannot cause a burst of
-// catch-up ticks once it finally returns.
+// run is the poll loop: an immediate first poll, then one per pollInterval
+// thereafter. Everything here runs in the background goroutine spawned by
+// start — NewDatadogProvider's contract is that the provider is ready to use
+// immediately, so nothing here may block start's caller, and the caller must
+// be able to invoke Shutdown even while the first poll is still in flight.
+// Readiness is Init's responsibility (it waits for configuration), not
+// start's. It uses a Timer reset after each poll completes, rather than a
+// Ticker, so a slow poll cannot cause a burst of catch-up ticks once it
+// finally returns.
 func (s *agentlessSource) run() {
 	defer close(s.doneCh)
+
+	select {
+	case <-s.stopCh:
+		return
+	default:
+	}
+	s.poll()
 
 	timer := time.NewTimer(s.pollInterval)
 	defer timer.Stop()
@@ -144,14 +159,18 @@ func (s *agentlessSource) run() {
 // times with backoff before giving up until the next tick.
 func (s *agentlessSource) poll() {
 	for attempt := 1; attempt <= maxPollAttempts; attempt++ {
-		if s.pollOnce() != pollOutcomeRetryable {
+		outcome, retryAfter := s.pollOnce()
+		if outcome != pollOutcomeRetryable {
 			return
 		}
 		if attempt == maxPollAttempts {
 			return
 		}
 
-		delay := s.retryDelay(attempt)
+		// Honor a server-requested Retry-After (e.g. on 429) when it asks for
+		// longer than our own jittered backoff, rather than intensifying
+		// throttling across a fleet by ignoring it.
+		delay := max(s.retryDelay(attempt), retryAfter)
 		select {
 		case <-time.After(delay):
 		case <-s.stopCh:
@@ -177,8 +196,10 @@ const (
 // pollOnce issues a single HTTP request and applies its result. Configuration
 // is only ever accepted from a 200 response; the ETag only advances after
 // both parsing and apply have succeeded, so a malformed payload can never be
-// acknowledged as received.
-func (s *agentlessSource) pollOnce() pollOutcome {
+// acknowledged as received. The returned time.Duration is a server-requested
+// Retry-After to honor on the next attempt; it is zero unless the response
+// carried one.
+func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
 	defer cancel()
 
@@ -197,9 +218,9 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.endpoint, nil)
 	if err != nil {
 		if s.warnOnce("request") {
-			log.Warn("openfeature: agentless: failed to build request: %v", err.Error())
+			log.Warn("openfeature: agentless: failed to build request: %s", sanitizeTransportError(err))
 		}
-		return pollOutcomeStop
+		return pollOutcomeStop, 0
 	}
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("DD-Client-Library-Language", "go")
@@ -213,10 +234,16 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		if s.warnOnce("http") {
-			log.Warn("openfeature: agentless: request failed: %v", err.Error())
+		select {
+		case <-s.stopCh:
+			// Stop canceled this request; not a real failure worth warning about.
+			return pollOutcomeStop, 0
+		default:
 		}
-		return pollOutcomeRetryable
+		if s.warnOnce("http") {
+			log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err))
+		}
+		return pollOutcomeRetryable, 0
 	}
 	defer resp.Body.Close()
 
@@ -228,12 +255,12 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 
 	switch resp.StatusCode {
 	case http.StatusNotModified:
-		return pollOutcomeSuccess
+		return pollOutcomeSuccess, 0
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if s.warnOnce("authentication") {
 			log.Warn("openfeature: agentless: received status %d, verify endpoint authentication", resp.StatusCode)
 		}
-		return pollOutcomeStop
+		return pollOutcomeStop, 0
 	case http.StatusOK:
 		// handled below
 	default:
@@ -241,12 +268,12 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 			if s.warnOnce("http") {
 				log.Warn("openfeature: agentless: received retryable status %d", resp.StatusCode)
 			}
-			return pollOutcomeRetryable
+			return pollOutcomeRetryable, retryAfterDuration(resp.Header)
 		}
 		if s.warnOnce("http") {
 			log.Warn("openfeature: agentless: received unexpected status %d", resp.StatusCode)
 		}
-		return pollOutcomeStop
+		return pollOutcomeStop, 0
 	}
 
 	body, err := readAgentlessResponseBody(resp)
@@ -254,7 +281,7 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 		if s.warnOnce("http") {
 			log.Warn("openfeature: agentless: failed to read response body: %v", err.Error())
 		}
-		return pollOutcomeRetryable
+		return pollOutcomeRetryable, 0
 	}
 
 	config, err := parseUFCEnvelope(body)
@@ -262,12 +289,12 @@ func (s *agentlessSource) pollOnce() pollOutcome {
 		if s.warnOnce("request") {
 			log.Warn("openfeature: agentless: received malformed configuration: %v", err.Error())
 		}
-		return pollOutcomeStop
+		return pollOutcomeStop, 0
 	}
 
 	s.apply(config)
 	s.setETag(strings.TrimSpace(resp.Header.Get("ETag")))
-	return pollOutcomeSuccess
+	return pollOutcomeSuccess, 0
 }
 
 func (s *agentlessSource) currentETag() string {
@@ -310,6 +337,41 @@ func readAgentlessResponseBody(resp *http.Response) ([]byte, error) {
 		reader = gz
 	}
 	return io.ReadAll(io.LimitReader(reader, maxResponseBodyBytes))
+}
+
+// sanitizeTransportError strips the request URL out of a transport error
+// before it is logged. http.Client.Do and http.NewRequestWithContext both
+// return a *url.Error whose Error() text embeds the full request URL, which
+// for a custom endpoint may carry credentials — s.endpoint must never appear
+// in a log line.
+// retryAfterDuration parses a Retry-After response header per RFC 7231
+// §7.1.3: either delta-seconds or an HTTP-date. Returns 0 when absent,
+// unparseable, non-positive, or already in the past.
+func retryAfterDuration(header http.Header) time.Duration {
+	v := header.Get("Retry-After")
+	if v == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(v); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if when, err := http.ParseTime(v); err == nil {
+		if d := time.Until(when); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+func sanitizeTransportError(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		return urlErr.Err.Error()
+	}
+	return "request failed"
 }
 
 // isRetryablePollStatus reports whether status warrants retrying within the

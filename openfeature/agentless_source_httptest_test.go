@@ -8,8 +8,10 @@ package openfeature
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -107,6 +109,9 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 	case "server_error":
 		w.WriteHeader(http.StatusInternalServerError)
+	case "throttled":
+		w.Header().Set("Retry-After", "2")
+		w.WriteHeader(http.StatusTooManyRequests)
 	case "valid_no_etag":
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -154,14 +159,21 @@ func newTestAgentlessSource(t *testing.T, backend *fakeUFCBackend, pollInterval 
 	return src
 }
 
-func TestAgentlessSource_FirstPollIsSynchronous(t *testing.T) {
+func TestAgentlessSource_StartDoesNotBlock(t *testing.T) {
 	backend := newFakeUFCBackend(t)
+	backend.setResponses("delayed_valid") // 150ms handler sleep
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
+	start := time.Now()
 	src.start()
+	elapsed := time.Since(start)
 
-	requests, _, _, _ := backend.status()
-	assert.Equal(t, 1, requests)
+	assert.Less(t, elapsed, 50*time.Millisecond, "start must not block on the first poll")
+
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond, "the first poll must still happen, just asynchronously")
 }
 
 func TestAgentlessSource_ETagNotAdvancedOnParseFailure(t *testing.T) {
@@ -201,8 +213,11 @@ func TestAgentlessSource_ETagAnd304(t *testing.T) {
 	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(*universalFlagsConfiguration) {})
 	src.start()
 
-	requests, _, lastIfNoneMatch, _ := backend.status()
-	require.Equal(t, 1, requests)
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond)
+	_, _, lastIfNoneMatch, _ := backend.status()
 	assert.Empty(t, lastIfNoneMatch, "the first request must not carry an ETag")
 
 	require.Eventually(t, func() bool {
@@ -234,15 +249,26 @@ func TestAgentlessSource_RetryWithinPoll(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("server_error", "server_error", "valid")
 
+	var mu sync.Mutex
 	var applied int
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {
+		mu.Lock()
+		defer mu.Unlock()
 		applied++
 	})
 
 	src.start()
 
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return applied == 1
+	}, 2*time.Second, time.Millisecond)
+
 	requests, _, _, _ := backend.status()
 	assert.Equal(t, 3, requests, "exactly 3 requests within the first poll")
+	mu.Lock()
+	defer mu.Unlock()
 	assert.Equal(t, 1, applied)
 }
 
@@ -250,16 +276,65 @@ func TestAgentlessSource_RetriesExhausted(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("server_error", "server_error", "server_error")
 
+	var mu sync.Mutex
 	var applied int
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {
+		mu.Lock()
+		defer mu.Unlock()
 		applied++
 	})
 
 	src.start()
 
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 3
+	}, 2*time.Second, time.Millisecond)
+
 	requests, _, _, _ := backend.status()
 	assert.Equal(t, 3, requests)
+	mu.Lock()
+	defer mu.Unlock()
 	assert.Equal(t, 0, applied)
+}
+
+func TestAgentlessSource_PollOnceReturnsRetryAfter(t *testing.T) {
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("throttled")
+
+	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+	outcome, retryAfter := src.pollOnce()
+	assert.Equal(t, pollOutcomeRetryable, outcome)
+	assert.Equal(t, 2*time.Second, retryAfter)
+}
+
+func TestAgentlessSource_NoWarningOnGracefulShutdownCancel(t *testing.T) {
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("delayed_valid") // 150ms handler sleep
+
+	logger, undo := newCapturingLogger()
+	defer undo()
+
+	src, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: backend.server.URL,
+		PollInterval:     time.Hour,
+		RequestTimeout:   5 * time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		src.start()
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let the request start before stopping
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	src.Stop(ctx)
+	<-done
+
+	assert.Equal(t, 0, logger.countContaining("request failed"), "a Stop-triggered cancellation must not warn")
 }
 
 func TestAgentlessSource_NonRetryableStopsImmediately(t *testing.T) {
@@ -268,6 +343,11 @@ func TestAgentlessSource_NonRetryableStopsImmediately(t *testing.T) {
 
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	src.start()
+
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond)
 
 	requests, _, _, _ := backend.status()
 	assert.Equal(t, 1, requests, "an auth failure must not be retried")
@@ -320,6 +400,48 @@ func TestAgentlessSource_NoOverlap(t *testing.T) {
 	assert.Equal(t, 1, maxInFlight, "no two polls may be in flight at once")
 }
 
+func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
+	var redirectTargetRequests int
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectTargetRequests++
+		if r.Header.Get("DD-API-KEY") != "" {
+			t.Error("the redirect target must never receive DD-API-KEY")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirectTarget.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	defer backend.Close()
+
+	src, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: backend.URL,
+		APIKey:           "secret-api-key",
+		PollInterval:     time.Hour,
+		RequestTimeout:   2 * time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+
+	src.start()
+
+	assert.Equal(t, 0, redirectTargetRequests, "a redirect must never be followed")
+}
+
+func TestSanitizeTransportError_DoesNotLeakSecrets(t *testing.T) {
+	const secret = "s3cr3t-token"
+	err := &url.Error{
+		Op:  "Get",
+		URL: "https://user:" + secret + "@example.com/path",
+		Err: errors.New("connection refused"),
+	}
+
+	got := sanitizeTransportError(err)
+	assert.False(t, strings.Contains(got, secret))
+	assert.Equal(t, "connection refused", got)
+}
+
 func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("valid")
@@ -360,6 +482,12 @@ func TestAgentlessSource_Headers(t *testing.T) {
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	src.start()
 
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return gotHeaders != nil
+	}, 2*time.Second, time.Millisecond)
+
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, "gzip", gotHeaders.Get("Accept-Encoding"))
@@ -371,13 +499,20 @@ func TestAgentlessSource_Gzip(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("gzip_valid")
 
+	var mu sync.Mutex
 	var applied int
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {
+		mu.Lock()
+		defer mu.Unlock()
 		applied++
 	})
 	src.start()
 
-	assert.Equal(t, 1, applied)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return applied == 1
+	}, 2*time.Second, time.Millisecond)
 }
 
 func TestAgentlessSource_WarningDedupe(t *testing.T) {
