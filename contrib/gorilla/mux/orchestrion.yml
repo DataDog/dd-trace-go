@@ -38,6 +38,7 @@ aspects:
               serviceName   string
               spanOpts      []tracer.StartSpanOption
               initOnce      *sync.Once
+              otelEnabled   bool
             }
 
             func ddDefaultResourceNamer(router *Router, req *http.Request) string {
@@ -87,7 +88,10 @@ aspects:
               analyticsRate := __dd_instr.AnalyticsRate(true)
               {{ $r }}.__dd_config.headerTags = __dd_instr.HTTPHeadersAsTags()
               {{ $r }}.__dd_config.serviceName = __dd_instr.ServiceName(instrumentation.ComponentServer, nil)
-              {{ $r }}.__dd_config.resourceNamer = ddDefaultResourceNamer
+              {{ $r }}.__dd_config.otelEnabled = __dd_instr.OTelSemanticsEnabled()
+              if !{{ $r }}.__dd_config.otelEnabled {
+                {{ $r }}.__dd_config.resourceNamer = ddDefaultResourceNamer
+              }
               {{ $r }}.__dd_config.ignoreRequest = func(_ *http.Request) bool { return false }
 
               {{ $r }}.__dd_config.spanOpts = []tracer.StartSpanOption{
@@ -115,7 +119,12 @@ aspects:
                 route, _ = match.Route.GetPathTemplate()
               }
               spanOpts = append(spanOpts, instrhttptrace.HeaderTagsFromRequest({{ $req }}, {{ $r }}.__dd_config.headerTags))
-              resource := {{ $r }}.__dd_config.resourceNamer({{ $r }}, {{ $req }})
+              var resource string
+              if {{ $r }}.__dd_config.resourceNamer != nil {
+                resource = {{ $r }}.__dd_config.resourceNamer({{ $r }}, {{ $req }})
+              } else {
+                resource = instrhttptrace.ServerSpanName({{ $req }}.Method, route)
+              }
 
               // This is a temporary workaround/hack to prevent endless recursion via httptrace.TraceAndServe, which
               // basically implies passing a shallow copy of this router that ignores all requests down to
