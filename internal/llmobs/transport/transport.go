@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/exporttransport"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -272,30 +273,29 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 	}
 	urlStr := c.baseURL(subdomain) + path
 	backoffStrat := defaultBackoffStrategy()
-	var attempts int
-	var last requestResult
 
-	doRequest := func() (result requestResult, err error) {
-		attempts++
+	doRequest := func(ctx context.Context) (attempt exporttransport.Attempt) {
 		log.Debug("llmobs: sending request (method: %s | url: %s)", method, urlStr)
 		defer func() {
-			if err != nil {
-				log.Debug("llmobs: request failed: %s", err.Error())
+			if attempt.Err != nil {
+				log.Debug("llmobs: request failed: %s", attempt.Err.Error())
 			}
 		}()
 
-		// Reset body reader if it's seekable (for retries)
 		if body != nil {
 			if seeker, ok := body.(io.Seeker); ok {
 				if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-					return requestResult{}, fmt.Errorf("failed to reset body reader: %w", err)
+					return exporttransport.Attempt{
+						Retriable: true,
+						Err:       fmt.Errorf("failed to reset body reader: %w", err),
+					}
 				}
 			}
 		}
 
 		req, err := c.newRequest(ctx, method, urlStr, subdomain, contentType, body)
 		if err != nil {
-			return requestResult{}, err
+			return exporttransport.Attempt{Retriable: true, Err: err}
 		}
 
 		// Set headers for datasets and experiments endpoints (both unstable and stable v2 paths)
@@ -316,8 +316,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			last = requestResult{attempts: attempts, retriable: ctx.Err() == nil}
-			return requestResult{}, err
+			return exporttransport.Attempt{Retriable: ctx.Err() == nil, Err: err}
 		}
 		defer resp.Body.Close()
 
@@ -325,13 +324,11 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		if code >= 200 && code <= 299 {
 			b, readErr := io.ReadAll(io.LimitReader(resp.Body, lim.maxResponseSize+1))
 			if readErr != nil {
-				last = requestResult{
-					statusCode: code,
-					attempts:   attempts,
-					body:       b,
-					retriable:  ctx.Err() == nil,
+				return exporttransport.Attempt{
+					Response:  exporttransport.Response{StatusCode: code, Body: b},
+					Retriable: ctx.Err() == nil,
+					Err:       fmt.Errorf("failed to read response body: %w", readErr),
 				}
-				return requestResult{}, fmt.Errorf("failed to read response body: %w", readErr)
 			}
 			if int64(len(b)) > lim.maxResponseSize {
 				// Left undrained on purpose, unlike the branches below: the remainder
@@ -339,60 +336,60 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 				// the connection would mean reading up to 1MiB more that we would
 				// still abandon whenever the body is far oversize.
 				// Retrying would only buffer the same oversized body again.
-				last = requestResult{statusCode: code, attempts: attempts}
-				return requestResult{}, backoff.Permanent(fmt.Errorf("%w: over %d bytes", errResponseTooLarge, lim.maxResponseSize))
+				return exporttransport.Attempt{
+					Response: exporttransport.Response{StatusCode: code},
+					Err:      fmt.Errorf("%w: over %d bytes", errResponseTooLarge, lim.maxResponseSize),
+				}
 			}
-			last = requestResult{statusCode: code, attempts: attempts, body: b}
-			return last, nil
+			return exporttransport.Attempt{Response: exporttransport.Response{StatusCode: code, Body: b}}
 		}
 		if isRetriableStatus(code) {
-			body := readResponseBody(resp.Body)
-			last = requestResult{
-				statusCode: code,
-				attempts:   attempts,
-				body:       body,
-				retriable:  true,
-			}
+			responseBody := readResponseBody(resp.Body)
 			errMsg := fmt.Sprintf("request failed with transient http status code: %d", code)
-			if message := errorBodyMessage(resp.Header, body); message != "" {
+			if message := errorBodyMessage(resp.Header, responseBody); message != "" {
 				errMsg = fmt.Sprintf("%s: %s", errMsg, message)
 			}
 			drainAndClose(resp.Body)
-			return requestResult{}, fmt.Errorf("%s", errMsg)
+			return exporttransport.Attempt{
+				Response:  exporttransport.Response{StatusCode: code, Body: responseBody},
+				Retriable: true,
+				Err:       errors.New(errMsg),
+			}
 		}
 		if code == http.StatusTooManyRequests {
-			body := readResponseBody(resp.Body)
-			last = requestResult{
-				statusCode: code,
-				attempts:   attempts,
-				body:       body,
-				retriable:  true,
-			}
+			responseBody := readResponseBody(resp.Body)
 			wait := parseRetryAfter(resp.Header)
 			log.Debug("llmobs: status code 429, waiting %s before retry...", wait.String())
 			drainAndClose(resp.Body)
-			return requestResult{}, backoff.RetryAfter(int(wait.Seconds()))
+			return exporttransport.Attempt{
+				Response:  exporttransport.Response{StatusCode: code, Body: responseBody},
+				Retriable: true,
+				Err:       backoff.RetryAfter(int(wait.Seconds())),
+			}
 		}
-		body := readResponseBody(resp.Body)
-		last = requestResult{statusCode: code, attempts: attempts, body: body}
+		responseBody := readResponseBody(resp.Body)
 		errMsg := fmt.Sprintf("request failed with http status code: %d", resp.StatusCode)
-		if message := errorBodyMessage(resp.Header, body); message != "" {
+		if message := errorBodyMessage(resp.Header, responseBody); message != "" {
 			errMsg = fmt.Sprintf("%s: %s", errMsg, message)
 		}
 		drainAndClose(resp.Body)
-		return requestResult{}, backoff.Permanent(fmt.Errorf("%s", errMsg))
+		return exporttransport.Attempt{
+			Response: exporttransport.Response{StatusCode: code, Body: responseBody},
+			Err:      errors.New(errMsg),
+		}
 	}
 
-	result, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
-	if err != nil {
-		last.attempts = attempts
-		if ctx.Err() != nil {
-			last.retriable = false
-		}
-		return last, err
-	}
-	result.attempts = attempts
-	return result, nil
+	result, err := exporttransport.Retry(ctx, exporttransport.RetryOptions{
+		MaxAttempts:    defaultMaxRetries,
+		MaxElapsedTime: backoff.DefaultMaxElapsedTime,
+		BackOff:        backoffStrat,
+	}, doRequest)
+	return requestResult{
+		statusCode: result.StatusCode,
+		attempts:   result.Attempts,
+		body:       result.Body,
+		retriable:  result.Retriable,
+	}, err
 }
 
 // RequestResult reports an LLM Obs transport request.

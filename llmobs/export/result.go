@@ -8,14 +8,11 @@ package export
 import (
 	"errors"
 	"fmt"
-	"strings"
-	"unicode/utf8"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/exporttransport"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
-
-const responseSnippetMaxBytes = 512
 
 // Result reports a submission outcome.
 type Result struct {
@@ -97,20 +94,8 @@ func applyResult(rr *RequestResult, result transport.RequestResult, err error) {
 	rr.StatusCode = result.StatusCode
 	rr.Attempts = result.Attempts
 	rr.Retriable = result.Retriable
-	rr.ResponseSnippet = responseSnippet(result.Body)
+	rr.ResponseSnippet = exporttransport.ResponseSnippet(result.Body)
 	rr.Err = err
-}
-
-func responseSnippet(body []byte) string {
-	s := strings.ToValidUTF8(strings.TrimSpace(string(body)), "")
-	if len(s) <= responseSnippetMaxBytes {
-		return s
-	}
-	cut := responseSnippetMaxBytes
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut]
 }
 
 func aggregateFailures(result *Result) error {

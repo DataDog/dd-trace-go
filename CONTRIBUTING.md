@@ -296,6 +296,12 @@ When possible, prioritize creating or using internal implementations for repetit
 3. OS: [internal/env](./internal/env) instead of `os.Getenv`. This is also available at [instrumentation/env](./instrumentation/env/) for those packages that cannot import internal modules.
 4. Errors: [instrumentation/errortrace](./instrumentation/errortrace/) instead of `errors`.
 
+### Offline export clients
+
+Use the experimental [`llmobs/export`](./llmobs/export) and [`otlp/export`](./otlp/export) packages when a caller already has completed LLM Obs events or OTLP service requests. They submit those payloads without starting a tracer. Create a destination-scoped client, select direct intake or Agent/collector routing explicitly, and call the signal-specific `Submit*` method.
+
+Keep these public APIs thin and reuse the repository's configuration, validation, payload, and transport code whenever the protocol permits it.
+
 ### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
 [fmt.Sprintf](https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor [string builders](https://pkg.go.dev/strings#Builder), or simple string concatenation, `a + "b" + c` over `fmt.Sprintf` when possible, especially in hot paths.
