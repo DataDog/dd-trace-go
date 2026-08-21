@@ -104,17 +104,9 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		// even under semantics, where error.msg is otherwise suppressed as a raw attribute.
 		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
 		if s.otelSemanticsEnabled {
-			// Under OTel semantics, mark the span errored for the OTLP status without
-			// injecting DD's error.* tags: WithError would set error.type to the reflect
-			// type of the status wrapper ("*errors.errorString"), clobbering the stable
-			// OTel error.type that instrumentation sets.
-			//
-			// This applies to every export format, not just OTLP. An error span sent to
-			// the Agent over MessagePack keeps error=1 and error.message, but no longer
-			// carries error.handling_stack, and carries error.type only when
-			// instrumentation set one. That is intentional: it matches dd-trace-dotnet
-			// under the same flag (OtlpHelpers.AgentConvertSpan), and the reflect-type
-			// error.type it replaces carried no grouping signal.
+			// Mark the span as errored directly. WithError would overwrite already
+			// populated attributes, such as error.type. Applies to all export formats:
+			// APM spans keep error=1 and error.message, without error.handling_stack.
 			s.DD.SetTag(ext.Error, true)
 		} else {
 			opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
