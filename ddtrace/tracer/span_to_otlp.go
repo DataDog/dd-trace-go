@@ -204,9 +204,13 @@ var otelIntMetricKeys = map[string]struct{}{
 
 // ddOnlyMetaKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
 // they have no OTel equivalent. span.kind is already carried by the OTLP SpanKind field.
+// error.type is intentionally excluded: it is a stable OTel span attribute that
+// instrumentation sets directly (e.g. otelhttp on failed requests), independent of
+// RecordError's "exception" event (exception.type/message/stacktrace). #4889 originally
+// suppressed it on the assumption it lived on the exception event instead; it doesn't,
+// so it passes through here.
 var ddOnlyMetaKeys = map[string]struct{}{
 	ext.ErrorMsg:           {},
-	ext.ErrorType:          {},
 	ext.ErrorStack:         {},
 	ext.ErrorHandlingStack: {},
 	ext.SpanKind:           {},
