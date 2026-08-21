@@ -30,9 +30,7 @@ func main() {
 			return err
 		}
 		// .otelc-build holds post-instrumentation copies of source that otelc
-		// writes during a build, including files from the Go standard library. It
-		// is gitignored, so this only ever fires for a developer who has run an
-		// otelc build locally.
+		// writes during a build, including Go standard library files.
 		if info.IsDir() && info.Name() == ".otelc-build" {
 			return filepath.SkipDir
 		}

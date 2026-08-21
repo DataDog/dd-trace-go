@@ -59,9 +59,8 @@ type TestCase interface {
 
 func Run(t *testing.T, tc TestCase) {
 	t.Helper()
-	// Either tool is acceptable, since both weave the same instrumentation and
-	// these suites are shared. A plain build is not: nothing is injected, and
-	// every assertion below would fail for the wrong reason.
+	// Both tools weave the same instrumentation, so either one satisfies these
+	// shared suites.
 	require.True(t, built.WithOrchestrion || otelc.Enabled(),
 		"this test suite must be run with either orchestrion or otelc enabled")
 

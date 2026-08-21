@@ -11,8 +11,9 @@
 package otelc
 
 // enabled is flipped to true at build time by the assign_value rule in
-// ddtrace/tracer/otelc.yaml. The rule matches this variable by name, so renaming
-// it silently disables every otelc build.
+// ddtrace/tracer/otelc.yaml. The rule matches on the name and on `kind: var`, so
+// renaming this variable or turning it into a constant silently disables every
+// otelc build.
 var enabled = false
 
 // Enabled reports whether the current build was compiled with otelc.
