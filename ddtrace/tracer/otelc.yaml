@@ -1,0 +1,198 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Core otelc rules: build mode, goroutine-local storage, and the tracer
+# lifecycle. Rules belonging to one integration live with that integration.
+#
+# A rule carries its own target:, so a single file can rewrite several packages
+# and does not have to sit next to the code it rewrites. What the location does
+# decide is reachability: otelc blank-imports the package it reads rules from
+# into the application's own main package, so that package must be importable by
+# any application, and must be reachable from otelc/all. A rule's target: may
+# still be internal, since targets are rewritten rather than imported.
+
+# ---------------------------------------------------------------------------
+# Build mode
+# ---------------------------------------------------------------------------
+
+# Marks the build as otelc-instrumented. This is the otelc equivalent of the
+# //orchestrion:enabled directive that flips internal/orchestrion.enabled.
+
+enable_otelc_flag:
+  target: github.com/DataDog/dd-trace-go/v2/internal/otelc
+  where:
+    kind: var
+    identifier: enabled
+  do:
+    - assign_value:
+        replace: "true"
+
+# ---------------------------------------------------------------------------
+# Goroutine-local storage: the storage layer, woven into the runtime package
+# ---------------------------------------------------------------------------
+
+# Goroutine Local Storage (GLS) storage layer, so tracer internals can forward
+# trace context through call sites that have no context.Context to carry it.
+#
+# The otelc port of the runtime aspects in
+# ../../internal/orchestrion/gls.orchestrion.yml. Consumed by
+# ../../internal/orchestrion/gls.go, which links to the accessors in
+# gls_accessors.go and falls back to no-ops when they are absent.
+#
+# Storage alone does nothing. It also needs the gate in internal/orchestrion
+# (glsActive) and the span lifecycle rules below, which are what push spans.
+
+gls_runtime_field:
+  target: runtime
+  where:
+    struct: g
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: __dd_gls_v2
+            type: any
+
+gls_runtime_accessors:
+  target: runtime
+  do:
+    - add_file:
+        file: gls_accessors.go
+        path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+
+# Clear the slot when a goroutine finishes, so a recycled g never inherits the
+# previous goroutine's trace context. goexit1 is the runtime function that ends a
+# goroutine: https://github.com/golang/go/blob/f38d42f2c4c6ad0d7cbdad5e1417cac3be2a5dcb/src/runtime/proc.go#L4264
+gls_goexit1_reset:
+  target: runtime
+  where:
+    func: goexit1
+  do:
+    - inject_code:
+        raw: "getg().__dd_gls_v2 = nil"
+
+# ---------------------------------------------------------------------------
+# Goroutine-local storage: the span lifecycle that fills it
+# ---------------------------------------------------------------------------
+
+# GLS lifecycle for active spans, the otelc port of the `tracer-internal` aspects
+# in orchestrion.yml. See that file for why each injection sits where it does.
+#
+# The tracer source stays GLS-agnostic, so a plain build pays nothing. These rules
+# weave the push, the read fallback, the pop, and the liveness cell.
+#
+# RECEIVER COUPLING: inject_code resolves parameters through the function
+# template variables, so the rules below name arguments positionally the way
+# orchestrion's `.Function.Argument` does. There is no equivalent for the
+# receiver: `FuncArgument` skips it and otelc exposes no `FuncReceiver`, so
+# span_gls_finish and span_gls_clear still spell it literally as `s` and break if
+# the receiver is renamed. gls_otelc_identifiers_test.go pins those two.
+
+span_gls_fields:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    struct: Span
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: __dd_glsPop
+            type: orchestrion.GLSPopperCell
+          - name: __dd_glsDone
+            type: orchestrion.GLSDoneCell
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# ContextWithSpan(ctx context.Context, s *Span)
+span_gls_context_with_span:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    func: ContextWithSpan
+  do:
+    - inject_code:
+        raw: |
+          {{- $s := .FuncArgument 1 -}}
+          if {{ $s }} != nil {
+            orchestrion.GLSActivate(nil, internal.ActiveSpanKey, {{ $s }}, &{{ $s }}.__dd_glsPop, &{{ $s }}.__dd_glsDone)
+          }
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+    internal: github.com/DataDog/dd-trace-go/v2/internal
+
+# SpanFromContext(ctx context.Context)
+span_gls_span_from_context:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    func: SpanFromContext
+  do:
+    - inject_code:
+        raw: |
+          {{- $ctx := .FuncArgument 0 -}}
+          if {{ $ctx }} != nil {
+            {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
+          }
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# (s *Span) Finish(...)
+span_gls_finish:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    func: Finish
+    recv: "*Span"
+  do:
+    - inject_code:
+        raw: |
+          if s != nil {
+            orchestrion.GLSDeactivate(&s.__dd_glsDone, &s.__dd_glsPop)
+          }
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# (s *Span) clear()
+span_gls_clear:
+  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+  where:
+    func: clear
+    recv: "*Span"
+  do:
+    - inject_code:
+        raw: "orchestrion.GLSReset(&s.__dd_glsDone, &s.__dd_glsPop)"
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# ---------------------------------------------------------------------------
+# Tracer lifecycle
+# ---------------------------------------------------------------------------
+
+# Automatically manage the tracer lifecycle in an instrumented application, the
+# otelc port of the `func main()` aspect in orchestrion.yml.
+#
+# KNOWN PARITY DIFFERENCE: orchestrion starts the tracer from an injected
+# `func init()`, so it is running before any other package's init can emit a span.
+# This rule starts it at the top of main instead, which is after every package
+# init has run, so a span emitted from an init is lost here but captured under
+# orchestrion. Everything after main begins is identical.
+#
+# Injecting a `func init()` instead would need add_file, which has no selectors:
+# it applies to the whole target package, which under `otelc go test` includes the
+# generated test-main. That both fails the build (otelc emits an empty `package`
+# clause there) and would start a second tracer underneath the integration
+# harness. `where: file: {is_test: false}` is not honored for add_file. Upstream
+# issues; revisit when fixed.
+#
+# `target: main` plus `where.func` does not match a test-main compile unit, so the
+# rule below never fires under `otelc go test`.
+# internal/orchestrion/_integration/otelc-autostart guards that.
+
+create_tracer:
+  target: main
+  where:
+    func: main
+  do:
+    - inject_code:
+        raw: |
+          _ = tracer.Start()
+          defer tracer.Stop()
+  imports:
+    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer

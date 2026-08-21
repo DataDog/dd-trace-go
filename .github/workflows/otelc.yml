@@ -1,0 +1,250 @@
+name: OTelc
+on:
+  workflow_dispatch:
+    inputs:
+      otelc-version:
+        description: OTelc version to use for integration testing (defaults to the pinned one)
+        type: string
+        required: false
+  pull_request:
+  push:
+    branches:
+      - release-v*
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
+  schedule: # nightly
+    - cron: "0 0 * * *"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ inputs.otelc-version && format('-{0}', inputs.otelc-version) }}
+  cancel-in-progress: true
+
+env:
+  # The single place to bump the tested otelc release. Upstream only; do not point
+  # this at a fork.
+  #
+  # Pinned to a main commit rather than v1.0.1: the rules use function template
+  # variables in inject_code, added after that release in
+  # open-telemetry/opentelemetry-go-compile-instrumentation#1140. Move back to a
+  # tag once one ships with it.
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.0.2-0.20260821102221-8649f330da3e' }}
+
+jobs:
+  go-versions-matrix:
+    name: Go Versions Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.matrix.outputs.json }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.4"
+          cache: true
+          cache-dependency-path: '**/go.mod'
+      - name: Compute Matrix
+        id: matrix
+        run: |-
+          echo -n "json="                      >> "${GITHUB_OUTPUT}"
+          go run ./internal/orchestrion/matrix >> "${GITHUB_OUTPUT}"
+
+  integration-test:
+    env:
+      REPORT: gotestsum-report-otelc.xml
+      # Workspace mode resolves modules differently from the module graph otelc
+      # analyzes, and it breaks outright when otelc and dd-trace-go disagree on
+      # their `go` directive. Same reason the orchestrion lane disables it.
+      GOWORK: 'off'
+    needs:
+      - go-versions-matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          - ubuntu
+          - macos
+          - windows
+        go-version: ${{ fromJSON(needs.go-versions-matrix.outputs.json) }}
+    name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }})
+    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+          cache-dependency-path: '**/go.mod'
+
+      - name: Install development tools
+        run: make tools-install
+
+      # `go install` is enough: unlike the upstream Makefile's `make install`, it
+      # produces a binary that resolves rules purely from this repository's tool
+      # files, which is all these suites need.
+      # shell: bash matters here. The Windows default is PowerShell, where
+      # ${OTELC_VERSION} expands to nothing and the install fails with
+      # "version must not be empty".
+      - name: Install otelc binary
+        shell: bash
+        run: go install "go.opentelemetry.io/otelc/tool/cmd/otelc@${OTELC_VERSION}"
+
+      # GitHub runs this on a candidate merge commit, so dependency updates landed
+      # on main since the branch was cut can leave go.mod/go.sum stale.
+      #
+      # otelc/all is tidied too, unlike the orchestrion lane. Auto-pin follows
+      # _integration/otel.instrumentation.go into otelc/all and runs a read-only
+      # `go list` there, so a stale go.mod in otelc/all fails the whole lane with
+      # "updates to go.mod needed".
+      - name: Run 'go mod tidy'
+        shell: bash
+        run: |-
+          source .github/workflows/apps/go-retry.sh
+          for dir in internal/orchestrion/_integration otelc/all; do
+            retry_on_corruption go -C "${dir}" mod tidy
+          done
+
+      - name: Run Tests
+        shell: bash
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          otelc version
+
+          # Listed explicitly: _integration directory names do not map mechanically
+          # onto contrib paths (_integration/redigo lives at contrib/gomodule/redigo),
+          # so this cannot be discovered. Each migrated contrib adds its package here.
+          PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
+          export PACKAGE_NAMES="\
+            ${PREFIX}/otelc \
+            ${PREFIX}/gls \
+            ${PREFIX}/gls-leak \
+            ${PREFIX}/otelc-autostart"
+          echo "Running otelc tests for: ${PACKAGE_NAMES}"
+
+          # `otelc go test -json` silently produces uninstrumented binaries: every
+          # GLS test skips and the proof test fails. So the tests run without it and
+          # the output is converted afterwards, which is also why each package gets
+          # its own invocation, since test2json -p labels one package at a time.
+          RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
+          cat > "${RUN_SCRIPT}" <<'EOF'
+          #!/usr/bin/env bash
+          set -o pipefail
+          rc=0
+          for pkg in ${PACKAGE_NAMES}; do
+            raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_').log"
+            otelc go test -v -shuffle=on "${pkg}" > "${raw}" 2>&1
+            status=$?
+            go tool test2json -t -p "${pkg}" < "${raw}"
+            if [[ "${status}" -ne 0 ]]; then
+              echo "::group::Raw output for ${pkg} (exit ${status})" >&2
+              cat "${raw}" >&2
+              echo "::endgroup::" >&2
+              rc=1
+            fi
+          done
+          exit "${rc}"
+          EOF
+
+          gotestsum --junitfile "${XML_PATH}" --raw-command -- bash "${RUN_SCRIPT}"
+        working-directory: internal/orchestrion/_integration
+        env:
+          # otelc-autostart shells out to a nested `otelc go build`, which
+          # recompiles the dependency closure, so this lane needs more headroom
+          # than a normal test run.
+          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci
+          XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
+
+      - name: Run Config Inverter Check
+        if: always()
+        run: |
+          git diff internal/env/supported_configurations.json
+          cd scripts/configinverter && go run main.go -input ../../internal/env/supported_configurations.json check
+
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
+          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+
+  # Catches breakage the suites above cannot see, since they are all applications
+  # inside this module. See scripts/build_otelc_external_app.sh.
+  external-app:
+    name: External Application Build
+    env:
+      GOWORK: 'off'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.4"
+          cache: true
+          cache-dependency-path: '**/go.mod'
+
+      - name: Install otelc binary
+        shell: bash
+        run: go install "go.opentelemetry.io/otelc/tool/cmd/otelc@${OTELC_VERSION}"
+
+      # Same reason as the integration-test lane: GitHub builds a candidate merge
+      # commit, so dependency updates landed on main since the branch was cut can
+      # leave these stale, and otelc fails with "updates to go.mod needed" for any
+      # module it reads.
+      - name: Run 'go mod tidy'
+        shell: bash
+        run: |-
+          source .github/workflows/apps/go-retry.sh
+          for dir in internal/apps/otelc-external-app otelc/all; do
+            retry_on_corruption go -C "${dir}" mod tidy
+          done
+
+      - name: Build an application outside this module
+        shell: bash
+        run: ./scripts/build_otelc_external_app.sh
+
+  # A single join point, so branch protection has one check to require.
+  integration-test-done:
+    name: OTelc Integration Tests
+    needs:
+      - integration-test
+      - external-app
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.integration-test.result == 'success' && needs.external-app.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.integration-test.result != 'success' || needs.external-app.result != 'success'
+        run: echo "Failure!" && exit 1
