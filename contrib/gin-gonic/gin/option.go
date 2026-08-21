@@ -24,14 +24,16 @@ const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 const serviceSourceGinMiddleware = "opt.gin_middleware"
 
 type config struct {
-	analyticsRate float64
-	resourceNamer func(c *gin.Context) string
-	serviceName   string
-	serviceSource string
-	ignoreRequest func(c *gin.Context) bool
-	isStatusError func(statusCode int) bool
-	useGinErrors  bool
-	headerTags    instrumentation.HeaderTags
+	analyticsRate    float64
+	resourceNamer    func(c *gin.Context) string
+	resourceNamerSet bool
+	serviceName      string
+	serviceSource    string
+	ignoreRequest    func(c *gin.Context) bool
+	isStatusError    func(statusCode int) bool
+	useGinErrors     bool
+	headerTags       instrumentation.HeaderTags
+	otelEnabled      bool
 }
 
 func newConfig(serviceName string) *config {
@@ -42,12 +44,12 @@ func newConfig(serviceName string) *config {
 	}
 	cfg := &config{
 		analyticsRate: instr.AnalyticsRate(true),
-		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
 		serviceSource: serviceSource,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
 		useGinErrors:  false,
 		headerTags:    instr.HTTPHeadersAsTags(),
+		otelEnabled:   instr.OTelSemanticsEnabled(),
 	}
 
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {
@@ -99,6 +101,7 @@ func WithAnalyticsRate(rate float64) OptionFn {
 func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
+		cfg.resourceNamerSet = true
 	}
 }
 
