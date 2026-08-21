@@ -133,7 +133,12 @@ type SpanContext struct {
 
 	// the below group should propagate only locally
 	isRemote bool
-	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// when true, indicates this context has no usable trace/span identity to
+	// hand to a child, which gets a fresh root identity instead of being
+	// parented. Baggage items are always inherited regardless. trace may
+	// still be non-nil here, carrying propagating tags (e.g. LLMObs lineage,
+	// _dd.p.ts, _dd.p.usr.id) that arrived without a matching trace/span ID —
+	// see extractTextMap and newSpanContext.
 	// +checklocks:mu
 	baggageOnly bool
 	errors      atomic.Int32 // number of spans with errors in this trace
@@ -290,6 +295,15 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.trace = parent.trace
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
+		} else if parent.trace != nil { // +checklocksignore - Read-only after init.
+			// Carrier-only parent: no trace/span identity to inherit, but
+			// propagating tags (LLMObs lineage, _dd.p.ts, _dd.p.usr.id, ...)
+			// still travel onto the new root so downstream consumers can
+			// resolve them without requiring an unbroken APM parent chain.
+			if pt := parent.trace.loadPropagatingTags(); len(pt) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
+				context.trace = newTrace()
+				context.trace.propagatingTags.Store(pt)
+			}
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
