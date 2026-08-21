@@ -25,6 +25,7 @@ const (
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
 	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
 	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
+	PackageCloudEventsSDKGoV2   Package = "cloudevents/sdk-go.v2"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
 	PackageDatabaseSQL          Package = "database/sql"
@@ -263,6 +264,10 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("gcp.pubsub.request"),
 			},
 		},
+	},
+	PackageCloudEventsSDKGoV2: {
+		TracedPackage: "github.com/cloudevents/sdk-go/v2",
+		EnvVarPrefix:  "CLOUDEVENTS",
 	},
 	PackageConfluentKafkaGo: {
 		TracedPackage: "github.com/confluentinc/confluent-kafka-go",
