@@ -2649,6 +2649,33 @@ func BenchmarkStartSpan(b *testing.B) {
 	}
 }
 
+// BenchmarkStartSpanManyTags exercises the shape spanStart's tagsHint targets:
+// several individual Tag options in one call, rather than a single
+// WithStartSpanConfig/WithTags. This is the common shape for contribs that
+// set each tag as its own option (e.g. component, span.kind, db.system,
+// host, port, resource.name) and for any third-party integration using the
+// plain Tag/ServiceName/ResourceName option API.
+func BenchmarkStartSpanManyTags(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+	assert.Nil(b, err)
+	defer stop()
+
+	b.ResetTimer()
+	for b.Loop() {
+		tracer.StartSpan("valkey.command",
+			Tag("component", "valkey-io/valkey-go"),
+			Tag("span.kind", "client"),
+			Tag("db.system", "valkey"),
+			Tag("out.host", "127.0.0.1"),
+			Tag("out.port", "6379"),
+			Tag("out.db", "0"),
+			Tag("resource.name", "GET"),
+			Tag("db.user", "default"),
+			Tag("valkey.raw_command", "GET foo"),
+		)
+	}
+}
+
 func BenchmarkStartSpanConcurrent(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	assert.NoError(b, err)
