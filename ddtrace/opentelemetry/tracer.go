@@ -98,7 +98,13 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
-	s := tracer.StartSpan(spanName, ddopts...)
+	//
+	// The parent is decided above, so detach any ambient Datadog span to keep
+	// StartSpanFromContext from choosing its own. It is used for its context handling:
+	// the caller's context becomes the span's context, which keeps the application's
+	// pprof labels on the goroutine, and the context it returns carries this span's
+	// profiling labels to its children.
+	s, ctx := tracer.StartSpanFromContext(tracer.ContextWithSpan(ctx, nil), spanName, ddopts...)
 
 	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
 	mergedBag, ddBag := mergeBaggageFromContext(ctx)
@@ -114,8 +120,9 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	})
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
-	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values
-	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
+	// Wrap the span in the OpenTelemetry context to propagate span context values.
+	// StartSpanFromContext already put the Datadog span on the context.
+	ctx = oteltrace.ContextWithSpan(ctx, os)
 	return ctx, os
 }
 
