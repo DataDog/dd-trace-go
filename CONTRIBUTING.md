@@ -311,8 +311,8 @@ The [`openfeature`](./openfeature) package's `NewDatadogProvider` delivers featu
 one of two ways, selected via `DD_FEATURE_FLAGS_CONFIGURATION_SOURCE`:
 
 - `agentless` (the default): polls a Datadog endpoint directly over HTTPS, with no Agent dependency.
-  Requires `DD_API_KEY` (or `DD_SITE` to target a non-default site) unless a custom endpoint is
-  configured.
+  Requires `DD_API_KEY` unless a custom endpoint is configured; `DD_SITE` optionally selects the
+  managed endpoint's host and has no effect without `DD_API_KEY`.
 - `remote_config`: subscribes to updates via the Agent's Remote Configuration, the historical
   delivery path. Because of this, `ddtrace/tracer` only subscribes to the `FFE_FLAGS` Remote Config
   product when this source is resolved — see `internal/openfeature.RemoteConfigSourceSelected`.

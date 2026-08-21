@@ -325,7 +325,21 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.deliveryErr != nil {
+		// Permanent: no delivery source could be started, so waiting out the
+		// timeout would only delay startup for configuration that can never arrive.
+		return &openfeature.ProviderInitError{
+			ErrorCode: openfeature.ProviderNotReadyCode,
+			Message:   "no feature-flag delivery source could be started",
+		}
+	}
+
 	for p.configuration == nil {
+		if p.shutdownCalled {
+			// Shutdown ran while Init was waiting: configuration will never
+			// arrive, so return instead of waiting out the full timeout.
+			return nil
+		}
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
 			return err
 		}
