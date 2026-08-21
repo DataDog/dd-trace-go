@@ -305,6 +305,23 @@ Sample PR: <https://github.com/DataDog/dd-trace-go/pull/3365>
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
+### Feature Flags configuration source
+
+The [`openfeature`](./openfeature) package's `NewDatadogProvider` delivers feature-flag configuration
+one of two ways, selected via `DD_FEATURE_FLAGS_CONFIGURATION_SOURCE`:
+
+- `agentless` (the default): polls a Datadog endpoint directly over HTTPS, with no Agent dependency.
+  Requires `DD_API_KEY` (or `DD_SITE` to target a non-default site) unless a custom endpoint is
+  configured.
+- `remote_config`: subscribes to updates via the Agent's Remote Configuration, the historical
+  delivery path. Because of this, `ddtrace/tracer` only subscribes to the `FFE_FLAGS` Remote Config
+  product when this source is resolved — see `internal/openfeature.RemoteConfigSourceSelected`.
+
+`DD_FEATURE_FLAGS_ENABLED` (default `true`) is the stable kill switch, checked before source
+selection. See [openfeature/doc.go](./openfeature/doc.go) for the full environment variable
+reference, precedence rules between these settings and the deprecated
+`DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED`, and the Agentless endpoint's derivation rules.
+
 ### Working with environment variables
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
