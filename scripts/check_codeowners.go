@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -40,6 +41,16 @@ import (
 
 // codeownersPath is the repository-relative location of the CODEOWNERS file.
 const codeownersPath = "CODEOWNERS"
+
+// ownerPattern matches a GitHub "@user" or "@org/team" handle, or a plausible
+// email address. It isn't a byte-perfect GitHub username validator; it only
+// needs to catch the malformed junk ("@@", a trailing comma, a stray word
+// containing "@") that a bare "contains @" check lets through, since GitHub
+// silently can't resolve such a token to a reviewer.
+var ownerPattern = regexp.MustCompile(
+	`^@[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?(?:/[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)?$` +
+		`|^[^\s@]+@[^\s@]+\.[^\s@]+$`,
+)
 
 // kind is the category of a CODEOWNERS pattern within the supported subset.
 type kind int
@@ -201,12 +212,16 @@ func parse(path string) ([]rule, error) {
 			continue
 		}
 		for _, o := range owners {
-			// The CI Visibility parser treats any term containing "@" as an
-			// owner and everything else as part of the pattern, so a stray
-			// token would silently corrupt the entry.
-			if !strings.Contains(o, "@") {
+			switch {
+			case !strings.Contains(o, "@"):
+				// The CI Visibility parser treats any term containing "@" as
+				// an owner and everything else as part of the pattern, so a
+				// stray token would silently corrupt the entry.
 				problems = append(problems, fmt.Sprintf(
 					"%s:%d: %q is not an owner; trailing comments are not supported on entry lines", path, line, o))
+			case !ownerPattern.MatchString(o):
+				problems = append(problems, fmt.Sprintf(
+					`%s:%d: %q is not a valid owner; use "@user", "@org/team", or an email address`, path, line, o))
 			}
 		}
 		rules = append(rules, rule{line: line, pattern: pattern, kind: k, match: match, owners: owners})
