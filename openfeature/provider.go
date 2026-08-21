@@ -341,6 +341,8 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 
 	for p.configuration == nil {
 		if p.shutdownCalled {
+			// Shutdown ran while Init was waiting: configuration will never
+			// arrive, so return instead of waiting out the full timeout.
 			return nil
 		}
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
