@@ -178,6 +178,16 @@ jobs:
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
 
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version || 'stable' }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+      - name: constantlogmsg analyzer (make lint/errlog)
+        run: make lint/errlog
+
       - name: Get GitHub Token via dd-octo-sts
         id: generate-token
         uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4

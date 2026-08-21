@@ -246,8 +246,8 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	// Source inspection is cached per file so repeated retries/subtests do not reparse the same file.
 	metadata := functionMetadata.fileMetadata
 	if !metadata.parseOK {
-		log.Debug("civisibility: failed parsing test source file [function:%s file:%s runtime_file:%s relative_file:%s start_line:%d error:%v]",
-			fn.Name(), sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine, metadata.parseErr)
+		log.Debug("civisibility: failed parsing test source file [function:%s file:%s runtime_file:%s relative_file:%s start_line:%d error:%s]",
+			fn.Name(), sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine, metadata.parseErr.Error())
 	}
 	if metadata.parseOK {
 		// let's check if the suite was marked as unskippable before
