@@ -159,14 +159,21 @@ func newTestAgentlessSource(t *testing.T, backend *fakeUFCBackend, pollInterval 
 	return src
 }
 
-func TestAgentlessSource_FirstPollIsSynchronous(t *testing.T) {
+func TestAgentlessSource_StartDoesNotBlock(t *testing.T) {
 	backend := newFakeUFCBackend(t)
+	backend.setResponses("delayed_valid") // 150ms handler sleep
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
+	start := time.Now()
 	src.start()
+	elapsed := time.Since(start)
 
-	requests, _, _, _ := backend.status()
-	assert.Equal(t, 1, requests)
+	assert.Less(t, elapsed, 50*time.Millisecond, "start must not block on the first poll")
+
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond, "the first poll must still happen, just asynchronously")
 }
 
 func TestAgentlessSource_ETagNotAdvancedOnParseFailure(t *testing.T) {
@@ -206,8 +213,11 @@ func TestAgentlessSource_ETagAnd304(t *testing.T) {
 	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(*universalFlagsConfiguration) {})
 	src.start()
 
-	requests, _, lastIfNoneMatch, _ := backend.status()
-	require.Equal(t, 1, requests)
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond)
+	_, _, lastIfNoneMatch, _ := backend.status()
 	assert.Empty(t, lastIfNoneMatch, "the first request must not carry an ETag")
 
 	require.Eventually(t, func() bool {
@@ -239,15 +249,26 @@ func TestAgentlessSource_RetryWithinPoll(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("server_error", "server_error", "valid")
 
+	var mu sync.Mutex
 	var applied int
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {
+		mu.Lock()
+		defer mu.Unlock()
 		applied++
 	})
 
 	src.start()
 
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return applied == 1
+	}, 2*time.Second, time.Millisecond)
+
 	requests, _, _, _ := backend.status()
 	assert.Equal(t, 3, requests, "exactly 3 requests within the first poll")
+	mu.Lock()
+	defer mu.Unlock()
 	assert.Equal(t, 1, applied)
 }
 
@@ -255,15 +276,25 @@ func TestAgentlessSource_RetriesExhausted(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("server_error", "server_error", "server_error")
 
+	var mu sync.Mutex
 	var applied int
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {
+		mu.Lock()
+		defer mu.Unlock()
 		applied++
 	})
 
 	src.start()
 
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 3
+	}, 2*time.Second, time.Millisecond)
+
 	requests, _, _, _ := backend.status()
 	assert.Equal(t, 3, requests)
+	mu.Lock()
+	defer mu.Unlock()
 	assert.Equal(t, 0, applied)
 }
 
@@ -312,6 +343,11 @@ func TestAgentlessSource_NonRetryableStopsImmediately(t *testing.T) {
 
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	src.start()
+
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond)
 
 	requests, _, _, _ := backend.status()
 	assert.Equal(t, 1, requests, "an auth failure must not be retried")
@@ -446,6 +482,12 @@ func TestAgentlessSource_Headers(t *testing.T) {
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	src.start()
 
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return gotHeaders != nil
+	}, 2*time.Second, time.Millisecond)
+
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, "gzip", gotHeaders.Get("Accept-Encoding"))
@@ -457,13 +499,20 @@ func TestAgentlessSource_Gzip(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("gzip_valid")
 
+	var mu sync.Mutex
 	var applied int
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {
+		mu.Lock()
+		defer mu.Unlock()
 		applied++
 	})
 	src.start()
 
-	assert.Equal(t, 1, applied)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return applied == 1
+	}, 2*time.Second, time.Millisecond)
 }
 
 func TestAgentlessSource_WarningDedupe(t *testing.T) {

@@ -99,17 +99,9 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 	return s, nil
 }
 
-// start issues the first poll synchronously, then hands off to the
-// background loop. Checking stopCh first means nothing billable is issued
-// once the source has been stopped.
+// start launches the poll loop in the background. It never blocks: see run
+// for why.
 func (s *agentlessSource) start() {
-	select {
-	case <-s.stopCh:
-		close(s.doneCh)
-		return
-	default:
-	}
-	s.poll()
 	go s.run()
 }
 
@@ -123,11 +115,24 @@ func (s *agentlessSource) Stop(ctx context.Context) {
 	}
 }
 
-// run is the background poll loop. It uses a Timer reset after each poll
-// completes, rather than a Ticker, so a slow poll cannot cause a burst of
-// catch-up ticks once it finally returns.
+// run is the poll loop: an immediate first poll, then one per pollInterval
+// thereafter. Everything here runs in the background goroutine spawned by
+// start — NewDatadogProvider's contract is that the provider is ready to use
+// immediately, so nothing here may block start's caller, and the caller must
+// be able to invoke Shutdown even while the first poll is still in flight.
+// Readiness is Init's responsibility (it waits for configuration), not
+// start's. It uses a Timer reset after each poll completes, rather than a
+// Ticker, so a slow poll cannot cause a burst of catch-up ticks once it
+// finally returns.
 func (s *agentlessSource) run() {
 	defer close(s.doneCh)
+
+	select {
+	case <-s.stopCh:
+		return
+	default:
+	}
+	s.poll()
 
 	timer := time.NewTimer(s.pollInterval)
 	defer timer.Stop()
