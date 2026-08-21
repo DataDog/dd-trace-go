@@ -123,7 +123,6 @@
 
 # gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability @DataDog/apm-ecosystems-performance
-/.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
 /.gitlab/benchmarks/            @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
 /.gitlab/benchmarks/macro/      @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
 /.gitlab/benchmarks/micro/      @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
