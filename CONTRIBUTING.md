@@ -237,6 +237,17 @@ The script provides:
 - Automatic Docker service management for integration tests
 - Support for Apple Silicon (M1/M2) Macs
 
+#### Crashtracker
+
+Run focused crashtracker tests with:
+
+```shell
+go test -race -count=1 ./crashtracker
+```
+
+The end-to-end tests intentionally crash helper processes and validate the
+report received by a local intake stub.
+
 ## Style Guidelines
 
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.

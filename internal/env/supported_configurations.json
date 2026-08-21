@@ -422,6 +422,20 @@
         "default": null
       }
     ],
+    "DD_CRASHTRACKING_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_CRASHTRACKING_FOREIGN_THREAD_SIGNALS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_CUSTOM_PARENT_ID": [
       {
         "implementation": "A",
