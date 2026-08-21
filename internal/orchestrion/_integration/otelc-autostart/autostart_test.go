@@ -21,14 +21,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubAgent is a real HTTP trace intake. The in-process agenttest.Agent cannot be
-// used here: its Addr() is the placeholder "agenttest.invalid:0" and it delivers
-// requests through an in-process RoundTripper, so it never opens a socket that a
-// child process could reach.
+// stubAgent is a real HTTP trace intake. The in-process agenttest.Agent does not
+// work here: it delivers requests through an in-process RoundTripper and never
+// opens a socket that a child process could reach.
 //
-// Payloads are kept raw rather than decoded. The assertion only needs to know
-// whether a given operation name was reported, and the name appears verbatim in
-// the msgpack body, so matching on bytes avoids depending on the wire format.
+// Payloads stay raw. An operation name appears verbatim in the msgpack body, so
+// matching on bytes avoids depending on the wire format.
 type stubAgent struct {
 	server *httptest.Server
 
@@ -78,13 +76,12 @@ func (a *stubAgent) requestCount() int {
 }
 
 // TestOtelcStartsTracer is the only check that the tracer lifecycle rule in
-// ddtrace/tracer/otelc.yaml actually works. Every other suite runs under the
-// integration harness, which calls tracertest.Bootstrap itself and so has a
-// running tracer either way.
+// ddtrace/tracer/otelc.yaml works. Every other suite runs under the integration
+// harness, which calls tracertest.Bootstrap itself and so has a running tracer
+// either way.
 //
-// It builds this command twice and runs both against the stub above. The plain
-// build is not a formality: without it, a passing otelc case would only show that
-// a span reached an agent, not that otelc is what started the tracer.
+// The plain build is the control: without it, a passing otelc case would only
+// show that a span reached an agent, not that otelc started the tracer.
 func TestOtelcStartsTracer(t *testing.T) {
 	if _, err := exec.LookPath("otelc"); err != nil {
 		t.Skip("otelc is not on PATH; install it from " +
