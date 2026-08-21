@@ -67,13 +67,16 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if scenario == "parallel-root-slots" || scenario == "parallel-root-coordination" {
 		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
 	}
-	// These fixture limits detect protocol deadlocks, not instrumentation speed:
-	// race and coverage teardown can legitimately take several seconds in CI.
+	// These fixture limits detect protocol deadlocks, not instrumentation speed.
+	// Each scenario re-execs the test binary twice (fixture child, then the
+	// quarantine machinery's own grandchild), and that grandchild is race- and
+	// coverage-instrumented, so process startup alone can take several seconds
+	// under load or inside a sandbox (e.g. the gotip gVisor job).
 	if scenario == "parallel-atf-sibling" {
-		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "10s")
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "30s")
 	}
 	if scenario == "parallel-denied" {
-		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "5s")
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "30s")
 	}
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
@@ -721,11 +724,11 @@ func TestQuarantinedRaceFailfastEndToEnd(t *testing.T) {
 }
 
 func TestQuarantinedRaceParallelAdmissionEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$", "-test.timeout=15s")
+	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$", "-test.timeout=1m")
 }
 
 func TestQuarantinedRaceParallelDeniedEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-denied", "^TestQuarantinedRaceParallelDeniedFixture$", "-test.timeout=10s")
+	runQuarantinedRaceEndToEnd(t, "parallel-denied", "^TestQuarantinedRaceParallelDeniedFixture$", "-test.timeout=1m")
 }
 
 func TestQuarantinedRaceParallelRootsReleaseProcessSlotsEndToEnd(t *testing.T) {
@@ -740,7 +743,7 @@ func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
 	if testing.CoverMode() == "" {
 		t.Skip("requires coverage instrumentation")
 	}
-	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$", "-test.timeout=15s")
+	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$", "-test.timeout=1m")
 }
 
 func TestQuarantinedRaceNestedAggregateCoverageEndToEnd(t *testing.T) {
@@ -843,7 +846,7 @@ func TestQuarantinedRaceOwnerGenerationFinalityEndToEnd(t *testing.T) {
 }
 
 func TestQuarantinedRaceParallelATFSiblingEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-atf-sibling", "^TestQuarantinedRaceParallelATFFixture$", "-test.timeout=15s")
+	runQuarantinedRaceEndToEnd(t, "parallel-atf-sibling", "^TestQuarantinedRaceParallelATFFixture$", "-test.timeout=1m")
 }
 
 func TestQuarantinedRaceSerialATFDoesNotRepeatSiblingEndToEnd(t *testing.T) {
@@ -929,6 +932,18 @@ func processCoverageCountForFunction(t *testing.T, profilePath, sourcePath, func
 	return total
 }
 
+// processCoverageCountForFunctionBody returns the execution count of the
+// entry block of functionName's body: among the profile's blocks contained
+// within the body's brace positions, the one that starts earliest.
+//
+// This can't match the body's brace positions exactly: Go 1.27's cmd/cover
+// trims blocks to lines containing executable code, so a body block no
+// longer spans from '{' to '}' the way it did on earlier toolchains (e.g. a
+// gapless single-statement body now starts at the first code token instead
+// of the opening brace). Both shapes still yield exactly one contained
+// block for the functions this helper is used on, so containment plus
+// "earliest start" preserves the original per-entry counting semantics
+// across toolchains.
 func processCoverageCountForFunctionBody(t *testing.T, profilePath, sourcePath, functionName string) int {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -944,19 +959,31 @@ func processCoverageCountForFunctionBody(t *testing.T, profilePath, sourcePath, 
 	require.NotZero(t, start.Line)
 	profile, err := os.ReadFile(profilePath)
 	require.NoError(t, err)
+	found := false
+	var entryStartLine, entryStartColumn, entryCount int
 	for _, line := range strings.Split(string(profile), "\n") {
 		separator := strings.LastIndexByte(line, ':')
 		if separator < 0 || !strings.HasSuffix(filepath.ToSlash(line[:separator]), "/gotesting/"+filepath.Base(sourcePath)) {
 			continue
 		}
 		var startLine, startColumn, endLine, endColumn, statements, count int
-		if _, err := fmt.Sscanf(line[separator+1:], "%d.%d,%d.%d %d %d", &startLine, &startColumn, &endLine, &endColumn, &statements, &count); err == nil &&
-			startLine == start.Line && startColumn == start.Column && endLine == finish.Line && endColumn == finish.Column {
-			return count
+		if _, err := fmt.Sscanf(line[separator+1:], "%d.%d,%d.%d %d %d", &startLine, &startColumn, &endLine, &endColumn, &statements, &count); err != nil {
+			continue
+		}
+		if startLine < start.Line || (startLine == start.Line && startColumn < start.Column) {
+			continue
+		}
+		if endLine > finish.Line || (endLine == finish.Line && endColumn > finish.Column) {
+			continue
+		}
+		if !found || startLine < entryStartLine || (startLine == entryStartLine && startColumn < entryStartColumn) {
+			found, entryStartLine, entryStartColumn, entryCount = true, startLine, startColumn, count
 		}
 	}
-	t.Fatalf("coverage block for %s not found", functionName)
-	return 0
+	if !found {
+		t.Fatalf("coverage block for %s not found", functionName)
+	}
+	return entryCount
 }
 
 func writeQuarantinedRaceIsolationPID(t *testing.T, name string) {
