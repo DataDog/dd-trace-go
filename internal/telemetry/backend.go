@@ -118,7 +118,10 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 	for _, opt := range opts {
 		opt(nil, candidate)
 	}
-	if candidate.captureStacktrace {
+	if candidate.captureStacktrace && len(candidate.rawStack.PCs) == 0 {
+		// A pre-captured stack (see withRawStacktrace) is already the
+		// right one — Log captured it before queuing, precisely to
+		// avoid capturing this replay goroutine's stack instead.
 		candidate.rawStack = stacktrace.CaptureRaw(telemetryStackSkip)
 	}
 

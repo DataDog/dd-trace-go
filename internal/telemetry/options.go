@@ -7,6 +7,8 @@ package telemetry
 
 import (
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 )
 
 // WithTags returns a LogOption that appends the tags for the telemetry log message. Tags are key-value pairs that are then
@@ -62,9 +64,13 @@ func WithTags(tags []string) LogOption {
 	}
 }
 
-// WithStacktrace returns a LogOption that sets the stacktrace for the telemetry log message. The stacktrace is a string
-// that is generated inside the WithStacktrace function. Logs demultiplication does not take the stacktrace into account.
-// This means that a log that has been demultiplicated will only show of the first log.
+// WithStacktrace returns a LogOption that requests a stack trace be attached
+// to the telemetry log message. The stack is captured lazily by
+// loggerBackend.add, at Log-dedup time — NOT inside this function — unless
+// [Log] has already captured one synchronously because the global client
+// wasn't installed yet (see [withRawStacktrace]). Logs demultiplication does
+// not take the stacktrace into account: a log that has been demultiplicated
+// will only show the first log's stack.
 func WithStacktrace() LogOption {
 	return func(_ *loggerKey, value *loggerValue) {
 		if value == nil {
@@ -72,4 +78,34 @@ func WithStacktrace() LogOption {
 		}
 		value.captureStacktrace = true
 	}
+}
+
+// withRawStacktrace attaches a stack trace captured earlier — before the
+// global telemetry client existed — instead of leaving loggerBackend.add to
+// capture one when the queued [Log] call is eventually replayed. Without
+// this, the captured stack would belong to the replay goroutine, not the
+// call site that actually requested it.
+//
+// Unexported: [Log] appends this automatically when it detects a queued
+// [WithStacktrace] request; callers should keep using [WithStacktrace] only.
+func withRawStacktrace(raw stacktrace.RawStackTrace) LogOption {
+	return func(_ *loggerKey, value *loggerValue) {
+		if value == nil {
+			return
+		}
+		value.captureStacktrace = true
+		value.rawStack = raw
+	}
+}
+
+// wantsStacktrace reports whether options includes a [WithStacktrace]
+// request, by applying each option's value-phase against a throwaway
+// loggerValue — the same phase loggerBackend.add applies for real inside
+// its LoadOrCompute closure.
+func wantsStacktrace(options []LogOption) bool {
+	var probe loggerValue
+	for _, opt := range options {
+		opt(nil, &probe)
+	}
+	return probe.captureStacktrace
 }
