@@ -32,7 +32,8 @@ const (
 	moduleName = "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/parallel_testing_retries"
 	suiteName  = "parallel_testing_retries_test.go"
 
-	parallelPanic = "testing: t.Parallel called multiple times"
+	parallelPanic           = "testing: t.Parallel called multiple times"
+	parallelCleanupDuration = 25 * time.Millisecond
 )
 
 // scenarioConfig describes one subprocess scenario and the exact CI Visibility
@@ -63,6 +64,9 @@ type scenarioConfig struct {
 	// expectedParallelEvents is the exact number of test events that completed a
 	// native t.Parallel transition and must publish pause timing.
 	expectedParallelEvents int
+	// suppressParallelWaitEvents expects the noop tracer to omit the generic wait
+	// span while retaining the test event's parallel timing metrics.
+	suppressParallelWaitEvents bool
 	// expectedFailureOutput is required in subprocess output when a scenario is
 	// expected to fail for a specific reason.
 	expectedFailureOutput string
@@ -218,6 +222,7 @@ func scenarioEnvForChild(environ []string, cfg scenarioConfig) []string {
 		constants.CIVisibilityTestManagementEnabledEnvironmentVariable:             {},
 		constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable: {},
 		constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled:           {},
+		constants.CIVisibilityUseNoopTracer:                                        {},
 	}
 	for _, entry := range environ {
 		key, _, _ := strings.Cut(entry, "=")
@@ -329,12 +334,14 @@ func validateScenarioPayloads(payloads *civisibilitytest.Payloads, cfg scenarioC
 	} {
 		testEvents.CheckEventsByMetricName(metric, cfg.expectedParallelEvents)
 	}
-	if cfg.expectedParallelEvents > 0 {
-		payloads.Events().
-			CheckEventsByResourceName("testing.T.Parallel", cfg.expectedParallelEvents).
-			CheckEventsByType("span", cfg.expectedParallelEvents).
-			CheckEventsByTagAndValue("test.parallel.wait", "true", cfg.expectedParallelEvents)
+	expectedParallelWaitEvents := cfg.expectedParallelEvents
+	if cfg.suppressParallelWaitEvents {
+		expectedParallelWaitEvents = 0
 	}
+	payloads.Events().
+		CheckEventsByResourceName("testing.T.Parallel", expectedParallelWaitEvents).
+		CheckEventsByType("span", expectedParallelWaitEvents).
+		CheckEventsByTagAndValue("test.parallel.wait", "true", expectedParallelWaitEvents)
 	expectedResourceEvents := cfg.expectedResourceEvents
 	if expectedResourceEvents == 0 {
 		expectedResourceEvents = cfg.expectedTestEvents
@@ -359,6 +366,8 @@ func validateScenarioPayloads(payloads *civisibilitytest.Payloads, cfg scenarioC
 func scenarioOrder() []string {
 	return []string{
 		"TestParallelWrapperNoRetry",
+		"TestDeniedParallel",
+		"TestParallelNoopTracer",
 		"TestParallelEFDSequential",
 		"TestParallelEFDParallel",
 		"TestParallelFlakyRetry",
@@ -393,6 +402,36 @@ func scenariosByName() map[string]scenarioConfig {
 				events.CheckEventsWithoutTag(constants.TestIsNew, 1)
 			},
 		},
+		"TestDeniedParallel": {
+			testName:                "TestDeniedParallel",
+			expectedTestEvents:      1,
+			expectedSuiteEvents:     1,
+			expectedModuleEvents:    1,
+			expectedSessionEvents:   1,
+			expectedTotalEvents:     4,
+			expectedFailureOutput:   "can not use t.Parallel",
+			expectFailure:           true,
+			validateFailureInParent: true,
+			validate: func(events civisibilitytest.Events, _ string) {
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 1)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusFail, 1)
+			},
+		},
+		"TestParallelNoopTracer": {
+			testName:                   "TestParallelNoopTracer",
+			env:                        map[string]string{constants.CIVisibilityUseNoopTracer: "true"},
+			expectedTestEvents:         1,
+			expectedSuiteEvents:        1,
+			expectedModuleEvents:       1,
+			expectedSessionEvents:      1,
+			expectedTotalEvents:        4,
+			expectedParallelEvents:     1,
+			suppressParallelWaitEvents: true,
+			validate: func(events civisibilitytest.Events, _ string) {
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 1)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 1)
+			},
+		},
 		"TestParallelEFDSequential": {
 			testName:               "TestParallelEFDSequential",
 			settings:               efdSettings(1),
@@ -409,6 +448,15 @@ func scenariosByName() map[string]scenarioConfig {
 				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 2)
 				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 1)
 				events.CheckEventsByTagAndValue(constants.TestIsNew, "true", 2)
+				for _, event := range events {
+					unaccountedDuration := float64(event.Content.Duration) -
+						event.Content.Metrics[constants.TestActiveDuration] -
+						event.Content.Metrics[constants.TestParallelPauseDuration]
+					minimumCleanupDuration := float64((parallelCleanupDuration - 5*time.Millisecond).Nanoseconds())
+					if unaccountedDuration < minimumCleanupDuration {
+						panic(fmt.Sprintf("expected cleanup outside active duration, got %vns", unaccountedDuration))
+					}
+				}
 			},
 		},
 		"TestParallelEFDParallel": {
@@ -669,6 +717,18 @@ func skipUnlessScenario(t *testing.T, name string) {
 
 func TestParallelEFDSequential(t *testing.T) {
 	skipUnlessScenario(t, "TestParallelEFDSequential")
+	t.Cleanup(func() { time.Sleep(parallelCleanupDuration) })
+	t.Parallel()
+}
+
+func TestDeniedParallel(t *testing.T) {
+	skipUnlessScenario(t, "TestDeniedParallel")
+	t.Setenv("PARALLEL_TESTING_RETRIES_DENY_PARALLEL", "true")
+	t.Parallel()
+}
+
+func TestParallelNoopTracer(t *testing.T) {
+	skipUnlessScenario(t, "TestParallelNoopTracer")
 	t.Parallel()
 }
 

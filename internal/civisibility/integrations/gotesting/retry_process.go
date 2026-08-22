@@ -3466,6 +3466,8 @@ func (o *processRetryChildObservation) buildResult(status processRetryStatus) pr
 		}
 	}
 	finish := time.Now()
+	startUnixNano := o.startTime.UnixNano()
+	finishUnixNano := finish.UnixNano()
 	panicData := o.result.panicData
 	panicStack := o.result.panicStack
 	if panicData == nil && o.result.cleanupPanicData != nil {
@@ -3489,8 +3491,8 @@ func (o *processRetryChildObservation) buildResult(status processRetryStatus) pr
 		RetryReason:                 o.cfg.RetryReason,
 		MRunEpoch:                   o.cfg.MRunEpoch,
 		InvocationOrdinal:           o.cfg.InvocationOrdinal,
-		StartUnixNano:               o.startTime.UnixNano(),
-		FinishUnixNano:              finish.UnixNano(),
+		StartUnixNano:               startUnixNano,
+		FinishUnixNano:              finishUnixNano,
 		DurationNanos:               o.result.duration.Nanoseconds(),
 		DurationValid:               o.result.duration >= 0,
 		ObservedActiveDurationNanos: o.result.timing.activeDuration.Nanoseconds(),
@@ -3502,11 +3504,12 @@ func (o *processRetryChildObservation) buildResult(status processRetryStatus) pr
 		RootParallel:                rootParallel,
 	}
 	if o.result.timing.pauseProjectionOK {
-		startOffset := o.result.timing.pauseStart.Sub(o.startTime)
-		endOffset := o.result.timing.pauseEnd.Sub(o.startTime)
-		if startOffset >= 0 && endOffset >= startOffset && endOffset <= finish.Sub(o.startTime)+parallelTimingSkewTolerance {
-			startNanos := startOffset.Nanoseconds()
-			endNanos := endOffset.Nanoseconds()
+		startOffsetNanos := o.result.timing.pauseStart.UnixNano() - startUnixNano
+		endOffsetNanos := o.result.timing.pauseEnd.UnixNano() - startUnixNano
+		wallDurationNanos := finishUnixNano - startUnixNano
+		if startOffsetNanos >= 0 && endOffsetNanos >= startOffsetNanos && endOffsetNanos <= wallDurationNanos {
+			startNanos := startOffsetNanos
+			endNanos := endOffsetNanos
 			result.ParallelPauseStartOffsetNanos = &startNanos
 			result.ParallelPauseEndOffsetNanos = &endNanos
 		}

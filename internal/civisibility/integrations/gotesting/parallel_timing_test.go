@@ -83,10 +83,17 @@ func exerciseParallelTiming(t *testing.T) {
 	require.False(t, hookedNonParallel.isParallel)
 	require.True(t, hookedNonParallel.activeDurationOK)
 	require.Equal(t, 2*time.Millisecond, hookedNonParallel.activeDuration)
+	var uncommitted testing.T
+	hookedUncommitted := observeHookedTestExecutionTiming(&uncommitted, &testExecutionMetadata{
+		parallelTiming: &parallelTimingState{},
+	}, 2*time.Millisecond, time.Time{})
+	require.False(t, hookedUncommitted.isParallel)
+	require.True(t, hookedUncommitted.activeDurationOK)
+	require.Equal(t, 2*time.Millisecond, hookedUncommitted.activeDuration)
 	hookedUnsupportedParallel := observeHookedTestExecutionTiming(nil, &testExecutionMetadata{
 		parallelTiming: &parallelTimingState{},
 	}, 2*time.Millisecond, time.Time{})
-	require.True(t, hookedUnsupportedParallel.isParallel)
+	require.False(t, hookedUnsupportedParallel.isParallel)
 	require.False(t, hookedUnsupportedParallel.activeDurationOK)
 
 	event := newProcessRetryRecordingTestForTesting("parallel-timing")

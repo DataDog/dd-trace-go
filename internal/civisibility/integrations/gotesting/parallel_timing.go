@@ -72,11 +72,7 @@ func observeHookedTestExecutionTiming(
 	if execMeta == nil || execMeta.parallelTiming == nil {
 		return testExecutionTiming{activeDuration: max(bodyDuration, 0), activeDurationOK: true}
 	}
-	baseline := execMeta.parallelTiming.baseline
-	if !baseline.valid {
-		return testExecutionTiming{isParallel: true}
-	}
-	return calculateTestExecutionTiming(bodyDuration, sampleParallelTiming(t, baseline, bodyEnd))
+	return observeTestExecutionTiming(t, execMeta, parallelTimingBaseline{}, bodyDuration, bodyEnd)
 }
 
 func observeTestExecutionTiming(
