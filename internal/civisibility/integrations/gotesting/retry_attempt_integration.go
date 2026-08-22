@@ -133,17 +133,18 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 
 	complete := func(attempt *retryAttemptRoot, result retryAttemptResult) {
 		localT := attempt.test
+		if finalize := execMeta.retryAttemptFinalizer; finalize != nil {
+			finalize(&result, false)
+			defer func() {
+				execMeta.retryAttemptFinalizer = nil
+				defer completeDeferredProcessRetryEvent(execMeta)
+				finalize(&result, true)
+			}()
+		}
 		observation := observeFreshRetryAttempt(currentIndex, result)
 		observation.rootParallel = attempt.group.rootParallelWasObserved()
 		execOpts.lastObservation = observation
 		logFreshRetryAttemptState("complete", localT, result)
-		if finalize := execMeta.retryAttemptFinalizer; finalize != nil {
-			defer func() {
-				execMeta.retryAttemptFinalizer = nil
-				defer completeDeferredProcessRetryEvent(execMeta)
-				finalize(result)
-			}()
-		}
 		if execOpts.originalExecutionMetadata != nil {
 			execOpts.originalExecutionMetadata.test = execMeta.test
 		}

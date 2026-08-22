@@ -520,8 +520,8 @@ func TestQuarantinedRaceAggregatePayloadFitsWireLimit(t *testing.T) {
 				},
 			}
 			result := processRetryResult{
-				Version: 1, TestName: root, ModuleName: "module", SuiteName: "suite", Attempt: 1, RetryReason: processRetrySubtreeReason,
-				Status: processRetryStatusFail, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1, Failed: true,
+				Version: processRetryResultVersion, TestName: root, ModuleName: "module", SuiteName: "suite", Attempt: 1, RetryReason: processRetrySubtreeReason,
+				Status: processRetryStatusFail, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1, DurationValid: true, Failed: true,
 				Subtests: make([]processRetrySubtreeResult, tt.count),
 			}
 			for idx := range result.Subtests {
@@ -552,8 +552,8 @@ func TestQuarantinedRaceAggregatePayloadFitsWireLimit(t *testing.T) {
 func TestQuarantinedRaceSmallPayloadSerializationIsUnchanged(t *testing.T) {
 	resultPath := filepath.Join(t.TempDir(), "result.json")
 	result := processRetryResult{
-		Version: 1, TestName: "TestSmall/root", Attempt: 1, RetryReason: processRetrySubtreeReason,
-		Status: processRetryStatusPass, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
+		Version: processRetryResultVersion, TestName: "TestSmall/root", Attempt: 1, RetryReason: processRetrySubtreeReason,
+		Status: processRetryStatusPass, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1, DurationValid: true,
 		Subtests: []processRetrySubtreeResult{{
 			TestName: "TestSmall/root/child", Status: processRetryStatusPass,
 			StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
@@ -579,8 +579,8 @@ func TestQuarantinedRaceUnrepresentableCoreWritesExplicitResult(t *testing.T) {
 		},
 	}
 	result := processRetryResult{
-		Version: 1, TestName: root, Attempt: 1, RetryReason: processRetrySubtreeReason,
-		Status: processRetryStatusPass, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
+		Version: processRetryResultVersion, TestName: root, Attempt: 1, RetryReason: processRetrySubtreeReason,
+		Status: processRetryStatusPass, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1, DurationValid: true,
 		Subtests: []processRetrySubtreeResult{{
 			TestName: root + "/" + strings.Repeat("x", processRetrySubtreeWireMaxBytes),
 			Status:   processRetryStatusPass, StartUnixNano: 1, FinishUnixNano: 2, DurationNanos: 1,
@@ -639,7 +639,7 @@ func TestQuarantinedRaceSubtreeResultValidationIsFailClosed(t *testing.T) {
 	}
 	now := time.Now().UnixNano()
 	valid := processRetryResult{
-		Version:           1,
+		Version:           processRetryResultVersion,
 		TestName:          cfg.SelectedRoot,
 		ModuleName:        "module",
 		SuiteName:         "suite",
@@ -651,6 +651,7 @@ func TestQuarantinedRaceSubtreeResultValidationIsFailClosed(t *testing.T) {
 		StartUnixNano:     now,
 		FinishUnixNano:    now + 10,
 		DurationNanos:     10,
+		DurationValid:     true,
 		Subtests: []processRetrySubtreeResult{{
 			TestName:       "TestCheckout/card/visa",
 			ModuleName:     "module",
@@ -667,6 +668,9 @@ func TestQuarantinedRaceSubtreeResultValidationIsFailClosed(t *testing.T) {
 		MRunEpoch: 1, InvocationOrdinal: 1, Subtree: cfg,
 	}
 	require.NoError(t, validateProcessRetryResult(valid, expected))
+	independentPolicyDuration := valid
+	independentPolicyDuration.DurationNanos = 3
+	require.NoError(t, validateProcessRetryResult(independentPolicyDuration, expected))
 
 	missingIdentity := valid
 	missingIdentity.ModuleName = ""

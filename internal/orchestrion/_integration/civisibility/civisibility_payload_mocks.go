@@ -42,6 +42,7 @@ type (
 		TestModuleID  uint64             `json:"test_module_id"`
 		TestSuiteID   uint64             `json:"test_suite_id"`
 		SpanID        uint64             `json:"span_id"`
+		ParentID      uint64             `json:"parent_id"`
 		TraceID       uint64             `json:"trace_id"`
 		Name          string             `json:"name"`
 		Service       string             `json:"service"`
