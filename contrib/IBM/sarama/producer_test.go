@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -422,6 +423,171 @@ func TestWrapAsyncProducerFinishesPendingSpanOnClose(t *testing.T) {
 			assert.Equal(t, sarama.ErrShuttingDown.Error(), spans[0].Tag(ext.ErrorMsg))
 		})
 	}
+}
+
+var errProduceFailed = errors.New("failed to produce message")
+
+// errorCheckTestCases are shared by the WithErrorCheck tests below.
+var errorCheckTestCases = []struct {
+	name     string
+	errCheck func(error) bool
+	// wantErr is whether the produced spans should be marked as errored.
+	wantErr bool
+}{
+	{name: "errCheck true", errCheck: func(error) bool { return true }, wantErr: true},
+	{name: "errCheck false", errCheck: func(error) bool { return false }, wantErr: false},
+}
+
+func TestSyncProducerWithErrorCheck(t *testing.T) {
+	for _, tc := range errorCheckTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			cfg := sarama.NewConfig()
+			cfg.Version = sarama.V0_11_0_0
+			raw := &failingSyncProducer{err: errProduceFailed}
+			producer := WrapSyncProducer(cfg, raw, WithErrorCheck(tc.errCheck))
+
+			_, _, err := producer.SendMessage(&sarama.ProducerMessage{Topic: "test"})
+			// the option only affects the span; the caller still sees the error.
+			require.ErrorIs(t, err, errProduceFailed)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			if tc.wantErr {
+				assert.Equal(t, errProduceFailed.Error(), spans[0].Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, spans[0].Tag(ext.ErrorMsg))
+			}
+		})
+	}
+}
+
+func TestSyncProducerSendMessagesWithErrorCheck(t *testing.T) {
+	for _, tc := range errorCheckTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			cfg := sarama.NewConfig()
+			cfg.Version = sarama.V0_11_0_0
+			// a plain error, rather than sarama.ProducerErrors, is applied to
+			// every message in the batch.
+			raw := &failingSyncProducer{err: errProduceFailed}
+			producer := WrapSyncProducer(cfg, raw, WithErrorCheck(tc.errCheck))
+
+			err := producer.SendMessages([]*sarama.ProducerMessage{
+				{Topic: "test"},
+				{Topic: "test"},
+			})
+			require.ErrorIs(t, err, errProduceFailed)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			for _, s := range spans {
+				if tc.wantErr {
+					assert.Equal(t, errProduceFailed.Error(), s.Tag(ext.ErrorMsg))
+				} else {
+					assert.Nil(t, s.Tag(ext.ErrorMsg))
+				}
+			}
+		})
+	}
+}
+
+func TestWrapAsyncProducerWithErrorCheck(t *testing.T) {
+	for _, tc := range errorCheckTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			cfg := sarama.NewConfig()
+			cfg.Version = sarama.V0_11_0_0
+			cfg.Producer.Return.Successes = true
+			raw := newBlockedAsyncProducer()
+			producer := WrapAsyncProducer(cfg, raw, WithErrorCheck(tc.errCheck))
+
+			msg := &sarama.ProducerMessage{Topic: "test"}
+			producer.Input() <- msg
+			select {
+			case got := <-raw.input:
+				require.Same(t, msg, got)
+			case <-time.After(time.Second):
+				t.Fatal("wrapped producer did not forward the message")
+			}
+			raw.errors <- &sarama.ProducerError{Msg: msg, Err: errProduceFailed}
+
+			// the span is finished before the error is forwarded, so once
+			// this returns the span is guaranteed to be available.
+			var err *sarama.ProducerError
+			select {
+			case err = <-producer.Errors():
+				require.ErrorIs(t, err, errProduceFailed)
+			case <-time.After(time.Second):
+				t.Fatal("wrapped producer did not forward the error")
+			}
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			if tc.wantErr {
+				assert.Equal(t, err.Error(), spans[0].Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, spans[0].Tag(ext.ErrorMsg))
+			}
+
+			close(raw.errors)
+			close(raw.successes)
+			assertWrappedSuccessesClosed(t, producer)
+		})
+	}
+}
+
+func TestSyncProducerSendMessagesWithErrorCheckPerMessage(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	errIgnored := errors.New("ignored failure")
+	ignored := &sarama.ProducerMessage{Topic: "ignored"}
+	failed := &sarama.ProducerMessage{Topic: "failed"}
+	succeeded := &sarama.ProducerMessage{Topic: "succeeded"}
+	// the real SyncProducer reports batch failures as sarama.ProducerErrors.
+	raw := &failingSyncProducer{err: sarama.ProducerErrors{
+		{Msg: ignored, Err: errIgnored},
+		{Msg: failed, Err: errProduceFailed},
+	}}
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+
+	producer := WrapSyncProducer(cfg, raw, WithErrorCheck(func(err error) bool {
+		return !errors.Is(err, errIgnored)
+	}))
+	err := producer.SendMessages([]*sarama.ProducerMessage{ignored, failed, succeeded})
+	require.ErrorAs(t, err, new(sarama.ProducerErrors))
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3)
+	errByTopic := make(map[any]any, len(spans))
+	for _, s := range spans {
+		errByTopic[s.Tag(ext.MessagingDestinationName)] = s.Tag(ext.ErrorMsg)
+	}
+	assert.Nil(t, errByTopic["ignored"])
+	assert.Nil(t, errByTopic["succeeded"])
+	require.NotNil(t, errByTopic["failed"])
+	assert.Contains(t, errByTopic["failed"], errProduceFailed.Error())
+}
+
+type failingSyncProducer struct {
+	sarama.SyncProducer
+	err error
+}
+
+func (p *failingSyncProducer) SendMessage(*sarama.ProducerMessage) (int32, int64, error) {
+	return 0, 0, p.err
+}
+
+func (p *failingSyncProducer) SendMessages([]*sarama.ProducerMessage) error {
+	return p.err
 }
 
 type blockedAsyncProducer struct {
