@@ -299,7 +299,7 @@ func getProducerMsgSize(msg *sarama.ProducerMessage) (size int64) {
 }
 
 func finishSpan(span *tracer.Span, err error, cfg *config) {
-	opts := []tracer.FinishOption{}
+	var opts []tracer.FinishOption
 	if err != nil && !cfg.shouldIgnoreError(err) {
 		opts = []tracer.FinishOption{tracer.WithError(err)}
 	}

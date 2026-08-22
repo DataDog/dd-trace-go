@@ -139,8 +139,8 @@ func WithBrokers(addrs []string) OptionFn {
 }
 
 // WithErrorCheck specifies a function fn which determines whether the passed
-// error should be marked as an error. The fn is called whenever a Kafka request
-// finishes with an error.
+// error should be marked as an error. The fn is called whenever a Kafka producer
+// request finishes with an error.
 func WithErrorCheck(fn func(err error) bool) OptionFn {
 	return func(cfg *config) {
 		// When the error is explicitly marked as not-an-error, that is
@@ -148,13 +148,13 @@ func WithErrorCheck(fn func(err error) bool) OptionFn {
 		// just skip the error and pretend the span was successful.
 		//
 		// This only affects whether the span/trace is marked as success/error,
-		// the calls to the Kafka API still return the upstream error code.
+		// the calls to the Kafka producer API still return the upstream error code.
 		cfg.errCheck = fn
 	}
 }
 
-func (c *config) shouldIgnoreError(err error) bool {
-	return c != nil && c.errCheck != nil && !c.errCheck(err)
+func (cfg *config) shouldIgnoreError(err error) bool {
+	return cfg != nil && cfg.errCheck != nil && !cfg.errCheck(err)
 }
 
 // startClusterIDFetch launches a goroutine to fetch the cluster ID from one of
