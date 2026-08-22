@@ -37,6 +37,14 @@ func newIntegrationTestConfig(t *testing.T) *sarama.Config {
 	return cfg
 }
 
+func newMockProducerConfig() *sarama.Config {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Return.Errors = true
+	return cfg
+}
+
 // waitForSpans polls the mock tracer until the expected number of spans
 // appear, or fails the test if the timeout is reached.
 func waitForSpans(t *testing.T, mt mocktracer.Tracer, sz int, timeout time.Duration) {

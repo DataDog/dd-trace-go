@@ -31,7 +31,7 @@ func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32
 	span := startProducerSpan(p.cfg, p.version, msg)
 	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.ClusterID(), msg, p.version)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
-	finishProducerSpan(span, partition, offset, err)
+	finishProducerSpan(span, partition, offset, err, p.cfg)
 	if err == nil && p.cfg.dataStreamsEnabled {
 		tracer.TrackKafkaProduceOffsetWithCluster(p.cfg.ClusterID(), msg.Topic, partition, offset)
 	}
@@ -49,7 +49,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	}
 	err := p.SyncProducer.SendMessages(msgs)
 	for i, span := range spans {
-		finishProducerSpan(span, msgs[i].Partition, msgs[i].Offset, err)
+		finishProducerSpan(span, msgs[i].Partition, msgs[i].Offset, err, p.cfg)
 	}
 	if err == nil && p.cfg.dataStreamsEnabled {
 		// we only track Kafka lag if messages have been sent successfully. Otherwise, we have no way to know to which partition data was sent to.
@@ -174,7 +174,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					// if returning successes isn't enabled, we just finish the
 					// span right away because there's no way to know when it will
 					// be done
-					span.Finish()
+					finishSpan(span, nil, cfg)
 				}
 			case msg, ok := <-p.Successes():
 				if !ok {
@@ -189,7 +189,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					spanID := spanctx.SpanID()
 					if span, ok := spans[spanID]; ok {
 						delete(spans, spanID)
-						finishProducerSpan(span, msg.Partition, msg.Offset, nil)
+						finishProducerSpan(span, msg.Partition, msg.Offset, nil, cfg)
 					}
 				}
 				wrapped.successes <- msg
@@ -202,7 +202,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					spanID := spanctx.SpanID()
 					if span, ok := spans[spanID]; ok {
 						delete(spans, spanID)
-						span.Finish(tracer.WithError(err))
+						finishSpan(span, err, cfg)
 					}
 				}
 				wrapped.errors <- err
@@ -253,10 +253,10 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	return span
 }
 
-func finishProducerSpan(span *tracer.Span, partition int32, offset int64, err error) {
+func finishProducerSpan(span *tracer.Span, partition int32, offset int64, err error, cfg *config) {
 	span.SetTag(ext.MessagingKafkaPartition, partition)
 	span.SetTag("offset", offset)
-	span.Finish(tracer.WithError(err))
+	finishSpan(span, err, cfg)
 }
 
 func getProducerSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, bool) {
@@ -296,4 +296,12 @@ func getProducerMsgSize(msg *sarama.ProducerMessage) (size int64) {
 		size += int64(msg.Key.Length())
 	}
 	return size
+}
+
+func finishSpan(span *tracer.Span, err error, cfg *config) {
+	var opts []tracer.FinishOption
+	if err != nil && !cfg.shouldIgnoreError(err) {
+		opts = []tracer.FinishOption{tracer.WithError(err)}
+	}
+	span.Finish(opts...)
 }
