@@ -118,7 +118,7 @@ var profileTypes = map[ProfileType]profileType{
 
 			c := p.compressors[CPUProfile]
 			c.Reset(&buf)
-			_, writeErr := outBuf.WriteTo(c)
+			writeErr := stripPPROFLabelsGzip(outBuf.Bytes(), c)
 			closeErr := c.Close()
 			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},

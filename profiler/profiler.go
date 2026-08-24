@@ -256,6 +256,11 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	for _, pt := range types {
 		isDelta := p.cfg.deltaProfiles && len(profileTypes[pt].DeltaValues) > 0
 		in, out := compressionStrategy(pt, isDelta, p.cfg.compressionConfig)
+		// CPU profiles are decompressed while their tracer labels are stripped
+		// before being passed to this pipeline.
+		if pt == CPUProfile {
+			in = noCompression
+		}
 		compressor, err := pipelineBuilder.Build(in, out)
 		if err != nil {
 			return nil, err
