@@ -489,11 +489,17 @@ func (p *DatadogProvider) evaluate(
 	// time-window checks and EVP first/last evaluation bounds.
 	evalNow := time.Now()
 	log.Debug("openfeature: evaluating flag %q", flagKey)
+
+	// Consent for this evaluation, stamped onto res.Metadata by the defer below. Stays false
+	// on paths with no configuration (cancelled context, provider not ready) — an evaluation
+	// with no environment behind it withholds consent.
+	var observeFullEvaluationData bool
 	defer func() {
 		if res.Metadata == nil {
-			res.Metadata = make(map[string]any, 1)
+			res.Metadata = make(map[string]any, 2)
 		}
 		res.Metadata[metadataEvalTimeKey] = evalNow.UnixMilli()
+		res.Metadata[metadataObserveFullEvaluationDataKey] = observeFullEvaluationData
 	}()
 
 	// Check if context was cancelled before starting evaluation
@@ -518,18 +524,12 @@ func (p *DatadogProvider) evaluate(
 		}
 	}
 
-	// Find the flag
-	flag, exists := config.Flags[flagKey]
-	if !exists {
-		return evaluationResult{
-			Value:  defaultValue,
-			Reason: openfeature.ErrorReason,
-			Error:  fmt.Errorf("%w: %q", errFlagNotFound, flagKey),
-		}
-	}
+	// Snapshot consent before evaluating, so a Remote Config swap of p.configuration mid-eval
+	// cannot change the value stamped on the result.
+	observeFullEvaluationData = config.ObserveFullEvaluationData
 
 	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateFlag(flag, defaultValue, flatCtx, evalNow)
+	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow)
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.

@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
@@ -275,11 +276,12 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(0, len(trace.spans), "no more spans in the trace")
 }
 
-// Tests to confirm that when the payload queue is full, chunks are dropped
-// and the associated trace is counted as dropped.
+// Tests to confirm that when the payload queue is full, chunks are dropped,
+// the associated trace is counted as dropped, and the drop is reported via statsd.
 func TestSubmitChunkQueueFull(t *testing.T) {
 	assert := assert.New(t)
-	tracer, err := newUnstartedTracer()
+	var tg statsdtest.TestStatsdClient
+	tracer, err := newUnstartedTracer(withStatsdClient(&tg))
 	assert.Nil(err)
 	defer tracer.Stop()
 
@@ -288,6 +290,38 @@ func TestSubmitChunkQueueFull(t *testing.T) {
 		tracer.submitChunk(&c)
 	}
 	assert.Equal(uint32(1), tracer.totalTracesDropped)
+
+	tracesDropped := tg.GetCallsByName("datadog.tracer.traces_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(tracesDropped, "reason:queue_full"))
+
+	spansDropped := tg.GetCallsByName("datadog.tracer.spans_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(spansDropped, "reason:queue_full"))
+}
+
+// Tests to confirm that a filter-rejected chunk that also overflows the
+// payload queue is only counted once, under reason:trace_filter, and not
+// double-counted under reason:queue_full.
+func TestSubmitChunkQueueFullFilterRejected(t *testing.T) {
+	assert := assert.New(t)
+	var tg statsdtest.TestStatsdClient
+	tracer, err := newUnstartedTracer(withStatsdClient(&tg))
+	assert.Nil(err)
+	defer tracer.Stop()
+
+	for range payloadQueueSize {
+		c := chunk{spans: make([]*Span, 1)}
+		tracer.submitChunk(&c)
+	}
+	c := chunk{spans: make([]*Span, 1), filterRejected: true}
+	tracer.submitChunk(&c)
+
+	tracesDropped := tg.GetCallsByName("datadog.tracer.traces_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(tracesDropped, "reason:trace_filter"))
+	assert.Equal(int64(0), tg.CountCallsByTag(tracesDropped, "reason:queue_full"))
+
+	spansDropped := tg.GetCallsByName("datadog.tracer.spans_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(spansDropped, "reason:trace_filter"))
+	assert.Equal(int64(0), tg.CountCallsByTag(spansDropped, "reason:queue_full"))
 }
 
 func TestPartialFlush(t *testing.T) {
@@ -1281,51 +1315,59 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 	}
 }
 
+func TestReplacePropagatingTagsImmutability(t *testing.T) {
+	// Mutating the input map after replacePropagatingTags must not affect the
+	// stored snapshot — lock-free readers rely on the map being immutable.
+	var tr trace
+	tags := map[string]string{"key": "original"}
+	tr.replacePropagatingTags(tags)
+
+	tags["key"] = "mutated"
+	tags["extra"] = "added"
+
+	assert.Equal(t, "original", tr.propagatingTag("key"))
+	assert.Equal(t, "", tr.propagatingTag("extra"))
+}
+
 func TestSetSamplingPriorityLocked(t *testing.T) {
 	t.Run("NoPriorAndP0IsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+		assert.Empty(t, tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
 		tr.mu.Unlock()
-		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+		assert.Empty(t, tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-2", tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
-		}
+		var tr trace
+		tr.propagatingTags.Store(map[string]string{keyDecisionMaker: "-1"})
+		tr.dm = parseDecisionMaker("-1")
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-1", tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
-		}
+		var tr trace
+		tr.propagatingTags.Store(map[string]string{keyDecisionMaker: "-1"})
+		tr.dm = parseDecisionMaker("-1")
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-2", tr.propagatingTag(keyDecisionMaker))
 	})
 }
 

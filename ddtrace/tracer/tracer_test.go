@@ -315,7 +315,7 @@ func TestTracerStartSpan(t *testing.T) {
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
 		}, span.metrics[keySamplingPriority])
-		assert.Equal("-1", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal("-1", span.context.trace.propagatingTag(keyDecisionMaker))
 		// A span is not measured unless made so specifically
 		_, ok := span.meta.Get(keyMeasured)
 		assert.False(ok)
@@ -330,7 +330,7 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.NoError(t, err)
 		span := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 		assert.Equal(t, float64(ext.PriorityUserKeep), span.metrics[keySamplingPriority])
-		assert.Equal(t, "-4", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-4", span.context.trace.propagatingTag(keyDecisionMaker))
 	})
 
 	t.Run("name", func(t *testing.T) {
@@ -413,7 +413,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoKeep), span.metrics[keySamplingPriority])
-		assert.Equal(t, "-1", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-1", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -432,7 +432,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -449,7 +449,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
 	})
 
@@ -491,7 +491,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		// this trace won't be sent to the agent,
 		// therefore not necessary to populate keyDecisionMaker
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
 
@@ -1055,7 +1055,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	root := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 	child := tracer.StartSpan("db.query", ChildOf(root.Context()))
 	assert.EqualValues(2, root.metrics[keySamplingPriority])
-	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-4", root.context.trace.propagatingTag(keyDecisionMaker))
 	assert.EqualValues(2, child.metrics[keySamplingPriority])
 	assert.EqualValues(2., *root.context.trace.priority.Load())
 	assert.EqualValues(2., *child.context.trace.priority.Load())
@@ -1074,7 +1074,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	}
 	child := tracer.StartSpan("db.query", ChildOf(spanCtx))
 	assert.EqualValues(1, child.metrics[keySamplingPriority])
-	assert.Equal("-1", child.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-1", child.context.trace.propagatingTag(keyDecisionMaker))
 }
 
 func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
@@ -1092,7 +1092,7 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	grandChild := tracer.StartSpan("db.query", ChildOf(child.Context()))
 	grandChild.SetTag(ext.ManualDrop, true)
 	grandChild.SetTag(ext.ManualKeep, true)
-	assert.Equal("-4", grandChild.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-4", grandChild.context.trace.propagatingTag(keyDecisionMaker))
 }
 
 func TestTracerBaggageImmutability(t *testing.T) {
@@ -1231,7 +1231,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() ddTransport {
-	return newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
+	return newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1353,7 +1353,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	s := newEnvSpan(tr, "pylons", "")
 	assert.Equal(1., s.metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.metrics[keySamplingPriority])
-	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-1", s.context.trace.propagatingTag(keyDecisionMaker))
 	p, ok := s.context.SamplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.metrics[keySamplingPriority])
@@ -1387,9 +1387,9 @@ func TestTracerPrioritySampler(t *testing.T) {
 		assert.Equal(tt.rate, s.metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.metrics[keySamplingPriority]
 		if prio > 0 {
-			assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
+			assert.Equal("-1", s.context.trace.propagatingTag(keyDecisionMaker))
 		} else {
-			assert.Equal("", s.context.trace.propagatingTags[keyDecisionMaker])
+			assert.Equal("", s.context.trace.propagatingTag(keyDecisionMaker))
 		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
@@ -2694,7 +2694,18 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	af := tracer.config.agent.load()
 	af.Stats = true
 	af.DropP0s = true
-	tracer.config.agent.store(af)
+	// Only force v0.4 when the caller did not pick an agent: at the default
+	// address a developer machine may have a real v1-capable Agent listening,
+	// which would flip the protocol under tests that assert on it. A caller that
+	// points the tracer at a specific agent (a mock, a UDS, a real one) is opting
+	// into that agent's advertised capabilities, so leave those alone —
+	// otherwise benchmarks that stand up a /v1.0/traces mock would silently
+	// measure the v0.4 encoder instead.
+	if u := tracer.config.internalConfig.AgentURL(); u == nil || u.String() == defaultURL {
+		af = pinTestTracerToV04(tracer, af)
+	} else {
+		tracer.config.agent.store(af)
+	}
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		tracer.reportHealthMetrics()
@@ -2724,6 +2735,44 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		// clear any service name that was set: we want the state to be the same as startup
 		globalconfig.SetServiceName("")
 	}, nil
+}
+
+// pinTestTracerToV04 forces tr onto the v0.4 trace protocol, in both config and the
+// writer's already-built payload. Only startTestTracer calls this, and only when the
+// caller did not pick an explicit agent (see there for why).
+//
+// newTracer may have already built the writer's initial payload using whatever
+// protocol was in effect at construction time — v1, if the default address happens to
+// have a real, v1-capable Agent listening (a developer's local Agent). Overriding
+// config alone does not retroactively change an already-built payload: only an
+// empty-payload flush re-reads the effective protocol (see agentTraceWriter.flush), so
+// trigger one here rather than leaving the first real trace to encode for whatever
+// protocol construction happened to pick.
+//
+// Pin the requested protocol too, not just the protocol state:
+// advanceTraceProtocolState(protoV04) is always safe here since v0.4 is the terminal,
+// "no more upgrades" state in the lattice (see trace_protocol_state.go) — but the
+// requested protocol is what refreshAgentFeatures's next poll re-derives the effective
+// protocol from, so it must also read v0.4 or a later poll observing v1 would resolve
+// straight back to v1.
+func pinTestTracerToV04(tr *tracer, af agentFeatures) agentFeatures {
+	tr.config.advanceTraceProtocolState(protoV04)
+	tr.config.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCode)
+	tr.config.agent.store(af)
+	tr.traceWriter.flush()
+	return af
+}
+
+// setTraceProtocolStateForTest forces cfg's trace-protocol state directly,
+// bypassing advanceTraceProtocolState's monotonicity. Production code must
+// never do this — test setup routinely needs an arbitrary precondition that
+// the monotone lattice's own transition rules cannot produce, such as
+// simulating a developer machine that already resolved to v1, or forcing v1
+// despite a test HTTP client that 404s everything (including /info) at
+// startup, which the lattice would otherwise treat as conclusive and
+// terminal.
+func setTraceProtocolStateForTest(cfg *config, s traceProtocolState) {
+	cfg.protocolState.Store(int32(s))
 }
 
 // testPrioritySampler extracts the *prioritySampler from a test tracer.
@@ -2880,6 +2929,11 @@ loop:
 	assert.Len(t, transport.Stats(), 1)
 }
 
+//go:noinline
+func captureStacktraceForTest(depth, skip uint) string {
+	return takeStacktrace(depth, skip)
+}
+
 func TestTakeStackTrace(t *testing.T) {
 	t.Run("n=12", func(t *testing.T) {
 		val := takeStacktrace(12, 0)
@@ -2889,12 +2943,12 @@ func TestTakeStackTrace(t *testing.T) {
 		assert.Contains(t, val, "tracer.TestTakeStackTrace")
 	})
 
-	t.Run("n=15,skip=2", func(t *testing.T) {
-		val := takeStacktrace(3, 2)
-		// top frame should be runtime.main or runtime.goexit, in case of tests that's goexit
+	t.Run("n=3,skip=1", func(t *testing.T) {
+		val := captureStacktraceForTest(3, 1)
+		assert.NotContains(t, val, "captureStacktraceForTest")
+		assert.Contains(t, val, "tracer.TestTakeStackTrace")
 		assert.Contains(t, val, "runtime.goexit")
-		numFrames := strings.Count(val, "\n\t")
-		assert.Equal(t, 3, numFrames)
+		assert.Equal(t, 3, strings.Count(val, "\n\t"))
 	})
 
 	t.Run("n=1", func(t *testing.T) {
@@ -2961,7 +3015,7 @@ func TestUserMonitoring(t *testing.T) {
 		v, _ := s.meta.Get(keyUserID)
 		assert.Equal(t, id, v)
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
-		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
+		assert.Equal(t, encoded, s.context.trace.propagatingTag(keyPropagatedUserID))
 		v, _ = s.meta.Get(keyPropagatedUserID)
 		assert.Equal(t, encoded, v)
 	})
@@ -2974,8 +3028,7 @@ func TestUserMonitoring(t *testing.T) {
 		assert.True(t, ok)
 		_, ok = s.meta.Get(keyPropagatedUserID)
 		assert.False(t, ok)
-		_, ok = s.context.trace.propagatingTags[keyPropagatedUserID]
-		assert.False(t, ok)
+		assert.False(t, s.context.trace.hasPropagatingTag(keyPropagatedUserID))
 	})
 
 	// This tests data races for trace.propagatingTags reads/writes through public API.

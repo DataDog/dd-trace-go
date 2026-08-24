@@ -18,6 +18,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
+var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
+
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	provider := newDatadogProvider(config)
 
@@ -152,10 +154,23 @@ func validateFlag(flagKey string, flag *flag) error {
 			}
 
 			for _, shard := range split.Shards {
-				if shard.TotalShards < 0 {
-					return fmt.Errorf("flag %q allocation %d split %d has shard with non-positive TotalShards %d",
+				if shard.TotalShards <= 0 || uint64(shard.TotalShards) > uint64(^uint32(0)) {
+					return fmt.Errorf("flag %q allocation %d split %d has shard with invalid TotalShards %d",
 						flagKey, i, j, shard.TotalShards)
 				}
+				for _, shardRange := range shard.Ranges {
+					if shardRange == nil {
+						return fmt.Errorf("flag %q allocation %d split %d has nil shard range", flagKey, i, j)
+					}
+					if shardRange.Start < 0 || shardRange.End < 0 {
+						return fmt.Errorf("flag %q allocation %d split %d has shard with negative range bounds",
+							flagKey, i, j)
+					}
+				}
+			}
+
+			if split.Shards == nil {
+				return fmt.Errorf("flag %q allocation %d split %d is missing shards", flagKey, i, j)
 			}
 
 			if _, exists := flag.Variations[split.VariationKey]; !exists {
@@ -174,6 +189,17 @@ func validateFlag(flagKey string, flag *flag) error {
 					return fmt.Errorf("flag %q allocation %d rule has nil condition", flagKey, i)
 				}
 
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE,
+					operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE,
+					operatorMatches, operatorNotMatches,
+					operatorOneOf, operatorNotOneOf, operatorIsNull:
+				default:
+					return fmt.Errorf("flag %q allocation %d rule has unknown operator %q",
+						flagKey, i, condition.Operator)
+				}
+
 				if condition.Operator == operatorMatches || condition.Operator == operatorNotMatches {
 					regex, ok := condition.Value.(string)
 					if !ok {
@@ -185,6 +211,22 @@ func validateFlag(flagKey string, flag *flag) error {
 						return fmt.Errorf("flag %q allocation %d rule has condition with invalid regex %q: %v",
 							flagKey, i, regex, err)
 					}
+				}
+
+				switch condition.Operator {
+				case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+					comparand, ok := condition.Value.(string)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q that requires string value",
+							errInvalidSemverComparand, flagKey, i, condition.Operator)
+					}
+					parsedComparand, ok := parseSemver(comparand)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q and invalid semantic version %q",
+							errInvalidSemverComparand, flagKey, i, condition.Operator, comparand)
+					}
+					condition.semverComparand = &parsedComparand
 				}
 			}
 		}

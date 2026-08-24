@@ -27,37 +27,48 @@ const maxAttributesCount = 128
 // Resource construction
 // -----------------------------------------------------------------------------
 
+// buildBaseResourceAttrs returns the telemetry.sdk.* and service.* resource attributes
+// shared by both trace and metrics OTLP exports.
+func buildBaseResourceAttrs(serviceName, svcVersion, env string) []*otlpcommon.KeyValue {
+	attrs := []*otlpcommon.KeyValue{
+		otlpKeyValue("service.name", otlpStringValue(serviceName)),
+		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
+		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
+		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
+	}
+	if env != "" {
+		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(env)))
+	}
+	if svcVersion != "" {
+		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(svcVersion)))
+	}
+	return attrs
+}
+
 // buildResource constructs the OTLP Resource from resolved tracer configuration.
 // If cfg is nil, an empty resource is returned.
 func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 	if cfg == nil {
 		return &otlpresource.Resource{}
 	}
-	attrs := []*otlpcommon.KeyValue{
-		otlpKeyValue("service.name", otlpStringValue(cfg.ServiceName())),
-		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
-		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
-		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
-	}
-	if v := cfg.Env(); v != "" {
-		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(v)))
-	}
-	if v := cfg.Version(); v != "" {
-		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(v)))
-	}
-	return &otlpresource.Resource{Attributes: attrs}
+	return &otlpresource.Resource{Attributes: buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env())}
 }
 
 // -----------------------------------------------------------------------------
 // Span conversion (DD Span → OTLP Span and related types)
 // -----------------------------------------------------------------------------
 
+// otlpTraceFlagSampled is the W3C "sampled" trace-flag (bit 0), carried in the
+// low 8 bits of the OTLP Span.Flags field.
+const otlpTraceFlagSampled = uint32(0x1)
+
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptrace.Span {
-	if p, ok := s.context.SamplingPriority(); ok && p < ext.PriorityAutoKeep {
+	p, ok := s.context.SamplingPriority()
+	if ok && p < ext.PriorityAutoKeep {
 		return nil
 	}
-	return &otlptrace.Span{
+	span := &otlptrace.Span{
 		TraceId:           convertTraceID(s.context.traceID.Upper(), s.context.traceID.Lower()),
 		SpanId:            convertSpanID(s.spanID),
 		ParentSpanId:      convertParentSpanID(s.parentID),
@@ -69,8 +80,14 @@ func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptr
 		Events:            convertEvents(s),
 		Links:             convertSpanLinks(s.spanLinks),
 		Status:            convertSpanStatus(s),
-		TraceState:        convertTraceState(s.context),
+		TraceState:        convertTraceState(s.context, p),
 	}
+	// Mirror the W3C sampled trace-flag we set on wire injection: kept spans
+	// carry the sampled bit. Priority < AutoKeep already returned nil above.
+	if ok && p >= ext.PriorityAutoKeep {
+		span.Flags = otlpTraceFlagSampled
+	}
+	return span
 }
 
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
@@ -281,11 +298,16 @@ func convertEventAttributes(ddAttributes map[string]*spanEventAttribute) []*otlp
 	return out
 }
 
-func convertTraceState(ctx *SpanContext) string {
+// convertTraceState builds the OTLP span's trace_state. It reuses
+// composeTracestate so the exported value is identical to what wire injection
+// would produce: a regenerated dd= member from the live context, the
+// DD-managed ot= member (rv/th) when probability sampling applies, followed by
+// any inbound third-party vendors. priority is the span's sampling priority.
+func convertTraceState(ctx *SpanContext, priority int) string {
 	if ctx.trace == nil {
 		return ""
 	}
-	return ctx.trace.propagatingTag(tracestateHeader)
+	return composeTracestate(ctx, priority, ctx.trace.propagatingTag(tracestateHeader))
 }
 
 // --- AnyValue helpers ---

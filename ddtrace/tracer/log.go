@@ -83,12 +83,16 @@ type startupInfo struct {
 	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
 	DogstatsdAddr               string                       `json:"dogstatsd_address"`         // Destination of statsd payloads
 	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`      // Whether Data Streams is enabled
+
+	OTLPTracesExportEnabled  bool `json:"otlp_traces_export_enabled"`  // Whether traces are exported over OTLP
+	OTLPMetricsExportEnabled bool `json:"otlp_metrics_export_enabled"` // Whether metrics are exported over OTLP
+	OTLPLogsExportEnabled    bool `json:"otlp_logs_export_enabled"`    // Whether logs are exported over OTLP
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
 // If the endpoint is not reachable, checkEndpoint returns an error
 // explaining why.
-func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
+func checkEndpoint(c *http.Client, endpoint string, protocol float64, extraHeaders map[string]string) error {
 	b := []byte{0x90} // empty array
 	if protocol == traceProtocolV1 {
 		b = []byte{0x80} // empty map
@@ -99,6 +103,9 @@ func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
 	res, err := c.Do(req)
 	if err != nil {
 		return err
@@ -141,13 +148,16 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
+	af := t.config.agent.load()
+	proto := t.config.effectiveTraceProtocol()
+
 	// Determine the agent URL to use in the logs.
 	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
 	var agentURL string
 	if srcURL := t.config.internalConfig.RawAgentURL(); srcURL != nil && srcURL.Scheme == "unix" {
 		agentURL = srcURL.String()
 	} else {
-		agentURL = t.config.ddTransport.endpoint()
+		agentURL = t.config.ddTransport.endpoint(proto)
 	}
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
@@ -175,7 +185,7 @@ func logStartup(t *tracer) {
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  strconv.FormatBool(t.config.internalConfig.LogToStdout()),
-		AgentFeatures:               t.config.agent.load(),
+		AgentFeatures:               af,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         partialFlushEnabled,
@@ -187,12 +197,16 @@ func logStartup(t *tracer) {
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.internalConfig.DogstatsdAddr(),
 		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
+		OTLPTracesExportEnabled:     t.otlpExportMode,
+		OTLPMetricsExportEnabled:    t.config.otelRuntimeMetricsShouldBeEnabled,
+		OTLPLogsExportEnabled:       t.config.internalConfig.LogsOTelEnabled(),
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.internalConfig.LogToStdout() {
-		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
+		startupHeaders := traceTransportHeaders(t.config.internalConfig)
+		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(proto), proto, startupHeaders); err != nil {
 			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}

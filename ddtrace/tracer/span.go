@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"math"
 	"reflect"
@@ -28,6 +29,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -39,6 +41,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
@@ -160,6 +163,8 @@ type Span struct {
 	spanLinks []SpanLink `msg:"span_links,omitempty"` // links to other spans
 	// +checklocks:mu
 	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
+	// +checklocks:mu
+	statSpan *tracerStatSpan `msg:"-"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -209,6 +214,7 @@ func (s *Span) clear() {
 	s.error = 0
 	s.spanLinks = nil
 	s.spanEvents = nil
+	s.statSpan = nil
 	s.goExecTraced = false
 	s.noDebugStack = false
 	s.finished = false
@@ -305,19 +311,35 @@ func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.Sampler
 	s.setMetricLocked(keyRulesSamplerAppliedRate, rate)
 	delete(s.metrics, keySamplingPriorityRate)
 	s.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	trace := s.context.trace
 	if !sampledByRate(s.traceID, rate) {
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	if limiter == nil {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	sampled, limiterRate := limiter.AllowOne(now)
 	if sampled {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 	} else {
+		// The Knuth rate would have kept this trace; the limiter is what dropped
+		// it. That is a non-probability outcome, so erase any threshold rather
+		// than encode the configured rate.
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.clearOtelProbability()
+		}
 	}
 	s.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
 	return true
@@ -785,11 +807,9 @@ func takeStacktrace(depth uint, skip uint) string {
 		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
 	}()
 
-	// This is necessary for span error stacktraces where we want complete visibility.
-	// Skip +4: The old implementation used runtime.Callers(2+skip, ...) which skipped runtime.Callers
-	// and takeStacktrace. The internal/stacktrace package auto-filters its own frames, but we still
-	// need to account for: runtime.Callers(1) + takeStacktrace(1) + setTagError(1) + additional frame(1)
-	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+4)
+	// Keep Datadog frames in span error stack traces, but omit this wrapper on top
+	// of the stacktrace package's own machinery.
+	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+1)
 	return stacktrace.Format(stack)
 }
 
@@ -839,6 +859,21 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 	assert.RWMutexLocked(&s.mu)
 	if s.metaStruct == nil {
 		s.metaStruct = make(metaStructMap, 1)
+	}
+	if key == stacktrace.SpanKey {
+		if current, ok := s.metaStruct[key]; ok {
+			merged, err := stacktrace.MergeSpanValues(current, v)
+			if err != nil {
+				telemetrylog.Warn(
+					"failed to merge stack-trace span values",
+					slog.Any("error", telemetrylog.NewSafeError(err)),
+					slog.String("current_type", fmt.Sprintf("%T", current)),
+					slog.String("next_type", fmt.Sprintf("%T", v)),
+				)
+				return
+			}
+			v = merged
+		}
 	}
 	s.metaStruct[key] = v
 }
@@ -905,7 +940,10 @@ func (s *Span) setMetricLocked(key string, v float64) {
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
+			// Force the keep: an AppSec attack-detection keep must retain the
+			// trace even when the sampling decision was inherited and locked
+			// from an upstream drop, mirroring the manual-keep path above.
+			s.forceSetSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
 	case "_sampling_priority_v1shim":
 		// We have this for backward compatibility with the v1 shim.
@@ -1159,11 +1197,6 @@ func (s *Span) finish(finishTime int64) {
 	// Lock ordering is span.mu -> trace.mu.
 	s.context.finish(s)
 
-	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
-	if hasTracer {
-		tracer.submit(s)
-	}
-
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
 		// point are attributed correctly.
@@ -1265,7 +1298,8 @@ func (s *Span) String() string {
 // +checklocksignore — Reads only immutable fields (spanID, traceID, parentID) set during init.
 func (s *Span) Format(f fmt.State, c rune) {
 	if s == nil {
-		fmt.Fprintf(f, "<nil>")
+		fmt.Fprint(f, "<nil>")
+		return
 	}
 	switch c {
 	case 's':
@@ -1278,12 +1312,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := env.Get("DD_ENV"); env != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
+			} else if env := env.Get("DD_ENV"); env != "" { //configaudit:ignore — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := env.Get("DD_VERSION"); v != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
+			} else if v := env.Get("DD_VERSION"); v != "" { //configaudit:ignore — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
@@ -1348,6 +1382,46 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, sessionID)
 	} else {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
+	}
+	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
+}
+
+// setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's
+// propagating tag set. Tags are trace-scoped so they are always explicitly set or unset,
+// preventing stale values from a sibling from leaking to downstream services.
+func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name string) {
+	if parentAgentSpanID == "" {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentSpanID)
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+	} else {
+		// Span ID is always propagated; id-only attribution is still useful to the backend.
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentSpanID, parentAgentSpanID)
+		if name == "" || !illmobs.AgentNameWireSafe(name) {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+			return
+		}
+		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
+		used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
+		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+			used += 27
+			tsUsed += 23
+		}
+		var nameXTagsLen int
+		if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentAgentName); prior != "" {
+			nameXTagsLen = used - len(prior) + len(name)
+			tsUsed -= len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(prior) + 4
+		} else {
+			nameXTagsLen = used + len(keyPropagatedLLMObsParentAgentName) + len(name) + 2
+		}
+		nameTracestateLen := len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(name) + 4
+		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
+			tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
+			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
+		} else {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+			log.Debug("LLMObs: parent agent name dropped from propagation — x-datadog-tags budget exceeded (name=%q)", name)
+		}
 	}
 }
 
@@ -1418,6 +1492,11 @@ const (
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
 	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
+	// keyPropagatedLLMObsParentAgentSpanID contains the propagated parent-agent span ID.
+	// The wire key uses the abbreviated form "pagent" per the cross-SDK propagation protocol.
+	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"
+	// keyPropagatedLLMObsParentAgentName contains the propagated parent-agent name.
+	keyPropagatedLLMObsParentAgentName = "_dd.p.llmobs_pagent_name"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

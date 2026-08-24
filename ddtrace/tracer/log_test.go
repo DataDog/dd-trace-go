@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,10 @@ const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-((rc|beta)\.[0-
 var commonLogIgnore = []string{"appsec: ", "telemetry", "Runtime metrics v2 enabled"}
 
 func TestStartupLog(t *testing.T) {
+	t.Setenv("OTEL_TRACES_EXPORTER", "")
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "")
+	t.Setenv("DD_LOGS_OTEL_ENABLED", "")
+
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
@@ -36,7 +41,27 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore(commonLogIgnore...)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v1.0/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"runtime_metrics_v2_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext,baggage","propagation_style_extract":"datadog,tracecontext,baggage","tracing_as_transport":false,"dogstatsd_address":"localhost:8125","data_streams_enabled":false}`, tp.Logs()[1])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v1.0/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"runtime_metrics_v2_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":(0|8125),"AgentVersion":"[^"]*"},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext,baggage","propagation_style_extract":"datadog,tracecontext,baggage","tracing_as_transport":false,"dogstatsd_address":"localhost:8125","data_streams_enabled":false,"otlp_traces_export_enabled":false,"otlp_metrics_export_enabled":false,"otlp_logs_export_enabled":false}`, tp.Logs()[1])
+	})
+
+	t.Run("agent version surfaces", func(t *testing.T) {
+		// AgentVersion is exported specifically so it lands in the startup
+		// log — the field a support triager will actually want.
+		assert := assert.New(t)
+		tp := new(log.RecordLogger)
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
+		defer stop()
+
+		af := tracer.config.agent.load()
+		af.AgentVersion = "7.78.2"
+		tracer.config.agent.store(af)
+
+		tp.Reset()
+		tp.Ignore(commonLogIgnore...)
+		logStartup(tracer)
+		require.Len(t, tp.Logs(), 2)
+		assert.Regexp(`"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":\d+,"AgentVersion":"7\.78\.2"}`, tp.Logs()[1])
 	})
 
 	t.Run("configured", func(t *testing.T) {
@@ -68,7 +93,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore(commonLogIgnore...)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v1.0/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sample_rate_limit":"100","trace_sampling_rules":\[{"service":"mysql","sample_rate":0\.75}\],"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"runtime_metrics_v2_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":(false|true,"metadata":{"version":"v\d+.\d+.\d+(-[^"]+)?"})},"feature_flags":\["discovery"\],"propagation_style_inject":"datadog,tracecontext,baggage","propagation_style_extract":"datadog,tracecontext,baggage","tracing_as_transport":false,"dogstatsd_address":"localhost:8125","data_streams_enabled":false}`, tp.Logs()[1])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v1.0/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sample_rate_limit":"100","trace_sampling_rules":\[{"service":"mysql","sample_rate":0\.75}\],"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"runtime_metrics_v2_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":(0|8125),"AgentVersion":"[^"]*"},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":(false|true,"metadata":{"version":"v\d+.\d+.\d+(-[^"]+)?"})},"feature_flags":\["discovery"\],"propagation_style_inject":"datadog,tracecontext,baggage","propagation_style_extract":"datadog,tracecontext,baggage","tracing_as_transport":false,"dogstatsd_address":"localhost:8125","data_streams_enabled":false,"otlp_traces_export_enabled":false,"otlp_metrics_export_enabled":false,"otlp_logs_export_enabled":false}`, tp.Logs()[1])
 	})
 
 	t.Run("limit", func(t *testing.T) {
@@ -99,7 +124,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore(commonLogIgnore...)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v1.0/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sample_rate_limit":"1000.001","trace_sampling_rules":\[{"service":"mysql","sample_rate":0\.75}\],"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"runtime_metrics_v2_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext,baggage","propagation_style_extract":"datadog,tracecontext,baggage","tracing_as_transport":false,"dogstatsd_address":"localhost:8125","data_streams_enabled":false}`, tp.Logs()[1])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v1.0/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sample_rate_limit":"1000.001","trace_sampling_rules":\[{"service":"mysql","sample_rate":0\.75}\],"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"runtime_metrics_v2_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":(0|8125),"AgentVersion":"[^"]*"},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext,baggage","propagation_style_extract":"datadog,tracecontext,baggage","tracing_as_transport":false,"dogstatsd_address":"localhost:8125","data_streams_enabled":false,"otlp_traces_export_enabled":false,"otlp_metrics_export_enabled":false,"otlp_logs_export_enabled":false}`, tp.Logs()[1])
 	})
 
 	t.Run("errors", func(t *testing.T) {
@@ -121,7 +146,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore(commonLogIgnore...)
 		logStartup(tracer)
 		assert.Len(tp.Logs(), 1)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v1.0/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"runtime_metrics_v2_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":((true)|(false)),"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext,baggage","propagation_style_extract":"datadog,tracecontext,baggage","tracing_as_transport":false,"dogstatsd_address":"localhost:8125","data_streams_enabled":false}`, tp.Logs()[0])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v1.0/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"runtime_metrics_v2_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":((true)|(false)),"agent_features":{"DropP0s":true,"Stats":true,"StatsdPort":(0|8125),"AgentVersion":"[^"]*"},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext,baggage","propagation_style_extract":"datadog,tracecontext,baggage","tracing_as_transport":false,"dogstatsd_address":"localhost:8125","data_streams_enabled":false,"otlp_traces_export_enabled":false,"otlp_metrics_export_enabled":false,"otlp_logs_export_enabled":false}`, tp.Logs()[0])
 	})
 
 	t.Run("integrations", func(t *testing.T) {
@@ -139,6 +164,41 @@ func TestStartupLog(t *testing.T) {
 			expect := fmt.Sprintf("\"%s\":{\"instrumented\":%t,\"available\":%t,\"available_version\":\"%s\"}", n, s.Instrumented, s.Available, s.Version)
 			assert.Contains(tp.Logs()[1], expect, "expected integration %s", expect)
 		}
+	})
+
+	t.Run("otlp_metrics_export", func(t *testing.T) {
+		assert := assert.New(t)
+		tp := new(log.RecordLogger)
+		withTestHooks(t)
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+		t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
+		defer stop()
+		require.True(t, tracer.config.otelRuntimeMetricsShouldBeEnabled,
+			"OTLP metrics pipeline should be active for this assertion to be meaningful")
+		tp.Reset()
+		tp.Ignore(commonLogIgnore...)
+		logStartup(tracer)
+		require.Len(t, tp.Logs(), 2)
+		assert.Contains(tp.Logs()[1], `"otlp_metrics_export_enabled":true`)
+	})
+
+	t.Run("otlp_metrics_export_config_without_pipeline", func(t *testing.T) {
+		assert := assert.New(t)
+		tp := new(log.RecordLogger)
+		require.Nil(t, otelmetricsinstall.StartHook, "test binary must not have the metric package imported")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+		t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
+		defer stop()
+		require.False(t, tracer.config.otelRuntimeMetricsShouldBeEnabled)
+		tp.Reset()
+		tp.Ignore(commonLogIgnore...)
+		logStartup(tracer)
+		require.Len(t, tp.Logs(), 2)
+		assert.Contains(tp.Logs()[1], `"otlp_metrics_export_enabled":false`)
 	})
 }
 

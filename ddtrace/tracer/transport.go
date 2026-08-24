@@ -60,6 +60,24 @@ const (
 	statsAPIPath    = "/v0.6/stats"
 )
 
+// tracesPathFor returns the trace-intake path for the given protocol.
+func tracesPathFor(protocol float64) string {
+	if protocol == traceProtocolV1 {
+		return tracesAPIPathV1
+	}
+	return tracesAPIPath
+}
+
+// errV1TracesNotSupported is returned by (*httpTransport).send when a v1
+// payload POST gets a 404 from /v1.0/traces: this specific backend doesn't
+// support v1. In a load-balanced fleet, this can happen even after
+// refreshAgentFeatures's upgrade hysteresis allowed v1, because /info polls
+// and trace sends are independent requests that can land on different
+// backends behind the same address. Unlike a poll, a rejected send is
+// authoritative for the request that hit it — see
+// (*agentTraceWriter).downgradeAfterRejectedSend.
+var errV1TracesNotSupported = errors.New("agent does not support /v1.0/traces")
+
 // ddTransport is an interface for communicating data to the Datadog agent
 // using Datadog-specific protocols (msgpack traces, stats payloads).
 type ddTransport interface {
@@ -69,29 +87,44 @@ type ddTransport interface {
 	// sendStats sends the given stats payload to the agent.
 	// tracerObfuscationVersion is the version of obfuscation applied (0 if none was applied)
 	sendStats(s *pb.ClientStatsPayload, tracerObfuscationVersion int) error
-	// endpoint returns the URL to which the transport will send traces.
-	endpoint() string
+	// endpoint returns the URL to which the transport would send a trace payload
+	// encoded with the given protocol. Diagnostics only: the URL used for an
+	// actual send is always derived from the payload passed to send.
+	endpoint(protocol float64) string
 }
 
+// httpTransport holds one immutable URL per trace protocol, computed once at
+// construction. send() always picks the URL matching the payload's own
+// protocol, so the wire format and the endpoint it is posted to can never
+// diverge — there is no mutable "current protocol" to keep in sync.
 type httpTransport struct {
-	traceURL string            // the delivery URL for traces
-	statsURL string            // the delivery URL for stats
-	client   *http.Client      // the HTTP client used in the POST
-	headers  map[string]string // the Transport headers
+	traceURLV04 string            // the delivery URL for v0.4 trace payloads
+	traceURLV1  string            // the delivery URL for v1.0 trace payloads
+	statsURL    string            // the delivery URL for stats
+	client      *http.Client      // the HTTP client used in the POST
+	headers     map[string]string // the Transport headers
 }
 
 // newHTTPTransport returns a new Transport implementation that sends traces
-// to the given traceURL and stats to the given statsURL, using the provided
-// *http.Client and headers. The caller is responsible for providing the
-// appropriate headers (e.g. datadogHeaders() for Datadog mode, or OTLP
-// headers resolved from config).
-func newHTTPTransport(traceURL string, statsURL string, client *http.Client, headers map[string]string) *httpTransport {
+// and stats to agentBaseURL, using the provided *http.Client and headers. The
+// caller is responsible for providing the appropriate headers (e.g.
+// datadogHeaders() for Datadog mode, or OTLP headers resolved from config).
+func newHTTPTransport(agentBaseURL string, client *http.Client, headers map[string]string) *httpTransport {
 	return &httpTransport{
-		traceURL: traceURL,
-		statsURL: statsURL,
-		client:   client,
-		headers:  headers,
+		traceURLV04: agentBaseURL + tracesAPIPath,
+		traceURLV1:  agentBaseURL + tracesAPIPathV1,
+		statsURL:    agentBaseURL + statsAPIPath,
+		client:      client,
+		headers:     headers,
 	}
+}
+
+// traceURLFor returns the trace-intake URL for the given protocol.
+func (t *httpTransport) traceURLFor(protocol float64) string {
+	if protocol == traceProtocolV1 {
+		return t.traceURLV1
+	}
+	return t.traceURLV04
 }
 
 func datadogHeaders() map[string]string {
@@ -182,7 +215,8 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 }
 
 func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
-	req, err := http.NewRequest("POST", t.traceURL, p)
+	protocol := p.protocol()
+	req, err := http.NewRequest("POST", t.traceURLFor(protocol), p)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %s", err)
 	}
@@ -208,10 +242,17 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	req.Header.Set(idempotencyKeyHeader, newIdempotencyKey())
 	if t := getGlobalTracer(); t != nil {
 		tc := t.TracerConf()
-		if tc.TracingAsTransport || tc.CanComputeStats {
-			// tracingAsTransport uses this header to disable the trace agent's stats computation
-			// while making canComputeStats() always false to also disable client stats computation.
-			req.Header.Set("Datadog-Client-Computed-Stats", "t")
+		if tc.TracingAsTransport || tc.CanComputeStats || tc.OTLPSpanMetricsEnabled {
+			// "yes" is the spec-correct value. Previously "t" was used for the
+			// TracingAsTransport and CanComputeStats paths; both values are accepted by
+			// the Agent, but "yes" is canonical going forward.
+			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
+		} else {
+			// Once a global tracer exists, live TracerConf() is authoritative and must
+			// override any "yes" baked into the static header map at startup (see
+			// traceTransportHeaders) — otherwise disabling OTLPSpanMetricsEnabled at
+			// runtime would never clear a header set before that config existed.
+			req.Header.Del("Datadog-Client-Computed-Stats")
 		}
 		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
 		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))
@@ -228,16 +269,21 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	}
 	response, err := t.doWithStaleConnRetry(req)
 	if err != nil {
-		reportAPIErrorsMetric(response, err, tracesAPIPath)
+		reportAPIErrorsMetric(response, err, tracesPathFor(protocol))
 		return nil, err
 	}
 	if code := response.StatusCode; code >= 400 {
-		reportAPIErrorsMetric(response, err, tracesAPIPath)
+		reportAPIErrorsMetric(response, err, tracesPathFor(protocol))
+		defer response.Body.Close()
+		if code == http.StatusNotFound && protocol == traceProtocolV1 {
+			// Distinguish this from the generic error below: it's evidence this
+			// backend doesn't support v1 specifically, not just a request failure.
+			return nil, errV1TracesNotSupported
+		}
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
 		n, _ := response.Body.Read(msg)
-		response.Body.Close()
 		txt := http.StatusText(code)
 		if n > 0 {
 			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
@@ -353,6 +399,6 @@ func reportAPIErrorsMetric(response *http.Response, err error, endpoint string) 
 	}
 }
 
-func (t *httpTransport) endpoint() string {
-	return t.traceURL
+func (t *httpTransport) endpoint(protocol float64) string {
+	return t.traceURLFor(protocol)
 }

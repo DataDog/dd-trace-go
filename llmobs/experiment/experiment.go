@@ -267,7 +267,7 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, op
 	if cfg.projectName == "" {
 		return nil, errRequiresProjectName
 	}
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 
@@ -644,16 +644,16 @@ func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluat
 		boolVal  *bool
 	)
 
-	metricType := "categorical"
+	metricType := transport.EvalMetricTypeCategorical
 	switch t := ev.Value.(type) {
 	case bool:
-		metricType = "boolean"
+		metricType = transport.EvalMetricTypeBoolean
 		boolVal = transport.AnyPtr(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
-		metricType = "score"
+		metricType = transport.EvalMetricTypeScore
 		scoreVal = transport.AnyPtr(asFloat64(t))
 
 	default:
@@ -686,16 +686,16 @@ func (e *Experiment) generateMetricFromSummaryEvaluation(ev *Evaluation, timesta
 		boolVal  *bool
 	)
 
-	metricType := "categorical"
+	metricType := transport.EvalMetricTypeCategorical
 	switch t := ev.Value.(type) {
 	case bool:
-		metricType = "boolean"
+		metricType = transport.EvalMetricTypeBoolean
 		boolVal = transport.AnyPtr(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
-		metricType = "score"
+		metricType = transport.EvalMetricTypeScore
 		scoreVal = transport.AnyPtr(asFloat64(t))
 
 	default:
