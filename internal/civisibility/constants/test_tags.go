@@ -34,22 +34,23 @@ const (
 	// This constant is used to tag traces with the execution status of the test.
 	TestStatus = "test.status"
 
-	// TestActiveDuration is the observed test-body duration, excluding the
-	// duration-excluded interval around testing.T.Parallel.
+	// TestActiveDuration is the observed active test execution duration. For
+	// parallel tests, it excludes the native scheduler wait in testing.T.Parallel.
 	TestActiveDuration = "test.active_duration"
 
-	// TestIsParallel indicates whether the test entered Go's parallel scheduler.
+	// TestIsParallel indicates whether the test called testing.T.Parallel.
 	TestIsParallel = "test.is_parallel"
 
-	// TestParallelPauseStartOffset is the start of the duration-excluded
-	// testing.T.Parallel interval relative to the test event start.
+	// TestParallelPauseStartOffset is the projected start of the native parallel
+	// scheduler wait relative to the test event start.
 	TestParallelPauseStartOffset = "test.parallel.pause.start_offset"
 
-	// TestParallelPauseEndOffset is the end of the duration-excluded
-	// testing.T.Parallel interval relative to the test event start.
+	// TestParallelPauseEndOffset is the projected end of the native parallel
+	// scheduler wait relative to the test event start.
 	TestParallelPauseEndOffset = "test.parallel.pause.end_offset"
 
-	// TestParallelPauseDuration is the duration-excluded testing.T.Parallel interval.
+	// TestParallelPauseDuration is the native parallel scheduler wait excluded
+	// from TestActiveDuration.
 	TestParallelPauseDuration = "test.parallel.pause.duration"
 
 	// TestFinalStatus indicates the final adjusted status for a test after considering retries.

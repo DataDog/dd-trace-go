@@ -398,7 +398,8 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	}
 }
 
-// instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
+// instrumentCloseAndSkip records a skip reason for the CI Visibility event
+// associated with a *testing.T, *testing.B, or *testing.common.
 //
 //go:linkname instrumentCloseAndSkip
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
@@ -420,11 +421,11 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 		return
 	}
 
-	// Get the CI Visibility span and check if we can mark it as skipped and close it
+	// Record the skip once; the wrapper finalizer closes the event.
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		log.Debug("instrumentCloseAndSkip: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), skipReason)
-		// The wrapper finalizer owns Close so timing tags can be written first.
+		// Keep Close in the finalizer so it can write timing tags first.
 		ciTestItem.skipReason = skipReason
 		if !ciTestItem.hasAdditionalFeatureWrapper {
 			ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
@@ -432,7 +433,8 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	}
 }
 
-// instrumentSkipNow helper function to close and skip a `*testing.T, *testing.B, *testing.common` CI Visibility span
+// instrumentSkipNow records a skip when the hook receives no reason argument.
+// It preserves any reason captured earlier for the CI Visibility event.
 //
 //go:linkname instrumentSkipNow
 func instrumentSkipNow(tb testing.TB) {
@@ -450,14 +452,14 @@ func instrumentSkipNow(tb testing.TB) {
 		return
 	}
 
-	// Get the CI Visibility span and check if we can mark it as skipped and close it
+	// Record the skip once; the wrapper finalizer closes the event.
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		if formatted := ciTestItem.processRetrySkipReason.Load(); formatted != nil {
 			ciTestItem.skipReason = *formatted
 		}
 		log.Debug("instrumentSkipNow: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), ciTestItem.skipReason)
-		// The wrapper finalizer owns Close so timing tags can be written first.
+		// Keep Close in the finalizer so it can write timing tags first.
 		if !ciTestItem.hasAdditionalFeatureWrapper {
 			ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
 		}
@@ -708,9 +710,10 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 	return nil
 }
 
-// instrumentTestingParallel reports whether CI Visibility has replaced the
-// native Parallel implementation. Only an isolated quarantined race subtree
-// takes ownership; every other call keeps the existing native fast path.
+// instrumentTestingParallel captures the timing baseline and reports whether CI
+// Visibility has replaced the native Parallel implementation. Only an isolated
+// quarantined race subtree takes ownership; every other call returns false so
+// the native implementation runs.
 //
 //go:linkname instrumentTestingParallel
 func instrumentTestingParallel(t *testing.T) bool {
