@@ -272,6 +272,15 @@ func TestConcurrentAddNeverResurrectsDowngradedPayload(t *testing.T) {
 
 	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "sanity check: the downgrade must have applied")
 
+	// Nothing re-checks h.payload's protocol except add()/flush() themselves,
+	// so if every add() above happened to finish before refreshAgentFeatures's
+	// HTTP round-trip landed, h.payload would still legitimately hold
+	// whatever protocol was last observed -- not a bug, just nothing having
+	// asked it to settle yet. One more add() forces that check now that the
+	// downgrade is conclusively applied, so the assertion below observes the
+	// writer's real settling behavior instead of racing the poll's network I/O.
+	w.add([]*Span{makeSpan(1)})
+
 	// The writer must have settled into agreement with the now-terminal
 	// protocol state -- a reintroduced stale-read race would leave it pinned
 	// to a resurrected v1 payload here.
