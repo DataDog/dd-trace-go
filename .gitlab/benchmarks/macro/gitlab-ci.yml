@@ -397,7 +397,7 @@ se-no-tracer-no-ext_proc:
       - platform/artifacts-haproxy_spoa/
     expire_in: 3 months
   variables:
-    GO_VERSION: "1.27" # It needs to be at the latest stable release
+    GO_VERSION: "1.27.0" # It needs to be at the latest stable release
     ARTIFACTS_DIR: "./artifacts-haproxy_spoa"
     HAPROXY_SPOA: "true"
 
