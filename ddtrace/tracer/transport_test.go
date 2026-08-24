@@ -881,6 +881,7 @@ func TestConcurrentTraceFlushOverUDS(t *testing.T) {
 				errs[i] = sendErr
 				return
 			}
+			io.Copy(io.Discard, body) //nolint:errcheck
 			body.Close()
 		})
 	}
