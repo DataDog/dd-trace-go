@@ -34,6 +34,8 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 | `DD_SERVICE_EXTENSION_TLS_CERT_FILE`      | `localhost.crt` | Change the default gRPC TLS layer cert. Do not modify if you are using GCP.                                   |
 | `DD_SERVICE_EXTENSION_UDS_PATH`           | _(unset)_       | Path to a Unix domain socket for the gRPC server. When set, overrides `DD_SERVICE_EXTENSION_HOST`/`PORT` and TLS is disabled. Only for self-managed Envoy deployments. |
 
+> `GOMEMLIMIT` is derived at startup from the container memory limit (85% of it, leaving room for the non-Go memory the runtime cannot see) unless you set it explicitly, so the garbage collector reclaims memory instead of the container being OOM-killed.
+
 > The Service Extension need to be connected to a deployed [Datadog agent](https://docs.datadoghq.com/agent).
 
 | Environment variable  | Default value | Description                      |
