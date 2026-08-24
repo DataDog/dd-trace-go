@@ -109,6 +109,25 @@ func TestCompareSemver(t *testing.T) {
 		}
 	}
 
+	t.Run("fourth and fifth numeric components", func(t *testing.T) {
+		tests := []struct {
+			left, right string
+			want        int
+		}{
+			{left: "1.2.3", right: "1.2.3.0", want: 0},
+			{left: "1.2.3.4", right: "1.2.3.5", want: -1},
+			{left: "1.2.3.4", right: "1.2.3.4.0", want: 0},
+			{left: "1.2.3.4.1", right: "1.2.3.4", want: 1},
+		}
+		for _, tt := range tests {
+			left, ok := parseSemver(tt.left)
+			require.True(t, ok)
+			right, ok := parseSemver(tt.right)
+			require.True(t, ok)
+			require.Equal(t, tt.want, compareSemver(left, right))
+		}
+	})
+
 	t.Run("arbitrarily large numeric prerelease identifiers", func(t *testing.T) {
 		left, ok := parseSemver("1.0.0-99999999999999999999")
 		require.True(t, ok)

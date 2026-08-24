@@ -6,12 +6,14 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -387,29 +389,88 @@ func TestValidateFlag(t *testing.T) {
 	})
 
 	t.Run("all variation types are valid", func(t *testing.T) {
-		validTypes := []valueType{
-			valueTypeBoolean,
-			valueTypeString,
-			valueTypeInteger,
-			valueTypeNumeric,
-			valueTypeJSON,
+		validTypes := []struct {
+			variationType valueType
+			value         any
+		}{
+			{valueTypeBoolean, true},
+			{valueTypeString, "test-value"},
+			{valueTypeInteger, int64(1)},
+			{valueTypeNumeric, 1.5},
+			{valueTypeJSON, map[string]any{"key": "value"}},
 		}
 
-		for _, vType := range validTypes {
+		for _, tt := range validTypes {
 			flag := &flag{
 				Key:           "test-flag",
-				VariationType: vType,
+				VariationType: tt.variationType,
 				Variations: map[string]*variant{
-					"v1": {Key: "v1", Value: "test-value"},
+					"v1": {Key: "v1", Value: tt.value},
 				},
 			}
 
 			err := validateFlag("test-flag", flag)
 			if err != nil {
-				t.Errorf("expected %s to be valid, got error: %v", vType, err)
+				t.Errorf("expected %s to be valid, got error: %v", tt.variationType, err)
 			}
 		}
 	})
+}
+
+func TestMalformedVariationsReturnParseErrorBeforeEvaluation(t *testing.T) {
+	tests := []struct {
+		name       string
+		enabled    bool
+		variations string
+	}{
+		{
+			name:       "nil variation",
+			enabled:    true,
+			variations: `{"on":{"key":"on","value":true},"bad":null}`,
+		},
+		{
+			name:       "variation map key mismatch",
+			enabled:    true,
+			variations: `{"on":{"key":"on","value":true},"bad":{"key":"other","value":true}}`,
+		},
+		{
+			name:       "unselected variation type mismatch",
+			enabled:    true,
+			variations: `{"on":{"key":"on","value":true},"bad":{"key":"bad","value":"true"}}`,
+		},
+		{
+			name:       "disabled variation type mismatch",
+			enabled:    false,
+			variations: `{"on":{"key":"on","value":"true"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte(fmt.Sprintf(`{
+				"format":"SERVER",
+				"flags":{"flag":{
+					"key":"flag",
+					"enabled":%t,
+					"variationType":"BOOLEAN",
+					"variations":%s,
+					"allocations":[{"splits":[{"shards":[],"variationKey":"on"}]}]
+				}}
+			}`, tt.enabled, tt.variations))
+
+			var config universalFlagsConfiguration
+			require.NoError(t, json.Unmarshal(data, &config))
+			require.NotContains(t, config.Flags, "flag")
+			require.Contains(t, config.invalidFlags, "flag")
+
+			provider := newDatadogProvider(ProviderConfig{})
+			provider.updateConfiguration(&config)
+			details := provider.BooleanEvaluation(context.Background(), "flag", false, nil)
+			require.Equal(t, false, details.Value)
+			require.Equal(t, of.ErrorReason, details.Reason)
+			require.Equal(t, of.ParseErrorCode, resolutionErrorCode(details.ResolutionError))
+		})
+	}
 }
 
 func TestValidateFlagConditionOperandTypes(t *testing.T) {

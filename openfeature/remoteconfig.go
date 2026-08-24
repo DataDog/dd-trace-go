@@ -110,14 +110,21 @@ func validateConfiguration(config *universalFlagsConfiguration) error {
 	}
 
 	hasFlags := len(config.Flags) > 0
+	if config.invalidFlags == nil {
+		config.invalidFlags = make(map[string]error)
+	}
 
-	// Validate each flag and delete invalid ones from the map
-	// Collect errors for reporting
+	// Validate each flag and delete invalid ones from the map.
+	// Keep their errors so evaluations return PARSE_ERROR rather than FLAG_NOT_FOUND.
 	errs := make([]error, 0, len(config.Flags))
 	maps.DeleteFunc(config.Flags, func(flagKey string, flag *flag) bool {
 		err := validateFlag(flagKey, flag)
-		errs = append(errs, err)
-		return err != nil
+		if err != nil {
+			config.invalidFlags[flagKey] = err
+			errs = append(errs, err)
+			return true
+		}
+		return false
 	})
 
 	if hasFlags && len(config.Flags) == 0 {
@@ -142,6 +149,22 @@ func validateFlag(flagKey string, flag *flag) error {
 		// Valid types
 	default:
 		return fmt.Errorf("flag %q has invalid variation type %q", flagKey, flag.VariationType)
+	}
+
+	// Validate every variation before evaluating any allocation. A malformed
+	// variation invalidates the complete flag, even if it is disabled or never
+	// selected by an allocation.
+	for variationKey, variation := range flag.Variations {
+		if variation == nil {
+			return fmt.Errorf("flag %q variation %q is nil", flagKey, variationKey)
+		}
+		if variation.Key != variationKey {
+			return fmt.Errorf("flag %q variation key mismatch: map key %q != variation.Key %q",
+				flagKey, variationKey, variation.Key)
+		}
+		if err := validateVariantType(variation.Value, flag.VariationType); err != nil {
+			return fmt.Errorf("flag %q variation %q has incompatible value: %w", flagKey, variationKey, err)
+		}
 	}
 
 	for i, allocation := range flag.Allocations {

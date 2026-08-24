@@ -6,12 +6,14 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -349,6 +351,48 @@ func TestEvaluateConfiguredFlag_InvalidFlagReturnsParseError(t *testing.T) {
 	}
 }
 
+type fixtureEvaluationResult struct {
+	value     any
+	reason    of.Reason
+	errorCode of.ErrorCode
+}
+
+func resolutionErrorCode(err of.ResolutionError) of.ErrorCode {
+	code, _, _ := strings.Cut(err.Error(), ":")
+	return of.ErrorCode(code)
+}
+
+// evaluateFixture uses the public provider methods so fixture assertions cover
+// both evaluation and OpenFeature resolution-error conversion.
+func evaluateFixture(
+	provider *DatadogProvider,
+	flagKey string,
+	defaultValue any,
+	variationType valueType,
+	evaluationContext map[string]any,
+) fixtureEvaluationResult {
+	flatContext := of.FlattenedContext(evaluationContext)
+	switch variationType {
+	case valueTypeBoolean:
+		details := provider.BooleanEvaluation(context.Background(), flagKey, defaultValue.(bool), flatContext)
+		return fixtureEvaluationResult{details.Value, details.Reason, resolutionErrorCode(details.ResolutionError)}
+	case valueTypeString:
+		details := provider.StringEvaluation(context.Background(), flagKey, defaultValue.(string), flatContext)
+		return fixtureEvaluationResult{details.Value, details.Reason, resolutionErrorCode(details.ResolutionError)}
+	case valueTypeInteger:
+		details := provider.IntEvaluation(context.Background(), flagKey, int64(defaultValue.(float64)), flatContext)
+		return fixtureEvaluationResult{details.Value, details.Reason, resolutionErrorCode(details.ResolutionError)}
+	case valueTypeNumeric:
+		details := provider.FloatEvaluation(context.Background(), flagKey, defaultValue.(float64), flatContext)
+		return fixtureEvaluationResult{details.Value, details.Reason, resolutionErrorCode(details.ResolutionError)}
+	case valueTypeJSON:
+		details := provider.ObjectEvaluation(context.Background(), flagKey, defaultValue, flatContext)
+		return fixtureEvaluationResult{details.Value, details.Reason, resolutionErrorCode(details.ResolutionError)}
+	default:
+		panic(fmt.Sprintf("unsupported fixture variation type %q", variationType))
+	}
+}
+
 func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	fixtureDir := "ffe-system-test-data"
 
@@ -360,6 +404,8 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	if err := json.Unmarshal(configData, &cfg); err != nil {
 		t.Fatal(err)
 	}
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.updateConfiguration(&cfg)
 
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
@@ -376,13 +422,15 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			var cases []struct {
-				Flag         string         `json:"flag"`
-				DefaultValue any            `json:"defaultValue"`
-				TargetingKey *string        `json:"targetingKey"`
-				Attributes   map[string]any `json:"attributes"`
-				Result       struct {
-					Value  any    `json:"value"`
-					Reason string `json:"reason"`
+				Flag          string         `json:"flag"`
+				DefaultValue  any            `json:"defaultValue"`
+				TargetingKey  *string        `json:"targetingKey"`
+				Attributes    map[string]any `json:"attributes"`
+				VariationType valueType      `json:"variationType"`
+				Result        struct {
+					Value     any    `json:"value"`
+					Reason    string `json:"reason"`
+					ErrorCode string `json:"errorCode"`
 				} `json:"result"`
 			}
 			if err := json.Unmarshal(data, &cases); err != nil {
@@ -400,14 +448,27 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						ctx["targetingKey"] = *tc.TargetingKey
 					}
 
-					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now())
+					result := evaluateFixture(provider, tc.Flag, tc.DefaultValue, tc.VariationType, ctx)
 
-					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
-						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
+					if fmt.Sprintf("%v", result.value) != fmt.Sprintf("%v", tc.Result.Value) {
+						t.Errorf("value: got %v, want %v", result.value, tc.Result.Value)
 					}
-					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
-						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					if tc.Result.Reason != "" && result.reason != of.Reason(tc.Result.Reason) {
+						t.Errorf("reason: got %q, want %q", result.reason, tc.Result.Reason)
 					}
+					// Fixtures that declare an errorCode must resolve to that code through
+					// the public provider path. A fixture with an ERROR reason but no
+					// errorCode intentionally leaves the code unspecified; otherwise an
+					// omitted code means the resolution must not contain an error.
+					switch {
+					case tc.Result.ErrorCode != "":
+						if result.errorCode != of.ErrorCode(tc.Result.ErrorCode) {
+							t.Errorf("error code: got %q, want %q", result.errorCode, tc.Result.ErrorCode)
+						}
+					case tc.Result.Reason != string(of.ErrorReason) && result.errorCode != "":
+						t.Errorf("error code: got %q, want no error", result.errorCode)
+					}
+
 				})
 			}
 		})
