@@ -412,6 +412,34 @@ func TestValidateFlag(t *testing.T) {
 	})
 }
 
+func TestValidateFlagConditionOperandTypes(t *testing.T) {
+	tests := []struct {
+		name     string
+		operator conditionOperator
+		value    any
+	}{
+		{name: "numeric", operator: operatorGT, value: "not-a-number"},
+		{name: "one of", operator: operatorOneOf, value: "not-an-array"},
+		{name: "is null", operator: operatorIsNull, value: "not-a-boolean"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flag := &flag{
+				Key:           "test-flag",
+				VariationType: valueTypeString,
+				Allocations: []*allocation{{
+					Rules: []*rule{{Conditions: []*condition{{
+						Operator: tt.operator,
+						Value:    tt.value,
+					}}}},
+				}},
+			}
+			require.Error(t, validateFlag("test-flag", flag))
+		})
+	}
+}
+
 func TestValidateFlagSemverConditions(t *testing.T) {
 	newFlag := func(operator conditionOperator, value any) *flag {
 		return &flag{
@@ -457,7 +485,6 @@ func TestValidateFlagSemverConditions(t *testing.T) {
 	}{
 		{name: "non-string", value: 1.2},
 		{name: "invalid", value: "not-a-version"},
-		{name: "short", value: "1.2"},
 		{name: "v prefix", value: "v1.2.3"},
 		{name: "leading zero", value: "01.2.3"},
 		{name: "overflow", value: "18446744073709551616.0.0"},
@@ -594,7 +621,8 @@ func TestProcessConfigUpdate(t *testing.T) {
 
 		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now())
 		require.Equal(t, false, invalidResult.Value)
-		require.Equal(t, "DEFAULT", string(invalidResult.Reason))
+		require.Equal(t, "ERROR", string(invalidResult.Reason))
+		require.ErrorIs(t, invalidResult.Error, errParseError)
 	})
 
 	t.Run("configuration deletion", func(t *testing.T) {

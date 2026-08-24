@@ -13,6 +13,7 @@ import (
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -200,16 +201,33 @@ func validateFlag(flagKey string, flag *flag) error {
 						flagKey, i, condition.Operator)
 				}
 
-				if condition.Operator == operatorMatches || condition.Operator == operatorNotMatches {
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE:
+					if _, ok := internal.ToFloat64(condition.Value); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires numeric value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorMatches, operatorNotMatches:
 					regex, ok := condition.Value.(string)
 					if !ok {
 						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires string value",
 							flagKey, i, condition.Operator)
 					}
-
 					if _, err := loadRegex(regex); err != nil {
 						return fmt.Errorf("flag %q allocation %d rule has condition with invalid regex %q: %v",
 							flagKey, i, regex, err)
+					}
+				case operatorOneOf, operatorNotOneOf:
+					switch condition.Value.(type) {
+					case []any, []string:
+					default:
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires array value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorIsNull:
+					if _, ok := condition.Value.(bool); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires boolean value",
+							flagKey, i, condition.Operator)
 					}
 				}
 

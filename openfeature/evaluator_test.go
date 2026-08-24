@@ -175,7 +175,7 @@ func TestEvaluateSemverCondition(t *testing.T) {
 		{name: "greater than or equal ignores build metadata", operator: operatorSemverGTE, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
 		{name: "different build metadata has equal precedence", operator: operatorSemverEQ, attribute: "1.0.0+linux", comparand: "1.0.0+darwin", want: true},
 		{name: "invalid attribute", operator: operatorSemverNEQ, attribute: "not-a-version", comparand: "1.0.0"},
-		{name: "short attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0"},
+		{name: "two-part attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0", want: true},
 		{name: "prefixed attribute", operator: operatorSemverGTE, attribute: "v1.2.3", comparand: "1.0.0"},
 		{name: "overflowing attribute", operator: operatorSemverGTE, attribute: "18446744073709551616.0.0", comparand: "1.0.0"},
 		{name: "non-string attribute", operator: operatorSemverEQ, attribute: 1.2, comparand: "1.2.0"},
@@ -326,6 +326,26 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 				t.Errorf("expected error to wrap errParseError, got: %v", result.Error)
 			}
 		})
+	}
+}
+
+func TestEvaluateConfiguredFlag_InvalidFlagReturnsParseError(t *testing.T) {
+	config := &universalFlagsConfiguration{
+		Flags: map[string]*flag{},
+		invalidFlags: map[string]error{
+			"invalid-flag": errors.New("invalid condition operand"),
+		},
+	}
+
+	result := evaluateConfiguredFlag(config, "invalid-flag", "default", nil, time.Now())
+	if result.Value != "default" {
+		t.Errorf("value: got %v, want default", result.Value)
+	}
+	if result.Reason != of.ErrorReason {
+		t.Errorf("reason: got %q, want %q", result.Reason, of.ErrorReason)
+	}
+	if !errors.Is(result.Error, errParseError) {
+		t.Errorf("expected parse error, got %v", result.Error)
 	}
 }
 
