@@ -823,6 +823,37 @@ func TestStatsPreferOTelSemanticHTTPAttributesWithLegacyMethodFallback(t *testin
 	}
 }
 
+func BenchmarkNewTracerStatSpanOTelSemantics(b *testing.B) {
+	for _, enabled := range []bool{false, true} {
+		b.Run(fmt.Sprintf("enabled=%t", enabled), func(b *testing.B) {
+			cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
+				c.internalConfig.SetOTelSemanticsEnabled(enabled, internalconfig.OriginCode)
+			})
+			require.NoError(b, err)
+			c := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+			s := Span{
+				name:     "http.request",
+				resource: "GET /users/{id}",
+				start:    time.Now().UnixNano(),
+				duration: int64(time.Millisecond),
+				metrics:  map[string]float64{keyMeasured: 1},
+				meta: tinternal.NewSpanMetaFromMap(map[string]string{
+					ext.HTTPMethod:        "GET",
+					ext.HTTPRequestMethod: "GET",
+				}),
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if _, ok := c.newTracerStatSpan(&s, nil); !ok {
+					b.Fatal("span excluded from stats")
+				}
+			}
+		})
+	}
+}
+
 func TestStatsIncludeServiceSource(t *testing.T) {
 	bucketSize := int64(500_000)
 	s := Span{
