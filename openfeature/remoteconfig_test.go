@@ -447,7 +447,7 @@ func TestMalformedVariationsReturnParseErrorBeforeEvaluation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data := []byte(fmt.Sprintf(`{
+			data := fmt.Appendf(nil, `{
 				"format":"SERVER",
 				"flags":{"flag":{
 					"key":"flag",
@@ -456,7 +456,7 @@ func TestMalformedVariationsReturnParseErrorBeforeEvaluation(t *testing.T) {
 					"variations":%s,
 					"allocations":[{"splits":[{"shards":[],"variationKey":"on"}]}]
 				}}
-			}`, tt.enabled, tt.variations))
+			}`, tt.enabled, tt.variations)
 
 			var config universalFlagsConfiguration
 			require.NoError(t, json.Unmarshal(data, &config))
