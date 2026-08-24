@@ -9,6 +9,8 @@ instruction_files:
   - internal/AGENTS.md
   - profiler/AGENTS.md
   - orchestrion/AGENTS.md
+  - internal/appsec/AGENTS.md
+  - internal/civisibility/AGENTS.md
 
 default_level: full
 presets:

@@ -440,13 +440,13 @@ cases:
         blocking deadlock
 
 # ==== Appsec Tests ====
-# TODO: Appsec does not currently have any AGENTS.md files. Add some in order to start testing.
+
 
 # ==== LLMObs Tests ====
 # TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
 
 # ==== CIVisibility Tests ====
-# TODO: CIVisibility does not currently have any AGENTS.md files. Add some in order to start testing.
+
 
 # ==== Datastreams Tests ====
 # TODO: Datastreams does not currently have any AGENTS.md files. Add some in order to start testing.
@@ -605,3 +605,4 @@ cases:
 
 # ==== OTelc Tests ====
 # TODO: OTelc does not currently have any AGENTS.md files. Add some in order to start testing.
+# Will be added after otelc migration is merged.
