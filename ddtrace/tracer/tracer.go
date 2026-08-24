@@ -42,6 +42,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -425,12 +426,12 @@ func storeConfig(c *config) {
 	data, _ := metadata.MarshalMsg(nil)
 	_, err := globalinternal.CreateMemfd(name, data)
 	if err != nil {
-		log.Error("failed to store the configuration: %s", err.Error())
+		telemetrylog.LogAndReportError("failed to store the configuration", err)
 	}
 
 	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
 	if err != nil {
-		log.Error("failed to publish the OTEL process context: %s", err.Error())
+		telemetrylog.LogAndReportError("failed to publish the OTEL process context", err)
 	}
 }
 
