@@ -272,30 +272,35 @@ func TestConcurrentAddNeverResurrectsDowngradedPayload(t *testing.T) {
 
 	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "sanity check: the downgrade must have applied")
 
-	// Nothing re-checks h.payload's protocol except add()/flush() themselves,
-	// so if every add() above happened to finish before refreshAgentFeatures's
-	// HTTP round-trip landed, h.payload would still legitimately hold
-	// whatever protocol was last observed -- not a bug, just nothing having
-	// asked it to settle yet. One more add() forces that check now that the
-	// downgrade is conclusively applied, so the assertion below observes the
-	// writer's real settling behavior instead of racing the poll's network I/O.
-	w.add([]*Span{makeSpan(1)})
-
-	// The writer must have settled into agreement with the now-terminal
-	// protocol state -- a reintroduced stale-read race would leave it pinned
-	// to a resurrected v1 payload here.
-	w.mu.Lock()
-	settledProtocol := w.payload.protocol()
-	w.mu.Unlock()
-	assert.Equal(t, traceProtocolV04, settledProtocol, "the writer's current payload must not have been resurrected to v1 after the downgrade settled")
-
-	// Flush and drain whatever the race above produced -- a mix of v1 and
-	// v0.4 requests is expected and fine, since the downgrade landed partway
-	// through the storm. What matters is that the state stays put afterward:
-	// reset the agent's recording and confirm a few more adds, now that the
-	// protocol has fully settled, all land on v0.4.
+	// Drain every async send the storm's add() calls spawned (the seal that
+	// fires when a call detects a protocol mismatch sends the sealed payload
+	// in the background -- see add()'s sealed branch), then flush whatever
+	// add() left behind in h.payload. Deliberately not an extra add(): a
+	// manufactured add() here would read the now-settled protocol itself and
+	// silently repair a resurrected payload before anything inspects it,
+	// laundering the exact regression this test exists to catch. flush()
+	// makes no such repair -- it sends h.payload under its own recorded
+	// protocol, whatever that is -- so a still-resurrected v1 payload shows
+	// up here as a genuine /v1.0/traces request instead of being fixed away.
+	w.wg.Wait()
 	w.flush()
 	w.wg.Wait()
+
+	// Exactly one /v1.0/traces request is legitimate: the single seal of the
+	// pre-downgrade payload that every add()/flush() above triggered at most
+	// once. A reintroduced stale-read race resurrects a second v1 payload
+	// after the downgrade settled; whether that resurrection happens mid-storm
+	// (caught by the very next add() detecting the mismatch again) or lingers
+	// unflushed until the flush() above, it always ends up as an extra
+	// /v1.0/traces request here.
+	v1Requests := 0
+	for _, path := range agent.Requests() {
+		if path == tracesAPIPathV1 {
+			v1Requests++
+		}
+	}
+	assert.LessOrEqual(t, v1Requests, 1, "at most one /v1.0/traces request may occur across the storm and its flush -- more indicates a payload resurrected after the downgrade settled")
+
 	agent.Reset()
 
 	for range 10 {
