@@ -240,6 +240,16 @@ func TestConcurrentAddNeverResurrectsDowngradedPayload(t *testing.T) {
 	require.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol(), "sanity check: agent must resolve to v1")
 
 	w := newAgentTraceWriter(tr.config, newPrioritySampler(), tr.statsd)
+	// Seed a real trace into the payload before the race starts, so it is
+	// never empty when the downgrade lands. rotateStalePayload swaps an empty
+	// stale payload for free, without sending it -- if the downgrade instead
+	// won the race against every storm add() below while the payload was
+	// still the empty one newAgentTraceWriter created, that free rotation
+	// would consume the one legitimate v1->v0.4 transition with no
+	// /v1.0/traces request at all, leaving a lone resurrected v1 request
+	// looking like the expected one instead of the regression it is.
+	w.add([]*Span{makeSpan(1)})
+	require.Equal(t, traceProtocolV1, w.payload.protocol(), "sanity check: the seed trace must land in a v1 payload")
 
 	const goroutines = 32
 	const itersPerGoroutine = 200
@@ -286,20 +296,22 @@ func TestConcurrentAddNeverResurrectsDowngradedPayload(t *testing.T) {
 	w.flush()
 	w.wg.Wait()
 
-	// Exactly one /v1.0/traces request is legitimate: the single seal of the
-	// pre-downgrade payload that every add()/flush() above triggered at most
-	// once. A reintroduced stale-read race resurrects a second v1 payload
-	// after the downgrade settled; whether that resurrection happens mid-storm
-	// (caught by the very next add() detecting the mismatch again) or lingers
-	// unflushed until the flush() above, it always ends up as an extra
-	// /v1.0/traces request here.
+	// Exactly one /v1.0/traces request is expected: because the seed above
+	// guarantees the payload is never empty, whichever add()/flush() call
+	// first observes the (monotone, one-way) downgrade must seal and send a
+	// real v1 payload -- there is no free, unsent rotation path available to
+	// consume that transition silently. A reintroduced stale-read race
+	// resurrects a second v1 payload after the downgrade settled; whether
+	// that resurrection happens mid-storm (caught by the very next add()
+	// detecting the mismatch again) or lingers unflushed until the flush()
+	// above, it always ends up as an extra /v1.0/traces request here.
 	v1Requests := 0
 	for _, path := range agent.Requests() {
 		if path == tracesAPIPathV1 {
 			v1Requests++
 		}
 	}
-	assert.LessOrEqual(t, v1Requests, 1, "at most one /v1.0/traces request may occur across the storm and its flush -- more indicates a payload resurrected after the downgrade settled")
+	assert.Equal(t, 1, v1Requests, "exactly one /v1.0/traces request -- the seeded pre-downgrade payload's seal -- may occur across the storm and its flush; more indicates a payload resurrected after the downgrade settled, fewer means the seeded seal itself went missing")
 
 	agent.Reset()
 
