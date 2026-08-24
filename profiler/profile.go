@@ -115,9 +115,29 @@ var profileTypes = map[ProfileType]profileType{
 			p.pendingProfiles.Wait()
 			pprof.StopCPUProfile()
 
+			stripLabels := appsecEnabled()
 			c := p.compressors[CPUProfile]
+			if stripLabels {
+				c = p.stripCPUCompressor
+			}
 			c.Reset(&buf)
-			_, writeErr := outBuf.WriteTo(c)
+			var writeErr error
+			if stripLabels {
+				r, err := gzip.NewReader(bytes.NewReader(outBuf.Bytes()))
+				if err != nil {
+					writeErr = err
+				} else {
+					profile, err := io.ReadAll(r)
+					_ = r.Close()
+					if err != nil {
+						writeErr = err
+					} else {
+						writeErr = stripPPROFLabels(profile, c)
+					}
+				}
+			} else {
+				_, writeErr = outBuf.WriteTo(c)
+			}
 			closeErr := c.Close()
 			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},

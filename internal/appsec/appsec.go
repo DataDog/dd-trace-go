@@ -17,6 +17,7 @@ import (
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/status"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -28,14 +29,14 @@ import (
 func Enabled() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started
+	return status.Enabled()
 }
 
 // RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
 func RASPEnabled() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started && activeAppSec.cfg.RASP
+	return status.Enabled() && activeAppSec.cfg.RASP
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -151,6 +152,7 @@ func setActiveAppSec(a *appsec) {
 		activeAppSec.stop()
 	}
 	activeAppSec = a
+	status.SetEnabled(a != nil && a.started)
 }
 
 type appsec struct {
@@ -189,6 +191,7 @@ func (a *appsec) start() error {
 	a.enableRASP()
 
 	a.started = true
+	status.SetEnabled(true) // TODO: right?
 	log.Info("appsec: up and running")
 
 	// TODO: log the config like the APM tracer does but we first need to define
@@ -202,7 +205,9 @@ func (a *appsec) stop() {
 	if !a.started {
 		return
 	}
+
 	a.started = false
+	status.SetEnabled(false) // TODO: right?
 	registerAppsecStopTelemetry()
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()
