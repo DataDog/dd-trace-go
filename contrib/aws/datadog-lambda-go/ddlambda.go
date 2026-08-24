@@ -108,7 +108,7 @@ const (
 	FIPSModeEnvVar = "DD_LAMBDA_FIPS_MODE"
 	// StripInjectedContextEnvVar enables stripping of injected _datadog propagation
 	// carriers from the Lambda payload before the user handler is invoked.
-	StripInjectedContextEnvVar = payload.StripInjectedContextEnvVar
+	StripInjectedContextEnvVar = "DD_LAMBDA_STRIP_INJECTED_CONTEXT"
 
 	// DefaultSite to send API messages to.
 	DefaultSite = "datadoghq.com"
@@ -285,7 +285,7 @@ func initializeListeners(cfg *Config) []wrapper.HandlerListener {
 	ml := metrics.MakeListener(metricsConfig, extensionManager)
 	pl := payload.MakeListener(payloadConfig)
 	return []wrapper.HandlerListener{
-		&tl, &ml, &pl,
+		&tl, &ml, &pl, // pl must be last, so trace/metrics see the raw payload before stripping.
 	}
 }
 
