@@ -115,7 +115,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 		mp.Framework,
 		// Resolved per request rather than cached: the gateway is identified from the request
 		// headers, so a single processor can serve several kinds of gateway.
-		req.AckBodyMessagesUntilEndOfStream(ctx),
+		ackBodyMessagesUntilEndOfStream(ctx, req),
 		req.SpanOptions(ctx)...,
 	)
 
@@ -286,6 +286,24 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 	}
 
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody})
+}
+
+// ackBodyMessagesUntilEndOfStream reports whether the stream must stay open to
+// acknowledge body messages the analysis no longer needs.
+//
+// Acknowledging everything is the default because it is what every gateway got before
+// this policy existed, and because it is the safe direction: it costs a round trip per
+// remaining chunk, whereas closing early on a gateway that does not tolerate it causes
+// timeouts. A [RequestHeaders] from a contrib module older than this core will not
+// implement [bodyAcknowledgementPolicy], and must keep the behaviour it was written
+// against.
+func ackBodyMessagesUntilEndOfStream(ctx context.Context, req RequestHeaders) bool {
+	policy, ok := req.(bodyAcknowledgementPolicy)
+	if !ok {
+		return true
+	}
+
+	return policy.AckBodyMessagesUntilEndOfStream(ctx)
 }
 
 // acknowledgeResponseBody acknowledges a response body message that needs no further

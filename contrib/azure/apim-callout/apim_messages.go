@@ -144,12 +144,6 @@ func (m *messageRequestHeaders) BodyParsingSizeLimit(_ context.Context) int {
 	return proxy.DefaultBodyParsingSizeLimit
 }
 
-// AckBodyMessagesUntilEndOfStream is irrelevant here: callout bodies arrive complete rather
-// than streamed, so [messageBody.GetEndOfStream] always reports the end of the stream.
-func (m *messageRequestHeaders) AckBodyMessagesUntilEndOfStream(_ context.Context) bool {
-	return false
-}
-
 // messageResponseHeaders implements proxy.ResponseHeaders for the callout response.
 type messageResponseHeaders struct {
 	addr                 *addressesResponseHeaders

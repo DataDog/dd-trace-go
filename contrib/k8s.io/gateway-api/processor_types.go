@@ -47,12 +47,6 @@ func (r requestHeader) BodyParsingSizeLimit(_ context.Context) int {
 	return proxy.DefaultBodyParsingSizeLimit
 }
 
-// AckBodyMessagesUntilEndOfStream is irrelevant here: the request mirror never analyzes a
-// response body, so no response body message is ever acknowledged.
-func (r requestHeader) AckBodyMessagesUntilEndOfStream(_ context.Context) bool {
-	return false
-}
-
 var _ proxy.HTTPBody = (*requestBody)(nil)
 
 type requestBody struct {

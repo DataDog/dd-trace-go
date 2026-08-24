@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,6 +49,7 @@ type serviceExtensionConfig struct {
 	healthcheckPort      string
 	observabilityMode    bool
 	bodyParsingSizeLimit *int
+	integration          string
 	tls                  *tlsConfig
 }
 
@@ -58,10 +60,34 @@ func trustGCLBXForwardedFor(config serviceExtensionConfig) bool {
 	return config.extensionSocketPath == ""
 }
 
+// integration reports which gateway is in front of this callout.
+//
+// An explicit value always wins. It has to be available, because the gateway is otherwise
+// only identifiable from a per-request header, and Envoy Gateway cannot inject one from
+// its EnvoyExtensionPolicy CRD. Inferring it from the presence of Kubernetes does not
+// work: a Google Cloud Service Extensions callout on GKE is in Kubernetes too.
+//
+// Without one, a Unix socket means a self-managed Envoy on the same host, and anything
+// else keeps the Google Cloud default the published image is built for.
 func integration(config serviceExtensionConfig) gocontrolplane.Integration {
+	switch name := strings.ToLower(strings.TrimSpace(config.integration)); name {
+	case "":
+	case gocontrolplane.GCPServiceExtensionIntegration.String():
+		return gocontrolplane.GCPServiceExtensionIntegration
+	case gocontrolplane.EnvoyIntegration.String():
+		return gocontrolplane.EnvoyIntegration
+	case gocontrolplane.EnvoyGatewayIntegration.String():
+		return gocontrolplane.EnvoyGatewayIntegration
+	case gocontrolplane.IstioIntegration.String():
+		return gocontrolplane.IstioIntegration
+	default:
+		log.Warn("service_extension: unknown DD_SERVICE_EXTENSION_INTEGRATION value %q, falling back to autodetection\n", name)
+	}
+
 	if config.extensionSocketPath != "" {
 		return gocontrolplane.EnvoyIntegration
 	}
+
 	return gocontrolplane.GCPServiceExtensionIntegration
 }
 
@@ -118,6 +144,7 @@ func loadConfig() serviceExtensionConfig {
 	keyFile := stringEnv("DD_SERVICE_EXTENSION_TLS_KEY_FILE", "localhost.key")
 	certFile := stringEnv("DD_SERVICE_EXTENSION_TLS_CERT_FILE", "localhost.crt")
 	socketPath := stringEnv("DD_SERVICE_EXTENSION_UDS_PATH", "")
+	integrationName := stringEnv("DD_SERVICE_EXTENSION_INTEGRATION", "")
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
@@ -137,6 +164,7 @@ func loadConfig() serviceExtensionConfig {
 		healthcheckPort:      healthcheckPortStr,
 		observabilityMode:    observabilityMode,
 		bodyParsingSizeLimit: bodyParsingSizeLimit,
+		integration:          integrationName,
 		tls:                  tlsConf,
 	}
 }

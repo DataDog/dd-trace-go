@@ -330,3 +330,25 @@ func TestOnResponseBodyMisconfigurationAcknowledgesMessage(t *testing.T) {
 		})
 	}
 }
+
+// legacyRequestHeaders is a RequestHeaders that predates bodyAcknowledgementPolicy, as a
+// contrib module compiled against an older core would be. It must still satisfy
+// RequestHeaders, which is what makes this a compile-time guarantee and not just a
+// behavioural one.
+type legacyRequestHeaders struct{ fakeRequestHeaders }
+
+var _ RequestHeaders = legacyRequestHeaders{}
+
+func (legacyRequestHeaders) AckBodyMessagesUntilEndOfStream() {} // deliberately the wrong signature
+
+// A contrib module is a separate Go module and can lag the core it is compiled against.
+// Such an implementation must keep the behaviour it was written for — acknowledging every
+// body message — rather than silently adopting the early close and reintroducing timeouts.
+func TestAckBodyMessagesDefaultsToDrainingForOlderImplementations(t *testing.T) {
+	require.True(t, ackBodyMessagesUntilEndOfStream(context.Background(), legacyRequestHeaders{}),
+		"an implementation without the policy must keep acknowledging until end-of-stream")
+
+	require.False(t, ackBodyMessagesUntilEndOfStream(context.Background(), fakeRequestHeaders{ackUntilEOS: false}),
+		"an implementation with the policy must be honoured")
+	require.True(t, ackBodyMessagesUntilEndOfStream(context.Background(), fakeRequestHeaders{ackUntilEOS: true}))
+}
