@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	appsecstatus "github.com/DataDog/dd-trace-go/v2/internal/appsec/status"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -43,6 +44,9 @@ var (
 	activeProfiler *profiler
 	containerID    atomic.Pointer[string]
 	entityID       atomic.Pointer[string]
+
+	// appsecEnabled is a hook for testing
+	appsecEnabled = appsecstatus.Enabled
 
 	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
@@ -106,16 +110,20 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg             *config        // profile configuration
-	out             chan batch     // upload queue
-	exit            chan struct{}  // exit signals the profiler to stop; it is closed after stopping
-	stopOnce        sync.Once      // stopOnce ensures the profiler is stopped exactly once.
-	wg              sync.WaitGroup // wg waits for all goroutines to exit when stopping.
-	met             *metrics       // metric collector state
-	deltas          map[ProfileType]*fastDeltaProfiler
-	compressors     map[ProfileType]compressor
-	seq             uint64         // seq is the value of the profile_seq tag
-	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
+	cfg         *config        // profile configuration
+	out         chan batch     // upload queue
+	exit        chan struct{}  // exit signals the profiler to stop; it is closed after stopping
+	stopOnce    sync.Once      // stopOnce ensures the profiler is stopped exactly once.
+	wg          sync.WaitGroup // wg waits for all goroutines to exit when stopping.
+	met         *metrics       // metric collector state
+	deltas      map[ProfileType]*fastDeltaProfiler
+	compressors map[ProfileType]compressor
+	// stripCPUCompressor is used if we are stripping unwanted labels from
+	// CPU profiles, in which case we need to have an uncompressed profile
+	// in memory and can't just pass it straight through for compression.
+	stripCPUCompressor compressor
+	seq                uint64         // seq is the value of the profile_seq tag
+	pendingProfiles    sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
 	// lastTrace is the last time an execution trace was collected
 	lastTrace time.Time
@@ -264,6 +272,13 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			return nil, err
 		}
 		p.compressors[pt] = compressor
+
+		if pt == CPUProfile {
+			p.stripCPUCompressor, err = pipelineBuilder.Build(noCompression, out)
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		if isDelta {
 			p.deltas[pt] = newFastDeltaProfiler(compressor, profileTypes[pt].DeltaValues...)
