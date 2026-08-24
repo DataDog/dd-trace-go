@@ -11,10 +11,6 @@ import (
 	"encoding/json"
 )
 
-const (
-	StripInjectedContextEnvVar = "DD_LAMBDA_STRIP_INJECTED_CONTEXT"
-)
-
 type (
 	// Listener implements wrapper.HandlerListener, stripping injected _datadog
 	// propagation carriers from the Lambda payload before it reaches the user handler, when enabled.
@@ -42,6 +38,9 @@ func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) (con
 	if !l.enabled || len(msg) == 0 {
 		return ctx, msg
 	}
+	if !json.Valid(msg) {
+		return ctx, msg
+	}
 	if !bytes.Contains(msg, datadogCarrierSubstrBytes) {
 		return ctx, msg
 	}
@@ -59,13 +58,15 @@ func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) (con
 // HandlerFinished implemented as part of the wrapper.HandlerListener interface
 func (l *Listener) HandlerFinished(ctx context.Context, err error) {}
 
+// Datadog injects _datadog as a flat JSON object carrier in one of two shapes:
+//  1. Object detail:  "_datadog": {"x-datadog-trace-id":"...", ...}  — stripped via byte scan
+//  2. String detail:  detail field contains "{\"...\",\"_datadog\":{...}}"  — stripped via json unmarshal/remarshal
+const datadogCarrierKey = "_datadog"
+
 var (
-	// Datadog injects _datadog as a flat JSON object carrier in one of two shapes:
-	//  1. Object detail:  "_datadog": {"x-datadog-trace-id":"...", ...}  — stripped via byte scan
-	//  2. String detail:  detail field contains "{\"...\",\"_datadog\":{...}}"  — stripped via json unmarshal/remarshal
-	datadogCarrierKeyBytes    = []byte(`"_datadog"`)
-	datadogCarrierSubstrBytes = []byte("_datadog")
-	datadogCarrierEscapedKey  = []byte(`\"_datadog\"`)
+	datadogKeyColon           = []byte(`"` + datadogCarrierKey + `":`)
+	datadogCarrierSubstrBytes = []byte(datadogCarrierKey)
+	datadogCarrierEscapedKey  = []byte(`\"` + datadogCarrierKey + `\"`)
 )
 
 // stripInjectedContextBytes removes every _datadog carrier from msg and reports whether the bytes changed.
@@ -79,35 +80,81 @@ func stripInjectedContextBytes(msg json.RawMessage) (json.RawMessage, bool) {
 }
 
 // stripObjectCarriers strips object-form "_datadog" carriers via byte scanning, supporting multiple carriers in O(n).
+// Writes into a freshly allocated buffer; msg is never mutated, so callers keep a safe,
+// untouched copy even when the result is later discarded (e.g. by the fail-open path).
 func stripObjectCarriers(msg json.RawMessage) (json.RawMessage, bool) {
-	type span struct{ start, end int }
-	var ranges []span
-
+	type span struct{ lo, hi int }
+	var spans []span
 	searchFrom := 0
+
 	for {
-		start, end, ok := findCarrierRange(msg, searchFrom)
-		if !ok {
+		rel := bytes.Index(msg[searchFrom:], datadogKeyColon)
+		if rel < 0 {
 			break
 		}
-		ranges = append(ranges, span{start, end})
-		searchFrom = end
+		keyAt := searchFrom + rel
+
+		// Must be preceded (ignoring whitespace) by '{' or ','
+		p := keyAt - 1
+		for p >= 0 && isJSONWhitespace(msg[p]) {
+			p--
+		}
+		if p < 0 || (msg[p] != '{' && msg[p] != ',') {
+			searchFrom = keyAt + 1
+			continue
+		}
+
+		// Value must open with '{'
+		i := keyAt + len(datadogKeyColon)
+		for i < len(msg) && isJSONWhitespace(msg[i]) {
+			i++
+		}
+		if i >= len(msg) || msg[i] != '{' {
+			searchFrom = keyAt + 1
+			continue
+		}
+
+		valHi, ok := scanObjectEnd(msg, i)
+		if !ok {
+			searchFrom = keyAt + 1
+			continue
+		}
+
+		// Absorb one adjacent comma. Backward search must not cross searchFrom
+		// so two consecutive carriers cannot both claim the same separating comma.
+		lo, hi := keyAt, valHi
+		bk := keyAt - 1
+		for bk >= searchFrom && isJSONWhitespace(msg[bk]) {
+			bk--
+		}
+		if bk >= searchFrom && msg[bk] == ',' {
+			lo = bk
+		} else {
+			fwd := valHi
+			for fwd < len(msg) && isJSONWhitespace(msg[fwd]) {
+				fwd++
+			}
+			if fwd < len(msg) && msg[fwd] == ',' {
+				hi = fwd + 1
+			}
+		}
+
+		spans = append(spans, span{lo, hi})
+		searchFrom = hi
 	}
-	if len(ranges) == 0 {
+
+	if len(spans) == 0 {
 		return msg, false
 	}
-	if len(ranges) == 1 {
-		r := ranges[0]
-		return append(msg[:r.start], msg[r.end:]...), true
-	}
-	out := msg
-	for i := len(ranges) - 1; i >= 0; i-- {
-		r := ranges[i]
-		out = append(out[:r.start], out[r.end:]...)
-	}
-	return out, true
-}
 
-const datadogCarrierKey = "_datadog"
+	out := make([]byte, 0, len(msg))
+	prev := 0
+	for _, s := range spans {
+		out = append(out, msg[prev:s.lo]...)
+		prev = s.hi
+	}
+	return append(out, msg[prev:]...), true
+}
 
 // stripStringEncodedCarriers removes _datadog from JSON objects embedded in top-level string fields.
 func stripStringEncodedCarriers(msg json.RawMessage) (json.RawMessage, bool) {
@@ -122,30 +169,9 @@ func stripStringEncodedCarriers(msg json.RawMessage) (json.RawMessage, bool) {
 
 	changed := false
 	for key, rawVal := range envelope {
-		var s string
-		if err := json.Unmarshal(rawVal, &s); err != nil {
-			continue // not a string field
-		}
-		if !bytes.Contains([]byte(s), datadogCarrierSubstrBytes) {
+		newVal, ok := stripDatadogFromStringField(rawVal)
+		if !ok {
 			continue
-		}
-
-		var inner map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(s), &inner); err != nil {
-			continue // string is not a JSON object
-		}
-		if _, ok := inner[datadogCarrierKey]; !ok {
-			continue
-		}
-
-		delete(inner, datadogCarrierKey)
-		innerBytes, err := json.Marshal(inner)
-		if err != nil {
-			return msg, false
-		}
-		newVal, err := json.Marshal(string(innerBytes))
-		if err != nil {
-			return msg, false
 		}
 		envelope[key] = newVal
 		changed = true
@@ -161,84 +187,34 @@ func stripStringEncodedCarriers(msg json.RawMessage) (json.RawMessage, bool) {
 	return out, true
 }
 
-// findCarrierRange returns the byte span of the first removable _datadog key/value pair in b at or after searchFrom.
-func findCarrierRange(b []byte, searchFrom int) (start, end int, ok bool) {
-	keyLen := len(datadogCarrierKeyBytes)
-	for {
-		keyIdx := bytes.Index(b[searchFrom:], datadogCarrierKeyBytes)
-		if keyIdx < 0 {
-			return 0, 0, false
-		}
-		keyIdx += searchFrom
-
-		if !isCarrierKeyAt(b, keyIdx, keyLen) {
-			searchFrom = keyIdx + 1
-			continue
-		}
-
-		valueEnd, ok := jsonCarrierValueEnd(b, keyIdx+keyLen)
-		if !ok {
-			searchFrom = keyIdx + 1
-			continue
-		}
-
-		removeStart, removeEnd := expandRemovalRange(b, keyIdx, valueEnd)
-		return removeStart, removeEnd, true
+// stripDatadogFromStringField removes the _datadog key from the JSON object
+// encoded within a JSON string field. Returns the new field value and true
+// if the field was modified, or nil and false otherwise.
+func stripDatadogFromStringField(rawVal json.RawMessage) (json.RawMessage, bool) {
+	var s string
+	if err := json.Unmarshal(rawVal, &s); err != nil {
+		return nil, false // not a string field
 	}
-}
-
-// isCarrierKeyAt reports whether keyIdx starts a JSON object key (preceded by '{' or ',', not a string value).
-func isCarrierKeyAt(b []byte, keyIdx, keyLen int) bool {
-	if keyIdx < 0 || keyIdx+keyLen > len(b) {
-		return false
+	if !bytes.Contains([]byte(s), datadogCarrierSubstrBytes) {
+		return nil, false
 	}
-	prev := keyIdx - 1
-	for prev >= 0 && isJSONWhitespace(b[prev]) {
-		prev--
+	var inner map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &inner); err != nil {
+		return nil, false // string is not a JSON object
 	}
-	return prev >= 0 && (b[prev] == '{' || b[prev] == ',')
-}
-
-// jsonCarrierValueEnd returns the byte offset after the {...} carrier value following a matched key.
-func jsonCarrierValueEnd(b []byte, from int) (int, bool) {
-	i := from
-	for i < len(b) && isJSONWhitespace(b[i]) {
-		i++
+	if _, ok := inner[datadogCarrierKey]; !ok {
+		return nil, false
 	}
-	if i >= len(b) || b[i] != ':' {
-		return 0, false
+	delete(inner, datadogCarrierKey)
+	innerBytes, err := json.Marshal(inner)
+	if err != nil {
+		return nil, false
 	}
-	i++
-	for i < len(b) && isJSONWhitespace(b[i]) {
-		i++
+	newVal, err := json.Marshal(string(innerBytes))
+	if err != nil {
+		return nil, false
 	}
-	if i >= len(b) || b[i] != '{' {
-		return 0, false
-	}
-	return scanDelimitedValueEnd(b, i, '{', '}')
-}
-
-// expandRemovalRange widens [keyStart:valueEnd) to include one adjacent structural comma when present.
-func expandRemovalRange(b []byte, keyStart, valueEnd int) (removeStart, removeEnd int) {
-	removeStart = keyStart
-	removeEnd = valueEnd
-
-	prev := keyStart - 1
-	for prev >= 0 && isJSONWhitespace(b[prev]) {
-		prev--
-	}
-	if prev >= 0 && b[prev] == ',' {
-		return prev, removeEnd
-	}
-
-	next := removeEnd
-	for next < len(b) && isJSONWhitespace(b[next]) {
-		next++
-	}
-	if next < len(b) && b[next] == ',' {
-		return removeStart, next + 1
-	}
-	return removeStart, removeEnd
+	return newVal, true
 }
 
 // isJSONWhitespace checks if the given byte is a JSON whitespace character.
@@ -246,8 +222,9 @@ func isJSONWhitespace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
-// scanDelimitedValueEnd scans for the end of a delimited value in the given byte slice.
-func scanDelimitedValueEnd(b []byte, start int, open, close byte) (int, bool) {
+// scanObjectEnd returns the byte offset after the closing '}' of a JSON object
+// starting at start in b, correctly tracking nested objects and strings.
+func scanObjectEnd(b []byte, start int) (int, bool) {
 	depth := 0
 	inString := false
 	escaped := false
@@ -268,13 +245,12 @@ func scanDelimitedValueEnd(b []byte, start int, open, close byte) (int, bool) {
 			}
 			continue
 		}
-
 		switch c {
 		case '"':
 			inString = true
-		case open:
+		case '{':
 			depth++
-		case close:
+		case '}':
 			depth--
 			if depth == 0 {
 				return i + 1, true
