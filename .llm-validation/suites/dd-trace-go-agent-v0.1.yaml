@@ -441,6 +441,161 @@ cases:
 
 # ==== Appsec Tests ====
 
+  - id: dd-trace-go-appsec-purpose
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      What is the internal/appsec package responsible for at a high level, and which external module
+      does most of the actual decision-making about WAF events and actions?
+    expected_criteria:
+      - States the package secures the application by monitoring operations executed by the application
+        and applying actions when a security threat is detected
+      - Names github.com/DataDog/go-libddwaf as the module containing the WAF (Web Application Firewall)
+        engine that does most of the decision making about events and actions
+    bad_signals:
+      - Says internal/appsec itself makes the WAF decisions rather than delegating to go-libddwaf
+      - Does not mention go-libddwaf at all
+
+  - id: dd-trace-go-appsec-dyngo-role
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      I'm writing a contrib integration that needs to hook into AppSec instrumentation. What package
+      underlies every AppSec-supporting API entrypoint in dd-trace-go/contrib, and what kind of system is it?
+    expected_criteria:
+      - Names internal/appsec/dyngo (the Instrumentation Gateway) as the package behind every
+        appsec-supporting contrib entrypoint
+      - Describes dyngo as a context-scoped event listener system that dynamically listens to events in
+        customer code and can react to configuration changes / hot-swap event listeners at runtime
+    bad_signals:
+      - Says contrib integrations call the WAF or go-libddwaf directly without going through dyngo
+      - Describes dyngo as a static/compile-time mechanism rather than a runtime event listener system
+
+  - id: dd-trace-go-appsec-operation-requirements
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      What are the requirements for defining a new AppSec operation type using the Start*/Finish pattern?
+    expected_criteria:
+      - States each operation must have a Start* function/method and a Finish method that call into dyngo
+      - States the operation's argument and result types must not require any external package, at most
+        the standard library
+    bad_signals:
+      - Omits either the Start*/Finish pairing or the standard-library-only constraint on args/results
+      - Says operation argument/result types can freely import other internal or third-party packages
+
+  - id: dd-trace-go-appsec-features-list
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      What AppSec features currently exist, and specifically, what does the "WAF Context" feature do?
+    expected_criteria:
+      - Lists features matching the documented set, e.g. HTTP/GRPC/GraphQL WAF Protection, SQL/OS/CMDi/HTTP
+        RASP, User Security, WAF Context, and Tracing
+      - States WAF Context is responsible for setting up the request-scoped context system of the WAF
+    bad_signals:
+      - Invents features that are not part of the documented feature list
+      - Misdescribes WAF Context, e.g. conflating it with HTTP WAF Protection specifically
+
+  - id: dd-trace-go-appsec-circular-dependency-risk
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      I want my new AppSec operation's argument struct to import a helper type from internal/appsec/config
+      so I don't have to redefine it. Is this safe to do, and why or why not?
+    expected_criteria:
+      - States this is risky and likely to cause a circular dependency
+      - Explains the mechanism -- the operation definition is used by the package it instruments, and the
+        package that instruments it will probably import the operation definition, so pulling in another
+        internal package from the operation's args/result types can create a cycle
+      - Recommends keeping the operation's argument/result types limited to the standard library instead
+    bad_signals:
+      - Says importing internal/appsec/config from the operation definition is fine with no caveats
+      - Does not explain why the circular dependency risk exists
+
+  - id: dd-trace-go-appsec-swap-feature-error-rollback
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      Look at (*appsec).SwapRootOperation in internal/appsec/features.go. If one of the feature builders
+      in the `features` slice (e.g. sqlsec.NewSQLSecFeature) returns an error while building the new set
+      of features for a config update, what happens to the other feature builders that already succeeded
+      during that same call, and does the previously active root operation get replaced?
+    expected_criteria:
+      - States that the whole swap is aborted on any feature-builder error -- SwapRootOperation joins the
+        errors and returns before calling dyngo.SwapRootOperation, so the previously active features/root
+        operation are left untouched
+      - States that any new features which had already been successfully built earlier in the same call
+        are explicitly Stop()'d and discarded rather than being partially activated
+    bad_signals:
+      - Says the successfully-built features activate anyway while only the failing one is skipped
+      - Says the old/previous features are torn down regardless of whether the new build succeeded
+
+  - id: dd-trace-go-appsec-stop-inflight-requests
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      Look at (*appsec).stop in internal/appsec/appsec.go. When AppSec is stopped, does it wait for
+      requests that are currently inside an active dyngo operation to finish before the WAF manager's
+      underlying resources are reset, or is there a known gap here?
+    expected_criteria:
+      - States that stop() does NOT wait for in-flight requests -- it swaps the dyngo root operation to
+        nil and calls a.cfg.WAFManager.Reset() immediately after acquiring featuresMu
+      - Identifies this as an acknowledged, unresolved gap in the code -- a TODO comment saying it should
+        "block until no more requests are using dyngo operations" -- not a deliberately finished design
+    bad_signals:
+      - Says stop() blocks until all in-flight requests finish before releasing WAF resources
+      - Says there is no known limitation or gap in this teardown path
+
+  - id: dd-trace-go-appsec-feature-rebuild-atomicity
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      When a configuration source (e.g. remote config) pushes a change affecting AppSec, how does AppSec
+      apply that change without leaving the system in an inconsistent state mid-update?
+    expected_criteria:
+      - States features are rebuilt via their builder (a pure function of the configuration) on every
+        configuration change
+      - States the rebuilt feature listeners are registered to the Instrumentation Gateway and the root
+        level operation is hot-swapped for the new one, making the whole update atomic
+    bad_signals:
+      - Says AppSec mutates existing feature or listener state in place rather than rebuilding and
+        hot-swapping
+      - Does not mention the hot-swap/atomicity guarantee at all
+
+  - id: dd-trace-go-appsec-limiter-deny-safe-default
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      Look at newLimiter in internal/appsec/limiter/limiter.go. If it's called with maxTokens <= 0 or a
+      non-positive interval, does the resulting limiter allow every check through (fail open) or deny
+      every check (fail closed)? Why was it built that way?
+    expected_criteria:
+      - States that in that case the function returns rate.NewLimiter(0, 0), a limiter whose Allow()
+        always returns false -- it fails closed / deny-safe
+      - Explains the reasoning given in the code -- computing a rate from a non-positive interval could
+        otherwise produce an unbounded/"infinite" limiter, which would be an unsafe default for a
+        security rate limiter
+    bad_signals:
+      - Says a zero/misconfigured maxTokens or interval results in an unlimited limiter that always allows
+      - Says this configuration would panic or error instead of returning a deny-all limiter
+
+  - id: dd-trace-go-appsec-doc-update-trigger
+    only_warn: true
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      I just added a new RASP feature to internal/appsec (a new protection type alongside the existing
+      SQL/OS/CMDi/HTTP RASP features). Do I need to update any documentation for this, and if so, which
+      file and why?
+    expected_criteria:
+      - States internal/appsec/README.md must be updated whenever changes to AppSec (ASM/AppSec) are
+        introduced
+      - Recognizes that adding a new feature qualifies as such a change
+    bad_signals:
+      - Says no documentation update is needed for this change
+      - Points to a different file instead of internal/appsec/README.md, e.g. the top-level project
+        README.md or CONTRIBUTING.md
 
 # ==== LLMObs Tests ====
 # TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
