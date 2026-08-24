@@ -369,6 +369,3 @@ func TestSpanEnrichment_AfterRootFinished(t *testing.T) {
 		assert.NotContains(t, k, "ffe_")
 	}
 }
-
-//go:fix inline
-func uint32Ptr(v uint32) *uint32 { return new(v) }

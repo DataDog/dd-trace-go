@@ -982,13 +982,6 @@ func generateUserID(i int) string {
 	return "user-" + string(rune('a'+i%26)) + string(rune('0'+i/26%10)) + string(rune('0'+i/260%10))
 }
 
-// boolPtr returns a pointer to a bool value
-//
-//go:fix inline
-func boolPtr(b bool) *bool {
-	return new(b)
-}
-
 // getExposureWriter returns the exposure writer from a provider for testing
 func getExposureWriter(provider *DatadogProvider) *exposureWriter {
 	return provider.exposureWriter
