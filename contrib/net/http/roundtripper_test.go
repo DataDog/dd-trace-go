@@ -29,6 +29,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -41,6 +42,7 @@ func setOTelSemantics(t *testing.T, value string) {
 		require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", value))
 	}
 	require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+	httptrace.ResetCfg()
 	t.Cleanup(func() {
 		if wasSet {
 			require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", oldValue))
@@ -48,6 +50,7 @@ func setOTelSemantics(t *testing.T, value string) {
 			require.NoError(t, os.Unsetenv("DD_TRACE_OTEL_SEMANTICS_ENABLED"))
 		}
 		require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+		httptrace.ResetCfg()
 		tracer.Stop()
 	})
 }
