@@ -26,7 +26,7 @@ type parsedSemver struct {
 // Build metadata is validated but not retained because it does not affect
 // SemVer precedence.
 func parseSemver(version string) (parsedSemver, bool) {
-	parts := make([]uint64, 0, 12)
+	parts := make([]uint64, 0, 5)
 	next := 0
 	for {
 		part, end, ok := parseSemverCoreIdentifier(version, next)
