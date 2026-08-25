@@ -824,10 +824,16 @@ func TestStatsPreferOTelSemanticHTTPAttributesWithLegacyMethodFallback(t *testin
 }
 
 func BenchmarkNewTracerStatSpanOTelSemantics(b *testing.B) {
-	for _, enabled := range []bool{false, true} {
-		b.Run(fmt.Sprintf("enabled=%t", enabled), func(b *testing.B) {
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "disabled"},
+		{name: "enabled", enabled: true},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
 			cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
-				c.internalConfig.SetOTelSemanticsEnabled(enabled, internalconfig.OriginCode)
+				c.internalConfig.SetOTelSemanticsEnabled(tc.enabled, internalconfig.OriginCode)
 			})
 			require.NoError(b, err)
 			c := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
