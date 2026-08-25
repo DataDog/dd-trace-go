@@ -311,18 +311,22 @@ func (h *agentTraceWriter) sendAsync(p payload) {
 // reported once, just not always attributed to this path.
 func (h *agentTraceWriter) downgradeAfterRejectedSend() {
 	h.config.advanceTraceProtocolState(protoV04)
-	// add() no longer rotates a stale payload on its own (issue #5258
-	// diagnostic: see add()'s doc comment), so without this, the payload the
-	// flush that just discovered this rejection built moments ago -- for the
-	// still-v1 protocol, since the rejection wasn't known yet -- would sit
-	// there and catch the very next trace, which would then be rejected too.
-	// This is the one call site kept for the empty case specifically because
-	// it's gated by a real, rare, already-confirmed rejection event, not by
-	// every add() call, so it doesn't reintroduce the cost this diagnostic
-	// build removed.
-	h.mu.Lock()
-	h.rotateStalePayload(traceProtocolV04)
-	h.mu.Unlock()
+	// This registers the downgrade (state, telemetry, log) only -- it does not
+	// also rotate h.payload. An earlier version of this diagnostic build
+	// (issue #5258) added a compensating rotation here so the very next trace
+	// wouldn't land in a payload built moments ago for the still-believed-good
+	// v1 protocol, but Codex review on #5263 correctly flagged that the
+	// rotation and this state flip aren't atomic with add(): a concurrent
+	// add() can populate that payload between the two, making it non-empty --
+	// rotateStalePayload only replaces an empty one -- so the compensating
+	// rotation could silently do nothing under exactly the concurrent traffic
+	// it was meant to help with. Fixing that race properly means serializing
+	// this with add() under h.mu, which reintroduces the per-add() cost this
+	// revert exists to remove. Simpler and consistent with removing add()'s
+	// own check entirely: don't special-case this path either. flush()'s
+	// existing, unconditional rebuild-for-current-protocol on every call is
+	// the only recovery mechanism now, same as any other post-transition
+	// staleness this diagnostic build accepts -- see add()'s doc comment.
 	if !h.config.internalConfig.ReportEffectiveTraceProtocol(h.config.effectiveTraceProtocol()) {
 		return
 	}

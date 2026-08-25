@@ -873,10 +873,19 @@ func (t *rejectV1Transport) endpoint(float64) string {
 // TestAgentWriterDowngradesWhenAgentRejectsV1 is the writer-level
 // verification for downgradeAfterRejectedSend: when an agent rejects a live
 // v1 send outright, the writer must downgrade config's protocol state
-// immediately and permanently (see trace_protocol_state.go), count the
+// immediately and permanently (see trace_protocol_state.go), and count the
 // rejected payload as dropped rather than retrying it against an endpoint
-// that will keep rejecting it, and let the very next payload recover on
-// v0.4.
+// that will keep rejecting it.
+//
+// Issue #5258 diagnostic build: downgradeAfterRejectedSend no longer rotates
+// h.payload itself (see its doc comment for why -- Codex review on #5263
+// found the rotation and this state flip weren't atomic with add(), so
+// fixing it properly would mean serializing this with add() under h.mu,
+// reintroducing the per-add() cost this build removes). So h.payload here is
+// still the same empty-but-v1 object flush() built moments before this
+// rejection was discovered: the very next add() lands in it too, and that
+// payload is also rejected. Only the payload after that -- built by the next
+// flush() once effectiveTraceProtocol() is v0.4 -- actually recovers.
 func TestAgentWriterDowngradesWhenAgentRejectsV1(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
 	ft := &rejectV1Transport{}
@@ -905,12 +914,22 @@ func TestAgentWriterDowngradesWhenAgentRejectsV1(t *testing.T) {
 	assert.Equal(t, int64(1), counts["datadog.tracer.traces_dropped"], "the rejected trace must be counted as dropped")
 	assert.Zero(t, counts["datadog.tracer.flush_traces"], "no successful delivery should be counted for the rejected payload")
 
-	// The very next payload recovers: it is built for v0.4 and delivered.
+	// The very next payload does NOT recover: add() no longer rotates, so this
+	// trace lands in the same stale (empty, v1) payload flush() just rebuilt
+	// before the rejection landed, and gets rejected too.
 	w.add([]*Span{makeSpan(2)})
 	w.flush()
 	w.wg.Wait()
-	require.Len(t, ft.delivered, 1, "the post-downgrade trace must be delivered")
+	assert.Empty(t, ft.delivered, "the payload built just before the rejection landed is still v1, so this trace is rejected too")
 	assert.Equal(t, 2, ft.sendCalls)
+
+	// The payload after that finally recovers: flush() rebuilds against the
+	// now-settled v0.4 protocol every time, regardless of add()'s behavior.
+	w.add([]*Span{makeSpan(3)})
+	w.flush()
+	w.wg.Wait()
+	require.Len(t, ft.delivered, 1, "the payload built once the protocol has settled at v0.4 must be delivered")
+	assert.Equal(t, 3, ft.sendCalls)
 }
 
 // TestDowngradeAfterRejectedSendSkipsMetricWhenTelemetryAlreadyReported pins
