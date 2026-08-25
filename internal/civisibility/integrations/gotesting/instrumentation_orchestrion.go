@@ -125,10 +125,14 @@ func instrumentTestingBuiltWithOrchestrion() {
 //
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
-	return instrumentTestingTFuncWithOptions(f, false)
+	return instrumentTestingTFuncWithParallelTiming(f, false)
 }
 
-func instrumentTestingTFuncWithOptions(f func(*testing.T), captureParallelBaseline bool) func(*testing.T) {
+func instrumentTestingTFuncWithParallelBaseline(f func(*testing.T)) func(*testing.T) {
+	return instrumentTestingTFuncWithParallelTiming(f, true)
+}
+
+func instrumentTestingTFuncWithParallelTiming(f func(*testing.T), captureParallelBaseline bool) func(*testing.T) {
 	release, ok := acquireOrchestrionTestingHook()
 	if !ok {
 		return f
@@ -415,11 +419,10 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 		return
 	}
 
-	// Record the skip once; the wrapper finalizer closes the event.
+	// Leave event closure to the finalizer so it can write timing tags.
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		log.Debug("instrumentCloseAndSkip: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), skipReason)
-		// Keep Close in the finalizer so it can write timing tags first.
 		ciTestItem.skipReason = skipReason
 		if !ciTestItem.hasAdditionalFeatureWrapper {
 			ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
@@ -446,14 +449,13 @@ func instrumentSkipNow(tb testing.TB) {
 		return
 	}
 
-	// Record the skip once; the wrapper finalizer closes the event.
+	// Leave event closure to the finalizer so it can write timing tags.
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		if formatted := ciTestItem.processRetrySkipReason.Load(); formatted != nil {
 			ciTestItem.skipReason = *formatted
 		}
 		log.Debug("instrumentSkipNow: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), ciTestItem.skipReason)
-		// Keep Close in the finalizer so it can write timing tags first.
 		if !ciTestItem.hasAdditionalFeatureWrapper {
 			ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
 		}

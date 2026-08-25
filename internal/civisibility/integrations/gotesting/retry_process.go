@@ -151,7 +151,7 @@ const (
 	processRetryDefaultTimeout             = 10 * time.Minute
 )
 
-// processRetryResult preserves three distinct clocks across the child-process
+// processRetryResult preserves three timing contracts across the child-process
 // boundary: Start/Finish form the event's wall envelope; Duration is Go's
 // policy duration including cleanup; ObservedActiveDuration is the test body.
 // Both duration values exclude the T.Parallel scheduler wait.

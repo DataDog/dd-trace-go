@@ -63,6 +63,8 @@ func TestGetFieldPointerFrom(t *testing.T) {
 		t.Fatal("Expected an error for non-existent field, got nil")
 	}
 
+	// These pure instrumentation assertions share an existing top-level test so
+	// the subprocess span-count scenarios do not gain extra test spans.
 	exerciseTestingInternalsOffsetLayout(t)
 	exerciseTestingInternalsCopyEquivalence(t)
 	exerciseTestingInternalsHelperMapIsolation(t)
@@ -70,8 +72,6 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseParallelTiming(t)
 	exerciseDenyParallelFieldCompatibility(t)
 	exerciseBenchmarkFuncInstrumentationConcurrentWrites(t)
-	// These pure instrumentation assertions run under this existing top-level test
-	// so the subprocess span-count scenarios do not gain extra test spans.
 	exerciseAdditionalFeaturePathSelection(t)
 	exerciseParallelEFDSelection(t)
 	exerciseMetadataOnlyPropagationSuppression(t)

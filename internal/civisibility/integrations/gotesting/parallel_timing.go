@@ -22,8 +22,8 @@ const (
 	parallelWaitTag             = "test.parallel.wait"
 )
 
-// A non-nil parallelTimingState means the Parallel hook ran, even when the
-// runtime layout is unsupported and the baseline is invalid.
+// Keep the baseline out of testExecutionMetadata because only parallel tests
+// need it. A non-nil state also records that the hook ran with an invalid baseline.
 type parallelTimingState struct {
 	baseline parallelTimingBaseline
 }

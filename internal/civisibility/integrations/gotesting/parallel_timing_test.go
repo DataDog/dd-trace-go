@@ -17,7 +17,14 @@ import (
 
 func exerciseParallelTiming(t *testing.T) {
 	t.Helper()
+	exerciseParallelTimingCalculation(t)
+	exerciseParallelTimingHookFallbacks(t)
+	exerciseParallelTimingReporting(t)
+	exerciseParallelTimingRetryPolicy(t)
+}
 
+func exerciseParallelTimingCalculation(t *testing.T) {
+	t.Helper()
 	wallEnd := time.Now()
 	timing := calculateTestExecutionTiming(20*time.Millisecond, parallelTimingSample{
 		durationBeforePause: 3 * time.Millisecond,
@@ -61,7 +68,48 @@ func exerciseParallelTiming(t *testing.T) {
 	require.True(t, invalidProjection.activeDurationOK)
 	require.Equal(t, 12*time.Millisecond, invalidProjection.activeDuration)
 	require.False(t, invalidProjection.pauseProjectionOK)
+}
 
+func exerciseParallelTimingHookFallbacks(t *testing.T) {
+	t.Helper()
+	hookedNonParallel := observeHookedTestExecutionTiming(nil, &testExecutionMetadata{}, 2*time.Millisecond, time.Time{})
+	require.False(t, hookedNonParallel.isParallel)
+	require.True(t, hookedNonParallel.activeDurationOK)
+	require.Equal(t, 2*time.Millisecond, hookedNonParallel.activeDuration)
+
+	var uncommitted testing.T
+	hookedUncommitted := observeHookedTestExecutionTiming(&uncommitted, &testExecutionMetadata{
+		parallelTiming: &parallelTimingState{},
+	}, 2*time.Millisecond, time.Time{})
+	require.False(t, hookedUncommitted.isParallel)
+	require.True(t, hookedUncommitted.activeDurationOK)
+	require.Equal(t, 2*time.Millisecond, hookedUncommitted.activeDuration)
+
+	hookedUnsupportedParallel := observeHookedTestExecutionTiming(nil, &testExecutionMetadata{
+		parallelTiming: &parallelTimingState{},
+	}, 2*time.Millisecond, time.Time{})
+	require.False(t, hookedUnsupportedParallel.isParallel)
+	require.False(t, hookedUnsupportedParallel.activeDurationOK)
+}
+
+func exerciseParallelTimingReporting(t *testing.T) {
+	t.Helper()
+	event := newProcessRetryRecordingTestForTesting("parallel-timing")
+	initializeTestExecutionTiming(event)
+	require.EqualValues(t, 0, event.tags[constants.TestActiveDuration])
+	require.Equal(t, false, event.tags[constants.TestIsParallel])
+	reportTestExecutionTiming(event, testExecutionTiming{
+		isParallel:       true,
+		activeDuration:   12 * time.Millisecond,
+		activeDurationOK: true,
+	})
+	require.EqualValues(t, (12 * time.Millisecond).Nanoseconds(), event.tags[constants.TestActiveDuration])
+	require.Equal(t, true, event.tags[constants.TestIsParallel])
+	require.NotContains(t, event.tags, constants.TestParallelPauseDuration)
+}
+
+func exerciseParallelTimingRetryPolicy(t *testing.T) {
+	t.Helper()
 	policyTiming := calculateTestExecutionTiming(6*time.Second, parallelTimingSample{
 		durationBeforePause: time.Second,
 		elapsedToResume:     3 * time.Second,
@@ -79,36 +127,6 @@ func exerciseParallelTiming(t *testing.T) {
 	require.EqualValues(t, 11, activeRetries)
 	require.EqualValues(t, 5, wallRetries)
 
-	hookedNonParallel := observeHookedTestExecutionTiming(nil, &testExecutionMetadata{}, 2*time.Millisecond, time.Time{})
-	require.False(t, hookedNonParallel.isParallel)
-	require.True(t, hookedNonParallel.activeDurationOK)
-	require.Equal(t, 2*time.Millisecond, hookedNonParallel.activeDuration)
-	var uncommitted testing.T
-	hookedUncommitted := observeHookedTestExecutionTiming(&uncommitted, &testExecutionMetadata{
-		parallelTiming: &parallelTimingState{},
-	}, 2*time.Millisecond, time.Time{})
-	require.False(t, hookedUncommitted.isParallel)
-	require.True(t, hookedUncommitted.activeDurationOK)
-	require.Equal(t, 2*time.Millisecond, hookedUncommitted.activeDuration)
-	hookedUnsupportedParallel := observeHookedTestExecutionTiming(nil, &testExecutionMetadata{
-		parallelTiming: &parallelTimingState{},
-	}, 2*time.Millisecond, time.Time{})
-	require.False(t, hookedUnsupportedParallel.isParallel)
-	require.False(t, hookedUnsupportedParallel.activeDurationOK)
-
-	event := newProcessRetryRecordingTestForTesting("parallel-timing")
-	initializeTestExecutionTiming(event)
-	require.EqualValues(t, 0, event.tags[constants.TestActiveDuration])
-	require.Equal(t, false, event.tags[constants.TestIsParallel])
-	reportTestExecutionTiming(event, testExecutionTiming{
-		isParallel:       true,
-		activeDuration:   12 * time.Millisecond,
-		activeDurationOK: true,
-	})
-	require.EqualValues(t, (12 * time.Millisecond).Nanoseconds(), event.tags[constants.TestActiveDuration])
-	require.Equal(t, true, event.tags[constants.TestIsParallel])
-	require.NotContains(t, event.tags, constants.TestParallelPauseDuration)
-
 	policyAttempt := processRetryAttemptResult{Result: processRetryResult{
 		DurationNanos: (7 * time.Second).Nanoseconds(),
 		DurationValid: true,
@@ -120,7 +138,6 @@ func exerciseParallelTiming(t *testing.T) {
 	policyDuration, ok = policyAttempt.Result.policyDuration()
 	require.False(t, ok)
 	require.Zero(t, policyDuration)
-
 }
 
 func BenchmarkParallelTimingBaselineCapture(b *testing.B) {
@@ -128,6 +145,18 @@ func BenchmarkParallelTimingBaselineCapture(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = captureParallelTimingBaseline(&t)
+	}
+}
+
+func BenchmarkParallelTimingHookCapture(b *testing.B) {
+	var t testing.T
+	meta := createTestMetadata(&t, nil)
+	defer deleteTestMetadata(&t)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		meta.parallelTiming = nil
+		captureParallelTimingHook(&t)
 	}
 }
 
