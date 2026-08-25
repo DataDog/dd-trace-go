@@ -5,16 +5,22 @@
 # to it the same way the customer's tracer does.
 #
 # The agent image is pinned to v7.77.1 to match the customer's environment
-# exactly (APMS-19533). The DD_API_KEY value is intentionally bogus —
-# the bug we're verifying lives in the agent's *receiver* layer (UDS listener,
-# connection lifecycle, backpressure), which accepts payloads regardless of
-# whether shipping downstream succeeds.
+# exactly (APMS-19533). Do NOT bump this tag: the whole point of the harness is
+# to exercise the receiver code path the customer actually runs, so a newer
+# agent invalidates the result rather than improving it. Dependabot bumped it to
+# 7.82.0 once (#5172) and it was reverted; datadog/agent is now frozen for this
+# directory in .github/dependabot.yml, so automated bumps can't recur.
+#
+# The DD_API_KEY value is intentionally bogus — the bug we're verifying lives
+# in the agent's *receiver* layer (UDS listener, connection lifecycle,
+# backpressure), which accepts payloads regardless of whether shipping
+# downstream succeeds.
 #
 # Usage is documented in ./README.md and the orchestrator at ./soak.sh.
 
 services:
   agent:
-    image: datadog/agent:7.82.0@sha256:5c0fd49a485f100f37beab1969ed68b8027e906acaf81cfec12c16d11e8d9b4e
+    image: datadog/agent:7.77.1@sha256:25dfd0ce2c76e8b40bf52941b9f8b79d9d0fd056e46846c236547da49b20e2bf
     container_name: staleidle-soak-agent
     # Run as root inside the container so the UDS socket the agent creates
     # under /var/run/datadog/ is host-readable/writable regardless of the
