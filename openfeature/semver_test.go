@@ -22,6 +22,10 @@ func TestParseSemver(t *testing.T) {
 		{version: "1.2.3.4", want: parsedSemver{major: 1, minor: 2, patch: 3, extra: []uint64{4}}},
 		{version: "1.2.3.4.5", want: parsedSemver{major: 1, minor: 2, patch: 3, extra: []uint64{4, 5}}},
 		{
+			version: "1.2.3.4.5.6.7.8.9.10.11.12.13",
+			want:    parsedSemver{major: 1, minor: 2, patch: 3, extra: []uint64{4, 5, 6, 7, 8, 9, 10, 11, 12, 13}},
+		},
+		{
 			version: "18446744073709551615.18446744073709551615.18446744073709551615",
 			want: parsedSemver{
 				major: ^uint64(0),
@@ -50,7 +54,6 @@ func TestParseSemver(t *testing.T) {
 
 	invalid := []string{
 		"",
-		"1.2.3.4.5.6",
 		"v1.2.3",
 		"01.2.3",
 		"1.02.3",

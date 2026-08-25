@@ -19,14 +19,14 @@ type parsedSemver struct {
 	prerelease string
 }
 
-// parseSemver accepts one through five numeric version parts. Missing minor
+// parseSemver accepts one or more numeric version parts. Missing minor
 // and patch parts are normalized to zero; additional parts participate in
 // ordering after the patch part. Numeric core identifiers are limited to
 // uint64, while numeric prerelease identifiers may be arbitrarily large.
 // Build metadata is validated but not retained because it does not affect
 // SemVer precedence.
 func parseSemver(version string) (parsedSemver, bool) {
-	parts := make([]uint64, 0, 5)
+	parts := make([]uint64, 0, 12)
 	next := 0
 	for {
 		part, end, ok := parseSemverCoreIdentifier(version, next)
@@ -38,7 +38,7 @@ func parseSemver(version string) (parsedSemver, bool) {
 		if next == len(version) || version[next] == '-' || version[next] == '+' {
 			break
 		}
-		if version[next] != '.' || len(parts) == 5 {
+		if version[next] != '.' {
 			return parsedSemver{}, false
 		}
 		next++
