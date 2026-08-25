@@ -192,6 +192,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_FASTHTTP_ANALYTICS_ENABLED":                             {},
 	"DD_TRACE_FEATURES":                                               {},
 	"DD_TRACE_FIBER_ANALYTICS_ENABLED":                                {},
+	"DD_TRACE_FORCE_V1_STATS_ENABLED":                                 {},
 	"DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED":                           {},
 	"DD_TRACE_GIN_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE_GIT_METADATA_ENABLED":                                   {},

@@ -205,18 +205,21 @@
 // span's language dimension. (The same defect exists in versions 7.73.0
 // through 7.76.x, but those don't advertise /v1.0/traces by default, so the
 // protocol guard above already excludes them in practice.) The tracer
-// detects this from the agent's reported version and enables client-side
-// stats computation regardless of DD_TRACE_STATS_COMPUTATION_ENABLED /
-// WithStatsComputation(false), so that the tracer computes the affected
-// stats itself instead of relying on the agent. This also enables P0 trace
-// dropping, since the two capabilities are not independently controllable
-// (see WithStatsComputation). To opt out, either upgrade the trace-agent to
-// 7.79.0 or later, or set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4. Two cases are
-// explicitly excluded from this override: the Datadog Lambda extension,
-// which already computes trace stats server-side (contrib/aws/datadog-lambda-go
-// starts the tracer with WithStatsComputation(false) on purpose), and CI
-// Visibility, whose transport never sends stats through this path regardless.
-// Other trace-agent implementations that do not follow this versioning
-// scheme (for example, an OpenTelemetry Collector exporter acting as a
-// Datadog trace-agent) are never affected by this override.
+// detects this from the agent's reported version and, when
+// DD_TRACE_FORCE_V1_STATS_ENABLED=true, enables client-side stats computation
+// regardless of DD_TRACE_STATS_COMPUTATION_ENABLED /
+// WithStatsComputation(false), so that the tracer computes the affected stats
+// itself instead of relying on the agent. This also enables P0 trace dropping,
+// since the two capabilities are not independently controllable
+// (see WithStatsComputation). The workaround is disabled by default because it
+// increases stats traffic. To use the configured stats behavior, leave that
+// setting unset or false; upgrading the trace-agent to 7.79.0 or later, or
+// setting DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, also avoids the affected path.
+// Two cases are explicitly excluded from this override: the Datadog Lambda
+// extension, which already computes trace stats server-side
+// (contrib/aws/datadog-lambda-go starts the tracer with WithStatsComputation(false)
+// on purpose), and CI Visibility, whose transport never sends stats through
+// this path regardless. Other trace-agent implementations that do not follow
+// this versioning scheme (for example, an OpenTelemetry Collector exporter
+// acting as a Datadog trace-agent) are never affected by this override.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

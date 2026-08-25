@@ -546,6 +546,8 @@ func TestTraceProtocolChangeLoggedOncePerTransition(t *testing.T) {
 // version to a fixed one therefore lifts the client-side-stats workaround
 // without a tracer restart.
 func TestPollAgentInfoLiftsV1StatsWorkaround(t *testing.T) {
+	t.Setenv("DD_TRACE_FORCE_V1_STATS_ENABLED", "true")
+
 	var agentVersion atomic.Pointer[string]
 	affected := "7.77.0"
 	agentVersion.Store(&affected)
@@ -623,6 +625,8 @@ func effectiveStatsReports(rec *telemetrytest.RecordClient) []bool {
 // silent"). Both directions must reach the log and config telemetry, and a
 // steady state must stay quiet so a 5s poll cannot spam either.
 func TestPollAgentInfoSurfacesV1StatsWorkaroundTransitions(t *testing.T) {
+	t.Setenv("DD_TRACE_FORCE_V1_STATS_ENABLED", "true")
+
 	t.Run("engages on a later poll", func(t *testing.T) {
 		rec := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(rec)()

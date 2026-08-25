@@ -739,11 +739,15 @@ func (c *config) canComputeStatsWithAgent(a agentFeatures) bool {
 	return c.statsComputationRequested() || c.forcesStatsForV1Agent(a)
 }
 
-// forcesStatsForV1Agent reports whether client-side stats must be turned on
-// against the user's configuration because the tracer is on the v1.0 wire
-// protocol and this trace-agent's own v1.0 stats concentrator would aggregate
-// stats under an empty `lang` (see agentOmitsLangInV1Stats).
+// forcesStatsForV1Agent reports whether client-side stats should be turned on
+// against the user's configuration because the opt-in workaround is enabled,
+// the tracer is on the v1.0 wire protocol, and this trace-agent's own v1.0
+// stats concentrator would aggregate stats under an empty `lang`
+// (see agentOmitsLangInV1Stats).
 func (c *config) forcesStatsForV1Agent(a agentFeatures) bool {
+	if !c.internalConfig.ForceV1StatsEnabled() {
+		return false
+	}
 	if !a.v1StatsLangUnfixed {
 		return false
 	}
@@ -1312,13 +1316,13 @@ func WithPartialFlushing(numSpans int) StartOption {
 // This option does not affect the Datadog trace protocol version used to send
 // traces; see DD_TRACE_AGENT_PROTOCOL_VERSION.
 //
-// WithStatsComputation(false) may still be overridden: on the 1.0 protocol,
+// WithStatsComputation(false) is normally authoritative. The v1.0 agent stats
+// workaround can be explicitly enabled with DD_TRACE_FORCE_V1_STATS_ENABLED=true:
 // against a trace-agent reporting version 7.77.x, 7.78.x, or an unreleased
-// 7.79.0 pre-release predating 7.79.0-rc.6, the tracer forces stats
+// 7.79.0 pre-release predating 7.79.0-rc.6, the tracer then forces stats
 // computation (and P0 trace dropping — the two are not independently
 // controllable) on to work around a defect in that agent's own v1.0 stats
-// aggregation. See the "Trace Protocol" section of this package's doc.go for
-// how to opt out.
+// aggregation. See the "Trace Protocol" section of this package's doc.go.
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)

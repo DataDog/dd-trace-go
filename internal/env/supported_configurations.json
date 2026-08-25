@@ -1290,6 +1290,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_FORCE_V1_STATS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED": [
       {
         "implementation": "A",

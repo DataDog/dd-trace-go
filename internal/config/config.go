@@ -127,7 +127,11 @@ type Config struct {
 	internalMetricsEnabled bool
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
-	traceAnalyticsEnabled   bool
+	// forceV1StatsEnabled enables the v1.0 agent stats workaround. It is opt-in
+	// because the workaround increases client-side stats traffic and can
+	// overwhelm agents that already have high stats volume.
+	forceV1StatsEnabled   bool
+	traceAnalyticsEnabled bool
 	// experimentalFeaturesEnabled controls tracer features that are not generally available.
 	experimentalFeaturesEnabled bool
 	// statsAdditionalTags is a list of tag keys to extract from spans and use as
@@ -348,6 +352,7 @@ func loadConfig() *Config {
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	cfg.forceV1StatsEnabled = p.GetBool("DD_TRACE_FORCE_V1_STATS_ENABLED", false)
 	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	cfg.experimentalFeaturesEnabled = p.GetBool("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", false)
 	if v := p.GetString("DD_TRACE_STATS_ADDITIONAL_TAGS", ""); v != "" {
@@ -1049,6 +1054,13 @@ func (c *Config) StatsComputationEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.statsComputationEnabled
+}
+
+// ForceV1StatsEnabled reports whether the v1.0 agent stats workaround is enabled.
+func (c *Config) ForceV1StatsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.forceV1StatsEnabled
 }
 
 func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origin, product ...Product) {

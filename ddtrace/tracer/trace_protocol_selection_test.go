@@ -133,6 +133,19 @@ func TestTraceProtocolDecoupling(t *testing.T) {
 	}
 }
 
+func TestV1StatsWorkaroundDisabledByDefault(t *testing.T) {
+	t.Setenv("DD_TRACE_FORCE_V1_STATS_ENABLED", "false")
+
+	agent := startTestAgent(t)
+	agent.SetInfo(v1StatsWorkaroundAffectedInfo)
+
+	tr := newTracerTest(t, agent, WithStatsComputation(false))
+	defer stopTracerTest(tr)
+
+	assert.False(t, tr.config.canComputeStats(), "the v1.0 stats workaround must be opt-in")
+	assert.False(t, tr.config.canDropP0s(), "the v1.0 stats workaround must not enable P0 dropping by default")
+}
+
 // TestPinTestTracerToV04RotatesWriterPayload pins a gap flagged in review:
 // startTestTracer's v1-capability override used to run after newTracer had already
 // built the writer's initial payload, so on a developer machine where a real Agent at
@@ -183,6 +196,8 @@ func TestPinTestTracerToV04RotatesWriterPayload(t *testing.T) {
 // move together for this workaround, so one column pins that invariant
 // structurally instead of two columns repeating the same value.
 func TestV1StatsWorkaroundForcesStatsAndP0Dropping(t *testing.T) {
+	t.Setenv("DD_TRACE_FORCE_V1_STATS_ENABLED", "true")
+
 	cases := []struct {
 		name              string
 		agentVersion      string // "" omits the "version" field from /info entirely
@@ -313,6 +328,8 @@ const v1StatsWorkaroundAffectedInfo = `{"endpoints":["/v0.4/traces","/v1.0/trace
 // In every case the wire protocol must stay v1.0: an exclusion suppresses the
 // stats override, never the protocol.
 func TestV1StatsWorkaroundExclusions(t *testing.T) {
+	t.Setenv("DD_TRACE_FORCE_V1_STATS_ENABLED", "true")
+
 	cases := []struct {
 		name string
 		// env is applied before the tracer is built, for exclusions whose
@@ -401,6 +418,7 @@ func TestV1StatsWorkaroundStartupOrderVsTracingAsTransport(t *testing.T) {
 	defer telemetry.MockClient(rec)()
 	logs := new(log.RecordLogger)
 
+	t.Setenv("DD_TRACE_FORCE_V1_STATS_ENABLED", "true")
 	t.Setenv("DD_APM_TRACING_ENABLED", "false")
 	agent := startTestAgent(t)
 	agent.SetInfo(v1StatsWorkaroundAffectedInfo)
@@ -426,6 +444,8 @@ func TestV1StatsWorkaroundStartupOrderVsTracingAsTransport(t *testing.T) {
 // actually changes what goes out on the wire, which is what makes the agent
 // skip its buggy v1.0 stats path in the first place.
 func TestV1StatsWorkaroundWireBehavior(t *testing.T) {
+	t.Setenv("DD_TRACE_FORCE_V1_STATS_ENABLED", "true")
+
 	agent := startTestAgent(t)
 	agent.SetInfo(infoJSON([]string{"/v0.4/traces", "/v1.0/traces", "/v0.6/stats"}, true, "7.77.0"))
 	tr := newTracerTest(t, agent, WithStatsComputation(false))

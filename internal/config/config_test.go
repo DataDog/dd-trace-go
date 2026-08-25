@@ -428,6 +428,26 @@ func resetGlobalState() {
 	useFreshConfig = false
 }
 
+func TestForceV1StatsEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		want bool
+	}{
+		{name: "disabled by default", want: false},
+		{name: "enabled explicitly", env: "true", want: true},
+		{name: "disabled explicitly", env: "false", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			t.Setenv("DD_TRACE_FORCE_V1_STATS_ENABLED", tc.env)
+
+			assert.Equal(t, tc.want, Get().ForceV1StatsEnabled())
+		})
+	}
+}
+
 func TestStatsAdditionalTagsExperimentalGate(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
