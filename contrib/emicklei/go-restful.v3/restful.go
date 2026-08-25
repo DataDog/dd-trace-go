@@ -34,18 +34,27 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	instr.Logger().Debug("contrib/emicklei/go-restful/v3: Creating tracing filter: %#v", cfg)
 	spanOpts := []tracer.StartSpanOption{instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-		spanOpts := append(
+		route := req.SelectedRoutePath()
+		var resource string
+		if cfg.otelSemanticsEnabled {
+			resource = httptrace.ServerSpanName(req.Request.Method, route)
+		} else {
+			resource = route
+		}
+		requestSpanOpts := append(
 			spanOpts,
-			tracer.ResourceName(req.SelectedRoutePath()),
+			tracer.ResourceName(resource),
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-			tracer.Tag(ext.HTTPRoute, req.SelectedRoutePath()),
 		)
-		if !math.IsNaN(cfg.analyticsRate) {
-			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+		if route != "" || !cfg.otelSemanticsEnabled {
+			requestSpanOpts = append(requestSpanOpts, tracer.Tag(ext.HTTPRoute, route))
 		}
-		spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req.Request, cfg.headerTags))
-		_, ctx, finishSpans := httptrace.StartRequestSpan(req.Request, spanOpts...)
+		if !math.IsNaN(cfg.analyticsRate) {
+			requestSpanOpts = append(requestSpanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+		}
+		requestSpanOpts = append(requestSpanOpts, httptrace.HeaderTagsFromRequest(req.Request, cfg.headerTags))
+		_, ctx, finishSpans := httptrace.StartRequestSpan(req.Request, requestSpanOpts...)
 		defer func() {
 			finishSpans(resp.StatusCode(), nil, tracer.WithError(resp.Error()))
 		}()
