@@ -94,7 +94,8 @@ type DatadogProvider struct {
 	shutdownCalled bool
 	// deliveryErr is set when no delivery source could start; permanent for the process. // +checklocks:mu
 	deliveryErr error
-	// writersStarted makes Init idempotent. // +checklocks:mu
+	// writersStarted ensures updateConfiguration only starts the periodic
+	// flushing writers once, on the first real configuration. // +checklocks:mu
 	writersStarted bool
 
 	// eventCh is returned unchanged by every EventChannel call.
@@ -276,6 +277,19 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 	p.configuration = config
 	close(p.configChangeCh)
 	p.configChangeCh = make(chan struct{})
+	if config != nil && !p.writersStarted {
+		// Start periodic flushing on the first real configuration, regardless of
+		// whether InitWithContext is still waiting or already gave up on its
+		// deadline — otherwise a late configuration would leave these writers
+		// never started for the rest of the process.
+		if p.exposureWriter != nil {
+			p.exposureWriter.start()
+		}
+		if p.flagEvalLoggingWriter != nil {
+			p.flagEvalLoggingWriter.start()
+		}
+		p.writersStarted = true
+	}
 	p.emitFirstOrChangeEvent(config)
 }
 
@@ -346,23 +360,25 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 			}
 		}
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
-			// Timed out or canceled with delivery still running. This is not an
-			// error: Go's ErrorState does not block evaluation, and configuration
-			// arriving later promotes the provider to ReadyState.
+			if errors.Is(err, context.Canceled) {
+				// The caller explicitly asked to stop waiting, unlike a deadline
+				// which we deliberately tolerate below: report this as a real
+				// failure rather than telling the SDK initialization succeeded.
+				return &openfeature.ProviderInitError{
+					ErrorCode: openfeature.ProviderNotReadyCode,
+					Message:   "initialization was canceled before configuration arrived",
+				}
+			}
+			// Timed out with delivery still running. This is not an error: Go's
+			// ErrorState does not block evaluation, and configuration arriving
+			// later promotes the provider to ReadyState (updateConfiguration
+			// also starts the writers below at that point, so nothing is lost
+			// by giving up here).
 			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives")
 			return nil
 		}
 	}
 
-	if !p.writersStarted {
-		// Start periodic flushing for exposure writer.
-		p.exposureWriter.start()
-		// Start periodic flushing for EVP flag evaluation writer (nil when killswitch disabled).
-		if p.flagEvalLoggingWriter != nil {
-			p.flagEvalLoggingWriter.start()
-		}
-		p.writersStarted = true
-	}
 	return nil
 }
 
