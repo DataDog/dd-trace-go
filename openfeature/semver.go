@@ -26,14 +26,23 @@ type parsedSemver struct {
 // Build metadata is validated but not retained because it does not affect
 // SemVer precedence.
 func parseSemver(version string) (parsedSemver, bool) {
-	parts := make([]uint64, 0, 5)
+	var parsed parsedSemver
 	next := 0
-	for {
+	for component := 0; ; component++ {
 		part, end, ok := parseSemverCoreIdentifier(version, next)
 		if !ok {
 			return parsedSemver{}, false
 		}
-		parts = append(parts, part)
+		switch component {
+		case 0:
+			parsed.major = part
+		case 1:
+			parsed.minor = part
+		case 2:
+			parsed.patch = part
+		default:
+			parsed.extra = append(parsed.extra, part)
+		}
 		next = end
 		if next == len(version) || version[next] == '-' || version[next] == '+' {
 			break
@@ -42,17 +51,6 @@ func parseSemver(version string) (parsedSemver, bool) {
 			return parsedSemver{}, false
 		}
 		next++
-	}
-
-	parsed := parsedSemver{major: parts[0]}
-	if len(parts) > 1 {
-		parsed.minor = parts[1]
-	}
-	if len(parts) > 2 {
-		parsed.patch = parts[2]
-	}
-	if len(parts) > 3 {
-		parsed.extra = parts[3:]
 	}
 	if next == len(version) {
 		return parsed, true
