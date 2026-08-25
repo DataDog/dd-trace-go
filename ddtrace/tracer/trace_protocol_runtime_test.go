@@ -6,15 +6,12 @@
 package tracer
 
 import (
-	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 // isV04WireByte reports whether b is the first byte of a msgpack array — the
@@ -23,14 +20,19 @@ func isV04WireByte(b byte) bool {
 	return b == msgpackArray16 || b == msgpackArray32 || b&0xf0 == msgpackArrayFix
 }
 
-// TestEmptyPayloadRotatesOnProtocolDowngrade pins that an idle writer does not
-// hold a stale v1 payload after the agent withdraws /v1.0/traces. Neither
-// add() nor flush() otherwise re-reads the effective protocol once a payload
-// exists — so without rotateStalePayload, a writer that saw no traffic across
-// the downgrade keeps its v1 payload indefinitely, and the first trace to
-// arrive afterwards is pushed into it and POSTed to /v1.0/traces, where it is
-// rejected.
-func TestEmptyPayloadRotatesOnProtocolDowngrade(t *testing.T) {
+// TestEmptyPayloadStaysStaleUntilNextFlushAfterProtocolDowngrade pins the
+// deliberate trade-off from reverting #5167's add()-side protocol
+// re-evaluation (issue #5258 diagnostic): add() no longer calls
+// rotateStalePayload, so an idle writer's stale v1 payload is not corrected
+// the moment a trace arrives after the agent withdraws /v1.0/traces — it
+// keeps absorbing traces under its original protocol until the next flush()
+// call, which still unconditionally rebuilds h.payload against the current
+// effective protocol regardless of what the old payload's protocol was.
+// Before this revert, add() itself rotated a stale *empty* payload for free;
+// see TestNonEmptyPayloadKeepsAbsorbingTracesUntilNextFlushAfterProtocolDowngrade
+// for the non-empty case, which used to be sealed and sent immediately
+// instead.
+func TestEmptyPayloadStaysStaleUntilNextFlushAfterProtocolDowngrade(t *testing.T) {
 	agent := startTestAgent(t)
 	tr := newTracerTest(t, agent, WithSendRetries(0))
 	defer stopTracerTest(tr)
@@ -47,26 +49,25 @@ func TestEmptyPayloadRotatesOnProtocolDowngrade(t *testing.T) {
 	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "sanity check: the poll must downgrade")
 
 	// The writer was idle across the downgrade and a trace arrives before any
-	// scheduled flush: add() itself, not just flush(), must rotate the stale
-	// v1 payload so this trace is not pushed into it.
+	// scheduled flush: add() no longer rotates the stale v1 payload, so the
+	// trace lands in it anyway.
 	agent.Reset()
 	w.add([]*Span{makeSpan(1)})
-	require.Equal(t, traceProtocolV04, w.payload.protocol(), "a trace accepted after a protocol downgrade must not land in the stale payload")
+	require.Equal(t, traceProtocolV1, w.payload.protocol(), "add() no longer re-checks the effective protocol; the stale payload is untouched until the next flush")
 
 	w.flush()
 	w.wg.Wait()
-	assert.Equal(t, []string{tracesAPIPath}, agent.Requests(), "the post-downgrade trace must land on /v0.4/traces")
+	assert.Equal(t, []string{tracesAPIPathV1}, agent.Requests(),
+		"the trace added before any post-downgrade flush still goes out on v1.0 -- the accepted trade-off of this revert")
 }
 
-// TestNonEmptyPayloadSealsOnProtocolDowngrade pins that a writer holding at
-// least one already-buffered trace does not keep absorbing new traces into
-// that stale payload after the agent withdraws /v1.0/traces.
-// rotateStalePayload only rotates a payload for free when it is empty, so a
-// non-empty stale payload needs add() to seal it with a real flush() instead
-// — otherwise every trace accepted between the downgrade and the next
-// scheduled flush would also be encoded as v1 and rejected by the agent
-// alongside the trace that was already buffered before the downgrade.
-func TestNonEmptyPayloadSealsOnProtocolDowngrade(t *testing.T) {
+// TestNonEmptyPayloadKeepsAbsorbingTracesUntilNextFlushAfterProtocolDowngrade
+// pins the non-empty counterpart of the trade-off above: a writer already
+// holding a buffered trace across a protocol downgrade keeps absorbing new
+// traces into that same stale payload -- no seal, no off-cadence flush --
+// until the next real flush() sends everything buffered so far under
+// whatever protocol the payload was built with.
+func TestNonEmptyPayloadKeepsAbsorbingTracesUntilNextFlushAfterProtocolDowngrade(t *testing.T) {
 	agent := startTestAgent(t)
 	tr := newTracerTest(t, agent, WithSendRetries(0))
 	defer stopTracerTest(tr)
@@ -85,62 +86,17 @@ func TestNonEmptyPayloadSealsOnProtocolDowngrade(t *testing.T) {
 	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "sanity check: the poll must downgrade")
 
 	agent.Reset()
-	// The writer already holds a buffered v1 trace across the downgrade: add()
-	// must seal it via flush() before pushing this trace, rather than mixing
-	// it into the stale payload.
+	// The writer already holds a buffered v1 trace across the downgrade:
+	// add() no longer seals it, so this trace joins it in the same payload.
 	w.add([]*Span{makeSpan(2)})
-	w.wg.Wait() // wait for the seal flush spawned inside add() before ordering-sensitive assertions below
-	require.Equal(t, traceProtocolV04, w.payload.protocol(), "a trace accepted after a protocol downgrade must not land in the sealed payload")
-	require.Equal(t, 1, w.payload.itemCount(), "the sealed payload's trace must not carry over into the new one")
+	require.Equal(t, traceProtocolV1, w.payload.protocol(), "add() no longer seals a non-empty stale payload")
+	require.Equal(t, 2, w.payload.itemCount(), "the pre- and post-downgrade traces are now buffered together")
 
 	w.flush()
 	w.wg.Wait()
 
-	assert.Equal(t, []string{tracesAPIPathV1, tracesAPIPath}, agent.Requests(),
-		"the pre-downgrade trace must go out sealed on v1.0 and the post-downgrade trace on v0.4")
-}
-
-// failingMarshaler implements msgp.Marshaler and always fails to encode, so
-// a span carrying it as a meta_struct value makes payloadV04.push return an
-// error deterministically -- v1's chunk encoding only warns and skips a
-// failing meta_struct value (see payload_v1.go), so this only reaches push's
-// error return under v0.4.
-type failingMarshaler struct{}
-
-func (failingMarshaler) MarshalMsg([]byte) ([]byte, error) {
-	return nil, errors.New("injected marshal failure for TestAddSendsSealedPayloadWhenPushFails")
-}
-
-// TestAddSendsSealedPayloadWhenPushFails pins a bug where add() sealed a
-// stale, non-empty payload for async send on a protocol transition, but
-// returned early -- without sending it -- if the incoming trace then failed
-// to encode into the replacement payload. The sealed payload held valid,
-// already-buffered traces; an unrelated encoding error on the new trace must
-// not orphan them.
-func TestAddSendsSealedPayloadWhenPushFails(t *testing.T) {
-	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent, WithSendRetries(0))
-	defer stopTracerTest(tr)
-
-	require.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol(), "sanity check: agent must resolve to v1")
-
-	w := newAgentTraceWriter(tr.config, newPrioritySampler(), tr.statsd)
-	w.add([]*Span{makeSpan(1)})
-	require.Equal(t, traceProtocolV1, w.payload.protocol(), "payload created while v1 was in effect must be v1")
-	require.Equal(t, 1, w.payload.itemCount(), "sanity check: the pre-transition trace is buffered")
-
-	// Force a protocol transition so add()'s seal path activates.
-	require.True(t, tr.config.advanceTraceProtocolState(protoV04))
-	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol())
-
-	// The incoming trace fails to encode into the new (v0.4) payload.
-	bad := makeSpan(2)
-	bad.SetTag("boom", sharedinternal.MetaStructValue{Value: failingMarshaler{}})
-	w.add([]*Span{bad})
-
-	w.wg.Wait() // wait for the seal's async send spawned inside add()
 	assert.Equal(t, []string{tracesAPIPathV1}, agent.Requests(),
-		"the sealed pre-transition trace must still be sent, not orphaned by the unrelated push error")
+		"both traces go out together on v1.0 at the next flush -- the accepted trade-off of this revert")
 }
 
 // TestConcurrentProtocolChangeDuringFlush runs a flush loop and an
@@ -211,27 +167,24 @@ func TestConcurrentProtocolChangeDuringFlush(t *testing.T) {
 	}
 }
 
-// TestConcurrentAddNeverResurrectsDowngradedPayload stresses the interleaving
-// behind a real regression: add() used to read the effective protocol before
-// acquiring h.mu, so a call could read v1, get descheduled, let a concurrent
-// add() race ahead -- observe the downgrade, correctly install and populate a
-// v0.4 payload -- and then, on resuming, treat that newer, correct payload as
-// "stale" purely because of its own outdated reading, sealing it away and
-// replacing it with a freshly built v1 payload instead. That resurrected v1
-// after the protocol state had already conclusively (and permanently, see
-// trace_protocol_state.go) moved to v0.4.
-//
-// The fix moved the protocol read inside h.mu, so this exact interleaving is
-// no longer reachable: whichever add() call is holding the lock always reads
-// the protocol atomically with respect to h.payload, and no goroutine can
-// observe a "stale" mismatch caused by its own outdated snapshot. That makes
-// the old bug impossible to reproduce deterministically against the fixed
-// code -- which is the point of the fix -- so this stresses it heavily
-// instead: many goroutines hammering add() while the protocol downgrades
-// mid-flight, then asserting the writer settles into agreement with the
-// (monotone, now-terminal) effective protocol and that nothing ever reaches
-// /v1.0/traces after the downgrade has taken hold. Run with -race.
-func TestConcurrentAddNeverResurrectsDowngradedPayload(t *testing.T) {
+// TestConcurrentAddSettlesOnNextFlushAfterProtocolDowngrade exercises many
+// goroutines hammering add() concurrently while the protocol downgrades
+// mid-flight. This test used to pin a specific race (add() reading the
+// effective protocol before acquiring h.mu, letting a descheduled goroutine
+// resurrect a stale v1 payload after the downgrade had settled) — with
+// #5167's add()-side re-evaluation reverted here (issue #5258 diagnostic),
+// add() no longer reads protocol state at all, so that exact race is
+// structurally gone, but so is add()'s own correction: concurrent add()s
+// during the storm may all land in whatever payload happens to exist,
+// v1 or v0.4, and that is an accepted consequence now (see the two tests
+// above), not a bug. What must still hold: a single flush() after the storm
+// always settles the writer onto the current effective protocol — flush()
+// unconditionally rebuilds h.payload for it regardless of what the old
+// payload's protocol was — and every request after that settles stays on the
+// now-terminal v0.4 protocol, since nothing in add() can resurrect v1
+// afterward. Run with -race: this still exercises the same concurrent h.mu
+// access pattern the original #5167 fix was written against.
+func TestConcurrentAddSettlesOnNextFlushAfterProtocolDowngrade(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping concurrent protocol-downgrade stress test in short mode")
 	}
@@ -274,19 +227,12 @@ func TestConcurrentAddNeverResurrectsDowngradedPayload(t *testing.T) {
 
 	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "sanity check: the downgrade must have applied")
 
-	// The writer must have settled into agreement with the now-terminal
-	// protocol state -- a reintroduced stale-read race would leave it pinned
-	// to a resurrected v1 payload here.
-	w.mu.Lock()
-	settledProtocol := w.payload.protocol()
-	w.mu.Unlock()
-	assert.Equal(t, traceProtocolV04, settledProtocol, "the writer's current payload must not have been resurrected to v1 after the downgrade settled")
-
-	// Flush and drain whatever the race above produced -- a mix of v1 and
-	// v0.4 requests is expected and fine, since the downgrade landed partway
-	// through the storm. What matters is that the state stays put afterward:
-	// reset the agent's recording and confirm a few more adds, now that the
-	// protocol has fully settled, all land on v0.4.
+	// Flush and drain whatever the storm produced -- a mix of v1 and v0.4
+	// requests is expected and fine now, since add() no longer tracks
+	// protocol itself and the downgrade landed partway through. What matters
+	// is that flush() settles the writer regardless, and it stays settled
+	// afterward: reset the agent's recording and confirm a few more adds,
+	// now that the protocol has fully settled, all land on v0.4.
 	w.flush()
 	w.wg.Wait()
 	agent.Reset()
