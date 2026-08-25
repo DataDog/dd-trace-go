@@ -76,6 +76,7 @@ func ResetCfg() {
 }
 
 func traceClientIPEnabled() bool { return cfg.traceClientIP }
+func otelSemanticsEnabled() bool { return cfg.otelSemanticsEnabled }
 
 func newConfig() config {
 	c := config{
