@@ -55,6 +55,7 @@ type config struct {
 	clientQueryStringAllowlist               map[string]struct{} // when non-nil, only keep these query parameter keys for client spans and skip regex obfuscation.
 	serverQueryStringAllowlist               map[string]struct{} // when non-nil, only keep these query parameter keys for server spans and skip regex obfuscation.
 	traceClientIP                            bool
+	otelSemanticsEnabled                     bool
 	isStatusError                            func(statusCode int) bool
 	inferredProxyServicesEnabled             bool
 	pubsubPropagationAsSpanLinks             bool
@@ -66,7 +67,7 @@ type config struct {
 }
 
 func (c config) String() string {
-	return fmt.Sprintf("config{queryString: %t, traceClientIP: %t, inferredProxyServicesEnabled: %t}", c.queryString, c.traceClientIP, c.inferredProxyServicesEnabled)
+	return fmt.Sprintf("config{queryString: %t, traceClientIP: %t, otelSemanticsEnabled: %t, inferredProxyServicesEnabled: %t}", c.queryString, c.traceClientIP, c.otelSemanticsEnabled, c.inferredProxyServicesEnabled)
 }
 
 // ResetCfg sets local variable cfg back to its defaults (mainly useful for testing)
@@ -75,11 +76,13 @@ func ResetCfg() {
 }
 
 func traceClientIPEnabled() bool { return cfg.traceClientIP }
+func otelSemanticsEnabled() bool { return cfg.otelSemanticsEnabled }
 
 func newConfig() config {
 	c := config{
 		queryString:                              !internal.BoolEnv(envQueryStringDisabled, false),
 		traceClientIP:                            internal.BoolEnv(envTraceClientIPEnabled, false),
+		otelSemanticsEnabled:                     instr.OTelSemanticsEnabled(),
 		isStatusError:                            isServerError,
 		inferredProxyServicesEnabled:             internal.BoolEnv(envInferredProxyServicesEnabled, false),
 		pubsubPropagationAsSpanLinks:             internal.BoolEnv(envPubsubPropagationAsSpanLinks, false),

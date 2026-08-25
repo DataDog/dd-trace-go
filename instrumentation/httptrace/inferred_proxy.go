@@ -129,7 +129,7 @@ func extractInferredProxyContext(headers http.Header) (*proxyContext, error) {
 	return &pc, nil
 }
 
-func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
+func startInferredProxySpan(requestProxyContext *proxyContext, request *http.Request, ipTags map[string]string, parent *tracer.SpanContext, otelSemanticsEnabled bool, opts ...tracer.StartSpanOption) *tracer.Span {
 	proxySpanInfo := supportedProxies[requestProxyContext.proxySystemName]
 	log.Debug(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
 
@@ -155,10 +155,35 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			cfg.Tags[ext.ServiceName] = configService
 			cfg.Tags[ext.Component] = proxySpanInfo.component
-			cfg.Tags[ext.HTTPMethod] = requestProxyContext.method
-			cfg.Tags[ext.HTTPURL] = requestProxyContext.domainName + requestProxyContext.path
-			cfg.Tags[ext.HTTPRoute] = requestProxyContext.path
-			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, requestProxyContext.path)
+			if otelSemanticsEnabled {
+				setOTelServerRequestTags(cfg.Tags, request, ipTags)
+				method, _, originalMethod := NormalizeHTTPMethod(requestProxyContext.method)
+				cfg.Tags[ext.HTTPRequestMethod] = method
+				delete(cfg.Tags, ext.HTTPRequestMethodOriginal)
+				if originalMethod != "" {
+					cfg.Tags[ext.HTTPRequestMethodOriginal] = originalMethod
+				}
+				cfg.Tags[ext.ResourceName] = ServerSpanName(requestProxyContext.method, requestProxyContext.path)
+				if _, ok := cfg.Tags[ext.URLPath]; !ok {
+					path := requestProxyContext.path
+					if path == "" {
+						path = "/"
+					}
+					cfg.Tags[ext.URLPath] = path
+				}
+				delete(cfg.Tags, ext.ServerPort)
+				if requestProxyContext.domainName != "" {
+					cfg.Tags[ext.ServerAddress] = requestProxyContext.domainName
+				}
+				if requestProxyContext.path != "" {
+					cfg.Tags[ext.HTTPRoute] = requestProxyContext.path
+				}
+			} else {
+				cfg.Tags[ext.HTTPMethod] = requestProxyContext.method
+				cfg.Tags[ext.HTTPURL] = requestProxyContext.domainName + requestProxyContext.path
+				cfg.Tags[ext.HTTPRoute] = requestProxyContext.path
+				cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, requestProxyContext.path)
+			}
 			cfg.Tags["_dd.inferred_span"] = 1
 			cfg.Tags["stage"] = requestProxyContext.stage
 		},
@@ -169,7 +194,8 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 	return span
 }
 
-func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
+func startInferredSpanFromRequest(request *http.Request, ipTags map[string]string, otelSemanticsEnabled bool) *tracer.Span {
+	headers := request.Header
 	var inferredStartSpanOpts []tracer.StartSpanOption
 	spanParentCtx, _ := tracer.Extract(tracer.HTTPHeadersCarrier(headers))
 	if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
@@ -178,7 +204,7 @@ func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
 
 	requestProxyContext, err := extractInferredProxyContext(headers)
 	if err == nil {
-		return startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+		return startInferredProxySpan(requestProxyContext, request, ipTags, spanParentCtx, otelSemanticsEnabled, inferredStartSpanOpts...)
 	} else {
 		log.Debug("unable to start inferred proxy span: %s\n", err.Error())
 	}
