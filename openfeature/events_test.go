@@ -60,11 +60,19 @@ func TestUpdateConfiguration_NilEmitsProviderStale(t *testing.T) {
 		t.Errorf("expected ProviderStale on a nil configuration, got %v", event.EventType)
 	}
 
-	// A later, real configuration must not re-fire ProviderReady: it already fired once.
+	// Recovering from stale must re-fire ProviderReady, not ProviderConfigChange:
+	// the SDK's status only transitions back to ready on ProviderReady.
+	p.updateConfiguration(createTestConfig())
+	event = drainEvent(t, p.EventChannel())
+	if event.EventType != openfeature.ProviderReady {
+		t.Errorf("expected ProviderReady after recovering from a nil configuration, got %v", event.EventType)
+	}
+
+	// A further, later configuration while already ready is a plain change.
 	p.updateConfiguration(createTestConfig())
 	event = drainEvent(t, p.EventChannel())
 	if event.EventType != openfeature.ProviderConfigChange {
-		t.Errorf("expected ProviderConfigChange after recovering from a nil configuration, got %v", event.EventType)
+		t.Errorf("expected ProviderConfigChange on a later update while ready, got %v", event.EventType)
 	}
 }
 
@@ -99,6 +107,42 @@ func TestUpdateConfiguration_ProviderReadySurvivesFullBuffer(t *testing.T) {
 done:
 	if !foundReady {
 		t.Errorf("ProviderReady must not be dropped even under a full buffer (drained %d events)", drained)
+	}
+}
+
+func TestUpdateConfiguration_ProviderStaleSurvivesFullBuffer(t *testing.T) {
+	p := newDatadogProvider(ProviderConfig{})
+	config := createTestConfig()
+
+	p.updateConfiguration(config)
+	drainEvent(t, p.EventChannel()) // ProviderReady
+
+	// Fire ProviderStale, filling one slot; leave it unread.
+	p.updateConfiguration(nil)
+
+	// Fill the rest of the buffer with coalescing ProviderConfigChange events,
+	// then overflow it by one so a slot must be drained. ProviderConfigChange
+	// must never evict the still-unread ProviderStale to make room for itself.
+	for range eventChannelBufferSize {
+		p.updateConfiguration(config)
+	}
+
+	foundStale := false
+	drained := 0
+	for {
+		select {
+		case e := <-p.EventChannel():
+			drained++
+			if e.EventType == openfeature.ProviderStale {
+				foundStale = true
+			}
+		default:
+			goto done
+		}
+	}
+done:
+	if !foundStale {
+		t.Errorf("ProviderStale must not be dropped even under a full buffer (drained %d events)", drained)
 	}
 }
 

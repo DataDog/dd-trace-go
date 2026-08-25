@@ -100,8 +100,11 @@ type DatadogProvider struct {
 
 	// eventCh is returned unchanged by every EventChannel call.
 	eventCh chan openfeature.Event
-	// firstConfigSeen reports whether ProviderReady has already fired. // +checklocks:mu
-	firstConfigSeen bool
+	// ready reports whether the provider is currently in the ready state, i.e.
+	// whether the last event emitted was ProviderReady or ProviderConfigChange
+	// rather than ProviderStale. Used to re-emit ProviderReady on every
+	// not-ready-to-ready transition, not just the first one. // +checklocks:mu
+	ready bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
