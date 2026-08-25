@@ -23,11 +23,14 @@ func TestConfigOTelSemantics(t *testing.T) {
 	internalconfig.CreateNew()
 	c := newConfig()
 	require.True(t, c.otelSemanticsEnabled)
+	require.Contains(t, c.String(), "otelSemanticsEnabled: true")
 
 	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "false")
 	internalconfig.CreateNew()
 	require.True(t, c.otelSemanticsEnabled, "configuration must capture the effective mode")
-	require.False(t, newConfig().otelSemanticsEnabled)
+	c = newConfig()
+	require.False(t, c.otelSemanticsEnabled)
+	require.Contains(t, c.String(), "otelSemanticsEnabled: false")
 }
 
 func TestConfig(t *testing.T) {
