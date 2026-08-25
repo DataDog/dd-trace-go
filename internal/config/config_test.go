@@ -1901,6 +1901,7 @@ func TestFlaggingProviderInitTimeout(t *testing.T) {
 		{"-1", 10000 * time.Millisecond},
 		{"abc", 10000 * time.Millisecond},
 		{"5000", 5000 * time.Millisecond},
+		{"9223372036854775807", 10000 * time.Millisecond}, // math.MaxInt64: overflows on conversion, must fall back
 	} {
 		t.Run(tt.value, func(t *testing.T) {
 			resetGlobalState()
