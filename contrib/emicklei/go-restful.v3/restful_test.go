@@ -218,12 +218,14 @@ func TestDatadogSemantics(t *testing.T) {
 func TestOTelSemantics(t *testing.T) {
 	setHTTPConfig(t, "true", "")
 	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")
+	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", "true")
 	httptrace.ResetCfg()
 
 	t.Run("route and attributes", func(t *testing.T) {
 		span := traceRoute(t, "GET", "/user/123?password=secret&keep=value", http.StatusOK, nil)
 		assert.Equal(t, "GET /user/{id}", span.Tag(ext.ResourceName))
 		assert.Equal(t, "/user/{id}", span.Tag(ext.HTTPRoute))
+		assert.Equal(t, "/user/{id}", span.Tag(ext.HTTPEndpoint))
 		assert.Equal(t, "GET", span.Tag(ext.HTTPRequestMethod))
 		assert.Equal(t, "/user/123", span.Tag(ext.URLPath))
 		assert.Equal(t, "http", span.Tag(ext.URLScheme))
@@ -267,6 +269,7 @@ func TestOTelSemantics(t *testing.T) {
 			span := traceWithoutRoute(t, tt.method, "/actual/path")
 			assert.Equal(t, tt.wantResource, span.Tag(ext.ResourceName))
 			assert.Nil(t, span.Tag(ext.HTTPRoute))
+			assert.Equal(t, "/actual/path", span.Tag(ext.HTTPEndpoint))
 			assert.Equal(t, tt.wantMethod, span.Tag(ext.HTTPRequestMethod))
 			assert.Equal(t, tt.wantOriginal, span.Tag(ext.HTTPRequestMethodOriginal))
 			assert.Equal(t, "/actual/path", span.Tag(ext.URLPath))
