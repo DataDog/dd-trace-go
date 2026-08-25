@@ -791,15 +791,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 				if bodyTerminal != nil {
 					bodyStack = utils.GetStacktrace(1)
 				}
-				execMeta.retryAttemptFinalizer = func(result *retryAttemptResult, finalize bool) {
-					if result == nil {
-						return
-					}
-					if !finalize {
-						result.timing = timing
-						return
-					}
-					applyTestExecutionTiming(test, timing)
+				execMeta.retryAttemptTiming = timing
+				execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
+					reportTestExecutionTiming(test, result.timing)
 					terminal := bodyTerminal
 					terminalStack := bodyStack
 					if result.panicData != nil {
@@ -810,7 +804,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 						terminal = result.cleanupPanicData
 						terminalStack = string(result.cleanupPanicStack)
 					}
-					logFreshRetryAttemptState("finalize_runm", t, *result)
+					logFreshRetryAttemptState("finalize_runm", t, result)
 					finalizeInstrumentedTestExecution(t, execMeta, test, suite, module, result.duration, result.output, terminal, terminalStack, true)
 				}
 				if r != nil {
@@ -820,7 +814,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 			}
 
 			unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(t, bodyReturned)
-			applyTestExecutionTiming(test, timing)
+			reportTestExecutionTiming(test, timing)
 			policyBodyDuration := bodyDuration
 			if timing.activeDurationOK {
 				policyBodyDuration = timing.activeDuration

@@ -134,11 +134,11 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 	complete := func(attempt *retryAttemptRoot, result retryAttemptResult) {
 		localT := attempt.test
 		if finalize := execMeta.retryAttemptFinalizer; finalize != nil {
-			finalize(&result, false)
+			result.timing = execMeta.retryAttemptTiming
 			defer func() {
 				execMeta.retryAttemptFinalizer = nil
 				defer completeDeferredProcessRetryEvent(execMeta)
-				finalize(&result, true)
+				finalize(result)
 			}()
 		}
 		observation := observeFreshRetryAttempt(currentIndex, result)

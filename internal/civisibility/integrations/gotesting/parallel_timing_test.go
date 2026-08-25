@@ -20,12 +20,12 @@ func exerciseParallelTiming(t *testing.T) {
 
 	wallEnd := time.Now()
 	timing := calculateTestExecutionTiming(20*time.Millisecond, parallelTimingSample{
-		preDuration:       3 * time.Millisecond,
-		baselineToResume:  11 * time.Millisecond,
-		postResume:        4 * time.Millisecond,
-		pauseClockValid:   true,
-		wallProjectionEnd: wallEnd,
-		wallProjectionOK:  true,
+		durationBeforePause: 3 * time.Millisecond,
+		elapsedToResume:     11 * time.Millisecond,
+		durationAfterResume: 4 * time.Millisecond,
+		pauseClockValid:     true,
+		wallProjectionEnd:   wallEnd,
+		wallProjectionOK:    true,
 	})
 	require.True(t, timing.isParallel)
 	require.True(t, timing.activeDurationOK)
@@ -36,36 +36,36 @@ func exerciseParallelTiming(t *testing.T) {
 	require.True(t, timing.pauseProjectionOK)
 
 	withinSkew := calculateTestExecutionTiming(time.Millisecond, parallelTimingSample{
-		preDuration:      time.Millisecond,
-		baselineToResume: time.Millisecond - parallelTimingSkewTolerance/2,
-		pauseClockValid:  true,
+		durationBeforePause: time.Millisecond,
+		elapsedToResume:     time.Millisecond - parallelTimingSkewTolerance/2,
+		pauseClockValid:     true,
 	})
 	require.True(t, withinSkew.activeDurationOK)
 	require.Equal(t, time.Millisecond, withinSkew.activeDuration)
 
 	invalidPause := calculateTestExecutionTiming(time.Millisecond, parallelTimingSample{
-		preDuration:      3 * time.Millisecond,
-		baselineToResume: time.Millisecond,
-		pauseClockValid:  true,
+		durationBeforePause: 3 * time.Millisecond,
+		elapsedToResume:     time.Millisecond,
+		pauseClockValid:     true,
 	})
 	require.False(t, invalidPause.activeDurationOK)
 	require.False(t, invalidPause.pauseProjectionOK)
 
 	invalidProjection := calculateTestExecutionTiming(20*time.Millisecond, parallelTimingSample{
-		preDuration:      3 * time.Millisecond,
-		baselineToResume: 11 * time.Millisecond,
-		postResume:       -2 * time.Millisecond,
-		pauseClockValid:  true,
-		wallProjectionOK: true,
+		durationBeforePause: 3 * time.Millisecond,
+		elapsedToResume:     11 * time.Millisecond,
+		durationAfterResume: -2 * time.Millisecond,
+		pauseClockValid:     true,
+		wallProjectionOK:    true,
 	})
 	require.True(t, invalidProjection.activeDurationOK)
 	require.Equal(t, 12*time.Millisecond, invalidProjection.activeDuration)
 	require.False(t, invalidProjection.pauseProjectionOK)
 
 	policyTiming := calculateTestExecutionTiming(6*time.Second, parallelTimingSample{
-		preDuration:      time.Second,
-		baselineToResume: 3 * time.Second,
-		pauseClockValid:  true,
+		durationBeforePause: time.Second,
+		elapsedToResume:     3 * time.Second,
+		pauseClockValid:     true,
 	})
 	require.True(t, policyTiming.activeDurationOK)
 	require.Equal(t, 4*time.Second, policyTiming.activeDuration)
@@ -100,7 +100,7 @@ func exerciseParallelTiming(t *testing.T) {
 	initializeTestExecutionTiming(event)
 	require.EqualValues(t, 0, event.tags[constants.TestActiveDuration])
 	require.Equal(t, false, event.tags[constants.TestIsParallel])
-	applyTestExecutionTiming(event, testExecutionTiming{
+	reportTestExecutionTiming(event, testExecutionTiming{
 		isParallel:       true,
 		activeDuration:   12 * time.Millisecond,
 		activeDurationOK: true,
@@ -113,11 +113,11 @@ func exerciseParallelTiming(t *testing.T) {
 		DurationNanos: (7 * time.Second).Nanoseconds(),
 		DurationValid: true,
 	}}
-	policyDuration, ok := processRetryPolicyDuration(policyAttempt)
+	policyDuration, ok := policyAttempt.Result.policyDuration()
 	require.True(t, ok)
 	require.Equal(t, 7*time.Second, policyDuration)
 	policyAttempt.Result.DurationValid = false
-	policyDuration, ok = processRetryPolicyDuration(policyAttempt)
+	policyDuration, ok = policyAttempt.Result.policyDuration()
 	require.False(t, ok)
 	require.Zero(t, policyDuration)
 

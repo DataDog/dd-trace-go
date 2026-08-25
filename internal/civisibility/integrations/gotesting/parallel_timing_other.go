@@ -47,11 +47,11 @@ func sampleParallelTiming(t *testing.T, baseline parallelTimingBaseline, bodyEnd
 	}
 	resumed := *(*time.Time)(unsafe.Add(base, layout.common.start.offset+layout.parallelNow.offset))
 	return parallelTimingSample{
-		preDuration:       *fieldPtr[time.Duration](base, layout.common.duration),
-		baselineToResume:  resumed.Sub(baseline.now),
-		postResume:        bodyEnd.Sub(resumed),
-		pauseClockValid:   true,
-		wallProjectionEnd: bodyEnd,
-		wallProjectionOK:  true,
+		durationBeforePause: *fieldPtr[time.Duration](base, layout.common.duration),
+		elapsedToResume:     resumed.Sub(baseline.now),
+		durationAfterResume: bodyEnd.Sub(resumed),
+		pauseClockValid:     true,
+		wallProjectionEnd:   bodyEnd,
+		wallProjectionOK:    true,
 	}
 }

@@ -286,15 +286,9 @@ func instrumentTestingTFuncWithOptions(f func(*testing.T), captureParallelBaseli
 					if bodyTerminal != nil {
 						bodyStack = utils.GetStacktrace(1)
 					}
-					execMeta.retryAttemptFinalizer = func(result *retryAttemptResult, finalize bool) {
-						if result == nil {
-							return
-						}
-						if !finalize {
-							result.timing = timing
-							return
-						}
-						applyTestExecutionTiming(test, timing)
+					execMeta.retryAttemptTiming = timing
+					execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
+						reportTestExecutionTiming(test, result.timing)
 						terminal := bodyTerminal
 						terminalStack := bodyStack
 						if result.panicData != nil {
@@ -305,7 +299,7 @@ func instrumentTestingTFuncWithOptions(f func(*testing.T), captureParallelBaseli
 							terminal = result.cleanupPanicData
 							terminalStack = string(result.cleanupPanicStack)
 						}
-						logFreshRetryAttemptState("finalize_orchestrion", currentT, *result)
+						logFreshRetryAttemptState("finalize_orchestrion", currentT, result)
 						finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, result.duration, result.output, terminal, terminalStack, false)
 					}
 					if r != nil {
@@ -315,7 +309,7 @@ func instrumentTestingTFuncWithOptions(f func(*testing.T), captureParallelBaseli
 				}
 
 				unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(currentT, bodyReturned)
-				applyTestExecutionTiming(test, timing)
+				reportTestExecutionTiming(test, timing)
 				policyBodyDuration := bodyDuration
 				if timing.activeDurationOK {
 					policyBodyDuration = timing.activeDuration

@@ -22,17 +22,22 @@ const (
 	parallelWaitTag             = "test.parallel.wait"
 )
 
+// A non-nil parallelTimingState means the Parallel hook ran, even when the
+// runtime layout is unsupported and the baseline is invalid.
 type parallelTimingState struct {
 	baseline parallelTimingBaseline
 }
 
+// parallelTimingSample combines Go's native testing clock with the wrapper's
+// wall clock. T.Parallel records the pre-pause duration and resets the native
+// start time when the test resumes.
 type parallelTimingSample struct {
-	preDuration       time.Duration
-	baselineToResume  time.Duration
-	postResume        time.Duration
-	pauseClockValid   bool
-	wallProjectionEnd time.Time
-	wallProjectionOK  bool
+	durationBeforePause time.Duration
+	elapsedToResume     time.Duration
+	durationAfterResume time.Duration
+	pauseClockValid     bool
+	wallProjectionEnd   time.Time
+	wallProjectionOK    bool
 }
 
 type testExecutionTiming struct {
@@ -110,10 +115,10 @@ func observeTestExecutionTiming(
 
 func calculateTestExecutionTiming(bodyDuration time.Duration, sample parallelTimingSample) testExecutionTiming {
 	timing := testExecutionTiming{isParallel: true}
-	if !sample.pauseClockValid || sample.preDuration < 0 {
+	if !sample.pauseClockValid || sample.durationBeforePause < 0 {
 		return timing
 	}
-	pauseRaw := sample.baselineToResume - sample.preDuration
+	pauseRaw := sample.elapsedToResume - sample.durationBeforePause
 	if pauseRaw < -parallelTimingSkewTolerance {
 		return timing
 	}
@@ -124,16 +129,16 @@ func calculateTestExecutionTiming(bodyDuration time.Duration, sample parallelTim
 	timing.activeDuration = max(bodyDuration-pauseDuration, 0)
 	timing.activeDurationOK = true
 
-	if !sample.wallProjectionOK || sample.postResume < -parallelTimingSkewTolerance {
+	if !sample.wallProjectionOK || sample.durationAfterResume < -parallelTimingSkewTolerance {
 		return timing
 	}
-	timing.pauseEnd = sample.wallProjectionEnd.Add(-max(sample.postResume, 0))
+	timing.pauseEnd = sample.wallProjectionEnd.Add(-max(sample.durationAfterResume, 0))
 	timing.pauseStart = timing.pauseEnd.Add(-pauseDuration)
 	timing.pauseProjectionOK = !timing.pauseEnd.Before(timing.pauseStart)
 	return timing
 }
 
-func applyTestExecutionTiming(test integrations.Test, timing testExecutionTiming) {
+func reportTestExecutionTiming(test integrations.Test, timing testExecutionTiming) {
 	if test == nil {
 		return
 	}

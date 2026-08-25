@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-func TestParallelCounterDuration(t *testing.T) {
+func TestTestingClockDuration(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		delta     int64
@@ -28,9 +28,9 @@ func TestParallelCounterDuration(t *testing.T) {
 		{name: "overflow", delta: math.MaxInt64, frequency: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := parallelCounterDuration(tc.delta, tc.frequency)
+			got, ok := testingClockDuration(tc.delta, tc.frequency)
 			if got != tc.want || ok != tc.ok {
-				t.Fatalf("parallelCounterDuration(%d, %d) = (%v, %t), want (%v, %t)", tc.delta, tc.frequency, got, ok, tc.want, tc.ok)
+				t.Fatalf("testingClockDuration(%d, %d) = (%v, %t), want (%v, %t)", tc.delta, tc.frequency, got, ok, tc.want, tc.ok)
 			}
 		})
 	}

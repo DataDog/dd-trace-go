@@ -10,28 +10,14 @@ package gotesting
 import (
 	"time"
 	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
-
-var (
-	retryAttemptKernel32                  = windows.NewLazySystemDLL("kernel32.dll")
-	retryAttemptQueryPerformanceCounter   = retryAttemptKernel32.NewProc("QueryPerformanceCounter")
-	retryAttemptQueryPerformanceFrequency = retryAttemptKernel32.NewProc("QueryPerformanceFrequency")
-)
-
-func retryAttemptPerformanceValue(proc *windows.LazyProc) (int64, bool) {
-	var value int64
-	ok, _, _ := proc.Call(uintptr(unsafe.Pointer(&value)))
-	return value, ok != 0
-}
 
 func initializeRetryAttemptStart(base unsafe.Pointer, field unsafeField) {
 	layout := getTestingInternalsLayout()
 	if base == nil || !field.available || layout == nil || !layout.parallelTimingOK {
 		return
 	}
-	counter, ok := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
+	counter, ok := testingClockNow()
 	if !ok {
 		return
 	}
@@ -43,8 +29,8 @@ func addRetryAttemptElapsed(base unsafe.Pointer, layout *testingInternalsLayout)
 	if base == nil || !field.available || !layout.parallelTimingOK {
 		return
 	}
-	now, counterOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
-	frequency := getParallelTimingFrequency()
+	now, counterOK := testingClockNow()
+	frequency := testingClockFrequency()
 	if !counterOK || frequency <= 0 {
 		return
 	}
@@ -52,7 +38,7 @@ func addRetryAttemptElapsed(base unsafe.Pointer, layout *testingInternalsLayout)
 	if now <= started {
 		return
 	}
-	elapsed, ok := parallelCounterDuration(now-started, frequency)
+	elapsed, ok := testingClockDuration(now-started, frequency)
 	if !ok {
 		return
 	}

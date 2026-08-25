@@ -78,7 +78,8 @@ type (
 		isFreshRetryAttemptDescendant bool
 		suppressCoverageCollection    bool
 		suppressUserTestBody          bool
-		retryAttemptFinalizer         func(*retryAttemptResult, bool)
+		retryAttemptTiming            testExecutionTiming
+		retryAttemptFinalizer         func(retryAttemptResult)
 		deferredRetryEvent            *deferredProcessRetryEvent
 		quarantinedRaceProcess        *quarantinedRaceProcessContext
 		quarantinedRaceChild          *quarantinedRaceChildState

@@ -151,6 +151,10 @@ const (
 	processRetryDefaultTimeout             = 10 * time.Minute
 )
 
+// processRetryResult preserves three distinct clocks across the child-process
+// boundary: Start/Finish form the event's wall envelope; Duration is Go's
+// policy duration including cleanup; ObservedActiveDuration is the test body.
+// Both duration values exclude the T.Parallel scheduler wait.
 type processRetryResult struct {
 	Version                       int                                `json:"version"`
 	TestName                      string                             `json:"test_name"`
@@ -187,6 +191,71 @@ type processRetryResult struct {
 	SkippedByITR                  bool                               `json:"skipped_by_itr,omitempty"`
 	ITRForcedRun                  bool                               `json:"itr_forced_run,omitempty"`
 	Modified                      bool                               `json:"modified,omitempty"`
+}
+
+func (r *processRetryResult) policyDuration() (time.Duration, bool) {
+	if !r.DurationValid || r.DurationNanos < 0 {
+		return 0, false
+	}
+	return time.Duration(r.DurationNanos), true
+}
+
+func (r *processRetryResult) executionTiming(wallTimingValid bool, start, finish time.Time) testExecutionTiming {
+	timing := testExecutionTiming{isParallel: r.RootParallel}
+	if r.ObservedActiveDurationValid && r.ObservedActiveDurationNanos >= 0 {
+		timing.activeDuration = time.Duration(r.ObservedActiveDurationNanos)
+		timing.activeDurationOK = true
+	}
+	if !wallTimingValid || r.ParallelPauseStartOffsetNanos == nil || r.ParallelPauseEndOffsetNanos == nil {
+		return timing
+	}
+	startOffset := time.Duration(*r.ParallelPauseStartOffsetNanos)
+	endOffset := time.Duration(*r.ParallelPauseEndOffsetNanos)
+	if startOffset >= 0 && endOffset >= startOffset && endOffset <= finish.Sub(start) {
+		timing.pauseStart = start.Add(startOffset)
+		timing.pauseEnd = start.Add(endOffset)
+		timing.pauseProjectionOK = true
+	}
+	return timing
+}
+
+func (r *processRetryResult) setExecutionTiming(timing testExecutionTiming) {
+	r.ObservedActiveDurationNanos = timing.activeDuration.Nanoseconds()
+	r.ObservedActiveDurationValid = timing.activeDurationOK
+	if !timing.pauseProjectionOK {
+		return
+	}
+	startOffset := timing.pauseStart.UnixNano() - r.StartUnixNano
+	endOffset := timing.pauseEnd.UnixNano() - r.StartUnixNano
+	wallDuration := r.FinishUnixNano - r.StartUnixNano
+	if startOffset < 0 || endOffset < startOffset || endOffset > wallDuration {
+		return
+	}
+	r.ParallelPauseStartOffsetNanos = &startOffset
+	r.ParallelPauseEndOffsetNanos = &endOffset
+}
+
+func (r *processRetryResult) validateTiming() error {
+	if r.DurationNanos < 0 || (!r.DurationValid && r.DurationNanos != 0) ||
+		r.ObservedActiveDurationNanos < 0 || (!r.ObservedActiveDurationValid && r.ObservedActiveDurationNanos != 0) {
+		return fmt.Errorf("%w: invalid duration", errProcessRetryResultInvalid)
+	}
+	if (r.ParallelPauseStartOffsetNanos == nil) != (r.ParallelPauseEndOffsetNanos == nil) {
+		return fmt.Errorf("%w: incomplete parallel pause", errProcessRetryResultInvalid)
+	}
+	if r.ParallelPauseStartOffsetNanos == nil {
+		return nil
+	}
+	if !r.RootParallel {
+		return fmt.Errorf("%w: pause on non-parallel test", errProcessRetryResultInvalid)
+	}
+	startOffset := *r.ParallelPauseStartOffsetNanos
+	endOffset := *r.ParallelPauseEndOffsetNanos
+	wallDuration := r.FinishUnixNano - r.StartUnixNano
+	if r.StartUnixNano == 0 || r.FinishUnixNano == 0 || startOffset < 0 || endOffset < startOffset || wallDuration < 0 || endOffset > wallDuration {
+		return fmt.Errorf("%w: invalid parallel pause", errProcessRetryResultInvalid)
+	}
+	return nil
 }
 
 type processRetryErrorInfo struct {
@@ -872,7 +941,7 @@ type processRetryAttemptResult struct {
 	SetupFailure                bool
 	BodyAdmitted                bool
 	ControlledTerminalCommitted bool
-	ResultWallTimingValid       bool
+	WallTimingValid             bool
 	Cleanup                     func()
 	quarantinedRaceInvocations  []quarantinedRaceInvocation
 }
@@ -2059,7 +2128,7 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		attempt.Err = errors.Join(attempt.Err, resultErr)
 	} else {
 		attempt.Result = result
-		attempt.ResultWallTimingValid = timingOK
+		attempt.WallTimingValid = timingOK
 		if isProcessRetryControlledTerminalStatus(result.Status) && control != nil {
 			terminal, terminalTimedOut, terminalErr := control.controlledTerminalState(ctx, shutdown, attemptTimer.C())
 			applyProcessRetryControlledTerminalState(&attempt, terminal, terminalTimedOut, terminalErr)
@@ -2480,29 +2549,8 @@ func deferProcessRetryTestEventWithAdmission(
 	return effective, tail
 }
 
-func processRetryPolicyDuration(attempt processRetryAttemptResult) (time.Duration, bool) {
-	if !attempt.Result.DurationValid || attempt.Result.DurationNanos < 0 {
-		return 0, false
-	}
-	return time.Duration(attempt.Result.DurationNanos), true
-}
-
-func applyProcessRetryExecutionTiming(test integrations.Test, attempt processRetryAttemptResult) {
-	timing := testExecutionTiming{isParallel: attempt.Result.RootParallel}
-	if attempt.Result.ObservedActiveDurationValid && attempt.Result.ObservedActiveDurationNanos >= 0 {
-		timing.activeDuration = time.Duration(attempt.Result.ObservedActiveDurationNanos)
-		timing.activeDurationOK = true
-	}
-	if attempt.ResultWallTimingValid && attempt.Result.ParallelPauseStartOffsetNanos != nil && attempt.Result.ParallelPauseEndOffsetNanos != nil {
-		startOffset := time.Duration(*attempt.Result.ParallelPauseStartOffsetNanos)
-		endOffset := time.Duration(*attempt.Result.ParallelPauseEndOffsetNanos)
-		if startOffset >= 0 && endOffset >= startOffset && endOffset <= attempt.FinishTime.Sub(attempt.StartTime) {
-			timing.pauseStart = attempt.StartTime.Add(startOffset)
-			timing.pauseEnd = attempt.StartTime.Add(endOffset)
-			timing.pauseProjectionOK = true
-		}
-	}
-	applyTestExecutionTiming(test, timing)
+func reportProcessRetryExecutionTiming(test integrations.Test, attempt *processRetryAttemptResult) {
+	reportTestExecutionTiming(test, attempt.Result.executionTiming(attempt.WallTimingValid, attempt.StartTime, attempt.FinishTime))
 }
 
 func finishProcessRetryTestEvent(
@@ -2545,7 +2593,7 @@ func finishProcessRetryTestEvent(
 		}
 	}
 	execMeta.test = test
-	applyProcessRetryExecutionTiming(test, attempt)
+	reportProcessRetryExecutionTiming(test, &attempt)
 	coverage.SubmitProcessTestCoverage(session.SessionID(), suite.SuiteID(), test.TestID(), attempt.Result.Coverage)
 	cancelExecution := setTestTagsFromExecutionMetadataNoClose(test, execMeta)
 	// A validated process skip is already the outcome of the execution. In
@@ -2569,7 +2617,7 @@ func finishProcessRetryTestEvent(
 	if admitContinuation != nil {
 		admitContinuation(effective)
 	}
-	policyDuration, policyDurationOK := processRetryPolicyDuration(attempt)
+	policyDuration, policyDurationOK := attempt.Result.policyDuration()
 	if policyDurationOK && isAnEfdExecution(execMeta) && policyDuration >= 5*time.Minute {
 		test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
 	}
@@ -3483,37 +3531,25 @@ func (o *processRetryChildObservation) buildResult(status processRetryStatus) pr
 	}
 	rootParallel = rootParallel || o.result.timing.isParallel
 	result := processRetryResult{
-		Version:                     processRetryResultVersion,
-		TestName:                    o.cfg.TestName,
-		ModuleName:                  o.execMeta.identity.ModuleName,
-		SuiteName:                   o.execMeta.identity.SuiteName,
-		Attempt:                     o.cfg.Attempt,
-		RetryReason:                 o.cfg.RetryReason,
-		MRunEpoch:                   o.cfg.MRunEpoch,
-		InvocationOrdinal:           o.cfg.InvocationOrdinal,
-		StartUnixNano:               startUnixNano,
-		FinishUnixNano:              finishUnixNano,
-		DurationNanos:               o.result.duration.Nanoseconds(),
-		DurationValid:               o.result.duration >= 0,
-		ObservedActiveDurationNanos: o.result.timing.activeDuration.Nanoseconds(),
-		ObservedActiveDurationValid: o.result.timing.activeDurationOK,
-		Failed:                      failed,
-		Skipped:                     o.result.skipped,
-		Panic:                       panicData != nil,
-		RaceDetected:                o.result.raceDetected,
-		RootParallel:                rootParallel,
+		Version:           processRetryResultVersion,
+		TestName:          o.cfg.TestName,
+		ModuleName:        o.execMeta.identity.ModuleName,
+		SuiteName:         o.execMeta.identity.SuiteName,
+		Attempt:           o.cfg.Attempt,
+		RetryReason:       o.cfg.RetryReason,
+		MRunEpoch:         o.cfg.MRunEpoch,
+		InvocationOrdinal: o.cfg.InvocationOrdinal,
+		StartUnixNano:     startUnixNano,
+		FinishUnixNano:    finishUnixNano,
+		DurationNanos:     o.result.duration.Nanoseconds(),
+		DurationValid:     o.result.duration >= 0,
+		Failed:            failed,
+		Skipped:           o.result.skipped,
+		Panic:             panicData != nil,
+		RaceDetected:      o.result.raceDetected,
+		RootParallel:      rootParallel,
 	}
-	if o.result.timing.pauseProjectionOK {
-		startOffsetNanos := o.result.timing.pauseStart.UnixNano() - startUnixNano
-		endOffsetNanos := o.result.timing.pauseEnd.UnixNano() - startUnixNano
-		wallDurationNanos := finishUnixNano - startUnixNano
-		if startOffsetNanos >= 0 && endOffsetNanos >= startOffsetNanos && endOffsetNanos <= wallDurationNanos {
-			startNanos := startOffsetNanos
-			endNanos := endOffsetNanos
-			result.ParallelPauseStartOffsetNanos = &startNanos
-			result.ParallelPauseEndOffsetNanos = &endNanos
-		}
-	}
+	result.setExecutionTiming(o.result.timing)
 	if result.Failed {
 		if panicInfo := o.execMeta.processRetryPanic.Load(); result.Panic && panicInfo != nil {
 			result.ErrorType = panicInfo.Type
@@ -3966,23 +4002,8 @@ func validateProcessRetryResult(result processRetryResult, expected processRetry
 	if (result.MRunEpoch == 0) != (result.InvocationOrdinal == 0) {
 		return fmt.Errorf("%w: invalid invocation identity", errProcessRetryResultInvalid)
 	}
-	if result.DurationNanos < 0 || (!result.DurationValid && result.DurationNanos != 0) ||
-		result.ObservedActiveDurationNanos < 0 || (!result.ObservedActiveDurationValid && result.ObservedActiveDurationNanos != 0) {
-		return fmt.Errorf("%w: invalid duration", errProcessRetryResultInvalid)
-	}
-	if (result.ParallelPauseStartOffsetNanos == nil) != (result.ParallelPauseEndOffsetNanos == nil) {
-		return fmt.Errorf("%w: incomplete parallel pause", errProcessRetryResultInvalid)
-	}
-	if result.ParallelPauseStartOffsetNanos != nil {
-		if !result.RootParallel {
-			return fmt.Errorf("%w: pause on non-parallel test", errProcessRetryResultInvalid)
-		}
-		startOffset := *result.ParallelPauseStartOffsetNanos
-		endOffset := *result.ParallelPauseEndOffsetNanos
-		wallDuration := result.FinishUnixNano - result.StartUnixNano
-		if result.StartUnixNano == 0 || result.FinishUnixNano == 0 || startOffset < 0 || endOffset < startOffset || wallDuration < 0 || endOffset > wallDuration {
-			return fmt.Errorf("%w: invalid parallel pause", errProcessRetryResultInvalid)
-		}
+	if err := result.validateTiming(); err != nil {
+		return err
 	}
 	if result.ResultError == processRetryResultErrorSubtreeTooLarge && expected.Subtree == nil {
 		return fmt.Errorf("%w: unexpected subtree result error", errProcessRetryResultInvalid)
