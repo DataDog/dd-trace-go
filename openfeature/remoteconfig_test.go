@@ -457,7 +457,6 @@ func TestValidateFlagSemverConditions(t *testing.T) {
 	}{
 		{name: "non-string", value: 1.2},
 		{name: "invalid", value: "not-a-version"},
-		{name: "short", value: "1.2"},
 		{name: "v prefix", value: "v1.2.3"},
 		{name: "leading zero", value: "01.2.3"},
 		{name: "overflow", value: "18446744073709551616.0.0"},

@@ -15,28 +15,45 @@ type parsedSemver struct {
 	major      uint64
 	minor      uint64
 	patch      uint64
+	extra      []uint64
 	prerelease string
 }
 
-// parseSemver accepts the same version syntax as Rust's semver::Version::parse.
-// Core identifiers are limited to uint64, while numeric prerelease identifiers
-// may be arbitrarily large. Build metadata is validated but not retained because
-// it does not affect SemVer precedence.
+// parseSemver accepts one or more numeric version parts. Missing minor
+// and patch parts are normalized to zero; additional parts participate in
+// ordering after the patch part. Numeric core identifiers are limited to
+// uint64, while numeric prerelease identifiers may be arbitrarily large.
+// Build metadata is validated but not retained because it does not affect
+// SemVer precedence.
 func parseSemver(version string) (parsedSemver, bool) {
-	major, next, ok := parseSemverCoreIdentifier(version, 0)
-	if !ok || next >= len(version) || version[next] != '.' {
-		return parsedSemver{}, false
-	}
-	minor, next, ok := parseSemverCoreIdentifier(version, next+1)
-	if !ok || next >= len(version) || version[next] != '.' {
-		return parsedSemver{}, false
-	}
-	patch, next, ok := parseSemverCoreIdentifier(version, next+1)
-	if !ok {
-		return parsedSemver{}, false
+	parts := make([]uint64, 0, 5)
+	next := 0
+	for {
+		part, end, ok := parseSemverCoreIdentifier(version, next)
+		if !ok {
+			return parsedSemver{}, false
+		}
+		parts = append(parts, part)
+		next = end
+		if next == len(version) || version[next] == '-' || version[next] == '+' {
+			break
+		}
+		if version[next] != '.' {
+			return parsedSemver{}, false
+		}
+		next++
 	}
 
-	parsed := parsedSemver{major: major, minor: minor, patch: patch}
+	parsed := parsedSemver{major: parts[0]}
+	if len(parts) > 1 {
+		parsed.minor = parts[1]
+	}
+	if len(parts) > 2 {
+		parsed.patch = parts[2]
+	}
+	if len(parts) > 3 {
+		parsed.extra = parts[3:]
+	}
 	if next == len(version) {
 		return parsed, true
 	}
@@ -142,6 +159,21 @@ func compareSemver(left, right parsedSemver) int {
 			return -1
 		}
 		return 1
+	}
+	for i := 0; i < len(left.extra) || i < len(right.extra); i++ {
+		var leftPart, rightPart uint64
+		if i < len(left.extra) {
+			leftPart = left.extra[i]
+		}
+		if i < len(right.extra) {
+			rightPart = right.extra[i]
+		}
+		if leftPart < rightPart {
+			return -1
+		}
+		if leftPart > rightPart {
+			return 1
+		}
 	}
 	return compareSemverPrerelease(left.prerelease, right.prerelease)
 }

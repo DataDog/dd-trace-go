@@ -175,7 +175,7 @@ func TestEvaluateSemverCondition(t *testing.T) {
 		{name: "greater than or equal ignores build metadata", operator: operatorSemverGTE, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
 		{name: "different build metadata has equal precedence", operator: operatorSemverEQ, attribute: "1.0.0+linux", comparand: "1.0.0+darwin", want: true},
 		{name: "invalid attribute", operator: operatorSemverNEQ, attribute: "not-a-version", comparand: "1.0.0"},
-		{name: "short attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0"},
+		{name: "two-part attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0", want: true},
 		{name: "prefixed attribute", operator: operatorSemverGTE, attribute: "v1.2.3", comparand: "1.0.0"},
 		{name: "overflowing attribute", operator: operatorSemverGTE, attribute: "18446744073709551616.0.0", comparand: "1.0.0"},
 		{name: "non-string attribute", operator: operatorSemverEQ, attribute: 1.2, comparand: "1.2.0"},
