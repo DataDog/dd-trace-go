@@ -58,7 +58,16 @@ func TestStartWithAgentless_ShutdownMidPoll(t *testing.T) {
 	p, err := startWithAgentless(ProviderConfig{}, settings)
 	require.NoError(t, err)
 
-	// Shut down while the first, synchronous poll is still in flight.
+	// start launches the poll in the background and returns immediately, so
+	// wait for the backend to actually receive the request before shutting
+	// down — otherwise this could pass trivially without exercising a
+	// shutdown-mid-poll race at all.
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond)
+
+	// Shut down while the first poll is still in flight.
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

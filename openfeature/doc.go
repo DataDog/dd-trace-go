@@ -195,17 +195,22 @@
 // DD_FEATURE_FLAGS_CONFIGURATION_SOURCE selects how configuration is delivered:
 //
 //   - "agentless" (default): the provider polls a Datadog endpoint directly over
-//     HTTPS on an interval. No Agent dependency. Requires DD_API_KEY (or DD_SITE
-//     to target a non-default site); see "# Environment Variables" below.
+//     HTTPS on an interval. No Agent dependency. Requires DD_API_KEY unless a
+//     custom endpoint is configured; DD_SITE optionally selects the managed
+//     endpoint's host and has no effect without DD_API_KEY. See
+//     "# Environment Variables" below.
 //   - "remote_config": the provider subscribes to Datadog Remote Config updates
 //     using the FFE_FLAGS product (capability 46), via the Agent. Configuration
 //     updates are acknowledged back to Remote Config with appropriate status
 //     codes (acknowledged for success, error for validation failures).
 //
 // Both sources feed the same validation and evaluation logic; only how
-// configuration arrives differs. Requesting configuration is billable, so
-// nothing is sent to Datadog until NewDatadogProvider is called — creating the
-// provider is the point at which billing begins.
+// configuration arrives differs. Requesting configuration is billable. For the
+// agentless source, nothing is sent to Datadog until NewDatadogProvider is
+// called — creating the provider is the point at which billing begins. For
+// the remote_config source, this guarantee does not hold if tracer.Start runs
+// first: the tracer eagerly subscribes to the FFE_FLAGS Remote Config product
+// and may fetch and buffer configuration before NewDatadogProvider is called.
 //
 // # Configuration
 //
@@ -235,8 +240,9 @@
 //     (https://github.com/open-feature/go-sdk/tree/main/openfeature/multi)
 //     to implement local overrides during development or testing.
 //
-//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE: "agentless" (default) or "remote_config".
-//     See "# Configuration Source" above. An unrecognized non-blank value disables
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE: "agentless" (default), "remote_config",
+//     or "offline" (explicitly disables configuration delivery). See
+//     "# Configuration Source" above. An unrecognized non-blank value also disables
 //     the provider (fails closed, to avoid silently starting billed polling on a typo).
 //
 //   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL: Optional override of
@@ -249,7 +255,9 @@
 //     unparseable value falls back to the default rather than being clamped.
 //
 //   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: Per-request
-//     timeout in seconds for Agentless polls, default 5, must be > 0.
+//     timeout in seconds for Agentless polls, default 5, valid range (0, 300]. An
+//     out-of-range or unparseable value falls back to the default rather than being
+//     clamped.
 //
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED: Deprecated. Kept only to grandfather
 //     existing adopters onto DD_FEATURE_FLAGS_CONFIGURATION_SOURCE=remote_config:
@@ -282,12 +290,16 @@
 //
 // # Prerequisites
 //
-// Create the provider after calling tracer.Start(). This matters for two
-// reasons: the DD_TAGS "env:" fallback (used by the Agentless endpoint's
-// dd_env query parameter) is only applied during tracer.Start, and the
-// remote_config source's Remote Config client needs the tracer's setup to
-// have already run — if it hasn't, the provider creation will return an
-// error asking you to call tracer.Start first.
+// Calling tracer.Start() before creating the provider is recommended but not
+// required. It matters for two things: the DD_TAGS "env:" fallback (used by
+// the Agentless endpoint's dd_env query parameter) is only applied during
+// tracer.Start, and for the remote_config source, if the tracer has already
+// subscribed to Remote Config, the provider attaches to that existing
+// subscription instead of starting its own client. If tracer.Start has not
+// run, the remote_config source falls back to starting its own default
+// Remote Config client — this does not require the tracer and does not error,
+// though it means the application runs its own Remote Config client separate
+// from the tracer's, if the tracer is started later.
 //
 // # Exposure Events and Deduplication
 //

@@ -57,7 +57,8 @@ type ProviderConfig struct {
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
-// using configuration received from Datadog Remote Config.
+// using configuration received from Datadog, either via Remote Config or
+// Agentless polling depending on the resolved delivery source.
 type DatadogProvider struct {
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
@@ -197,14 +198,13 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 	return p
 }
 
-// updateConfiguration updates the provider's flag configuration.
-// This is called by the Remote Config callback when new configuration is received.
 // startWithAgentless registers an Agentless configuration source as the
 // provider's activated delivery source. Claiming activation and registering
 // the source happen under the same lock as the shutdownCalled check, so a
 // poller can never be registered after Shutdown — that would otherwise leak
 // a billable poller for the process lifetime. src.start() runs outside the
-// lock since it issues the first request synchronously.
+// lock since it launches the poll loop in the background and returns
+// immediately.
 func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*DatadogProvider, error) {
 	p := newDatadogProviderWithSource(config, internalffe.SourceAgentless)
 
@@ -252,6 +252,9 @@ func (p *DatadogProvider) markActivated() {
 	p.activated = true
 }
 
+// updateConfiguration updates the provider's flag configuration. This is
+// called by the Remote Config callback or the Agentless poller when a new
+// configuration is received.
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
