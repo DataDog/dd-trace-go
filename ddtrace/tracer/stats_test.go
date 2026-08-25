@@ -925,7 +925,7 @@ func TestStatsIncludeOTelHTTPServerAttributes(t *testing.T) {
 			assert.Equal(t, tt.status, group.HTTPStatusCode)
 			assert.Equal(t, tt.wantErrors, group.Errors)
 
-			otelAttrs := buildDataPointAttributes(group, group.Errors > 0, true)
+			otelAttrs := buildDataPointAttributes(group, group.Errors > 0)
 			assertOTLPIntAttribute(t, otelAttrs, ext.HTTPResponseStatusCode, int64(tt.status))
 			attrs := kvAttrsToMap(otelAttrs)
 			assert.Equal(t, "SPAN_KIND_SERVER", attrs["span.kind"])
@@ -933,7 +933,7 @@ func TestStatsIncludeOTelHTTPServerAttributes(t *testing.T) {
 			if tt.wantErrors > 0 {
 				assert.Equal(t, "STATUS_CODE_ERROR", attrs["status.code"])
 			} else {
-				assert.NotContains(t, attrs, "status.code")
+				assert.Equal(t, "STATUS_CODE_OK", attrs["status.code"])
 			}
 		})
 	}

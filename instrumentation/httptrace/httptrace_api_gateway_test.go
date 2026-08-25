@@ -214,6 +214,34 @@ func TestInferredProxySpansOTelSemantics(t *testing.T) {
 		ProxyHeaderStage:       "dev",
 	}
 
+	for _, tt := range []struct {
+		name      string
+		target    string
+		proxyPath string
+		wantPath  string
+	}{
+		{name: "empty path defaults to slash", target: "https://example.com", wantPath: "/"},
+		{name: "request path takes precedence", target: "https://example.com/request/path", proxyPath: "/proxy/path", wantPath: "/request/path"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
+			for key, value := range inferredHeaders {
+				req.Header.Set(key, value)
+			}
+			req.Header.Set(ProxyHeaderPath, tt.proxyPath)
+
+			_, _, finishSpans := StartRequestSpan(req)
+			finishSpans(http.StatusOK, nil)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			assert.Equal(t, tt.wantPath, spans[1].Tag(ext.URLPath))
+		})
+	}
+
 	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			mt := mocktracer.Start()
