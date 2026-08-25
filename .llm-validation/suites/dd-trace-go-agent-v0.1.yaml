@@ -602,6 +602,136 @@ cases:
 
 # ==== CIVisibility Tests ====
 
+  - id: dd-trace-go-civisibility-http-retry-defaults
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      For exponentialBackoff/getExponentialBackoffDuration and the DefaultMaxRetries/DefaultBackoff
+      constants, what are the default retry count and initial backoff, how does the delay grow between 
+      attempts, and is any random jitter added to it?
+    expected_criteria:
+      - States the defaults are 3 retries (DefaultMaxRetries) and a 100ms initial backoff (DefaultBackoff)
+      - States the delay doubles each attempt (initialDelay * 2^retryCount) and is capped at a 10 second
+        maximum
+      - States the computed delay is NOT randomized/jittered -- it's a deterministic doubling capped at 10s
+    bad_signals:
+      - Gives different default values for retry count or initial backoff
+      - Says the backoff includes random jitter added to the sleep duration
+      - Says the delay grows unbounded without a cap
+
+  - id: dd-trace-go-civisibility-close-action-order
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      Does PushCiVisibilityCloseAction append new close actions to the end of the closeActions 
+      slice or prepend them to the front, and what execution order does that produce when CI 
+      Visibility shuts down?
+    expected_criteria:
+      - States it prepends the new action to the front of the slice
+      - States this produces LIFO (last registered, first executed) order during shutdown
+    bad_signals:
+      - Says new actions are appended to the end of the slice
+      - Says close actions execute in FIFO/registration order
+
+  - id: dd-trace-go-civisibility-git-command-serialization
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      Can two git commands issued by CI Visibility run concurrently, and what specifically enforces the answer?
+    expected_criteria:
+      - States git command execution is serialized, not concurrent
+      - Names the package-level gitCommandMutex, locked immediately before invoking exec.Command and
+        unlocked via defer, as the mechanism enforcing this
+    bad_signals:
+      - Says git commands can run concurrently with no synchronization
+      - Attributes the serialization to a different mechanism (e.g. a channel or semaphore) instead of
+        gitCommandMutex
+
+  - id: dd-trace-go-civisibility-concurrent-exit-calls
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      If exitCiVisibility in internal/civisibility/integrations/civisibility.go is called from
+      two goroutines at roughly the same time (e.g. a signal and a normal test-run shutdown racing), what
+      happens on the goroutine that doesn't get the state transition first -- does it re-run the close
+      actions, return immediately, or something else?
+    expected_criteria:
+      - States only one caller actually owns the shutdown -- the one that observes
+        civisibility.GetState() == StateInitialized and transitions it to StateExiting under
+        closeActionsMutex
+      - States the other caller sees a state other than StateInitialized, takes the early-return branch,
+        and if a shutdown is already in progress it blocks on the shared ciVisibilityShutdownDone channel
+        (via waitForCIVisibilityShutdown) until the owning goroutine finishes, rather than re-running any
+        close actions itself
+    bad_signals:
+      - Says both goroutines run the close actions independently/concurrently
+      - Says the second caller panics or errors instead of waiting on the shutdown-done channel
+
+  - id: dd-trace-go-civisibility-signal-handler-deadlock-avoidance
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      Look at ciVisibilitySignalHandler.run() and exitCiVisibility's stopSignalHandler parameter in
+      internal/civisibility/integrations/civisibility.go. Why does the signal-triggered shutdown path call
+      exitCiVisibility(false) instead of exitCiVisibility(true)?
+    expected_criteria:
+      - States that exitCiVisibility(true) would call stopCIVisibilitySignalHandler, which blocks on
+        "<-handler.done"
+      - States handler.done only closes when run() itself returns (via its deferred close), so the
+        signal-handling goroutine calling exitCiVisibility(true) from inside run() would be waiting on its
+        own completion -- a self-deadlock -- which is why it passes false and skips stopping the handler
+    bad_signals:
+      - Says there is no functional difference between passing true and false here
+      - Does not connect the choice to avoiding the signal-handler goroutine deadlocking on itself
+
+  - id: dd-trace-go-civisibility-expect-json-response-retry
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      If a request configured with ExpectJSONResponse=true gets back a 2xx response
+      whose Content-Type doesn't parse as JSON, what does the client do? Does this same handling apply to
+      endpoints that don't care about parsing a JSON response, like file/pack uploads?
+    expected_criteria:
+      - States that a 2xx response with an unrecognized/non-JSON format is treated as a transient failure
+        and retried via exponentialBackoff when ExpectJSONResponse is true
+      - States that upload-style endpoints which never decode the response body intentionally leave
+        ExpectJSONResponse false, so they are unaffected by this retry-on-ambiguous-format behavior
+    bad_signals:
+      - Says a 2xx response is always treated as success regardless of its content type
+      - Says every endpoint retries on a non-JSON 2xx response, including endpoints that don't parse JSON
+
+  - id: dd-trace-go-civisibility-bazel-git-cli-short-circuit
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      When Bazel payload-file/manifest mode disables the Git CLI (bazel.IsGitCLIDisabled()), does execGit 
+      still try to find and run the git binary before giving up, or does it short-circuit earlier? And does 
+      it touch gitCommandMutex in that case?
+    expected_criteria:
+      - States execGit checks bazel.IsGitCLIDisabled() before the isGitFound() check and before acquiring
+        gitCommandMutex, logging a debug message and returning immediately with a dedicated sentinel error
+      - States that in this mode, neither the git executable lookup, gitCommandMutex, nor exec.Command is
+        ever reached
+    bad_signals:
+      - Says execGit still attempts to locate/run the git binary before failing in this mode
+      - Says the Bazel check happens after acquiring gitCommandMutex
+
+  - id: dd-trace-go-civisibility-doc-update-trigger
+    only_warn: true
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      I just added a new CI Visibility feature (e.g. a new backend-negotiated toggle alongside the
+      existing flaky retries/EFD/ITR/impacted tests features). Do I need to update any documentation for
+      this, and if so, which file and why?
+    expected_criteria:
+      - States internal/civisibility/CIVISIBILITY_OVERVIEW.md must be updated when new CI Vis
+        functionality is introduced
+      - Recognizes that adding a new feature qualifies as such a change
+    bad_signals:
+      - Says no documentation update is needed for this change
+      - Points to a different file instead of internal/civisibility/CIVISIBILITY_OVERVIEW.md, e.g. the
+        top-level project README.md or CONTRIBUTING.md
 
 # ==== Datastreams Tests ====
 # TODO: Datastreams does not currently have any AGENTS.md files. Add some in order to start testing.
