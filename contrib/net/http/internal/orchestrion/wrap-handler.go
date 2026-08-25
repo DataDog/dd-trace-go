@@ -25,6 +25,9 @@ func WrapHandler(handler http.Handler) http.Handler {
 		tracedMux.ServeMux = handler
 		return tracedMux
 	default:
+		if config.Instrumentation.OTelSemanticsEnabled() {
+			return wrap.Handler(handler, "", "")
+		}
 		if options.GetBoolEnv("DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE", false) {
 			return wrap.Handler(handler, "", "", config.WithResourceNamer(quantizeResourceNamer))
 		}

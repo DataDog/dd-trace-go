@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 func setOTelSemantics(t *testing.T, enabled bool) {
@@ -24,6 +25,7 @@ func setOTelSemantics(t *testing.T, enabled bool) {
 	oldValue, wasSet := os.LookupEnv("DD_TRACE_OTEL_SEMANTICS_ENABLED")
 	require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", strconv.FormatBool(enabled)))
 	require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+	httptrace.ResetCfg()
 	t.Cleanup(func() {
 		if wasSet {
 			require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", oldValue))
@@ -31,6 +33,7 @@ func setOTelSemantics(t *testing.T, enabled bool) {
 			require.NoError(t, os.Unsetenv("DD_TRACE_OTEL_SEMANTICS_ENABLED"))
 		}
 		require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+		httptrace.ResetCfg()
 		tracer.Stop()
 	})
 }
