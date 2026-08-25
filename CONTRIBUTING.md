@@ -394,3 +394,4 @@ fmt.Printf("Leak start at stack=%s\n", string(debug.Stack()))
 In practice, leaks often go through `http.(*Client).Do`, so that can be a good place to instrument as well.
 
 Following the advice above, most goroutine leaks should be easy to debug and fix.
+
