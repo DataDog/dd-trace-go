@@ -12,7 +12,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
-	appsectrace "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -101,7 +100,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 			ClientIP:    clientIP,
 		}
 
-		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, AppSecSpanTagSetter(span), appsecConfig)
+		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, AppSecSpanTagSetter(span, otelSemanticsEnabled()), appsecConfig)
 		afterHandle = func() {
 			secAfterHandle()
 			closeSpan()
@@ -111,30 +110,6 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 		handled = secHandled
 	}
 	return rw, rt, afterHandle, handled
-}
-
-type otelAppSecSpanTagSetter struct {
-	span *tracer.Span
-}
-
-func (s otelAppSecSpanTagSetter) SetTag(key string, value any) {
-	switch key {
-	case ext.HTTPClientIP:
-		key = ext.ClientAddress
-	case ext.NetworkClientIP:
-		key = ext.NetworkPeerAddress
-	}
-	s.span.SetTag(key, value)
-}
-
-// AppSecSpanTagSetter returns a setter for AppSec span tags. Under OpenTelemetry semantics,
-// it translates HTTP client and network peer addresses to their semantic attribute names;
-// all other tags and Datadog semantics remain unchanged.
-func AppSecSpanTagSetter(span *tracer.Span) appsectrace.TagSetter {
-	if cfg.otelSemanticsEnabled {
-		return otelAppSecSpanTagSetter{span: span}
-	}
-	return span
 }
 
 // HTTPEndpointTag returns a start option that applies http.endpoint resource-renaming configuration.

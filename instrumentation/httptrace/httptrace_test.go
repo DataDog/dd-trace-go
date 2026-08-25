@@ -376,46 +376,6 @@ func TestBeforeHandleClientAddressesWithAppSec(t *testing.T) {
 	}
 }
 
-func TestAppSecSpanTagSetter(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		otel bool
-	}{
-		{name: "Datadog"},
-		{name: "OpenTelemetry", otel: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			oldEnabled := cfg.otelSemanticsEnabled
-			defer func() { cfg.otelSemanticsEnabled = oldEnabled }()
-			cfg.otelSemanticsEnabled = tt.otel
-
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			span := tracer.StartSpan("request")
-			setter := AppSecSpanTagSetter(span)
-			setter.SetTag(ext.HTTPClientIP, "203.0.113.10")
-			setter.SetTag(ext.NetworkClientIP, "192.0.2.1")
-			setter.SetTag("appsec.custom", "value")
-			span.Finish()
-
-			spans := mt.FinishedSpans()
-			require.Len(t, spans, 1)
-			if tt.otel {
-				assert.Equal(t, "203.0.113.10", spans[0].Tag(ext.ClientAddress))
-				assert.Equal(t, "192.0.2.1", spans[0].Tag(ext.NetworkPeerAddress))
-				assert.Nil(t, spans[0].Tag(ext.HTTPClientIP))
-				assert.Nil(t, spans[0].Tag(ext.NetworkClientIP))
-			} else {
-				assert.Equal(t, "203.0.113.10", spans[0].Tag(ext.HTTPClientIP))
-				assert.Equal(t, "192.0.2.1", spans[0].Tag(ext.NetworkClientIP))
-				assert.Nil(t, spans[0].Tag(ext.ClientAddress))
-				assert.Nil(t, spans[0].Tag(ext.NetworkPeerAddress))
-			}
-			assert.Equal(t, "value", spans[0].Tag("appsec.custom"))
-		})
-	}
-}
-
 func TestStartRequestSpan(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
