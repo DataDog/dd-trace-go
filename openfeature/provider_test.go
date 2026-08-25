@@ -671,8 +671,9 @@ func TestInitWithContext_ShutdownDuringWaitReturnsPromptly(t *testing.T) {
 	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
 	elapsed := time.Since(start)
 
-	if err != nil {
-		t.Errorf("expected nil error, got: %v", err)
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) || initErr.ErrorCode != openfeature.ProviderFatalCode {
+		t.Errorf("expected a ProviderInitError with ProviderFatalCode (configuration will never arrive), got: %v", err)
 	}
 	if elapsed >= time.Second {
 		t.Errorf("Init must return promptly once Shutdown runs, not wait out its own timeout; took %v", elapsed)

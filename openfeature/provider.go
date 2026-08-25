@@ -55,13 +55,20 @@ type ProviderConfig struct {
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
-// using configuration received from Datadog Remote Config.
+// using configuration received from Datadog, either via Remote Config or
+// Agentless polling depending on the resolved delivery source.
 type DatadogProvider struct {
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
 
-	configChange sync.Cond
+	// configChangeCh is closed and replaced under mu whenever configuration or
+	// shutdownCalled changes, to wake any goroutine parked in
+	// waitForConfigurationUpdate. Using a closed channel rather than a
+	// sync.Cond avoids a lost-wakeup race: closing is a permanent state
+	// transition, so a waiter can never miss it regardless of exactly when it
+	// starts waiting relative to the close. // +checklocks:mu
+	configChangeCh chan struct{}
 
 	hooks []openfeature.Hook
 
@@ -196,19 +203,18 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 		source:                source,
 		eventCh:               make(chan openfeature.Event, eventChannelBufferSize),
 	}
-	p.configChange.L = &p.mu
+	p.configChangeCh = make(chan struct{})
 
 	return p
 }
 
-// updateConfiguration updates the provider's flag configuration.
-// This is called by the Remote Config callback when new configuration is received.
 // startWithAgentless registers an Agentless configuration source as the
 // provider's activated delivery source. Claiming activation and registering
 // the source happen under the same lock as the shutdownCalled check, so a
 // poller can never be registered after Shutdown — that would otherwise leak
 // a billable poller for the process lifetime. src.start() runs outside the
-// lock since it issues the first request synchronously.
+// lock since it launches the poll loop in the background and returns
+// immediately.
 func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*DatadogProvider, error) {
 	p := newDatadogProviderWithSource(config, internalffe.SourceAgentless)
 
@@ -256,6 +262,9 @@ func (p *DatadogProvider) markActivated() {
 	p.activated = true
 }
 
+// updateConfiguration updates the provider's flag configuration. This is
+// called by the Remote Config callback or the Agentless poller when a new
+// configuration is received.
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -265,7 +274,8 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 		return
 	}
 	p.configuration = config
-	p.configChange.Broadcast()
+	close(p.configChangeCh)
+	p.configChangeCh = make(chan struct{})
 	p.emitFirstOrChangeEvent(config)
 }
 
@@ -290,36 +300,21 @@ func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) 
 	return p.InitWithContext(ctx, evaluationContext)
 }
 
-// waitForConfigurationUpdate waits for a configuration update or context cancellation.
-// Assumes mutex is locked on entry, temporarily unlocks during wait, relocks on exit.
+// waitForConfigurationUpdate waits for a configuration/shutdown change or
+// context cancellation. Assumes mu is held on entry; unlocks it while
+// waiting and reacquires it before returning, on every path — including an
+// already-canceled ctx, unlike a sync.Cond-based wait which would need to
+// special-case that to avoid relocking an already-held mutex.
 func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error {
-	defer p.mu.Lock() // Always relock when function exits
-
-	// Check if context was cancelled before waiting
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	// Create channel to signal condition variable completion
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		p.configChange.Wait()
-	}()
-
-	// Temporarily unlock to allow configuration update and context handling
+	ch := p.configChangeCh
 	p.mu.Unlock()
+	defer p.mu.Lock()
 
-	// Wait for either context cancellation or configuration update
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil // Configuration updated, defer will relock
+	case <-ch:
+		return nil
 	}
 }
 
@@ -342,8 +337,13 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	for p.configuration == nil {
 		if p.shutdownCalled {
 			// Shutdown ran while Init was waiting: configuration will never
-			// arrive, so return instead of waiting out the full timeout.
-			return nil
+			// arrive. Return an error rather than nil — nil would tell the
+			// OpenFeature SDK initialization succeeded and move it to
+			// ReadyState, even though the provider just tore itself down.
+			return &openfeature.ProviderInitError{
+				ErrorCode: openfeature.ProviderFatalCode,
+				Message:   "provider was shut down before configuration arrived",
+			}
 		}
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
 			// Timed out or canceled with delivery still running. This is not an
@@ -389,7 +389,8 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	source := p.source
 	agentless := p.agentless
 	p.configuration = nil
-	p.configChange.Broadcast()
+	close(p.configChangeCh)
+	p.configChangeCh = make(chan struct{})
 	p.mu.Unlock()
 
 	done := make(chan error, 1)

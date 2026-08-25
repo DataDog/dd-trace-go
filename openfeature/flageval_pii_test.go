@@ -222,7 +222,7 @@ func TestProviderStampsConsentFromEvaluatedConfig(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &DatadogProvider{configuration: tc.config}
-			p.configChange.L = &p.mu
+			p.configChangeCh = make(chan struct{})
 
 			res := p.evaluate(context.Background(), "pii-flag", "fallback", of.FlattenedContext{
 				of.TargetingKey: piiCanonicalTargetingKey,
@@ -240,7 +240,7 @@ func TestProviderStampsConsentFromEvaluatedConfig(t *testing.T) {
 
 	t.Run("missing flag still carries consent", func(t *testing.T) {
 		p := &DatadogProvider{configuration: piiTestConfig(true)}
-		p.configChange.L = &p.mu
+		p.configChangeCh = make(chan struct{})
 
 		res := p.evaluate(context.Background(), "no-such-flag", "fallback", of.FlattenedContext{
 			of.TargetingKey: piiCanonicalTargetingKey,
@@ -596,7 +596,7 @@ func TestConsentIsNotReReadAfterEvaluation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &DatadogProvider{configuration: piiTestConfig(tc.consentAtEvaluation)}
-			p.configChange.L = &p.mu
+			p.configChangeCh = make(chan struct{})
 			w := newFlagEvalLoggingWriter(ProviderConfig{})
 
 			// Evaluate against the current configuration, then run the hook exactly as the
