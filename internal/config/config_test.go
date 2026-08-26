@@ -284,9 +284,8 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 	// Get all methods on *Config
 	configType := reflect.TypeFor[*Config]()
 
-	for i := 0; i < configType.NumMethod(); i++ {
+	for method := range configType.Methods() {
 		// Capture method
-		method := configType.Method(i)
 		methodName := method.Name
 
 		// Skip if not a Set method
