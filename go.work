@@ -82,3 +82,12 @@ use (
 	./tools/v2fix
 	./tools/v2fix/_stage
 )
+
+// Workspace-wide MVS otherwise selects x/net v0.54.0, pulled in transitively
+// by orchestrion/all and internal/orchestrion/_integration's own dependency
+// tree (unrelated to grpc). v0.54.0 gates its legacy http2.TrailerPrefix etc.
+// behind a "go1.27 && !http2legacy" build constraint (Go 1.27 ships its own
+// net/http2 server), which google.golang.org/grpc v1.82.1 does not yet
+// handle. grpc's own go.mod already targets x/net v0.53.0; pin the workspace
+// back to that until grpc catches up.
+replace golang.org/x/net => golang.org/x/net v0.53.0
