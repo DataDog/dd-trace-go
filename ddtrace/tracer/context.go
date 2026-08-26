@@ -14,6 +14,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+// activeSpanContextKey is a context key for the snapshotted SpanContext.
+// When a Span is stored in a Go context via ContextWithSpan, we also snapshot
+// its SpanContext so that StartSpanFromContext can tell "a span was explicitly
+// placed here via ContextWithSpan" apart from "ctx.Value found an active span
+// some other way" (notably Orchestrion's GLS fallback, which resolves an
+// active span even from context.Background()). Only the former should
+// override an explicit ChildOf option; see StartSpanFromContext.
+type activeSpanContextKey struct{}
+
 // ContextWithSpan returns a copy of the given context which includes the span s.
 // If ctx is nil, a new background context is created to avoid panicking.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
@@ -38,6 +47,13 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	// SpanFromContext is extended analogously ("Span SpanFromContext GLS read").
 	// Without orchestrion there is no GLS; this is a plain context.WithValue.
 	newCtx := context.WithValue(ctx, internal.ActiveSpanKey, s)
+	if s != nil {
+		// Snapshot the SpanContext so StartSpanFromContext can tell this apart
+		// from a span found only via GLS inference. This does NOT protect the
+		// underlying trace from being finished or flushed; callers must ensure
+		// the parent's trace lifetime exceeds child span creation.
+		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, s.Context())
+	}
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }
 
@@ -118,6 +134,10 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()
+	} else if sc, ok := ctx.Value(activeSpanContextKey{}).(*SpanContext); ok && sc != nil {
+		// A span was placed here via ContextWithSpan; that is deliberate, so it
+		// outranks an explicit ChildOf. Asserted since 2018.
+		optsLocal = append(optsLocal, ChildOf(sc))
 	} else if s, ok := SpanFromContext(ctx); ok {
 		// Reached only when the context chain carries no span snapshot, i.e. the
 		// span came from somewhere other than ContextWithSpan. In practice that
