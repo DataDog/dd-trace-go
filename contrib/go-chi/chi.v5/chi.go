@@ -78,6 +78,11 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			if routePattern != "" || !cfg.otelEnabled {
 				span.SetTag(ext.HTTPRoute, routePattern)
 			}
+			if cfg.otelEnabled {
+				if endpoint, ok := httptrace.HTTPEndpoint(routePattern, r); ok {
+					span.SetTag(ext.HTTPEndpoint, endpoint)
+				}
+			}
 			var resourceName string
 			if cfg.resourceNamer != nil {
 				resourceName = cfg.resourceNamer(r)
