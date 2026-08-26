@@ -88,8 +88,6 @@ type DatadogProvider struct {
 	source internalffe.Source
 	// agentless is non-nil only once startWithAgentless has registered it. // +checklocks:mu
 	agentless *agentlessSource
-	// activated reports whether a delivery source has been registered. // +checklocks:mu
-	activated bool
 	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
 	shutdownCalled bool
 	// deliveryErr is set when no delivery source could start; permanent for the process. // +checklocks:mu
@@ -216,12 +214,11 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 }
 
 // startWithAgentless registers an Agentless configuration source as the
-// provider's activated delivery source. Claiming activation and registering
-// the source happen under the same lock as the shutdownCalled check, so a
-// poller can never be registered after Shutdown — that would otherwise leak
-// a billable poller for the process lifetime. src.start() runs outside the
-// lock since it launches the poll loop in the background and returns
-// immediately.
+// provider's delivery source. Registering the source happens under the same
+// lock as the shutdownCalled check, so a poller can never be registered after
+// Shutdown — that would otherwise leak a billable poller for the process
+// lifetime. src.start() runs outside the lock since it launches the poll loop
+// in the background and returns immediately.
 func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*DatadogProvider, error) {
 	p := newDatadogProviderWithSource(config, internalffe.SourceAgentless)
 
@@ -254,19 +251,7 @@ func (p *DatadogProvider) tryRegisterAgentless(src *agentlessSource) bool {
 		return false
 	}
 	p.agentless = src
-	p.activated = true
 	return true
-}
-
-// markActivated records that a delivery source has been registered, unless
-// Shutdown already ran.
-func (p *DatadogProvider) markActivated() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.shutdownCalled {
-		return
-	}
-	p.activated = true
 }
 
 // updateConfiguration updates the provider's flag configuration. This is

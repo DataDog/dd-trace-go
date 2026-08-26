@@ -32,7 +32,6 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 
 	if !tracerOwnsSubscription {
 		log.Debug("openfeature: successfully subscribed to Remote Config updates")
-		provider.markActivated()
 		return provider, nil
 	}
 	if !attachProvider(provider) {
@@ -40,7 +39,6 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 		return nil, errors.New("failed to attach to tracer's RC subscription")
 	}
 	log.Debug("openfeature: attached to tracer's RC subscription")
-	provider.markActivated()
 	return provider, nil
 }
 

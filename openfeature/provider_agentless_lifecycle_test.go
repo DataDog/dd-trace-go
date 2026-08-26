@@ -39,7 +39,6 @@ func TestTryRegisterAgentless_AfterShutdownRegistersNothing(t *testing.T) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	assert.Nil(t, p.agentless)
-	assert.False(t, p.activated)
 
 	requests, _, _, _ := backend.status()
 	assert.Equal(t, 0, requests, "a poller must never be registered, let alone started, after shutdown")

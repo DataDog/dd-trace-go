@@ -680,6 +680,52 @@ func TestInitWithContext_ShutdownDuringWaitReturnsPromptly(t *testing.T) {
 	}
 }
 
+func TestInitWithContext_LateConfigurationStillBecomesReady(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	// Init gives up on its deadline while delivery is still running. That is
+	// deliberately not an error, so the provider must still pick up a
+	// configuration that arrives afterwards.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := provider.InitWithContext(ctx, openfeature.EvaluationContext{}); err != nil {
+		t.Fatalf("a deadline with delivery still running must not be reported as an error, got: %v", err)
+	}
+	if provider.getConfiguration() != nil {
+		t.Fatal("no configuration should be stored yet")
+	}
+
+	// The configuration arrives late, after Init already returned.
+	provider.updateConfiguration(createTestConfig())
+
+	if provider.getConfiguration() == nil {
+		t.Error("a configuration arriving after Init's deadline must still be stored")
+	}
+
+	event := drainEvent(t, provider.EventChannel())
+	if event.EventType != openfeature.ProviderReady {
+		t.Errorf("the late configuration must promote the provider to ready, got %v", event.EventType)
+	}
+
+	// The periodic writers must be started by that late configuration too,
+	// otherwise they would never flush for the rest of the process.
+	provider.mu.RLock()
+	writersStarted := provider.writersStarted
+	provider.mu.RUnlock()
+	if !writersStarted {
+		t.Error("the late configuration must also start the periodic writers")
+	}
+
+	// Evaluation works, which is the user-visible point of all this.
+	result := provider.BooleanEvaluation(context.Background(), "bool-flag", false, openfeature.FlattenedContext{
+		"targetingKey": "user-123",
+		"country":      "US",
+	})
+	if result.Value != true {
+		t.Errorf("evaluation must succeed once the late configuration is applied, got %v (reason %s)", result.Value, result.Reason)
+	}
+}
+
 func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 	// Create a provider and set up its configuration immediately
 	provider := newDatadogProvider(ProviderConfig{})
