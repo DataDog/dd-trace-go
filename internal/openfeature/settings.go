@@ -47,19 +47,7 @@ type Settings struct {
 
 // ResolveSettings resolves the feature-flag delivery Settings from cfg.
 func ResolveSettings(cfg *config.Config) Settings {
-	enabled, enabledSet := cfg.FeatureFlagsEnabled()
-	source, sourceSet := cfg.FeatureFlagsConfigurationSource()
-	legacyEnabled := cfg.ExperimentalFlaggingProviderEnabled()
-	legacyEnabledSet := cfg.ExperimentalFlaggingProviderEnabledExplicit()
-
-	resolved, legacyDecided := resolveSource(sourceInputs{
-		enabled:          enabled,
-		enabledSet:       enabledSet,
-		source:           source,
-		sourceSet:        sourceSet,
-		legacyEnabled:    legacyEnabled,
-		legacyEnabledSet: legacyEnabledSet,
-	})
+	resolved, legacyDecided := resolveSourceFromConfig(cfg)
 
 	return Settings{
 		Source:           resolved,
@@ -73,11 +61,31 @@ func ResolveSettings(cfg *config.Config) Settings {
 	}
 }
 
+// resolveSourceFromConfig reads only the four config fields that feed resolveSource,
+// so callers that just need the delivery source don't pay for the unrelated reads
+// ResolveSettings performs. legacyDecided has the same meaning as in resolveSource.
+func resolveSourceFromConfig(cfg *config.Config) (resolved Source, legacyDecided bool) {
+	enabled, enabledSet := cfg.FeatureFlagsEnabled()
+	source, sourceSet := cfg.FeatureFlagsConfigurationSource()
+	legacyEnabled := cfg.ExperimentalFlaggingProviderEnabled()
+	legacyEnabledSet := cfg.ExperimentalFlaggingProviderEnabledExplicit()
+
+	return resolveSource(sourceInputs{
+		enabled:          enabled,
+		enabledSet:       enabledSet,
+		source:           source,
+		sourceSet:        sourceSet,
+		legacyEnabled:    legacyEnabled,
+		legacyEnabledSet: legacyEnabledSet,
+	})
+}
+
 // RemoteConfigSourceSelected reports whether cfg resolves to SourceRemoteConfig.
 // It lets the tracer decide whether to keep its eager Remote Config subscription
 // without importing this package's full Settings machinery.
 func RemoteConfigSourceSelected(cfg *config.Config) bool {
-	return ResolveSettings(cfg).Source == SourceRemoteConfig
+	source, _ := resolveSourceFromConfig(cfg)
+	return source == SourceRemoteConfig
 }
 
 // sourceInputs is the pure, table-testable input to resolveSource.
