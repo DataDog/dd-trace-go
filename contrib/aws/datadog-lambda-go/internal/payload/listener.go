@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 )
 
 type (
@@ -17,50 +18,20 @@ type (
 	Listener struct {
 		enabled bool
 	}
-	// Config gives options for how the listener should work
+
+	// Config gives options for how the listener should work.
 	Config struct {
 		StripInjectedContext bool
 	}
 )
 
-// MakeListener creates a new Listener with the given Config
-func MakeListener(config Config) Listener {
-	return Listener{enabled: config.StripInjectedContext}
+// byteRange represents a half-open byte range [start, end) to remove.
+type byteRange struct {
+	start int
+	end   int
 }
 
-// HandlerStarted strips injected _datadog carriers from msg for the handler when enabled.
-//
-// Extension listeners must run before this one so APM trace extraction sees
-// the raw payload; stripping only affects what reaches the user handler.
-// Returns msg unchanged if disabled, no carrier is present, or stripping
-// would produce invalid JSON (fail-open).
-func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage) {
-	if !l.enabled || len(msg) == 0 {
-		return ctx, msg
-	}
-	if !json.Valid(msg) {
-		return ctx, msg
-	}
-	if !bytes.Contains(msg, datadogCarrierSubstrBytes) {
-		return ctx, msg
-	}
-
-	out, changed := stripInjectedContextBytes(msg)
-	if !changed {
-		return ctx, msg
-	}
-	if !json.Valid(out) {
-		return ctx, msg // fail-open
-	}
-	return ctx, out
-}
-
-// HandlerFinished implemented as part of the wrapper.HandlerListener interface
-func (l *Listener) HandlerFinished(ctx context.Context, err error) {}
-
-// Datadog injects _datadog as a flat JSON object carrier in one of two shapes:
-//  1. Object detail:  "_datadog": {"x-datadog-trace-id":"...", ...}  — stripped via byte scan
-//  2. String detail:  detail field contains "{\"...\",\"_datadog\":{...}}"  — stripped via json unmarshal/remarshal
+// datadogCarrierKey is the JSON property name for the Datadog propagation carrier.
 const datadogCarrierKey = "_datadog"
 
 var (
@@ -69,94 +40,157 @@ var (
 	datadogCarrierEscapedKey  = []byte(`\"` + datadogCarrierKey + `\"`)
 )
 
-// stripInjectedContextBytes removes every _datadog carrier from msg and reports whether the bytes changed.
-func stripInjectedContextBytes(msg json.RawMessage) (json.RawMessage, bool) {
-	out, objectChanged := stripObjectCarriers(msg)
-	out2, stringChanged := stripStringEncodedCarriers(out)
-	if stringChanged {
-		return out2, true
-	}
-	return out, objectChanged
+// MakeListener creates a new Listener with the given Config.
+func MakeListener(config Config) Listener {
+	return Listener{enabled: config.StripInjectedContext}
 }
 
-// stripObjectCarriers strips object-form "_datadog" carriers via byte scanning, supporting multiple carriers in O(n).
-// Writes into a freshly allocated buffer; msg is never mutated, so callers keep a safe,
-// untouched copy even when the result is later discarded (e.g. by the fail-open path).
-func stripObjectCarriers(msg json.RawMessage) (json.RawMessage, bool) {
-	type span struct{ lo, hi int }
-	var spans []span
-	searchFrom := 0
+// HandlerStarted strips injected _datadog carriers from msg for the handler when enabled.
+//
+// Extension listeners must run before this one so APM trace extraction sees
+// the raw payload; stripping only affects what reaches the user handler.
+// Returns msg unchanged if stripping fails or an unexpected panic occurs.
+func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) (retCtx context.Context, retMsg json.RawMessage) {
+	retCtx, retMsg = ctx, msg
 
-	for {
-		rel := bytes.Index(msg[searchFrom:], datadogKeyColon)
-		if rel < 0 {
-			break
+	// Fail open so payload stripping never prevents the user handler from running.
+	defer func() {
+		if recover() != nil {
+			retCtx = ctx
+			retMsg = msg
 		}
-		keyAt := searchFrom + rel
+	}()
 
-		// Must be preceded (ignoring whitespace) by '{' or ','
-		p := keyAt - 1
-		for p >= 0 && isJSONWhitespace(msg[p]) {
-			p--
-		}
-		if p < 0 || (msg[p] != '{' && msg[p] != ',') {
-			searchFrom = keyAt + 1
-			continue
-		}
-
-		// Value must open with '{'
-		i := keyAt + len(datadogKeyColon)
-		for i < len(msg) && isJSONWhitespace(msg[i]) {
-			i++
-		}
-		if i >= len(msg) || msg[i] != '{' {
-			searchFrom = keyAt + 1
-			continue
-		}
-
-		valHi, ok := scanObjectEnd(msg, i)
-		if !ok {
-			searchFrom = keyAt + 1
-			continue
-		}
-
-		// Absorb one adjacent comma. Backward search must not cross searchFrom
-		// so two consecutive carriers cannot both claim the same separating comma.
-		lo, hi := keyAt, valHi
-		bk := keyAt - 1
-		for bk >= searchFrom && isJSONWhitespace(msg[bk]) {
-			bk--
-		}
-		if bk >= searchFrom && msg[bk] == ',' {
-			lo = bk
-		} else {
-			fwd := valHi
-			for fwd < len(msg) && isJSONWhitespace(msg[fwd]) {
-				fwd++
-			}
-			if fwd < len(msg) && msg[fwd] == ',' {
-				hi = fwd + 1
-			}
-		}
-
-		spans = append(spans, span{lo, hi})
-		searchFrom = hi
+	if !l.enabled || len(msg) == 0 {
+		return
+	}
+	if !bytes.Contains(msg, datadogCarrierSubstrBytes) {
+		return
+	}
+	if !json.Valid(msg) {
+		return
 	}
 
-	if len(spans) == 0 {
+	stripped, changed := stripInjectedContextBytes(msg)
+	if !changed || !json.Valid(stripped) {
+		return
+	}
+
+	retMsg = stripped
+	return
+}
+
+// HandlerFinished implements the wrapper.HandlerListener interface.
+func (l *Listener) HandlerFinished(ctx context.Context, err error) {}
+
+// stripInjectedContextBytes removes supported _datadog carriers from msg.
+// Datadog injects _datadog in one of two shapes:
+//  1. Object detail: "_datadog": {...}
+//  2. String detail: "detail": "{\"_datadog\":{...}}"
+func stripInjectedContextBytes(msg json.RawMessage) (json.RawMessage, bool) {
+	out, objectChanged := stripObjectCarriers(msg)
+	out, stringChanged := stripStringEncodedCarriers(out)
+
+	return out, objectChanged || stringChanged
+}
+
+// stripObjectCarriers removes object-form "_datadog" carriers via byte scanning.
+// The result is built incrementally to avoid allocating a separate range slice.
+func stripObjectCarriers(msg json.RawMessage) (json.RawMessage, bool) {
+	var out []byte
+	searchFrom := 0
+	copyFrom := 0
+
+	for searchFrom < len(msg) {
+		keyStart, valueEnd, found := findNextObjectCarrier(msg, searchFrom)
+		if !found {
+			break
+		}
+
+		removal := carrierRemovalRange(msg, keyStart, valueEnd, searchFrom)
+		if out == nil {
+			// Allocate only after finding the first removable carrier. Capacity is
+			// based on the input size so multiple carriers do not grow the buffer.
+			out = make([]byte, 0, len(msg))
+		}
+
+		out = append(out, msg[copyFrom:removal.start]...)
+		copyFrom = removal.end
+		searchFrom = removal.end
+	}
+
+	if out == nil {
 		return msg, false
 	}
 
-	out := make([]byte, 0, len(msg))
-	prev := 0
-	for _, s := range spans {
-		out = append(out, msg[prev:s.lo]...)
-		prev = s.hi
-	}
-	return append(out, msg[prev:]...), true
+	out = append(out, msg[copyFrom:]...)
+	return out, true
 }
 
-// stripStringEncodedCarriers removes _datadog from JSON objects embedded in top-level string fields.
+// findNextObjectCarrier returns the key start and object-value end for the
+// next removable carrier at or after searchFrom.
+func findNextObjectCarrier(msg []byte, searchFrom int) (keyStart, valueEnd int, found bool) {
+	for searchFrom < len(msg) {
+		relative := bytes.Index(msg[searchFrom:], datadogKeyColon)
+		if relative < 0 {
+			return 0, 0, false
+		}
+
+		keyStart = searchFrom + relative
+		if !isObjectProperty(msg, keyStart) {
+			searchFrom = keyStart + 1
+			continue
+		}
+
+		valueStart, ok := objectValueStart(msg, keyStart+len(datadogKeyColon))
+		if !ok {
+			searchFrom = keyStart + 1
+			continue
+		}
+
+		valueEnd, ok = scanObjectEnd(msg, valueStart)
+		if !ok {
+			searchFrom = keyStart + 1
+			continue
+		}
+
+		return keyStart, valueEnd, true
+	}
+
+	return 0, 0, false
+}
+
+// isObjectProperty reports whether keyStart is positioned after an object
+// opening brace or an object-property separator.
+func isObjectProperty(msg []byte, keyStart int) bool {
+	previous := skipJSONWhitespaceBackward(msg, keyStart-1)
+	return previous >= 0 && (msg[previous] == '{' || msg[previous] == ',')
+}
+
+// objectValueStart returns the opening brace for an object carrier value.
+func objectValueStart(msg []byte, start int) (int, bool) {
+	start = skipJSONWhitespaceForward(msg, start)
+	return start, start < len(msg) && msg[start] == '{'
+}
+
+// carrierRemovalRange expands a carrier range to consume one adjacent comma.
+// It prefers the preceding comma unless that comma belongs to an earlier range.
+func carrierRemovalRange(msg []byte, keyStart, valueEnd, searchFrom int) byteRange {
+	previous := skipJSONWhitespaceBackward(msg, keyStart-1)
+	if previous >= searchFrom && msg[previous] == ',' {
+		return byteRange{start: previous, end: valueEnd}
+	}
+
+	next := skipJSONWhitespaceForward(msg, valueEnd)
+	if next < len(msg) && msg[next] == ',' {
+		return byteRange{start: keyStart, end: next + 1}
+	}
+
+	return byteRange{start: keyStart, end: valueEnd}
+}
+
+// stripStringEncodedCarriers removes _datadog from JSON objects encoded
+// inside top-level string fields.
 func stripStringEncodedCarriers(msg json.RawMessage) (json.RawMessage, bool) {
 	if !bytes.Contains(msg, datadogCarrierEscapedKey) {
 		return msg, false
@@ -168,84 +202,111 @@ func stripStringEncodedCarriers(msg json.RawMessage) (json.RawMessage, bool) {
 	}
 
 	changed := false
-	for key, rawVal := range envelope {
-		newVal, ok := stripDatadogFromStringField(rawVal)
+	for key, rawValue := range envelope {
+		newValue, ok := stripDatadogFromStringField(rawValue)
 		if !ok {
 			continue
 		}
-		envelope[key] = newVal
+
+		envelope[key] = newValue
 		changed = true
 	}
 
 	if !changed {
 		return msg, false
 	}
+
 	out, err := json.Marshal(envelope)
 	if err != nil {
 		return msg, false
 	}
+
 	return out, true
 }
 
-// stripDatadogFromStringField removes the _datadog key from the JSON object
-// encoded within a JSON string field. Returns the new field value and true
-// if the field was modified, or nil and false otherwise.
-func stripDatadogFromStringField(rawVal json.RawMessage) (json.RawMessage, bool) {
-	var s string
-	if err := json.Unmarshal(rawVal, &s); err != nil {
-		return nil, false // not a string field
-	}
-	if !bytes.Contains([]byte(s), datadogCarrierSubstrBytes) {
+// stripDatadogFromStringField removes _datadog from a JSON object encoded
+// inside a JSON string.
+func stripDatadogFromStringField(rawValue json.RawMessage) (json.RawMessage, bool) {
+	var value string
+	if err := json.Unmarshal(rawValue, &value); err != nil {
 		return nil, false
 	}
+	if !strings.Contains(value, datadogCarrierKey) {
+		return nil, false
+	}
+
 	var inner map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(s), &inner); err != nil {
-		return nil, false // string is not a JSON object
-	}
-	if _, ok := inner[datadogCarrierKey]; !ok {
+	if err := json.Unmarshal([]byte(value), &inner); err != nil {
 		return nil, false
 	}
+	if _, exists := inner[datadogCarrierKey]; !exists {
+		return nil, false
+	}
+
 	delete(inner, datadogCarrierKey)
+
 	innerBytes, err := json.Marshal(inner)
 	if err != nil {
 		return nil, false
 	}
-	newVal, err := json.Marshal(string(innerBytes))
+
+	newValue, err := json.Marshal(string(innerBytes))
 	if err != nil {
 		return nil, false
 	}
-	return newVal, true
+
+	return newValue, true
 }
 
-// isJSONWhitespace checks if the given byte is a JSON whitespace character.
+// skipJSONWhitespaceForward returns the first index at or after start that is
+// not JSON whitespace. Returns len(msg) when only whitespace remains.
+func skipJSONWhitespaceForward(msg []byte, start int) int {
+	for start < len(msg) && isJSONWhitespace(msg[start]) {
+		start++
+	}
+	return start
+}
+
+// skipJSONWhitespaceBackward returns the first index at or before start that is
+// not JSON whitespace. Returns a value less than zero when only whitespace remains.
+func skipJSONWhitespaceBackward(msg []byte, start int) int {
+	for start >= 0 && isJSONWhitespace(msg[start]) {
+		start--
+	}
+	return start
+}
+
+// isJSONWhitespace reports whether c is JSON whitespace.
 func isJSONWhitespace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
-// scanObjectEnd returns the byte offset after the closing '}' of a JSON object
-// starting at start in b, correctly tracking nested objects and strings.
-func scanObjectEnd(b []byte, start int) (int, bool) {
+// scanObjectEnd returns the offset after the closing '}' of the object at start,
+// accounting for nested objects and quoted strings.
+func scanObjectEnd(msg []byte, start int) (int, bool) {
 	depth := 0
 	inString := false
 	escaped := false
 
-	for i := start; i < len(b); i++ {
-		c := b[i]
-		if inString {
+	for i := start; i < len(msg); i++ {
+		current := msg[i]
+
+		if inString { // Order is significant: escaped must be checked before '\\' and '"'
 			if escaped {
 				escaped = false
 				continue
 			}
-			if c == '\\' {
+			if current == '\\' {
 				escaped = true
 				continue
 			}
-			if c == '"' {
+			if current == '"' {
 				inString = false
 			}
 			continue
 		}
-		switch c {
+
+		switch current { // Outside a string, '{' and '}' drive the depth counter
 		case '"':
 			inString = true
 		case '{':
@@ -257,5 +318,6 @@ func scanObjectEnd(b []byte, start int) (int, bool) {
 			}
 		}
 	}
+
 	return 0, false
 }
