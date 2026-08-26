@@ -31,7 +31,7 @@ require (
 	github.com/tinylib/msgp v1.6.4
 	github.com/trailofbits/go-mutexasserts v0.0.0-20250514102930-c1f3d2e37561
 	go.opentelemetry.io/collector/pdata/pprofile v0.155.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0

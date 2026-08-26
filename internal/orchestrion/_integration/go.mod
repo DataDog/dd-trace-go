@@ -7,8 +7,8 @@ require (
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/99designs/gqlgen v0.17.92
 	github.com/DataDog/datadog-agent/pkg/proto v0.82.0
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
 	github.com/DataDog/go-libddwaf/v4 v4.10.0
 	github.com/DataDog/orchestrion v1.11.0
@@ -98,8 +98,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.11.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.11.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.11.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.9.2 // indirect
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.9.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.11.0-dev.1 // indirect
@@ -346,7 +346,7 @@ require (
 	go.opentelemetry.io/collector/pdata v1.61.0 // indirect
 	go.opentelemetry.io/collector/pdata/pprofile v0.155.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.62.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
