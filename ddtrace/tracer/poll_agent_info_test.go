@@ -441,6 +441,14 @@ func TestTraceProtocolDowngradeIsSticky(t *testing.T) {
 // for the rest of the process — see downgradeAfterRejectedSend and
 // trace_protocol_state.go. The rejected payload itself is dropped, not
 // redelivered (see doc.go's documented trade-off).
+//
+// Issue #5258 diagnostic build: downgradeAfterRejectedSend no longer rotates
+// h.payload (see its doc comment). So the writer's payload after the first
+// rejection is still the empty-but-v1 object the preceding flush() built
+// moments before the rejection was discovered — the second span lands in it
+// too and is rejected again. Only the third span, added once a flush has
+// rebuilt the payload against the now-settled v0.4 protocol, actually gets
+// through.
 func TestTraceProtocolStaysV04AfterRejectedSend(t *testing.T) {
 	agent := startTestAgent(t)
 	agent.RejectV1Traces(true)
@@ -467,9 +475,18 @@ func TestTraceProtocolStaysV04AfterRejectedSend(t *testing.T) {
 		require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "the downgrade must stay sticky through repeated positive polls")
 	}
 
-	// A second span still gets through, now correctly encoded as v0.4.
+	// The second span does NOT get through: it lands in the same stale (v1,
+	// empty) payload the flush above rebuilt just before the rejection
+	// landed, so it is rejected too.
 	s2 := tr.StartSpan("op2")
 	s2.Finish()
+	flushAgentTracerTest(t, tr, agent, 0)
+	assert.Empty(t, agent.Requests(), "the payload built just before the rejection landed is still v1, so this span is rejected too")
+
+	// The third span finally gets through, now correctly encoded as v0.4:
+	// the flush above rebuilt the payload against the settled protocol.
+	s3 := tr.StartSpan("op3")
+	s3.Finish()
 	flushAgentTracerTest(t, tr, agent, 1)
 	assert.Equal(t, []string{tracesAPIPath}, agent.Requests())
 }

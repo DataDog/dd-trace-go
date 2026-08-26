@@ -180,7 +180,20 @@
 // still in effect keeps going to /v1.0/traces, since it was already
 // committed to that wire format, and may be rejected there; a payload the
 // Agent rejects outright is dropped rather than re-encoded and redelivered on
-// 0.4. Under concurrent flush traffic this is not limited to a single
+// 0.4.
+//
+// Issue #5258 diagnostic build: this loss window is temporarily wider than
+// described above. New traces accepted after a downgrade is discovered are
+// no longer rerouted into a fresh 0.4 payload immediately — they land in
+// whatever payload already existed at that moment (built for the
+// still-believed-good 1.0 protocol) and ride along with it, potentially
+// through more than one rejected send, until a scheduled or size-triggered
+// flush happens to rebuild the payload against the now-settled 0.4 protocol.
+// This trades a wider, but still bounded and self-correcting, loss window
+// for removing add()'s per-call protocol check, which production telemetry
+// suggested was disproportionate to how rarely this path actually fires.
+//
+// Under concurrent flush traffic this is not limited to a single
 // payload: several payloads can be in flight (or queued waiting for a
 // connection slot) at once, so a real Agent-side rollback can cost up to the
 // tracer's concurrent-connection limit worth of payloads already committed to

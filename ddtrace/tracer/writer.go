@@ -73,57 +73,42 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 	return tw
 }
 
+// add pushes trace into h.payload without checking whether h.payload's
+// protocol still matches effectiveTraceProtocol(). That check (plus sealing a
+// non-empty mismatched payload for immediate async send) was added by #5167
+// and reverted here (issue #5258 diagnostic): direct benchmarking found it
+// added no measurable steady-state cost, but the sealed-payload path itself
+// cost 6-12x a normal add() call when a transition was actually in flight,
+// and #5167's own re-evaluation machinery (protocolState, rotateStalePayload,
+// effectiveTraceProtocol) is left fully intact — flush() still reads it fresh
+// on every call and unconditionally rebuilds h.payload for the current
+// protocol regardless of what oldp's protocol was, so a real protocol change
+// still gets picked up correctly, just at the next flush instead of
+// immediately. The trade-off: a payload that is mid-buffering when a
+// transition happens can keep absorbing spans (which will go out under
+// whatever protocol h.payload started with) until that next flush, instead
+// of being sealed and resent immediately. A transition that lands on an
+// already-in-flight v1.0 payload after the agent has genuinely stopped
+// accepting it is not silently corrupted — the existing errV1TracesNotSupported
+// handling in sendAsync (downgradeAfterRejectedSend) still drops and reports
+// it via reason:v1_rejected. See the two TestEmptyPayload.../
+// TestNonEmptyPayload... tests in trace_protocol_runtime_test.go for the
+// exact contract this leaves, and datadog.tracer.trace_protocol_changed for
+// the production frequency data (issue #5258) that motivated this trade-off.
 func (h *agentTraceWriter) add(trace []*Span) {
 	h.mu.Lock()
-	// Read the effective protocol exactly once, under the lock, and thread it
-	// through the rest of this call: reading it before acquiring h.mu (as an
-	// earlier version of this method did) lets a concurrent add() race ahead,
-	// install and populate a payload for a newer protocol, and then have this
-	// call's now-stale reading treat that newer, correct payload as
-	// mismatched — sealing it away and replacing it with a payload for the
-	// stale protocol instead. Reading it here makes this call's decision
-	// atomic with respect to h.payload, since nothing else can touch
-	// h.payload while this goroutine holds h.mu.
-	protocol := h.config.effectiveTraceProtocol()
-	// Seal a non-empty stale payload and push into its replacement within the
-	// same critical section as the mismatch check: checking and pushing under
-	// two separate lock acquisitions (as an earlier version of this method
-	// did, calling h.flush() here) leaves a window where a protocol change
-	// lands in between, so the push still reaches the old payload despite the
-	// check having just passed. rotateStalePayload only replaces an empty
-	// payload for free, so a non-empty one is sealed here for async send
-	// instead.
-	var sealed payload
-	if h.payload.itemCount() > 0 && h.payload.protocol() != protocol {
-		sealed = h.payload
-		h.payload = h.newPayload(protocol, min(sealed.size(), int(payloadMaxLimit)))
-	} else {
-		h.rotateStalePayload(protocol)
-	}
-	stats, pushErr := h.payload.push(trace)
-	needsFlush := pushErr == nil && stats.size > payloadSizeLimit
-	if pushErr == nil {
-		// TODO: This does not differentiate between complete traces and partial chunks
-		atomic.AddUint32(&h.tracesQueued, 1)
-	}
-	h.mu.Unlock()
-
-	if sealed != nil {
-		// A downgrade would otherwise get every trace queued between now and
-		// the next scheduled flush rejected on the old protocol's endpoint;
-		// an upgrade just costs one harmless off-cadence flush. Sent
-		// unconditionally, even if pushErr below is set: sealed already holds
-		// valid, previously-buffered traces that must not be orphaned by an
-		// unrelated encoding error on the incoming one.
-		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:protocol_change"}, 1)
-		h.sendAsync(sealed)
-	}
-
-	if pushErr != nil {
+	stats, err := h.payload.push(trace)
+	if err != nil {
+		h.mu.Unlock()
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
-		log.Error("Error encoding msgpack: %s", pushErr.Error())
+		log.Error("Error encoding msgpack: %s", err.Error())
 		return
 	}
+	// TODO: This does not differentiate between complete traces and partial chunks
+	atomic.AddUint32(&h.tracesQueued, 1)
+
+	needsFlush := stats.size > payloadSizeLimit
+	h.mu.Unlock()
 
 	if needsFlush {
 		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
@@ -326,6 +311,22 @@ func (h *agentTraceWriter) sendAsync(p payload) {
 // reported once, just not always attributed to this path.
 func (h *agentTraceWriter) downgradeAfterRejectedSend() {
 	h.config.advanceTraceProtocolState(protoV04)
+	// This registers the downgrade (state, telemetry, log) only -- it does not
+	// also rotate h.payload. An earlier version of this diagnostic build
+	// (issue #5258) added a compensating rotation here so the very next trace
+	// wouldn't land in a payload built moments ago for the still-believed-good
+	// v1 protocol, but Codex review on #5263 correctly flagged that the
+	// rotation and this state flip aren't atomic with add(): a concurrent
+	// add() can populate that payload between the two, making it non-empty --
+	// rotateStalePayload only replaces an empty one -- so the compensating
+	// rotation could silently do nothing under exactly the concurrent traffic
+	// it was meant to help with. Fixing that race properly means serializing
+	// this with add() under h.mu, which reintroduces the per-add() cost this
+	// revert exists to remove. Simpler and consistent with removing add()'s
+	// own check entirely: don't special-case this path either. flush()'s
+	// existing, unconditional rebuild-for-current-protocol on every call is
+	// the only recovery mechanism now, same as any other post-transition
+	// staleness this diagnostic build accepts -- see add()'s doc comment.
 	if !h.config.internalConfig.ReportEffectiveTraceProtocol(h.config.effectiveTraceProtocol()) {
 		return
 	}
