@@ -13,6 +13,7 @@ require (
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.5.1
 	google.golang.org/protobuf v1.36.10
 	gotest.tools/gotestsum v1.12.3
+	gvisor.dev/gvisor v0.0.0-20260107153705-120d5fcd96de
 	mvdan.cc/sh/v3 v3.12.0
 )
 

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
 )
@@ -1999,4 +2000,63 @@ func TestEndToEnd_AllThreeFixes(t *testing.T) {
 			t.Errorf("expected 'premium' or 'basic', got %q", value)
 		}
 	})
+}
+
+func TestEndToEnd_ExposureSerialID(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+	status := processConfigUpdate(provider, "datadog/2/ASM_FEATURES/test/config", []byte(`{
+		"createdAt":"2026-01-01T00:00:00Z",
+		"format":"SERVER",
+		"environment":{"name":"test"},
+		"flags":{
+			"holdout-flag":{
+				"key":"holdout-flag",
+				"enabled":true,
+				"variationType":"BOOLEAN",
+				"variations":{"on":{"key":"on","value":true}},
+				"allocations":[{
+					"key":"holdout-allocation",
+					"doLog":true,
+					"splits":[{"variationKey":"on","serialId":340132,"shards":[]}]
+				}]
+			},
+			"plain-flag":{
+				"key":"plain-flag",
+				"enabled":true,
+				"variationType":"BOOLEAN",
+				"variations":{"on":{"key":"on","value":true}},
+				"allocations":[{
+					"key":"plain-allocation",
+					"doLog":true,
+					"splits":[{"variationKey":"on","shards":[]}]
+				}]
+			}
+		}
+	}`))
+	require.Equal(t, rc.ApplyStateAcknowledged, status.State)
+
+	domain := "exposure-serial-id-test-app"
+	require.NoError(t, of.SetNamedProviderAndWait(domain, provider))
+	client := of.NewClient(domain)
+
+	writer := getExposureWriter(provider)
+	evalCtx := of.NewEvaluationContext("user-123", map[string]any{})
+
+	value, err := client.BooleanValue(context.Background(), "holdout-flag", false, evalCtx)
+	require.NoError(t, err)
+	require.True(t, value)
+
+	value, err = client.BooleanValue(context.Background(), "plain-flag", false, evalCtx)
+	require.NoError(t, err)
+	require.True(t, value)
+
+	exposures := getExposureBuffer(writer)
+	require.Len(t, exposures, 2)
+
+	require.Equal(t, "holdout-flag", exposures[0].Flag.Key)
+	require.NotNil(t, exposures[0].SerialID)
+	require.Equal(t, uint32(340132), *exposures[0].SerialID)
+
+	require.Equal(t, "plain-flag", exposures[1].Flag.Key)
+	require.Nil(t, exposures[1].SerialID)
 }
