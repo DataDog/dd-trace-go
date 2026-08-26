@@ -50,9 +50,6 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			if cfg.otelEnabled {
-				opts = append(opts, httptrace.HTTPEndpointTag("", r))
-			}
 			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
 			span, ctx, finishSpans := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
@@ -79,6 +76,8 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				span.SetTag(ext.HTTPRoute, routePattern)
 			}
 			if cfg.otelEnabled {
+				// Chi exposes the final route pattern only after dispatch, so endpoint tagging
+				// must happen here rather than when the span starts.
 				if endpoint, ok := httptrace.HTTPEndpoint(routePattern, r); ok {
 					span.SetTag(ext.HTTPEndpoint, endpoint)
 				}
