@@ -9,13 +9,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/wrapper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var _ wrapper.HandlerListener = (*Listener)(nil)
 
 var testcases = []struct {
 	name    string
@@ -44,6 +49,30 @@ var testcases = []struct {
 
 	// regression: carrier value contains literal , and } characters
 	{"regression: value with ,}", true, `{"foo":"a,}b","_datadog":{"x":1}}`, `{"foo":"a,}b"}`},
+
+	// _datadog with a non-object value must be left unchanged
+	{"_datadog value: null", true, `{"_datadog":null}`, `{"_datadog":null}`},
+	{"_datadog value: bool", true, `{"_datadog":true}`, `{"_datadog":true}`},
+	{"_datadog value: number", true, `{"_datadog":42}`, `{"_datadog":42}`},
+	{"_datadog value: string", true, `{"_datadog":"str"}`, `{"_datadog":"str"}`},
+	{"_datadog value: array", true, `{"_datadog":[1,2,3]}`, `{"_datadog":[1,2,3]}`},
+
+	// keys that contain _datadog as a substring must not be removed
+	{"similar key: prefix", true, `{"x_datadog":{"a":"b"}}`, `{"x_datadog":{"a":"b"}}`},
+	{"similar key: suffix", true, `{"_datadogx":{"a":"b"}}`, `{"_datadogx":{"a":"b"}}`},
+
+	// the injected form never has whitespace before the colon so this must not be stripped
+	{"whitespace before colon", true, `{"_datadog" :{"x":"y"}}`, `{"_datadog" :{"x":"y"}}`},
+
+	// even number of backslashes before a quote means the quote closes the string
+	{"even backslashes in value", true,
+		`{"foo":"bar\\\\","_datadog":{"x":"y"}}`,
+		`{"foo":"bar\\\\"}`},
+
+	// odd number of backslashes means the quote is escaped and does not close the string
+	{"odd backslashes in carrier value", true,
+		`{"_datadog":{"x":"val\\\""}}`,
+		`{}`},
 }
 
 func strip(enabled bool, in json.RawMessage) json.RawMessage {
@@ -225,6 +254,37 @@ func FuzzStripInjectedContext(f *testing.F) {
 		_, out2 := l.HandlerStarted(context.Background(), out)
 		if !bytes.Equal(out, out2) {
 			t.Fatalf("not idempotent: once=%q twice=%q", out, out2)
+		}
+	})
+}
+
+func FuzzStripCompleteness(f *testing.F) {
+	f.Add(`{"x-datadog-trace-id":"1"}`, `{"foo":"bar"}`)
+	f.Add(`{}`, `{}`)
+
+	f.Fuzz(func(t *testing.T, carrierJSON string, restJSON string) {
+		trimmed := strings.TrimSpace(carrierJSON)
+		if len(trimmed) == 0 || trimmed[0] != '{' {
+			return
+		}
+		if !json.Valid([]byte(trimmed)) || !json.Valid([]byte(restJSON)) {
+			return
+		}
+		payload := fmt.Sprintf(`{"_datadog":%s,"other":%s}`, trimmed, restJSON)
+		if !json.Valid([]byte(payload)) {
+			return
+		}
+
+		l := MakeListener(Config{StripInjectedContext: true})
+		_, out := l.HandlerStarted(context.Background(), json.RawMessage(payload))
+
+		var result map[string]json.RawMessage
+		if err := json.Unmarshal(out, &result); err != nil {
+			t.Fatalf("output is not valid JSON: %v", err)
+		}
+
+		if _, found := result[datadogCarrierKey]; found {
+			t.Fatalf("carrier was not removed: out=%q", out)
 		}
 	})
 }
