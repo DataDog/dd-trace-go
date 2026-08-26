@@ -98,10 +98,8 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	s := tracer.StartSpan(spanName, ddopts...)
 
 	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
-	mergedBag := mergeBaggageFromContext(ctx)
-	for _, m := range mergedBag.Members() {
-		ctx = baggage.Set(ctx, m.Key(), m.Value())
-	}
+	mergedBag, ddBag := mergeBaggageFromContext(ctx)
+	ctx = baggage.SetAll(ctx, ddBag)
 	ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
 
 	os := oteltrace.Span(&span{
@@ -117,9 +115,11 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	return ctx, os
 }
 
-// mergeBaggageFromContext merges Datadog baggage found on the context into the OpenTelemetry baggage found on the context.
-// adding key-value pairs only if the key doesn't already exist in the OpenTelemetry baggage. It ensures no existing values are overwritten.
-func mergeBaggageFromContext(ctx context.Context) otelbaggage.Baggage {
+// mergeBaggageFromContext merges Datadog baggage found on the context into the OpenTelemetry baggage found on the context,
+// adding key-value pairs only if the key doesn't already exist in the OpenTelemetry baggage. It ensures no existing values
+// are overwritten. It returns the merged OTel baggage along with the equivalent map[string]string used to update Datadog
+// baggage.
+func mergeBaggageFromContext(ctx context.Context) (otelbaggage.Baggage, map[string]string) {
 	otelBag := otelbaggage.FromContext(ctx)
 	for key, value := range baggage.All(ctx) {
 		if otelBag.Member(key).Value() == "" {
@@ -134,7 +134,15 @@ func mergeBaggageFromContext(ctx context.Context) otelbaggage.Baggage {
 			}
 		}
 	}
-	return otelBag
+	members := otelBag.Members()
+	if len(members) == 0 {
+		return otelBag, nil
+	}
+	ddBag := make(map[string]string, len(members))
+	for _, m := range members {
+		ddBag[m.Key()] = m.Value()
+	}
+	return otelBag, ddBag
 }
 
 type otelCtxToDDCtx struct {

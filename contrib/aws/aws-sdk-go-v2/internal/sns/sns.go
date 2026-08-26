@@ -6,7 +6,9 @@
 package sns
 
 import (
+	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/smithy-go/middleware"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
@@ -29,23 +33,23 @@ const (
 
 var instr = internal.Instr
 
-func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation string) {
+func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "Publish":
-		handlePublish(span, in)
+		handlePublish(ctx, span, in)
 	case "PublishBatch":
-		handlePublishBatch(span, in)
+		handlePublishBatch(ctx, span, in)
 	}
 }
 
-func handlePublish(span *tracer.Span, in middleware.InitializeInput) {
+func handlePublish(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PublishInput params")
 		return
 	}
 
-	traceContext, err := getTraceContext(span)
+	traceContext, err := getTraceContext(ctx, span, destinationName(params.TopicArn, params.TargetArn), int64(publishInputSize(params)))
 	if err != nil {
 		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
@@ -63,23 +67,27 @@ func handlePublish(span *tracer.Span, in middleware.InitializeInput) {
 	injectTraceContext(traceContext, params.MessageAttributes)
 }
 
-func handlePublishBatch(span *tracer.Span, in middleware.InitializeInput) {
+func handlePublishBatch(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishBatchInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PublishBatch params")
 		return
 	}
 
-	traceContext, err := getTraceContext(span)
-	if err != nil {
-		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
-		return
-	}
-
-	ctxSize := attributeSize(datadogKey, traceContext)
 	runningSize := batchTotalSize(params.PublishBatchRequestEntries)
 
 	for i := range params.PublishBatchRequestEntries {
+		traceContext, err := getTraceContext(
+			ctx,
+			span,
+			destinationName(params.TopicArn, nil),
+			int64(publishBatchEntrySize(&params.PublishBatchRequestEntries[i])),
+		)
+		if err != nil {
+			instr.Logger().Debug("Unable to get trace context: %s", err.Error())
+			continue
+		}
+		ctxSize := attributeSize(datadogKey, traceContext)
 		if runningSize+ctxSize > maxMessageSizeBytes {
 			instr.Logger().Debug("Cannot inject trace context: batch size limit would be exceeded")
 			break
@@ -93,11 +101,22 @@ func handlePublishBatch(span *tracer.Span, in middleware.InitializeInput) {
 	}
 }
 
-func getTraceContext(span *tracer.Span) (types.MessageAttributeValue, error) {
+func getTraceContext(ctx context.Context, span *tracer.Span, destination string, payloadSize int64) (types.MessageAttributeValue, error) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
 		return types.MessageAttributeValue{}, err
+	}
+
+	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+		ctx,
+		options.CheckpointParams{PayloadSize: payloadSize},
+		"direction:out",
+		"type:sns",
+		"topic:"+destination,
+	)
+	if ok {
+		datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
 	}
 
 	jsonBytes, err := json.Marshal(carrier)
@@ -148,12 +167,21 @@ func publishInputSize(params *sns.PublishInput) int {
 func batchTotalSize(entries []types.PublishBatchRequestEntry) int {
 	total := 0
 	for _, entry := range entries {
-		if entry.Message != nil {
-			total += len(*entry.Message)
-		}
-		total += sizeAttributes(entry.MessageAttributes)
+		total += publishBatchEntrySize(&entry)
 	}
 	return total
+}
+
+func publishBatchEntrySize(entry *types.PublishBatchRequestEntry) int {
+	if entry == nil {
+		return 0
+	}
+
+	size := 0
+	if entry.Message != nil {
+		size += len(*entry.Message)
+	}
+	return size + sizeAttributes(entry.MessageAttributes)
 }
 
 func injectTraceContext(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) bool {
@@ -165,4 +193,20 @@ func injectTraceContext(traceContext types.MessageAttributeValue, messageAttribu
 
 	messageAttributes[datadogKey] = traceContext
 	return true
+}
+
+func destinationName(topicArn *string, targetArn *string) string {
+	switch {
+	case topicArn != nil && *topicArn != "":
+		return arnResourceName(*topicArn)
+	case targetArn != nil && *targetArn != "":
+		return arnResourceName(*targetArn)
+	default:
+		return ""
+	}
+}
+
+func arnResourceName(arn string) string {
+	parts := strings.Split(arn, ":")
+	return parts[len(parts)-1]
 }

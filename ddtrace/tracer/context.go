@@ -12,8 +12,16 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
+
+// activeSpanContextKey is a context key for the snapshotted SpanContext.
+// When a Span is stored in a Go context via ContextWithSpan, we also snapshot
+// its SpanContext so that StartSpanFromContext can tell "a span was explicitly
+// placed here via ContextWithSpan" apart from "ctx.Value found an active span
+// some other way" (notably Orchestrion's GLS fallback, which resolves an
+// active span even from context.Background()). Only the former should
+// override an explicit ChildOf option; see StartSpanFromContext.
+type activeSpanContextKey struct{}
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 // If ctx is nil, a new background context is created to avoid panicking.
@@ -22,7 +30,30 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
 		ctx = context.Background()
 	}
-	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
+	// Plain context.WithValue. When built with orchestrion, three aspects in
+	// ddtrace/tracer/orchestrion.yml extend the span's GLS lifecycle:
+	//   - "Span GLS fields": adds two woven fields to Span — __dd_glsPop
+	//     (GLSPopperCell, an atomic pointer to the goroutine-scoped popper) and
+	//     __dd_glsReclaimable (atomic.Bool, set on finish so a cross-goroutine
+	//     GLS entry is never handed out as the active span and is dropped by the
+	//     next push).
+	//   - "Span ContextWithSpan GLS push": prepends before this line:
+	//       orchestrion.GLSActivate(nil, ActiveSpanKey, s, &s.__dd_glsPop)
+	//     which pushes s onto the goroutine-local stack and records a goroutine-
+	//     scoped popper in __dd_glsPop (first push wins; no-op when disabled).
+	//   - "Span Finish GLS deactivate": prepends at the top of Span.Finish:
+	//       orchestrion.GLSDeactivate(&s.__dd_glsReclaimable, &s.__dd_glsPop)
+	//     which pops the GLS entry exactly once, only on the goroutine that pushed.
+	// SpanFromContext is extended analogously ("Span SpanFromContext GLS read").
+	// Without orchestrion there is no GLS; this is a plain context.WithValue.
+	newCtx := context.WithValue(ctx, internal.ActiveSpanKey, s)
+	if s != nil {
+		// Snapshot the SpanContext so StartSpanFromContext can tell this apart
+		// from a span found only via GLS inference. This does NOT protect the
+		// underlying trace from being finished or flushed; callers must ensure
+		// the parent's trace lifetime exceeds child span creation.
+		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, s.Context())
+	}
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }
 
@@ -67,7 +98,13 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
+	// Plain context lookup. Under orchestrion, "Span SpanFromContext GLS read"
+	// (ddtrace/tracer/orchestrion.yml) prepends:
+	//   ctx = orchestrion.WrapContext(ctx)
+	// so ctx.Value also consults the goroutine-local stack as a fallback when the
+	// explicit context chain carries no active span (e.g. un-instrumented callers).
+	// Without orchestrion this is a bare ctx.Value.
+	v := ctx.Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
 		// We may have a nil *Span wrapped in an interface in the GLS context stack,
 		// in which case we need to act as if there was nothing (otherwise we'll
@@ -81,8 +118,14 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
-// is found in the context, it will be used as the parent of the resulting span. If the ChildOf
-// option is passed, it will only be used as the parent if there is no span found in `ctx`.
+// was placed in ctx by [ContextWithSpan], it is used as the parent of the resulting span even if
+// the ChildOf option is passed. An active span discovered any other way — notably through
+// Orchestrion's goroutine-local storage fallback — is only used as the parent when the caller
+// did not pass a non-nil ChildOf.
+//
+// ChildOf(nil) counts as unset rather than as a request for a root span, because
+// [StartSpanConfig.Parent] gives nil that meaning already and integrations pass the nil that
+// [Extract] returns when propagation is disabled. Such a call still gets the discovered parent.
 // +checklocksignore — Initialization time, span just created by StartSpan, not yet shared.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
 	// copy opts in case the caller reuses the slice in parallel
@@ -91,8 +134,17 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()
+	} else if sc, ok := ctx.Value(activeSpanContextKey{}).(*SpanContext); ok && sc != nil {
+		// A span was placed here via ContextWithSpan; that is deliberate, so it
+		// outranks an explicit ChildOf. Asserted since 2018.
+		optsLocal = append(optsLocal, ChildOf(sc))
 	} else if s, ok := SpanFromContext(ctx); ok {
-		optsLocal = append(optsLocal, ChildOf(s.Context()))
+		// Reached only when the context chain carries no span snapshot, i.e. the
+		// span came from somewhere other than ContextWithSpan. In practice that
+		// is Orchestrion's GLS fallback, which is an inference about the current
+		// scope rather than a parent the caller named, so it must not override an
+		// explicit ChildOf. See childOfIfUnset.
+		optsLocal = append(optsLocal, childOfIfUnset(s.Context()))
 	}
 	optsLocal = append(optsLocal, withContext(ctx))
 	s := StartSpan(operationName, optsLocal...)
