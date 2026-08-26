@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
@@ -152,6 +155,73 @@ func (tc *TestCaseRouterParallel) ExpectedTraces() trace.Traces {
 		}
 	}
 	return traces
+}
+
+type TestCaseOTelSemantics struct {
+	router *mux.Router
+}
+
+func (tc *TestCaseOTelSemantics) Setup(_ context.Context, t *testing.T) {
+	internalconfig.Get().SetOTelSemanticsEnabled(true, internalconfig.OriginCode)
+	httptrace.ResetCfg()
+	t.Cleanup(func() {
+		internalconfig.Get().SetOTelSemanticsEnabled(false, internalconfig.OriginCode)
+		httptrace.ResetCfg()
+	})
+
+	tc.router = mux.NewRouter()
+	tc.router.HandleFunc("/users/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func (tc *TestCaseOTelSemantics) Run(_ context.Context, t *testing.T) {
+	for _, tt := range []struct {
+		method string
+		path   string
+		status int
+	}{
+		{method: "gEt", path: "/users/123", status: http.StatusOK},
+		{method: "PROPFIND", path: "/missing", status: http.StatusNotFound},
+	} {
+		recorder := httptest.NewRecorder()
+		tc.router.ServeHTTP(recorder, httptest.NewRequest(tt.method, tt.path, nil))
+		require.Equal(t, tt.status, recorder.Code)
+	}
+}
+
+func (*TestCaseOTelSemantics) ExpectedTraces() trace.Traces {
+	return trace.Traces{
+		{
+			Tags: map[string]any{
+				"name":     "http.request",
+				"resource": "GET /users/{id}",
+				"type":     "web",
+				"service":  "mux.router",
+			},
+			Meta: map[string]string{
+				"component":                    "gorilla/mux",
+				"span.kind":                    "server",
+				"http.request.method":          "GET",
+				"http.request.method_original": "gEt",
+				"http.route":                   "/users/{id}",
+			},
+		},
+		{
+			Tags: map[string]any{
+				"name":     "http.request",
+				"resource": "HTTP",
+				"type":     "web",
+				"service":  "mux.router",
+			},
+			Meta: map[string]string{
+				"component":                    "gorilla/mux",
+				"span.kind":                    "server",
+				"http.request.method":          "_OTHER",
+				"http.request.method_original": "PROPFIND",
+			},
+		},
+	}
 }
 
 type TestCase struct {
