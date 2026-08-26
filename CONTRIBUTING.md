@@ -168,14 +168,17 @@ make format/shell
 Analyzes lock usage patterns to detect potential deadlocks and race conditions.
 
 ```shell
+# Install the managed checklocks binary
+make tools-install
+
 # Run checklocks on the default target (./ddtrace/tracer)
 ./scripts/checklocks.sh
 
 # Run checklocks on a specific directory
 ./scripts/checklocks.sh ./path/to/target
 
-# Run checklocks and ignore errors
-./scripts/checklocks.sh --ignore-errors
+# Run checklocks and ignore known issues
+./scripts/checklocks.sh --ignore-known-issues
 ```
 
 ### Module Management Scripts
@@ -394,3 +397,4 @@ fmt.Printf("Leak start at stack=%s\n", string(debug.Stack()))
 In practice, leaks often go through `http.(*Client).Do`, so that can be a good place to instrument as well.
 
 Following the advice above, most goroutine leaks should be easy to debug and fix.
+

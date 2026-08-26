@@ -49,7 +49,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version || 'stable' }}
+          go-version: ${{ inputs.go-version || '1.26.4' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Copyright
@@ -71,7 +71,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version || 'stable' }}
+          go-version: ${{ inputs.go-version || '1.26.4' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Lint GitHub Actions workflows
@@ -90,7 +90,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version || 'stable' }}
+          go-version: ${{ inputs.go-version || '1.26.4' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run fixmodules
@@ -111,7 +111,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version || 'stable' }}
+          go-version: ${{ inputs.go-version || '1.26.4' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Update documentation
@@ -132,7 +132,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version || 'stable' }}
+          go-version: ${{ inputs.go-version || '1.26.4' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Format
@@ -194,7 +194,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: stable
+          go-version: 1.26.4
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run checklocks
