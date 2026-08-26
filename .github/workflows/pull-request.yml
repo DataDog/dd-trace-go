@@ -31,7 +31,7 @@ jobs:
       - warm-repo-cache
     strategy:
       matrix:
-        go-version: [ "1.25", "1.26" ]
+        go-version: [ "1.25", "1.26.4" ]
       fail-fast: false
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
@@ -43,7 +43,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.25", "1.26" ]
+        go-version: [ "1.25", "1.26.4" ]
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
     with:
