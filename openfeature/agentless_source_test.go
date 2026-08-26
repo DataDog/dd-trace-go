@@ -6,12 +6,16 @@
 package openfeature
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRetryDelay(t *testing.T) {
@@ -94,5 +98,67 @@ func TestRetryAfterDuration(t *testing.T) {
 		future := time.Now().Add(30 * time.Second).UTC()
 		got := retryAfterDuration(newHeader("Retry-After", future.Format(http.TimeFormat)))
 		assert.InDelta(t, 30*time.Second, got, float64(2*time.Second))
+	})
+}
+
+func TestReadAgentlessResponseBody(t *testing.T) {
+	newResponse := func(body []byte, contentEncoding string) *http.Response {
+		resp := &http.Response{
+			Header: http.Header{},
+			Body:   io.NopCloser(bytes.NewReader(body)),
+		}
+		if contentEncoding != "" {
+			resp.Header.Set("Content-Encoding", contentEncoding)
+		}
+		return resp
+	}
+
+	gzipped := func(t *testing.T, payload []byte) []byte {
+		t.Helper()
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		_, err := gz.Write(payload)
+		require.NoError(t, err)
+		require.NoError(t, gz.Close())
+		return buf.Bytes()
+	}
+
+	// A small limit keeps these cases cheap; the production limit is only a
+	// different number, not different logic.
+	const limit = 64
+
+	t.Run("reads a plain body", func(t *testing.T) {
+		got, err := readAgentlessResponseBody(newResponse([]byte(`{"ok":true}`), ""), limit)
+		require.NoError(t, err)
+		assert.Equal(t, `{"ok":true}`, string(got))
+	})
+
+	t.Run("decodes gzip", func(t *testing.T) {
+		got, err := readAgentlessResponseBody(newResponse(gzipped(t, []byte(`{"ok":true}`)), "gzip"), limit)
+		require.NoError(t, err)
+		assert.Equal(t, `{"ok":true}`, string(got))
+	})
+
+	t.Run("accepts a body exactly at the limit", func(t *testing.T) {
+		got, err := readAgentlessResponseBody(newResponse(bytes.Repeat([]byte("a"), limit), ""), limit)
+		require.NoError(t, err)
+		assert.Len(t, got, limit)
+	})
+
+	t.Run("rejects a body one byte over the limit", func(t *testing.T) {
+		// Must be a distinct error, not a silently truncated body: truncation
+		// would surface downstream as malformed configuration.
+		_, err := readAgentlessResponseBody(newResponse(bytes.Repeat([]byte("a"), limit+1), ""), limit)
+		assert.ErrorIs(t, err, errResponseTooLarge)
+	})
+
+	t.Run("rejects a decompression bomb", func(t *testing.T) {
+		// The bound is applied after gzip decoding, so a body that is small on
+		// the wire but expands past the limit is still rejected.
+		bomb := gzipped(t, bytes.Repeat([]byte("a"), 100*limit))
+		require.Less(t, len(bomb), limit, "compressed payload must itself be under the limit")
+
+		_, err := readAgentlessResponseBody(newResponse(bomb, "gzip"), limit)
+		assert.ErrorIs(t, err, errResponseTooLarge)
 	})
 }

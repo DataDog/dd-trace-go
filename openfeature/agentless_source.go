@@ -33,8 +33,18 @@ const maxPollAttempts = 3
 // unbounded memory use on a misbehaving endpoint.
 const maxDrainBytes = 4096
 
-// maxResponseBodyBytes bounds how much of a 200 response body is decoded.
+// maxResponseBodyBytes bounds how much of a 200 response body is decoded. The
+// bound is applied after gzip decoding, so it also caps what a decompression
+// bomb can expand to. 10MiB is roughly two orders of magnitude above a
+// realistic configuration: the shared cross-language fixture carries 31 flags
+// in ~95KB, so this allows on the order of ten thousand flags.
 const maxResponseBodyBytes = 10 << 20 // 10MiB
+
+// errResponseTooLarge reports a 200 body that exceeded maxResponseBodyBytes.
+// It must stay distinguishable from a parse failure: silently truncating an
+// oversized body would surface as malformed configuration and freeze the flags
+// at last-known-good with a warning naming the wrong cause.
+var errResponseTooLarge = errors.New("response exceeds maximum size")
 
 // agentlessSource polls the Agentless configuration endpoint on an interval
 // and applies newly received configuration. All fields other than mu, etag,
@@ -276,8 +286,15 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 		return pollOutcomeStop, 0
 	}
 
-	body, err := readAgentlessResponseBody(resp)
+	body, err := readAgentlessResponseBody(resp, maxResponseBodyBytes)
 	if err != nil {
+		if errors.Is(err, errResponseTooLarge) {
+			// Retrying cannot help: the same oversized body would come back.
+			if s.warnOnce("size") {
+				log.Warn("openfeature: agentless: response exceeds the %d byte limit; keeping the last known configuration", maxResponseBodyBytes)
+			}
+			return pollOutcomeStop, 0
+		}
 		if s.warnOnce("http") {
 			log.Warn("openfeature: agentless: failed to read response body: %v", err.Error())
 		}
@@ -325,8 +342,10 @@ func (s *agentlessSource) warnOnce(category string) bool {
 // readAgentlessResponseBody reads a 200 response body, decoding gzip when
 // Content-Encoding says so. Go's transport only auto-decompresses when it set
 // Accept-Encoding itself; since we set that header explicitly, decoding is
-// our responsibility.
-func readAgentlessResponseBody(resp *http.Response) ([]byte, error) {
+// our responsibility. It reads one byte past limit so exceeding the bound is
+// detectable rather than silently truncating. limit is a parameter rather than
+// maxResponseBodyBytes directly so tests can exercise the bound cheaply.
+func readAgentlessResponseBody(resp *http.Response, limit int) ([]byte, error) {
 	reader := io.Reader(resp.Body)
 	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
 		gz, err := gzip.NewReader(reader)
@@ -336,7 +355,14 @@ func readAgentlessResponseBody(resp *http.Response) ([]byte, error) {
 		defer gz.Close()
 		reader = gz
 	}
-	return io.ReadAll(io.LimitReader(reader, maxResponseBodyBytes))
+	body, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > limit {
+		return nil, errResponseTooLarge
+	}
+	return body, nil
 }
 
 // retryAfterDuration parses a Retry-After response header per RFC 7231
