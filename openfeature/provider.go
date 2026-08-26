@@ -148,6 +148,9 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 
 func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Source) *DatadogProvider {
 	evp := newEVPClient()
+	if source == internalffe.SourceAgentless {
+		evp = newAgentlessEVPClient(internalffe.ResolveSettings(internalconfig.Get()))
+	}
 
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
