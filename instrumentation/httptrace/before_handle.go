@@ -119,6 +119,24 @@ func HTTPEndpointTag(route string, r *http.Request) tracer.StartSpanOption {
 	return opt
 }
 
+// HTTPEndpoint returns the endpoint selected by resource-renaming configuration.
+// The route takes precedence over the simplified request path unless
+// DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT is enabled. The boolean
+// is false when endpoint resource renaming is disabled.
+func HTTPEndpoint(route string, r *http.Request) (string, bool) {
+	// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
+	// enabled or disabled for all requests by setting the value of DD_TRACE_RESOURCE_RENAMING_ENABLED.
+	if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
+		return "", false
+	}
+
+	httpURL := r.URL.EscapedPath()
+	if cfg.resourceRenamingAlwaysSimplifiedEndpoint || route == "" {
+		return simplifyHTTPUrl(httpURL), true
+	}
+	return route, true
+}
+
 // handleHTTPEndpoint tags the span with http.endpoint based on the resource renaming configuration and returns the computed endpoint.
 func handleHTTPEndpoint(route string, r *http.Request) (tracer.StartSpanOption, func() string) {
 	var endpoint string
@@ -131,26 +149,11 @@ func handleHTTPEndpoint(route string, r *http.Request) (tracer.StartSpanOption, 
 				sc.Tags[ext.HTTPRoute] = route
 			}
 
-			// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
-			// enabled or disabled for all requests by setting the value of DD_TRACE_RESOURCE_RENAMING_ENABLED.
-			if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
-				return
-			}
-
-			httpURL := r.URL.EscapedPath()
-			if cfg.resourceRenamingAlwaysSimplifiedEndpoint {
-				endpoint = simplifyHTTPUrl(httpURL)
+			var ok bool
+			endpoint, ok = HTTPEndpoint(route, r)
+			if ok {
 				sc.Tags[ext.HTTPEndpoint] = endpoint
-				return
 			}
-
-			if route != "" {
-				endpoint = route
-			} else {
-				endpoint = simplifyHTTPUrl(httpURL)
-			}
-
-			sc.Tags[ext.HTTPEndpoint] = endpoint
 		}, func() string {
 			return endpoint
 		}

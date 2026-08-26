@@ -138,10 +138,18 @@ func TestOTelSemanticsHTTPEndpoint(t *testing.T) {
 	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", "true")
 	httptrace.ResetCfg()
 
-	span := traceChiRequest(t, http.MethodGet, "http://example.com/no_such_route_xyz", http.StatusOK, http.MethodGet, "/registered", nil)
-	assert.Equal(t, "GET", span.Tag(ext.ResourceName))
-	assert.NotContains(t, span.Tags(), ext.HTTPRoute)
-	assert.NotEmpty(t, span.Tag(ext.HTTPEndpoint))
+	matched := traceChiRequest(t, http.MethodGet, "http://example.com/users/alice", http.StatusOK, http.MethodGet, "/users/{id}", nil)
+	assert.Equal(t, "/users/{id}", matched.Tag(ext.HTTPEndpoint))
+
+	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", "true")
+	httptrace.ResetCfg()
+	alwaysSimplified := traceChiRequest(t, http.MethodGet, "http://example.com/users/alice", http.StatusOK, http.MethodGet, "/users/{id}", nil)
+	assert.Equal(t, "/users/alice", alwaysSimplified.Tag(ext.HTTPEndpoint))
+
+	unmatched := traceChiRequest(t, http.MethodGet, "http://example.com/no_such_route_xyz", http.StatusOK, http.MethodGet, "/registered", nil)
+	assert.Equal(t, "GET", unmatched.Tag(ext.ResourceName))
+	assert.NotContains(t, unmatched.Tags(), ext.HTTPRoute)
+	assert.Equal(t, "/no_such_route_xyz", unmatched.Tag(ext.HTTPEndpoint))
 }
 
 func TestOTelSemanticsFinalRoutePattern(t *testing.T) {
