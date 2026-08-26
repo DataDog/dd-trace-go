@@ -339,11 +339,6 @@ func readAgentlessResponseBody(resp *http.Response) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(reader, maxResponseBodyBytes))
 }
 
-// sanitizeTransportError strips the request URL out of a transport error
-// before it is logged. http.Client.Do and http.NewRequestWithContext both
-// return a *url.Error whose Error() text embeds the full request URL, which
-// for a custom endpoint may carry credentials — s.endpoint must never appear
-// in a log line.
 // retryAfterDuration parses a Retry-After response header per RFC 7231
 // §7.1.3: either delta-seconds or an HTTP-date. Returns 0 when absent,
 // unparseable, non-positive, or already in the past.
@@ -366,6 +361,11 @@ func retryAfterDuration(header http.Header) time.Duration {
 	return 0
 }
 
+// sanitizeTransportError strips the request URL out of a transport error
+// before it is logged. http.Client.Do and http.NewRequestWithContext both
+// return a *url.Error whose Error() text embeds the full request URL, which
+// for a custom endpoint may carry credentials — s.endpoint must never appear
+// in a log line.
 func sanitizeTransportError(err error) string {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) && urlErr.Err != nil {
