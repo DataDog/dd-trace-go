@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	apiKeyFingerprintHeader = "DD-API-KEY-FINGERPRINT"
 	apiKeyFingerprintPrefix = "rijn_"
 	sha256Base62Length      = 43
 	base62Alphabet          = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

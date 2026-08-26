@@ -37,7 +37,7 @@ type agentlessEndpoint struct {
 	// url is the full request URL. SENSITIVE: may embed credentials; never log.
 	url string
 	// managed reports whether this is the Datadog-hosted endpoint, the only
-	// one that receives the DD-API-KEY header.
+	// one that receives API-key credential headers.
 	managed bool
 }
 
@@ -45,7 +45,7 @@ type agentlessEndpoint struct {
 // baseURL is blank, it derives the managed Datadog-hosted endpoint from site
 // and requires apiKey. When baseURL is set, it is used verbatim (with the
 // canonical path appended only if the URL has no path of its own) and the
-// endpoint never receives the API key.
+// endpoint never receives API-key credentials.
 func buildAgentlessEndpoint(baseURL, site, env, apiKey string) (agentlessEndpoint, error) {
 	if strings.TrimSpace(baseURL) != "" {
 		return buildCustomAgentlessEndpoint(baseURL)

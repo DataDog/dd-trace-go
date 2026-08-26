@@ -54,6 +54,7 @@ type fakeUFCBackend struct {
 	maxInFlight     int
 	lastIfNoneMatch string
 	lastAuthPresent bool
+	lastFingerprint string
 }
 
 func newFakeUFCBackend(t *testing.T) *fakeUFCBackend {
@@ -76,6 +77,12 @@ func (b *fakeUFCBackend) status() (requestsTotal, maxInFlight int, lastIfNoneMat
 	return b.requestsTotal, b.maxInFlight, b.lastIfNoneMatch, b.lastAuthPresent
 }
 
+func (b *fakeUFCBackend) apiKeyFingerprint() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.lastFingerprint
+}
+
 func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
 	b.requestsTotal++
@@ -85,6 +92,7 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	b.lastIfNoneMatch = r.Header.Get("If-None-Match")
 	b.lastAuthPresent = r.Header.Get("DD-API-KEY") != ""
+	b.lastFingerprint = r.Header.Get(apiKeyFingerprintHeader)
 	response := b.responses[0]
 	if len(b.responses) > 1 {
 		b.responses = b.responses[1:]
@@ -411,6 +419,9 @@ func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
 		if r.Header.Get("DD-API-KEY") != "" {
 			t.Error("the redirect target must never receive DD-API-KEY")
 		}
+		if r.Header.Get(apiKeyFingerprintHeader) != "" {
+			t.Error("the redirect target must never receive DD-API-KEY-FINGERPRINT")
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer redirectTarget.Close()
@@ -460,7 +471,7 @@ func TestSanitizeTransportError_DoesNotLeakSecrets(t *testing.T) {
 	assert.Equal(t, "connection refused", got)
 }
 
-func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
+func TestAgentlessSource_CredentialsOnlySentToManagedEndpoint(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("valid")
 
@@ -472,6 +483,7 @@ func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
 	}, func(*universalFlagsConfiguration) {})
 	require.NoError(t, err)
 	assert.Empty(t, src.apiKey, "a custom endpoint must never receive the API key")
+	assert.Empty(t, src.apiKeyFingerprint, "a custom endpoint must never derive an API key fingerprint")
 
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -480,8 +492,47 @@ func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
 	})
 	src.start()
 
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond)
 	_, _, _, lastAuthPresent := backend.status()
 	assert.False(t, lastAuthPresent)
+	assert.Empty(t, backend.apiKeyFingerprint())
+}
+
+func TestAgentlessSource_ManagedEndpointCredentials(t *testing.T) {
+	const (
+		apiKey      = "system-tests-mock-api-key"
+		fingerprint = "rijn_Fc1Sxm6lPHiKU1IdWeNqpcVZiiW3C2LXJLqQp670sFU"
+	)
+
+	backend := newFakeUFCBackend(t)
+	src, err := newAgentlessSource(internalffe.Settings{
+		Site:           "datadoghq.com",
+		APIKey:         apiKey,
+		PollInterval:   time.Hour,
+		RequestTimeout: 2 * time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+	assert.Equal(t, apiKey, src.apiKey)
+	assert.Equal(t, fingerprint, src.apiKeyFingerprint)
+
+	// Keep the managed-endpoint credentials while directing this test request
+	// to the local capture server.
+	src.endpoint = backend.server.URL
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		src.Stop(ctx)
+	})
+	src.start()
+
+	require.Eventually(t, func() bool {
+		requests, _, _, authenticated := backend.status()
+		return requests >= 1 && authenticated
+	}, 2*time.Second, time.Millisecond)
+	assert.Equal(t, fingerprint, backend.apiKeyFingerprint())
 }
 
 func TestAgentlessSource_Headers(t *testing.T) {

@@ -52,12 +52,13 @@ var errResponseTooLarge = errors.New("response exceeds maximum size")
 type agentlessSource struct {
 	// endpoint is the full request URL. SENSITIVE: may embed credentials; never log.
 	endpoint string
-	// apiKey is sent as DD-API-KEY; empty unless endpoint is the managed one.
-	apiKey         string
-	pollInterval   time.Duration
-	requestTimeout time.Duration
-	httpClient     *http.Client
-	apply          func(*universalFlagsConfiguration)
+	// API-key credentials are sent only to the managed endpoint.
+	apiKey            string
+	apiKeyFingerprint string
+	pollInterval      time.Duration
+	requestTimeout    time.Duration
+	httpClient        *http.Client
+	apply             func(*universalFlagsConfiguration)
 	// retryDelay is overridden by tests to skip real waiting.
 	retryDelay func(attempt int) time.Duration
 
@@ -78,15 +79,18 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 	}
 
 	apiKey := ""
+	apiKeyFingerprint := ""
 	if endpoint.managed {
 		apiKey = settings.APIKey
+		apiKeyFingerprint = createAPIKeyFingerprint(apiKey)
 	}
 
 	s := &agentlessSource{
-		endpoint:       endpoint.url,
-		apiKey:         apiKey,
-		pollInterval:   settings.PollInterval,
-		requestTimeout: settings.RequestTimeout,
+		endpoint:          endpoint.url,
+		apiKey:            apiKey,
+		apiKeyFingerprint: apiKeyFingerprint,
+		pollInterval:      settings.PollInterval,
+		requestTimeout:    settings.RequestTimeout,
 		// We build our own transport rather than use http.DefaultTransport so
 		// these polls stay out of our own HTTP instrumentation and can never
 		// recurse through it (see internal/civisibility/utils/net/http.go).
@@ -97,9 +101,9 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 		doneCh:     make(chan struct{}),
 	}
 	// A fixed configuration endpoint has no legitimate reason to redirect.
-	// Refusing to follow redirects avoids forwarding DD-API-KEY to a
+	// Refusing to follow redirects avoids forwarding API-key credentials to a
 	// different host: Go's client only strips Authorization/Cookie headers
-	// on a cross-origin redirect, not our custom DD-API-KEY header.
+	// on a cross-origin redirect, not our custom headers.
 	s.httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
@@ -240,6 +244,7 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 	}
 	if s.apiKey != "" {
 		req.Header.Set("DD-API-KEY", s.apiKey)
+		req.Header.Set(apiKeyFingerprintHeader, s.apiKeyFingerprint)
 	}
 
 	resp, err := s.httpClient.Do(req)
