@@ -8,11 +8,9 @@ package openfeature
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -35,11 +33,7 @@ const (
 
 	directEVPHostPrefix = "event-platform-intake."
 
-	apiKeyHeader            = "DD-API-KEY"
-	apiKeyFingerprintHeader = "DD-API-KEY-FINGERPRINT"
-	apiKeyFingerprintPrefix = "rijn_"
-	sha256Base62Length      = 43
-	base62Alphabet          = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	apiKeyHeader = "DD-API-KEY"
 )
 
 var errNoEVPRoute = errors.New("no compatible EVP route is available")
@@ -68,7 +62,6 @@ type evpClient struct {
 	agentURL     *url.URL
 	directURL    *url.URL
 	apiKey       string
-	fingerprint  string
 	jsonConfig   jsoniter.API
 
 	discoveryOnce sync.Once
@@ -94,7 +87,6 @@ func newAgentlessEVPClient(settings internalffe.Settings) *evpClient {
 	c.directClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
 	c.apiKey = settings.APIKey
 	if c.apiKey != "" {
-		c.fingerprint = createAPIKeyFingerprint(c.apiKey)
 		c.directURL = buildDirectEVPURL(settings.Site)
 	}
 	return c
@@ -127,28 +119,6 @@ func buildDirectEVPURL(site string) *url.URL {
 		return nil
 	}
 	return u
-}
-
-func createAPIKeyFingerprint(apiKey string) string {
-	digest := sha256.Sum256([]byte(apiKey))
-	value := new(big.Int).SetBytes(digest[:])
-	radix := big.NewInt(62)
-	remainder := new(big.Int)
-	encoded := make([]byte, 0, sha256Base62Length)
-	for value.Sign() > 0 {
-		value.QuoRem(value, radix, remainder)
-		encoded = append(encoded, base62Alphabet[remainder.Int64()])
-	}
-	if len(encoded) == 0 {
-		encoded = append(encoded, base62Alphabet[0])
-	}
-	for len(encoded) < sha256Base62Length {
-		encoded = append(encoded, base62Alphabet[0])
-	}
-	for left, right := 0, len(encoded)-1; left < right; left, right = left+1, right-1 {
-		encoded[left], encoded[right] = encoded[right], encoded[left]
-	}
-	return apiKeyFingerprintPrefix + string(encoded)
 }
 
 func (c *evpClient) post(endpoint, eventName string, payload any) error {
@@ -249,7 +219,6 @@ func (c *evpClient) send(
 	req.Header.Set("Content-Type", "application/json")
 	if direct {
 		req.Header.Set(apiKeyHeader, c.apiKey)
-		req.Header.Set(apiKeyFingerprintHeader, c.fingerprint)
 	} else {
 		req.Header.Set(evpSubdomainHeader, evpSubdomainValue)
 	}
@@ -363,7 +332,7 @@ func (c *evpClient) canUseDirect() bool {
 }
 
 func (c *evpClient) canUseDirectLocked() bool {
-	return c.directClient != nil && c.directURL != nil && c.apiKey != "" && c.fingerprint != ""
+	return c.directClient != nil && c.directURL != nil && c.apiKey != ""
 }
 
 func (c *evpClient) selectDirect() {

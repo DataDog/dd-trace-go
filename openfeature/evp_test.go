@@ -23,8 +23,7 @@ import (
 )
 
 const (
-	testAPIKey         = "system-tests-mock-api-key"
-	testAPIFingerprint = "rijn_Fc1Sxm6lPHiKU1IdWeNqpcVZiiW3C2LXJLqQp670sFU"
+	testAPIKey = "system-tests-mock-api-key"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -58,12 +57,6 @@ func configuredAgentlessEVP(local, direct http.RoundTripper) *evpClient {
 	c.routeMode = evpRouteLocal
 	c.localBase = evpProxyV2Path
 	return c
-}
-
-func TestCreateAPIKeyFingerprint(t *testing.T) {
-	if got := createAPIKeyFingerprint(testAPIKey); got != testAPIFingerprint {
-		t.Fatalf("createAPIKeyFingerprint() = %q, want %q", got, testAPIFingerprint)
-	}
 }
 
 func TestSelectEVPProxyPath(t *testing.T) {
@@ -106,9 +99,6 @@ func TestAgentlessEVPDiscoveryAndLocalHeaders(t *testing.T) {
 					eventRequests.Add(1)
 					if got := r.Header.Get(apiKeyHeader); got != "" {
 						t.Errorf("local request carried API key %q", got)
-					}
-					if got := r.Header.Get(apiKeyFingerprintHeader); got != "" {
-						t.Errorf("local request carried fingerprint %q", got)
 					}
 					if got := r.Header.Get(evpSubdomainHeader); got != evpSubdomainValue {
 						t.Errorf("local EVP header = %q, want %q", got, evpSubdomainValue)
@@ -157,9 +147,6 @@ func TestAgentlessEVPDirectCredentialsAndBothSignals(t *testing.T) {
 		if got := r.Header.Get(apiKeyHeader); got != testAPIKey {
 			t.Errorf("direct API key = %q, want configured key", got)
 		}
-		if got := r.Header.Get(apiKeyFingerprintHeader); got != testAPIFingerprint {
-			t.Errorf("direct fingerprint = %q, want %q", got, testAPIFingerprint)
-		}
 		if got := r.Header.Get(evpSubdomainHeader); got != "" {
 			t.Errorf("direct request carried local EVP header %q", got)
 		}
@@ -198,7 +185,7 @@ func TestRemoteConfigEVPRemainsAgentOnly(t *testing.T) {
 		if r.URL.Path != joinEVPPath(evpProxyV2Path, exposureEndpoint) {
 			t.Errorf("unexpected Agent path %q", r.URL.Path)
 		}
-		if r.Header.Get(apiKeyHeader) != "" || r.Header.Get(apiKeyFingerprintHeader) != "" {
+		if r.Header.Get(apiKeyHeader) != "" {
 			t.Error("Remote Configuration Agent request carried direct credentials")
 		}
 		w.WriteHeader(http.StatusAccepted)
