@@ -275,6 +275,42 @@ func TestConvertSpanAttributesOtelSemantics(t *testing.T) {
 	assert.Equal(t, "GET", m["http.request.method"])
 }
 
+func TestConvertDatabaseSpanOTelSemantics(t *testing.T) {
+	s := newSpan("mysql.query", "mysql.db", "orders", 100, 200, 0)
+	s.start = 1000
+	s.duration = 100
+	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{
+		ext.SpanKind:      ext.SpanKindClient,
+		ext.DBSystemName:  ext.DBSystemMySQL,
+		ext.DBNamespace:   "orders",
+		ext.ServerAddress: "db.example.com",
+		ext.DBStatement:   "SELECT * FROM customer",
+		ext.DBUser:        "alice",
+		ext.Component:     "database/sql",
+		"sql.query_type":  "Query",
+	})
+	s.metrics[ext.ServerPort] = 3307
+
+	otlp := convertSpan(s, "mysql.db", true)
+	require.NotNil(t, otlp)
+	assert.Equal(t, "orders", otlp.Name)
+	assert.Equal(t, otlptrace.Span_SPAN_KIND_CLIENT, otlp.Kind)
+
+	attrs := keyValuesToMap(otlp.Attributes)
+	assert.Equal(t, ext.DBSystemMySQL, attrs[ext.DBSystemName])
+	assert.Equal(t, "orders", attrs[ext.DBNamespace])
+	assert.Equal(t, "db.example.com", attrs[ext.ServerAddress])
+	assert.Equal(t, int64(3307), attrs[ext.ServerPort])
+	assert.Equal(t, "SELECT * FROM customer", attrs[ext.DBStatement])
+	assert.Equal(t, "alice", attrs[ext.DBUser])
+	assert.Equal(t, "database/sql", attrs[ext.Component])
+	assert.Equal(t, "Query", attrs["sql.query_type"])
+	for _, key := range []string{ext.DBSystem, ext.DBName, ext.TargetHost, ext.TargetPort, "db.query.text"} {
+		assert.NotContains(t, attrs, key)
+	}
+	assert.NotContains(t, otlp.Name, "SELECT")
+}
+
 func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 	s := newBasicSpan("op")
 	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{"tag": "val"})
