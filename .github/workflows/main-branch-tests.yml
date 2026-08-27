@@ -26,7 +26,7 @@ jobs:
       id-token: write
       pull-requests: write
     with:
-      go-version: "1.26.4" # Should be the highest supported version of Go
+      go-version: "1.27" # Should be the highest supported version of Go
     secrets: inherit
 
   warm-repo-cache:
@@ -48,7 +48,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.25", "1.26.4" ]
+        go-version: [ "1.26", "1.27" ]
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
     permissions:
