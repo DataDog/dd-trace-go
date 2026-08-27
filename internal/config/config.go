@@ -283,6 +283,8 @@ type Config struct {
 	featureFlagsAgentlessPollInterval time.Duration
 	// featureFlagsAgentlessRequestTimeout is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS.
 	featureFlagsAgentlessRequestTimeout time.Duration
+	// flaggingProviderInitTimeout is DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS.
+	flaggingProviderInitTimeout time.Duration
 	// spanPoolEnabled enables the experimental span pool.
 	spanPoolEnabled bool
 	// llmObsEnabled controls if LLM Observability is enabled
@@ -487,6 +489,7 @@ func loadConfig() *Config {
 	cfg.featureFlagsAgentlessBaseURL = p.GetString("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", "")
 	cfg.featureFlagsAgentlessPollInterval = time.Duration(p.GetIntWithValidator("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", 30, validateFeatureFlagsAgentlessPollInterval)) * time.Second
 	cfg.featureFlagsAgentlessRequestTimeout = time.Duration(p.GetIntWithValidator("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS", 5, validateFeatureFlagsAgentlessRequestTimeout)) * time.Second
+	cfg.flaggingProviderInitTimeout = time.Duration(p.GetIntWithValidator("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", 10000, validateFlaggingProviderInitTimeout)) * time.Millisecond
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
@@ -1976,6 +1979,13 @@ func (c *Config) FeatureFlagsAgentlessRequestTimeout() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.featureFlagsAgentlessRequestTimeout
+}
+
+// FlaggingProviderInitTimeout returns DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS.
+func (c *Config) FlaggingProviderInitTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.flaggingProviderInitTimeout
 }
 
 func (c *Config) SpanPoolEnabled() bool {

@@ -270,6 +270,13 @@
 //     recorded as tags on the active trace's root span. Default: false. Note:
 //     the added span tags may affect APM billing.
 //
+//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
+//     milliseconds for Init to wait for the first configuration before returning,
+//     used only by Init (not InitWithContext, which takes its deadline from the
+//     caller's context). Default 10000. An out-of-range (<= 0, or large enough to
+//     overflow when converted to a time.Duration) or unparseable value falls back
+//     to the default rather than being clamped.
+//
 // Example (Agentless, the default):
 //
 //	export DD_API_KEY=<your API key>

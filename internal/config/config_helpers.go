@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -131,6 +132,23 @@ func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
 func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
 	if seconds <= 0 || seconds > 300 {
 		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: value %d out of range (0, 300]", seconds)
+		return false
+	}
+	return true
+}
+
+// maxFlaggingProviderInitTimeoutMs is the largest value that can be converted to a
+// time.Duration in nanoseconds (via multiplication by time.Millisecond) without
+// overflowing int64 and wrapping to a negative duration.
+const maxFlaggingProviderInitTimeoutMs = math.MaxInt64 / int64(time.Millisecond)
+
+// validateFlaggingProviderInitTimeout rejects a non-positive or overflow-prone value so the
+// caller falls back to the default rather than Init receiving an already-expired context: on
+// 64-bit systems, converting an unbounded ms value to a time.Duration and multiplying by
+// time.Millisecond in loadConfig can overflow int64 and wrap to a negative duration.
+func validateFlaggingProviderInitTimeout(ms int) bool {
+	if ms <= 0 || int64(ms) > maxFlaggingProviderInitTimeoutMs {
+		log.Warn("ignoring DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: value %d out of range (0, %d]", ms, maxFlaggingProviderInitTimeoutMs)
 		return false
 	}
 	return true

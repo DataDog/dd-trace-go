@@ -39,8 +39,6 @@ const (
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
-	// Default timeout for provider initialization
-	defaultInitTimeout = 30 * time.Second
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
 )
@@ -94,8 +92,17 @@ type DatadogProvider struct {
 	shutdownCalled bool
 	// deliveryErr is set when no delivery source could start; permanent for the process. // +checklocks:mu
 	deliveryErr error
-	// writersStarted makes Init idempotent. // +checklocks:mu
+	// writersStarted ensures updateConfiguration only starts the periodic
+	// flushing writers once, on the first real configuration. // +checklocks:mu
 	writersStarted bool
+
+	// eventCh is returned unchanged by every EventChannel call.
+	eventCh chan openfeature.Event
+	// ready reports whether the provider is currently in the ready state, i.e.
+	// whether the last event emitted was ProviderReady or ProviderConfigChange
+	// rather than ProviderStale. Used to re-emit ProviderReady on every
+	// not-ready-to-ready transition, not just the first one. // +checklocks:mu
+	ready bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -196,6 +203,7 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
 		source:                source,
+		eventCh:               make(chan openfeature.Event, eventChannelBufferSize),
 	}
 	p.configChangeCh = make(chan struct{})
 
@@ -257,6 +265,20 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 	p.configuration = config
 	close(p.configChangeCh)
 	p.configChangeCh = make(chan struct{})
+	if config != nil && !p.writersStarted {
+		// Start periodic flushing on the first real configuration, regardless of
+		// whether InitWithContext is still waiting or already gave up on its
+		// deadline — otherwise a late configuration would leave these writers
+		// never started for the rest of the process.
+		if p.exposureWriter != nil {
+			p.exposureWriter.start()
+		}
+		if p.flagEvalLoggingWriter != nil {
+			p.flagEvalLoggingWriter.start()
+		}
+		p.writersStarted = true
+	}
+	p.emitFirstOrChangeEvent(config)
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
@@ -275,7 +297,7 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 // this is waiting for the first configuration to be loaded.
 func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) error {
 	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), defaultInitTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), internalconfig.Get().FlaggingProviderInitTimeout())
 	defer cancel()
 	return p.InitWithContext(ctx, evaluationContext)
 }
@@ -326,19 +348,25 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 			}
 		}
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
-			return err
+			if errors.Is(err, context.Canceled) {
+				// The caller explicitly asked to stop waiting, unlike a deadline
+				// which we deliberately tolerate below: report this as a real
+				// failure rather than telling the SDK initialization succeeded.
+				return &openfeature.ProviderInitError{
+					ErrorCode: openfeature.ProviderNotReadyCode,
+					Message:   "initialization was canceled before configuration arrived",
+				}
+			}
+			// Timed out with delivery still running. This is not an error: Go's
+			// ErrorState does not block evaluation, and configuration arriving
+			// later promotes the provider to ReadyState (updateConfiguration
+			// also starts the writers below at that point, so nothing is lost
+			// by giving up here).
+			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives")
+			return nil
 		}
 	}
 
-	if !p.writersStarted {
-		// Start periodic flushing for exposure writer.
-		p.exposureWriter.start()
-		// Start periodic flushing for EVP flag evaluation writer (nil when killswitch disabled).
-		if p.flagEvalLoggingWriter != nil {
-			p.flagEvalLoggingWriter.start()
-		}
-		p.writersStarted = true
-	}
 	return nil
 }
 
