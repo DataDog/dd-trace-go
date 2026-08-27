@@ -284,9 +284,8 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 	// Get all methods on *Config
 	configType := reflect.TypeFor[*Config]()
 
-	for i := 0; i < configType.NumMethod(); i++ {
+	for method := range configType.Methods() {
 		// Capture method
-		method := configType.Method(i)
 		methodName := method.Name
 
 		// Skip if not a Set method
@@ -1703,4 +1702,34 @@ func TestLLMObsEnvVars(t *testing.T) {
 		cfg := Get()
 		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
 	})
+}
+
+func TestReportEffectiveStatsComputation(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+	before := cfg.StatsComputationEnabled()
+
+	// The first report must fire even though false is the zero value — this
+	// is exactly what the tri-state (vs. a plain atomic.Bool) buys.
+	assert.True(t, cfg.ReportEffectiveStatsComputation(false))
+	assert.False(t, cfg.ReportEffectiveStatsComputation(false), "repeating the same value must not re-report")
+	assert.True(t, cfg.ReportEffectiveStatsComputation(true), "a changed value must report")
+	assert.False(t, cfg.ReportEffectiveStatsComputation(true), "repeating the new value must not re-report")
+
+	// StatsComputationEnabled itself must be untouched by any of this.
+	assert.Equal(t, before, cfg.StatsComputationEnabled())
+
+	var reports []bool
+	for _, c := range rec.Configuration {
+		if c.Name == "DD_TRACE_STATS_COMPUTATION_ENABLED" && c.Origin == telemetry.OriginCalculated {
+			reports = append(reports, c.Value.(bool))
+		}
+	}
+	assert.Equal(t, []bool{false, true}, reports)
 }

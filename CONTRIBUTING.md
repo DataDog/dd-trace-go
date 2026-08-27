@@ -54,6 +54,7 @@ Our CI pipeline includes several automated checks:
 #### Static Checks Workflow
 
 - **Copyright Check**: Verifies all files have proper copyright headers
+- **CODEOWNERS Check**: Runs `scripts/check_codeowners.go` to verify every tracked file has an owner in [CODEOWNERS](./CODEOWNERS), and that GitHub and CI Visibility resolve that owner identically. The repository has no catch-all `*` entry, so a new top-level directory or root-level file is unowned until an entry is added. See [CODEOWNERS patterns](#codeowners-patterns) for the accepted syntax. Run locally with `make lint/misc`.
 - **Generate Check**: Ensures generated code is up-to-date
 - **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
@@ -131,6 +132,20 @@ make test/contrib
 make test/appsec
 ```
 
+### CODEOWNERS patterns
+
+[CODEOWNERS](./CODEOWNERS) is read by two consumers that do not implement the same matching rules: GitHub, which follows gitignore semantics, and CI Visibility, which uses the simpler matcher in [internal/civisibility/utils](./internal/civisibility/utils/codeowners.go) to attribute test results to teams. A pattern the two interpret differently assigns the right reviewers while silently mis-attributing test ownership.
+
+To keep them in agreement, entries are restricted to the subset on which both behave identically:
+
+| Pattern | Meaning |
+| --- | --- |
+| `/path/to/dir/` | Anchored at the repository root, applies to everything beneath the directory. The trailing slash is required. |
+| `/path/to/file.go` | Anchored at the repository root, matches exactly one file. |
+| `*suffix` | Matches any path ending in `suffix`, at any depth. Only one leading `*` is supported, and the suffix may not contain `/`. |
+
+Later entries take precedence over earlier ones. There is no catch-all `*` entry: every path is owned explicitly, so **a new top-level directory or root-level file needs a new entry**. `make lint/misc` fails otherwise.
+
 ## Getting a PR Reviewed
 
 We try to review new PRs within a week of them being opened. If more than two weeks have passed with no reply, please feel free to comment on the PR to bubble it up.
@@ -178,14 +193,17 @@ make format/shell
 Analyzes lock usage patterns to detect potential deadlocks and race conditions.
 
 ```shell
+# Install the managed checklocks binary
+make tools-install
+
 # Run checklocks on the default target (./ddtrace/tracer)
 ./scripts/checklocks.sh
 
 # Run checklocks on a specific directory
 ./scripts/checklocks.sh ./path/to/target
 
-# Run checklocks and ignore errors
-./scripts/checklocks.sh --ignore-errors
+# Run checklocks and ignore known issues
+./scripts/checklocks.sh --ignore-known-issues
 ```
 
 ### Module Management Scripts

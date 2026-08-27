@@ -99,7 +99,9 @@ func TestTracesAgentIntegration(t *testing.T) {
 		assert.NoError(err)
 		body, err := transport.send(p)
 		assert.NoError(err)
-		defer body.Close()
+		_, _ = io.Copy(io.Discard, body)
+		body.Close()
+		transport.client.CloseIdleConnections()
 	}
 }
 
@@ -184,6 +186,26 @@ func TestTransportResponse(t *testing.T) {
 			assert.Equal(tt.body, string(slurp))
 		})
 	}
+}
+
+// TestTransportSendDistinguishesV1RejectionFrom404 pins that a 404 on
+// /v1.0/traces surfaces as errV1TracesNotSupported (so agentTraceWriter can
+// fall back to v0.4 — see downgradeAfterRejectedSend), while the same status
+// on /v0.4/traces surfaces as a generic error: v0.4 is universally accepted,
+// so a 404 there is never evidence of a missing protocol, just a failure.
+func TestTransportSendDistinguishesV1RejectionFrom404(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+
+	_, err := transport.send(newPayload(traceProtocolV1))
+	assert.ErrorIs(t, err, errV1TracesNotSupported)
+
+	_, err = transport.send(newPayload(traceProtocolV04))
+	assert.NotErrorIs(t, err, errV1TracesNotSupported)
+	assert.Error(t, err)
 }
 
 func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {

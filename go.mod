@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/v2
 
-go 1.25.0
+go 1.26.0
 
 godebug x509negativeserial=1
 

@@ -164,8 +164,8 @@ func TestCoverageReportApiRequestOmitsInvalidFlags(t *testing.T) {
 		value *string
 	}{
 		{name: "unset"},
-		{name: "empty", value: stringPointer(" , , ")},
-		{name: "over maximum", value: stringPointer(makeCoverageReportFlags(maxCoverageReportFlags + 1))},
+		{name: "empty", value: new(" , , ")},
+		{name: "over maximum", value: new(makeCoverageReportFlags(maxCoverageReportFlags + 1))},
 	}
 
 	defer log.UseLogger(log.DiscardLogger{})()
@@ -409,6 +409,7 @@ func makeCoverageReportFlagSlice(count int) []string {
 	return flags
 }
 
+//go:fix inline
 func stringPointer(value string) *string {
-	return &value
+	return new(value)
 }
