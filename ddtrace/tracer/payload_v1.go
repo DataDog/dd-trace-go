@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/bits"
 	"sync"
 	"sync/atomic"
 	_ "unsafe"
@@ -616,105 +617,148 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			p.buf = msgp.AppendMapHeader(p.buf, 0)
 			continue
 		}
-		// component (field 15) span_kind (field 16) are only emitted when they map to known values.
-		// Omit the field and use a 15-field map if it isn't set.
+		// Only encode non-default fields. In addition to producing smaller payloads,
+		// the map header must exactly match the fields written below.
+		meta := span.meta.Map(false)
+		attributeCount := len(meta) + len(span.metrics) + len(span.metaStruct)
+		if _, ok := meta["_dd.span_links"]; ok {
+			attributeCount--
+		}
+		if _, ok := meta[ext.Component]; ok {
+			attributeCount--
+		}
+		if _, ok := meta[ext.SpanKind]; ok {
+			attributeCount--
+		}
+		lang, hasLanguage := span.meta.Language()
+		if hasLanguage && lang != "" {
+			attributeCount++
+		}
+
 		component, _ := span.meta.Get(ext.Component)
 		spanKindVal := uint32(0)
 		if sk, ok := span.meta.Get(ext.SpanKind); ok {
 			spanKindVal = getSpanKindValue(sk)
 		}
-		// Increment the number of fields based on the presence of component and span_kind
-		nFields := uint32(14)
+		env, _ := span.meta.Env()
+		version, _ := span.meta.Version()
+
+		spanFields := bitmap(0)
+		if span.service != "" {
+			spanFields.set(1)
+		}
+		if span.name != "" {
+			spanFields.set(2)
+		}
+		if span.resource != "" {
+			spanFields.set(3)
+		}
+		if span.spanID != 0 {
+			spanFields.set(4)
+		}
+		if span.parentID != 0 {
+			spanFields.set(5)
+		}
+		if span.start != 0 {
+			spanFields.set(6)
+		}
+		if span.duration != 0 {
+			spanFields.set(7)
+		}
+		if span.error != 0 {
+			spanFields.set(8)
+		}
+		if attributeCount != 0 {
+			spanFields.set(9)
+		}
+		if span.spanType != "" {
+			spanFields.set(10)
+		}
+		if len(span.spanLinks) != 0 {
+			spanFields.set(11)
+		}
+		if len(span.spanEvents) != 0 {
+			spanFields.set(12)
+		}
+		if env != "" {
+			spanFields.set(13)
+		}
+		if version != "" {
+			spanFields.set(14)
+		}
 		if component != "" {
-			nFields++
+			spanFields.set(15)
 		}
 		if spanKindVal != 0 {
-			nFields++
+			spanFields.set(16)
 		}
-		p.buf = msgp.AppendMapHeader(p.buf, nFields) // number of fields in span
+		p.buf = msgp.AppendMapHeader(p.buf, uint32(bits.OnesCount32(uint32(spanFields))))
 
-		p.buf = encodeStringField(p.buf, fullSetBitmap, 1, span.service, st)
-		p.buf = encodeStringField(p.buf, fullSetBitmap, 2, span.name, st)
-		p.buf = encodeStringField(p.buf, fullSetBitmap, 3, span.resource, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 4, span.spanID, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 5, span.parentID, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 6, span.start, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 7, span.duration, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 8, span.error != 0, st)
+		p.buf = encodeStringField(p.buf, spanFields, 1, span.service, st)
+		p.buf = encodeStringField(p.buf, spanFields, 2, span.name, st)
+		p.buf = encodeStringField(p.buf, spanFields, 3, span.resource, st)
+		p.buf = encodeField(p.buf, spanFields, 4, span.spanID, st)
+		p.buf = encodeField(p.buf, spanFields, 5, span.parentID, st)
+		p.buf = encodeField(p.buf, spanFields, 6, span.start, st)
+		p.buf = encodeField(p.buf, spanFields, 7, span.duration, st)
+		p.buf = encodeField(p.buf, spanFields, 8, true, st)
 
 		// span attributes combine the meta (tags), metrics and meta_struct.
 		// To avoid increased allocations, we serialize attributes immediately without
-		// creating an intermediate map. We write a placeholder for the array header
-		// and write the actual count after writing all attributes.
+		// creating an intermediate map.
 		// Promoted attrs (env, version, language) are encoded separately
 		// as fields 13-16 and must not appear in the attributes array.
-		p.buf = append(p.buf, 9) // attributes fieldID (msgp fixint)
-		off := len(p.buf)
-		count := 0
-		p.buf = append(p.buf, msgpackArray32, 0, 0, 0, 0)
+		if spanFields.contains(9) {
+			p.buf = append(p.buf, 9) // attributes fieldID (msgp fixint)
+			p.buf = msgp.AppendArrayHeader(p.buf, uint32(attributeCount*3))
 
-		if lang, ok := span.meta.Language(); ok {
-			count++
-			p.buf = st.serialize("language", p.buf)
-			p.buf = append(p.buf, byte(StringValueType))
-			p.buf = st.serialize(lang, p.buf)
-		}
-
-		// Map(false) returns the underlying flat map directly (no copy, no promoted attrs).
-		for k, v := range span.meta.Map(false) {
-			// Span links are serialized separately in the payload, so
-			// we skip them here to avoid duplication.
-			if k == "_dd.span_links" {
-				continue
+			if hasLanguage && lang != "" {
+				p.buf = st.serialize("language", p.buf)
+				p.buf = append(p.buf, byte(StringValueType))
+				p.buf = st.serialize(lang, p.buf)
 			}
-			// component and span_kind are promoted to dedicated fields (15, 16);
-			// skip them here to avoid encoding them twice.
-			if k == ext.Component || k == ext.SpanKind {
-				continue
-			}
-			count++
-			p.buf = st.serialize(k, p.buf)
-			p.buf = append(p.buf, byte(StringValueType))
-			p.buf = st.serialize(v, p.buf)
-		}
-		for k, v := range span.metrics {
-			count++
-			p.buf = st.serialize(k, p.buf)
-			p.buf = append(p.buf, byte(FloatValueType))
-			p.buf = msgp.AppendFloat64(p.buf, v)
-		}
-		for k, v := range span.metaStruct {
-			var err error
-			scratch, err = msgp.AppendIntf(scratch[:0], v)
-			if err != nil {
-				log.Warn("failed to serialize meta_struct value for key %s: %s", k, err.Error())
-				scratch, _ = msgp.AppendIntf(nil, []byte(serializationFailed))
-			}
-			count++
-			p.buf = st.serialize(k, p.buf)
-			p.buf = append(p.buf, byte(BytesValueType))
-			p.buf = msgp.AppendBytes(p.buf, scratch)
-		}
-		elementCount := uint32(count) * 3
-		p.buf[off+1] = byte(elementCount >> 24)
-		p.buf[off+2] = byte(elementCount >> 16)
-		p.buf[off+3] = byte(elementCount >> 8)
-		p.buf[off+4] = byte(elementCount)
 
-		p.buf = encodeStringField(p.buf, fullSetBitmap, 10, span.spanType, st)
-		p.encodeSpanLinks(fullSetBitmap, 11, span.spanLinks, st)
-		p.encodeSpanEvents(fullSetBitmap, 12, span.spanEvents, st)
+			// Map(false) returns the underlying flat map directly (no copy, no promoted attrs).
+			for k, v := range meta {
+				// Span links are serialized separately in the payload, so
+				// we skip them here to avoid duplication.
+				if k == "_dd.span_links" {
+					continue
+				}
+				// component and span_kind are promoted to dedicated fields (15, 16);
+				// skip them here to avoid encoding them twice.
+				if k == ext.Component || k == ext.SpanKind {
+					continue
+				}
+				p.buf = st.serialize(k, p.buf)
+				p.buf = append(p.buf, byte(StringValueType))
+				p.buf = st.serialize(v, p.buf)
+			}
+			for k, v := range span.metrics {
+				p.buf = st.serialize(k, p.buf)
+				p.buf = append(p.buf, byte(FloatValueType))
+				p.buf = msgp.AppendFloat64(p.buf, v)
+			}
+			for k, v := range span.metaStruct {
+				var err error
+				scratch, err = msgp.AppendIntf(scratch[:0], v)
+				if err != nil {
+					log.Warn("failed to serialize meta_struct value for key %s: %s", k, err.Error())
+					scratch, _ = msgp.AppendIntf(nil, []byte(serializationFailed))
+				}
+				p.buf = st.serialize(k, p.buf)
+				p.buf = append(p.buf, byte(BytesValueType))
+				p.buf = msgp.AppendBytes(p.buf, scratch)
+			}
+		}
 
-		env, _ := span.meta.Env()
-		version, _ := span.meta.Version()
-		p.buf = encodeStringField(p.buf, fullSetBitmap, 13, env, st)
-		p.buf = encodeStringField(p.buf, fullSetBitmap, 14, version, st)
-		if component != "" {
-			p.buf = encodeStringField(p.buf, fullSetBitmap, 15, component, st)
-		}
-		if spanKindVal != 0 {
-			p.buf = encodeField(p.buf, fullSetBitmap, 16, spanKindVal, st)
-		}
+		p.buf = encodeStringField(p.buf, spanFields, 10, span.spanType, st)
+		p.encodeSpanLinks(spanFields, 11, span.spanLinks, st)
+		p.encodeSpanEvents(spanFields, 12, span.spanEvents, st)
+		p.buf = encodeStringField(p.buf, spanFields, 13, env, st)
+		p.buf = encodeStringField(p.buf, spanFields, 14, version, st)
+		p.buf = encodeStringField(p.buf, spanFields, 15, component, st)
+		p.buf = encodeField(p.buf, spanFields, 16, spanKindVal, st)
 	}
 	return true, nil
 }

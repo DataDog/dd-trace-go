@@ -527,6 +527,95 @@ func TestEmptyPayloadV1(t *testing.T) {
 	assert.Empty(o)
 }
 
+func TestPayloadV1SpanEncodingOmitsDefaultFields(t *testing.T) {
+	p := newPayloadV1()
+	_, err := p.encodeSpans(fullSetBitmap, 4, spanList{new(Span)}, newStringTable())
+	require.NoError(t, err)
+
+	fieldID, encodedSpans, err := msgp.ReadUint32Bytes(p.buf)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(4), fieldID)
+
+	spanCount, encodedSpan, err := msgp.ReadArrayHeaderBytes(encodedSpans)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(1), spanCount)
+
+	fieldCount, remaining, err := msgp.ReadMapHeaderBytes(encodedSpan)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(0), fieldCount)
+	assert.Empty(t, remaining)
+
+	decoded, remaining, err := decodeSpans(encodedSpans, newStringTable())
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
+	require.Len(t, decoded, 1)
+	assert.Equal(t, &Span{}, decoded[0])
+}
+
+func TestPayloadV1SpanEncodingIncludesNonDefaultFields(t *testing.T) {
+	span := newBasicSpan("operation")
+	span.service = "service"
+	span.resource = "resource"
+	span.spanID = 41
+	span.parentID = 42
+	span.duration = 99
+	span.error = 1
+	span.spanType = "web"
+	span.metrics = map[string]float64{"metric": 1.25}
+	span.metaStruct = metaStructMap{"structured": map[string]any{"key": "value"}}
+	span.spanLinks = []SpanLink{{TraceID: 10, TraceIDHigh: 11, SpanID: 12}}
+	span.spanEvents = []spanEvent{{Name: "event"}}
+	span.SetTag("tag", "value")
+	span.SetTag("language", "go")
+	span.SetTag(ext.Environment, "production")
+	span.SetTag(ext.Version, "1.2.3")
+	span.SetTag(ext.Component, "component")
+	span.SetTag(ext.SpanKind, ext.SpanKindServer)
+
+	p := newPayloadV1()
+	_, err := p.encodeSpans(fullSetBitmap, 4, spanList{span}, newStringTable())
+	require.NoError(t, err)
+
+	fieldID, encodedSpans, err := msgp.ReadUint32Bytes(p.buf)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(4), fieldID)
+
+	spanCount, encodedSpan, err := msgp.ReadArrayHeaderBytes(encodedSpans)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(1), spanCount)
+
+	fieldCount, _, err := msgp.ReadMapHeaderBytes(encodedSpan)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(16), fieldCount)
+
+	decoded, remaining, err := decodeSpans(encodedSpans, newStringTable())
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
+	require.Len(t, decoded, 1)
+	got := decoded[0]
+	assert.Equal(t, span.service, got.service)
+	assert.Equal(t, span.name, got.name)
+	assert.Equal(t, span.resource, got.resource)
+	assert.Equal(t, span.spanID, got.spanID)
+	assert.Equal(t, span.parentID, got.parentID)
+	assert.Equal(t, span.start, got.start)
+	assert.Equal(t, span.duration, got.duration)
+	assert.Equal(t, span.error, got.error)
+	assert.Equal(t, span.spanType, got.spanType)
+	assert.Equal(t, span.metrics, got.metrics)
+	assert.Equal(t, span.metaStruct, got.metaStruct)
+	assert.Equal(t, span.spanLinks, got.spanLinks)
+	require.Len(t, got.spanEvents, 1)
+	assert.Equal(t, span.spanEvents[0].Name, got.spanEvents[0].Name)
+	assert.Equal(t, span.spanEvents[0].TimeUnixNano, got.spanEvents[0].TimeUnixNano)
+	for _, key := range []string{"tag", "language", ext.Environment, ext.Version, ext.Component, ext.SpanKind} {
+		want, _ := span.meta.Get(key)
+		gotValue, ok := got.meta.Get(key)
+		assert.True(t, ok, "missing decoded tag %q", key)
+		assert.Equal(t, want, gotValue)
+	}
+}
+
 // TestPayloadV1IncrementalChunkEncoding verifies that pushing N chunks into the
 // same payloadV1 produces a correctly encoded payload where every chunk retains
 // its original span data. Each chunk is encoded exactly once as it is pushed;
