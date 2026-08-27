@@ -6,6 +6,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -31,15 +32,19 @@ var _ ResponseHeaders = (*fakeResponseHeaders)(nil)
 var _ HTTPBody = (*fakeBody)(nil)
 
 type fakeRequestHeaders struct {
-	eos     bool
-	limit   int
-	headers map[string][]string
+	eos         bool
+	limit       int
+	headers     map[string][]string
+	ackUntilEOS bool
 }
 
 func (f fakeRequestHeaders) GetEndOfStream() bool                                 { return f.eos }
 func (f fakeRequestHeaders) MessageType() MessageType                             { return MessageTypeRequestHeaders }
 func (f fakeRequestHeaders) SpanOptions(context.Context) []tracer.StartSpanOption { return nil }
 func (f fakeRequestHeaders) BodyParsingSizeLimit(context.Context) int             { return f.limit }
+func (f fakeRequestHeaders) AckBodyMessagesUntilEndOfStream(context.Context) bool {
+	return f.ackUntilEOS
+}
 func (f fakeRequestHeaders) ExtractRequest(context.Context) (PseudoRequest, error) {
 	return PseudoRequest{
 		Scheme:     "https",
@@ -153,7 +158,10 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 					}, instr)
 					defer mp.Close()
 
-					reqHeaders := fakeRequestHeaders{eos: direction != "request", limit: tt.limit, headers: map[string][]string{"Content-Type": {"application/json"}}}
+					// ackUntilEOS keeps the stream open past the analyzed chunk so this test can
+					// stay focused on the reported body size. Stream lifetime itself is covered by
+					// TestOnResponseBodyTruncationStreamLifetime.
+					reqHeaders := fakeRequestHeaders{eos: direction != "request", limit: tt.limit, headers: map[string][]string{"Content-Type": {"application/json"}}, ackUntilEOS: true}
 					reqState, err := mp.OnRequestHeaders(context.Background(), reqHeaders)
 					require.NoError(t, err)
 
@@ -194,6 +202,59 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 	}
 }
 
+// TestOnResponseBodyTruncationStreamLifetime covers the analyzed-before-end-of-stream
+// branch under both gateway policies: the analysis is complete once the body overflows the
+// parsing limit, so the only difference is whether the stream survives to acknowledge the
+// rest of the body.
+func TestOnResponseBodyTruncationStreamLifetime(t *testing.T) {
+	tests := []struct {
+		name            string
+		ackUntilEOS     bool
+		wantStreamEnded bool
+	}{
+		{name: "closes-early-when-draining-is-off", ackUntilEOS: false, wantStreamEnded: true},
+		{name: "stays-open-when-draining-is-on", ackUntilEOS: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			appsec.Start()
+			defer appsec.Stop()
+
+			continueCalls := 0
+			mp := NewProcessor(ProcessorConfig{
+				Framework:           "test-framework",
+				ContinueMessageFunc: func(_ context.Context, _ ContinueActionOptions) error { continueCalls++; return nil },
+				BlockMessageFunc:    func(_ context.Context, _ BlockActionOptions) error { return nil },
+			}, instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane))
+			defer mp.Close()
+
+			jsonHeaders := map[string][]string{"Content-Type": {"application/json"}}
+			reqState, err := mp.OnRequestHeaders(context.Background(), fakeRequestHeaders{eos: true, limit: 5, headers: jsonHeaders, ackUntilEOS: tt.ackUntilEOS})
+			require.NoError(t, err)
+			require.NoError(t, mp.OnResponseHeaders(fakeResponseHeaders{eos: false, headers: jsonHeaders}, &reqState))
+
+			// A single chunk overflows the limit, so the analysis completes before EOS.
+			continueCalls = 0
+			err = mp.OnResponseBody(fakeBody{b: []byte("0123456789"), eos: false}, &reqState)
+
+			require.Equal(t, 1, continueCalls, "the message must be acknowledged either way")
+			require.Empty(t, reqState.responseBuffer.buffer, "the analyzed payload must be released")
+			if tt.wantStreamEnded {
+				require.ErrorIs(t, err, io.EOF, "the stream must end once nothing is left to analyze")
+				require.Equal(t, MessageTypeFinished, reqState.State)
+				return
+			}
+
+			require.NoError(t, err, "the stream must stay open to acknowledge the rest of the body")
+			require.True(t, reqState.State.Ongoing())
+			require.ErrorIs(t, mp.OnResponseBody(fakeBody{eos: true}, &reqState), io.EOF)
+		})
+	}
+}
+
 func TestRequestStateCloseConcurrentWithLockedFinalize(t *testing.T) {
 	var afterHandleCalls atomic.Int64
 	insideAfterHandle := make(chan struct{})
@@ -227,23 +288,170 @@ func TestRequestStateCloseConcurrentWithLockedFinalize(t *testing.T) {
 }
 
 func TestOnResponseBodyMisconfigurationAcknowledgesMessage(t *testing.T) {
-	continueCalls := 0
-	mp := NewProcessor(ProcessorConfig{
-		ContinueMessageFunc: func(context.Context, ContinueActionOptions) error {
-			continueCalls++
-			return nil
-		},
-	}, instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane))
-	defer mp.Close()
-
-	state := RequestState{
-		Mu:          new(sync.Mutex),
-		Context:     context.Background(),
-		afterHandle: func() {},
-		State:       MessageTypeResponseBody,
+	// The message is always acknowledged; only the decision to keep the stream open
+	// depends on AckBodyMessagesUntilEndOfStream.
+	tests := []struct {
+		name            string
+		endOfStream     bool
+		ackUntilEOS     bool
+		wantStreamEnded bool
+	}{
+		{name: "end-of-stream-ends-the-stream", endOfStream: true, wantStreamEnded: true},
+		{name: "early-close-when-draining-is-off", endOfStream: false, wantStreamEnded: true},
+		{name: "stays-open-when-draining-is-on", endOfStream: false, ackUntilEOS: true},
+		{name: "end-of-stream-ends-the-stream-while-draining", endOfStream: true, ackUntilEOS: true, wantStreamEnded: true},
 	}
-	err := mp.OnResponseBody(fakeBody{eos: true}, &state)
 
-	require.ErrorIs(t, err, io.EOF)
-	require.Equal(t, 1, continueCalls)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			continueCalls := 0
+			mp := NewProcessor(ProcessorConfig{
+				ContinueMessageFunc: func(context.Context, ContinueActionOptions) error {
+					continueCalls++
+					return nil
+				},
+			}, instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane))
+			defer mp.Close()
+
+			state := RequestState{
+				Mu:                              new(sync.Mutex),
+				Context:                         context.Background(),
+				afterHandle:                     func() {},
+				State:                           MessageTypeResponseBody,
+				ackBodyMessagesUntilEndOfStream: tt.ackUntilEOS,
+			}
+			err := mp.OnResponseBody(fakeBody{eos: tt.endOfStream}, &state)
+
+			if tt.wantStreamEnded {
+				require.ErrorIs(t, err, io.EOF)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, 1, continueCalls)
+		})
+	}
+}
+
+// legacyRequestHeaders is a RequestHeaders that predates bodyAcknowledgementPolicy, as a
+// contrib module compiled against an older core would be. It must still satisfy
+// RequestHeaders, which is what makes this a compile-time guarantee and not just a
+// behavioural one.
+type legacyRequestHeaders struct{ fakeRequestHeaders }
+
+var _ RequestHeaders = legacyRequestHeaders{}
+
+func (legacyRequestHeaders) AckBodyMessagesUntilEndOfStream() {} // deliberately the wrong signature
+
+// A contrib module is a separate Go module and can lag the core it is compiled against.
+// Such an implementation must keep the behaviour it was written for — acknowledging every
+// body message — rather than silently adopting the early close and reintroducing timeouts.
+func TestAckBodyMessagesDefaultsToDrainingForOlderImplementations(t *testing.T) {
+	require.True(t, ackBodyMessagesUntilEndOfStream(context.Background(), legacyRequestHeaders{}),
+		"an implementation without the policy must keep acknowledging until end-of-stream")
+
+	require.False(t, ackBodyMessagesUntilEndOfStream(context.Background(), fakeRequestHeaders{ackUntilEOS: false}),
+		"an implementation with the policy must be honoured")
+	require.True(t, ackBodyMessagesUntilEndOfStream(context.Background(), fakeRequestHeaders{ackUntilEOS: true}))
+}
+
+func TestBodyBufferAppend(t *testing.T) {
+	t.Run("retains-everything-under-the-limit", func(t *testing.T) {
+		b := newBodyBuffer(64)
+
+		b.append([]byte("hello "))
+		b.append([]byte("world"))
+
+		require.Equal(t, "hello world", string(b.buffer))
+		require.False(t, b.truncated)
+	})
+
+	t.Run("truncates-at-the-limit", func(t *testing.T) {
+		b := newBodyBuffer(4)
+
+		b.append([]byte("ab"))
+		b.append([]byte("cdef"))
+
+		require.Equal(t, "abcd", string(b.buffer))
+		require.True(t, b.truncated)
+	})
+
+	t.Run("ignores-chunks-once-truncated", func(t *testing.T) {
+		b := newBodyBuffer(2)
+		b.append([]byte("abcd"))
+		require.True(t, b.truncated)
+
+		b.append([]byte("efgh"))
+
+		require.Equal(t, "ab", string(b.buffer))
+	})
+
+	t.Run("empty-chunk-allocates-nothing", func(t *testing.T) {
+		b := newBodyBuffer(64)
+
+		b.append(nil)
+		b.append([]byte{})
+
+		require.Nil(t, b.buffer)
+		require.Zero(t, cap(b.buffer))
+	})
+}
+
+// A streamed body arrives in many small chunks. Growth has to stay amortized without
+// ever reserving more than the limit the caller was promised.
+func TestBodyBufferGrowthStaysWithinTheLimit(t *testing.T) {
+	const (
+		// Deliberately not a power of two: append's doubling lands exactly on a
+		// power-of-two limit, which would hide the overshoot this guards against. Real
+		// limits look like the 10485760 default, not 65536.
+		sizeLimit = 100_000
+		chunkSize = 512
+	)
+
+	b := newBodyBuffer(sizeLimit)
+	chunk := bytes.Repeat([]byte("x"), chunkSize)
+
+	// Overshoot the limit deliberately so the final chunk straddles it, which is where
+	// append's own rounding would have reserved past sizeLimit.
+	for range (sizeLimit / chunkSize) + 10 {
+		b.append(chunk)
+		require.LessOrEqual(t, cap(b.buffer), sizeLimit, "capacity must never exceed the size limit")
+	}
+
+	require.True(t, b.truncated)
+	require.Len(t, b.buffer, sizeLimit)
+}
+
+// Most bodies arrive in a single chunk and are released straight after analysis, so
+// the first allocation must be exact. Rounding those up to a page would add allocation
+// traffic at request rate for no amortization in return.
+func TestBodyBufferSingleChunkAllocatesExactly(t *testing.T) {
+	b := newBodyBuffer(10 * 1024 * 1024)
+
+	b.append([]byte("{}"))
+
+	require.Equal(t, "{}", string(b.buffer))
+	require.Equal(t, 2, cap(b.buffer), "a single-chunk body must not over-allocate")
+}
+
+// Once a second chunk proves the body is streamed, reallocating per chunk costs more
+// than the slack, so growth takes over.
+func TestBodyBufferSecondChunkGrowsToThePageFloor(t *testing.T) {
+	b := newBodyBuffer(10 * 1024 * 1024)
+
+	b.append([]byte("{"))
+	b.append([]byte("}"))
+
+	require.Equal(t, "{}", string(b.buffer))
+	require.Equal(t, minBodyBufferCapacity, cap(b.buffer))
+}
+
+// The floor must never push capacity past a size limit smaller than a page.
+func TestBodyBufferFloorRespectsATinyLimit(t *testing.T) {
+	b := newBodyBuffer(8)
+
+	b.append([]byte("ab"))
+	b.append([]byte("cd"))
+
+	require.Equal(t, "abcd", string(b.buffer))
+	require.LessOrEqual(t, cap(b.buffer), 8)
 }
