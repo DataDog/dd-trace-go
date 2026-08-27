@@ -33,6 +33,7 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 | `DD_SERVICE_EXTENSION_TLS_KEY_FILE`       | `localhost.key` | Change the default gRPC TLS layer key. Do not modify if you are using GCP.                                    |
 | `DD_SERVICE_EXTENSION_TLS_CERT_FILE`      | `localhost.crt` | Change the default gRPC TLS layer cert. Do not modify if you are using GCP.                                   |
 | `DD_SERVICE_EXTENSION_UDS_PATH`           | _(unset)_       | Path to a Unix domain socket for the gRPC server. When set, overrides `DD_SERVICE_EXTENSION_HOST`/`PORT` and TLS is disabled. Only for self-managed Envoy deployments. |
+| `DD_SERVICE_EXTENSION_INTEGRATION`        | _(unset)_       | Gateway in front of the extension: `gcp-service-extension`, `envoy`, `envoy-gateway` or `istio`. Leave unset for GCP. Set it to `envoy-gateway`, which cannot inject the identification header from its `EnvoyExtensionPolicy` CRD. |
 
 > `GOMEMLIMIT` is derived at startup from the container memory limit (85% of it, leaving room for the non-Go memory the runtime cannot see) unless you set it explicitly, so the garbage collector reclaims memory instead of the container being OOM-killed.
 

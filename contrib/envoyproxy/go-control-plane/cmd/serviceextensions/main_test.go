@@ -213,6 +213,49 @@ func setEnv(env map[string]string) {
 	}
 }
 
+func TestIntegrationSelection(t *testing.T) {
+	tests := []struct {
+		name       string
+		envValue   string
+		socketPath string
+		want       gocontrolplane.Integration
+	}{
+		{name: "default-is-google-cloud", want: gocontrolplane.GCPServiceExtensionIntegration},
+		{name: "a-unix-socket-implies-self-managed-envoy", socketPath: "/var/run/ext.sock", want: gocontrolplane.EnvoyIntegration},
+		{
+			// The case the Kubernetes guess used to try to cover, and got wrong.
+			name:     "envoy-gateway-must-be-named-explicitly",
+			envValue: "envoy-gateway",
+			want:     gocontrolplane.EnvoyGatewayIntegration,
+		},
+		{name: "istio", envValue: "istio", want: gocontrolplane.IstioIntegration},
+		{name: "envoy", envValue: "envoy", want: gocontrolplane.EnvoyIntegration},
+		{name: "google-cloud-stays-explicitly-selectable", envValue: "gcp-service-extension", want: gocontrolplane.GCPServiceExtensionIntegration},
+		{name: "case-and-space-insensitive", envValue: "  Envoy-Gateway ", want: gocontrolplane.EnvoyGatewayIntegration},
+		{
+			// An explicit value wins over the socket inference, otherwise a self-managed
+			// Envoy Gateway reached over a socket could not name itself.
+			name:       "explicit-value-beats-the-socket-inference",
+			envValue:   "envoy-gateway",
+			socketPath: "/var/run/ext.sock",
+			want:       gocontrolplane.EnvoyGatewayIntegration,
+		},
+		{name: "unknown-value-falls-back", envValue: "nginx", want: gocontrolplane.GCPServiceExtensionIntegration},
+		{name: "unknown-value-still-honours-the-socket", envValue: "nginx", socketPath: "/var/run/ext.sock", want: gocontrolplane.EnvoyIntegration},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := integration(serviceExtensionConfig{
+				integration:         tt.envValue,
+				extensionSocketPath: tt.socketPath,
+			})
+
+			require.Equal(t, tt.want, got, "resolved %s, wanted %s", got, tt.want)
+		})
+	}
+}
+
 const (
 	// Fixture paths, mirroring the layout the code reads under a filesystem root.
 	fixtureV2Limit  = "sys/fs/cgroup/memory.max"
