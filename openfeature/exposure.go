@@ -24,8 +24,8 @@ const (
 	// Matches the dd-trace-js implementation (1 second)
 	defaultExposureFlushInterval = 1 * time.Second
 
-	// exposureEndpoint is the EVP proxy endpoint for exposure events
-	exposureEndpoint = "/evp_proxy/v2/api/v2/exposures"
+	// exposureEndpoint is the direct EVP intake path for exposure events.
+	exposureEndpoint = "/api/v2/exposures"
 
 	// evpSubdomainHeader is the HTTP header name for EVP subdomain routing
 	evpSubdomainHeader = "X-Datadog-EVP-Subdomain"
