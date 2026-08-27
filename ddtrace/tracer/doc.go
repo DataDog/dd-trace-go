@@ -219,4 +219,14 @@
 // Other trace-agent implementations that do not follow this versioning
 // scheme (for example, an OpenTelemetry Collector exporter acting as a
 // Datadog trace-agent) are never affected by this override.
+// # Feature Flags Remote Config subscription
+//
+// The tracer eagerly subscribes to the FFE_FLAGS Remote Config product during Start, but only when
+// the resolved Feature Flags delivery source is remote_config. By default, and whenever
+// DD_FEATURE_FLAGS_CONFIGURATION_SOURCE is agentless (the default) or Feature Flags are disabled,
+// this subscription is skipped: Feature Flags configuration is instead polled directly from Datadog
+// over HTTPS by the openfeature package's provider, once the application creates it, with no Agent
+// dependency and no Remote Config capability advertised. See the openfeature package's
+// documentation for the full set of DD_FEATURE_FLAGS_* environment variables and the source
+// selection rules.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
