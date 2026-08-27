@@ -410,6 +410,13 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	}
 	if err != nil && !events.IsSecurityError(err) && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
 		span.SetTag(ext.Error, err)
+		if tp.cfg.otelSemantics {
+			errorInfo := internal.OTelErrorSemantics(err, otelInfo.SystemName)
+			span.SetTag(ext.ErrorType, errorInfo.Type)
+			if errorInfo.ResponseStatusCode != "" {
+				span.SetTag(ext.DBResponseStatusCode, errorInfo.ResponseStatusCode)
+			}
+		}
 	}
 	span.Finish()
 }

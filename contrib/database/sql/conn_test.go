@@ -17,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
@@ -73,6 +74,88 @@ func TestTryTraceOTelSemantics(t *testing.T) {
 	assert.Nil(t, span.Tag(ext.DBName))
 	assert.Nil(t, span.Tag(ext.TargetHost))
 	assert.Nil(t, span.Tag(ext.TargetPort))
+}
+
+func TestTryTraceOTelErrorSemantics(t *testing.T) {
+	tests := []struct {
+		name      string
+		errCheck  func(error) bool
+		wantError bool
+	}{
+		{name: "accepted", wantError: true},
+		{name: "filtered", errCheck: func(error) bool { return false }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			var tags map[string]any
+			if tt.wantError {
+				tags = map[string]any{
+					ext.ErrorType:            "invalid",
+					ext.DBResponseStatusCode: "invalid",
+				}
+			}
+			tp := &traceParams{
+				driverName: "mysql",
+				cfg: &config{
+					serviceName:   "mysql.db",
+					spanName:      "mysql.query",
+					analyticsRate: math.NaN(),
+					otelSemantics: true,
+					errCheck:      tt.errCheck,
+					tags:          tags,
+				},
+				connectionInfo: internal.ConnectionInfo{System: "mysql"},
+			}
+			err := &mysql.MySQLError{Number: 1062, Message: "duplicate entry"}
+			tp.tryTrace(context.Background(), QueryTypeExec, "INSERT INTO customer VALUES (1)", time.Now(), err)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			span := spans[0]
+			if tt.wantError {
+				assert.Equal(t, err.Error(), span.Tag(ext.ErrorMsg))
+				assert.Equal(t, "1062", span.Tag(ext.ErrorType))
+				assert.Equal(t, "1062", span.Tag(ext.DBResponseStatusCode))
+				return
+			}
+			assert.Nil(t, span.Tag(ext.ErrorMsg))
+			assert.Nil(t, span.Tag(ext.ErrorType))
+			assert.Nil(t, span.Tag(ext.DBResponseStatusCode))
+		})
+	}
+}
+
+func TestTryTraceOTelSpecialErrors(t *testing.T) {
+	tp := &traceParams{
+		driverName: "mysql",
+		cfg: &config{
+			serviceName:   "mysql.db",
+			spanName:      "mysql.query",
+			analyticsRate: math.NaN(),
+			otelSemantics: true,
+		},
+		connectionInfo: internal.ConnectionInfo{System: "mysql"},
+	}
+
+	t.Run("driver skip", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		tp.tryTrace(context.Background(), QueryTypeExec, "SELECT 1", time.Now(), driver.ErrSkip)
+		assert.Empty(t, mt.FinishedSpans())
+	})
+	t.Run("security error", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		tp.tryTrace(context.Background(), QueryTypeExec, "SELECT 1", time.Now(), &events.BlockingSecurityEvent{})
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Nil(t, spans[0].Tag(ext.ErrorMsg))
+		assert.Nil(t, spans[0].Tag(ext.ErrorType))
+		assert.Nil(t, spans[0].Tag(ext.DBResponseStatusCode))
+	})
 }
 
 func TestWithSpanTags(t *testing.T) {
