@@ -8,6 +8,12 @@
 package ext
 
 const (
+	// ServerAddress identifies the server address under OpenTelemetry semantics.
+	ServerAddress = "server.address"
+
+	// ServerPort identifies the server port under OpenTelemetry semantics.
+	ServerPort = "server.port"
+
 	// TargetHost sets the target host address.
 	// Legacy: Kept for backwards compatibility. Use NetworkDestinationName for hostname
 	// and NetworkDestinationIP for IP addresses

@@ -339,6 +339,10 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		return
 	}
 	dbSystem, _ := normalizeDBSystem(tp.driverName)
+	var otelInfo internal.OTelConnectionInfo
+	if tp.cfg.otelSemantics {
+		otelInfo = tp.connectionInfo.OTelSemantics(tp.driverName)
+	}
 	opts := options.Expand(spanOpts, 0, 6+len(tp.cfg.tags)+1)
 	opts = append(opts,
 		instrumentation.ServiceNameWithSource(tp.cfg.serviceName, tp.cfg.serviceSource),
@@ -346,8 +350,10 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		tracer.StartTime(startTime),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, dbSystem),
 	)
+	if !tp.cfg.otelSemantics {
+		opts = append(opts, tracer.Tag(ext.DBSystem, dbSystem))
+	}
 	if tp.cfg.tags != nil {
 		for key, tag := range tp.cfg.tags {
 			opts = append(opts, tracer.Tag(key, tag))
@@ -357,20 +363,50 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, tp.cfg.spanName, opts...)
-	resource := string(qtype)
-	if query != "" {
-		resource = query
-	}
-
 	span.SetTag("sql.query_type", string(qtype))
-	span.SetTag(ext.ResourceName, resource)
-	for k, v := range tp.datadogTags {
-		span.SetTag(k, v)
+	if tp.cfg.otelSemantics {
+		operation := ""
+		if query == "" {
+			operation = string(qtype)
+		}
+		span.SetTag(ext.ResourceName, otelInfo.SpanName(operation))
+		if query != "" {
+			span.SetTag(ext.DBStatement, query)
+		}
+		if otelInfo.Namespace != "" {
+			span.SetTag(ext.DBNamespace, otelInfo.Namespace)
+		}
+		if otelInfo.ServerAddress != "" {
+			span.SetTag(ext.ServerAddress, otelInfo.ServerAddress)
+		}
+		if otelInfo.ServerPort != 0 {
+			span.SetTag(ext.ServerPort, otelInfo.ServerPort)
+		}
+		for k, v := range tp.datadogTags {
+			switch k {
+			case ext.DBName, ext.TargetHost, ext.TargetPort:
+				continue
+			}
+			span.SetTag(k, v)
+		}
+	} else {
+		resource := string(qtype)
+		if query != "" {
+			resource = query
+		}
+		span.SetTag(ext.ResourceName, resource)
+		for k, v := range tp.datadogTags {
+			span.SetTag(k, v)
+		}
 	}
 	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
 		for k, v := range meta {
 			span.SetTag(k, v)
 		}
+	}
+	if tp.cfg.otelSemantics {
+		// db.system.name is required and must not be overridden by custom or context tags.
+		span.SetTag(ext.DBSystemName, otelInfo.SystemName)
 	}
 	if err != nil && !events.IsSecurityError(err) && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
 		span.SetTag(ext.Error, err)
