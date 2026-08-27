@@ -488,6 +488,53 @@ func TestAgentlessEVPDirectClientUsesEnvironmentProxy(t *testing.T) {
 	}
 }
 
+func TestAgentlessEVPDirectClientDoesNotFollowRedirects(t *testing.T) {
+	for _, status := range []int{
+		http.StatusMovedPermanently,
+		http.StatusFound,
+		http.StatusTemporaryRedirect,
+		http.StatusPermanentRedirect,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var redirectTargetRequests atomic.Int64
+			redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				redirectTargetRequests.Add(1)
+				if got := r.Header.Get(apiKeyHeader); got != "" {
+					t.Errorf("redirect target received direct API key %q", got)
+				}
+				w.WriteHeader(http.StatusAccepted)
+			}))
+			defer redirectTarget.Close()
+
+			redirectingIntake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get(apiKeyHeader); got != testAPIKey {
+					t.Errorf("direct intake API key = %q, want configured key", got)
+				}
+				http.Redirect(w, r, redirectTarget.URL, status)
+			}))
+			defer redirectingIntake.Close()
+
+			client := newAgentlessEVPClient(internalffe.Settings{
+				Source: internalffe.SourceAgentless,
+				Site:   "mock-intake.invalid",
+				APIKey: testAPIKey,
+			})
+			client.directURL, _ = url.Parse(redirectingIntake.URL)
+			client.directClient.Transport = redirectingIntake.Client().Transport
+			client.routeMode = evpRouteDirect
+
+			err := client.postRaw(exposureEndpoint, "exposure", []byte(`{}`))
+			var statusErr *evpHTTPStatusError
+			if !errors.As(err, &statusErr) || statusErr.statusCode != status {
+				t.Fatalf("postRaw() error = %v, want HTTP status %d", err, status)
+			}
+			if got := redirectTargetRequests.Load(); got != 0 {
+				t.Fatalf("redirect target received %d request(s), want 0", got)
+			}
+		})
+	}
+}
+
 func TestDefinitivePreSendErrors(t *testing.T) {
 	for _, err := range []error{
 		syscall.ECONNREFUSED,

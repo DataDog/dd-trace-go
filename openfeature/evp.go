@@ -85,6 +85,13 @@ func newEVPClient() *evpClient {
 func newAgentlessEVPClient(settings internalffe.Settings) *evpClient {
 	c := newEVPClientBase()
 	c.directClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+	// Direct EVP intake has no legitimate reason to redirect. Refusing redirects
+	// prevents DD-API-KEY from being forwarded to a redirect target: Go strips
+	// only built-in sensitive headers on cross-origin redirects, not this custom
+	// credential header.
+	c.directClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	c.apiKey = settings.APIKey
 	if c.apiKey != "" {
 		c.directURL = buildDirectEVPURL(settings.Site)

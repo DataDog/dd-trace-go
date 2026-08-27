@@ -45,7 +45,7 @@ const (
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
-	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
+	// ExposureFlushInterval is the interval at which exposure events are flushed through EVP.
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
 
