@@ -10,8 +10,12 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"log"
+	"math"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -21,6 +25,55 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTryTraceOTelSemantics(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tp := &traceParams{
+		driverName: "mysql",
+		cfg: &config{
+			serviceName:   "mysql.db",
+			spanName:      "mysql.query",
+			analyticsRate: math.NaN(),
+			otelSemantics: true,
+			tags: map[string]any{
+				"custom":         "connection",
+				ext.DBSystemName: "invalid",
+			},
+		},
+		connectionInfo: internal.ConnectionInfo{
+			System:    "mysql",
+			User:      "alice",
+			Namespace: "orders",
+			Host:      "db.example.com",
+			Port:      "3307",
+		},
+	}
+	tp.datadogTags = tp.connectionInfo.DatadogTags()
+	ctx := WithSpanTags(context.Background(), map[string]string{
+		"custom":         "operation",
+		ext.DBSystemName: "also-invalid",
+	})
+	const query = "SELECT * FROM customer"
+	tp.tryTrace(ctx, QueryTypeQuery, query, time.Now(), nil)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal(t, "orders", span.Tag(ext.ResourceName))
+	assert.Equal(t, query, span.Tag(ext.DBStatement))
+	assert.Equal(t, ext.DBSystemMySQL, span.Tag(ext.DBSystemName))
+	assert.Equal(t, "orders", span.Tag(ext.DBNamespace))
+	assert.Equal(t, "db.example.com", span.Tag(ext.ServerAddress))
+	assert.Equal(t, float64(3307), span.Tag(ext.ServerPort))
+	assert.Equal(t, "alice", span.Tag(ext.DBUser))
+	assert.Equal(t, "operation", span.Tag("custom"))
+	assert.Nil(t, span.Tag(ext.DBSystem))
+	assert.Nil(t, span.Tag(ext.DBName))
+	assert.Nil(t, span.Tag(ext.TargetHost))
+	assert.Nil(t, span.Tag(ext.TargetPort))
+}
 
 func TestWithSpanTags(t *testing.T) {
 	type sqlRegister struct {
