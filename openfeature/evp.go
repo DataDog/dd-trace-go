@@ -110,15 +110,60 @@ func newEVPClientBase() *evpClient {
 }
 
 func buildDirectEVPURL(site string) *url.URL {
-	site = strings.TrimSpace(site)
-	if site == "" || strings.ContainsAny(site, "/?#@") {
+	site = strings.ToLower(strings.TrimSpace(site))
+	if !isValidDirectEVPSite(site) {
 		return nil
 	}
-	u, err := url.Parse("https://" + directEVPHostPrefix + site)
-	if err != nil || u.Hostname() == "" {
+	expectedHost := directEVPHostPrefix + site
+	u, err := url.Parse("https://" + expectedHost)
+	if err != nil ||
+		u.Scheme != "https" ||
+		u.User != nil ||
+		u.Host != expectedHost ||
+		u.Hostname() != expectedHost ||
+		u.Port() != "" ||
+		u.Path != "" ||
+		u.RawPath != "" ||
+		u.RawQuery != "" ||
+		u.Fragment != "" {
 		return nil
 	}
 	return u
+}
+
+func isValidDirectEVPSite(site string) bool {
+	if site == "" || len(site) > 230 {
+		return false
+	}
+
+	labelLength := 0
+	previousWasHyphen := false
+	for i := 0; i < len(site); i++ {
+		character := site[i]
+		if character == '.' {
+			if labelLength == 0 || previousWasHyphen {
+				return false
+			}
+			labelLength = 0
+			previousWasHyphen = false
+			continue
+		}
+
+		if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') {
+			labelLength++
+			previousWasHyphen = false
+		} else if character == '-' && labelLength > 0 {
+			labelLength++
+			previousWasHyphen = true
+		} else {
+			return false
+		}
+		if labelLength > 63 {
+			return false
+		}
+	}
+
+	return labelLength > 0 && !previousWasHyphen
 }
 
 func (c *evpClient) post(endpoint, eventName string, payload any) error {

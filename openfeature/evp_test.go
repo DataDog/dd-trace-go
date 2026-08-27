@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/http/httptrace"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -57,6 +58,124 @@ func configuredAgentlessEVP(local, direct http.RoundTripper) *evpClient {
 	c.routeMode = evpRouteLocal
 	c.localBase = evpProxyV2Path
 	return c
+}
+
+func TestBuildDirectEVPURL(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		site     string
+		wantHost string
+	}{
+		{name: "default site", site: "datadoghq.com", wantHost: "event-platform-intake.datadoghq.com"},
+		{name: "custom domain", site: "custom.example", wantHost: "event-platform-intake.custom.example"},
+		{name: "uppercase domain with outer whitespace", site: "  DATADOGHQ.EU\t", wantHost: "event-platform-intake.datadoghq.eu"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := buildDirectEVPURL(tc.site)
+			if u == nil {
+				t.Fatal("buildDirectEVPURL() returned nil")
+			}
+			if u.Scheme != "https" || u.User != nil || u.Host != tc.wantHost || u.Hostname() != tc.wantHost || u.Port() != "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+				t.Fatalf("buildDirectEVPURL() = %#v, want exact HTTPS host %q", u, tc.wantHost)
+			}
+		})
+	}
+}
+
+func TestBuildDirectEVPURLRejectsUnsafeSite(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		site string
+	}{
+		{name: "empty", site: ""},
+		{name: "userinfo", site: "datadoghq.com@evil.example"},
+		{name: "userinfo with password", site: "datadoghq.com:password@evil.example"},
+		{name: "scheme", site: "https://datadoghq.com"},
+		{name: "default port", site: "datadoghq.com:443"},
+		{name: "custom port", site: "datadoghq.com:8443"},
+		{name: "path", site: "datadoghq.com/path"},
+		{name: "query", site: "datadoghq.com?query=value"},
+		{name: "fragment", site: "datadoghq.com#fragment"},
+		{name: "internal whitespace", site: "data doghq.com"},
+		{name: "backslash", site: "datadoghq.com\\evil.example"},
+		{name: "percent-encoded dot", site: "datadoghq.com%2eattacker.example"},
+		{name: "ideographic full stop", site: "datadoghq.com。attacker.example"},
+		{name: "fullwidth full stop", site: "datadoghq.com．attacker.example"},
+		{name: "halfwidth ideographic full stop", site: "datadoghq.com｡attacker.example"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := buildDirectEVPURL(tc.site); got != nil {
+				t.Fatalf("buildDirectEVPURL(%q) = %s, want nil", tc.site, got)
+			}
+		})
+	}
+}
+
+func TestAgentlessEVPDirectConstructorPreservesExactHostAndCredentials(t *testing.T) {
+	client := newAgentlessEVPClient(internalffe.Settings{
+		Source: internalffe.SourceAgentless,
+		Site:   "  CUSTOM.EXAMPLE  ",
+		APIKey: testAPIKey,
+	})
+	client.agentURL = &url.URL{Scheme: "http", Host: "agent.invalid"}
+	client.httpClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"endpoints":[]}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	client.directClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Scheme != "https" || req.URL.Host != "event-platform-intake.custom.example" {
+			t.Fatalf("direct request URL = %s, want exact configured HTTPS host", req.URL)
+		}
+		if got := req.Header.Get(apiKeyHeader); got != testAPIKey {
+			t.Fatalf("direct API key = %q, want configured key", got)
+		}
+		return newResponse(http.StatusAccepted), nil
+	})}
+
+	if err := client.postRaw(exposureEndpoint, "exposure", []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgentlessEVPUnsafeSiteNeverReachesDirectTransport(t *testing.T) {
+	for _, site := range []string{
+		"datadoghq.com%2eattacker.example",
+		"datadoghq.com。attacker.example",
+		"datadoghq.com．attacker.example",
+		"datadoghq.com｡attacker.example",
+	} {
+		t.Run(site, func(t *testing.T) {
+			var directRequests atomic.Int64
+			client := newAgentlessEVPClient(internalffe.Settings{
+				Source: internalffe.SourceAgentless,
+				Site:   site,
+				APIKey: testAPIKey,
+			})
+			client.agentURL = &url.URL{Scheme: "http", Host: "agent.invalid"}
+			client.httpClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"endpoints":[]}`)),
+					Header:     make(http.Header),
+				}, nil
+			})}
+			client.directClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				directRequests.Add(1)
+				return newResponse(http.StatusAccepted), nil
+			})}
+
+			err := client.postRaw(exposureEndpoint, "exposure", []byte(`{}`))
+			if !errors.Is(err, errNoEVPRoute) {
+				t.Fatalf("postRaw() error = %v, want %v", err, errNoEVPRoute)
+			}
+			if directRequests.Load() != 0 {
+				t.Fatalf("direct transport received %d request(s), want 0", directRequests.Load())
+			}
+		})
+	}
 }
 
 func TestSelectEVPProxyPath(t *testing.T) {
