@@ -23,65 +23,82 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageDatabaseSQL)
 }
 
-// ParseDSN parses various supported DSN types into a map of key/value pairs which can be used as valid tags.
-func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
-	meta = make(map[string]string)
-	switch driverName {
-	case "mysql":
-		meta, err = parseMySQLDSN(dsn)
-		if err != nil {
-			instr.Logger().Debug("Error parsing DSN for mysql: %v", sanitizeError(err))
-			return
-		}
-	case "postgres", "pgx":
-		meta, err = parsePostgresDSN(dsn)
-		if err != nil {
-			instr.Logger().Debug("Error parsing DSN for postgres: %v", sanitizeError(err))
-			return
-		}
-	case "sqlserver":
-		meta, err = parseSQLServerDSN(dsn)
-		if err != nil {
-			instr.Logger().Debug("Error parsing DSN for sqlserver: %v", sanitizeError(err))
-			return
-		}
-	default:
-		// Try to parse the DSN and see if the scheme contains a known driver name.
-		u, e := parseSafe(dsn)
-		if e != nil {
-			// dsn is not a valid URL, so just ignore
-			instr.Logger().Debug("Error parsing driver name from DSN: %v", e)
-			return
-		}
-		if driverName != u.Scheme {
-			// In some cases the driver is registered under a non-official name.
-			// For example, "Test" may be the registered name with a DSN of "postgres://postgres:postgres@127.0.0.1:5432/fakepreparedb"
-			// for the purposes of testing/mocking.
-			// In these cases, we try to parse the DSN based upon the DSN itself, instead of the registered driver name
-			return ParseDSN(u.Scheme, dsn)
-		}
-	}
-	return reduceKeys(meta), nil
+// ConnectionInfo contains non-sensitive connection facts parsed from a DSN.
+type ConnectionInfo struct {
+	System          string
+	User            string
+	ApplicationName string
+	Namespace       string
+	Host            string
+	Port            string
+	InstanceName    string
 }
 
-// reduceKeys takes a map containing parsed DSN information and returns a new
-// map containing only the keys relevant as tracing tags, if any.
-func reduceKeys(meta map[string]string) map[string]string {
-	var keysOfInterest = map[string]string{
-		"user":                             ext.DBUser,
-		"application_name":                 ext.DBApplication,
-		"dbname":                           ext.DBName,
-		"host":                             ext.TargetHost,
-		"port":                             ext.TargetPort,
-		ext.MicrosoftSQLServerInstanceName: ext.MicrosoftSQLServerInstanceName,
+// DatadogTags returns connection facts using Datadog span tag names.
+func (c ConnectionInfo) DatadogTags() map[string]string {
+	values := map[string]string{
+		ext.DBUser:                         c.User,
+		ext.DBApplication:                  c.ApplicationName,
+		ext.DBName:                         c.Namespace,
+		ext.TargetHost:                     c.Host,
+		ext.TargetPort:                     c.Port,
+		ext.MicrosoftSQLServerInstanceName: c.InstanceName,
 	}
-	m := make(map[string]string)
-	for k, v := range meta {
-		if nk, ok := keysOfInterest[k]; ok {
-			m[nk] = v
+	tags := make(map[string]string, len(values))
+	for key, value := range values {
+		if value != "" {
+			tags[key] = value
 		}
 	}
-	return m
+	return tags
+}
+
+// ParseDSN parses supported DSN forms into non-sensitive connection facts.
+func ParseDSN(driverName, dsn string) (ConnectionInfo, error) {
+	var (
+		meta   map[string]string
+		err    error
+		system string
+	)
+	switch driverName {
+	case "mysql":
+		system = "mysql"
+		meta, err = parseMySQLDSN(dsn)
+	case "postgres", "postgresql", "pgx":
+		system = "postgresql"
+		meta, err = parsePostgresDSN(dsn)
+	case "sqlserver", "mssql", "azuresql":
+		system = "sqlserver"
+		meta, err = parseSQLServerDSN(dsn)
+	default:
+		// Driver aliases can still expose a recognized product through a URL DSN.
+		u, parseErr := parseSafe(dsn)
+		if parseErr != nil {
+			instr.Logger().Debug("Error parsing driver name from DSN: %v", parseErr)
+			return ConnectionInfo{}, nil
+		}
+		if driverName != u.Scheme {
+			return ParseDSN(u.Scheme, dsn)
+		}
+		return ConnectionInfo{}, nil
+	}
+	if err != nil {
+		instr.Logger().Debug("Error parsing DSN for %s: %v", system, sanitizeError(err))
+		return ConnectionInfo{}, err
+	}
+	return connectionInfo(system, meta), nil
+}
+
+func connectionInfo(system string, meta map[string]string) ConnectionInfo {
+	return ConnectionInfo{
+		System:          system,
+		User:            meta["user"],
+		ApplicationName: meta["application_name"],
+		Namespace:       meta["dbname"],
+		Host:            meta["host"],
+		Port:            meta["port"],
+		InstanceName:    meta[ext.MicrosoftSQLServerInstanceName],
+	}
 }
 
 // parseMySQLDSN parses a mysql-type dsn into a map.

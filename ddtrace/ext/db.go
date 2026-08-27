@@ -20,6 +20,12 @@ const (
 	DBStatement = "db.statement"
 	// DBSystem indicates the database management system (DBMS) product being used.
 	DBSystem = "db.system"
+	// DBSystemName indicates the database management system product being used under OpenTelemetry semantics.
+	DBSystemName = "db.system.name"
+	// DBNamespace indicates the database name under OpenTelemetry semantics.
+	DBNamespace = "db.namespace"
+	// DBResponseStatusCode indicates a database response code under OpenTelemetry semantics.
+	DBResponseStatusCode = "db.response.status_code"
 	// DBClientConnectionPoolName indicates the name of the database connection pool,
 	// unique within the instrumented application.
 	DBClientConnectionPoolName = "db.client.connection.pool.name"
@@ -31,6 +37,10 @@ const (
 	DBSystemMySQL              = "mysql"
 	DBSystemPostgreSQL         = "postgresql"
 	DBSystemMicrosoftSQLServer = "mssql"
+	// DBSystemNameMicrosoftSQLServer is the OpenTelemetry db.system.name value for Microsoft SQL Server.
+	DBSystemNameMicrosoftSQLServer = "microsoft.sql_server"
+	// DBSystemSQLite indicates SQLite.
+	DBSystemSQLite = "sqlite"
 	// DBSystemOtherSQL is used for other SQL databases not listed above.
 	DBSystemOtherSQL      = "other_sql"
 	DBSystemElasticsearch = "elasticsearch"

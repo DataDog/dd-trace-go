@@ -11,6 +11,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -244,9 +246,10 @@ func (tc *TracedConn) ResetSession(ctx context.Context) error {
 
 // traceParams stores all information related to tracing the driver.Conn
 type traceParams struct {
-	cfg        *config
-	driverName string
-	meta       map[string]string
+	cfg            *config
+	driverName     string
+	connectionInfo internal.ConnectionInfo
+	datadogTags    map[string]string
 }
 
 type contextKey int
@@ -295,7 +298,7 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 		spanCtx = span.Context()
 	}
 
-	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.TargetHost], PeerDBName: tc.meta[ext.DBName], PeerService: tc.providedPeerService(ctx)}
+	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.connectionInfo.Host, PeerDBName: tc.connectionInfo.Namespace, PeerService: tc.providedPeerService(ctx)}
 	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
 		instr.Logger().Warn("contrib/database/sql: failed to inject query comments: %s", err.Error())
@@ -361,7 +364,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 
 	span.SetTag("sql.query_type", string(qtype))
 	span.SetTag(ext.ResourceName, resource)
-	for k, v := range tp.meta {
+	for k, v := range tp.datadogTags {
 		span.SetTag(k, v)
 	}
 	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
