@@ -2,6 +2,70 @@ name: dd-trace-go-agent
 version: "0.1"
 
 cases:
+# ==== General Tests ====
+
+  - id: dd-trace-go-general-forbidigo-env-vars
+    files:
+      - AGENTS.md
+    input: |
+      I'm adding support for a new environment variable, say DD_TRACE_MY_NEW_FEATURE, and I want to read it
+      directly with os.Getenv inside a contrib package. Will `make lint` catch this, and if so, what's the
+      enforced alternative? Are there any directories in the repo where calling os.Getenv or os.LookupEnv
+      directly is fine?
+    expected_criteria:
+      - States that golangci-lint's forbidigo rule forbids direct calls to os.Getenv and os.LookupEnv anywhere
+        in the repo, so lint will fail on the contrib package
+      - States the enforced alternative is internal/env.Get (or internal/env.Lookup for the LookupEnv case),
+        or instrumentation/env for packages that cannot import internal packages
+      - States there are exemptions -- internal/env, internal/log, and internal/locking are excluded from this
+        forbidigo rule since they implement the wrapper itself, and _test.go files are also excluded
+    bad_signals:
+      - Says os.Getenv/os.LookupEnv is allowed anywhere in production code with no lint enforcement
+      - Fails to name internal/env.Get/Lookup as the required replacement
+      - Says there are no exemptions to the rule at all
+
+  - id: dd-trace-go-general-cross-build-libddwaf-skip
+    files:
+      - AGENTS.md
+    input: |
+      How does scripts/cross_build.sh decide which packages to skip because they import
+      go-libddwaf, and what happens to packages that have no buildable Go files for the current build?
+    expected_criteria:
+      - States the skip list is computed dynamically at script run time via `go list`, not a hardcoded list of
+        package names
+      - States it uses a `go list -f` template printing the import path, whether GoFiles are present, and the
+        joined transitive Deps list, then filters (via awk) for packages whose Deps do not match go-libddwaf
+      - States packages without GoFiles (e.g. test-only packages) are also excluded from the list passed to
+        `go build`
+    bad_signals:
+      - Says the skipped packages are a static/hardcoded list maintained in the script
+      - Does not mention go list or the dependency-based filtering mechanism
+      - Says test-only packages are still passed directly to go build
+
+  - id: dd-trace-go-general-env-autodetect-first-read
+    files:
+      - AGENTS.md
+    input: |
+      Look at env.Get and verifySupportedConfiguration in internal/env/env.go. If a test calls
+      env.Get("DD_BRAND_NEW_VAR") for a variable that isn't yet listed in SupportedConfigurations, and the real
+      DD_BRAND_NEW_VAR environment variable is actually set in the test process, does that first call return
+      its value? What happens as a result of that call?
+    expected_criteria:
+      - States verifySupportedConfiguration returns false for a DD_/OTEL_-prefixed name that isn't in
+        SupportedConfigurations, regardless of whether testing.Testing() is true, so env.Get returns "" on that
+        call -- the real value is not read
+      - States that when testing.Testing() is true, the unlisted key is additionally recorded into the
+        generated configuration file (via addSupportedConfigurationToFile) purely as a side effect, for a
+        future `configinverter generate` run, and an error is logged
+      - Concludes the variable only becomes readable by env.Get after it's been added to
+        SupportedConfigurations via regeneration -- not on the same call that first detected it
+    bad_signals:
+      - Says the first call to env.Get returns the real environment variable's value because testing.Testing()
+        is true
+      - Says the variable becomes usable immediately without needing a configinverter generate step
+      - Does not mention that verifySupportedConfiguration returns false whenever the name isn't in
+        SupportedConfigurations
+
 # ==== Contrib Tests ====
   - id: dd-trace-go-contrib-structure
     files:
@@ -596,6 +660,81 @@ cases:
       - Says no documentation update is needed for this change
       - Points to a different file instead of internal/appsec/README.md, e.g. the top-level project
         README.md or CONTRIBUTING.md
+
+# ==== Internal Tests ====
+
+  - id: dd-trace-go-internal-locking-deadlock-buildtag
+    files:
+      - internal/AGENTS.md
+    input: |
+      Look at internal/locking/mutex_sync.go and mutex_deadlock.go. What Go build tag switches locking.Mutex
+      and locking.RWMutex from a zero-overhead implementation to one with runtime deadlock detection, and what
+      type actually backs each version?
+    expected_criteria:
+      - States the `deadlock` build tag controls this -- its absence (mutex_sync.go, `//go:build !deadlock`)
+        makes Mutex/RWMutex plain type aliases for sync.Mutex/sync.RWMutex
+      - States that building with the `deadlock` tag (mutex_deadlock.go, `//go:build deadlock`) instead makes
+        Mutex/RWMutex structs embedding github.com/linkdata/deadlock's Mutex/RWMutex
+    bad_signals:
+      - Names an incorrect build tag (e.g. `debug`) as the one controlling this
+      - Says both build configurations use the same underlying type / no build-tag-based switch exists
+
+  - id: dd-trace-go-internal-locking-assert-implementation
+    files:
+      - internal/AGENTS.md
+    input: |
+      Does MutexLocked/RWMutexRLocked in internal/locking/assert (assert_sync_prod.go, assert_sync_debug.go, 
+      assert_deadlock.go) actually verify lock state by calling TryLock and checking whether it succeeds, and
+      how does the deadlock-build variant reach the lock state given that locking.Mutex is a struct embedding a
+      deadlock.Mutex there?
+    expected_criteria:
+      - States the real (non-benchmark) implementations do NOT use TryLock -- they call
+        github.com/trailofbits/go-mutexasserts, which inspects lock state via atomic operations without
+        attempting to acquire the lock; a TryLock-based version exists only in assert_bench_test.go for
+        benchmark comparison
+      - States the deadlock-build variant uses reflection (reflect.ValueOf(m).Elem().FieldByName("mu")) to
+        reach the embedded deadlock.Mutex/RWMutex's private "mu" field, casts it via unsafe.Pointer to a
+        *sync.Mutex/*sync.RWMutex, and runs go-mutexasserts against that raw pointer
+    bad_signals:
+      - Says the assertions are TryLock-based in the shipped implementation (only repeating what the README
+        states)
+      - Says the deadlock-build variant cannot verify lock state at all, or that it operates directly on the
+        deadlock.Mutex type without reflection/unsafe
+
+  - id: dd-trace-go-internal-stableconfig-oversized-file-fallback
+    files:
+      - internal/AGENTS.md
+    input: |
+      If the managed stable-config file at /etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml 
+      exists but is 10KB, or exists but contains invalid YAML, does loading it fail tracer initialization, or does 
+      something else happen? Is there a specific size threshold involved?
+    expected_criteria:
+      - States there's a 4KB (maxFileSize) size limit; a file exceeding it is dropped with a logged warning
+        rather than being partially read or causing an error
+      - States invalid/malformed YAML is also dropped with a logged warning (fileContentsToConfig returns an
+        empty config on unmarshal error)
+      - Concludes that in both cases the package falls back to an empty stable config rather than
+        failing/panicking, so tracer initialization is not blocked by a bad or oversized file
+    bad_signals:
+      - Says an oversized or malformed stable config file causes an error that stops tracer initialization
+      - Does not mention a specific size threshold, or gives an incorrect one
+
+  - id: dd-trace-go-internal-processtags-default-enabled
+    files:
+      - internal/AGENTS.md
+    input: |
+      Is process tag collection controlled by DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED, opt-in (off by 
+      default) or opt-out (on by default)? Also, if SetServiceNameTag is called with isUserDefined=false and 
+      later called again with isUserDefined=true, are both the resulting tags (svc.auto and svc.user) present 
+      afterward, or only one?
+    expected_criteria:
+      - States the feature defaults to enabled -- `internal.BoolEnv(envProcessTagsEnabled, true)` -- despite
+        the "EXPERIMENTAL" name, so it must be explicitly set to false/disabled to opt out
+      - States svc.auto and svc.user are mutually exclusive -- SetServiceNameTag deletes both keys before
+        setting the new one, so only the most recently set tag (svc.user:true in this example) remains
+    bad_signals:
+      - Says the DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED feature is disabled by default
+      - Says both svc.auto and svc.user remain set simultaneously after the second call
 
 # ==== LLMObs Tests ====
 # TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
