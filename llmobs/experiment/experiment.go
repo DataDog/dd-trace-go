@@ -648,16 +648,16 @@ func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluat
 	switch t := ev.Value.(type) {
 	case bool:
 		metricType = transport.EvalMetricTypeBoolean
-		boolVal = transport.AnyPtr(t)
+		boolVal = new(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
 		metricType = transport.EvalMetricTypeScore
-		scoreVal = transport.AnyPtr(asFloat64(t))
+		scoreVal = new(asFloat64(t))
 
 	default:
-		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
+		catVal = new(fmt.Sprintf("%v", t))
 	}
 
 	return transport.ExperimentEvalMetricEvent{
@@ -690,16 +690,16 @@ func (e *Experiment) generateMetricFromSummaryEvaluation(ev *Evaluation, timesta
 	switch t := ev.Value.(type) {
 	case bool:
 		metricType = transport.EvalMetricTypeBoolean
-		boolVal = transport.AnyPtr(t)
+		boolVal = new(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
 		metricType = transport.EvalMetricTypeScore
-		scoreVal = transport.AnyPtr(asFloat64(t))
+		scoreVal = new(asFloat64(t))
 
 	default:
-		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
+		catVal = new(fmt.Sprintf("%v", t))
 	}
 
 	// Summary evaluations don't have span/trace IDs, but use the latest timestamp from per-record evaluations.

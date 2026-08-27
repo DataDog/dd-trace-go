@@ -1,6 +1,15 @@
+# Enforced by scripts/check_codeowners.go (make lint/misc). Every tracked file
+# must have an owner here; there is no catch-all "*" entry, so a new top-level
+# directory or root-level file needs a new line below.
+#
+# Patterns are restricted to the forms GitHub and CI Visibility interpret
+# identically. See "CODEOWNERS patterns" in CONTRIBUTING.md.
+#
+#   /path/to/dir/     anchored, applies to everything beneath it (slash required)
+#   /path/to/file.go  anchored, exact match
+#   *suffix           suffix match at any depth (one leading "*", no "/")
+#
 # Note: Later matches take precedence
-# Note: directory owners need a trailing "/" to apply recursively (no bare GitHub-style dir globs)
-# Note: CIVis suffix matches only support a single leading "*"
 
 # shared modules and repository tooling
 /.claude/                       @DataDog/dd-trace-go-guild
@@ -81,8 +90,6 @@
 /.github/workflows/config-audit.yml            @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/remote_config.go               @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/otel_dd_mappings.go            @DataDog/apm-sdk-capabilities-go
-/internal/env/supported_configurations.gen.go  @DataDog/apm-sdk-capabilities-go
-/internal/env/supported_configurations.json    @DataDog/apm-sdk-capabilities-go
 # capabilities - telemetry
 /internal/telemetry/                 @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/telemetry.go         @DataDog/apm-sdk-capabilities-go
@@ -100,6 +107,10 @@
 /ddtrace/tracer/propagating_tags.go  @DataDog/apm-sdk-capabilities-go
 # capabilities- OTel integration
 /ddtrace/opentelemetry/              @DataDog/apm-sdk-capabilities-go
+
+# common configuration tooling
+/internal/env/supported_configurations.gen.go  @DataDog/dd-trace-go-guild
+/internal/env/supported_configurations.json    @DataDog/dd-trace-go-guild
 
 # data streams monitoring
 /datastreams/                               @DataDog/data-streams-monitoring
@@ -122,7 +133,7 @@
 /contrib/modelcontextprotocol/go-sdk/      @DataDog/ml-observability @DataDog/apm-idm-go
 
 # gitlab configuration
-.gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability @DataDog/apm-ecosystems-performance
+/.gitlab-ci.yml                 @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability @DataDog/apm-ecosystems-performance
 /.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
 /.gitlab/benchmarks/            @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
 /.gitlab/benchmarks/macro/      @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-performance
@@ -144,7 +155,7 @@
 # database monitoring
 /ddtrace/tracer/sqlcomment.go       @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 /ddtrace/tracer/sqlcomment_test.go  @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
-contrib/database/sql/               @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
+/contrib/database/sql/              @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 
 # dependency-file review
 *go.mod                         @DataDog/apm-go
