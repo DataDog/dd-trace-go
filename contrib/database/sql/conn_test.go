@@ -158,6 +158,154 @@ func TestTryTraceOTelSpecialErrors(t *testing.T) {
 	})
 }
 
+func TestTryTraceOTelOperationMatrix(t *testing.T) {
+	tests := []struct {
+		name         string
+		queryType    QueryType
+		query        string
+		wantResource string
+	}{
+		{name: "query", queryType: QueryTypeQuery, query: "SELECT * FROM customer", wantResource: "orders"},
+		{name: "exec", queryType: QueryTypeExec, query: "DELETE FROM customer", wantResource: "orders"},
+		{name: "prepare", queryType: QueryTypePrepare, query: "SELECT * FROM customer WHERE id = ?", wantResource: "orders"},
+		{name: "connect", queryType: QueryTypeConnect, wantResource: "Connect orders"},
+		{name: "ping", queryType: QueryTypePing, wantResource: "Ping orders"},
+		{name: "begin", queryType: QueryTypeBegin, wantResource: "Begin orders"},
+		{name: "commit", queryType: QueryTypeCommit, wantResource: "Commit orders"},
+		{name: "rollback", queryType: QueryTypeRollback, wantResource: "Rollback orders"},
+		{name: "close", queryType: QueryTypeClose, wantResource: "Close orders"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			tp := newTestTraceParams(true)
+			tp.tryTrace(context.Background(), tt.queryType, tt.query, time.Now(), nil)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			span := spans[0]
+			assert.Equal(t, tt.wantResource, span.Tag(ext.ResourceName))
+			assert.Equal(t, ext.DBSystemMySQL, span.Tag(ext.DBSystemName))
+			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
+			assert.Equal(t, "orders", span.Tag(ext.DBNamespace))
+			assert.Equal(t, "db.example.com", span.Tag(ext.ServerAddress))
+			assert.Equal(t, float64(3307), span.Tag(ext.ServerPort))
+			assert.Nil(t, span.Tag(ext.DBSystem))
+			assert.Nil(t, span.Tag(ext.DBName))
+			assert.Nil(t, span.Tag(ext.TargetHost))
+			assert.Nil(t, span.Tag(ext.TargetPort))
+			assert.Nil(t, span.Tag(ext.ErrorType))
+			assert.Nil(t, span.Tag(ext.DBResponseStatusCode))
+			assert.Nil(t, span.Tag("db.query.text"))
+			if tt.query == "" {
+				assert.Nil(t, span.Tag(ext.DBStatement))
+			} else {
+				assert.Equal(t, tt.query, span.Tag(ext.DBStatement))
+				assert.NotContains(t, tt.wantResource, tt.query)
+			}
+		})
+	}
+}
+
+func TestTryTraceOTelFiltering(t *testing.T) {
+	t.Run("ignored operation", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		tp := newTestTraceParams(true)
+		tp.cfg.ignoreQueryTypes = map[QueryType]struct{}{QueryTypeQuery: {}}
+		tp.tryTrace(context.Background(), QueryTypeQuery, "SELECT 1", time.Now(), nil)
+		assert.Empty(t, mt.FinishedSpans())
+	})
+	t.Run("child only without parent", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		tp := newTestTraceParams(true)
+		tp.cfg.childSpansOnly = true
+		tp.tryTrace(context.Background(), QueryTypeQuery, "SELECT 1", time.Now(), nil)
+		assert.Empty(t, mt.FinishedSpans())
+	})
+}
+
+func TestTryTraceDatadogSemanticsSnapshot(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tp := newTestTraceParams(false)
+	tp.cfg.tags = map[string]any{"custom": "value"}
+	const query = "SELECT * FROM customer"
+	tp.tryTrace(context.Background(), QueryTypeQuery, query, time.Now(), nil)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	tags := spans[0].Tags()
+	// Exclude tracer-wide metadata so this snapshot covers every field owned by the integration.
+	for _, key := range []string{"_dd.base_service", "_dd.p.tid", "_dd.profiling.enabled", "_dd.tags.process", "_dd.top_level", "language"} {
+		delete(tags, key)
+	}
+	assert.Equal(t, map[string]any{
+		ext.SpanName:     "mysql.query",
+		ext.ServiceName:  "mysql.db",
+		ext.ResourceName: query,
+		ext.SpanType:     ext.SpanTypeSQL,
+		ext.Component:    string(componentName),
+		ext.SpanKind:     ext.SpanKindClient,
+		ext.DBSystem:     ext.DBSystemMySQL,
+		ext.DBName:       "orders",
+		ext.DBUser:       "alice",
+		ext.TargetHost:   "db.example.com",
+		ext.TargetPort:   "3307",
+		"custom":         "value",
+		"sql.query_type": string(QueryTypeQuery),
+	}, tags)
+}
+
+func newTestTraceParams(otelSemantics bool) *traceParams {
+	connectionInfo := internal.ConnectionInfo{
+		System:    "mysql",
+		User:      "alice",
+		Namespace: "orders",
+		Host:      "db.example.com",
+		Port:      "3307",
+	}
+	return &traceParams{
+		driverName: "mysql",
+		cfg: &config{
+			serviceName:   "mysql.db",
+			spanName:      "mysql.query",
+			analyticsRate: math.NaN(),
+			otelSemantics: otelSemantics,
+		},
+		connectionInfo: connectionInfo,
+		datadogTags:    connectionInfo.DatadogTags(),
+	}
+}
+
+func BenchmarkTryTraceSemantics(b *testing.B) {
+	for _, queryType := range []QueryType{QueryTypeQuery, QueryTypeExec} {
+		for _, enabled := range []bool{false, true} {
+			name := string(queryType) + "/Datadog"
+			if enabled {
+				name = string(queryType) + "/OpenTelemetry"
+			}
+			b.Run(name, func(b *testing.B) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				tp := newTestTraceParams(enabled)
+				ctx := context.Background()
+				start := time.Now()
+				b.ReportAllocs()
+				b.ResetTimer()
+				for range b.N {
+					tp.tryTrace(ctx, queryType, "SELECT * FROM customer", start, nil)
+					mt.Reset()
+				}
+			})
+		}
+	}
+}
+
 func TestWithSpanTags(t *testing.T) {
 	type sqlRegister struct {
 		name   string

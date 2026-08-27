@@ -338,7 +338,6 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}
-	dbSystem, _ := normalizeDBSystem(tp.driverName)
 	var otelInfo internal.OTelConnectionInfo
 	if tp.cfg.otelSemantics {
 		otelInfo = tp.connectionInfo.OTelSemantics(tp.driverName)
@@ -352,6 +351,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	)
 	if !tp.cfg.otelSemantics {
+		dbSystem, _ := normalizeDBSystem(tp.driverName)
 		opts = append(opts, tracer.Tag(ext.DBSystem, dbSystem))
 	}
 	if tp.cfg.tags != nil {
