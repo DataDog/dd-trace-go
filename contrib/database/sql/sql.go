@@ -171,7 +171,8 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 		cfg:        t.cfg,
 	}
 	if dsn != "" {
-		tp.meta, _ = sqlinternal.ParseDSN(t.driverName, dsn)
+		tp.connectionInfo, _ = sqlinternal.ParseDSN(t.driverName, dsn)
+		tp.datadogTags = tp.connectionInfo.DatadogTags()
 	}
 	start := time.Now()
 	ctx, end := startTraceTask(ctx, string(QueryTypeConnect))

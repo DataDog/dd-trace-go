@@ -20,11 +20,13 @@ func TestParseDSN(t *testing.T) {
 	for _, tt := range []struct {
 		driverName string
 		dsn        string
+		system     string
 		expected   map[string]string
 	}{
 		{
 			driverName: "postgres",
 			dsn:        "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full",
+			system:     "postgresql",
 			expected: map[string]string{
 				ext.DBUser:     "bob",
 				ext.TargetHost: "1.2.3.4",
@@ -35,6 +37,7 @@ func TestParseDSN(t *testing.T) {
 		{
 			driverName: "mysql",
 			dsn:        "bob:secret@tcp(1.2.3.4:5432)/mydb",
+			system:     "mysql",
 			expected: map[string]string{
 				ext.DBName:     "mydb",
 				ext.DBUser:     "bob",
@@ -45,6 +48,7 @@ func TestParseDSN(t *testing.T) {
 		{
 			driverName: "postgres",
 			dsn:        "connect_timeout=0 binary_parameters=no password=zMWmQz26GORmgVVKEbEl dbname=dogdatastaging application_name=trace-api port=5433 sslmode=disable host=master-db-master-active.postgres.service.consul user=dog",
+			system:     "postgresql",
 			expected: map[string]string{
 				ext.TargetPort:    "5433",
 				ext.TargetHost:    "master-db-master-active.postgres.service.consul",
@@ -56,6 +60,7 @@ func TestParseDSN(t *testing.T) {
 		{
 			driverName: "sqlserver",
 			dsn:        "sqlserver://bob:secret@1.2.3.4:1433?database=mydb",
+			system:     "sqlserver",
 			expected: map[string]string{
 				ext.DBUser:     "bob",
 				ext.TargetHost: "1.2.3.4",
@@ -66,6 +71,7 @@ func TestParseDSN(t *testing.T) {
 		{
 			driverName: "sqlserver",
 			dsn:        "sqlserver://alice:secret@localhost/SQLExpress?database=mydb",
+			system:     "sqlserver",
 			expected: map[string]string{
 				ext.DBUser:                         "alice",
 				ext.TargetHost:                     "localhost",
@@ -74,9 +80,10 @@ func TestParseDSN(t *testing.T) {
 			},
 		},
 	} {
-		m, err := ParseDSN(tt.driverName, tt.dsn)
+		info, err := ParseDSN(tt.driverName, tt.dsn)
 		assert.Equal(nil, err)
-		assert.Equal(tt.expected, m)
+		assert.Equal(tt.system, info.System)
+		assert.Equal(tt.expected, info.DatadogTags())
 	}
 }
 

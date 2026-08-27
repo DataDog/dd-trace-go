@@ -29,6 +29,7 @@ type config struct {
 	dsn                string
 	ignoreQueryTypes   map[QueryType]struct{}
 	childSpansOnly     bool
+	otelSemantics      bool
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
@@ -144,6 +145,7 @@ type registerConfig = config
 
 func defaults(cfg *config, driverName string, rc *registerConfig) {
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.otelSemantics = instr.OTelSemanticsEnabled()
 	mode := env.Get("DD_DBM_PROPAGATION_MODE")
 	if mode == "" {
 		mode = env.Get("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
