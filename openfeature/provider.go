@@ -45,7 +45,7 @@ const (
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
-	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
+	// ExposureFlushInterval is the interval at which exposure events are flushed through EVP.
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
 
@@ -146,6 +146,9 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 
 func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Source) *DatadogProvider {
 	evp := newEVPClient()
+	if source == internalffe.SourceAgentless {
+		evp = newAgentlessEVPClient(internalffe.ResolveSettings(internalconfig.Get()))
+	}
 
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)

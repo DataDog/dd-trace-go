@@ -195,9 +195,10 @@
 // DD_FEATURE_FLAGS_CONFIGURATION_SOURCE selects how configuration is delivered:
 //
 //   - "agentless" (default): the provider polls a Datadog endpoint directly over
-//     HTTPS on an interval. No Agent dependency. Requires DD_API_KEY unless a
-//     custom endpoint is configured; DD_SITE optionally selects the managed
-//     endpoint's host and has no effect without DD_API_KEY. See
+//     HTTPS on an interval, without using the Agent for configuration. Requires
+//     DD_API_KEY unless a custom endpoint is configured; DD_SITE optionally
+//     selects the managed endpoint's host and has no effect without DD_API_KEY.
+//     EVP event delivery may still use a compatible local Agent route. See
 //     "# Environment Variables" below.
 //   - "remote_config": the provider subscribes to Datadog Remote Config updates
 //     using the FFE_FLAGS product (capability 46), via the Agent. Configuration
@@ -212,6 +213,17 @@
 // first: the tracer eagerly subscribes to the FFE_FLAGS Remote Config product
 // and may fetch and buffer configuration before NewDatadogProvider is called.
 //
+// Exposure and flag-evaluation events use EVP. With the agentless configuration
+// source, the first event flush queries the trace Agent's /info endpoint once,
+// preferring /evp_proxy/v4 and then /evp_proxy/v2. When neither route is
+// advertised or the Agent cannot be reached, delivery uses the direct
+// event-platform intake derived from DD_SITE and authenticates with DD_API_KEY.
+// Discovery runs only once. A selected local route can transition to direct
+// delivery after an incompatible HTTP response or transport failure. Without a
+// compatible Agent route or valid direct credentials, EVP event delivery is
+// disabled. The remote_config source continues to send EVP events through the
+// Agent's /evp_proxy/v2 route.
+//
 // # Configuration
 //
 // The provider can be configured using ProviderConfig when creating a new instance:
@@ -224,7 +236,7 @@
 // Configuration Options:
 //
 //   - ExposureFlushInterval: Duration between automatic flushes of exposure events
-//     to the Datadog agent. Defaults to 1 second if not specified. Exposure events
+//     through EVP. Defaults to 1 second if not specified. Exposure events
 //     track which feature flags are evaluated and by which users, providing visibility
 //     into feature flag usage. Set to 0 to disable automatic flushing (not recommended).
 //
@@ -277,6 +289,10 @@
 //     overflow when converted to a time.Duration) or unparseable value falls back
 //     to the default rather than being clamped.
 //
+//   - DD_FLAGGING_EVALUATION_COUNTS_ENABLED: Set to "false" to disable EVP
+//     flag-evaluation count events. Defaults to true. Exposure events are not
+//     affected.
+//
 // Example (Agentless, the default):
 //
 //	export DD_API_KEY=<your API key>
@@ -284,16 +300,24 @@
 //
 // Standard Datadog environment variables also apply:
 //
-//   - DD_API_KEY: Required for the default, managed Agentless endpoint.
+//   - DD_API_KEY: Required for the default, managed Agentless configuration
+//     endpoint and direct EVP event fallback.
 //   - DD_SITE: Datadog site (default: datadoghq.com). Determines the managed
-//     Agentless endpoint's host.
-//   - DD_AGENT_HOST: Datadog agent host (default: localhost). Only relevant to
-//     the remote_config source.
-//   - DD_TRACE_AGENT_PORT: Datadog agent port (default: 8126). Only relevant to
-//     the remote_config source.
+//     Agentless configuration endpoint and direct EVP intake hosts.
+//   - DD_TRACE_AGENT_URL: Trace Agent URL. Takes precedence over DD_AGENT_HOST
+//     and DD_TRACE_AGENT_PORT. Used for remote_config and for Agentless EVP route
+//     discovery and local event delivery.
+//   - DD_AGENT_HOST: Trace Agent host (default: localhost). Used with
+//     DD_TRACE_AGENT_PORT when DD_TRACE_AGENT_URL is unset.
+//   - DD_TRACE_AGENT_PORT: Trace Agent port (default: 8126). Used with
+//     DD_AGENT_HOST when DD_TRACE_AGENT_URL is unset.
 //   - DD_SERVICE: Service name for tagging
 //   - DD_ENV: Environment name (e.g., production, staging)
 //   - DD_VERSION: Application version
+//
+// With no Agent address variables set, EVP route discovery uses the standard
+// trace Agent resolution: an existing /var/run/datadog/apm.socket, then
+// localhost:8126.
 //
 // # Prerequisites
 //
@@ -331,8 +355,8 @@
 // The cache uses LRU eviction when capacity is reached, ensuring recently active
 // flag/subject combinations remain cached while older entries are evicted.
 //
-// Exposure events are buffered and flushed periodically to the Datadog Agent
-// (default: every 1 second, configurable via ExposureFlushInterval).
+// Exposure events are buffered and flushed periodically through EVP (default:
+// every 1 second, configurable via ExposureFlushInterval).
 //
 // # Performance Considerations
 //
