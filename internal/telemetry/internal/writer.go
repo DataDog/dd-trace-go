@@ -239,8 +239,10 @@ func (w *writer) newRequest(endpoint *http.Request, requestType transport.Reques
 					panicErr, ok := panicValue.(error) // check if we can use the panic value as an error
 					if ok {
 						log.Error("telemetry/writer: panic while encoding payload: %v", panicErr.Error())
+					} else {
+						panicErr = fmt.Errorf("telemetry/writer: panic while encoding payload: %v", panicValue)
 					}
-					pipeWriter.CloseWithError(panicErr) // CloseWithError with nil as parameter is like Close()
+					pipeWriter.CloseWithError(panicErr)
 				}
 			}
 		}()
