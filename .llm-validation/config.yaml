@@ -3,14 +3,6 @@ model: claude-opus-4-8
 runs: 3
 
 instruction_files:
-  - AGENTS.md
-  - contrib/AGENTS.md
-  - ddtrace/tracer/AGENTS.md
-  - internal/AGENTS.md
-  - profiler/AGENTS.md
-  - orchestrion/AGENTS.md
-  - internal/appsec/AGENTS.md
-  - internal/civisibility/AGENTS.md
 
 default_level: gate
 presets:
