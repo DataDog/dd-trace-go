@@ -18,6 +18,13 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
+)
+
+const (
+	headerEVPOrigin        = "DD-EVP-ORIGIN"
+	evpOrigin              = "dd-trace-go"
+	headerEVPOriginVersion = "DD-EVP-ORIGIN-VERSION"
 )
 
 type evpClient struct {
@@ -75,6 +82,8 @@ func (c *evpClient) postRaw(endpoint, eventName string, body []byte) error {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(evpSubdomainHeader, evpSubdomainValue)
+	req.Header.Set(headerEVPOrigin, evpOrigin)
+	req.Header.Set(headerEVPOriginVersion, version.Tag)
 
 	log.Debug("openfeature: sending %s events to %s", eventName, requestURL)
 
