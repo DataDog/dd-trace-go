@@ -68,6 +68,16 @@ func tracesPathFor(protocol float64) string {
 	return tracesAPIPath
 }
 
+// errV1TracesNotSupported is returned by (*httpTransport).send when a v1
+// payload POST gets a 404 from /v1.0/traces: this specific backend doesn't
+// support v1. In a load-balanced fleet, this can happen even after
+// refreshAgentFeatures's upgrade hysteresis allowed v1, because /info polls
+// and trace sends are independent requests that can land on different
+// backends behind the same address. Unlike a poll, a rejected send is
+// authoritative for the request that hit it — see
+// (*agentTraceWriter).downgradeAfterRejectedSend.
+var errV1TracesNotSupported = errors.New("agent does not support /v1.0/traces")
+
 // ddTransport is an interface for communicating data to the Datadog agent
 // using Datadog-specific protocols (msgpack traces, stats payloads).
 type ddTransport interface {
@@ -264,11 +274,16 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	}
 	if code := response.StatusCode; code >= 400 {
 		reportAPIErrorsMetric(response, err, tracesPathFor(protocol))
+		defer response.Body.Close()
+		if code == http.StatusNotFound && protocol == traceProtocolV1 {
+			// Distinguish this from the generic error below: it's evidence this
+			// backend doesn't support v1 specifically, not just a request failure.
+			return nil, errV1TracesNotSupported
+		}
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
 		n, _ := response.Body.Read(msg)
-		response.Body.Close()
 		txt := http.StatusText(code)
 		if n > 0 {
 			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)

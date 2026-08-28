@@ -368,8 +368,7 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, r
 			if os.IsTimeout(result.Error) {
 				typ = "type:timeout"
 			}
-			var writerStatusCodeError *internal.WriterStatusCodeError
-			if errors.As(result.Error, &writerStatusCodeError) {
+			if _, ok := errors.AsType[*internal.WriterStatusCodeError](result.Error); ok {
 				typ = "type:status_code"
 			}
 			c.Count(transport.NamespaceTelemetry, "telemetry_api.errors", []string{endpoint, typ}).Submit(1)

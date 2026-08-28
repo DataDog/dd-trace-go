@@ -284,9 +284,8 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 	// Get all methods on *Config
 	configType := reflect.TypeFor[*Config]()
 
-	for i := 0; i < configType.NumMethod(); i++ {
+	for method := range configType.Methods() {
 		// Capture method
-		method := configType.Method(i)
 		methodName := method.Name
 
 		// Skip if not a Set method
@@ -394,6 +393,11 @@ func getTestValueForType(t reflect.Type) any {
 	}
 	if t == reflect.TypeFor[*url.URL]() {
 		return &url.URL{Scheme: "http", Host: "test-agent:8126"}
+	}
+	// Optional tri-state bools (e.g. SetLLMObsAgentlessEnabled).
+	if t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Bool {
+		b := true
+		return &b
 	}
 
 	// Then check by kind
@@ -878,6 +882,23 @@ func TestOTLPSpanMetricsConfig(t *testing.T) {
 			}
 		}
 		assert.True(t, found, "expected a calculated-origin DD_TRACE_STATS_COMPUTATION_ENABLED report")
+	})
+
+	t.Run("does not force v0.4 trace protocol", func(t *testing.T) {
+		// Regression pin: RequestedTraceProtocol used to special-case
+		// OTLPSpanMetricsEnabled and return v0.4 unconditionally. The Agent has
+		// always accepted v1.0 payloads regardless of whether OTLP span metrics
+		// are in use, so that coupling is removed.
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTLPSpanMetricsEnabled())
+		assert.Equal(t, TraceProtocolV1, cfg.RequestedTraceProtocol())
 	})
 
 	t.Run("OTelSemanticsEnabled disabled by default", func(t *testing.T) {
@@ -1628,4 +1649,87 @@ func TestSamplingRulesEnvPrecedenceOverCode(t *testing.T) {
 
 		assert.Equal(t, otherRules, cfg.TraceSamplingRules())
 	})
+}
+
+func TestLLMObsEnvVars(t *testing.T) {
+	t.Run("defaults when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		assert.False(t, cfg.LLMObsEnabled())
+		assert.Empty(t, cfg.LLMObsMLApp())
+		assert.Empty(t, cfg.LLMObsProjectName())
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("loads from env vars", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_LLMOBS_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_ML_APP", "my-app")
+		t.Setenv("DD_LLMOBS_PROJECT_NAME", "my-project")
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "false")
+
+		cfg := Get()
+		assert.True(t, cfg.LLMObsEnabled())
+		assert.Equal(t, "my-app", cfg.LLMObsMLApp())
+		assert.Equal(t, "my-project", cfg.LLMObsProjectName())
+		require.NotNil(t, cfg.LLMObsAgentlessEnabled())
+		assert.False(t, *cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unset stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Regression guard for the p.IsSet check in loadConfig: unset must stay
+		// nil (tri-state), not collapse to GetBool's zero-value false.
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unparseable value stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (nil), not silently coerced into an explicit false. Before the
+		// fix, IsSet only checked the string was non-empty, so GetBool's
+		// parse-error fallback to its default (false) was mistaken for an
+		// explicit false.
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "garbage")
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+}
+
+func TestReportEffectiveStatsComputation(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+	before := cfg.StatsComputationEnabled()
+
+	// The first report must fire even though false is the zero value — this
+	// is exactly what the tri-state (vs. a plain atomic.Bool) buys.
+	assert.True(t, cfg.ReportEffectiveStatsComputation(false))
+	assert.False(t, cfg.ReportEffectiveStatsComputation(false), "repeating the same value must not re-report")
+	assert.True(t, cfg.ReportEffectiveStatsComputation(true), "a changed value must report")
+	assert.False(t, cfg.ReportEffectiveStatsComputation(true), "repeating the new value must not re-report")
+
+	// StatsComputationEnabled itself must be untouched by any of this.
+	assert.Equal(t, before, cfg.StatsComputationEnabled())
+
+	var reports []bool
+	for _, c := range rec.Configuration {
+		if c.Name == "DD_TRACE_STATS_COMPUTATION_ENABLED" && c.Origin == telemetry.OriginCalculated {
+			reports = append(reports, c.Value.(bool))
+		}
+	}
+	assert.Equal(t, []bool{false, true}, reports)
 }

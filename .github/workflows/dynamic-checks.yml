@@ -35,7 +35,7 @@ jobs:
     name: Dynamic Analysis with Debug Detection
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
-      go-version: "1.26.4"
+      go-version: "1.27"
       build_tags: "debug"
     secrets: inherit
 
@@ -43,7 +43,7 @@ jobs:
     name: Dynamic Analysis with Deadlock Detection
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
-      go-version: "1.26.4"
+      go-version: "1.27"
       build_tags: "deadlock"
     secrets: inherit
 
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["oldstable", "1.26.4"]
+        go-version: ["oldstable", "1.27"]
         build_tags: ["debug", "debug,deadlock"]
       fail-fast: false
     env:

@@ -55,7 +55,7 @@ func telemetryConfiguration(c *config) []telemetry.Configuration {
 		{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
 		{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
 		{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
-		{Name: "goroutine_leak_profile_enabled", Value: profileEnabled(goroutineLeakProfile)},
+		{Name: "goroutine_leak_profile_enabled", Value: profileEnabled(GoroutineLeakProfile)},
 		{Name: "upload_timeout", Value: c.uploadTimeout.String()},
 		{Name: "execution_trace_enabled", Value: c.traceConfig.Enabled},
 		{Name: "execution_trace_period", Value: c.traceConfig.Period.String()},
