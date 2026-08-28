@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	_ "unsafe" // required blank import to run orchestrion
+	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -633,7 +633,12 @@ func instrumentTestifySuiteRun(t *testing.T, suite any) {
 	}
 	defer release()
 	if isProcessRetryChild() {
-		return
+		execMeta := getTestMetadata(t)
+		if execMeta == nil || execMeta.quarantinedRaceChild == nil {
+			return
+		}
+		// The isolated subtree still needs the real Testify method for source,
+		// CODEOWNERS, impacted-test, and ITR metadata; it creates no child span.
 	}
 
 	log.Debug("instrumentTestifySuiteRun: instrumenting testify suite run")
@@ -680,11 +685,59 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 }
 
 // instrumentTestingParallel reports whether CI Visibility has replaced the
-// native Parallel implementation. Retry attempts now use a fresh testing.T and
-// bridge the real scheduler directly, so Parallel always remains native here.
+// native Parallel implementation. Only an isolated quarantined race subtree
+// takes ownership; every other call keeps the existing native fast path.
 //
 //go:linkname instrumentTestingParallel
 func instrumentTestingParallel(t *testing.T) bool {
-	_ = t
-	return false
+	if !quarantinedRaceParallelHookActive {
+		return false
+	}
+	execMeta := getTestMetadata(t)
+	if execMeta == nil || execMeta.processRetryParallelPause == nil || execMeta.processRetryParallelPaused.Load() || !testingParallelWillSuspend(t) {
+		return false
+	}
+	if !execMeta.processRetryParallelPaused.CompareAndSwap(false, true) {
+		return false
+	}
+	defer execMeta.processRetryParallelPaused.Store(false)
+
+	if state := execMeta.quarantinedRaceChild; state != nil && state.cfg != nil && t.Name() == state.cfg.SelectedRoot {
+		state.startParallelBridge()
+	}
+	resume := execMeta.processRetryParallelPause()
+	if resume != nil {
+		defer resume()
+	}
+	// Parallel is already woven with this hook. The guard above makes that
+	// nested entry return false so exactly one native call suspends the test.
+	t.Parallel()
+	return true
+}
+
+func testingParallelWillSuspend(t *testing.T) bool {
+	layout := getTestingInternalsLayout()
+	if t == nil || layout == nil || layout.disabled || !allAvailable(
+		layout.common.isParallel, layout.common.parent.unsafeField, layout.common.barrier, layout.denyParallel,
+	) {
+		return false
+	}
+	base := commonBaseForTest(t, layout)
+	if base == nil {
+		return false
+	}
+	parent := pointerWord(base, layout.common.parent)
+	if parent == nil || *fieldPtr[bool](base, layout.common.isParallel) ||
+		layout.common.isSynctest.available && *fieldPtr[bool](base, layout.common.isSynctest) ||
+		*fieldPtr[chan bool](parent, layout.common.barrier) == nil {
+		return false
+	}
+	switch layout.denyParallel.typ {
+	case reflect.TypeFor[bool]():
+		return !*fieldPtr[bool](unsafe.Pointer(t), layout.denyParallel)
+	case reflect.TypeFor[string]():
+		return *fieldPtr[string](unsafe.Pointer(t), layout.denyParallel) == ""
+	default:
+		return false
+	}
 }

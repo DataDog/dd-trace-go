@@ -39,12 +39,17 @@ type RequestState struct {
 
 	// Processing state
 	State MessageType
+	// responseFinalized guards the once-only response analysis and span finalization.
+	responseFinalized bool
+	// ackBodyMessagesUntilEndOfStream is resolved per request, since a gateway can only be
+	// identified from the request headers. See [RequestHeaders.AckBodyMessagesUntilEndOfStream].
+	ackBodyMessagesUntilEndOfStream bool
 }
 
 // newRequestState creates a new request state. clientIP carries an identity the
 // proxy resolved itself; leaving it invalid defers to the default policy, whose
 // final transport fallback is request.RemoteAddr.
-func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, framework string, options ...tracer.StartSpanOption) (RequestState, bool) {
+func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, framework string, ackBodyMessagesUntilEndOfStream bool, options ...tracer.StartSpanOption) (RequestState, bool) {
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
@@ -64,14 +69,15 @@ func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, 
 	}
 
 	return RequestState{
-		Mu:                    new(sync.Mutex),
-		Context:               spanRequest.Context(),
-		afterHandle:           afterHandle,
-		fakeResponseWriter:    fakeResponseWriter,
-		wrappedResponseWriter: wrappedResponseWriter,
-		requestBuffer:         requestBuffer,
-		responseBuffer:        responseBuffer,
-		State:                 MessageTypeRequestHeaders,
+		Mu:                              new(sync.Mutex),
+		Context:                         spanRequest.Context(),
+		afterHandle:                     afterHandle,
+		fakeResponseWriter:              fakeResponseWriter,
+		wrappedResponseWriter:           wrappedResponseWriter,
+		requestBuffer:                   requestBuffer,
+		responseBuffer:                  responseBuffer,
+		State:                           MessageTypeRequestHeaders,
+		ackBodyMessagesUntilEndOfStream: ackBodyMessagesUntilEndOfStream,
 	}, blocked
 }
 
@@ -92,7 +98,13 @@ func (rs *RequestState) PropagationHeaders() (http.Header, error) {
 
 // BlockAction marks the request as blocked and completes it.
 func (rs *RequestState) BlockAction() BlockActionOptions {
-	rs.Close()
+	rs.Mu.Lock()
+	defer rs.Mu.Unlock()
+	return rs.blockActionLocked()
+}
+
+func (rs *RequestState) blockActionLocked() BlockActionOptions {
+	_ = rs.closeLocked()
 	if rs.fakeResponseWriter.status == 0 {
 		panic("cannot block request without a status code")
 	}
@@ -130,18 +142,28 @@ func (rs *RequestState) CloseBeforeResponse() {
 
 // Close finalizes the request processing.
 func (rs *RequestState) Close() error {
-	// Allows us to be called multiple times without deadlocking
-	if rs.Mu.TryLock() {
-		defer rs.Mu.Unlock()
-	}
+	rs.Mu.Lock()
+	defer rs.Mu.Unlock()
+	return rs.closeLocked()
+}
 
-	rs.afterHandle()
+func (rs *RequestState) closeLocked() error {
+	rs.finalizeResponse()
 
 	if rs.State.Ongoing() {
 		rs.State = MessageTypeFinished
 	}
 
 	return nil
+}
+
+// finalizeResponse runs deferred response analysis exactly once. The caller must hold rs.Mu.
+func (rs *RequestState) finalizeResponse() {
+	if rs.responseFinalized {
+		return
+	}
+	rs.afterHandle()
+	rs.responseFinalized = true
 }
 
 func (rs *RequestState) Span() (*tracer.Span, bool) {

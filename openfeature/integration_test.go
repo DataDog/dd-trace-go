@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
 )
@@ -603,7 +604,7 @@ func createE2EBooleanConfig() universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "us-rollout",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -654,7 +655,7 @@ func createE2EStringConfig() *universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "premium-users",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -705,7 +706,7 @@ func createE2EIntegerConfig() *universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "high-traffic-users",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -756,7 +757,7 @@ func createE2EFloatConfig() *universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "test-group",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -820,7 +821,7 @@ func createE2EObjectConfig() *universalFlagsConfiguration {
 				Allocations: []*allocation{
 					{
 						Key:   "advanced-users",
-						DoLog: boolPtr(true),
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -979,11 +980,6 @@ func createE2EShardingConfig() *universalFlagsConfiguration {
 
 func generateUserID(i int) string {
 	return "user-" + string(rune('a'+i%26)) + string(rune('0'+i/26%10)) + string(rune('0'+i/260%10))
-}
-
-// boolPtr returns a pointer to a bool value
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 // getExposureWriter returns the exposure writer from a provider for testing
@@ -1628,7 +1624,7 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 				Allocations: []*allocation{
 					{
 						Key:   "test-allocation",
-						DoLog: boolPtr(false), // Disable logging
+						DoLog: new(false), // Disable logging
 						Rules: []*rule{},
 						Splits: []*split{
 							{
@@ -1999,4 +1995,63 @@ func TestEndToEnd_AllThreeFixes(t *testing.T) {
 			t.Errorf("expected 'premium' or 'basic', got %q", value)
 		}
 	})
+}
+
+func TestEndToEnd_ExposureSerialID(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+	status := processConfigUpdate(provider, "datadog/2/ASM_FEATURES/test/config", []byte(`{
+		"createdAt":"2026-01-01T00:00:00Z",
+		"format":"SERVER",
+		"environment":{"name":"test"},
+		"flags":{
+			"holdout-flag":{
+				"key":"holdout-flag",
+				"enabled":true,
+				"variationType":"BOOLEAN",
+				"variations":{"on":{"key":"on","value":true}},
+				"allocations":[{
+					"key":"holdout-allocation",
+					"doLog":true,
+					"splits":[{"variationKey":"on","serialId":340132,"shards":[]}]
+				}]
+			},
+			"plain-flag":{
+				"key":"plain-flag",
+				"enabled":true,
+				"variationType":"BOOLEAN",
+				"variations":{"on":{"key":"on","value":true}},
+				"allocations":[{
+					"key":"plain-allocation",
+					"doLog":true,
+					"splits":[{"variationKey":"on","shards":[]}]
+				}]
+			}
+		}
+	}`))
+	require.Equal(t, rc.ApplyStateAcknowledged, status.State)
+
+	domain := "exposure-serial-id-test-app"
+	require.NoError(t, of.SetNamedProviderAndWait(domain, provider))
+	client := of.NewClient(domain)
+
+	writer := getExposureWriter(provider)
+	evalCtx := of.NewEvaluationContext("user-123", map[string]any{})
+
+	value, err := client.BooleanValue(context.Background(), "holdout-flag", false, evalCtx)
+	require.NoError(t, err)
+	require.True(t, value)
+
+	value, err = client.BooleanValue(context.Background(), "plain-flag", false, evalCtx)
+	require.NoError(t, err)
+	require.True(t, value)
+
+	exposures := getExposureBuffer(writer)
+	require.Len(t, exposures, 2)
+
+	require.Equal(t, "holdout-flag", exposures[0].Flag.Key)
+	require.NotNil(t, exposures[0].SerialID)
+	require.Equal(t, uint32(340132), *exposures[0].SerialID)
+
+	require.Equal(t, "plain-flag", exposures[1].Flag.Key)
+	require.Nil(t, exposures[1].SerialID)
 }
