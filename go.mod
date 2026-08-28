@@ -108,6 +108,7 @@ require (
 )
 
 retract (
+	v2.9.3-rc.1
 	[v2.0.0-rc.1, v2.0.0-rc.22]
 	[v2.0.0-beta.1, v2.0.0-beta.11]
 	v2.0.0-20240516153256-8d6fa2bea61d
