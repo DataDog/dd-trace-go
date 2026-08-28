@@ -341,7 +341,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@d56b98b3595ee8b541db95472b1ca4f2154a0316
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@e58113510acc7d478e3477077dc5c9d936a36417
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -383,6 +383,21 @@ jobs:
       image: ghcr.io/datadog/dd-trace-go/haproxy-spoa
       dockerfile: ./contrib/haproxy/stream-processing-offload/cmd/spoa/Dockerfile
       artifact_prefix: haproxy-spoa-image
+      commit_sha: ${{ github.sha }}
+      tags: >-
+        dev
+      push: ${{ github.ref == 'refs/heads/main' }}
+      platforms: '["linux/amd64"]'
+
+  # Pushing an image tagged with "dev" only on commit to main,
+  # otherwise build and use the image from the artifact.
+  build-apim-callout:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/apim-callout
+      dockerfile: ./contrib/azure/apim-callout/cmd/apim-callout/Dockerfile
+      artifact_prefix: apim-callout-image
       commit_sha: ${{ github.sha }}
       tags: >-
         dev

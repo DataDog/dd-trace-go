@@ -8,6 +8,7 @@ package itrbackfillfixture
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -24,6 +25,7 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 		name              string
 		extraEnv          []string
 		skipProfileAssert bool
+		expectFailure     bool
 	}{
 		{name: "manual-count"},
 		{name: "manual-codecoverage-disabled", extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
@@ -31,13 +33,17 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 		{name: "manual-coverage-report-disabled", extraEnv: []string{"DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED=false"}},
 		{name: "manual-partial-coverage", extraEnv: []string{"DD_ITR_BACKFILL_PARTIAL_COVERAGE=true"}, skipProfileAssert: true},
 		{name: "manual-producer-bitmap-upload", skipProfileAssert: true},
+		{name: "manual-process-coverage-merge-failure", skipProfileAssert: true, expectFailure: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			profile := filepath.Join(t.TempDir(), test.name+".out")
-			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv,
+			output := runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, test.expectFailure,
 				"go", "test", "-mod=readonly", "./...",
 				"-cover", "-covermode=count", "-coverpkg", "./...",
 				"-count=1", "-coverprofile", profile)
+			if test.expectFailure && !strings.Contains(output, "process coverage merge failure publication suppressed") {
+				t.Fatalf("fixture did not verify failed-merge publication behavior:\n%s", output)
+			}
 			if !test.skipProfileAssert {
 				assertProfileContainsPositiveCounts(t, profile, "fixtures/itrbackfill/manual/lib/lib.go")
 			}
@@ -95,7 +101,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 				args = append(args, "-coverprofile", profile)
 			}
 			args = append(args, test.extraTestArgs...)
-			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, args...)
+			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, false, args...)
 			if test.withProfile && !test.skipProfileAssert {
 				profilePaths := test.profilePaths
 				if len(profilePaths) == 0 {
@@ -117,7 +123,7 @@ func sharedFixtureGoCache(t *testing.T) string {
 	return goCache
 }
 
-func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, args ...string) {
+func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, expectFailure bool, args ...string) string {
 	t.Helper()
 
 	cmd := exec.Command(args[0], args[1:]...)
@@ -128,7 +134,13 @@ func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache stri
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if expectFailure {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+			t.Fatalf("fixture command exit = %v, want 1\n%s", err, output.String())
+		}
+	} else if err != nil {
 		t.Fatalf("fixture command failed: %v\n%s", err, output.String())
 	}
 	if profile != "" {
@@ -136,6 +148,7 @@ func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache stri
 			t.Fatalf("expected coverprofile %s: %v\n%s", profile, err, output.String())
 		}
 	}
+	return output.String()
 }
 
 func isolatedFixtureEnv(t *testing.T, scenario, goCache string) []string {
