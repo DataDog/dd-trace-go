@@ -122,8 +122,6 @@ func (h *agentTraceWriter) stop() {
 	h.wg.Wait()
 }
 
-func (h *agentTraceWriter) wait() { h.wg.Wait() }
-
 // newPayload returns a new payload for protocol. hint, when positive,
 // pre-sizes the buffer to the previous flush cycle's actual encoded size,
 // eliminating the doubling ramp-up at the cost of one upfront allocation.
