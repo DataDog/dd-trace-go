@@ -259,6 +259,32 @@ func TestRoundTripperGzipErrorResponseUncompressedRequest(t *testing.T) {
 	assert.Equal(t, errBody, span.Tag(ext.ErrorMsg))
 }
 
+// TestRoundTripperEmptyErrorBody is a regression test for #5284: a non-2xx response with an
+// empty body must not produce an error with an empty message. peek() normalizes io.EOF to nil,
+// so an empty body returns an empty snippet with no error; RoundTrip must fall back to the HTTP
+// status text (e.g. "Unauthorized") so Error Tracking shows a meaningful title.
+func TestRoundTripperEmptyErrorBody(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		// no body written
+	}))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/twitter/_search", nil)
+	require.NoError(t, err)
+
+	res, err := (&http.Client{Transport: NewRoundTripper()}).Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	span := mt.FinishedSpans()[0]
+	assert.Equal(t, http.StatusText(http.StatusUnauthorized), span.Tag(ext.ErrorMsg))
+	assert.NotEmpty(t, span.Tag(ext.ErrorMsg))
+}
+
 // TestRoundTripperGzipBodyCutoffUncompressedRequest covers the path TestRoundTripperGzipBodyCutoff
 // doesn't: a gzip-bomb response arriving on an uncompressed request. Content-Encoding is now read
 // from the response's own header, so this path decodes gzip where it previously wouldn't have; it

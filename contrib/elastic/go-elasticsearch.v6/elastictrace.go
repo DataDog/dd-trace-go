@@ -90,7 +90,10 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	} else if res.StatusCode < 200 || res.StatusCode > 299 {
 		// HTTP error
 		snip, rc, err := peek(res.Body, res.Header.Get("Content-Encoding"), int(res.ContentLength), bodyCutoff)
-		if err != nil {
+		if err != nil || snip == "" {
+			// An empty body (common for 401/403) yields an empty snippet, which
+			// would otherwise produce an error with no message. Fall back to the
+			// HTTP status text so Error Tracking shows e.g. "Unauthorized".
 			snip = http.StatusText(res.StatusCode)
 		}
 		span.SetTag(ext.Error, errors.New(snip))
