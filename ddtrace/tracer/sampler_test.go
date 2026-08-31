@@ -286,6 +286,14 @@ func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
 			rate, ok := getMetric(span, keySamplingPriorityRate)
 			assert.True(ok, "traceID=%d should have rate tag", id)
 			assert.EqualValues(1.0, rate, "traceID=%d should have rate 1.0", id)
+			rv, th, unknown := span.context.trace.otelTracestate()
+			if assert.NotNil(rv, "traceID=%d should have ot.rv", id) {
+				assert.EqualValues(deriveOtelRV(id), *rv, "traceID=%d should derive ot.rv from the trace ID", id)
+			}
+			if assert.NotNil(th, "traceID=%d should have ot.th", id) {
+				assert.Zero(*th, "traceID=%d should have the rate-1.0 threshold", id)
+			}
+			assert.Empty(unknown, "traceID=%d should not have unknown ot fields", id)
 		}
 	})
 
