@@ -653,6 +653,14 @@ type eofPanicStreamingClientConn struct {
 	panicStreamingClientConn
 }
 
+type codedEOFStreamingClientConn struct {
+	panicStreamingClientConn
+}
+
+func (c *codedEOFStreamingClientConn) Send(any) error {
+	return connectrpc.NewError(connectrpc.CodeInternal, io.EOF)
+}
+
 func (c *eofPanicStreamingClientConn) Receive(any) error { panic(io.EOF) }
 
 func (panicStreamingHandlerConn) Spec() connectrpc.Spec {
@@ -850,4 +858,67 @@ func TestStreamingClientReceiveFirstCapturesHeaders(t *testing.T) {
 
 	require.Len(t, mt.FinishedSpans(), 1)
 	assert.NotNil(t, metadataTag(mt.FinishedSpans()[0], ext.RPCSystemConnectRPC, "x-late-header"))
+}
+
+func TestRootMessageSpanRespectsSpanOptionsParent(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	parent := tracer.StartSpan("parent")
+	opts := []Option{WithStreamCalls(false), WithSpanOptions(tracer.ChildOf(parent.Context()))}
+	rig := newTestRig(t, opts, opts)
+	stream := rig.client(bidiProcedure).CallBidiStream(context.Background())
+	require.NoError(t, stream.Send(wrapperspb.String("hello")))
+	_, err := stream.Receive()
+	require.NoError(t, err)
+	require.NoError(t, stream.CloseRequest())
+	_, err = stream.Receive()
+	assert.ErrorIs(t, err, io.EOF)
+	require.NoError(t, stream.CloseResponse())
+	parent.Finish()
+
+	messageSpanCount := 0
+	for _, span := range mt.FinishedSpans() {
+		if span.OperationName() != "connect.message" {
+			continue
+		}
+		messageSpanCount++
+		assert.Nil(t, span.Tag(ext.SpanKind), "a message span parented via WithSpanOptions is not root")
+	}
+	assert.NotZero(t, messageSpanCount)
+}
+
+func TestStreamingClientCodedEOFSendFailureFinishesCallSpan(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	interceptor := NewClientInterceptor(WithStreamMessages(false))
+	wrapped := interceptor.WrapStreamingClient(func(context.Context, connectrpc.Spec) connectrpc.StreamingClientConn {
+		return &codedEOFStreamingClientConn{panicStreamingClientConn{header: make(http.Header)}}
+	})(context.Background(), connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi, IsClient: true})
+
+	err := wrapped.Send(wrapperspb.String("hello"))
+	require.Error(t, err)
+
+	require.Len(t, mt.FinishedSpans(), 1, "a coded error wrapping io.EOF must still finish the call span")
+	assert.Equal(t, "internal", mt.FinishedSpans()[0].Tag(tagConnectErrorCode))
+	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+}
+
+func TestExplicitlyCodedEOFIsAlwaysAnError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "unknown code wrapping EOF", err: connectrpc.NewError(connectrpc.CodeUnknown, io.EOF)},
+		{name: "internal code wrapping EOF", err: connectrpc.NewError(connectrpc.CodeInternal, io.EOF)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			span := tracer.StartSpan("message")
+			finishMessage(span, test.err, unaryProcedure, connectrpc.ProtocolConnect, newConfig())
+			require.Len(t, mt.FinishedSpans(), 1)
+			assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+		})
+	}
 }

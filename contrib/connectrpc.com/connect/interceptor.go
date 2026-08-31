@@ -230,7 +230,7 @@ func (c *streamingClientConn) Send(message any) (err error) {
 			panic(recovered)
 		}
 		finishMessage(messageSpan, err, c.Spec().Procedure, protocol, c.cfg)
-		c.endOperation(err, err != nil && !errors.Is(err, io.EOF), false)
+		c.endOperation(err, err != nil && !isExpectedStreamEOF(err), false)
 	}()
 	return c.StreamingClientConn.Send(message)
 }

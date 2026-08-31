@@ -76,7 +76,7 @@ func (cfg *config) startCallSpan(ctx context.Context, spec connectrpc.Spec, comp
 // other root RPC span would. Otherwise they're plain internal children of the call span, so
 // span.kind is omitted, matching contrib/google.golang.org/grpc's message spans.
 func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, protocol string, component instrumentation.Component, opts ...tracer.StartSpanOption) *tracer.Span {
-	root := isRootSpan(ctx, opts)
+	root := isRootSpan(ctx, cfg, opts)
 	service, method := parseProcedure(spec.Procedure)
 	serviceName, serviceSource := cfg.service(component)
 	opts = append(opts,
@@ -97,14 +97,21 @@ func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, p
 }
 
 // isRootSpan reports whether a span started now, with the given extra options, would have no
-// parent: no ambient span in ctx (e.g. no call span, no caller-supplied span), and no
-// caller-supplied parent option (e.g. a ChildOf extracted from propagated headers).
-func isRootSpan(ctx context.Context, opts []tracer.StartSpanOption) bool {
-	if len(opts) > 0 {
+// parent: no ambient span in ctx (e.g. no call span, no caller-supplied span), and no parent
+// established by opts (e.g. a ChildOf extracted from propagated headers) or by cfg.spanOpts
+// (e.g. a ChildOf configured via WithSpanOptions), both of which cfg.startSpanOptions folds
+// into the final span options after this check would otherwise have run.
+func isRootSpan(ctx context.Context, cfg *config, opts []tracer.StartSpanOption) bool {
+	if _, ok := tracer.SpanFromContext(ctx); ok {
 		return false
 	}
-	_, ok := tracer.SpanFromContext(ctx)
-	return !ok
+	if len(opts) == 0 && len(cfg.spanOpts) == 0 {
+		return true
+	}
+	all := make([]tracer.StartSpanOption, 0, len(opts)+len(cfg.spanOpts))
+	all = append(all, opts...)
+	all = append(all, cfg.spanOpts...)
+	return tracer.NewStartSpanConfig(all...).Parent == nil
 }
 
 func spanKind(component instrumentation.Component) string {
@@ -183,8 +190,15 @@ func codeOf(err error) connectrpc.Code {
 	}
 }
 
+// isExpectedStreamEOF reports whether err is nothing more than the sentinel signal that a
+// stream ended normally. A *connectrpc.Error is always a deliberate RPC-level error, even when
+// its explicit code is CodeUnknown or it happens to wrap io.EOF as its cause, so only a bare
+// (uncoded) error chain containing io.EOF counts as expected termination.
 func isExpectedStreamEOF(err error) bool {
-	return errors.Is(err, io.EOF) && codeOf(err) == connectrpc.CodeUnknown
+	if _, ok := errors.AsType[*connectrpc.Error](err); ok {
+		return false
+	}
+	return errors.Is(err, io.EOF)
 }
 
 func finishCall(span *tracer.Span, err error, procedure, protocol string, cfg *config) {
