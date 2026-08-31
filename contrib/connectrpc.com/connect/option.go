@@ -42,7 +42,6 @@ type config struct {
 	withErrorDetailTags bool
 	analyticsRate       float64
 	spanOpts            []tracer.StartSpanOption
-	spanOptsHaveParent  bool
 	tags                map[string]any
 }
 
@@ -77,13 +76,6 @@ func newConfig(opts ...Option) *config {
 	}
 	for _, opt := range opts {
 		opt.apply(cfg)
-	}
-	// Resolved once here, rather than on every message span: cfg.spanOpts holds arbitrary
-	// user-supplied options (from WithSpanOptions), and StartSpanOption is just a function,
-	// so invoking it repeatedly to check for a configured parent could run side effects (or
-	// resolve a different parent) more often than intended.
-	if len(cfg.spanOpts) > 0 {
-		cfg.spanOptsHaveParent = tracer.NewStartSpanConfig(cfg.spanOpts...).Parent != nil
 	}
 	return cfg
 }
@@ -125,8 +117,11 @@ func NoDebugStack() OptionFn {
 }
 
 // NonErrorCodes replaces the Connect codes that are not marked as errors.
-// By default, CodeCanceled is not marked as an error. Stream EOF and errors
-// wrapping context.Canceled are always treated as normal stream termination.
+// By default, CodeCanceled is not marked as an error. Stream EOF and an uncoded
+// context.Canceled are always treated as normal stream termination; a *connectrpc.Error
+// with an explicit code takes precedence over its cause, so, for example,
+// connectrpc.NewError(connectrpc.CodeInternal, context.Canceled) is still recorded as an
+// internal error rather than suppressed.
 func NonErrorCodes(codes ...connectrpc.Code) OptionFn {
 	return func(cfg *config) {
 		cfg.nonErrorCodes = make(map[connectrpc.Code]bool, len(codes))

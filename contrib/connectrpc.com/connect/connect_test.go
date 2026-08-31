@@ -472,10 +472,18 @@ func TestStreamingMessagesWithoutCallSpans(t *testing.T) {
 		messageCount++
 		assert.Equal(t, parent.Context().TraceIDLower(), span.TraceID())
 		assert.Equal(t, parent.Context().SpanID(), span.ParentID())
-		// These message spans are children of "parent" (and, on the server, of the
-		// extracted trace context), so they're plain internal spans: span.kind is only
-		// added when a message span has no parent at all (see TestRootMessageSpanHasSpanKind).
-		assert.Nil(t, span.Tag(ext.SpanKind))
+		// The client message spans are local children of "parent" (a real, already-live
+		// span), so span.kind is left unset. The server message spans only have a *remote*
+		// parent (freshly re-extracted from headers on every message, see
+		// streamingHandlerConn.messageParentOpts), so each is still its own local trace
+		// root and does get span.kind, same as a call span parented via extracted headers
+		// always would.
+		switch span.Tag(ext.ServiceName) {
+		case "connect.client":
+			assert.Nil(t, span.Tag(ext.SpanKind))
+		case "connect.server":
+			assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind))
+		}
 		if metadataTag(span, ext.RPCSystemConnectRPC, "x-message-header") != nil {
 			switch span.Tag(ext.ServiceName) {
 			case "connect.client":
@@ -861,6 +869,51 @@ func TestStreamingClientReceiveFirstCapturesHeaders(t *testing.T) {
 	assert.NotNil(t, metadataTag(mt.FinishedSpans()[0], ext.RPCSystemConnectRPC, "x-late-header"))
 }
 
+func TestStreamingClientPanicTakesPrecedenceOverStoredTerminalError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 newConfig(),
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	conn.beginOperation()
+	conn.beginOperation()
+	// One in-flight operation completes normally, with a code that's suppressed by default...
+	conn.endOperation(connectrpc.NewError(connectrpc.CodeCanceled, errors.New("canceled")), true, false)
+	// ...while a second, concurrently in-flight operation panics. The panic must take over as
+	// the terminal error even though a normal (non-context, non-panic) one is already stored.
+	conn.endOperation(errors.New("boom"), true, true)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg), "the panic must win over an already-stored terminal error")
+}
+
+func TestServerMessageSpanIsMeasured(t *testing.T) {
+	// A top-level span's measured tag is dropped as redundant (all top-level spans count
+	// toward stats already), so this must be checked on a message span that's a genuine
+	// non-top-level child of a call span, matching real usage with the default
+	// WithStreamCalls(true) — exactly the case the fix targets.
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	cfg := newConfig()
+	spec := connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi}
+	callSpan, ctx := cfg.startCallSpan(context.Background(), spec, instrumentation.ComponentServer)
+	messageSpan := cfg.startMessageSpan(ctx, spec, connectrpc.ProtocolConnect, instrumentation.ComponentServer)
+	messageSpan.Finish()
+	callSpan.Finish()
+
+	require.Len(t, mt.FinishedSpans(), 2)
+	for _, span := range mt.FinishedSpans() {
+		if span.OperationName() == "connect.message" {
+			assert.EqualValues(t, 1, span.Tag("_dd.measured"))
+		}
+	}
+}
+
 func TestConfiguredSpanOptionNotReinvokedPerMessage(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -869,17 +922,17 @@ func TestConfiguredSpanOptionNotReinvokedPerMessage(t *testing.T) {
 		calls.Add(1)
 	})
 	cfg := newConfig(WithSpanOptions(countingOpt))
-	// newConfig resolves whether cfg.spanOpts has a parent exactly once, at config-build time.
-	require.EqualValues(t, 1, calls.Load())
+	require.Zero(t, calls.Load(), "newConfig must not invoke a configured span option just to build the config")
 
 	const messages = 5
 	for range messages {
 		span := cfg.startMessageSpan(context.Background(), connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi}, connectrpc.ProtocolConnect, instrumentation.ComponentServer)
 		span.Finish()
 	}
-	// Exactly one more invocation per real span: isRootSpan must not add any extra
-	// per-message re-invocation of a user-supplied, potentially stateful option.
-	assert.EqualValues(t, 1+messages, calls.Load())
+	// Exactly one invocation per real span: root-ness must be determined from that same
+	// invocation (via Span.Root() on the result), not from a separate pre-evaluation that
+	// could invoke a user-supplied, potentially stateful option an extra time.
+	assert.EqualValues(t, messages, calls.Load())
 }
 
 func TestRootMessageSpanRespectsSpanOptionsParent(t *testing.T) {

@@ -147,13 +147,11 @@ func (i *interceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc)
 		}
 
 		protocol := conn.Peer().Protocol
-		parentOpts := propagationOptions(conn.RequestHeader())
 		var callSpan *tracer.Span
 		if i.cfg.traceStreamCalls {
-			callSpan, ctx = i.cfg.startCallSpan(ctx, spec, instrumentation.ComponentServer, parentOpts...)
+			callSpan, ctx = i.cfg.startCallSpan(ctx, spec, instrumentation.ComponentServer, propagationOptions(conn.RequestHeader())...)
 			setProtocolTag(callSpan, protocol)
 			withHeaderTags(i.cfg, conn.RequestHeader(), protocol, callSpan)
-			parentOpts = nil
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					finishCallOnPanic(callSpan, panicError(recovered), spec.Procedure, protocol, i.cfg)
@@ -169,7 +167,6 @@ func (i *interceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc)
 			StreamingHandlerConn: conn,
 			cfg:                  i.cfg,
 			ctx:                  ctx,
-			parentOpts:           parentOpts,
 		})
 	}
 }
@@ -305,7 +302,7 @@ func (c *streamingClientConn) endOperation(err error, terminal, isPanic bool) {
 	c.mu.Lock()
 	if terminal {
 		c.finishPending = true
-		if err != nil && (isPanic || !isExpectedStreamEOF(err)) && (c.terminalErr == nil || c.terminalErrFromCtx) {
+		if err != nil && (isPanic || !isExpectedStreamEOF(err)) && (c.terminalErr == nil || c.terminalErrFromCtx || isPanic) {
 			c.terminalErr = err
 			c.terminalErrFromCtx = false
 			c.terminalErrIsPanic = isPanic
@@ -359,13 +356,25 @@ type streamingHandlerConn struct {
 	connectrpc.StreamingHandlerConn
 	cfg        *config
 	ctx        context.Context
-	parentOpts []tracer.StartSpanOption
 	headerOnce sync.Once
+}
+
+// messageParentOpts returns the parent option for a message span. If c.ctx already carries an
+// ambient span (the call span, when WithStreamCalls(true) built one), no extra option is
+// needed. Otherwise, the trace context is re-extracted from headers fresh on every call rather
+// than cached once and reused across messages: dd-trace-go backfills a trace onto an extracted
+// SpanContext the first time it parents a real span, so reusing the same SpanContext value for
+// every message would make sibling message spans disagree about their own root-ness.
+func (c *streamingHandlerConn) messageParentOpts() []tracer.StartSpanOption {
+	if _, ok := tracer.SpanFromContext(c.ctx); ok {
+		return nil
+	}
+	return propagationOptions(c.RequestHeader())
 }
 
 func (c *streamingHandlerConn) Receive(message any) (err error) {
 	protocol := c.Peer().Protocol
-	span := c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentServer, c.parentOpts...)
+	span := c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentServer, c.messageParentOpts()...)
 	c.headerOnce.Do(func() {
 		withHeaderTags(c.cfg, c.RequestHeader(), protocol, span)
 	})
@@ -385,7 +394,7 @@ func (c *streamingHandlerConn) Receive(message any) (err error) {
 
 func (c *streamingHandlerConn) Send(message any) (err error) {
 	protocol := c.Peer().Protocol
-	span := c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentServer, c.parentOpts...)
+	span := c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentServer, c.messageParentOpts()...)
 	c.headerOnce.Do(func() {
 		withHeaderTags(c.cfg, c.RequestHeader(), protocol, span)
 	})
