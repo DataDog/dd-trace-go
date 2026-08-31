@@ -359,14 +359,11 @@ type streamingHandlerConn struct {
 	headerOnce sync.Once
 }
 
-// messageParentOpts returns the parent option for a message span. If c.ctx already carries an
-// ambient span (the call span, when WithStreamCalls(true) built one), no extra option is
-// needed. Otherwise, the trace context is re-extracted from headers fresh on every call rather
-// than cached once and reused across messages: dd-trace-go backfills a trace onto an extracted
-// SpanContext the first time it parents a real span, so reusing the same SpanContext value for
-// every message would make sibling message spans disagree about their own root-ness.
+// messageParentOpts returns a fresh propagated parent when there is no call span. An explicit
+// span in c.ctx still takes precedence, while an inferred Orchestrion GLS parent yields to the
+// propagated parent. Re-extracting avoids sharing a backfilled SpanContext between messages.
 func (c *streamingHandlerConn) messageParentOpts() []tracer.StartSpanOption {
-	if _, ok := tracer.SpanFromContext(c.ctx); ok {
+	if c.cfg.traceStreamCalls {
 		return nil
 	}
 	return propagationOptions(c.RequestHeader())

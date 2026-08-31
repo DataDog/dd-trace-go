@@ -237,6 +237,7 @@ func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowE
 	}
 
 	code := codeOf(err)
+	_, hasConnectError := errors.AsType[*connectrpc.Error](err)
 	expectedEOF := !isPanic && allowEOF && isExpectedStreamEOF(err)
 	notModified := !isPanic && allowNotModified && connectrpc.IsNotModifiedError(err)
 	if rpcSystem(protocol) == ext.RPCSystemGRPC {
@@ -250,7 +251,7 @@ func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowE
 	}
 
 	if !isPanic {
-		if expectedEOF || (code == connectrpc.CodeCanceled && errors.Is(err, context.Canceled)) || notModified || cfg.nonErrorCodes[code] {
+		if expectedEOF || (code == connectrpc.CodeCanceled && !hasConnectError && errors.Is(err, context.Canceled)) || notModified || cfg.nonErrorCodes[code] {
 			err = nil
 		} else if err != nil && cfg.errCheck != nil && !cfg.errCheck(procedure, err) {
 			err = nil

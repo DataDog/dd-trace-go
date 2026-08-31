@@ -502,6 +502,33 @@ func TestStreamingMessagesWithoutCallSpans(t *testing.T) {
 	assert.True(t, clientPeerFound)
 }
 
+func TestStreamingHandlerMessagePrefersPropagatedParentToAmbientFallback(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	propagated := tracer.StartSpan("propagated")
+	defer propagated.Finish()
+	ambient := tracer.StartSpan("ambient")
+	defer ambient.Finish()
+
+	header := make(http.Header)
+	require.NoError(t, tracer.Inject(propagated.Context(), tracer.HTTPHeadersCarrier(header)))
+	// This has the same shape as Orchestrion's GLS fallback: the span is discoverable, but
+	// ContextWithSpan did not add an explicit parent snapshot.
+	ctx := context.WithValue(context.Background(), instr.ActiveSpanKey(), ambient)
+	conn := &streamingHandlerConn{
+		StreamingHandlerConn: panicStreamingHandlerConn{header: header},
+		cfg:                  newConfig(WithStreamCalls(false)),
+		ctx:                  ctx,
+	}
+	require.NoError(t, conn.Send(nil))
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	messageSpan := mt.FinishedSpans()[0]
+	assert.Equal(t, propagated.Context().TraceIDLower(), messageSpan.TraceID())
+	assert.Equal(t, propagated.Context().SpanID(), messageSpan.ParentID())
+	assert.NotEqual(t, ambient.Context().SpanID(), messageSpan.ParentID())
+}
+
 func requireCallPair(t *testing.T, mt mocktracer.Tracer, kind string) (client, server *mocktracer.Span) {
 	t.Helper()
 	require.Eventually(t, func() bool {
@@ -624,6 +651,34 @@ func TestFinishMessageEOF(t *testing.T) {
 	}
 }
 
+func TestCodedCancellationHonorsNonErrorCodes(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		opts      []Option
+		wantError bool
+	}{
+		{name: "uncoded cancellation is always suppressed", err: context.Canceled, opts: []Option{NonErrorCodes()}},
+		{name: "coded cancellation is suppressed by default", err: connectrpc.NewError(connectrpc.CodeCanceled, context.Canceled)},
+		{name: "coded cancellation can be an error", err: connectrpc.NewError(connectrpc.CodeCanceled, context.Canceled), opts: []Option{NonErrorCodes()}, wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			span := tracer.StartSpan("canceled")
+			finishCall(span, test.err, unaryProcedure, connectrpc.ProtocolConnect, newConfig(test.opts...))
+			require.Len(t, mt.FinishedSpans(), 1)
+			assert.Equal(t, "canceled", mt.FinishedSpans()[0].Tag(tagConnectErrorCode))
+			if test.wantError {
+				assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+			}
+		})
+	}
+}
+
 type panicStreamingClientConn struct {
 	header http.Header
 }
@@ -648,7 +703,9 @@ func (c *panicStreamingClientConn) ResponseTrailer() http.Header {
 }
 func (c *panicStreamingClientConn) CloseResponse() error { return nil }
 
-type panicStreamingHandlerConn struct{}
+type panicStreamingHandlerConn struct {
+	header http.Header
+}
 
 type terminalErrorStreamingClientConn struct {
 	panicStreamingClientConn
@@ -681,7 +738,7 @@ func (panicStreamingHandlerConn) Peer() connectrpc.Peer {
 }
 
 func (panicStreamingHandlerConn) Receive(any) error            { panic("receive panic") }
-func (panicStreamingHandlerConn) RequestHeader() http.Header   { return make(http.Header) }
+func (c panicStreamingHandlerConn) RequestHeader() http.Header { return c.header }
 func (panicStreamingHandlerConn) Send(any) error               { return nil }
 func (panicStreamingHandlerConn) ResponseHeader() http.Header  { return make(http.Header) }
 func (panicStreamingHandlerConn) ResponseTrailer() http.Header { return make(http.Header) }
