@@ -27,6 +27,7 @@ const (
 	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
+	PackageConnectRPC           Package = "connectrpc.com/connect"
 	PackageDatabaseSQL          Package = "database/sql"
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
 	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
@@ -297,6 +298,24 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("kafka"),
 				buildOpNameV0:      staticName("kafka.produce"),
 				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageConnectRPC: {
+		TracedPackage: "connectrpc.com/connect",
+		EnvVarPrefix:  "CONNECT",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("connect.server"),
+				buildOpNameV0:      staticName("connect.server"),
+				buildOpNameV1:      staticName("connect.server.request"),
+			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("connect.client"),
+				buildOpNameV0:      staticName("connect.client"),
+				buildOpNameV1:      staticName("connect.client.request"),
 			},
 		},
 	},

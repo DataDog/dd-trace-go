@@ -32,6 +32,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2"            // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2" // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2"    // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2"                   // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"                             // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2"              // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2"                            // integration

@@ -16,6 +16,7 @@ use (
 	./contrib/cloud.google.com/go/pubsub.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
+	./contrib/connectrpc.com/connect
 	./contrib/database/sql
 	./contrib/dimfeld/httptreemux.v5
 	./contrib/elastic/go-elasticsearch.v6
