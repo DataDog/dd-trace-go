@@ -56,15 +56,11 @@ func init() {
 func (cfg *config) startCallSpan(ctx context.Context, spec connectrpc.Spec, component instrumentation.Component, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context) {
 	service, method := parseProcedure(spec.Procedure)
 	serviceName, serviceSource := cfg.service(component)
-	spanKind := ext.SpanKindServer
-	if component == instrumentation.ComponentClient {
-		spanKind = ext.SpanKindClient
-	}
 	opts = append(opts,
 		instrumentation.ServiceNameWithSource(serviceName, serviceSource),
 		tracer.ResourceName(spec.Procedure),
 		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, spanKind),
+		tracer.Tag(ext.SpanKind, spanKind(component)),
 		tracer.Tag(ext.RPCService, service),
 		tracer.Tag(ext.RPCMethod, method),
 		tracer.Tag(tagMethodKind, methodKind(spec.StreamType)),
@@ -74,6 +70,10 @@ func (cfg *config) startCallSpan(ctx context.Context, spec connectrpc.Spec, comp
 	return tracer.StartSpanFromContext(ctx, instr.OperationName(component, nil), cfg.startSpanOptions(opts...)...)
 }
 
+// startMessageSpan starts a span for a single streaming message. These spans can end up as
+// trace roots when WithStreamCalls(false) leaves no call span to parent them (e.g. no caller
+// span on the client, or no extracted parent on the server), so they must carry span.kind
+// like any other root RPC span would.
 func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, protocol string, component instrumentation.Component, opts ...tracer.StartSpanOption) *tracer.Span {
 	service, method := parseProcedure(spec.Procedure)
 	serviceName, serviceSource := cfg.service(component)
@@ -81,6 +81,7 @@ func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, p
 		instrumentation.ServiceNameWithSource(serviceName, serviceSource),
 		tracer.ResourceName(spec.Procedure),
 		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, spanKind(component)),
 		tracer.Tag(ext.RPCSystem, rpcSystem(protocol)),
 		tracer.Tag(ext.RPCService, service),
 		tracer.Tag(ext.RPCMethod, method),
@@ -89,6 +90,13 @@ func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, p
 	)
 	span, _ := tracer.StartSpanFromContext(ctx, "connect.message", cfg.startSpanOptions(opts...)...)
 	return span
+}
+
+func spanKind(component instrumentation.Component) string {
+	if component == instrumentation.ComponentClient {
+		return ext.SpanKindClient
+	}
+	return ext.SpanKindServer
 }
 
 func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.StartSpanOption {
@@ -165,26 +173,45 @@ func isExpectedStreamEOF(err error) bool {
 }
 
 func finishCall(span *tracer.Span, err error, procedure, protocol string, cfg *config) {
-	finishSpan(span, err, procedure, protocol, false, false, cfg)
+	finishSpan(span, err, procedure, protocol, false, false, false, cfg)
+}
+
+func finishCallOnPanic(span *tracer.Span, err error, procedure, protocol string, cfg *config) {
+	finishSpan(span, err, procedure, protocol, false, false, true, cfg)
 }
 
 func finishMessage(span *tracer.Span, err error, procedure, protocol string, cfg *config) {
-	finishSpan(span, err, procedure, protocol, true, false, cfg)
+	finishSpan(span, err, procedure, protocol, true, false, false, cfg)
+}
+
+func finishMessageOnPanic(span *tracer.Span, err error, procedure, protocol string, cfg *config) {
+	finishSpan(span, err, procedure, protocol, true, false, true, cfg)
 }
 
 func finishUnary(span *tracer.Span, err error, procedure, protocol, httpMethod string, cfg *config) {
 	allowNotModified := rpcSystem(protocol) == ext.RPCSystemConnectRPC && httpMethod == http.MethodGet
-	finishSpan(span, err, procedure, protocol, false, allowNotModified, cfg)
+	finishSpan(span, err, procedure, protocol, false, allowNotModified, false, cfg)
 }
 
-func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowEOF, allowNotModified bool, cfg *config) {
+func finishUnaryOnPanic(span *tracer.Span, err error, procedure, protocol, httpMethod string, cfg *config) {
+	allowNotModified := rpcSystem(protocol) == ext.RPCSystemConnectRPC && httpMethod == http.MethodGet
+	finishSpan(span, err, procedure, protocol, false, allowNotModified, true, cfg)
+}
+
+// finishSpan finishes span, tagging it based on err. allowEOF and allowNotModified permit
+// treating a stream EOF or Connect's unary-GET "not modified" response as non-errors; isPanic
+// forces the opposite: a recovered panic must always be recorded as an error, even if the
+// panic value happens to be one that would otherwise be filtered out (e.g. context.Canceled,
+// a non-error code, or a value errCheck classifies as not an error), since the panic is always
+// re-raised by the caller after this returns and must stay visible in the trace.
+func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowEOF, allowNotModified, isPanic bool, cfg *config) {
 	if span == nil {
 		return
 	}
 
 	code := codeOf(err)
-	expectedEOF := allowEOF && isExpectedStreamEOF(err)
-	notModified := allowNotModified && connectrpc.IsNotModifiedError(err)
+	expectedEOF := !isPanic && allowEOF && isExpectedStreamEOF(err)
+	notModified := !isPanic && allowNotModified && connectrpc.IsNotModifiedError(err)
 	if rpcSystem(protocol) == ext.RPCSystemGRPC {
 		statusCode := uint32(0)
 		if err != nil && !expectedEOF {
@@ -195,10 +222,12 @@ func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowE
 		span.SetTag(tagConnectErrorCode, code.String())
 	}
 
-	if expectedEOF || (code == connectrpc.CodeCanceled && errors.Is(err, context.Canceled)) || notModified || cfg.nonErrorCodes[code] {
-		err = nil
-	} else if err != nil && cfg.errCheck != nil && !cfg.errCheck(procedure, err) {
-		err = nil
+	if !isPanic {
+		if expectedEOF || (code == connectrpc.CodeCanceled && errors.Is(err, context.Canceled)) || notModified || cfg.nonErrorCodes[code] {
+			err = nil
+		} else if err != nil && cfg.errCheck != nil && !cfg.errCheck(procedure, err) {
+			err = nil
+		}
 	}
 	if notModified {
 		span.SetTag(ext.HTTPCode, 304)
