@@ -1,10 +1,10 @@
 services:
   aerospike:
-    image: aerospike:ce-8.1.2.4_1@sha256:e3ade4ebc112080907c1b45fb61e6c3393fc6147452fe61f5ffc24762080dbac
+    image: aerospike:ce-8.1.2.4_1@sha256:fb172169a3b0c217563a4c7eb88ef117c4d24ac64a3a66ad99a18c0dca36bd8c
     ports:
       - "3000:3000"
   cassandra:
-    image: cassandra:5@sha256:259578bbeac315a7326c2a99e60eab86f3415e9e895207bf2a032af4de8c16b5
+    image: cassandra:5@sha256:d35e159439b302146f964919904f84fd3c2cebf347272b8cb8c4368c1cf200e5
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -22,7 +22,7 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: postgres:18@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+    image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -30,7 +30,7 @@ services:
     ports:
       - "5432:5432"
   mssql:
-    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:86cc6144ef39bb0fbed2329e1ad79b13ee82e7b2e4739213a0db0800e668a74a
+    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:4bab24f36c1ecd48e85f7d37df26e6bf301641d84c3fe652f9a0dcc947d512e1
     environment:
       SA_PASSWORD: myPassw0rd
       ACCEPT_EULA: Y
@@ -41,11 +41,11 @@ services:
     ports:
       - "8500:8500"
   redis:
-    image: redis:8-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
+    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
     ports:
       - "6379:6379"
   valkey:
-    image: valkey/valkey:9@sha256:3acc0687f2a2e1091fae6450d7842dd658c941338cf0a873ddd9e14b9e4ea4dd
+    image: valkey/valkey:9@sha256:70739f85ad2ee01a726a965584a0f94895f01b0c60b3cc8b0aeef11eaa6888cf
     environment:
       VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
     ports:
@@ -71,7 +71,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:9.4.4@sha256:5b4517639f5c027e5abc0dbb29dc99e0662b2d060befe17d91c953b88020391d
+    image: elasticsearch:9.5.2@sha256:7b92af0bc2055e499c903ad631b40e646bd07edd8cf206da9b9265942925e5e2
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -83,7 +83,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:9.4.4@sha256:5b4517639f5c027e5abc0dbb29dc99e0662b2d060befe17d91c953b88020391d
+    image: elasticsearch:9.5.2@sha256:7b92af0bc2055e499c903ad631b40e646bd07edd8cf206da9b9265942925e5e2
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -95,7 +95,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:9.4.4@sha256:5b4517639f5c027e5abc0dbb29dc99e0662b2d060befe17d91c953b88020391d
+    image: elasticsearch:9.5.2@sha256:7b92af0bc2055e499c903ad631b40e646bd07edd8cf206da9b9265942925e5e2
     environment:
       http.port: 9204-9300
       discovery.type: single-node
@@ -108,7 +108,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest@sha256:5c0fd49a485f100f37beab1969ed68b8027e906acaf81cfec12c16d11e8d9b4e
+    image: registry.datadoghq.com/agent:latest@sha256:abb3279b6465f8641eff1ee7cc2bea293221accafc8f0a9a256e4e4835dc8e17
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -116,7 +116,7 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.64.1@sha256:817244a7aec2196c0ad5b09e958a9d1fb40846ecc4257736917aa6b9b55c5e49
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.65.0@sha256:9c635df1361ab7cc3e608622a2035f74516c709b0fa14ad78dc724840f24ff63
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
