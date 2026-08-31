@@ -243,6 +243,13 @@ func (c *streamingClientConn) Receive(message any) (err error) {
 		messageSpan = c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentClient)
 		setPeerTags(messageSpan, c.Peer())
 	}
+	c.headerTagsOnce.Do(func() {
+		target := c.span
+		if target == nil {
+			target = messageSpan
+		}
+		withHeaderTags(c.cfg, c.RequestHeader(), protocol, target)
+	})
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panicErr := panicError(recovered)
@@ -298,7 +305,7 @@ func (c *streamingClientConn) endOperation(err error, terminal, isPanic bool) {
 	c.mu.Lock()
 	if terminal {
 		c.finishPending = true
-		if err != nil && !isExpectedStreamEOF(err) && (c.terminalErr == nil || c.terminalErrFromCtx) {
+		if err != nil && (isPanic || !isExpectedStreamEOF(err)) && (c.terminalErr == nil || c.terminalErrFromCtx) {
 			c.terminalErr = err
 			c.terminalErrFromCtx = false
 			c.terminalErrIsPanic = isPanic

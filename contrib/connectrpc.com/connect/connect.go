@@ -70,26 +70,41 @@ func (cfg *config) startCallSpan(ctx context.Context, spec connectrpc.Spec, comp
 	return tracer.StartSpanFromContext(ctx, instr.OperationName(component, nil), cfg.startSpanOptions(opts...)...)
 }
 
-// startMessageSpan starts a span for a single streaming message. These spans can end up as
-// trace roots when WithStreamCalls(false) leaves no call span to parent them (e.g. no caller
-// span on the client, or no extracted parent on the server), so they must carry span.kind
-// like any other root RPC span would.
+// startMessageSpan starts a span for a single streaming message. When WithStreamCalls(false)
+// leaves no call span to parent them (e.g. no caller span on the client, or no extracted
+// parent on the server), these spans become trace roots and must carry span.kind like any
+// other root RPC span would. Otherwise they're plain internal children of the call span, so
+// span.kind is omitted, matching contrib/google.golang.org/grpc's message spans.
 func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, protocol string, component instrumentation.Component, opts ...tracer.StartSpanOption) *tracer.Span {
+	root := isRootSpan(ctx, opts)
 	service, method := parseProcedure(spec.Procedure)
 	serviceName, serviceSource := cfg.service(component)
 	opts = append(opts,
 		instrumentation.ServiceNameWithSource(serviceName, serviceSource),
 		tracer.ResourceName(spec.Procedure),
 		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, spanKind(component)),
 		tracer.Tag(ext.RPCSystem, rpcSystem(protocol)),
 		tracer.Tag(ext.RPCService, service),
 		tracer.Tag(ext.RPCMethod, method),
 		tracer.Tag(tagMethodKind, methodKind(spec.StreamType)),
 		spanTypeRPC,
 	)
+	if root {
+		opts = append(opts, tracer.Tag(ext.SpanKind, spanKind(component)))
+	}
 	span, _ := tracer.StartSpanFromContext(ctx, "connect.message", cfg.startSpanOptions(opts...)...)
 	return span
+}
+
+// isRootSpan reports whether a span started now, with the given extra options, would have no
+// parent: no ambient span in ctx (e.g. no call span, no caller-supplied span), and no
+// caller-supplied parent option (e.g. a ChildOf extracted from propagated headers).
+func isRootSpan(ctx context.Context, opts []tracer.StartSpanOption) bool {
+	if len(opts) > 0 {
+		return false
+	}
+	_, ok := tracer.SpanFromContext(ctx)
+	return !ok
 }
 
 func spanKind(component instrumentation.Component) string {

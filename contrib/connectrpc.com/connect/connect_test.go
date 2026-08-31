@@ -471,12 +471,10 @@ func TestStreamingMessagesWithoutCallSpans(t *testing.T) {
 		messageCount++
 		assert.Equal(t, parent.Context().TraceIDLower(), span.TraceID())
 		assert.Equal(t, parent.Context().SpanID(), span.ParentID())
-		switch span.Tag(ext.ServiceName) {
-		case "connect.client":
-			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
-		case "connect.server":
-			assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind))
-		}
+		// These message spans are children of "parent" (and, on the server, of the
+		// extracted trace context), so they're plain internal spans: span.kind is only
+		// added when a message span has no parent at all (see TestRootMessageSpanHasSpanKind).
+		assert.Nil(t, span.Tag(ext.SpanKind))
 		if metadataTag(span, ext.RPCSystemConnectRPC, "x-message-header") != nil {
 			switch span.Tag(ext.ServiceName) {
 			case "connect.client":
@@ -651,6 +649,12 @@ type terminalErrorStreamingClientConn struct {
 func (c *terminalErrorStreamingClientConn) Send(any) error    { return nil }
 func (c *terminalErrorStreamingClientConn) Receive(any) error { return c.err }
 
+type eofPanicStreamingClientConn struct {
+	panicStreamingClientConn
+}
+
+func (c *eofPanicStreamingClientConn) Receive(any) error { panic(io.EOF) }
+
 func (panicStreamingHandlerConn) Spec() connectrpc.Spec {
 	return connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi}
 }
@@ -812,4 +816,38 @@ func TestFinishOnPanicAlwaysRecordsError(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
 	})
+}
+
+func TestStreamingClientPanicWithEOFStillErrorsCallSpan(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	interceptor := NewClientInterceptor(WithStreamMessages(false))
+	wrapped := interceptor.WrapStreamingClient(func(context.Context, connectrpc.Spec) connectrpc.StreamingClientConn {
+		return &eofPanicStreamingClientConn{panicStreamingClientConn{header: make(http.Header)}}
+	})(context.Background(), connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi, IsClient: true})
+	assert.Panics(t, func() { _ = wrapped.Receive(nil) })
+	require.Len(t, mt.FinishedSpans(), 1)
+	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg), "a panic carrying io.EOF must still error the call span")
+}
+
+func TestStreamingClientReceiveFirstCapturesHeaders(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	fakeConn := &panicStreamingClientConn{header: make(http.Header)}
+	fakeConn.header.Set("X-Late-Header", "value")
+	conn := &streamingClientConn{
+		StreamingClientConn: fakeConn,
+		cfg:                 newConfig(WithHeaderTags(), WithStreamMessages(false)),
+		ctx:                 context.Background(),
+		span:                tracer.StartSpan("connect.client"),
+	}
+
+	// The server ends the stream before the client ever calls Send or CloseRequest, a valid
+	// bidi pattern. The call span finishes right here, so header capture must happen on this
+	// very first Receive, not only from Send/CloseRequest.
+	err := conn.Receive(&wrapperspb.StringValue{})
+	assert.ErrorIs(t, err, io.EOF)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	assert.NotNil(t, metadataTag(mt.FinishedSpans()[0], ext.RPCSystemConnectRPC, "x-late-header"))
 }
