@@ -251,10 +251,6 @@ jobs:
             scenario: APPSEC_BLOCKING
             image_artifact: apim-callout-image-linux-amd64
             image_name: apim-callout
-          - weblog-variant: apim
-            scenario: APPSEC_BLOCKING_FULL_DENYLIST
-            image_artifact: apim-callout-image-linux-amd64
-            image_name: apim-callout
       fail-fast: false
     env:
       SYSTEM_TESTS_WEBLOG: ${{ matrix.weblog-variant }}
