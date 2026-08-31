@@ -42,6 +42,7 @@ type config struct {
 	withErrorDetailTags bool
 	analyticsRate       float64
 	spanOpts            []tracer.StartSpanOption
+	spanOptsHaveParent  bool
 	tags                map[string]any
 }
 
@@ -76,6 +77,13 @@ func newConfig(opts ...Option) *config {
 	}
 	for _, opt := range opts {
 		opt.apply(cfg)
+	}
+	// Resolved once here, rather than on every message span: cfg.spanOpts holds arbitrary
+	// user-supplied options (from WithSpanOptions), and StartSpanOption is just a function,
+	// so invoking it repeatedly to check for a configured parent could run side effects (or
+	// resolve a different parent) more often than intended.
+	if len(cfg.spanOpts) > 0 {
+		cfg.spanOptsHaveParent = tracer.NewStartSpanConfig(cfg.spanOpts...).Parent != nil
 	}
 	return cfg
 }

@@ -97,21 +97,22 @@ func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, p
 }
 
 // isRootSpan reports whether a span started now, with the given extra options, would have no
-// parent: no ambient span in ctx (e.g. no call span, no caller-supplied span), and no parent
-// established by opts (e.g. a ChildOf extracted from propagated headers) or by cfg.spanOpts
-// (e.g. a ChildOf configured via WithSpanOptions), both of which cfg.startSpanOptions folds
-// into the final span options after this check would otherwise have run.
+// parent: no ambient span in ctx (e.g. no call span, no caller-supplied span), no parent
+// established by opts (a ChildOf we build ourselves from propagated headers, cheap and
+// side-effect-free to inspect), and no parent configured via WithSpanOptions. The latter is
+// resolved once in newConfig rather than here: cfg.spanOpts can hold arbitrary user-supplied
+// options, and re-invoking a stateful one on every message span (in addition to its real
+// invocation in cfg.startSpanOptions) could run side effects, or resolve a different parent,
+// more often than intended.
 func isRootSpan(ctx context.Context, cfg *config, opts []tracer.StartSpanOption) bool {
-	if _, ok := tracer.SpanFromContext(ctx); ok {
+	if cfg.spanOptsHaveParent {
 		return false
 	}
-	if len(opts) == 0 && len(cfg.spanOpts) == 0 {
-		return true
+	if len(opts) > 0 {
+		return tracer.NewStartSpanConfig(opts...).Parent == nil
 	}
-	all := make([]tracer.StartSpanOption, 0, len(opts)+len(cfg.spanOpts))
-	all = append(all, opts...)
-	all = append(all, cfg.spanOpts...)
-	return tracer.NewStartSpanConfig(all...).Parent == nil
+	_, ok := tracer.SpanFromContext(ctx)
+	return !ok
 }
 
 func spanKind(component instrumentation.Component) string {

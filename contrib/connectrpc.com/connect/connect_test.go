@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -858,6 +859,27 @@ func TestStreamingClientReceiveFirstCapturesHeaders(t *testing.T) {
 
 	require.Len(t, mt.FinishedSpans(), 1)
 	assert.NotNil(t, metadataTag(mt.FinishedSpans()[0], ext.RPCSystemConnectRPC, "x-late-header"))
+}
+
+func TestConfiguredSpanOptionNotReinvokedPerMessage(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var calls atomic.Int32
+	countingOpt := tracer.StartSpanOption(func(*tracer.StartSpanConfig) {
+		calls.Add(1)
+	})
+	cfg := newConfig(WithSpanOptions(countingOpt))
+	// newConfig resolves whether cfg.spanOpts has a parent exactly once, at config-build time.
+	require.EqualValues(t, 1, calls.Load())
+
+	const messages = 5
+	for range messages {
+		span := cfg.startMessageSpan(context.Background(), connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi}, connectrpc.ProtocolConnect, instrumentation.ComponentServer)
+		span.Finish()
+	}
+	// Exactly one more invocation per real span: isRootSpan must not add any extra
+	// per-message re-invocation of a user-supplied, potentially stateful option.
+	assert.EqualValues(t, 1+messages, calls.Load())
 }
 
 func TestRootMessageSpanRespectsSpanOptionsParent(t *testing.T) {
