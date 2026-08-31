@@ -69,7 +69,7 @@ func (i *interceptor) wrapUnaryClient(ctx context.Context, request connectrpc.An
 	procedure := request.Spec().Procedure
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			finishUnary(span, panicError(recovered), procedure, protocol, request.HTTPMethod(), i.cfg)
+			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, request.HTTPMethod(), i.cfg)
 			panic(recovered)
 		}
 		finishUnary(span, err, procedure, protocol, request.HTTPMethod(), i.cfg)
@@ -88,7 +88,7 @@ func (i *interceptor) wrapUnaryServer(ctx context.Context, request connectrpc.An
 	span, ctx := i.cfg.startCallSpan(ctx, request.Spec(), instrumentation.ComponentServer, propagationOptions(request.Header())...)
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			finishUnary(span, panicError(recovered), procedure, protocol, request.HTTPMethod(), i.cfg)
+			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, request.HTTPMethod(), i.cfg)
 			panic(recovered)
 		}
 		finishUnary(span, err, procedure, protocol, request.HTTPMethod(), i.cfg)
@@ -118,7 +118,7 @@ func (i *interceptor) WrapStreamingClient(next connectrpc.StreamingClientFunc) c
 				if callSpan != nil {
 					setProtocolTag(callSpan, protocol)
 				}
-				finishCall(callSpan, panicError(recovered), spec.Procedure, protocol, i.cfg)
+				finishCallOnPanic(callSpan, panicError(recovered), spec.Procedure, protocol, i.cfg)
 				panic(recovered)
 			}
 		}()
@@ -156,7 +156,7 @@ func (i *interceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc)
 			parentOpts = nil
 			defer func() {
 				if recovered := recover(); recovered != nil {
-					finishCall(callSpan, panicError(recovered), spec.Procedure, protocol, i.cfg)
+					finishCallOnPanic(callSpan, panicError(recovered), spec.Procedure, protocol, i.cfg)
 					panic(recovered)
 				}
 				finishCall(callSpan, err, spec.Procedure, protocol, i.cfg)
@@ -185,6 +185,7 @@ type streamingClientConn struct {
 	finishPending      bool
 	terminalErr        error
 	terminalErrFromCtx bool
+	terminalErrIsPanic bool
 	finishOnce         sync.Once
 	headerTagsOnce     sync.Once
 	stopContextDone    func() bool
@@ -224,12 +225,12 @@ func (c *streamingClientConn) Send(message any) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panicErr := panicError(recovered)
-			finishMessage(messageSpan, panicErr, c.Spec().Procedure, protocol, c.cfg)
-			c.endOperation(panicErr, true)
+			finishMessageOnPanic(messageSpan, panicErr, c.Spec().Procedure, protocol, c.cfg)
+			c.endOperation(panicErr, true, true)
 			panic(recovered)
 		}
 		finishMessage(messageSpan, err, c.Spec().Procedure, protocol, c.cfg)
-		c.endOperation(err, err != nil && !errors.Is(err, io.EOF))
+		c.endOperation(err, err != nil && !errors.Is(err, io.EOF), false)
 	}()
 	return c.StreamingClientConn.Send(message)
 }
@@ -245,12 +246,12 @@ func (c *streamingClientConn) Receive(message any) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panicErr := panicError(recovered)
-			finishMessage(messageSpan, panicErr, c.Spec().Procedure, protocol, c.cfg)
-			c.endOperation(panicErr, true)
+			finishMessageOnPanic(messageSpan, panicErr, c.Spec().Procedure, protocol, c.cfg)
+			c.endOperation(panicErr, true, true)
 			panic(recovered)
 		}
 		finishMessage(messageSpan, err, c.Spec().Procedure, protocol, c.cfg)
-		c.endOperation(err, err != nil)
+		c.endOperation(err, err != nil, false)
 	}()
 	return c.StreamingClientConn.Receive(message)
 }
@@ -266,10 +267,10 @@ func (c *streamingClientConn) CloseRequest() (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panicErr := panicError(recovered)
-			c.endOperation(panicErr, true)
+			c.endOperation(panicErr, true, true)
 			panic(recovered)
 		}
-		c.endOperation(err, err != nil)
+		c.endOperation(err, err != nil, false)
 	}()
 	return c.StreamingClientConn.CloseRequest()
 }
@@ -279,10 +280,10 @@ func (c *streamingClientConn) CloseResponse() (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panicErr := panicError(recovered)
-			c.endOperation(panicErr, true)
+			c.endOperation(panicErr, true, true)
 			panic(recovered)
 		}
-		c.endOperation(err, true)
+		c.endOperation(err, true, false)
 	}()
 	return c.StreamingClientConn.CloseResponse()
 }
@@ -293,22 +294,24 @@ func (c *streamingClientConn) beginOperation() {
 	c.mu.Unlock()
 }
 
-func (c *streamingClientConn) endOperation(err error, terminal bool) {
+func (c *streamingClientConn) endOperation(err error, terminal, isPanic bool) {
 	c.mu.Lock()
 	if terminal {
 		c.finishPending = true
 		if err != nil && !isExpectedStreamEOF(err) && (c.terminalErr == nil || c.terminalErrFromCtx) {
 			c.terminalErr = err
 			c.terminalErrFromCtx = false
+			c.terminalErrIsPanic = isPanic
 		}
 	}
 	c.active--
 	shouldFinish := c.finishPending && c.active == 0
 	terminalErr := c.terminalErr
+	terminalErrIsPanic := c.terminalErrIsPanic
 	c.mu.Unlock()
 	if shouldFinish {
 		c.stopContextCallback()
-		c.finish(terminalErr)
+		c.finish(terminalErr, terminalErrIsPanic)
 	}
 }
 
@@ -318,12 +321,14 @@ func (c *streamingClientConn) requestFinish(err error) {
 	if err != nil && !errors.Is(err, io.EOF) && c.terminalErr == nil {
 		c.terminalErr = err
 		c.terminalErrFromCtx = true
+		c.terminalErrIsPanic = false
 	}
 	shouldFinish := c.active == 0
 	terminalErr := c.terminalErr
+	terminalErrIsPanic := c.terminalErrIsPanic
 	c.mu.Unlock()
 	if shouldFinish {
-		c.finish(terminalErr)
+		c.finish(terminalErr, terminalErrIsPanic)
 	}
 }
 
@@ -333,8 +338,12 @@ func (c *streamingClientConn) stopContextCallback() {
 	}
 }
 
-func (c *streamingClientConn) finish(err error) {
+func (c *streamingClientConn) finish(err error, isPanic bool) {
 	c.finishOnce.Do(func() {
+		if isPanic {
+			finishCallOnPanic(c.span, err, c.Spec().Procedure, c.Peer().Protocol, c.cfg)
+			return
+		}
 		finishCall(c.span, err, c.Spec().Procedure, c.Peer().Protocol, c.cfg)
 	})
 }
@@ -355,7 +364,7 @@ func (c *streamingHandlerConn) Receive(message any) (err error) {
 	})
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			finishMessage(span, panicError(recovered), c.Spec().Procedure, protocol, c.cfg)
+			finishMessageOnPanic(span, panicError(recovered), c.Spec().Procedure, protocol, c.cfg)
 			panic(recovered)
 		}
 		finishMessage(span, err, c.Spec().Procedure, protocol, c.cfg)
@@ -375,7 +384,7 @@ func (c *streamingHandlerConn) Send(message any) (err error) {
 	})
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			finishMessage(span, panicError(recovered), c.Spec().Procedure, protocol, c.cfg)
+			finishMessageOnPanic(span, panicError(recovered), c.Spec().Procedure, protocol, c.cfg)
 			panic(recovered)
 		}
 		finishMessage(span, err, c.Spec().Procedure, protocol, c.cfg)

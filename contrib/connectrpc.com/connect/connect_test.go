@@ -456,8 +456,10 @@ func TestStreamingMessagesWithoutCallSpans(t *testing.T) {
 	parent.Finish()
 
 	spans := mt.FinishedSpans()
-	assert.Empty(t, callSpans(spans, ext.SpanKindClient))
-	assert.Empty(t, callSpans(spans, ext.SpanKindServer))
+	for _, span := range spans {
+		assert.NotEqual(t, "connect.client", span.OperationName(), "no call span should be created with WithStreamCalls(false)")
+		assert.NotEqual(t, "connect.server", span.OperationName(), "no call span should be created with WithStreamCalls(false)")
+	}
 	messageCount := 0
 	clientHeaderFound := false
 	serverHeaderFound := false
@@ -469,6 +471,12 @@ func TestStreamingMessagesWithoutCallSpans(t *testing.T) {
 		messageCount++
 		assert.Equal(t, parent.Context().TraceIDLower(), span.TraceID())
 		assert.Equal(t, parent.Context().SpanID(), span.ParentID())
+		switch span.Tag(ext.ServiceName) {
+		case "connect.client":
+			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
+		case "connect.server":
+			assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind))
+		}
 		if metadataTag(span, ext.RPCSystemConnectRPC, "x-message-header") != nil {
 			switch span.Tag(ext.ServiceName) {
 			case "connect.client":
@@ -719,11 +727,89 @@ func TestStreamingClientTerminalErrorPrefersRealError(t *testing.T) {
 	// ...but the in-flight Send/Receive concurrently completes with the real cause.
 	// The real error must win over the generic cancellation.
 	realErr := connectrpc.NewError(connectrpc.CodeUnavailable, errors.New("boom"))
-	conn.endOperation(realErr, true)
+	conn.endOperation(realErr, true, false)
 
 	require.Len(t, mt.FinishedSpans(), 1)
 	finished := mt.FinishedSpans()[0]
 	assert.Equal(t, "unavailable", finished.Tag(tagConnectErrorCode))
 	require.NotNil(t, finished.Tag(ext.ErrorMsg))
 	assert.Contains(t, finished.Tag(ext.ErrorMsg), "boom")
+}
+
+func TestRootMessageSpanHasSpanKind(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	opts := []Option{WithStreamCalls(false)}
+	rig := newTestRig(t, opts, opts)
+	stream := rig.client(bidiProcedure).CallBidiStream(context.Background())
+	require.NoError(t, stream.Send(wrapperspb.String("hello")))
+	_, err := stream.Receive()
+	require.NoError(t, err)
+	require.NoError(t, stream.CloseRequest())
+	_, err = stream.Receive()
+	assert.ErrorIs(t, err, io.EOF)
+	require.NoError(t, stream.CloseResponse())
+
+	var foundClientRoot, foundServerRoot bool
+	for _, span := range mt.FinishedSpans() {
+		if span.OperationName() != "connect.message" || span.ParentID() != 0 {
+			continue
+		}
+		switch span.Tag(ext.ServiceName) {
+		case "connect.client":
+			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind), "root client message span must carry span.kind")
+			foundClientRoot = true
+		case "connect.server":
+			assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind), "root server message span must carry span.kind")
+			foundServerRoot = true
+		}
+	}
+	assert.True(t, foundClientRoot, "expected at least one root client message span")
+	assert.True(t, foundServerRoot, "expected at least one root server message span")
+}
+
+func TestFinishOnPanicAlwaysRecordsError(t *testing.T) {
+	// Values that finishSpan's normal (non-panic) path would treat as non-errors. A panic
+	// carrying one of these must still be recorded as an error, since it is always re-raised
+	// by the caller right after the span is finished.
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "context canceled", err: context.Canceled},
+		{name: "connect default non-error code", err: connectrpc.NewError(connectrpc.CodeCanceled, context.Canceled)},
+		{name: "not modified", err: connectrpc.NewNotModifiedError(nil)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			span := tracer.StartSpan("panic")
+			finishUnaryOnPanic(span, test.err, unaryProcedure, connectrpc.ProtocolConnect, http.MethodGet, newConfig())
+			require.Len(t, mt.FinishedSpans(), 1)
+			assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+		})
+	}
+
+	t.Run("bypasses NonErrorCodes and WithErrorCheck", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		cfg := newConfig(
+			NonErrorCodes(connectrpc.CodeNotFound),
+			WithErrorCheck(func(string, error) bool { return false }),
+		)
+		span := tracer.StartSpan("panic")
+		finishCallOnPanic(span, connectrpc.NewError(connectrpc.CodeNotFound, errors.New("boom")), unaryProcedure, connectrpc.ProtocolConnect, cfg)
+		require.Len(t, mt.FinishedSpans(), 1)
+		assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+	})
+
+	t.Run("message span panic", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		span := tracer.StartSpan("panic")
+		finishMessageOnPanic(span, context.Canceled, unaryProcedure, connectrpc.ProtocolConnect, newConfig())
+		require.Len(t, mt.FinishedSpans(), 1)
+		assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+	})
 }
