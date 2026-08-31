@@ -30,7 +30,11 @@ import (
 
 const componentName = instrumentation.PackageCloudEventsSDKGoV2
 
-var instr = instrumentation.Load(componentName)
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(componentName)
+}
 
 // New returns an observability service that the CloudEvents SDK calls around
 // send, request, and receive operations. Install it on a client with
@@ -38,6 +42,10 @@ var instr = instrumentation.Load(componentName)
 //
 // The service adds W3C trace context to outgoing event extensions. Callers that
 // send the same event concurrently should clone it before each send.
+//
+// The CloudEvents SDK supports only one active observability recorder. Applying
+// another ObservabilityService replaces this service's recording callbacks,
+// although both services' inbound context decorators remain registered.
 func New(opts ...Option) client.ObservabilityService {
 	service := &observabilityService{}
 	defaults(&service.config)
@@ -48,7 +56,10 @@ func New(opts ...Option) client.ObservabilityService {
 }
 
 // NewClient creates a CloudEvents client with Datadog observability enabled.
-// It has the same signature as client.New and is used by Orchestrion.
+// It has the same signature as client.New and is used by Orchestrion. Datadog
+// observability is applied after opts, so it replaces the recording callbacks
+// of an ObservabilityService supplied there. That service's inbound context
+// decorators remain registered by the CloudEvents SDK.
 func NewClient(obj any, opts ...client.Option) (client.Client, error) {
 	opts = append(opts, client.WithObservabilityService(New()))
 	return client.New(obj, opts...)
@@ -136,15 +147,17 @@ func spanLinks(extracted *tracer.SpanContext) []tracer.SpanLink {
 	if extracted == nil {
 		return nil
 	}
-	if (extracted.TraceIDLower() == 0 && extracted.TraceIDUpper() == 0) || extracted.SpanID() == 0 {
-		return extracted.SpanLinks()
-	}
+	links := extracted.SpanLinks()
 	producer := tracer.SpanLink{
 		TraceID:     extracted.TraceIDLower(),
 		TraceIDHigh: extracted.TraceIDUpper(),
 		SpanID:      extracted.SpanID(),
 	}
-	links := extracted.SpanLinks()
+	// A span link requires both identifiers. Preserve any links supplied by the
+	// propagator, but do not synthesize an invalid link from a partial context.
+	if (producer.TraceID == 0 && producer.TraceIDHigh == 0) || producer.SpanID == 0 {
+		return links
+	}
 	for _, link := range links {
 		if link.TraceID == producer.TraceID && link.TraceIDHigh == producer.TraceIDHigh && link.SpanID == producer.SpanID {
 			return links
@@ -159,7 +172,15 @@ func (s *observabilityService) RecordSendingEvent(
 	ctx context.Context,
 	event cloudevents.Event,
 ) (context.Context, func(error)) {
-	span, spanCtx := s.startProducerSpan(ctx, &event)
+	span, spanCtx := tracer.StartSpanFromContext(
+		ctx,
+		"cloudevents.send",
+		s.spanOptions(instrumentation.ComponentProducer, "send")...,
+	)
+	s.tagEvent(span, &event)
+
+	inject(span, &event)
+
 	return spanCtx, func(result error) {
 		finishSpan(span, result)
 	}
@@ -171,12 +192,35 @@ func (s *observabilityService) RecordRequestEvent(
 	ctx context.Context,
 	event cloudevents.Event,
 ) (context.Context, func(error, *cloudevents.Event)) {
-	span, spanCtx := s.startProducerSpan(ctx, &event)
+	span, spanCtx := tracer.StartSpanFromContext(
+		ctx,
+		"cloudevents.request",
+		s.spanOptions(instrumentation.ComponentProducer, "request")...,
+	)
+	s.tagEvent(span, &event)
+
+	inject(span, &event)
+
 	return spanCtx, func(result error, response *cloudevents.Event) {
+		// An ACK confirms delivery, but the request/reply operation is incomplete
+		// when the SDK cannot produce the response event.
 		if isSuccess(result) && response == nil {
 			result = errors.New("cloudevents: response conversion returned nil event")
 		}
 		finishSpan(span, result)
+	}
+}
+
+// inject adds propagation fields without preventing the SDK from sending the
+// event when propagation is unavailable or misconfigured.
+func inject(span *tracer.Span, event *cloudevents.Event) {
+	carrier := &eventCarrier{writer: event}
+	if err := tracer.Inject(span.Context(), carrier); err != nil {
+		instr.Logger().Debug("contrib/cloudevents/sdk-go.v2: failed to inject trace context: %v", err)
+		return
+	}
+	if !carrier.wrote {
+		instr.Logger().Debug("contrib/cloudevents/sdk-go.v2: no supported propagation fields were injected; enable the tracecontext propagation style")
 	}
 }
 
@@ -189,23 +233,6 @@ func (s *observabilityService) RecordReceivedMalformedEvent(_ context.Context, e
 	)
 	span.SetTag(ext.ResourceName, "malformed")
 	finishSpan(span, err)
-}
-
-// startProducerSpan creates the span shared by send and request operations and
-// adds its propagation context to the event.
-func (s *observabilityService) startProducerSpan(
-	ctx context.Context,
-	event *cloudevents.Event,
-) (*tracer.Span, context.Context) {
-	span, spanCtx := tracer.StartSpanFromContext(
-		ctx,
-		"cloudevents.send",
-		s.spanOptions(instrumentation.ComponentProducer, "send")...,
-	)
-	s.tagEvent(span, event)
-	// Propagation is best effort and must not prevent the SDK from sending the event.
-	_ = tracer.Inject(span.Context(), eventCarrier{writer: event})
-	return span, spanCtx
 }
 
 // spanOptions builds the Datadog messaging tags shared by send and receive spans.

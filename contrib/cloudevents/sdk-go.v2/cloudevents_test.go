@@ -70,7 +70,7 @@ func assertSpanTags(t *testing.T, span *mocktracer.Span, wantTags map[string]any
 func TestCarriers(t *testing.T) {
 	t.Run("write propagation extensions", func(t *testing.T) {
 		e := testEvent()
-		carrier := eventCarrier{writer: &e}
+		carrier := &eventCarrier{writer: &e}
 		values := map[string]string{
 			"traceparent": "parent",
 			"tracestate":  "state",
@@ -79,6 +79,9 @@ func TestCarriers(t *testing.T) {
 		}
 		for key, value := range values {
 			carrier.Set(key, value)
+		}
+		if !carrier.wrote {
+			t.Error("carrier did not record a supported propagation write")
 		}
 		for _, key := range propagationKeys {
 			if got := e.Extensions()[key]; got == nil {
@@ -179,8 +182,8 @@ func TestSend(t *testing.T) {
 				"cloudevents.datacontenttype":    "application/json",
 			}
 			assertSpanTags(t, send, wantTags)
-			if send.Tag("cloudevents.subject") != nil || send.Tag("cloudevents.data") != nil {
-				t.Errorf("opt-in or payload tag unexpectedly present: %#v", send.Tags())
+			if send.Tag("cloudevents.event_subject") != nil {
+				t.Errorf("opt-in subject tag unexpectedly present: %#v", send.Tags())
 			}
 			if got := send.Tag(ext.ErrorMsg); (got != nil) != tc.isError {
 				t.Errorf("error tag = %#v, want error=%v", got, tc.isError)
@@ -216,6 +219,12 @@ func TestRequestCallbackResults(t *testing.T) {
 			_, finish := service.RecordRequestEvent(context.Background(), testEvent())
 			finish(tc.result, tc.response)
 			span := requireSpan(t, mt)
+			if got, want := span.OperationName(), "cloudevents.request"; got != want {
+				t.Errorf("operation name = %q, want %q", got, want)
+			}
+			if got, want := span.Tag(ext.MessagingOperationName), "request"; got != want {
+				t.Errorf("messaging operation = %#v, want %q", got, want)
+			}
 			if got := span.Tag(ext.ErrorMsg); (got != nil) != tc.isError {
 				t.Errorf("error tag = %#v, want error=%v", got, tc.isError)
 			}

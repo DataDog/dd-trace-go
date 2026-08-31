@@ -25,13 +25,15 @@ var propagationKeys = [...]string{
 // eventCarrier adapts a CloudEvent writer to tracer.TextMapWriter.
 type eventCarrier struct {
 	writer event.EventWriter
+	wrote  bool
 }
 
 // Set writes a supported W3C propagation field into the event envelope.
-func (c eventCarrier) Set(key, value string) {
+func (c *eventCarrier) Set(key, value string) {
 	for _, allowed := range propagationKeys {
 		if key == allowed {
 			c.writer.SetExtension(key, value)
+			c.wrote = true
 			return
 		}
 	}
@@ -54,5 +56,5 @@ func (c messageCarrier) ForeachKey(fn func(string, string) error) error {
 	return nil
 }
 
-var _ tracer.TextMapWriter = eventCarrier{}
+var _ tracer.TextMapWriter = (*eventCarrier)(nil)
 var _ tracer.TextMapReader = messageCarrier{}

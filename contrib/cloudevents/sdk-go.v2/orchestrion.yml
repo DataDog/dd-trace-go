@@ -14,6 +14,8 @@ aspects:
       all-of:
         - function-call: github.com/cloudevents/sdk-go/v2/client.New
         - not:
-            import-path: github.com/cloudevents/sdk-go/v2
+            one-of:
+              - import-path: github.com/cloudevents/sdk-go/v2
+              - import-path: github.com/cloudevents/sdk-go/v2/client
     advice:
       - replace-function: github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2.NewClient
