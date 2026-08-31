@@ -75,8 +75,18 @@ func (cfg *config) startCallSpan(ctx context.Context, spec connectrpc.Spec, comp
 // parent on the server), these spans become trace roots and must carry span.kind like any
 // other root RPC span would. Otherwise they're plain internal children of the call span, so
 // span.kind is omitted, matching contrib/google.golang.org/grpc's message spans.
+//
+// Root-ness is checked on the span itself, via Span.Root(), after the single real call to
+// tracer.StartSpanFromContext below — not by a separate pre-evaluation of opts or cfg.spanOpts.
+// Both can include arbitrary, potentially stateful StartSpanOptions (e.g. from
+// WithSpanOptions), and there's no way to know whether one sets a parent without invoking it;
+// invoking it a second time just to check isn't safe unless it's known to be idempotent.
+// Callers must not reuse the same opts (in particular, an extracted-header ChildOf) across
+// multiple message spans: dd-trace-go backfills a trace onto an extracted SpanContext the
+// first time it parents a real span, which would make Root() disagree between sibling spans
+// sharing that same SpanContext value. streamingHandlerConn re-extracts fresh per message
+// instead of caching a shared parent option for this reason.
 func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, protocol string, component instrumentation.Component, opts ...tracer.StartSpanOption) *tracer.Span {
-	root := isRootSpan(ctx, cfg, opts)
 	service, method := parseProcedure(spec.Procedure)
 	serviceName, serviceSource := cfg.service(component)
 	opts = append(opts,
@@ -89,30 +99,17 @@ func (cfg *config) startMessageSpan(ctx context.Context, spec connectrpc.Spec, p
 		tracer.Tag(tagMethodKind, methodKind(spec.StreamType)),
 		spanTypeRPC,
 	)
-	if root {
-		opts = append(opts, tracer.Tag(ext.SpanKind, spanKind(component)))
+	if component == instrumentation.ComponentServer {
+		// Matches contrib/google.golang.org/grpc's server message spans: even as children of
+		// the call span (so not top-level), their per-message latency should still count
+		// toward trace stats.
+		opts = append(opts, tracer.Measured())
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, "connect.message", cfg.startSpanOptions(opts...)...)
+	if span.Root() == span {
+		span.SetTag(ext.SpanKind, spanKind(component))
+	}
 	return span
-}
-
-// isRootSpan reports whether a span started now, with the given extra options, would have no
-// parent: no ambient span in ctx (e.g. no call span, no caller-supplied span), no parent
-// established by opts (a ChildOf we build ourselves from propagated headers, cheap and
-// side-effect-free to inspect), and no parent configured via WithSpanOptions. The latter is
-// resolved once in newConfig rather than here: cfg.spanOpts can hold arbitrary user-supplied
-// options, and re-invoking a stateful one on every message span (in addition to its real
-// invocation in cfg.startSpanOptions) could run side effects, or resolve a different parent,
-// more often than intended.
-func isRootSpan(ctx context.Context, cfg *config, opts []tracer.StartSpanOption) bool {
-	if cfg.spanOptsHaveParent {
-		return false
-	}
-	if len(opts) > 0 {
-		return tracer.NewStartSpanConfig(opts...).Parent == nil
-	}
-	_, ok := tracer.SpanFromContext(ctx)
-	return !ok
 }
 
 func spanKind(component instrumentation.Component) string {
