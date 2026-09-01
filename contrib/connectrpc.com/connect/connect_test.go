@@ -1232,6 +1232,101 @@ func TestStreamingClientKeepsFirstRealErrorWhenErrorCheckRejectsSecond(t *testin
 	assert.Contains(t, finished.Tag(ext.ErrorMsg), "real failure")
 }
 
+func TestStreamingClientPrimaryErrorCheckedOnlyOnce(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var calls atomic.Int32
+	cfg := newConfig(WithErrorCheck(func(string, error) bool {
+		// Stateful: accepts the first call, rejects every call after. If the primary were
+		// checked twice (once to decide whether a fallback is needed, once more inside the
+		// actual finish), the second call would flip the verdict and the span would incorrectly
+		// appear successful.
+		return calls.Add(1) == 1
+	}))
+	primary := connectrpc.NewError(connectrpc.CodeInternal, errors.New("real failure"))
+	shadowed := connectrpc.NewError(connectrpc.CodeInternal, errors.New("shadowed"))
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 cfg,
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	conn.beginOperation() // Send
+	conn.beginOperation() // Receive, still in flight
+	conn.endOperation(primary, true, false)
+	conn.endOperation(shadowed, true, false)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	finished := mt.FinishedSpans()[0]
+	assert.EqualValues(t, 1, calls.Load(), "cfg.errCheck must be evaluated at most once for the primary error")
+	assert.NotNil(t, finished.Tag(ext.ErrorMsg))
+	assert.Contains(t, finished.Tag(ext.ErrorMsg), "real failure")
+}
+
+func TestStreamingClientThreeWayRacePreservesAcceptedFallback(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	rejected1 := connectrpc.NewError(connectrpc.CodeInternal, errors.New("rejected 1"))
+	rejected2 := connectrpc.NewError(connectrpc.CodeInternal, errors.New("rejected 2"))
+	cfg := newConfig(WithErrorCheck(func(_ string, err error) bool {
+		return err != error(rejected1) && err != error(rejected2)
+	}))
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 cfg,
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	conn.beginOperation() // Send
+	conn.beginOperation() // Receive, still in flight
+	// Send stores an error WithErrorCheck will reject...
+	conn.endOperation(rejected1, true, false)
+	// ...a context-deadline observation stores an error WithErrorCheck will accept, while
+	// Receive is still in flight...
+	conn.requestFinish(context.DeadlineExceeded)
+	// ...and Receive then returns a second rejected error. With only one fallback slot (the
+	// previous fix), this would silently overwrite the accepted deadline candidate; with every
+	// candidate retained, it must not.
+	conn.endOperation(rejected2, true, false)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	finished := mt.FinishedSpans()[0]
+	assert.Equal(t, "deadline_exceeded", finished.Tag(tagConnectErrorCode))
+	assert.NotNil(t, finished.Tag(ext.ErrorMsg))
+}
+
+// specPanicStreamingClientConn panics from Spec, to prove streamingClientConn's Send, Receive,
+// CloseRequest, and CloseResponse never call the wrapped conn's Spec after construction — they
+// use the spec cached at construction time instead. A regression guard for the "recovery defer
+// re-invokes the same connection method that panicked in the first place" class of bug.
+type specPanicStreamingClientConn struct {
+	*panicStreamingClientConn
+}
+
+func (*specPanicStreamingClientConn) Spec() connectrpc.Spec { panic("spec panic") }
+func (*specPanicStreamingClientConn) Send(any) error        { return nil }
+func (*specPanicStreamingClientConn) Receive(any) error     { return nil }
+func (*specPanicStreamingClientConn) CloseRequest() error   { return nil }
+func (*specPanicStreamingClientConn) CloseResponse() error  { return nil }
+
+func TestStreamingClientNeverCallsSpecAfterConstruction(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	interceptor := NewClientInterceptor()
+	wrapped := interceptor.WrapStreamingClient(func(context.Context, connectrpc.Spec) connectrpc.StreamingClientConn {
+		return &specPanicStreamingClientConn{panicStreamingClientConn: &panicStreamingClientConn{header: make(http.Header)}}
+	})(context.Background(), connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi, IsClient: true})
+
+	assert.NotPanics(t, func() { _ = wrapped.Send(wrapperspb.String("hello")) })
+	assert.NotPanics(t, func() { _ = wrapped.Receive(&wrapperspb.StringValue{}) })
+	assert.NotPanics(t, func() { _ = wrapped.CloseRequest() })
+	assert.NotPanics(t, func() { _ = wrapped.CloseResponse() })
+}
+
 // nilConnectErrorWrapper wraps a nil *connectrpc.Error as its cause without ever calling any of
 // its methods, modeling a custom error type that can legitimately carry the nested typed-nil
 // trap without crashing at construction (unlike fmt.Errorf's %w, which would call Error() on the
@@ -1266,40 +1361,35 @@ func TestFinishSpanHandlesNestedTypedNilConnectError(t *testing.T) {
 	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
 }
 
-// peerPanicStreamingClientConn panics on its first Peer call instead of from Send, to exercise a
-// panic that happens while streamingClientConn.Send reads the peer's protocol rather than during
-// the wrapped read/write call itself. It succeeds on later calls, since finish also calls Peer
-// once the stream is finishing — this conn models a transient failure, not a permanently broken
-// one.
-type peerPanicStreamingClientConn struct {
-	*panicStreamingClientConn
-	calls atomic.Int32
-}
-
-func (c *peerPanicStreamingClientConn) Peer() connectrpc.Peer {
-	if c.calls.Add(1) == 1 {
-		panic("peer panic")
-	}
-	return connectrpc.Peer{Addr: "localhost:8080", Protocol: connectrpc.ProtocolConnect}
-}
-func (*peerPanicStreamingClientConn) Send(any) error { return nil }
-
-func TestStreamingClientSendFinishesCallSpanWhenPeerPanics(t *testing.T) {
+// TestWrapStreamingClientFinishesCallSpanWhenPeerPanics covers what
+// TestStreamingClientSendFinishesCallSpanWhenPeerPanics used to test directly against
+// streamingClientConn.Send: a panicking Peer call used to be re-invoked from several places
+// (Send/Receive/finish), each needing its own defer-ordering fix. Now Spec/Peer are read exactly
+// once, in WrapStreamingClient's already panic-protected setup, and cached — streamingClientConn
+// never calls the wrapped conn's Peer or Spec again, so there's nothing left for Send/Receive to
+// guard against. This test exercises the one remaining live call site instead.
+func TestWrapStreamingClientFinishesCallSpanWhenPeerPanics(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	span := tracer.StartSpan("connect.client")
-	conn := &streamingClientConn{
-		StreamingClientConn: &peerPanicStreamingClientConn{panicStreamingClientConn: &panicStreamingClientConn{header: make(http.Header)}},
-		cfg:                 newConfig(),
-		ctx:                 context.Background(),
-		span:                span,
-	}
-
-	assert.Panics(t, func() { _ = conn.Send(wrapperspb.String("hello")) })
-
-	require.Len(t, mt.FinishedSpans(), 1, "the call span must finish even when Peer panics before the recovery defer is registered")
+	interceptor := NewClientInterceptor()
+	wrapped := interceptor.WrapStreamingClient(func(context.Context, connectrpc.Spec) connectrpc.StreamingClientConn {
+		return &peerPanicStreamingClientConn{panicStreamingClientConn: &panicStreamingClientConn{header: make(http.Header)}}
+	})
+	assert.Panics(t, func() {
+		wrapped(context.Background(), connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi, IsClient: true})
+	})
+	require.Len(t, mt.FinishedSpans(), 1, "the call span must finish even when Peer panics while WrapStreamingClient reads it")
 	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
 }
+
+// peerPanicStreamingClientConn panics on every Peer call, to exercise WrapStreamingClient's own
+// read of conn.Peer() (the only remaining call site since streamingClientConn now caches it).
+type peerPanicStreamingClientConn struct {
+	*panicStreamingClientConn
+}
+
+func (*peerPanicStreamingClientConn) Peer() connectrpc.Peer { panic("peer panic") }
+func (*peerPanicStreamingClientConn) Send(any) error        { return nil }
 
 func TestNormallyReturnedTypedNilErrorFinishesSpan(t *testing.T) {
 	// A wrapped handler or streaming operation normally returning (*connectrpc.Error)(nil) as
