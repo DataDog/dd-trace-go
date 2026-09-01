@@ -14,6 +14,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -391,8 +392,23 @@ func setPeerTags(span *tracer.Span, peer connectrpc.Peer) {
 }
 
 func panicError(value any) error {
-	if err, ok := value.(error); ok {
+	if err, ok := value.(error); ok && !isNilError(err) {
 		return err
 	}
 	return fmt.Errorf("panic: %v", value)
+}
+
+// isNilError reports whether err is a non-nil error interface wrapping a nil value, e.g. a
+// value recovered from panic((*connectrpc.Error)(nil)). Such an error compares != nil and
+// passes a type assertion to error, but calling any of its methods (as codeOf and
+// isExpectedStreamEOF do) dereferences the nil receiver and panics again, replacing the
+// original panic and leaving the span unfinished.
+func isNilError(err error) bool {
+	v := reflect.ValueOf(err)
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func, reflect.Interface:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
