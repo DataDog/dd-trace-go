@@ -13,6 +13,8 @@ Use the following AGENTS.md files when making specific changes:
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
 * [orchestrion/AGENTS.md](./orchestrion/AGENTS.md) -- for updating or creating new Orchestrion (auto-instrumentation) files
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
+* [internal/appsec/AGENTS.md](./internal/appsec/AGENTS.md) -- for Application Security/App & API Protection updates
+* [internal/civisibility/AGENTS.md](./internal/civisibility/AGENTS.md) -- for changes to the Test Optimization product
 
 ## Updating Documentation
 
