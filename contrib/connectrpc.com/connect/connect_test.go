@@ -743,6 +743,31 @@ func (panicStreamingHandlerConn) Send(any) error               { return nil }
 func (panicStreamingHandlerConn) ResponseHeader() http.Header  { return make(http.Header) }
 func (panicStreamingHandlerConn) ResponseTrailer() http.Header { return make(http.Header) }
 
+// headerPanicStreamingHandlerConn returns valid headers for its first two calls — matching the
+// calls WrapStreamingHandler itself makes while setting up the call span — then panics from
+// RequestHeader from the third call onward, which is the one streamingHandlerConn.Receive makes
+// via headerOnce while setting up the message span.
+type headerPanicStreamingHandlerConn struct {
+	calls atomic.Int32
+}
+
+func (*headerPanicStreamingHandlerConn) Spec() connectrpc.Spec {
+	return connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi}
+}
+func (*headerPanicStreamingHandlerConn) Peer() connectrpc.Peer {
+	return connectrpc.Peer{Protocol: connectrpc.ProtocolConnect}
+}
+func (*headerPanicStreamingHandlerConn) Receive(any) error { return nil }
+func (c *headerPanicStreamingHandlerConn) RequestHeader() http.Header {
+	if c.calls.Add(1) > 2 {
+		panic("header panic")
+	}
+	return make(http.Header)
+}
+func (*headerPanicStreamingHandlerConn) Send(any) error               { return nil }
+func (*headerPanicStreamingHandlerConn) ResponseHeader() http.Header  { return make(http.Header) }
+func (*headerPanicStreamingHandlerConn) ResponseTrailer() http.Header { return make(http.Header) }
+
 func TestStreamingPanicsFinishSpans(t *testing.T) {
 	t.Run("client constructor", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -782,6 +807,20 @@ func TestStreamingPanicsFinishSpans(t *testing.T) {
 		})
 		assert.Panics(t, func() { _ = wrapped(context.Background(), panicStreamingHandlerConn{}) })
 		require.Len(t, mt.FinishedSpans(), 2)
+		for _, span := range mt.FinishedSpans() {
+			assert.NotNil(t, span.Tag(ext.ErrorMsg))
+		}
+	})
+
+	t.Run("server message header capture", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		interceptor := NewServerInterceptor(WithHeaderTags())
+		wrapped := interceptor.WrapStreamingHandler(func(_ context.Context, conn connectrpc.StreamingHandlerConn) error {
+			return conn.Receive(nil)
+		})
+		assert.Panics(t, func() { _ = wrapped(context.Background(), &headerPanicStreamingHandlerConn{}) })
+		require.Len(t, mt.FinishedSpans(), 2, "both the call span and the message span must finish even when the message span's own header-tag capture panics")
 		for _, span := range mt.FinishedSpans() {
 			assert.NotNil(t, span.Tag(ext.ErrorMsg))
 		}
@@ -887,6 +926,25 @@ func TestFinishOnPanicAlwaysRecordsError(t *testing.T) {
 		defer mt.Stop()
 		span := tracer.StartSpan("panic")
 		finishMessageOnPanic(span, context.Canceled, unaryProcedure, connectrpc.ProtocolConnect, newConfig())
+		require.Len(t, mt.FinishedSpans(), 1)
+		assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+	})
+
+	t.Run("typed nil error panic value", func(t *testing.T) {
+		// panic((*connectrpc.Error)(nil)) type-asserts to a non-nil error interface wrapping a
+		// nil pointer. Calling any of its methods (as codeOf does) would dereference that nil
+		// receiver and panic again, replacing the original panic and leaving the span unfinished.
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		span := tracer.StartSpan("panic")
+		var recovered any
+		func() {
+			defer func() { recovered = recover() }()
+			panic((*connectrpc.Error)(nil))
+		}()
+		require.NotPanics(t, func() {
+			finishCallOnPanic(span, panicError(recovered), unaryProcedure, connectrpc.ProtocolConnect, newConfig())
+		})
 		require.Len(t, mt.FinishedSpans(), 1)
 		assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
 	})

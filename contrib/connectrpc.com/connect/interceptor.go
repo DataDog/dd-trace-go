@@ -384,9 +384,6 @@ func (c *streamingHandlerConn) messageParentOpts() []tracer.StartSpanOption {
 func (c *streamingHandlerConn) Receive(message any) (err error) {
 	protocol := c.Peer().Protocol
 	span := c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentServer, c.messageParentOpts()...)
-	c.headerOnce.Do(func() {
-		withHeaderTags(c.cfg, c.RequestHeader(), protocol, span)
-	})
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			finishMessageOnPanic(span, panicError(recovered), c.Spec().Procedure, protocol, c.cfg)
@@ -394,6 +391,9 @@ func (c *streamingHandlerConn) Receive(message any) (err error) {
 		}
 		finishMessage(span, err, c.Spec().Procedure, protocol, c.cfg)
 	}()
+	c.headerOnce.Do(func() {
+		withHeaderTags(c.cfg, c.RequestHeader(), protocol, span)
+	})
 	err = c.StreamingHandlerConn.Receive(message)
 	if err == nil {
 		withRequestTags(c.cfg, message, protocol, span)
@@ -404,9 +404,6 @@ func (c *streamingHandlerConn) Receive(message any) (err error) {
 func (c *streamingHandlerConn) Send(message any) (err error) {
 	protocol := c.Peer().Protocol
 	span := c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentServer, c.messageParentOpts()...)
-	c.headerOnce.Do(func() {
-		withHeaderTags(c.cfg, c.RequestHeader(), protocol, span)
-	})
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			finishMessageOnPanic(span, panicError(recovered), c.Spec().Procedure, protocol, c.cfg)
@@ -414,5 +411,8 @@ func (c *streamingHandlerConn) Send(message any) (err error) {
 		}
 		finishMessage(span, err, c.Spec().Procedure, protocol, c.cfg)
 	}()
+	c.headerOnce.Do(func() {
+		withHeaderTags(c.cfg, c.RequestHeader(), protocol, span)
+	})
 	return c.StreamingHandlerConn.Send(message)
 }
