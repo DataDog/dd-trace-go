@@ -113,27 +113,32 @@ func (i *interceptor) WrapStreamingClient(next connectrpc.StreamingClientFunc) c
 		if i.cfg.traceStreamCalls {
 			callSpan, ctx = i.cfg.startCallSpan(ctx, spec, instrumentation.ComponentClient)
 		}
-		protocol := ""
+		var peer connectrpc.Peer
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				if callSpan != nil {
-					setProtocolTag(callSpan, protocol)
+					setProtocolTag(callSpan, peer.Protocol)
 				}
-				finishCallOnPanic(callSpan, panicError(recovered), spec.Procedure, protocol, i.cfg)
+				finishCallOnPanic(callSpan, panicError(recovered), spec.Procedure, peer.Protocol, i.cfg)
 				panic(recovered)
 			}
 		}()
 		conn := next(ctx, spec)
-		protocol = conn.Peer().Protocol
+		peer = conn.Peer()
 		if callSpan != nil {
-			setProtocolTag(callSpan, protocol)
-			setPeerTags(callSpan, conn.Peer())
+			setProtocolTag(callSpan, peer.Protocol)
+			setPeerTags(callSpan, peer)
 		}
 		injectSpan(ctx, conn.RequestHeader())
 		if callSpan == nil && !i.cfg.traceStreamMessages {
 			return conn
 		}
-		return newStreamingClientConn(ctx, i.cfg, conn, callSpan)
+		// spec and peer are cached on the returned streamingClientConn instead of being re-derived
+		// via conn.Spec()/conn.Peer() later: both are meant to be stable for the connection's
+		// lifetime, and re-invoking those methods from within a panic-recovery defer (as earlier
+		// review rounds found) risks a second panic replacing the original one and aborting
+		// cleanup, if the wrapped conn's implementation ever panics on a later call.
+		return newStreamingClientConn(ctx, i.cfg, conn, callSpan, spec, peer)
 	}
 }
 
@@ -168,6 +173,8 @@ func (i *interceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc)
 			StreamingHandlerConn: conn,
 			cfg:                  i.cfg,
 			ctx:                  ctx,
+			spec:                 spec,
+			protocol:             protocol,
 		})
 	}
 }
@@ -177,24 +184,32 @@ type streamingClientConn struct {
 	cfg  *config
 	ctx  context.Context
 	span *tracer.Span
+	// spec and peer are captured once at construction (from values already computed in
+	// WrapStreamingClient's own panic-protected setup), instead of being re-derived via
+	// conn.Spec()/conn.Peer() from Send/Receive/finish. See the comment where this is
+	// constructed for why.
+	spec connectrpc.Spec
+	peer connectrpc.Peer
 
-	mu                  sync.Mutex
-	active              int
-	finishPending       bool
-	terminalErr         error
-	terminalErrIsPanic  bool
-	terminalErrFallback error
-	finishOnce          sync.Once
-	headerTagsOnce      sync.Once
-	stopContextDone     func() bool
+	mu                   sync.Mutex
+	active               int
+	finishPending        bool
+	terminalErr          error
+	terminalErrIsPanic   bool
+	terminalErrFallbacks []error
+	finishOnce           sync.Once
+	headerTagsOnce       sync.Once
+	stopContextDone      func() bool
 }
 
-func newStreamingClientConn(ctx context.Context, cfg *config, conn connectrpc.StreamingClientConn, span *tracer.Span) *streamingClientConn {
+func newStreamingClientConn(ctx context.Context, cfg *config, conn connectrpc.StreamingClientConn, span *tracer.Span, spec connectrpc.Spec, peer connectrpc.Peer) *streamingClientConn {
 	stream := &streamingClientConn{
 		StreamingClientConn: conn,
 		cfg:                 cfg,
 		ctx:                 ctx,
 		span:                span,
+		spec:                spec,
+		peer:                peer,
 	}
 	if span != nil {
 		stream.stopContextDone = context.AfterFunc(ctx, func() {
@@ -206,59 +221,55 @@ func newStreamingClientConn(ctx context.Context, cfg *config, conn connectrpc.St
 
 func (c *streamingClientConn) Send(message any) (err error) {
 	c.beginOperation()
-	var protocol string
 	var messageSpan *tracer.Span
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panicErr := panicError(recovered)
-			finishMessageOnPanic(messageSpan, panicErr, c.Spec().Procedure, protocol, c.cfg)
+			finishMessageOnPanic(messageSpan, panicErr, c.spec.Procedure, c.peer.Protocol, c.cfg)
 			c.endOperation(panicErr, true, true)
 			panic(recovered)
 		}
-		finishMessage(messageSpan, err, c.Spec().Procedure, protocol, c.cfg)
+		finishMessage(messageSpan, err, c.spec.Procedure, c.peer.Protocol, c.cfg)
 		c.endOperation(err, err != nil && !isExpectedStreamEOF(err), false)
 	}()
-	protocol = c.Peer().Protocol
 	if c.cfg.traceStreamMessages {
-		messageSpan = c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentClient)
-		setPeerTags(messageSpan, c.Peer())
-		withRequestTags(c.cfg, message, protocol, messageSpan)
+		messageSpan = c.cfg.startMessageSpan(c.ctx, c.spec, c.peer.Protocol, instrumentation.ComponentClient)
+		setPeerTags(messageSpan, c.peer)
+		withRequestTags(c.cfg, message, c.peer.Protocol, messageSpan)
 	}
 	c.headerTagsOnce.Do(func() {
 		target := c.span
 		if target == nil {
 			target = messageSpan
 		}
-		withHeaderTags(c.cfg, c.RequestHeader(), protocol, target)
+		withHeaderTags(c.cfg, c.RequestHeader(), c.peer.Protocol, target)
 	})
 	return c.StreamingClientConn.Send(message)
 }
 
 func (c *streamingClientConn) Receive(message any) (err error) {
 	c.beginOperation()
-	var protocol string
 	var messageSpan *tracer.Span
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panicErr := panicError(recovered)
-			finishMessageOnPanic(messageSpan, panicErr, c.Spec().Procedure, protocol, c.cfg)
+			finishMessageOnPanic(messageSpan, panicErr, c.spec.Procedure, c.peer.Protocol, c.cfg)
 			c.endOperation(panicErr, true, true)
 			panic(recovered)
 		}
-		finishMessage(messageSpan, err, c.Spec().Procedure, protocol, c.cfg)
+		finishMessage(messageSpan, err, c.spec.Procedure, c.peer.Protocol, c.cfg)
 		c.endOperation(err, err != nil, false)
 	}()
-	protocol = c.Peer().Protocol
 	if c.cfg.traceStreamMessages {
-		messageSpan = c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentClient)
-		setPeerTags(messageSpan, c.Peer())
+		messageSpan = c.cfg.startMessageSpan(c.ctx, c.spec, c.peer.Protocol, instrumentation.ComponentClient)
+		setPeerTags(messageSpan, c.peer)
 	}
 	c.headerTagsOnce.Do(func() {
 		target := c.span
 		if target == nil {
 			target = messageSpan
 		}
-		withHeaderTags(c.cfg, c.RequestHeader(), protocol, target)
+		withHeaderTags(c.cfg, c.RequestHeader(), c.peer.Protocol, target)
 	})
 	return c.StreamingClientConn.Receive(message)
 }
@@ -273,10 +284,9 @@ func (c *streamingClientConn) CloseRequest() (err error) {
 		}
 		c.endOperation(err, err != nil, false)
 	}()
-	protocol := c.Peer().Protocol
 	if c.span != nil {
 		c.headerTagsOnce.Do(func() {
-			withHeaderTags(c.cfg, c.RequestHeader(), protocol, c.span)
+			withHeaderTags(c.cfg, c.RequestHeader(), c.peer.Protocol, c.span)
 		})
 	}
 	return c.StreamingClientConn.CloseRequest()
@@ -311,11 +321,12 @@ func (c *streamingClientConn) endOperation(err error, terminal, isPanic bool) {
 	}
 	c.active--
 	shouldFinish := c.finishPending && c.active == 0
-	terminalErr, terminalErrIsPanic, terminalErrFallback := c.terminalErr, c.terminalErrIsPanic, c.terminalErrFallback
+	terminalErr, terminalErrIsPanic := c.terminalErr, c.terminalErrIsPanic
+	fallbacks := c.terminalErrFallbacks
 	c.mu.Unlock()
 	if shouldFinish {
 		c.stopContextCallback()
-		c.finish(terminalErr, terminalErrIsPanic, terminalErrFallback)
+		c.finish(terminalErr, terminalErrIsPanic, fallbacks)
 	}
 }
 
@@ -326,30 +337,26 @@ func (c *streamingClientConn) requestFinish(err error) {
 		c.recordTerminalError(err, false)
 	}
 	shouldFinish := c.active == 0
-	terminalErr, terminalErrIsPanic, terminalErrFallback := c.terminalErr, c.terminalErrIsPanic, c.terminalErrFallback
+	terminalErr, terminalErrIsPanic := c.terminalErr, c.terminalErrIsPanic
+	fallbacks := c.terminalErrFallbacks
 	c.mu.Unlock()
 	if shouldFinish {
-		c.finish(terminalErr, terminalErrIsPanic, terminalErrFallback)
+		c.finish(terminalErr, terminalErrIsPanic, fallbacks)
 	}
 }
 
 // recordTerminalError updates the stream's terminal-error bookkeeping with a newly observed
 // candidate. Must be called with c.mu held. A panic always wins outright, discarding any
-// fallback (it no longer matters once a panic must be reported); a stored panic is never
+// fallbacks (they no longer matter once a panic must be reported); a stored panic is never
 // displaced by a later non-panic. Otherwise this relies only on isSuppressedTerminalError's
-// code-based rules (never cfg.errCheck, which must run at most once per RPC — see its own doc):
-// a code-suppressed stored error is always replaced. A code-non-suppressed ("real") stored error
-// is never displaced by another real candidate — concurrent Send/Receive can each finish with a
-// different, equally "real" by-code error, and always picking one over the other by arrival
-// order would let cfg.errCheck's rejection of whichever one that is permanently hide the other's
-// genuine failure. Instead the shadowed candidate is remembered as a fallback, and finish uses it
+// code-based rules (never cfg.errCheck, which must run at most once per distinct error — see its
+// own doc): a code-suppressed stored error is always replaced. A code-non-suppressed ("real")
+// stored error is never displaced by another real candidate — concurrent Send, Receive, and a
+// context-cancellation observation can each finish with a different, equally "real" by-code
+// error, and always picking one over the others by arrival order would let cfg.errCheck's
+// rejection of whichever one that is permanently hide the others' genuine failure. Instead every
+// shadowed candidate is appended to terminalErrFallbacks, and finish tries them in arrival order
 // if cfg.errCheck ends up rejecting the primary.
-//
-// Only one fallback slot is kept: a third concurrent real candidate overwrites whatever fallback
-// is already stored, so a genuine three-way race (e.g. Send, Receive, and a context-cancellation
-// observation all landing with different real errors) could still lose one candidate outright.
-// Send and Receive can only race two at a time by connect's own concurrency contract, so this
-// covers the realistic case; a general fix would need to track every candidate, not just one.
 func (c *streamingClientConn) recordTerminalError(candidate error, isPanic bool) {
 	switch {
 	case c.terminalErr == nil:
@@ -358,13 +365,13 @@ func (c *streamingClientConn) recordTerminalError(candidate error, isPanic bool)
 	case isPanic:
 		c.terminalErr = candidate
 		c.terminalErrIsPanic = true
-		c.terminalErrFallback = nil
+		c.terminalErrFallbacks = nil
 	case c.terminalErrIsPanic:
 		// A stored panic is never displaced.
 	case isSuppressedTerminalError(c.terminalErr, c.cfg):
 		c.terminalErr = candidate
 	case !isSuppressedTerminalError(candidate, c.cfg):
-		c.terminalErrFallback = candidate
+		c.terminalErrFallbacks = append(c.terminalErrFallbacks, candidate)
 	}
 }
 
@@ -374,24 +381,37 @@ func (c *streamingClientConn) stopContextCallback() {
 	}
 }
 
-func (c *streamingClientConn) finish(err error, isPanic bool, fallback error) {
+func (c *streamingClientConn) finish(err error, isPanic bool, fallbacks []error) {
 	c.finishOnce.Do(func() {
 		if isPanic {
-			finishCallOnPanic(c.span, err, c.Spec().Procedure, c.Peer().Protocol, c.cfg)
+			finishCallOnPanic(c.span, err, c.spec.Procedure, c.peer.Protocol, c.cfg)
 			return
 		}
-		procedure := c.Spec().Procedure
-		if fallback != nil && !wouldRecordError(err, procedure, c.cfg) {
-			err = fallback
+		candidate := normalizeError(err)
+		out := finishOutcomeFor(candidate, c.spec.Procedure, false, false, c.cfg)
+		for _, fb := range fallbacks {
+			if out.recorded != nil {
+				break
+			}
+			fb = normalizeError(fb)
+			if fbOut := finishOutcomeFor(fb, c.spec.Procedure, false, false, c.cfg); fbOut.recorded != nil {
+				candidate, out = fb, fbOut
+			}
 		}
-		finishCall(c.span, err, procedure, c.Peer().Protocol, c.cfg)
+		finishClassified(c.span, candidate, out, c.peer.Protocol, c.cfg)
 	})
 }
 
 type streamingHandlerConn struct {
 	connectrpc.StreamingHandlerConn
-	cfg        *config
-	ctx        context.Context
+	cfg *config
+	ctx context.Context
+	// spec and protocol are captured once at construction (from values already computed in
+	// WrapStreamingHandler's own panic-protected setup), instead of being re-derived via
+	// conn.Spec()/conn.Peer() from Receive/Send — see streamingClientConn's spec/peer fields for
+	// why.
+	spec       connectrpc.Spec
+	protocol   string
 	headerOnce sync.Once
 }
 
@@ -406,37 +426,35 @@ func (c *streamingHandlerConn) messageParentOpts() []tracer.StartSpanOption {
 }
 
 func (c *streamingHandlerConn) Receive(message any) (err error) {
-	protocol := c.Peer().Protocol
-	span := c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentServer, c.messageParentOpts()...)
+	span := c.cfg.startMessageSpan(c.ctx, c.spec, c.protocol, instrumentation.ComponentServer, c.messageParentOpts()...)
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			finishMessageOnPanic(span, panicError(recovered), c.Spec().Procedure, protocol, c.cfg)
+			finishMessageOnPanic(span, panicError(recovered), c.spec.Procedure, c.protocol, c.cfg)
 			panic(recovered)
 		}
-		finishMessage(span, err, c.Spec().Procedure, protocol, c.cfg)
+		finishMessage(span, err, c.spec.Procedure, c.protocol, c.cfg)
 	}()
 	c.headerOnce.Do(func() {
-		withHeaderTags(c.cfg, c.RequestHeader(), protocol, span)
+		withHeaderTags(c.cfg, c.RequestHeader(), c.protocol, span)
 	})
 	err = c.StreamingHandlerConn.Receive(message)
 	if err == nil {
-		withRequestTags(c.cfg, message, protocol, span)
+		withRequestTags(c.cfg, message, c.protocol, span)
 	}
 	return err
 }
 
 func (c *streamingHandlerConn) Send(message any) (err error) {
-	protocol := c.Peer().Protocol
-	span := c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentServer, c.messageParentOpts()...)
+	span := c.cfg.startMessageSpan(c.ctx, c.spec, c.protocol, instrumentation.ComponentServer, c.messageParentOpts()...)
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			finishMessageOnPanic(span, panicError(recovered), c.Spec().Procedure, protocol, c.cfg)
+			finishMessageOnPanic(span, panicError(recovered), c.spec.Procedure, c.protocol, c.cfg)
 			panic(recovered)
 		}
-		finishMessage(span, err, c.Spec().Procedure, protocol, c.cfg)
+		finishMessage(span, err, c.spec.Procedure, c.protocol, c.cfg)
 	}()
 	c.headerOnce.Do(func() {
-		withHeaderTags(c.cfg, c.RequestHeader(), protocol, span)
+		withHeaderTags(c.cfg, c.RequestHeader(), c.protocol, span)
 	})
 	return c.StreamingHandlerConn.Send(message)
 }

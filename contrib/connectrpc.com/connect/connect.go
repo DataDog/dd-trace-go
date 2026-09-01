@@ -228,15 +228,47 @@ func isSuppressedTerminalError(err error, cfg *config) bool {
 	return cfg.nonErrorCodes[code]
 }
 
-// wouldRecordError reports whether finishSpan would keep err as a non-panic span's recorded
-// error: it isn't code-suppressed (isSuppressedTerminalError) and, if cfg.errCheck is set, the
-// callback accepts it. Used only to decide whether a stream's terminal error needs to fall back
-// to a shadowed concurrent candidate — see (*streamingClientConn).recordTerminalError.
-func wouldRecordError(err error, procedure string, cfg *config) bool {
-	if isSuppressedTerminalError(err, cfg) {
-		return false
+// normalizeError replaces err with a safe stand-in if it (or something in its Unwrap chain) is a
+// nil-valued error interface — see the call site in finishOutcomeFor for why that's unsafe to
+// inspect any further. A no-op for any other error, including nil itself.
+func normalizeError(err error) error {
+	if isNilError(err) || hasNilConnectError(err) {
+		return fmt.Errorf("connect: error value (%T) is unsafe to inspect: a nil error, or one with a nil *connectrpc.Error in its chain", err)
 	}
-	return cfg.errCheck == nil || cfg.errCheck(procedure, err)
+	return err
+}
+
+// finishOutcome carries finishSpan's per-error classification of a single candidate error,
+// computed once by finishOutcomeFor. Splitting this out lets (*streamingClientConn).finish try
+// a fallback candidate, calling cfg.errCheck at most once per distinct error it actually
+// examines, instead of finishSpan re-deriving (and cfg.errCheck re-evaluating) the same primary
+// error a second time.
+type finishOutcome struct {
+	code        connectrpc.Code
+	expectedEOF bool
+	notModified bool
+	recorded    error // err if it should be recorded on the span; nil otherwise (non-panic only)
+}
+
+// finishOutcomeFor classifies err the way finishSpan would, for a non-panic finish. err must
+// already be normalized (see normalizeError).
+func finishOutcomeFor(err error, procedure string, allowEOF, allowNotModified bool, cfg *config) finishOutcome {
+	code := codeOf(err)
+	_, hasConnectError := errors.AsType[*connectrpc.Error](err)
+	out := finishOutcome{
+		code:        code,
+		expectedEOF: allowEOF && isExpectedStreamEOF(err),
+	}
+	out.notModified = allowNotModified && connectrpc.IsNotModifiedError(err)
+	switch {
+	case out.expectedEOF, code == connectrpc.CodeCanceled && !hasConnectError && errors.Is(err, context.Canceled), out.notModified, cfg.nonErrorCodes[code]:
+		// recorded stays nil.
+	case err != nil && cfg.errCheck != nil && !cfg.errCheck(procedure, err):
+		// recorded stays nil.
+	default:
+		out.recorded = err
+	}
+	return out
 }
 
 func finishCall(span *tracer.Span, err error, procedure, protocol string, cfg *config) {
@@ -275,48 +307,39 @@ func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowE
 	if span == nil {
 		return
 	}
-	if isNilError(err) || hasNilConnectError(err) {
-		// Covers two variants of the same trap: err itself is a nil-valued error interface (e.g.
-		// a normally returned (*connectrpc.Error)(nil)), or err is a legitimate non-nil wrapper
-		// whose Unwrap chain contains a nil *connectrpc.Error (e.g. a custom error type storing
-		// one as its cause). Either way, codeOf, connectrpc.IsNotModifiedError,
-		// setErrorDetailTags, and eventually span.Finish's own error tagging (via
-		// tracer.WithError) can call a method on that nil value (Unwrap, Details, Error, Code)
-		// and panic. Replace err with a safe stand-in before any of that runs.
-		err = fmt.Errorf("connect: error value (%T) is unsafe to inspect: a nil error, or one with a nil *connectrpc.Error in its chain", err)
+	err = normalizeError(err)
+	out := finishOutcome{code: codeOf(err), recorded: err}
+	if !isPanic {
+		out = finishOutcomeFor(err, procedure, allowEOF, allowNotModified, cfg)
 	}
+	finishClassified(span, err, out, protocol, cfg)
+}
 
-	code := codeOf(err)
-	_, hasConnectError := errors.AsType[*connectrpc.Error](err)
-	expectedEOF := !isPanic && allowEOF && isExpectedStreamEOF(err)
-	notModified := !isPanic && allowNotModified && connectrpc.IsNotModifiedError(err)
+// finishClassified applies out (as computed by finishOutcomeFor, or synthesized directly for a
+// panic) to span. err is the error finishOutcomeFor was given — not out.recorded, which may
+// already be nil — since the gRPC/Connect status-code tags reflect the original error even when
+// it ends up suppressed; only the recorded error (and whether it's attached via tracer.WithError)
+// depends on out.recorded.
+func finishClassified(span *tracer.Span, err error, out finishOutcome, protocol string, cfg *config) {
 	if rpcSystem(protocol) == ext.RPCSystemGRPC {
 		statusCode := uint32(0)
-		if err != nil && !expectedEOF {
-			statusCode = uint32(code)
+		if err != nil && !out.expectedEOF {
+			statusCode = uint32(out.code)
 		}
 		span.SetTag(tagGRPCStatusCode, statusCode)
-	} else if err != nil && !expectedEOF && !notModified {
-		span.SetTag(tagConnectErrorCode, code.String())
+	} else if err != nil && !out.expectedEOF && !out.notModified {
+		span.SetTag(tagConnectErrorCode, out.code.String())
 	}
-
-	if !isPanic {
-		if expectedEOF || (code == connectrpc.CodeCanceled && !hasConnectError && errors.Is(err, context.Canceled)) || notModified || cfg.nonErrorCodes[code] {
-			err = nil
-		} else if err != nil && cfg.errCheck != nil && !cfg.errCheck(procedure, err) {
-			err = nil
-		}
-	}
-	if notModified {
+	if out.notModified {
 		span.SetTag(ext.HTTPCode, 304)
 	}
-	if err != nil && cfg.withErrorDetailTags {
-		setErrorDetailTags(span, err, protocol)
+	if out.recorded != nil && cfg.withErrorDetailTags {
+		setErrorDetailTags(span, out.recorded, protocol)
 	}
 
 	var finishOpts []tracer.FinishOption
-	if err != nil {
-		finishOpts = append(finishOpts, tracer.WithError(err))
+	if out.recorded != nil {
+		finishOpts = append(finishOpts, tracer.WithError(out.recorded))
 		if cfg.noDebugStack {
 			finishOpts = append(finishOpts, tracer.NoDebugStack())
 		}
