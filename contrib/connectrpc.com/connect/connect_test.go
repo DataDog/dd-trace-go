@@ -949,6 +949,114 @@ func TestStreamingClientPanicTakesPrecedenceOverStoredTerminalError(t *testing.T
 	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg), "the panic must win over an already-stored terminal error")
 }
 
+func TestStreamingClientSendPanicDuringMessageSpanSetupFinishesCallSpan(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	// Succeeds for the call span (the first invocation, made while constructing the stream),
+	// then panics once startMessageSpan evaluates it while handling Send — before this test was
+	// written, the panic-recovery defer in Send wasn't registered yet at that point, so the
+	// panic escaped uncaught and the call span was never finished.
+	var calls int
+	panicOnMessageSpan := tracer.StartSpanOption(func(*tracer.StartSpanConfig) {
+		calls++
+		if calls > 1 {
+			panic("span option panic")
+		}
+	})
+	interceptor := NewClientInterceptor(WithSpanOptions(panicOnMessageSpan))
+	wrapped := interceptor.WrapStreamingClient(func(context.Context, connectrpc.Spec) connectrpc.StreamingClientConn {
+		return &panicStreamingClientConn{header: make(http.Header)}
+	})(context.Background(), connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi, IsClient: true})
+
+	assert.Panics(t, func() { _ = wrapped.Send(wrapperspb.String("hello")) })
+
+	require.Len(t, mt.FinishedSpans(), 1, "the call span must finish even when the panic happens while setting up the message span")
+	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+}
+
+func TestStreamingClientRealErrorReplacesSuppressedTerminalError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 newConfig(),
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	conn.beginOperation()
+	conn.beginOperation()
+	// Send finishes first with a code that's suppressed by default (CodeCanceled)...
+	conn.endOperation(connectrpc.NewError(connectrpc.CodeCanceled, errors.New("send canceled")), true, false)
+	// ...while Receive concurrently fails with a real, unsuppressed error. Neither is a panic
+	// or a context-derived error, so the real one must still win over the suppressed one
+	// already stored, rather than "first terminal error wins".
+	conn.endOperation(connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom")), true, false)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	finished := mt.FinishedSpans()[0]
+	assert.Equal(t, "internal", finished.Tag(tagConnectErrorCode))
+	require.NotNil(t, finished.Tag(ext.ErrorMsg))
+	assert.Contains(t, finished.Tag(ext.ErrorMsg), "boom")
+}
+
+func TestStreamingClientContextErrorReplacesSuppressedTerminalError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 newConfig(),
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	conn.beginOperation() // Send
+	conn.beginOperation() // Receive, still in flight
+	// Send finishes first with a code that's suppressed by default (CodeCanceled)...
+	conn.endOperation(connectrpc.NewError(connectrpc.CodeCanceled, errors.New("send canceled")), true, false)
+	// ...but while Receive is still in flight, the ambient context is observed to have hit its
+	// deadline. That's a real, unsuppressed reason for the stream ending and must replace the
+	// already-stored suppressed error, the same way a concurrent Send/Receive failure would.
+	conn.requestFinish(context.DeadlineExceeded)
+	// Receive itself then returns (e.g. with the same cancellation, non-terminal for bookkeeping
+	// purposes); this is what actually drops active to 0 and triggers the deferred finish.
+	conn.endOperation(nil, false, false)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	finished := mt.FinishedSpans()[0]
+	assert.Equal(t, "deadline_exceeded", finished.Tag(tagConnectErrorCode))
+	assert.NotNil(t, finished.Tag(ext.ErrorMsg))
+}
+
+func TestStreamingClientErrorCheckInvokedOnceForSuppressedThenRealError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var calls atomic.Int32
+	cfg := newConfig(WithErrorCheck(func(string, error) bool {
+		calls.Add(1)
+		return true
+	}))
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 cfg,
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	conn.beginOperation()
+	conn.beginOperation()
+	conn.endOperation(connectrpc.NewError(connectrpc.CodeCanceled, errors.New("send canceled")), true, false)
+	conn.endOperation(connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom")), true, false)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	// WithErrorCheck's doc promises it runs once, when the span finishes — not once per
+	// candidate terminal error considered while two operations race to finish the stream.
+	assert.EqualValues(t, 1, calls.Load())
+}
+
 func TestServerMessageSpanIsMeasured(t *testing.T) {
 	// A top-level span's measured tag is dropped as redundant (all top-level spans count
 	// toward stats already), so this must be checked on a message span that's a genuine

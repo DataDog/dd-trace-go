@@ -199,6 +199,27 @@ func isExpectedStreamEOF(err error) bool {
 	return errors.Is(err, io.EOF)
 }
 
+// isSuppressedTerminalError reports whether err's code is one finishSpan would drop as a
+// non-error, so a stream's terminal-error bookkeeping can let a later, more meaningful error
+// replace an earlier one that would end up suppressed anyway. This deliberately checks only the
+// code-based rules finishSpan applies (the default uncoded-context.Canceled rule and
+// cfg.nonErrorCodes; the stream-EOF and unary-GET-not-modified cases don't apply here: callers
+// already filter EOF before storing a terminal error, and streams have no not-modified
+// responses). cfg.errCheck is intentionally excluded: it's documented as running once, when the
+// span actually finishes, and calling it speculatively here to compare candidates could invoke a
+// side-effecting user callback extra times per RPC.
+func isSuppressedTerminalError(err error, cfg *config) bool {
+	if err == nil {
+		return true
+	}
+	code := codeOf(err)
+	_, hasConnectError := errors.AsType[*connectrpc.Error](err)
+	if code == connectrpc.CodeCanceled && !hasConnectError && errors.Is(err, context.Canceled) {
+		return true
+	}
+	return cfg.nonErrorCodes[code]
+}
+
 func finishCall(span *tracer.Span, err error, procedure, protocol string, cfg *config) {
 	finishSpan(span, err, procedure, protocol, false, false, false, cfg)
 }
