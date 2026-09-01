@@ -502,6 +502,26 @@ func TestStreamingMessagesWithoutCallSpans(t *testing.T) {
 	assert.True(t, clientPeerFound)
 }
 
+func TestStreamingWithoutCallSpansOverGRPCFinishesNormally(t *testing.T) {
+	// WithStreamCalls(false) leaves c.span nil for the whole stream. finishClassified's gRPC
+	// status-code tag is set unconditionally, regardless of err, unlike the Connect error-code
+	// tag which is skipped entirely when err is nil — so a nil-span dereference here only
+	// reproduces over the grpc/grpc-web wire protocol. TestStreamingMessagesWithoutCallSpans uses
+	// the default Connect protocol and doesn't exercise this path.
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	opts := []Option{WithStreamCalls(false)}
+	rig := newTestRig(t, opts, opts, connectrpc.WithGRPC())
+	stream := rig.client(bidiProcedure).CallBidiStream(context.Background())
+	require.NoError(t, stream.Send(wrapperspb.String("hello")))
+	_, err := stream.Receive()
+	require.NoError(t, err)
+	require.NoError(t, stream.CloseRequest())
+	_, err = stream.Receive()
+	assert.ErrorIs(t, err, io.EOF)
+	assert.NoError(t, stream.CloseResponse())
+}
+
 func TestStreamingHandlerMessagePrefersPropagatedParentToAmbientFallback(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -1325,6 +1345,32 @@ func TestStreamingClientNeverCallsSpecAfterConstruction(t *testing.T) {
 	assert.NotPanics(t, func() { _ = wrapped.Receive(&wrapperspb.StringValue{}) })
 	assert.NotPanics(t, func() { _ = wrapped.CloseRequest() })
 	assert.NotPanics(t, func() { _ = wrapped.CloseResponse() })
+}
+
+func TestStreamingClientFinishSkipsClassificationWhenSpanIsNil(t *testing.T) {
+	// WithStreamCalls(false) leaves c.span nil. finish must not do any error classification —
+	// including invoking cfg.errCheck — for a span that will never be reported. (It also must
+	// not panic on the nil span regardless, though *tracer.Span's SetTag/Finish already tolerate
+	// a nil receiver, so a missing guard here wouldn't itself crash on this specific
+	// implementation; the classification skip is what's actually observable.)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var errCheckCalls atomic.Int32
+	cfg := newConfig(WithErrorCheck(func(string, error) bool {
+		errCheckCalls.Add(1)
+		return true
+	}))
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 cfg,
+		ctx:                 context.Background(),
+		span:                nil,
+	}
+
+	require.NotPanics(t, func() {
+		conn.finish(connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom")), false, nil)
+	})
+	assert.Zero(t, errCheckCalls.Load(), "finish must not classify an error for a call span that doesn't exist")
 }
 
 // nilConnectErrorWrapper wraps a nil *connectrpc.Error as its cause without ever calling any of
