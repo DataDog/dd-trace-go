@@ -65,16 +65,22 @@ func (i *interceptor) WrapUnary(next connectrpc.UnaryFunc) connectrpc.UnaryFunc 
 
 func (i *interceptor) wrapUnaryClient(ctx context.Context, request connectrpc.AnyRequest, next connectrpc.UnaryFunc) (response connectrpc.AnyResponse, err error) {
 	span, ctx := i.cfg.startCallSpan(ctx, request.Spec(), instrumentation.ComponentClient)
-	var protocol, procedure string
+	// Unlike wrapUnaryServer, the span already exists here, so the defer is registered first and
+	// these are read into cached locals afterward: if any of request's methods panic, the defer
+	// (using whatever value each local ended up with, possibly still "") still finishes the span,
+	// and — since the defer itself only ever reads the cached locals, never calling request's
+	// methods again — a persistently panicking method can't abort cleanup a second time either.
+	var protocol, procedure, httpMethod string
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, request.HTTPMethod(), i.cfg)
+			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, httpMethod, i.cfg)
 			panic(recovered)
 		}
-		finishUnary(span, err, procedure, protocol, request.HTTPMethod(), i.cfg)
+		finishUnary(span, err, procedure, protocol, httpMethod, i.cfg)
 	}()
 	protocol = request.Peer().Protocol
 	procedure = request.Spec().Procedure
+	httpMethod = request.HTTPMethod()
 	setProtocolTag(span, protocol)
 	setPeerTags(span, request.Peer())
 	injectSpan(ctx, request.Header())
@@ -84,15 +90,20 @@ func (i *interceptor) wrapUnaryClient(ctx context.Context, request connectrpc.An
 }
 
 func (i *interceptor) wrapUnaryServer(ctx context.Context, request connectrpc.AnyRequest, next connectrpc.UnaryFunc) (response connectrpc.AnyResponse, err error) {
+	// Read everything the defer needs from request before it's registered: it's called from
+	// within an already-executing recover, so if request's implementation ever panicked on a
+	// second call to one of these methods, that new panic would replace the original one and
+	// abort cleanup (the same class of bug as the wrapped Streaming*Conn defers elsewhere).
 	protocol := request.Peer().Protocol
 	procedure := request.Spec().Procedure
+	httpMethod := request.HTTPMethod()
 	span, ctx := i.cfg.startCallSpan(ctx, request.Spec(), instrumentation.ComponentServer, propagationOptions(request.Header())...)
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, request.HTTPMethod(), i.cfg)
+			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, httpMethod, i.cfg)
 			panic(recovered)
 		}
-		finishUnary(span, err, procedure, protocol, request.HTTPMethod(), i.cfg)
+		finishUnary(span, err, procedure, protocol, httpMethod, i.cfg)
 	}()
 	setProtocolTag(span, protocol)
 	withHeaderTags(i.cfg, request.Header(), protocol, span)
