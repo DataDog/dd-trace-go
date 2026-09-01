@@ -177,6 +177,13 @@ func setProtocolTag(span *tracer.Span, protocol string) {
 
 func codeOf(err error) connectrpc.Code {
 	if connectErr, ok := errors.AsType[*connectrpc.Error](err); ok {
+		// A matched-but-nil *connectrpc.Error (e.g. a handler normally returning
+		// (*connectrpc.Error)(nil)) would panic on Code(), and every one of its other methods
+		// dereferences the same nil receiver, so err isn't safe to pass to errors.Is below either
+		// — it can reach *connectrpc.Error.Unwrap via the chain walk. Return early instead.
+		if connectErr == nil {
+			return connectrpc.CodeUnknown
+		}
 		return connectErr.Code()
 	}
 	switch {
@@ -256,6 +263,14 @@ func finishUnaryOnPanic(span *tracer.Span, err error, procedure, protocol, httpM
 func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowEOF, allowNotModified, isPanic bool, cfg *config) {
 	if span == nil {
 		return
+	}
+	if isNilError(err) {
+		// A normally returned (*connectrpc.Error)(nil) (or any other nil-valued error) is not
+		// just unsafe for codeOf: connectrpc.IsNotModifiedError, setErrorDetailTags, and
+		// eventually span.Finish's own error tagging (via tracer.WithError) all call methods on
+		// err too (Unwrap, Details, Error), each of which dereferences the same nil receiver.
+		// Replace it with a safe stand-in before any of that runs.
+		err = fmt.Errorf("connect: got a non-nil error interface (%T) holding a nil value", err)
 	}
 
 	code := codeOf(err)

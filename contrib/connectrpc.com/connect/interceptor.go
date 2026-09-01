@@ -150,8 +150,6 @@ func (i *interceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc)
 		var callSpan *tracer.Span
 		if i.cfg.traceStreamCalls {
 			callSpan, ctx = i.cfg.startCallSpan(ctx, spec, instrumentation.ComponentServer, propagationOptions(conn.RequestHeader())...)
-			setProtocolTag(callSpan, protocol)
-			withHeaderTags(i.cfg, conn.RequestHeader(), protocol, callSpan)
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					finishCallOnPanic(callSpan, panicError(recovered), spec.Procedure, protocol, i.cfg)
@@ -159,6 +157,8 @@ func (i *interceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc)
 				}
 				finishCall(callSpan, err, spec.Procedure, protocol, i.cfg)
 			}()
+			setProtocolTag(callSpan, protocol)
+			withHeaderTags(i.cfg, conn.RequestHeader(), protocol, callSpan)
 		}
 		if !i.cfg.traceStreamMessages {
 			return next(ctx, conn)
@@ -181,7 +181,6 @@ type streamingClientConn struct {
 	active             int
 	finishPending      bool
 	terminalErr        error
-	terminalErrFromCtx bool
 	terminalErrIsPanic bool
 	finishOnce         sync.Once
 	headerTagsOnce     sync.Once
@@ -205,7 +204,7 @@ func newStreamingClientConn(ctx context.Context, cfg *config, conn connectrpc.St
 
 func (c *streamingClientConn) Send(message any) (err error) {
 	c.beginOperation()
-	protocol := c.Peer().Protocol
+	var protocol string
 	var messageSpan *tracer.Span
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -217,6 +216,7 @@ func (c *streamingClientConn) Send(message any) (err error) {
 		finishMessage(messageSpan, err, c.Spec().Procedure, protocol, c.cfg)
 		c.endOperation(err, err != nil && !isExpectedStreamEOF(err), false)
 	}()
+	protocol = c.Peer().Protocol
 	if c.cfg.traceStreamMessages {
 		messageSpan = c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentClient)
 		setPeerTags(messageSpan, c.Peer())
@@ -234,7 +234,7 @@ func (c *streamingClientConn) Send(message any) (err error) {
 
 func (c *streamingClientConn) Receive(message any) (err error) {
 	c.beginOperation()
-	protocol := c.Peer().Protocol
+	var protocol string
 	var messageSpan *tracer.Span
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -246,6 +246,7 @@ func (c *streamingClientConn) Receive(message any) (err error) {
 		finishMessage(messageSpan, err, c.Spec().Procedure, protocol, c.cfg)
 		c.endOperation(err, err != nil, false)
 	}()
+	protocol = c.Peer().Protocol
 	if c.cfg.traceStreamMessages {
 		messageSpan = c.cfg.startMessageSpan(c.ctx, c.Spec(), protocol, instrumentation.ComponentClient)
 		setPeerTags(messageSpan, c.Peer())
@@ -262,12 +263,6 @@ func (c *streamingClientConn) Receive(message any) (err error) {
 
 func (c *streamingClientConn) CloseRequest() (err error) {
 	c.beginOperation()
-	protocol := c.Peer().Protocol
-	if c.span != nil {
-		c.headerTagsOnce.Do(func() {
-			withHeaderTags(c.cfg, c.RequestHeader(), protocol, c.span)
-		})
-	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panicErr := panicError(recovered)
@@ -276,6 +271,12 @@ func (c *streamingClientConn) CloseRequest() (err error) {
 		}
 		c.endOperation(err, err != nil, false)
 	}()
+	protocol := c.Peer().Protocol
+	if c.span != nil {
+		c.headerTagsOnce.Do(func() {
+			withHeaderTags(c.cfg, c.RequestHeader(), protocol, c.span)
+		})
+	}
 	return c.StreamingClientConn.CloseRequest()
 }
 
@@ -303,13 +304,12 @@ func (c *streamingClientConn) endOperation(err error, terminal, isPanic bool) {
 	if terminal {
 		c.finishPending = true
 		if err != nil && (isPanic || !isExpectedStreamEOF(err)) {
-			replace := c.terminalErr == nil || c.terminalErrFromCtx || isPanic ||
+			replace := c.terminalErr == nil || isPanic ||
 				(!c.terminalErrIsPanic &&
 					!isSuppressedTerminalError(err, c.cfg) &&
 					isSuppressedTerminalError(c.terminalErr, c.cfg))
 			if replace {
 				c.terminalErr = err
-				c.terminalErrFromCtx = false
 				c.terminalErrIsPanic = isPanic
 			}
 		}
@@ -335,7 +335,6 @@ func (c *streamingClientConn) requestFinish(err error) {
 				isSuppressedTerminalError(c.terminalErr, c.cfg))
 		if replace {
 			c.terminalErr = err
-			c.terminalErrFromCtx = true
 			c.terminalErrIsPanic = false
 		}
 	}
