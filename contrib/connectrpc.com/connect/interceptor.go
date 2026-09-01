@@ -65,8 +65,7 @@ func (i *interceptor) WrapUnary(next connectrpc.UnaryFunc) connectrpc.UnaryFunc 
 
 func (i *interceptor) wrapUnaryClient(ctx context.Context, request connectrpc.AnyRequest, next connectrpc.UnaryFunc) (response connectrpc.AnyResponse, err error) {
 	span, ctx := i.cfg.startCallSpan(ctx, request.Spec(), instrumentation.ComponentClient)
-	protocol := request.Peer().Protocol
-	procedure := request.Spec().Procedure
+	var protocol, procedure string
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, request.HTTPMethod(), i.cfg)
@@ -74,6 +73,8 @@ func (i *interceptor) wrapUnaryClient(ctx context.Context, request connectrpc.An
 		}
 		finishUnary(span, err, procedure, protocol, request.HTTPMethod(), i.cfg)
 	}()
+	protocol = request.Peer().Protocol
+	procedure = request.Spec().Procedure
 	setProtocolTag(span, protocol)
 	setPeerTags(span, request.Peer())
 	injectSpan(ctx, request.Header())
@@ -304,11 +305,7 @@ func (c *streamingClientConn) endOperation(err error, terminal, isPanic bool) {
 	if terminal {
 		c.finishPending = true
 		if err != nil && (isPanic || !isExpectedStreamEOF(err)) {
-			replace := c.terminalErr == nil || isPanic ||
-				(!c.terminalErrIsPanic &&
-					!isSuppressedTerminalError(err, c.cfg) &&
-					isSuppressedTerminalError(c.terminalErr, c.cfg))
-			if replace {
+			if shouldReplaceTerminalError(c.terminalErr, c.terminalErrIsPanic, err, isPanic, c.cfg) {
 				c.terminalErr = err
 				c.terminalErrIsPanic = isPanic
 			}
@@ -329,11 +326,7 @@ func (c *streamingClientConn) requestFinish(err error) {
 	c.mu.Lock()
 	c.finishPending = true
 	if err != nil && !errors.Is(err, io.EOF) {
-		replace := c.terminalErr == nil ||
-			(!c.terminalErrIsPanic &&
-				!isSuppressedTerminalError(err, c.cfg) &&
-				isSuppressedTerminalError(c.terminalErr, c.cfg))
-		if replace {
+		if shouldReplaceTerminalError(c.terminalErr, c.terminalErrIsPanic, err, false, c.cfg) {
 			c.terminalErr = err
 			c.terminalErrIsPanic = false
 		}
