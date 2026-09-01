@@ -4,67 +4,50 @@ version: "0.1"
 cases:
 # ==== General Tests ====
 
-  - id: dd-trace-go-general-forbidigo-env-vars
+  - id: dd-trace-go-general-codeowners-dual-consumer
     files:
       - AGENTS.md
     input: |
-      I'm adding support for a new environment variable, say DD_TRACE_MY_NEW_FEATURE, and I want to read it
-      directly with os.Getenv inside a contrib package. Will `make lint` catch this, and if so, what's the
-      enforced alternative? Are there any directories in the repo where calling os.Getenv or os.LookupEnv
-      directly is fine?
+      I want to add a CODEOWNERS entry using a double-star glob like `**/testdata/**` so it matches
+      testdata directories at any nesting depth, and I want it to also correctly attribute CI
+      Visibility test ownership, not just GitHub review assignment. Is that pattern safe to use, and
+      if not, what's the risk and which patterns are actually safe?
     expected_criteria:
-      - States that golangci-lint's forbidigo rule forbids direct calls to os.Getenv and os.LookupEnv anywhere
-        in the repo, so lint will fail on the contrib package
-      - States the enforced alternative is internal/env.Get (or internal/env.Lookup for the LookupEnv case),
-        or instrumentation/env for packages that cannot import internal packages
-      - States there are exemptions -- internal/env, internal/log, and internal/locking are excluded from this
-        forbidigo rule since they implement the wrapper itself, and _test.go files are also excluded
+      - States CODEOWNERS is read by two consumers with different matching semantics -- GitHub (gitignore
+        semantics) and CI Visibility (a simpler matcher in internal/civisibility/utils) -- so a pattern
+        the two interpret differently can assign the right reviewers while silently mis-attributing test
+        ownership
+      - States entries must be restricted to the subset both interpret identically -- an anchored
+        directory pattern ending in / (e.g. /path/to/dir/), an anchored exact file path (e.g.
+        /path/to/file.go), or a single leading */suffix pattern with no additional / -- so a
+        double-star/unanchored glob like `**/testdata/**` is not one of the safe patterns
+      - Mentions that later entries take precedence over earlier ones, and that there is no catch-all
+        `*` entry, so every new top-level directory or root-level file needs its own explicit entry or
+        `make lint/misc` fails
     bad_signals:
-      - Says os.Getenv/os.LookupEnv is allowed anywhere in production code with no lint enforcement
-      - Fails to name internal/env.Get/Lookup as the required replacement
-      - Says there are no exemptions to the rule at all
+      - Says the double-star glob is safe/recommended without qualification
+      - Does not mention the two different consumers (GitHub vs CI Visibility) or their differing
+        matching semantics
+      - Says CODEOWNERS has a catch-all entry covering unlisted paths
 
-  - id: dd-trace-go-general-cross-build-libddwaf-skip
+  - id: dd-trace-go-general-code-coverage-flags-cap
     files:
       - AGENTS.md
     input: |
-      How does scripts/cross_build.sh decide which packages to skip because they import
-      go-libddwaf, and what happens to packages that have no buildable Go files for the current build?
+      I'm setting DD_CODE_COVERAGE_FLAGS to a comma-separated list of 40 flags to tag an uploaded code
+      coverage report. After trimming whitespace and dropping empty entries I have 35 entries. What 
+      happens to the upload, and does the tool also dedupe or reorder the flags I did provide?
     expected_criteria:
-      - States the skip list is computed dynamically at script run time via `go list`, not a hardcoded list of
-        package names
-      - States it uses a `go list -f` template printing the import path, whether GoFiles are present, and the
-        joined transitive Deps list, then filters (via awk) for packages whose Deps do not match go-libddwaf
-      - States packages without GoFiles (e.g. test-only packages) are also excluded from the list passed to
-        `go build`
+      - States there's a maximum of 32 normalized flags accepted; exceeding it causes the report to be
+        uploaded without any flags, plus a logged warning -- not a hard failure of the upload itself
+      - States that for accepted (under-the-limit) values, order and duplicate flags are preserved --
+        the tool does not dedupe or reorder flags
+      - Mentions that whitespace around each flag is trimmed and empty entries are discarded before the
+        32-flag count is evaluated
     bad_signals:
-      - Says the skipped packages are a static/hardcoded list maintained in the script
-      - Does not mention go list or the dependency-based filtering mechanism
-      - Says test-only packages are still passed directly to go build
-
-  - id: dd-trace-go-general-env-autodetect-first-read
-    files:
-      - AGENTS.md
-    input: |
-      Look at env.Get and verifySupportedConfiguration in internal/env/env.go. If a test calls
-      env.Get("DD_BRAND_NEW_VAR") for a variable that isn't yet listed in SupportedConfigurations, and the real
-      DD_BRAND_NEW_VAR environment variable is actually set in the test process, does that first call return
-      its value? What happens as a result of that call?
-    expected_criteria:
-      - States verifySupportedConfiguration returns false for a DD_/OTEL_-prefixed name that isn't in
-        SupportedConfigurations, regardless of whether testing.Testing() is true, so env.Get returns "" on that
-        call -- the real value is not read
-      - States that when testing.Testing() is true, the unlisted key is additionally recorded into the
-        generated configuration file (via addSupportedConfigurationToFile) purely as a side effect, for a
-        future `configinverter generate` run, and an error is logged
-      - Concludes the variable only becomes readable by env.Get after it's been added to
-        SupportedConfigurations via regeneration -- not on the same call that first detected it
-    bad_signals:
-      - Says the first call to env.Get returns the real environment variable's value because testing.Testing()
-        is true
-      - Says the variable becomes usable immediately without needing a configinverter generate step
-      - Does not mention that verifySupportedConfiguration returns false whenever the name isn't in
-        SupportedConfigurations
+      - Says the upload fails/errors outright when more than 32 flags are supplied
+      - Says flags are deduplicated or reordered
+      - Omits the specific 32-flag threshold or gives an incorrect number
 
 # ==== Contrib Tests ====
   - id: dd-trace-go-contrib-structure
@@ -122,46 +105,6 @@ cases:
       - Omits updating instrumentation/packages.go or contribIntegrations in option.go
       - Does not mention the documentation repo PR at all
 
-  - id: dd-trace-go-contrib-shared-instrumentation
-    only_warn: true
-    files:
-      - contrib/AGENTS.md
-    input: |
-      I'm writing a new HTTP-based contrib integration and need to resolve the span's service name
-      and operation name and get a logger, consistent with how the rest of the contrib packages do
-      it. Where does this shared logic live and how should I access it instead of writing it myself?
-    expected_criteria:
-      - States that code shared across multiple contribs lives in the instrumentation/ directory
-      - Mentions that instrumentation.Load(...) returns an Instrumentation instance whose methods
-        (e.g. ServiceName, OperationName, Logger) should be used instead of reimplementing this logic
-      - Advises against duplicating naming/service-resolution logic inside the new contrib package
-    bad_signals:
-      - Recommends writing bespoke service-name/operation-name resolution logic inside the new
-        contrib package instead of using the instrumentation package
-      - Does not reference the instrumentation package/directory at all
-      - Says this shared logic lives in a different directory instead of instrumentation/
-
-  - id: dd-trace-go-contrib-httptrace-server
-    only_warn: true
-    files:
-      - contrib/AGENTS.md
-    input: |
-      My new contrib integration wraps a Go HTTP server-side framework. How should I start and
-      finish the span for each incoming request so that it's consistent with other HTTP server
-      contribs like net/http?
-    expected_criteria:
-      - Recommends using the shared httptrace package (instrumentation/httptrace) rather than
-        manually calling tracer.StartSpan for each request
-      - Mentions that the shared helper returns a wrapped ResponseWriter/Request plus a finish
-        function that must be deferred/called to finish the span
-      - Notes span.kind should be set to server for this server-side span, and the component tag
-        should be set to the integration's naming-convention value
-    bad_signals:
-      - Has the integration call tracer.StartSpan directly instead of using the shared httptrace
-        helper
-      - Fails to mention finishing the span via the returned finish/cleanup function
-      - Omits the span.kind server tag or sets an incorrect span.kind value for a server span
-
   - id: dd-trace-go-contrib-versioned-package
     files:
       - contrib/AGENTS.md
@@ -207,6 +150,38 @@ cases:
     bad_signals:
       - Says tests are optional for a new contrib integration
       - Does not mention example_test.go as an expected file
+
+  - id: dd-trace-go-contrib-with-service-naming
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm adding a functional option to my new contrib integration that lets callers override the
+      span's service name. Should I name it WithServiceName or WithService, and is there a broader
+      naming convention this follows?
+    expected_criteria:
+      - States the option should be named WithService, not WithServiceName
+      - Frames this as a general naming guideline that applies to all contrib integrations, not a
+        one-off choice for this particular integration
+    bad_signals:
+      - Recommends naming the option WithServiceName
+      - Treats the naming choice as arbitrary/up to the integration author with no stated convention
+
+  - id: dd-trace-go-contrib-version-pinning
+    files:
+      - contrib/AGENTS.md
+    input: |
+      My contrib integration currently pins its instrumented library to v2.3.0 to avoid a known CVE.
+      If a future major version of dd-trace-go changes, is v2.3.0 guaranteed to keep working with it,
+      and generally what version should a contrib integration target for the library it wraps?
+    expected_criteria:
+      - States the target is the minimum working version of the integrated package that has no known
+        reported vulnerabilities/CVEs, not the latest version
+      - States there's no guarantee that a previously pinned version will keep working with future
+        dd-trace-go versions, since integrated packages have their own differing versioning policies
+        around breaking changes
+    bad_signals:
+      - Says integrations should always track the latest version of the integrated package
+      - Claims a pinned version is guaranteed to remain compatible with future dd-trace-go releases
 
 # ==== Tracer Tests ====
   - id: dd-trace-go-tracer-api-break
@@ -328,6 +303,55 @@ cases:
       - Does not mention any specific cardinality limit env var or option
       - Gives incorrect default values for the limits
 
+  - id: dd-trace-go-tracer-protocol-downgrade-permanence
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      Our trace-agent briefly stopped advertising the /v1.0/traces endpoint, so our tracer downgraded
+      from protocol 1.0 to 0.4. A few minutes later the agent's capability check reports 1.0 support
+      again. Does the tracer go back to sending traces over 1.0 on its own, and does an in-flight
+      payload that was already built for 1.0 at the moment of the downgrade behave any differently
+      from newly built payloads?
+    expected_criteria:
+      - States the downgrade from 1.0 to 0.4 is permanent for the life of the process -- once the
+        tracer has conclusive evidence 1.0 is unavailable it never re-upgrades on its own, even if
+        later checks report 1.0 support again; only restarting the process allows re-upgrading
+      - Explains the reasoning -- capability checks and trace sends are independent requests that can
+        land on different backends in a load-balanced fleet, so healthy checks don't prove anything
+        about where the next send goes
+      - States a payload already built while 1.0 was in effect keeps going to /v1.0/traces (since it
+        was already committed to that wire format) and may be rejected there, rather than being
+        re-encoded and redelivered on 0.4
+    bad_signals:
+      - Says the tracer automatically re-upgrades back to protocol 1.0 once the agent reports support
+        again, without a restart
+      - Says an already-built 1.0 payload is transparently re-encoded and resent over 0.4 after the
+        downgrade
+      - Does not mention that the downgrade is permanent for the process lifetime
+
+  - id: dd-trace-go-tracer-otel-probability-sampling-propagation
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      When the Go tracer makes a probability-based sampling decision (say, from a sampling rule), does
+      it expose that decision in a way an OpenTelemetry-native downstream service could verify and use
+      to extrapolate span counts, or is that information Datadog-internal only? Does this require any
+      configuration, and does it apply to a manual keep decision?
+    expected_criteria:
+      - States the tracer expresses probability-based sampling decisions (agent rate, global rate, or a
+        sampling rule) as an OpenTelemetry consistent-probability-sampling pair (ot.th/ot.rv, per OTEP
+        235) on the ot= list-member of the W3C tracestate header, letting OTel-native downstream
+        services make/verify the same keep-or-drop decision and extrapolate span counts
+      - States this is automatic and requires no configuration, and that existing Datadog propagation
+        is left unchanged; an inbound ot= value is honored and forwarded unchanged
+      - States non-probability decisions -- such as a manual keep, an AppSec decision, or a
+        rate-limiter drop -- omit the threshold, so a manual keep decision would NOT get an ot.th/ot.rv
+        pair
+    bad_signals:
+      - Says this requires explicit configuration/opt-in
+      - Says a manual keep decision is also expressed with a probability threshold on tracestate
+      - Does not mention the W3C tracestate ot= list-member or OTEP 235
+
 # ==== Profiling Tests ====
 
   - id: dd-trace-go-profiler-cpu-duration-clamp
@@ -344,42 +368,6 @@ cases:
     bad_signals:
       - Says the CPU profile will run for the full 5 minutes configured, spanning multiple periods
       - Says Start will return an error because cpuDuration exceeds period
-
-  - id: dd-trace-go-profiler-upload-queue-full-behavior
-    files:
-      - profiler/AGENTS.md
-    input: |
-      Our upload endpoint has been slow and profile batches are being produced faster than they can
-      be sent. What happens once the internal upload queue fills up -- does collection block, does
-      the queue grow unbounded, and which batch (oldest or newest) is discarded?
-    expected_criteria:
-      - States the upload queue is a small bounded/buffered channel (not unbounded)
-      - States that when it's full, the profiler evicts the oldest queued batch to make room for the
-        newest one rather than blocking collection
-      - Mentions that a warning is logged and/or a queue-full metric is incremented when this eviction
-        happens
-    bad_signals:
-      - Says the collection goroutine blocks until queue space frees up
-      - Says the newest batch is dropped while older queued batches are kept
-      - Says the queue grows without bound, risking unbounded memory growth
-
-  - id: dd-trace-go-profiler-upload-retry-backoff
-    files:
-      - profiler/AGENTS.md
-    input: |
-      When a profile upload to the agent fails with a retriable error (like a 5xx response), what
-      backoff strategy is used between retry attempts, and how many times will it retry before
-      giving up?
-    expected_criteria:
-      - States retries are capped at a small fixed number (2 retries) rather than being unbounded
-      - States the wait between retries is a random duration bounded by the profiling period
-        (not a fixed or exponentially-doubling backoff)
-      - Mentions that only retriable errors (server 5xx/transport errors) trigger a retry, while
-        non-retriable errors (e.g. 4xx) fail immediately without retrying
-    bad_signals:
-      - Says the profiler uses exponential backoff (e.g. doubling delay starting at 1s)
-      - Says uploads retry indefinitely until they succeed
-      - Says all upload errors, including 4xx client errors, are retried the same way
 
   - id: dd-trace-go-profiler-stop-flush-on-exit
     files:
@@ -416,42 +404,6 @@ cases:
       - Says all four heap sample values are delta-encoded the same way
       - Says none of the heap values are delta-encoded
 
-  - id: dd-trace-go-profiler-goroutine-leak-forced-on
-    files:
-      - profiler/AGENTS.md
-    input: |
-      Our Go binary is built with GOEXPERIMENT=goroutineleakprofile. Can we disable the
-      goroutine-leak profile for a given profiler.Start call by simply not including it in a
-      WithProfileTypes(...) option call?
-    expected_criteria:
-      - States that when the goroutine-leak profile is available (detected via build info /
-        GOEXPERIMENT at build time), it is added unconditionally after user options (including
-        WithProfileTypes) have already been applied
-      - Concludes that omitting it from WithProfileTypes does not disable it in this case -- there is
-        currently no supported option to opt out when the GOEXPERIMENT is enabled at build time
-    bad_signals:
-      - Says passing WithProfileTypes without listing the goroutine-leak profile will disable it
-      - Says the goroutine-leak profile is only enabled when explicitly requested via WithProfileTypes
-
-  - id: dd-trace-go-profiler-execution-trace-not-a-profile-type
-    files:
-      - profiler/AGENTS.md
-    input: |
-      I want to programmatically check whether execution tracing is enabled and control it the same
-      way as other profile types, e.g. by checking or setting it through WithProfileTypes/cfg.types.
-      Will that work for execution traces?
-    expected_criteria:
-      - States that execution trace is deliberately excluded from the normal profile-types map used
-        by WithProfileTypes, and is instead controlled by its own separate configuration
-        (e.g. an executionTraceConfig / DD_PROFILING_EXECUTION_TRACE_ENABLED-style setting)
-      - States that whether an execution trace runs in a given collection cycle is decided
-        dynamically/probabilistically at collection time rather than via the static profile-types set
-    bad_signals:
-      - Says execution trace can be enabled or disabled via WithProfileTypes like any other profile
-        type
-      - Says execution trace is always collected every cycle once enabled, with no separate
-        per-cycle decision logic
-
   - id: dd-trace-go-profiler-withprofiletypes-forces-metrics
     files:
       - profiler/AGENTS.md
@@ -483,25 +435,39 @@ cases:
       - Says Lambda support just requires a different upload URL/agentless configuration rather than
         being entirely disabled
 
-  - id: dd-trace-go-profiler-shared-zstd-encoder-forgotten-close
+  - id: dd-trace-go-profiler-delta-computation-location
     files:
       - profiler/AGENTS.md
     input: |
-      Multiple profile types (e.g. CPU and Heap) can end up sharing the same cached zstd encoder
-      instance when they compress at the same level. If some code path acquires that shared encoder
-      via Reset() but fails to call Close() on it (e.g. due to an early return on error), what
-      happens to other profile types that later need the same encoder?
+      For heap and other profile types where delta values are computed, what does "computing a delta"
+      actually mean here, and where in the profiler codebase is that computation implemented?
     expected_criteria:
-      - States the shared encoder uses a size-1 channel acting as a semaphore/lock, acquired in
-        Reset() and released in Close()
-      - States that skipping Close() after Reset() leaves the semaphore permanently held, so any
-        later Reset() call for that same cached encoder blocks forever (a deadlock), rather than
-        erroring or silently proceeding
+      - States a delta is the difference between two profiles, showing the change in a resource (e.g.
+        memory allocations, blocking time) over the last collection interval/minute, rather than a
+        cumulative or absolute value
+      - States delta computation is implemented in the internal/fastdelta package
     bad_signals:
-      - Says each profile type gets its own independent encoder instance so a missing Close() only
-        affects that one profile type
-      - Says a missing Close() call causes an error to be returned on the next Reset() rather than a
-        blocking deadlock
+      - Says delta computation is done inline in profile.go with no dedicated package
+      - Misdescribes a delta as a cumulative running total rather than a difference between two
+        profiles
+      - Names an incorrect package/location for the delta computation logic
+
+  - id: dd-trace-go-profiler-start-telemetry-report
+    files:
+      - profiler/AGENTS.md
+    input: |
+      Besides sending collected profiles to the Datadog backend, does the Go profiler ever report
+      information about its own configuration (e.g. which profile types or options were set) back to
+      Datadog, and if so, when and where is that implemented?
+    expected_criteria:
+      - States yes -- the profiler sends an instrumentation telemetry message containing its
+        configuration when profiling is started
+      - Identifies telemetry.go as the file implementing this behavior, distinct from upload.go (which
+        uploads the collected profile data itself)
+    bad_signals:
+      - Says the profiler never reports its own configuration to Datadog
+      - Conflates this telemetry message with the regular profile upload path (upload.go) instead of
+        identifying it as a separate mechanism
 
 # ==== Appsec Tests ====
 
@@ -577,40 +543,6 @@ cases:
       - Says importing internal/appsec/config from the operation definition is fine with no caveats
       - Does not explain why the circular dependency risk exists
 
-  - id: dd-trace-go-appsec-swap-feature-error-rollback
-    files:
-      - internal/appsec/AGENTS.md
-    input: |
-      Look at (*appsec).SwapRootOperation in internal/appsec/features.go. If one of the feature builders
-      in the `features` slice (e.g. sqlsec.NewSQLSecFeature) returns an error while building the new set
-      of features for a config update, what happens to the other feature builders that already succeeded
-      during that same call, and does the previously active root operation get replaced?
-    expected_criteria:
-      - States that the whole swap is aborted on any feature-builder error -- SwapRootOperation joins the
-        errors and returns before calling dyngo.SwapRootOperation, so the previously active features/root
-        operation are left untouched
-      - States that any new features which had already been successfully built earlier in the same call
-        are explicitly Stop()'d and discarded rather than being partially activated
-    bad_signals:
-      - Says the successfully-built features activate anyway while only the failing one is skipped
-      - Says the old/previous features are torn down regardless of whether the new build succeeded
-
-  - id: dd-trace-go-appsec-stop-inflight-requests
-    files:
-      - internal/appsec/AGENTS.md
-    input: |
-      Look at (*appsec).stop in internal/appsec/appsec.go. When AppSec is stopped, does it wait for
-      requests that are currently inside an active dyngo operation to finish before the WAF manager's
-      underlying resources are reset, or is there a known gap here?
-    expected_criteria:
-      - States that stop() does NOT wait for in-flight requests -- it swaps the dyngo root operation to
-        nil and calls a.cfg.WAFManager.Reset() immediately after acquiring featuresMu
-      - Identifies this as an acknowledged, unresolved gap in the code -- a TODO comment saying it should
-        "block until no more requests are using dyngo operations" -- not a deliberately finished design
-    bad_signals:
-      - Says stop() blocks until all in-flight requests finish before releasing WAF resources
-      - Says there is no known limitation or gap in this teardown path
-
   - id: dd-trace-go-appsec-feature-rebuild-atomicity
     files:
       - internal/appsec/AGENTS.md
@@ -626,23 +558,6 @@ cases:
       - Says AppSec mutates existing feature or listener state in place rather than rebuilding and
         hot-swapping
       - Does not mention the hot-swap/atomicity guarantee at all
-
-  - id: dd-trace-go-appsec-limiter-deny-safe-default
-    files:
-      - internal/appsec/AGENTS.md
-    input: |
-      Look at newLimiter in internal/appsec/limiter/limiter.go. If it's called with maxTokens <= 0 or a
-      non-positive interval, does the resulting limiter allow every check through (fail open) or deny
-      every check (fail closed)? Why was it built that way?
-    expected_criteria:
-      - States that in that case the function returns rate.NewLimiter(0, 0), a limiter whose Allow()
-        always returns false -- it fails closed / deny-safe
-      - Explains the reasoning given in the code -- computing a rate from a non-positive interval could
-        otherwise produce an unbounded/"infinite" limiter, which would be an unsafe default for a
-        security rate limiter
-    bad_signals:
-      - Says a zero/misconfigured maxTokens or interval results in an unlimited limiter that always allows
-      - Says this configuration would panic or error instead of returning a deny-all limiter
 
   - id: dd-trace-go-appsec-doc-update-trigger
     only_warn: true
@@ -661,102 +576,85 @@ cases:
       - Points to a different file instead of internal/appsec/README.md, e.g. the top-level project
         README.md or CONTRIBUTING.md
 
+  - id: dd-trace-go-appsec-missing-top-level-operation
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      Suppose some user code path never starts one of the top-level dyngo operations (like the
+      service-entry-span operation or the WAF context operation) before reaching code that would
+      otherwise emit AppSec sub-operations like a SQL or HTTP round-trip operation. What happens to
+      those sub-operations from an AppSec-protection standpoint, and is this treated as a normal/
+      expected configuration?
+    expected_criteria:
+      - States that without a Top Level Operation, nothing gets monitored -- sub-operations effectively
+        have no effect on AppSec protection since there's no root to attach listeners/events to
+      - States this situation should produce an error log to thoroughly explain the issue to the user,
+        i.e. it's treated as a problem to surface, not a silently accepted configuration
+    bad_signals:
+      - Says sub-operations are still monitored/protected normally even without a top-level operation
+      - Says this situation passes silently with no log output
+
+  - id: dd-trace-go-appsec-graphql-operation-nesting
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      For HTTP and GRPC, the top-level handler operation's user code callback is reached directly.
+      Does GraphQL follow that same direct-to-user-code shape, or are there intermediate operations in
+      between, and if so what are they and in what order?
+    expected_criteria:
+      - States GraphQL does NOT go directly from the top-level request operation to user code like
+        HTTP/GRPC do
+      - States the nesting order is graphqlsec.RequestOperation, then graphqlsec.ExecutionOperation,
+        then graphqlsec.ResolveOperation, before reaching user code
+    bad_signals:
+      - Says GraphQL reaches user code directly from the top-level operation with no intermediate
+        operations
+      - Gives an incorrect order for ExecutionOperation/ResolveOperation (e.g. reversing them)
+
 # ==== Internal Tests ====
 
-  - id: dd-trace-go-internal-locking-deadlock-buildtag
+  - id: dd-trace-go-internal-config-source-precedence
     files:
       - internal/AGENTS.md
     input: |
-      Look at internal/locking/mutex_sync.go and mutex_deadlock.go. What Go build tag switches locking.Mutex
-      and locking.RWMutex from a zero-overhead implementation to one with runtime deadlock detection, and what
-      type actually backs each version?
+      If a configuration value is set via both a Datadog environment variable and an OpenTelemetry
+      (OTEL_*) environment variable, which one wins? And where do local declarative config files and
+      managed declarative config files fall in that ordering relative to setting the value
+      programmatically in code?
     expected_criteria:
-      - States the `deadlock` build tag controls this -- its absence (mutex_sync.go, `//go:build !deadlock`)
-        makes Mutex/RWMutex plain type aliases for sync.Mutex/sync.RWMutex
-      - States that building with the `deadlock` tag (mutex_deadlock.go, `//go:build deadlock`) instead makes
-        Mutex/RWMutex structs embedding github.com/linkdata/deadlock's Mutex/RWMutex
+      - States the descending priority order is -- programmatic APIs first, then managed declarative
+        configs, then Datadog (DD_) environment variables, then OTel (OTEL_) environment variables,
+        then local declarative configs
+      - Concludes a Datadog DD_ environment variable takes precedence over an OTEL_ environment
+        variable for the same setting
+      - Mentions that defaults are used as a fallback only when no source has configured the field
     bad_signals:
-      - Names an incorrect build tag (e.g. `debug`) as the one controlling this
-      - Says both build configurations use the same underlying type / no build-tag-based switch exists
+      - Says OTEL_ environment variables take precedence over DD_ environment variables
+      - Gives an incorrect/reordered precedence list (e.g. placing local declarative config above
+        environment variables)
 
-  - id: dd-trace-go-internal-locking-assert-implementation
+  - id: dd-trace-go-internal-telemetry-dependencies-category
     files:
       - internal/AGENTS.md
     input: |
-      Does MutexLocked/RWMutexRLocked in internal/locking/assert (assert_sync_prod.go, assert_sync_debug.go, 
-      assert_deadlock.go) actually verify lock state by calling TryLock and checking whether it succeeds, and
-      how does the deadlock-build variant reach the lock state given that locking.Mutex is a struct embedding a
-      deadlock.Mutex there?
+      The internal telemetry package supports several categories of reporting -- metrics, logs,
+      product lifecycle, app config, integration status, and dependencies. What specifically does the
+      dependencies category send to the backend, and why would that be useful to Datadog?
     expected_criteria:
-      - States the real (non-benchmark) implementations do NOT use TryLock -- they call
-        github.com/trailofbits/go-mutexasserts, which inspects lock state via atomic operations without
-        attempting to acquire the lock; a TryLock-based version exists only in assert_bench_test.go for
-        benchmark comparison
-      - States the deadlock-build variant uses reflection (reflect.ValueOf(m).Elem().FieldByName("mu")) to
-        reach the embedded deadlock.Mutex/RWMutex's private "mu" field, casts it via unsafe.Pointer to a
-        *sync.Mutex/*sync.RWMutex, and runs go-mutexasserts against that raw pointer
+      - States the dependencies category sends all of the dependencies of the application to the
+        backend
+      - States this is for SCA (software composition analysis) purposes, e.g. tracking/analyzing what
+        third-party packages an instrumented application uses
     bad_signals:
-      - Says the assertions are TryLock-based in the shipped implementation (only repeating what the README
-        states)
-      - Says the deadlock-build variant cannot verify lock state at all, or that it operates directly on the
-        deadlock.Mutex type without reflection/unsafe
-
-  - id: dd-trace-go-internal-stableconfig-oversized-file-fallback
-    files:
-      - internal/AGENTS.md
-    input: |
-      If the managed stable-config file at /etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml 
-      exists but is 10KB, or exists but contains invalid YAML, does loading it fail tracer initialization, or does 
-      something else happen? Is there a specific size threshold involved?
-    expected_criteria:
-      - States there's a 4KB (maxFileSize) size limit; a file exceeding it is dropped with a logged warning
-        rather than being partially read or causing an error
-      - States invalid/malformed YAML is also dropped with a logged warning (fileContentsToConfig returns an
-        empty config on unmarshal error)
-      - Concludes that in both cases the package falls back to an empty stable config rather than
-        failing/panicking, so tracer initialization is not blocked by a bad or oversized file
-    bad_signals:
-      - Says an oversized or malformed stable config file causes an error that stops tracer initialization
-      - Does not mention a specific size threshold, or gives an incorrect one
-
-  - id: dd-trace-go-internal-processtags-default-enabled
-    files:
-      - internal/AGENTS.md
-    input: |
-      Is process tag collection controlled by DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED, opt-in (off by 
-      default) or opt-out (on by default)? Also, if SetServiceNameTag is called with isUserDefined=false and 
-      later called again with isUserDefined=true, are both the resulting tags (svc.auto and svc.user) present 
-      afterward, or only one?
-    expected_criteria:
-      - States the feature defaults to enabled -- `internal.BoolEnv(envProcessTagsEnabled, true)` -- despite
-        the "EXPERIMENTAL" name, so it must be explicitly set to false/disabled to opt out
-      - States svc.auto and svc.user are mutually exclusive -- SetServiceNameTag deletes both keys before
-        setting the new one, so only the most recently set tag (svc.user:true in this example) remains
-    bad_signals:
-      - Says the DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED feature is disabled by default
-      - Says both svc.auto and svc.user remain set simultaneously after the second call
+      - Confuses the dependencies category with the integration category (loading/errors of
+        dd-trace-go's own integrations)
+      - Does not mention SCA or any security/composition-analysis motivation for sending dependency
+        information
 
 # ==== LLMObs Tests ====
 # TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
 
 # ==== CIVisibility Tests ====
-
-  - id: dd-trace-go-civisibility-http-retry-defaults
-    files:
-      - internal/civisibility/AGENTS.md
-    input: |
-      For exponentialBackoff/getExponentialBackoffDuration and the DefaultMaxRetries/DefaultBackoff
-      constants, what are the default retry count and initial backoff, how does the delay grow between 
-      attempts, and is any random jitter added to it?
-    expected_criteria:
-      - States the defaults are 3 retries (DefaultMaxRetries) and a 100ms initial backoff (DefaultBackoff)
-      - States the delay doubles each attempt (initialDelay * 2^retryCount) and is capped at a 10 second
-        maximum
-      - States the computed delay is NOT randomized/jittered -- it's a deterministic doubling capped at 10s
-    bad_signals:
-      - Gives different default values for retry count or initial backoff
-      - Says the backoff includes random jitter added to the sleep duration
-      - Says the delay grows unbounded without a cap
 
   - id: dd-trace-go-civisibility-close-action-order
     files:
@@ -786,75 +684,6 @@ cases:
       - Attributes the serialization to a different mechanism (e.g. a channel or semaphore) instead of
         gitCommandMutex
 
-  - id: dd-trace-go-civisibility-concurrent-exit-calls
-    files:
-      - internal/civisibility/AGENTS.md
-    input: |
-      If exitCiVisibility in internal/civisibility/integrations/civisibility.go is called from
-      two goroutines at roughly the same time (e.g. a signal and a normal test-run shutdown racing), what
-      happens on the goroutine that doesn't get the state transition first -- does it re-run the close
-      actions, return immediately, or something else?
-    expected_criteria:
-      - States only one caller actually owns the shutdown -- the one that observes
-        civisibility.GetState() == StateInitialized and transitions it to StateExiting under
-        closeActionsMutex
-      - States the other caller sees a state other than StateInitialized, takes the early-return branch,
-        and if a shutdown is already in progress it blocks on the shared ciVisibilityShutdownDone channel
-        (via waitForCIVisibilityShutdown) until the owning goroutine finishes, rather than re-running any
-        close actions itself
-    bad_signals:
-      - Says both goroutines run the close actions independently/concurrently
-      - Says the second caller panics or errors instead of waiting on the shutdown-done channel
-
-  - id: dd-trace-go-civisibility-signal-handler-deadlock-avoidance
-    files:
-      - internal/civisibility/AGENTS.md
-    input: |
-      Look at ciVisibilitySignalHandler.run() and exitCiVisibility's stopSignalHandler parameter in
-      internal/civisibility/integrations/civisibility.go. Why does the signal-triggered shutdown path call
-      exitCiVisibility(false) instead of exitCiVisibility(true)?
-    expected_criteria:
-      - States that exitCiVisibility(true) would call stopCIVisibilitySignalHandler, which blocks on
-        "<-handler.done"
-      - States handler.done only closes when run() itself returns (via its deferred close), so the
-        signal-handling goroutine calling exitCiVisibility(true) from inside run() would be waiting on its
-        own completion -- a self-deadlock -- which is why it passes false and skips stopping the handler
-    bad_signals:
-      - Says there is no functional difference between passing true and false here
-      - Does not connect the choice to avoiding the signal-handler goroutine deadlocking on itself
-
-  - id: dd-trace-go-civisibility-expect-json-response-retry
-    files:
-      - internal/civisibility/AGENTS.md
-    input: |
-      If a request configured with ExpectJSONResponse=true gets back a 2xx response
-      whose Content-Type doesn't parse as JSON, what does the client do? Does this same handling apply to
-      endpoints that don't care about parsing a JSON response, like file/pack uploads?
-    expected_criteria:
-      - States that a 2xx response with an unrecognized/non-JSON format is treated as a transient failure
-        and retried via exponentialBackoff when ExpectJSONResponse is true
-      - States that upload-style endpoints which never decode the response body intentionally leave
-        ExpectJSONResponse false, so they are unaffected by this retry-on-ambiguous-format behavior
-    bad_signals:
-      - Says a 2xx response is always treated as success regardless of its content type
-      - Says every endpoint retries on a non-JSON 2xx response, including endpoints that don't parse JSON
-
-  - id: dd-trace-go-civisibility-bazel-git-cli-short-circuit
-    files:
-      - internal/civisibility/AGENTS.md
-    input: |
-      When Bazel payload-file/manifest mode disables the Git CLI (bazel.IsGitCLIDisabled()), does execGit 
-      still try to find and run the git binary before giving up, or does it short-circuit earlier? And does 
-      it touch gitCommandMutex in that case?
-    expected_criteria:
-      - States execGit checks bazel.IsGitCLIDisabled() before the isGitFound() check and before acquiring
-        gitCommandMutex, logging a debug message and returning immediately with a dedicated sentinel error
-      - States that in this mode, neither the git executable lookup, gitCommandMutex, nor exec.Command is
-        ever reached
-    bad_signals:
-      - Says execGit still attempts to locate/run the git binary before failing in this mode
-      - Says the Bazel check happens after acquiring gitCommandMutex
-
   - id: dd-trace-go-civisibility-doc-update-trigger
     only_warn: true
     files:
@@ -871,6 +700,39 @@ cases:
       - Says no documentation update is needed for this change
       - Points to a different file instead of internal/civisibility/CIVISIBILITY_OVERVIEW.md, e.g. the
         top-level project README.md or CONTRIBUTING.md
+
+  - id: dd-trace-go-civisibility-feature-override-logging
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      Backend settings negotiation enables early flake detection for our test run, but we also have a
+      local environment-variable kill switch set that disables it. Does CI Visibility silently honor
+      the local override with no trace of what happened, or is there something logged so we can tell
+      why the feature ended up disabled?
+    expected_criteria:
+      - States the local env-var kill switch takes effect and disables the feature even though backend
+        settings enabled it
+      - States this is not silent -- it's logged when a local override disables a capability that
+        backend settings had enabled, specifically to aid troubleshooting
+    bad_signals:
+      - Says the override happens with no logging at all
+      - Says backend settings always win over a local environment-variable kill switch
+
+  - id: dd-trace-go-civisibility-coverage-filename-only-entries
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      For a per-test Go code coverage upload, is a files[] entry required to always include
+      line-coverage bitmap data, or can an entry validly contain just a filename with no bitmap? If
+      the latter is possible, when would that happen?
+    expected_criteria:
+      - States a files[] entry can validly be filename-only, with no bitmap field, when there is no
+        line-coverage data available for that file
+      - States the bitmap field (raw Go FileBitmap bytes) is included specifically when line coverage
+        is available, e.g. for test files or referenced resources that do have line-level data
+    bad_signals:
+      - Says every coverage file entry must include bitmap data or the upload is invalid
+      - Says filename-only entries are dropped/rejected rather than treated as valid
 
 # ==== Datastreams Tests ====
 # TODO: Datastreams does not currently have any AGENTS.md files. Add some in order to start testing.
@@ -940,91 +802,41 @@ cases:
       - Omits ExpectedTraces from the required interface methods
       - Fails to mention running go generate to wire the new test into the generated test suite
 
-  - id: dd-trace-go-orchestrion-peek-skips-finished-cross-goroutine
+  - id: dd-trace-go-orchestrion-argument-of-type-lookup
     files:
       - orchestrion/AGENTS.md
     input: |
-      A span is pushed onto the per-goroutine context stack (GLS) on goroutine A, but it finishes on
-      goroutine B, flipping its "done" cell to true there. Back on goroutine A, does
-      contextStack.Peek() still return this finished span as the active parent context?
+      Inside an orchestrion.yml advice template, I don't know the positional index of the *http.Request
+      argument on the matched function -- I only know its type. Is there a template expression that
+      finds an argument by type instead of by position, and what does it produce if no argument of
+      that type exists? How does that failure mode compare to looking up an out-of-range positional
+      argument with .Function.Argument?
     expected_criteria:
-      - States Peek walks the stack from the top and skips any entry whose done cell reads true,
-        returning only the innermost still-live entry (or nil if none are live)
-      - Explains this exists specifically so a span finished elsewhere can't be adopted as a parent,
-        which would otherwise collapse unrelated traces together
+      - States `{{ .Function.ArgumentOfType type }}` can be used to find the name of the first
+        argument matching a given type, as an alternative to positional lookup
+      - States that if no argument of that type exists, it returns a blank string -- not an error
+      - Contrasts this with `.Function.Argument n` (or `.Function.Result n`), which returns an error
+        when the index is out of range/there aren't enough arguments -- i.e. the two failure modes
+        differ (blank string vs error)
     bad_signals:
-      - Says Peek always returns the literal top of the stack regardless of whether it has finished
-      - Says Peek and Pop behave identically with respect to finished entries
+      - Says there's no way to look up a function argument by type, only by position
+      - Says ArgumentOfType also errors out when no match is found (same as the positional
+        out-of-range case)
 
-  - id: dd-trace-go-orchestrion-popentry-vs-popscope
+  - id: dd-trace-go-orchestrion-directive-args-access
     files:
       - orchestrion/AGENTS.md
     input: |
-      Two different call sites push plain boolean overrides under the same GLS key (one marks
-      "execution traced", the other marks a scoped "not traced" override), and each has its own
-      paired pop function. Why would one of these pops need to use a PopEntry-style removal instead
-      of a PopScope-style removal from the context stack?
+      A join point in my orchestrion.yml aspect matches based on a directive comment that carries its
+      own key/value arguments. Inside the advice template, what expression gives me access to those
+      directive arguments, and how do I read an individual key and its value from it?
     expected_criteria:
-      - States PopScope removes the target entry and everything pushed above it, which is only
-        correct for genuinely nested scopes
-      - States PopEntry removes exactly the one entry matching its token and leaves entries above it
-        untouched, which is required when two overrides under the same key are independent rather
-        than strictly nested, so closing one doesn't wrongly discard an unrelated entry above it
+      - States `{{ .DirectiveArgs }}` is used to access the key/value list of directive arguments
+        inside the advice template
+      - States individual entries are read via `.Key` and `.Value` on that list
     bad_signals:
-      - Says PopScope and PopEntry behave identically since they operate on the same key
-      - Says using PopScope in place of PopEntry here would be equally correct
-
-  - id: dd-trace-go-orchestrion-token-not-index
-    files:
-      - orchestrion/AGENTS.md
-    input: |
-      Why does pushing a value onto the context stack return a monotonically-increasing token to
-      identify that scope, rather than just using the entry's index in the underlying slice?
-    expected_criteria:
-      - States that an index cannot reliably identify a scope over time -- a push, pop, and another
-        push can land an unrelated new value at the exact same index, so an index captured earlier
-        could end up naming a completely different scope by the time its exit runs
-      - States a monotonically increasing token never repeats, so a stale token can never accidentally
-        match a new, unrelated scope
-    bad_signals:
-      - Says the slice index is used directly to identify and later remove entries
-      - Says tokens exist only for logging/debugging purposes and play no role in correctness
-
-  - id: dd-trace-go-orchestrion-push-drains-finished-entries
-    files:
-      - orchestrion/AGENTS.md
-    input: |
-      Before appending a new entry under a key, does the context stack's Push do anything with
-      entries already sitting on that key's stack, or does it purely append?
-    expected_criteria:
-      - States Push first drops any trailing entries at the top of that key's stack whose done cell
-        already reads true, before appending the new entry
-      - Explains this bounds GLS growth for values pushed on one goroutine whose lifecycle (and pop)
-        completes on a different goroutine, so the pop never actually runs on the original goroutine
-    bad_signals:
-      - Says Push only ever appends, and that shrinking the stack is exclusively the job of
-        Pop/PopScope
-      - Says finished entries are left in place indefinitely until an explicit pop removes them
-
-  - id: dd-trace-go-orchestrion-pooled-span-liveness-cell
-    files:
-      - orchestrion/AGENTS.md
-    input: |
-      Each context stack entry captures its own separate done *atomic.Bool cell at push time. Why not
-      just check a "finished" flag directly on the pushed value itself (e.g. a field on *tracer.Span)
-      whenever liveness needs to be checked, instead of capturing a separate cell?
-    expected_criteria:
-      - States that finished spans are returned to a sync.Pool and can be recycled into a completely
-        unrelated, newly active span
-      - Explains that if liveness were read directly off the recycled object, a bit being reset for
-        the new span would make the stack incorrectly think the old, already-finished scope is live
-        again, whereas a cell captured at push time freezes that specific scope's liveness
-        independent of what happens to the underlying pooled object afterward
-    bad_signals:
-      - Says reading a finished flag directly off the pooled span object is equally safe since spans
-        are only ever reused after Finish is called
-      - Says the separate done cell exists purely for performance/caching reasons unrelated to
-        object pooling
+      - Says directive arguments cannot be accessed from within an advice template
+      - Invents different/incorrect field names in place of .Key/.Value or .DirectiveArgs
 
 
 # ==== OTelc Tests ====
