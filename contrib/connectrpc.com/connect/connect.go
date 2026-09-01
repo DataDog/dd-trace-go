@@ -457,6 +457,27 @@ func panicError(value any) error {
 	return fmt.Errorf("panic: %v", value)
 }
 
+// recoverFinish calls finish (a span's ordinary, non-panic finishing logic — e.g. finishMessage,
+// finishCall, or finishUnary). cfg.errCheck is user-supplied and runs as part of finish's
+// classification; if it panics, that's a genuinely new panic, not one the caller is already
+// unwinding for, and without this it would skip whatever bookkeeping the caller still needs to
+// run (e.g. (*streamingClientConn).endOperation) and leave the span unfinished. Recovers that
+// panic just long enough to call onPanic (finishMessageOnPanic, finishCallOnPanic, or
+// finishUnaryOnPanic, as appropriate) so the span still finishes as an error, and returns the
+// recovered value so the caller can still run any further cleanup before re-raising it with
+// panic(recovered) — matching every other panic path in this package. Returns nil if finish
+// completed without panicking.
+func recoverFinish(finish func(), onPanic func(panicErr error)) (recovered any) {
+	defer func() {
+		recovered = recover()
+		if recovered != nil {
+			onPanic(panicError(recovered))
+		}
+	}()
+	finish()
+	return nil
+}
+
 // isNilError reports whether err is a non-nil error interface wrapping a nil value, e.g. a
 // value recovered from panic((*connectrpc.Error)(nil)). Such an error compares != nil and
 // passes a type assertion to error, but calling any of its methods (as codeOf and
