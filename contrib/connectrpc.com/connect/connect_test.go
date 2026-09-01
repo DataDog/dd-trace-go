@@ -1161,7 +1161,7 @@ func TestStreamingClientContextDeadlineSurvivesSuppressedRace(t *testing.T) {
 	assert.NotNil(t, finished.Tag(ext.ErrorMsg))
 }
 
-func TestStreamingClientLatestRealErrorWinsWhenErrorCheckDiffers(t *testing.T) {
+func TestStreamingClientFallsBackWhenErrorCheckRejectsFirstRealError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	rejected := connectrpc.NewError(connectrpc.CodeInternal, errors.New("flaky, ignore"))
@@ -1185,9 +1185,46 @@ func TestStreamingClientLatestRealErrorWinsWhenErrorCheckDiffers(t *testing.T) {
 	conn.endOperation(rejected, true, false)
 	// ...but Receive then finishes with a different error that has the same Connect code (so
 	// isSuppressedTerminalError's code-only comparison can't distinguish them) and that
-	// WithErrorCheck accepts. Keeping "first wins" here would let cfg.errCheck's rejection of
-	// the first error hide the second, genuine failure entirely.
+	// WithErrorCheck accepts. The rejected error stays primary (arrival order is preserved), but
+	// the accepted one is kept as a fallback, so finish falls back to it once cfg.errCheck
+	// rejects the primary, instead of losing the genuine failure entirely.
 	conn.endOperation(accepted, true, false)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	finished := mt.FinishedSpans()[0]
+	assert.NotNil(t, finished.Tag(ext.ErrorMsg))
+	assert.Contains(t, finished.Tag(ext.ErrorMsg), "real failure")
+}
+
+func TestStreamingClientKeepsFirstRealErrorWhenErrorCheckRejectsSecond(t *testing.T) {
+	// The mirror image of the test above: WithErrorCheck accepts the first error and rejects the
+	// second one. Since the bookkeeping can't call cfg.errCheck while comparing candidates (it
+	// must run at most once per RPC), it always keeps the first-arriving real error as primary
+	// and only remembers a later one as a fallback — so this must not let the second, ultimately
+	// rejected error evict the first, accepted one.
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	accepted := connectrpc.NewError(connectrpc.CodeInternal, errors.New("real failure"))
+	rejected := connectrpc.NewError(connectrpc.CodeInternal, errors.New("flaky, ignore"))
+	cfg := newConfig(WithErrorCheck(func(_ string, err error) bool {
+		return err != error(rejected)
+	}))
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 cfg,
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	conn.beginOperation() // Send
+	conn.beginOperation() // Receive, still in flight
+	// Send finishes first with an error WithErrorCheck will accept...
+	conn.endOperation(accepted, true, false)
+	// ...and Receive then finishes with a same-code error WithErrorCheck will reject. The
+	// accepted error must stay primary; the rejected one becoming a fallback must never be used,
+	// since the primary is never rejected.
+	conn.endOperation(rejected, true, false)
 
 	require.Len(t, mt.FinishedSpans(), 1)
 	finished := mt.FinishedSpans()[0]
