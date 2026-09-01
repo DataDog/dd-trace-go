@@ -320,7 +320,15 @@ func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowE
 // already be nil — since the gRPC/Connect status-code tags reflect the original error even when
 // it ends up suppressed; only the recorded error (and whether it's attached via tracer.WithError)
 // depends on out.recorded.
+//
+// span is nil whenever WithStreamCalls(false) leaves no call span for a stream (finish is still
+// called to run the terminal-error bookkeeping and, on the client, stop the context watcher), so
+// this must stay a no-op in that case rather than assume finishSpan's old caller-side check is
+// still the only path in — (*streamingClientConn).finish calls this directly.
 func finishClassified(span *tracer.Span, err error, out finishOutcome, protocol string, cfg *config) {
+	if span == nil {
+		return
+	}
 	if rpcSystem(protocol) == ext.RPCSystemGRPC {
 		statusCode := uint32(0)
 		if err != nil && !out.expectedEOF {

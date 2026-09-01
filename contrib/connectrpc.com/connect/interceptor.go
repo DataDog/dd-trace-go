@@ -394,6 +394,14 @@ func (c *streamingClientConn) stopContextCallback() {
 
 func (c *streamingClientConn) finish(err error, isPanic bool, fallbacks []error) {
 	c.finishOnce.Do(func() {
+		if c.span == nil {
+			// WithStreamCalls(false) leaves no call span; finish still runs (for the
+			// terminal-error bookkeeping and, via the caller, the context-watcher cleanup), but
+			// there's nothing to tag or classify an error for. finishClassified would also no-op
+			// on a nil span, but skip the classification (and any cfg.errCheck call) entirely
+			// rather than do it for a result nothing will ever use.
+			return
+		}
 		if isPanic {
 			finishCallOnPanic(c.span, err, c.spec.Procedure, c.peer.Protocol, c.cfg)
 			return
