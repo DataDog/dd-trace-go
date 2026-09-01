@@ -228,6 +228,30 @@ func isSuppressedTerminalError(err error, cfg *config) bool {
 	return cfg.nonErrorCodes[code]
 }
 
+// shouldReplaceTerminalError decides whether candidate should replace a stream's currently
+// stored terminal error. A panic always wins, and a stored panic is never displaced by a later
+// non-panic. Otherwise this relies only on isSuppressedTerminalError's code-based rules (never
+// cfg.errCheck, which is meant to run at most once per RPC — see isSuppressedTerminalError):
+// a code-suppressed stored error is always replaced (even by another code-suppressed one, which
+// is harmless since finishSpan drops both the same way), but a code-non-suppressed ("real")
+// stored error is only replaced by another candidate that's also real by code. Concurrent
+// Send/Receive can each finish with a different, equally "real" by-code error; since
+// cfg.errCheck might accept one and reject the other, always keeping whichever arrived first
+// would let a callback-rejected error permanently hide a later genuine failure, so the newer
+// candidate wins that case instead.
+func shouldReplaceTerminalError(storedErr error, storedIsPanic bool, candidate error, isPanic bool, cfg *config) bool {
+	switch {
+	case storedErr == nil, isPanic:
+		return true
+	case storedIsPanic:
+		return false
+	case isSuppressedTerminalError(storedErr, cfg):
+		return true
+	default:
+		return !isSuppressedTerminalError(candidate, cfg)
+	}
+}
+
 func finishCall(span *tracer.Span, err error, procedure, protocol string, cfg *config) {
 	finishSpan(span, err, procedure, protocol, false, false, false, cfg)
 }
@@ -264,13 +288,15 @@ func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowE
 	if span == nil {
 		return
 	}
-	if isNilError(err) {
-		// A normally returned (*connectrpc.Error)(nil) (or any other nil-valued error) is not
-		// just unsafe for codeOf: connectrpc.IsNotModifiedError, setErrorDetailTags, and
-		// eventually span.Finish's own error tagging (via tracer.WithError) all call methods on
-		// err too (Unwrap, Details, Error), each of which dereferences the same nil receiver.
-		// Replace it with a safe stand-in before any of that runs.
-		err = fmt.Errorf("connect: got a non-nil error interface (%T) holding a nil value", err)
+	if isNilError(err) || hasNilConnectError(err) {
+		// Covers two variants of the same trap: err itself is a nil-valued error interface (e.g.
+		// a normally returned (*connectrpc.Error)(nil)), or err is a legitimate non-nil wrapper
+		// whose Unwrap chain contains a nil *connectrpc.Error (e.g. a custom error type storing
+		// one as its cause). Either way, codeOf, connectrpc.IsNotModifiedError,
+		// setErrorDetailTags, and eventually span.Finish's own error tagging (via
+		// tracer.WithError) can call a method on that nil value (Unwrap, Details, Error, Code)
+		// and panic. Replace err with a safe stand-in before any of that runs.
+		err = fmt.Errorf("connect: error value (%T) is unsafe to inspect: a nil error, or one with a nil *connectrpc.Error in its chain", err)
 	}
 
 	code := codeOf(err)
@@ -313,7 +339,7 @@ func finishSpan(span *tracer.Span, err error, procedure, protocol string, allowE
 
 func setErrorDetailTags(span *tracer.Span, err error, protocol string) {
 	var connectErr *connectrpc.Error
-	if !errors.As(err, &connectErr) {
+	if !errors.As(err, &connectErr) || connectErr == nil {
 		return
 	}
 	prefix := "connect." + tagStatusDetailsPrefix
@@ -426,4 +452,15 @@ func isNilError(err error) bool {
 	default:
 		return false
 	}
+}
+
+// hasNilConnectError reports whether err's chain contains a *connectrpc.Error whose value is
+// nil, e.g. a custom wrapper error whose Unwrap returns (*connectrpc.Error)(nil) as its cause.
+// Unlike isNilError, which only catches err itself being nil-valued, this catches the same trap
+// one level deeper: errors.AsType happily matches the nil pointer without dereferencing it, but
+// codeOf, setErrorDetailTags, and connectrpc.IsNotModifiedError's Unwrap chain-walk all call one
+// of its methods and panic.
+func hasNilConnectError(err error) bool {
+	connectErr, ok := errors.AsType[*connectrpc.Error](err)
+	return ok && connectErr == nil
 }

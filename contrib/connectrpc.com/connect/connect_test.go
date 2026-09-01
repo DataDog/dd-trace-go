@@ -1161,6 +1161,74 @@ func TestStreamingClientContextDeadlineSurvivesSuppressedRace(t *testing.T) {
 	assert.NotNil(t, finished.Tag(ext.ErrorMsg))
 }
 
+func TestStreamingClientLatestRealErrorWinsWhenErrorCheckDiffers(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	rejected := connectrpc.NewError(connectrpc.CodeInternal, errors.New("flaky, ignore"))
+	accepted := connectrpc.NewError(connectrpc.CodeInternal, errors.New("real failure"))
+	cfg := newConfig(WithErrorCheck(func(_ string, err error) bool {
+		// A stand-in for a callback that can tell these two apart even though they share a
+		// Connect code, which isSuppressedTerminalError's code-only comparison cannot.
+		return err != error(rejected)
+	}))
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 cfg,
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	conn.beginOperation() // Send
+	conn.beginOperation() // Receive, still in flight
+	// Send finishes first with an error the configured WithErrorCheck will reject...
+	conn.endOperation(rejected, true, false)
+	// ...but Receive then finishes with a different error that has the same Connect code (so
+	// isSuppressedTerminalError's code-only comparison can't distinguish them) and that
+	// WithErrorCheck accepts. Keeping "first wins" here would let cfg.errCheck's rejection of
+	// the first error hide the second, genuine failure entirely.
+	conn.endOperation(accepted, true, false)
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	finished := mt.FinishedSpans()[0]
+	assert.NotNil(t, finished.Tag(ext.ErrorMsg))
+	assert.Contains(t, finished.Tag(ext.ErrorMsg), "real failure")
+}
+
+// nilConnectErrorWrapper wraps a nil *connectrpc.Error as its cause without ever calling any of
+// its methods, modeling a custom error type that can legitimately carry the nested typed-nil
+// trap without crashing at construction (unlike fmt.Errorf's %w, which would call Error() on the
+// nil pointer immediately while formatting the wrapped message).
+type nilConnectErrorWrapper struct{}
+
+func (nilConnectErrorWrapper) Error() string { return "wrapped nil connect error" }
+func (nilConnectErrorWrapper) Unwrap() error { return (*connectrpc.Error)(nil) }
+
+func TestSetErrorDetailTagsIgnoresNestedTypedNilConnectError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span := tracer.StartSpan("nested-nil")
+	require.NotPanics(t, func() {
+		setErrorDetailTags(span, nilConnectErrorWrapper{}, connectrpc.ProtocolConnect)
+	})
+	span.Finish()
+}
+
+func TestFinishSpanHandlesNestedTypedNilConnectError(t *testing.T) {
+	// allowNotModified exercises connectrpc.IsNotModifiedError's errors.Is chain-walk, which
+	// would otherwise reach the nested nil *connectrpc.Error's Unwrap and panic; WithErrorDetailTags
+	// exercises setErrorDetailTags's own guard too.
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span := tracer.StartSpan("connect.server")
+	cfg := newConfig(WithErrorDetailTags())
+	require.NotPanics(t, func() {
+		finishUnary(span, nilConnectErrorWrapper{}, unaryProcedure, connectrpc.ProtocolConnect, http.MethodGet, cfg)
+	})
+	require.Len(t, mt.FinishedSpans(), 1)
+	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+}
+
 // peerPanicStreamingClientConn panics on its first Peer call instead of from Send, to exercise a
 // panic that happens while streamingClientConn.Send reads the peer's protocol rather than during
 // the wrapped read/write call itself. It succeeds on later calls, since finish also calls Peer
