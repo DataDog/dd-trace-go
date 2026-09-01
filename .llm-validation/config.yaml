@@ -14,42 +14,41 @@ instruction_files:
 
 default_level: gate
 presets:
-  # One short, low-ambiguity, blocking case per monitored instruction file. 
+  # One short, low-ambiguity, blocking case per monitored instruction file.
   gate:
     cases:
-      - dd-trace-go-general-forbidigo-env-vars           # AGENTS.md
-      - dd-trace-go-contrib-structure                    # contrib/AGENTS.md
-      - dd-trace-go-tracer-span-limit                     # ddtrace/tracer/AGENTS.md
-      - dd-trace-go-internal-locking-deadlock-buildtag    # internal/AGENTS.md
-      - dd-trace-go-profiler-cpu-duration-clamp           # profiler/AGENTS.md
-      - dd-trace-go-appsec-limiter-deny-safe-default      # internal/appsec/AGENTS.md
-      - dd-trace-go-civisibility-close-action-order       # internal/civisibility/AGENTS.md
-      - dd-trace-go-orchestrion-build-time-enabled-check  # orchestrion/AGENTS.md
+      - dd-trace-go-general-code-coverage-flags-cap       # AGENTS.md
+      - dd-trace-go-contrib-structure                     # contrib/AGENTS.md
+      - dd-trace-go-tracer-span-limit                      # ddtrace/tracer/AGENTS.md
+      - dd-trace-go-internal-config-source-precedence     # internal/AGENTS.md
+      - dd-trace-go-profiler-cpu-duration-clamp            # profiler/AGENTS.md
+      - dd-trace-go-appsec-purpose                         # internal/appsec/AGENTS.md
+      - dd-trace-go-civisibility-close-action-order        # internal/civisibility/AGENTS.md
+      - dd-trace-go-orchestrion-build-time-enabled-check   # orchestrion/AGENTS.md
     runs: 3
-  # Three cases per monitored file (the gate case plus two deeper ones)
+  # Three cases per monitored file (the gate case plus two additional ones).
   minimum:
     cases:
-      - dd-trace-go-general-forbidigo-env-vars
-      - dd-trace-go-general-env-autodetect-first-read
-      - dd-trace-go-general-fixmodules-transitive-replace
+      - dd-trace-go-general-code-coverage-flags-cap
+      - dd-trace-go-general-codeowners-dual-consumer
+      - dd-trace-go-control-general-go
       - dd-trace-go-contrib-structure
       - dd-trace-go-contrib-tags
       - dd-trace-go-contrib-telemetry-registration
       - dd-trace-go-tracer-span-limit
       - dd-trace-go-tracer-sampling-env-config
       - dd-trace-go-tracer-stats-cardinality-limits
-      - dd-trace-go-internal-locking-deadlock-buildtag
-      - dd-trace-go-internal-clientip-custom-header-no-fallback
-      - dd-trace-go-internal-stableconfig-oversized-file-fallback
+      - dd-trace-go-internal-config-source-precedence
+      - dd-trace-go-internal-telemetry-dependencies-category
       - dd-trace-go-profiler-cpu-duration-clamp
-      - dd-trace-go-profiler-upload-queue-full-behavior
       - dd-trace-go-profiler-withprofiletypes-forces-metrics
-      - dd-trace-go-appsec-limiter-deny-safe-default
+      - dd-trace-go-profiler-aws-lambda-disabled
       - dd-trace-go-appsec-purpose
       - dd-trace-go-appsec-dyngo-role
+      - dd-trace-go-appsec-operation-requirements
       - dd-trace-go-civisibility-close-action-order
-      - dd-trace-go-civisibility-http-retry-defaults
       - dd-trace-go-civisibility-git-command-serialization
+      - dd-trace-go-civisibility-feature-override-logging
       - dd-trace-go-orchestrion-build-time-enabled-check
       - dd-trace-go-orchestrion-yml-structure
       - dd-trace-go-orchestrion-template-function-fields
