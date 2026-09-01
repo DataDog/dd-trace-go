@@ -228,28 +228,15 @@ func isSuppressedTerminalError(err error, cfg *config) bool {
 	return cfg.nonErrorCodes[code]
 }
 
-// shouldReplaceTerminalError decides whether candidate should replace a stream's currently
-// stored terminal error. A panic always wins, and a stored panic is never displaced by a later
-// non-panic. Otherwise this relies only on isSuppressedTerminalError's code-based rules (never
-// cfg.errCheck, which is meant to run at most once per RPC — see isSuppressedTerminalError):
-// a code-suppressed stored error is always replaced (even by another code-suppressed one, which
-// is harmless since finishSpan drops both the same way), but a code-non-suppressed ("real")
-// stored error is only replaced by another candidate that's also real by code. Concurrent
-// Send/Receive can each finish with a different, equally "real" by-code error; since
-// cfg.errCheck might accept one and reject the other, always keeping whichever arrived first
-// would let a callback-rejected error permanently hide a later genuine failure, so the newer
-// candidate wins that case instead.
-func shouldReplaceTerminalError(storedErr error, storedIsPanic bool, candidate error, isPanic bool, cfg *config) bool {
-	switch {
-	case storedErr == nil, isPanic:
-		return true
-	case storedIsPanic:
+// wouldRecordError reports whether finishSpan would keep err as a non-panic span's recorded
+// error: it isn't code-suppressed (isSuppressedTerminalError) and, if cfg.errCheck is set, the
+// callback accepts it. Used only to decide whether a stream's terminal error needs to fall back
+// to a shadowed concurrent candidate — see (*streamingClientConn).recordTerminalError.
+func wouldRecordError(err error, procedure string, cfg *config) bool {
+	if isSuppressedTerminalError(err, cfg) {
 		return false
-	case isSuppressedTerminalError(storedErr, cfg):
-		return true
-	default:
-		return !isSuppressedTerminalError(candidate, cfg)
 	}
+	return cfg.errCheck == nil || cfg.errCheck(procedure, err)
 }
 
 func finishCall(span *tracer.Span, err error, procedure, protocol string, cfg *config) {

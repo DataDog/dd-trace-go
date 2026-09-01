@@ -178,14 +178,15 @@ type streamingClientConn struct {
 	ctx  context.Context
 	span *tracer.Span
 
-	mu                 sync.Mutex
-	active             int
-	finishPending      bool
-	terminalErr        error
-	terminalErrIsPanic bool
-	finishOnce         sync.Once
-	headerTagsOnce     sync.Once
-	stopContextDone    func() bool
+	mu                  sync.Mutex
+	active              int
+	finishPending       bool
+	terminalErr         error
+	terminalErrIsPanic  bool
+	terminalErrFallback error
+	finishOnce          sync.Once
+	headerTagsOnce      sync.Once
+	stopContextDone     func() bool
 }
 
 func newStreamingClientConn(ctx context.Context, cfg *config, conn connectrpc.StreamingClientConn, span *tracer.Span) *streamingClientConn {
@@ -305,20 +306,16 @@ func (c *streamingClientConn) endOperation(err error, terminal, isPanic bool) {
 	if terminal {
 		c.finishPending = true
 		if err != nil && (isPanic || !isExpectedStreamEOF(err)) {
-			if shouldReplaceTerminalError(c.terminalErr, c.terminalErrIsPanic, err, isPanic, c.cfg) {
-				c.terminalErr = err
-				c.terminalErrIsPanic = isPanic
-			}
+			c.recordTerminalError(err, isPanic)
 		}
 	}
 	c.active--
 	shouldFinish := c.finishPending && c.active == 0
-	terminalErr := c.terminalErr
-	terminalErrIsPanic := c.terminalErrIsPanic
+	terminalErr, terminalErrIsPanic, terminalErrFallback := c.terminalErr, c.terminalErrIsPanic, c.terminalErrFallback
 	c.mu.Unlock()
 	if shouldFinish {
 		c.stopContextCallback()
-		c.finish(terminalErr, terminalErrIsPanic)
+		c.finish(terminalErr, terminalErrIsPanic, terminalErrFallback)
 	}
 }
 
@@ -326,17 +323,48 @@ func (c *streamingClientConn) requestFinish(err error) {
 	c.mu.Lock()
 	c.finishPending = true
 	if err != nil && !errors.Is(err, io.EOF) {
-		if shouldReplaceTerminalError(c.terminalErr, c.terminalErrIsPanic, err, false, c.cfg) {
-			c.terminalErr = err
-			c.terminalErrIsPanic = false
-		}
+		c.recordTerminalError(err, false)
 	}
 	shouldFinish := c.active == 0
-	terminalErr := c.terminalErr
-	terminalErrIsPanic := c.terminalErrIsPanic
+	terminalErr, terminalErrIsPanic, terminalErrFallback := c.terminalErr, c.terminalErrIsPanic, c.terminalErrFallback
 	c.mu.Unlock()
 	if shouldFinish {
-		c.finish(terminalErr, terminalErrIsPanic)
+		c.finish(terminalErr, terminalErrIsPanic, terminalErrFallback)
+	}
+}
+
+// recordTerminalError updates the stream's terminal-error bookkeeping with a newly observed
+// candidate. Must be called with c.mu held. A panic always wins outright, discarding any
+// fallback (it no longer matters once a panic must be reported); a stored panic is never
+// displaced by a later non-panic. Otherwise this relies only on isSuppressedTerminalError's
+// code-based rules (never cfg.errCheck, which must run at most once per RPC — see its own doc):
+// a code-suppressed stored error is always replaced. A code-non-suppressed ("real") stored error
+// is never displaced by another real candidate — concurrent Send/Receive can each finish with a
+// different, equally "real" by-code error, and always picking one over the other by arrival
+// order would let cfg.errCheck's rejection of whichever one that is permanently hide the other's
+// genuine failure. Instead the shadowed candidate is remembered as a fallback, and finish uses it
+// if cfg.errCheck ends up rejecting the primary.
+//
+// Only one fallback slot is kept: a third concurrent real candidate overwrites whatever fallback
+// is already stored, so a genuine three-way race (e.g. Send, Receive, and a context-cancellation
+// observation all landing with different real errors) could still lose one candidate outright.
+// Send and Receive can only race two at a time by connect's own concurrency contract, so this
+// covers the realistic case; a general fix would need to track every candidate, not just one.
+func (c *streamingClientConn) recordTerminalError(candidate error, isPanic bool) {
+	switch {
+	case c.terminalErr == nil:
+		c.terminalErr = candidate
+		c.terminalErrIsPanic = isPanic
+	case isPanic:
+		c.terminalErr = candidate
+		c.terminalErrIsPanic = true
+		c.terminalErrFallback = nil
+	case c.terminalErrIsPanic:
+		// A stored panic is never displaced.
+	case isSuppressedTerminalError(c.terminalErr, c.cfg):
+		c.terminalErr = candidate
+	case !isSuppressedTerminalError(candidate, c.cfg):
+		c.terminalErrFallback = candidate
 	}
 }
 
@@ -346,13 +374,17 @@ func (c *streamingClientConn) stopContextCallback() {
 	}
 }
 
-func (c *streamingClientConn) finish(err error, isPanic bool) {
+func (c *streamingClientConn) finish(err error, isPanic bool, fallback error) {
 	c.finishOnce.Do(func() {
 		if isPanic {
 			finishCallOnPanic(c.span, err, c.Spec().Procedure, c.Peer().Protocol, c.cfg)
 			return
 		}
-		finishCall(c.span, err, c.Spec().Procedure, c.Peer().Protocol, c.cfg)
+		procedure := c.Spec().Procedure
+		if fallback != nil && !wouldRecordError(err, procedure, c.cfg) {
+			err = fallback
+		}
+		finishCall(c.span, err, procedure, c.Peer().Protocol, c.cfg)
 	})
 }
 
