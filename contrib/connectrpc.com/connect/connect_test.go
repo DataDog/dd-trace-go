@@ -1373,6 +1373,110 @@ func TestStreamingClientFinishSkipsClassificationWhenSpanIsNil(t *testing.T) {
 	assert.Zero(t, errCheckCalls.Load(), "finish must not classify an error for a call span that doesn't exist")
 }
 
+func TestStreamingClientSendFinishesStreamWhenErrorCheckPanics(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	cfg := newConfig(WithErrorCheck(func(string, error) bool {
+		panic("errCheck panic")
+	}))
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &codedEOFStreamingClientConn{panicStreamingClientConn{header: make(http.Header)}},
+		cfg:                 cfg,
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	// Send's underlying call returns a real (non-suppressed-by-code) error, so finishMessage's
+	// classification actually invokes cfg.errCheck — and that's where this panics, before
+	// endOperation would otherwise run.
+	assert.PanicsWithValue(t, "errCheck panic", func() {
+		_ = conn.Send(wrapperspb.String("hello"))
+	})
+
+	require.Len(t, mt.FinishedSpans(), 2, "both the message span and the call span must finish even though cfg.errCheck itself panicked while classifying a normal completion")
+	for _, finished := range mt.FinishedSpans() {
+		assert.NotNil(t, finished.Tag(ext.ErrorMsg))
+	}
+}
+
+func TestStreamingClientEndOperationWaitsForRacingContextWatcher(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span := tracer.StartSpan("connect.client")
+	stopCalled := make(chan struct{})
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 newConfig(),
+		ctx:                 context.Background(),
+		span:                span,
+		ctxFinishDone:       make(chan struct{}),
+		stopContextDone: func() bool {
+			close(stopCalled)
+			// Simulates context.AfterFunc's documented stop() behavior when the context is
+			// already done and its callback (requestFinish) has started running concurrently.
+			return false
+		},
+	}
+	conn.beginOperation() // the stream's one in-flight operation
+
+	endOperationDone := make(chan struct{})
+	go func() {
+		defer close(endOperationDone)
+		// Finishes with a code that's suppressed by default (CodeCanceled). Without waiting for
+		// the racing context watcher below, this would win the race and incorrectly finish the
+		// call span successfully.
+		conn.endOperation(connectrpc.NewError(connectrpc.CodeCanceled, errors.New("send canceled")), true, false)
+	}()
+
+	<-stopCalled
+	select {
+	case <-endOperationDone:
+		t.Fatal("endOperation must wait for the racing context watcher before finishing")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	// The context watcher (requestFinish) races in with the real failure and completes.
+	conn.requestFinish(context.DeadlineExceeded)
+
+	select {
+	case <-endOperationDone:
+	case <-time.After(time.Second):
+		t.Fatal("endOperation never resumed after the context watcher finished")
+	}
+
+	require.Len(t, mt.FinishedSpans(), 1)
+	finished := mt.FinishedSpans()[0]
+	assert.Equal(t, "deadline_exceeded", finished.Tag(tagConnectErrorCode))
+	assert.NotNil(t, finished.Tag(ext.ErrorMsg))
+}
+
+func TestRequestFinishRecoversPanicInsteadOfCrashingProcess(t *testing.T) {
+	// requestFinish runs in its own goroutine, spawned by context.AfterFunc, with no caller to
+	// propagate a panic to — if cfg.errCheck panics while requestFinish is the one driving the
+	// stream to completion, letting that escape would crash the whole host process, not just
+	// this request.
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	cfg := newConfig(WithErrorCheck(func(string, error) bool {
+		panic("errCheck panic")
+	}))
+	span := tracer.StartSpan("connect.client")
+	conn := &streamingClientConn{
+		StreamingClientConn: &panicStreamingClientConn{header: make(http.Header)},
+		cfg:                 cfg,
+		ctx:                 context.Background(),
+		span:                span,
+	}
+
+	require.NotPanics(t, func() {
+		conn.requestFinish(connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom")))
+	})
+
+	require.Len(t, mt.FinishedSpans(), 1, "the call span must still finish as an error despite cfg.errCheck panicking")
+	assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
+}
+
 // nilConnectErrorWrapper wraps a nil *connectrpc.Error as its cause without ever calling any of
 // its methods, modeling a custom error type that can legitimately carry the nested typed-nil
 // trap without crashing at construction (unlike fmt.Errorf's %w, which would call Error() on the

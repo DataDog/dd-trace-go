@@ -76,7 +76,12 @@ func (i *interceptor) wrapUnaryClient(ctx context.Context, request connectrpc.An
 			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, httpMethod, i.cfg)
 			panic(recovered)
 		}
-		finishUnary(span, err, procedure, protocol, httpMethod, i.cfg)
+		if recovered := recoverFinish(
+			func() { finishUnary(span, err, procedure, protocol, httpMethod, i.cfg) },
+			func(panicErr error) { finishUnaryOnPanic(span, panicErr, procedure, protocol, httpMethod, i.cfg) },
+		); recovered != nil {
+			panic(recovered)
+		}
 	}()
 	protocol = request.Peer().Protocol
 	procedure = request.Spec().Procedure
@@ -103,7 +108,12 @@ func (i *interceptor) wrapUnaryServer(ctx context.Context, request connectrpc.An
 			finishUnaryOnPanic(span, panicError(recovered), procedure, protocol, httpMethod, i.cfg)
 			panic(recovered)
 		}
-		finishUnary(span, err, procedure, protocol, httpMethod, i.cfg)
+		if recovered := recoverFinish(
+			func() { finishUnary(span, err, procedure, protocol, httpMethod, i.cfg) },
+			func(panicErr error) { finishUnaryOnPanic(span, panicErr, procedure, protocol, httpMethod, i.cfg) },
+		); recovered != nil {
+			panic(recovered)
+		}
 	}()
 	setProtocolTag(span, protocol)
 	withHeaderTags(i.cfg, request.Header(), protocol, span)
@@ -172,7 +182,12 @@ func (i *interceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc)
 					finishCallOnPanic(callSpan, panicError(recovered), spec.Procedure, protocol, i.cfg)
 					panic(recovered)
 				}
-				finishCall(callSpan, err, spec.Procedure, protocol, i.cfg)
+				if recovered := recoverFinish(
+					func() { finishCall(callSpan, err, spec.Procedure, protocol, i.cfg) },
+					func(panicErr error) { finishCallOnPanic(callSpan, panicErr, spec.Procedure, protocol, i.cfg) },
+				); recovered != nil {
+					panic(recovered)
+				}
 			}()
 			setProtocolTag(callSpan, protocol)
 			withHeaderTags(i.cfg, conn.RequestHeader(), protocol, callSpan)
@@ -209,8 +224,24 @@ type streamingClientConn struct {
 	terminalErrIsPanic   bool
 	terminalErrFallbacks []error
 	finishOnce           sync.Once
-	headerTagsOnce       sync.Once
-	stopContextDone      func() bool
+	// stopAttemptOnce guards the (at most once, ever) attempt to stop the context-cancellation
+	// watcher from endOperation. Without it, active reaching 0 more than once for the same
+	// stream (e.g. a message operation finishes the stream, then CloseResponse's own
+	// beginOperation/endOperation pair transiently re-triggers active==0) would call
+	// stopContextDone a second time; context.AfterFunc's stop reports "not stopped" both when the
+	// callback has started and when it was already stopped by an earlier call, and this package
+	// can't tell those two apart, so a second call could wait on ctxFinishDone forever even
+	// though the watcher will now never run at all. See endOperation.
+	stopAttemptOnce sync.Once
+	headerTagsOnce  sync.Once
+	stopContextDone func() bool
+	// ctxFinishDone is closed when requestFinish (the context.AfterFunc callback) returns,
+	// regardless of whether it actually finished the stream. stopContextDone's own return value
+	// only says whether the callback was prevented from starting at all — if the context is
+	// already done, it may report "not stopped" while the callback is still running or has
+	// already finished, and endOperation needs to know when it's actually safe to read
+	// terminalErr/terminalErrFallbacks as final. See stopContextCallback.
+	ctxFinishDone chan struct{}
 }
 
 func newStreamingClientConn(ctx context.Context, cfg *config, conn connectrpc.StreamingClientConn, span *tracer.Span, spec connectrpc.Spec, peer connectrpc.Peer) *streamingClientConn {
@@ -223,6 +254,7 @@ func newStreamingClientConn(ctx context.Context, cfg *config, conn connectrpc.St
 		peer:                peer,
 	}
 	if span != nil {
+		stream.ctxFinishDone = make(chan struct{})
 		stream.stopContextDone = context.AfterFunc(ctx, func() {
 			stream.requestFinish(ctx.Err())
 		})
@@ -240,7 +272,15 @@ func (c *streamingClientConn) Send(message any) (err error) {
 			c.endOperation(panicErr, true, true)
 			panic(recovered)
 		}
-		finishMessage(messageSpan, err, c.spec.Procedure, c.peer.Protocol, c.cfg)
+		if recovered := recoverFinish(
+			func() { finishMessage(messageSpan, err, c.spec.Procedure, c.peer.Protocol, c.cfg) },
+			func(panicErr error) {
+				finishMessageOnPanic(messageSpan, panicErr, c.spec.Procedure, c.peer.Protocol, c.cfg)
+			},
+		); recovered != nil {
+			c.endOperation(panicError(recovered), true, true)
+			panic(recovered)
+		}
 		c.endOperation(err, err != nil && !isExpectedStreamEOF(err), false)
 	}()
 	if c.cfg.traceStreamMessages {
@@ -268,7 +308,15 @@ func (c *streamingClientConn) Receive(message any) (err error) {
 			c.endOperation(panicErr, true, true)
 			panic(recovered)
 		}
-		finishMessage(messageSpan, err, c.spec.Procedure, c.peer.Protocol, c.cfg)
+		if recovered := recoverFinish(
+			func() { finishMessage(messageSpan, err, c.spec.Procedure, c.peer.Protocol, c.cfg) },
+			func(panicErr error) {
+				finishMessageOnPanic(messageSpan, panicErr, c.spec.Procedure, c.peer.Protocol, c.cfg)
+			},
+		); recovered != nil {
+			c.endOperation(panicError(recovered), true, true)
+			panic(recovered)
+		}
 		c.endOperation(err, err != nil, false)
 	}()
 	if c.cfg.traceStreamMessages {
@@ -332,28 +380,63 @@ func (c *streamingClientConn) endOperation(err error, terminal, isPanic bool) {
 	}
 	c.active--
 	shouldFinish := c.finishPending && c.active == 0
-	terminalErr, terminalErrIsPanic := c.terminalErr, c.terminalErrIsPanic
-	fallbacks := c.terminalErrFallbacks
 	c.mu.Unlock()
-	if shouldFinish {
-		c.stopContextCallback()
-		c.finish(terminalErr, terminalErrIsPanic, fallbacks)
+	if !shouldFinish {
+		return
 	}
+	// stopAttemptOnce: active can reach 0 more than once for the same stream (e.g. a message
+	// operation finishes it, then CloseResponse's own beginOperation/endOperation pair
+	// transiently re-triggers active == 0); only the first such transition needs to coordinate
+	// with the context watcher at all, and doing it more than once risks trying to stop a watcher
+	// that's already been stopped — see the struct field doc.
+	c.stopAttemptOnce.Do(func() {
+		if !c.stopContextCallback() {
+			// The context watcher raced us: it's either currently running requestFinish or has
+			// already finished doing so. Either way, terminalErr/terminalErrFallbacks might still
+			// change (requestFinish could be about to record a more meaningful error) or might
+			// already have changed without requestFinish calling finish itself (it may have
+			// observed active > 0 moments before this call decremented it) — either way, this
+			// must not read them as final until the watcher has fully returned.
+			<-c.ctxFinishDone
+		}
+		c.finishFromSnapshot()
+	})
 }
 
 func (c *streamingClientConn) requestFinish(err error) {
+	if c.ctxFinishDone != nil {
+		// Signal completion before returning, regardless of whether this call itself finishes
+		// the stream — endOperation may be waiting to find out. Never wait on this channel from
+		// here: this goroutine is what closes it.
+		defer close(c.ctxFinishDone)
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			// This runs in its own goroutine, spawned by context.AfterFunc, with no caller to
+			// propagate a panic to — finish already finishes the call span as an error before
+			// re-raising anything it recovers (see finish's own recoverFinish use), so the only
+			// thing left to do here is stop it from crashing the whole host process.
+			instr.Logger().Error("contrib/connectrpc.com/connect: recovered panic finishing stream after context cancellation: %v", recovered)
+		}
+	}()
 	c.mu.Lock()
 	c.finishPending = true
 	if err != nil && !errors.Is(err, io.EOF) {
 		c.recordTerminalError(err, false)
 	}
 	shouldFinish := c.active == 0
+	c.mu.Unlock()
+	if shouldFinish {
+		c.finishFromSnapshot()
+	}
+}
+
+func (c *streamingClientConn) finishFromSnapshot() {
+	c.mu.Lock()
 	terminalErr, terminalErrIsPanic := c.terminalErr, c.terminalErrIsPanic
 	fallbacks := c.terminalErrFallbacks
 	c.mu.Unlock()
-	if shouldFinish {
-		c.finish(terminalErr, terminalErrIsPanic, fallbacks)
-	}
+	c.finish(terminalErr, terminalErrIsPanic, fallbacks)
 }
 
 // recordTerminalError updates the stream's terminal-error bookkeeping with a newly observed
@@ -386,10 +469,17 @@ func (c *streamingClientConn) recordTerminalError(candidate error, isPanic bool)
 	}
 }
 
-func (c *streamingClientConn) stopContextCallback() {
-	if c.stopContextDone != nil {
-		c.stopContextDone()
+// stopContextCallback attempts to prevent the context-cancellation watcher (if any) from ever
+// calling requestFinish, and reports whether that's guaranteed: true if there is no watcher, or
+// if it was stopped before it could run at all. False means the watcher's context.AfterFunc
+// callback has already started (or already finished) concurrently — see its own return value's
+// documentation — and the caller must not trust an already-taken terminalErr snapshot without
+// waiting for it first.
+func (c *streamingClientConn) stopContextCallback() bool {
+	if c.stopContextDone == nil {
+		return true
 	}
+	return c.stopContextDone()
 }
 
 func (c *streamingClientConn) finish(err error, isPanic bool, fallbacks []error) {
@@ -406,18 +496,33 @@ func (c *streamingClientConn) finish(err error, isPanic bool, fallbacks []error)
 			finishCallOnPanic(c.span, err, c.spec.Procedure, c.peer.Protocol, c.cfg)
 			return
 		}
-		candidate := normalizeError(err)
-		out := finishOutcomeFor(candidate, c.spec.Procedure, false, false, c.cfg)
-		for _, fb := range fallbacks {
-			if out.recorded != nil {
-				break
-			}
-			fb = normalizeError(fb)
-			if fbOut := finishOutcomeFor(fb, c.spec.Procedure, false, false, c.cfg); fbOut.recorded != nil {
-				candidate, out = fb, fbOut
-			}
+		// cfg.errCheck runs as part of classification below (possibly more than once, if a
+		// fallback is tried). finishOnce means this is the only chance this span gets to finish
+		// at all, so a panic here — most likely from that user-supplied callback — must still
+		// finish it (as an error) rather than leaving it open forever; recoverFinish handles
+		// that, and the panic is then re-raised to whichever caller (endOperation or
+		// requestFinish) invoked finish, exactly as any other panic from this package would be.
+		if recovered := recoverFinish(
+			func() {
+				candidate := normalizeError(err)
+				out := finishOutcomeFor(candidate, c.spec.Procedure, false, false, c.cfg)
+				for _, fb := range fallbacks {
+					if out.recorded != nil {
+						break
+					}
+					fb = normalizeError(fb)
+					if fbOut := finishOutcomeFor(fb, c.spec.Procedure, false, false, c.cfg); fbOut.recorded != nil {
+						candidate, out = fb, fbOut
+					}
+				}
+				finishClassified(c.span, candidate, out, c.peer.Protocol, c.cfg)
+			},
+			func(panicErr error) {
+				finishCallOnPanic(c.span, panicErr, c.spec.Procedure, c.peer.Protocol, c.cfg)
+			},
+		); recovered != nil {
+			panic(recovered)
 		}
-		finishClassified(c.span, candidate, out, c.peer.Protocol, c.cfg)
 	})
 }
 
@@ -451,7 +556,12 @@ func (c *streamingHandlerConn) Receive(message any) (err error) {
 			finishMessageOnPanic(span, panicError(recovered), c.spec.Procedure, c.protocol, c.cfg)
 			panic(recovered)
 		}
-		finishMessage(span, err, c.spec.Procedure, c.protocol, c.cfg)
+		if recovered := recoverFinish(
+			func() { finishMessage(span, err, c.spec.Procedure, c.protocol, c.cfg) },
+			func(panicErr error) { finishMessageOnPanic(span, panicErr, c.spec.Procedure, c.protocol, c.cfg) },
+		); recovered != nil {
+			panic(recovered)
+		}
 	}()
 	c.headerOnce.Do(func() {
 		withHeaderTags(c.cfg, c.RequestHeader(), c.protocol, span)
@@ -470,7 +580,12 @@ func (c *streamingHandlerConn) Send(message any) (err error) {
 			finishMessageOnPanic(span, panicError(recovered), c.spec.Procedure, c.protocol, c.cfg)
 			panic(recovered)
 		}
-		finishMessage(span, err, c.spec.Procedure, c.protocol, c.cfg)
+		if recovered := recoverFinish(
+			func() { finishMessage(span, err, c.spec.Procedure, c.protocol, c.cfg) },
+			func(panicErr error) { finishMessageOnPanic(span, panicErr, c.spec.Procedure, c.protocol, c.cfg) },
+		); recovered != nil {
+			panic(recovered)
+		}
 	}()
 	c.headerOnce.Do(func() {
 		withHeaderTags(c.cfg, c.RequestHeader(), c.protocol, span)
