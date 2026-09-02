@@ -1704,6 +1704,45 @@ func TestLLMObsEnvVars(t *testing.T) {
 	})
 }
 
+func TestLLMObsPromptEnvVars(t *testing.T) {
+	for _, test := range []struct {
+		name, ttl, ttlAlias, timeout, timeoutAlias string
+		wantTTL, wantTimeout                       time.Duration
+	}{
+		{name: "defaults", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "values", ttl: "1.5", timeout: "0", wantTTL: 1500 * time.Millisecond, wantTimeout: 0},
+		{name: "aliases", ttlAlias: "2", timeoutAlias: "3", wantTTL: 2 * time.Second, wantTimeout: 3 * time.Second},
+		{name: "canonical wins over alias", ttl: "4", ttlAlias: "2", timeout: "6", timeoutAlias: "3", wantTTL: 4 * time.Second, wantTimeout: 6 * time.Second},
+		{name: "nonpositive ttl disables", ttl: "-1", wantTTL: -time.Second, wantTimeout: 5 * time.Second},
+		{name: "invalid", ttl: "NaN", timeout: "-1", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "overflow", ttl: "1e100", timeout: "1e100", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			if test.ttl != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_CACHE_TTL", test.ttl)
+			}
+			if test.ttlAlias != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS", test.ttlAlias)
+			}
+			if test.timeout != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT", test.timeout)
+			}
+			if test.timeoutAlias != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS", test.timeoutAlias)
+			}
+			t.Setenv("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", "true")
+			t.Setenv("DD_LLMOBS_PROMPTS_CACHE_DIR", "/tmp/prompts")
+			cfg := Get()
+			assert.Equal(t, test.wantTTL, cfg.LLMObsPromptsCacheTTL())
+			assert.Equal(t, test.wantTimeout, cfg.LLMObsPromptsTimeout())
+			assert.True(t, cfg.LLMObsPromptsFileCacheEnabled())
+			assert.Equal(t, "/tmp/prompts", cfg.LLMObsPromptsCacheDir())
+		})
+	}
+}
+
 func TestReportEffectiveStatsComputation(t *testing.T) {
 	resetGlobalState()
 	defer resetGlobalState()

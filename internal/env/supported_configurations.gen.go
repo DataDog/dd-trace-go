@@ -109,6 +109,10 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_LLMOBS_ENABLED":                                               {},
 	"DD_LLMOBS_ML_APP":                                                {},
 	"DD_LLMOBS_PROJECT_NAME":                                          {},
+	"DD_LLMOBS_PROMPTS_CACHE_DIR":                                     {},
+	"DD_LLMOBS_PROMPTS_CACHE_TTL":                                     {},
+	"DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED":                            {},
+	"DD_LLMOBS_PROMPTS_TIMEOUT":                                       {},
 	"DD_LOGGING_RATE":                                                 {},
 	"DD_LOGS_OTEL_ENABLED":                                            {},
 	"DD_METRICS_OTEL_ENABLED":                                         {},
@@ -328,4 +332,6 @@ var SensitiveConfigurations = map[string]struct{}{
 var KeyAliases = map[string][]string{
 	"DD_API_KEY":                    {"DD-API-KEY"},
 	"DD_APPSEC_STACK_TRACE_ENABLED": {"DD_APPSEC_STACK_TRACE_ENABLE"},
+	"DD_LLMOBS_PROMPTS_CACHE_TTL":   {"DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS"},
+	"DD_LLMOBS_PROMPTS_TIMEOUT":     {"DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS"},
 }
