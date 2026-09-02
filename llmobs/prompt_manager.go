@@ -67,12 +67,12 @@ func (request promptRequest) cacheKey() promptCacheKey {
 		Env          string         `json:"env,omitempty"`
 		TargetingKey string         `json:"targeting_key,omitempty"`
 		Attributes   map[string]any `json:"attributes,omitempty"`
-	}{Attributes: request.attributes}
+	}{}
 	switch {
 	case request.version != nil:
 		selector.Kind, selector.Version = "version", request.version
 	case request.env != "":
-		selector.Kind, selector.Env, selector.TargetingKey = "resolve", request.env, request.targetingKey
+		selector.Kind, selector.Env, selector.TargetingKey, selector.Attributes = "resolve", request.env, request.targetingKey, request.attributes
 	default:
 		selector.Kind = "latest"
 	}
@@ -122,7 +122,7 @@ func (manager *promptManager) get(ctx context.Context, promptID string, options 
 		return nil, err
 	}
 	var attributes map[string]any
-	if options.version == nil {
+	if options.version == nil && manager.env != "" {
 		attributes = maps.Clone(options.attributes)
 		if _, err := json.Marshal(attributes); err != nil {
 			return nil, fmt.Errorf("llmobs: invalid prompt targeting attributes: %w", err)
@@ -140,9 +140,9 @@ func (manager *promptManager) get(ctx context.Context, promptID string, options 
 			}
 		}
 	}
-	request := promptRequest{promptID: promptID, version: options.version, attributes: attributes}
+	request := promptRequest{promptID: promptID, version: options.version}
 	if options.version == nil && manager.env != "" {
-		request.env, request.targetingKey = manager.env, options.targetingKey
+		request.env, request.targetingKey, request.attributes = manager.env, options.targetingKey, attributes
 	}
 	prompt, err := manager.getHTTP(ctx, request)
 	if err == nil {

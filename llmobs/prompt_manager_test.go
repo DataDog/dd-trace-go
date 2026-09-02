@@ -90,7 +90,7 @@ func TestPromptRoutingAndHTTP(t *testing.T) {
 	}
 
 	manager.env = ""
-	_, err = manager.get(context.Background(), "a/b ?", getPromptConfig{})
+	_, err = manager.get(context.Background(), "a/b ?", getPromptConfig{attributes: map[string]any{"ignored": make(chan int)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,6 +378,11 @@ func TestPromptCacheSelectorsLRUAndFile(t *testing.T) {
 	}
 	if requestA.cacheKey() == (promptRequest{promptID: "p"}).cacheKey() {
 		t.Fatal("selectors collided")
+	}
+	latestA := promptRequest{promptID: "p", attributes: map[string]any{"tier": "gold"}}
+	latestB := promptRequest{promptID: "p", attributes: map[string]any{"tier": "free"}}
+	if latestA.cacheKey() != latestB.cacheKey() {
+		t.Fatal("targeting attributes fragmented latest selector")
 	}
 
 	dir := t.TempDir()
