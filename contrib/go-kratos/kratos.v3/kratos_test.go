@@ -820,6 +820,9 @@ func TestEndpointHostPort(t *testing.T) {
 	}{
 		{endpoint: "localhost:50051", host: "localhost", port: "50051"},
 		{endpoint: "dns:///payments.internal:8443", host: "payments.internal", port: "8443"},
+		{endpoint: "dns:payments.internal:8443", host: "payments.internal", port: "8443"},
+		{endpoint: "dns:/payments.internal:8443", host: "payments.internal", port: "8443"},
+		{endpoint: "passthrough:payments.internal:8443", host: "payments.internal", port: "8443"},
 		{endpoint: "dns://payments.internal:8443", host: "payments.internal", port: "8443"},
 		{endpoint: "dns://resolver.example/payments.internal:8443", host: "payments.internal", port: "8443"},
 		{endpoint: "dns://resolver.example/[2001:db8::1]:8443", host: "2001:db8::1", port: "8443"},

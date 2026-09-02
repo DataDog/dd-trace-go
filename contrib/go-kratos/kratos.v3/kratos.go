@@ -27,6 +27,7 @@ import (
 	"github.com/go-kratos/kratos/v3/transport"
 	kratoshttp "github.com/go-kratos/kratos/v3/transport/http"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/status"
 )
 
@@ -303,13 +304,18 @@ func endpointHostPort(endpoint string) (host, port string) {
 		return "", ""
 	}
 	target := endpoint
-	if strings.Contains(endpoint, "://") {
+	scheme, _, _ := strings.Cut(lowerEndpoint, ":")
+	if strings.Contains(endpoint, "://") || resolver.Get(scheme) != nil {
 		parsed, err := url.Parse(endpoint)
-		if err != nil || parsed.Scheme == "unix" {
+		if err != nil {
 			return "", ""
 		}
-		target = strings.TrimPrefix(parsed.Path, "/")
-		if target == "" {
+		switch {
+		case parsed.Opaque != "":
+			target = parsed.Opaque
+		case parsed.Path != "":
+			target = strings.TrimPrefix(parsed.Path, "/")
+		default:
 			target = parsed.Host
 		}
 	}
