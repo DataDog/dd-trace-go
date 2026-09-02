@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/open-feature/go-sdk/openfeature"
@@ -29,6 +30,15 @@ import (
 func promptResponse(id, version, text string) string {
 	encoded, _ := json.Marshal(map[string]any{"prompt_id": id, "version": version, "template": text})
 	return string(encoded)
+}
+
+func promptHTTPResponse(request *http.Request, status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+		Request:    request,
+	}
 }
 
 func testPromptManager(server *httptest.Server, env string, ttl time.Duration, now func() time.Time, evaluate func(context.Context, string, string, map[string]any) (any, error)) *promptManager {
@@ -106,6 +116,94 @@ func TestPromptWorksWithoutLLMObsEnabled(t *testing.T) {
 	}
 }
 
+func TestGetPromptOptions(t *testing.T) {
+	previous := getGlobalPromptManager
+	var manager *promptManager
+	getGlobalPromptManager = func() (*promptManager, error) { return manager, nil }
+	defer func() { getGlobalPromptManager = previous }()
+
+	attributes := map[string]any{"tier": "gold"}
+	messages := []PromptMessage{{Role: "user", Content: "Hello {name}"}}
+	var evaluatedKey, evaluatedTarget string
+	var evaluatedAttributes map[string]any
+	type requestResult struct {
+		path string
+		body []byte
+		err  error
+	}
+	requests := make(chan requestResult, 1)
+	client := &http.Client{Transport: promptRoundTripper(func(request *http.Request) (*http.Response, error) {
+		var body []byte
+		var err error
+		if request.Body != nil {
+			body, err = io.ReadAll(request.Body)
+		}
+		requests <- requestResult{path: request.URL.EscapedPath(), body: body, err: err}
+		return promptHTTPResponse(request, http.StatusInternalServerError, "boom"), nil
+	})}
+	manager = newPromptManager("api", "app", "staging", "https://api.datadoghq.com", 0, false, "", time.Second, client, nil, func(_ context.Context, key, targetingKey string, got map[string]any) (any, error) {
+		evaluatedKey, evaluatedTarget, evaluatedAttributes = key, targetingKey, got
+		attributes["tier"] = "mutated"
+		messages[0].Content = "mutated"
+		return nil, errors.New("missing")
+	})
+	prompt, err := GetPrompt(context.Background(), "greeting",
+		WithPromptTargetingKey("user-1"),
+		WithPromptTargetingAttributes(attributes),
+		WithPromptFallback(PromptFallback{Template: PromptTemplate{Messages: messages}}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := <-requests
+	if request.err != nil {
+		t.Fatal(request.err)
+	}
+	if evaluatedKey != "__llmobs__.prompt.greeting" || evaluatedTarget != "user-1" || evaluatedAttributes["tier"] != "gold" {
+		t.Fatalf("evaluation key=%q target=%q attributes=%#v", evaluatedKey, evaluatedTarget, evaluatedAttributes)
+	}
+	if got := prompt.Template().Messages[0].Content; got != "Hello {name}" {
+		t.Fatalf("fallback mutated: %q", got)
+	}
+	if !strings.Contains(string(request.body), `"targeting_key":"user-1"`) || !strings.Contains(string(request.body), `"tier":"gold"`) {
+		t.Fatalf("resolve body %s", request.body)
+	}
+
+	manager.env = ""
+	prompt, err = GetPrompt(context.Background(), "greeting",
+		WithPromptFallbackFunc(func() (PromptFallback, error) {
+			return PromptFallback{Template: PromptTemplate{Text: "function"}}, nil
+		}),
+		WithPromptFallback(PromptFallback{Template: PromptTemplate{Text: "static"}}),
+	)
+	if err != nil || prompt.Template().Text != "static" {
+		t.Fatalf("last static fallback prompt=%#v err=%v", prompt, err)
+	}
+	<-requests
+	prompt, err = GetPrompt(context.Background(), "greeting",
+		WithPromptFallback(PromptFallback{Template: PromptTemplate{Text: "static"}}),
+		WithPromptFallbackFunc(func() (PromptFallback, error) {
+			return PromptFallback{Template: PromptTemplate{Text: "function"}}, nil
+		}),
+	)
+	if err != nil || prompt.Template().Text != "function" {
+		t.Fatalf("last functional fallback prompt=%#v err=%v", prompt, err)
+	}
+	<-requests
+
+	prompt, err = GetPrompt(context.Background(), "greeting",
+		WithPromptVersion(7),
+		WithPromptFallback(PromptFallback{Template: PromptTemplate{Text: "version fallback"}}),
+	)
+	if err != nil || prompt.Template().Text != "version fallback" {
+		t.Fatalf("version fallback prompt=%#v err=%v", prompt, err)
+	}
+	request = <-requests
+	if request.path != "/api/unstable/llm-obs/v1/prompts/greeting/versions/7" {
+		t.Fatalf("version path %q", request.path)
+	}
+}
+
 func TestPromptFeatureFlagAndTargeting(t *testing.T) {
 	serverCalls := atomic.Int32{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -146,12 +244,20 @@ func TestPromptUsesRegisteredDefaultProviderForAB(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = openfeature.SetProviderAndWait(openfeature.NoopProvider{}) }()
-	manager := newPromptManager("api", "app", "staging", "https://api.datadoghq.com", time.Minute, false, "", time.Second, nil, nil, nil)
+	var httpCalls atomic.Int32
+	client := &http.Client{Transport: promptRoundTripper(func(request *http.Request) (*http.Response, error) {
+		httpCalls.Add(1)
+		return nil, errors.New("unexpected HTTP request")
+	})}
+	manager := newPromptManager("api", "app", "staging", "https://api.datadoghq.com", time.Minute, false, "", time.Second, client, nil, nil)
 	for _, target := range []string{"alice", "bob"} {
 		prompt, err := manager.get(context.Background(), "greeting", getPromptConfig{targetingKey: target, attributes: map[string]any{"targetingKey": "attribute"}})
 		if err != nil || prompt.Version() != target || prompt.Template().Text != "__llmobs__.prompt.greeting" {
 			t.Fatalf("target=%s prompt=%#v err=%v", target, prompt, err)
 		}
+	}
+	if httpCalls.Load() != 0 {
+		t.Fatalf("provider success made %d HTTP requests", httpCalls.Load())
 	}
 }
 
@@ -168,18 +274,19 @@ func TestPromptProviderMissesFallThroughToResolve(t *testing.T) {
 		{name: "not ready", err: errors.New("provider not ready")},
 	} {
 		t.Run(outcome.name, func(t *testing.T) {
+			type receivedRequest struct {
+				attributes map[string]any
+				err        error
+			}
+			received := make(chan receivedRequest, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 				var body struct {
 					Data struct {
 						Attributes map[string]any `json:"attributes"`
 					} `json:"data"`
 				}
-				if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-					t.Fatal(err)
-				}
-				if len(body.Data.Attributes) != 1 || body.Data.Attributes["env"] != "staging" {
-					t.Fatalf("optional fields not omitted: %#v", body)
-				}
+				err := json.NewDecoder(request.Body).Decode(&body)
+				received <- receivedRequest{attributes: body.Data.Attributes, err: err}
 				_, _ = w.Write([]byte(promptResponse("p", "http", "x")))
 			}))
 			defer server.Close()
@@ -187,6 +294,13 @@ func TestPromptProviderMissesFallThroughToResolve(t *testing.T) {
 			prompt, err := manager.get(context.Background(), "p", getPromptConfig{})
 			if err != nil || prompt.Source() != PromptSourceResolve {
 				t.Fatalf("prompt=%#v err=%v", prompt, err)
+			}
+			request := <-received
+			if request.err != nil {
+				t.Fatal(request.err)
+			}
+			if len(request.attributes) != 1 || request.attributes["env"] != "staging" {
+				t.Fatalf("optional fields not omitted: %#v", request.attributes)
 			}
 		})
 	}
@@ -241,14 +355,21 @@ func TestPromptCacheSelectorsLRUAndFile(t *testing.T) {
 	now := time.Unix(100, 0)
 	cache := newPromptCache(time.Minute, func() time.Time { return now })
 	prompt, _ := newManagedPrompt("p", "1", PromptSourceRegistry, PromptTemplate{Text: "x"}, "", "")
-	for i := range promptCacheMaxEntries + 1 {
+	for i := range promptCacheMaxEntries {
 		cache.set(promptCacheKey{promptID: "p", selector: string(rune(i))}, prompt, now)
 	}
+	if _, _, _, ok := cache.get(promptCacheKey{promptID: "p", selector: string(rune(0))}); !ok {
+		t.Fatal("missing entry to promote")
+	}
+	cache.set(promptCacheKey{promptID: "p", selector: string(rune(promptCacheMaxEntries))}, prompt, now)
 	if cache.lru.Len() != promptCacheMaxEntries {
 		t.Fatalf("cache size %d", cache.lru.Len())
 	}
-	if _, _, _, ok := cache.get(promptCacheKey{promptID: "p", selector: string(rune(0))}); ok {
+	if _, _, _, ok := cache.get(promptCacheKey{promptID: "p", selector: string(rune(1))}); ok {
 		t.Fatal("LRU did not evict oldest")
+	}
+	if _, _, _, ok := cache.get(promptCacheKey{promptID: "p", selector: string(rune(0))}); !ok {
+		t.Fatal("LRU evicted recently accessed entry")
 	}
 	requestA := promptRequest{promptID: "p", env: "staging", targetingKey: "u", attributes: map[string]any{"a": 1, "b": 2}}
 	requestB := promptRequest{promptID: "p", env: "staging", targetingKey: "u", attributes: map[string]any{"b": 2, "a": 1}}
@@ -278,12 +399,18 @@ func TestPromptCacheSelectorsLRUAndFile(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(files.path(keyA))
-		if err != nil || info.Mode().Perm() != 0o600 {
-			t.Fatalf("file mode %v err=%v", info.Mode(), err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("file mode %v", info.Mode())
 		}
 		dirInfo, err := os.Stat(dir)
-		if err != nil || dirInfo.Mode().Perm() != 0o700 {
-			t.Fatalf("dir mode %v err=%v", dirInfo.Mode(), err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dirInfo.Mode().Perm() != 0o700 {
+			t.Fatalf("dir mode %v", dirInfo.Mode())
 		}
 	}
 	if err := os.WriteFile(files.path(keyA), []byte("bad"), 0o600); err != nil {
@@ -338,152 +465,168 @@ func TestPromptFreshCacheTTLZeroAndSelectorIsolation(t *testing.T) {
 }
 
 func TestPromptColdFetchCoalescingAndCancellation(t *testing.T) {
-	started, release := make(chan struct{}, 1), make(chan struct{})
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls.Add(1)
-		started <- struct{}{}
-		<-release
-		_, _ = w.Write([]byte(promptResponse("p", "1", "x")))
-	}))
-	defer server.Close()
-	manager := testPromptManager(server, "", time.Minute, nil, nil)
-	results := make(chan error, 2)
-	go func() { _, err := manager.get(context.Background(), "p", getPromptConfig{}); results <- err }()
-	<-started
-	go func() { _, err := manager.get(context.Background(), "p", getPromptConfig{}); results <- err }()
-	for range 10 {
-		runtime.Gosched()
-	}
-	close(release)
-	if err := <-results; err != nil {
-		t.Fatal(err)
-	}
-	if err := <-results; err != nil {
-		t.Fatal(err)
-	}
-	if calls.Load() != 1 {
-		t.Fatalf("upstream calls %d", calls.Load())
-	}
-
-	canceled, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := manager.get(canceled, "other", getPromptConfig{fallback: &PromptFallback{Template: PromptTemplate{Text: "x"}}})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancellation %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		started, release := make(chan struct{}), make(chan struct{})
+		var calls atomic.Int32
+		client := &http.Client{Transport: promptRoundTripper(func(request *http.Request) (*http.Response, error) {
+			if calls.Add(1) == 1 {
+				close(started)
+			}
+			<-release
+			return promptHTTPResponse(request, http.StatusOK, promptResponse("p", "1", "x")), nil
+		})}
+		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Minute, false, "", time.Second, client, nil, nil)
+		firstResult, canceledResult := make(chan error, 1), make(chan error, 1)
+		go func() { _, err := manager.get(context.Background(), "p", getPromptConfig{}); firstResult <- err }()
+		<-started
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() { _, err := manager.get(ctx, "p", getPromptConfig{}); canceledResult <- err }()
+		synctest.Wait()
+		cancel()
+		if err := <-canceledResult; !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancellation %v", err)
+		}
+		close(release)
+		if err := <-firstResult; err != nil {
+			t.Fatal(err)
+		}
+		prompt, err := manager.get(context.Background(), "p", getPromptConfig{})
+		if err != nil || prompt.Source() != PromptSourceCache || calls.Load() != 1 {
+			t.Fatalf("cached prompt=%#v err=%v calls=%d", prompt, err, calls.Load())
+		}
+	})
 }
 
 func TestPromptColdFetchKeepsFallbacksCallerSpecific(t *testing.T) {
-	started, release := make(chan struct{}, 1), make(chan struct{})
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls.Add(1)
-		started <- struct{}{}
-		<-release
-		http.Error(w, "boom", http.StatusInternalServerError)
-	}))
-	defer server.Close()
-	manager := testPromptManager(server, "", time.Minute, nil, nil)
-	results := make(chan string, 2)
-	call := func(text string) {
-		prompt, err := manager.get(context.Background(), "p", getPromptConfig{fallback: &PromptFallback{Template: PromptTemplate{Text: text}}})
-		if err != nil {
-			results <- err.Error()
-			return
+	synctest.Test(t, func(t *testing.T) {
+		started, release := make(chan struct{}), make(chan struct{})
+		var calls atomic.Int32
+		client := &http.Client{Transport: promptRoundTripper(func(request *http.Request) (*http.Response, error) {
+			if calls.Add(1) == 1 {
+				close(started)
+			}
+			<-release
+			return promptHTTPResponse(request, http.StatusInternalServerError, "boom"), nil
+		})}
+		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Minute, false, "", time.Second, client, nil, nil)
+		results := make(chan string, 2)
+		call := func(text string) {
+			prompt, err := manager.get(context.Background(), "p", getPromptConfig{fallback: &PromptFallback{Template: PromptTemplate{Text: text}}})
+			if err != nil {
+				results <- err.Error()
+				return
+			}
+			results <- prompt.Template().Text
 		}
-		results <- prompt.Template().Text
-	}
-	go call("first")
-	<-started
-	go call("second")
-	for range 10 {
-		runtime.Gosched()
-	}
-	close(release)
-	got := map[string]bool{<-results: true, <-results: true}
-	if !got["first"] || !got["second"] || calls.Load() != 1 {
-		t.Fatalf("results=%#v calls=%d", got, calls.Load())
-	}
+		go call("first")
+		<-started
+		go call("second")
+		synctest.Wait()
+		close(release)
+		got := map[string]bool{<-results: true, <-results: true}
+		if !got["first"] || !got["second"] || calls.Load() != 1 {
+			t.Fatalf("results=%#v calls=%d", got, calls.Load())
+		}
+	})
 }
 
 func TestPromptStaleRefreshEviction(t *testing.T) {
-	now := time.Unix(100, 0)
-	refreshStarted, release := make(chan struct{}), make(chan struct{})
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		switch calls.Add(1) {
-		case 1:
-			_, _ = w.Write([]byte(promptResponse("p", "1", "old")))
-		case 2:
-			close(refreshStarted)
-			<-release
-			http.NotFound(w, nil)
-		default:
-			_, _ = w.Write([]byte(promptResponse("p", "2", "new")))
+	synctest.Test(t, func(t *testing.T) {
+		now := time.Unix(100, 0)
+		var calls atomic.Int32
+		client := &http.Client{Transport: promptRoundTripper(func(request *http.Request) (*http.Response, error) {
+			switch calls.Add(1) {
+			case 1:
+				return promptHTTPResponse(request, http.StatusOK, promptResponse("p", "1", "old")), nil
+			case 2:
+				return promptHTTPResponse(request, http.StatusNotFound, ""), nil
+			default:
+				return promptHTTPResponse(request, http.StatusOK, promptResponse("p", "2", "new")), nil
+			}
+		})}
+		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Second, false, "", time.Second, client, func() time.Time { return now }, nil)
+		first, err := manager.get(context.Background(), "p", getPromptConfig{})
+		if err != nil || first.Version() != "1" {
+			t.Fatalf("first=%#v err=%v", first, err)
 		}
-	}))
-	defer server.Close()
-	manager := testPromptManager(server, "", time.Second, func() time.Time { return now }, nil)
-	first, err := manager.get(context.Background(), "p", getPromptConfig{})
-	if err != nil || first.Version() != "1" {
-		t.Fatalf("first=%#v err=%v", first, err)
-	}
-	now = now.Add(2 * time.Second)
-	stale, err := manager.get(context.Background(), "p", getPromptConfig{})
-	if err != nil || stale.Version() != "1" || stale.Source() != PromptSourceCache {
-		t.Fatalf("stale=%#v err=%v", stale, err)
-	}
-	<-refreshStarted
-	close(release)
-	for {
-		manager.refreshMu.Lock()
-		refreshing := len(manager.refreshing)
-		manager.refreshMu.Unlock()
-		if refreshing == 0 {
-			break
+		now = now.Add(2 * time.Second)
+		stale, err := manager.get(context.Background(), "p", getPromptConfig{})
+		if err != nil || stale.Version() != "1" || stale.Source() != PromptSourceCache {
+			t.Fatalf("stale=%#v err=%v", stale, err)
 		}
-		runtime.Gosched()
-	}
-	refetched, err := manager.get(context.Background(), "p", getPromptConfig{})
-	if err != nil || refetched.Version() != "2" || calls.Load() != 3 {
-		t.Fatalf("refetched=%#v err=%v calls=%d", refetched, err, calls.Load())
-	}
+		synctest.Wait()
+		refetched, err := manager.get(context.Background(), "p", getPromptConfig{})
+		if err != nil || refetched.Version() != "2" || calls.Load() != 3 {
+			t.Fatalf("refetched=%#v err=%v calls=%d", refetched, err, calls.Load())
+		}
+	})
+}
+
+func TestPromptStaleRefreshUpdatesAndCoalesces(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		now := time.Unix(100, 0)
+		refreshStarted, release := make(chan struct{}), make(chan struct{})
+		var calls atomic.Int32
+		client := &http.Client{Transport: promptRoundTripper(func(request *http.Request) (*http.Response, error) {
+			switch calls.Add(1) {
+			case 1:
+				return promptHTTPResponse(request, http.StatusOK, promptResponse("p", "1", "old")), nil
+			case 2:
+				close(refreshStarted)
+				<-release
+				return promptHTTPResponse(request, http.StatusOK, promptResponse("p", "2", "new")), nil
+			default:
+				return nil, errors.New("unexpected duplicate refresh")
+			}
+		})}
+		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Second, false, "", time.Second, client, func() time.Time { return now }, nil)
+		if _, err := manager.get(context.Background(), "p", getPromptConfig{}); err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(2 * time.Second)
+		first, err := manager.get(context.Background(), "p", getPromptConfig{})
+		if err != nil || first.Version() != "1" {
+			t.Fatalf("first stale prompt=%#v err=%v", first, err)
+		}
+		<-refreshStarted
+		second, err := manager.get(context.Background(), "p", getPromptConfig{})
+		if err != nil || second.Version() != "1" || calls.Load() != 2 {
+			t.Fatalf("second stale prompt=%#v err=%v calls=%d", second, err, calls.Load())
+		}
+		close(release)
+		synctest.Wait()
+		refreshed, err := manager.get(context.Background(), "p", getPromptConfig{})
+		if err != nil || refreshed.Version() != "2" || refreshed.Source() != PromptSourceCache || calls.Load() != 2 {
+			t.Fatalf("refreshed prompt=%#v err=%v calls=%d", refreshed, err, calls.Load())
+		}
+	})
 }
 
 func TestPromptStaleRefreshFailurePreservesCache(t *testing.T) {
-	base, now := time.Unix(100, 0), time.Unix(100, 0)
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if calls.Add(1) == 1 {
-			_, _ = io.WriteString(w, promptResponse("p", "1", "old"))
-			return
+	synctest.Test(t, func(t *testing.T) {
+		base, now := time.Unix(100, 0), time.Unix(100, 0)
+		var calls atomic.Int32
+		client := &http.Client{Transport: promptRoundTripper(func(request *http.Request) (*http.Response, error) {
+			if calls.Add(1) == 1 {
+				return promptHTTPResponse(request, http.StatusOK, promptResponse("p", "1", "old")), nil
+			}
+			return promptHTTPResponse(request, http.StatusInternalServerError, "boom"), nil
+		})}
+		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Second, false, "", time.Second, client, func() time.Time { return now }, nil)
+		if _, err := manager.get(context.Background(), "p", getPromptConfig{}); err != nil {
+			t.Fatal(err)
 		}
-		http.Error(w, "boom", http.StatusInternalServerError)
-	}))
-	defer server.Close()
-	manager := testPromptManager(server, "", time.Second, func() time.Time { return now }, nil)
-	if _, err := manager.get(context.Background(), "p", getPromptConfig{}); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(2 * time.Second)
-	if prompt, err := manager.get(context.Background(), "p", getPromptConfig{}); err != nil || prompt.Version() != "1" {
-		t.Fatalf("stale prompt=%#v err=%v", prompt, err)
-	}
-	for {
-		manager.refreshMu.Lock()
-		refreshing := len(manager.refreshing)
-		manager.refreshMu.Unlock()
-		if refreshing == 0 {
-			break
+		now = now.Add(2 * time.Second)
+		if prompt, err := manager.get(context.Background(), "p", getPromptConfig{}); err != nil || prompt.Version() != "1" {
+			t.Fatalf("stale prompt=%#v err=%v", prompt, err)
 		}
-		runtime.Gosched()
-	}
-	now = base
-	prompt, err := manager.get(context.Background(), "p", getPromptConfig{})
-	if err != nil || prompt.Version() != "1" || calls.Load() != 2 {
-		t.Fatalf("preserved prompt=%#v err=%v calls=%d", prompt, err, calls.Load())
-	}
+		synctest.Wait()
+		now = base
+		prompt, err := manager.get(context.Background(), "p", getPromptConfig{})
+		if err != nil || prompt.Version() != "1" || calls.Load() != 2 {
+			t.Fatalf("preserved prompt=%#v err=%v calls=%d", prompt, err, calls.Load())
+		}
+	})
 }
 
 type promptRoundTripper func(*http.Request) (*http.Response, error)
@@ -535,6 +678,16 @@ func TestPromptResolveIsNotPersisted(t *testing.T) {
 	entries, err = os.ReadDir(dir)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("registry not persisted: %v %#v", err, entries)
+	}
+	var httpCalls atomic.Int32
+	warmClient := &http.Client{Transport: promptRoundTripper(func(*http.Request) (*http.Response, error) {
+		httpCalls.Add(1)
+		return nil, errors.New("unexpected HTTP request")
+	})}
+	warmManager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Minute, true, dir, time.Second, warmClient, nil, nil)
+	prompt, err := warmManager.get(context.Background(), "p", getPromptConfig{})
+	if err != nil || prompt.Source() != PromptSourceCache || httpCalls.Load() != 0 {
+		t.Fatalf("warm prompt=%#v err=%v HTTP calls=%d", prompt, err, httpCalls.Load())
 	}
 }
 

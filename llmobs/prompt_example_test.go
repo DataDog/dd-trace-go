@@ -12,7 +12,8 @@ import (
 )
 
 func ExampleGetPrompt() {
-	prompt, err := llmobs.GetPrompt(context.Background(), "greeting",
+	ctx := context.Background() // In an HTTP handler, use the request's context.
+	prompt, err := llmobs.GetPrompt(ctx, "greeting",
 		llmobs.WithPromptTargetingKey("user-123"),
 		llmobs.WithPromptTargetingAttributes(map[string]any{"tier": "premium"}),
 		llmobs.WithPromptFallback(llmobs.PromptFallback{Template: llmobs.PromptTemplate{Text: "Hello {name}"}}),
@@ -21,7 +22,9 @@ func ExampleGetPrompt() {
 		return
 	}
 	variables := map[string]any{"name": "Ada"}
-	_ = prompt.Format(variables)
-	span, _ := llmobs.StartLLMSpan(context.Background(), "request")
+	rendered := prompt.Format(variables)
+	span, _ := llmobs.StartLLMSpan(ctx, "request")
+	defer span.Finish()
 	span.Annotate(llmobs.WithAnnotatedPrompt(prompt.Annotation(variables)))
+	_ = rendered.Text // Pass this to the model client.
 }

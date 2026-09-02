@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
+	"slices"
 )
 
 // ErrPromptAuth is returned when DD_API_KEY is not configured.
@@ -119,7 +120,7 @@ func (p *ManagedPrompt) Annotation(variables map[string]any) Prompt {
 // uses the application's registered default OpenFeature provider for targeting and A/B selection,
 // without creating or initializing a provider, and falls through to /resolve when unavailable.
 // Without DD_ENV, the latest registry version is fetched. DD_API_KEY is always required and
-// environment resolution also requires DD_APP_KEY. Cache and timeout behavior is configured by
+// the /resolve fallback also requires DD_APP_KEY. Cache and timeout behavior is configured by
 // DD_LLMOBS_PROMPTS_CACHE_TTL, DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED,
 // DD_LLMOBS_PROMPTS_CACHE_DIR, and DD_LLMOBS_PROMPTS_TIMEOUT.
 // Go has no agentless Feature Flags source; /resolve provides the server-side fallback. Rendering
@@ -156,8 +157,7 @@ func WithPromptTargetingKey(targetingKey string) GetPromptOption {
 // WithPromptTargetingAttributes sets a shallow snapshot of flat targeting attributes.
 func WithPromptTargetingAttributes(attributes map[string]any) GetPromptOption {
 	return func(config *getPromptConfig) {
-		config.attributes = make(map[string]any, len(attributes))
-		maps.Copy(config.attributes, attributes)
+		config.attributes = maps.Clone(attributes)
 	}
 }
 
@@ -167,22 +167,21 @@ func WithPromptFallback(fallback PromptFallback) GetPromptOption {
 		copy := fallback
 		copy.Template = copyPromptTemplate(fallback.Template)
 		config.fallback = &copy
+		config.fallbackFunc = nil
 	}
 }
 
 // WithPromptFallbackFunc sets a fallback evaluated only after retrieval and cache failure.
 func WithPromptFallbackFunc(fallback func() (PromptFallback, error)) GetPromptOption {
-	return func(config *getPromptConfig) { config.fallbackFunc = fallback }
+	return func(config *getPromptConfig) {
+		config.fallback = nil
+		config.fallbackFunc = fallback
+	}
 }
 
 func copyPromptTemplate(template PromptTemplate) PromptTemplate {
 	copy := template
-	if template.Messages != nil {
-		copy.Messages = append([]PromptMessage(nil), template.Messages...)
-		if len(template.Messages) == 0 {
-			copy.Messages = []PromptMessage{}
-		}
-	}
+	copy.Messages = slices.Clone(template.Messages)
 	return copy
 }
 

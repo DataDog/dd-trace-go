@@ -123,8 +123,7 @@ func (manager *promptManager) get(ctx context.Context, promptID string, options 
 	}
 	var attributes map[string]any
 	if options.version == nil {
-		attributes = make(map[string]any, len(options.attributes))
-		maps.Copy(attributes, options.attributes)
+		attributes = maps.Clone(options.attributes)
 		if _, err := json.Marshal(attributes); err != nil {
 			return nil, fmt.Errorf("llmobs: invalid prompt targeting attributes: %w", err)
 		}

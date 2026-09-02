@@ -6,11 +6,13 @@
 package config
 
 import (
+	"math"
 	"net/url"
 	"os"
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1705,17 +1707,30 @@ func TestLLMObsEnvVars(t *testing.T) {
 }
 
 func TestLLMObsPromptEnvVars(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		assert.Equal(t, time.Minute, cfg.LLMObsPromptsCacheTTL())
+		assert.Equal(t, 5*time.Second, cfg.LLMObsPromptsTimeout())
+		assert.False(t, cfg.LLMObsPromptsFileCacheEnabled())
+		assert.Empty(t, cfg.LLMObsPromptsCacheDir())
+	})
+
+	maxDurationSeconds := float64(math.MaxInt64) / float64(time.Second)
+	maxSafeDurationSeconds := math.Nextafter(maxDurationSeconds, 0)
 	for _, test := range []struct {
 		name, ttl, ttlAlias, timeout, timeoutAlias string
 		wantTTL, wantTimeout                       time.Duration
 	}{
-		{name: "defaults", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
 		{name: "values", ttl: "1.5", timeout: "0", wantTTL: 1500 * time.Millisecond, wantTimeout: 0},
 		{name: "aliases", ttlAlias: "2", timeoutAlias: "3", wantTTL: 2 * time.Second, wantTimeout: 3 * time.Second},
 		{name: "canonical wins over alias", ttl: "4", ttlAlias: "2", timeout: "6", timeoutAlias: "3", wantTTL: 4 * time.Second, wantTimeout: 6 * time.Second},
 		{name: "nonpositive ttl disables", ttl: "-1", wantTTL: -time.Second, wantTimeout: 5 * time.Second},
 		{name: "invalid", ttl: "NaN", timeout: "-1", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
 		{name: "overflow", ttl: "1e100", timeout: "1e100", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "maximum safe duration", ttl: strconv.FormatFloat(maxSafeDurationSeconds, 'g', -1, 64), timeout: strconv.FormatFloat(maxSafeDurationSeconds, 'g', -1, 64), wantTTL: time.Duration(maxSafeDurationSeconds * float64(time.Second)), wantTimeout: time.Duration(maxSafeDurationSeconds * float64(time.Second))},
+		{name: "rounded maximum overflows", ttl: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), timeout: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), wantTTL: time.Minute, wantTimeout: 5 * time.Second},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			resetGlobalState()
@@ -1732,15 +1747,21 @@ func TestLLMObsPromptEnvVars(t *testing.T) {
 			if test.timeoutAlias != "" {
 				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS", test.timeoutAlias)
 			}
-			t.Setenv("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", "true")
-			t.Setenv("DD_LLMOBS_PROMPTS_CACHE_DIR", "/tmp/prompts")
 			cfg := Get()
 			assert.Equal(t, test.wantTTL, cfg.LLMObsPromptsCacheTTL())
 			assert.Equal(t, test.wantTimeout, cfg.LLMObsPromptsTimeout())
-			assert.True(t, cfg.LLMObsPromptsFileCacheEnabled())
-			assert.Equal(t, "/tmp/prompts", cfg.LLMObsPromptsCacheDir())
 		})
 	}
+
+	t.Run("file cache", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_PROMPTS_CACHE_DIR", "/tmp/prompts")
+		cfg := Get()
+		assert.True(t, cfg.LLMObsPromptsFileCacheEnabled())
+		assert.Equal(t, "/tmp/prompts", cfg.LLMObsPromptsCacheDir())
+	})
 }
 
 func TestReportEffectiveStatsComputation(t *testing.T) {
