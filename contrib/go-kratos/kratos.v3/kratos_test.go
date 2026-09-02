@@ -92,6 +92,7 @@ func TestClientGRPC(t *testing.T) {
 	header := testHeader{}
 	tr := &testTransport{
 		kind:      transport.KindGRPC,
+		endpoint:  "dns:///payments.internal:8443",
 		operation: "/helloworld.v1.Greeter/SayHello",
 		header:    header,
 	}
@@ -117,6 +118,9 @@ func TestClientGRPC(t *testing.T) {
 	assert.Equal(t, "helloworld.v1.Greeter", span.Tag(ext.RPCService))
 	assert.Equal(t, "SayHello", span.Tag(ext.RPCMethod))
 	assert.Equal(t, "OK", span.Tag("grpc.code"))
+	assert.Equal(t, "payments.internal", span.Tag(ext.PeerHostname))
+	assert.Equal(t, "payments.internal", span.Tag(ext.TargetHost))
+	assert.Equal(t, "8443", span.Tag(ext.TargetPort))
 }
 
 func TestHTTPTransportEndToEnd(t *testing.T) {
@@ -494,6 +498,18 @@ func TestNamingSchema(t *testing.T) {
 }
 
 func TestDefaultServiceNameUsesDDService(t *testing.T) {
+	// Applications commonly construct middleware before starting the tracer.
+	// Keep these instances across the configuration reload to verify that the
+	// default service name is resolved lazily when a span starts.
+	middlewares := map[string]struct {
+		kind       transport.Kind
+		spanKind   string
+		middleware middleware.Middleware
+	}{
+		"server": {kind: transport.KindHTTP, spanKind: ext.SpanKindServer, middleware: Server()},
+		"client": {kind: transport.KindHTTP, spanKind: ext.SpanKindClient, middleware: Client()},
+	}
+
 	t.Cleanup(instrumentation.ReloadConfig)
 	t.Setenv("DD_SERVICE", "checkout-api")
 	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
@@ -502,14 +518,7 @@ func TestDefaultServiceNameUsesDDService(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	for name, tc := range map[string]struct {
-		kind       transport.Kind
-		spanKind   string
-		middleware middleware.Middleware
-	}{
-		"server": {kind: transport.KindHTTP, spanKind: ext.SpanKindServer, middleware: Server()},
-		"client": {kind: transport.KindHTTP, spanKind: ext.SpanKindClient, middleware: Client()},
-	} {
+	for name, tc := range middlewares {
 		t.Run(name, func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
 			require.NoError(t, err)
@@ -527,6 +536,26 @@ func TestDefaultServiceNameUsesDDService(t *testing.T) {
 			assert.Equal(t, "checkout-api", span.Tag(ext.ServiceName))
 		})
 	}
+}
+
+func TestCachedServiceName(t *testing.T) {
+	tracer.Stop()
+	calls := 0
+	serviceName := newCachedServiceName(func() string {
+		calls++
+		return "checkout-api"
+	})
+	assert.Equal(t, "checkout-api", serviceName.String())
+	assert.Equal(t, 2, calls, "service name must not be cached before tracer initialization")
+
+	tracer.Start(tracer.WithAgentAddr("127.0.0.1:0"))
+	t.Cleanup(tracer.Stop)
+	serviceName = newCachedServiceName(func() string {
+		calls++
+		return "payments-api"
+	})
+	assert.Equal(t, "payments-api", serviceName.String())
+	assert.Equal(t, 3, calls, "service name must be cached after tracer initialization")
 }
 
 func TestWithoutTransportContext(t *testing.T) {
@@ -563,6 +592,47 @@ func TestSplitOperation(t *testing.T) {
 			service, method := splitOperation(tc.operation)
 			assert.Equal(t, tc.service, service)
 			assert.Equal(t, tc.method, method)
+		})
+	}
+}
+
+func TestResourceName(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "http://example.com/users/alice", nil)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name string
+		tr   *testTransport
+		want string
+	}{
+		{name: "operation", tr: &testTransport{operation: "/example.v1.Service/Get"}, want: "/example.v1.Service/Get"},
+		{name: "http_method_and_template", tr: &testTransport{kind: transport.KindHTTP, request: req, pathTemplate: "/users/{name}"}, want: "GET /users/{name}"},
+		{name: "http_without_template", tr: &testTransport{kind: transport.KindHTTP, request: req}, want: "unknown"},
+		{name: "grpc_without_operation", tr: &testTransport{kind: transport.KindGRPC}, want: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, resourceName(tc.tr))
+		})
+	}
+}
+
+func TestEndpointHostPort(t *testing.T) {
+	for _, tc := range []struct {
+		endpoint string
+		host     string
+		port     string
+	}{
+		{endpoint: "localhost:50051", host: "localhost", port: "50051"},
+		{endpoint: "dns:///payments.internal:8443", host: "payments.internal", port: "8443"},
+		{endpoint: "dns:///payments.internal", host: "payments.internal"},
+		{endpoint: "dns:///%zz"},
+		{endpoint: "unix:///tmp/kratos.sock"},
+		{},
+	} {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			host, port := endpointHostPort(tc.endpoint)
+			assert.Equal(t, tc.host, host)
+			assert.Equal(t, tc.port, port)
 		})
 	}
 }

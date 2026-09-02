@@ -11,6 +11,8 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -95,8 +97,8 @@ func Client(opts ...Option) middleware.Middleware {
 func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []tracer.StartSpanOption {
 	spanOpts := make([]tracer.StartSpanOption, 0, 12+len(cfg.spanOpts))
 	spanOpts = append(spanOpts,
-		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
-		tracer.ResourceName(tr.Operation()),
+		instrumentation.ServiceNameWithSource(cfg.serviceName.String(), cfg.serviceSource),
+		tracer.ResourceName(resourceName(tr)),
 		tracer.Tag(ext.Component, component),
 		tracer.Tag(ext.SpanKind, spanKind),
 		tracer.Tag(ext.RPCSystem, tr.Kind().String()),
@@ -140,6 +142,18 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 			tracer.SpanType(ext.AppTypeRPC),
 			tracer.Tag(ext.GRPCFullMethod, tr.Operation()),
 		)
+		if spanKind == ext.SpanKindClient {
+			host, port := endpointHostPort(tr.Endpoint())
+			if host != "" {
+				spanOpts = append(spanOpts,
+					tracer.Tag(ext.PeerHostname, host),
+					tracer.Tag(ext.TargetHost, host),
+				)
+			}
+			if port != "" {
+				spanOpts = append(spanOpts, tracer.Tag(ext.TargetPort, port))
+			}
+		}
 	}
 	return append(spanOpts, cfg.spanOpts...)
 }
@@ -200,6 +214,40 @@ func splitOperation(operation string) (service, method string) {
 	operation = strings.TrimPrefix(operation, "/")
 	service, method, _ = strings.Cut(operation, "/")
 	return service, method
+}
+
+func resourceName(tr transport.Transporter) string {
+	if operation := tr.Operation(); operation != "" {
+		return operation
+	}
+	if tr.Kind() == transport.KindHTTP {
+		if httpTr, ok := tr.(kratoshttp.Transporter); ok && httpTr.Request() != nil && httpTr.PathTemplate() != "" {
+			return httpTr.Request().Method + " " + httpTr.PathTemplate()
+		}
+	}
+	return "unknown"
+}
+
+func endpointHostPort(endpoint string) (host, port string) {
+	target := endpoint
+	if strings.Contains(endpoint, "://") {
+		parsed, err := url.Parse(endpoint)
+		if err != nil || parsed.Scheme == "unix" {
+			return "", ""
+		}
+		target = parsed.Host
+		if target == "" {
+			target = strings.TrimPrefix(parsed.Path, "/")
+		}
+	}
+	if target == "" {
+		return "", ""
+	}
+	host, port, err := net.SplitHostPort(target)
+	if err == nil {
+		return host, port
+	}
+	return strings.Trim(target, "[]"), ""
 }
 
 type headerCarrier struct {

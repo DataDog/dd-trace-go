@@ -23,7 +23,7 @@ const (
 )
 
 type config struct {
-	serviceName   string
+	serviceName   *cachedServiceName
 	serviceSource string
 	noDebugStack  bool
 	spanOpts      []tracer.StartSpanOption
@@ -31,6 +31,30 @@ type config struct {
 	analyticsRate float64
 	queryString   bool
 	isStatusError func(int) bool
+}
+
+type cachedServiceName struct {
+	value    string
+	getValue func() string
+}
+
+func newCachedServiceName(getValue func() string) *cachedServiceName {
+	c := &cachedServiceName{getValue: getValue}
+	// Warm up the cache when the tracer is already initialized.
+	_ = c.String()
+	return c
+}
+
+func (cs *cachedServiceName) String() string {
+	if cs.value != "" {
+		return cs.value
+	}
+	serviceName := cs.getValue()
+	// Resolve again until tracer configuration, including start options, is final.
+	if instr.TracerInitialized() {
+		cs.value = serviceName
+	}
+	return serviceName
 }
 
 // Option configures the Kratos tracing middleware.
@@ -50,7 +74,9 @@ func defaults(cfg *config) {
 
 func serverDefaults(cfg *config) {
 	defaults(cfg)
-	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.serviceName = newCachedServiceName(func() string {
+		return instr.ServiceName(instrumentation.ComponentServer, nil)
+	})
 	cfg.serviceSource = string(component)
 	cfg.isStatusError = isServerError
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {
@@ -60,7 +86,9 @@ func serverDefaults(cfg *config) {
 
 func clientDefaults(cfg *config) {
 	defaults(cfg)
-	cfg.serviceName = instr.ServiceName(instrumentation.ComponentClient, nil)
+	cfg.serviceName = newCachedServiceName(func() string {
+		return instr.ServiceName(instrumentation.ComponentClient, nil)
+	})
 	cfg.serviceSource = string(component)
 	cfg.queryString = cfg.queryString && options.GetBoolEnv(envClientQueryStringEnabled, true)
 	cfg.isStatusError = isClientError
@@ -80,7 +108,7 @@ func isClientError(statusCode int) bool {
 // WithService sets the service name for spans created by the middleware.
 func WithService(name string) Option {
 	return func(cfg *config) {
-		cfg.serviceName = name
+		cfg.serviceName = newCachedServiceName(func() string { return name })
 		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
