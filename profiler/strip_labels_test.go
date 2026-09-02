@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	"os"
 	"testing"
@@ -60,11 +61,17 @@ func TestStripTracerLabels(t *testing.T) {
 		{Key: 9, Str: 10},
 	}}))
 
+	var compressed bytes.Buffer
+	gzipWriter := gzip.NewWriter(&compressed)
+	_, err := gzipWriter.Write(input.Bytes())
+	require.NoError(t, err)
+	require.NoError(t, gzipWriter.Close())
+
 	var output bytes.Buffer
-	require.NoError(t, stripPPROFLabels(input.Bytes(), &output))
+	require.NoError(t, stripPPROFLabels(compressed.Bytes(), &output))
 
 	// Make sure we produced a valid profile.
-	_, err := pprofile.ParseData(output.Bytes())
+	_, err = pprofile.ParseData(output.Bytes())
 	require.NoError(t, err)
 
 	var gotLabels []pproflite.Label
