@@ -229,6 +229,9 @@ func (manager *promptManager) getHTTP(ctx context.Context, request promptRequest
 
 func (manager *promptManager) sharedContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	shared := context.WithoutCancel(ctx)
+	if manager.timeout == 0 {
+		return context.WithCancel(shared)
+	}
 	return context.WithTimeout(shared, manager.timeout)
 }
 

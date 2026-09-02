@@ -704,6 +704,18 @@ func TestPromptTimeoutAndCallerCancellationTelemetry(t *testing.T) {
 	}
 }
 
+func TestPromptZeroTimeoutHasNoDeadline(t *testing.T) {
+	manager := &promptManager{}
+	ctx, cancel := manager.sharedContext(context.Background())
+	defer cancel()
+	if _, ok := ctx.Deadline(); ok {
+		t.Fatal("zero timeout created a deadline")
+	}
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("zero timeout context error: %v", err)
+	}
+}
+
 func TestPromptResolveIsNotPersisted(t *testing.T) {
 	dir := t.TempDir()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, promptResponse("p", "1", "x")) }))
