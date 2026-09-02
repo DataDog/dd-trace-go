@@ -123,18 +123,7 @@ var profileTypes = map[ProfileType]profileType{
 			c.Reset(&buf)
 			var writeErr error
 			if stripLabels {
-				r, err := gzip.NewReader(bytes.NewReader(outBuf.Bytes()))
-				if err != nil {
-					writeErr = err
-				} else {
-					profile, err := io.ReadAll(r)
-					_ = r.Close()
-					if err != nil {
-						writeErr = err
-					} else {
-						writeErr = stripPPROFLabels(profile, c)
-					}
-				}
+				writeErr = stripPPROFLabels(outBuf.Bytes(), c)
 			} else {
 				_, writeErr = outBuf.WriteTo(c)
 			}

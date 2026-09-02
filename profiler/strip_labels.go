@@ -6,17 +6,33 @@
 package profiler
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"math"
+
+	"github.com/klauspost/compress/gzip"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pproflite"
 )
 
-// stripPPROFLabels removes unwanted labels from samples in the pprof-encoded
-// profile in data and writes the resulting profile to w.
+// stripPPROFLabels removes unwanted labels from samples in the gzip-compressed
+// pprof profile in data and writes the resulting profile to w.
 func stripPPROFLabels(data []byte, w io.Writer) error {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	data, readErr := io.ReadAll(r)
+	closeErr := r.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+
 	decoder := pproflite.NewDecoder(data)
 	skippedKeyStringIndices := make(map[int64]struct{})
 	var n int64
