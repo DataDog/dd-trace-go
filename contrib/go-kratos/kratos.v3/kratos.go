@@ -52,6 +52,13 @@ func Server(opts ...Option) middleware.Middleware {
 				return handler(ctx, req)
 			}
 
+			var inferredSpan *tracer.Span
+			if tr.Kind() == transport.KindHTTP {
+				if httpTr, ok := tr.(kratoshttp.Transporter); ok && httpTr.Request() != nil {
+					inferredSpan, ctx = httptrace.StartInferredSpanFromRequest(ctx, httpTr.Request())
+				}
+			}
+
 			spanOpts := startSpanOptions(cfg, tr, ext.SpanKindServer)
 			if header := tr.RequestHeader(); header != nil {
 				if spanctx, extractErr := tracer.Extract(headerCarrier{Header: header}); extractErr == nil {
@@ -62,16 +69,31 @@ func Server(opts ...Option) middleware.Middleware {
 							return true
 						})
 						ctx = baggage.SetAll(ctx, items)
-						if links := spanctx.SpanLinks(); links != nil {
-							spanOpts = append(spanOpts, tracer.WithSpanLinks(links))
+						if tr.Kind() == transport.KindHTTP {
+							spanOpts = append(spanOpts, httptrace.BaggageTags(items))
+						}
+						if inferredSpan == nil {
+							if links := spanctx.SpanLinks(); links != nil {
+								spanOpts = append(spanOpts, tracer.WithSpanLinks(links))
+							}
 						}
 					}
-					spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
+					if inferredSpan == nil {
+						spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
+					}
 				}
+			}
+			if inferredSpan != nil {
+				spanOpts = append(spanOpts, tracer.ChildOf(inferredSpan.Context()))
 			}
 
 			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentServer), spanOpts...)
-			defer func() { finishSpan(span, tr, err, ext.SpanKindServer, cfg) }()
+			defer func() {
+				finishSpan(span, tr, err, ext.SpanKindServer, cfg)
+				if inferredSpan != nil {
+					finishInferredHTTPSpan(inferredSpan, err, cfg)
+				}
+			}()
 			return handler(spanCtx, req)
 		}
 	}
@@ -146,7 +168,13 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 				httptrace.HeaderTagsFromRequest(req, cfg.headerTags),
 			)
 			if spanKind == ext.SpanKindServer {
-				spanOpts = append(spanOpts, httptrace.ClientIPTagsFromRequest(req))
+				spanOpts = append(spanOpts,
+					httptrace.ClientIPTagsFromRequest(req),
+					tracer.Tag(ext.HTTPUserAgent, req.UserAgent()),
+				)
+				if req.Host != "" {
+					spanOpts = append(spanOpts, tracer.Tag("http.host", req.Host))
+				}
 			} else {
 				spanOpts = append(spanOpts, tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()))
 				if port, err := strconv.Atoi(req.URL.Port()); err == nil {
@@ -181,6 +209,9 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind string, cfg *config) {
 	if tr.Kind() == transport.KindGRPC {
 		code := status.Code(err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			code = status.FromContextError(err).Code()
+		}
 		span.SetTag("grpc.code", code.String())
 		if errors.Is(err, context.Canceled) || code == codes.Canceled {
 			span.Finish()
@@ -220,6 +251,24 @@ func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind
 		if cfg.noDebugStack {
 			finishOpts = append(finishOpts, tracer.NoDebugStack())
 		}
+	}
+	span.Finish(finishOpts...)
+}
+
+func finishInferredHTTPSpan(span *tracer.Span, err error, cfg *config) {
+	if err == nil {
+		span.Finish()
+		return
+	}
+	statusCode := int(kratoserrors.FromError(err).Code)
+	span.SetTag(ext.HTTPCode, strconv.Itoa(statusCode))
+	if !cfg.isStatusError(statusCode) {
+		span.Finish()
+		return
+	}
+	finishOpts := []tracer.FinishOption{tracer.WithError(err)}
+	if cfg.noDebugStack {
+		finishOpts = append(finishOpts, tracer.NoDebugStack())
 	}
 	span.Finish(finishOpts...)
 }

@@ -48,6 +48,7 @@ func TestServerHTTP(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "http://example.com/v1/greeters/alice", nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Request-ID", "test-request-id")
+	req.Header.Set("User-Agent", "kratos-test-client/1.0")
 	tr := &testTransport{
 		kind:         transport.KindHTTP,
 		operation:    "/helloworld.v1.Greeter/SayHello",
@@ -84,6 +85,8 @@ func TestServerHTTP(t *testing.T) {
 	assert.Equal(t, "SayHello", span.Tag(ext.RPCMethod))
 	assert.Equal(t, http.MethodPost, span.Tag(ext.HTTPMethod))
 	assert.Equal(t, "http://example.com/v1/greeters/alice", span.Tag(ext.HTTPURL))
+	assert.Equal(t, "example.com", span.Tag("http.host"))
+	assert.Equal(t, "kratos-test-client/1.0", span.Tag(ext.HTTPUserAgent))
 	assert.Equal(t, "/v1/greeters/{name}", span.Tag(ext.HTTPRoute))
 	assert.Equal(t, "test-request-id", span.Tag("http.request.headers.x-request-id"))
 }
@@ -114,6 +117,78 @@ func TestServerHTTPClientIP(t *testing.T) {
 	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
 	assert.Equal(t, "203.0.113.10", span.Tag(ext.HTTPClientIP))
 	assert.Equal(t, "10.0.0.1", span.Tag(ext.NetworkClientIP))
+}
+
+func TestServerHTTPInferredProxy(t *testing.T) {
+	t.Cleanup(httptrace.ResetCfg)
+	t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
+	httptrace.ResetCfg()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	req, err := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	require.NoError(t, err)
+	req.Header.Set(httptrace.ProxyHeaderSystem, "aws-apigateway")
+	req.Header.Set(httptrace.ProxyHeaderStartTimeMs, strconv.FormatInt(time.Now().Add(-time.Second).UnixMilli(), 10))
+	req.Header.Set(httptrace.ProxyHeaderPath, "/test")
+	req.Header.Set(httptrace.ProxyHeaderHTTPMethod, http.MethodGet)
+	req.Header.Set(httptrace.ProxyHeaderDomain, "api.example.com")
+	req.Header.Set(httptrace.ProxyHeaderStage, "prod")
+	tr := &testTransport{
+		kind:      transport.KindHTTP,
+		operation: "/example.v1.Service/Test",
+		header:    testHeader{},
+		request:   req,
+	}
+	ctx := transport.NewServerContext(context.Background(), tr)
+
+	_, err = Server()(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
+	require.NoError(t, err)
+
+	serverSpan := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	var inferredSpan *mocktracer.Span
+	for _, span := range mt.FinishedSpans() {
+		if span.OperationName() == "aws.apigateway" {
+			inferredSpan = span
+			break
+		}
+	}
+	require.NotNil(t, inferredSpan)
+	assert.Equal(t, inferredSpan.SpanID(), serverSpan.ParentID())
+	assert.Equal(t, float64(1), inferredSpan.Tag("_dd.inferred_span"))
+	assert.Nil(t, inferredSpan.Tag(ext.HTTPCode))
+}
+
+func TestFinishInferredHTTPSpan(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		err          error
+		noDebugStack bool
+		statusCode   string
+		isError      bool
+	}{
+		{name: "client_error", err: kratoserrors.NotFound("NOT_FOUND", "not found"), statusCode: "404"},
+		{name: "server_error", err: kratoserrors.InternalServer("INTERNAL", "failed"), noDebugStack: true, statusCode: "500", isError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			span := tracer.StartSpan("aws.apigateway")
+			finishInferredHTTPSpan(span, tc.err, &config{isStatusError: isServerError, noDebugStack: tc.noDebugStack})
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tc.statusCode, spans[0].Tag(ext.HTTPCode))
+			if tc.isError {
+				assert.Equal(t, tc.err.Error(), spans[0].Tag(ext.ErrorMsg))
+				assert.Empty(t, spans[0].Tag(ext.ErrorStack))
+			} else {
+				assert.Nil(t, spans[0].Tag(ext.ErrorMsg))
+			}
+		})
+	}
 }
 
 func TestClientGRPC(t *testing.T) {
@@ -186,20 +261,26 @@ func TestServerPropagatesExtractedBaggage(t *testing.T) {
 
 	header := testHeader{}
 	header.Set("baggage", "user.id=1234")
+	req, err := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	require.NoError(t, err)
 	tr := &testTransport{
-		kind:      transport.KindGRPC,
+		kind:      transport.KindHTTP,
 		operation: "/example.v1.Service/Test",
 		header:    header,
+		request:   req,
 	}
 	ctx := transport.NewServerContext(context.Background(), tr)
 
-	_, err := Server()(func(ctx context.Context, _ any) (any, error) {
+	_, err = Server()(func(ctx context.Context, _ any) (any, error) {
 		value, ok := baggage.Get(ctx, "user.id")
 		require.True(t, ok)
 		assert.Equal(t, "1234", value)
 		return nil, nil
 	})(ctx, nil)
 	require.NoError(t, err)
+
+	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	assert.Equal(t, "1234", span.Tag("baggage.user.id"))
 }
 
 func TestHTTPTransportEndToEnd(t *testing.T) {
@@ -447,6 +528,27 @@ func TestGRPCCanceledIsNotSpanError(t *testing.T) {
 		return nil, wantErr
 	})(ctx, nil)
 	require.ErrorIs(t, err, wantErr)
+
+	span := findSpan(t, mt, "grpc.client", ext.SpanKindClient)
+	assert.Equal(t, codes.Canceled.String(), span.Tag("grpc.code"))
+	assert.Nil(t, span.Tag(ext.ErrorMsg))
+}
+
+func TestRawContextCanceledIsNotSpanError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tr := &testTransport{
+		kind:      transport.KindGRPC,
+		operation: "/example.v1.Service/Find",
+		header:    testHeader{},
+	}
+	ctx := transport.NewClientContext(context.Background(), tr)
+
+	_, err := Client()(func(context.Context, any) (any, error) {
+		return nil, context.Canceled
+	})(ctx, nil)
+	require.ErrorIs(t, err, context.Canceled)
 
 	span := findSpan(t, mt, "grpc.client", ext.SpanKindClient)
 	assert.Equal(t, codes.Canceled.String(), span.Tag("grpc.code"))
