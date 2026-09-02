@@ -415,6 +415,27 @@ func TestTraceClientIPFlag(t *testing.T) {
 	}
 }
 
+func TestClientIPTagsFromRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	oldConfig := cfg
+	defer func() { cfg = oldConfig }()
+	t.Setenv(envTraceClientIPEnabled, "true")
+	cfg = newConfig()
+
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	span := tracer.StartSpan("http.request", ClientIPTagsFromRequest(req))
+	span.Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "203.0.113.10", spans[0].Tag(ext.HTTPClientIP))
+	assert.Equal(t, "10.0.0.1", spans[0].Tag(ext.NetworkClientIP))
+}
+
 func TestURLTag(t *testing.T) {
 	type URLTestCase struct {
 		name, expectedURL, host, port, path, query, fragment string

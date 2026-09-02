@@ -7,6 +7,7 @@ package kratos
 
 import (
 	"math"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -34,6 +35,7 @@ type config struct {
 }
 
 type cachedServiceName struct {
+	once     sync.Once
 	value    string
 	getValue func() string
 }
@@ -46,15 +48,13 @@ func newCachedServiceName(getValue func() string) *cachedServiceName {
 }
 
 func (cs *cachedServiceName) String() string {
-	if cs.value != "" {
-		return cs.value
+	if !instr.TracerInitialized() {
+		return cs.getValue()
 	}
-	serviceName := cs.getValue()
-	// Resolve again until tracer configuration, including start options, is final.
-	if instr.TracerInitialized() {
-		cs.value = serviceName
-	}
-	return serviceName
+	cs.once.Do(func() {
+		cs.value = cs.getValue()
+	})
+	return cs.value
 }
 
 // Option configures the Kratos tracing middleware.

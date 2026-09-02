@@ -12,13 +12,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 
 	kratoserrors "github.com/go-kratos/kratos/v3/errors"
 	"github.com/go-kratos/kratos/v3/middleware"
@@ -84,6 +88,34 @@ func TestServerHTTP(t *testing.T) {
 	assert.Equal(t, "test-request-id", span.Tag("http.request.headers.x-request-id"))
 }
 
+func TestServerHTTPClientIP(t *testing.T) {
+	t.Cleanup(httptrace.ResetCfg)
+	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")
+	httptrace.ResetCfg()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	req, err := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	require.NoError(t, err)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	tr := &testTransport{
+		kind:      transport.KindHTTP,
+		operation: "/example.v1.Service/Test",
+		header:    testHeader{},
+		request:   req,
+	}
+	ctx := transport.NewServerContext(context.Background(), tr)
+
+	_, err = Server()(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
+	require.NoError(t, err)
+
+	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	assert.Equal(t, "203.0.113.10", span.Tag(ext.HTTPClientIP))
+	assert.Equal(t, "10.0.0.1", span.Tag(ext.NetworkClientIP))
+}
+
 func TestClientGRPC(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -121,6 +153,53 @@ func TestClientGRPC(t *testing.T) {
 	assert.Equal(t, "payments.internal", span.Tag(ext.PeerHostname))
 	assert.Equal(t, "payments.internal", span.Tag(ext.TargetHost))
 	assert.Equal(t, "8443", span.Tag(ext.TargetPort))
+}
+
+func TestClientHTTPMetadataAndBaggage(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	req, err := http.NewRequest(http.MethodGet, "http://payments.internal:8443/test", nil)
+	require.NoError(t, err)
+	header := testHeader{}
+	tr := &testTransport{
+		kind:      transport.KindHTTP,
+		operation: "/example.v1.Service/Test",
+		header:    header,
+		request:   req,
+	}
+	ctx := baggage.Set(context.Background(), "user.id", "1234")
+	ctx = transport.NewClientContext(ctx, tr)
+
+	_, err = Client()(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
+	require.NoError(t, err)
+
+	span := findSpan(t, mt, "http.request", ext.SpanKindClient)
+	assert.Equal(t, "payments.internal", span.Tag(ext.NetworkDestinationName))
+	assert.Equal(t, float64(8443), span.Tag(ext.NetworkDestinationPort))
+	assert.Equal(t, "user.id=1234", header.Get("baggage"))
+}
+
+func TestServerPropagatesExtractedBaggage(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	header := testHeader{}
+	header.Set("baggage", "user.id=1234")
+	tr := &testTransport{
+		kind:      transport.KindGRPC,
+		operation: "/example.v1.Service/Test",
+		header:    header,
+	}
+	ctx := transport.NewServerContext(context.Background(), tr)
+
+	_, err := Server()(func(ctx context.Context, _ any) (any, error) {
+		value, ok := baggage.Get(ctx, "user.id")
+		require.True(t, ok)
+		assert.Equal(t, "1234", value)
+		return nil, nil
+	})(ctx, nil)
+	require.NoError(t, err)
 }
 
 func TestHTTPTransportEndToEnd(t *testing.T) {
@@ -540,22 +619,37 @@ func TestDefaultServiceNameUsesDDService(t *testing.T) {
 
 func TestCachedServiceName(t *testing.T) {
 	tracer.Stop()
-	calls := 0
+	var calls atomic.Int32
 	serviceName := newCachedServiceName(func() string {
-		calls++
+		calls.Add(1)
 		return "checkout-api"
 	})
 	assert.Equal(t, "checkout-api", serviceName.String())
-	assert.Equal(t, 2, calls, "service name must not be cached before tracer initialization")
+	assert.EqualValues(t, 2, calls.Load(), "service name must not be cached before tracer initialization")
 
 	tracer.Start(tracer.WithAgentAddr("127.0.0.1:0"))
 	t.Cleanup(tracer.Stop)
+	const goroutines = 100
+	results := make(chan string, goroutines)
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Go(func() {
+			results <- serviceName.String()
+		})
+	}
+	wg.Wait()
+	close(results)
+	for result := range results {
+		assert.Equal(t, "checkout-api", result)
+	}
+	assert.EqualValues(t, 3, calls.Load(), "service name must be cached once after tracer initialization")
+
 	serviceName = newCachedServiceName(func() string {
-		calls++
+		calls.Add(1)
 		return "payments-api"
 	})
 	assert.Equal(t, "payments-api", serviceName.String())
-	assert.Equal(t, 3, calls, "service name must be cached after tracer initialization")
+	assert.EqualValues(t, 4, calls.Load(), "service name must be cached after tracer initialization")
 }
 
 func TestWithoutTransportContext(t *testing.T) {
@@ -630,6 +724,8 @@ func TestEndpointHostPort(t *testing.T) {
 		{endpoint: "dns:///payments.internal", host: "payments.internal"},
 		{endpoint: "dns:///%zz"},
 		{endpoint: "unix:///tmp/kratos.sock"},
+		{endpoint: "unix:/tmp/kratos.sock"},
+		{endpoint: "unix-abstract:/kratos.sock"},
 		{},
 	} {
 		t.Run(tc.endpoint, func(t *testing.T) {

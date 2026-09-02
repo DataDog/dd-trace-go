@@ -304,3 +304,18 @@ func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderT
 		}
 	}
 }
+
+// ClientIPTagsFromRequest adds the standard HTTP client and network client IP
+// tags when client IP collection is enabled.
+func ClientIPTagsFromRequest(req *http.Request) tracer.StartSpanOption {
+	var tags map[string]string
+	if cfg.traceClientIP {
+		_, clientIP := clientip.Resolve(req.Header, true, req.RemoteAddr)
+		tags = clientip.TagsFor(req.RemoteAddr, clientIP)
+	}
+	return func(cfg *tracer.StartSpanConfig) {
+		for key, value := range tags {
+			tracer.Tag(key, value)(cfg)
+		}
+	}
+}

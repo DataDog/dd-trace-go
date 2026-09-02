@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -54,8 +55,16 @@ func Server(opts ...Option) middleware.Middleware {
 			spanOpts := startSpanOptions(cfg, tr, ext.SpanKindServer)
 			if header := tr.RequestHeader(); header != nil {
 				if spanctx, extractErr := tracer.Extract(headerCarrier{Header: header}); extractErr == nil {
-					if spanctx != nil && spanctx.SpanLinks() != nil {
-						spanOpts = append(spanOpts, tracer.WithSpanLinks(spanctx.SpanLinks()))
+					if spanctx != nil {
+						items := make(map[string]string)
+						spanctx.ForeachBaggageItem(func(key, value string) bool {
+							items[key] = value
+							return true
+						})
+						ctx = baggage.SetAll(ctx, items)
+						if links := spanctx.SpanLinks(); links != nil {
+							spanOpts = append(spanOpts, tracer.WithSpanLinks(links))
+						}
 					}
 					spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
 				}
@@ -84,6 +93,9 @@ func Client(opts ...Option) middleware.Middleware {
 
 			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentClient), startSpanOptions(cfg, tr, ext.SpanKindClient)...)
 			defer func() { finishSpan(span, tr, err, ext.SpanKindClient, cfg) }()
+			for key, value := range baggage.All(ctx) {
+				span.SetBaggageItem(key, value)
+			}
 			if header := tr.RequestHeader(); header != nil {
 				if injectErr := tracer.Inject(span.Context(), headerCarrier{Header: header}); injectErr != nil {
 					instr.Logger().Warn("contrib/go-kratos/kratos.v3: failed to inject trace headers: %s", injectErr.Error())
@@ -133,6 +145,14 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 				tracer.Tag(ext.HTTPURL, httpURL),
 				httptrace.HeaderTagsFromRequest(req, cfg.headerTags),
 			)
+			if spanKind == ext.SpanKindServer {
+				spanOpts = append(spanOpts, httptrace.ClientIPTagsFromRequest(req))
+			} else {
+				spanOpts = append(spanOpts, tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()))
+				if port, err := strconv.Atoi(req.URL.Port()); err == nil {
+					spanOpts = append(spanOpts, tracer.Tag(ext.NetworkDestinationPort, port))
+				}
+			}
 			if route := httpTr.PathTemplate(); route != "" {
 				spanOpts = append(spanOpts, tracer.Tag(ext.HTTPRoute, route))
 			}
@@ -229,6 +249,10 @@ func resourceName(tr transport.Transporter) string {
 }
 
 func endpointHostPort(endpoint string) (host, port string) {
+	lowerEndpoint := strings.ToLower(endpoint)
+	if strings.HasPrefix(lowerEndpoint, "unix:") || strings.HasPrefix(lowerEndpoint, "unix-abstract:") {
+		return "", ""
+	}
 	target := endpoint
 	if strings.Contains(endpoint, "://") {
 		parsed, err := url.Parse(endpoint)
