@@ -160,7 +160,6 @@ func (c *promptFileCache) set(key promptCacheKey, prompt *ManagedPrompt, written
 		log.Debug("Failed to create prompt cache directory: %v", err.Error())
 		return
 	}
-	_ = os.Chmod(c.dir, 0o700)
 	temporary, err := os.CreateTemp(c.dir, ".prompt-*")
 	if err != nil {
 		return

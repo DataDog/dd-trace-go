@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -411,7 +412,7 @@ func TestPromptCacheSelectorsLRUAndFile(t *testing.T) {
 		t.Fatal("targeting attributes fragmented latest selector")
 	}
 
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "prompts")
 	files := newPromptFileCache(true, dir, time.Minute, func() time.Time { return now })
 	keyA, keyB := promptCacheKey{promptID: "a/b", selector: "latest"}, promptCacheKey{promptID: "a_b", selector: "latest"}
 	files.set(keyA, prompt, now.Add(-30*time.Second))
@@ -442,6 +443,19 @@ func TestPromptCacheSelectorsLRUAndFile(t *testing.T) {
 		}
 		if dirInfo.Mode().Perm() != 0o700 {
 			t.Fatalf("dir mode %v", dirInfo.Mode())
+		}
+
+		configuredDir := t.TempDir()
+		if err := os.Chmod(configuredDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		newPromptFileCache(true, configuredDir, time.Minute, func() time.Time { return now }).set(keyA, prompt, now)
+		dirInfo, err = os.Stat(configuredDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dirInfo.Mode().Perm() != 0o755 {
+			t.Fatalf("configured dir mode changed to %v", dirInfo.Mode())
 		}
 	}
 	if err := os.WriteFile(files.path(keyA), []byte("bad"), 0o600); err != nil {
