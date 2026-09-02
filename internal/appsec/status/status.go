@@ -3,21 +3,26 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-// Package status exposes the status of appsec, i.e. whether or
-// not it is currently enabled. This exists so that other dd-trace-go packages
-// can query this status without depending on all of appsec.
+// Package status exposes whether AppSec has ever been enabled. This allows the
+// profiler to conservatively determine whether CPU profiles may contain AppSec
+// goroutine pprof labels without depending on the full AppSec implementation.
+// The monotonic signal intentionally favors simplicity over coordinating an
+// exact status across AppSec lifecycle transitions.
 package status
 
 import "sync/atomic"
 
-var enabled atomic.Bool
+var everEnabled atomic.Bool
 
-// Enabled reports whether appsec is enabled.
-func Enabled() bool {
-	return enabled.Load()
+// EverEnabled reports whether AppSec has been enabled at least once during the
+// lifetime of the process. Once true, it remains true even if AppSec stops or
+// is remotely deactivated because goroutine pprof labels added while it was
+// enabled may still be present.
+func EverEnabled() bool {
+	return everEnabled.Load()
 }
 
-// SetEnabled sets whether appsec is enabled.
-func SetEnabled(value bool) {
-	enabled.Store(value)
+// MarkEnabled records that AppSec has been enabled.
+func MarkEnabled() {
+	everEnabled.Store(true)
 }

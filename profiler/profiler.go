@@ -43,8 +43,8 @@ var (
 	containerID    atomic.Pointer[string]
 	entityID       atomic.Pointer[string]
 
-	// appsecEnabled is a hook for testing
-	appsecEnabled = appsecstatus.Enabled
+	// appsecEnabled is a hook for testing.
+	appsecEnabled = appsecstatus.EverEnabled
 
 	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
