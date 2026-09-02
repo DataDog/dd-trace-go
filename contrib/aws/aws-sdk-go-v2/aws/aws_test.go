@@ -180,17 +180,12 @@ func TestWithDataDogTracer(t *testing.T) {
 	}
 }
 
-// TestWithDataDogTracer_ReusedLoadOptionsFunc is a regression test for a bug where WithDataDogTracer
-// called prepConfig(opts...) once, at construction time, and captured the resulting *config in the
-// returned awsconfig.LoadOptionsFunc closure. If that LoadOptionsFunc value is stored and reused across
-// multiple awsconfig.LoadDefaultConfig calls, defaults(cfg) never re-runs, so any config value derived
-// from mutable global/process state (here, the DD_TRACE_AWS_ANALYTICS_ENABLED env var consulted by
-// instr.AnalyticsRate) stays pinned to whatever it was the first time the closure was built.
+// TestWithDataDogTracer_ReusedLoadOptionsFunc guards against a bug. A reused WithDataDogTracer
+// closure kept a stale *config, because prepConfig ran only once, at construction time. It never
+// re-read mutable global state, like the DD_TRACE_AWS_ANALYTICS_ENABLED env var.
 //
-// Note: this cannot be exercised through internal/globalconfig.SetAnalyticsRate /
-// instrumentation/testutils.SetGlobalAnalyticsRate, because defaults() calls instr.AnalyticsRate(false)
-// (defaultGlobal=false), which never consults globalconfig.AnalyticsRate() for this integration. The env
-// var is the one piece of mutable global state that actually feeds cfg.analyticsRate here.
+// This test can't use globalconfig.SetAnalyticsRate or testutils.SetGlobalAnalyticsRate. defaults()
+// calls instr.AnalyticsRate(false), which ignores globalconfig.AnalyticsRate() here.
 func TestWithDataDogTracer_ReusedLoadOptionsFunc(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -248,6 +243,86 @@ func TestWithDataDogTracer_ReusedLoadOptionsFunc(t *testing.T) {
 	// (first-observed) rate instead of tracking the env var change between calls.
 	assert.Equal(t, 1.0, spans[0].Tag(ext.EventSampleRate))
 	assert.Nil(t, spans[1].Tag(ext.EventSampleRate))
+}
+
+func TestWithDataDogTracer_WithOpts(t *testing.T) {
+	tests := []struct {
+		name                string
+		opts                []Option
+		expectedServiceName string
+		expectedRate        interface{}
+	}{
+		{
+			name:                "with defaults",
+			opts:                nil,
+			expectedServiceName: "aws.SQS",
+			expectedRate:        nil,
+		},
+		{
+			name:                "with enabled",
+			opts:                []Option{WithAnalytics(true)},
+			expectedServiceName: "aws.SQS",
+			expectedRate:        1.0,
+		},
+		{
+			name:                "with disabled",
+			opts:                []Option{WithAnalytics(false)},
+			expectedServiceName: "aws.SQS",
+			expectedRate:        nil,
+		},
+		{
+			name:                "with service name",
+			opts:                []Option{WithService("TestName")},
+			expectedServiceName: "TestName",
+			expectedRate:        nil,
+		},
+		{
+			name:                "with override",
+			opts:                []Option{WithAnalyticsRate(0.23)},
+			expectedServiceName: "aws.SQS",
+			expectedRate:        0.23,
+		},
+		{
+			name:                "with rate outside boundary",
+			opts:                []Option{WithAnalyticsRate(1.5)},
+			expectedServiceName: "aws.SQS",
+			expectedRate:        nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(200)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverWithOptionsFunc(func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+
+			awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+				awsconfig.WithRegion("eu-west-1"),
+				awsconfig.WithCredentialsProvider(aws.AnonymousCredentials{}),
+				awsconfig.WithEndpointResolverWithOptions(resolver),
+				WithDataDogTracer(tt.opts...),
+			)
+			require.NoError(t, err)
+
+			sqsClient := sqs.NewFromConfig(awsCfg)
+			sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 1)
+			s := spans[0]
+			assert.Equal(t, tt.expectedServiceName, s.Tag(ext.ServiceName))
+			assert.Equal(t, tt.expectedRate, s.Tag(ext.EventSampleRate))
+		})
+	}
 }
 
 func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
