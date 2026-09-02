@@ -27,7 +27,9 @@ import (
 	kratoshttp "github.com/go-kratos/kratos/v3/transport/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 func TestServerHTTP(t *testing.T) {
@@ -166,8 +168,82 @@ func TestHTTPTransportEndToEnd(t *testing.T) {
 	assert.Equal(t, clientSpan.SpanID(), serverSpan.ParentID())
 	assert.Equal(t, "kratos-client", clientSpan.Tag(ext.ServiceName))
 	assert.Equal(t, "kratos-server", serverSpan.Tag(ext.ServiceName))
-	assert.Equal(t, "200", clientSpan.Tag(ext.HTTPCode))
-	assert.Equal(t, "200", serverSpan.Tag(ext.HTTPCode))
+	// Kratos middleware does not expose a successful response status. Avoid
+	// reporting an incorrect 200 for valid responses such as 201 or 204.
+	assert.Nil(t, clientSpan.Tag(ext.HTTPCode))
+	assert.Nil(t, serverSpan.Tag(ext.HTTPCode))
+}
+
+func TestHTTPQueryStringDisabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		envName  string
+		spanKind string
+	}{
+		{name: "server_global_opt_out", envName: envQueryStringDisabled, spanKind: ext.SpanKindServer},
+		{name: "client_opt_out", envName: envClientQueryStringEnabled, spanKind: ext.SpanKindClient},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(tc.envName, "false")
+			if tc.envName == envQueryStringDisabled {
+				t.Setenv(tc.envName, "true")
+			}
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest(http.MethodGet, "http://example.com/search?q=alice&token=secret", nil)
+			require.NoError(t, err)
+			tr := &testTransport{kind: transport.KindHTTP, operation: "/example.v1.Search/Find", header: testHeader{}, request: req}
+			ctx := context.Background()
+			mw := Client()
+			if tc.spanKind == ext.SpanKindServer {
+				ctx = transport.NewServerContext(ctx, tr)
+				mw = Server()
+			} else {
+				ctx = transport.NewClientContext(ctx, tr)
+			}
+
+			_, err = mw(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
+			require.NoError(t, err)
+
+			span := findSpan(t, mt, "http.request", tc.spanKind)
+			assert.Equal(t, "http://example.com/search", span.Tag(ext.HTTPURL))
+		})
+	}
+}
+
+func TestAnalyticsConfiguration(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+		opts    []Option
+		want    any
+	}{
+		{name: "environment", enabled: true, want: 1.0},
+		{name: "disabled_option", enabled: true, opts: []Option{WithAnalytics(false)}},
+		{name: "enabled_option", opts: []Option{WithAnalytics(true)}, want: 1.0},
+		{name: "rate_option", opts: []Option{WithAnalyticsRate(0.25)}, want: 0.25},
+		{name: "invalid_rate", opts: []Option{WithAnalyticsRate(2)}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_KRATOS_ANALYTICS_ENABLED", strconv.FormatBool(tc.enabled))
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+			require.NoError(t, err)
+			tr := &testTransport{kind: transport.KindHTTP, operation: "/example.v1.Service/Test", header: testHeader{}, request: req}
+			ctx := transport.NewServerContext(context.Background(), tr)
+
+			_, err = Server(tc.opts...)(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
+			require.NoError(t, err)
+
+			span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+			assert.Equal(t, tc.want, span.Tag(ext.EventSampleRate))
+		})
+	}
 }
 
 func TestGRPCTransportEndToEnd(t *testing.T) {
@@ -227,7 +303,7 @@ func TestErrorAndOptions(t *testing.T) {
 		request:   req,
 	}
 	ctx := transport.NewClientContext(context.Background(), tr)
-	wantErr := kratoserrors.New(http.StatusServiceUnavailable, "DEPENDENCY_DOWN", "dependency unavailable")
+	wantErr := kratoserrors.BadRequest("INVALID_REQUEST", "invalid request")
 	next := func(context.Context, any) (any, error) {
 		return nil, wantErr
 	}
@@ -242,9 +318,9 @@ func TestErrorAndOptions(t *testing.T) {
 	assert.Equal(t, "kratos-client-test", span.Tag(ext.ServiceName))
 	assert.Equal(t, instrumentation.ServiceSourceWithServiceOption, span.Tag(ext.KeyServiceSource))
 	assert.Equal(t, "custom-value", span.Tag("custom.tag"))
-	assert.Equal(t, float64(http.StatusServiceUnavailable), span.Tag("kratos.status_code"))
-	assert.Equal(t, "DEPENDENCY_DOWN", span.Tag("kratos.error_reason"))
-	assert.Equal(t, "503", span.Tag(ext.HTTPCode))
+	assert.Equal(t, float64(http.StatusBadRequest), span.Tag("kratos.status_code"))
+	assert.Equal(t, "INVALID_REQUEST", span.Tag("kratos.error_reason"))
+	assert.Equal(t, "400", span.Tag(ext.HTTPCode))
 	assert.Equal(t, wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Empty(t, span.Tag(ext.ErrorStack))
 }
@@ -272,6 +348,28 @@ func TestGRPCError(t *testing.T) {
 	assert.Nil(t, span.Tag(ext.HTTPCode))
 }
 
+func TestGRPCCanceledIsNotSpanError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tr := &testTransport{
+		kind:      transport.KindGRPC,
+		operation: "/example.v1.Service/Find",
+		header:    testHeader{},
+	}
+	ctx := transport.NewClientContext(context.Background(), tr)
+	wantErr := status.Error(codes.Canceled, "request canceled")
+
+	_, err := Client()(func(context.Context, any) (any, error) {
+		return nil, wantErr
+	})(ctx, nil)
+	require.ErrorIs(t, err, wantErr)
+
+	span := findSpan(t, mt, "grpc.client", ext.SpanKindClient)
+	assert.Equal(t, codes.Canceled.String(), span.Tag("grpc.code"))
+	assert.Nil(t, span.Tag(ext.ErrorMsg))
+}
+
 func TestHTTPServerClientErrorIsNotSpanError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -297,6 +395,53 @@ func TestHTTPServerClientErrorIsNotSpanError(t *testing.T) {
 	assert.Equal(t, float64(http.StatusNotFound), span.Tag("kratos.status_code"))
 	assert.Equal(t, "NOT_FOUND", span.Tag("kratos.error_reason"))
 	assert.Nil(t, span.Tag(ext.ErrorMsg))
+}
+
+func TestHTTPConfiguredErrorStatuses(t *testing.T) {
+	tests := []struct {
+		name       string
+		spanKind   string
+		envName    string
+		envValue   string
+		statusCode int
+		opts       []Option
+	}{
+		{name: "server_custom_404", spanKind: ext.SpanKindServer, envName: envServerErrorStatuses, envValue: "400-499", statusCode: http.StatusNotFound},
+		{name: "server_option_404", spanKind: ext.SpanKindServer, envName: envServerErrorStatuses, envValue: "", statusCode: http.StatusNotFound, opts: []Option{WithStatusCheck(func(int) bool { return true })}},
+		{name: "client_default_503", spanKind: ext.SpanKindClient, envName: envClientErrorStatuses, envValue: "", statusCode: http.StatusServiceUnavailable},
+		{name: "client_custom_503", spanKind: ext.SpanKindClient, envName: envClientErrorStatuses, envValue: "500-599", statusCode: http.StatusServiceUnavailable},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(tc.envName, tc.envValue)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+			require.NoError(t, err)
+			tr := &testTransport{kind: transport.KindHTTP, operation: "/example.v1.Service/Test", header: testHeader{}, request: req}
+			ctx := context.Background()
+			mw := Client(tc.opts...)
+			if tc.spanKind == ext.SpanKindServer {
+				ctx = transport.NewServerContext(ctx, tr)
+				mw = Server(tc.opts...)
+			} else {
+				ctx = transport.NewClientContext(ctx, tr)
+			}
+			wantErr := kratoserrors.New(tc.statusCode, "TEST_ERROR", "test error")
+
+			_, err = mw(func(context.Context, any) (any, error) { return nil, wantErr })(ctx, nil)
+			require.ErrorIs(t, err, wantErr)
+
+			span := findSpan(t, mt, "http.request", tc.spanKind)
+			assert.Equal(t, strconv.Itoa(tc.statusCode), span.Tag(ext.HTTPCode))
+			if tc.name == "client_default_503" {
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
+			} else {
+				assert.Equal(t, wantErr.Error(), span.Tag(ext.ErrorMsg))
+			}
+		})
+	}
 }
 
 func TestNamingSchema(t *testing.T) {

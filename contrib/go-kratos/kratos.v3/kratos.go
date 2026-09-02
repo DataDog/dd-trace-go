@@ -9,7 +9,8 @@ package kratos // import "github.com/DataDog/dd-trace-go/contrib/go-kratos/krato
 
 import (
 	"context"
-	"net/http"
+	"errors"
+	"math"
 	"strconv"
 	"strings"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/go-kratos/kratos/v3/middleware"
 	"github.com/go-kratos/kratos/v3/transport"
 	kratoshttp "github.com/go-kratos/kratos/v3/transport/http"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -58,7 +60,7 @@ func Server(opts ...Option) middleware.Middleware {
 			}
 
 			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentServer), spanOpts...)
-			defer func() { finishSpan(span, tr, err, ext.SpanKindServer, cfg.noDebugStack) }()
+			defer func() { finishSpan(span, tr, err, ext.SpanKindServer, cfg) }()
 			return handler(spanCtx, req)
 		}
 	}
@@ -79,7 +81,7 @@ func Client(opts ...Option) middleware.Middleware {
 			}
 
 			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentClient), startSpanOptions(cfg, tr, ext.SpanKindClient)...)
-			defer func() { finishSpan(span, tr, err, ext.SpanKindClient, cfg.noDebugStack) }()
+			defer func() { finishSpan(span, tr, err, ext.SpanKindClient, cfg) }()
 			if header := tr.RequestHeader(); header != nil {
 				if injectErr := tracer.Inject(span.Context(), headerCarrier{Header: header}); injectErr != nil {
 					instr.Logger().Warn("contrib/go-kratos/kratos.v3: failed to inject trace headers: %s", injectErr.Error())
@@ -99,6 +101,9 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 		tracer.Tag(ext.SpanKind, spanKind),
 		tracer.Tag(ext.RPCSystem, tr.Kind().String()),
 	)
+	if !math.IsNaN(cfg.analyticsRate) {
+		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
 	if spanKind == ext.SpanKindServer {
 		spanOpts = append(spanOpts, tracer.Measured())
 	}
@@ -115,10 +120,10 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 		if httpTr, ok := tr.(kratoshttp.Transporter); ok && httpTr.Request() != nil {
 			req := httpTr.Request()
 			spanType := ext.SpanTypeHTTP
-			httpURL := httptrace.URLFromClientRequest(req, true)
+			httpURL := httptrace.URLFromClientRequest(req, cfg.queryString)
 			if spanKind == ext.SpanKindServer {
 				spanType = ext.SpanTypeWeb
-				httpURL = httptrace.URLFromRequest(req, true)
+				httpURL = httptrace.URLFromRequest(req, cfg.queryString)
 			}
 			spanOpts = append(spanOpts,
 				tracer.SpanType(spanType),
@@ -139,33 +144,46 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 	return append(spanOpts, cfg.spanOpts...)
 }
 
-func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind string, noDebugStack bool) {
+func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind string, cfg *config) {
 	if tr.Kind() == transport.KindGRPC {
-		span.SetTag("grpc.code", status.Code(err).String())
+		code := status.Code(err)
+		span.SetTag("grpc.code", code.String())
+		if errors.Is(err, context.Canceled) || code == codes.Canceled {
+			span.Finish()
+			return
+		}
 	}
 	if err == nil {
-		if tr.Kind() == transport.KindHTTP {
-			span.SetTag(ext.HTTPCode, strconv.Itoa(http.StatusOK))
-		}
 		span.Finish()
 		return
 	}
 
 	kratosErr := kratoserrors.FromError(err)
-	span.SetTag("kratos.status_code", kratosErr.Code)
-	if kratosErr.Reason != "" {
-		span.SetTag("kratos.error_reason", kratosErr.Reason)
-	}
+	markError := true
+	hasProtocolStatus := tr.Kind() != transport.KindHTTP || spanKind == ext.SpanKindServer
 	if tr.Kind() == transport.KindHTTP {
-		span.SetTag(ext.HTTPCode, strconv.Itoa(int(kratosErr.Code)))
+		// A client-side transport failure has no response status to classify and
+		// must remain an error. Kratos HTTP response errors use *kratoserrors.Error.
+		var responseErr *kratoserrors.Error
+		if spanKind == ext.SpanKindClient {
+			hasProtocolStatus = errors.As(err, &responseErr)
+		}
+		if hasProtocolStatus {
+			statusCode := int(kratosErr.Code)
+			span.SetTag(ext.HTTPCode, strconv.Itoa(statusCode))
+			markError = cfg.isStatusError(statusCode)
+		}
+	}
+	if hasProtocolStatus {
+		span.SetTag("kratos.status_code", kratosErr.Code)
+		if kratosErr.Reason != "" {
+			span.SetTag("kratos.error_reason", kratosErr.Reason)
+		}
 	}
 	var finishOpts []tracer.FinishOption
-	// A 4xx returned by a server represents a client error and should not mark
-	// the server span as erroneous. Client spans and non-HTTP spans retain the
-	// original error because the remote call itself failed.
-	if tr.Kind() != transport.KindHTTP || spanKind == ext.SpanKindClient || kratosErr.Code >= http.StatusInternalServerError {
+	if markError {
 		finishOpts = append(finishOpts, tracer.WithError(err))
-		if noDebugStack {
+		if cfg.noDebugStack {
 			finishOpts = append(finishOpts, tracer.NoDebugStack())
 		}
 	}
