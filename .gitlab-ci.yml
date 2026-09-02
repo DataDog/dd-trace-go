@@ -81,12 +81,6 @@ linux-go-go-prof-app-parallel:
     # monitored file reads as "absent at baseline" and the gate quietly diffs against nothing.
     LLMVAL_BASE_REF: "main"
 
-"llm validation (candidate-absent)":
-  variables:
-    LLMVAL_PLATFORM_PROJECT: "ddoghq/llm-validation-platform"
-    LLMVAL_PLATFORM_REF: "anna.yafi/make-generic"
-    LLMVAL_BASE_REF: "main"
-
 go-go-prof-app-parallel-check-slo-breaches:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
 
