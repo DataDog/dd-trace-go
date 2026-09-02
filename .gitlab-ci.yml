@@ -61,18 +61,31 @@ include:
     ref: 'main'
   # LLM Validation gate: reusable job shipped by the platform repo — only the local .llm-validation/ suite
   # stays in this repo. The job auto-skips when no monitored file changed; a FAIL blocks the merge.
-  - project: 'DataDog/llm-validation-platform'
-    ref: anna.yafi/instruction-presence-benchmark
+  - project: 'ddoghq/llm-validation-platform'
+    ref: anna.yafi/make-generic
     file: '/ci/llm-validation.gitlab-ci.yml'
-
-"llm validation":
-  variables:
-    LLMVAL_BASE_REF: "main"
 
 # Pin the benchmarking-platform image for the go-go-prof-app-parallel jobs
 # included from DataDog/apm-reliability/apm-sdks-benchmarks above.
 linux-go-go-prof-app-parallel:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
+
+"llm validation":
+  variables:
+    LLMVAL_PLATFORM_PROJECT: "ddoghq/llm-validation-platform"
+    LLMVAL_PLATFORM_REF: "anna.yafi/make-generic"
+    # LLMVAL_BASE_REF must be set here (job-level), NOT in the top-level `variables:` block above — the
+    # template gives it its own job-level default ("master"), and a job-level variable always beats a
+    # top-level one in GitLab. A top-level override here silently loses, and dd-trace-go's real default
+    # branch is `main`; `master` is a stale branch frozen in 2018, long before AGENTS.md existed, so every
+    # monitored file reads as "absent at baseline" and the gate quietly diffs against nothing.
+    LLMVAL_BASE_REF: "main"
+
+"llm validation (candidate-absent)":
+  variables:
+    LLMVAL_PLATFORM_PROJECT: "ddoghq/llm-validation-platform"
+    LLMVAL_PLATFORM_REF: "anna.yafi/make-generic"
+    LLMVAL_BASE_REF: "main"
 
 go-go-prof-app-parallel-check-slo-breaches:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
