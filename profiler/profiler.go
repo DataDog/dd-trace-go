@@ -114,10 +114,14 @@ type profiler struct {
 	met         *metrics       // metric collector state
 	deltas      map[ProfileType]*fastDeltaProfiler
 	compressors map[ProfileType]compressor
-	// stripCPUCompressor is used if we are stripping unwanted labels from
-	// CPU profiles, in which case we need to have an uncompressed profile
-	// in memory and can't just pass it straight through for compression.
+	// stripCPUCompressor is used when we want to strip labels from CPU
+	// profiles, in which case we need the decompressed profile in memory
+	// and can't pass straight through to recompression. Initialized lazily.
 	stripCPUCompressor compressor
+	// compressionBuilder is retained so that stripCPUCompressor can share a
+	// zstd encoder with the other compressors which are initialized when
+	// the profiler is started.
+	compressionBuilder compressionPipelineBuilder
 	seq                uint64         // seq is the value of the profile_seq tag
 	pendingProfiles    sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
@@ -255,22 +259,14 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if p.cfg.traceConfig.Enabled {
 		types = append(types, executionTrace)
 	}
-	var pipelineBuilder compressionPipelineBuilder
 	for _, pt := range types {
 		isDelta := p.cfg.deltaProfiles && len(profileTypes[pt].DeltaValues) > 0
 		in, out := compressionStrategy(pt, isDelta, p.cfg.compressionConfig)
-		compressor, err := pipelineBuilder.Build(in, out)
+		compressor, err := p.compressionBuilder.Build(in, out)
 		if err != nil {
 			return nil, err
 		}
 		p.compressors[pt] = compressor
-
-		if pt == CPUProfile {
-			p.stripCPUCompressor, err = pipelineBuilder.Build(noCompression, out)
-			if err != nil {
-				return nil, err
-			}
-		}
 
 		if isDelta {
 			p.deltas[pt] = newFastDeltaProfiler(compressor, profileTypes[pt].DeltaValues...)

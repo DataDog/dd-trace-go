@@ -118,6 +118,19 @@ var profileTypes = map[ProfileType]profileType{
 			stripLabels := appsecEnabled()
 			c := p.compressors[CPUProfile]
 			if stripLabels {
+				if p.stripCPUCompressor == nil {
+					_, outputCompression := compressionStrategy(CPUProfile, false, p.cfg.compressionConfig)
+					var err error
+					p.stripCPUCompressor, err = p.compressionBuilder.Build(noCompression, outputCompression)
+					if err != nil {
+						return nil, err
+					}
+					// Drop the old compressor, which we won't use again.
+					// This is safe because we arrange for CPU profiling to stop
+					// after all other profilers, meaning we won't race with any
+					// other access to p.compressors
+					delete(p.compressors, CPUProfile)
+				}
 				c = p.stripCPUCompressor
 			}
 			c.Reset(&buf)
