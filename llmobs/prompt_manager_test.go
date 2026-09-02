@@ -23,6 +23,7 @@ import (
 
 	"github.com/open-feature/go-sdk/openfeature"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -107,7 +108,7 @@ func TestPromptWorksWithoutLLMObsEnabled(t *testing.T) {
 	defer server.Close()
 	manager := testPromptManager(server, "", 0, nil, nil)
 	previous := getGlobalPromptManager
-	getGlobalPromptManager = func() (*promptManager, error) { return manager, nil }
+	getGlobalPromptManager = func() *promptManager { return manager }
 	defer func() { getGlobalPromptManager = previous }()
 	t.Setenv("DD_LLMOBS_ENABLED", "false")
 	prompt, err := GetPrompt(context.Background(), "p")
@@ -119,7 +120,7 @@ func TestPromptWorksWithoutLLMObsEnabled(t *testing.T) {
 func TestGetPromptOptions(t *testing.T) {
 	previous := getGlobalPromptManager
 	var manager *promptManager
-	getGlobalPromptManager = func() (*promptManager, error) { return manager, nil }
+	getGlobalPromptManager = func() *promptManager { return manager }
 	defer func() { getGlobalPromptManager = previous }()
 
 	attributes := map[string]any{"tier": "gold"}
@@ -201,6 +202,31 @@ func TestGetPromptOptions(t *testing.T) {
 	request = <-requests
 	if request.path != "/api/unstable/llm-obs/v1/prompts/greeting/versions/7" {
 		t.Fatalf("version path %q", request.path)
+	}
+}
+
+func TestGlobalPromptManagerFollowsLatestConfig(t *testing.T) {
+	t.Cleanup(func() {
+		internalconfig.CreateNew()
+		globalPromptManagerState.Lock()
+		globalPromptManagerState.config = nil
+		globalPromptManagerState.manager = nil
+		globalPromptManagerState.Unlock()
+	})
+
+	stagingConfig := internalconfig.CreateNew()
+	stagingConfig.SetEnv("staging", internalconfig.OriginCode, internalconfig.ProductTracer)
+	stagingManager := globalPromptManager()
+
+	productionConfig := internalconfig.CreateNew()
+	productionConfig.SetEnv("production", internalconfig.OriginCode, internalconfig.ProductTracer)
+	productionManager := globalPromptManager()
+
+	if stagingManager == productionManager {
+		t.Fatal("manager was reused after global configuration changed")
+	}
+	if stagingManager.env != "staging" || productionManager.env != "production" {
+		t.Fatalf("manager environments: staging=%q production=%q", stagingManager.env, productionManager.env)
 	}
 }
 

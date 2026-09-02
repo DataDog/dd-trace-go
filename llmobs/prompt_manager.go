@@ -80,18 +80,29 @@ func (request promptRequest) cacheKey() promptCacheKey {
 	return promptCacheKey{promptID: request.promptID, selector: string(encoded)}
 }
 
-var getGlobalPromptManager = sync.OnceValues(func() (*promptManager, error) {
+var globalPromptManagerState struct {
+	sync.Mutex
+	config  *config.Config
+	manager *promptManager
+}
+
+var getGlobalPromptManager = func() *promptManager {
 	cfg := config.Get()
-	return newPromptManager(
-		cfg.APIKey(), cfg.AppKey(), cfg.Env(), "https://api."+cfg.Site(),
-		cfg.LLMObsPromptsCacheTTL(), cfg.LLMObsPromptsFileCacheEnabled(), cfg.LLMObsPromptsCacheDir(),
-		cfg.LLMObsPromptsTimeout(), nil, nil, nil,
-	), nil
-})
+	globalPromptManagerState.Lock()
+	defer globalPromptManagerState.Unlock()
+	if globalPromptManagerState.config != cfg {
+		globalPromptManagerState.config = cfg
+		globalPromptManagerState.manager = newPromptManager(
+			cfg.APIKey(), cfg.AppKey(), cfg.Env(), "https://api."+cfg.Site(),
+			cfg.LLMObsPromptsCacheTTL(), cfg.LLMObsPromptsFileCacheEnabled(), cfg.LLMObsPromptsCacheDir(),
+			cfg.LLMObsPromptsTimeout(), nil, nil, nil,
+		)
+	}
+	return globalPromptManagerState.manager
+}
 
 func globalPromptManager() *promptManager {
-	manager, _ := getGlobalPromptManager()
-	return manager
+	return getGlobalPromptManager()
 }
 
 func newPromptManager(apiKey, appKey, env, origin string, ttl time.Duration, fileCacheEnabled bool, cacheDir string, timeout time.Duration, client *http.Client, now func() time.Time, evaluate func(context.Context, string, string, map[string]any) (any, error)) *promptManager {
