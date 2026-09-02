@@ -36,6 +36,7 @@ func Example() {
 // directly accessible (e.g. when the AWS config is loaded by other code, such as an SDK helper or an AWS-provided
 // config loader).
 func ExampleWithDataDogTracer() {
+	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), awstrace.WithDataDogTracer())
 	if err != nil {
 		log.Fatal(err.Error())
 	}

@@ -120,17 +120,14 @@ func TestAppendMiddleware(t *testing.T) {
 func TestWithDataDogTracer(t *testing.T) {
 	tests := []struct {
 		name               string
-		responseStatus     int
 		expectedStatusCode int
 	}{
 		{
 			name:               "test mocked sqs failure request",
-			responseStatus:     400,
 			expectedStatusCode: 400,
 		},
 		{
 			name:               "test mocked sqs success request",
-			responseStatus:     200,
 			expectedStatusCode: 200,
 		},
 	}

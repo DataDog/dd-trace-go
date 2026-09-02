@@ -72,9 +72,8 @@ func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) 
 // directly accessible.
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func WithDataDogTracer(opts ...Option) awsconfig.LoadOptionsFunc {
-	cfg := prepConfig(opts...)
 	return func(o *awsconfig.LoadOptions) error {
-		appendMiddleware(cfg, &o.APIOptions)
+		appendMiddleware(prepConfig(opts...), &o.APIOptions)
 		return nil
 	}
 }
