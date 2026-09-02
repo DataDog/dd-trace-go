@@ -180,6 +180,76 @@ func TestWithDataDogTracer(t *testing.T) {
 	}
 }
 
+// TestWithDataDogTracer_ReusedLoadOptionsFunc is a regression test for a bug where WithDataDogTracer
+// called prepConfig(opts...) once, at construction time, and captured the resulting *config in the
+// returned awsconfig.LoadOptionsFunc closure. If that LoadOptionsFunc value is stored and reused across
+// multiple awsconfig.LoadDefaultConfig calls, defaults(cfg) never re-runs, so any config value derived
+// from mutable global/process state (here, the DD_TRACE_AWS_ANALYTICS_ENABLED env var consulted by
+// instr.AnalyticsRate) stays pinned to whatever it was the first time the closure was built.
+//
+// Note: this cannot be exercised through internal/globalconfig.SetAnalyticsRate /
+// instrumentation/testutils.SetGlobalAnalyticsRate, because defaults() calls instr.AnalyticsRate(false)
+// (defaultGlobal=false), which never consults globalconfig.AnalyticsRate() for this integration. The env
+// var is the one piece of mutable global state that actually feeds cfg.analyticsRate here.
+func TestWithDataDogTracer_ReusedLoadOptionsFunc(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	server := mockAWS(200)
+	defer server.Close()
+
+	resolver := aws.EndpointResolverWithOptionsFunc(func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           server.URL,
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	sendMessage := func(cfg aws.Config) {
+		sqsClient := sqs.NewFromConfig(cfg)
+		_, err := sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+			MessageBody: aws.String("foobar"),
+			QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
+		})
+		require.NoError(t, err)
+	}
+
+	// Build the LoadOptionsFunc exactly once, as a caller storing it for reuse would.
+	loadOpt := WithDataDogTracer()
+
+	// First LoadDefaultConfig call: analytics enabled via the global env var.
+	t.Setenv("DD_TRACE_AWS_ANALYTICS_ENABLED", "true")
+	cfg1, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion("eu-west-1"),
+		awsconfig.WithCredentialsProvider(aws.AnonymousCredentials{}),
+		awsconfig.WithEndpointResolverWithOptions(resolver),
+		loadOpt,
+	)
+	require.NoError(t, err)
+	sendMessage(cfg1)
+
+	// Flip the global env var, then build a second, independent aws.Config by reusing the SAME
+	// stored LoadOptionsFunc (WithDataDogTracer is deliberately not called again).
+	t.Setenv("DD_TRACE_AWS_ANALYTICS_ENABLED", "false")
+	cfg2, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion("eu-west-1"),
+		awsconfig.WithCredentialsProvider(aws.AnonymousCredentials{}),
+		awsconfig.WithEndpointResolverWithOptions(resolver),
+		loadOpt,
+	)
+	require.NoError(t, err)
+	sendMessage(cfg2)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+
+	// If prepConfig had run only once (the pre-fix bug), both spans would report the same
+	// (first-observed) rate instead of tracking the env var change between calls.
+	assert.Equal(t, 1.0, spans[0].Tag(ext.EventSampleRate))
+	assert.Nil(t, spans[1].Tag(ext.EventSampleRate))
+}
+
 func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 	tests := []struct {
 		name               string
