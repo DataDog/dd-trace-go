@@ -29,14 +29,14 @@ import (
 func Enabled() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return status.Enabled()
+	return activeAppSec != nil && activeAppSec.started
 }
 
 // RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
 func RASPEnabled() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return status.Enabled() && activeAppSec.cfg.RASP
+	return activeAppSec != nil && activeAppSec.started && activeAppSec.cfg.RASP
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -152,7 +152,6 @@ func setActiveAppSec(a *appsec) {
 		activeAppSec.stop()
 	}
 	activeAppSec = a
-	status.SetEnabled(a != nil && a.started)
 }
 
 type appsec struct {
@@ -190,8 +189,8 @@ func (a *appsec) start() error {
 	a.enableRCBlocking()
 	a.enableRASP()
 
+	status.MarkEnabled()
 	a.started = true
-	status.SetEnabled(true) // TODO: right?
 	log.Info("appsec: up and running")
 
 	// TODO: log the config like the APM tracer does but we first need to define
@@ -207,7 +206,6 @@ func (a *appsec) stop() {
 	}
 
 	a.started = false
-	status.SetEnabled(false) // TODO: right?
 	registerAppsecStopTelemetry()
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()
