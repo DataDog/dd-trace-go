@@ -235,9 +235,9 @@ func endpointHostPort(endpoint string) (host, port string) {
 		if err != nil || parsed.Scheme == "unix" {
 			return "", ""
 		}
-		target = parsed.Host
+		target = strings.TrimPrefix(parsed.Path, "/")
 		if target == "" {
-			target = strings.TrimPrefix(parsed.Path, "/")
+			target = parsed.Host
 		}
 	}
 	if target == "" {
