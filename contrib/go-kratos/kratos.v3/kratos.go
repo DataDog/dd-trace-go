@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 
 	kratoserrors "github.com/go-kratos/kratos/v3/errors"
@@ -173,6 +174,7 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 					httptrace.ClientIPTagsFromRequest(req),
 					tracer.Tag(ext.HTTPUserAgent, req.UserAgent()),
 				)
+				spanOpts = appsechttpsec.AppendSecurityTestingHeaderTags(spanOpts, req.Header)
 				if req.Host != "" {
 					spanOpts = append(spanOpts, tracer.Tag("http.host", req.Host))
 				}

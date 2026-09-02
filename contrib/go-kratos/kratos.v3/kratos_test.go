@@ -49,6 +49,8 @@ func TestServerHTTP(t *testing.T) {
 	require.NoError(t, err)
 	req.Header.Set("X-Request-ID", "test-request-id")
 	req.Header.Set("User-Agent", "kratos-test-client/1.0")
+	req.Header.Set("X-Datadog-Endpoint-Scan", "scan-uuid")
+	req.Header.Set("X-Datadog-Security-Test", " test-uuid ")
 	tr := &testTransport{
 		kind:         transport.KindHTTP,
 		operation:    "/helloworld.v1.Greeter/SayHello",
@@ -89,6 +91,8 @@ func TestServerHTTP(t *testing.T) {
 	assert.Equal(t, "kratos-test-client/1.0", span.Tag(ext.HTTPUserAgent))
 	assert.Equal(t, "/v1/greeters/{name}", span.Tag(ext.HTTPRoute))
 	assert.Equal(t, "test-request-id", span.Tag("http.request.headers.x-request-id"))
+	assert.Equal(t, "scan-uuid", span.Tag("http.request.headers.x-datadog-endpoint-scan"))
+	assert.Equal(t, "test-uuid", span.Tag("http.request.headers.x-datadog-security-test"))
 }
 
 func TestServerHTTPClientIP(t *testing.T) {
