@@ -14,6 +14,14 @@ import (
 
 type plainStruct struct{ Field string }
 
+// ptrLogValuerStruct implements slog.LogValuer only on its pointer receiver.
+// Only *ptrLogValuerStruct satisfies slog.LogValuer — a bare
+// ptrLogValuerStruct value does not, and slog can't dispatch a
+// pointer-receiver method on a value it doesn't have the address of.
+type ptrLogValuerStruct struct{ Field string }
+
+func (p *ptrLogValuerStruct) LogValue() slog.Value { return slog.StringValue(p.Field) }
+
 // ── Good: safe slog.Any / slog.String usage ─────────────────────────────────
 
 func goodSafeError(err error) {
@@ -37,6 +45,10 @@ func goodStringNotFromError() {
 	telemetrylog.Error("event", slog.String("key", "a plain constant value"))
 }
 
+func goodPtrLogValuerPassedAsPointer() {
+	telemetrylog.Debug("event", slog.Any("data", &ptrLogValuerStruct{Field: "x"}))
+}
+
 // ── Bad: unsafe slog.Any / slog.String usage ────────────────────────────────
 
 func badRawErrorViaAny(err error) {
@@ -50,6 +62,15 @@ func badRawErrorViaAnyMethod(err error) {
 
 func badNonLogValuerStruct() {
 	telemetrylog.Debug("event", slog.Any("data", plainStruct{Field: "x"})) // want "does not implement slog.LogValuer"
+}
+
+// badPtrLogValuerPassedAsValue is the regression case for a real
+// false-negative: the value passed here is ptrLogValuerStruct (not a
+// pointer), which does not implement slog.LogValuer even though its pointer
+// type does. slog.Any boxes exactly the type passed, so at runtime slog
+// cannot dispatch LogValue and reflects over the raw struct instead.
+func badPtrLogValuerPassedAsValue() {
+	telemetrylog.Debug("event", slog.Any("data", ptrLogValuerStruct{Field: "x"})) // want "does not implement slog.LogValuer"
 }
 
 func badStringWithErrorCall(err error) {

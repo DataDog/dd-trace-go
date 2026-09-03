@@ -249,7 +249,14 @@ func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, value ast.Expr
 	if t == nil {
 		return
 	}
-	if logValuerIface != nil && (types.Implements(t, logValuerIface) || types.Implements(types.NewPointer(t), logValuerIface)) {
+	if logValuerIface != nil && types.Implements(t, logValuerIface) {
+		// Only exempt when the exact type passed implements LogValuer.
+		// A pointer-receiver LogValue method only satisfies the interface on
+		// *T, not T: slog.Any boxes exactly the type passed, so if the caller
+		// passed a bare T, slog cannot dispatch LogValue at runtime and falls
+		// back to reflecting over the raw value. Checking types.NewPointer(t)
+		// here would wrongly exempt that case just because *T happens to
+		// implement the interface — the caller must pass a pointer explicitly.
 		return // already safe: SafeError, SafeSlice, or a caller-provided LogValuer
 	}
 	if errIface != nil && types.Implements(t, errIface) {
