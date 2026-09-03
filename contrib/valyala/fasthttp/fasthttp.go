@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
+	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 var instr *instrumentation.Instrumentation
@@ -79,7 +80,7 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, string(fctx.Method())),
-		tracer.Tag(ext.HTTPURL, string(fctx.URI().FullURI())),
+		tracer.Tag(ext.HTTPURL, httpURLTag(fctx)),
 		tracer.Tag(ext.HTTPUserAgent, string(fctx.UserAgent())),
 		tracer.Measured(),
 	}
@@ -88,4 +89,16 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	}
 	opts = appsechttpsec.AppendSecurityTestingHeaderTagsFromBytes(opts, fctx.Request.Header.VisitAll)
 	return opts
+}
+
+// httpURLTag builds the http.url span tag from the request URI's scheme, host, and path, appending the query
+// string only after running it through the same obfuscation net/http-based integrations use. Unlike
+// fctx.URI().FullURI(), this never leaks a raw, unobfuscated query string.
+func httpURLTag(fctx *fasthttp.RequestCtx) string {
+	uri := fctx.URI()
+	url := string(uri.Scheme()) + "://" + string(uri.Host()) + string(uri.PathOriginal())
+	if query := instrhttptrace.ObfuscateQueryString(string(uri.QueryString())); query != "" {
+		url += "?" + query
+	}
+	return url
 }

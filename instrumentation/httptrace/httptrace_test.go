@@ -582,6 +582,48 @@ func TestURLTagWithAllowlist(t *testing.T) {
 	}
 }
 
+func TestObfuscateQueryStringExported(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	t.Run("default obfuscator", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.useDefaultObfuscator = true
+		require.Equal(t, "<redacted>", ObfuscateQueryString("token=value"))
+	})
+	t.Run("query string disabled", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = false
+		cfg.useDefaultObfuscator = true
+		require.Equal(t, "", ObfuscateQueryString("token=value"))
+	})
+	t.Run("empty raw query", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		require.Equal(t, "", ObfuscateQueryString(""))
+	})
+	t.Run("custom regexp", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.useDefaultObfuscator = false
+		cfg.queryStringRegexp = regexp.MustCompile(`secret=\w+`)
+		require.Equal(t, "<redacted>", ObfuscateQueryString("secret=abc"))
+	})
+	t.Run("server allowlist", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.serverQueryStringAllowlist = map[string]struct{}{"p1": {}}
+		require.Equal(t, "p1=a", ObfuscateQueryString("p1=a&secret=abc"))
+	})
+	t.Run("client allowlist via ObfuscateClientQueryString", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = map[string]struct{}{"p1": {}}
+		require.Equal(t, "p1=a", ObfuscateClientQueryString("p1=a&secret=abc"))
+	})
+}
+
 func TestURLTagWithClientServerAllowlist(t *testing.T) {
 	makeRequest := func(query string) *http.Request {
 		return &http.Request{
