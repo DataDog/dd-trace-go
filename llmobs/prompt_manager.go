@@ -127,6 +127,7 @@ func newPromptManager(cfg promptManagerConfig) *promptManager {
 	}
 	if cfg.client == nil {
 		cfg.client = internal.DefaultHTTPClient(cfg.timeout, true)
+		cfg.client.CheckRedirect = promptRedirectPolicy
 	}
 	if cfg.evaluate == nil {
 		cfg.evaluate = func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
@@ -139,6 +140,16 @@ func newPromptManager(cfg promptManagerConfig) *promptManager {
 		cacheEnabled: cfg.ttl > 0, cache: newPromptCache(cfg.ttl, cfg.now), fileCache: newPromptFileCache(cfg.fileCacheEnabled && cfg.ttl > 0, cfg.cacheDir, cfg.ttl, cfg.now),
 		httpClient: cfg.client, now: cfg.now, evaluate: cfg.evaluate, refreshing: make(map[promptCacheKey]struct{}),
 	}
+}
+
+func promptRedirectPolicy(request *http.Request, via []*http.Request) error {
+	if len(via) != 0 && (request.URL.Scheme != via[0].URL.Scheme || request.URL.Host != via[0].URL.Host) {
+		return http.ErrUseLastResponse
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
 }
 
 func (manager *promptManager) get(ctx context.Context, promptID string, options getPromptConfig) (*ManagedPrompt, error) {

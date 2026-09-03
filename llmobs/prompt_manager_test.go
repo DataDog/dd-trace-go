@@ -105,6 +105,28 @@ func TestPromptRoutingAndHTTP(t *testing.T) {
 	}
 }
 
+func TestPromptRejectsCrossOriginRedirect(t *testing.T) {
+	var targetCalls atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		targetCalls.Add(1)
+	}))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+
+	manager := newPromptManager(promptManagerConfig{
+		apiKey: "api", appKey: "app", origin: source.URL, timeout: time.Second,
+	})
+	if _, err := manager.fetchHTTP(context.Background(), promptRequest{promptID: "p", env: "staging"}); err == nil {
+		t.Fatal("cross-origin redirect was accepted")
+	}
+	if calls := targetCalls.Load(); calls != 0 {
+		t.Fatalf("redirect target received %d requests", calls)
+	}
+}
+
 func TestPromptWorksWithoutLLMObsEnabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, promptResponse("p", "1", "x"))
