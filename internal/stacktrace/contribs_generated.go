@@ -234,6 +234,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/circonus-labs/circonusllhist",
 		"github.com/client9/misspell",
 		"github.com/clipperhouse/uax29/v2",
+		"github.com/cloudevents/sdk-go/v2",
 		"github.com/cloudwego/base64x",
 		"github.com/cloudwego/iasm",
 		"github.com/cncf/udpa/go",
