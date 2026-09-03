@@ -8,11 +8,13 @@ package crashtracker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +33,18 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 	tmp := t.TempDir()
 	injectedBinary := filepath.Join(tmp, "victim-orchestrion")
 	plainBinary := filepath.Join(tmp, "victim-plain")
+	if runtime.GOOS == "windows" {
+		// go build -o <path> never appends .exe on its own, even on Windows
+		// (golang/go#59790, closed as intentional: an explicit -o name is
+		// treated as final). exec.Command on an absolute path without a
+		// recognised extension resolves it via PATHEXT-style probing
+		// (os/exec's lookExtensions) and stores any failure as cmd.Err,
+		// silently short-circuiting Start/CombinedOutput with no process
+		// ever launched -- which is exactly the empty-output, full-timeout
+		// failure this test hit on Windows CI before this fix.
+		injectedBinary += ".exe"
+		plainBinary += ".exe"
+	}
 
 	buildInjectedVictim(t, moduleRoot, injectedBinary)
 	buildPlainVictim(t, moduleRoot, plainBinary)
@@ -103,6 +117,16 @@ func buildPlainVictim(t *testing.T, moduleRoot, output string) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", "build", "-o", output, victimImportPath)
 	cmd.Dir = moduleRoot
+	// This build must never be orchestrion-instrumented -- that is the whole
+	// point of the negative assertion in TestCrashtrackerMainInjection. DRIVER
+	// and TOOLEXEC CI modes activate orchestrion via an explicit wrapper
+	// command or -toolexec flag that this separate `go build` invocation never
+	// sees, but GOFLAGS mode (.github/workflows/orchestrion.yml) activates it
+	// by exporting GOFLAGS="... -toolexec=orchestrion toolexec" into the whole
+	// shell session, which this process inherits via os.Environ() like any
+	// other GOFLAGS content. Overriding it to empty here, rather than only for
+	// that one mode, keeps this build's "plain" guarantee unconditional.
+	cmd.Env = append(os.Environ(), "GOFLAGS=")
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		t.Fatal("build plain victim: timeout")
@@ -129,9 +153,17 @@ func runVictim(t *testing.T, binary, agentURL string) []byte {
 		"DD_INSTRUMENTATION_TELEMETRY_ENABLED=false",
 		"DD_REMOTE_CONFIGURATION_ENABLED=false",
 	)
-	out, _ := cmd.CombinedOutput() // Non-zero panic exit is expected for both victims.
+	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		t.Fatalf("run victim %q: timeout", binary)
+	}
+	// A non-zero exit from the victim's own panic is expected; a *exec.Error
+	// (failed to even start, e.g. cmd.Err from a failed Windows extension
+	// lookup) is not, and CombinedOutput would otherwise return it silently
+	// alongside empty output.
+	var execErr *exec.Error
+	if errors.As(err, &execErr) {
+		t.Fatalf("run victim %q: %v", binary, execErr)
 	}
 	return out
 }
