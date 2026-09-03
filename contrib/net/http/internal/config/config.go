@@ -12,6 +12,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
@@ -94,13 +96,14 @@ type RoundTripperAfterFunc func(*http.Response, *tracer.Span)
 
 type RoundTripperConfig struct {
 	CommonConfig
-	Before        RoundTripperBeforeFunc
-	After         RoundTripperAfterFunc
-	SpanNamer     func(req *http.Request) string
-	Propagation   bool
-	ErrCheck      func(err error) bool
-	QueryString   bool // reports whether the query string is included in the URL tag for http client spans
-	ClientTimings bool // reports whether httptrace.ClientTrace should be enabled for detailed timing
+	Before               RoundTripperBeforeFunc
+	After                RoundTripperAfterFunc
+	SpanNamer            func(req *http.Request) string
+	Propagation          bool
+	ErrCheck             func(err error) bool
+	QueryString          bool // reports whether the query string is included in the URL tag for http client spans
+	ClientTimings        bool // reports whether httptrace.ClientTrace should be enabled for detailed timing
+	OTelSemanticsEnabled bool
 }
 
 func (c *RoundTripperConfig) ApplyOpts(opts ...RoundTripperOption) {
@@ -119,4 +122,36 @@ type RoundTripperOptionFn func(*RoundTripperConfig)
 
 func (o RoundTripperOptionFn) applyRoundTripper(cfg *RoundTripperConfig) {
 	o(cfg)
+}
+
+// NormalizeClientRequestMethod applies OpenTelemetry method normalization to the
+// effective client method. An empty Request.Method means GET in net/http.
+func NormalizeClientRequestMethod(req *http.Request) (attribute, spanName, original string) {
+	method := req.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+	return httptrace.NormalizeHTTPMethod(method)
+}
+
+// ClientErrorCheck determines which HTTP client response statuses are treated as errors:
+//   - Use DD_TRACE_HTTP_CLIENT_ERROR_STATUSES when configured.
+//   - Otherwise, under OpenTelemetry semantics, 4xx, 5xx, and out-of-range status codes are errors.
+//   - Otherwise, 4xx are errors.
+//
+// See:
+// https://github.com/open-telemetry/semantic-conventions/blob/7f3c3bfc300cc090871692219af6a2495aa67915/docs/http/http-spans.md?plain=1#L82-L105
+func ClientErrorCheck(otelSemantics bool) func(int) bool {
+	if fn := httptrace.GetErrorCodesFromInput(env.Get(EnvClientErrorStatuses)); fn != nil {
+		return fn
+	}
+
+	if otelSemantics {
+		return func(statusCode int) bool {
+			return statusCode < http.StatusContinue /* 100 */ || statusCode >= http.StatusBadRequest /* 400 */
+		}
+	}
+	return func(statusCode int) bool {
+		return statusCode >= http.StatusBadRequest /* 400 */ && statusCode < http.StatusInternalServerError /* 500 */
+	}
 }
