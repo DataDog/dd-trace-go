@@ -432,8 +432,8 @@
     "DD_CRASHTRACKING_FOREIGN_THREAD_SIGNALS_ENABLED": [
       {
         "implementation": "A",
-        "type": "boolean",
-        "default": "false"
+        "type": "FIX_ME",
+        "default": "FIX_ME"
       }
     ],
     "DD_CUSTOM_PARENT_ID": [
