@@ -83,17 +83,16 @@ fpd_origin_tracking_smoke_test:
     #    (the same call the validate script will eventually make to resolve PRs).
     - |
       echo "Resolving PRs for current commit..."
-      curl --fail --silent --show-error \
+      response=$(curl --fail --silent --show-error \
         -H "Authorization: Bearer $GH_TOKEN" \
         -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/DataDog/dd-trace-go/commits/$CI_COMMIT_SHA/pulls" \
-        | head -c 500
-      echo
+        "https://api.github.com/repos/DataDog/dd-trace-go/commits/$CI_COMMIT_SHA/pulls")
+      echo "${response:0:500}"
       echo "FPD origin-tracking smoke test passed"
   after_script:
     - |
       if [ -f /tmp/gh-token ]; then
-        /tmp/dd-octo-sts revoke -t "$(cat /tmp/gh-token)" || true
+        dd-octo-sts revoke -t "$(cat /tmp/gh-token)" || true
         rm -f /tmp/gh-token
       fi
 
