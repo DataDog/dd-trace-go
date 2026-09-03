@@ -2649,6 +2649,34 @@ func BenchmarkStartSpan(b *testing.B) {
 	}
 }
 
+// BenchmarkStartSpanManyTags exercises setting several individual Tag
+// options in one StartSpan call (component, span.kind, db.system, host,
+// port, resource.name, ...) instead of a single WithStartSpanConfig/WithTags
+// call. This is the common shape for contribs and third-party integrations
+// using the plain Tag/ServiceName/ResourceName option API, and it crosses
+// Go's small-map (8-bucket) growth threshold, making it a baseline for
+// evaluating future changes to how spanStart/Tag size the per-span tag map.
+func BenchmarkStartSpanManyTags(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+	assert.Nil(b, err)
+	defer stop()
+
+	b.ResetTimer()
+	for b.Loop() {
+		tracer.StartSpan("valkey.command",
+			Tag("component", "valkey-io/valkey-go"),
+			Tag("span.kind", "client"),
+			Tag("db.system", "valkey"),
+			Tag("out.host", "127.0.0.1"),
+			Tag("out.port", "6379"),
+			Tag("out.db", "0"),
+			Tag("resource.name", "GET"),
+			Tag("db.user", "default"),
+			Tag("valkey.raw_command", "GET foo"),
+		)
+	}
+}
+
 func BenchmarkStartSpanConcurrent(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	assert.NoError(b, err)
