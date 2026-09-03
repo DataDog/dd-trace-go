@@ -7,6 +7,8 @@ package telemetry
 
 import (
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 )
 
 // WithTags returns a LogOption that appends the tags for the telemetry log message. Tags are key-value pairs that are then
@@ -71,5 +73,38 @@ func WithStacktrace() LogOption {
 			return
 		}
 		value.captureStacktrace = true
+	}
+}
+
+// withStacktraceNowSkip skips WithStacktraceNow's own frame, landing the
+// capture on whatever function called it (e.g. ReportError) — the same
+// "keep telemetry call-chain frames, only skip pure capture machinery"
+// convention as telemetryStackSkip in backend.go.
+const withStacktraceNowSkip = 1
+
+// WithStacktraceNow returns a LogOption that captures the stack trace
+// synchronously, at the caller's own call site, right now — instead of
+// deferring capture to whenever the backend actually processes the record
+// (see [WithStacktrace]). Use this at any call site whose Log call may be
+// queued and replayed later (e.g. before telemetry.StartApp runs), so the
+// stack reflects where the call was actually made, not the replay machinery
+// that eventually delivers it.
+//
+// When telemetry is disabled ([Disabled] is true), this returns the same
+// no-capture-yet option as WithStacktrace instead of paying the capture cost:
+// every call through the package-level Log function is a no-op in that case,
+// so there's nothing to preserve accuracy for.
+func WithStacktraceNow() LogOption {
+	if Disabled() {
+		return WithStacktrace()
+	}
+	raw := stacktrace.CaptureRaw(withStacktraceNowSkip)
+	return func(_ *loggerKey, value *loggerValue) {
+		if value == nil {
+			return
+		}
+		value.captureStacktrace = true
+		value.stacktraceCaptured = true
+		value.rawStack = raw
 	}
 }

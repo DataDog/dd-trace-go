@@ -131,10 +131,10 @@ func TestReportPanic_WithTagsOption(t *testing.T) {
 	sendLog = func(_ telemetry.Record, opts ...telemetry.LogOption) { capturedOpts = opts }
 
 	ReportPanic("unexpected panic in goroutine", "a string panic value")
-	assert.Len(t, capturedOpts, 1, "WithStacktrace only, no extra opts passed")
+	assert.Len(t, capturedOpts, 1, "WithStacktraceNow only, no extra opts passed")
 
 	ReportPanic("unexpected panic in goroutine", "a string panic value", telemetry.WithTags([]string{"env:prod"}))
-	assert.Len(t, capturedOpts, 2, "caller-supplied opts must reach sendLog alongside WithStacktrace")
+	assert.Len(t, capturedOpts, 2, "caller-supplied opts must reach sendLog alongside WithStacktraceNow")
 }
 
 func TestLogAndReportError_BasicFlow(t *testing.T) {
@@ -370,7 +370,7 @@ func TestLogAndReportPanic_WithTagsOption(t *testing.T) {
 	LogAndReportPanic("unexpected panic in goroutine", "a string panic value", telemetry.WithTags([]string{"env:prod"}))
 	internallog.Flush()
 
-	assert.Len(t, capturedOpts, 2, "caller-supplied opts must reach sendLog alongside WithStacktrace")
+	assert.Len(t, capturedOpts, 2, "caller-supplied opts must reach sendLog alongside WithStacktraceNow")
 }
 
 // BenchmarkReportError measures the cost of the explicit ReportError helper,

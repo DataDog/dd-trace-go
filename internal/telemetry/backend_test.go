@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -218,6 +219,59 @@ func TestLoggerBackend_StackTrace(t *testing.T) {
 		assert.Contains(t, stackTrace, "TestLoggerBackend_StackTrace", "Should contain calling test function")
 		assert.Contains(t, stackTrace, "backend_test.go", "Should show test file location")
 	})
+
+	t.Run("pre-captured stack from WithStacktraceNow is not overwritten by add", func(t *testing.T) {
+		// Capture the option in this test function, but only apply it to the
+		// backend from inside a nested helper - simulating what replay does:
+		// add() runs far from (and long after) the original call site. If
+		// add() re-captured here, the resulting stack would show
+		// addFarFromCallSite, not this test function.
+		opt := WithStacktraceNow()
+
+		addFarFromCallSite := func(b *loggerBackend, record Record, opt LogOption) {
+			b.Add(record, opt)
+		}
+		addFarFromCallSite(backend, NewRecord(LogError, "pre-captured stack test"), opt)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		stackTrace := logs.Logs[0].StackTrace
+		assert.NotEmpty(t, stackTrace)
+		assert.Contains(t, stackTrace, "TestLoggerBackend_StackTrace",
+			"should show this test function, since WithStacktraceNow captured here")
+		assert.NotContains(t, stackTrace, "addFarFromCallSite",
+			"must not show the helper add() actually ran from - proves add() did not re-capture")
+	})
+}
+
+func TestWithStacktraceNow_CapturesEagerly(t *testing.T) {
+	opt := WithStacktraceNow()
+
+	value := &loggerValue{}
+	opt(nil, value)
+
+	assert.True(t, value.captureStacktrace)
+	assert.True(t, value.stacktraceCaptured, "must be marked as already captured, not deferred")
+	assert.NotEmpty(t, value.rawStack.PCs, "stack must be captured at WithStacktraceNow's own call site, not later")
+}
+
+func TestWithStacktraceNow_DisabledFallsBackToDeferred(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+
+	opt := WithStacktraceNow()
+
+	value := &loggerValue{}
+	opt(nil, value)
+
+	assert.True(t, value.captureStacktrace, "still requests a stack trace")
+	assert.False(t, value.stacktraceCaptured, "must not pay the eager-capture cost when telemetry is disabled")
+	assert.Empty(t, value.rawStack.PCs, "falls back to WithStacktrace's deferred (never-actually-reached-when-disabled) behavior")
 }
 
 func TestLoggerBackend_Tags(t *testing.T) {

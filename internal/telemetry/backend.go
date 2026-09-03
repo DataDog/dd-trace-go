@@ -35,7 +35,12 @@ type loggerValue struct {
 	record Record
 
 	captureStacktrace bool
-	rawStack          stacktrace.RawStackTrace
+	// stacktraceCaptured is true if rawStack was already populated eagerly
+	// (WithStacktraceNow), so add() must not re-capture it — a re-capture at
+	// this point could run on a queued-and-replayed call's stack, not the
+	// original caller's.
+	stacktraceCaptured bool
+	rawStack           stacktrace.RawStackTrace
 }
 
 type formatter struct {
@@ -118,7 +123,7 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 	for _, opt := range opts {
 		opt(nil, candidate)
 	}
-	if candidate.captureStacktrace {
+	if candidate.captureStacktrace && !candidate.stacktraceCaptured {
 		candidate.rawStack = stacktrace.CaptureRaw(telemetryStackSkip)
 	}
 
