@@ -33,6 +33,23 @@ func TestE2ECrashReport_CgoFault(t *testing.T) {
 	if out, err := exec.Command("go", "env", "CGO_ENABLED").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "1" {
 		t.Skip("cgo not available in this build environment")
 	}
+	if runtime.GOOS == "windows" {
+		// A fault entirely inside cgo-compiled C code is invisible to
+		// SetCrashOutput on Windows by design, not by bug: runtime/
+		// signal_windows.go's isgoexception only treats an exception as
+		// Go's to handle when the faulting PC falls within the Go binary's
+		// own compiled-code range (firstmoduledata.text..etext), and this
+		// fixture's fault happens entirely inside gcc/mingw-compiled
+		// machine code, never Go's. Confirmed empirically on Windows CI
+		// across two rounds of added diagnostics: the victim reaches and
+		// logs "calling into C", then produces no further output of any
+		// kind (no Go crash text, no return) before this test's own
+		// timeout kills it -- consistent with the fault never reaching a
+		// handler that would print anything, exactly as isgoexception's
+		// own PC-range check predicts. See doc.go's cgo section for the
+		// same limitation stated for callers of this package.
+		t.Skip("a fault entirely inside cgo-compiled C code is invisible to SetCrashOutput on windows; see doc.go's cgo section")
+	}
 	t.Parallel()
 
 	dir := t.TempDir()

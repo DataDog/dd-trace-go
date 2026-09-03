@@ -64,10 +64,20 @@
 //
 // # Cgo and foreign threads
 //
-// A fault while Go is calling into C through cgo is captured normally: the
-// Go runtime cannot safely convert it to a recoverable panic, so it prints a
-// fatal crash report instead, and that report reaches SetCrashOutput and
-// this package's parser the same way an ordinary Go-code fault does.
+// A fault while Go is calling into C through cgo is captured normally on
+// Unix: the Go runtime cannot safely convert it to a recoverable panic, so
+// it prints a fatal crash report instead, and that report reaches
+// SetCrashOutput and this package's parser the same way an ordinary Go-code
+// fault does.
+//
+// On Windows this only holds when the faulting instruction is itself
+// Go-compiled code. runtime/signal_windows.go's isgoexception checks the
+// faulting PC against the Go binary's own compiled-code range and does not
+// treat an exception outside it as Go's to handle, so a fault entirely
+// inside C code compiled by cgo's own C toolchain — not Go's compiler — is
+// invisible to SetCrashOutput there: no crash report of any kind, silently,
+// the same blind spot foreign threads have below, verified directly against
+// that check rather than assumed identical to Unix.
 //
 // A fault on a thread created entirely by native code — a pthread spawned
 // directly by a C library, which never entered Go — is different.
