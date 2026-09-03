@@ -1392,7 +1392,7 @@ func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 func Tag(k string, v any) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = map[string]any{}
+			cfg.Tags = make(map[string]any, cfg.tagsHint)
 		}
 		cfg.Tags[k] = v
 	}
