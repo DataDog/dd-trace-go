@@ -47,6 +47,14 @@ func badPlusVNotAtEnd(v any) {
 	internallog.Info("value %+v suffix %s", v, "x") // want "must be the last format verb"
 }
 
+// badMultipleVerbsLastIsErrorDotError is the regression case for a real false
+// negative: the final argument being err.Error() must not exempt the whole
+// call when an earlier %v verb reflects over a non-error value - only the
+// format's single final verb position is ever eligible for that exemption.
+func badMultipleVerbsLastIsErrorDotError(config any, err *customError) {
+	internallog.Warn("defaulting to %v; error: %v", config, err.Error()) // want "must be the last format verb"
+}
+
 // ── Suggestion: allowed, but flagged as a style nudge ───────────────────────
 
 func suggestRawErrorAtEnd(err *customError) {

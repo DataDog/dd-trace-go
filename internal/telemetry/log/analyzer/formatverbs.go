@@ -88,11 +88,30 @@ func (r *formatVerbsRunner) run(pass *analysis.Pass) (any, error) {
 		}
 
 		format, ok := constStringValue(pass, call.Args[0])
-		if !ok || !vVerbPattern.MatchString(format) {
-			return // non-constant or no %v-family verb: nothing for this check
+		if !ok {
+			return // non-constant format: nothing for this check
+		}
+		verbs := vVerbPattern.FindAllString(format, -1)
+		if len(verbs) == 0 {
+			return // no %v-family verb: nothing for this check
 		}
 
 		lastArg := call.Args[len(call.Args)-1]
+		if len(verbs) > 1 {
+			// Multiple %v-family verbs: per policy, a %v not in the format's
+			// final verb position is always forbidden, even when the last
+			// argument is err.Error(). With more than one %v present, at
+			// least one of them is necessarily not that final verb, so
+			// report unconditionally here rather than falling through to the
+			// checks below, which only reason about the single last
+			// argument and would otherwise let the whole call through
+			// whenever that last verb happens to pair safely with
+			// err.Error() — exactly the false negative this guards against.
+			if !nolintSuppressed(pass, call.Pos(), "gocritic", "logformatverbs") {
+				pass.Reportf(call.Pos(), "%s.%s: %%v/%%+v/%%#v must be the last format verb; use a specific verb like %%s, %%d, or %%q for earlier arguments", pkg, fn)
+			}
+			return
+		}
 		if isErrorDotErrorCall(pass, lastArg) {
 			return // err.Error() is always allowed
 		}
