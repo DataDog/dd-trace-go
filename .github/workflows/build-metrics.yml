@@ -126,7 +126,7 @@ jobs:
       - name: Install go-size-analyzer
         if: matrix.mode == 'standard'
         run: |
-          curl -L --fail "https://github.com/Zxilly/go-size-analyzer/releases/download/v1.13.0/go-size-analyzer_1.13.0_linux_amd64.tar.gz" -o gsa.tar.gz
+          curl -L --fail "https://github.com/Zxilly/go-size-analyzer/releases/download/v1.14.0/go-size-analyzer_1.14.0_linux_amd64.tar.gz" -o gsa.tar.gz
           tar -xzf gsa.tar.gz gsa
           chmod +x gsa
           echo "${{ github.workspace }}" >> "$GITHUB_PATH"
