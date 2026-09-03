@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	envoyextprocfilter "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -576,6 +577,8 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
+		var blockBody map[string]any
+		require.NoError(t, json.Unmarshal(res.GetImmediateResponse().GetBody(), &blockBody))
 		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 2)
 		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
@@ -628,6 +631,8 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
+		var blockBody map[string]any
+		require.NoError(t, json.Unmarshal(res.GetImmediateResponse().GetBody(), &blockBody))
 		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 2)
 		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
@@ -645,6 +650,44 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("blocking-event-on-response-headers-with-truncated-body", func(t *testing.T) {
+		bodySize := 2
+		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, &bodySize)
+		require.NoError(t, err)
+		defer rig.Close()
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		stream, err := rig.client.Process(context.Background())
+		require.NoError(t, err)
+		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Chrome"}, "OPTION", "/", false)
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		sendProcessingResponseHeaders(t, stream, map[string]string{"test": "match-response-header", "Content-Type": "application/json"}, "200", true)
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		require.NoError(t, stream.Send(&envoyextproc.ProcessingRequest{
+			Request: &envoyextproc.ProcessingRequest_ResponseBody{
+				ResponseBody: &envoyextproc.HttpBody{Body: []byte("body")},
+			},
+		}))
+
+		response, err := stream.Recv()
+		require.NoError(t, err)
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, response.GetResponse())
+		require.Equal(t, envoytypes.StatusCode(418), response.GetImmediateResponse().GetStatus().Code)
+		var blockBody map[string]any
+		require.NoError(t, json.Unmarshal(response.GetImmediateResponse().GetBody(), &blockBody))
+		require.NoError(t, stream.CloseSend())
+		_, _ = stream.Recv()
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"headers-003": 1})
+		require.Equal(t, "true", finished[0].Tag("appsec.blocked"))
 	})
 
 	t.Run("no-monitoring-event-on-request-body-bad-content-type", func(t *testing.T) {
@@ -1070,6 +1113,194 @@ func TestAppSecBodyParsingActivation(t *testing.T) {
 		require.NotContains(t, span.Tags(), "appsec.event")
 		require.NotContains(t, span.Tags(), "_dd.appsec.json")
 	})
+}
+
+func TestResponseBodyEndOfStreamIsAcknowledged(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	testutils.StartAppSec(t)
+
+	// Given
+	bodySize := 256
+	rig, err := newEnvoyAppsecRig(t, GCPServiceExtensionIntegration, false, &bodySize)
+	require.NoError(t, err)
+	defer rig.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	stream, err := rig.client.Process(context.Background())
+	require.NoError(t, err)
+	sendProcessingRequestHeaders(t, stream, nil, "GET", "/", false)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	sendProcessingResponseHeaders(t, stream, map[string]string{"Content-Type": "application/json"}, "200", true)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	// When
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_ResponseBody{
+			ResponseBody: &envoyextproc.HttpBody{Body: []byte("{}"), EndOfStream: true},
+		},
+	})
+	require.NoError(t, err)
+
+	// Then
+	response, err := stream.Recv()
+	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_ResponseBody{}, response.GetResponse())
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, response.GetResponseBody().GetResponse().GetStatus())
+
+	response, err = stream.Recv()
+	require.Nil(t, response)
+	require.ErrorIs(t, err, io.EOF)
+	require.Len(t, mt.FinishedSpans(), 1)
+}
+
+func TestResponseBodyTruncationIsAcknowledgedUntilEndOfStream(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	testutils.StartAppSec(t)
+
+	// Given
+	bodySize := 2
+	rig, err := newEnvoyAppsecRig(t, GCPServiceExtensionIntegration, false, &bodySize)
+	require.NoError(t, err)
+	defer rig.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	stream, err := rig.client.Process(context.Background())
+	require.NoError(t, err)
+	sendProcessingRequestHeaders(t, stream, nil, "GET", "/", false)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	sendProcessingResponseHeaders(t, stream, map[string]string{"Content-Type": "application/json"}, "200", true)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	assertContinue := func(body []byte, endOfStream bool) {
+		t.Helper()
+		require.NoError(t, stream.Send(&envoyextproc.ProcessingRequest{
+			Request: &envoyextproc.ProcessingRequest_ResponseBody{
+				ResponseBody: &envoyextproc.HttpBody{Body: body, EndOfStream: endOfStream},
+			},
+		}))
+		response, recvErr := stream.Recv()
+		require.NoError(t, recvErr)
+		require.IsType(t, &envoyextproc.ProcessingResponse_ResponseBody{}, response.GetResponse())
+		require.Equal(t, envoyextproc.CommonResponse_CONTINUE, response.GetResponseBody().GetResponse().GetStatus())
+	}
+
+	// When / Then
+	assertContinue([]byte("too large"), false)
+	assertContinue([]byte("ignored"), false)
+	assertContinue(nil, true)
+
+	response, err := stream.Recv()
+	require.Nil(t, response)
+	require.ErrorIs(t, err, io.EOF)
+	require.Len(t, mt.FinishedSpans(), 1)
+}
+
+// Self-managed Envoy accepts a clean stream close as "processing is done, carry on", so
+// there is no reason to keep acknowledging the tail of an oversized body: doing so would
+// hold every remaining chunk for one callout round trip.
+func TestResponseBodyTruncationClosesStreamEarlyOnSelfManagedEnvoy(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	testutils.StartAppSec(t)
+
+	// Given
+	bodySize := 2
+	rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, &bodySize)
+	require.NoError(t, err)
+	defer rig.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// A regression here leaves the stream open waiting for an end-of-stream chunk that this
+	// test never sends, so bound the stream to fail instead of hanging.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stream, err := rig.client.Process(ctx)
+	require.NoError(t, err)
+	sendProcessingRequestHeaders(t, stream, nil, "GET", "/", false)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	sendProcessingResponseHeaders(t, stream, map[string]string{"Content-Type": "application/json"}, "200", true)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	// When: a single chunk overflows the parsing limit, so analysis completes before EOS
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_ResponseBody{
+			ResponseBody: &envoyextproc.HttpBody{Body: []byte("too large")},
+		},
+	})
+	require.NoError(t, err)
+
+	// Then: that message is still acknowledged, but the stream ends right after it
+	response, err := stream.Recv()
+	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_ResponseBody{}, response.GetResponse())
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, response.GetResponseBody().GetResponse().GetStatus())
+
+	response, err = stream.Recv()
+	require.Nil(t, response)
+	require.ErrorIs(t, err, io.EOF, "the stream must close right after the truncation acknowledgement")
+	require.Len(t, mt.FinishedSpans(), 1)
+}
+
+// The published callout container reports GCPServiceExtensionIntegration for every TCP
+// deployment, so a self-managed Envoy is only distinguishable from the per-request
+// integration header. Resolving the acknowledgement policy from the static config value
+// would keep draining here.
+func TestResponseBodyTruncationClosesStreamEarlyWhenEnvoyIsIdentifiedByHeader(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	testutils.StartAppSec(t)
+
+	// Given a processor configured exactly as the container configures it over TCP
+	bodySize := 2
+	rig, err := newEnvoyAppsecRig(t, GCPServiceExtensionIntegration, false, &bodySize)
+	require.NoError(t, err)
+	defer rig.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// ...but where the request identifies the gateway as self-managed Envoy
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(datadogEnvoyIntegrationHeader, "1"))
+
+	stream, err := rig.client.Process(ctx)
+	require.NoError(t, err)
+	sendProcessingRequestHeaders(t, stream, nil, "GET", "/", false)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	sendProcessingResponseHeaders(t, stream, map[string]string{"Content-Type": "application/json"}, "200", true)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	// When a single chunk overflows the parsing limit
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_ResponseBody{
+			ResponseBody: &envoyextproc.HttpBody{Body: []byte("too large")},
+		},
+	})
+	require.NoError(t, err)
+
+	// Then the stream closes early despite the GCP-defaulted Integration
+	response, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, response.GetResponseBody().GetResponse().GetStatus())
+
+	response, err = stream.Recv()
+	require.Nil(t, response)
+	require.ErrorIs(t, err, io.EOF, "the header-identified Envoy must get the early close")
+	require.Len(t, mt.FinishedSpans(), 1)
 }
 
 func TestGeneratedSpan(t *testing.T) {
@@ -1612,9 +1843,12 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 	// 2- Send the response body
 	msgResponseBodySent := sendProcessingResponseBodyStreamed(t, stream, []byte(responseBody), 1)
 
-	// minus 1 because the last message is the end of stream, and the connection will be closed after that
-	// because no appsec event will be found
-	for i := 0; i < msgResponseBodySent-1; i++ {
+	responsesToRead := msgResponseBodySent
+	if blockOnResponseBody {
+		// Leave the blocking response for the caller to assert.
+		responsesToRead--
+	}
+	for i := 0; i < responsesToRead; i++ {
 		res, err = stream.Recv()
 		require.NoError(t, err)
 		require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetResponseBody().GetResponse().GetStatus())

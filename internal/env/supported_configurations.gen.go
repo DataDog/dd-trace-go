@@ -141,6 +141,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_SERVICE":                                                      {},
 	"DD_SERVICE_EXTENSION_HEALTHCHECK_PORT":                           {},
 	"DD_SERVICE_EXTENSION_HOST":                                       {},
+	"DD_SERVICE_EXTENSION_INTEGRATION":                                {},
 	"DD_SERVICE_EXTENSION_OBSERVABILITY_MODE":                         {},
 	"DD_SERVICE_EXTENSION_PORT":                                       {},
 	"DD_SERVICE_EXTENSION_TLS":                                        {},
