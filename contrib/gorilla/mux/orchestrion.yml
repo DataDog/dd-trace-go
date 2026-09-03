@@ -21,6 +21,7 @@ aspects:
           imports:
             http: net/http
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            instrhttptrace: github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace
             sync: sync
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
@@ -29,6 +30,7 @@ aspects:
 
             func init() {
               __dd_instr = instrumentation.Load(instrumentation.PackageGorillaMux)
+              instrhttptrace.RegisterRoutingHandlerType[*Router]()
             }
 
             type ddRouterConfig struct {
