@@ -837,16 +837,12 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	}
 	var ctx *SpanContext
 	if s.traceID.Empty() || (s.spanID == 0 && s.origin != "synthetics") {
-		// No usable trace/span identity: an intermediary dropped
-		// x-datadog-trace-id/parent-id but forwarded x-datadog-tags. Rather
-		// than dropping those tags with ErrSpanContextNotFound, hand back a
-		// carrier-only context so they travel onto a fresh root span (see
-		// newSpanContext). _dd.p.tid is dropped along the way, since it holds
-		// the upper bits of a trace we have no lower-bit identity for.
+		// Special case if absent x-datadog-trace-id/parent-id but
+		// x-datadog-tags present - allow propagating as carrier-only context
 		if s.tr == nil {
 			return nil, ErrSpanContextNotFound
 		}
-		s.tr.unsetPropagatingTag(keyTraceID128)
+		s.tr.unsetPropagatingTag(keyTraceID128) // unnecessary in carrier only ctx
 		if len(s.tr.loadPropagatingTags()) == 0 {
 			return nil, ErrSpanContextNotFound
 		}
