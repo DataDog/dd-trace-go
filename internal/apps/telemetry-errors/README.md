@@ -270,6 +270,13 @@ resolved within ~2 minutes in the same session) and the tracer's own build versi
 controlled rebuild with a released-looking version string). Neither was the cause. The actual cause was
 found only by inspecting the intercepting agent's own reported destination and key.
 
+**Not a gap, but a bystander to ignore:** any container-based trigger run in this harness also surfaces
+a pre-existing, unrelated "appsec: remote activation of threats detection cannot be enabled" issue in
+the same Error Tracking search — AppSec can't reach remote-config from inside a throwaway container. It
+predates this harness and is unrelated to this batch's adopted call sites (AppSec's own telemetry
+reporting is explicitly out of scope for this batch, see dd-trace-go#5250). Don't mistake it for
+something a trigger you just ran broke.
+
 ## Running this app
 
 This is a manual-only harness — deliberately not wired into
