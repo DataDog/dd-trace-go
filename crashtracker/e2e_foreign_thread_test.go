@@ -52,6 +52,16 @@ func TestE2ECrashReport_ForeignThreadSignal(t *testing.T) {
 	if out, err := exec.Command("go", "env", "CGO_ENABLED").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "1" {
 		t.Skip("cgo not available in this build environment")
 	}
+	if runtime.GOOS == "windows" {
+		// WithForeignThreadSignals is an intentional no-op on Windows (see
+		// foreign_thread_windows.go and doc.go's cgo/foreign-threads section):
+		// os/signal has no portable Windows equivalent of SIGSEGV/SIGBUS/SIGILL/
+		// SIGFPE to register for. No report can ever arrive here, so the
+		// victim process below would just run out its 20-second sleep and the
+		// select would time out waiting for something the feature never
+		// promises to produce on this platform.
+		t.Skip("WithForeignThreadSignals has no effect on windows; see foreign_thread_windows.go")
+	}
 	t.Parallel()
 
 	dir := t.TempDir()
