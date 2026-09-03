@@ -15,6 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
@@ -50,9 +51,7 @@ var tagMapPool = sync.Pool{
 
 type spanTimestampKey struct{}
 
-// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
-// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
-func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
+func prepConfig(opts ...Option) *config {
 	cfg := &config{}
 
 	defaults(cfg)
@@ -60,8 +59,29 @@ func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 		opt.apply(cfg)
 	}
 
+	return cfg
+}
+
+func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) {
 	tm := traceMiddleware{cfg: cfg}
-	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+	*apiOptions = append(*apiOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+}
+
+// WithDataDogTracer returns an AWS config LoadOptionsFunc that adds the Datadog tracing middleware into the
+// APIOptions middleware stack. It can be passed to awsconfig.LoadDefaultConfig when the aws.Config isn't otherwise
+// directly accessible.
+// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
+func WithDataDogTracer(opts ...Option) awsconfig.LoadOptionsFunc {
+	return func(o *awsconfig.LoadOptions) error {
+		appendMiddleware(prepConfig(opts...), &o.APIOptions)
+		return nil
+	}
+}
+
+// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
+// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
+func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
+	appendMiddleware(prepConfig(opts...), &awsCfg.APIOptions)
 }
 
 type traceMiddleware struct {
