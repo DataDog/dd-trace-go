@@ -100,13 +100,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// If the tests pass, check for goroutine leaks:
-	//
-	// TODO(felixge): We should try to get rid of all the ignored functions
-	// below. And we should definitely try to not add any new ones here!
-	opts := []goleak.Option{
-		goleak.IgnoreAnyFunction("github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
-	}
-	if err := goleak.Find(opts...); err != nil {
+	if err := goleak.Find(); err != nil {
 		fmt.Fprintf(os.Stderr, "goleak: Errors on successful test run: %v\n\n", err)
 		fmt.Fprintf(os.Stderr, "See Goroutine Leak section in CONTRIBUTING.md for more information on how to fix this.\n")
 		os.Exit(1)

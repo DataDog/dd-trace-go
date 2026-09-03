@@ -1379,9 +1379,15 @@ func WithStatsOriginCardinalityLimit(limit int) StartOption {
 	}
 }
 
-// WithDynamicInstrumentationEnabled enables or disables dynamic
-// instrumentation, allowing the tracer to place probes for the Live Debugger
-// and Dynamic Instrumentation products.
+// WithDynamicInstrumentationEnabled enables or disables dynamic instrumentation.
+// Can also be configured via DD_DYNAMIC_INSTRUMENTATION_ENABLED. Default: false.
+//
+// The tracer neither places nor evaluates probes: it only subscribes to the
+// Live Debugger Remote Config products so that probe configurations are
+// delivered to the Datadog Agent's system-probe, which installs and evaluates
+// them out of process. Enabling this therefore has no effect unless
+// system-probe is running on the same host with dynamic instrumentation
+// enabled.
 func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetDynamicInstrumentationEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
