@@ -29,15 +29,25 @@ const ddSource = "crashtracker"
 // rather than in ordinary Go code.
 const cgoExecutionMarker = "signal arrived during cgo execution"
 
+// externalCodeExecutionMarker is signal_windows.go's winthrow equivalent of
+// cgoExecutionMarker: the same "Go was calling into C when this fault
+// happened" fact, but the Windows runtime prints different wording for it
+// than the Unix runtime does. Verified against runtime/signal_windows.go's
+// source directly, not assumed from the Unix wording.
+const externalCodeExecutionMarker = "signal arrived during external code execution"
+
 // preambleHasCgoMarker reports whether the preamble contains the runtime's
-// cgo-fault marker line.
-func preambleHasCgoMarker(preamble []string) bool {
+// cgo-fault marker line, and if so, returns that line's own text. Callers
+// annotate with the returned text rather than a hardcoded phrase, since
+// signal_unix.go and signal_windows.go use different wording for the
+// identical condition and a dump only ever contains one of the two.
+func preambleHasCgoMarker(preamble []string) (string, bool) {
 	for _, line := range preamble {
-		if strings.TrimSpace(line) == cgoExecutionMarker {
-			return true
+		if trimmed := strings.TrimSpace(line); trimmed == cgoExecutionMarker || trimmed == externalCodeExecutionMarker {
+			return trimmed, true
 		}
 	}
-	return false
+	return "", false
 }
 
 var (
@@ -492,8 +502,8 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 		for _, line := range preamble {
 			if topLevelSignalRe.MatchString(line) {
 				msg := strings.TrimSpace(line)
-				if preambleHasCgoMarker(preamble) {
-					msg += " (" + cgoExecutionMarker + ")"
+				if marker, ok := preambleHasCgoMarker(preamble); ok {
+					msg += " (" + marker + ")"
 				}
 				return msg
 			}
@@ -512,6 +522,20 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 		// frame rather than reaching errorMessage.
 		if strings.HasPrefix(line, "panic(") {
 			return panicValue(line)
+		}
+		// A native Windows exception has no sigInfo (parseSignal only
+		// recognises the Unix "[signal ...]"/topLevelSignalRe forms, never
+		// this runtime's own "Exception 0x..." header), so it never reaches
+		// the sigInfo != nil branch above and would otherwise fall through
+		// to the generic first-non-empty-line fallback below, losing the
+		// cgo/external-code context the same way the topLevelSignalRe branch
+		// preserves it for Unix.
+		if windowsExceptionRe.MatchString(line) {
+			msg := strings.TrimSpace(line)
+			if marker, ok := preambleHasCgoMarker(preamble); ok {
+				msg += " (" + marker + ")"
+			}
+			return msg
 		}
 	}
 	// Fall back to the first non-empty preamble line.
