@@ -450,6 +450,9 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 	if text, ok := value.(string); ok && text != "" && data["chat_template"] != nil {
 		return PromptTemplate{}, errors.New("invalid prompt response: template cannot contain both text and messages")
 	}
+	if text, ok := value.(string); ok && text == "" && data["chat_template"] != nil {
+		value = data["chat_template"]
+	}
 	if !exists || value == nil {
 		value, exists = data["chat_template"]
 	}

@@ -61,6 +61,16 @@ func TestPromptEmptyChatAndVersionUUIDFallback(t *testing.T) {
 	}
 }
 
+func TestPromptPrefersChatToEmptyText(t *testing.T) {
+	prompt, err := parsePrompt([]byte(`{"prompt_id":"chat","version":1,"template":"","chat_template":[{"role":"user","content":"hello"}]}`), PromptSourceRegistry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(prompt.Template().Messages, []PromptMessage{{Role: "user", Content: "hello"}}) {
+		t.Fatalf("template %#v", prompt.Template())
+	}
+}
+
 func TestPromptRejectsMalformedResponses(t *testing.T) {
 	for _, raw := range []string{
 		`[]`,
