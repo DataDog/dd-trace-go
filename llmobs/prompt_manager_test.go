@@ -342,9 +342,10 @@ func TestPromptReusesRegisteredDatadogProviderForAB(t *testing.T) {
 	}
 }
 
-func TestPromptProviderDoesNotReplaceDefault(t *testing.T) {
+func TestPromptProviderFollowsConfiguration(t *testing.T) {
 	openfeature.Shutdown()
 	promptOpenFeatureState.Lock()
+	promptOpenFeatureState.configuration = nil
 	promptOpenFeatureState.client = nil
 	promptOpenFeatureState.Unlock()
 
@@ -352,12 +353,14 @@ func TestPromptProviderDoesNotReplaceDefault(t *testing.T) {
 	var providerCalls atomic.Int32
 	newPromptOpenFeatureProvider = func(ddopenfeature.ProviderConfig) (openfeature.FeatureProvider, error) {
 		providerCalls.Add(1)
-		return promptABProvider{}, nil
+		return &promptABProvider{}, nil
 	}
 	t.Cleanup(func() {
 		newPromptOpenFeatureProvider = previousFactory
 		openfeature.Shutdown()
+		internalconfig.CreateNew()
 		promptOpenFeatureState.Lock()
+		promptOpenFeatureState.configuration = nil
 		promptOpenFeatureState.client = nil
 		promptOpenFeatureState.Unlock()
 	})
@@ -372,6 +375,14 @@ func TestPromptProviderDoesNotReplaceDefault(t *testing.T) {
 	}
 	if providerCalls.Load() != 1 {
 		t.Fatalf("provider initialized %d times", providerCalls.Load())
+	}
+	internalconfig.CreateNew()
+	_, err = ensurePromptOpenFeatureClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providerCalls.Load() != 2 {
+		t.Fatalf("provider initialized %d times after configuration change", providerCalls.Load())
 	}
 	if got := openfeature.ProviderMetadata().Name; got != "NoopProvider" {
 		t.Fatalf("default OpenFeature provider was replaced: %q", got)

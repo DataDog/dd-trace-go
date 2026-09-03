@@ -103,7 +103,8 @@ var globalPromptManagerState struct {
 
 var promptOpenFeatureState struct {
 	sync.Mutex
-	client *openfeature.Client
+	configuration *config.Config
+	client        *openfeature.Client
 }
 
 var newPromptOpenFeatureProvider = ddopenfeature.NewDatadogProvider
@@ -168,7 +169,8 @@ func ensurePromptOpenFeatureClient() (*openfeature.Client, error) {
 
 	promptOpenFeatureState.Lock()
 	defer promptOpenFeatureState.Unlock()
-	if promptOpenFeatureState.client != nil {
+	configuration := config.Get()
+	if promptOpenFeatureState.configuration == configuration && promptOpenFeatureState.client != nil {
 		return promptOpenFeatureState.client, nil
 	}
 
@@ -183,6 +185,7 @@ func ensurePromptOpenFeatureClient() (*openfeature.Client, error) {
 	if err := openfeature.SetNamedProvider(promptOpenFeatureDomain, provider); err != nil {
 		return nil, err
 	}
+	promptOpenFeatureState.configuration = configuration
 	promptOpenFeatureState.client = openfeature.NewClient(promptOpenFeatureDomain)
 	return promptOpenFeatureState.client, nil
 }
