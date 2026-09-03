@@ -6,6 +6,7 @@
 package crashtracker_test
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -87,6 +88,9 @@ func TestE2ECrashReport_CgoFault(t *testing.T) {
 		"DD_TRACE_AGENT_URL=" + srv.URL,
 		"DD_CRASHTRACKING_ENABLED=true",
 	}
+	var victimOut bytes.Buffer
+	cmd.Stdout = &victimOut
+	cmd.Stderr = &victimOut
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting crash victim: %s", err)
 	}
@@ -120,7 +124,16 @@ func TestE2ECrashReport_CgoFault(t *testing.T) {
 		}
 
 	case <-time.After(30 * time.Second):
-		t.Fatal("timeout waiting for crash report from monitor")
+		// Kill and Wait before reading victimOut: Stdout/Stderr are copied by
+		// an internal goroutine that is only guaranteed done once Wait
+		// returns (os/exec's own documented contract), so reading the buffer
+		// beforehand would race with that goroutine's writes. This makes the
+		// later t.Cleanup's own Kill/Wait redundant but harmless -- both
+		// return an error on an already-reaped process, which is discarded
+		// the same way there.
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("timeout waiting for crash report from monitor\nvictim output:\n%s", victimOut.String())
 	}
 }
 
