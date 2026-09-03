@@ -62,7 +62,7 @@ include:
   # LLM Validation gate: reusable job shipped by the platform repo — only the local .llm-validation/ suite
   # stays in this repo. The job auto-skips when no monitored file changed; a FAIL blocks the merge.
   - project: 'ddoghq/llm-validation-platform'
-    ref: anna.yafi/make-generic
+    ref: main
     file: '/ci/llm-validation.gitlab-ci.yml'
 
 # Pin the benchmarking-platform image for the go-go-prof-app-parallel jobs
@@ -73,7 +73,7 @@ linux-go-go-prof-app-parallel:
 "llm validation":
   variables:
     LLMVAL_PLATFORM_PROJECT: "ddoghq/llm-validation-platform"
-    LLMVAL_PLATFORM_REF: "anna.yafi/make-generic"
+    LLMVAL_PLATFORM_REF: "main"
     LLMVAL_BASE_REF: "main"   # must be job-level, not top-level `variables:` — see ci/README.md
 
 go-go-prof-app-parallel-check-slo-breaches:
