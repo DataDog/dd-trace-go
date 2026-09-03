@@ -207,18 +207,27 @@ run — by an agent or a person — is:
 
 ## Current coverage
 
-Endpoints in this app and the call site each one exercises:
+HTTP-endpoint triggers in this app:
 
 | Endpoint | Call site | Reachability |
 |---|---|---|
 | `/decision-maker` | `parseDecisionMaker` (`ddtrace/tracer/propagating_tags.go`) | `http-triggerable` — malformed `_dd.p.dm` value on an inbound `x-datadog-tags` header |
 
-Adopted call sites with no trigger yet in this app (reported gaps, not silent passes):
+Non-endpoint triggers — these fire on a background cadence once the process is configured correctly,
+with no HTTP call needed. See "Running this app" below for exact commands:
 
-| Call site | Reachability | Why untriggered |
+| Mechanism | Call site | Reachability |
 |---|---|---|
-| `tracer.go` `storeConfig` (x2) | `not-triggerable` | Fires on internal config marshaling failure; not reachable from outside the process |
-| `remoteconfig.go` `updateState` (x4) | `fault-injectable` | Reachable via a malformed remote-config poll response; no trigger endpoint implemented yet |
+| Fault-injecting reverse proxy in front of a real agent, returning malformed JSON for the remote-config poll endpoint | `updateState` "could not parse the json response body" (`internal/remoteconfig/remoteconfig.go`) | `fault-injectable` — confirmed working end-to-end (tiers 0/1/2) |
+| Linux container with a custom seccomp profile blocking the `memfd_create` syscall | `storeConfig`'s two sites (`ddtrace/tracer/tracer.go`) — both fire together, since the second one's own internal fallback also fails under Docker Desktop's Linux VM kernel | `fault-injectable`, Linux-only (both sites are no-ops on macOS/Windows) — confirmed at tiers 0/1, tier 2 currently blocked, see "Known gaps" |
+
+Not practically triggerable from outside the process, given what each depends on:
+
+| Call site | Why |
+|---|---|
+| `remoteconfig.go` `newUpdateRequest` erroring | Only fails on an already-corrupted internal repository state, not reachable via a crafted network response |
+| `remoteconfig.go` `http.NewRequest` erroring | Only fails on a malformed agent URL, which tracer startup validates before this point is ever reached |
+| `remoteconfig.go` "could not read the response body" | Needs a raw truncated-connection response (200 announced, then abrupt close mid-body) — plausible but not yet implemented here |
 
 ## Known gaps
 
@@ -226,6 +235,20 @@ Adopted call sites with no trigger yet in this app (reported gaps, not silent pa
   for at least one other language's telemetry error feed, grouping was coarse enough that a large volume
   of structurally different errors collapsed into a single grouped issue. Whether this affects Go's feed
   specifically was not established from this app alone.
+- **Container-originated telemetry, sent through a manually-run (non-`docker-compose`) isolated agent,
+  did not become searchable at tier 2 — reproducibly, across every routing topology tried** (host-gateway
+  routing, same-network container-to-container routing, and with the agent given Docker socket access to
+  resolve container tags), while native-process-originated telemetry through the identical agent landed
+  reliably every time. Enabling the agent's own debug logging surfaced a concrete, reproducible
+  differentiator: a container-originated connection triggers an additional internal origin-resolution
+  attempt (the agent tries to resolve the sending container's identity via its cgroup, through an
+  internal gRPC call to its own tag-resolution component) that fails outright for these throwaway
+  containers; a native-process connection never triggers this attempt at all, since there is no
+  container identity to resolve. Whether this failed *internal* resolution is what causes the payload to
+  be silently dropped on the *external* forward to the real intake was not established — that would need
+  visibility into the backend this harness does not have. Until this is understood: **prefer running
+  triggers as native host processes for tier-2 verification**; reserve containers (as the Linux-only
+  trigger above requires) for tiers 0 and 1, which do not depend on landing.
 
 **Not a gap, but the pitfall that cost the most time building this process:** local-agent interception
 (see "Do not rely on 'no local agent' being true" under Tier 1). It presents identically to a genuine
@@ -253,3 +276,50 @@ docker-compose run --build scenario 'telemetry-errors/v1$'
 The `docker-compose` path additionally needs a reachable agent container and does not benefit from the
 `DD_TELEMETRY_HEARTBEAT_INTERVAL` flush-speedup shown above unless that env var is passed through with
 `-e`; prefer the direct `go run` invocations above for the fast local loop.
+
+### Running the remote-config JSON-parse trigger
+
+Build and run [`rcfaultproxy`](./rcfaultproxy), a fault-injecting reverse proxy, in front of a real,
+verified agent from Tier 1 above. It intercepts only the remote-config poll endpoint; every other
+request (notably `/info`, needed for the tracer to detect remote-config support at all, and
+`/telemetry/proxy/*`) passes through untouched:
+
+```sh
+go build -o /tmp/rcfaultproxy ./telemetry-errors/rcfaultproxy
+/tmp/rcfaultproxy -listen :20000 -upstream http://localhost:18126 &
+
+export DD_TELEMETRY_HEARTBEAT_INTERVAL=2
+export DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS=1   # optional, speeds up the first poll
+export DD_TRACE_AGENT_URL=http://localhost:20000
+go run ./telemetry-errors -http localhost:8080
+# no curl needed — remote-config polls automatically once the tracer starts
+```
+
+### Running the memfd/OTel-process-context trigger (Linux only)
+
+`storeConfig`'s two sites are no-ops on macOS/Windows (`internal/inmemoryfile.go` vs
+`internal/inmemoryfilelinux.go`) — they only do real work, and can only fail, on Linux. Both fire
+unconditionally at tracer startup, so no HTTP call is needed here either; letting the process run for a
+few seconds is enough. To force the failure deterministically rather than relying on an already-broken
+environment, block the underlying syscall with a minimal custom seccomp profile:
+
+```sh
+cat > no-memfd-seccomp.json <<'EOF'
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "architectures": ["SCMP_ARCH_X86_64", "SCMP_ARCH_AARCH64"],
+  "syscalls": [{"names": ["memfd_create"], "action": "SCMP_ACT_ERRNO"}]
+}
+EOF
+
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /tmp/telemetry-errors-linux ./telemetry-errors
+
+docker run --rm --security-opt seccomp=./no-memfd-seccomp.json \
+  -e DD_TELEMETRY_HEARTBEAT_INTERVAL=2 \
+  -v /tmp/telemetry-errors-linux:/telemetry-errors-linux:ro \
+  --entrypoint /telemetry-errors-linux \
+  alpine:latest -http 0.0.0.0:8080
+```
+
+See "Known gaps" above before treating a real send through this container as tier-2-verified — as of
+this writing, container-originated telemetry through a manually-run agent does not reliably land.
