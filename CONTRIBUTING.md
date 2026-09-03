@@ -80,6 +80,11 @@ Our CI pipeline includes several automated checks:
 
 - **CuSim Deployment**: Scheduled GitLab `deploy_to_cusim` runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.
 
+#### System Tests Workflow
+
+- **Pinned reference**: `system-tests.yml` and `parametric-tests.yml` check out [DataDog/system-tests](https://github.com/DataDog/system-tests) at a fixed commit (`SYSTEM_TESTS_REF`) rather than tracking its default branch, so results stay reproducible across runs.
+- **Automated bump**: `update-system-tests.yml` runs weekly and opens a PR bumping `SYSTEM_TESTS_REF` to the latest system-tests commit. Trigger it manually with `gh workflow run "Update System Tests"`, or preview the diff without opening a PR using `gh workflow run "Update System Tests" -f dry-run=true`.
+- **Testing against a newer system-tests commit**: if your PR depends on a system-tests change merged after the current pin, either bump `SYSTEM_TESTS_REF` in your branch or re-run the workflow manually with `-f ref=<commit>`.
 
 ### CI Troubleshooting
 
