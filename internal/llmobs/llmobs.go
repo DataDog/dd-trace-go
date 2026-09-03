@@ -21,6 +21,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -203,6 +204,8 @@ func ResolveAgentlessEnabled(agentlessEnabled *bool, agentSupportsLLMObs bool) (
 // Start starts the global LLMObs instance with the given configuration and tracer.
 // Returns an error if LLMObs is already running or if configuration is invalid.
 func Start(cfg config.Config, tracer Tracer, startErr error) (err error) {
+	internalconfig.RecordProductStart(internalconfig.ProductLLMObs)
+
 	startTime := time.Now()
 	defer func() {
 		trackLLMObsStart(startTime, err, cfg)
