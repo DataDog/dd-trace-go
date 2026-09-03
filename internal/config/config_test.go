@@ -1733,3 +1733,159 @@ func TestReportEffectiveStatsComputation(t *testing.T) {
 	}
 	assert.Equal(t, []bool{false, true}, reports)
 }
+
+func TestExperimentalFlaggingProviderEnabledExplicit(t *testing.T) {
+	t.Run("unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		assert.False(t, cfg.ExperimentalFlaggingProviderEnabled())
+		assert.False(t, cfg.ExperimentalFlaggingProviderEnabledExplicit())
+	})
+
+	t.Run("explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", "true")
+		cfg := Get()
+		assert.True(t, cfg.ExperimentalFlaggingProviderEnabled())
+		assert.True(t, cfg.ExperimentalFlaggingProviderEnabledExplicit())
+	})
+}
+
+func TestFeatureFlagsEnabled(t *testing.T) {
+	t.Run("unset stays not-explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.False(t, explicit)
+		assert.False(t, enabled)
+	})
+
+	t.Run("explicit true", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "true")
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.True(t, explicit)
+		assert.True(t, enabled)
+	})
+
+	t.Run("explicit false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "false")
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.True(t, explicit)
+		assert.False(t, enabled)
+	})
+
+	t.Run("unparseable value stays not-explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (not explicit), not silently coerced into an explicit false.
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "garbage")
+		cfg := Get()
+		_, explicit := cfg.FeatureFlagsEnabled()
+		assert.False(t, explicit)
+	})
+}
+
+func TestFeatureFlagsConfigurationSource(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "agentless", source)
+		assert.False(t, explicit)
+	})
+
+	t.Run("explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "remote_config", source)
+		assert.True(t, explicit)
+	})
+}
+
+func TestFeatureFlagsAgentlessBaseURL(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", "https://example.com")
+	cfg := Get()
+	assert.Equal(t, "https://example.com", cfg.FeatureFlagsAgentlessBaseURL())
+}
+
+func TestFeatureFlagsAgentlessPollInterval(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 30 * time.Second},
+		{"0", 30 * time.Second},
+		{"-1", 30 * time.Second},
+		{"3601", 30 * time.Second},
+		{"abc", 30 * time.Second},
+		{"3600", 3600 * time.Second},
+		{"60", 60 * time.Second},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FeatureFlagsAgentlessPollInterval())
+		})
+	}
+}
+
+func TestFeatureFlagsAgentlessRequestTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 5 * time.Second},
+		{"0", 5 * time.Second},
+		{"-5", 5 * time.Second},
+		{"x", 5 * time.Second},
+		{"10", 10 * time.Second},
+		{"300", 300 * time.Second},
+		{"301", 5 * time.Second},
+		// Regression guard: without an upper bound, this value overflows int64
+		// once converted to a time.Duration and multiplied by time.Second,
+		// wrapping to a negative duration that would disable the HTTP client's
+		// timeout enforcement entirely.
+		{"9223372037", 5 * time.Second},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FeatureFlagsAgentlessRequestTimeout())
+		})
+	}
+}
