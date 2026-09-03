@@ -219,7 +219,7 @@ with no HTTP call needed. See "Running this app" below for exact commands:
 | Mechanism | Call site | Reachability |
 |---|---|---|
 | Fault-injecting reverse proxy in front of a real agent, returning malformed JSON for the remote-config poll endpoint | `updateState` "could not parse the json response body" (`internal/remoteconfig/remoteconfig.go`) | `fault-injectable` — confirmed working end-to-end (tiers 0/1/2) |
-| Linux container with a custom seccomp profile blocking the `memfd_create` syscall | `storeConfig`'s two sites (`ddtrace/tracer/tracer.go`) — both fire together, since the second one's own internal fallback also fails under Docker Desktop's Linux VM kernel | `fault-injectable`, Linux-only (both sites are no-ops on macOS/Windows) — confirmed at tiers 0/1, tier 2 currently blocked, see "Known gaps" |
+| Linux container with a custom seccomp profile blocking the `memfd_create` syscall, run with `--network host` (see "Known gaps") | `storeConfig`'s two sites (`ddtrace/tracer/tracer.go`) — both fire together, since the second one's own internal fallback also fails under Docker Desktop's Linux VM kernel | `fault-injectable`, Linux-only (both sites are no-ops on macOS/Windows) — confirmed at all three tiers |
 
 Not practically triggerable from outside the process, given what each depends on:
 
@@ -235,20 +235,19 @@ Not practically triggerable from outside the process, given what each depends on
   for at least one other language's telemetry error feed, grouping was coarse enough that a large volume
   of structurally different errors collapsed into a single grouped issue. Whether this affects Go's feed
   specifically was not established from this app alone.
-- **Container-originated telemetry, sent through a manually-run (non-`docker-compose`) isolated agent,
-  did not become searchable at tier 2 — reproducibly, across every routing topology tried** (host-gateway
-  routing, same-network container-to-container routing, and with the agent given Docker socket access to
-  resolve container tags), while native-process-originated telemetry through the identical agent landed
-  reliably every time. Enabling the agent's own debug logging surfaced a concrete, reproducible
-  differentiator: a container-originated connection triggers an additional internal origin-resolution
-  attempt (the agent tries to resolve the sending container's identity via its cgroup, through an
-  internal gRPC call to its own tag-resolution component) that fails outright for these throwaway
-  containers; a native-process connection never triggers this attempt at all, since there is no
-  container identity to resolve. Whether this failed *internal* resolution is what causes the payload to
-  be silently dropped on the *external* forward to the real intake was not established — that would need
-  visibility into the backend this harness does not have. Until this is understood: **prefer running
-  triggers as native host processes for tier-2 verification**; reserve containers (as the Linux-only
-  trigger above requires) for tiers 0 and 1, which do not depend on landing.
+- **Resolved — container-originated telemetry needs `network_mode: host`, not bridge networking with
+  published ports.** Sending from a container over bridge networking (`-p hostport:containerport`, or a
+  custom bridge network with container-name resolution) reproducibly failed to land at tier 2 — 2xx,
+  non-zero bytes flushed, no error anywhere, yet never searchable — while native-process telemetry
+  through the identical agent landed reliably every time. Enabling the agent's own debug logging pinned
+  the mechanism precisely: a bridge-networked connection triggers an internal origin-resolution attempt
+  (the agent tries to resolve the sender's identity via its cgroup, through an internal call to its own
+  tag-resolution component) that fails outright for a throwaway container the agent has no way to
+  recognize; this attempt is never made at all for a same-network-namespace connection. Confirmed the
+  fix directly: re-running the exact same trigger with the sending container on `network_mode: host`
+  (matching the topology this repo's own `docker-compose.yml` already uses) made the resolution attempt
+  disappear entirely, and the payload landed within seconds. **Use `network_mode: host` for any
+  container-based trigger** — it is both the fix and the existing convention, not a new requirement.
 
 **Not a gap, but the pitfall that cost the most time building this process:** local-agent interception
 (see "Do not rely on 'no local agent' being true" under Tier 1). It presents identically to a genuine
@@ -314,12 +313,13 @@ EOF
 
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /tmp/telemetry-errors-linux ./telemetry-errors
 
-docker run --rm --security-opt seccomp=./no-memfd-seccomp.json \
+docker run --rm --network host --security-opt seccomp=./no-memfd-seccomp.json \
+  -e DD_TRACE_AGENT_URL=http://localhost:18126 \
   -e DD_TELEMETRY_HEARTBEAT_INTERVAL=2 \
   -v /tmp/telemetry-errors-linux:/telemetry-errors-linux:ro \
   --entrypoint /telemetry-errors-linux \
-  alpine:latest -http 0.0.0.0:8080
+  alpine:latest -http 127.0.0.1:8080
 ```
 
-See "Known gaps" above before treating a real send through this container as tier-2-verified — as of
-this writing, container-originated telemetry through a manually-run agent does not reliably land.
+**Use `--network host`** for tier-2-verifiable runs — see "Known gaps" above; bridge networking with a
+published port (`-p hostport:8080`) is fine for tiers 0/1 only, where landing doesn't matter.
