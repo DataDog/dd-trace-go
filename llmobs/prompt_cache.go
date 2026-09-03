@@ -21,6 +21,8 @@ import (
 
 const promptCacheMaxEntries = 1024
 
+var promptFileCacheDirWarning sync.Once
+
 type promptCacheKey struct {
 	promptID string
 	selector string
@@ -108,8 +110,11 @@ func newPromptFileCache(enabled bool, dir string, ttl time.Duration, now func() 
 	if dir == "" {
 		if cacheDir, err := os.UserCacheDir(); err == nil {
 			dir = filepath.Join(cacheDir, "datadog", "llmobs", "prompts")
-		} else {
-			dir = filepath.Join(os.TempDir(), "datadog", "llmobs", "prompts")
+		} else if enabled {
+			enabled = false
+			promptFileCacheDirWarning.Do(func() {
+				log.Warn("Prompt file cache disabled: could not determine a user cache directory: %v", err.Error())
+			})
 		}
 	}
 	return &promptFileCache{enabled: enabled, dir: dir, ttl: ttl, now: now}

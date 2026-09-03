@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -25,6 +26,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -504,6 +506,31 @@ func TestPromptCacheSelectorsLRUAndFile(t *testing.T) {
 	}
 	if _, _, _, ok := files.get(keyA); ok {
 		t.Fatal("corrupt entry was a hit")
+	}
+}
+
+func TestPromptFileCacheDisablesWithoutUserCacheDir(t *testing.T) {
+	switch runtime.GOOS {
+	case "windows":
+		t.Setenv("LocalAppData", "")
+	case "plan9":
+		t.Setenv("home", "")
+	default:
+		t.Setenv("XDG_CACHE_HOME", "")
+		t.Setenv("HOME", "")
+	}
+	promptFileCacheDirWarning = sync.Once{}
+	t.Cleanup(func() { promptFileCacheDirWarning = sync.Once{} })
+	recorder := new(log.RecordLogger)
+	defer log.UseLogger(recorder)()
+
+	first := newPromptFileCache(true, "", time.Minute, time.Now)
+	second := newPromptFileCache(true, "", time.Minute, time.Now)
+	if first.enabled || second.enabled {
+		t.Fatal("file cache remained enabled without a user cache directory")
+	}
+	if warnings := strings.Count(strings.Join(recorder.Logs(), "\n"), "Prompt file cache disabled"); warnings != 1 {
+		t.Fatalf("file cache warnings: got %d, want 1", warnings)
 	}
 }
 
