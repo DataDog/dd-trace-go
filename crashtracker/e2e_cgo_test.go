@@ -137,6 +137,12 @@ func TestE2ECrashReport_CgoFault(t *testing.T) {
 	}
 }
 
+// The two os.Stderr writes bracketing Start() and the cgo call are stage
+// markers, not assertions: the test above has no way to tell "never got
+// past Start()" apart from "got past Start(), then the cgo call itself never
+// faulted or the fault never surfaced" when the victim produces zero output,
+// which is exactly what's been observed on Windows CI. Deliberately not
+// buffered/flushed-through anything: os.Stderr writes go straight to the fd.
 const cgoFaultSource = `package main
 
 /*
@@ -147,12 +153,18 @@ void crashtracker_e2e_fault_in_c(void) {
 */
 import "C"
 
-import "github.com/DataDog/dd-trace-go/v2/crashtracker"
+import (
+	"os"
+
+	"github.com/DataDog/dd-trace-go/v2/crashtracker"
+)
 
 func main() {
 	if err := crashtracker.Start(); err != nil {
 		panic(err)
 	}
+	os.Stderr.WriteString("e2e_cgo_test: Start returned, calling into C\n")
 	C.crashtracker_e2e_fault_in_c()
+	os.Stderr.WriteString("e2e_cgo_test: C call returned without faulting\n")
 }
 `
