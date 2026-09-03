@@ -69,6 +69,21 @@ func TestMLAppLimiterConcurrent(t *testing.T) {
 	assert.LessOrEqual(t, len(*l.admitted.Load()), maxTelemetryMLApps)
 }
 
+func TestMLAppLimiterConfiguredSurvivesFullBudget(t *testing.T) {
+	var l mlAppLimiter
+
+	for i := range maxTelemetryMLApps {
+		l.tagValue("propagated-" + strconv.Itoa(i))
+	}
+
+	// setConfigured runs after the budget is already full, as it does when Start replaces
+	// an active LLMObs instance.
+	l.setConfigured("my-app")
+	assert.Equal(t, "my-app", l.tagValue("my-app"))
+
+	assert.Equal(t, telemetryMLAppBlocked, l.tagValue("propagated-late"))
+}
+
 func TestMLAppTelemetryTag(t *testing.T) {
 	defer withEmptyMLAppLimiter(t)()
 
@@ -113,6 +128,28 @@ func TestCostTagsTelemetryTagsMLAppBounded(t *testing.T) {
 	assert.Contains(t, distinct, telemetryMLAppBlocked)
 
 	assert.Contains(t, costTagsTelemetryTags(nil, "manual"), "ml_app:N/A")
+}
+
+func TestMLAppLimiterTagValueAllocs(t *testing.T) {
+	var l mlAppLimiter
+	l.setConfigured("configured-app")
+	l.tagValue("admitted-app")
+	for i := range maxTelemetryMLApps {
+		l.tagValue("filler-" + strconv.Itoa(i))
+	}
+
+	for name, mlApp := range map[string]string{
+		"configured": "configured-app",
+		"admitted":   "admitted-app",
+		"blocked":    "unknown-app",
+	} {
+		t.Run(name, func(t *testing.T) {
+			allocs := testing.AllocsPerRun(100, func() {
+				l.tagValue(mlApp)
+			})
+			assert.Zero(t, allocs)
+		})
+	}
 }
 
 // A filled limiter blocks the ml_app values of every later test, so restore it.

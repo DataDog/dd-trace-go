@@ -34,19 +34,30 @@ const (
 )
 
 // maxTelemetryMLApps caps distinct ml_app values, because telemetry never evicts a metric
-// handle and a span can inherit ml_app from the distributed trace context.
+// handle and a span can inherit ml_app from the distributed trace context. 64 covers every
+// legitimate multi-app deployment we know of while keeping the copy-on-write fill cost, at
+// most 64 map copies over the life of the process, negligible.
 const maxTelemetryMLApps = 64
 
 // telemetryMLAppBlocked marks an ml_app value that the limiter rejected.
 const telemetryMLAppBlocked = "tracer_blocked_value"
 
-// trackLLMObsStart runs before any span, so the configured ml_app takes the first slot.
+// telemetryMLApps is shared by all four telemetry call sites in this file, so their ml_app
+// values draw from one process-wide budget.
 var telemetryMLApps mlAppLimiter
 
 // mlAppLimiter admits the first maxTelemetryMLApps distinct ml_app values. The admitted set
-// is copy-on-write, so a blocked value costs a lock-free lookup and no allocation.
+// is copy-on-write, so a blocked value costs a lock-free lookup and no allocation. The
+// active configured value (set via setConfigured) always reports correctly, independent of
+// that budget, so it survives even after a restart finds the limiter already full.
 type mlAppLimiter struct {
-	admitted atomic.Pointer[map[string]struct{}]
+	admitted   atomic.Pointer[map[string]struct{}]
+	configured atomic.Pointer[string]
+}
+
+// setConfigured reserves mlApp so tagValue always reports it, bypassing the admitted budget.
+func (l *mlAppLimiter) setConfigured(mlApp string) {
+	l.configured.Store(&mlApp)
 }
 
 // tagValue returns telemetryMLAppBlocked for a rejected mlApp, and "" for an empty one so
@@ -54,6 +65,9 @@ type mlAppLimiter struct {
 func (l *mlAppLimiter) tagValue(mlApp string) string {
 	if mlApp == "" {
 		return ""
+	}
+	if configured := l.configured.Load(); configured != nil && *configured == mlApp {
+		return mlApp
 	}
 	if admitted := l.admitted.Load(); admitted != nil {
 		if _, ok := (*admitted)[mlApp]; ok {
@@ -116,6 +130,7 @@ func trackLLMObsStart(startTime time.Time, err error, cfg config.Config) {
 	if telemetry.Disabled() {
 		return
 	}
+	telemetryMLApps.setConfigured(cfg.MLApp)
 	telemetry.ProductStarted(telemetry.NamespaceMLObs)
 	telemetry.RegisterAppConfigs(
 		telemetry.Configuration{Name: "site", Value: cfg.TracerConfig.Site},
