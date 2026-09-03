@@ -219,7 +219,8 @@ with no HTTP call needed. See "Running this app" below for exact commands:
 | Mechanism | Call site | Reachability |
 |---|---|---|
 | Fault-injecting reverse proxy in front of a real agent, returning malformed JSON for the remote-config poll endpoint | `updateState` "could not parse the json response body" (`internal/remoteconfig/remoteconfig.go`) | `fault-injectable` — confirmed working end-to-end (tiers 0/1/2) |
-| Linux container with a custom seccomp profile blocking the `memfd_create` syscall, run with `--network host` (see "Known gaps") | `storeConfig`'s two sites (`ddtrace/tracer/tracer.go`) — both fire together, since the second one's own internal fallback also fails under Docker Desktop's Linux VM kernel | `fault-injectable`, Linux-only (both sites are no-ops on macOS/Windows) — confirmed at all three tiers |
+| Linux container with a custom seccomp profile blocking the `memfd_create` syscall, run with `--network host` (see "Known gaps") | `storeConfig`'s **first** site, "failed to store the configuration" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only (both `storeConfig` sites are no-ops on macOS/Windows) — confirmed at all three tiers |
+| Same container as above — both `storeConfig` sites fire from one run, since the second site's own internal fallback also fails under Docker Desktop's Linux VM kernel | `storeConfig`'s **second** site, "failed to publish the OTEL process context" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only — confirmed generated at tier 0, **not yet observed landing** at tier 2; see "Known gaps" |
 
 Not practically triggerable from outside the process, given what each depends on:
 
@@ -231,6 +232,17 @@ Not practically triggerable from outside the process, given what each depends on
 
 ## Known gaps
 
+- **A tier-0 pass does not guarantee the record is ever transmitted — assert tier 2 per message, not
+  per run.** Found via `storeConfig`'s two sites, which both fire from a single run, microseconds apart
+  in the same function. In payload-files dump mode (tier 0) both are present, but they land in
+  *different* payloads — the second one consistently in a later flush than the first. In a real
+  agent-connected run, only the earlier payload carried logs: every subsequent flush was byte-identical
+  and heartbeat-sized, and the second message never appeared at tier 2 — across multiple runs, a 35s
+  run (vs. 10s, to rule out the process exiting too early), and three independent query shapes (exact
+  message text, its distinctive error type, and an unfiltered per-run listing). Its sibling from the
+  same function landed every time. Root cause not established; what is established is that "the trigger
+  fired and tier 0 shows the payload" is **not** sufficient evidence that a given message reaches the
+  backend. Verify each expected message at tier 2 individually.
 - **Coarse error grouping** (see "Do not assert 'a new product-side issue appeared'" above): confirmed
   for at least one other language's telemetry error feed, grouping was coarse enough that a large volume
   of structurally different errors collapsed into a single grouped issue. Whether this affects Go's feed
