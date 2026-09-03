@@ -87,7 +87,7 @@ fpd_origin_tracking_smoke_test:
         -H "Authorization: Bearer $GH_TOKEN" \
         -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/DataDog/dd-trace-go/commits/$CI_COMMIT_SHA/pulls")
-      echo "${response:0:500}"
+      echo "$response"
       echo "FPD origin-tracking smoke test passed"
   after_script:
     - |
