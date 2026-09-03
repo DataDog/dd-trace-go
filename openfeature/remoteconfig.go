@@ -13,10 +13,13 @@ import (
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
+
+var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	provider := newDatadogProvider(config)
@@ -189,6 +192,8 @@ func validateFlag(flagKey string, flag *flag) error {
 
 				switch condition.Operator {
 				case operatorLT, operatorLTE, operatorGT, operatorGTE,
+					operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE,
 					operatorMatches, operatorNotMatches,
 					operatorOneOf, operatorNotOneOf, operatorIsNull:
 				default:
@@ -196,17 +201,47 @@ func validateFlag(flagKey string, flag *flag) error {
 						flagKey, i, condition.Operator)
 				}
 
-				if condition.Operator == operatorMatches || condition.Operator == operatorNotMatches {
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE:
+					if _, ok := internal.ToFloat64(condition.Value); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires numeric value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorMatches, operatorNotMatches:
 					regex, ok := condition.Value.(string)
 					if !ok {
 						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires string value",
 							flagKey, i, condition.Operator)
 					}
-
 					if _, err := loadRegex(regex); err != nil {
 						return fmt.Errorf("flag %q allocation %d rule has condition with invalid regex %q: %v",
 							flagKey, i, regex, err)
 					}
+				case operatorOneOf, operatorNotOneOf:
+					if _, ok := condition.Value.([]any); !ok {
+						if _, ok := condition.Value.([]string); !ok {
+							return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires array value",
+								flagKey, i, condition.Operator)
+						}
+					}
+				case operatorIsNull:
+					if _, ok := condition.Value.(bool); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires boolean value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+					comparand, ok := condition.Value.(string)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q that requires string value",
+							errInvalidSemverComparand, flagKey, i, condition.Operator)
+					}
+					parsedComparand, ok := parseSemver(comparand)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q and invalid semantic version %q",
+							errInvalidSemverComparand, flagKey, i, condition.Operator, comparand)
+					}
+					condition.semverComparand = &parsedComparand
 				}
 			}
 		}

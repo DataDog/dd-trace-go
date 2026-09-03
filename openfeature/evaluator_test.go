@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -144,6 +145,92 @@ func TestComputeShardIndex(t *testing.T) {
 	}
 }
 
+func TestEvaluateSemverCondition(t *testing.T) {
+	tests := []struct {
+		name      string
+		operator  conditionOperator
+		attribute any
+		comparand any
+		want      bool
+	}{
+		{name: "equal", operator: operatorSemverEQ, attribute: "1.2.3", comparand: "1.2.3", want: true},
+		{name: "equal mismatch", operator: operatorSemverEQ, attribute: "1.2.4", comparand: "1.2.3"},
+		{name: "not equal", operator: operatorSemverNEQ, attribute: "1.2.4", comparand: "1.2.3", want: true},
+		{name: "not equal mismatch", operator: operatorSemverNEQ, attribute: "1.2.3", comparand: "1.2.3"},
+		{name: "less than", operator: operatorSemverLT, attribute: "1.9.9", comparand: "2.0.0", want: true},
+		{name: "less than mismatch", operator: operatorSemverLT, attribute: "2.0.0", comparand: "2.0.0"},
+		{name: "less than or equal", operator: operatorSemverLTE, attribute: "2.0.0", comparand: "2.0.0", want: true},
+		{name: "less than or equal mismatch", operator: operatorSemverLTE, attribute: "2.0.1", comparand: "2.0.0"},
+		{name: "greater than", operator: operatorSemverGT, attribute: "1.0.1", comparand: "1.0.0", want: true},
+		{name: "greater than mismatch", operator: operatorSemverGT, attribute: "1.0.0", comparand: "1.0.0"},
+		{name: "greater than or equal", operator: operatorSemverGTE, attribute: "1.0.0", comparand: "1.0.0", want: true},
+		{name: "greater than or equal mismatch", operator: operatorSemverGTE, attribute: "0.9.9", comparand: "1.0.0"},
+		{name: "prerelease before release", operator: operatorSemverLT, attribute: "1.0.0-beta.1", comparand: "1.0.0", want: true},
+		{name: "numeric prerelease ordering", operator: operatorSemverLT, attribute: "1.0.0-beta.2", comparand: "1.0.0-beta.11", want: true},
+		{name: "equal ignores build metadata", operator: operatorSemverEQ, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
+		{name: "equal ignores dotted build metadata", operator: operatorSemverEQ, attribute: "4.0.0+exp.sha.5114f85", comparand: "4.0.0", want: true},
+		{name: "not equal ignores build metadata", operator: operatorSemverNEQ, attribute: "4.0.0+build.42", comparand: "4.0.0"},
+		{name: "less than ignores build metadata", operator: operatorSemverLT, attribute: "4.0.0+build.42", comparand: "4.0.0"},
+		{name: "less than or equal ignores build metadata", operator: operatorSemverLTE, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
+		{name: "greater than ignores build metadata", operator: operatorSemverGT, attribute: "4.0.0+build.42", comparand: "4.0.0"},
+		{name: "greater than or equal ignores build metadata", operator: operatorSemverGTE, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
+		{name: "different build metadata has equal precedence", operator: operatorSemverEQ, attribute: "1.0.0+linux", comparand: "1.0.0+darwin", want: true},
+		{name: "invalid attribute", operator: operatorSemverNEQ, attribute: "not-a-version", comparand: "1.0.0"},
+		{name: "two-part attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0", want: true},
+		{name: "prefixed attribute", operator: operatorSemverGTE, attribute: "v1.2.3", comparand: "1.0.0"},
+		{name: "overflowing attribute", operator: operatorSemverGTE, attribute: "18446744073709551616.0.0", comparand: "1.0.0"},
+		{name: "non-string attribute", operator: operatorSemverEQ, attribute: 1.2, comparand: "1.2.0"},
+		{name: "invalid comparand", operator: operatorSemverNEQ, attribute: "1.2.3", comparand: "not-a-version"},
+		{name: "non-string comparand", operator: operatorSemverEQ, attribute: "1.2.3", comparand: 1.2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			comparand, _ := tt.comparand.(string)
+			var parsedComparand *parsedSemver
+			if parsed, ok := parseSemver(comparand); ok {
+				parsedComparand = &parsed
+			}
+			condition := &condition{
+				Operator:        tt.operator,
+				Attribute:       "version",
+				Value:           tt.comparand,
+				semverComparand: parsedComparand,
+			}
+			context := map[string]any{"version": tt.attribute}
+			if got := evaluateCondition(condition, context); got != tt.want {
+				t.Errorf("evaluateCondition() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing attribute", func(t *testing.T) {
+		comparand, ok := parseSemver("1.2.3")
+		if !ok {
+			t.Fatal("parseSemver failed")
+		}
+		condition := &condition{
+			Operator:        operatorSemverEQ,
+			Attribute:       "version",
+			Value:           "1.2.3",
+			semverComparand: &comparand,
+		}
+		if evaluateCondition(condition, map[string]any{}) {
+			t.Error("expected a missing attribute not to match")
+		}
+	})
+
+	t.Run("unsupported operator", func(t *testing.T) {
+		comparand, ok := parseSemver("1.2.3")
+		if !ok {
+			t.Fatal("parseSemver failed")
+		}
+		if evaluateSemverCondition("1.2.3", &comparand, conditionOperator("UNKNOWN")) {
+			t.Error("expected an unsupported operator not to match")
+		}
+	})
+}
+
 func TestValidateVariantType(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -255,6 +342,13 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.updateConfiguration(&cfg)
+	if err := of.SetProviderAndWait(provider); err != nil {
+		t.Fatalf("set provider: %v", err)
+	}
+	client := of.NewClient("fixture-test")
+
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -275,8 +369,9 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				TargetingKey *string        `json:"targetingKey"`
 				Attributes   map[string]any `json:"attributes"`
 				Result       struct {
-					Value  any    `json:"value"`
-					Reason string `json:"reason"`
+					Value     any    `json:"value"`
+					Reason    string `json:"reason"`
+					ErrorCode string `json:"errorCode"`
 				} `json:"result"`
 			}
 			if err := json.Unmarshal(data, &cases); err != nil {
@@ -301,6 +396,19 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 					}
 					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
 						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+					if tc.Result.ErrorCode != "" {
+						evaluationContext := of.NewEvaluationContext("", tc.Attributes)
+						if tc.TargetingKey != nil {
+							evaluationContext = of.NewEvaluationContext(*tc.TargetingKey, tc.Attributes)
+						}
+						details, err := client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue, evaluationContext)
+						if err == nil {
+							t.Error("expected SDK evaluation error, got nil")
+						}
+						if details.ErrorCode != of.ErrorCode(tc.Result.ErrorCode) {
+							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
+						}
 					}
 				})
 			}

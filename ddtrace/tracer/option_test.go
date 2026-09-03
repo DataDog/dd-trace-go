@@ -1926,11 +1926,24 @@ func TestWithStatsComputation(t *testing.T) {
 		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("disabled-via-option", func(t *testing.T) {
+		// Regression pin for the CSS<->trace-protocol decoupling: disabling
+		// client-side stats must not change the wire protocol. Previously this
+		// subtest asserted a v0.4 downgrade, but that assertion was
+		// environment-ambiguous — plain newTestConfig makes a real /info
+		// request, so it passed in CI (no local agent, v1 unavailable anyway)
+		// for a reason unrelated to CSS, and would have failed on a dev machine
+		// with a v1-capable agent running locally. Pin it against a stub that
+		// unambiguously advertises v1 instead.
 		assert := assert.New(t)
-		c, err := newTestConfig(WithStatsComputation(false))
+		url := mockAgentEndpoint(t, "/v1.0/traces")
+		c, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+			WithStatsComputation(false),
+		)
 		assert.NoError(err)
 		assert.False(c.internalConfig.StatsComputationEnabled())
-		assert.Equal(traceProtocolV04, c.internalConfig.TraceProtocol())
+		assert.False(c.canComputeStats(), "sanity check: CSS must actually be off")
+		assert.Equal(traceProtocolV1, c.effectiveTraceProtocol(), "disabling CSS must not downgrade the trace protocol")
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)
@@ -2330,6 +2343,11 @@ func TestCanComputeStats(t *testing.T) {
 		assert.False(t, c.canComputeStats())
 		assert.False(t, c.canDropP0s())
 	})
+
+	// The full decision matrix for the 7.77/7.78 v1.0 stats workaround lives in
+	// trace_protocol_selection_test.go (TestV1StatsWorkaroundForcesStatsAndP0Dropping),
+	// including the "agent doesn't advertise v1.0" case that would otherwise be
+	// duplicated here.
 }
 
 // Regression: agentless flag set without CI Visibility enabled must not disable the agent.

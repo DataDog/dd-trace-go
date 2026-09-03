@@ -1565,6 +1565,30 @@ func TestSpanLog(t *testing.T) {
 	})
 }
 
+func TestSpanFormatNil(t *testing.T) {
+	// The nil guard in Format must return: without it, execution fell through to
+	// the verb switch and fmt's panic recovery appended a second "<nil>", so a nil
+	// span rendered as the malformed "<nil><nil>".
+	assert.Equal(t, "<nil>", fmt.Sprintf("%v", (*Span)(nil)))
+	assert.Equal(t, "<nil>", fmt.Sprintf("%s", (*Span)(nil)))
+}
+
+func TestSpanFormatNonNil(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+	span := tracer.StartSpan("test.request")
+
+	expect := fmt.Sprintf(`dd.trace_id=%q dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+	assert.Equal(t, expect, fmt.Sprintf("%v", span))
+
+	// The tag lines come from map iteration, so only the fixed header is compared.
+	dump := fmt.Sprintf("%s", span)
+	assert.Contains(t, dump, "Name: test.request")
+	assert.Contains(t, dump, "\nService: "+span.service)
+	assert.Contains(t, dump, "\nTags:")
+}
+
 func TestRootSpanAccessor(t *testing.T) {
 	tracer, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)
@@ -1742,7 +1766,7 @@ func BenchmarkSetTagString(b *testing.B) {
 func BenchmarkSetTagStringPtr(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
-	v := makePointer("some text")
+	v := new("some text")
 
 	b.ResetTimer()
 	for i := range b.N {

@@ -94,12 +94,14 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+		transport := newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		body, err := transport.send(p)
 		assert.NoError(err)
-		defer body.Close()
+		_, _ = io.Copy(io.Discard, body)
+		body.Close()
+		transport.client.CloseIdleConnections()
 	}
 }
 
@@ -171,7 +173,7 @@ func TestTransportResponse(t *testing.T) {
 				w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+			transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 			rc, err := transport.send(newPayload(traceProtocolV04))
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
@@ -184,6 +186,26 @@ func TestTransportResponse(t *testing.T) {
 			assert.Equal(tt.body, string(slurp))
 		})
 	}
+}
+
+// TestTransportSendDistinguishesV1RejectionFrom404 pins that a 404 on
+// /v1.0/traces surfaces as errV1TracesNotSupported (so agentTraceWriter can
+// fall back to v0.4 — see downgradeAfterRejectedSend), while the same status
+// on /v0.4/traces surfaces as a generic error: v0.4 is universally accepted,
+// so a 404 there is never evidence of a missing protocol, just a failure.
+func TestTransportSendDistinguishesV1RejectionFrom404(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+
+	_, err := transport.send(newPayload(traceProtocolV1))
+	assert.ErrorIs(t, err, errV1TracesNotSupported)
+
+	_, err = transport.send(newPayload(traceProtocolV04))
+	assert.NotErrorIs(t, err, errV1TracesNotSupported)
+	assert.Error(t, err)
 }
 
 func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {
@@ -231,7 +253,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+		transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -273,7 +295,7 @@ func TestCustomTransport(t *testing.T) {
 
 	c := &http.Client{}
 	crt := wrapRecordingRoundTripper(c)
-	transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, c, datadogHeaders())
+	transport := newHTTPTransport(srv.URL, c, datadogHeaders())
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
 	_, err = transport.send(p)
@@ -538,8 +560,7 @@ func TestUDSTransportRecoversFromStaleIdleConn(t *testing.T) {
 	}()
 
 	transport := newHTTPTransport(
-		"http://localhost"+tracesAPIPath,
-		"http://localhost"+statsAPIPath,
+		"http://localhost",
 		internal.UDSClient(socketPath, 5*time.Second),
 		datadogHeaders(),
 	)
@@ -841,7 +862,7 @@ func TestConcurrentTraceFlushOverUDS(t *testing.T) {
 
 	udsURL := internal.UnixDataSocketURL(socketPath).String()
 	client := internal.UDSClient(socketPath, 5*time.Second)
-	transport := newHTTPTransport(udsURL+tracesAPIPath, udsURL+statsAPIPath, client, datadogHeaders())
+	transport := newHTTPTransport(udsURL, client, datadogHeaders())
 
 	const numGoroutines = 20
 

@@ -19,20 +19,33 @@ type universalFlagsConfiguration struct {
 	Format string `json:"format"`
 	// Environment contains information about the environment this configuration applies to
 	Environment environment `json:"environment"`
+	// ObserveFullEvaluationData reports whether this environment consents to emitting the raw
+	// targeting key and evaluation context. Environment-scoped in origin but lives at the UFC
+	// root, as a sibling of Environment. Plain bool (no omitempty, no pointer) so an absent
+	// or malformed value fails closed to false.
+	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
-	// invalidFlags contains flags that could not be parsed or validated.
-	invalidFlags map[string]struct{}
+	// invalidFlags contains errors for flags that could not be parsed or validated.
+	invalidFlags map[string]error
 }
 
 // UnmarshalJSON parses flags independently so one invalid flag does not reject
-// the complete configuration.
+// the complete configuration. The shadow struct is the sole populator: any new field on
+// universalFlagsConfiguration must be added and copied here or it reads as zero forever.
+//
+// observeFullEvaluationData is taken as json.RawMessage and then interpreted leniently:
+// null, absent, or a wrong-typed value all fall to false. Rejecting the whole UFC on a
+// malformed consent value would fail closed on availability — agentless swallows the parse
+// error, leaving a fresh pod with no last-known-good UFC and stranding every flag on the
+// SDK default. Fail-closed on privacy must not cascade into fail-closed on availability.
 func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		CreatedAt   time.Time                  `json:"createdAt"`
-		Format      string                     `json:"format"`
-		Environment environment                `json:"environment"`
-		Flags       map[string]json.RawMessage `json:"flags"`
+		CreatedAt                 time.Time                  `json:"createdAt"`
+		Format                    string                     `json:"format"`
+		Environment               environment                `json:"environment"`
+		ObserveFullEvaluationData json.RawMessage            `json:"observeFullEvaluationData"`
+		Flags                     map[string]json.RawMessage `json:"flags"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -41,17 +54,18 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.CreatedAt = raw.CreatedAt
 	config.Format = raw.Format
 	config.Environment = raw.Environment
+	config.ObserveFullEvaluationData = parseLenientBool(raw.ObserveFullEvaluationData)
 	config.Flags = make(map[string]*flag, len(raw.Flags))
-	config.invalidFlags = make(map[string]struct{})
+	config.invalidFlags = make(map[string]error)
 
 	for flagKey, flagData := range raw.Flags {
 		var parsedFlag flag
 		if err := json.Unmarshal(flagData, &parsedFlag); err != nil {
-			config.invalidFlags[flagKey] = struct{}{}
+			config.invalidFlags[flagKey] = err
 			continue
 		}
 		if err := validateFlag(flagKey, &parsedFlag); err != nil {
-			config.invalidFlags[flagKey] = struct{}{}
+			config.invalidFlags[flagKey] = err
 			continue
 		}
 		config.Flags[flagKey] = &parsedFlag
@@ -151,6 +165,14 @@ const (
 	// operatorGTE checks if attribute >= value (value: number)
 	operatorGTE conditionOperator = "GTE"
 
+	// Semantic version operators compare string attributes to string values.
+	operatorSemverEQ  conditionOperator = "SEMVER_EQ"
+	operatorSemverNEQ conditionOperator = "SEMVER_NEQ"
+	operatorSemverLT  conditionOperator = "SEMVER_LT"
+	operatorSemverLTE conditionOperator = "SEMVER_LTE"
+	operatorSemverGT  conditionOperator = "SEMVER_GT"
+	operatorSemverGTE conditionOperator = "SEMVER_GTE"
+
 	// operatorMatches checks if attribute matches regex pattern (value: string regex)
 	operatorMatches conditionOperator = "MATCHES"
 	// operatorNotMatches checks if attribute doesn't match regex pattern (value: string regex)
@@ -175,10 +197,13 @@ type condition struct {
 	// Value is the value to compare against
 	// Type depends on the operator:
 	// - Numeric operators (LT, LTE, GT, GTE): number (int64 or float64)
+	// - Semantic version operators (SEMVER_EQ, SEMVER_NEQ, SEMVER_LT, SEMVER_LTE, SEMVER_GT, SEMVER_GTE): string
 	// - Regex operators (MATCHES, NOT_MATCHES): string (regex pattern)
 	// - List operators (ONE_OF, NOT_ONE_OF): []any or []string
 	// - Null check (IS_NULL): bool
 	Value any `json:"value"`
+	// semverComparand is the validated, parsed SemVer condition value.
+	semverComparand *parsedSemver
 }
 
 // split defines how traffic should be distributed for a specific variant.
