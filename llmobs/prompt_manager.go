@@ -27,9 +27,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
 )
 
-const promptEndpoint = "/api/unstable/llm-obs/v1/prompts"
+const (
+	promptEndpoint                 = "/api/unstable/llm-obs/v1/prompts"
+	promptOpenFeatureDomain        = "datadog-llmobs-prompts"
+	datadogOpenFeatureProviderName = "Datadog Remote Config Provider"
+)
 
 type promptManager struct {
 	apiKey, appKey, env, origin string
@@ -96,6 +101,13 @@ var globalPromptManagerState struct {
 	manager *promptManager
 }
 
+var promptOpenFeatureState struct {
+	sync.Mutex
+	client *openfeature.Client
+}
+
+var newPromptOpenFeatureProvider = ddopenfeature.NewDatadogProvider
+
 var getGlobalPromptManager = func() *promptManager {
 	cfg := config.Get()
 	env := cfg.Env()
@@ -103,7 +115,7 @@ var getGlobalPromptManager = func() *promptManager {
 	defer globalPromptManagerState.Unlock()
 	if globalPromptManagerState.config != cfg || globalPromptManagerState.manager.env != env {
 		globalPromptManagerState.config = cfg
-		globalPromptManagerState.manager = newPromptManager(promptManagerConfig{
+		managerConfig := promptManagerConfig{
 			apiKey:           cfg.APIKey(),
 			appKey:           cfg.AppKey(),
 			env:              env,
@@ -112,7 +124,11 @@ var getGlobalPromptManager = func() *promptManager {
 			fileCacheEnabled: cfg.LLMObsPromptsFileCacheEnabled(),
 			cacheDir:         cfg.LLMObsPromptsCacheDir(),
 			timeout:          cfg.LLMObsPromptsTimeout(),
-		})
+		}
+		if cfg.ExperimentalFlaggingProviderEnabled() {
+			managerConfig.evaluate = evaluatePromptFeatureFlag
+		}
+		globalPromptManagerState.manager = newPromptManager(managerConfig)
 	}
 	return globalPromptManagerState.manager
 }
@@ -129,17 +145,46 @@ func newPromptManager(cfg promptManagerConfig) *promptManager {
 		cfg.client = internal.DefaultHTTPClient(cfg.timeout, true)
 		cfg.client.CheckRedirect = promptRedirectPolicy
 	}
-	if cfg.evaluate == nil {
-		cfg.evaluate = func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
-			details, err := openfeature.NewDefaultClient().ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
-			return details.Value, err
-		}
-	}
 	return &promptManager{
 		apiKey: cfg.apiKey, appKey: cfg.appKey, env: cfg.env, origin: cfg.origin, timeout: cfg.timeout,
 		cacheEnabled: cfg.ttl > 0, cache: newPromptCache(cfg.ttl, cfg.now), fileCache: newPromptFileCache(cfg.fileCacheEnabled && cfg.ttl > 0, cfg.cacheDir, cfg.ttl, cfg.now),
 		httpClient: cfg.client, now: cfg.now, evaluate: cfg.evaluate, refreshing: make(map[promptCacheKey]struct{}),
 	}
+}
+
+func evaluatePromptFeatureFlag(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
+	client, err := ensurePromptOpenFeatureClient()
+	if err != nil {
+		return nil, err
+	}
+	details, err := client.ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
+	return details.Value, err
+}
+
+func ensurePromptOpenFeatureClient() (*openfeature.Client, error) {
+	if openfeature.ProviderMetadata().Name == datadogOpenFeatureProviderName {
+		return openfeature.NewDefaultClient(), nil
+	}
+
+	promptOpenFeatureState.Lock()
+	defer promptOpenFeatureState.Unlock()
+	if promptOpenFeatureState.client != nil {
+		return promptOpenFeatureState.client, nil
+	}
+
+	provider, err := newPromptOpenFeatureProvider(ddopenfeature.ProviderConfig{})
+	if err != nil {
+		return nil, err
+	}
+	if provider.Metadata().Name != datadogOpenFeatureProviderName {
+		return nil, errors.New("llmobs: Datadog OpenFeature provider is unavailable")
+	}
+	// Keep prompt evaluation isolated from the application's default provider.
+	if err := openfeature.SetNamedProvider(promptOpenFeatureDomain, provider); err != nil {
+		return nil, err
+	}
+	promptOpenFeatureState.client = openfeature.NewClient(promptOpenFeatureDomain)
+	return promptOpenFeatureState.client, nil
 }
 
 func promptRedirectPolicy(request *http.Request, via []*http.Request) error {
@@ -166,7 +211,7 @@ func (manager *promptManager) get(ctx context.Context, promptID string, options 
 			return nil, fmt.Errorf("llmobs: invalid prompt targeting attributes: %w", err)
 		}
 	}
-	if options.version == nil && manager.env != "" {
+	if options.version == nil && manager.env != "" && manager.evaluate != nil {
 		value, err := manager.evaluate(ctx, "__llmobs__.prompt."+promptID, options.targetingKey, attributes)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

@@ -116,15 +116,8 @@ func (p *ManagedPrompt) Annotation(variables map[string]any) Prompt {
 	return annotation
 }
 
-// GetPrompt retrieves a managed prompt. Exact versions use the registry; otherwise DD_ENV
-// uses the application's registered default OpenFeature provider for targeting and A/B selection,
-// without creating or initializing a provider, and falls through to /resolve when unavailable.
-// Without DD_ENV, the latest registry version is fetched. DD_API_KEY is always required and
-// the /resolve fallback also requires DD_APP_KEY. Cache and timeout behavior is configured by
-// DD_LLMOBS_PROMPTS_CACHE_TTL, DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED,
-// DD_LLMOBS_PROMPTS_CACHE_DIR, and DD_LLMOBS_PROMPTS_TIMEOUT.
-// Go has no agentless Feature Flags source; /resolve provides the server-side fallback. Rendering
-// does not track prompts automatically: use Annotation with WithAnnotatedPrompt explicitly.
+// GetPrompt retrieves a managed prompt by ID.
+// Options may select an exact version, provide targeting context, or define a fallback.
 func GetPrompt(ctx context.Context, promptID string, opts ...GetPromptOption) (*ManagedPrompt, error) {
 	config := getPromptConfig{}
 	for _, option := range opts {

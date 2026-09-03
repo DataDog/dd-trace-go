@@ -659,6 +659,7 @@ func generatedThirdPartyLibraries() []string {
 		"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp",
 		"go.opentelemetry.io/otel/log",
 		"go.opentelemetry.io/otel/metric",
+		"go.opentelemetry.io/otel/metric/x",
 		"go.opentelemetry.io/otel/sdk",
 		"go.opentelemetry.io/otel/sdk/log",
 		"go.opentelemetry.io/otel/sdk/metric",

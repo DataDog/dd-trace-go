@@ -29,6 +29,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
 )
 
 func promptResponse(id, version, text string) string {
@@ -299,14 +300,24 @@ func TestPromptFeatureFlagAndTargeting(t *testing.T) {
 	}
 }
 
-type promptABProvider struct{ openfeature.NoopProvider }
+type promptABProvider struct {
+	openfeature.NoopProvider
+	evaluations chan openfeature.FlattenedContext
+}
 
-func (promptABProvider) ObjectEvaluation(_ context.Context, flag string, _ any, context openfeature.FlattenedContext) openfeature.InterfaceResolutionDetail {
+func (promptABProvider) Metadata() openfeature.Metadata {
+	return openfeature.Metadata{Name: datadogOpenFeatureProviderName}
+}
+
+func (provider promptABProvider) ObjectEvaluation(_ context.Context, flag string, _ any, context openfeature.FlattenedContext) openfeature.InterfaceResolutionDetail {
+	if provider.evaluations != nil {
+		provider.evaluations <- context
+	}
 	target, _ := context[openfeature.TargetingKey].(string)
 	return openfeature.InterfaceResolutionDetail{Value: map[string]any{"prompt_id": "greeting", "version": target, "template": flag}}
 }
 
-func TestPromptUsesRegisteredDefaultProviderForAB(t *testing.T) {
+func TestPromptReusesRegisteredDatadogProviderForAB(t *testing.T) {
 	if err := openfeature.SetProviderAndWait(promptABProvider{}); err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +329,7 @@ func TestPromptUsesRegisteredDefaultProviderForAB(t *testing.T) {
 	})}
 	manager := newPromptManager(promptManagerConfig{
 		apiKey: "api", appKey: "app", env: "staging", origin: "https://api.datadoghq.com",
-		ttl: time.Minute, timeout: time.Second, client: client,
+		ttl: time.Minute, timeout: time.Second, client: client, evaluate: evaluatePromptFeatureFlag,
 	})
 	for _, target := range []string{"alice", "bob"} {
 		prompt, err := manager.get(context.Background(), "greeting", getPromptConfig{targetingKey: target, attributes: map[string]any{"targetingKey": "attribute"}})
@@ -328,6 +339,45 @@ func TestPromptUsesRegisteredDefaultProviderForAB(t *testing.T) {
 	}
 	if httpCalls.Load() != 0 {
 		t.Fatalf("provider success made %d HTTP requests", httpCalls.Load())
+	}
+}
+
+func TestPromptProviderDoesNotReplaceDefault(t *testing.T) {
+	openfeature.Shutdown()
+	promptOpenFeatureState.Lock()
+	promptOpenFeatureState.client = nil
+	promptOpenFeatureState.Unlock()
+
+	previousFactory := newPromptOpenFeatureProvider
+	var providerCalls atomic.Int32
+	newPromptOpenFeatureProvider = func(ddopenfeature.ProviderConfig) (openfeature.FeatureProvider, error) {
+		providerCalls.Add(1)
+		return promptABProvider{}, nil
+	}
+	t.Cleanup(func() {
+		newPromptOpenFeatureProvider = previousFactory
+		openfeature.Shutdown()
+		promptOpenFeatureState.Lock()
+		promptOpenFeatureState.client = nil
+		promptOpenFeatureState.Unlock()
+	})
+
+	_, err := ensurePromptOpenFeatureClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ensurePromptOpenFeatureClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providerCalls.Load() != 1 {
+		t.Fatalf("provider initialized %d times", providerCalls.Load())
+	}
+	if got := openfeature.ProviderMetadata().Name; got != "NoopProvider" {
+		t.Fatalf("default OpenFeature provider was replaced: %q", got)
+	}
+	if got := openfeature.NamedProviderMetadata(promptOpenFeatureDomain).Name; got != datadogOpenFeatureProviderName {
+		t.Fatalf("named prompt provider: %q", got)
 	}
 }
 
