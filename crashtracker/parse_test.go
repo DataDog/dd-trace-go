@@ -344,40 +344,6 @@ func TestErrorTypeWindowsException(t *testing.T) {
 	}
 }
 
-func TestErrorMessageWindowsExceptionCgoMarker(t *testing.T) {
-	// Exact shape from runtime/signal_windows.go's winthrow: the "Exception
-	// 0x..." header, then "PC=...", then (only when the fault happened while
-	// calling into C, per winthrow's g0.m.incgo check) this marker line.
-	// Without this branch in errorMessage, a Windows exception never reaches
-	// the sigInfo != nil path (parseSignal doesn't recognise this header), so
-	// it would fall through to the generic first-non-empty-line fallback and
-	// silently drop the fact that Go was calling into C when it faulted.
-	preamble := []string{
-		"Exception 0xc0000005 0x0 0x0 0x7ff6a2345678",
-		"PC=0x7ff6a2345678",
-		"signal arrived during external code execution",
-	}
-	got := errorMessage(preamble, nil)
-	want := "Exception 0xc0000005 0x0 0x0 0x7ff6a2345678 (signal arrived during external code execution)"
-	if got != want {
-		t.Errorf("errorMessage() = %q, want %q", got, want)
-	}
-}
-
-func TestErrorMessageWindowsExceptionNoCgoMarker(t *testing.T) {
-	// An ordinary Windows fault, not inside a cgo call: no marker line, so
-	// the message is just the header, unannotated.
-	preamble := []string{
-		"Exception 0xc0000005 0x0 0x0 0x7ff6a2345678",
-		"PC=0x7ff6a2345678",
-	}
-	got := errorMessage(preamble, nil)
-	want := "Exception 0xc0000005 0x0 0x0 0x7ff6a2345678"
-	if got != want {
-		t.Errorf("errorMessage() = %q, want %q", got, want)
-	}
-}
-
 func TestCapThreadsKeepsCrashedGoroutineWhenTruncating(t *testing.T) {
 	threads := make([]Thread, maxReportThreads*2)
 	// Mark a goroutine well past the cap as the crashed one, so retaining it

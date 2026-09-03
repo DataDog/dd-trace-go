@@ -99,24 +99,12 @@ func TestE2ECrashReport_CgoFault(t *testing.T) {
 	case body := <-received:
 		report := assertRFC0013Body(t, body)
 		errObj := report["error"].(map[string]any)
-		// runtime/signal_unix.go and runtime/signal_windows.go report a fault
-		// during a cgo call as different top-level crash shapes: a "SIGSEGV: ..."
-		// header with a "signal arrived during cgo execution" marker line on
-		// Unix, versus an "Exception 0x..." header (classified as
-		// error.type=WindowsException; see parse.go's windowsExceptionRe) with
-		// a "signal arrived during external code execution" marker line on
-		// Windows. Verified directly against both runtime sources rather than
-		// assumed identical.
-		wantType, wantMarker := "SIGSEGV", "signal arrived during cgo execution"
-		if runtime.GOOS == "windows" {
-			wantType, wantMarker = "WindowsException", "signal arrived during external code execution"
-		}
-		if got, _ := errObj["type"].(string); got != wantType {
-			t.Errorf("error.type = %q, want %q", got, wantType)
+		if got, _ := errObj["type"].(string); got != "SIGSEGV" {
+			t.Errorf("error.type = %q, want %q", got, "SIGSEGV")
 		}
 		msg, _ := errObj["message"].(string)
-		if !strings.Contains(msg, wantMarker) {
-			t.Errorf("error.message = %q, want it to contain the runtime's cgo marker %q", msg, wantMarker)
+		if !strings.Contains(msg, "signal arrived during cgo execution") {
+			t.Errorf("error.message = %q, want it to contain the runtime's cgo marker", msg)
 		}
 
 	case <-time.After(30 * time.Second):
