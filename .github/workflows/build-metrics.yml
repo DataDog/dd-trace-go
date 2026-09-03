@@ -12,7 +12,9 @@ name: Build Metrics
 # - Warm module cache: runs go mod download (untimed) so measurement reflects compilation, not network
 # - Dependency attribution (standard mode only): go-size-analyzer breaks the binary down by
 #   vendor package, published as go.build.dependency_size_bytes.<dependency>, so a size
-#   regression can be traced to which dependency grew instead of just the binary total
+#   regression can be traced to which dependency grew instead of just the binary total.
+#   It also publishes go.build.dependency_total_size_bytes and go.build.dependency_count,
+#   the summed size and the count of all vendor packages, to track overall dependency bloat
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
 # - Runs on: Pull requests (when this file, scripts/*, orchestrion.yml, or any go.mod changes) and pushes to main
 # - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version

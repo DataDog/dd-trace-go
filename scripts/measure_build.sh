@@ -19,8 +19,11 @@ set -euo pipefail
 # Output JSON includes all build_duration_samples (one per repeat) and a single
 # binary_size_bytes taken from the last build. In standard mode, if `gsa`
 # (go-size-analyzer) is on PATH, the JSON also includes dependency_sizes: the
-# top 10 vendor (third-party) packages contributing to that binary's size,
-# attributing size to specific dependencies instead of just the binary total.
+# top 10 vendor packages by size. The JSON also includes
+# dependency_total_size_bytes and dependency_count: the summed size and the
+# count of every vendor package, including packages outside the top 10.
+# These two fields attribute the binary size to specific dependencies and to
+# overall dependency bloat.
 #
 # Examples:
 #   scripts/measure_build.sh --sample net_http --mode standard
@@ -186,20 +189,24 @@ message "Durations: ${durations[*]}, size: $size bytes"
 # Dependency size attribution (standard mode only — orchestrion mode builds the
 # same source, so re-running the analysis there would just duplicate this data)
 DEPENDENCY_SIZES="[]"
+DEPENDENCY_TOTAL_SIZE_BYTES=0
+DEPENDENCY_COUNT=0
 if [[ "$MODE" == "standard" ]] && command -v gsa &> /dev/null; then
   message "Attributing binary size to dependencies with gsa..."
   bin_path="$OUT_DIR/$SAMPLE-$MODE.test"
   gsa_json="$OUT_DIR/gsa.json"
   if gsa "$bin_path" -f json --compact --no-disasm -o "$gsa_json"; then
+    # Filter vendor packages once. Reuse the result for the top-10 slice and the totals below.
+    VENDOR_PACKAGES=$(jq '[.packages | to_entries[] | select(.value.type == "vendor")]' "$gsa_json")
     DEPENDENCY_SIZES=$(jq '[
-      .packages
-      | to_entries
-      | map(select(.value.type == "vendor"))
-      | sort_by(-.value.size)
+      sort_by(-.value.size)
       | .[0:10]
       | .[]
       | { name: .key, metric_key: (.key | ascii_downcase | gsub("[^a-z0-9_]+"; "_")), size_bytes: .value.size }
-    ]' "$gsa_json")
+    ]' <<< "$VENDOR_PACKAGES")
+    DEPENDENCY_TOTAL_SIZE_BYTES=$(jq '[.[].value.size] | add // 0' <<< "$VENDOR_PACKAGES")
+    DEPENDENCY_COUNT=$(jq 'length' <<< "$VENDOR_PACKAGES")
+    message "  Dependencies: $DEPENDENCY_COUNT, total size: $DEPENDENCY_TOTAL_SIZE_BYTES bytes"
   else
     message "  gsa analysis failed; continuing without dependency_sizes"
   fi
@@ -216,8 +223,10 @@ JSON=$(jq -n \
   --argjson durations "$DURATION_ARRAY" \
   --argjson size "$size" \
   --argjson dependency_sizes "$DEPENDENCY_SIZES" \
+  --argjson dependency_total_size_bytes "$DEPENDENCY_TOTAL_SIZE_BYTES" \
+  --argjson dependency_count "$DEPENDENCY_COUNT" \
   --arg go_version "$GO_VERSION" \
-  '{ sample: $sample, mode: $mode, metrics: { build_duration_samples: $durations, binary_size_bytes: $size, dependency_sizes: $dependency_sizes }, go_version: $go_version }')
+  '{ sample: $sample, mode: $mode, metrics: { build_duration_samples: $durations, binary_size_bytes: $size, dependency_sizes: $dependency_sizes, dependency_total_size_bytes: $dependency_total_size_bytes, dependency_count: $dependency_count }, go_version: $go_version }')
 
 # Add orchestrion version if in orchestrion mode
 if [[ "$MODE" == "orchestrion" ]]; then
