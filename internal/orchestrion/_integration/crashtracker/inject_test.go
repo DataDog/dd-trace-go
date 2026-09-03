@@ -8,7 +8,6 @@ package crashtracker
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -51,12 +50,19 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	runVictim(t, injectedBinary, srv.URL)
+	injectedOut := runVictim(t, injectedBinary, srv.URL)
 	select {
 	case body := <-received:
 		assertInjectedCrashReport(t, body)
 	case <-time.After(15 * time.Second):
-		t.Fatal("timed out waiting for crash report from orchestrion-built victim")
+		// Include the victim's own output: this timeout has been observed on
+		// Windows CI with no other diagnostic (the plain-panic path through
+		// crashtracker.Start() called directly, not via injection, is
+		// otherwise known to work there), and discarding stdout/stderr left
+		// no way to tell whether the injected Start() call ran at all, ran
+		// and failed to spawn the monitor, or spawned a monitor that failed
+		// to upload.
+		t.Fatalf("timed out waiting for crash report from orchestrion-built victim\nvictim output:\n%s", injectedOut)
 	}
 
 	runVictim(t, plainBinary, srv.URL)
@@ -106,7 +112,12 @@ func buildPlainVictim(t *testing.T, moduleRoot, output string) {
 	}
 }
 
-func runVictim(t *testing.T, binary, agentURL string) {
+// runVictim runs binary and returns its combined stdout+stderr. The caller
+// decides whether to surface it: a panicking victim's own crash dump
+// (written to stderr, independent of and before any crashtracker upload) is
+// the most direct evidence available when a report doesn't arrive as
+// expected.
+func runVictim(t *testing.T, binary, agentURL string) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -118,12 +129,11 @@ func runVictim(t *testing.T, binary, agentURL string) {
 		"DD_INSTRUMENTATION_TELEMETRY_ENABLED=false",
 		"DD_REMOTE_CONFIGURATION_ENABLED=false",
 	)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	_ = cmd.Run() // Non-zero panic exit is expected for both victims.
+	out, _ := cmd.CombinedOutput() // Non-zero panic exit is expected for both victims.
 	if ctx.Err() == context.DeadlineExceeded {
 		t.Fatalf("run victim %q: timeout", binary)
 	}
+	return out
 }
 
 func filterInjectionEnv(env []string) []string {
