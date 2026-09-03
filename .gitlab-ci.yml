@@ -61,18 +61,20 @@ include:
     ref: 'main'
   # LLM Validation gate: reusable job shipped by the platform repo — only the local .llm-validation/ suite
   # stays in this repo. The job auto-skips when no monitored file changed; a FAIL blocks the merge.
-  - project: 'DataDog/llm-validation-platform'
-    ref: anna.yafi/instruction-presence-benchmark
+  - project: 'ddoghq/llm-validation-platform'
+    ref: main
     file: '/ci/llm-validation.gitlab-ci.yml'
-
-"llm validation":
-  variables:
-    LLMVAL_BASE_REF: "main"
 
 # Pin the benchmarking-platform image for the go-go-prof-app-parallel jobs
 # included from DataDog/apm-reliability/apm-sdks-benchmarks above.
 linux-go-go-prof-app-parallel:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
+
+"llm validation":
+  variables:
+    LLMVAL_PLATFORM_PROJECT: "ddoghq/llm-validation-platform"
+    LLMVAL_PLATFORM_REF: "main"
+    LLMVAL_BASE_REF: "main"   # must be job-level, not top-level `variables:` — see ci/README.md
 
 go-go-prof-app-parallel-check-slo-breaches:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
