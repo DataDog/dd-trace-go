@@ -429,13 +429,6 @@
         "default": "true"
       }
     ],
-    "DD_CRASHTRACKING_FOREIGN_THREAD_SIGNALS_ENABLED": [
-      {
-        "implementation": "A",
-        "type": "boolean",
-        "default": "false"
-      }
-    ],
     "DD_CUSTOM_PARENT_ID": [
       {
         "implementation": "A",
@@ -931,6 +924,13 @@
         "implementation": "A",
         "type": "string",
         "default": "0.0.0.0"
+      }
+    ],
+    "DD_SERVICE_EXTENSION_INTEGRATION": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_SERVICE_EXTENSION_OBSERVABILITY_MODE": [

@@ -24,32 +24,6 @@ const stackFormat = "Datadog Crashtracker 1.0"
 // ddSource is the ddsource value for crash reports.
 const ddSource = "crashtracker"
 
-// cgoExecutionMarker is the Go runtime's own text (runtime/signal_unix.go's
-// fatalsignal) noting a fault happened while Go was calling into C via cgo,
-// rather than in ordinary Go code.
-const cgoExecutionMarker = "signal arrived during cgo execution"
-
-// externalCodeExecutionMarker is signal_windows.go's winthrow equivalent of
-// cgoExecutionMarker: the same "Go was calling into C when this fault
-// happened" fact, but the Windows runtime prints different wording for it
-// than the Unix runtime does. Verified against runtime/signal_windows.go's
-// source directly, not assumed from the Unix wording.
-const externalCodeExecutionMarker = "signal arrived during external code execution"
-
-// preambleHasCgoMarker reports whether the preamble contains the runtime's
-// cgo-fault marker line, and if so, returns that line's own text. Callers
-// annotate with the returned text rather than a hardcoded phrase, since
-// signal_unix.go and signal_windows.go use different wording for the
-// identical condition and a dump only ever contains one of the two.
-func preambleHasCgoMarker(preamble []string) (string, bool) {
-	for _, line := range preamble {
-		if trimmed := strings.TrimSpace(line); trimmed == cgoExecutionMarker || trimmed == externalCodeExecutionMarker {
-			return trimmed, true
-		}
-	}
-	return "", false
-}
-
 var (
 	// goroutineHeaderRe matches a goroutine block header in both standard and
 	// GOTRACEBACK=system format:
@@ -326,14 +300,7 @@ func parseLocation(line string) (file string, lineNo int) {
 }
 
 // crashingThread returns the goroutine that crashed: the first goroutine in
-// the "running" state, the first in "syscall" state if none is running, or
-// the first goroutine overall if neither matches. The "syscall" fallback
-// covers a fault during a cgo call: runtime/signal_unix.go's fatalsignal
-// switches the reported goroutine from the runtime's g0 to mp.curg (the Go
-// code that called into C), and that goroutine's own traceback state is
-// "syscall" — cgo calls are tracked like blocking syscalls — never "running".
-// Verified against a real captured cgo-fault dump: every goroutine in it was
-// in some non-running state, with the one that actually crashed at "syscall".
+// the "running" state, or the first goroutine overall if none is running.
 func crashingThread(threads []Thread) *Thread {
 	if len(threads) == 0 {
 		return nil
@@ -343,14 +310,6 @@ func crashingThread(threads []Thread) *Thread {
 		if threads[i].State == "running" {
 			idx = i
 			break
-		}
-	}
-	if threads[idx].State != "running" {
-		for i := range threads {
-			if threads[i].State == "syscall" {
-				idx = i
-				break
-			}
 		}
 	}
 	threads[idx].Crashed = true
@@ -395,7 +354,7 @@ func capThreads(threads []Thread) []Thread {
 //     — appears when the process is killed directly by a signal with no
 //     surrounding panic context.
 func parseSignal(preamble []string) *SigInfo {
-	for i, line := range preamble {
+	for _, line := range preamble {
 		// Bracketed form: "[signal SIG…]". Anchored to the runtime's actual
 		// bracket rather than an unanchored substring test: a panic value that
 		// happens to contain the text "signal SIG..." (e.g. a message like
@@ -419,29 +378,13 @@ func parseSignal(preamble []string) *SigInfo {
 			}
 			return info
 		}
-		// Top-level form: "SIGABRT: abort", or for a real fault (not a sent
-		// signal), "SIGSEGV: segmentation violation" followed immediately by
-		// "PC=0x... m=N sigcode=N[ addr=0x...]" on the next line
-		// (runtime/signal_unix.go's fatalsignal). sigcode there is plain
-		// decimal, unlike the bracketed form's hex code=0x...; signalCodeRe
-		// still matches it, since "sigcode=" contains "code=" as a substring.
-		// addr is only printed for SIGSEGV/SIGBUS.
+		// Top-level form: "SIGABRT: abort"
 		if m := topLevelSignalRe.FindStringSubmatch(line); m != nil {
 			name := m[1]
-			info := &SigInfo{
+			return &SigInfo{
 				SiSignoHuman: name,
 				SiSigno:      signalNumbers[name],
 			}
-			if i+1 < len(preamble) {
-				next := preamble[i+1]
-				if cm := signalCodeRe.FindStringSubmatch(next); cm != nil {
-					info.SiCode = parseIntFlexible(cm[1])
-				}
-				if am := signalAddrRe.FindStringSubmatch(next); am != nil {
-					info.SiAddr = am[1]
-				}
-			}
-			return info
 		}
 	}
 	return nil
@@ -493,21 +436,6 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 				return strings.Trim(strings.TrimSpace(line), "[]")
 			}
 		}
-		// Top-level form has no bracketed line; its own signal-name line is
-		// the message, same as the generic preamble fallback below would
-		// return anyway. Made explicit here so the cgo marker (runtime's own
-		// note that Go was calling into C when the fault happened — see
-		// crashingThread) can be appended: for a cgo-using application, that
-		// is often the single most actionable fact in the whole report.
-		for _, line := range preamble {
-			if topLevelSignalRe.MatchString(line) {
-				msg := strings.TrimSpace(line)
-				if marker, ok := preambleHasCgoMarker(preamble); ok {
-					msg += " (" + marker + ")"
-				}
-				return msg
-			}
-		}
 	}
 	for i, line := range preamble {
 		if rest, ok := strings.CutPrefix(line, "fatal error:"); ok {
@@ -522,20 +450,6 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 		// frame rather than reaching errorMessage.
 		if strings.HasPrefix(line, "panic(") {
 			return panicValue(line)
-		}
-		// A native Windows exception has no sigInfo (parseSignal only
-		// recognises the Unix "[signal ...]"/topLevelSignalRe forms, never
-		// this runtime's own "Exception 0x..." header), so it never reaches
-		// the sigInfo != nil branch above and would otherwise fall through
-		// to the generic first-non-empty-line fallback below, losing the
-		// cgo/external-code context the same way the topLevelSignalRe branch
-		// preserves it for Unix.
-		if windowsExceptionRe.MatchString(line) {
-			msg := strings.TrimSpace(line)
-			if marker, ok := preambleHasCgoMarker(preamble); ok {
-				msg += " (" + marker + ")"
-			}
-			return msg
 		}
 	}
 	// Fall back to the first non-empty preamble line.
