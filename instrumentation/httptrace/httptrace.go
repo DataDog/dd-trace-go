@@ -223,20 +223,10 @@ func URLFromClientRequest(r *http.Request, queryString bool) string {
 // Use this for server-side integrations whose request type is not a *http.Request (e.g. fasthttp) and therefore
 // cannot call URLFromRequest directly.
 func ObfuscateQueryString(rawQuery string) string {
-	return obfuscateQueryStringForTag(rawQuery, false)
-}
-
-// ObfuscateClientQueryString is the client-side counterpart of ObfuscateQueryString: it consults
-// DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST[_CLIENT] instead of the server-side allowlist.
-func ObfuscateClientQueryString(rawQuery string) string {
-	return obfuscateQueryStringForTag(rawQuery, true)
-}
-
-func obfuscateQueryStringForTag(rawQuery string, isClient bool) string {
 	if !cfg.queryString || rawQuery == "" {
 		return ""
 	}
-	return obfuscateQueryString(rawQuery, isClient)
+	return obfuscateQueryString(rawQuery, false)
 }
 
 func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
@@ -272,8 +262,7 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 // obfuscateQueryString applies allowlist filtering or regexp-based obfuscation to rawQuery, in the priority
 // order used for the http.url span tag: an explicit allowlist (getQueryStringAllowlist) takes precedence over
 // the default obfuscator, which takes precedence over a custom DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP. It is
-// the single obfuscation code path shared by urlFromRequest and the exported ObfuscateQueryString /
-// ObfuscateClientQueryString.
+// the single obfuscation code path shared by urlFromRequest and the exported ObfuscateQueryString.
 func obfuscateQueryString(rawQuery string, isClient bool) string {
 	if allowlist := cfg.getQueryStringAllowlist(isClient); allowlist != nil {
 		// When an allowlist is configured, only keep the specified parameter keys.

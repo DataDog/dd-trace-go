@@ -616,12 +616,6 @@ func TestObfuscateQueryStringExported(t *testing.T) {
 		cfg.serverQueryStringAllowlist = map[string]struct{}{"p1": {}}
 		require.Equal(t, "p1=a", ObfuscateQueryString("p1=a&secret=abc"))
 	})
-	t.Run("client allowlist via ObfuscateClientQueryString", func(t *testing.T) {
-		cfg = oldCfg
-		cfg.queryString = true
-		cfg.clientQueryStringAllowlist = map[string]struct{}{"p1": {}}
-		require.Equal(t, "p1=a", ObfuscateClientQueryString("p1=a&secret=abc"))
-	})
 }
 
 func TestURLTagWithClientServerAllowlist(t *testing.T) {
