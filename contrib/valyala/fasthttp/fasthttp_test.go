@@ -7,6 +7,7 @@ package fasthttp
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -157,9 +158,9 @@ func TestHTTPURLQueryStringObfuscation(t *testing.T) {
 }
 
 func TestHTTPURLQueryStringDisabled(t *testing.T) {
+	t.Cleanup(instrhttptrace.ResetCfg)
 	t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED", "true")
 	instrhttptrace.ResetCfg()
-	t.Cleanup(instrhttptrace.ResetCfg)
 
 	addr := startServer(t)
 	assert := assert.New(t)
@@ -176,9 +177,9 @@ func TestHTTPURLQueryStringDisabled(t *testing.T) {
 }
 
 func TestHTTPURLQueryStringCustomRegexp(t *testing.T) {
+	t.Cleanup(instrhttptrace.ResetCfg)
 	t.Setenv("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP", `myparam=\w+`)
 	instrhttptrace.ResetCfg()
-	t.Cleanup(instrhttptrace.ResetCfg)
 
 	addr := startServer(t)
 	assert := assert.New(t)
@@ -198,9 +199,9 @@ func TestHTTPURLQueryStringCustomRegexp(t *testing.T) {
 }
 
 func TestHTTPURLQueryStringAllowlist(t *testing.T) {
+	t.Cleanup(instrhttptrace.ResetCfg)
 	t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "safe")
 	instrhttptrace.ResetCfg()
-	t.Cleanup(instrhttptrace.ResetCfg)
 
 	addr := startServer(t)
 	assert := assert.New(t)
@@ -217,6 +218,31 @@ func TestHTTPURLQueryStringAllowlist(t *testing.T) {
 	assert.Contains(url, "safe=1")
 	assert.NotContains(url, "hunter2")
 	assert.NotContains(url, "password")
+}
+
+// Test that the http.url span tag preserves the raw, as-received wire-form path
+// (no dot-segment collapsing, no %2F decoding) rather than a normalized one. A
+// regular net/http.Client would normalize a path like "/a/b/../c" before it ever
+// reaches the wire, so this dials the server directly and writes the request
+// line by hand to control the exact bytes sent.
+func TestHTTPURLPreservesRawPath(t *testing.T) {
+	addr := startServer(t)
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rawAddr := strings.TrimPrefix(addr, "http://")
+	conn, err := net.Dial("tcp", rawAddr)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	_, err = conn.Write([]byte("GET /a/b/../c HTTP/1.1\r\nHost: " + rawAddr + "\r\nConnection: close\r\n\r\n"))
+	require.NoError(t, err)
+	_, _ = io.ReadAll(conn) // drain the response so the span finishes before we inspect it
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(addr+"/a/b/../c", spans[0].Tag(ext.HTTPURL))
 }
 
 // Test that HTTP Status codes >= 500 are treated as error spans
