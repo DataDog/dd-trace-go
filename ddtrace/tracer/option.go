@@ -75,6 +75,7 @@ var contribIntegrations = map[string]struct {
 	"go.mongodb.org/mongo-driver":                   {"MongoDB", false},
 	"github.com/gocql/gocql":                        {"Cassandra", false},
 	"github.com/gofiber/fiber/v2":                   {"Fiber", false},
+	"github.com/go-kratos/kratos/v3":                {"Kratos v3", false},
 	"github.com/gomodule/redigo":                    {"Redigo", false},
 	"google.golang.org/api":                         {"Google API", false},
 	"google.golang.org/grpc":                        {"gRPC", false},

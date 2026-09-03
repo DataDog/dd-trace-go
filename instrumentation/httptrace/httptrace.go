@@ -77,20 +77,6 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
 	})
 
-	var inferredProxySpan *tracer.Span
-
-	if cfg.inferredProxyServicesEnabled {
-		inferredProxySpanCreated := false
-
-		if created, ok := r.Context().Value(inferredSpanCreatedCtxKey{}).(bool); ok {
-			inferredProxySpanCreated = created
-		}
-
-		if !inferredProxySpanCreated {
-			inferredProxySpan = startInferredSpanFromHeaders(r.Header)
-		}
-	}
-
 	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 	if extractErr == nil && parentCtx != nil {
 		items := make(map[string]string)
@@ -100,6 +86,7 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 		})
 		r = r.WithContext(baggage.SetAll(r.Context(), items))
 	}
+	inferredProxySpan, requestContext := StartInferredSpanFromRequest(r.Context(), r)
 
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
@@ -139,11 +126,6 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 		})
 	nopts = append(nopts, opts...)
 
-	requestContext := r.Context()
-	if inferredProxySpan != nil {
-		requestContext = context.WithValue(requestContext, inferredSpanCreatedCtxKey{}, true)
-	}
-
 	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
 	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
 		FinishRequestSpan(span, status, errorFn, opts...)
@@ -151,6 +133,24 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 			FinishRequestSpan(inferredProxySpan, status, errorFn, opts...)
 		}
 	}
+}
+
+// StartInferredSpanFromRequest starts an inferred proxy or Pub/Sub span when
+// configured request headers describe one. The returned context prevents
+// nested HTTP instrumentation from creating a duplicate inferred span. The
+// caller is responsible for finishing a non-nil span.
+func StartInferredSpanFromRequest(ctx context.Context, r *http.Request) (*tracer.Span, context.Context) {
+	if !cfg.inferredProxyServicesEnabled {
+		return nil, ctx
+	}
+	if created, _ := ctx.Value(inferredSpanCreatedCtxKey{}).(bool); created {
+		return nil, ctx
+	}
+	span := startInferredSpanFromHeaders(r.Header)
+	if span == nil {
+		return nil, ctx
+	}
+	return span, context.WithValue(ctx, inferredSpanCreatedCtxKey{}, true)
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
@@ -301,6 +301,36 @@ func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderT
 	return func(cfg *tracer.StartSpanConfig) {
 		for _, t := range tags {
 			cfg.Tags[t.key] = t.val
+		}
+	}
+}
+
+// ClientIPTagsFromRequest adds the standard HTTP client and network client IP
+// tags when client IP collection is enabled.
+func ClientIPTagsFromRequest(req *http.Request) tracer.StartSpanOption {
+	var tags map[string]string
+	if cfg.traceClientIP {
+		_, clientIP := clientip.Resolve(req.Header, true, req.RemoteAddr)
+		tags = clientip.TagsFor(req.RemoteAddr, clientIP)
+	}
+	return func(cfg *tracer.StartSpanConfig) {
+		for key, value := range tags {
+			tracer.Tag(key, value)(cfg)
+		}
+	}
+}
+
+// BaggageTags adds configured baggage items as span tags.
+func BaggageTags(items map[string]string) tracer.StartSpanOption {
+	tags := make(map[string]string)
+	for key, value := range items {
+		if cfg.tagBaggageKey(key) {
+			tags["baggage."+key] = value
+		}
+	}
+	return func(cfg *tracer.StartSpanConfig) {
+		for key, value := range tags {
+			tracer.Tag(key, value)(cfg)
 		}
 	}
 }
