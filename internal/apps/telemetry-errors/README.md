@@ -75,30 +75,62 @@ re-running.
 
 ### Tier 1 — real intake
 
-Same app, no dump mode, no local agent — the telemetry client falls back to the direct (agentless)
-intake when the agent proxy is unreachable and an API key is present:
+**Do not rely on "no local agent" being true.** The tracer's telemetry client tries an agent proxy
+*before* falling back to the direct (agentless) intake, and it will happily use whatever agent answers
+on the default port — including one you forgot was running, or one authenticated with a completely
+different API key than the one you intend to test with. On a Datadog engineer's own machine this is the
+common case, not the exception: a local agent for day-to-day development is often already running.
+Confirmed empirically: with an unrelated local agent reachable on the default port, every "agentless"
+send in this tier looked identical to success (2xx, non-zero bytes flushed, no error) while landing in
+whatever org that agent's own key belongs to — never in the org actually being verified. That failure
+mode produces no error anywhere in the chain; it has to be ruled out structurally, not detected.
+
+The robust approach is to run an **isolated, verified agent** rather than trust ambient agentlessness:
 
 ```sh
-export DD_TELEMETRY_HEARTBEAT_INTERVAL=2
 dd-auth -- bash -c '
-  go run ./telemetry-errors -http localhost:8080 &
-  APP_PID=$!
-  sleep 1
-  curl -s localhost:8080/decision-maker
-  sleep 3
-  kill $APP_PID
+  docker run -d --name dogfood-agent \
+    -e DD_API_KEY="$DD_API_KEY" -e DD_SITE=datadoghq.com \
+    -e DD_APM_NON_LOCAL_TRAFFIC=true -e DD_HOSTNAME=dogfood-agent \
+    -p 18126:8126 datadog/agent:latest
 '
+# wait for it to answer, e.g.: until curl -sf http://localhost:18126/info >/dev/null; do sleep 2; done
+
+# confirm the key it is actually forwarding with (must NOT match any pre-existing local agent's key):
+docker exec dogfood-agent agent status | grep -A2 "API Key ending"
+
+export DD_TELEMETRY_HEARTBEAT_INTERVAL=2
+export DD_TRACE_AGENT_URL=http://localhost:18126
+go run ./telemetry-errors -http localhost:8080 &
+APP_PID=$!
+sleep 1
+curl -s localhost:8080/decision-maker
+sleep 8
+kill $APP_PID
+
+docker rm -f dogfood-agent
 ```
+
+A non-default host port (`18126`, not `8126`) avoids colliding with anything already bound to the
+default port — with `network_mode: host` (as used elsewhere in this directory) that collision would
+either fail loudly (port already in use) or, worse, silently bind to whichever process won the race.
+The explicit `docker exec ... agent status` key check is the actual guard: if its suffix matches a key
+you didn't just mint, stop and investigate before trusting anything this tier reports.
 
 Datadog employees should prefer `dd-auth` over setting `DD_API_KEY` manually, exactly as recommended in
 [`internal/apps/README.md`](../README.md). Never pass `dd-auth`'s `--output` or `-v` flags in a
 scripted or logged context — both print live credentials (`-v`'s own help says "will print secrets!").
 The wrapper form above keeps the key confined to the child process's environment.
 
+If you skip the container and rely on the direct intake instead, first confirm nothing is listening on
+the default agent port at all (e.g. `lsof -iTCP:8126 -sTCP:LISTEN`) — otherwise this tier's "success"
+tells you nothing about the org you think you're testing against.
+
 `dd-auth`'s default target is Datadog's own production org, so this tier and tier 2 below read from the
 same place the tracer just wrote to — no separate staging round-trip needed. Confirm the intake accepted
 the payload by exit code / absence of a `WriterStatusCodeError` in the app's stderr; a non-2xx response
-surfaces there.
+surfaces there. Absence of an error is necessary but not sufficient — it does not by itself prove which
+org received the payload, per the above.
 
 ### Tier 2 — product landing
 
@@ -113,16 +145,15 @@ coarse buckets — many structurally different errors can collapse into a single
 grouping is fine-grained enough to be a useful assertion is language- and product-version-dependent;
 check empirically before relying on it, and treat it as a judgment call (see below), not a pass/fail gate.
 
-**A 2xx from the intake does not guarantee a searchable record.** Confirmed empirically against a real
-org: three separate reports from the same trigger, each independently confirmed accepted by the intake
-(tier 1 — a successful flush with a non-zero byte count and no transport error), never became findable
-by tier 2 within a 25-minute window — not by exact tag match, not by an unscoped full-text search on the
-literal message. That absence is itself evidence, not just an unlucky timing window: an unrelated,
-unscoped full-text search performed minutes later found an unrelated record from within that same
-window, ruling out plain indexing lag as the explanation. So tier 1 passing is **not sufficient** to
-conclude tier 2 will pass — run tier 2 for real before treating a `ReportError` adoption as confirmed
-end-to-end, and if it comes up empty after a generous wait, treat that as a genuine product-side finding
-to file (see "Known gaps" below), not a harness bug to retry past.
+**A tier-1 pass alone does not prove which org received the payload — run tier 2 for real.** Confirmed
+the hard way: several reports from the same trigger, each independently confirmed accepted by the
+intake (tier 1 — a successful flush with a non-zero byte count and no transport error), never became
+findable by tier 2 at all. The cause was not the product: it was silent local-agent interception (see
+"Do not rely on 'no local agent' being true" under Tier 1) — every one of those "accepted" sends had
+gone to a different org than the one being searched, with no error anywhere to reveal it. Once run
+through a verified, isolated agent, the identical payload became searchable within a couple of minutes.
+The general lesson stands independent of that specific cause: a 2xx and a non-zero byte count only
+prove the client-side send succeeded, never which org received it — always confirm tier 2 directly.
 
 ## Judged, not asserted (tier 2)
 
@@ -191,18 +222,19 @@ Adopted call sites with no trigger yet in this app (reported gaps, not silent pa
 
 ## Known gaps
 
-- **Intake acceptance vs. searchability** (see "A 2xx from the intake does not guarantee a searchable
-  record" above): a report can be confirmed accepted by tier 1 and still never surface at tier 2, with
-  no error returned to the sender either way. Root cause unconfirmed. One candidate explanation was
-  tested directly and ruled out: rebuilding with a released-looking version string (in place of a
-  development build's version) made no difference — same acceptance, still not searchable. Since every
-  comparison record found during scoping for this process happened to carry a released version string,
-  that correlation looked promising but did not hold up under a controlled test. Escalate to whoever
-  owns the telemetry intake/indexing pipeline rather than re-testing this specific theory again.
 - **Coarse error grouping** (see "Do not assert 'a new product-side issue appeared'" above): confirmed
   for at least one other language's telemetry error feed, grouping was coarse enough that a large volume
   of structurally different errors collapsed into a single grouped issue. Whether this affects Go's feed
   specifically was not established from this app alone.
+
+**Not a gap, but the pitfall that cost the most time building this process:** local-agent interception
+(see "Do not rely on 'no local agent' being true" under Tier 1). It presents identically to a genuine
+product-side "accepted but unsearchable" gap — 2xx, non-zero bytes flushed, no error anywhere — right up
+until you verify which agent actually handled the send. Two things ruled out simpler explanations first
+and are worth naming so they aren't re-litigated: search-indexing lag (ruled out — an unrelated query
+resolved within ~2 minutes in the same session) and the tracer's own build version (ruled out via a
+controlled rebuild with a released-looking version string). Neither was the cause. The actual cause was
+found only by inspecting the intercepting agent's own reported destination and key.
 
 ## Running this app
 
