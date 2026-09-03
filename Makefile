@@ -81,6 +81,10 @@ lint/errlog: ## Run SDK logging safety analyzers — constant messages, SafeErro
 	# older Go patch than the one setup-go puts on PATH, so the compiler and go tool versions
 	# mismatch. Version-agnostic: checks nothing, pins nothing.
 	env -u GOROOT go run ./internal/telemetry/log/analyzer/cmd ./...
+	# The root module's ./... pass above cannot cross Go workspace module
+	# boundaries, so it silently skips every module in go.work that isn't
+	# the root one (e.g. tools/v2fix, internal/orchestrion/_integration).
+	env -u GOROOT go run ./scripts/lint_errlog_workspaces.go
 
 .PHONY: format
 format: tools-install ## Format code
