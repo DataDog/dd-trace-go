@@ -229,6 +229,15 @@ func TestGlobalPromptManagerFollowsLatestConfig(t *testing.T) {
 	if stagingManager.env != "staging" || productionManager.env != "production" {
 		t.Fatalf("manager environments: staging=%q production=%q", stagingManager.env, productionManager.env)
 	}
+
+	productionConfig.SetEnv("canary", internalconfig.OriginCode, internalconfig.ProductTracer)
+	canaryManager := globalPromptManager()
+	if productionManager == canaryManager {
+		t.Fatal("manager was reused after current configuration changed")
+	}
+	if canaryManager.env != "canary" {
+		t.Fatalf("manager environment: got %q, want %q", canaryManager.env, "canary")
+	}
 }
 
 func TestPromptFeatureFlagAndTargeting(t *testing.T) {

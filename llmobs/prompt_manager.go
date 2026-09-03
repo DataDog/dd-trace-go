@@ -88,12 +88,13 @@ var globalPromptManagerState struct {
 
 var getGlobalPromptManager = func() *promptManager {
 	cfg := config.Get()
+	env := cfg.Env()
 	globalPromptManagerState.Lock()
 	defer globalPromptManagerState.Unlock()
-	if globalPromptManagerState.config != cfg {
+	if globalPromptManagerState.config != cfg || globalPromptManagerState.manager.env != env {
 		globalPromptManagerState.config = cfg
 		globalPromptManagerState.manager = newPromptManager(
-			cfg.APIKey(), cfg.AppKey(), cfg.Env(), "https://api."+cfg.Site(),
+			cfg.APIKey(), cfg.AppKey(), env, "https://api."+cfg.Site(),
 			cfg.LLMObsPromptsCacheTTL(), cfg.LLMObsPromptsFileCacheEnabled(), cfg.LLMObsPromptsCacheDir(),
 			cfg.LLMObsPromptsTimeout(), nil, nil, nil,
 		)
