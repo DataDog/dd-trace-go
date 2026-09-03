@@ -45,6 +45,16 @@ type promptManager struct {
 	refreshing                  map[promptCacheKey]struct{}
 }
 
+type promptManagerConfig struct {
+	apiKey, appKey, env, origin string
+	ttl, timeout                time.Duration
+	fileCacheEnabled            bool
+	cacheDir                    string
+	client                      *http.Client
+	now                         func() time.Time
+	evaluate                    func(context.Context, string, string, map[string]any) (any, error)
+}
+
 type promptRequest struct {
 	promptID     string
 	version      *int
@@ -93,11 +103,16 @@ var getGlobalPromptManager = func() *promptManager {
 	defer globalPromptManagerState.Unlock()
 	if globalPromptManagerState.config != cfg || globalPromptManagerState.manager.env != env {
 		globalPromptManagerState.config = cfg
-		globalPromptManagerState.manager = newPromptManager(
-			cfg.APIKey(), cfg.AppKey(), env, "https://api."+cfg.Site(),
-			cfg.LLMObsPromptsCacheTTL(), cfg.LLMObsPromptsFileCacheEnabled(), cfg.LLMObsPromptsCacheDir(),
-			cfg.LLMObsPromptsTimeout(), nil, nil, nil,
-		)
+		globalPromptManagerState.manager = newPromptManager(promptManagerConfig{
+			apiKey:           cfg.APIKey(),
+			appKey:           cfg.AppKey(),
+			env:              env,
+			origin:           "https://api." + cfg.Site(),
+			ttl:              cfg.LLMObsPromptsCacheTTL(),
+			fileCacheEnabled: cfg.LLMObsPromptsFileCacheEnabled(),
+			cacheDir:         cfg.LLMObsPromptsCacheDir(),
+			timeout:          cfg.LLMObsPromptsTimeout(),
+		})
 	}
 	return globalPromptManagerState.manager
 }
@@ -106,23 +121,23 @@ func globalPromptManager() *promptManager {
 	return getGlobalPromptManager()
 }
 
-func newPromptManager(apiKey, appKey, env, origin string, ttl time.Duration, fileCacheEnabled bool, cacheDir string, timeout time.Duration, client *http.Client, now func() time.Time, evaluate func(context.Context, string, string, map[string]any) (any, error)) *promptManager {
-	if now == nil {
-		now = time.Now
+func newPromptManager(cfg promptManagerConfig) *promptManager {
+	if cfg.now == nil {
+		cfg.now = time.Now
 	}
-	if client == nil {
-		client = internal.DefaultHTTPClient(timeout, true)
+	if cfg.client == nil {
+		cfg.client = internal.DefaultHTTPClient(cfg.timeout, true)
 	}
-	if evaluate == nil {
-		evaluate = func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
+	if cfg.evaluate == nil {
+		cfg.evaluate = func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
 			details, err := openfeature.NewDefaultClient().ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
 			return details.Value, err
 		}
 	}
 	return &promptManager{
-		apiKey: apiKey, appKey: appKey, env: env, origin: origin, timeout: timeout,
-		cacheEnabled: ttl > 0, cache: newPromptCache(ttl, now), fileCache: newPromptFileCache(fileCacheEnabled && ttl > 0, cacheDir, ttl, now),
-		httpClient: client, now: now, evaluate: evaluate, refreshing: make(map[promptCacheKey]struct{}),
+		apiKey: cfg.apiKey, appKey: cfg.appKey, env: cfg.env, origin: cfg.origin, timeout: cfg.timeout,
+		cacheEnabled: cfg.ttl > 0, cache: newPromptCache(cfg.ttl, cfg.now), fileCache: newPromptFileCache(cfg.fileCacheEnabled && cfg.ttl > 0, cfg.cacheDir, cfg.ttl, cfg.now),
+		httpClient: cfg.client, now: cfg.now, evaluate: cfg.evaluate, refreshing: make(map[promptCacheKey]struct{}),
 	}
 }
 

@@ -44,7 +44,10 @@ func promptHTTPResponse(request *http.Request, status int, body string) *http.Re
 }
 
 func testPromptManager(server *httptest.Server, env string, ttl time.Duration, now func() time.Time, evaluate func(context.Context, string, string, map[string]any) (any, error)) *promptManager {
-	return newPromptManager("api", "app", env, server.URL, ttl, false, "", time.Second, server.Client(), now, evaluate)
+	return newPromptManager(promptManagerConfig{
+		apiKey: "api", appKey: "app", env: env, origin: server.URL,
+		ttl: ttl, timeout: time.Second, client: server.Client(), now: now, evaluate: evaluate,
+	})
 }
 
 func TestPromptRoutingAndHTTP(t *testing.T) {
@@ -143,11 +146,15 @@ func TestGetPromptOptions(t *testing.T) {
 		requests <- requestResult{path: request.URL.EscapedPath(), body: body, err: err}
 		return promptHTTPResponse(request, http.StatusInternalServerError, "boom"), nil
 	})}
-	manager = newPromptManager("api", "app", "staging", "https://api.datadoghq.com", 0, false, "", time.Second, client, nil, func(_ context.Context, key, targetingKey string, got map[string]any) (any, error) {
-		evaluatedKey, evaluatedTarget, evaluatedAttributes = key, targetingKey, got
-		attributes["tier"] = "mutated"
-		messages[0].Content = "mutated"
-		return nil, errors.New("missing")
+	manager = newPromptManager(promptManagerConfig{
+		apiKey: "api", appKey: "app", env: "staging", origin: "https://api.datadoghq.com",
+		timeout: time.Second, client: client,
+		evaluate: func(_ context.Context, key, targetingKey string, got map[string]any) (any, error) {
+			evaluatedKey, evaluatedTarget, evaluatedAttributes = key, targetingKey, got
+			attributes["tier"] = "mutated"
+			messages[0].Content = "mutated"
+			return nil, errors.New("missing")
+		},
 	})
 	prompt, err := GetPrompt(context.Background(), "greeting",
 		WithPromptTargetingKey("user-1"),
@@ -285,7 +292,10 @@ func TestPromptUsesRegisteredDefaultProviderForAB(t *testing.T) {
 		httpCalls.Add(1)
 		return nil, errors.New("unexpected HTTP request")
 	})}
-	manager := newPromptManager("api", "app", "staging", "https://api.datadoghq.com", time.Minute, false, "", time.Second, client, nil, nil)
+	manager := newPromptManager(promptManagerConfig{
+		apiKey: "api", appKey: "app", env: "staging", origin: "https://api.datadoghq.com",
+		ttl: time.Minute, timeout: time.Second, client: client,
+	})
 	for _, target := range []string{"alice", "bob"} {
 		prompt, err := manager.get(context.Background(), "greeting", getPromptConfig{targetingKey: target, attributes: map[string]any{"targetingKey": "attribute"}})
 		if err != nil || prompt.Version() != target || prompt.Template().Text != "__llmobs__.prompt.greeting" {
@@ -529,7 +539,10 @@ func TestPromptColdFetchCoalescingAndCancellation(t *testing.T) {
 			<-release
 			return promptHTTPResponse(request, http.StatusOK, promptResponse("p", "1", "x")), nil
 		})}
-		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Minute, false, "", time.Second, client, nil, nil)
+		manager := newPromptManager(promptManagerConfig{
+			apiKey: "api", appKey: "app", origin: "https://api.datadoghq.com",
+			ttl: time.Minute, timeout: time.Second, client: client,
+		})
 		firstResult, canceledResult := make(chan error, 1), make(chan error, 1)
 		go func() { _, err := manager.get(context.Background(), "p", getPromptConfig{}); firstResult <- err }()
 		<-started
@@ -562,7 +575,10 @@ func TestPromptColdFetchKeepsFallbacksCallerSpecific(t *testing.T) {
 			<-release
 			return promptHTTPResponse(request, http.StatusInternalServerError, "boom"), nil
 		})}
-		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Minute, false, "", time.Second, client, nil, nil)
+		manager := newPromptManager(promptManagerConfig{
+			apiKey: "api", appKey: "app", origin: "https://api.datadoghq.com",
+			ttl: time.Minute, timeout: time.Second, client: client,
+		})
 		results := make(chan string, 2)
 		call := func(text string) {
 			prompt, err := manager.get(context.Background(), "p", getPromptConfig{fallback: &PromptFallback{Template: PromptTemplate{Text: text}}})
@@ -598,7 +614,10 @@ func TestPromptStaleRefreshEviction(t *testing.T) {
 				return promptHTTPResponse(request, http.StatusOK, promptResponse("p", "2", "new")), nil
 			}
 		})}
-		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Second, false, "", time.Second, client, func() time.Time { return now }, nil)
+		manager := newPromptManager(promptManagerConfig{
+			apiKey: "api", appKey: "app", origin: "https://api.datadoghq.com",
+			ttl: time.Second, timeout: time.Second, client: client, now: func() time.Time { return now },
+		})
 		first, err := manager.get(context.Background(), "p", getPromptConfig{})
 		if err != nil || first.Version() != "1" {
 			t.Fatalf("first=%#v err=%v", first, err)
@@ -633,7 +652,10 @@ func TestPromptStaleRefreshUpdatesAndCoalesces(t *testing.T) {
 				return nil, errors.New("unexpected duplicate refresh")
 			}
 		})}
-		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Second, false, "", time.Second, client, func() time.Time { return now }, nil)
+		manager := newPromptManager(promptManagerConfig{
+			apiKey: "api", appKey: "app", origin: "https://api.datadoghq.com",
+			ttl: time.Second, timeout: time.Second, client: client, now: func() time.Time { return now },
+		})
 		if _, err := manager.get(context.Background(), "p", getPromptConfig{}); err != nil {
 			t.Fatal(err)
 		}
@@ -666,7 +688,10 @@ func TestPromptStaleRefreshFailurePreservesCache(t *testing.T) {
 			}
 			return promptHTTPResponse(request, http.StatusInternalServerError, "boom"), nil
 		})}
-		manager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Second, false, "", time.Second, client, func() time.Time { return now }, nil)
+		manager := newPromptManager(promptManagerConfig{
+			apiKey: "api", appKey: "app", origin: "https://api.datadoghq.com",
+			ttl: time.Second, timeout: time.Second, client: client, now: func() time.Time { return now },
+		})
 		if _, err := manager.get(context.Background(), "p", getPromptConfig{}); err != nil {
 			t.Fatal(err)
 		}
@@ -696,7 +721,9 @@ func TestPromptTimeoutAndCallerCancellationTelemetry(t *testing.T) {
 		<-request.Context().Done()
 		return nil, request.Context().Err()
 	})}
-	manager := newPromptManager("api", "", "", "https://api.datadoghq.com", 0, false, "", time.Millisecond, client, nil, nil)
+	manager := newPromptManager(promptManagerConfig{
+		apiKey: "api", origin: "https://api.datadoghq.com", timeout: time.Millisecond, client: client,
+	})
 	_, err := manager.get(context.Background(), "p", getPromptConfig{})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("timeout %v", err)
@@ -729,7 +756,11 @@ func TestPromptResolveIsNotPersisted(t *testing.T) {
 	dir := t.TempDir()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, promptResponse("p", "1", "x")) }))
 	defer server.Close()
-	manager := newPromptManager("api", "app", "staging", server.URL, time.Minute, true, dir, time.Second, server.Client(), nil, func(context.Context, string, string, map[string]any) (any, error) { return nil, errors.New("missing") })
+	manager := newPromptManager(promptManagerConfig{
+		apiKey: "api", appKey: "app", env: "staging", origin: server.URL,
+		ttl: time.Minute, fileCacheEnabled: true, cacheDir: dir, timeout: time.Second, client: server.Client(),
+		evaluate: func(context.Context, string, string, map[string]any) (any, error) { return nil, errors.New("missing") },
+	})
 	if _, err := manager.get(context.Background(), "p", getPromptConfig{}); err != nil {
 		t.Fatal(err)
 	}
@@ -750,7 +781,10 @@ func TestPromptResolveIsNotPersisted(t *testing.T) {
 		httpCalls.Add(1)
 		return nil, errors.New("unexpected HTTP request")
 	})}
-	warmManager := newPromptManager("api", "app", "", "https://api.datadoghq.com", time.Minute, true, dir, time.Second, warmClient, nil, nil)
+	warmManager := newPromptManager(promptManagerConfig{
+		apiKey: "api", appKey: "app", origin: "https://api.datadoghq.com",
+		ttl: time.Minute, fileCacheEnabled: true, cacheDir: dir, timeout: time.Second, client: warmClient,
+	})
 	prompt, err := warmManager.get(context.Background(), "p", getPromptConfig{})
 	if err != nil || prompt.Source() != PromptSourceCache || httpCalls.Load() != 0 {
 		t.Fatalf("warm prompt=%#v err=%v HTTP calls=%d", prompt, err, httpCalls.Load())
