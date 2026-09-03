@@ -193,9 +193,12 @@ Adopted call sites with no trigger yet in this app (reported gaps, not silent pa
 
 - **Intake acceptance vs. searchability** (see "A 2xx from the intake does not guarantee a searchable
   record" above): a report can be confirmed accepted by tier 1 and still never surface at tier 2, with
-  no error returned to the sender either way. Root cause unconfirmed — worth re-testing against a
-  released tracer build rather than a development version, since every comparison record found during
-  scoping for this process carried a released version string.
+  no error returned to the sender either way. Root cause unconfirmed. One candidate explanation was
+  tested directly and ruled out: rebuilding with a released-looking version string (in place of a
+  development build's version) made no difference — same acceptance, still not searchable. Since every
+  comparison record found during scoping for this process happened to carry a released version string,
+  that correlation looked promising but did not hold up under a controlled test. Escalate to whoever
+  owns the telemetry intake/indexing pipeline rather than re-testing this specific theory again.
 - **Coarse error grouping** (see "Do not assert 'a new product-side issue appeared'" above): confirmed
   for at least one other language's telemetry error feed, grouping was coarse enough that a large volume
   of structurally different errors collapsed into a single grouped issue. Whether this affects Go's feed
