@@ -69,7 +69,6 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CIVISIBILITY_USE_NOOP_TRACER":                                 {},
 	"DD_CODE_COVERAGE_FLAGS":                                          {},
 	"DD_CRASHTRACKING_ENABLED":                                        {},
-	"DD_CRASHTRACKING_FOREIGN_THREAD_SIGNALS_ENABLED":                 {},
 	"DD_CUSTOM_PARENT_ID":                                             {},
 	"DD_CUSTOM_TRACE_ID":                                              {},
 	"DD_DATA_STREAMS_ENABLED":                                         {},

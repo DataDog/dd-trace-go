@@ -64,24 +64,18 @@ func start(opts ...Option) error {
 		return nil
 	}
 
-	if cfg.foreignThreadSignals {
-		startForeignThreadSignals(cfg)
-	}
-
 	return spawnMonitor(cfg)
 }
 
 func defaultConfig() *config {
 	enabled, _, _ := stableconfig.Bool("DD_CRASHTRACKING_ENABLED", true)
-	foreignThreadSignals, _, _ := stableconfig.Bool("DD_CRASHTRACKING_FOREIGN_THREAD_SIGNALS_ENABLED", false)
 	return &config{
-		enabled:              enabled,
-		service:              resolveService(),
-		env:                  env.Get("DD_ENV"),
-		version:              env.Get("DD_VERSION"),
-		site:                 env.Get("DD_SITE"),
-		apiKey:               env.Get("DD_API_KEY"),
-		foreignThreadSignals: foreignThreadSignals,
+		enabled: enabled,
+		service: resolveService(),
+		env:     env.Get("DD_ENV"),
+		version: env.Get("DD_VERSION"),
+		site:    env.Get("DD_SITE"),
+		apiKey:  env.Get("DD_API_KEY"),
 	}
 }
 
