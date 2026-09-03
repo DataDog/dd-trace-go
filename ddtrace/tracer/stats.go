@@ -67,6 +67,9 @@ type concentrator struct {
 	cfg          *config               // tracer startup configuration
 	statsdClient internal.StatsdClient // statsd client for sending metrics.
 
+	// otelSemantics is captured at construction to avoid reading locked config for every span.
+	otelSemantics bool
+
 	// sender determines where flushed stats go (the Datadog Agent or an OTLP
 	// metrics endpoint) and the destination-specific policy that comes with it.
 	sender statsSender
@@ -198,6 +201,7 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		aggregationKey:   aggKey,
 		spanConcentrator: spanConcentrator,
 		statsdClient:     statsdClient,
+		otelSemantics:    c.internalConfig.OTelSemanticsEnabled(),
 		sender:           &ddStatsSender{cfg: c},
 	}
 }
@@ -271,7 +275,13 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	} else {
 		c.spanConcentrator.SetObfuscationEnabled(false, false)
 	}
-	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
+	httpMethod := ""
+	if c.otelSemantics {
+		httpMethod, _ = s.meta.Get(ext.HTTPRequestMethod)
+	}
+	if httpMethod == "" {
+		httpMethod, _ = s.meta.Get(ext.HTTPMethod)
+	}
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
 	if httpEndpoint == "" && c.sender.httpRouteFallback() {
 		// http.endpoint (net/http, mux, httptreemux, httprouter) and http.route
