@@ -503,6 +503,43 @@ func TestExtractNoIdentityNoPropagatingTags(t *testing.T) {
 	assert.Nil(t, ctx)
 }
 
+// TestExtractCarrierOnlyDoesNotShadowIdentity covers an intermediary that
+// discards the x-datadog-* identity headers while forwarding x-datadog-tags
+// and a W3C traceparent. The Datadog extractor runs first and yields only a
+// carrier-only context, but the W3C trace must still be continued: the
+// carrier-only context contributes its propagating tags, not its (absent)
+// identity.
+func TestExtractCarrierOnlyDoesNotShadowIdentity(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog,tracecontext,baggage")
+	src := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+		tracestateHeader:  "dd=s:2;t.dm:-4",
+		traceTagsHeader:   keyPropagatedLLMObsParentID + "=1234," + keyDecisionMaker + "=-1",
+	})
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+	assert.False(t, ctx.baggageOnly, "identity-bearing context must win over carrier-only")
+	assert.Equal(t, "12345678901234567890123456789012", ctx.TraceID())
+	assert.Equal(t, uint64(0x1234567890123456), ctx.SpanID())
+	assert.Empty(t, ctx.spanLinks, "the W3C context must be continued, not linked as terminated")
+
+	// Tags that arrived without identity are merged in, but the identity-bearing
+	// context's own tags win on conflict (_dd.p.dm here comes from tracestate).
+	assert.Equal(t, "1234", ctx.trace.propagatingTag(keyPropagatedLLMObsParentID))
+	assert.Equal(t, "-4", ctx.trace.propagatingTag(keyDecisionMaker))
+
+	child := tracer.StartSpan("web.request", ChildOf(ctx))
+	defer child.Finish()
+	assert.Equal(t, "12345678901234567890123456789012", child.Context().TraceID())
+	assert.Equal(t, uint64(0x1234567890123456), child.parentID)
+	assert.Equal(t, "1234", child.Context().trace.propagatingTag(keyPropagatedLLMObsParentID))
+}
+
 func Test257CharacterDDTracestateLengh(t *testing.T) {
 	t.Setenv(envPropagationStyle, "tracecontext")
 

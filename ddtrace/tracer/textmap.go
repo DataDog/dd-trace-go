@@ -418,6 +418,14 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 
 	var ctx *SpanContext
 	var producer Propagator // propagator that produced ctx
+	// A carrier-only context — propagating tags that arrived without trace
+	// identity, see propagator.extractTextMap — must not end the search: a
+	// later extractor may still supply real identity, and treating the
+	// carrier-only context as the incoming one would sever that trace. Hold it
+	// aside and either promote it (nothing else extracted) or merge its tags
+	// into the identity-bearing context below.
+	var carrierOnly *SpanContext
+	var carrierOnlyProducer Propagator
 	var links []SpanLink
 
 	for _, v := range p.extractors {
@@ -438,6 +446,12 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 				return nil, nil, err
 			}
 			if extractedCtx != nil {
+				if extractedCtx.baggageOnly { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+					if carrierOnly == nil {
+						carrierOnly, carrierOnlyProducer = extractedCtx, v
+					}
+					continue // no identity here; keep looking
+				}
 				ctx, producer = extractedCtx, v
 				if p.onlyExtractFirst {
 					break
@@ -477,16 +491,28 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 
 	if ctx == nil {
-		if len(pendingBaggage) > 0 {
+		if carrierOnly != nil {
+			// No extractor supplied identity, so the carrier-only context is
+			// the incoming one: the new span becomes a genuine root carrying
+			// the propagating tags that survived.
+			ctx, producer = carrierOnly, carrierOnlyProducer
+			carrierOnly = nil
+		} else if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
 				baggage:     pendingBaggage, // +checklocksignore - Initialization time, not shared yet.
 				baggageOnly: true,           // +checklocksignore - Initialization time, not shared yet.
 			}
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil, nil
+		} else {
+			// 0 successful extractions
+			return nil, nil, ErrSpanContextNotFound
 		}
-		// 0 successful extractions
-		return nil, nil, ErrSpanContextNotFound
+	}
+	if carrierOnly != nil {
+		// Identity came from another propagator; keep the tags that arrived
+		// without it so no propagating-tag consumer loses lineage.
+		mergeCarrierOnlyTags(ctx, carrierOnly)
 	}
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
@@ -507,6 +533,31 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		log.Debug("Extracted span context: %s", ctx.safeDebugString())
 	}
 	return ctx, producer, nil
+}
+
+// mergeCarrierOnlyTags copies propagating tags from a carrier-only context
+// (tags that arrived without trace identity) onto the context that did supply
+// identity. Keys already present win: the identity-bearing context describes
+// the trace actually being continued, so it must not be overwritten by a
+// carrier whose identity we discarded.
+// +checklocksignore - Initialization time, neither context is shared yet.
+func mergeCarrierOnlyTags(ctx, carrierOnly *SpanContext) {
+	src := carrierOnly.trace
+	if src == nil {
+		return
+	}
+	tags := src.loadPropagatingTags()
+	if len(tags) == 0 {
+		return
+	}
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
+	for k, v := range tags {
+		if !ctx.trace.hasPropagatingTag(k) {
+			ctx.trace.setPropagatingTagUnsafe(k, v)
+		}
+	}
 }
 
 // cutPrefixFold reports whether s starts with prefix, ignoring case, and if so
