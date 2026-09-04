@@ -181,15 +181,25 @@ func spawnMonitor(cfg *config) error {
 		return fmt.Errorf("crashtracker: stdin pipe is not *os.File (type %T)", pipe)
 	}
 
-	if err := debug.SetCrashOutput(pipeFile, debug.CrashOptions{}); err != nil {
-		_ = pipeFile.Close()
-		return fmt.Errorf("crashtracker: set crash output: %w", err)
-	}
-
+	// Start the monitor before registering the crash output fd, not after: the
+	// read end only becomes a live, open fd once the child process exists, and
+	// SetCrashOutput must never be the registered destination for a write with
+	// no possible reader. A dump larger than the kernel pipe buffer would
+	// otherwise make the runtime's crash writer block on a reader that may
+	// never come — worse than the pre-crashtracker behavior of dying outright.
+	// Starting first closes that window: once cmd.Start returns, the read end
+	// is open in the child regardless of whether its own ReadAll call has run
+	// yet, so a write of any size can proceed.
 	if err := cmd.Start(); err != nil {
-		_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
 		_ = pipeFile.Close()
 		return fmt.Errorf("crashtracker: start monitor process: %w", err)
+	}
+
+	if err := debug.SetCrashOutput(pipeFile, debug.CrashOptions{}); err != nil {
+		_ = pipeFile.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait() // reap: the child is already started, so Kill alone would leave a zombie
+		return fmt.Errorf("crashtracker: set crash output: %w", err)
 	}
 
 	// SetCrashOutput duplicated the fd internally, so this write end can be
