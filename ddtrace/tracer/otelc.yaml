@@ -82,12 +82,10 @@ gls_goexit1_reset:
 # The tracer source stays GLS-agnostic, so a plain build pays nothing. These rules
 # weave the push, the read fallback, the pop, and the liveness cell.
 #
-# RECEIVER COUPLING: inject_code resolves parameters through the function
-# template variables, so the rules below name arguments positionally the way
-# orchestrion's `.Function.Argument` does. There is no equivalent for the
-# receiver: `FuncArgument` skips it and otelc exposes no `FuncReceiver`, so
-# span_gls_finish and span_gls_clear still spell it literally as `s` and break if
-# the receiver is renamed. gls_otelc_identifiers_test.go pins those two.
+# The rules below never spell a tracer identifier literally. Parameters resolve
+# through `.FuncArgument`, positionally the way orchestrion's `.Function.Argument`
+# does, and receivers through `.Receiver`, so a rename on either side keeps
+# working.
 
 span_gls_fields:
   target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
@@ -143,8 +141,9 @@ span_gls_finish:
   do:
     - inject_code:
         raw: |
-          if s != nil {
-            orchestrion.GLSDeactivate(&s.__dd_glsDone, &s.__dd_glsPop)
+          {{- $s := .Receiver -}}
+          if {{ $s }} != nil {
+            orchestrion.GLSDeactivate(&{{ $s }}.__dd_glsDone, &{{ $s }}.__dd_glsPop)
           }
   imports:
     orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
@@ -157,7 +156,9 @@ span_gls_clear:
     recv: "*Span"
   do:
     - inject_code:
-        raw: "orchestrion.GLSReset(&s.__dd_glsDone, &s.__dd_glsPop)"
+        raw: |
+          {{- $s := .Receiver -}}
+          orchestrion.GLSReset(&{{ $s }}.__dd_glsDone, &{{ $s }}.__dd_glsPop)
   imports:
     orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
 
@@ -178,8 +179,8 @@ span_gls_clear:
 # it applies to the whole target package, which under `otelc go test` includes the
 # generated test-main. That both fails the build (otelc emits an empty `package`
 # clause there) and would start a second tracer underneath the integration
-# harness. `where: file: {is_test: false}` is not honored for add_file. Upstream
-# issues; revisit when fixed.
+# harness. `where: file: {is_test: false}` is not honored for add_file either, so
+# there is no way to scope the rule to non-test builds. Revisit once otelc can.
 #
 # `target: main` plus `where.func` does not match a test-main compile unit, so the
 # rule below never fires under `otelc go test`.
