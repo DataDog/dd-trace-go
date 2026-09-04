@@ -15,8 +15,11 @@ import (
 )
 
 // nolintPattern matches a //nolint or //nolint:linter1,linter2 comment,
-// mirroring golangci-lint's own nolint directive syntax.
-var nolintPattern = regexp.MustCompile(`^//\s*nolint(?::\s*([\w, -]+))?`)
+// mirroring golangci-lint's own nolint directive syntax. The \b word
+// boundary after "nolint" keeps ordinary comments whose first word merely
+// starts with the prefix — //nolintended behavior, // nolintentionally left
+// unsafe — from parsing as a bare, suppress-everything directive.
+var nolintPattern = regexp.MustCompile(`^//\s*nolint\b(?::\s*([\w, -]+))?`)
 
 // nolintSuppressed reports whether pos is covered by a //nolint comment that
 // applies to one of names (case-insensitive), or a bare //nolint with no

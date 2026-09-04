@@ -35,3 +35,14 @@ func trailingNolintOnUnrelatedPreviousLineDoesNotCarryOver(v any) {
 	other := v //nolint:gocritic // this exception belongs to this line, not the next one
 	internallog.Error("value: %v", other) // want "exposes uncontrolled data"
 }
+
+func nolintPrefixedWordIsNotADirective(v any) {
+	//nolintended behavior: an ordinary comment whose first word merely
+	// starts with "nolint" must not parse as a bare suppress-everything
+	// directive.
+	internallog.Error("value: %v", v) // want "exposes uncontrolled data"
+}
+
+func nolintPrefixedWordTrailingIsNotADirective(v any) {
+	internallog.Error("value: %v", v) // nolintentionally left unsafe // want "exposes uncontrolled data"
+}
