@@ -105,11 +105,21 @@ func main() {
 		// packages of its own (e.g. its code all lives in a nested,
 		// separately-mod'd subdirectory) — that's not a lint failure, just
 		// nothing to check here, so skip vet entirely rather than let that
-		// exit code masquerade as a real diagnostic below.
+		// exit code masquerade as a real diagnostic below. But a `go list`
+		// failure (a missing dependency, a malformed package) is a real
+		// problem with the module, not an empty one — treating it the same
+		// as "nothing to check" would let a broken module in this tool's own
+		// scope pass silently instead of failing the sweep.
 		list := exec.Command("go", "list", "./...")
 		list.Dir = dir
+		list.Stderr = os.Stderr
 		out, err := list.Output()
-		if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		if err != nil {
+			fmt.Printf("== %s: go list failed ==\n", use.Path)
+			failed = true
+			continue
+		}
+		if len(strings.TrimSpace(string(out))) == 0 {
 			continue
 		}
 
