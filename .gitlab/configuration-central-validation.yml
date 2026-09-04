@@ -2,7 +2,7 @@
 # This URL is available in the dd-gitlab/publish-content-addresable-templates job whenever
 # a change is made on the one-pipeline template.
 variables:
-  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/f14ac28614630d12bcfe6cba4fd8d72dce142c62ff0b053ba7c323622104ebd7/scripts/config-inversion/
+  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/1.4.0/scripts/config-inversion/
 
 .download-scripts-from-template: &download-scripts-from-template
   - mkdir -p scripts
@@ -75,6 +75,7 @@ variables:
       dotenv: origin.env
 
 # Job 2: runs validation + lifecycle tracking. Runs on the packaging image (has aws + python).
+# Scripts are baked into the image at /scripts/config-inversion/ — no download needed.
 # Consumes the REGISTRY_* origin data from Job 1 via the dotenv artifact.
 .validate_supported_configurations_v2_local_file_with_track:
   allow_failure: false
@@ -85,14 +86,12 @@ variables:
     LANGUAGE_NAME: ""
     MULTIPLE_RELEASE_LINES: "false"
   before_script:
-    - *download-scripts-from-template
     # TODO: remove once config-inversion-local-validation-with-track.py is merged into libdatadog-build
-    # and added to the download loop in *download-scripts-from-template above.
-    - cp .gitlab/config-inversion-local-validation-with-track.py scripts/
-    - chmod +x scripts/config-inversion-local-validation-with-track.py
+    - cp .gitlab/config-inversion-local-validation-with-track.py /scripts/config-inversion/
+    - chmod +x /scripts/config-inversion/config-inversion-local-validation-with-track.py
     - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
   script:
-    - scripts/config-inversion-local-validation-with-track.py
+    - /scripts/config-inversion/config-inversion-local-validation-with-track.py
 
 .update_central_configurations_version_range_v2:
   allow_failure: false
