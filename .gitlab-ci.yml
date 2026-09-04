@@ -40,6 +40,18 @@ validate_supported_configurations_v2_local_file:
     LOCAL_JSON_PATH: internal/env/supported_configurations.json
     BACKFILLED: true
 
+# Draft: replaces validate_supported_configurations_v2_local_file once the track endpoint is ready.
+# Switch: delete the job above and rename this one to validate_supported_configurations_v2_local_file.
+validate_supported_configurations_v2_local_file_with_track:
+  stage: config-validation
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  extends: .validate_supported_configurations_v2_local_file_with_track
+  variables:
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+    LANGUAGE_NAME: "golang"
+    DDOCTOSTS_SCOPE: "DataDog/dd-trace-go"
+    DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
+
 update_central_configurations_version_range_v2:
   stage: config-validation
   image: registry.ddbuild.io/ci/libdatadog-build/packaging:100425777

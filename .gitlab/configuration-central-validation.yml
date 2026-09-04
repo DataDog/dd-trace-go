@@ -25,6 +25,45 @@ variables:
   script:
     - scripts/config-inversion-local-validation.py
 
+# Draft: updated template that adds lifecycle origin tracking via POST /validate/v2/track.
+# Requires:
+#   - dd-octo-sts-ci-base image (has dd-octo-sts CLI baked in)
+#   - DDOCTOSTS_SCOPE and DDOCTOSTS_POLICY set by the extending job
+#   - FP_API_KEY stored in SSM as ci.$CI_PROJECT_NAME.FP_API_KEY
+#   - The updated config-inversion-local-validation.py deployed in libdatadog-build
+# Draft: updated template that adds lifecycle origin tracking via POST /validate/v2/track.
+# Requires:
+#   - dd-octo-sts-ci-base image (has dd-octo-sts CLI baked in)
+#   - DDOCTOSTS_SCOPE and DDOCTOSTS_POLICY set by the extending job
+#   - FP_API_KEY stored in SSM as ci.$CI_PROJECT_NAME.FP_API_KEY
+#   - The updated config-inversion-local-validation.py deployed in libdatadog-build
+.validate_supported_configurations_v2_local_file_with_track:
+  image: registry.ddbuild.io/images/dd-octo-sts-ci-base:2025.06-1
+  allow_failure: false
+  rules:
+    - when: on_success
+  id_tokens:
+    DDOCTOSTS_ID_TOKEN:
+      aud: dd-octo-sts
+  variables:
+    LOCAL_JSON_PATH: ""
+    LANGUAGE_NAME: ""
+    MULTIPLE_RELEASE_LINES: "false"
+    # Set in the extending job:
+    # DDOCTOSTS_SCOPE: "DataDog/dd-trace-go"
+    # DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
+  before_script:
+    - *download-scripts-from-template
+    # TODO: remove once config-inversion-local-validation-with-track.py is merged into libdatadog-build
+    # and added to the download loop in *download-scripts-from-template above.
+    - cp .gitlab/config-inversion-local-validation-with-track.py scripts/
+    - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
+    - export GH_TOKEN=$(dd-octo-sts token --scope "$DDOCTOSTS_SCOPE" --policy "$DDOCTOSTS_POLICY")
+  script:
+    - scripts/config-inversion-local-validation-with-track.py
+  after_script:
+    - dd-octo-sts revoke -t "$GH_TOKEN" || true
+
 .update_central_configurations_version_range_v2:
   allow_failure: false
   rules:
