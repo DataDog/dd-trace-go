@@ -344,6 +344,40 @@ func TestErrorTypeWindowsException(t *testing.T) {
 	}
 }
 
+func TestErrorMessageWindowsExceptionCgoMarker(t *testing.T) {
+	// Exact shape from runtime/signal_windows.go's winthrow: the "Exception
+	// 0x..." header, then "PC=...", then (only when the fault happened while
+	// calling into C, per winthrow's g0.m.incgo check) this marker line.
+	// Without this branch in errorMessage, a Windows exception never reaches
+	// the sigInfo != nil path (parseSignal doesn't recognise this header), so
+	// it would fall through to the generic first-non-empty-line fallback and
+	// silently drop the fact that Go was calling into C when it faulted.
+	preamble := []string{
+		"Exception 0xc0000005 0x0 0x0 0x7ff6a2345678",
+		"PC=0x7ff6a2345678",
+		"signal arrived during external code execution",
+	}
+	got := errorMessage(preamble, nil)
+	want := "Exception 0xc0000005 0x0 0x0 0x7ff6a2345678 (signal arrived during external code execution)"
+	if got != want {
+		t.Errorf("errorMessage() = %q, want %q", got, want)
+	}
+}
+
+func TestErrorMessageWindowsExceptionNoCgoMarker(t *testing.T) {
+	// An ordinary Windows fault, not inside a cgo call: no marker line, so
+	// the message is just the header, unannotated.
+	preamble := []string{
+		"Exception 0xc0000005 0x0 0x0 0x7ff6a2345678",
+		"PC=0x7ff6a2345678",
+	}
+	got := errorMessage(preamble, nil)
+	want := "Exception 0xc0000005 0x0 0x0 0x7ff6a2345678"
+	if got != want {
+		t.Errorf("errorMessage() = %q, want %q", got, want)
+	}
+}
+
 func TestCapThreadsKeepsCrashedGoroutineWhenTruncating(t *testing.T) {
 	threads := make([]Thread, maxReportThreads*2)
 	// Mark a goroutine well past the cap as the crashed one, so retaining it
@@ -465,6 +499,77 @@ func TestParseCrashDumpSignalDetails(t *testing.T) {
 	}
 	if r.SigInfo.SiAddr != "0x0" {
 		t.Errorf("SigInfo.SiAddr = %q, want %q", r.SigInfo.SiAddr, "0x0")
+	}
+}
+
+// TestParseCrashDumpCgoFault covers a fault that happened while Go was
+// calling into C via cgo. The fixture is a real dump (trimmed of a few
+// idle background goroutines), captured by actually crashing a cgo program
+// under runtime/debug.SetCrashOutput, not hand-written. This dump shape
+// differs from an ordinary Go-code SIGSEGV in three ways this test pins:
+// the fault detail (PC=.../sigcode=.../addr=...) is on the line after the
+// signal name rather than inline, the crashing goroutine's state is
+// "syscall" rather than "running" (runtime/signal_unix.go's fatalsignal
+// switches the reported goroutine to mp.curg, the Go code that entered the
+// C call, whose state cgo tracks like a blocking syscall), and the runtime
+// adds its own "signal arrived during cgo execution" line.
+func TestParseCrashDumpCgoFault(t *testing.T) {
+	dump := readFixture(t, "sigsegv_cgo.txt")
+	r := parseCrashDump(dump)
+
+	if r.Error.Type != "SIGSEGV" {
+		t.Errorf("Error.Type = %q, want %q", r.Error.Type, "SIGSEGV")
+	}
+	if !strings.Contains(r.Error.Message, cgoExecutionMarker) {
+		t.Errorf("Error.Message = %q, want it to contain %q", r.Error.Message, cgoExecutionMarker)
+	}
+	if r.Error.ThreadName != "goroutine 1" {
+		t.Errorf("Error.ThreadName = %q, want %q (the goroutine that called into C, not index 0 by accident)", r.Error.ThreadName, "goroutine 1")
+	}
+
+	if r.SigInfo == nil {
+		t.Fatal("SigInfo is nil")
+	}
+	if r.SigInfo.SiCode != 2 {
+		t.Errorf("SigInfo.SiCode = %d, want 2 (from the second line's decimal sigcode=, not the bracketed form's hex code=)", r.SigInfo.SiCode)
+	}
+	if r.SigInfo.SiAddr != "0x0" {
+		t.Errorf("SigInfo.SiAddr = %q, want %q", r.SigInfo.SiAddr, "0x0")
+	}
+
+	crashedCount := 0
+	for _, th := range r.Error.Threads {
+		if th.Crashed {
+			crashedCount++
+			if th.State != "syscall" {
+				t.Errorf("crashed goroutine state = %q, want %q", th.State, "syscall")
+			}
+		}
+	}
+	if crashedCount != 1 {
+		t.Errorf("crashed goroutine count = %d, want 1", crashedCount)
+	}
+}
+
+func TestCrashingThreadFallsBackToSyscallState(t *testing.T) {
+	// No goroutine is "running" — matches the real cgo-fault dump shape,
+	// where the runtime reports the goroutine that called into C as
+	// "syscall". The "syscall" one, not threads[0], must be picked even
+	// when it is not first in dump order, proving this is a real state
+	// match rather than an accidental index-0 default.
+	threads := []Thread{
+		{Name: "goroutine 2", State: "select (no cases)"},
+		{Name: "goroutine 1", State: "syscall"},
+		{Name: "goroutine 3", State: "sleep"},
+	}
+
+	got := crashingThread(threads)
+
+	if got.Name != "goroutine 1" {
+		t.Errorf("crashingThread() = %+v, want the syscall-state goroutine", got)
+	}
+	if !got.Crashed {
+		t.Error("crashingThread() did not mark the returned thread Crashed")
 	}
 }
 
