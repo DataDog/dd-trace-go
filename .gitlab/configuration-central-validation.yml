@@ -48,7 +48,7 @@ variables:
       response=$(curl --silent --show-error --fail \
         -H "Authorization: Bearer $GH_TOKEN" \
         -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${CI_PROJECT_PATH}/commits/${CI_COMMIT_SHA}/pulls")
+        "https://api.github.com/repos/${DDOCTOSTS_SCOPE}/commits/${CI_COMMIT_SHA}/pulls")
 
       dd-octo-sts revoke -t "$GH_TOKEN" || true
       unset GH_TOKEN
@@ -60,7 +60,7 @@ variables:
       match = next((p for p in prs if p.get('merge_commit_sha') == sha), None)
       print(match['number'] if match else '')
       ")
-      REGISTRY_PR_REPO="$CI_PROJECT_PATH"
+      REGISTRY_PR_REPO="$DDOCTOSTS_SCOPE"
       REGISTRY_IS_DEFAULT_BRANCH=$([ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && echo "true" || echo "false")
       REGISTRY_BRANCH="$CI_COMMIT_BRANCH"
       REGISTRY_COMMITTED_AT=$(git show -s --format=%cI "$CI_COMMIT_SHA")
