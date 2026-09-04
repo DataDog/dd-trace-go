@@ -53,13 +53,8 @@ variables:
       dd-octo-sts revoke -t "$GH_TOKEN" || true
       unset GH_TOKEN
 
-      REGISTRY_PR_NUMBER=$(echo "$response" | python3 -c "
-      import sys, json
-      prs = json.load(sys.stdin)
-      sha = '${CI_COMMIT_SHA}'
-      match = next((p for p in prs if p.get('merge_commit_sha') == sha), None)
-      print(match['number'] if match else '')
-      ")
+      REGISTRY_PR_NUMBER=$(echo "$response" | jq -r --arg sha "$CI_COMMIT_SHA" \
+        'map(select(.merge_commit_sha == $sha)) | first | .number // ""')
       REGISTRY_PR_REPO="$DDOCTOSTS_SCOPE"
       REGISTRY_IS_DEFAULT_BRANCH=$([ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && echo "true" || echo "false")
       REGISTRY_BRANCH="$CI_COMMIT_BRANCH"
