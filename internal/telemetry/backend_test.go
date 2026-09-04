@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -218,6 +219,147 @@ func TestLoggerBackend_StackTrace(t *testing.T) {
 		assert.Contains(t, stackTrace, "TestLoggerBackend_StackTrace", "Should contain calling test function")
 		assert.Contains(t, stackTrace, "backend_test.go", "Should show test file location")
 	})
+
+	t.Run("pre-captured stack from WithStacktraceNow is not overwritten by add", func(t *testing.T) {
+		// Capture the option in this test function, but only apply it to the
+		// backend from inside a nested helper - simulating what replay does:
+		// add() runs far from (and long after) the original call site. If
+		// add() re-captured here, the resulting stack would show
+		// addFarFromCallSite, not this test function.
+		opt := WithStacktraceNow()
+
+		addFarFromCallSite := func(b *loggerBackend, record Record, opt LogOption) {
+			b.Add(record, opt)
+		}
+		addFarFromCallSite(backend, NewRecord(LogError, "pre-captured stack test"), opt)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		stackTrace := logs.Logs[0].StackTrace
+		assert.NotEmpty(t, stackTrace)
+		assert.Contains(t, stackTrace, "TestLoggerBackend_StackTrace",
+			"should show this test function, since WithStacktraceNow captured here")
+		assert.NotContains(t, stackTrace, "addFarFromCallSite",
+			"must not show the helper add() actually ran from - proves add() did not re-capture")
+	})
+}
+
+func TestWithStacktraceNow_MarksDedupKey(t *testing.T) {
+	// The key phase (key != nil, value == nil) must stamp the key so
+	// stack-now entries dedup separately from plain, stackless ones.
+	key := loggerKey{}
+	WithStacktraceNow()(&key, nil)
+	assert.True(t, key.stackNow)
+}
+
+func TestLoggerBackend_StackNowDoesNotDedupWithStackless(t *testing.T) {
+	// Regression test: a report (WithStacktraceNow — what ReportError and
+	// ReportPanic send) must not merge into a plain, stackless entry with the
+	// same message, level, and tags. Before the key carried the stackNow
+	// flag, the second add hit the first entry's dedup key and its captured
+	// stack and attributes were silently dropped.
+	t.Run("plain log first, report second", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+
+		backend.Add(NewRecord(LogError, "collision message"))
+		report := NewRecord(LogError, "collision message")
+		report.AddAttrs(slog.String("error", "sometype"))
+		backend.Add(report, WithStacktraceNow())
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 2, "the report must stay a separate entry, not dedup into the plain log")
+
+		var plain, stacked transport.LogMessage
+		for _, msg := range logs.Logs {
+			if msg.StackTrace == "" {
+				plain = msg
+			} else {
+				stacked = msg
+			}
+		}
+		assert.Equal(t, "collision message", plain.Message, "the plain entry must carry no report attributes")
+		assert.Equal(t, uint32(1), plain.Count)
+		assert.NotEmpty(t, stacked.StackTrace, "the report entry must keep its stack trace")
+		assert.Contains(t, stacked.Message, "error=sometype", "the report entry must keep its error attribute")
+		assert.Equal(t, uint32(1), stacked.Count)
+	})
+
+	t.Run("report first, plain log second", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+
+		report := NewRecord(LogError, "collision message")
+		report.AddAttrs(slog.String("error", "sometype"))
+		backend.Add(report, WithStacktraceNow())
+		backend.Add(NewRecord(LogError, "collision message"))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 2, "entries must stay separate in either order")
+	})
+
+	t.Run("two reports with the same message still dedup together", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+
+		report1 := NewRecord(LogError, "collision message")
+		report1.AddAttrs(slog.String("error", "typeA"))
+		report2 := NewRecord(LogError, "collision message")
+		report2.AddAttrs(slog.String("error", "typeA"))
+		backend.Add(report1, WithStacktraceNow())
+		backend.Add(report2, WithStacktraceNow())
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1, "identical reports must still dedup against each other")
+		assert.Equal(t, uint32(2), logs.Logs[0].Count)
+		assert.NotEmpty(t, logs.Logs[0].StackTrace)
+	})
+
+	t.Run("plain logs with the same message still dedup together", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+
+		backend.Add(NewRecord(LogError, "collision message"))
+		backend.Add(NewRecord(LogError, "collision message"))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1, "identical stackless entries must still dedup against each other")
+		assert.Equal(t, uint32(2), logs.Logs[0].Count)
+	})
+}
+
+func TestWithStacktraceNow_CapturesEagerly(t *testing.T) {
+	opt := WithStacktraceNow()
+
+	value := &loggerValue{}
+	opt(nil, value)
+
+	assert.True(t, value.captureStacktrace)
+	assert.True(t, value.stacktraceCaptured, "must be marked as already captured, not deferred")
+	assert.NotEmpty(t, value.rawStack.PCs, "stack must be captured at WithStacktraceNow's own call site, not later")
+}
+
+func TestWithStacktraceNow_DisabledFallsBackToDeferred(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+
+	opt := WithStacktraceNow()
+
+	value := &loggerValue{}
+	opt(nil, value)
+
+	assert.True(t, value.captureStacktrace, "still requests a stack trace")
+	assert.False(t, value.stacktraceCaptured, "must not pay the eager-capture cost when telemetry is disabled")
+	assert.Empty(t, value.rawStack.PCs, "falls back to WithStacktrace's deferred (never-actually-reached-when-disabled) behavior")
 }
 
 func TestLoggerBackend_Tags(t *testing.T) {

@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"cmp"
 	"fmt"
-	"log/slog"
 	"os"
 	"reflect"
 	"sort"
@@ -388,14 +387,7 @@ func (w *flagEvalLoggingWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("openfeature: flag evaluation writer recovered panic: %s", r)
-				var errAttr slog.Attr
-				if err, ok := r.(error); ok {
-					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
-				} else {
-					errAttr = slog.Any("panic", r)
-				}
-				telemetrylog.Error("openfeature: flag evaluation writer recovered panic", errAttr)
+				telemetrylog.LogAndReportPanic("openfeature: flag evaluation writer recovered panic", r)
 			}
 			// Always signal completion so stop() unblocks, even on panic.
 			close(w.workerDone)
