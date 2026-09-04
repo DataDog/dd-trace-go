@@ -55,7 +55,7 @@ validate_supported_configurations_v2_resolve_origin:
 
 validate_supported_configurations_v2_local_file_with_track:
   stage: config-validation
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:1.4.0
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:132132300
   tags: ["runner:apm-k8s-tweaked-metal"]
   needs: ["validate_supported_configurations_v2_resolve_origin"]
   extends: .validate_supported_configurations_v2_local_file_with_track
