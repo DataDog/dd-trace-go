@@ -580,6 +580,89 @@ func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileR
 	assert.True(t, bytes.Contains(traceData, fmt.Appendf(nil, "%d", cpuProfileRate)))
 }
 
+func TestExecutionTraceSchedule(t *testing.T) {
+	const period = 2 * time.Minute
+	for _, tc := range []struct {
+		name         string
+		period       time.Duration
+		cpuDuration  time.Duration
+		cpuEnabled   bool
+		firstTrace   bool
+		wantDelay    time.Duration
+		wantDuration time.Duration
+	}{
+		{
+			// Default schedule: CPU profiling covers the whole period, so
+			// the trace already overlaps it and must not be delayed.
+			name:         "cpu-duration-equals-period",
+			period:       period,
+			cpuDuration:  period,
+			cpuEnabled:   true,
+			wantDelay:    0,
+			wantDuration: period,
+		},
+		{
+			// CPU profiling is scheduled at the end of the period, so the
+			// trace is delayed to overlap it and shortened to cpuDuration.
+			name:         "cpu-shorter-than-period-delays-trace",
+			period:       period,
+			cpuDuration:  time.Minute,
+			cpuEnabled:   true,
+			wantDelay:    time.Minute,
+			wantDuration: time.Minute,
+		},
+		{
+			// The first trace is never delayed so that we still capture
+			// startup activity.
+			name:         "first-trace-not-delayed",
+			period:       period,
+			cpuDuration:  time.Minute,
+			cpuEnabled:   true,
+			firstTrace:   true,
+			wantDelay:    0,
+			wantDuration: period,
+		},
+		{
+			// With CPU profiling disabled there is no window to overlap, so
+			// the trace covers the whole period as before.
+			name:         "cpu-disabled-not-delayed",
+			period:       period,
+			cpuDuration:  time.Minute,
+			cpuEnabled:   false,
+			wantDelay:    0,
+			wantDuration: period,
+		},
+		{
+			// A zero cpuDuration must not produce a full-period delay
+			// followed by a zero-duration (empty) trace; fall back to the
+			// full-period trace.
+			name:         "zero-cpu-duration-not-delayed",
+			period:       period,
+			cpuDuration:  0,
+			cpuEnabled:   true,
+			wantDelay:    0,
+			wantDuration: period,
+		},
+		{
+			// cpuDuration is clamped to period by newProfiler, but guard
+			// the helper in isolation: a cpuDuration > period must never
+			// yield a negative delay.
+			name:         "cpu-duration-greater-than-period-not-delayed",
+			period:       period,
+			cpuDuration:  2 * period,
+			cpuEnabled:   true,
+			wantDelay:    0,
+			wantDuration: period,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			delay, duration := executionTraceSchedule(tc.period, tc.cpuDuration, tc.cpuEnabled, tc.firstTrace)
+			assert.Equal(t, tc.wantDelay, delay, "delay")
+			assert.Equal(t, tc.wantDuration, duration, "duration")
+		})
+	}
+}
+
 func TestExecutionTraceMisconfiguration(t *testing.T) {
 	rl := new(log.RecordLogger)
 	defer log.UseLogger(rl)()
