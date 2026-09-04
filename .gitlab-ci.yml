@@ -40,17 +40,28 @@ validate_supported_configurations_v2_local_file:
     LOCAL_JSON_PATH: internal/env/supported_configurations.json
     BACKFILLED: true
 
-# Draft: replaces validate_supported_configurations_v2_local_file once the track endpoint is ready.
-# Switch: delete the job above and rename this one to validate_supported_configurations_v2_local_file.
+# Draft: two-job replacement for validate_supported_configurations_v2_local_file.
+# Job 1 resolves PR/commit origin metadata using dd-octo-sts (no aws needed).
+# Job 2 runs validation+tracking using the packaging image (has aws + python).
+# Once stable, delete validate_supported_configurations_v2_local_file above and rename these.
+validate_supported_configurations_v2_resolve_origin:
+  stage: config-validation
+  image: registry.ddbuild.io/images/dd-octo-sts-ci-base:2025.06-1
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  extends: .validate_supported_configurations_v2_resolve_origin
+  variables:
+    DDOCTOSTS_SCOPE: "DataDog/dd-trace-go"
+    DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
+
 validate_supported_configurations_v2_local_file_with_track:
   stage: config-validation
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:100425777
   tags: ["runner:apm-k8s-tweaked-metal"]
+  needs: ["validate_supported_configurations_v2_resolve_origin"]
   extends: .validate_supported_configurations_v2_local_file_with_track
   variables:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
     LANGUAGE_NAME: "golang"
-    DDOCTOSTS_SCOPE: "DataDog/dd-trace-go"
-    DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
 
 update_central_configurations_version_range_v2:
   stage: config-validation

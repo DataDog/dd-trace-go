@@ -3,19 +3,20 @@
 # Adds lifecycle origin tracking on top of the existing validation.
 #
 # Required env vars (set by the CI template):
-#   FP_API_KEY          - Feature Parity Dashboard API key (from SSM)
-#   GH_TOKEN            - short-lived GitHub token (from dd-octo-sts, set in before_script)
-#   CI_COMMIT_SHA       - set by GitLab CI
-#   CI_COMMIT_BRANCH    - set by GitLab CI
-#   CI_DEFAULT_BRANCH   - set by GitLab CI
-#   CI_PROJECT_PATH     - set by GitLab CI (e.g. "DataDog/dd-trace-go")
-#   LANGUAGE_NAME       - set by the job (e.g. "golang")
-#   MULTIPLE_RELEASE_LINES - "true"/"false", set by the job
+#   FP_API_KEY                - Feature Parity Dashboard API key (from SSM)
+#   REGISTRY_PR_NUMBER        - PR number (may be empty for direct pushes), set by resolve_origin job
+#   REGISTRY_PR_REPO          - "<owner>/<repo>", set by resolve_origin job
+#   REGISTRY_IS_DEFAULT_BRANCH - "true"/"false", set by resolve_origin job
+#   REGISTRY_BRANCH           - branch name, set by resolve_origin job
+#   REGISTRY_COMMITTED_AT     - ISO 8601 commit timestamp, set by resolve_origin job
+#   REGISTRY_AUTHOR           - committer email, set by resolve_origin job
+#   CI_COMMIT_SHA             - set by GitLab CI
+#   LANGUAGE_NAME             - set by the job (e.g. "golang")
+#   MULTIPLE_RELEASE_LINES    - "true"/"false", set by the job
 
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 import requests
@@ -30,7 +31,6 @@ NC = '\033[0m'
 BOLD = '\033[1m'
 
 FPD_BASE_URL = 'https://dd-feature-parity.azurewebsites.net'
-GITHUB_API = 'https://api.github.com'
 MAX_RETRIES = 2
 RETRY_BACKOFF = [2, 5]  # seconds
 
@@ -61,64 +61,21 @@ def validate_and_normalize_config(data):
     if errors:
         print(f"Validation found {len(errors)} error(s):")
         for err in errors:
-            print(f"  ✗ {err}")
+            print(f"  x {err}")
         sys.exit(1)
     return normalize_v2_format(data.get('supportedConfigurations', {}))
 
 
-# ── GitHub API: resolve PR number for the current commit ─────────────────────
-
-def resolve_pr_number(repo, commit_sha, gh_token):
-    """
-    Returns the PR number whose merge_commit_sha matches the current commit,
-    or None for direct pushes / pre-PR commits.
-    Strategy-agnostic: works with merge, squash, and rebase.
-    """
-    url = f"{GITHUB_API}/repos/{repo}/commits/{commit_sha}/pulls"
-    headers = {'Authorization': f'Bearer {gh_token}', 'Accept': 'application/vnd.github+json'}
-
-    for attempt in range(1 + MAX_RETRIES):
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-        except requests.exceptions.RequestException as e:
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF[attempt])
-                continue
-            print(f"{BOLD_RED}Error: GitHub API request failed: {e}{NC}")
-            sys.exit(1)
-
-        if response.status_code in (429, 500, 502, 503, 504):
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF[attempt])
-                continue
-            print(f"{BOLD_RED}Error: GitHub API returned {response.status_code} after retries{NC}")
-            sys.exit(1)
-
-        if response.status_code != 200:
-            print(f"{BOLD_RED}Error: GitHub API returned {response.status_code}: {response.text}{NC}")
-            sys.exit(1)
-
-        for pr in response.json():
-            if pr.get('merge_commit_sha') == commit_sha:
-                return pr['number']
-        return None  # no match: direct push or pre-PR commit
-
-    return None
-
-
 # ── Origin block ──────────────────────────────────────────────────────────────
 
-def build_origin(pr_number):
+def build_origin():
     commit_sha = os.environ.get('CI_COMMIT_SHA', '')
-    branch = os.environ.get('CI_COMMIT_BRANCH', '')
-    is_default_branch = branch == os.environ.get('CI_DEFAULT_BRANCH', 'main')
-
-    committed_at = subprocess.check_output(
-        ['git', 'show', '-s', '--format=%cI', commit_sha], text=True
-    ).strip()
-    author = subprocess.check_output(
-        ['git', 'show', '-s', '--format=%ae', commit_sha], text=True
-    ).strip()
+    pr_number_str = os.environ.get('REGISTRY_PR_NUMBER', '').strip()
+    pr_repo = os.environ.get('REGISTRY_PR_REPO', '').strip()
+    is_default_branch = os.environ.get('REGISTRY_IS_DEFAULT_BRANCH', 'false').strip().lower() == 'true'
+    branch = os.environ.get('REGISTRY_BRANCH', '').strip()
+    committed_at = os.environ.get('REGISTRY_COMMITTED_AT', '').strip()
+    author = os.environ.get('REGISTRY_AUTHOR', '').strip()
 
     origin = {
         'commit_sha': commit_sha,
@@ -127,9 +84,11 @@ def build_origin(pr_number):
         'language': os.environ.get('LANGUAGE_NAME', ''),
         'is_default_branch': is_default_branch,
     }
-    if pr_number is not None:
-        origin['pr_number'] = pr_number
-        origin['repo'] = os.environ.get('CI_PROJECT_PATH', '')
+
+    if pr_number_str:
+        origin['pr_number'] = int(pr_number_str)
+        origin['repo'] = pr_repo
+
     if os.environ.get('MULTIPLE_RELEASE_LINES', 'false').lower() == 'true':
         origin['branch'] = branch
 
@@ -144,15 +103,25 @@ def send_track_request(supported_configs, origin, fp_api_key, verbose=False):
     print(f"\n{BOLD}Payload to be sent to POST {url}:{NC}")
     print(json.dumps(payload, indent=2, default=str))
     print()
-    try:
-        response = requests.post(
-            url,
-            json=payload,
-            headers={'Content-Type': 'application/json', 'FP_API_KEY': fp_api_key},
-            timeout=30
-        )
-    except requests.exceptions.RequestException as e:
-        print(f"{BOLD_RED}Error: FPD request failed: {e}{NC}")
+
+    response = None
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers={'Content-Type': 'application/json', 'FP_API_KEY': fp_api_key},
+                timeout=30
+            )
+            break
+        except requests.exceptions.RequestException as e:
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_BACKOFF[attempt])
+                continue
+            print(f"{BOLD_RED}Error: FPD request failed: {e}{NC}")
+            sys.exit(1)
+
+    if response is None:
         sys.exit(1)
 
     if not (200 <= response.status_code < 300):
@@ -168,7 +137,8 @@ def send_track_request(supported_configs, origin, fp_api_key, verbose=False):
               f"{t.get('from_status') or 'none'} -> {t.get('to_status')} ({t.get('event')})")
 
     if body.get('origin_recording_error'):
-        print(f"{BOLD_YELLOW}Warning: origin recording error (non-blocking): {body['origin_recording_error']}{NC}")
+        print(f"{BOLD_YELLOW}Warning: origin recording error (non-blocking): "
+              f"{body['origin_recording_error']}{NC}")
 
     if body.get('failed'):
         _print_validation_errors(body)
@@ -205,10 +175,8 @@ def main():
         print(f"{BOLD_RED}Error: FP_API_KEY is not set{NC}")
         sys.exit(1)
 
-    gh_token = os.environ.get('GH_TOKEN', '')
-    if not gh_token:
-        print(f"{BOLD_RED}Error: GH_TOKEN is not set{NC}")
-        sys.exit(1)
+    pr_number_str = os.environ.get('REGISTRY_PR_NUMBER', '').strip()
+    print(f"PR: #{pr_number_str}" if pr_number_str else "PR: not found (direct push or pre-PR commit)")
 
     try:
         data = load_config_file()
@@ -217,13 +185,7 @@ def main():
         sys.exit(1)
 
     supported_configs = validate_and_normalize_config(data)
-
-    commit_sha = os.environ.get('CI_COMMIT_SHA', '')
-    repo = os.environ.get('CI_PROJECT_PATH', '')
-    pr_number = resolve_pr_number(repo, commit_sha, gh_token)
-    print(f"PR: #{pr_number}" if pr_number else "PR: not found (direct push or pre-PR commit)")
-
-    origin = build_origin(pr_number)
+    origin = build_origin()
     success = send_track_request(supported_configs, origin, fp_api_key, verbose=args.verbose)
     sys.exit(0 if success else 1)
 

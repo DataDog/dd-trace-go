@@ -25,20 +25,11 @@ variables:
   script:
     - scripts/config-inversion-local-validation.py
 
-# Draft: updated template that adds lifecycle origin tracking via POST /validate/v2/track.
-# Requires:
-#   - dd-octo-sts-ci-base image (has dd-octo-sts CLI baked in)
-#   - DDOCTOSTS_SCOPE and DDOCTOSTS_POLICY set by the extending job
-#   - FP_API_KEY stored in SSM as ci.$CI_PROJECT_NAME.FP_API_KEY
-#   - The updated config-inversion-local-validation.py deployed in libdatadog-build
-# Draft: updated template that adds lifecycle origin tracking via POST /validate/v2/track.
-# Requires:
-#   - dd-octo-sts-ci-base image (has dd-octo-sts CLI baked in)
-#   - DDOCTOSTS_SCOPE and DDOCTOSTS_POLICY set by the extending job
-#   - FP_API_KEY stored in SSM as ci.$CI_PROJECT_NAME.FP_API_KEY
-#   - The updated config-inversion-local-validation.py deployed in libdatadog-build
-.validate_supported_configurations_v2_local_file_with_track:
-  image: registry.ddbuild.io/images/dd-octo-sts-ci-base:2025.06-1
+# Job 1: resolves origin metadata (PR number, author, commit timestamp) using dd-octo-sts.
+# Runs on dd-octo-sts-ci-base (has dd-octo-sts CLI). The GitHub token is minted, used
+# for a single API call, and revoked — it never leaves this job. Only non-sensitive
+# origin data is written to the dotenv artifact for Job 2 to consume.
+.validate_supported_configurations_v2_resolve_origin:
   allow_failure: false
   rules:
     - when: on_success
@@ -46,26 +37,66 @@ variables:
     DDOCTOSTS_ID_TOKEN:
       aud: dd-octo-sts
   variables:
-    LOCAL_JSON_PATH: ""
-    LANGUAGE_NAME: ""
-    MULTIPLE_RELEASE_LINES: "false"
     # Set in the extending job:
     # DDOCTOSTS_SCOPE: "DataDog/dd-trace-go"
     # DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
+  script:
+    - |
+      GH_TOKEN=$(dd-octo-sts token --scope "$DDOCTOSTS_SCOPE" --policy "$DDOCTOSTS_POLICY")
+
+      # Resolve the PR number for this commit via merge_commit_sha matching (strategy-agnostic).
+      response=$(curl --silent --show-error --fail \
+        -H "Authorization: Bearer $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${CI_PROJECT_PATH}/commits/${CI_COMMIT_SHA}/pulls")
+
+      dd-octo-sts revoke -t "$GH_TOKEN" || true
+      unset GH_TOKEN
+
+      REGISTRY_PR_NUMBER=$(echo "$response" | python3 -c "
+      import sys, json
+      prs = json.load(sys.stdin)
+      sha = '${CI_COMMIT_SHA}'
+      match = next((p for p in prs if p.get('merge_commit_sha') == sha), None)
+      print(match['number'] if match else '')
+      ")
+      REGISTRY_PR_REPO="$CI_PROJECT_PATH"
+      REGISTRY_IS_DEFAULT_BRANCH=$([ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && echo "true" || echo "false")
+      REGISTRY_BRANCH="$CI_COMMIT_BRANCH"
+      REGISTRY_COMMITTED_AT=$(git show -s --format=%cI "$CI_COMMIT_SHA")
+      REGISTRY_AUTHOR=$(git show -s --format=%ae "$CI_COMMIT_SHA")
+
+      {
+        echo "REGISTRY_PR_NUMBER=${REGISTRY_PR_NUMBER}"
+        echo "REGISTRY_PR_REPO=${REGISTRY_PR_REPO}"
+        echo "REGISTRY_IS_DEFAULT_BRANCH=${REGISTRY_IS_DEFAULT_BRANCH}"
+        echo "REGISTRY_BRANCH=${REGISTRY_BRANCH}"
+        echo "REGISTRY_COMMITTED_AT=${REGISTRY_COMMITTED_AT}"
+        echo "REGISTRY_AUTHOR=${REGISTRY_AUTHOR}"
+      } > origin.env
+  artifacts:
+    reports:
+      dotenv: origin.env
+
+# Job 2: runs validation + lifecycle tracking. Runs on the packaging image (has aws + python).
+# Consumes the REGISTRY_* origin data from Job 1 via the dotenv artifact.
+.validate_supported_configurations_v2_local_file_with_track:
+  allow_failure: false
+  rules:
+    - when: on_success
+  variables:
+    LOCAL_JSON_PATH: ""
+    LANGUAGE_NAME: ""
+    MULTIPLE_RELEASE_LINES: "false"
   before_script:
     - *download-scripts-from-template
     # TODO: remove once config-inversion-local-validation-with-track.py is merged into libdatadog-build
     # and added to the download loop in *download-scripts-from-template above.
     - cp .gitlab/config-inversion-local-validation-with-track.py scripts/
     - chmod +x scripts/config-inversion-local-validation-with-track.py
-    # TODO: remove once running on an image that has aws CLI baked in (e.g. libdatadog-build/packaging).
-    - pip install awscli --quiet
     - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
-    - export GH_TOKEN=$(dd-octo-sts token --scope "$DDOCTOSTS_SCOPE" --policy "$DDOCTOSTS_POLICY")
   script:
     - scripts/config-inversion-local-validation-with-track.py
-  after_script:
-    - dd-octo-sts revoke -t "$GH_TOKEN" || true
 
 .update_central_configurations_version_range_v2:
   allow_failure: false
