@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -354,6 +355,52 @@ func TestLogAndReportPanic_PanickyError(t *testing.T) {
 	logs := recorder.Logs()
 	assert.Len(t, logs, 1)
 	assert.Contains(t, logs[0], "unexpected panic in goroutine: ")
+}
+
+func TestLogAndReportError_PercentInMessageLoggedVerbatim(t *testing.T) {
+	// Regression test: LogAndReportError used to pass msg unescaped into
+	// internal/log.Error's format string, so a constant message containing a
+	// percent was parsed as a format verb instead of logged literally —
+	// LogAndReportError("operation %s failed", err) consumed errStr at the
+	// embedded verb and left the appended one MISSING, and "reached 100%
+	// capacity" tripped go vet's printf check.
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(telemetry.Record, ...telemetry.LogOption) {}
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	LogAndReportError("sdk error: reached 100% capacity", errors.New("boom"))
+	LogAndReportError("sdk error: operation %s failed", errors.New("boom"))
+	internallog.Flush()
+
+	logs := recorder.Logs()
+	require.Len(t, logs, 2)
+	assert.Contains(t, logs[0], "sdk error: reached 100% capacity: boom")
+	assert.Contains(t, logs[1], "sdk error: operation %s failed: boom")
+	assert.NotContains(t, logs[0], "%!")
+	assert.NotContains(t, logs[1], "%!")
+	assert.NotContains(t, logs[1], "MISSING")
+}
+
+func TestLogAndReportPanic_PercentInMessageLoggedVerbatim(t *testing.T) {
+	origSend := sendLog
+	defer func() { sendLog = origSend }()
+	sendLog = func(telemetry.Record, ...telemetry.LogOption) {}
+
+	recorder := &internallog.RecordLogger{}
+	undo := internallog.UseLogger(recorder)
+	defer undo()
+
+	LogAndReportPanic("sdk error: writer at 100% capacity", "a string panic value")
+	internallog.Flush()
+
+	logs := recorder.Logs()
+	require.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "sdk error: writer at 100% capacity: a string panic value")
+	assert.NotContains(t, logs[0], "%!")
 }
 
 func TestLogAndReportPanic_WithTagsOption(t *testing.T) {

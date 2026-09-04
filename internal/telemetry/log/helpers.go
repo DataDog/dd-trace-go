@@ -8,6 +8,7 @@ package log
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -73,8 +74,10 @@ func ReportPanic(msg string, recovered any, opts ...telemetry.LogOption) {
 // want both a local log line and a report without duplicating the message.
 //
 // msg MUST be a constant string — see [ReportError] for the rationale. The
-// format string passed to internal/log.Error is always msg+": %s" regardless
-// of whether err is nil, so the call site's local dedup key stays stable.
+// format string passed to internal/log.Error is always the percent-escaped
+// msg followed by ": %s" regardless of whether err is nil, so the call site's
+// local dedup key stays stable and a percent in msg is logged verbatim
+// rather than parsed as a format verb.
 func LogAndReportError(msg string, err error, opts ...telemetry.LogOption) {
 	errStr := "<nil>"
 	if err != nil {
@@ -82,7 +85,7 @@ func LogAndReportError(msg string, err error, opts ...telemetry.LogOption) {
 		// receiver that dereferences itself) instead of letting it escape.
 		errStr = fmt.Sprint(err)
 	}
-	internallog.Error(msg+": %s", errStr)
+	internallog.Error(messageFormat(msg), errStr)
 	ReportError(msg, err, opts...)
 }
 
@@ -95,6 +98,19 @@ func LogAndReportPanic(msg string, recovered any, opts ...telemetry.LogOption) {
 		// receiver that dereferences itself) instead of letting it escape.
 		errStr = fmt.Sprint(recovered)
 	}
-	internallog.Error(msg+": %s", errStr)
+	internallog.Error(messageFormat(msg), errStr)
 	ReportPanic(msg, recovered, opts...)
+}
+
+// messageFormat turns a constant message into the internal/log format
+// string that logs it verbatim followed by the error detail. Percent signs
+// in msg are doubled so they render literally — internal/log.Error formats
+// its first argument, and a lone % in the message would otherwise either
+// consume the errStr argument (LogAndReportError("operation %s failed", err)
+// logged "operation: <nil> failed: %!s(MISSING)") or emit a formatting
+// diagnostic. The escaping is applied before the ": %s" suffix is appended so
+// the suffix stays the format's single verb, keeping the per-message dedup
+// key stable.
+func messageFormat(msg string) string {
+	return strings.ReplaceAll(msg, "%", "%%") + ": %s"
 }
