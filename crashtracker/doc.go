@@ -62,6 +62,24 @@
 // goroutine in the crash dump. Set GOTRACEBACK=all in the process environment
 // to include all goroutines in the crash report's error.threads field.
 //
+// # Containers and PID 1
+//
+// The monitor is a child of the application process, in the same PID
+// namespace rather than a separate one. If the application is PID 1 of that
+// namespace — the common case for a Go binary run directly as a container's
+// ENTRYPOINT with no init process in front of it — the kernel terminates
+// every other process in the namespace with an unblockable SIGKILL as soon
+// as PID 1 fully exits (pid_namespaces(7)). That includes the monitor.
+// Receiving the crash dump itself is not the risk: the runtime's write to
+// the pipe happens synchronously before the application finishes exiting,
+// with the monitor already started and reading. Uploading the parsed report
+// is a network round trip, and it can still be in flight when the namespace
+// teardown lands a moment later, silently losing the report. Run the
+// application behind an init process (tini, dumb-init, or an orchestrator's
+// own, e.g. Kubernetes' shareProcessNamespace) so it is not PID 1 itself —
+// already common container practice for signal handling and zombie
+// reaping, and required here for the same structural reason.
+//
 // # Init order note
 //
 // The monitor child is intercepted from package init, which is the earliest hook
