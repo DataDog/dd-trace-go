@@ -7,7 +7,7 @@ variables:
 .download-scripts-from-template: &download-scripts-from-template
   - mkdir -p scripts
   - |
-    for script_file in "config-inversion-local-validation.py" "config-inversion-update-supported-range.py"
+    for script_file in "config-inversion-local-validation.py" "config-inversion-update-supported-range.py" "config_parser.py" "config_inversion_verify_format.py"
     do
       curl --location --fail --show-error --output "scripts/${script_file}" "${SCRIPTS_BASE_URL}/${script_file}"
       chmod +x scripts/$script_file
