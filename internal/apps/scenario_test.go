@@ -102,6 +102,30 @@ func TestScenario(t *testing.T) {
 			})
 		}
 	})
+
+	// telemetry-errors is a manual verification harness for dogfooding
+	// internal/telemetry/log's ReportError/ReportPanic API (PR #4997) — not
+	// wired into .github/workflows/test-apps.cue, so it never runs in CI.
+	// Run it by hand: DD_SITE=datad0g.com DD_API_KEY=... docker-compose run
+	// --build scenario 'telemetry-errors/v1$', then search Error Tracking for
+	// service:dd-trace-go/telemetry-errors.
+	t.Run("telemetry-errors", func(t *testing.T) {
+		scenarios := []struct {
+			version   string
+			endpoints []string
+		}{
+			{"v1", []string{"/decision-maker"}},
+		}
+		for _, s := range scenarios {
+			t.Run(s.version, func(t *testing.T) {
+				lc := newLaunchConfig(t)
+				lc.Version = s.version
+				process := lc.Launch(t)
+				defer process.Stop(t)
+				wc.HitEndpoints(t, process, s.endpoints...)
+			})
+		}
+	})
 }
 
 func newWorkloadConfig(t *testing.T) (wc workloadConfig) {

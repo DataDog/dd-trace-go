@@ -6,12 +6,7 @@
 package log
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
-	"runtime/debug"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,49 +14,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
-
-// replayCaptureRoundTripper records every request body sent through it,
-// decoded as a transport.Body, and answers 200 OK without making a real
-// network call. RoundTrip runs synchronously inside client.Flush's HTTP
-// call, so bodies is fully populated by the time Flush returns.
-type replayCaptureRoundTripper struct {
-	t      *testing.T
-	bodies []transport.Body
-}
-
-func (rt *replayCaptureRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	defer req.Body.Close()
-	raw, err := io.ReadAll(req.Body)
-	require.NoError(rt.t, err)
-
-	var body transport.Body
-	require.NoError(rt.t, json.Unmarshal(raw, &body))
-	rt.bodies = append(rt.bodies, body)
-
-	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(nil))}, nil
-}
-
-// extractLogMessages returns the transport.LogMessage entries carried by
-// body, whether it's a direct "logs" request or a "message-batch" wrapping
-// one alongside other payload types.
-func extractLogMessages(t *testing.T, body transport.Body) []transport.LogMessage {
-	t.Helper()
-	switch payload := body.Payload.(type) {
-	case *transport.Logs:
-		return payload.Logs
-	case transport.MessageBatch:
-		var logs []transport.LogMessage
-		for _, msg := range payload {
-			if inner, ok := msg.Payload.(*transport.Logs); ok {
-				logs = append(logs, inner.Logs...)
-			}
-		}
-		return logs
-	default:
-		return nil
-	}
-}
 
 // TestReportError_QueuedBeforeClientExists_StackPointsAtCallSite proves the
 // fix for the replay-time stack capture bug: a report made before any
@@ -79,13 +33,7 @@ func TestReportError_QueuedBeforeClientExists_StackPointsAtCallSite(t *testing.T
 
 	ReportError("dogfood test: queued before a client existed", errors.New("boom"))
 
-	rt := &replayCaptureRoundTripper{t: t}
-	client, err := telemetry.NewClient("test-service", "test-env", "1.0.0", telemetry.ClientConfig{
-		AgentURL:         "http://localhost:8126",
-		HTTPClient:       &http.Client{Transport: rt},
-		DependencyLoader: func() (*debug.BuildInfo, bool) { return nil, false }, // keep the flush free of unrelated noise
-	})
-	require.NoError(t, err)
+	client, rt := telemetrytest.NewCapturingClient(t)
 	defer client.Close()
 
 	// SwapClient (not StartApp) replays the queue synchronously and skips
@@ -95,13 +43,7 @@ func TestReportError_QueuedBeforeClientExists_StackPointsAtCallSite(t *testing.T
 	telemetry.SwapClient(client)
 	client.Flush()
 
-	require.NotEmpty(t, rt.bodies, "the queued report must have been flushed")
-	// Each body carries at least one log message, so len(bodies) is a lower
-	// bound capacity hint; a message-batch may hold several and append grows past it.
-	logs := make([]transport.LogMessage, 0, len(rt.bodies))
-	for _, body := range rt.bodies {
-		logs = append(logs, extractLogMessages(t, body)...)
-	}
+	logs := rt.LogMessages()
 	require.Len(t, logs, 1)
 
 	stack := logs[0].StackTrace
@@ -116,7 +58,7 @@ func TestReportError_QueuedBeforeClientExists_StackPointsAtCallSite(t *testing.T
 // report-dedup collision: a plain, stackless telemetrylog.Error with the same
 // message, level, and tags as a report shares the backend's dedup key shape,
 // so before the key carried a stack-now marker the report merged into the
-// plain entry and silently lost both its stack trace and its error attribute.
+// plain entry and lost both its stack trace and its error attribute.
 func TestReportError_DoesNotDedupIntoPlainLogEntry(t *testing.T) {
 	telemetry.StopApp()
 	t.Cleanup(telemetry.StopApp)
@@ -128,22 +70,13 @@ func TestReportError_DoesNotDedupIntoPlainLogEntry(t *testing.T) {
 	Error("dogfood test: colliding message")
 	ReportError("dogfood test: colliding message", errors.New("boom"))
 
-	rt := &replayCaptureRoundTripper{t: t}
-	client, err := telemetry.NewClient("test-service", "test-env", "1.0.0", telemetry.ClientConfig{
-		AgentURL:         "http://localhost:8126",
-		HTTPClient:       &http.Client{Transport: rt},
-		DependencyLoader: func() (*debug.BuildInfo, bool) { return nil, false },
-	})
-	require.NoError(t, err)
+	client, rt := telemetrytest.NewCapturingClient(t)
 	defer client.Close()
 
 	telemetry.SwapClient(client)
 	client.Flush()
 
-	logs := make([]transport.LogMessage, 0, len(rt.bodies))
-	for _, body := range rt.bodies {
-		logs = append(logs, extractLogMessages(t, body)...)
-	}
+	logs := rt.LogMessages()
 	require.Len(t, logs, 2, "the plain log and the report must be two distinct entries")
 
 	var stackless, report transport.LogMessage

@@ -58,13 +58,17 @@ Our CI pipeline includes several automated checks:
 - **Generate Check**: Ensures generated code is up-to-date
 - **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
-- **Error-logging Lint**: Runs `make lint/errlog`, three `go vet`-compatible analyzers: `constantlogmsg` (rejects non-constant message arguments on `log.Error`, `log.Warn`, and the `telemetrylog.ReportError`/`ReportPanic`/`LogAndReportError`/`LogAndReportPanic` helpers — non-constant messages break dedup and, for the telemetry-reporting functions, risk leaking PII to Error Tracking), `telemetrysafety` (requires `slog.Any`/`slog.String` values passed to telemetry log calls to be PII-safe), and `logformatverbs` (flags unsafe `%v`/`%+v`/`%#v` usage). Run locally with `make lint/errlog`.
+- **Error-logging Lint**: Runs `make lint/errlog`, three `go vet`-compatible analyzers: `constantlogmsg` (rejects non-constant message arguments on `log.Error`, `log.Warn`, and the `telemetrylog.ReportError`/`ReportPanic`/`LogAndReportError`/`LogAndReportPanic` helpers — non-constant messages break dedup and, for the telemetry-reporting functions, risk leaking PII to Error Tracking), `telemetrysafety` (requires `slog.Any`/`slog.String` values passed to telemetry log calls to be PII-safe), and `logformatverbs` (flags unsafe `%v`/`%+v`/`%#v` usage). Run locally with `make lint/errlog`. Before adding a new `ReportError`/`ReportPanic` call site, read "When to report, and when not to" in [`internal/README.md`](./internal/README.md#telemetry) — the short version: our defect, swallowed, not per-span, and after telemetry has started. Before merging one, dogfood it against a real org with [`internal/apps/telemetry-errors`](./internal/apps/telemetry-errors/README.md) — no unit test can see the wire payload's stack trace, error type, or dedup count.
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
 - **Cross-Compile Check**: Runs `scripts/cross_build.sh` to cross-compile the library for every [first class Go port](https://go.dev/wiki/PortingPolicy) (including 32-bit `linux/386`, `windows/386`, `linux/arm`), catching architecture-specific compile regressions. Run locally with `./scripts/cross_build.sh`. Packages that import `go-libddwaf` are skipped until it builds on 32-bit (see DataDog/go-libddwaf#227); they stay covered on 64-bit by the test matrix.
 
 #### Unit and Integration Tests
 
-- **Core Tests**: Tests the main library functionality
+- **Core Tests**: Tests the main library functionality, including that specific Error Tracking call
+  sites (decision-maker parsing in ddtrace/tracer, remote-config update-state parsing in
+  internal/remoteconfig, and the memfd/OTel-process-context sites in internal/apps/telemetry-errors)
+  produce well-formed telemetry payloads — see internal/apps/telemetry-errors/README.md for the full
+  dogfooding process these regression tests automate tier 0 of.
 - **Integration Tests**: Tests against real services using Docker
 - **Contrib Tests**: Tests all third-party integrations
 - **Race Detection**: Tests with Go race detector enabled

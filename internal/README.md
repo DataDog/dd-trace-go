@@ -67,3 +67,16 @@ The `telemetry/log` subpackage also provides an explicit, opt-in API for surfaci
 * **`constantlogmsg` analyzer** (`telemetry/log/analyzer/`): `go vet`-compatible pass that rejects non-constant message arguments on all protected log functions (`ReportError`/`ReportPanic`, `LogAndReportError`/`LogAndReportPanic`, `telemetrylog.Debug/Warn/Error`, and `internal/log.Error/Warn` for their own local dedup-key hygiene), enforcing the dedup-key and PII guarantees.
 
 Adopting this in an existing `log.Error` call site means calling `ReportError`/`ReportPanic` alongside it, one call site at a time — there's no table or hook that changes behavior repo-wide.
+
+**When to report, and when not to.** Report an error only when a non-zero count in Error Tracking would make a dd-trace-go maintainer open the code. Concretely, report when **all four** hold:
+
+1. **It's our defect, not the user's environment or config.** Report a failure to marshal a struct we built, a `recover()` in one of our own goroutines, a protocol response we can't parse. Do not report an unreachable agent, a missing `DD_API_KEY`, an unparseable user-supplied regexp, or a user calling an API out of order — those are already surfaced to the user via `internal/log.Warn`/`Error`, and we cannot act on them.
+2. **We swallow it.** Report the error at the place that finally drops it, not at every layer it passes through — reporting at both ends double-counts the same failure.
+3. **The site is not per-span or per-request.** `ReportError`/`ReportPanic` allocate and capture a stack trace on every call, before the telemetry-disabled check can short-circuit it. Report at a flush, poll, or start boundary instead. If the failure is genuinely per-span, report the aggregate (e.g. "lost N traces") at the flush boundary rather than once per span.
+4. **It fires after `telemetry.StartApp`.** Reports made earlier are queued in the global-client recorder and replayed later, and the stack trace is captured at replay time — so it points at the telemetry client's replay path, not at your bug.
+
+A `statsd`/telemetry **count** is the right tool when you want to know *how often* something happens; `ReportError` is the right tool when you want to know *where*. A site that already emits a count with a `reason:` tag and carries no error value usually needs nothing more.
+
+**Picking a helper.** Use `LogAndReportError`/`LogAndReportPanic` only when the site already matches `log.Error("<constant>: %s", err.Error())` exactly — the rewrite is then output-identical, including `internal/log`'s dedup key. Otherwise leave the existing `log.Error` call as-is and add a bare `ReportError`/`ReportPanic` next to it.
+
+Only the **first** error type seen per `(message, level, tags)` per flush window is transmitted, and only the error's *type* is ever sent — never its message. For an error wrapped with `fmt.Errorf("...: %w", err)` this often reads as `*errors.errorString`, so the message and stack trace carry the real signal; pick a message specific enough to stand on its own.

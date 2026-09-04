@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // loadPropagatingTags returns the current propagating-tags snapshot. The
@@ -229,7 +230,7 @@ func (t *trace) propagatingTagsByteLens() (xTagsLen, tracestateLen int) {
 func parseDecisionMaker(dm string) uint32 {
 	v, err := strconv.ParseInt(dm, 10, 32)
 	if err != nil {
-		log.Error("failed to convert decision maker to uint32: %s", err.Error())
+		telemetrylog.LogAndReportError("failed to convert decision maker to uint32", err)
 		return 0
 	}
 	if v < 0 {

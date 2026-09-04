@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -341,13 +342,13 @@ func ClientID() string {
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new update request payload: %s", err.Error())
+		telemetrylog.LogAndReportError("remoteconfig: unexpected error while creating a new update request payload", err)
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new http request: %s", err.Error())
+		telemetrylog.LogAndReportError("remoteconfig: unexpected error while creating a new http request", err)
 		return
 	}
 	if internal.ContainerID() != "" {
@@ -375,7 +376,7 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("remoteconfig: http request error: could not read the response body: %s", err.Error())
+		telemetrylog.LogAndReportError("remoteconfig: http request error: could not read the response body", err)
 		return
 	}
 
@@ -385,7 +386,7 @@ func (c *Client) updateState() {
 
 	var update clientGetConfigsResponse
 	if err := json.Unmarshal(respBody, &update); err != nil {
-		log.Error("remoteconfig: http request error: could not parse the json response body: %s", err.Error())
+		telemetrylog.LogAndReportError("remoteconfig: http request error: could not parse the json response body", err)
 		return
 	}
 
