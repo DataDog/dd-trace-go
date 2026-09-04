@@ -133,7 +133,7 @@ type SpanContext struct {
 
 	// the below group should propagate only locally
 	isRemote bool
-	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// when true, context only propagates baggage (and tags) and should not be used for distributed tracing fields
 	// +checklocks:mu
 	baggageOnly bool
 	errors      atomic.Int32 // number of spans with errors in this trace
@@ -290,6 +290,12 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.trace = parent.trace
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
+		} else if parent.trace != nil {
+			// propagate tags (LLMObs lineage, _dd.p.ts, _dd.p.usr.id, ...)
+			if pt := parent.trace.loadPropagatingTags(); len(pt) > 0 {
+				context.trace = newTrace()
+				context.trace.propagatingTags.Store(pt)
+			}
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
