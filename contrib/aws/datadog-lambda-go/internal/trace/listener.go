@@ -98,9 +98,9 @@ func (l *Listener) initTracer() {
 }
 
 // HandlerStarted starts the function execution span if Datadog tracing is enabled
-func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) context.Context {
+func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage) {
 	if !l.ddTraceEnabled {
-		return ctx
+		return ctx, msg
 	}
 
 	if l.universalInstrumentation && l.extensionManager.IsExtensionRunning() {
@@ -115,7 +115,7 @@ func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) cont
 	// Add the span to the context so the user can create child spans
 	ctx = ddtracer.ContextWithSpan(ctx, functionExecutionSpan)
 
-	return ctx
+	return ctx, msg
 }
 
 // HandlerFinished ends the function execution span and stops the tracer
