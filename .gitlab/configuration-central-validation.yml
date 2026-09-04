@@ -58,6 +58,7 @@ variables:
       REGISTRY_PR_REPO="$DDOCTOSTS_SCOPE"
       REGISTRY_IS_DEFAULT_BRANCH=$([ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && echo "true" || echo "false")
       REGISTRY_BRANCH="$CI_COMMIT_BRANCH"
+      git config --global --add safe.directory "$CI_PROJECT_DIR"
       REGISTRY_COMMITTED_AT=$(git show -s --format=%cI "$CI_COMMIT_SHA")
       REGISTRY_AUTHOR=$(git show -s --format=%ae "$CI_COMMIT_SHA")
 
