@@ -542,7 +542,7 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	assert.Nil(err)
 	assert.Contains(headers[tracestateHeader], "valid_vendor=a:1")
 	// iterating through propagatingTags map doesn't guarantee order in tracestate header
-	ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+	ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 	assert.Contains(ddTag, "s:2")
 	assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
 	assert.LessOrEqual(len(ddTag), tracestateDDMaxSize) // one of the propagated tags will not be propagated
@@ -1608,7 +1608,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Nil(err)
 					checkSameElements(assert, tc.outHeaders[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outHeaders[tracestateHeader], headers[tracestateHeader])
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					assert.LessOrEqual(len(ddTag), 256)
 				})
 			}
@@ -1807,7 +1807,7 @@ func TestEnvVars(t *testing.T) {
 						tc.out[tracestateHeader] = strings.TrimSuffix(tc.out[tracestateHeader], ",othervendor=t61rcWkgMzE")
 					}
 					checkSameElements(assert, tc.out[tracestateHeader], headers[tracestateHeader])
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					// -3 as we don't count dd= as part of the "value" length limit
 					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
@@ -1837,7 +1837,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal("00-00000000000000001111111111111112-2222222222222222-01", headers[traceparentHeader])
 					assert.Contains(headers[tracestateHeader], "valid_vendor=a:1")
 					// iterating through propagatingTags map doesn't guarantee order in tracestate header
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					assert.Contains(ddTag, "s:2")
 					assert.Contains(ddTag, "s:2")
 					assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
@@ -1901,7 +1901,7 @@ func TestEnvVars(t *testing.T) {
 				v, _ := root.meta.Get("_dd.parent_id")
 				assert.Empty(v, "extraction happened from DD headers, so _dd.parent_id mustn't be set")
 
-				ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+				ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 				// -3 as we don't count dd= as part of the "value" length limit
 				assert.LessOrEqual(len(ddTag)-3, 256)
 			})
@@ -1975,7 +1975,7 @@ func TestEnvVars(t *testing.T) {
 
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					assert.LessOrEqual(len(ddTag), 256)
 				})
 			}
@@ -2061,7 +2061,7 @@ func TestEnvVars(t *testing.T) {
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					// The tracestate should be recomposed because updated=true
 					assert.Contains(headers[tracestateHeader], "dd=")
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					// -3 as we don't count dd= as part of the "value" length limit
 					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
