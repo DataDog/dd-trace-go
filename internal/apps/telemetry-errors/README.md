@@ -73,6 +73,25 @@ around it — the run simply survives long enough for a normal flush tick to fir
 A trigger failing any of these is a real defect in the adoption, not a flake — investigate before
 re-running.
 
+#### These checks are now also automated in CI, for 3 of the 4 known sites
+
+`ddtrace/tracer/errortracking_test.go` and `internal/remoteconfig/errortracking_test.go` cover
+`parseDecisionMaker` and `updateState` respectively, using a fake `http.RoundTripper`
+(`internal/telemetry/telemetrytest.NewCapturingClient`) instead of this section's payload-files-dump
+env vars — both packages already have many unrelated sibling tests, so avoiding a second process-global
+cache (on top of the telemetry-client swap these tests already need) keeps them simpler to reason about.
+`internal/apps/telemetry-errors/seccomp_e2e_test.go` covers `storeConfig`'s two sites and *does* use this
+section's payload-files-dump mechanism (it needs zero network I/O inside a throwaway container, so
+there's nothing simpler to fall back on) — it only asserts hard on the first (memfd) site; the second
+(OTEL process context) is checked best-effort only, since whether it fires at all depends on the CI
+runner's own kernel (see "Known gaps" below).
+
+None of the three automated tests exercise `customer_frames_redacted` — `ddtrace/tracer` and
+`internal/remoteconfig` are under the SDK's own internal-frame prefix
+(`github.com/DataDog/dd-trace-go/v2`), so a test inside them can never produce a frame the redaction
+step would classify as "customer"; `internal/apps` is a genuinely separate Go module, which is exactly
+why this check can only ever be exercised manually, from this harness, as described above.
+
 ### Tier 1 — real intake
 
 **Do not rely on "no local agent" being true.** The tracer's telemetry client tries an agent proxy
@@ -211,16 +230,16 @@ HTTP-endpoint triggers in this app:
 
 | Endpoint | Call site | Reachability |
 |---|---|---|
-| `/decision-maker` | `parseDecisionMaker` (`ddtrace/tracer/propagating_tags.go`) | `http-triggerable` — malformed `_dd.p.dm` value on an inbound `x-datadog-tags` header |
+| `/decision-maker` | `parseDecisionMaker` (`ddtrace/tracer/propagating_tags.go`) | `http-triggerable` — malformed `_dd.p.dm` value on an inbound `x-datadog-tags` header. Tier 0 for this site is now also enforced automatically in CI — see `ddtrace/tracer/errortracking_test.go`. |
 
 Non-endpoint triggers — these fire on a background cadence once the process is configured correctly,
 with no HTTP call needed. See "Running this app" below for exact commands:
 
 | Mechanism | Call site | Reachability |
 |---|---|---|
-| Fault-injecting reverse proxy in front of a real agent, returning malformed JSON for the remote-config poll endpoint | `updateState` "could not parse the json response body" (`internal/remoteconfig/remoteconfig.go`) | `fault-injectable` — confirmed working end-to-end (tiers 0/1/2) |
-| Linux container with a custom seccomp profile blocking the `memfd_create` syscall, run with `--network host` (see "Known gaps") | `storeConfig`'s **first** site, "failed to store the configuration" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only (both `storeConfig` sites are no-ops on macOS/Windows) — confirmed at all three tiers |
-| Same container as above — both `storeConfig` sites fire from one run, since the second site's own internal fallback also fails under Docker Desktop's Linux VM kernel | `storeConfig`'s **second** site, "failed to publish the OTEL process context" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only — confirmed generated at tier 0, **not yet observed landing** at tier 2; see "Known gaps" |
+| Fault-injecting reverse proxy in front of a real agent, returning malformed JSON for the remote-config poll endpoint | `updateState` "could not parse the json response body" (`internal/remoteconfig/remoteconfig.go`) | `fault-injectable` — confirmed working end-to-end (tiers 0/1/2). Tier 0 for this site is now also enforced automatically in CI — see `internal/remoteconfig/errortracking_test.go`. |
+| Linux container with a custom seccomp profile blocking the `memfd_create` syscall, run with `--network host` (see "Known gaps") | `storeConfig`'s **first** site, "failed to store the configuration" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only (both `storeConfig` sites are no-ops on macOS/Windows) — confirmed at all three tiers. Tier 0 for this site is now also enforced automatically in CI (Linux runners only) — see `internal/apps/telemetry-errors/seccomp_e2e_test.go`. |
+| Same container as above — both `storeConfig` sites fire from one run, since the second site's own internal fallback also fails under Docker Desktop's Linux VM kernel | `storeConfig`'s **second** site, "failed to publish the OTEL process context" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only — confirmed generated at tier 0, **not yet observed landing** at tier 2; see "Known gaps". The same CI test above checks for this message too, but only best-effort (non-blocking) — the runner's own kernel determines whether it fires at all. |
 
 Not practically triggerable from outside the process, given what each depends on:
 

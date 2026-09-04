@@ -64,7 +64,11 @@ Our CI pipeline includes several automated checks:
 
 #### Unit and Integration Tests
 
-- **Core Tests**: Tests the main library functionality
+- **Core Tests**: Tests the main library functionality, including that specific Error Tracking call
+  sites (decision-maker parsing in ddtrace/tracer, remote-config update-state parsing in
+  internal/remoteconfig, and the memfd/OTel-process-context sites in internal/apps/telemetry-errors)
+  produce well-formed telemetry payloads — see internal/apps/telemetry-errors/README.md for the full
+  dogfooding process these regression tests automate tier 0 of.
 - **Integration Tests**: Tests against real services using Docker
 - **Contrib Tests**: Tests all third-party integrations
 - **Race Detection**: Tests with Go race detector enabled
