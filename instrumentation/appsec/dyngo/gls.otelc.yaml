@@ -1,0 +1,82 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# AppSec/dyngo GLS lifecycle, the otelc port of the dyngo aspects in
+# ../../../internal/orchestrion/gls.orchestrion.yml. See that file for the
+# reasoning behind each injection.
+#
+# dyngo's source is GLS-agnostic (plain context.WithValue / ctx.Value), so a plain
+# build pays nothing. Unlike spans, dyngo operations are always registered and
+# finished on the same goroutine, so there is no liveness cell: the `done`
+# argument to GLSActivate/GLSDeactivate is nil.
+#
+# Arguments resolve through the function template variables, so a rename in the
+# dyngo source keeps these rules working.
+
+dyngo_operation_gls_field:
+  target: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+  where:
+    struct: operation
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: __dd_glsPop
+            type: orchestrion.GLSPopperCell
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# RegisterOperation(ctx context.Context, op Operation) context.Context
+# ctxp is non-nil here so the returned context is GLS-aware, matching what
+# in-source CtxWithValue used to do.
+dyngo_register_operation_gls_push:
+  target: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+  where:
+    func: RegisterOperation
+  do:
+    - inject_code:
+        raw: |
+          {{- $ctx := .FuncArgument 0 -}}
+          {{- $op := .FuncArgument 1 -}}
+          {
+            __dd_o := {{ $op }}.unwrap()
+            orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop, nil)
+          }
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# FromContext(ctx context.Context) (Operation, bool)
+# Wrapped unconditionally, including when ctx is nil: AppSec calls
+# FromContext(nil) from un-instrumented sites and relies purely on the GLS
+# fallback, and a nil guard here would let the source's own `if ctx == nil`
+# short-circuit before the GLS is ever consulted.
+dyngo_from_context_gls_read:
+  target: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+  where:
+    func: FromContext
+  do:
+    - inject_code:
+        raw: |
+          {{- $ctx := .FuncArgument 0 -}}
+          {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+
+# FinishOperation[O Operation, E ResultOf[O]](op O, results E)
+# Deferred so the pop runs on exit. The source declares its own `o := op.unwrap()`
+# further down, which is not in scope at the top of the body, hence __dd_o here.
+dyngo_finish_operation_gls_deactivate:
+  target: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+  where:
+    func: FinishOperation
+  do:
+    - inject_code:
+        raw: |
+          {{- $op := .FuncArgument 0 -}}
+          defer func() {
+            __dd_o := {{ $op }}.unwrap()
+            orchestrion.GLSDeactivate(nil, &__dd_o.__dd_glsPop)
+          }()
+  imports:
+    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
