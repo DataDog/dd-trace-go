@@ -26,3 +26,11 @@ func badSpread(args ...any) {
 	// Spread calls have no single "last argument" to check; must not crash.
 	log.Printf("value: %v", args...)
 }
+
+// badNonConstantFormat is the regression case for a real coverage gap:
+// constantlogmsg doesn't cover the standard library log package at all, so
+// nothing enforced a constant format string here until this analyzer
+// restored the check the retired stdLogVariableFormat ruleguard rule had.
+func badNonConstantFormat(format string, name string) {
+	log.Printf(format, name) // want "format argument must be a compile-time constant string"
+}
