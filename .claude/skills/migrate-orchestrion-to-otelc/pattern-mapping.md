@@ -12,6 +12,7 @@ in `references.md`.
 | `replace-function` | before-hook: `SetSkipCall(true)` + call the drop-in the aspect points to + `SetReturnVal`; guard re-entrancy if the drop-in calls the target again |
 | `prepend-statements` in a `function-body` | `inject_hooks` before/after hook, or `inject_code` when the code must run in-package |
 | `add-struct-field` | `add_struct_fields`, exported if a hook must read it |
+| `wrap-expression` on a `struct-literal` | `where: {struct_literal:}` with `set_fields`: `value:` to set a field, `wrap:` to wrap what the literal already assigns |
 | `assign-value` | `assign_value`: `replace:` for a new expression, `wrap:` to keep the original as `{{ . }}` |
 | `inject-declarations` (`go:linkname` to the contrib) | usually nothing: otelc links external hooks through its own trampoline. Only needed if in-package `inject_code` must reference a contrib symbol |
 | `add-blank-import` | the rule's top-level `imports:` map |
@@ -24,8 +25,9 @@ in `references.md`.
 | `function` with `signature` / `signature-contains` | `where:` sub-filters `signature`, `signature_contains`, `result`, `last_result`, `param` |
 | `function-call` | `where: {function_call: "import/path.Func"}` |
 | `struct-definition` | `where: {struct:}` |
+| `struct-literal` | `where: {struct_literal: "import/path.TypeName"}`, matching literals written in the `target:` package |
 | `declaration-of`, `value-declaration` | `where: {identifier:, kind: var\|const}` |
-| `directive` (`dd:span`) | `where: {directive:}` with `expand_directive`, but the template reads only `{{FuncName}}`, not the directive's arguments (`feature-gaps.md`) |
+| `directive` (`dd:span`) | `where: {directive:}` with `expand_directive`; the template reads `.DirectiveArgs` / `.DirectiveArg <key>` for the directive's own arguments |
 | `import-path`, `package-name`, `package-filter` | `target:`, exact or glob; `$root` for the module being built |
 | `test-main` | nothing. `target: test_main` is unsupported; `where.file.is_test` gates files inside a point-selector rule |
 | `all-of` | flat keys in one `where` are an implicit conjunction |
@@ -37,17 +39,21 @@ equivalent, so use it only when the hook depends on that range.
 
 ## Porting a template to `inject_code`
 
-`inject_code` takes a raw string (`raw:`) with no template variables:
-- Spell the receiver and parameter names exactly as the target's source does.
-- Results the target leaves unnamed become `_unnamedRetVal0`, `_unnamedRetVal1`, and so on.
+`inject_code` takes a raw string (`raw:`) rendered as a `text/template`, so the snippet reads the
+matched function instead of naming its identifiers:
+- `.FuncArgument N` for a parameter, `.Receiver` for a method's receiver, `.FuncReturn N` for a
+  result, and `.FuncArgumentOfType` / `.FuncReturnOfType` to pick one by type rather than position.
+- Parameters and results the target leaves unnamed, or names `_`, are given a synthetic name the
+  first time the template reads them.
 - Imports the snippet needs come from the rule's top-level `imports:`.
 - It lands at the top of the body, unless `pattern:` plus `placement: before|after` anchor it to a
   statement.
 
-Only workable when the target is our own code. Guard the coupling with a test that parses the source
-with `go/ast` and asserts the identifiers are unchanged: without it a rename fails as a compile
-error inside an instrumented copy of the package instead of pointing at the yaml
-(`ddtrace/tracer/gls_otelc_identifiers_test.go`).
+Resolve every identifier through a template variable. A literal name survives only until someone
+renames it in the target, and then the build fails as a compile error inside an instrumented copy of
+the package, which points nowhere near the yaml. `ddtrace/tracer/otelc.yaml` does this throughout.
+
+Only workable when the target is our own code.
 
 ## Reaching state the aspect read in-package
 

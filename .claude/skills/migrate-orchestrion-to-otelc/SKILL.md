@@ -57,9 +57,9 @@ integration is not blocked. Say so, and do not open a PR until the suite is actu
 From the sources in `references.md`, learn:
 - Orchestrion: the full set of join points and advice, and what advice templates can read (the `.`
   accessors).
-- otelc: the seven rule kinds (`inject_hooks`, `inject_code`, `add_struct_fields`, `wrap_call`,
-  `add_file`, `assign_value`, `expand_directive`), the `where` and `where.file` selectors, glob and
-  `$root` targets, and `version` ranges.
+- otelc: the eight rule kinds (`inject_hooks`, `inject_code`, `add_struct_fields`, `wrap_call`,
+  `add_file`, `assign_value`, `expand_directive`, `set_fields`), the `where` and `where.file`
+  selectors, glob and `$root` targets, and `version` ranges.
 
 Orchestrion renders Go code templates into the matched AST node. otelc calls external hook functions
 through a trampoline and `//go:linkname`, and can also inject raw code in-package (`inject_code`).
@@ -81,6 +81,10 @@ Prefer hooks; inject raw code only when it must run inside the target package.
      `otelc.yml` or `*.otelc.yaml`. Each rule's `path:` is this package. otelc walks a named
      package's directory tree and stops at nested modules, so `otelc/all` must name this module
      directly.
+   - Do not add the file-level `version:` key yet (IDMPL-905). It only exists on otelc main, and a
+     file carrying it fails to parse on every released version, so there is nothing valid to
+     declare while `OTELC_VERSION` is a main commit. otelc warns about its absence into
+     `.otelc-build/debug.log` only.
    - Not under `internal/`. otelc blank-imports the packages it reads rules from into the
      application's own main package, so a rule-carrying package under `internal/` builds here and
      fails for every real user. `scripts/build_otelc_external_app.sh` guards this; a rule's
@@ -140,11 +144,12 @@ Prefer hooks; inject raw code only when it must run inside the target package.
 - Keep comments short: what is not obvious from the code, and nothing else.
 - Do not copy rule syntax or API signatures into these docs. Re-read `references.md`.
 
-Two otelc v1.0.1 defects leave a green run with nothing instrumented:
+Two otelc defects leave a green run with nothing instrumented:
 
-- **Never pass `-json` to `otelc go test`.** It is forwarded into the `go <verb> -a -x -n` dry run
-  otelc parses for its build plan, which then arrives empty. Use `-v`, and `go tool test2json -t -p
-  <pkg>` afterwards if you need machine-readable output.
+- **Never pass `-json` to `otelc go test`** (IDMPL-903). It is forwarded into the `go <verb> -a -x
+  -n` dry run otelc parses for its build plan, which then arrives empty, leaving `matched.json` as
+  `[]`. Use `-v`, and `go tool test2json -t -p <pkg>` afterwards if you need machine-readable
+  output.
 - **A package whose only Go files are `_test.go` is skipped.** When it is the package under test the
   whole build loses instrumentation, including rules targeting other modules. Give it a `doc.go`.
 
