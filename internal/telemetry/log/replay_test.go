@@ -96,7 +96,9 @@ func TestReportError_QueuedBeforeClientExists_StackPointsAtCallSite(t *testing.T
 	client.Flush()
 
 	require.NotEmpty(t, rt.bodies, "the queued report must have been flushed")
-	var logs []transport.LogMessage
+	// Each body carries at least one log message, so len(bodies) is a lower
+	// bound capacity hint; a message-batch may hold several and append grows past it.
+	logs := make([]transport.LogMessage, 0, len(rt.bodies))
 	for _, body := range rt.bodies {
 		logs = append(logs, extractLogMessages(t, body)...)
 	}
