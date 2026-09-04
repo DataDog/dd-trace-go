@@ -372,15 +372,23 @@ func TestLogAndReportError_PercentInMessageLoggedVerbatim(t *testing.T) {
 	undo := internallog.UseLogger(recorder)
 	defer undo()
 
+	// Flush after each message: internal/log aggregates by key and flushes a
+	// map, so a single flush of both messages would leave their relative
+	// order to Go's randomized map iteration.
 	LogAndReportError("sdk error: reached 100% capacity", errors.New("boom"))
-	LogAndReportError("sdk error: operation %s failed", errors.New("boom"))
 	internallog.Flush()
 
 	logs := recorder.Logs()
-	require.Len(t, logs, 2)
+	require.Len(t, logs, 1)
 	assert.Contains(t, logs[0], "sdk error: reached 100% capacity: boom")
-	assert.Contains(t, logs[1], "sdk error: operation %s failed: boom")
 	assert.NotContains(t, logs[0], "%!")
+
+	LogAndReportError("sdk error: operation %s failed", errors.New("boom"))
+	internallog.Flush()
+
+	logs = recorder.Logs()
+	require.Len(t, logs, 2)
+	assert.Contains(t, logs[1], "sdk error: operation %s failed: boom")
 	assert.NotContains(t, logs[1], "%!")
 	assert.NotContains(t, logs[1], "MISSING")
 }
