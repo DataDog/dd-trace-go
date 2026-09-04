@@ -12,10 +12,11 @@ import (
 )
 
 type config struct {
-	serviceName   string
-	serviceSource string
-	analyticsRate float64
-	errCheck      func(err error) bool
+	serviceName        string
+	serviceSource      string
+	analyticsRate      float64
+	errCheck           func(err error) bool
+	dataStreamsEnabled bool
 }
 
 // Option describes options for the AWS integration.
@@ -32,6 +33,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 }
 
 // WithService sets the given service name for the dialled connection.
@@ -75,3 +77,13 @@ func WithErrorCheck(fn func(err error) bool) OptionFn {
 		cfg.errCheck = fn
 	}
 }
+
+// WithDataStreams enables Data Streams Monitoring for supported AWS services
+// (currently SQS). When enabled, produce and consume checkpoints are set and
+// the DSM pathway is propagated via the _datadog SQS message attribute.
+func WithDataStreams() OptionFn {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
+	}
+}
+

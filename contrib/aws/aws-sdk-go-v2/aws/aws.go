@@ -110,10 +110,14 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
+		var sqsQueueName string
 		resourceTags, ok := resourceTagsFromParams(in, serviceID, region, partition)
 		if !ok {
 			instr.Logger().Debug("attempted to extract resourceTagsFromParams of an unsupported AWS service: %s", serviceID)
 		} else {
+			if serviceID == "SQS" {
+				sqsQueueName = resourceTags[ext.SQSQueueName]
+			}
 			for k, v := range resourceTags {
 				if v != "" {
 					opts = append(opts, tracer.Tag(k, v))
@@ -131,7 +135,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
-			sqsTracer.EnrichOperation(spanctx, span, in, operation)
+			sqsTracer.EnrichOperation(spanctx, span, in, operation, mw.cfg.dataStreamsEnabled)
 		case "SNS":
 			snsTracer.EnrichOperation(spanctx, span, in, operation)
 		case "Kinesis":
@@ -149,6 +153,12 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)
 		}
+
+		// Post-process the response (e.g. SQS consume DSM checkpoints).
+		if serviceID == "SQS" && err == nil {
+			sqsTracer.EnrichOperationOutput(out, operation, mw.cfg.dataStreamsEnabled, sqsQueueName)
+		}
+
 		span.Finish()
 
 		return out, metadata, err
