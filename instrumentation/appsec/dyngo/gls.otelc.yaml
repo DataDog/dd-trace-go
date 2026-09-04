@@ -12,9 +12,8 @@
 # finished on the same goroutine, so there is no liveness cell: the `done`
 # argument to GLSActivate/GLSDeactivate is nil.
 #
-# All three targets are plain functions, so the rules resolve their arguments
-# through the function template variables and survive a rename. Contrast the
-# receiver-based rules in ../../../ddtrace/tracer/otelc.yaml.
+# Arguments resolve through the function template variables, so a rename in the
+# dyngo source keeps these rules working.
 
 dyngo_operation_gls_field:
   target: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo

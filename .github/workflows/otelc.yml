@@ -32,11 +32,11 @@ env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
   #
-  # Pinned to a main commit rather than v1.0.1: the rules use function template
-  # variables in inject_code, added after that release in
-  # open-telemetry/opentelemetry-go-compile-instrumentation#1140. Move back to a
+  # Pinned to a main commit rather than v1.1.0: the rules use the `.Receiver`
+  # template variable, added after that release in
+  # open-telemetry/opentelemetry-go-compile-instrumentation#1194. Move back to a
   # tag once one ships with it.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.0.2-0.20260821102221-8649f330da3e' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260904142222-f25f662b469d' }}
 
 jobs:
   go-versions-matrix:
