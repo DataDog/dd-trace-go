@@ -6,67 +6,34 @@
 package echo
 
 import (
-	"sync"
-	"sync/atomic"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
 
-var (
-	hasIgnoredRoutes atomic.Bool
-	ignoredRoutes    sync.Map
-)
-
-// IgnoreRoute records route as ignored by Echo tracing middleware and returns it.
-func IgnoreRoute[T *echo.Route | []*echo.Route](route T) T {
-	switch route := any(route).(type) {
-	case *echo.Route:
-		ignoreRoute(route)
-	case []*echo.Route:
-		for _, route := range route {
-			ignoreRoute(route)
-		}
-	}
-	return route
-}
-
-func ignoreRoute(route *echo.Route) {
-	if route == nil {
-		return
-	}
-	ignoredRoutes.Store(route, struct{}{})
-	hasIgnoredRoutes.Store(true)
-}
-
-func isIgnoredRoute(c echo.Context) bool {
-	if !hasIgnoredRoutes.Load() || c == nil || c.Request() == nil || c.Echo() == nil {
-		return false
-	}
-
-	path := c.Path()
-	if path == "" {
-		return false
-	}
-
-	request := c.Request()
-	if router := c.Echo().Routers()[request.Host]; router != nil {
-		return isIgnoredRouteIn(router.Routes(), request.Method, path)
-	}
-
-	return isIgnoredRouteIn(c.Echo().Routes(), request.Method, path)
-}
-
-func isIgnoredRouteIn(routes []*echo.Route, method, path string) bool {
-	for _, route := range routes {
-		if route == nil || route.Path != path {
+func parseIgnoredRoutes(value string) map[string]struct{} {
+	ignoredRoutes := make(map[string]struct{})
+	for _, route := range strings.Split(value, ",") {
+		fields := strings.Fields(route)
+		if len(fields) != 2 {
 			continue
 		}
-		if route.Method != method && route.Method != echo.RouteNotFound {
-			continue
-		}
-		if _, found := ignoredRoutes.Load(route); found {
-			return true
-		}
+		ignoredRoutes[routeKey(strings.ToUpper(fields[0]), fields[1])] = struct{}{}
 	}
-	return false
+	if len(ignoredRoutes) == 0 {
+		return nil
+	}
+	return ignoredRoutes
+}
+
+func isIgnoredRoute(cfg *config, c echo.Context) bool {
+	if cfg == nil || len(cfg.ignoredRoutes) == 0 || c == nil || c.Request() == nil || c.Path() == "" {
+		return false
+	}
+	_, found := cfg.ignoredRoutes[routeKey(c.Request().Method, c.Path())]
+	return found
+}
+
+func routeKey(method, path string) string {
+	return method + "\x00" + path
 }
