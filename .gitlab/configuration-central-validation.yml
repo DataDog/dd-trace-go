@@ -58,7 +58,9 @@ variables:
     # and added to the download loop in *download-scripts-from-template above.
     - cp .gitlab/config-inversion-local-validation-with-track.py scripts/
     - chmod +x scripts/config-inversion-local-validation-with-track.py
-    - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
+    # TODO: switch to SSM fetch once running on the libdatadog-build/packaging image:
+    # export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
+    # For this draft, FP_API_KEY is set as a masked CI variable in the project settings.
     - export GH_TOKEN=$(dd-octo-sts token --scope "$DDOCTOSTS_SCOPE" --policy "$DDOCTOSTS_POLICY")
   script:
     - scripts/config-inversion-local-validation-with-track.py
