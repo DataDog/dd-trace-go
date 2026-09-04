@@ -47,10 +47,11 @@ examples, because these rules target our own code and the hooks call dd-trace-go
 - `ddtrace/tracer/otelc.yaml` — every core rule in one file: build-mode flag (`assign_value`), the
   GLS storage woven into `runtime` (`add_struct_fields` + `add_file` + `inject_code`, including
   `//go:linkname`), the span GLS lifecycle, and the tracer lifecycle with why it cannot use
-  `add_file`. Worth reading before writing your own rules; a rule carries its own `target:`, so one
-  file can rewrite several packages.
-- `ddtrace/tracer/gls_otelc_identifiers_test.go` and the one in `instrumentation/appsec/dyngo` —
-  how to guard `inject_code` against a rename in the target.
+  `add_file`. Also the worked example of resolving every injected identifier through `.FuncArgument`
+  and `.Receiver` rather than naming it. Worth reading before writing your own rules; a rule carries
+  its own `target:`, so one file can rewrite several packages.
+- `instrumentation/appsec/dyngo/gls.otelc.yaml` — the same rules against a package whose targets are
+  all plain functions, so every identifier resolves through `.FuncArgument`.
 - `otelc/all/otel.instrumentation.go` and
   `internal/orchestrion/_integration/otel.instrumentation.go` — rule discovery. An application
   names `otelc/all` in the tool file at its own module root; otelc reads the tool file at that
