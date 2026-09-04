@@ -40,9 +40,27 @@ func goodIndexedErrorDotErrorSoleVerb(err *customError) {
 	internallog.Warn("failed: %[1]v", err.Error())
 }
 
-func goodNonConstantFormat(format string, a any) {
-	// Non-constant formats are constantlogmsg's problem, not this analyzer's.
-	internallog.Debug(format, a)
+func goodNonConstantFormatOnConstantLogMsgCoveredFunc(format string, a any) {
+	// Error and Warn are constantlogmsg's problem specifically (its
+	// DefaultFuncs covers exactly those two internalLogPkg entries) — this
+	// analyzer must not also flag them, or every violation would produce two
+	// diagnostics.
+	internallog.Warn(format, a)
+}
+
+// ── Bad: non-constant format on a function constantlogmsg doesn't cover ─────
+
+// badNonConstantFormatDebug is the regression case for a real coverage gap:
+// constantlogmsg's DefaultFuncs only enforces a constant format for
+// internalLogPkg's Error and Warn, not Debug or Info — this restores the
+// check the retired internalLogVariableFormat ruleguard rule had for all
+// four.
+func badNonConstantFormatDebug(format string, a any) {
+	internallog.Debug(format, a) // want "format argument must be a compile-time constant string"
+}
+
+func badNonConstantFormatInfo(format string, a any) {
+	internallog.Info(format, a) // want "format argument must be a compile-time constant string"
 }
 
 // ── Bad: forbidden %v/%+v/%#v usage ──────────────────────────────────────────
@@ -101,6 +119,24 @@ func badSingleVerbNotFinalWithErrorLast(cfg any, err *customError) {
 	// Exactly one %v-family verb, but it isn't the final verb — still reported
 	// even though the last argument happens to be err.Error().
 	internallog.Warn("value %v; msg: %s", cfg, err.Error()) // want "must be the last format verb"
+}
+
+// badIndexedVerbResolvesToNonLastArgument is the regression case for a real
+// false negative: an explicit index can put the (only, textually final)
+// %v-family verb on an argument other than the call's last one. %[2]s
+// consumes argument 2 (err.Error()) and %[1]v consumes argument 1 (cfg) —
+// checking the literal last call argument for the err.Error() exemption
+// looks at the wrong operand entirely and would wrongly exempt this call.
+func badIndexedVerbResolvesToNonLastArgument(cfg any, err *customError) {
+	internallog.Warn("%[2]s %[1]v", cfg, err.Error()) // want "exposes uncontrolled data"
+}
+
+// goodIndexedVerbResolvesToErrorDotError is the mirror case proving the fix
+// doesn't over-correct: here the resolved argument for the sole, final
+// %v-family verb genuinely is err.Error(), even though the call's last
+// argument positionally (cfg, via %[2]s) is not.
+func goodIndexedVerbResolvesToErrorDotError(cfg any, err *customError) {
+	internallog.Warn("cfg=%[2]s %[1]v", err.Error(), cfg)
 }
 
 // ── Suggestion: allowed, but flagged as a style nudge ───────────────────────
