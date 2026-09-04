@@ -81,9 +81,9 @@ Prefer hooks; inject raw code only when it must run inside the target package.
      `otelc.yml` or `*.otelc.yaml`. Each rule's `path:` is this package. otelc walks a named
      package's directory tree and stops at nested modules, so `otelc/all` must name this module
      directly.
-   - Do not add the file-level `version:` key yet (IDMPL-905). It only exists on otelc main, and a
-     file carrying it fails to parse on every released version, so there is nothing valid to
-     declare while `OTELC_VERSION` is a main commit. otelc warns about its absence into
+   - Do not add the file-level `version:` key yet. It only exists on otelc main, and a file
+     carrying it fails to parse on every released version, so there is nothing valid to declare
+     while `OTELC_VERSION` is a main commit. otelc warns about its absence into
      `.otelc-build/debug.log` only.
    - Not under `internal/`. otelc blank-imports the packages it reads rules from into the
      application's own main package, so a rule-carrying package under `internal/` builds here and
@@ -127,17 +127,17 @@ Prefer hooks; inject raw code only when it must run inside the target package.
 - Definition-side double-firing: a hooked constructor that internally calls another hooked
   constructor fires both. Hook only the inner funnel, or add a re-entrancy guard.
 - `SetParam` and `SetReturnVal` do not work on a generic target function. `SetReturnVal` also
-  panics in a before-only hook, because `returnVals` is allocated only for an after trampoline
-  (IDMPL-723). Pair before and after hooks and pass the value through `SetData`/`GetData`.
+  panics in a before-only hook, because `returnVals` is allocated only for an after trampoline.
+  Pair before and after hooks and pass the value through `SetData`/`GetData`.
 - A hook that panics is swallowed by otelc's generated `recover()`: green build, green tests, no
   instrumentation. Assume this whenever spans go missing without an error.
-- `inject_hooks` gives no init-ordering guarantee (IDMPL-719). The trampoline links through
+- `inject_hooks` gives no init-ordering guarantee. The trampoline links through
   `//go:linkname` and creates no import edge, so hooking a function that other packages call from
   their own `init()` can run the hook before the hook module's own `init()`.
 - `target: $root` never matches `package main`, whose compile-time import path is the literal
   string `main`. A call-site rule that must fire there needs a `$root` rule and a `main` rule.
-- Hook modules must pin `go.opentelemetry.io/otelc/pkg` to the commit behind the CLI's release tag
-  (IDMPL-722). There is no submodule tag, so plain `go mod tidy` drifts them onto HEAD.
+- Hook modules must pin `go.opentelemetry.io/otelc/pkg` to the commit behind the CLI's release tag.
+  There is no submodule tag, so plain `go mod tidy` drifts them onto HEAD.
 - Upstream limits hook imports to the target library, OpenTelemetry and the standard library, and
   expects hooks to honour `OTEL_GO_ENABLED_INSTRUMENTATIONS` / `OTEL_GO_DISABLED_INSTRUMENTATIONS`.
   Ours import the contrib and follow dd's own configuration instead; say so in the PR.
@@ -146,10 +146,9 @@ Prefer hooks; inject raw code only when it must run inside the target package.
 
 Two otelc defects leave a green run with nothing instrumented:
 
-- **Never pass `-json` to `otelc go test`** (IDMPL-903). It is forwarded into the `go <verb> -a -x
-  -n` dry run otelc parses for its build plan, which then arrives empty, leaving `matched.json` as
-  `[]`. Use `-v`, and `go tool test2json -t -p <pkg>` afterwards if you need machine-readable
-  output.
+- **Never pass `-json` to `otelc go test`.** It is forwarded into the `go <verb> -a -x -n` dry run
+  otelc parses for its build plan, which then arrives empty, leaving `matched.json` as `[]`. Use
+  `-v`, and `go tool test2json -t -p <pkg>` afterwards if you need machine-readable output.
 - **A package whose only Go files are `_test.go` is skipped.** When it is the package under test the
   whole build loses instrumentation, including rules targeting other modules. Give it a `doc.go`.
 
