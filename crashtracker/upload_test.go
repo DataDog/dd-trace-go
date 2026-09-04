@@ -251,6 +251,36 @@ func TestUploadReportRetriesTransientFailure(t *testing.T) {
 	}
 }
 
+// TestUploadReportRetries408 proves a 408 (the intake or an intervening
+// proxy gave up waiting for the request) is treated as transient rather than
+// a permanent 4xx: repeating the request unmodified is exactly what RFC 7231
+// expects to resolve it, so giving up after one 408 would lose a report a
+// retry could have delivered.
+func TestUploadReportRetries408(t *testing.T) {
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			w.WriteHeader(http.StatusRequestTimeout)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	cfg := &config{
+		agentURL:   srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	if err := uploadReport(cfg, newTestReport()); err != nil {
+		t.Fatalf("uploadReport returned unexpected error: %v", err)
+	}
+	if requestCount != 2 {
+		t.Errorf("requestCount = %d, want 2 (one 408, one success)", requestCount)
+	}
+}
+
 // TestUploadReportDoesNotRetryBadRequest proves a non-retryable 4xx (which
 // will fail identically on every attempt) does not waste the monitor's
 // remaining time before exit retrying a request that can never succeed.
