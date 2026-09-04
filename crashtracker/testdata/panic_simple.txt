@@ -1,0 +1,24 @@
+panic: something went wrong
+
+goroutine 1 [running]:
+panic({0x104a8c1e0, 0x104c3d4f0})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go:830 +0x148
+main.inner(...)
+	/tmp/crashdemo/main.go:7
+main.middle(...)
+	/tmp/crashdemo/main.go:12
+main.main()
+	/tmp/crashdemo/main.go:20 +0x58
+
+goroutine 34 [select (no cases)]:
+main.main.func1()
+	/tmp/crashdemo/main.go:17 +0x1c
+created by main.main in goroutine 1
+	/tmp/crashdemo/main.go:17 +0x24
+
+goroutine 35 [chan receive]:
+main.main.func2()
+	/tmp/crashdemo/main.go:18 +0x30
+created by main.main in goroutine 1
+	/tmp/crashdemo/main.go:18 +0x30
+exit status 2

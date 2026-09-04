@@ -1,0 +1,16 @@
+fatal error: concurrent map writes
+
+goroutine 35 [running]:
+internal/runtime/maps.fatal({0x1049ce9f4?, 0x0?})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go:1181 +0x20
+main.main.func2()
+	/tmp/crashdemo/main.go:14 +0x30
+created by main.main in goroutine 1
+	/tmp/crashdemo/main.go:12 +0xa0
+
+goroutine 34 [running]:
+main.main.func1()
+	/tmp/crashdemo/main.go:9 +0x30
+created by main.main in goroutine 1
+	/tmp/crashdemo/main.go:7 +0x60
+exit status 2
