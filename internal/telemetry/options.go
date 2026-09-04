@@ -94,12 +94,22 @@ const withStacktraceNowSkip = 1
 // no-capture-yet option as WithStacktrace instead of paying the capture cost:
 // every call through the package-level Log function is a no-op in that case,
 // so there's nothing to preserve accuracy for.
+//
+// Entries sent with this option are deduplicated separately from entries
+// without it: the backend's dedup key carries a flag set here, so a report
+// can never merge into a plain, stackless log entry that happens to share
+// the same message, level, and tags — a merge would drop the report's
+// stack trace and error attributes.
 func WithStacktraceNow() LogOption {
 	if Disabled() {
 		return WithStacktrace()
 	}
 	raw := stacktrace.CaptureRaw(withStacktraceNowSkip)
-	return func(_ *loggerKey, value *loggerValue) {
+	return func(key *loggerKey, value *loggerValue) {
+		if key != nil {
+			key.stackNow = true
+			return
+		}
 		if value == nil {
 			return
 		}

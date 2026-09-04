@@ -28,6 +28,14 @@ type loggerKey struct {
 	tags    string
 	message string
 	level   LogLevel
+
+	// stackNow is true for entries whose stack was captured synchronously at
+	// the call site (WithStacktraceNow), i.e. ReportError/ReportPanic reports.
+	// It keeps such reports out of the dedup bucket of plain, stackless log
+	// entries with the same message, level, and tags — otherwise a report
+	// would merge into the plain entry and silently lose both its stack trace
+	// and its error/panic attributes.
+	stackNow bool
 }
 
 type loggerValue struct {

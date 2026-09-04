@@ -111,3 +111,53 @@ func TestReportError_QueuedBeforeClientExists_StackPointsAtCallSite(t *testing.T
 	assert.NotContains(t, stack, "SwapClient")
 	assert.NotContains(t, stack, "globalClientRecorder")
 }
+
+// TestReportError_DoesNotDedupIntoPlainLogEntry proves the fix for the
+// report-dedup collision: a plain, stackless telemetrylog.Error with the same
+// message, level, and tags as a report shares the backend's dedup key shape,
+// so before the key carried a stack-now marker the report merged into the
+// plain entry and silently lost both its stack trace and its error attribute.
+func TestReportError_DoesNotDedupIntoPlainLogEntry(t *testing.T) {
+	telemetry.StopApp()
+	t.Cleanup(telemetry.StopApp)
+
+	require.Nil(t, telemetry.GlobalClient(), "must run before any client exists to exercise the replay path")
+
+	// Same message, level, and (empty) tags: a guaranteed key collision
+	// between a plain log entry and a report if the key has no report marker.
+	Error("dogfood test: colliding message")
+	ReportError("dogfood test: colliding message", errors.New("boom"))
+
+	rt := &replayCaptureRoundTripper{t: t}
+	client, err := telemetry.NewClient("test-service", "test-env", "1.0.0", telemetry.ClientConfig{
+		AgentURL:         "http://localhost:8126",
+		HTTPClient:       &http.Client{Transport: rt},
+		DependencyLoader: func() (*debug.BuildInfo, bool) { return nil, false },
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	telemetry.SwapClient(client)
+	client.Flush()
+
+	logs := make([]transport.LogMessage, 0, len(rt.bodies))
+	for _, body := range rt.bodies {
+		logs = append(logs, extractLogMessages(t, body)...)
+	}
+	require.Len(t, logs, 2, "the plain log and the report must be two distinct entries")
+
+	var stackless, report transport.LogMessage
+	for _, msg := range logs {
+		if msg.StackTrace == "" {
+			stackless = msg
+		} else {
+			report = msg
+		}
+	}
+	assert.Equal(t, "dogfood test: colliding message", stackless.Message,
+		"the plain entry must stay attribute-free")
+	assert.NotEmpty(t, report.StackTrace, "the report entry must keep its captured stack")
+	assert.Contains(t, report.Message, "error.error_type=", "the report entry must keep its error attribute")
+	assert.Contains(t, report.StackTrace, "TestReportError_DoesNotDedupIntoPlainLogEntry",
+		"the report's stack must show this test's call site")
+}
