@@ -99,9 +99,13 @@ func attemptUpload(cfg *config, compressed []byte) (retryable bool, err error) {
 	// actually accepted by the intake, and this is the only check standing
 	// between that and silently treating the upload as successful.
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		// 5xx and 429 are worth retrying; any other 4xx (bad request, invalid
-		// API key, ...) will fail identically on every attempt.
-		retryable := resp.StatusCode >= http.StatusInternalServerError || resp.StatusCode == http.StatusTooManyRequests
+		// 5xx, 429, and 408 are worth retrying; any other 4xx (bad request,
+		// invalid API key, ...) will fail identically on every attempt. 408
+		// specifically means the server gave up waiting for the request, which
+		// repeating unmodified is expected to resolve (RFC 7231 §6.5.7).
+		retryable := resp.StatusCode >= http.StatusInternalServerError ||
+			resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode == http.StatusRequestTimeout
 		return retryable, fmt.Errorf("crashtracker: intake returned %d", resp.StatusCode)
 	}
 	return false, nil
