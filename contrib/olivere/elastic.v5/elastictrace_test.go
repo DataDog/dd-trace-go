@@ -403,6 +403,16 @@ func TestPeekGzip(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, body, snip)
 	})
+
+	t.Run("encoding casing is ignored", func(t *testing.T) {
+		// Content-Encoding is a case-insensitive HTTP token (RFC 9110 8.4.1).
+		body := `{"error":{"type":"index_not_found_exception"}}`
+		gz := gzipped(t, []byte(body))
+
+		snip, _, err := peek(io.NopCloser(bytes.NewReader(gz)), "GZip", len(gz), bodyCutoff)
+		require.NoError(t, err)
+		assert.Equal(t, body, snip)
+	})
 }
 
 func TestHTTPClientGzipBodyCutoff(t *testing.T) {
@@ -435,6 +445,104 @@ func TestHTTPClientGzipBodyCutoff(t *testing.T) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal(t, reqBody, span.Tag("elasticsearch.body"))
 	assert.Len(t, span.Tag(ext.ErrorMsg).(string), bodyCutoff)
+}
+
+// TestHTTPClientGzipErrorResponseUncompressedRequest is a regression test: peek() must use
+// each body's own Content-Encoding header. A gzip-compressed error response must be decoded
+// even when the request itself was not gzip-compressed.
+func TestHTTPClientGzipErrorResponseUncompressedRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	errBody := `{"error":{"type":"index_not_found_exception"}}`
+	gz := gzipped(t, []byte(errBody))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(gz)
+	}))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/twitter/_search", nil)
+	require.NoError(t, err)
+	// Set explicitly: otherwise net/http requests gzip on its own, transparently
+	// inflates the response, and strips Content-Encoding before peek() sees it.
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res, err := NewHTTPClient().Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	span := mt.FinishedSpans()[0]
+	assert.Equal(t, errBody, span.Tag(ext.ErrorMsg))
+}
+
+// TestHTTPClientGzipBodyCutoffUncompressedRequest covers the path TestHTTPClientGzipBodyCutoff
+// doesn't: a gzip-bomb response arriving on an uncompressed request. Content-Encoding is now read
+// from the response's own header, so this path decodes gzip where it previously wouldn't have; it
+// must still respect bodyCutoff.
+func TestHTTPClientGzipBodyCutoffUncompressedRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	bomb := gzipped(t, make([]byte, 4<<20))
+	require.Less(t, len(bomb), bodyCutoff)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Length", strconv.Itoa(len(bomb)))
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(bomb)
+	}))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/twitter/_search", nil)
+	require.NoError(t, err)
+	// Set explicitly: otherwise net/http requests gzip on its own, transparently
+	// inflates the response, and strips Content-Encoding before peek() sees it.
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res, err := NewHTTPClient().Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	span := mt.FinishedSpans()[0]
+	assert.Len(t, span.Tag(ext.ErrorMsg).(string), bodyCutoff)
+}
+
+// TestHTTPClientGzipResponseCaseInsensitiveEncoding is a regression test: peek() must treat
+// Content-Encoding as case-insensitive per RFC 9110 8.4.1. A gzip-compressed request must not
+// prevent decoding a gzip-compressed response whose header uses different casing.
+func TestHTTPClientGzipResponseCaseInsensitiveEncoding(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	errBody := `{"error":{"type":"index_not_found_exception"}}`
+	gz := gzipped(t, []byte(errBody))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "GZip")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(gz)
+	}))
+	defer srv.Close()
+
+	reqBody := `{"query":{"match_all":{}}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/twitter/_search", bytes.NewReader(gzipped(t, []byte(reqBody))))
+	require.NoError(t, err)
+	req.Header.Set("Content-Encoding", "gzip")
+	// Set explicitly: otherwise net/http adds it itself, transparently inflates the
+	// response, and strips Content-Encoding before peek() ever sees a gzip stream.
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	res, err := NewHTTPClient().Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	span := mt.FinishedSpans()[0]
+	assert.Equal(t, reqBody, span.Tag("elasticsearch.body"))
+	assert.Equal(t, errBody, span.Tag(ext.ErrorMsg))
 }
 
 func TestAnalyticsSettings(t *testing.T) {

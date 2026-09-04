@@ -134,7 +134,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Check that metrics were recorded
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:json,protocol:http",
 			Kind:      "count",
@@ -157,7 +157,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Check that metrics were recorded with correct tags
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
@@ -180,7 +180,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Check that metrics were recorded with correct tags
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:protobuf,protocol:grpc",
 			Kind:      "count",
@@ -221,7 +221,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Verify telemetry was recorded
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:json,protocol:http",
 			Kind:      "count",
@@ -251,7 +251,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Verify no metrics were recorded
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:json,protocol:http",
 			Kind:      "count",

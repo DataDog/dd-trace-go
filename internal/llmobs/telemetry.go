@@ -51,12 +51,12 @@ func trackLLMObsStart(startTime time.Time, err error, cfg config.Config) {
 	telemetry.RegisterAppConfigs(
 		telemetry.Configuration{Name: "site", Value: cfg.TracerConfig.Site},
 		telemetry.Configuration{Name: "ml_app", Value: cfg.MLApp},
-		telemetry.Configuration{Name: "agentless", Value: cfg.ResolvedAgentlessEnabled},
+		telemetry.Configuration{Name: "agentless", Value: cfg.AgentlessEnabled},
 	)
 
 	tags := errTelemetryTags(err)
 	tags = append(tags, []string{
-		"agentless:" + boolTag(cfg.ResolvedAgentlessEnabled),
+		"agentless:" + boolTag(cfg.AgentlessEnabled),
 		"site:" + cfg.TracerConfig.Site,
 		"ml_app:" + valOrNA(cfg.MLApp),
 	}...)
@@ -172,7 +172,7 @@ func trackSubmitEvaluationMetric(metric *transport.LLMObsMetric, err error) {
 	metricType := "other"
 	hasTag := false
 	if metric != nil {
-		metricType = metric.MetricType
+		metricType = string(metric.MetricType)
 		hasTag = metric.JoinOn.Tag != nil
 	}
 
@@ -225,7 +225,7 @@ func spanEventTags(event *transport.LLMObsSpanEvent) []string {
 	integration := findTagValue(event.Tags, "integration:")
 	mlApp := findTagValue(event.Tags, "ml_app:")
 	autoInstrumented := integration != ""
-	hasError := event.Status == "error"
+	hasError := event.Status == transport.SpanStatusError
 
 	return []string{
 		"span_kind:" + spanKind,
