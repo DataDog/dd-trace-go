@@ -19,7 +19,11 @@ import (
 const (
 	// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans.
 	envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
-	// envIgnoredRoutes is the name of the env var used to specify route resources whose spans should be skipped.
+	// envIgnoredRoutes is the name of the env var used to skip spans for routes.
+	// The value holds comma-separated entries in the form "METHOD /pattern".
+	// Example: "GET /ready,POST /health".
+	// The middleware matches each entry against the request method and the route
+	// pattern that Echo registered. It does not match the request URL.
 	envIgnoredRoutes = "DD_TRACE_ECHO_IGNORED_ROUTES"
 )
 
