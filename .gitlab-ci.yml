@@ -1,7 +1,9 @@
 stages:
   - ci-image
   - docker-images-reliability-env
-  - shared-pipeline
+  - shared-pipeline-build
+  - shared-pipeline-test
+  - shared-pipeline-publish
   - generate
   - microbenchmarks
   - macrobenchmarks
@@ -13,29 +15,16 @@ stages:
 
 variables:
   INDEX_FILE: index.txt
-  # Only run the config-inversion jobs from one-pipeline; skip all packaging/publish/system-test jobs.
+  # Disabled one-pipeline shared pipeline (packaging/publish/system-test/registry) as dd-trace-go has its own way of running those. One-pipeline is only used to run configuration registry related jobs.
   SKIP_SHARED_PIPELINE: "true"
-  # requirements_json_test / system_tests are gated by this separate flag, NOT by SKIP_SHARED_PIPELINE.
   DANGEROUSLY_SKIP_SHARED_PIPELINE_TESTS: "true"
-
-  # For CuSim (used by deploy_to_cusim). These are normally provided by
-  # libdatadog-build's one-pipeline.yml template, which
-  # dd-trace-go does not include, so they are declared here directly.
-  BUILD_JOB_NAME:
-    value: ""
-    description: "[Optional] Name of the job to retrieve artifacts for CuSim"
-  RELIABILITY_ENV_BRANCH:
-    value: "master"
-    description: "Run a specific datadog-reliability-env branch downstream"
 
 workflow:
   auto_cancel:
     on_new_commit: interruptible
 
 # Config Registry CI Jobs
-# Sourced from the shared libdatadog-build one-pipeline template (versions/1.0.0) instead of the
-# previously hand-copied .gitlab/configuration-central-validation.yml. Image/scripts come from the
-# template's base-packaging-job so they stay in sync with the pinned release.
+# Extended from one-pipeline
 validate_supported_configurations_v2_local_file:
   tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .validate_supported_configurations_v2_local_file
@@ -69,22 +58,3 @@ linux-go-go-prof-app-parallel:
 
 go-go-prof-app-parallel-check-slo-breaches:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
-
-deploy_to_cusim:
-  stage: test-apps
-  needs: []
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-      when: on_success
-    - when: manual
-      allow_failure: true
-  trigger:
-    project: DataDog/apm-reliability/datadog-reliability-env
-    branch: $RELIABILITY_ENV_BRANCH
-  variables:
-    UPSTREAM_PACKAGE_JOB: $BUILD_JOB_NAME
-    UPSTREAM_PROJECT_ID: $CI_PROJECT_ID
-    UPSTREAM_PROJECT_NAME: $CI_PROJECT_NAME
-    UPSTREAM_PIPELINE_ID: $CI_PIPELINE_ID
-    UPSTREAM_BRANCH: $CI_COMMIT_REF_NAME
-    UPSTREAM_COMMIT_SHA: $CI_COMMIT_SHA
