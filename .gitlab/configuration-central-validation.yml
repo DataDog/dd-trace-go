@@ -2,12 +2,12 @@
 # This URL is available in the dd-gitlab/publish-content-addresable-templates job whenever
 # a change is made on the one-pipeline template.
 variables:
-  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/f14ac28614630d12bcfe6cba4fd8d72dce142c62ff0b053ba7c323622104ebd7/scripts/config-inversion/
+  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/1.4.0/scripts/config-inversion/
 
 .download-scripts-from-template: &download-scripts-from-template
   - mkdir -p scripts
   - |
-    for script_file in "config-inversion-local-validation.py" "config-inversion-update-supported-range.py"
+    for script_file in "config-inversion-local-validation.py" "config-inversion-update-supported-range.py" "config_parser.py" "config_inversion_verify_format.py"
     do
       curl --location --fail --show-error --output "scripts/${script_file}" "${SCRIPTS_BASE_URL}/${script_file}"
       chmod +x scripts/$script_file
@@ -24,6 +24,77 @@ variables:
     - *download-scripts-from-template
   script:
     - scripts/config-inversion-local-validation.py
+
+# Job 1: resolves origin metadata (PR number, author, commit timestamp) using dd-octo-sts.
+# Runs on dd-octo-sts-ci-base (has dd-octo-sts CLI). The GitHub token is minted, used
+# for a single API call, and revoked — it never leaves this job. Only non-sensitive
+# origin data is written to the dotenv artifact for Job 2 to consume.
+.validate_supported_configurations_v2_resolve_origin:
+  allow_failure: false
+  rules:
+    - when: on_success
+  id_tokens:
+    DDOCTOSTS_ID_TOKEN:
+      aud: dd-octo-sts
+  variables:
+    # Set in the extending job:
+    # DDOCTOSTS_SCOPE: "DataDog/dd-trace-go"
+    # DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
+  script:
+    - |
+      GH_TOKEN=$(dd-octo-sts token --scope "$DDOCTOSTS_SCOPE" --policy "$DDOCTOSTS_POLICY")
+
+      # Resolve the PR number for this commit via merge_commit_sha matching (strategy-agnostic).
+      response=$(curl --silent --show-error --fail \
+        -H "Authorization: Bearer $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${DDOCTOSTS_SCOPE}/commits/${CI_COMMIT_SHA}/pulls")
+
+      dd-octo-sts revoke -t "$GH_TOKEN" || true
+      unset GH_TOKEN
+
+      REGISTRY_PR_NUMBER=$(echo "$response" | jq -r --arg sha "$CI_COMMIT_SHA" \
+        'map(select(.merge_commit_sha == $sha)) | first | .number // ""')
+      REGISTRY_PR_REPO="$DDOCTOSTS_SCOPE"
+      REGISTRY_IS_DEFAULT_BRANCH=$([ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && echo "true" || echo "false")
+      REGISTRY_BRANCH="$CI_COMMIT_BRANCH"
+      git config --global --add safe.directory "$CI_PROJECT_DIR"
+      REGISTRY_COMMITTED_AT=$(git show -s --format=%cI "$CI_COMMIT_SHA")
+      REGISTRY_AUTHOR=$(git show -s --format=%ae "$CI_COMMIT_SHA")
+
+      {
+        echo "REGISTRY_PR_NUMBER=${REGISTRY_PR_NUMBER}"
+        echo "REGISTRY_PR_REPO=${REGISTRY_PR_REPO}"
+        echo "REGISTRY_IS_DEFAULT_BRANCH=${REGISTRY_IS_DEFAULT_BRANCH}"
+        echo "REGISTRY_BRANCH=${REGISTRY_BRANCH}"
+        echo "REGISTRY_COMMITTED_AT=${REGISTRY_COMMITTED_AT}"
+        echo "REGISTRY_AUTHOR=${REGISTRY_AUTHOR}"
+      } > origin.env
+  artifacts:
+    reports:
+      dotenv: origin.env
+
+# Job 2: runs validation + lifecycle tracking. Runs on the packaging image (has aws + python).
+# Scripts are baked into the image at /scripts/config-inversion/ — no download needed.
+# Consumes the REGISTRY_* origin data from Job 1 via the dotenv artifact.
+.validate_supported_configurations_v2_local_file_with_track:
+  allow_failure: false
+  rules:
+    - when: on_success
+  variables:
+    LOCAL_JSON_PATH: ""
+    LANGUAGE_NAME: ""
+    MULTIPLE_RELEASE_LINES: "false"
+  before_script:
+    # TODO: remove once config-inversion-local-validation-with-track.py is merged into libdatadog-build
+    - cp .gitlab/config-inversion-local-validation-with-track.py /scripts/config-inversion/
+    - chmod +x /scripts/config-inversion/config-inversion-local-validation-with-track.py
+    # Setup Feature Parity Dashboard API key
+    - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
+    # Install dependencies for python script
+    - pip3 install requests jsonschema
+  script:
+    - /scripts/config-inversion/config-inversion-local-validation-with-track.py
 
 .update_central_configurations_version_range_v2:
   allow_failure: false
