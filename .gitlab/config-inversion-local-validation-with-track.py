@@ -176,7 +176,7 @@ def main():
         sys.exit(1)
 
     pr_number_str = os.environ.get('REGISTRY_PR_NUMBER', '').strip()
-    print(f"PR: #{pr_number_str}" if pr_number_str else "PR: not found (direct push or pre-PR commit)")
+    print(f"PR: #{pr_number_str}" if pr_number_str else "PR: not resolved (merge_commit_sha match only applies to merged commits; origin will be recorded without pr_number)")
 
     try:
         data = load_config_file()
