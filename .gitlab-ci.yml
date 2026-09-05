@@ -15,7 +15,7 @@ stages:
 
 variables:
   INDEX_FILE: index.txt
-  # Disabled one-pipeline shared pipeline (packaging/publish/system-test/registry) as dd-trace-go has its own way of running those. One-pipeline is only used to run configuration registry related jobs.
+  # Disable one-pipeline shared pipeline (packaging/publish/system-test) as dd-trace-go runs those in its own way.
   SKIP_SHARED_PIPELINE: "true"
   DANGEROUSLY_SKIP_SHARED_PIPELINE_TESTS: "true"
 
@@ -23,8 +23,7 @@ workflow:
   auto_cancel:
     on_new_commit: interruptible
 
-# Config Registry CI Jobs
-# Extended from one-pipeline
+# Config Registry CI Jobs - Extended from one-pipeline
 validate_supported_configurations_v2_local_file:
   tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .validate_supported_configurations_v2_local_file
