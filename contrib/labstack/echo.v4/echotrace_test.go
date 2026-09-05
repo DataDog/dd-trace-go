@@ -547,6 +547,89 @@ func TestIgnoreRequestFunc(t *testing.T) {
 	assert.Len(spans, 0)
 }
 
+func TestParseIgnoredRoutes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  map[string]struct{}
+	}{
+		{
+			name:  "empty",
+			value: "",
+		},
+		{
+			name:  "spaces only",
+			value: " \t ",
+		},
+		{
+			name:  "trailing comma",
+			value: "GET /ready,",
+			want: map[string]struct{}{
+				routeKey(http.MethodGet, "/ready"): {},
+			},
+		},
+		{
+			name:  "one field entry is dropped",
+			value: "GET,POST /health",
+			want: map[string]struct{}{
+				routeKey(http.MethodPost, "/health"): {},
+			},
+		},
+		{
+			name:  "three field entry is dropped",
+			value: "GET /a b,POST /health",
+			want: map[string]struct{}{
+				routeKey(http.MethodPost, "/health"): {},
+			},
+		},
+		{
+			name:  "duplicate entry",
+			value: "GET /ready,GET /ready",
+			want: map[string]struct{}{
+				routeKey(http.MethodGet, "/ready"): {},
+			},
+		},
+		{
+			name:  "lowercase method",
+			value: "get /ready",
+			want: map[string]struct{}{
+				routeKey(http.MethodGet, "/ready"): {},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, parseIgnoredRoutes(tt.value))
+		})
+	}
+}
+
+func TestIgnoredRoutesEnvMatchesLowercaseRequestMethod(t *testing.T) {
+	assert := assert.New(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	req.Method = "get"
+	rec := httptest.NewRecorder()
+	c := echo.New().NewContext(req, rec)
+	c.SetPath("/ready")
+
+	cfg := &config{ignoredRoutes: parseIgnoredRoutes("GET /ready")}
+	assert.True(isIgnoredRoute(cfg, c))
+}
+
+func TestIgnoredRoutesEnvMatchesLowercaseConfiguredMethod(t *testing.T) {
+	assert := assert.New(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	rec := httptest.NewRecorder()
+	c := echo.New().NewContext(req, rec)
+	c.SetPath("/ready")
+
+	cfg := &config{ignoredRoutes: parseIgnoredRoutes("get /ready")}
+	assert.True(isIgnoredRoute(cfg, c))
+}
+
 func TestIgnoredRoutesEnv(t *testing.T) {
 	t.Setenv(envIgnoredRoutes, "GET /ready,POST /health")
 	assert := assert.New(t)
@@ -651,6 +734,29 @@ func TestIgnoredRoutesEnvWithChainedGroupRoute(t *testing.T) {
 
 	assert.Equal(http.StatusNoContent, readyRec.Code)
 	assert.True(readyCalled)
+	assert.Len(mt.FinishedSpans(), 0)
+}
+
+func TestIgnoredRoutesEnvWithParamRoute(t *testing.T) {
+	t.Setenv(envIgnoredRoutes, "GET /users/:id")
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var userCalled bool
+
+	router := Wrap(echo.New())
+	router.GET("/users/:id", func(c echo.Context) error {
+		userCalled = true
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	userReq := httptest.NewRequest(http.MethodGet, "/users/123", nil)
+	userRec := httptest.NewRecorder()
+	router.ServeHTTP(userRec, userReq)
+
+	assert.Equal(http.StatusNoContent, userRec.Code)
+	assert.True(userCalled)
 	assert.Len(mt.FinishedSpans(), 0)
 }
 
