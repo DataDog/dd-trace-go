@@ -89,7 +89,10 @@ variables:
     # TODO: remove once config-inversion-local-validation-with-track.py is merged into libdatadog-build
     - cp .gitlab/config-inversion-local-validation-with-track.py /scripts/config-inversion/
     - chmod +x /scripts/config-inversion/config-inversion-local-validation-with-track.py
+    # Setup Feature Parity Dashboard API key
     - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
+    # Install dependencies for python script
+    - pip3 install requests jsonschema
   script:
     - /scripts/config-inversion/config-inversion-local-validation-with-track.py
 
