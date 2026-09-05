@@ -23,6 +23,7 @@ import (
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -395,8 +396,8 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", errMsg)
 	assert.Equal("*errors.errorString", errType)
-	// With SkipAndCaptureWithInternalFrames, we now see DD internal stacktrace frames for better visibility
-	assert.Contains(errStack, "stacktrace.SkipAndCaptureWithInternalFrames")
+	assert.NotContains(errStack, "stacktrace.SkipAndCaptureWithInternalFrames")
+	assert.NotContains(errStack, "tracer.takeStacktrace")
 	assert.NotEmpty(errStack)
 	assert.Equal(2, strings.Count(errStack, "\n\t"))
 }
@@ -651,6 +652,48 @@ func TestSpanSetMetaStruct(t *testing.T) {
 		}
 		wg.Wait()
 		assert.Len(t, span.metaStruct, count)
+	})
+}
+
+func TestSpanStackTraceMergeWarning(t *testing.T) {
+	t.Run("invalid current", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		event := &stacktrace.Event{Category: stacktrace.VulnerabilityEvent}
+		valid := map[string][]*stacktrace.Event{
+			string(stacktrace.VulnerabilityEvent): {event},
+		}
+		span := newBasicSpan("web.request")
+		span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: "invalid current"})
+		span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: valid})
+
+		require.Equal(t, []telemetrytest.LogLine{{
+			Level: telemetry.LogWarn,
+			Text:  "failed to merge stack-trace span values",
+		}}, telemetryClient.Logs)
+		require.Equal(t, "invalid current", span.metaStruct[stacktrace.SpanKey])
+	})
+
+	t.Run("invalid next", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		event := &stacktrace.Event{Category: stacktrace.VulnerabilityEvent}
+		valid := map[string][]*stacktrace.Event{
+			string(stacktrace.VulnerabilityEvent): {event},
+		}
+		span := newBasicSpan("web.request")
+		span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: valid})
+		span.SetTag(stacktrace.SpanKey, sharedinternal.MetaStructValue{Value: "invalid next"})
+
+		require.Equal(t, []telemetrytest.LogLine{{
+			Level: telemetry.LogWarn,
+			Text:  "failed to merge stack-trace span values",
+		}}, telemetryClient.Logs)
+		require.Equal(t, map[string][]*stacktrace.Event{
+			string(stacktrace.VulnerabilityEvent): {event},
+		}, span.metaStruct[stacktrace.SpanKey])
 	})
 }
 
@@ -1522,6 +1565,30 @@ func TestSpanLog(t *testing.T) {
 	})
 }
 
+func TestSpanFormatNil(t *testing.T) {
+	// The nil guard in Format must return: without it, execution fell through to
+	// the verb switch and fmt's panic recovery appended a second "<nil>", so a nil
+	// span rendered as the malformed "<nil><nil>".
+	assert.Equal(t, "<nil>", fmt.Sprintf("%v", (*Span)(nil)))
+	assert.Equal(t, "<nil>", fmt.Sprintf("%s", (*Span)(nil)))
+}
+
+func TestSpanFormatNonNil(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+	span := tracer.StartSpan("test.request")
+
+	expect := fmt.Sprintf(`dd.trace_id=%q dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+	assert.Equal(t, expect, fmt.Sprintf("%v", span))
+
+	// The tag lines come from map iteration, so only the fixed header is compared.
+	dump := fmt.Sprintf("%s", span)
+	assert.Contains(t, dump, "Name: test.request")
+	assert.Contains(t, dump, "\nService: "+span.service)
+	assert.Contains(t, dump, "\nTags:")
+}
+
 func TestRootSpanAccessor(t *testing.T) {
 	tracer, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)
@@ -1699,7 +1766,7 @@ func BenchmarkSetTagString(b *testing.B) {
 func BenchmarkSetTagStringPtr(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
-	v := makePointer("some text")
+	v := new("some text")
 
 	b.ResetTimer()
 	for i := range b.N {

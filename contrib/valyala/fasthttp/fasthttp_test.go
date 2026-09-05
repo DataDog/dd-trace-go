@@ -152,8 +152,9 @@ func TestStatusError(t *testing.T) {
 	require.Len(t, spans, 1)
 	span := spans[0]
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	wantErr := fmt.Sprintf("%d: %s", 500, errMsg)
+	wantErr := fmt.Sprintf("%d: %s", 500, fasthttp.StatusMessage(500))
 	assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
+	assert.NotContains(span.Tag(ext.ErrorMsg), errMsg, "response body must not be leaked into the error tag")
 }
 
 // Test that users can customize which HTTP status codes are considered an error
@@ -177,7 +178,7 @@ func TestWithStatusCheck(t *testing.T) {
 		span := spans[0]
 		assert.Equal("600", span.Tag(ext.HTTPCode))
 		require.Contains(t, span.Tags(), ext.ErrorMsg)
-		wantErr := fmt.Sprintf("%d: %s", 600, errMsg)
+		wantErr := fmt.Sprintf("%d: %s", 600, fasthttp.StatusMessage(600))
 		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	})
 	t.Run("notError", func(t *testing.T) {

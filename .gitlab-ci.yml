@@ -18,6 +18,16 @@ variables:
   # requirements_json_test / system_tests are gated by this separate flag, NOT by SKIP_SHARED_PIPELINE.
   DANGEROUSLY_SKIP_SHARED_PIPELINE_TESTS: "true"
 
+  # For CuSim (used by deploy_to_cusim). These are normally provided by
+  # libdatadog-build's one-pipeline.yml template, which
+  # dd-trace-go does not include, so they are declared here directly.
+  BUILD_JOB_NAME:
+    value: ""
+    description: "[Optional] Name of the job to retrieve artifacts for CuSim"
+  RELIABILITY_ENV_BRANCH:
+    value: "master"
+    description: "Run a specific datadog-reliability-env branch downstream"
+
 workflow:
   auto_cancel:
     on_new_commit: interruptible
@@ -59,3 +69,22 @@ linux-go-go-prof-app-parallel:
 
 go-go-prof-app-parallel-check-slo-breaches:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
+
+deploy_to_cusim:
+  stage: test-apps
+  needs: []
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: on_success
+    - when: manual
+      allow_failure: true
+  trigger:
+    project: DataDog/apm-reliability/datadog-reliability-env
+    branch: $RELIABILITY_ENV_BRANCH
+  variables:
+    UPSTREAM_PACKAGE_JOB: $BUILD_JOB_NAME
+    UPSTREAM_PROJECT_ID: $CI_PROJECT_ID
+    UPSTREAM_PROJECT_NAME: $CI_PROJECT_NAME
+    UPSTREAM_PIPELINE_ID: $CI_PIPELINE_ID
+    UPSTREAM_BRANCH: $CI_COMMIT_REF_NAME
+    UPSTREAM_COMMIT_SHA: $CI_COMMIT_SHA

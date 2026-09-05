@@ -67,9 +67,13 @@ type ExperimentView struct {
 }
 
 type DatasetRecordCreate struct {
-	Input          any `json:"input,omitempty"`
-	ExpectedOutput any `json:"expected_output,omitempty"`
-	Metadata       any `json:"metadata,omitempty"`
+	// ID is supplied by the client and persisted by the backend as the record's
+	// id. Sending it means the caller already knows the id of everything it
+	// inserted and does not have to recover it from the response.
+	ID             string `json:"id,omitempty"`
+	Input          any    `json:"input,omitempty"`
+	ExpectedOutput any    `json:"expected_output,omitempty"`
+	Metadata       any    `json:"metadata,omitempty"`
 }
 
 type DatasetRecordUpdate struct {
@@ -77,12 +81,6 @@ type DatasetRecordUpdate struct {
 	Input          any    `json:"input,omitempty"`
 	ExpectedOutput *any   `json:"expected_output,omitempty"`
 	Metadata       any    `json:"metadata,omitempty"`
-}
-
-type ErrorMessage struct {
-	Message string `json:"message,omitempty"`
-	Type    string `json:"type,omitempty"`
-	Stack   string `json:"stack,omitempty"`
 }
 
 // ---------- Requests ----------
@@ -140,18 +138,18 @@ type RequestAttributesExperimentPushEvents struct {
 }
 
 type ExperimentEvalMetricEvent struct {
-	MetricSource     string        `json:"metric_source,omitempty"`
-	SpanID           string        `json:"span_id,omitempty"`
-	TraceID          string        `json:"trace_id,omitempty"`
-	TimestampMS      int64         `json:"timestamp_ms,omitempty"`
-	MetricType       string        `json:"metric_type,omitempty"`
-	Label            string        `json:"label,omitempty"`
-	CategoricalValue *string       `json:"categorical_value,omitempty"`
-	ScoreValue       *float64      `json:"score_value,omitempty"`
-	BooleanValue     *bool         `json:"boolean_value,omitempty"`
-	Error            *ErrorMessage `json:"error,omitempty"`
-	Tags             []string      `json:"tags,omitempty"`
-	ExperimentID     string        `json:"experiment_id,omitempty"`
+	MetricSource     string         `json:"metric_source,omitempty"`
+	SpanID           string         `json:"span_id,omitempty"`
+	TraceID          string         `json:"trace_id,omitempty"`
+	TimestampMS      int64          `json:"timestamp_ms,omitempty"`
+	MetricType       EvalMetricType `json:"metric_type,omitempty"`
+	Label            string         `json:"label,omitempty"`
+	CategoricalValue *string        `json:"categorical_value,omitempty"`
+	ScoreValue       *float64       `json:"score_value,omitempty"`
+	BooleanValue     *bool          `json:"boolean_value,omitempty"`
+	Error            *ErrorMessage  `json:"error,omitempty"`
+	Tags             []string       `json:"tags,omitempty"`
+	ExperimentID     string         `json:"experiment_id,omitempty"`
 
 	// Reasoning is a free-form explanation for the evaluation result
 	// (e.g. an LLM judge's reasoning paragraph).
@@ -213,28 +211,13 @@ type (
 	CreateExperimentResponse = Response[ExperimentView]
 )
 
-// DatasetRecordItemV2 is the wire format for a single item in the v2 dataset-records list response.
-// The v2 endpoint returns a flat object (id, input, expected_output, metadata at the top level),
-// unlike the unstable endpoint which wraps fields under "attributes".
-type DatasetRecordItemV2 struct {
-	ID             string `json:"id"`
-	Input          any    `json:"input"`
-	ExpectedOutput any    `json:"expected_output"`
-	Metadata       any    `json:"metadata"`
-}
-
-type GetDatasetRecordsResponseV2 struct {
-	Data []DatasetRecordItemV2 `json:"data"`
-	Meta ResponseMeta          `json:"meta"`
-}
-
 func (c *Transport) GetDatasetByName(ctx context.Context, name, projectID string) (*DatasetView, error) {
 	q := url.Values{}
 	q.Set("filter[name]", name)
 	datasetPath := fmt.Sprintf("%s/%s/datasets?%s", endpointPrefixDNE, url.PathEscape(projectID), q.Encode())
 	method := http.MethodGet
 
-	result, err := c.jsonRequest(ctx, method, datasetPath, subdomainDNE, nil, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, datasetPath, subdomainDNE, nil, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +257,7 @@ func (c *Transport) CreateDataset(ctx context.Context, name, description, projec
 			},
 		},
 	}
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +285,7 @@ func (c *Transport) DeleteDataset(ctx context.Context, datasetIDs ...string) err
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return err
 	}
@@ -318,7 +301,7 @@ func (c *Transport) BatchUpdateDataset(
 	insert []DatasetRecordCreate,
 	update []DatasetRecordUpdate,
 	delete []string,
-) (int, []string, error) {
+) (int, error) {
 	path := fmt.Sprintf("%s/datasets/%s/batch_update", endpointPrefixDNE, url.PathEscape(datasetID))
 	method := http.MethodPost
 	body := BatchUpdateDatasetRequest{
@@ -328,44 +311,37 @@ func (c *Transport) BatchUpdateDataset(
 				InsertRecords: insert,
 				UpdateRecords: update,
 				DeleteRecords: delete,
-				Deduplicate:   AnyPtr(false),
+				Deduplicate:   new(false),
 			},
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
-		return -1, nil, err
+		return -1, err
 	}
 	if result.statusCode != http.StatusOK {
-		return -1, nil, fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+		return -1, fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
 	var resp BatchUpdateDatasetResponse
 	if err := json.Unmarshal(result.body, &resp); err != nil {
-		return -1, nil, fmt.Errorf("failed to decode json response: %w", err)
+		return -1, fmt.Errorf("failed to decode json response: %w", err)
 	}
 
-	// FIXME: we don't get version numbers in responses to deletion requests
-	// TODO(rarguelloF): the backend could return a better response here...
-	var (
-		newDatasetVersion = -1
-		newRecordIDs      []string
-	)
-	if len(resp.Data) > 0 {
-		if resp.Data[0].Attributes.Version > 0 {
-			newDatasetVersion = resp.Data[0].Attributes.Version
-		}
+	// The response carries one entry per affected record, deletions included:
+	// those come back with deleted_at and ttl set. Nothing here correlates
+	// entries with what was sent, because inserts already carry a client-supplied
+	// id, so the only thing worth reading is the new version. Every entry in a
+	// batch shares it, so the first will do.
+	//
+	// A deletes-only batch returns no version, in which case the caller falls
+	// back to incrementing.
+	newDatasetVersion := -1
+	if len(resp.Data) > 0 && resp.Data[0].Attributes.Version > 0 {
+		newDatasetVersion = resp.Data[0].Attributes.Version
 	}
-	if len(resp.Data) == len(insert)+len(update) {
-		// new records are at the end of the slice
-		for _, rec := range resp.Data[len(update):] {
-			newRecordIDs = append(newRecordIDs, rec.ID)
-		}
-	} else {
-		log.Warn("llmobs/internal/transport: BatchUpdateDataset: expected %d records in response, got %d", len(insert)+len(update), len(resp.Data))
-	}
-	return newDatasetVersion, newRecordIDs, nil
+	return newDatasetVersion, nil
 }
 
 // GetDatasetRecordsPage fetches a single page of records for the given dataset.
@@ -387,7 +363,7 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datase
 		recordsPath = recordsPath + "?" + q.Encode()
 	}
 
-	result, err := c.jsonRequest(ctx, http.MethodGet, recordsPath, subdomainDNE, nil, getDatasetRecordsTimeout)
+	result, err := c.jsonRequest(ctx, http.MethodGet, recordsPath, subdomainDNE, nil, datasetRecordsLimits)
 	if err != nil {
 		return nil, "", err
 	}
@@ -395,19 +371,19 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datase
 		return nil, "", fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
-	var recordsResp GetDatasetRecordsResponseV2
+	// The v2 records endpoint speaks JSON:API like the rest of these endpoints:
+	// each item carries id at the top level and the record fields under
+	// "attributes".
+	var recordsResp GetDatasetRecordsResponse
 	if err := json.Unmarshal(result.body, &recordsResp); err != nil {
 		return nil, "", fmt.Errorf("failed to decode json response: %w", err)
 	}
 
 	records := make([]DatasetRecordView, 0, len(recordsResp.Data))
 	for _, r := range recordsResp.Data {
-		records = append(records, DatasetRecordView{
-			ID:             r.ID,
-			Input:          r.Input,
-			ExpectedOutput: r.ExpectedOutput,
-			Metadata:       r.Metadata,
-		})
+		rec := r.Attributes
+		rec.ID = r.ID
+		records = append(records, rec)
 	}
 
 	return records, recordsResp.Meta.After, nil
@@ -472,7 +448,7 @@ func (c *Transport) GetOrCreateProject(ctx context.Context, name string) (*Proje
 			},
 		},
 	}
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +499,9 @@ func (c *Transport) CreateExperiment(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	// The response echoes back the config supplied above, so it can be as large
+	// as the request was.
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -554,7 +532,7 @@ func (c *Transport) UpdateExperimentStatus(ctx context.Context, id, status, errS
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, http.MethodPatch, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, http.MethodPatch, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return err
 	}
@@ -584,7 +562,7 @@ func (c *Transport) PushExperimentEvents(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return err
 	}
@@ -651,7 +629,7 @@ func (c *Transport) BulkUploadDataset(ctx context.Context, datasetID string, rec
 	path := fmt.Sprintf("%s/datasets/%s/records/upload", endpointPrefixDNE, url.PathEscape(datasetID))
 	contentType := "multipart/form-data; boundary=" + boundary
 
-	result, err := c.request(ctx, http.MethodPost, path, subdomainDNE, bytes.NewReader(body.Bytes()), contentType, bulkUploadTimeout)
+	result, err := c.request(ctx, http.MethodPost, path, subdomainDNE, bytes.NewReader(body.Bytes()), contentType, bulkUploadLimits)
 	if err != nil {
 		return err
 	}

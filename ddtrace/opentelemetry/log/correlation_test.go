@@ -122,8 +122,8 @@ func TestContextWithDDSpan(t *testing.T) {
 		assert.Contains(t, retrievedState, "dd=")
 
 		// Extract just the dd vendor part (before any comma)
-		originalDD := strings.SplitN(originalState, ",", 2)[0]
-		retrievedDD := strings.SplitN(retrievedState, ",", 2)[0]
+		originalDD, _, _ := strings.Cut(originalState, ",")
+		retrievedDD, _, _ := strings.Cut(retrievedState, ",")
 
 		// Check that both contain the same fields (order-independent)
 		// Extract expected fields from original

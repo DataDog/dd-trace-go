@@ -3,6 +3,12 @@
 version: 2
 
 updates:
+  # Git submodules — keeps canonical external test fixtures current.
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
   # GitHub Actions — pins to commit SHAs already used in workflows;
   # Dependabot keeps those SHAs current, preventing stale action hijacks.
   - package-ecosystem: "github-actions"
@@ -32,12 +38,12 @@ updates:
   # Docker — updates base image digests (sha256 pins) to latest verified digests.
   - package-ecosystem: "docker"
     directories:
+      - "/.gitlab/benchmarks/micro/container"
       - "/contrib/azure/apim-callout/cmd/apim-callout"
       - "/contrib/envoyproxy/go-control-plane/cmd/serviceextensions"
       - "/contrib/haproxy/stream-processing-offload/cmd/spoa"
       - "/contrib/k8s.io/gateway-api/cmd/request-mirror"
       - "/internal/apps"
-      - "/internal/setup-smoke-test"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -54,12 +60,95 @@ updates:
       - "dependencies"
     cooldown:
       default-days: 2
+
+  # Docker Compose (dev/local) — updates image digests in the local-development
+  # stacks. Version/tag upgrades are allowed here; maintainers curate them.
+  - package-ecosystem: "docker-compose"
+    directories:
+      - "/"
+      - "/internal/apps"
+      - "/internal/apps/staleidle-soak"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    groups:
+      docker-compose-dev:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 2
     ignore:
-      # amazonlinux:2 is pinned to a specific AL2 (glibc 2.26) digest and must
-      # never be upgraded to AL2023 (glibc 2.34).  Omitting `versions` blocks
-      # ALL Dependabot updates for this image — both digest refreshes of :2 and
-      # any tag-change PR proposing :2023 — because a version-scoped rule like
-      # "= 2" would still permit a :2 → :2023 tag upgrade.  The :2023 stage in
-      # the same Dockerfile is unpinned and always pulls the current :2023 at
-      # build time, so losing automated digest updates there is acceptable.
-      - dependency-name: "amazonlinux"
+      # localstack is frozen entirely — no version/tag bumps, no digest refreshes.
+      - dependency-name: "localstack/localstack"
+
+  # Docker Compose (test images) — CI service containers and the Testcontainers
+  # image catalog intentionally pin specific (often old) versions to cover
+  # compatibility matrices. Only digests are refreshed; version/tag bumps are
+  # ignored so the test matrix doesn't silently drift.
+  - package-ecosystem: "docker-compose"
+    directories:
+      - "/.github/testservices"
+      - "/instrumentation/testutils/containers/images"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    groups:
+      docker-compose-test-images:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 2
+    ignore:
+      # Dependabot does not support YAML aliases (dependabot-core#1582), so the
+      # ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      # list below is repeated verbatim for every entry instead of using an anchor/alias.
+      - dependency-name: "ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "cassandra"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "cimg/mysql"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "cimg/postgres"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "mcr.microsoft.com/mssql/server"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "consul"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "redis"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "valkey/valkey"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "elasticsearch"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "docker.elastic.co/elasticsearch/elasticsearch"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "mongo"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "memcached"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "confluentinc/confluent-local"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      # No update-types here (unlike the entries above): localstack is frozen
+      # entirely, digest refreshes included — see the matching entry in the
+      # docker-compose (dev/local) block above for why.
+      - dependency-name: "localstack/localstack"
+      - dependency-name: "docker.io/postgres"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "vault"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "aerospike"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]

@@ -246,29 +246,32 @@ func TestConvertSpanAttributesIntEncoding(t *testing.T) {
 }
 
 // TestConvertSpanAttributesOtelSemantics verifies that under OTel semantics the OTLP
-// exporter omits Datadog-specific attributes (span identity, error.*, span.kind).
+// exporter omits Datadog-specific attributes (span identity, error.message/stack,
+// span.kind) but preserves error.type, which is a stable OpenTelemetry attribute.
 func TestConvertSpanAttributesOtelSemantics(t *testing.T) {
 	s := newBasicSpan("op")
 	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{
 		"http.request.method":  "GET",
 		ext.ErrorMsg:           "boom",
-		ext.ErrorType:          "*errors.errorString",
+		ext.ErrorType:          "*net.OpError",
 		ext.ErrorStack:         "goroutine 1 ...",
 		ext.ErrorHandlingStack: "goroutine 1 ...",
 		ext.SpanKind:           ext.SpanKindServer,
 	})
 	m := keyValuesToMap(convertSpanAttributes(s, "", true))
 
-	// DD-only span-identity, error, and span.kind attributes are suppressed.
+	// DD-only span-identity, error message/stack, and span.kind attributes are suppressed.
 	for _, k := range []string{
 		"operation.name", "resource.name", "span.type",
-		ext.ErrorMsg, ext.ErrorType, ext.ErrorStack, ext.ErrorHandlingStack, ext.SpanKind,
+		ext.ErrorMsg, ext.ErrorStack, ext.ErrorHandlingStack, ext.SpanKind,
 	} {
 		_, ok := m[k]
 		assert.Falsef(t, ok, "%q should be suppressed when OTel semantics is enabled", k)
 	}
 
-	// Non-DD-only meta is preserved unchanged.
+	// error.type is a stable OTel attribute and passes through unchanged, as does
+	// non-DD-only meta.
+	assert.Equal(t, "*net.OpError", m[ext.ErrorType])
 	assert.Equal(t, "GET", m["http.request.method"])
 }
 
@@ -459,21 +462,29 @@ func TestConvertSpanLinks_EmptyNil(t *testing.T) {
 }
 
 func TestConvertSpanTraceState(t *testing.T) {
-	t.Run("populated from span context", func(t *testing.T) {
+	t.Run("regenerated from live span context", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 1, 1, 0)
-		setPropagatingTag(s.context, tracestateHeader, "dd=s:2;o:rum,othervendor=abc")
+		s.context.origin = "rum"
+		s.context.setSamplingPriority(ext.PriorityUserKeep, samplernames.Manual)
+		// The inbound dd= (stale priority/origin) is dropped and rebuilt from
+		// the live context; the foreign vendor is preserved.
+		setPropagatingTag(s.context, tracestateHeader, "dd=s:1;o:stale,othervendor=abc")
 
 		otlpSpan := convertSpan(s, "svc", false)
 		require.NotNil(t, otlpSpan)
-		assert.Equal(t, "dd=s:2;o:rum,othervendor=abc", otlpSpan.TraceState)
+		assert.Equal(t, "dd=s:2;o:rum;p:0000000000000001;t.dm:-4,othervendor=abc", otlpSpan.TraceState)
+		assert.Equal(t, otlpTraceFlagSampled, otlpSpan.Flags)
 	})
 
-	t.Run("empty when no tracestate", func(t *testing.T) {
+	t.Run("regenerated for local root without inbound tracestate", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 1, 1, 0)
+		s.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
 
 		otlpSpan := convertSpan(s, "svc", false)
 		require.NotNil(t, otlpSpan)
-		assert.Empty(t, otlpSpan.TraceState)
+		// A locally-started span now carries a regenerated dd= member, matching
+		// what wire injection would emit.
+		assert.Equal(t, "dd=s:1;p:0000000000000001;t.dm:-0", otlpSpan.TraceState)
 	})
 
 	t.Run("empty when trace is nil", func(t *testing.T) {
@@ -483,6 +494,43 @@ func TestConvertSpanTraceState(t *testing.T) {
 		otlpSpan := convertSpan(s, "svc", false)
 		require.NotNil(t, otlpSpan)
 		assert.Empty(t, otlpSpan.TraceState)
+	})
+}
+
+func TestConvertSpanTraceStateOtel(t *testing.T) {
+	t.Run("probability decision emits ot=rv;th and sets sampled flag", func(t *testing.T) {
+		const tid = uint64(0xfff972474538efff)
+		s := newSpan("op", "svc", "res", 1, tid, 0)
+		s.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+		s.context.trace.setOtelProbability(tid, 0.1)
+
+		otlpSpan := convertSpan(s, "svc", false)
+		require.NotNil(t, otlpSpan)
+		assert.Contains(t, otlpSpan.TraceState, "ot=rv:ef284ace7a91e1;th:e6666666666668")
+		assert.Equal(t, otlpTraceFlagSampled, otlpSpan.Flags)
+	})
+
+	t.Run("inherited ot= is forwarded on export", func(t *testing.T) {
+		s := newSpan("op", "svc", "res", 1, 1, 0)
+		s.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
+		s.context.trace.setOtelUpstream(0xabcdef1234567, true, 0, false, "")
+
+		otlpSpan := convertSpan(s, "svc", false)
+		require.NotNil(t, otlpSpan)
+		assert.Contains(t, otlpSpan.TraceState, "ot=rv:0abcdef1234567")
+	})
+
+	t.Run("malformed inbound ot= is dropped", func(t *testing.T) {
+		s := newSpan("op", "svc", "res", 1, 1, 0)
+		s.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+		// Inbound ot= that was never parsed into managed state must not be
+		// re-emitted; only foreign vendors survive.
+		setPropagatingTag(s.context, tracestateHeader, "dd=s:1,ot=garbage,othervendor=abc")
+
+		otlpSpan := convertSpan(s, "svc", false)
+		require.NotNil(t, otlpSpan)
+		assert.NotContains(t, otlpSpan.TraceState, "ot=")
+		assert.Contains(t, otlpSpan.TraceState, "othervendor=abc")
 	})
 }
 

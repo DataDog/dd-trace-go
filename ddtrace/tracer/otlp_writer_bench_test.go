@@ -78,7 +78,7 @@ func BenchmarkOTLPTraceWriterFlush(b *testing.B) {
 	for b.Loop() {
 		writer.add(trace)
 		writer.flush()
-		writer.wg.Wait()
+		writer.wait()
 	}
 }
 

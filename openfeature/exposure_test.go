@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	jsoniter "github.com/json-iterator/go"
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
@@ -104,6 +105,145 @@ func TestLRUCache_AllocationCycle(t *testing.T) {
 		if !result {
 			t.Errorf("allocation cycle step %d (%s) should return true", i+1, allocation)
 		}
+	}
+}
+
+func TestLRUCache_SerialIDAppears(t *testing.T) {
+	cache := newExposureLRUCache(defaultExposureCacheCapacity)
+
+	key := exposureCacheKey{flagKey: "test-flag", targetingKey: "user-123"}
+
+	if !cache.add(key, exposureCacheValue{allocationKey: "allocation-a", variant: "variant-a"}) {
+		t.Fatal("first exposure should return true")
+	}
+	if !cache.add(key, exposureCacheValue{allocationKey: "allocation-a", variant: "variant-a", serialID: 340132, hasSerialID: true}) {
+		t.Error("appearing serial id should return true")
+	}
+	if cache.add(key, exposureCacheValue{allocationKey: "allocation-a", variant: "variant-a", serialID: 340132, hasSerialID: true}) {
+		t.Error("repeating the same serial id should return false")
+	}
+}
+
+func TestLRUCache_SerialIDCycle(t *testing.T) {
+	cache := newExposureLRUCache(defaultExposureCacheCapacity)
+
+	key := exposureCacheKey{flagKey: "test-flag", targetingKey: "user-123"}
+
+	serialIDs := []uint32{340132, 340133, 340132}
+
+	for i, serialID := range serialIDs {
+		value := exposureCacheValue{allocationKey: "allocation-a", variant: "variant-a", serialID: serialID, hasSerialID: true}
+		result := cache.add(key, value)
+		if !result {
+			t.Errorf("serial id cycle step %d (%d) should return true", i+1, serialID)
+		}
+	}
+}
+
+func TestLRUCache_SerialIDDisappears(t *testing.T) {
+	cache := newExposureLRUCache(defaultExposureCacheCapacity)
+
+	key := exposureCacheKey{flagKey: "test-flag", targetingKey: "user-123"}
+
+	if !cache.add(key, exposureCacheValue{allocationKey: "allocation-a", variant: "variant-a", serialID: 340132, hasSerialID: true}) {
+		t.Fatal("first exposure should return true")
+	}
+	if !cache.add(key, exposureCacheValue{allocationKey: "allocation-a", variant: "variant-a"}) {
+		t.Error("disappearing serial id should return true")
+	}
+}
+
+func TestLRUCache_SerialIDZeroIsNotAbsent(t *testing.T) {
+	cache := newExposureLRUCache(defaultExposureCacheCapacity)
+
+	key := exposureCacheKey{flagKey: "test-flag", targetingKey: "user-123"}
+
+	if !cache.add(key, exposureCacheValue{allocationKey: "allocation-a", variant: "variant-a"}) {
+		t.Fatal("first exposure should return true")
+	}
+	if !cache.add(key, exposureCacheValue{allocationKey: "allocation-a", variant: "variant-a", serialID: 0, hasSerialID: true}) {
+		t.Error("serial id of zero should not match an absent serial id")
+	}
+}
+
+func TestExposureWriter_AppendCarriesSerialIDIntoCache(t *testing.T) {
+	writer := &exposureWriter{
+		buffer: make([]exposureEvent, 0, 256),
+		cache:  newExposureLRUCache(defaultExposureCacheCapacity),
+	}
+
+	event := exposureEvent{
+		Allocation: exposureAllocation{Key: "allocation-a"},
+		Flag:       exposureFlag{Key: "test-flag"},
+		Variant:    exposureVariant{Key: "variant-a"},
+		Subject:    exposureSubject{ID: "user-123"},
+	}
+
+	writer.append(event)
+
+	withSerialID := event
+	withSerialID.SerialID = new(uint32(340132))
+	writer.append(withSerialID)
+	writer.append(withSerialID)
+
+	if len(writer.buffer) != 2 {
+		t.Fatalf("expected 2 buffered events, got %d", len(writer.buffer))
+	}
+	if writer.buffer[0].SerialID != nil {
+		t.Errorf("expected no serial id on the first event, got %d", *writer.buffer[0].SerialID)
+	}
+	if writer.buffer[1].SerialID == nil {
+		t.Fatal("expected a serial id on the second event, got none")
+	}
+	if *writer.buffer[1].SerialID != 340132 {
+		t.Errorf("expected serial id 340132, got %d", *writer.buffer[1].SerialID)
+	}
+}
+
+func TestExposureEvent_SerialIDWireShape(t *testing.T) {
+	api := jsoniter.Config{}.Froze()
+
+	event := exposureEvent{
+		Timestamp:  1,
+		Allocation: exposureAllocation{Key: "allocation-a"},
+		Flag:       exposureFlag{Key: "test-flag"},
+		Variant:    exposureVariant{Key: "variant-a"},
+		Subject:    exposureSubject{ID: "user-123"},
+	}
+
+	tests := []struct {
+		name     string
+		serialID *uint32
+		expected any
+		present  bool
+	}{
+		{name: "serial id present", serialID: new(uint32(340132)), expected: float64(340132), present: true},
+		{name: "serial id of zero is sent", serialID: new(uint32(0)), expected: float64(0), present: true},
+		{name: "absent serial id is omitted", serialID: nil, present: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			event.SerialID = tc.serialID
+
+			data, err := api.Marshal(event)
+			if err != nil {
+				t.Fatalf("unexpected marshal error: %v", err)
+			}
+
+			var decoded map[string]any
+			if err := api.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("unexpected unmarshal error: %v", err)
+			}
+
+			got, ok := decoded["serial_id"]
+			if ok != tc.present {
+				t.Fatalf("expected serial_id present=%v, got present=%v (payload: %s)", tc.present, ok, data)
+			}
+			if tc.present && got != tc.expected {
+				t.Errorf("expected serial_id %v, got %v", tc.expected, got)
+			}
+		})
 	}
 }
 
@@ -349,6 +489,7 @@ func TestExposureHook_After(t *testing.T) {
 		metadata          of.FlagMetadata
 		expectEvent       bool
 		expectedSubjectID string
+		expectedSerialID  *uint32
 	}{
 		{
 			name:         "with targeting key",
@@ -405,6 +546,65 @@ func TestExposureHook_After(t *testing.T) {
 			variant:      "variant-a",
 			metadata:     nil,
 			expectEvent:  false, // no allocation key means no event
+		},
+		{
+			name:         "with serial id",
+			targetingKey: "user-123",
+			attributes:   map[string]any{},
+			flagKey:      "holdout-flag",
+			variant:      "variant-a",
+			metadata: of.FlagMetadata{
+				metadataAllocationKey:    "test-allocation",
+				metadataDoLogKey:         true,
+				metadataSplitSerialIDKey: uint32(340132),
+			},
+			expectEvent:       true,
+			expectedSubjectID: "user-123",
+			expectedSerialID:  new(uint32(340132)),
+		},
+		{
+			name:         "with serial id of zero",
+			targetingKey: "user-123",
+			attributes:   map[string]any{},
+			flagKey:      "holdout-flag",
+			variant:      "variant-a",
+			metadata: of.FlagMetadata{
+				metadataAllocationKey:    "test-allocation",
+				metadataDoLogKey:         true,
+				metadataSplitSerialIDKey: uint32(0),
+			},
+			expectEvent:       true,
+			expectedSubjectID: "user-123",
+			expectedSerialID:  new(uint32(0)),
+		},
+		{
+			name:         "without serial id",
+			targetingKey: "user-123",
+			attributes:   map[string]any{},
+			flagKey:      "test-flag",
+			variant:      "variant-a",
+			metadata: of.FlagMetadata{
+				metadataAllocationKey: "test-allocation",
+				metadataDoLogKey:      true,
+			},
+			expectEvent:       true,
+			expectedSubjectID: "user-123",
+			expectedSerialID:  nil,
+		},
+		{
+			name:         "malformed serial id still reports the exposure",
+			targetingKey: "user-123",
+			attributes:   map[string]any{},
+			flagKey:      "test-flag",
+			variant:      "variant-a",
+			metadata: of.FlagMetadata{
+				metadataAllocationKey:    "test-allocation",
+				metadataDoLogKey:         true,
+				metadataSplitSerialIDKey: "340132",
+			},
+			expectEvent:       true,
+			expectedSubjectID: "user-123",
+			expectedSerialID:  nil,
 		},
 	}
 
@@ -464,6 +664,14 @@ func TestExposureHook_After(t *testing.T) {
 				}
 				if event.Variant.Key != tc.variant {
 					t.Errorf("expected variant %q, got %q", tc.variant, event.Variant.Key)
+				}
+				switch {
+				case tc.expectedSerialID == nil && event.SerialID != nil:
+					t.Errorf("expected no serial id, got %d", *event.SerialID)
+				case tc.expectedSerialID != nil && event.SerialID == nil:
+					t.Errorf("expected serial id %d, got none", *tc.expectedSerialID)
+				case tc.expectedSerialID != nil && *event.SerialID != *tc.expectedSerialID:
+					t.Errorf("expected serial id %d, got %d", *tc.expectedSerialID, *event.SerialID)
 				}
 			} else {
 				if len(writer.buffer) != 0 {
