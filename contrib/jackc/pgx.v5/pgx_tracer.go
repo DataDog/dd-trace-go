@@ -8,6 +8,7 @@ package pgx
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -36,20 +37,14 @@ const (
 	operationTypeAcquire                = "Acquire"
 )
 
-type tracedBatchQuery struct {
-	span *tracer.Span
-	data pgx.TraceBatchQueryData
-}
-
-func (tb *tracedBatchQuery) finish() {
-	tb.span.Finish(tracer.WithError(tb.data.Err))
-}
-
 // batchState holds per-batch mutable tracing state. It is stored in the context
 // returned by TraceBatchStart so that concurrent batches on different pool
 // connections each have isolated state, avoiding a race on shared pgxTracer fields.
 type batchState struct {
-	prevQuery *tracedBatchQuery
+	// lastCheckpoint is when the previous query in the batch had its result read,
+	// or the batch start time for the first query. It bounds the start of the next
+	// query's span.
+	lastCheckpoint time.Time
 }
 
 type contextKeyBatchState struct{}
@@ -213,7 +208,7 @@ func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pg
 		tracer.Tag(tagBatchNumQueries, data.Batch.Len()),
 	)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.batch", opts...)
-	ctx = context.WithValue(ctx, contextKeyBatchState{}, &batchState{})
+	ctx = context.WithValue(ctx, contextKeyBatchState{}, &batchState{lastCheckpoint: time.Now()})
 	return ctx
 }
 
@@ -224,24 +219,26 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 	if t.wrapped.batch != nil {
 		t.wrapped.batch.TraceBatchQuery(ctx, conn, data)
 	}
-	// Finish the previous batch query span before starting the next one, since pgx doesn't provide hooks or
-	// timestamp information about when the actual operation started or finished.
-	// batchState is stored per-batch in the context so concurrent batches on different pool connections
-	// each track their own prevQuery without racing on shared tracer state.
-	bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState)
-	if bs != nil && bs.prevQuery != nil {
-		bs.prevQuery.finish()
+	// pgx reports a batch query only once its result has been read, and provides no
+	// timestamp for when the query itself started. The time elapsed since the previous
+	// checkpoint (the batch start, or the prior query's result) is the closest available
+	// estimate of this query's cost, so the span covers that interval. Attributing the
+	// interval until the next query is read instead would charge each query's cost to the
+	// query queued before it.
+	// batchState is stored per-batch in the context so concurrent batches on different pool
+	// connections each track their own checkpoint without racing on shared tracer state.
+	now := time.Now()
+	start := now
+	if bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState); bs != nil {
+		start = bs.lastCheckpoint
+		bs.lastCheckpoint = now
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypeQuery, data.SQL,
 		tracer.Tag(tagRowsAffected, data.CommandTag.RowsAffected()),
+		tracer.StartTime(start),
 	)
 	span, _ := tracer.StartSpanFromContext(ctx, "pgx.batch.query", opts...)
-	if bs != nil {
-		bs.prevQuery = &tracedBatchQuery{
-			span: span,
-			data: data,
-		}
-	}
+	span.Finish(tracer.WithError(data.Err), tracer.FinishTime(now))
 }
 
 func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchEndData) {
@@ -250,10 +247,6 @@ func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.
 	}
 	if t.wrapped.batch != nil {
 		t.wrapped.batch.TraceBatchEnd(ctx, conn, data)
-	}
-	if bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState); bs != nil && bs.prevQuery != nil {
-		bs.prevQuery.finish()
-		bs.prevQuery = nil
 	}
 	t.finishSpan(ctx, data.Err)
 }
