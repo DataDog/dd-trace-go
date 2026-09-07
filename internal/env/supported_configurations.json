@@ -1255,6 +1255,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_ECHO_IGNORED_ROUTES": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": ""
+      }
+    ],
     "DD_TRACE_ELASTIC_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
