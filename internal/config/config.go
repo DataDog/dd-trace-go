@@ -273,8 +273,7 @@ type Config struct {
 	featureFlagsConfigurationSource string
 	// featureFlagsConfigurationSourceSet reports whether featureFlagsConfigurationSource was
 	// explicitly configured (any origin other than the default), regardless of whether the
-	// value itself is blank. A blank-but-set value is handled by openfeature.resolveSource,
-	// not here.
+	// value itself is blank.
 	featureFlagsConfigurationSourceSet bool
 	// featureFlagsAgentlessBaseURL is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL.
 	// SENSITIVE: may embed credentials; never log.
