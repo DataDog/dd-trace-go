@@ -71,6 +71,29 @@ func monitorConfigFromEnv() *config {
 	}
 }
 
+// readCrashDump reads up to maxCrashDumpSize bytes of crash dump from r and
+// reports whether the true input was larger and got cut off.
+//
+// It reads one byte past the cap: getting exactly maxCrashDumpSize+1 bytes
+// back proves the source had more to give, since io.LimitReader alone can't
+// tell that apart from the source having exactly maxCrashDumpSize bytes and
+// hitting a genuine EOF. Without this lookahead byte, a cut landing right
+// after a syntactically valid frame produces a report that parses cleanly
+// and looks complete when it silently is not -- regardless of whether the
+// cut happens to fall between frames or in the middle of one, since this
+// check is purely a byte count, not aware of frame boundaries at all.
+func readCrashDump(r io.Reader) (data []byte, truncated bool, err error) {
+	data, err = io.ReadAll(io.LimitReader(r, maxCrashDumpSize+1))
+	if err != nil {
+		return data, false, err
+	}
+	truncated = len(data) > maxCrashDumpSize
+	if truncated {
+		data = data[:maxCrashDumpSize]
+	}
+	return data, truncated, nil
+}
+
 // runMonitor is the monitor-child entry point. It reads crash output from stdin,
 // parses it, and uploads a report. It never returns.
 func runMonitor(cfg *config) {
@@ -82,7 +105,7 @@ func runMonitor(cfg *config) {
 	// any signal that still reaches the group despite it.
 	ignoreTerminalSignals()
 
-	data, err := io.ReadAll(io.LimitReader(os.Stdin, maxCrashDumpSize))
+	data, truncated, err := readCrashDump(os.Stdin)
 	// Drain any remaining crash-dump bytes after the cap so the crashing
 	// application is not blocked writing into the pipe while we upload.
 	go io.Copy(io.Discard, os.Stdin) //nolint:errcheck
@@ -93,6 +116,13 @@ func runMonitor(cfg *config) {
 	}
 
 	report := parseCrashDump(data)
+	if truncated && report.Error.Stack != nil {
+		// The crashing goroutine's own frames may have parsed without error --
+		// the cut can land cleanly between goroutines, not just mid-frame --
+		// but the dump as a whole is known incomplete, so say so even though
+		// parseCrashDump itself found nothing wrong.
+		report.Error.Stack.Incomplete = true
+	}
 	report.DDTags = buildDDTags(cfg, report)
 	if err := uploadReport(cfg, report); err != nil {
 		// Emit one line so operators know a crash report was attempted but
