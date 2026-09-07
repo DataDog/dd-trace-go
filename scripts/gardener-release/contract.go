@@ -24,6 +24,10 @@ const (
 	MaxBodyBytes        = 256
 	MaxContextBytes     = 4096
 	MaxVersionComponent = 2147483647
+	// MaxRecoveryBundleBytes is §13.2's "Recovery bundle: At most 50 MiB.
+	// Stop before publishing if the bundle exceeds the cap." B08 enforces
+	// this before persisting a signed record's Bundle.
+	MaxRecoveryBundleBytes = 50 * 1024 * 1024
 )
 
 var (
