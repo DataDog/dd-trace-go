@@ -8,8 +8,10 @@ package crashtracker
 import (
 	"compress/gzip"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -332,6 +334,92 @@ func TestUploadReportGivesUpAfterAllAttemptsFail(t *testing.T) {
 	if !strings.Contains(err.Error(), "503") {
 		t.Errorf("error %q does not mention the underlying status code 503", err.Error())
 	}
+}
+
+// TestUploadReportRejectsRedirect proves the fix for the bug where a 3xx
+// response was silently followed: net/http's default client converts a
+// redirected POST to a GET and drops its body for 301/302/303, so if the
+// redirect target answered 200, uploadReport would have reported success for
+// a request that never actually carried the report. cfg deliberately omits
+// httpClient (unlike every other test in this file) so this exercises
+// buildRequestAndClient's own internal.DefaultHTTPClient branch, the one the
+// fix lives on and the one real (monitor) uploads always use.
+func TestUploadReportRejectsRedirect(t *testing.T) {
+	var redirectRequests int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/evp_proxy/v4/api/v2/errorsintake", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/redirected", http.StatusFound)
+	})
+	mux.HandleFunc("/redirected", func(w http.ResponseWriter, r *http.Request) {
+		redirectRequests++
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	cfg := &config{agentURL: srv.URL}
+
+	err := uploadReport(cfg, newTestReport())
+	if err == nil {
+		t.Fatal("expected error for a redirected response, got nil")
+	}
+	if !strings.Contains(err.Error(), "302") {
+		t.Errorf("error %q does not mention the original 302 status", err.Error())
+	}
+	if redirectRequests != 0 {
+		t.Error("client followed the redirect; want it rejected so a 3xx from the intake is never silently treated as success")
+	}
+}
+
+// TestUploadReportUnixSocket proves the Unix socket agent path (URL scheme
+// "unix://") actually reaches the socket: buildRequestAndClient's UDSClient
+// branch and the request's http://localhost URL rewrite need each other to
+// work, and every other upload test uses a TCP httptest.Server so none of
+// them previously exercised this branch at all.
+func TestUploadReportUnixSocket(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "agent.sock")
+	l, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen on unix socket: %v", err)
+	}
+
+	var gotMethod, gotPath, gotSubdomain string
+	var gotBody []byte
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotSubdomain = r.Header.Get("X-Datadog-EVP-Subdomain")
+		gotBody = decompressBody(t, readAll(t, r.Body))
+		w.WriteHeader(http.StatusAccepted)
+	})}
+	go srv.Serve(l)
+	defer srv.Close()
+
+	cfg := &config{agentURL: "unix://" + socketPath}
+
+	if err := uploadReport(cfg, newTestReport()); err != nil {
+		t.Fatalf("uploadReport over unix socket returned unexpected error: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Errorf("method = %q, want POST", gotMethod)
+	}
+	if gotPath != agentEVPPath {
+		t.Errorf("path = %q, want %q", gotPath, agentEVPPath)
+	}
+	if gotSubdomain != agentEVPSubdomain {
+		t.Errorf("EVP subdomain = %q, want %q", gotSubdomain, agentEVPSubdomain)
+	}
+	assertRFC0013Body(t, gotBody)
+}
+
+// readAll reads r fully, failing the test on error.
+func readAll(t *testing.T, r io.Reader) []byte {
+	t.Helper()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return data
 }
 
 // TestBuildRequestToleratesDDSiteAsURL verifies the fix for DD_SITE supplied

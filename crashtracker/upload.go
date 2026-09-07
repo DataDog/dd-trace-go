@@ -175,10 +175,25 @@ func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Clien
 		client = cfg.httpClient
 	case socketPath != "":
 		client = internal.UDSClient(socketPath, uploadTimeout)
+		client.CheckRedirect = rejectRedirects
 	default:
 		client = internal.DefaultHTTPClient(uploadTimeout, false)
+		client.CheckRedirect = rejectRedirects
 	}
 	return req, client, nil
+}
+
+// rejectRedirects stops net/http from following a 3xx response. The intake
+// never legitimately redirects, and the default client silently converts a
+// redirected POST to a GET and drops its body for 301/302/303 (net/http's
+// documented behavior): if the redirect target then answered 200, attemptUpload
+// would report success for a request that never carried the report. Returning
+// http.ErrUseLastResponse instead surfaces the original 3xx as resp.StatusCode,
+// which attemptUpload's existing non-2xx check already treats as a failure.
+// Left unset on a caller-supplied WithHTTPClient, which owns its own redirect
+// policy.
+func rejectRedirects(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // gzipCompress compresses body for upload.
