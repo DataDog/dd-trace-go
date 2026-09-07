@@ -68,8 +68,7 @@ func ResolveSettings(cfg *config.Config) Settings {
 func resolveSourceFromConfig(cfg *config.Config) (resolved Source, legacyDecided bool) {
 	enabled, enabledSet := cfg.FeatureFlagsEnabled()
 	source, sourceSet := cfg.FeatureFlagsConfigurationSource()
-	legacyEnabled := cfg.ExperimentalFlaggingProviderEnabled()
-	legacyEnabledSet := cfg.ExperimentalFlaggingProviderEnabledExplicit()
+	legacyEnabled, legacyEnabledSet := cfg.ExperimentalFlaggingProviderEnabled()
 
 	return resolveSource(sourceInputs{
 		enabled:          enabled,

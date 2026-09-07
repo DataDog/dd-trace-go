@@ -1922,19 +1922,13 @@ func (c *Config) CIVisibilityAgentlessURL() string {
 	return c.ciVisibilityAgentlessURL
 }
 
-func (c *Config) ExperimentalFlaggingProviderEnabled() bool {
+// ExperimentalFlaggingProviderEnabled returns DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED and
+// whether it was explicitly set, distinguishing an opted-in legacy customer from one who
+// never set it.
+func (c *Config) ExperimentalFlaggingProviderEnabled() (enabled, explicit bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.experimentalFlaggingProviderEnabled
-}
-
-// ExperimentalFlaggingProviderEnabledExplicit reports whether
-// DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED was explicitly set, distinguishing an opted-in
-// legacy customer from one who never set it.
-func (c *Config) ExperimentalFlaggingProviderEnabledExplicit() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.experimentalFlaggingProviderEnabledSet
+	return c.experimentalFlaggingProviderEnabled, c.experimentalFlaggingProviderEnabledSet
 }
 
 // FeatureFlagsEnabled returns DD_FEATURE_FLAGS_ENABLED and whether it was explicitly set.

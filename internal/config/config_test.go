@@ -1734,14 +1734,15 @@ func TestReportEffectiveStatsComputation(t *testing.T) {
 	assert.Equal(t, []bool{false, true}, reports)
 }
 
-func TestExperimentalFlaggingProviderEnabledExplicit(t *testing.T) {
+func TestExperimentalFlaggingProviderEnabled(t *testing.T) {
 	t.Run("unset", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
 		cfg := Get()
-		assert.False(t, cfg.ExperimentalFlaggingProviderEnabled())
-		assert.False(t, cfg.ExperimentalFlaggingProviderEnabledExplicit())
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.False(t, enabled)
+		assert.False(t, explicit)
 	})
 
 	t.Run("explicitly set", func(t *testing.T) {
@@ -1750,8 +1751,9 @@ func TestExperimentalFlaggingProviderEnabledExplicit(t *testing.T) {
 
 		t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", "true")
 		cfg := Get()
-		assert.True(t, cfg.ExperimentalFlaggingProviderEnabled())
-		assert.True(t, cfg.ExperimentalFlaggingProviderEnabledExplicit())
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.True(t, enabled)
+		assert.True(t, explicit)
 	})
 }
 
