@@ -1949,7 +1949,7 @@ func (c *Config) FeatureFlagsEnabled() (enabled, explicit bool) {
 }
 
 // FeatureFlagsConfigurationSource returns DD_FEATURE_FLAGS_CONFIGURATION_SOURCE and whether
-// it was explicitly set to a non-blank value.
+// it was explicitly configured, regardless of whether the value itself is blank.
 func (c *Config) FeatureFlagsConfigurationSource() (source string, explicit bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

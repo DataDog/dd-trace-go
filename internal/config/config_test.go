@@ -1822,6 +1822,21 @@ func TestFeatureFlagsConfigurationSource(t *testing.T) {
 		assert.Equal(t, "remote_config", source)
 		assert.True(t, explicit)
 	})
+
+	t.Run("blank but set is still explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// A whitespace-only value is explicit here on purpose: deciding what a
+		// blank source means belongs to openfeature.resolveSource, which falls
+		// through to the later precedence rules. Coercing it to non-explicit at
+		// this layer would hide the distinction from that decision.
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "   ")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "   ", source)
+		assert.True(t, explicit)
+	})
 }
 
 func TestFeatureFlagsAgentlessBaseURL(t *testing.T) {
