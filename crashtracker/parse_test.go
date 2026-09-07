@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -214,8 +215,8 @@ func TestParseCrashDump(t *testing.T) {
 			if r.OSInfo.Architecture != runtime.GOARCH {
 				t.Errorf("OSInfo.Architecture = %q, want %q", r.OSInfo.Architecture, runtime.GOARCH)
 			}
-			if r.OSInfo.Bitness != "64-bit" {
-				t.Errorf("OSInfo.Bitness = %q, want %q", r.OSInfo.Bitness, "64-bit")
+			if want := strconv.Itoa(strconv.IntSize) + "-bit"; r.OSInfo.Bitness != want {
+				t.Errorf("OSInfo.Bitness = %q, want %q", r.OSInfo.Bitness, want)
 			}
 
 			if tt.wantSignal {
@@ -249,6 +250,47 @@ func TestParseSignalQuit(t *testing.T) {
 	}
 	if got.SiSigno != 3 {
 		t.Errorf("SiSigno = %d, want 3", got.SiSigno)
+	}
+}
+
+// TestCrashingThreadFallsBackWhenNoGoroutineIsRunning proves crashingThread's
+// documented fallback: when no goroutine is in the "running" state -- a
+// realistic shape for an operator-triggered SIGQUIT delivered while the
+// process is otherwise idle, since SIGQUIT is a deliberate diagnostic dump
+// request rather than a fault inside a specific goroutine's execution -- the
+// first goroutine in dump order is still marked Crashed and used for
+// error.stack, rather than the report ending up with no primary stack at
+// all. See crashingThread's own doc comment for why this is a best-effort
+// attribution, not evidence that goroutine actually caused anything.
+func TestCrashingThreadFallsBackWhenNoGoroutineIsRunning(t *testing.T) {
+	dump := []byte(`SIGQUIT: quit
+
+goroutine 1 [chan receive]:
+main.main()
+	/tmp/crashdemo/main.go:20 +0x30
+
+goroutine 5 [select]:
+main.worker()
+	/tmp/crashdemo/main.go:30 +0x1c
+created by main.main in goroutine 1
+	/tmp/crashdemo/main.go:25 +0x24
+`)
+	r := parseCrashDump(dump)
+
+	if r.Error.ThreadName != "goroutine 1" {
+		t.Errorf("Error.ThreadName = %q, want %q (the fallback: first goroutine in dump order)", r.Error.ThreadName, "goroutine 1")
+	}
+	crashedCount := 0
+	for _, th := range r.Error.Threads {
+		if th.Crashed {
+			crashedCount++
+		}
+	}
+	if crashedCount != 1 {
+		t.Errorf("crashed goroutine count = %d, want exactly 1", crashedCount)
+	}
+	if r.SigInfo == nil || r.SigInfo.SiSignoHuman != "SIGQUIT" {
+		t.Errorf("SigInfo = %+v, want a populated SIGQUIT SigInfo", r.SigInfo)
 	}
 }
 

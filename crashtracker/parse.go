@@ -301,6 +301,18 @@ func parseLocation(line string) (file string, lineNo int) {
 
 // crashingThread returns the goroutine that crashed: the first goroutine in
 // the "running" state, or the first goroutine overall if none is running.
+//
+// That fallback is a best-effort attribution, not a positively identified
+// crash location: an operator-triggered SIGQUIT can produce a dump with no
+// "running" goroutine at all (SIGQUIT is a deliberate diagnostic dump
+// request, not a fault inside a specific goroutine's execution, so a process
+// that was otherwise idle when it arrived can have every goroutine parked in
+// some other state). In that case dump order, not evidence of a fault,
+// decides which goroutine error.stack and error.thread_name describe. This
+// is deliberately still preferred over reporting no primary stack at all —
+// an approximate crash location is more actionable than none — but it means
+// error.stack should not be read as proof that goroutine actually caused the
+// crash for a SIGQUIT-shaped report specifically.
 func crashingThread(threads []Thread) *Thread {
 	if len(threads) == 0 {
 		return nil
