@@ -10,7 +10,20 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
+
+// ddTagValue returns the value of the first "key:value" entry in a
+// comma-separated ddtags string, and whether it was present at all.
+func ddTagValue(ddtags, key string) (string, bool) {
+	for _, kv := range strings.Split(ddtags, ",") {
+		if k, v, ok := strings.Cut(kv, ":"); ok && k == key {
+			return v, true
+		}
+	}
+	return "", false
+}
 
 // assertCanonicalAgentRequest and assertRFC0013Body are the internal-package
 // counterparts of the identically-named helpers in e2e_test.go (external
@@ -55,10 +68,14 @@ func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
 	if !strings.Contains(ddtags, "data_schema_version:"+wantSchemaVersion) {
 		t.Errorf("ddtags = %q, want it to contain %q", ddtags, "data_schema_version:"+wantSchemaVersion)
 	}
-	if !strings.Contains(ddtags, "uuid:") {
+	uuidVal, ok := ddTagValue(ddtags, "uuid")
+	if !ok {
 		t.Errorf("ddtags = %q, want a uuid entry", ddtags)
+	} else if _, err := uuid.Parse(uuidVal); err != nil {
+		t.Errorf("ddtags uuid = %q, not a valid UUID: %v", uuidVal, err)
 	}
-	if !strings.Contains(ddtags, "incomplete:") {
+	incompleteVal, ok := ddTagValue(ddtags, "incomplete")
+	if !ok {
 		t.Errorf("ddtags = %q, want an incomplete entry", ddtags)
 	}
 	if !strings.Contains(ddtags, "is_crash:true") {
@@ -78,10 +95,13 @@ func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
 	if _, ok := errObj["type"]; !ok {
 		t.Error("error.type missing")
 	}
-	stack, ok := errObj["stack"].(map[string]any)
-	if !ok {
-		t.Error("error.stack missing or wrong type")
-	} else {
+	// A report is permitted to have no primary stack at all (crashingThread
+	// returns nil for a dump with zero parsed threads) or a present-but-empty
+	// one (reportIncomplete's Stack.Incomplete case, when parseFrames bails
+	// before capturing a single frame): asserting non-empty frames
+	// unconditionally would fail on a shape production is allowed to emit.
+	// Only assert format/frames when the stack is both present and complete.
+	if stack, ok := errObj["stack"].(map[string]any); ok && incompleteVal != "true" {
 		if stack["format"] != "Datadog Crashtracker 1.0" {
 			t.Errorf("error.stack.format = %v, want Datadog Crashtracker 1.0", stack["format"])
 		}

@@ -33,7 +33,22 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/crashtracker"
+	"github.com/google/uuid"
 )
+
+// ddTagValue returns the value of the first "key:value" entry in a
+// comma-separated ddtags string, and whether it was present at all. Local
+// counterpart of intake_assert_test.go's identically-named helper: the
+// internal/external package split forces the duplication (see this file's
+// package doc), same as assertCanonicalAgentRequest/assertRFC0013Body below.
+func ddTagValue(ddtags, key string) (string, bool) {
+	for _, kv := range strings.Split(ddtags, ",") {
+		if k, v, ok := strings.Cut(kv, ":"); ok && k == key {
+			return v, true
+		}
+	}
+	return "", false
+}
 
 const e2eRoleEnv = "_CRASHTRACKER_E2E"
 
@@ -134,7 +149,7 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 		t.Fatalf("spawn crash victim: %v", err)
 	}
 	// The victim panics, so non-zero exit is expected.
-	_ = cmd.Wait()
+	_ = waitForVictim(t, cmd, 15*time.Second)
 
 	// Wait for the monitor grandchild to deliver the crash report.
 	select {
@@ -183,7 +198,7 @@ func TestE2ECrashReport_ManyGoroutines(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("spawn crash victim: %v", err)
 	}
-	_ = cmd.Wait()
+	_ = waitForVictim(t, cmd, 15*time.Second)
 
 	select {
 	case body := <-received:
@@ -236,7 +251,7 @@ func TestE2ECrashReport_PanicWithOptions(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("spawn crash victim: %v", err)
 	}
-	_ = cmd.Wait()
+	_ = waitForVictim(t, cmd, 15*time.Second)
 
 	select {
 	case body := <-received:
@@ -280,7 +295,10 @@ func TestE2ECrashReport_CleanExit(t *testing.T) {
 	)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawn crash victim: %v", err)
+	}
+	if err := waitForVictim(t, cmd, 15*time.Second); err != nil {
 		// Clean exit should succeed.
 		t.Fatalf("crash victim exited non-zero: %v", err)
 	}
@@ -379,10 +397,14 @@ func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
 	if !strings.Contains(ddtags, "data_schema_version:"+wantSchemaVersion) {
 		t.Errorf("ddtags = %q, want it to contain %q", ddtags, "data_schema_version:"+wantSchemaVersion)
 	}
-	if !strings.Contains(ddtags, "uuid:") {
+	uuidVal, ok := ddTagValue(ddtags, "uuid")
+	if !ok {
 		t.Errorf("ddtags = %q, want a uuid entry", ddtags)
+	} else if _, err := uuid.Parse(uuidVal); err != nil {
+		t.Errorf("ddtags uuid = %q, not a valid UUID: %v", uuidVal, err)
 	}
-	if !strings.Contains(ddtags, "incomplete:") {
+	incompleteVal, ok := ddTagValue(ddtags, "incomplete")
+	if !ok {
 		t.Errorf("ddtags = %q, want an incomplete entry", ddtags)
 	}
 	if !strings.Contains(ddtags, "is_crash:true") {
@@ -403,10 +425,13 @@ func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
 		t.Error("error.type missing")
 	}
 
-	stack, ok := errObj["stack"].(map[string]any)
-	if !ok {
-		t.Error("error.stack missing or not an object")
-	} else {
+	// A report is permitted to have no primary stack at all (crashingThread
+	// returns nil for a dump with zero parsed threads) or a present-but-empty
+	// one (reportIncomplete's Stack.Incomplete case, when parseFrames bails
+	// before capturing a single frame): asserting non-empty frames
+	// unconditionally would fail on a shape production is allowed to emit.
+	// Only assert format/frames when the stack is both present and complete.
+	if stack, ok := errObj["stack"].(map[string]any); ok && incompleteVal != "true" {
 		if stack["format"] != "Datadog Crashtracker 1.0" {
 			t.Errorf("error.stack.format = %q, want Datadog Crashtracker 1.0", stack["format"])
 		}
@@ -465,7 +490,11 @@ func filterE2EEnv(env []string) []string {
 			// configured site instead of the test's mock server, and the test
 			// would hang waiting on a report that never arrives. DD_SITE
 			// shapes that same agentless target, so it is stripped alongside it.
+			// DD-API-KEY (hyphenated) is a registered alias internal/env also
+			// resolves DD_API_KEY from (see supported_configurations.gen.go),
+			// so it needs stripping too or it would survive this filter intact.
 			strings.HasPrefix(kv, "DD_API_KEY=") ||
+			strings.HasPrefix(kv, "DD-API-KEY=") ||
 			strings.HasPrefix(kv, "DD_SITE=") {
 			continue
 		}
@@ -500,4 +529,41 @@ func TestFilterE2EEnvStripsAPIKeyAndSite(t *testing.T) {
 	if !found {
 		t.Errorf("filterE2EEnv(%v) = %v, want DD_ENV to survive (only DD_API_KEY/DD_SITE are stripped)", in, out)
 	}
+}
+
+// TestFilterE2EEnvStripsHyphenatedAPIKeyAlias proves the fix for the bug
+// where DD-API-KEY (the hyphenated alias internal/env also resolves
+// DD_API_KEY from) survived filtering because only the canonical
+// underscored name was checked.
+func TestFilterE2EEnvStripsHyphenatedAPIKeyAlias(t *testing.T) {
+	in := []string{"PATH=/usr/bin", "DD-API-KEY=dummy"}
+	out := filterE2EEnv(in)
+
+	for _, kv := range out {
+		if strings.HasPrefix(kv, "DD-API-KEY=") {
+			t.Errorf("filterE2EEnv(%v) = %v, want DD-API-KEY stripped", in, out)
+		}
+	}
+}
+
+// waitForVictim waits for the crash-victim subprocess to exit, bounded by
+// timeout. Without this bound, a victim that hangs during startup (before
+// ever reaching Start or the deliberate crash) would block here indefinitely,
+// so a test's own "wait for the report" timeout below would never even begin:
+// the two waits are sequential, not one deadline covering both. On timeout
+// the victim is killed and reaped so the failure is reported promptly rather
+// than surfacing later as an outer go test -timeout or CI job timeout.
+func waitForVictim(t *testing.T, cmd *exec.Cmd, timeout time.Duration) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		_ = cmd.Process.Kill()
+		<-done // reap
+		t.Fatalf("timeout waiting for crash victim (pid %d) to exit", cmd.Process.Pid)
+	}
+	return nil
 }
