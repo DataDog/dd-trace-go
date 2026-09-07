@@ -2,7 +2,7 @@
 // is third-party on purpose; a dd-trace-go one would defeat the point.
 module example.com/otelcexternalapp
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.0.0
