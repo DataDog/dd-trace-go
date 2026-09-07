@@ -109,6 +109,10 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 	case "server_error":
 		w.WriteHeader(http.StatusInternalServerError)
+	case "not_found":
+		// A non-retryable status that is neither 401 nor 403, so it reaches the
+		// "unexpected status" branch rather than the authentication one.
+		w.WriteHeader(http.StatusNotFound)
 	case "throttled":
 		w.Header().Set("Retry-After", "2")
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -558,6 +562,30 @@ func TestAgentlessSource_WarningDedupe(t *testing.T) {
 	}, 2*time.Second, time.Millisecond)
 
 	assert.Equal(t, 1, logger.countContaining("authentication"))
+}
+
+// TestAgentlessSource_WarningDedupeIsPerCause pins that warnOnce dedupes per
+// failure cause, not per broad area. A transient 500 must not spend the warn
+// slot of the 404 that follows it: the 404 stops polling, so its warning is
+// the only outward sign that the configuration has frozen at last-known-good.
+func TestAgentlessSource_WarningDedupeIsPerCause(t *testing.T) {
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("server_error", "not_found")
+
+	logger, undo := newCapturingLogger()
+	defer undo()
+
+	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+	src.start()
+
+	// Wait on the second warning itself, not on the request count: the backend
+	// counts a request before the client has processed its response, so
+	// asserting on the count would race the log write.
+	require.Eventually(t, func() bool {
+		return logger.countContaining("unexpected status 404") == 1
+	}, 2*time.Second, time.Millisecond)
+
+	assert.Equal(t, 1, logger.countContaining("retryable status 500"))
 }
 
 func TestAgentlessSource_NoLogContainsTheEndpoint(t *testing.T) {
