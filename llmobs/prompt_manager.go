@@ -44,8 +44,6 @@ type promptManager struct {
 	now                         func() time.Time
 	evaluate                    func(context.Context, string, string, map[string]any) (any, error)
 	fills                       singleflight.Group
-	refreshMu                   sync.Mutex
-	refreshing                  map[promptCacheKey]struct{}
 }
 
 type promptManagerConfig struct {
@@ -107,7 +105,7 @@ var promptEvaluatorState struct {
 
 var promptEvaluatorMissingWarning sync.Once
 
-var getGlobalPromptManager = func() *promptManager {
+var globalPromptManager = func() *promptManager {
 	cfg := config.Get()
 	env := cfg.Env()
 	globalPromptManagerState.Lock()
@@ -138,22 +136,18 @@ var getGlobalPromptManager = func() *promptManager {
 	return globalPromptManagerState.manager
 }
 
-func globalPromptManager() *promptManager {
-	return getGlobalPromptManager()
-}
-
 func newPromptManager(cfg promptManagerConfig) *promptManager {
 	if cfg.now == nil {
 		cfg.now = time.Now
 	}
 	if cfg.client == nil {
 		cfg.client = internal.DefaultHTTPClient(cfg.timeout, true)
-		cfg.client.CheckRedirect = promptRedirectPolicy
+		cfg.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
 	return &promptManager{
 		apiKey: cfg.apiKey, appKey: cfg.appKey, env: cfg.env, origin: cfg.origin, timeout: cfg.timeout,
 		cacheEnabled: cfg.ttl > 0, cache: newPromptCache(cfg.ttl, cfg.now), fileCache: newPromptFileCache(cfg.fileCacheEnabled && cfg.ttl > 0, cfg.cacheDir, cfg.ttl, cfg.now),
-		httpClient: cfg.client, now: cfg.now, evaluate: cfg.evaluate, refreshing: make(map[promptCacheKey]struct{}),
+		httpClient: cfg.client, now: cfg.now, evaluate: cfg.evaluate,
 	}
 }
 
@@ -172,16 +166,6 @@ func evaluatePromptFeatureFlag(ctx context.Context, key, targetingKey string, at
 	evaluate := promptEvaluatorState.evaluate
 	promptEvaluatorState.Unlock()
 	return evaluate(ctx, key, targetingKey, attributes)
-}
-
-func promptRedirectPolicy(request *http.Request, via []*http.Request) error {
-	if len(via) != 0 && (request.URL.Scheme != via[0].URL.Scheme || request.URL.Host != via[0].URL.Host) {
-		return http.ErrUseLastResponse
-	}
-	if len(via) >= 10 {
-		return errors.New("stopped after 10 redirects")
-	}
-	return nil
 }
 
 func (manager *promptManager) get(ctx context.Context, promptID string, options getPromptConfig) (*ManagedPrompt, error) {
@@ -296,23 +280,11 @@ func (manager *promptManager) sharedContext(ctx context.Context) (context.Contex
 
 func (manager *promptManager) refresh(ctx context.Context, request promptRequest) {
 	key := request.cacheKey()
-	manager.refreshMu.Lock()
-	if _, exists := manager.refreshing[key]; exists {
-		manager.refreshMu.Unlock()
-		return
-	}
-	manager.refreshing[key] = struct{}{}
-	manager.refreshMu.Unlock()
-	go func() {
-		defer func() {
-			manager.refreshMu.Lock()
-			delete(manager.refreshing, key)
-			manager.refreshMu.Unlock()
-		}()
+	manager.fills.DoChan(key.promptID+"\x00"+key.selector, func() (any, error) {
 		shared, cancel := manager.sharedContext(ctx)
 		defer cancel()
-		_, _ = manager.fetchAndCache(shared, request, true)
-	}()
+		return manager.fetchAndCache(shared, request, true)
+	})
 }
 
 type promptFetchError struct {

@@ -106,25 +106,22 @@ func TestPromptRoutingAndHTTP(t *testing.T) {
 	}
 }
 
-func TestPromptRejectsCrossOriginRedirect(t *testing.T) {
-	var targetCalls atomic.Int32
-	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		targetCalls.Add(1)
+func TestPromptRejectsRedirect(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		http.Redirect(w, request, "/next", http.StatusTemporaryRedirect)
 	}))
-	defer target.Close()
-	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		http.Redirect(w, request, target.URL, http.StatusTemporaryRedirect)
-	}))
-	defer source.Close()
+	defer server.Close()
 
 	manager := newPromptManager(promptManagerConfig{
-		apiKey: "api", appKey: "app", origin: source.URL, timeout: time.Second,
+		apiKey: "api", appKey: "app", origin: server.URL, timeout: time.Second,
 	})
 	if _, err := manager.fetchHTTP(context.Background(), promptRequest{promptID: "p", env: "staging"}); err == nil {
-		t.Fatal("cross-origin redirect was accepted")
+		t.Fatal("redirect was accepted")
 	}
-	if calls := targetCalls.Load(); calls != 0 {
-		t.Fatalf("redirect target received %d requests", calls)
+	if calls.Load() != 1 {
+		t.Fatalf("redirect caused %d requests", calls.Load())
 	}
 }
 
@@ -134,9 +131,9 @@ func TestPromptWorksWithoutLLMObsEnabled(t *testing.T) {
 	}))
 	defer server.Close()
 	manager := testPromptManager(server, "", 0, nil, nil)
-	previous := getGlobalPromptManager
-	getGlobalPromptManager = func() *promptManager { return manager }
-	defer func() { getGlobalPromptManager = previous }()
+	previous := globalPromptManager
+	globalPromptManager = func() *promptManager { return manager }
+	defer func() { globalPromptManager = previous }()
 	t.Setenv("DD_LLMOBS_ENABLED", "false")
 	prompt, err := GetPrompt(context.Background(), "p")
 	if err != nil || prompt.ID() != "p" {
@@ -145,10 +142,10 @@ func TestPromptWorksWithoutLLMObsEnabled(t *testing.T) {
 }
 
 func TestGetPromptOptions(t *testing.T) {
-	previous := getGlobalPromptManager
+	previous := globalPromptManager
 	var manager *promptManager
-	getGlobalPromptManager = func() *promptManager { return manager }
-	defer func() { getGlobalPromptManager = previous }()
+	globalPromptManager = func() *promptManager { return manager }
+	defer func() { globalPromptManager = previous }()
 
 	attributes := map[string]any{"tier": "gold"}
 	messages := []PromptMessage{{Role: "user", Content: "Hello {name}"}}
