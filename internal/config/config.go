@@ -269,7 +269,9 @@ type Config struct {
 	// featureFlagsEnabled is DD_FEATURE_FLAGS_ENABLED, the stable Feature Flagging kill switch.
 	// nil means not explicitly set.
 	featureFlagsEnabled *bool
-	// featureFlagsConfigurationSource is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE.
+	// featureFlagsConfigurationSource is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE, kept raw:
+	// trimming, casing and validity are resolved by openfeature.resolveSource, which needs
+	// to tell a blank value apart from an unrecognized one.
 	featureFlagsConfigurationSource string
 	// featureFlagsConfigurationSourceSet reports whether featureFlagsConfigurationSource was
 	// explicitly configured (any origin other than the default), regardless of whether the
@@ -279,8 +281,14 @@ type Config struct {
 	// SENSITIVE: may embed credentials; never log.
 	featureFlagsAgentlessBaseURL string
 	// featureFlagsAgentlessPollInterval is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS.
+	// An out-of-range value falls back to the default instead of being clamped, so a
+	// misconfigured billed-polling interval surfaces rather than quietly becoming a valid one.
+	// See validateFeatureFlagsAgentlessPollInterval for the accepted range.
 	featureFlagsAgentlessPollInterval time.Duration
 	// featureFlagsAgentlessRequestTimeout is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS.
+	// Bounded from above as well as below: an unbounded value overflows once multiplied into
+	// a time.Duration, and http.Client reads the resulting negative timeout as "no timeout".
+	// See validateFeatureFlagsAgentlessRequestTimeout for the accepted range.
 	featureFlagsAgentlessRequestTimeout time.Duration
 	// spanPoolEnabled enables the experimental span pool.
 	spanPoolEnabled bool
@@ -1957,14 +1965,18 @@ func (c *Config) FeatureFlagsAgentlessBaseURL() string {
 	return c.featureFlagsAgentlessBaseURL
 }
 
-// FeatureFlagsAgentlessPollInterval returns DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS.
+// FeatureFlagsAgentlessPollInterval returns DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS,
+// or the default when the configured value was out of range. The value is always positive,
+// so callers need not guard a ticker against it.
 func (c *Config) FeatureFlagsAgentlessPollInterval() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.featureFlagsAgentlessPollInterval
 }
 
-// FeatureFlagsAgentlessRequestTimeout returns DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS.
+// FeatureFlagsAgentlessRequestTimeout returns DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS,
+// or the default when the configured value was out of range. The value is always positive,
+// so it is safe to hand to http.Client, which treats a non-positive Timeout as no timeout.
 func (c *Config) FeatureFlagsAgentlessRequestTimeout() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
