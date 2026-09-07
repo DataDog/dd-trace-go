@@ -139,85 +139,87 @@ func TestTrace200(t *testing.T) {
 
 // Test that the http.url span tag redacts sensitive query string parameters instead of
 // leaking them verbatim (APMSP-3529).
-func TestHTTPURLQueryStringObfuscation(t *testing.T) {
-	addr := startServer(t)
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+func TestHTTPURLQueryString(t *testing.T) {
+	t.Run("obfuscation", func(t *testing.T) {
+		addr := startServer(t)
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	resp, err := (&http.Client{}).Get(addr + "/any?token=supersecret&safe=1")
-	require.NoError(t, err)
-	defer resp.Body.Close()
+		resp, err := (&http.Client{}).Get(addr + "/any?token=supersecret&safe=1")
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	url, _ := spans[0].Tag(ext.HTTPURL).(string)
-	assert.Contains(url, "safe=1")
-	assert.Contains(url, "<redacted>")
-	assert.NotContains(url, "supersecret")
-}
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		url, _ := spans[0].Tag(ext.HTTPURL).(string)
+		assert.Contains(url, "safe=1")
+		assert.Contains(url, "<redacted>")
+		assert.NotContains(url, "supersecret")
+	})
 
-func TestHTTPURLQueryStringDisabled(t *testing.T) {
-	t.Cleanup(instrhttptrace.ResetCfg)
-	t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED", "true")
-	instrhttptrace.ResetCfg()
+	t.Run("disabled", func(t *testing.T) {
+		t.Cleanup(instrhttptrace.ResetCfg)
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED", "true")
+		instrhttptrace.ResetCfg()
 
-	addr := startServer(t)
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+		addr := startServer(t)
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	resp, err := (&http.Client{}).Get(addr + "/any?token=supersecret")
-	require.NoError(t, err)
-	defer resp.Body.Close()
+		resp, err := (&http.Client{}).Get(addr + "/any?token=supersecret")
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	assert.Equal(addr+"/any", spans[0].Tag(ext.HTTPURL))
-}
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(addr+"/any", spans[0].Tag(ext.HTTPURL))
+	})
 
-func TestHTTPURLQueryStringCustomRegexp(t *testing.T) {
-	t.Cleanup(instrhttptrace.ResetCfg)
-	t.Setenv("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP", `myparam=\w+`)
-	instrhttptrace.ResetCfg()
+	t.Run("custom regexp", func(t *testing.T) {
+		t.Cleanup(instrhttptrace.ResetCfg)
+		t.Setenv("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP", `myparam=\w+`)
+		instrhttptrace.ResetCfg()
 
-	addr := startServer(t)
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+		addr := startServer(t)
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	resp, err := (&http.Client{}).Get(addr + "/any?myparam=shouldberedacted&other=1")
-	require.NoError(t, err)
-	defer resp.Body.Close()
+		resp, err := (&http.Client{}).Get(addr + "/any?myparam=shouldberedacted&other=1")
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	url, _ := spans[0].Tag(ext.HTTPURL).(string)
-	assert.Contains(url, "other=1")
-	assert.Contains(url, "<redacted>")
-	assert.NotContains(url, "shouldberedacted")
-}
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		url, _ := spans[0].Tag(ext.HTTPURL).(string)
+		assert.Contains(url, "other=1")
+		assert.Contains(url, "<redacted>")
+		assert.NotContains(url, "shouldberedacted")
+	})
 
-func TestHTTPURLQueryStringAllowlist(t *testing.T) {
-	t.Cleanup(instrhttptrace.ResetCfg)
-	t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "safe")
-	instrhttptrace.ResetCfg()
+	t.Run("allowlist", func(t *testing.T) {
+		t.Cleanup(instrhttptrace.ResetCfg)
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "safe")
+		instrhttptrace.ResetCfg()
 
-	addr := startServer(t)
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+		addr := startServer(t)
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	resp, err := (&http.Client{}).Get(addr + "/any?safe=1&password=hunter2")
-	require.NoError(t, err)
-	defer resp.Body.Close()
+		resp, err := (&http.Client{}).Get(addr + "/any?safe=1&password=hunter2")
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	url, _ := spans[0].Tag(ext.HTTPURL).(string)
-	assert.Contains(url, "safe=1")
-	assert.NotContains(url, "hunter2")
-	assert.NotContains(url, "password")
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		url, _ := spans[0].Tag(ext.HTTPURL).(string)
+		assert.Contains(url, "safe=1")
+		assert.NotContains(url, "hunter2")
+		assert.NotContains(url, "password")
+	})
 }
 
 // Test that the http.url span tag preserves the raw, as-received wire-form path

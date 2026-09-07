@@ -91,9 +91,8 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	return opts
 }
 
-// httpURLTag builds the http.url span tag from the request URI's scheme, host, and path, appending the query
-// string only after running it through the same obfuscation net/http-based integrations use. Unlike
-// fctx.URI().FullURI(), this never leaks a raw, unobfuscated query string.
+// httpURLTag builds the http.url span tag. It obfuscates the query string because
+// fctx.URI().FullURI() returns it verbatim.
 func httpURLTag(fctx *fasthttp.RequestCtx) string {
 	uri := fctx.URI()
 	url := string(uri.Scheme()) + "://" + string(uri.Host()) + string(uri.PathOriginal())

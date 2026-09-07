@@ -582,7 +582,7 @@ func TestURLTagWithAllowlist(t *testing.T) {
 	}
 }
 
-func TestObfuscateQueryStringExported(t *testing.T) {
+func TestObfuscateQueryString(t *testing.T) {
 	oldCfg := cfg
 	defer func() { cfg = oldCfg }()
 
