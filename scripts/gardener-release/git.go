@@ -19,6 +19,10 @@ type Command struct {
 	Args []string
 	Env  []string
 	Dir  string
+	// Stdin is fed to the subprocess when non-empty. Only plumbing helpers
+	// that genuinely need it (git hash-object --stdin, git mktree) set it;
+	// it is never used to interpolate untrusted input into a shell.
+	Stdin string
 }
 
 type CommandResult struct {
@@ -36,6 +40,9 @@ func (ExecRunner) Run(ctx context.Context, command Command) (CommandResult, erro
 	cmd := exec.CommandContext(ctx, command.Path, command.Args...)
 	cmd.Dir = command.Dir
 	cmd.Env = append([]string(nil), command.Env...)
+	if command.Stdin != "" {
+		cmd.Stdin = strings.NewReader(command.Stdin)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
