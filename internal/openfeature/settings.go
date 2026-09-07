@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Source identifies which delivery mechanism feeds feature-flag configuration
@@ -123,6 +124,11 @@ func resolveSource(in sourceInputs) (source Source, legacyDecided bool) {
 			case "offline":
 				return SourceDisabled, false
 			default:
+				// Failing closed without a diagnostic would make the feature go
+				// dark with nothing pointing at the typo, so warn as the other
+				// tracers do. The raw value is logged, not the normalized one,
+				// so the customer sees what they actually set.
+				log.Warn("openfeature: unsupported Feature Flagging configuration source %q; provider disabled", in.source)
 				return SourceDisabled, false
 			}
 		}
