@@ -17,7 +17,45 @@ import (
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
+
+type evaluatorTestProvider struct {
+	of.NoopProvider
+	evaluations chan of.FlattenedContext
+}
+
+func (evaluatorTestProvider) Metadata() of.Metadata {
+	return of.Metadata{Name: datadogProviderName}
+}
+
+func (provider evaluatorTestProvider) ObjectEvaluation(_ context.Context, _ string, _ any, evaluationContext of.FlattenedContext) of.InterfaceResolutionDetail {
+	provider.evaluations <- evaluationContext
+	return of.InterfaceResolutionDetail{Value: map[string]any{"value": "ok"}}
+}
+
+func TestRegisteredEvaluatorUsesDefaultDatadogProvider(t *testing.T) {
+	of.Shutdown()
+	provider := evaluatorTestProvider{evaluations: make(chan of.FlattenedContext, 1)}
+	if err := of.SetProviderAndWait(provider); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { of.Shutdown() })
+
+	evaluate, err := internalffe.NewEvaluator("test-domain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := evaluate(context.Background(), "flag", "alice", map[string]any{"tier": "gold"})
+	if err != nil || value.(map[string]any)["value"] != "ok" {
+		t.Fatalf("value=%#v err=%v", value, err)
+	}
+	evaluationContext := <-provider.evaluations
+	if evaluationContext[of.TargetingKey] != "alice" || evaluationContext["tier"] != "gold" {
+		t.Fatalf("evaluation context=%#v", evaluationContext)
+	}
+}
 
 func TestEvaluateShard(t *testing.T) {
 	t.Run("targeting key hashes to correct shard", func(t *testing.T) {

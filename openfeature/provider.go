@@ -16,6 +16,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
 
 var _ openfeature.FeatureProvider = (*DatadogProvider)(nil)
@@ -44,7 +45,13 @@ const (
 	defaultInitTimeout = 30 * time.Second
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
+
+	datadogProviderName = "Datadog Remote Config Provider"
 )
+
+func init() {
+	internalffe.NewEvaluator = newEvaluator
+}
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
@@ -99,6 +106,27 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 	return startWithRemoteConfig(config)
 }
 
+func newEvaluator(domain string) (internalffe.Evaluator, error) {
+	client := openfeature.NewDefaultClient()
+	if openfeature.ProviderMetadata().Name != datadogProviderName {
+		provider, err := NewDatadogProvider(ProviderConfig{})
+		if err != nil {
+			return nil, err
+		}
+		if provider.Metadata().Name != datadogProviderName {
+			return nil, errors.New("openfeature: Datadog provider is unavailable")
+		}
+		if err := openfeature.SetNamedProvider(domain, provider); err != nil {
+			return nil, err
+		}
+		client = openfeature.NewClient(domain)
+	}
+	return func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
+		details, err := client.ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
+		return details.Value, err
+	}, nil
+}
+
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	evp := newEVPClient()
 
@@ -150,7 +178,7 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
-			Name: "Datadog Remote Config Provider",
+			Name: datadogProviderName,
 		},
 		hooks:                 hooks,
 		exposureWriter:        writer,

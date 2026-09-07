@@ -23,13 +23,11 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/open-feature/go-sdk/openfeature"
-
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-	ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
 )
 
 func promptResponse(id, version, text string) string {
@@ -300,95 +298,46 @@ func TestPromptFeatureFlagAndTargeting(t *testing.T) {
 	}
 }
 
-type promptABProvider struct {
-	openfeature.NoopProvider
-	evaluations chan openfeature.FlattenedContext
-}
-
-func (promptABProvider) Metadata() openfeature.Metadata {
-	return openfeature.Metadata{Name: datadogOpenFeatureProviderName}
-}
-
-func (provider promptABProvider) ObjectEvaluation(_ context.Context, flag string, _ any, context openfeature.FlattenedContext) openfeature.InterfaceResolutionDetail {
-	if provider.evaluations != nil {
-		provider.evaluations <- context
-	}
-	target, _ := context[openfeature.TargetingKey].(string)
-	return openfeature.InterfaceResolutionDetail{Value: map[string]any{"prompt_id": "greeting", "version": target, "template": flag}}
-}
-
-func TestPromptReusesRegisteredDatadogProviderForAB(t *testing.T) {
-	if err := openfeature.SetProviderAndWait(promptABProvider{}); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = openfeature.SetProviderAndWait(openfeature.NoopProvider{}) }()
-	var httpCalls atomic.Int32
-	client := &http.Client{Transport: promptRoundTripper(func(request *http.Request) (*http.Response, error) {
-		httpCalls.Add(1)
-		return nil, errors.New("unexpected HTTP request")
-	})}
-	manager := newPromptManager(promptManagerConfig{
-		apiKey: "api", appKey: "app", env: "staging", origin: "https://api.datadoghq.com",
-		ttl: time.Minute, timeout: time.Second, client: client, evaluate: evaluatePromptFeatureFlag,
-	})
-	for _, target := range []string{"alice", "bob"} {
-		prompt, err := manager.get(context.Background(), "greeting", getPromptConfig{targetingKey: target, attributes: map[string]any{"targetingKey": "attribute"}})
-		if err != nil || prompt.Version() != target || prompt.Template().Text != "__llmobs__.prompt.greeting" {
-			t.Fatalf("target=%s prompt=%#v err=%v", target, prompt, err)
-		}
-	}
-	if httpCalls.Load() != 0 {
-		t.Fatalf("provider success made %d HTTP requests", httpCalls.Load())
-	}
-}
-
-func TestPromptProviderFollowsConfiguration(t *testing.T) {
-	openfeature.Shutdown()
-	promptOpenFeatureState.Lock()
-	promptOpenFeatureState.configuration = nil
-	promptOpenFeatureState.client = nil
-	promptOpenFeatureState.Unlock()
-
-	previousFactory := newPromptOpenFeatureProvider
-	var providerCalls atomic.Int32
-	newPromptOpenFeatureProvider = func(ddopenfeature.ProviderConfig) (openfeature.FeatureProvider, error) {
-		providerCalls.Add(1)
-		return &promptABProvider{}, nil
+func TestPromptEvaluatorFollowsConfiguration(t *testing.T) {
+	previous := internalffe.NewEvaluator
+	var evaluatorCalls atomic.Int32
+	internalffe.NewEvaluator = func(string) (internalffe.Evaluator, error) {
+		evaluatorCalls.Add(1)
+		return func(context.Context, string, string, map[string]any) (any, error) {
+			return "registered", nil
+		}, nil
 	}
 	t.Cleanup(func() {
-		newPromptOpenFeatureProvider = previousFactory
-		openfeature.Shutdown()
+		internalffe.NewEvaluator = previous
 		internalconfig.CreateNew()
-		promptOpenFeatureState.Lock()
-		promptOpenFeatureState.configuration = nil
-		promptOpenFeatureState.client = nil
-		promptOpenFeatureState.Unlock()
+		promptEvaluatorState.Lock()
+		promptEvaluatorState.configuration = nil
+		promptEvaluatorState.evaluate = nil
+		promptEvaluatorState.Unlock()
+		globalPromptManagerState.Lock()
+		globalPromptManagerState.config = nil
+		globalPromptManagerState.manager = nil
+		globalPromptManagerState.Unlock()
 	})
+	t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", "true")
+	internalconfig.CreateNew()
 
-	_, err := ensurePromptOpenFeatureClient()
-	if err != nil {
-		t.Fatal(err)
+	for range 2 {
+		manager := globalPromptManager()
+		value, err := manager.evaluate(context.Background(), "prompt", "user", nil)
+		if err != nil || value != "registered" {
+			t.Fatalf("value=%v err=%v", value, err)
+		}
 	}
-	_, err = ensurePromptOpenFeatureClient()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if providerCalls.Load() != 1 {
-		t.Fatalf("provider initialized %d times", providerCalls.Load())
+	if evaluatorCalls.Load() != 1 {
+		t.Fatalf("evaluator initialized %d times", evaluatorCalls.Load())
 	}
 	internalconfig.CreateNew()
-	_, err = ensurePromptOpenFeatureClient()
-	if err != nil {
+	if _, err := globalPromptManager().evaluate(context.Background(), "prompt", "user", nil); err != nil {
 		t.Fatal(err)
 	}
-	if providerCalls.Load() != 2 {
-		t.Fatalf("provider initialized %d times after configuration change", providerCalls.Load())
-	}
-	if got := openfeature.ProviderMetadata().Name; got != "NoopProvider" {
-		t.Fatalf("default OpenFeature provider was replaced: %q", got)
-	}
-	if got := openfeature.NamedProviderMetadata(promptOpenFeatureDomain).Name; got != datadogOpenFeatureProviderName {
-		t.Fatalf("named prompt provider: %q", got)
+	if evaluatorCalls.Load() != 2 {
+		t.Fatalf("evaluator initialized %d times after configuration change", evaluatorCalls.Load())
 	}
 }
 

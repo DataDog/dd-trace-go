@@ -20,20 +20,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/open-feature/go-sdk/openfeature"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
 )
 
 const (
-	promptEndpoint                 = "/api/unstable/llm-obs/v1/prompts"
-	promptOpenFeatureDomain        = "datadog-llmobs-prompts"
-	datadogOpenFeatureProviderName = "Datadog Remote Config Provider"
+	promptEndpoint          = "/api/unstable/llm-obs/v1/prompts"
+	promptOpenFeatureDomain = "datadog-llmobs-prompts"
 )
 
 type promptManager struct {
@@ -101,13 +99,13 @@ var globalPromptManagerState struct {
 	manager *promptManager
 }
 
-var promptOpenFeatureState struct {
+var promptEvaluatorState struct {
 	sync.Mutex
 	configuration *config.Config
-	client        *openfeature.Client
+	evaluate      internalffe.Evaluator
 }
 
-var newPromptOpenFeatureProvider = ddopenfeature.NewDatadogProvider
+var promptEvaluatorMissingWarning sync.Once
 
 var getGlobalPromptManager = func() *promptManager {
 	cfg := config.Get()
@@ -127,7 +125,13 @@ var getGlobalPromptManager = func() *promptManager {
 			timeout:          cfg.LLMObsPromptsTimeout(),
 		}
 		if cfg.ExperimentalFlaggingProviderEnabled() {
-			managerConfig.evaluate = evaluatePromptFeatureFlag
+			if internalffe.NewEvaluator == nil {
+				promptEvaluatorMissingWarning.Do(func() {
+					log.Warn("LLMObs prompt feature flag evaluation is enabled but unavailable; import github.com/DataDog/dd-trace-go/v2/openfeature to enable A/B exposure reporting")
+				})
+			} else {
+				managerConfig.evaluate = evaluatePromptFeatureFlag
+			}
 		}
 		globalPromptManagerState.manager = newPromptManager(managerConfig)
 	}
@@ -154,40 +158,20 @@ func newPromptManager(cfg promptManagerConfig) *promptManager {
 }
 
 func evaluatePromptFeatureFlag(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
-	client, err := ensurePromptOpenFeatureClient()
-	if err != nil {
-		return nil, err
-	}
-	details, err := client.ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
-	return details.Value, err
-}
-
-func ensurePromptOpenFeatureClient() (*openfeature.Client, error) {
-	if openfeature.ProviderMetadata().Name == datadogOpenFeatureProviderName {
-		return openfeature.NewDefaultClient(), nil
-	}
-
-	promptOpenFeatureState.Lock()
-	defer promptOpenFeatureState.Unlock()
+	promptEvaluatorState.Lock()
 	configuration := config.Get()
-	if promptOpenFeatureState.configuration == configuration && promptOpenFeatureState.client != nil {
-		return promptOpenFeatureState.client, nil
+	if promptEvaluatorState.configuration != configuration || promptEvaluatorState.evaluate == nil {
+		evaluate, err := internalffe.NewEvaluator(promptOpenFeatureDomain)
+		if err != nil {
+			promptEvaluatorState.Unlock()
+			return nil, err
+		}
+		promptEvaluatorState.configuration = configuration
+		promptEvaluatorState.evaluate = evaluate
 	}
-
-	provider, err := newPromptOpenFeatureProvider(ddopenfeature.ProviderConfig{})
-	if err != nil {
-		return nil, err
-	}
-	if provider.Metadata().Name != datadogOpenFeatureProviderName {
-		return nil, errors.New("llmobs: Datadog OpenFeature provider is unavailable")
-	}
-	// Keep prompt evaluation isolated from the application's default provider.
-	if err := openfeature.SetNamedProvider(promptOpenFeatureDomain, provider); err != nil {
-		return nil, err
-	}
-	promptOpenFeatureState.configuration = configuration
-	promptOpenFeatureState.client = openfeature.NewClient(promptOpenFeatureDomain)
-	return promptOpenFeatureState.client, nil
+	evaluate := promptEvaluatorState.evaluate
+	promptEvaluatorState.Unlock()
+	return evaluate(ctx, key, targetingKey, attributes)
 }
 
 func promptRedirectPolicy(request *http.Request, via []*http.Request) error {

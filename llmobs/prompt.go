@@ -143,6 +143,8 @@ func WithPromptVersion(version int) GetPromptOption {
 }
 
 // WithPromptTargetingKey sets the OpenFeature and /resolve targeting key.
+// OpenFeature evaluation and exposure reporting require a side-effect import of
+// github.com/DataDog/dd-trace-go/v2/openfeature and DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED=true.
 func WithPromptTargetingKey(targetingKey string) GetPromptOption {
 	return func(config *getPromptConfig) { config.targetingKey = targetingKey }
 }
