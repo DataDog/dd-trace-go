@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -169,6 +168,29 @@ func NormalizeVersion(command, raw string) (string, bool, error) {
 	return fmt.Sprintf("v%s.%s.%s", match[1], match[2], patch), true, nil
 }
 
+func DecodeDispatchJSON(raw []byte) (DispatchRequest, error) {
+	fields, err := decodeStrictObject(raw, MaxContextBytes+1024, ErrInvalidContextJSON, ErrTrailingContextJSON, ErrDuplicateContextKey)
+	if err != nil {
+		if errors.Is(err, errStrictJSONNotObject) {
+			return DispatchRequest{}, ErrWrongContextType
+		}
+		return DispatchRequest{}, err
+	}
+	allowed := map[string]bool{"contract_version": true, "command": true, "version": true, "context": true}
+	inputs := make(map[string]string, len(allowed))
+	for key := range fields {
+		if !allowed[key] {
+			return DispatchRequest{}, ErrUnknownInputKey
+		}
+		s, err := stringField(fields, key, ErrUnknownInputKey, ErrWrongContextType)
+		if err != nil {
+			return DispatchRequest{}, err
+		}
+		inputs[key] = s
+	}
+	return DecodeDispatchInputs(inputs)
+}
+
 func DecodeDispatchInputs(inputs map[string]string) (DispatchRequest, error) {
 	required := map[string]bool{"contract_version": true, "command": true, "version": true, "context": true}
 	for key := range inputs {
@@ -216,42 +238,12 @@ func DecodeDispatchInputs(inputs map[string]string) (DispatchRequest, error) {
 }
 
 func DecodeContext(raw string) (Context, error) {
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.UseNumber()
-	tok, err := dec.Token()
+	seen, err := decodeStrictObject([]byte(raw), MaxContextBytes, ErrInvalidContextJSON, ErrTrailingContextJSON, ErrDuplicateContextKey)
 	if err != nil {
-		return Context{}, ErrInvalidContextJSON
-	}
-	if delimiter, ok := tok.(json.Delim); !ok || delimiter != '{' {
-		return Context{}, ErrWrongContextType
-	}
-	seen := map[string]json.RawMessage{}
-	for dec.More() {
-		keyToken, err := dec.Token()
-		if err != nil {
-			return Context{}, ErrInvalidContextJSON
+		if errors.Is(err, errStrictJSONNotObject) {
+			return Context{}, ErrWrongContextType
 		}
-		key, ok := keyToken.(string)
-		if !ok {
-			return Context{}, ErrInvalidContextJSON
-		}
-		if _, exists := seen[key]; exists {
-			return Context{}, ErrDuplicateContextKey
-		}
-		var rawValue json.RawMessage
-		if err := dec.Decode(&rawValue); err != nil {
-			return Context{}, ErrInvalidContextJSON
-		}
-		seen[key] = rawValue
-	}
-	if tok, err = dec.Token(); err != nil {
-		return Context{}, ErrInvalidContextJSON
-	}
-	if delimiter, ok := tok.(json.Delim); !ok || delimiter != '}' {
-		return Context{}, ErrInvalidContextJSON
-	}
-	if dec.Decode(&struct{}{}) != io.EOF {
-		return Context{}, ErrTrailingContextJSON
+		return Context{}, err
 	}
 	allowed := map[string]bool{
 		"repository_id":              true,
@@ -268,15 +260,7 @@ func DecodeContext(raw string) (Context, error) {
 		}
 	}
 	value := func(key string) (string, error) {
-		raw, ok := seen[key]
-		if !ok {
-			return "", ErrUnknownContextKey
-		}
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			return "", ErrWrongContextType
-		}
-		return s, nil
+		return stringField(seen, key, ErrUnknownContextKey, ErrWrongContextType)
 	}
 	ctx := Context{}
 	if ctx.RepositoryID, err = value("repository_id"); err != nil {
@@ -398,6 +382,10 @@ func validWebhookID(s string) bool {
 func ErrorCode(err error) string {
 	if err == nil {
 		return ""
+	}
+	var releaseErr *ReleaseError
+	if errors.As(err, &releaseErr) {
+		return releaseErr.Code
 	}
 	return err.Error()
 }
