@@ -1,0 +1,151 @@
+{
+  "contract_version": "1",
+  "repository": {
+    "full_name": "DataDog/dd-trace-go",
+    "workflow_id": "gardener-release.yml",
+    "dispatch_ref": "main"
+  },
+  "workflow_dispatch": {
+    "required_string_inputs": [
+      "contract_version",
+      "command",
+      "version",
+      "context"
+    ],
+    "forbidden_inputs": [
+      "actor",
+      "target_ref",
+      "run_id",
+      "attempt",
+      "path",
+      "blob"
+    ],
+    "input_bounds": {
+      "context_utf8_bytes_max": 4096
+    }
+  },
+  "command": {
+    "prefix": "/gardener",
+    "release_commands": [
+      "release:prepare",
+      "release:promote",
+      "release:release"
+    ],
+    "grammar": "/gardener release:(prepare|promote|release) [vM.m[.p]]",
+    "body_utf8_bytes_max": 256,
+    "whitespace": {
+      "surrounding": "ASCII spaces or tabs only",
+      "separator": "one or more ASCII spaces or tabs"
+    },
+    "rejects": [
+      "prose",
+      "quoted commands",
+      "fenced blocks",
+      "multiple commands",
+      "extra arguments",
+      "interior newlines",
+      "Unicode lookalikes",
+      "NUL bytes",
+      "other control characters",
+      "leading zero numeric components",
+      "rc/dev/build metadata suffixes",
+      "branch names",
+      "commit SHAs"
+    ],
+    "version_component": {
+      "minimum": 0,
+      "maximum": 2147483647,
+      "syntax": "0 or [1-9][0-9]*"
+    },
+    "normalization": {
+      "omitted_version": "auto",
+      "explicit_minor": "append .0",
+      "explicit_patch": "preserve canonical vM.m.p",
+      "prepare_patch_greater_than_zero": "reject"
+    }
+  },
+  "context": {
+    "encoding": "JSON object encoded as one workflow_dispatch string input",
+    "required_string_keys": [
+      "repository_id",
+      "repository_full_name",
+      "issue_number",
+      "original_comment_id",
+      "acknowledgement_comment_id",
+      "body_snapshot",
+      "policy_revision"
+    ],
+    "numeric_identifier_keys": [
+      "repository_id",
+      "issue_number",
+      "original_comment_id",
+      "acknowledgement_comment_id"
+    ],
+    "numeric_identifier_syntax": "positive canonical decimal string, at most 20 digits",
+    "policy_revision_syntax": "lowercase SHA-256 hex digest",
+    "rejects": [
+      "arrays",
+      "null",
+      "duplicate keys",
+      "unknown keys",
+      "wrong types",
+      "trailing JSON",
+      "invalid UTF-8"
+    ]
+  },
+  "request": {
+    "key_format": "<repository_id>:<original_comment_id>",
+    "marker_format": "<!-- gardener:release:request:v1:<repository_id>:<original_comment_id> command=<command> version=<normalized_version> -->",
+    "sha256": {
+      "algorithm": "SHA-256",
+      "input": "compact UTF-8 JSON string array with no BOM and no trailing newline",
+      "ordered_fields": [
+        "contract_version",
+        "repository_id",
+        "repository_full_name",
+        "issue_number",
+        "original_comment_id",
+        "command",
+        "normalized_version",
+        "body_snapshot"
+      ],
+      "excluded_fields": [
+        "run_id",
+        "attempt_number",
+        "acknowledgement_comment_id",
+        "current_branch_state",
+        "actor",
+        "target_ref"
+      ]
+    }
+  },
+  "fixtures": {
+    "valid": [
+      "valid-dispatch-context.json",
+      "valid-prepare-explicit-minor.json",
+      "valid-prepare-omitted-version.json",
+      "valid-promote-explicit-patch.json",
+      "valid-promote-omitted-version.json",
+      "valid-release-explicit-patch.json",
+      "valid-release-omitted-version.json"
+    ],
+    "invalid": [
+      "invalid-command-in-prose.json",
+      "invalid-context-duplicate-key.json",
+      "invalid-context-trailing-json.json",
+      "invalid-context-unknown-key.json",
+      "invalid-context-wrong-type.json",
+      "invalid-extra-token.json",
+      "invalid-input-unknown-key.json",
+      "invalid-input-unnormalized-version.json",
+      "invalid-interior-newline.json",
+      "invalid-leading-zero.json",
+      "invalid-multiple-commands.json",
+      "invalid-overflow.json",
+      "invalid-prepare-patch.json",
+      "invalid-rc-suffix.json",
+      "invalid-unicode-command.json",
+      "invalid-unsafe-id.json"
+    ]
+  }
+}

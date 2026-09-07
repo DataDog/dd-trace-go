@@ -1,0 +1,33 @@
+name: Gardener release
+
+on:
+  workflow_dispatch:
+    inputs:
+      contract_version:
+        description: Release dispatch contract version.
+        required: true
+        type: string
+      command:
+        description: Release command selected by Gardener.
+        required: true
+        type: string
+      version:
+        description: Normalized release version or auto.
+        required: true
+        type: string
+      context:
+        description: Release request context JSON string.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  not-ready:
+    name: Gardener release is not ready
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stop before release implementation exists
+        run: |
+          echo 'Gardener release automation is not ready.'
+          exit 1

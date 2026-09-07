@@ -1,0 +1,17 @@
+{
+  "id": "invalid-rc-suffix",
+  "case": "invalid_command",
+  "body": "/gardener release:promote v2.11.0-rc.1",
+  "webhook": {
+    "repository_id": "123",
+    "repository_full_name": "DataDog/dd-trace-go",
+    "issue_number": "456",
+    "original_comment_id": "789"
+  },
+  "expected": {
+    "ok": false,
+    "name": "release_invalid",
+    "error_code": "invalid_version",
+    "matrix": "R06"
+  }
+}

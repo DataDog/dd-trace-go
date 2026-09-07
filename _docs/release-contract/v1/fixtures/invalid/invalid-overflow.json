@@ -1,0 +1,17 @@
+{
+  "id": "invalid-overflow",
+  "case": "invalid_command",
+  "body": "/gardener release:release v2147483648.0.0",
+  "webhook": {
+    "repository_id": "123",
+    "repository_full_name": "DataDog/dd-trace-go",
+    "issue_number": "456",
+    "original_comment_id": "789"
+  },
+  "expected": {
+    "ok": false,
+    "name": "release_invalid",
+    "error_code": "version_overflow",
+    "matrix": "R06"
+  }
+}
