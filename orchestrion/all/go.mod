@@ -13,6 +13,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.11.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.11.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 v2.11.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.11.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.11.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.11.0-dev.1
@@ -61,6 +62,7 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	cloud.google.com/go/pubsub v1.50.1 // indirect
 	cloud.google.com/go/pubsub/v2 v2.0.0 // indirect
+	connectrpc.com/connect v1.16.2 // indirect
 	github.com/99designs/gqlgen v0.17.92 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.0 // indirect
@@ -322,6 +324,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 => ../../contrib/cloud.google.com/go/pubsub.v2
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 => ../../contrib/confluentinc/confluent-kafka-go/kafka.v2
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 => ../../contrib/confluentinc/confluent-kafka-go/kafka
+	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 => ../../contrib/connectrpc.com/connect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/database/sql
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 => ../../contrib/elastic/go-elasticsearch.v6
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 => ../../contrib/gin-gonic/gin

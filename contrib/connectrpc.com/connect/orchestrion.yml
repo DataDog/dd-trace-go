@@ -1,0 +1,58 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026 Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
+  description: |-
+    Connect is an RPC framework built on Protocol Buffers and net/http.
+
+    ### Details & Caveats
+    - Generated clients are instrumented through `connect.WithClientOptions`, which supported
+      versions of protoc-gen-connect-go use when constructing their generic clients.
+    - A direct call to the generic `connect.NewClient` must include `connect.WithClientOptions()`
+      to enable automatic instrumentation, or configure the Datadog interceptor manually.
+
+aspects:
+  - id: Client
+    join-point:
+      all-of:
+        - function-call: connectrpc.com/connect.WithClientOptions
+        - not:
+            import-path: connectrpc.com/connect
+        - not:
+            import-path: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
+    advice:
+      - append-args:
+          type: connectrpc.com/connect.ClientOption
+          values:
+            - imports:
+                connect: connectrpc.com/connect
+                connecttrace: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
+              template: connect.WithInterceptors(connecttrace.NewClientInterceptor())
+
+  - id: Handler
+    join-point:
+      all-of:
+        - one-of:
+            - function-call: connectrpc.com/connect.NewUnaryHandler
+            - function-call: connectrpc.com/connect.NewClientStreamHandler
+            - function-call: connectrpc.com/connect.NewServerStreamHandler
+            - function-call: connectrpc.com/connect.NewBidiStreamHandler
+            - function-call: connectrpc.com/connect.NewUnaryHandlerSimple
+            - function-call: connectrpc.com/connect.NewClientStreamHandlerSimple
+            - function-call: connectrpc.com/connect.NewServerStreamHandlerSimple
+        - not:
+            import-path: connectrpc.com/connect
+        - not:
+            import-path: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
+    advice:
+      - append-args:
+          type: connectrpc.com/connect.HandlerOption
+          values:
+            - imports:
+                connect: connectrpc.com/connect
+                connecttrace: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
+              template: connect.WithInterceptors(connecttrace.NewServerInterceptor())

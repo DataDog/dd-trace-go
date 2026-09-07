@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
+	connectrpc.com/connect v1.20.0
 	github.com/99designs/gqlgen v0.17.92
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.11.0-dev.1
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.11.0-dev.1
@@ -71,6 +72,7 @@ require (
 	google.golang.org/api v0.273.1
 	google.golang.org/grpc v1.82.1
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
+	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 	gotest.tools/v3 v3.5.2
@@ -106,6 +108,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.11.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.11.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.11.0-dev.1 // indirect
@@ -379,7 +382,6 @@ require (
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
-	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -413,6 +415,8 @@ replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 
 replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 => ../../../contrib/confluentinc/confluent-kafka-go/kafka.v2
 
 replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 => ../../../contrib/confluentinc/confluent-kafka-go/kafka
+
+replace github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 => ../../../contrib/connectrpc.com/connect
 
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../../contrib/database/sql
 
