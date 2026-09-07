@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -69,14 +70,29 @@ func start(opts ...Option) error {
 
 func defaultConfig() *config {
 	enabled, _, _ := stableconfig.Bool("DD_CRASHTRACKING_ENABLED", true)
+	tags := internal.ParseTagString(env.Get("DD_TAGS"))
 	return &config{
 		enabled: enabled,
-		service: resolveService(),
-		env:     env.Get("DD_ENV"),
-		version: env.Get("DD_VERSION"),
+		service: resolveService(tags),
+		env:     resolveTag("DD_ENV", "env", tags),
+		version: resolveTag("DD_VERSION", "version", tags),
 		site:    env.Get("DD_SITE"),
 		apiKey:  env.Get("DD_API_KEY"),
 	}
+}
+
+// resolveTag resolves a single attribution value using the same precedence
+// as the tracer's own DD_TAGS fallback (ddtrace/tracer/option.go): an
+// explicit envVar wins outright; otherwise the same-named DD_TAGS entry, if
+// any. Without this, service/env/version set only via DD_TAGS (with
+// DD_SERVICE/DD_ENV/DD_VERSION left unset) would resolve differently here
+// than in the tracer, and a crash report would fail to attribute to the same
+// service as that process's traces.
+func resolveTag(envVar, tagKey string, tags map[string]string) string {
+	if v := env.Get(envVar); v != "" {
+		return v
+	}
+	return tags[tagKey]
 }
 
 // resolveService resolves the service name when Start runs before the tracer
@@ -90,11 +106,11 @@ func defaultConfig() *config {
 // runs before tracer.Start sets that default, so without this the two would
 // independently pick different values for the same process and crash reports
 // would fail to correlate with that service's traces.
-func resolveService() string {
+func resolveService(tags map[string]string) string {
 	if s := globalconfig.ServiceName(); s != "" {
 		return s
 	}
-	if s := env.Get("DD_SERVICE"); s != "" {
+	if s := resolveTag("DD_SERVICE", "service", tags); s != "" {
 		return s
 	}
 	return filepath.Base(os.Args[0])
