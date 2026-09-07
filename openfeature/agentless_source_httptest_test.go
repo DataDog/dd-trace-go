@@ -480,6 +480,15 @@ func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
 	})
 	src.start()
 
+	// Wait for the poll to actually reach the backend before asserting no
+	// Authorization header arrived — start() only schedules the poll goroutine
+	// and returns immediately, so lastAuthPresent would otherwise be read on
+	// its zero value and pass trivially.
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond)
+
 	_, _, _, lastAuthPresent := backend.status()
 	assert.False(t, lastAuthPresent)
 }
