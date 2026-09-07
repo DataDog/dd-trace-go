@@ -34,10 +34,9 @@ validate_supported_configurations_v2_local_file:
 # Draft: two-job replacement for validate_supported_configurations_v2_local_file.
 # Job 1 resolves PR/commit origin metadata using dd-octo-sts (no aws needed).
 # Job 2 runs validation+tracking using the packaging image (has aws + python).
+# Templates come from the WIP one-pipeline ref (see .gitlab/one-pipeline.locked.yml).
 # Once stable, delete validate_supported_configurations_v2_local_file above and rename these.
 validate_supported_configurations_v2_resolve_origin:
-  stage: shared-pipeline-test
-  image: registry.ddbuild.io/images/dd-octo-sts-ci-base:2025.06-1
   tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .validate_supported_configurations_v2_resolve_origin
   variables:
@@ -45,8 +44,6 @@ validate_supported_configurations_v2_resolve_origin:
     DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
 
 validate_supported_configurations_v2_local_file_with_track:
-  stage: shared-pipeline-test
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:132132300
   tags: ["runner:apm-k8s-tweaked-metal"]
   needs: ["validate_supported_configurations_v2_resolve_origin"]
   extends: .validate_supported_configurations_v2_local_file_with_track
@@ -69,7 +66,6 @@ include:
   - local: ".gitlab/benchmarks/test-apps/test-apps.yml"
   - local: ".gitlab/docker-images-reliability-env.yml"
   - local: ".gitlab/one-pipeline.locked.yml"
-  - local: ".gitlab/configuration-central-validation.yml"
   - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
     file: '.gitlab/ci-go-go-prof-app-parallel.yml'
     ref: 'main'
