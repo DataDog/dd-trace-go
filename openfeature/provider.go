@@ -388,7 +388,11 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			err = stopRemoteConfig()
 		}
 		if agentless != nil {
-			agentless.Stop(ctx)
+			if stopErr := agentless.Stop(ctx); stopErr != nil {
+				// The outer select can still report success on this path, so
+				// without this a truncated teardown would be invisible.
+				log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error())
+			}
 		}
 
 		p.mu.Lock()
