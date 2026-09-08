@@ -129,6 +129,8 @@ const (
 	EventPhaseAdvanced        EventKind = "phase_advanced"
 	EventAcknowledgementBound EventKind = "acknowledgement_bound"
 	EventFailureObserved      EventKind = "failure_observed"
+	EventBranchPublished      EventKind = "branch_published"
+	EventTagPublished         EventKind = "tag_published"
 )
 
 // Event is one immutable, append-only record on an operation. Sequence
