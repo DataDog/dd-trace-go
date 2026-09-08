@@ -290,24 +290,10 @@ func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) {
 	}
 }
 
-// Go Dynamic Instrumentation runs entirely out of process, in the Datadog
-// Agent's system-probe (datadog-agent/pkg/dyninst). The tracer never parses,
-// applies or evaluates a probe configuration, so the callbacks below only
-// report an apply status. The subscriptions themselves are the point: the core
-// agent filters Remote Config director targets by the products the *tracer*
-// advertises (pkg/config/remote/service/tracer_predicates.go) and only requests
-// from the backend the union of products its active clients ask for
-// (refreshProductsLocked in pkg/config/remote/service/service.go). It then
-// forwards the matching configs to system-probe's gRPC config subscription,
-// keyed by the runtime ID the tracer publishes via storeConfig's metadata
-// memfd. An unsubscribed tracer therefore means system-probe receives nothing.
-//
-// Until Agent 7.73.0 the tracer additionally re-published every config through
-// empty //go:noinline functions that system-probe read with eBPF uprobes. That
-// relay was replaced by the gRPC subscription above in
-// DataDog/datadog-agent#42348, and 7.73.0 is also the minimum Agent version
-// Live Debugger for Go supports, so it has been removed.
-
+// dynamicInstrumentationRCUpdate reports the apply status for a Dynamic
+// Instrumentation Remote Config update. The tracer does not apply probe
+// configurations, so it reports Unknown for a live config and Acknowledged
+// for a deletion.
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	applyStatus := make(map[string]state.ApplyStatus, len(u))
 	for k, v := range u {
@@ -320,22 +306,6 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 		if deleted {
 			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 		} else {
-			// Unknown rather than Acknowledged: system-probe installs the probe
-			// and reports the real outcome, so the tracer must not claim it.
-			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
-		}
-	}
-	return applyStatus
-}
-
-func (t *tracer) dynamicInstrumentationSymDBRCUpdate(
-	u remoteconfig.ProductUpdate,
-) map[string]state.ApplyStatus {
-	applyStatus := make(map[string]state.ApplyStatus, len(u))
-	for k, v := range u {
-		if len(v) == 0 {
-			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-		} else {
 			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
 		}
 	}
@@ -344,7 +314,7 @@ func (t *tracer) dynamicInstrumentationSymDBRCUpdate(
 
 // startRemoteConfig starts the remote config client. It registers the
 // APM_TRACING product unconditionally and it registers the LIVE_DEBUGGING and
-// LIVE_DEBUGGING_SYMBOL_DB with their respective callbacks if the tracer is
+// LIVE_DEBUGGING_SYMBOL_DB products with a shared callback if the tracer is
 // configured to use the dynamic instrumentation product.
 func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	err := remoteconfig.Start(rcConfig)
@@ -399,7 +369,7 @@ func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
 		"LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate,
 	)
 	symDBTok, liveDebuggingSymDBError := remoteconfig.Subscribe(
-		"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationSymDBRCUpdate,
+		"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationRCUpdate,
 	)
 	t.dynInstSubscriptions.ldSubscriptionToken = ldTok
 	t.dynInstSubscriptions.symDBSubscriptionToken = symDBTok

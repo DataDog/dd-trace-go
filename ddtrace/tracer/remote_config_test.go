@@ -996,9 +996,6 @@ func TestDynamicInstrumentationRC(t *testing.T) {
 		checkRemoteConfigProductState(t, state.ProductLiveDebuggingSymbolDB, false)
 	})
 
-	// The apply status is the tracer's only contribution to these products: it
-	// is what ends up in config_states on the wire. A live config must stay
-	// Unknown, because system-probe -- not the tracer -- applies the probe.
 	t.Run("Probe config apply status", func(t *testing.T) {
 		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
 		tracer := startTracer(t)
@@ -1011,24 +1008,6 @@ func TestDynamicInstrumentationRC(t *testing.T) {
 			"key": {State: state.ApplyStateUnknown},
 		}, status)
 		status = tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
-			"key": nil,
-		})
-		require.Equal(t, map[string]state.ApplyStatus{
-			"key": {State: state.ApplyStateAcknowledged},
-		}, status)
-	})
-
-	t.Run("symdb updates", func(t *testing.T) {
-		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
-		tracer := startTracer(t)
-		startRemoteConfig(t, tracer)
-		status := tracer.dynamicInstrumentationSymDBRCUpdate(remoteconfig.ProductUpdate{
-			"key": []byte(`"value"`),
-		})
-		require.Equal(t, map[string]state.ApplyStatus{
-			"key": {State: state.ApplyStateUnknown},
-		}, status)
-		status = tracer.dynamicInstrumentationSymDBRCUpdate(remoteconfig.ProductUpdate{
 			"key": nil,
 		})
 		require.Equal(t, map[string]state.ApplyStatus{
