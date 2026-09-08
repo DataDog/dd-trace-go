@@ -59,6 +59,15 @@ type wireLogsPayload struct {
 // mechanism (DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES) — no real agent or
 // backend needed. This automates the README's "Running the memfd/OTel-
 // process-context trigger" recipe end to end.
+//
+// The memfd (CreateMemfd) site does NOT report to Error Tracking (see its
+// call site's comment): memfd_create failing is a customer-environment
+// condition (seccomp, kernel capabilities, resource limits), not an
+// actionable SDK defect, and reporting it would create fleet-wide false
+// positives for hardened deployments. This test asserts the negative — no
+// telemetry log for it — plus that it is still visible locally via
+// internal/log.Error on the container's stderr, so the failure is not
+// silently swallowed entirely.
 func TestSeccompMemfdBlocked_ReportsWellFormedErrors(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("storeConfig's memfd/OTel sites are no-ops outside Linux")
@@ -98,6 +107,11 @@ func TestSeccompMemfdBlocked_ReportsWellFormedErrors(t *testing.T) {
 		"-e", "DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES=true",
 		"-e", "TEST_UNDECLARED_OUTPUTS_DIR=/out",
 		"-e", "DD_TELEMETRY_HEARTBEAT_INTERVAL=2",
+		// internal/log.Error aggregates and only flushes to stderr once per
+		// DD_LOGGING_RATE seconds (default 60s) or on Stop(); this run's window
+		// is much shorter than that, so without this the memfd site's local log
+		// line would never appear in time for the assertion below.
+		"-e", "DD_LOGGING_RATE=0",
 		"-v", binaryPath+":/telemetry-errors-linux:ro",
 		"-v", outDir+":/out",
 		"--entrypoint", "/telemetry-errors-linux",
@@ -126,16 +140,21 @@ func TestSeccompMemfdBlocked_ReportsWellFormedErrors(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
+	// The memfd site is expected to fail locally (seccomp blocks
+	// memfd_create) but not report to Error Tracking, so payload files may
+	// legitimately never appear if the OTel process-context site also never
+	// fires on this kernel (see below) — don't require any payload file to
+	// exist.
 	entries, _ := os.ReadDir(payloadsDir)
-	require.NotEmpty(t, entries, "no telemetry payload files were dumped within the timeout; container stderr: %s", stderr.String())
-
 	logs := readAllLogMessages(t, payloadsDir, entries)
 
-	memfdMsg := findLogMessage(logs, "failed to store the configuration")
-	require.NotNil(t, memfdMsg, "memfd_create being blocked by seccomp must deterministically produce this message")
-	assert.Contains(t, memfdMsg.Message, "error.error_type=")
-	assert.Equal(t, "ERROR", memfdMsg.Level)
-	assert.Contains(t, memfdMsg.StackTrace, "storeConfig")
+	// The deterministic assertion this test can make: memfd_create being
+	// blocked by seccomp must produce a local log line, but never a telemetry
+	// report for it.
+	assert.Contains(t, stderr.String(), "failed to store the configuration",
+		"memfd_create being blocked by seccomp must still be visible in the local log")
+	assert.Nil(t, findLogMessage(logs, "failed to store the configuration"),
+		"the memfd site must not report to Error Tracking (customer-environment condition, not an SDK defect)")
 
 	// Best-effort only: this second site additionally needs the mmap/prctl
 	// fallback to also fail, which depends on the runner's own kernel — a

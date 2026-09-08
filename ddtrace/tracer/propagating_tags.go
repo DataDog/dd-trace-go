@@ -14,7 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // loadPropagatingTags returns the current propagating-tags snapshot. The
@@ -230,7 +229,12 @@ func (t *trace) propagatingTagsByteLens() (xTagsLen, tracestateLen int) {
 func parseDecisionMaker(dm string) uint32 {
 	v, err := strconv.ParseInt(dm, 10, 32)
 	if err != nil {
-		telemetrylog.LogAndReportError("failed to convert decision maker to uint32", err)
+		// Not reported to Error Tracking: dm comes directly from an inbound
+		// propagation header (_dd.p.dm), so any upstream peer can trigger this
+		// on every request. It is invalid external input, not a dd-trace-go
+		// defect, and reporting it per-request would let a peer arbitrarily
+		// inflate an SDK Error Tracking issue.
+		log.Error("failed to convert decision maker to uint32: %s", err.Error())
 		return 0
 	}
 	if v < 0 {

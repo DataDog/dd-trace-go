@@ -32,8 +32,15 @@ func main() {
 // (httptrace.NewServeMux), so accepting that request runs the header through
 // the real extraction path: (*propagator).extractTextMap ->
 // unmarshalPropagatingTagsIntoTrace -> replacePropagatingTags ->
-// parseDecisionMaker (ddtrace/tracer/propagating_tags.go), which reports the
-// parse failure via telemetrylog.LogAndReportError.
+// parseDecisionMaker (ddtrace/tracer/propagating_tags.go).
+//
+// parseDecisionMaker does NOT report this to Error Tracking (see the
+// call site's comment and internal/README.md's "our defect, not the user's
+// environment" rule): a malformed _dd.p.dm arrives directly from an inbound
+// header, so any upstream peer could otherwise inflate an SDK issue on every
+// request. This endpoint stays in the harness purely to exercise the
+// extraction path end-to-end; it is not one of this app's telemetry-reporting
+// triggers.
 func DecisionMakerHandler(w http.ResponseWriter, r *http.Request) {
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, "http://"+r.Host+"/decision-maker-target", nil)
 	if err != nil {

@@ -41,6 +41,11 @@ kill $APP_PID
 ls "$TEST_UNDECLARED_OUTPUTS_DIR"/payloads/telemetry/
 ```
 
+**`/decision-maker` itself no longer produces a telemetry payload** — see "Current coverage" below for
+why `parseDecisionMaker` doesn't report to Error Tracking. The steps above still work as a template for
+any `http-triggerable` or `fault-injectable` site that *does* report (e.g. the `remoteconfig.go`
+JSON-parse trigger under "Running this app" below); swap the `curl` target accordingly.
+
 **Both env vars are required.** Setting one without the other makes every flush fail silently — nothing
 is sent anywhere and no file is written. Each file is one JSON-encoded `transport.Body`; find the one
 whose `request_type` is `logs` (or `message-batch` wrapping a `logs` payload) and inspect its
@@ -73,21 +78,25 @@ around it — the run simply survives long enough for a normal flush tick to fir
 A trigger failing any of these is a real defect in the adoption, not a flake — investigate before
 re-running.
 
-#### These checks are now also automated in CI, for 3 of the 4 known sites
+#### These checks are now also automated in CI, for 2 of the 3 sites that still report
 
-`ddtrace/tracer/errortracking_test.go` and `internal/remoteconfig/errortracking_test.go` cover
-`parseDecisionMaker` and `updateState` respectively, using a fake `http.RoundTripper`
-(`internal/telemetry/telemetrytest.NewCapturingClient`) instead of this section's payload-files-dump
-env vars — both packages already have many unrelated sibling tests, so avoiding a second process-global
-cache (on top of the telemetry-client swap these tests already need) keeps them simpler to reason about.
-`internal/apps/telemetry-errors/seccomp_e2e_test.go` covers `storeConfig`'s two sites and *does* use this
-section's payload-files-dump mechanism (it needs zero network I/O inside a throwaway container, so
-there's nothing simpler to fall back on) — it only asserts hard on the first (memfd) site; the second
-(OTEL process context) is checked best-effort only, since whether it fires at all depends on the CI
-runner's own kernel (see "Known gaps" below).
+`internal/remoteconfig/errortracking_test.go` covers `updateState`'s JSON-parse-error site using a fake
+`http.RoundTripper` (`internal/telemetry/telemetrytest.NewCapturingClient`) instead of this section's
+payload-files-dump env vars — the package already has many unrelated sibling tests, so avoiding a second
+process-global cache (on top of the telemetry-client swap this test already needs) keeps it simpler to
+reason about. `internal/apps/telemetry-errors/seccomp_e2e_test.go` covers `storeConfig`'s OTel
+process-context site and *does* use this section's payload-files-dump mechanism (it needs zero network
+I/O inside a throwaway container, so there's nothing simpler to fall back on) — that assertion is
+best-effort only, since whether the site fires at all depends on the CI runner's own kernel (see "Known
+gaps" below). `storeConfig`'s memfd site (also exercised by that same test, and asserted hard there) no
+longer reports to Error Tracking at all — see "Current coverage" below.
 
-None of the three automated tests exercise `customer_frames_redacted` — `ddtrace/tracer` and
-`internal/remoteconfig` are under the SDK's own internal-frame prefix
+`parseDecisionMaker` (`ddtrace/tracer/propagating_tags.go`) is not one of these sites: it does not call
+`ReportError`/`LogAndReportError` (see "Current coverage" below for why), so there is nothing for a
+wire-shape test to assert there.
+
+None of these automated tests exercise `customer_frames_redacted` — `internal/remoteconfig` and
+`internal/apps/telemetry-errors` (via the container test) are under the SDK's own internal-frame prefix
 (`github.com/DataDog/dd-trace-go/v2`), so a test inside them can never produce a frame the redaction
 step would classify as "customer"; `internal/apps` is a genuinely separate Go module, which is exactly
 why this check can only ever be exercised manually, from this harness, as described above.
@@ -120,6 +129,11 @@ docker exec dogfood-agent agent status | grep -A2 "API Key ending"
 
 export DD_TELEMETRY_HEARTBEAT_INTERVAL=2
 export DD_TRACE_AGENT_URL=http://localhost:18126
+# Required to make a rejected payload observable: client.Flush handles a
+# non-2xx telemetry response with internal/log.Debug and does not affect the
+# app's exit code, so without DD_TRACE_DEBUG (which gates that log line) a
+# WriterStatusCodeError never surfaces anywhere you'd see it.
+export DD_TRACE_DEBUG=true
 go run ./telemetry-errors -http localhost:8080 &
 APP_PID=$!
 sleep 1
@@ -129,6 +143,9 @@ kill $APP_PID
 
 docker rm -f dogfood-agent
 ```
+
+As in tier 0 above, swap the `curl` target for a site that actually reports (`/decision-maker` itself
+doesn't — see "Current coverage") before relying on this recipe to prove intake acceptance.
 
 A non-default host port (`18126`, not `8126`) avoids colliding with anything already bound to the
 default port — with `network_mode: host` (as used elsewhere in this directory) that collision would
@@ -147,9 +164,11 @@ tells you nothing about the org you think you're testing against.
 
 `dd-auth`'s default target is Datadog's own production org, so this tier and tier 2 below read from the
 same place the tracer just wrote to — no separate staging round-trip needed. Confirm the intake accepted
-the payload by exit code / absence of a `WriterStatusCodeError` in the app's stderr; a non-2xx response
-surfaces there. Absence of an error is necessary but not sufficient — it does not by itself prove which
-org received the payload, per the above.
+the payload by grepping the app's stderr for `WriterStatusCodeError` with `DD_TRACE_DEBUG=true` set (as
+above) — without it, a rejected payload is silent: the app's exit code is unaffected either way, since
+`client.Flush` only logs a non-2xx response at debug level and never treats it as fatal. Absence of that
+error is necessary but not sufficient — it does not by itself prove which org received the payload, per
+the above.
 
 ### Tier 2 — product landing
 
@@ -230,7 +249,7 @@ HTTP-endpoint triggers in this app:
 
 | Endpoint | Call site | Reachability |
 |---|---|---|
-| `/decision-maker` | `parseDecisionMaker` (`ddtrace/tracer/propagating_tags.go`) | `http-triggerable` — malformed `_dd.p.dm` value on an inbound `x-datadog-tags` header. Tier 0 for this site is now also enforced automatically in CI — see `ddtrace/tracer/errortracking_test.go`. |
+| `/decision-maker` | `parseDecisionMaker` (`ddtrace/tracer/propagating_tags.go`) | `http-triggerable`, but **not reported** — a malformed `_dd.p.dm` value arrives directly from an inbound `x-datadog-tags` header, so any upstream peer could trigger this on every request; per policy rule 1 ("our defect, not the user's environment"), this is invalid external input, not an SDK defect, so `parseDecisionMaker` only logs locally and does not call `ReportError`/`LogAndReportError`. The endpoint stays in this harness to exercise the extraction path end-to-end, not as a telemetry-reporting trigger. |
 
 Non-endpoint triggers — these fire on a background cadence once the process is configured correctly,
 with no HTTP call needed. See "Running this app" below for exact commands:
@@ -238,7 +257,7 @@ with no HTTP call needed. See "Running this app" below for exact commands:
 | Mechanism | Call site | Reachability |
 |---|---|---|
 | Fault-injecting reverse proxy in front of a real agent, returning malformed JSON for the remote-config poll endpoint | `updateState` "could not parse the json response body" (`internal/remoteconfig/remoteconfig.go`) | `fault-injectable` — confirmed working end-to-end (tiers 0/1/2). Tier 0 for this site is now also enforced automatically in CI — see `internal/remoteconfig/errortracking_test.go`. |
-| Linux container with a custom seccomp profile blocking the `memfd_create` syscall, run with `--network host` (see "Known gaps") | `storeConfig`'s **first** site, "failed to store the configuration" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only (both `storeConfig` sites are no-ops on macOS/Windows) — confirmed at all three tiers. Tier 0 for this site is now also enforced automatically in CI (Linux runners only) — see `internal/apps/telemetry-errors/seccomp_e2e_test.go`. |
+| Linux container with a custom seccomp profile blocking the `memfd_create` syscall, run with `--network host` (see "Known gaps") | `storeConfig`'s **first** site, "failed to store the configuration" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only (both `storeConfig` sites are no-ops on macOS/Windows), but **not reported**: `memfd_create` failing under seccomp/kernel-capability/resource-limit restrictions is a customer-environment condition, not an actionable SDK defect, and reporting it would create fleet-wide false positives for hardened deployments (e.g. gVisor, locked-down seccomp profiles). `storeConfig` only logs this locally now. CI still asserts the negative (no telemetry report) and the local log line — see `internal/apps/telemetry-errors/seccomp_e2e_test.go`. |
 | Same container as above — both `storeConfig` sites fire from one run, since the second site's own internal fallback also fails under Docker Desktop's Linux VM kernel | `storeConfig`'s **second** site, "failed to publish the OTEL process context" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only — confirmed generated at tier 0, **not yet observed landing** at tier 2; see "Known gaps". The same CI test above checks for this message too, but only best-effort (non-blocking) — the runner's own kernel determines whether it fires at all. |
 
 Not practically triggerable from outside the process, given what each depends on:
