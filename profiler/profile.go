@@ -54,10 +54,11 @@ const (
 	// shouldn't just be added to WithProfileTypes
 	executionTrace
 
-	// goroutineLeakProfile is the Go 1.26 experimental goroutine leak
-	// profile, which contains tracebacks of goroutines permanently blocked
-	// in synchronization
-	goroutineLeakProfile
+	// GoroutineLeakProfile reports tracebacks of goroutines permanently
+	// blocked in synchronization. It requires Go 1.27 or later, or Go 1.26,
+	// in which case the program must be built with
+	// GOEXPERIMENT=goroutineleakprofile
+	GoroutineLeakProfile
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -201,10 +202,10 @@ var profileTypes = map[ProfileType]profileType{
 			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
 	},
-	goroutineLeakProfile: {
+	GoroutineLeakProfile: {
 		Name:     "goroutine-leak",
 		Filename: "goroutineleak.pprof",
-		Collect:  collectGenericProfile("goroutineleak", goroutineLeakProfile),
+		Collect:  collectGenericProfile("goroutineleak", GoroutineLeakProfile),
 	},
 }
 
@@ -334,6 +335,8 @@ func (t *ProfileType) UnmarshalText(text []byte) error {
 		*t = MutexProfile
 	case "goroutine":
 		*t = GoroutineProfile
+	case "goroutineleak":
+		*t = GoroutineLeakProfile
 	default:
 		return fmt.Errorf("unknown profile type: %s", text)
 	}

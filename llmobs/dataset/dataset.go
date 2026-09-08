@@ -501,7 +501,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 		update = append(update, transport.DatasetRecordUpdate{
 			ID:             id,
 			Input:          rec.Input,
-			ExpectedOutput: transport.AnyPtr(rec.ExpectedOutput),
+			ExpectedOutput: new(rec.ExpectedOutput),
 			Metadata:       rec.Metadata,
 		})
 	}

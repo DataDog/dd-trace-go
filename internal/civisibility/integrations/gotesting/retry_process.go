@@ -2260,8 +2260,7 @@ func attemptFromWaitError(attempt *processRetryAttemptResult, waitErr error) {
 		attempt.ExitStatusObserved = true
 		return
 	}
-	var exitErr *exec.ExitError
-	if errors.As(waitErr, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 		attempt.ExitCode = exitErr.ExitCode()
 		attempt.ExitStatusObserved = true
 		attempt.Err = errors.Join(attempt.Err, processRetryWaitErrorEvidence(waitErr))
@@ -2342,8 +2341,7 @@ func effectiveProcessRetryStatus(attempt processRetryAttemptResult, metadataCanc
 		return failed("test_panic")
 	}
 	if attempt.Err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(attempt.Err, &exitErr) {
+		if _, ok := errors.AsType[*exec.ExitError](attempt.Err); !ok {
 			return failed("process_error")
 		}
 	}
