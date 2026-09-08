@@ -66,7 +66,7 @@ func extractLogMessages(t *testing.T, body transport.Body) []transport.LogMessag
 // TestReportError_QueuedBeforeClientExists_StackPointsAtCallSite proves the
 // fix for the replay-time stack capture bug: a report made before any
 // telemetry client exists gets queued by globalClientCall, then replayed
-// once a client is installed via SwapClient. Before WithStacktraceNow, the
+// once a client is installed via SwapClient. Before WithCaptureStacktraceNow, the
 // stack trace attached to the eventual wire payload pointed at the replay
 // machinery (SwapClient/Replay/globalClientRecorder), not at this test's own
 // call site, because capture was deferred all the way to loggerBackend.add,

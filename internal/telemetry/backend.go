@@ -29,13 +29,13 @@ type loggerKey struct {
 	message string
 	level   LogLevel
 
-	// stackNow is true for entries whose stack was captured synchronously at
-	// the call site (WithStacktraceNow), i.e. ReportError/ReportPanic reports.
+	// captureStackNow is true for entries whose stack was captured synchronously at
+	// the call site (WithCaptureStacktraceNow), i.e. ReportError/ReportPanic reports.
 	// It keeps such reports out of the dedup bucket of plain, stackless log
 	// entries with the same message, level, and tags — otherwise a report
 	// would merge into the plain entry and silently lose both its stack trace
 	// and its error/panic attributes.
-	stackNow bool
+	captureStackNow bool
 }
 
 type loggerValue struct {
@@ -44,7 +44,7 @@ type loggerValue struct {
 
 	captureStacktrace bool
 	// stacktraceCaptured is true if rawStack was already populated eagerly
-	// (WithStacktraceNow), so add() must not re-capture it — a re-capture at
+	// (WithCaptureStacktraceNow), so add() must not re-capture it — a re-capture at
 	// this point could run on a queued-and-replayed call's stack, not the
 	// original caller's.
 	stacktraceCaptured bool

@@ -220,13 +220,13 @@ func TestLoggerBackend_StackTrace(t *testing.T) {
 		assert.Contains(t, stackTrace, "backend_test.go", "Should show test file location")
 	})
 
-	t.Run("pre-captured stack from WithStacktraceNow is not overwritten by add", func(t *testing.T) {
+	t.Run("pre-captured stack from WithCaptureStacktraceNow is not overwritten by add", func(t *testing.T) {
 		// Capture the option in this test function, but only apply it to the
 		// backend from inside a nested helper - simulating what replay does:
 		// add() runs far from (and long after) the original call site. If
 		// add() re-captured here, the resulting stack would show
 		// addFarFromCallSite, not this test function.
-		opt := WithStacktraceNow()
+		opt := WithCaptureStacktraceNow()
 
 		addFarFromCallSite := func(b *loggerBackend, record Record, opt LogOption) {
 			b.Add(record, opt)
@@ -242,24 +242,24 @@ func TestLoggerBackend_StackTrace(t *testing.T) {
 		stackTrace := logs.Logs[0].StackTrace
 		assert.NotEmpty(t, stackTrace)
 		assert.Contains(t, stackTrace, "TestLoggerBackend_StackTrace",
-			"should show this test function, since WithStacktraceNow captured here")
+			"should show this test function, since WithCaptureStacktraceNow captured here")
 		assert.NotContains(t, stackTrace, "addFarFromCallSite",
 			"must not show the helper add() actually ran from - proves add() did not re-capture")
 	})
 }
 
-func TestWithStacktraceNow_MarksDedupKey(t *testing.T) {
+func TestWithCaptureStacktraceNow_MarksDedupKey(t *testing.T) {
 	// The key phase (key != nil, value == nil) must stamp the key so
 	// stack-now entries dedup separately from plain, stackless ones.
 	key := loggerKey{}
-	WithStacktraceNow()(&key, nil)
-	assert.True(t, key.stackNow)
+	WithCaptureStacktraceNow()(&key, nil)
+	assert.True(t, key.captureStackNow)
 }
 
 func TestLoggerBackend_StackNowDoesNotDedupWithStackless(t *testing.T) {
-	// Regression test: a report (WithStacktraceNow — what ReportError and
+	// Regression test: a report (WithCaptureStacktraceNow — what ReportError and
 	// ReportPanic send) must not merge into a plain, stackless entry with the
-	// same message, level, and tags. Before the key carried the stackNow
+	// same message, level, and tags. Before the key carried the captureStackNow
 	// flag, the second add hit the first entry's dedup key and its captured
 	// stack and attributes were silently dropped.
 	t.Run("plain log first, report second", func(t *testing.T) {
@@ -268,7 +268,7 @@ func TestLoggerBackend_StackNowDoesNotDedupWithStackless(t *testing.T) {
 		backend.Add(NewRecord(LogError, "collision message"))
 		report := NewRecord(LogError, "collision message")
 		report.AddAttrs(slog.String("error", "sometype"))
-		backend.Add(report, WithStacktraceNow())
+		backend.Add(report, WithCaptureStacktraceNow())
 
 		payload := backend.Payload()
 		require.NotNil(t, payload)
@@ -295,7 +295,7 @@ func TestLoggerBackend_StackNowDoesNotDedupWithStackless(t *testing.T) {
 
 		report := NewRecord(LogError, "collision message")
 		report.AddAttrs(slog.String("error", "sometype"))
-		backend.Add(report, WithStacktraceNow())
+		backend.Add(report, WithCaptureStacktraceNow())
 		backend.Add(NewRecord(LogError, "collision message"))
 
 		payload := backend.Payload()
@@ -311,8 +311,8 @@ func TestLoggerBackend_StackNowDoesNotDedupWithStackless(t *testing.T) {
 		report1.AddAttrs(slog.String("error", "typeA"))
 		report2 := NewRecord(LogError, "collision message")
 		report2.AddAttrs(slog.String("error", "typeA"))
-		backend.Add(report1, WithStacktraceNow())
-		backend.Add(report2, WithStacktraceNow())
+		backend.Add(report1, WithCaptureStacktraceNow())
+		backend.Add(report2, WithCaptureStacktraceNow())
 
 		payload := backend.Payload()
 		require.NotNil(t, payload)
@@ -336,23 +336,23 @@ func TestLoggerBackend_StackNowDoesNotDedupWithStackless(t *testing.T) {
 	})
 }
 
-func TestWithStacktraceNow_CapturesEagerly(t *testing.T) {
-	opt := WithStacktraceNow()
+func TestWithCaptureStacktraceNow_CapturesEagerly(t *testing.T) {
+	opt := WithCaptureStacktraceNow()
 
 	value := &loggerValue{}
 	opt(nil, value)
 
 	assert.True(t, value.captureStacktrace)
 	assert.True(t, value.stacktraceCaptured, "must be marked as already captured, not deferred")
-	assert.NotEmpty(t, value.rawStack.PCs, "stack must be captured at WithStacktraceNow's own call site, not later")
+	assert.NotEmpty(t, value.rawStack.PCs, "stack must be captured at WithCaptureStacktraceNow's own call site, not later")
 }
 
-func TestWithStacktraceNow_DisabledFallsBackToDeferred(t *testing.T) {
+func TestWithCaptureStacktraceNow_DisabledFallsBackToDeferred(t *testing.T) {
 	telemetryEnabledOnce = sync.Once{}
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
 	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
 
-	opt := WithStacktraceNow()
+	opt := WithCaptureStacktraceNow()
 
 	value := &loggerValue{}
 	opt(nil, value)

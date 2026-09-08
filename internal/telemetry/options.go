@@ -76,13 +76,13 @@ func WithStacktrace() LogOption {
 	}
 }
 
-// withStacktraceNowSkip skips WithStacktraceNow's own frame, landing the
+// withCaptureStacktraceNowSkip skips WithCaptureStacktraceNow's own frame, landing the
 // capture on whatever function called it (e.g. ReportError) — the same
 // "keep telemetry call-chain frames, only skip pure capture machinery"
 // convention as telemetryStackSkip in backend.go.
-const withStacktraceNowSkip = 1
+const withCaptureStacktraceNowSkip = 1
 
-// WithStacktraceNow returns a LogOption that captures the stack trace
+// WithCaptureStacktraceNow returns a LogOption that captures the stack trace
 // synchronously, at the caller's own call site, right now — instead of
 // deferring capture to whenever the backend actually processes the record
 // (see [WithStacktrace]). Use this at any call site whose Log call may be
@@ -100,14 +100,14 @@ const withStacktraceNowSkip = 1
 // can never merge into a plain, stackless log entry that happens to share
 // the same message, level, and tags — a merge would drop the report's
 // stack trace and error attributes.
-func WithStacktraceNow() LogOption {
+func WithCaptureStacktraceNow() LogOption {
 	if Disabled() {
 		return WithStacktrace()
 	}
-	raw := stacktrace.CaptureRaw(withStacktraceNowSkip)
+	raw := stacktrace.CaptureRaw(withCaptureStacktraceNowSkip)
 	return func(key *loggerKey, value *loggerValue) {
 		if key != nil {
-			key.stackNow = true
+			key.captureStackNow = true
 			return
 		}
 		if value == nil {

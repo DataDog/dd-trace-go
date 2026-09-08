@@ -35,7 +35,7 @@ func ReportError(msg string, err error, opts ...telemetry.LogOption) {
 	}
 
 	allOpts := make([]telemetry.LogOption, 0, len(opts)+1)
-	allOpts = append(allOpts, telemetry.WithStacktraceNow())
+	allOpts = append(allOpts, telemetry.WithCaptureStacktraceNow())
 	allOpts = append(allOpts, opts...)
 	sendLog(record, allOpts...)
 }
@@ -64,7 +64,7 @@ func ReportPanic(msg string, recovered any, opts ...telemetry.LogOption) {
 	}
 
 	allOpts := make([]telemetry.LogOption, 0, len(opts)+1)
-	allOpts = append(allOpts, telemetry.WithStacktraceNow())
+	allOpts = append(allOpts, telemetry.WithCaptureStacktraceNow())
 	allOpts = append(allOpts, opts...)
 	sendLog(record, allOpts...)
 }
