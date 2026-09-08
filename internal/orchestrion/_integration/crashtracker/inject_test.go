@@ -100,7 +100,7 @@ func buildInjectedVictim(t *testing.T, moduleRoot, output string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "run", "github.com/DataDog/orchestrion", "go", "build", "-o", output, victimImportPath)
+	cmd := orchestrionCommand(ctx, "go", "build", "-o", output, victimImportPath)
 	cmd.Dir = moduleRoot
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
@@ -109,6 +109,21 @@ func buildInjectedVictim(t *testing.T, moduleRoot, output string) {
 	if err != nil {
 		t.Fatalf("build orchestrion victim: %v\n%s", err, out)
 	}
+}
+
+// orchestrionCommand invokes the orchestrion CLI, preferring a PATH-resolved
+// binary over `go run`. CI installs an orchestrion binary to GOBIN
+// specifically so steps like this one can use it directly, and for
+// coverage-collection runs that binary is built with -cover instead: a
+// nested `go run github.com/DataDog/orchestrion` here would compile its own
+// uninstrumented copy, silently dropping this build out of the coverage
+// report. Falls back to `go run` when no such binary is on PATH, matching
+// the plain command this package's README documents for local development.
+func orchestrionCommand(ctx context.Context, args ...string) *exec.Cmd {
+	if path, err := exec.LookPath("orchestrion"); err == nil {
+		return exec.CommandContext(ctx, path, args...)
+	}
+	return exec.CommandContext(ctx, "go", append([]string{"run", "github.com/DataDog/orchestrion"}, args...)...)
 }
 
 func buildPlainVictim(t *testing.T, moduleRoot, output string) {
@@ -168,6 +183,14 @@ func runVictim(t *testing.T, binary, agentURL string) []byte {
 	return out
 }
 
+// filterInjectionEnv strips variables that must not pollute the victim's
+// environment. DD_API_KEY/DD-API-KEY (the hyphenated alias internal/env also
+// resolves DD_API_KEY from) and DD_SITE are stripped because crashtracker
+// prefers the agentless path whenever an API key is set, ahead of
+// DD_TRACE_AGENT_URL: an ambient key from a developer's shell or CI
+// environment would send the victim's report to the real intake instead of
+// srv, and the caller would wait out its full 15s timeout for a report that
+// never arrives.
 func filterInjectionEnv(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
@@ -176,7 +199,10 @@ func filterInjectionEnv(env []string) []string {
 			strings.HasPrefix(kv, "DD_CRASHTRACKING_IS_MONITOR_PROCESS=") ||
 			strings.HasPrefix(kv, "DD_TRACE_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_INSTRUMENTATION_TELEMETRY_ENABLED=") ||
-			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") {
+			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") ||
+			strings.HasPrefix(kv, "DD_API_KEY=") ||
+			strings.HasPrefix(kv, "DD-API-KEY=") ||
+			strings.HasPrefix(kv, "DD_SITE=") {
 			continue
 		}
 		filtered = append(filtered, kv)

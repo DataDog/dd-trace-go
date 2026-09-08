@@ -101,13 +101,23 @@ func spawnSubprocess(t *testing.T, role, agentURL string) *exec.Cmd {
 	return cmd
 }
 
-// filterOrchEnv strips variables that must not pollute the subprocess environment.
+// filterOrchEnv strips variables that must not pollute the subprocess
+// environment. DD_API_KEY/DD-API-KEY (the hyphenated alias internal/env also
+// resolves DD_API_KEY from) and DD_SITE are stripped because crashtracker
+// prefers the agentless path whenever an API key is set, ahead of
+// DD_TRACE_AGENT_URL: an ambient key from a developer's shell or CI
+// environment would send the subprocess's report to the real intake instead
+// of tc.mockSrv, and Run would wait out its full 15s timeout for a report
+// that never arrives.
 func filterOrchEnv(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
 		if strings.HasPrefix(kv, e2eRoleEnv+"=") ||
 			strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
-			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") {
+			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
+			strings.HasPrefix(kv, "DD_API_KEY=") ||
+			strings.HasPrefix(kv, "DD-API-KEY=") ||
+			strings.HasPrefix(kv, "DD_SITE=") {
 			continue
 		}
 		filtered = append(filtered, kv)
