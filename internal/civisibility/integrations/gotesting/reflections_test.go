@@ -98,7 +98,7 @@ func exerciseDenyParallelFieldCompatibility(t *testing.T) {
 
 	boolSource := struct{ denyParallel bool }{denyParallel: true}
 	boolTarget := struct{ denyParallel bool }{}
-	boolField, _ := denyParallelField(reflect.TypeOf(boolSource))
+	boolField, _ := denyParallelField(reflect.TypeFor[struct{ denyParallel bool }]())
 	copyDenyParallelField(unsafe.Pointer(&boolSource), unsafe.Pointer(&boolTarget), boolField)
 	if !boolTarget.denyParallel {
 		t.Fatal("expected bool denyParallel value to be preserved")
@@ -106,7 +106,7 @@ func exerciseDenyParallelFieldCompatibility(t *testing.T) {
 
 	stringSource := struct{ denyParallel string }{denyParallel: "t.Setenv"}
 	stringTarget := struct{ denyParallel string }{}
-	stringField, _ := denyParallelField(reflect.TypeOf(stringSource))
+	stringField, _ := denyParallelField(reflect.TypeFor[struct{ denyParallel string }]())
 	copyDenyParallelField(unsafe.Pointer(&stringSource), unsafe.Pointer(&stringTarget), stringField)
 	if stringTarget.denyParallel != stringSource.denyParallel {
 		t.Fatalf("expected string denyParallel value %q, got %q", stringSource.denyParallel, stringTarget.denyParallel)
