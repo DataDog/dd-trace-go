@@ -246,29 +246,32 @@ func TestConvertSpanAttributesIntEncoding(t *testing.T) {
 }
 
 // TestConvertSpanAttributesOtelSemantics verifies that under OTel semantics the OTLP
-// exporter omits Datadog-specific attributes (span identity, error.*, span.kind).
+// exporter omits Datadog-specific attributes (span identity, error.message/stack,
+// span.kind) but preserves error.type, which is a stable OpenTelemetry attribute.
 func TestConvertSpanAttributesOtelSemantics(t *testing.T) {
 	s := newBasicSpan("op")
 	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{
 		"http.request.method":  "GET",
 		ext.ErrorMsg:           "boom",
-		ext.ErrorType:          "*errors.errorString",
+		ext.ErrorType:          "*net.OpError",
 		ext.ErrorStack:         "goroutine 1 ...",
 		ext.ErrorHandlingStack: "goroutine 1 ...",
 		ext.SpanKind:           ext.SpanKindServer,
 	})
 	m := keyValuesToMap(convertSpanAttributes(s, "", true))
 
-	// DD-only span-identity, error, and span.kind attributes are suppressed.
+	// DD-only span-identity, error message/stack, and span.kind attributes are suppressed.
 	for _, k := range []string{
 		"operation.name", "resource.name", "span.type",
-		ext.ErrorMsg, ext.ErrorType, ext.ErrorStack, ext.ErrorHandlingStack, ext.SpanKind,
+		ext.ErrorMsg, ext.ErrorStack, ext.ErrorHandlingStack, ext.SpanKind,
 	} {
 		_, ok := m[k]
 		assert.Falsef(t, ok, "%q should be suppressed when OTel semantics is enabled", k)
 	}
 
-	// Non-DD-only meta is preserved unchanged.
+	// error.type is a stable OTel attribute and passes through unchanged, as does
+	// non-DD-only meta.
+	assert.Equal(t, "*net.OpError", m[ext.ErrorType])
 	assert.Equal(t, "GET", m["http.request.method"])
 }
 
