@@ -106,9 +106,11 @@ type DatadogProvider struct {
 // The provider will be ready to use immediately, but flag evaluations will return errors
 // until the first configuration is received.
 //
-// Returns an error if the remote_config source is selected and the default configuration of the
-// Remote Config client is NOT working. In this case, please call tracer.Start before creating
-// the provider.
+// Returns an error if the remote_config source is selected and activating Remote Config
+// delivery fails: starting or subscribing with the default RC client (when no tracer-owned
+// subscription exists), a conflicting existing FFE_FLAGS subscription, or callback
+// attachment. If the default client is the one at fault, please call tracer.Start before
+// creating the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
 	settings := internalffe.ResolveSettings(internalconfig.Get())
 	if settings.LegacyKeyDecided {
@@ -308,9 +310,11 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	if p.deliveryErr != nil {
 		// Permanent: no delivery source could be started, so waiting out the
 		// timeout would only delay startup for configuration that can never arrive.
+		// Safe to surface: newAgentlessSource's errors never contain the
+		// configured endpoint or credentials.
 		return &openfeature.ProviderInitError{
 			ErrorCode: openfeature.ProviderNotReadyCode,
-			Message:   "no feature-flag delivery source could be started",
+			Message:   "no feature-flag delivery source could be started: " + p.deliveryErr.Error(),
 		}
 	}
 
@@ -361,6 +365,12 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	// updateConfiguration and takes p.mu, so holding the lock across it
 	// would deadlock.
 	p.mu.Lock()
+	if p.shutdownCalled {
+		// Teardown below is idempotent today; returning early keeps that from
+		// depending on every future step guarding itself.
+		p.mu.Unlock()
+		return nil
+	}
 	p.shutdownCalled = true
 	source := p.source
 	agentless := p.agentless

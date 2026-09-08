@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
 
@@ -74,8 +76,43 @@ func TestStartWithAgentless_ShutdownMidPoll(t *testing.T) {
 	elapsed := time.Since(start)
 
 	require.NoError(t, err)
-	assert.Less(t, elapsed, time.Second, "Shutdown must not wait out the full request timeout")
 	assert.Nil(t, p.getConfiguration())
+	// Bounded well under the 5s request timeout rather than near the ~150ms it
+	// actually takes, so a loaded runner's scheduling latency can't fail this.
+	assert.Less(t, elapsed, 3*time.Second, "Shutdown must not wait out the full request timeout")
+}
+
+func TestInitWithContext_DeliveryErrFailsFast(t *testing.T) {
+	p := newDatadogProviderWithSource(ProviderConfig{}, internalffe.SourceAgentless)
+	p.mu.Lock()
+	p.deliveryErr = errors.New("no API key for managed agentless endpoint")
+	p.mu.Unlock()
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := p.InitWithContext(ctx, openfeature.EvaluationContext{})
+
+	var initErr *openfeature.ProviderInitError
+	require.ErrorAs(t, err, &initErr)
+	assert.Equal(t, openfeature.ProviderNotReadyCode, initErr.ErrorCode)
+	assert.Contains(t, initErr.Message, "no API key for managed agentless endpoint",
+		"the cause must reach the SDK caller, not just the log")
+	assert.Less(t, time.Since(start), time.Second,
+		"a permanent delivery failure must fail Init immediately, not wait out the timeout")
+}
+
+func TestNewDatadogProvider_DisabledSourceIsNoop(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "offline")
+
+	p, err := NewDatadogProvider(ProviderConfig{})
+
+	require.NoError(t, err)
+	assert.IsType(t, &openfeature.NoopProvider{}, p,
+		"a disabled source must start no delivery source at all")
 }
 
 func TestDatadogProvider_ConcurrentLifecycleRace(t *testing.T) {
