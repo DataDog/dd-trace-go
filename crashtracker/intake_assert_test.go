@@ -17,7 +17,7 @@ import (
 // ddTagValue returns the value of the first "key:value" entry in a
 // comma-separated ddtags string, and whether it was present at all.
 func ddTagValue(ddtags, key string) (string, bool) {
-	for _, kv := range strings.Split(ddtags, ",") {
+	for kv := range strings.SplitSeq(ddtags, ",") {
 		if k, v, ok := strings.Cut(kv, ":"); ok && k == key {
 			return v, true
 		}

@@ -32,8 +32,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/crashtracker"
 	"github.com/google/uuid"
+
+	"github.com/DataDog/dd-trace-go/v2/crashtracker"
 )
 
 // ddTagValue returns the value of the first "key:value" entry in a
@@ -42,7 +43,7 @@ import (
 // internal/external package split forces the duplication (see this file's
 // package doc), same as assertCanonicalAgentRequest/assertRFC0013Body below.
 func ddTagValue(ddtags, key string) (string, bool) {
-	for _, kv := range strings.Split(ddtags, ",") {
+	for kv := range strings.SplitSeq(ddtags, ",") {
 		if k, v, ok := strings.Cut(kv, ":"); ok && k == key {
 			return v, true
 		}
