@@ -24,9 +24,22 @@ var nolintPattern = regexp.MustCompile(`^//\s*nolint\b(?::\s*([\w, -]+))?`)
 // nolintSuppressed reports whether pos is covered by a //nolint comment that
 // applies to one of names (case-insensitive), or a bare //nolint with no
 // linter list. Matching golangci-lint's own nolint processor, a directive
-// counts whether it trails on the same line as pos or stands alone on the
-// line immediately above it (the common "doc comment before a statement"
-// style).
+// counts whether it trails on the same line as pos or stands alone on a line
+// above it (the common "doc comment before a statement" style).
+//
+// enclosingStart bounds how far up that search goes: for a diagnostic
+// reported inside a multi-line call expression, a standalone directive on
+// any line between the call's first line and pos — including the line
+// directly above the call — applies to pos. This mirrors golangci-lint,
+// which anchors a standalone directive to the node that follows it and
+// covers that node's whole extent; without it, a directive above
+//
+//	//nolint:telemetrysafety
+//	log.Error("failed",
+//		slog.Any("err", err))
+//
+// would only suppress a diagnostic reported on the call's first line, not on
+// the attr line where telemetrysafety reports.
 //
 // telemetrysafety and logformatverbs replace checks that used to run under
 // golangci-lint's gocritic/ruleguard linter, which understands //nolint
@@ -35,22 +48,28 @@ var nolintPattern = regexp.MustCompile(`^//\s*nolint\b(?::\s*([\w, -]+))?`)
 // call sites this migration inherited would otherwise start failing even
 // though they were deliberately excepted. This keeps those exceptions honored
 // without requiring a churn of call-site edits that are out of scope here.
-func nolintSuppressed(pass *analysis.Pass, pos token.Pos, names ...string) bool {
+func nolintSuppressed(pass *analysis.Pass, pos, enclosingStart token.Pos, names ...string) bool {
 	file := fileForPos(pass, pos)
 	if file == nil {
 		return false
 	}
 	line := pass.Fset.Position(pos).Line
+	minLine := line
+	if enclosingStart.IsValid() {
+		if startLine := pass.Fset.Position(enclosingStart).Line; startLine < minLine {
+			minLine = startLine
+		}
+	}
 	for _, cg := range file.Comments {
 		for _, c := range cg.List {
 			cLine := pass.Fset.Position(c.Pos()).Line
 			switch {
 			case cLine == line:
 				// Trailing on pos's own line: always counts, same as golangci-lint.
-			case cLine == line-1 && standaloneComment(pass, c):
-				// On the previous line: only counts when nothing but whitespace
-				// precedes it — a directive trailing unrelated code on that
-				// line does not carry over to the next line.
+			case cLine < line && cLine >= minLine-1 && standaloneComment(pass, c):
+				// Standalone above pos: directly above it, or anywhere between
+				// the enclosing call's first line and pos. A directive trailing
+				// unrelated code on one of those lines still does not count.
 			default:
 				continue
 			}

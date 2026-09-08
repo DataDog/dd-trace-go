@@ -103,7 +103,7 @@ func (r *formatVerbsRunner) run(pass *analysis.Pass) (any, error) {
 			// enforce it here for those, restoring what the retired
 			// internalLogVariableFormat/stdLogVariableFormat ruleguard rules
 			// checked before this package replaced them.
-			if r.needsConstantFormatCheck(pkg, fn) && !nolintSuppressed(pass, call.Pos(), "gocritic", "logformatverbs") {
+			if r.needsConstantFormatCheck(pkg, fn) && !nolintSuppressed(pass, call.Pos(), call.Pos(), "gocritic", "logformatverbs") {
 				pass.Reportf(call.Args[0].Pos(), "%s.%s: format argument must be a compile-time constant string; a variable format string breaks dedup and can leak uncontrolled data", pkg, fn)
 			}
 			return
@@ -130,7 +130,7 @@ func (r *formatVerbsRunner) run(pass *analysis.Pass) (any, error) {
 		if lastArgIsErrorDotError && vFamilyCount == 1 && finalVerb == 'v' {
 			return // sole %v-family verb, in final position, backed by err.Error()
 		}
-		if nolintSuppressed(pass, call.Pos(), "gocritic", "logformatverbs") {
+		if nolintSuppressed(pass, call.Pos(), call.Pos(), "gocritic", "logformatverbs") {
 			return
 		}
 

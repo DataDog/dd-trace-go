@@ -81,8 +81,9 @@ func (r *telemetrySafetyRunner) run(pass *analysis.Pass) (any, error) {
 			return
 		}
 
-		// Args[0] is the message; only structured attrs (slog.Any/slog.String
-		// calls passed directly as arguments) are inspected.
+		// Args[0] is the message; only structured attrs passed directly as
+		// arguments are inspected. checkAttrArg also unwraps parenthesized
+		// attrs and descends into slog.Group children.
 		//
 		// Known limitation: a slog.Any/slog.String call assigned to a local
 		// variable first and passed by that variable is invisible here —
@@ -92,28 +93,55 @@ func (r *telemetrySafetyRunner) run(pass *analysis.Pass) (any, error) {
 		// those call sites; teaching this pass to follow local slog.Attr
 		// variables is a separate, larger change).
 		for _, arg := range call.Args[1:] {
-			inner, ok := arg.(*ast.CallExpr)
-			if !ok {
-				continue
-			}
-			innerFn, innerPkg := resolveFunc(pass, inner)
-			if innerPkg != "log/slog" || len(inner.Args) < 2 {
-				continue
-			}
-			switch innerFn {
-			case "Any":
-				r.checkSlogAny(pass, inner.Args[1], errIface, logValuerIface)
-			case "String":
-				r.checkSlogString(pass, inner.Args[1], errIface)
-			}
+			r.checkAttrArg(pass, call, arg, errIface, logValuerIface)
 		}
 	})
 
 	return nil, nil
 }
 
-func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, value ast.Expr, errIface, logValuerIface *types.Interface) {
-	if isNilLiteral(pass, value) || nolintSuppressed(pass, value.Pos(), "gocritic", "telemetrysafety") {
+// checkAttrArg inspects one structured-attr argument passed to a telemetry
+// log call. It unwraps parentheses — record.AddAttrs((slog.Any("error", err)))
+// makes the argument an *ast.ParenExpr, which would otherwise slip past the
+// call assertion unexamined — and descends into slog.Group children: attrs
+// nested in a group resolve to log/slog themselves, so the Preorder filter
+// never reaches them on its own.
+func (r *telemetrySafetyRunner) checkAttrArg(pass *analysis.Pass, call *ast.CallExpr, arg ast.Expr, errIface, logValuerIface *types.Interface) {
+	for {
+		paren, ok := arg.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		arg = paren.X
+	}
+	inner, ok := arg.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	innerFn, innerPkg := resolveFunc(pass, inner)
+	if innerPkg != "log/slog" || len(inner.Args) < 1 {
+		return
+	}
+	switch innerFn {
+	case "Any":
+		if len(inner.Args) >= 2 {
+			r.checkSlogAny(pass, call, inner.Args[1], errIface, logValuerIface)
+		}
+	case "String":
+		if len(inner.Args) >= 2 {
+			r.checkSlogString(pass, call, inner.Args[1], errIface)
+		}
+	case "Group":
+		// Args[0] is the group name; the rest are attrs, which may
+		// themselves be nested groups.
+		for _, child := range inner.Args[1:] {
+			r.checkAttrArg(pass, call, child, errIface, logValuerIface)
+		}
+	}
+}
+
+func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, call *ast.CallExpr, value ast.Expr, errIface, logValuerIface *types.Interface) {
+	if isNilLiteral(pass, value) || nolintSuppressed(pass, value.Pos(), call.Pos(), "gocritic", "telemetrysafety") {
 		return
 	}
 	t := pass.TypesInfo.TypeOf(value)
@@ -138,7 +166,7 @@ func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, value ast.Expr
 		"telemetry logging: slog.Any value of type %s does not implement slog.LogValuer and may leak data via reflection; use an explicit slog.<Type>() helper or implement LogValuer", t.String())
 }
 
-func (r *telemetrySafetyRunner) checkSlogString(pass *analysis.Pass, value ast.Expr, errIface *types.Interface) {
+func (r *telemetrySafetyRunner) checkSlogString(pass *analysis.Pass, call *ast.CallExpr, value ast.Expr, errIface *types.Interface) {
 	call, ok := value.(*ast.CallExpr)
 	if !ok {
 		return
@@ -151,7 +179,7 @@ func (r *telemetrySafetyRunner) checkSlogString(pass *analysis.Pass, value ast.E
 	if recvType == nil || errIface == nil || !types.Implements(recvType, errIface) {
 		return
 	}
-	if nolintSuppressed(pass, value.Pos(), "gocritic", "telemetrysafety") {
+	if nolintSuppressed(pass, value.Pos(), call.Pos(), "gocritic", "telemetrysafety") {
 		return
 	}
 	pass.Reportf(value.Pos(),

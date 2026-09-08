@@ -84,3 +84,56 @@ func badShadowedNilIsNotExempt() {
 	nil := plainStruct{Field: "shadowed value must still be flagged"}
 	telemetrylog.Error("event", slog.Any("data", nil)) // want "does not implement slog.LogValuer"
 }
+
+func badRawErrorViaAnyParenthesized(err error) {
+	// Parentheses make the argument an *ast.ParenExpr, not a call — the attr
+	// must still be unwrapped and checked.
+	telemetrylog.Error("operation failed", (slog.Any("error", err))) // want "raw error value"
+}
+
+func badRawErrorInsideGroup(err error) {
+	// Group children resolve to log/slog, so the telemetry-call filter never
+	// reaches them — they must be descended into explicitly.
+	telemetrylog.Error("operation failed", slog.Group("ctx", slog.Any("error", err))) // want "raw error value"
+}
+
+func badRawErrorInsideNestedGroup(err error) {
+	telemetrylog.Error("operation failed", slog.Group("a", slog.Group("b", slog.Any("error", err)))) // want "raw error value"
+}
+
+func badRawErrorInsideGroupParenthesized(err error) {
+	telemetrylog.Error("operation failed", slog.Group("ctx", (slog.Any("error", err)))) // want "raw error value"
+}
+
+func badStringWithErrorCallInsideGroup(err error) {
+	telemetrylog.Warn("failed", slog.Group("ctx", slog.String("error", err.Error()))) // want "slog.String with err.Error"
+}
+
+func goodSafeErrorInsideGroup(err error) {
+	telemetrylog.Debug("event", slog.Group("ctx", slog.Any("error", telemetrylog.NewSafeError(err))))
+}
+
+func goodGroupOfSafeAttrs() {
+	telemetrylog.Debug("event", slog.Group("ctx", slog.String("op", "startup"), slog.Int("n", 1)))
+}
+
+// ── nolint suppression across multi-line calls ───────────────────────────────
+
+func nolintAboveMultiLineCall(err error) {
+	//nolint:telemetrysafety
+	telemetrylog.Error("failed",
+		slog.Any("err", err))
+}
+
+func nolintInsideMultiLineCall(err error) {
+	telemetrylog.Error("failed",
+		//nolint:telemetrysafety
+		slog.Any("err", err))
+}
+
+func nolintTrailingOnUnrelatedLineDoesNotCarryOver(err error) {
+	x := err //nolint:gocritic // this exception belongs to this line, not the call below
+	_ = x
+	telemetrylog.Error("failed",
+		slog.Any("err", err)) // want "raw error value"
+}

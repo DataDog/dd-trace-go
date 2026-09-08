@@ -40,6 +40,13 @@
 // of this analyzer).
 //
 // Usage: go run ./scripts/lint_errlog_workspaces.go
+//
+// Run standalone, this script covers only the workspace sibling modules: it
+// skips the root module's `.` use, assuming `make lint/errlog` runs the root
+// `./...` pass separately (see the Makefile target). Running this script by
+// hand therefore says nothing about the root module — pair it with
+// `go run ./internal/telemetry/log/analyzer/cmd ./...` from the repo root
+// for full coverage.
 package main
 
 import (

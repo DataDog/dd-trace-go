@@ -26,6 +26,13 @@ import (
 // err is scrubbed through [NewSafeError] before transmission, so only the
 // error type (not the message) is sent to telemetry.
 //
+// Before [telemetry.StartApp] runs, reports queue in the global telemetry
+// client's recorder: a 512-entry ring buffer shared by every global
+// telemetry call. When it fills, the oldest queued report is dropped, and
+// the only signal is a single debug-level internal log (off by default).
+// Callers that cannot control startup order should expect an early burst of
+// reports to evict the first ones.
+//
 // opts may include [telemetry.WithTags] or additional options. A redacted
 // stack trace is always attached.
 func ReportError(msg string, err error, opts ...telemetry.LogOption) {
@@ -51,6 +58,12 @@ func ReportError(msg string, err error, opts ...telemetry.LogOption) {
 // panic(string) or a plain struct), only its type is attached — never its
 // content — matching the same disclosure rule [NewSafeError] applies to errors.
 // A redacted stack trace is always attached.
+//
+// Before [telemetry.StartApp] runs, panics queue in the global telemetry
+// client's recorder: a 512-entry ring buffer shared by every global
+// telemetry call. When it fills, the oldest queued report is dropped, and
+// the only signal is a single debug-level internal log (off by default).
+// See [ReportError] for the caller-facing consequences.
 //
 // opts may include [telemetry.WithTags] or additional options.
 func ReportPanic(msg string, recovered any, opts ...telemetry.LogOption) {
