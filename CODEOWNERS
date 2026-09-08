@@ -90,8 +90,6 @@
 /.github/workflows/config-audit.yml            @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/remote_config.go               @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/otel_dd_mappings.go            @DataDog/apm-sdk-capabilities-go
-/internal/env/supported_configurations.gen.go  @DataDog/apm-sdk-capabilities-go
-/internal/env/supported_configurations.json    @DataDog/apm-sdk-capabilities-go
 # capabilities - telemetry
 /internal/telemetry/                 @DataDog/apm-sdk-capabilities-go
 /ddtrace/tracer/telemetry.go         @DataDog/apm-sdk-capabilities-go
@@ -109,6 +107,10 @@
 /ddtrace/tracer/propagating_tags.go  @DataDog/apm-sdk-capabilities-go
 # capabilities- OTel integration
 /ddtrace/opentelemetry/              @DataDog/apm-sdk-capabilities-go
+
+# common configuration tooling
+/internal/env/supported_configurations.gen.go  @DataDog/dd-trace-go-guild
+/internal/env/supported_configurations.json    @DataDog/dd-trace-go-guild
 
 # data streams monitoring
 /datastreams/                               @DataDog/data-streams-monitoring

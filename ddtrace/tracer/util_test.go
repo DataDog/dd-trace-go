@@ -85,21 +85,21 @@ func TestDereference(t *testing.T) {
 		value    any
 		expected any
 	}{
-		{makePointer(1), 1},
-		{makePointer(byte(1)), byte(1)},
-		{makePointer(int16(1)), int16(1)},
-		{makePointer(int32(1)), int32(1)},
-		{makePointer(int64(1)), int64(1)},
-		{makePointer(uint(1)), uint(1)},
-		{makePointer(uint16(1)), uint16(1)},
-		{makePointer(uint32(1)), uint32(1)},
-		{makePointer(uint64(1)), uint64(1)},
-		{makePointer("a"), "a"},
-		{makePointer(float32(1.25)), float32(1.25)},
-		{makePointer(float64(1.25)), float64(1.25)},
-		{makePointer(true), true},
-		{makePointer(false), false},
-		{makePointer(samplernames.SingleSpan), samplernames.SingleSpan},
+		{new(1), 1},
+		{new(byte(1)), byte(1)},
+		{new(int16(1)), int16(1)},
+		{new(int32(1)), int32(1)},
+		{new(int64(1)), int64(1)},
+		{new(uint(1)), uint(1)},
+		{new(uint16(1)), uint16(1)},
+		{new(uint32(1)), uint32(1)},
+		{new(uint64(1)), uint64(1)},
+		{new("a"), "a"},
+		{new(float32(1.25)), float32(1.25)},
+		{new(float64(1.25)), float64(1.25)},
+		{new(true), true},
+		{new(false), false},
+		{new(samplernames.SingleSpan), samplernames.SingleSpan},
 		{(*int)(nil), 0},
 		{(*byte)(nil), byte(0)},
 		{(*int16)(nil), int16(0)},
@@ -131,8 +131,4 @@ func TestDereference(t *testing.T) {
 			}
 		})
 	}
-}
-
-func makePointer[T any](value T) *T {
-	return &value
 }

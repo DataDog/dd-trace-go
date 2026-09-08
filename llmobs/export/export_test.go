@@ -192,7 +192,8 @@ func tagsOf(t *testing.T, span map[string]any) []string {
 	return out
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }
 
 func spanEvent(traceID, spanID string, kind export.Kind, opts ...export.SpanEventOption) export.SpanEvent {
 	opts = append([]export.SpanEventOption{export.WithTiming(time.Unix(0, 1), 0)}, opts...)
@@ -696,7 +697,7 @@ func TestSubmitEvaluations_CancelAfterLastPOSTIsNotAnError(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitEvaluations(ctx, []export.EvaluationMetric{
-		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.9)},
+		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: new(0.9)},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, res.Sent)
@@ -850,7 +851,7 @@ func TestSubmitEvaluations_Chunking(t *testing.T) {
 
 	evals := make([]export.EvaluationMetric, 2020)
 	for i := range evals {
-		evals[i] = export.EvaluationMetric{SpanID: "s", TraceID: "t", Label: "ok", ScoreValue: ptr(0.5)}
+		evals[i] = export.EvaluationMetric{SpanID: "s", TraceID: "t", Label: "ok", ScoreValue: new(0.5)}
 	}
 	res, err := c.SubmitEvaluations(context.Background(), evals)
 	require.NoError(t, err)
@@ -911,7 +912,7 @@ func TestSubmitEvaluations_DropsOversizedRow(t *testing.T) {
 		SpanID:     "s",
 		TraceID:    "t",
 		Label:      "large",
-		ScoreValue: ptr(1.0),
+		ScoreValue: new(1.0),
 		Metadata:   map[string]any{"value": strings.Repeat("x", illmobs.SizeLimitEVPEvent)},
 	}})
 	require.NoError(t, err)
@@ -1201,11 +1202,11 @@ func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
 	c := newClient(t, fake, "defaultapp")
 
 	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
-		{SpanID: "s1", TraceID: "t1", Label: "quality", CategoricalValue: ptr("good"), Timestamp: time.UnixMilli(123)},
-		{SpanID: "s2", TraceID: "t2", Label: "score", ScoreValue: ptr(0.9)},
-		{SpanID: "s3", TraceID: "t3", Label: "ok", BooleanValue: ptr(true)},
+		{SpanID: "s1", TraceID: "t1", Label: "quality", CategoricalValue: new("good"), Timestamp: time.UnixMilli(123)},
+		{SpanID: "s2", TraceID: "t2", Label: "score", ScoreValue: new(0.9)},
+		{SpanID: "s3", TraceID: "t3", Label: "ok", BooleanValue: new(true)},
 		{SpanID: "s4", TraceID: "t4", Label: "struct", JSONValue: map[string]any{"k": "v"}, MetricType: export.MetricTypeJSON},
-		{TagKey: "session_id", TagValue: "abc", Label: "tagjoin", ScoreValue: ptr(1.0)},
+		{TagKey: "session_id", TagValue: "abc", Label: "tagjoin", ScoreValue: new(1.0)},
 	})
 	require.NoError(t, err)
 	require.Zero(t, res.Failed)
@@ -1248,7 +1249,7 @@ func TestSubmitEvaluations_NarrativeFieldsReachTheWire(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
-		SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.75),
+		SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: new(0.75),
 		Assessment: "mostly correct",
 		Reasoning:  "cited two of three sources",
 		Metadata:   map[string]any{"judge": "gpt-4o", "rubric_version": float64(3)},
@@ -1263,7 +1264,7 @@ func TestSubmitEvaluations_NarrativeFieldsReachTheWire(t *testing.T) {
 	fake2 := &fakeTransport{}
 	c2 := newClient(t, fake2, "test-app")
 	_, err = c2.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
-		SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.75),
+		SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: new(0.75),
 	}})
 	require.NoError(t, err)
 	bare := firstMetric(t, fake2.captured()[0].body)
@@ -1277,8 +1278,8 @@ func TestSubmitEvaluations_WithCallMLApp(t *testing.T) {
 	c := newClient(t, fake, "client-app")
 
 	_, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
-		{SpanID: "s1", TraceID: "t", Label: "q", ScoreValue: ptr(1.0)},
-		{SpanID: "s2", TraceID: "t", Label: "q", ScoreValue: ptr(1.0), MLApp: "row-app"},
+		{SpanID: "s1", TraceID: "t", Label: "q", ScoreValue: new(1.0)},
+		{SpanID: "s2", TraceID: "t", Label: "q", ScoreValue: new(1.0), MLApp: "row-app"},
 	}, export.WithCallMLApp("call-app"))
 	require.NoError(t, err)
 
@@ -1293,7 +1294,7 @@ func TestSubmitEvaluations_StampsTracerVersion(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	_, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
-		SpanID: "s", TraceID: "t", Label: "q", ScoreValue: ptr(1.0),
+		SpanID: "s", TraceID: "t", Label: "q", ScoreValue: new(1.0),
 		Tags: []string{"team:ml", "ddtrace.version:bogus"},
 	}})
 	require.NoError(t, err)
@@ -1319,15 +1320,15 @@ func TestSubmitEvaluations_Validation(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
-		{SpanID: "s", TraceID: "t", ScoreValue: ptr(1.0)},
-		{Label: "no-join", ScoreValue: ptr(1.0)},
-		{SpanID: "s", TraceID: "t", TagKey: "k", TagValue: "v", Label: "both", ScoreValue: ptr(1.0)},
+		{SpanID: "s", TraceID: "t", ScoreValue: new(1.0)},
+		{Label: "no-join", ScoreValue: new(1.0)},
+		{SpanID: "s", TraceID: "t", TagKey: "k", TagValue: "v", Label: "both", ScoreValue: new(1.0)},
 		{SpanID: "s", TraceID: "t", Label: "novalue"},
-		{SpanID: "s", TraceID: "t", Label: "twovalues", ScoreValue: ptr(1.0), BooleanValue: ptr(true)},
+		{SpanID: "s", TraceID: "t", Label: "twovalues", ScoreValue: new(1.0), BooleanValue: new(true)},
 		{SpanID: "s", TraceID: "t", Label: "jsonscalarmismatch", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{"k": "v"}},
-		{SpanID: "s", Label: "partial", ScoreValue: ptr(1.0)},
-		{SpanID: "s", TraceID: "t", Label: "badtype", MetricType: export.MetricType("scores"), ScoreValue: ptr(1.0)},
-		{SpanID: "s", TraceID: "t", Label: "mismatch", MetricType: export.MetricTypeScore, CategoricalValue: ptr("x")},
+		{SpanID: "s", Label: "partial", ScoreValue: new(1.0)},
+		{SpanID: "s", TraceID: "t", Label: "badtype", MetricType: export.MetricType("scores"), ScoreValue: new(1.0)},
+		{SpanID: "s", TraceID: "t", Label: "mismatch", MetricType: export.MetricTypeScore, CategoricalValue: new("x")},
 		{SpanID: "s", TraceID: "t", Label: "emptyjson", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{}},
 	})
 	require.NoError(t, err)
@@ -1461,7 +1462,7 @@ func TestSubmitEvaluations_ContextCanceledStopsPromptly(t *testing.T) {
 	cancel()
 
 	res, err := c.SubmitEvaluations(ctx, []export.EvaluationMetric{
-		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.9)},
+		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: new(0.9)},
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
@@ -1488,7 +1489,7 @@ func TestSubmitEvaluations_MidFlightCancelNotRetriable(t *testing.T) {
 	}()
 
 	res, err := c.SubmitEvaluations(ctx, []export.EvaluationMetric{
-		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: ptr(0.9)},
+		{SpanID: "s", TraceID: "t", Label: "quality", ScoreValue: new(0.9)},
 	})
 	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
@@ -1540,9 +1541,9 @@ func TestSubmitEvaluations_RejectsNonFiniteScore(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
-		{SpanID: "s1", TraceID: "t1", Label: "nan", ScoreValue: ptr(math.NaN())},
-		{SpanID: "s2", TraceID: "t2", Label: "inf", ScoreValue: ptr(math.Inf(1))},
-		{SpanID: "s3", TraceID: "t3", Label: "ok", ScoreValue: ptr(0.5)},
+		{SpanID: "s1", TraceID: "t1", Label: "nan", ScoreValue: new(math.NaN())},
+		{SpanID: "s2", TraceID: "t2", Label: "inf", ScoreValue: new(math.Inf(1))},
+		{SpanID: "s3", TraceID: "t3", Label: "ok", ScoreValue: new(0.5)},
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 2)
@@ -1685,7 +1686,7 @@ func TestSubmitEvaluations_RejectsUnmarshalableJSON(t *testing.T) {
 
 	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
 		{SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: export.MetricTypeJSON, JSONValue: map[string]any{"x": math.Inf(1)}},
-		{SpanID: "s2", TraceID: "t2", Label: "ok", ScoreValue: ptr(0.5)},
+		{SpanID: "s2", TraceID: "t2", Label: "ok", ScoreValue: new(0.5)},
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 1)
@@ -1929,7 +1930,7 @@ func TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
-		SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: export.MetricTypeJSON, ScoreValue: ptr(0.5),
+		SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: export.MetricTypeJSON, ScoreValue: new(0.5),
 	}})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 1)

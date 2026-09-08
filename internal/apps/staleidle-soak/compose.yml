@@ -7,9 +7,10 @@
 # The agent image is pinned to v7.77.1 to match the customer's environment
 # exactly (APMS-19533). Do NOT bump this tag: the whole point of the harness is
 # to exercise the receiver code path the customer actually runs, so a newer
-# agent invalidates the result rather than improving it. Dependabot bumped it to
-# 7.82.0 once (#5172) and it was reverted; datadog/agent is now frozen for this
-# directory in .github/dependabot.yml, so automated bumps can't recur.
+# agent invalidates the result rather than improving it. Dependabot bumped it
+# twice (#5172 to 7.82.0, then again to 7.83.0) and both were reverted;
+# datadog/agent is now frozen for this directory in .github/dependabot.yml, so
+# automated bumps can't recur.
 #
 # The DD_API_KEY value is intentionally bogus — the bug we're verifying lives
 # in the agent's *receiver* layer (UDS listener, connection lifecycle,
