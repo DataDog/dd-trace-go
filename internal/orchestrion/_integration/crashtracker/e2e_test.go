@@ -22,7 +22,7 @@ import (
 // test binary. TestCrashtrackerMainInjection validates injection into a real
 // non-test main function.
 func TestMain(m *testing.M) {
-	switch os.Getenv(e2eRoleEnv) {
+	switch role := os.Getenv(e2eRoleEnv); role {
 	case crashRoleOrch:
 		// Explicit Start() — orchestrion does not inject into test binaries.
 		if err := ct.Start(); err != nil {
@@ -30,6 +30,16 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 		panic(orchCrashMsg)
+	case "":
+		// Not a re-exec: run the package's own tests normally.
+	default:
+		// A role was set but didn't match any case above -- a missing case for
+		// a newly added role, most likely. Falling through to m.Run() here
+		// would run the full test suite inside what the parent expects to be a
+		// crash-victim subprocess, and the parent would wait out its full
+		// timeout for a report that a test suite, not a victim, can't produce.
+		os.Stderr.WriteString("unknown e2e role: " + role + "\n")
+		os.Exit(1)
 	}
 	os.Exit(m.Run())
 }

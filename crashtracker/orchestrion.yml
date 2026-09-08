@@ -14,8 +14,11 @@ meta:
 
     Ordering with respect to the tracer and profiler: the tracer and profiler
     aspects use inject-declarations to emit func init() calls, which run before
-    main() starts. This aspect uses prepend-statements inside main(), so the
-    tracer is always started before crashtracker.Start() executes.
+    main() starts. This aspect uses prepend-statements inside main(), so
+    crashtracker.Start() always runs after the tracer starts, and
+    resolveService reads the tracer-attributed service name from globalconfig.
+    The call site also matches crashtracker/doc.go, which says to call Start
+    as early as possible in main.
 
     Note: crashes that occur during init() functions (before main() is reached)
     are not captured because SetCrashOutput is wired inside crashtracker.Start().

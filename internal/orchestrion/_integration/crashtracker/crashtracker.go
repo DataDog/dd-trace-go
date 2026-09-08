@@ -6,9 +6,11 @@
 package crashtracker
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +49,11 @@ type TestCase struct {
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
+	// Capacity 1: this scenario's single panic produces exactly one report.
+	// A second report (e.g. a retried upload after a slow-but-successful
+	// send) would be dropped by the handler's non-blocking select below
+	// rather than queued, which is fine only as long as that one-report
+	// assumption holds.
 	tc.received = make(chan []byte, 1)
 	tc.mockSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isCrashtrackerRequest(r) {
@@ -64,14 +71,21 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
-	cmd := spawnSubprocess(t, crashRoleOrch, tc.mockSrv.URL)
-	_ = cmd.Wait() // non-zero exit expected (panic)
+	var out bytes.Buffer
+	cmd := spawnSubprocess(t, crashRoleOrch, tc.mockSrv.URL, &out)
+
+	err := cmd.Wait()
+	var execErr *exec.Error
+	if errors.As(err, &execErr) {
+		t.Fatalf("subprocess failed to start: %v", execErr)
+	}
+	// Any other non-zero exit is expected: the subprocess panics.
 
 	select {
 	case body := <-tc.received:
 		assertOrchCrashReport(t, body)
 	case <-time.After(15 * time.Second):
-		t.Fatal("timed out waiting for crash report from explicit crashtracker.Start() subprocess")
+		t.Fatalf("timed out waiting for crash report from explicit crashtracker.Start() subprocess\nsubprocess output:\n%s", out.String())
 	}
 }
 
@@ -80,8 +94,11 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 }
 
 // spawnSubprocess re-execs this binary as a crash-victim subprocess. It is
-// called from TestCase.Run. Only runs when the binary was built with orchestrion.
-func spawnSubprocess(t *testing.T, role, agentURL string) *exec.Cmd {
+// called from TestCase.Run. Only runs when the binary was built with
+// orchestrion. Combined stdout+stderr is written to out: a panicking
+// subprocess's own crash dump is the most direct evidence available when a
+// report doesn't arrive as expected.
+func spawnSubprocess(t *testing.T, role, agentURL string, out io.Writer) *exec.Cmd {
 	t.Helper()
 	if !built.WithOrchestrion {
 		t.Skip("subprocess e2e requires orchestrion-built binary; run via orchestrion go test")
@@ -93,8 +110,8 @@ func spawnSubprocess(t *testing.T, role, agentURL string) *exec.Cmd {
 		"DD_TRACE_AGENT_URL="+agentURL,
 		"DD_CRASHTRACKING_ENABLED=true",
 	)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	cmd.Stdout = out
+	cmd.Stderr = out
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("spawn subprocess: %v", err)
 	}

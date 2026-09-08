@@ -46,8 +46,8 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 		plainBinary += ".exe"
 	}
 
-	buildInjectedVictim(t, moduleRoot, injectedBinary)
-	buildPlainVictim(t, moduleRoot, plainBinary)
+	buildVictim(t, moduleRoot, injectedBinary, true)
+	buildVictim(t, moduleRoot, plainBinary, false)
 
 	received := make(chan []byte, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,35 +79,80 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 		t.Fatalf("timed out waiting for crash report from orchestrion-built victim\nvictim output:\n%s", injectedOut)
 	}
 
+	// Consume a possible second report from the orchestrion-built victim. The
+	// buffer above is sized 2 so a second report (e.g. a retried upload)
+	// cannot block the handler, but that same slack would let it survive into
+	// the plain-victim check below and fail it with the wrong cause: "posted
+	// a report without injection" when the report actually leaked from the
+	// injected run above.
+	select {
+	case <-received:
+	default:
+	}
+
 	runVictim(t, plainBinary, srv.URL)
 	select {
 	case body := <-received:
 		t.Fatalf("plain victim posted crash report without orchestrion injection: %s", body)
 	case <-time.After(3 * time.Second):
+		// The plain victim is built with GOFLAGS="" specifically so it carries
+		// no orchestrion instrumentation at all (buildVictim), so it has no
+		// code path that could ever produce a report no matter how long this
+		// waits -- unlike the positive assertion's 15s, this window isn't
+		// racing a slow-but-real upload, just bounding the test's own runtime.
 	}
 }
 
+// integrationModuleRoot returns the directory containing this package's
+// go.mod. runtime.Caller pins this to this file's own known location, so it
+// stays correct if the package ever moves a level deeper or shallower, or if
+// a runner starts the test binary from a different working directory.
 func integrationModuleRoot(t *testing.T) string {
 	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working directory: %v", err)
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot determine module root: runtime.Caller failed")
 	}
-	return filepath.Dir(wd)
+	// This file lives in internal/orchestrion/_integration/crashtracker, so
+	// the module root with go.mod is two directory levels up.
+	return filepath.Dir(filepath.Dir(file))
 }
 
-func buildInjectedVictim(t *testing.T, moduleRoot, output string) {
+// buildVictim builds the victim binary at output, instrumented via
+// orchestrionCommand when instrumented is true and via a plain, explicitly
+// uninstrumented `go build` otherwise. The two modes share their timeout and
+// error-reporting shape so a fix to one (e.g. the deadline) cannot miss the
+// other.
+func buildVictim(t *testing.T, moduleRoot, output string, instrumented bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := orchestrionCommand(ctx, "go", "build", "-o", output, victimImportPath)
+
+	var cmd *exec.Cmd
+	if instrumented {
+		cmd = orchestrionCommand(ctx, "go", "build", "-o", output, victimImportPath)
+	} else {
+		cmd = exec.CommandContext(ctx, "go", "build", "-o", output, victimImportPath)
+		// This build must never be orchestrion-instrumented -- that is the
+		// whole point of the negative assertion in TestCrashtrackerMainInjection.
+		// DRIVER and TOOLEXEC CI modes activate orchestrion via an explicit
+		// wrapper command or -toolexec flag that this separate `go build`
+		// invocation never sees, but GOFLAGS mode (.github/workflows/orchestrion.yml)
+		// activates it by exporting GOFLAGS="... -toolexec=orchestrion toolexec"
+		// into the whole shell session, which this process inherits via
+		// os.Environ() like any other GOFLAGS content. Overriding it to empty
+		// here, rather than only for that one mode, keeps this build's "plain"
+		// guarantee unconditional.
+		cmd.Env = append(os.Environ(), "GOFLAGS=")
+	}
 	cmd.Dir = moduleRoot
+
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
-		t.Fatal("build orchestrion victim: timeout")
+		t.Fatalf("build victim (instrumented=%v): timeout", instrumented)
 	}
 	if err != nil {
-		t.Fatalf("build orchestrion victim: %v\n%s", err, out)
+		t.Fatalf("build victim (instrumented=%v): %v\n%s", instrumented, err, out)
 	}
 }
 
@@ -126,31 +171,6 @@ func orchestrionCommand(ctx context.Context, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, "go", append([]string{"run", "github.com/DataDog/orchestrion"}, args...)...)
 }
 
-func buildPlainVictim(t *testing.T, moduleRoot, output string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", output, victimImportPath)
-	cmd.Dir = moduleRoot
-	// This build must never be orchestrion-instrumented -- that is the whole
-	// point of the negative assertion in TestCrashtrackerMainInjection. DRIVER
-	// and TOOLEXEC CI modes activate orchestrion via an explicit wrapper
-	// command or -toolexec flag that this separate `go build` invocation never
-	// sees, but GOFLAGS mode (.github/workflows/orchestrion.yml) activates it
-	// by exporting GOFLAGS="... -toolexec=orchestrion toolexec" into the whole
-	// shell session, which this process inherits via os.Environ() like any
-	// other GOFLAGS content. Overriding it to empty here, rather than only for
-	// that one mode, keeps this build's "plain" guarantee unconditional.
-	cmd.Env = append(os.Environ(), "GOFLAGS=")
-	out, err := cmd.CombinedOutput()
-	if ctx.Err() == context.DeadlineExceeded {
-		t.Fatal("build plain victim: timeout")
-	}
-	if err != nil {
-		t.Fatalf("build plain victim: %v\n%s", err, out)
-	}
-}
-
 // runVictim runs binary and returns its combined stdout+stderr. The caller
 // decides whether to surface it: a panicking victim's own crash dump
 // (written to stderr, independent of and before any crashtracker upload) is
@@ -167,6 +187,19 @@ func runVictim(t *testing.T, binary, agentURL string) []byte {
 		"DD_TRACE_ENABLED=false",
 		"DD_INSTRUMENTATION_TELEMETRY_ENABLED=false",
 		"DD_REMOTE_CONFIGURATION_ENABLED=false",
+		// Lets the profiler's injected func init() actually call Start, so the
+		// victim's own ordering check (globalconfig/traceprof, victim/main.go)
+		// has something real to observe instead of trivially seeing "not
+		// started" for a profiler that was never going to start either way.
+		"DD_PROFILING_ENABLED=true",
+		// Without an explicit service, tracer.Start() (ddtrace/tracer/option.go)
+		// deliberately skips globalconfig.SetServiceName so contribs keep
+		// computing their own default -- meaning globalconfig.ServiceName()
+		// would read empty even on a fully successful, correctly-ordered
+		// Start(), and the victim's ordering check would misread that as
+		// "tracer hasn't run yet". An explicit service routes through the
+		// branch that does set it.
+		"DD_SERVICE=crashtracker-ordering-proof",
 	)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
@@ -229,7 +262,18 @@ func assertInjectedCrashReport(t *testing.T, body []byte) {
 	if got, _ := errObj["type"].(string); got != "panic" {
 		t.Errorf("error.type = %q, want panic", got)
 	}
-	if msg, _ := errObj["message"].(string); !strings.Contains(msg, "orchestrion injection victim crash") {
+	msg, _ := errObj["message"].(string)
+	if !strings.Contains(msg, "orchestrion injection victim crash") {
 		t.Errorf("error.message = %q, want injection victim crash", msg)
+	}
+	// The tracer and profiler aspects inject func init() calls, which the Go
+	// runtime guarantees complete before main() runs -- these confirm that
+	// guarantee actually held for this build, rather than assuming it (see
+	// victim/main.go for how the victim itself observes this).
+	if !strings.Contains(msg, "tracer_started=true") {
+		t.Errorf("error.message = %q, want tracer_started=true: the injected tracer.Start() should have run before crashtracker.Start()", msg)
+	}
+	if !strings.Contains(msg, "profiler_started=true") {
+		t.Errorf("error.message = %q, want profiler_started=true: the injected profiler.Start() should have run before crashtracker.Start()", msg)
 	}
 }
