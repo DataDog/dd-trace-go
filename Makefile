@@ -115,6 +115,91 @@ test-deadlock: tools-install ## Run tests with deadlock detection
 test-debug-deadlock: tools-install ## Run tests with debug and deadlock detection
 	BUILD_TAGS=debug,deadlock $(BIN_PATH) ./scripts/test.sh --all
 
+# CI-parity targets. `make test/*` uses the root docker-compose.yaml; CI uses
+# .github/testservices/docker-compose.yaml. See "Reproducing
+# CI locally" in CONTRIBUTING.md.
+CI_TEST_RESULTS := /tmp/test-results
+BUILD_TAGS ?=
+CHUNK ?= 1
+JOB ?= core
+SERVICES ?=
+
+# CI's test-core job starts only the agent (`docker compose up -d datadog-agent`); only
+# test-contrib brings up the whole stack. Mirroring that keeps ci/run faithful and, on a
+# laptop, avoids the memory pressure of 20 containers when the job needs one.
+ifeq ($(JOB),core)
+CI_JOB_SERVICES := datadog-agent
+endif
+
+# Five images in CI's stack publish no arm64 manifest at all (elasticsearch:2,
+# elasticsearch:5, elasticsearch:6.8.13, cimg/mysql:8.0, mssql/server:2019-latest), so on
+# Apple Silicon they only run under emulation. The rest do ship arm64 variants — which is
+# its own problem, since CI runs amd64 and we want the same builds, not merely working
+# ones. scripts/test.sh forces the platform the same way for the root stack.
+ifeq ($(shell uname -s)-$(shell uname -m),Darwin-arm64)
+CI_PLATFORM := DOCKER_DEFAULT_PLATFORM=linux/amd64
+endif
+CI_COMPOSE := $(CI_PLATFORM) COMPOSE_FILE=.github/testservices/docker-compose.yaml COMPOSE_PROJECT_NAME=dd-trace-go-ci
+CI_ENV := $(CI_COMPOSE) INTEGRATION=true GOTOOLCHAIN=local GODEBUG=x509negativeserial=1 \
+	TEST_RESULTS=$(CI_TEST_RESULTS) BUILD_TAGS=$(BUILD_TAGS)
+REQUIRE_JQ = command -v jq > /dev/null || { echo "jq is required (brew install jq)" >&2; exit 1; }
+# scripts/ci_test_core.sh (like scripts/test.sh) uses `mapfile`, a bash 4 builtin. macOS
+# ships bash 3.2, so `env bash` there fails with a bare "mapfile: command not found".
+REQUIRE_BASH4 = bash -c 'type mapfile' > /dev/null 2>&1 || { \
+	echo "this needs bash >= 4; found $$(bash --version | head -1)" >&2; \
+	echo "on macOS: brew install bash, then put its prefix ahead of /bin in PATH" >&2; \
+	exit 1; }
+
+.PHONY: ci/run
+ci/run: tools-install ## Reproduce a CI job end to end (JOB=core|contrib, CHUNK=n)
+	@case "$(JOB)" in \
+	  core) echo "==> reproducing the test-core job" ;; \
+	  contrib) echo "==> reproducing test-contrib, chunk $(CHUNK)" ;; \
+	  *) echo "JOB must be 'core' or 'contrib' (got '$(JOB)')" >&2; exit 1 ;; \
+	esac
+	@$(MAKE) --no-print-directory ci/services SERVICES="$(CI_JOB_SERVICES)"
+	@trap '$(MAKE) --no-print-directory ci/services/down' EXIT INT TERM; \
+	  $(MAKE) --no-print-directory ci/$(JOB) CHUNK=$(CHUNK) BUILD_TAGS=$(BUILD_TAGS)
+
+.PHONY: ci/services
+ci/services: ## Start CI's service containers (all, or SERVICES="a b")
+	@$(CI_COMPOSE) docker compose up -d --wait --wait-timeout 120 $(SERVICES) || { \
+	  echo "" >&2; \
+	  echo "ci/services failed. The two usual causes:" >&2; \
+	  echo "  'address already in use'         -> a local service holds one of CI's ports; stop it" >&2; \
+	  echo "  'does not provide the platform'  -> a cached image is the wrong arch; make ci/services/pull" >&2; \
+	  exit 1; }
+
+# An image pulled earlier without a forced platform is cached as arm64 only; `up` then
+# reports "does not provide the specified platform" and will not fetch the amd64 variant
+# on its own. Re-pulling with the platform forced repairs the local store.
+.PHONY: ci/services/pull
+ci/services/pull: ## Re-pull CI's images at CI's platform (repairs wrong-arch cache)
+	$(CI_COMPOSE) docker compose pull --policy always
+
+.PHONY: ci/services/down
+ci/services/down: ## Stop CI's service containers
+	$(CI_COMPOSE) docker compose down
+
+.PHONY: ci/core
+ci/core: tools-install ## Run CI's test-core entrypoint alone (services must be up)
+	@$(REQUIRE_BASH4)
+	@mkdir -p $(CI_TEST_RESULTS)
+	$(BIN_PATH) $(CI_ENV) DD_APPSEC_WAF_TIMEOUT=1h ./scripts/ci_test_core.sh
+
+.PHONY: ci/contrib/chunks
+ci/contrib/chunks: ## List the contrib chunks CI splits test-contrib into
+	@$(REQUIRE_JQ)
+	@go run ./scripts/ci_contrib_matrix.go | jq -r 'to_entries[] | "CHUNK=\(.key + 1)\t\(.value)"'
+
+.PHONY: ci/contrib
+ci/contrib: tools-install ## Run one test-contrib chunk alone (services must be up)
+	@mkdir -p $(CI_TEST_RESULTS)
+	@$(REQUIRE_JQ)
+	@chunk=$$(go run ./scripts/ci_contrib_matrix.go | jq -er ".[$$(($(CHUNK) - 1))]") || \
+		{ echo "no chunk $(CHUNK); run 'make ci/contrib/chunks' for the valid range" >&2; exit 1; }; \
+	$(BIN_PATH) $(CI_ENV) DD_APPSEC_WAF_TIMEOUT=1m ./scripts/ci_test_contrib.sh default "$$chunk"
+
 .PHONY: fix-modules
 fix-modules: tools-install ## Fix module dependencies and consistency
 	$(BIN_PATH) ./scripts/fix_modules.sh

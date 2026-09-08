@@ -86,6 +86,13 @@ Targets:
   test/integration     Run integration tests
   test-deadlock        Run tests with deadlock detection
   test-debug-deadlock  Run tests with debug and deadlock detection
+  ci/run               Reproduce a CI job end to end (JOB=core|contrib, CHUNK=n)
+  ci/services          Start CI's service containers (all, or SERVICES="a b")
+  ci/services/pull     Re-pull CI's images at CI's platform (repairs wrong-arch cache)
+  ci/services/down     Stop CI's service containers
+  ci/core              Run CI's test-core entrypoint alone (services must be up)
+  ci/contrib/chunks    List the contrib chunks CI splits test-contrib into
+  ci/contrib           Run one test-contrib chunk alone (services must be up)
   fix-modules          Fix module dependencies and consistency
   fix/go               Apply go fix modernizations to Go code
   fix/go/diff          Preview go fix modernizations (dry-run)
@@ -107,3 +114,7 @@ For example if you're running tests that need the `mysql` database container to 
 ```shell
 docker compose -f docker-compose.yaml -p dd-trace-go up -d mysql
 ```
+
+These targets are not what CI runs. CI uses different entrypoints and different versions of the service containers. 
+
+To reproduce a CI failure, run `make ci/run JOB=core` or `make ci/run JOB=contrib CHUNK=n`. The target starts CI's service containers, runs the job, then stops the containers. For the per-step targets and the limits on Apple Silicon, see [Reproducing CI locally](./CONTRIBUTING.md#reproducing-ci-locally).
