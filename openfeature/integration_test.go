@@ -1449,74 +1449,84 @@ func TestEndToEnd_ExposurePayloadStructure(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Wait for the flush to reach the fake agent. Polling rather than sleeping a
-	// fixed interval: the flush is asynchronous, so a loaded CI runner can take
+	// Wait for both exposures to reach the fake agent, across however many
+	// payloads they land in. The 50ms flush interval can legitimately drain
+	// the buffer between the two evaluations above, splitting them into two
+	// one-exposure payloads instead of a single two-exposure one: this test's
+	// contract is that both exposures arrive with the right fields, not that
+	// they share a batch boundary. Polling rather than sleeping a fixed
+	// interval: the flush is asynchronous, so a loaded CI runner can take
 	// longer than any interval short enough to keep the test fast.
+	var allExposures []exposureEvent
+	var firstPayloadContext exposureContext
 	require.Eventually(t, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return len(receivedPayloads) > 0
-	}, 5*time.Second, time.Millisecond, "expected at least one payload to be sent to agent")
-
-	// Verify payloads were received
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Verify payload structure
-	payload := receivedPayloads[0]
+		allExposures = nil
+		for _, payload := range receivedPayloads {
+			allExposures = append(allExposures, payload.Exposures...)
+		}
+		if len(receivedPayloads) > 0 {
+			firstPayloadContext = receivedPayloads[0].Context
+		}
+		return len(allExposures) >= 2
+	}, 5*time.Second, time.Millisecond, "expected both exposures to be sent to agent")
 
 	// Log context for debugging
-	t.Logf("Payload context: %+v", payload.Context)
+	t.Logf("Payload context: %+v", firstPayloadContext)
 
 	// Verify context (be lenient since env vars might not always work in tests)
-	if payload.Context.Service == "" {
+	if firstPayloadContext.Service == "" {
 		t.Logf("Warning: service name is empty (expected 'test-service')")
 	}
-	if payload.Context.Version == "" {
+	if firstPayloadContext.Version == "" {
 		t.Logf("Warning: version is empty (expected '1.2.3')")
 	}
-	if payload.Context.Env == "" {
+	if firstPayloadContext.Env == "" {
 		t.Logf("Warning: env is empty (expected 'testing')")
 	}
 
 	// Verify exposures
-	if len(payload.Exposures) != 2 {
-		t.Errorf("expected 2 exposures, got %d", len(payload.Exposures))
+	if len(allExposures) != 2 {
+		t.Fatalf("expected 2 exposures, got %d", len(allExposures))
 	}
 
-	if len(payload.Exposures) >= 2 {
-		// First exposure
-		exp1 := payload.Exposures[0]
-		if exp1.Flag.Key != "feature-rollout" {
-			t.Errorf("expected flag 'feature-rollout', got %q", exp1.Flag.Key)
-		}
-		if exp1.Subject.ID != "user-abc" {
-			t.Errorf("expected subject 'user-abc', got %q", exp1.Subject.ID)
-		}
-		if exp1.Allocation.Key != "us-rollout" {
-			t.Errorf("expected allocation 'us-rollout', got %q", exp1.Allocation.Key)
-		}
-		if exp1.Variant.Key != "on" {
-			t.Errorf("expected variant 'on', got %q", exp1.Variant.Key)
-		}
-		if exp1.Timestamp == 0 {
-			t.Error("expected non-zero timestamp")
-		}
+	// Index by subject rather than position: which evaluation's exposure lands
+	// in which payload is not part of this test's contract, only that both
+	// arrived with the right fields.
+	exposuresBySubject := make(map[string]exposureEvent, len(allExposures))
+	for _, exp := range allExposures {
+		exposuresBySubject[exp.Subject.ID] = exp
+	}
 
-		// Verify subject attributes are included
-		if exp1.Subject.Attributes == nil {
-			t.Error("expected subject attributes to be present")
-		} else {
-			if country, ok := exp1.Subject.Attributes["country"]; !ok || country != "US" {
-				t.Errorf("expected country attribute 'US', got %v", country)
-			}
-		}
+	exp1, ok := exposuresBySubject["user-abc"]
+	if !ok {
+		t.Fatal("expected an exposure for subject 'user-abc'")
+	}
+	if exp1.Flag.Key != "feature-rollout" {
+		t.Errorf("expected flag 'feature-rollout', got %q", exp1.Flag.Key)
+	}
+	if exp1.Allocation.Key != "us-rollout" {
+		t.Errorf("expected allocation 'us-rollout', got %q", exp1.Allocation.Key)
+	}
+	if exp1.Variant.Key != "on" {
+		t.Errorf("expected variant 'on', got %q", exp1.Variant.Key)
+	}
+	if exp1.Timestamp == 0 {
+		t.Error("expected non-zero timestamp")
+	}
 
-		// Second exposure
-		exp2 := payload.Exposures[1]
-		if exp2.Subject.ID != "user-xyz" {
-			t.Errorf("expected subject 'user-xyz', got %q", exp2.Subject.ID)
+	// Verify subject attributes are included
+	if exp1.Subject.Attributes == nil {
+		t.Error("expected subject attributes to be present")
+	} else {
+		if country, ok := exp1.Subject.Attributes["country"]; !ok || country != "US" {
+			t.Errorf("expected country attribute 'US', got %v", country)
 		}
+	}
+
+	if _, ok := exposuresBySubject["user-xyz"]; !ok {
+		t.Error("expected an exposure for subject 'user-xyz'")
 	}
 }
 
@@ -1565,23 +1575,31 @@ func TestEndToEnd_ExposureFlushInterval(t *testing.T) {
 	writer.buffer = make([]exposureEvent, 0)
 	writer.mu.Unlock()
 
-	// Generate events continuously
+	// Generate one event, wait for it to be flushed, then repeat: generating
+	// all events upfront let a delayed flush worker drain every one of them
+	// into a single request, after which an empty buffer produces no further
+	// flushes no matter how long the test then waits for a second one.
+	// Producing the next event only after observing a flush guarantees the
+	// buffer is non-empty for the next tick.
 	for i := range 5 {
 		evalCtx := of.NewEvaluationContext(fmt.Sprintf("user-%d", i), map[string]any{
 			"country": "US",
 		})
-		_, _ = client.BooleanValue(ctx, "feature-rollout", false, evalCtx)
-		time.Sleep(30 * time.Millisecond)
-	}
+		_, err := client.BooleanValue(ctx, "feature-rollout", false, evalCtx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
-	// Wait for at least 2 flushes. Polling rather than sleeping a fixed interval:
-	// the flush ticker is asynchronous, so a loaded CI runner can take longer than
-	// any interval short enough to keep the test fast.
-	require.Eventually(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return flushCount >= 2
-	}, 5*time.Second, time.Millisecond, "expected at least 2 flushes")
+		wantFlushes := i + 1
+		// Polling rather than sleeping a fixed interval: the flush ticker is
+		// asynchronous, so a loaded CI runner can take longer than any interval
+		// short enough to keep the test fast.
+		require.Eventually(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return flushCount >= wantFlushes
+		}, 5*time.Second, time.Millisecond, "expected %d flushes", wantFlushes)
+	}
 }
 
 // TestEndToEnd_ExposureDoLogFalse tests that exposure events are NOT sent when doLog is false.
