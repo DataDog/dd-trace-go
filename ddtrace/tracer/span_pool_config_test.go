@@ -212,10 +212,11 @@ func TestSpanPoolActivationReachesHotPath(t *testing.T) {
 // guard for a reported production symptom: a service set
 // DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED=true alongside
 // DD_TRACE_STATS_COMPUTATION_ENABLED=false and DD_DATA_STREAMS_ENABLED=true,
-// and observed the trace protocol downgrade to v0.4 — a real, intentional
-// consequence of disabling stats computation (see newConfig: "v1 is not
-// compatible without CSS") — and suspected the span pool was disabled too.
-// It wasn't, and can't be by this config: SetSpanPoolEnabled has exactly two
+// and suspected the span pool was disabled by that combination. (Disabling
+// stats computation was once believed to also force the trace protocol down
+// to v0.4; it doesn't — client-side stats and the wire protocol are
+// independent, see effectiveTraceProtocol.) The span pool wasn't disabled
+// either, and can't be by this config: SetSpanPoolEnabled has exactly two
 // call sites in the whole repo (the env-var load in internal/config and
 // WithSpanPool in this package's newConfig), and neither references stats
 // computation, trace protocol, or DSM. There is now no mechanism that forces

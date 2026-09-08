@@ -109,7 +109,7 @@ func runProcessRetryAttemptWithBaseline(
 	parentDeadlineOK bool,
 	baseline *processRetryLaunchBaseline,
 ) processRetryAttemptResult {
-	return runProcessRetryAttemptWithBaselineAndShutdown(ctx, cfg, parentDeadline, parentDeadlineOK, baseline, nil)
+	return runProcessRetryAttemptWithBaselineAndShutdown(ctx, cfg, parentDeadline, parentDeadlineOK, baseline, nil, nil)
 }
 
 func waitProcessRetryChild(

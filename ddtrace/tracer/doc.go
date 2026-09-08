@@ -164,4 +164,59 @@
 //
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
+//
+// # Trace Protocol
+//
+// Client-side stats computation is independent of the Datadog trace protocol
+// version (DD_TRACE_AGENT_PROTOCOL_VERSION). Disabling stats computation does
+// not change the wire format used to send traces, and selecting a protocol
+// version does not enable or disable stats computation. The protocol falls
+// back from 1.0 to 0.4 only when the Datadog Agent does not advertise the
+// /v1.0/traces endpoint.
+//
+// Agent capabilities are re-checked periodically, so this fallback is applied
+// at runtime and not only at startup: if a running Agent stops advertising
+// /v1.0/traces (for example after a rollback), the tracer switches to 0.4
+// without needing a restart. A live send that the Agent rejects outright
+// triggers the same switch immediately, without waiting for the next check.
+//
+// Either way, the downgrade is permanent for the life of the process: once
+// the tracer has conclusive evidence 1.0 is unavailable, it never
+// re-upgrades on its own, even if a later check reports 1.0 support again.
+// This is deliberate: in a load-balanced fleet, a capability check and a
+// trace send are independent requests that can land on different backends,
+// so no number of healthy checks proves anything about where the next send
+// goes. Re-upgrading to 1.0 requires restarting the process.
+//
+// A downgrade can cost already-buffered traces: a payload built while 1.0 was
+// still in effect keeps going to /v1.0/traces, since it was already
+// committed to that wire format, and may be rejected there; a payload the
+// Agent rejects outright is dropped rather than re-encoded and redelivered on
+// 0.4. Under concurrent flush traffic this is not limited to a single
+// payload: several payloads can be in flight (or queued waiting for a
+// connection slot) at once, so a real Agent-side rollback can cost up to the
+// tracer's concurrent-connection limit worth of payloads already committed to
+// 1.0 at the moment the rejection is discovered, not just the one that
+// discovers it.
+//
+// One exception: on the 1.0 protocol, a trace-agent identifying as version
+// 7.77.x, 7.78.x, or an unreleased 7.79.0 pre-release predating 7.79.0-rc.6,
+// has a defect where its own stats aggregation for that protocol loses the
+// span's language dimension. (The same defect exists in versions 7.73.0
+// through 7.76.x, but those don't advertise /v1.0/traces by default, so the
+// protocol guard above already excludes them in practice.) The tracer
+// detects this from the agent's reported version and enables client-side
+// stats computation regardless of DD_TRACE_STATS_COMPUTATION_ENABLED /
+// WithStatsComputation(false), so that the tracer computes the affected
+// stats itself instead of relying on the agent. This also enables P0 trace
+// dropping, since the two capabilities are not independently controllable
+// (see WithStatsComputation). To opt out, either upgrade the trace-agent to
+// 7.79.0 or later, or set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4. Two cases are
+// explicitly excluded from this override: the Datadog Lambda extension,
+// which already computes trace stats server-side (contrib/aws/datadog-lambda-go
+// starts the tracer with WithStatsComputation(false) on purpose), and CI
+// Visibility, whose transport never sends stats through this path regardless.
+// Other trace-agent implementations that do not follow this versioning
+// scheme (for example, an OpenTelemetry Collector exporter acting as a
+// Datadog trace-agent) are never affected by this override.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

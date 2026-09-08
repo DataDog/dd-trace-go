@@ -148,7 +148,8 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
-	proto := t.config.internalConfig.RequestedTraceProtocol()
+	af := t.config.agent.load()
+	proto := t.config.effectiveTraceProtocol()
 
 	// Determine the agent URL to use in the logs.
 	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
@@ -184,7 +185,7 @@ func logStartup(t *tracer) {
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  strconv.FormatBool(t.config.internalConfig.LogToStdout()),
-		AgentFeatures:               t.config.agent.load(),
+		AgentFeatures:               af,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         partialFlushEnabled,
