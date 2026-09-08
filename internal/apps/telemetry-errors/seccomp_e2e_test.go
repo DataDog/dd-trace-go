@@ -104,6 +104,15 @@ func TestSeccompMemfdBlocked_ReportsWellFormedErrors(t *testing.T) {
 	run := exec.Command(dockerPath, "run", "--rm",
 		"--name", containerName,
 		"--security-opt", "seccomp="+seccompPath,
+		// Run as the host's UID:GID rather than the image default (root).
+		// On native Linux Docker (unlike Docker Desktop's macOS VM, which
+		// transparently remaps bind-mount ownership) the container's root user
+		// is the host's root, so files it writes into the bind-mounted outDir
+		// come back owned by root and t.TempDir()'s cleanup — running as the
+		// unprivileged test user — fails with "permission denied" on RemoveAll.
+		// memfd_create/seccomp need no elevated privileges, so this changes
+		// nothing about what's under test.
+		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 		"-e", "DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES=true",
 		"-e", "TEST_UNDECLARED_OUTPUTS_DIR=/out",
 		"-e", "DD_TELEMETRY_HEARTBEAT_INTERVAL=2",
