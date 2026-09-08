@@ -35,6 +35,20 @@ func (provider evaluatorTestProvider) ObjectEvaluation(_ context.Context, _ stri
 	return of.InterfaceResolutionDetail{Value: map[string]any{"value": "ok"}}
 }
 
+type waitingEvaluatorTestProvider struct {
+	evaluatorTestProvider
+	started chan<- struct{}
+	ready   <-chan struct{}
+}
+
+func (provider waitingEvaluatorTestProvider) Init(of.EvaluationContext) error {
+	close(provider.started)
+	<-provider.ready
+	return nil
+}
+
+func (waitingEvaluatorTestProvider) Shutdown() {}
+
 func TestRegisteredEvaluatorUsesDefaultDatadogProvider(t *testing.T) {
 	of.Shutdown()
 	provider := evaluatorTestProvider{evaluations: make(chan of.FlattenedContext, 1)}
@@ -54,6 +68,41 @@ func TestRegisteredEvaluatorUsesDefaultDatadogProvider(t *testing.T) {
 	evaluationContext := <-provider.evaluations
 	if evaluationContext[of.TargetingKey] != "alice" || evaluationContext["tier"] != "gold" {
 		t.Fatalf("evaluation context=%#v", evaluationContext)
+	}
+}
+
+func TestRegisteredEvaluatorWaitsForProvider(t *testing.T) {
+	of.Shutdown()
+	started := make(chan struct{})
+	ready := make(chan struct{})
+	provider := waitingEvaluatorTestProvider{
+		evaluatorTestProvider: evaluatorTestProvider{evaluations: make(chan of.FlattenedContext, 1)},
+		started:               started,
+		ready:                 ready,
+	}
+	if err := of.SetProvider(provider); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { of.Shutdown() })
+	<-started
+
+	evaluate, err := internalffe.NewEvaluator("test-domain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := evaluate(canceled, "flag", "alice", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("error=%v, want context canceled", err)
+	}
+	select {
+	case <-provider.evaluations:
+		t.Fatal("flag evaluated before provider was ready")
+	default:
+	}
+	close(ready)
+	if _, err := evaluate(context.Background(), "flag", "alice", nil); err != nil {
+		t.Fatal(err)
 	}
 }
 

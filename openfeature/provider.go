@@ -122,9 +122,38 @@ func newEvaluator(domain string) (internalffe.Evaluator, error) {
 		client = openfeature.NewClient(domain)
 	}
 	return func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
+		if err := waitForProvider(ctx, client); err != nil {
+			return nil, err
+		}
 		details, err := client.ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
 		return details.Value, err
 	}, nil
+}
+
+func waitForProvider(ctx context.Context, client *openfeature.Client) error {
+	if client.State() != openfeature.NotReadyState {
+		return nil
+	}
+	stateChanged := make(chan struct{}, 1)
+	notify := func(openfeature.EventDetails) {
+		select {
+		case stateChanged <- struct{}{}:
+		default:
+		}
+	}
+	client.AddHandler(openfeature.ProviderReady, &notify)
+	client.AddHandler(openfeature.ProviderError, &notify)
+	defer client.RemoveHandler(openfeature.ProviderReady, &notify)
+	defer client.RemoveHandler(openfeature.ProviderError, &notify)
+	if client.State() != openfeature.NotReadyState {
+		return nil
+	}
+	select {
+	case <-stateChanged:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {

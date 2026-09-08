@@ -384,6 +384,22 @@ func TestPromptProviderMissesFallThroughToResolve(t *testing.T) {
 	}
 }
 
+func TestPromptProviderWaitUsesPromptTimeout(t *testing.T) {
+	manager := newPromptManager(promptManagerConfig{
+		env: "staging", timeout: time.Millisecond,
+		evaluate: func(ctx context.Context, _ string, _ string, _ map[string]any) (any, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	})
+	prompt, err := manager.get(context.Background(), "p", getPromptConfig{
+		fallback: &PromptFallback{Template: PromptTemplate{Text: "fallback"}},
+	})
+	if err != nil || prompt.Source() != PromptSourceFallback {
+		t.Fatalf("prompt=%#v err=%v", prompt, err)
+	}
+}
+
 func TestPromptFallbackAuthAndErrors(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -180,7 +180,15 @@ func (manager *promptManager) get(ctx context.Context, promptID string, options 
 		}
 	}
 	if options.version == nil && manager.env != "" && manager.evaluate != nil {
-		value, err := manager.evaluate(ctx, "__llmobs__.prompt."+promptID, options.targetingKey, attributes)
+		evaluationCtx := ctx
+		var cancel context.CancelFunc
+		if manager.timeout > 0 {
+			evaluationCtx, cancel = context.WithTimeout(ctx, manager.timeout)
+		}
+		value, err := manager.evaluate(evaluationCtx, "__llmobs__.prompt."+promptID, options.targetingKey, attributes)
+		if cancel != nil {
+			cancel()
+		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
