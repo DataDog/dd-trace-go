@@ -166,6 +166,28 @@ bash --version                             # expect 5.x
 
 `make ci/contrib` does not need bash 4. No script on the contrib path uses a bash 4 feature.
 
+To check the job graph, matrix expressions, or step logic before pushing, use [`act`](https://github.com/nektos/act) instead:
+
+```shell
+# Install act
+brew install act
+
+# Runs the generate.yml job: no services or credentials needed, start here
+make act/generate
+
+# static-checks.yml's jobs, minus the reviewdog-wrapped `lint` job (run `make lint/go` for that)
+make act/static-checks
+
+# unit-integration-tests.yml
+make act/core-tests
+make act/contrib-tests CHUNK=3   # find the chunk with `make ci/contrib/chunks`
+
+# List every job act can see
+make act/list
+```
+
+**By default, none of these test your uncommitted code.** Every checkout step in this repo's workflows pins an explicit `ref:`. That pin makes act's checkout fetch the last commit you *pushed* over the network, and it ignores your working tree. Use these targets to validate a workflow-YAML edit's mechanics. Use `make lint`, `make test`, or `make ci/run` to validate a code change instead. See [.github/act/README.md](./.github/act/README.md) for which workflows are runnable at all, and for the manual "push a scratch branch" recipe for the rare case where you need the real job graph exercised against your actual code.
+
 #### On Apple Silicon
 
 On arm64 macOS, the `ci/*` targets set `DOCKER_DEFAULT_PLATFORM=linux/amd64`. `scripts/test.sh` sets

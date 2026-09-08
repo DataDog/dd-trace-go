@@ -60,6 +60,11 @@ Targets:
   ci/core              Run CI's test-core entrypoint alone (services must be up)
   ci/contrib/chunks    List the contrib chunks CI splits test-contrib into
   ci/contrib           Run one test-contrib chunk alone (services must be up)
+  act/list             List jobs in the workflows act can run (see .github/act/README.md)
+  act/generate         Run generate.yml under act (tests the last pushed commit, see .github/act/README.md)
+  act/static-checks    Run static-checks.yml's jobs under act (excludes reviewdog-wrapped `lint`, use `make lint` for that)
+  act/core-tests       Run unit-integration-tests.yml's test-core job under act
+  act/contrib-tests    Run one unit-integration-tests.yml test-contrib-matrix chunk under act (CHUNK=n, see `make ci/contrib/chunks`)
   fix-modules          Fix module dependencies and consistency
   fix/go               Apply go fix modernizations to Go code
   fix/go/diff          Preview go fix modernizations (dry-run)
