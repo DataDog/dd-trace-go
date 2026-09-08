@@ -9,10 +9,8 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc/metadata"
@@ -151,10 +149,6 @@ const (
 	datadogIntegrationHeader      = "x-datadog-istio-integration"
 )
 
-var isK8s = sync.OnceValue(func() bool {
-	return os.Getenv("KUBERNETES") != ""
-})
-
 func (i Integration) String() string {
 	switch i {
 	case GCPServiceExtensionIntegration:
@@ -177,6 +171,35 @@ func (m messageRequestHeaders) BodyParsingSizeLimit(ctx context.Context) int {
 	default:
 		return proxy.DefaultBodyParsingSizeLimit
 	}
+}
+
+// AckBodyMessagesUntilEndOfStream reports whether the gateway requires an acknowledgement
+// for every response body message. Only Google Cloud load balancers do; self-managed Envoy,
+// Istio and Envoy Gateway accept a clean close as soon as the analysis is done.
+//
+// The gateway is only identifiable per request, because the published callout container
+// reports GCPServiceExtensionIntegration for every TCP deployment. Draining therefore
+// stops only on positive identification — an explicitly configured integration or the
+// documented header — and never on inference. Getting this wrong reintroduces the callout
+// timeouts the acknowledgement exists to prevent, whereas acknowledging a gateway that did
+// not need it only costs a round trip per chunk.
+func (m messageRequestHeaders) AckBodyMessagesUntilEndOfStream(ctx context.Context) bool {
+	// Explicitly configured as something other than Google Cloud.
+	if m.integration != GCPServiceExtensionIntegration {
+		return false
+	}
+
+	// Explicitly identified by the header the documentation instructs customers to inject.
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if values := md.Get(datadogEnvoyIntegrationHeader); len(values) > 0 && values[0] == "1" {
+			return false
+		}
+		if values := md.Get(datadogIntegrationHeader); len(values) > 0 && values[0] == "1" {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (m messageRequestHeaders) SpanOptions(ctx context.Context) []tracer.StartSpanOption {
@@ -202,17 +225,14 @@ func (m messageRequestHeaders) component(ctx context.Context) string {
 		if len(valuesIstio) > 0 && valuesIstio[0] == "1" {
 			return componentNameIstio
 		}
-
-		// We don't have the ability to add custom headers in envoy gateway EnvoyExtensionPolicy CRD.
-		// So we fall back to detecting if we are running in k8s or not.
-		// If we are running in k8s, we assume it is Envoy Gateway, otherwise GCP Service Extension.
-		if isK8s() {
-			return componentNameEnvoyGateway
-		}
 	}
 
+	// Envoy Gateway cannot inject a header from its EnvoyExtensionPolicy CRD, so it has to
+	// be named explicitly through the integration above. Presence in Kubernetes used to be
+	// taken as proof of Envoy Gateway, which cannot work: a Google Cloud Service Extensions
+	// callout deployed on GKE is equally in Kubernetes, so the two are indistinguishable by
+	// that signal.
 	return componentNameGCPServiceExtension
-
 }
 
 type responseHeadersEnvoy struct {

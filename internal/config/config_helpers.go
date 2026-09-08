@@ -111,6 +111,31 @@ func validateAgentTimeout(timeout int) bool {
 	return true
 }
 
+// validateFeatureFlagsAgentlessPollInterval rejects an out-of-range poll interval so the
+// caller falls back to the default rather than clamping it (clamping would silently move a
+// misconfigured billed-polling interval to a valid one instead of surfacing the mistake).
+func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
+	if seconds <= 0 || seconds > 3600 {
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS: value %d out of range (0, 3600]", seconds)
+		return false
+	}
+	return true
+}
+
+// validateFeatureFlagsAgentlessRequestTimeout rejects a non-positive value and caps the upper
+// bound at 300s: without an upper bound, a large-but-plausible-looking value (e.g. 9223372037)
+// overflows int64 once converted to a time.Duration in nanoseconds and multiplied by
+// time.Second, wrapping to a negative duration. http.Client treats a non-positive Timeout as
+// "no timeout", so an overflowed value would silently disable request timeout enforcement
+// entirely instead of surfacing the misconfiguration.
+func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
+	if seconds <= 0 || seconds > 300 {
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: value %d out of range (0, 300]", seconds)
+		return false
+	}
+	return true
+}
+
 func validateSendRetries(retries int) bool {
 	if retries < 0 {
 		log.Warn("ignoring DD_TRACE_SEND_RETRIES: negative value %d", retries)

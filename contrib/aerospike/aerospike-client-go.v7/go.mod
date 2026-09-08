@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1

@@ -1,14 +1,6 @@
 # shellcheck shell=bash
 # go-retry.sh — retry a command when its output shows Go toolchain/cache corruption.
 #
-# go1.26.5 (currently `stable`) intermittently corrupts its own heap mid-build (fatal errors,
-# faults, SIGSEGVs, frontend ICEs — golang/go#77168) and a crash can leave partially written
-# cache/module archives that later surface as zip/archive checksum errors, e.g. a
-# "zip: checksum error" during `go install`/`go get`/`go build`. These are toolchain flakes, not
-# real breaks, so retry a few times and let a fresh process dodge the probabilistic crash. Fail
-# fast on anything else — e.g. govulncheck exit 3 (vulnerabilities found) never matches the
-# signature and so is never retried. Shared by smoke-tests.yml and govulncheck*.{yml,sh}.
-#
 # The build cache is always rebuildable offline, so it is dropped on every retry to discard
 # partial artifacts a crashed compiler left behind. The module cache is wiped more selectively,
 # because refetching it needs the network: a crash (SIGSEGV/ICE/fatal fault) can silently corrupt

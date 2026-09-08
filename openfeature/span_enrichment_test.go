@@ -38,15 +38,15 @@ func TestBuildEvaluation(t *testing.T) {
 					ResolutionDetail: of.ResolutionDetail{
 						Variant: "v1",
 						FlagMetadata: of.FlagMetadata{
-							metadataSerialIDKey: uint32(42),
-							metadataDoLogKey:    true,
+							metadataSplitSerialIDKey: uint32(42),
+							metadataDoLogKey:         true,
 						},
 					},
 				},
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "experiment-flag",
-				SerialID: uint32Ptr(42),
+				SerialID: new(uint32(42)),
 				Subject:  "user-123",
 			},
 		},
@@ -60,15 +60,15 @@ func TestBuildEvaluation(t *testing.T) {
 					ResolutionDetail: of.ResolutionDetail{
 						Variant: "v2",
 						FlagMetadata: of.FlagMetadata{
-							metadataSerialIDKey: uint32(101),
-							metadataDoLogKey:    false,
+							metadataSplitSerialIDKey: uint32(101),
+							metadataDoLogKey:         false,
 						},
 					},
 				},
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "no-log-flag",
-				SerialID: uint32Ptr(101),
+				SerialID: new(uint32(101)),
 			},
 		},
 		{
@@ -81,14 +81,14 @@ func TestBuildEvaluation(t *testing.T) {
 					ResolutionDetail: of.ResolutionDetail{
 						Variant: "v3",
 						FlagMetadata: of.FlagMetadata{
-							metadataSerialIDKey: uint32(7),
+							metadataSplitSerialIDKey: uint32(7),
 						},
 					},
 				},
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "missing-do-log-flag",
-				SerialID: uint32Ptr(7),
+				SerialID: new(uint32(7)),
 			},
 		},
 		{
@@ -101,8 +101,8 @@ func TestBuildEvaluation(t *testing.T) {
 					ResolutionDetail: of.ResolutionDetail{
 						Variant: "v1",
 						FlagMetadata: of.FlagMetadata{
-							metadataSerialIDKey: "42",
-							metadataDoLogKey:    true,
+							metadataSplitSerialIDKey: "42",
+							metadataDoLogKey:         true,
 						},
 					},
 				},
@@ -369,5 +369,3 @@ func TestSpanEnrichment_AfterRootFinished(t *testing.T) {
 		assert.NotContains(t, k, "ffe_")
 	}
 }
-
-func uint32Ptr(v uint32) *uint32 { return &v }

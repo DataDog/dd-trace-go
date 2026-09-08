@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/_tools
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/campoy/embedmd v1.0.0
@@ -13,6 +13,7 @@ require (
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.5.1
 	google.golang.org/protobuf v1.36.10
 	gotest.tools/gotestsum v1.12.3
+	gvisor.dev/gvisor v0.0.0-20260107153705-120d5fcd96de
 	mvdan.cc/sh/v3 v3.12.0
 )
 

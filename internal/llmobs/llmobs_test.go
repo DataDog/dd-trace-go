@@ -7,6 +7,7 @@ package llmobs_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -407,7 +408,266 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, customStartTime.UnixNano(), l0.StartNS)
 		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), l0.Duration)
 	})
+	t.Run("distributed-context-propagation-agent-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
 
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		var agentSpanID string
+		genSpans := func() {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client_agent", llmobs.StartSpanConfig{})
+			agentSpanID = agent.SpanID()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+			agent.Finish(llmobs.FinishSpanConfig{})
+		}
+		genSpans()
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "server-side tool must carry agent_attribution from upstream agent")
+		assert.Equal(t, "client_agent", attr["pagent_name"])
+		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
+	})
+	t.Run("distributed-context-propagation-agent-attribution-through-non-agent", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		var agentSpanID string
+		genSpans := func() {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client_agent", llmobs.StartSpanConfig{})
+			agentSpanID = agent.SpanID()
+			// Workflow between the agent and the outbound request: attribution must still forward.
+			_, ctx = ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "client_workflow", llmobs.StartSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+			agent.Finish(llmobs.FinishSpanConfig{})
+		}
+		genSpans()
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "server-side tool must carry agent_attribution forwarded through an intermediate non-agent span")
+		assert.Equal(t, "client_agent", attr["pagent_name"])
+		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
+	})
+	t.Run("distributed-context-propagation-no-agent-omits-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			// Only a workflow upstream — no agent anywhere.
+			_, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "client_workflow", llmobs.StartSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		_, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"]
+		assert.False(t, ok, "server-side tool with no agent anywhere must omit agent_attribution")
+	})
+	t.Run("distributed-context-propagation-clears-stale-agent-attribution", func(t *testing.T) {
+		// Propagating tags are trace-scoped. An agent sibling that publishes pagent tags must not
+		// leave them behind for a later non-agent sibling to carry to downstream services.
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			rootSpan, ctxRoot := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "root", llmobs.StartSpanConfig{})
+			defer rootSpan.Finish(llmobs.FinishSpanConfig{})
+
+			// Agent sibling publishes pagent tags via an APM child span.
+			agentSibling, ctxAgent := ll.StartSpan(ctxRoot, llmobs.SpanKindAgent, "agent_sibling", llmobs.StartSpanConfig{})
+			apmChild, _ := tracer.StartSpanFromContext(ctxAgent, "apm.child")
+			apmChild.Finish()
+			agentSibling.Finish(llmobs.FinishSpanConfig{})
+
+			// Non-agent sibling makes the outbound request. The pagent keys must be cleared
+			// so the downstream tool does not inherit stale attribution from the agent sibling.
+			_, ctxWF := ll.StartSpan(ctxRoot, llmobs.SpanKindWorkflow, "wf_sibling", llmobs.StartSpanConfig{})
+			req, err := http.NewRequestWithContext(ctxWF, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		_, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"]
+		assert.False(t, ok, "server-side tool under a non-agent sibling must not inherit stale agent attribution")
+	})
+	t.Run("distributed-context-propagation-agent-attribution-wire-keys", func(t *testing.T) {
+		// Cross-language compatibility requires the exact tag keys _dd.p.llmobs_pagent_span_id and
+		// _dd.p.llmobs_pagent_name in the x-datadog-tags header.
+		_, _, ll := testTracer(t)
+
+		var capturedTags string
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			capturedTags = req.Header.Get("X-Datadog-Tags")
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client_agent", llmobs.StartSpanConfig{})
+			defer agent.Finish(llmobs.FinishSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		assert.Contains(t, capturedTags, "_dd.p.llmobs_pagent_span_id=")
+		assert.Contains(t, capturedTags, "_dd.p.llmobs_pagent_name=")
+	})
+	t.Run("distributed-context-propagation-id-only-when-name-unsafe", func(t *testing.T) {
+		// When the agent name contains wire-unsafe bytes (e.g. comma), only the span ID is
+		// propagated. The downstream span reports id-only attribution (pagent_name == nil).
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		var agentSpanID string
+		genSpans := func() {
+			// Comma is the tagset delimiter and rejected by AgentNameWireSafe.
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "bad,name", llmobs.StartSpanConfig{})
+			agentSpanID = agent.SpanID()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+			agent.Finish(llmobs.FinishSpanConfig{})
+		}
+		genSpans()
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "server-side tool must have agent_attribution even with an unsafe name (id-only)")
+		assert.Nil(t, attr["pagent_name"], "unsafe name must not propagate; pagent_name must be nil (id-only)")
+		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
+	})
+	t.Run("distributed-context-propagation-agent-name-dropped-when-over-budget", func(t *testing.T) {
+		// When the agent name is so long that appending it would push the x-datadog-tags
+		// header past MaxTagsHeaderLen, the name is silently dropped (id-only path) while
+		// the span ID is always propagated unconditionally.
+		_, _, ll := testTracer(t)
+
+		var capturedTags string
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			capturedTags = req.Header.Get("X-Datadog-Tags")
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			// 400 printable ASCII chars: wire-safe per AgentNameWireSafe but too large
+			// to fit alongside the other LLMObs propagating tags within the 512-byte budget.
+			longName := strings.Repeat("a", 400)
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, longName, llmobs.StartSpanConfig{})
+			defer agent.Finish(llmobs.FinishSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		assert.Contains(t, capturedTags, "_dd.p.llmobs_pagent_span_id=", "span ID must always be propagated")
+		assert.NotContains(t, capturedTags, "_dd.p.llmobs_pagent_name=", "oversized name must be dropped to stay within budget")
+	})
+	t.Run("distributed-context-propagation-agent-name-equals-sign-roundtrips", func(t *testing.T) {
+		// "=" is accepted by AgentNameWireSafe and preserved end-to-end through the
+		// x-datadog-tags header: parsePropagatableTraceTags reads everything after the
+		// first "=" as the value, so an "=" inside the value is not misread as a separator.
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServer(t, h)
+
+		var agentSpanID string
+		genSpans := func() {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "agent=v2", llmobs.StartSpanConfig{})
+			agentSpanID = agent.SpanID()
+			defer agent.Finish(llmobs.FinishSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "server-side tool must carry agent_attribution")
+		assert.Equal(t, "agent=v2", attr["pagent_name"], "= in agent name must be preserved through propagation")
+		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
+	})
+
+}
+
+func TestCollectorSpanFieldCompatibility(t *testing.T) {
+	var duration int64 = 123
+	var status string = "ok"
+	span := llmobstest.LLMObsSpan{Duration: duration, Status: status}
+	assert.Equal(t, duration, span.Duration)
+	assert.Equal(t, status, span.Status)
 }
 
 func TestToolVersionPropagation(t *testing.T) {
@@ -1231,13 +1491,13 @@ func TestSpanTruncation(t *testing.T) {
 		// Check that input and output were truncated
 		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
 			if inputValue, exists := inputMap["value"]; exists {
-				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputValue)
+				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", inputValue)
 			}
 		}
 
 		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
 			if outputValue, exists := outputMap["value"]; exists {
-				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputValue)
+				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", outputValue)
 			}
 		}
 
@@ -1274,12 +1534,12 @@ func TestSpanTruncation(t *testing.T) {
 
 		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
 		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", inputMap["value"])
 			assert.NotContains(t, inputMap, "messages", "Original messages should be replaced")
 		}
 
 		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", outputMap["value"])
 			assert.NotContains(t, outputMap, "messages", "Original messages should be replaced")
 		}
 
@@ -1308,12 +1568,12 @@ func TestSpanTruncation(t *testing.T) {
 
 		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
 		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", inputMap["value"])
 			assert.NotContains(t, inputMap, "documents", "Original documents should be replaced")
 		}
 
 		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", outputMap["value"])
 		}
 
 		assert.Contains(t, l0.CollectionErrors, "dropped_io")
@@ -1341,11 +1601,11 @@ func TestSpanTruncation(t *testing.T) {
 
 		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
 		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", inputMap["value"])
 		}
 
 		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
-			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 5MB size limit.]", outputMap["value"])
 			assert.NotContains(t, outputMap, "documents", "Original documents should be replaced")
 		}
 
@@ -1659,7 +1919,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:           "test-span-id",
 				TraceID:          "test-trace-id",
 				Label:            "accuracy",
-				CategoricalValue: ptrFromVal("correct"),
+				CategoricalValue: new("correct"),
 				MLApp:            "test-app",
 				TimestampMS:      1234567890,
 				Tags:             []string{"env:test"},
@@ -1674,7 +1934,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:       "categorical",
 					Label:            "accuracy",
-					CategoricalValue: ptrFromVal("correct"),
+					CategoricalValue: new("correct"),
 					MLApp:            "test-app",
 					TimestampMS:      1234567890,
 					Tags:             []string{"env:test", "ddtrace.version:" + version.Tag},
@@ -1684,12 +1944,12 @@ func TestSubmitEvaluation(t *testing.T) {
 		{
 			name: "span-join-score",
 			config: llmobs.EvaluationConfig{
-				SpanID:      "test-span-id",
-				TraceID:     "test-trace-id",
-				Label:       "rating",
-				ScoreValue:  ptrFromVal(0.85),
-				MLApp:       "test-app",
-				TimestampMS: 1234567890,
+				SpanID:     "test-span-id",
+				TraceID:    "test-trace-id",
+				Label:      "rating",
+				ScoreValue: new(0.85),
+				MLApp:      "test-app",
+				Timestamp:  time.UnixMilli(1234567890),
 			},
 			wantMetric: func() llmobstransport.LLMObsMetric {
 				return llmobstransport.LLMObsMetric{
@@ -1701,7 +1961,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:  "score",
 					Label:       "rating",
-					ScoreValue:  ptrFromVal(0.85),
+					ScoreValue:  new(0.85),
 					MLApp:       "test-app",
 					TimestampMS: 1234567890,
 					Tags:        []string{"ddtrace.version:" + version.Tag},
@@ -1714,7 +1974,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:       "test-span-id",
 				TraceID:      "test-trace-id",
 				Label:        "is_valid",
-				BooleanValue: ptrFromVal(true),
+				BooleanValue: new(true),
 				MLApp:        "test-app",
 				TimestampMS:  1234567890,
 			},
@@ -1728,7 +1988,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:   "boolean",
 					Label:        "is_valid",
-					BooleanValue: ptrFromVal(true),
+					BooleanValue: new(true),
 					MLApp:        "test-app",
 					TimestampMS:  1234567890,
 					Tags:         []string{"ddtrace.version:" + version.Tag},
@@ -1741,7 +2001,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				TagKey:           "session_id",
 				TagValue:         "session-123",
 				Label:            "quality",
-				CategoricalValue: ptrFromVal("high"),
+				CategoricalValue: new("high"),
 				MLApp:            "test-app",
 				TimestampMS:      1234567890,
 			},
@@ -1755,7 +2015,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:       "categorical",
 					Label:            "quality",
-					CategoricalValue: ptrFromVal("high"),
+					CategoricalValue: new("high"),
 					MLApp:            "test-app",
 					TimestampMS:      1234567890,
 					Tags:             []string{"ddtrace.version:" + version.Tag},
@@ -1766,7 +2026,7 @@ func TestSubmitEvaluation(t *testing.T) {
 			name: "missing-join-info",
 			config: llmobs.EvaluationConfig{
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
+				CategoricalValue: new("value"),
 			},
 			wantError: "must provide either span/trace IDs or tag key/value for joining",
 		},
@@ -1778,9 +2038,49 @@ func TestSubmitEvaluation(t *testing.T) {
 				TagKey:           "session_id",
 				TagValue:         "session-123",
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
+				CategoricalValue: new("value"),
 			},
 			wantError: "provide either span/trace IDs or tag key/value, not both",
+		},
+		{
+			name: "partial-span-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				Label:            "test",
+				CategoricalValue: new("value"),
+			},
+			wantError: "both span and trace IDs are required for span-based joining",
+		},
+		{
+			name: "partial-tag-join",
+			config: llmobs.EvaluationConfig{
+				TagKey:           "session_id",
+				Label:            "test",
+				CategoricalValue: new("value"),
+			},
+			wantError: "both tag key and value are required for tag-based joining",
+		},
+		{
+			name: "partial-span-with-full-tag-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TagKey:           "session_id",
+				TagValue:         "session-123",
+				Label:            "test",
+				CategoricalValue: new("value"),
+			},
+			wantError: "both span and trace IDs are required for span-based joining",
+		},
+		{
+			name: "full-span-with-partial-tag-join",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TraceID:          "test-trace-id",
+				TagKey:           "session_id",
+				Label:            "test",
+				CategoricalValue: new("value"),
+			},
+			wantError: "both tag key and value are required for tag-based joining",
 		},
 		{
 			name: "no-value-provided",
@@ -1797,8 +2097,8 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:           "test-span-id",
 				TraceID:          "test-trace-id",
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
-				ScoreValue:       ptrFromVal(0.5),
+				CategoricalValue: new("value"),
+				ScoreValue:       new(0.5),
 			},
 			wantError: "exactly one metric value (categorical, score, or boolean) must be provided",
 		},
@@ -1808,7 +2108,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:           "test-span-id",
 				TraceID:          "test-trace-id",
 				Label:            "accuracy",
-				CategoricalValue: ptrFromVal("correct"),
+				CategoricalValue: new("correct"),
 				MLApp:            "test-app",
 				TimestampMS:      1234567890,
 				Tags:             []string{"env:test", "team:ml"},
@@ -1823,7 +2123,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:       "categorical",
 					Label:            "accuracy",
-					CategoricalValue: ptrFromVal("correct"),
+					CategoricalValue: new("correct"),
 					MLApp:            "test-app",
 					TimestampMS:      1234567890,
 					Tags:             []string{"env:test", "team:ml", "ddtrace.version:" + version.Tag},
@@ -1836,7 +2136,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:      "test-span-id",
 				TraceID:     "test-trace-id",
 				Label:       "rating",
-				ScoreValue:  ptrFromVal(0.95),
+				ScoreValue:  new(0.95),
 				MLApp:       "test-app",
 				TimestampMS: 1234567890,
 				Tags:        []string{"env:prod", "ddtrace.version:custom-version"},
@@ -1851,7 +2151,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:  "score",
 					Label:       "rating",
-					ScoreValue:  ptrFromVal(0.95),
+					ScoreValue:  new(0.95),
 					MLApp:       "test-app",
 					TimestampMS: 1234567890,
 					Tags:        []string{"env:prod", "ddtrace.version:" + version.Tag},
@@ -1864,7 +2164,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:       "test-span-id",
 				TraceID:      "test-trace-id",
 				Label:        "correctness",
-				BooleanValue: ptrFromVal(true),
+				BooleanValue: new(true),
 				MLApp:        "test-app",
 				TimestampMS:  1234567890,
 				Tags:         nil,
@@ -1879,7 +2179,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:   "boolean",
 					Label:        "correctness",
-					BooleanValue: ptrFromVal(true),
+					BooleanValue: new(true),
 					MLApp:        "test-app",
 					TimestampMS:  1234567890,
 					Tags:         []string{"ddtrace.version:" + version.Tag},
@@ -1905,6 +2205,25 @@ func TestSubmitEvaluation(t *testing.T) {
 			assert.Equal(t, tc.wantMetric(), *got)
 		})
 	}
+}
+
+func TestSubmitEvaluationDefaultsTimestamp(t *testing.T) {
+	_, coll, ll := testTracer(t)
+	before := time.Now().UnixMilli()
+
+	err := ll.SubmitEvaluation(llmobs.EvaluationConfig{
+		SpanID:     "test-span-id",
+		TraceID:    "test-trace-id",
+		Label:      "timestamp-default",
+		ScoreValue: new(1.0),
+	})
+	require.NoError(t, err)
+	after := time.Now().UnixMilli()
+
+	tracer.Flush()
+	metric := coll.RequireMetric(t, "timestamp-default")
+	assert.GreaterOrEqual(t, metric.TimestampMS, before)
+	assert.LessOrEqual(t, metric.TimestampMS, after)
 }
 
 func TestLLMObsLifecycle(t *testing.T) {
@@ -2366,6 +2685,143 @@ func traceHandler(h http.Handler) http.Handler {
 	})
 }
 
+func TestAgentAttributionSerialization(t *testing.T) {
+	t.Run("tool-under-agent-has-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		ctx := context.Background()
+
+		agent, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "my_agent", llmobs.StartSpanConfig{})
+		tool, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "my_tool", llmobs.StartSpanConfig{})
+		tool.Finish(llmobs.FinishSpanConfig{})
+		agent.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		toolSpan := coll.RequireSpan(t, "my_tool")
+		attr, ok := toolSpan.Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "agent_attribution must be present on tool span")
+		assert.Equal(t, "my_agent", attr["pagent_name"])
+		assert.Equal(t, agent.SpanID(), attr["pagent_span_id"])
+	})
+
+	t.Run("top-level-agent-omits-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		ctx := context.Background()
+
+		agent, _ := ll.StartSpan(ctx, llmobs.SpanKindAgent, "top_agent", llmobs.StartSpanConfig{})
+		agent.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		agentSpan := coll.RequireSpan(t, "top_agent")
+		_, ok := agentSpan.Meta["agent_attribution"]
+		assert.False(t, ok, "top-level agent must omit agent_attribution")
+	})
+
+	t.Run("no-agent-anywhere-omits-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		ctx := context.Background()
+
+		wf, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "wf", llmobs.StartSpanConfig{})
+		tool, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "tool", llmobs.StartSpanConfig{})
+		tool.Finish(llmobs.FinishSpanConfig{})
+		wf.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		_, wfOK := coll.RequireSpan(t, "wf").Meta["agent_attribution"]
+		_, toolOK := coll.RequireSpan(t, "tool").Meta["agent_attribution"]
+		assert.False(t, wfOK, "workflow with no agent ancestor must omit agent_attribution")
+		assert.False(t, toolOK, "tool with no agent ancestor must omit agent_attribution")
+	})
+
+	t.Run("id-only-emits-null-name", func(t *testing.T) {
+		// Simulate an id-only propagated parent: name empty, id set.
+		_, coll, ll := testTracer(t)
+		prop := &llmobs.PropagatedLLMSpan{
+			MLApp:             mlApp,
+			ParentAgentSpanID: "9999",
+			ParentAgentName:   "", // id-only
+		}
+		ctx := llmobs.ContextWithPropagatedLLMSpan(context.Background(), prop)
+
+		child, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "child_tool", llmobs.StartSpanConfig{})
+		child.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "child_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "agent_attribution must be present when id-only")
+		assert.Equal(t, "9999", attr["pagent_span_id"])
+		v, present := attr["pagent_name"]
+		require.True(t, present, "pagent_name key must be present (explicit null), not absent")
+		assert.Nil(t, v, "pagent_name must be JSON null when name is empty")
+	})
+
+	t.Run("agent-workflow-tool-indirect-nesting", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		ctx := context.Background()
+
+		agent, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "my_agent", llmobs.StartSpanConfig{})
+		wf, wfCtx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "wf", llmobs.StartSpanConfig{})
+		tool, _ := ll.StartSpan(wfCtx, llmobs.SpanKindTool, "tool", llmobs.StartSpanConfig{})
+		tool.Finish(llmobs.FinishSpanConfig{})
+		wf.Finish(llmobs.FinishSpanConfig{})
+		agent.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		wfAttr, ok := coll.RequireSpan(t, "wf").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "workflow under agent must have agent_attribution")
+		assert.Equal(t, "my_agent", wfAttr["pagent_name"])
+		assert.Equal(t, agent.SpanID(), wfAttr["pagent_span_id"])
+
+		toolAttr, ok := coll.RequireSpan(t, "tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "tool under agent (via workflow) must have agent_attribution")
+		assert.Equal(t, "my_agent", toolAttr["pagent_name"])
+		assert.Equal(t, agent.SpanID(), toolAttr["pagent_span_id"])
+	})
+
+	t.Run("sub-agent-under-agent", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		ctx := context.Background()
+
+		outer, outerCtx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "outer_agent", llmobs.StartSpanConfig{})
+		inner, innerCtx := ll.StartSpan(outerCtx, llmobs.SpanKindAgent, "inner_agent", llmobs.StartSpanConfig{})
+		innerTool, _ := ll.StartSpan(innerCtx, llmobs.SpanKindTool, "inner_tool", llmobs.StartSpanConfig{})
+		innerTool.Finish(llmobs.FinishSpanConfig{})
+		inner.Finish(llmobs.FinishSpanConfig{})
+		outer.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		innerAttr, ok := coll.RequireSpan(t, "inner_agent").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "inner agent must attribute to outer agent")
+		assert.Equal(t, "outer_agent", innerAttr["pagent_name"])
+		assert.Equal(t, outer.SpanID(), innerAttr["pagent_span_id"])
+
+		toolAttr, ok := coll.RequireSpan(t, "inner_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "inner tool must attribute to inner agent (nearest)")
+		assert.Equal(t, "inner_agent", toolAttr["pagent_name"])
+		assert.Equal(t, inner.SpanID(), toolAttr["pagent_span_id"])
+	})
+
+	t.Run("propagated-agent-is-inherited-when-no-local-parent", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		prop := &llmobs.PropagatedLLMSpan{
+			MLApp:             mlApp,
+			SpanID:            "remote-parent",
+			TraceID:           "remote-trace",
+			ParentAgentName:   "remote_agent",
+			ParentAgentSpanID: "remote-agent-id",
+		}
+		ctx := llmobs.ContextWithPropagatedLLMSpan(context.Background(), prop)
+
+		tool, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "tool", llmobs.StartSpanConfig{})
+		tool.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "tool with propagated agent ancestor must have agent_attribution")
+		assert.Equal(t, "remote_agent", attr["pagent_name"])
+		assert.Equal(t, "remote-agent-id", attr["pagent_span_id"])
+	})
+}
+
 func traceClient(c *http.Client) *http.Client {
 	c.Transport = &tracedRT{base: c.Transport}
 	return c
@@ -2390,8 +2846,9 @@ func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	return rt.base.RoundTrip(req)
 }
 
+//go:fix inline
 func ptrFromVal[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 func TestDDAttributes(t *testing.T) {
@@ -2536,7 +2993,7 @@ func assertAPMTraceID(t *testing.T, apmSpan agenttest.Span, llmSpan llmobstransp
 // the backend's size limit.
 //
 // The fix (PR #4524) adds size-based flushing: before appending a new event to the buffer, if the
-// cumulative size would exceed sizeLimitEVPEvent (5MB), the current buffer is flushed first.
+// cumulative size would exceed SizeLimitEVPEvent (5MB), the current buffer is flushed first.
 func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
 
@@ -2570,7 +3027,7 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 // to exceed the backend's size limit.
 //
 // The fix adds size-based flushing for eval metrics, mirroring PR #4524 for span events: before
-// appending a new metric to the buffer, if the cumulative size would exceed sizeLimitEVPEvent
+// appending a new metric to the buffer, if the cumulative size would exceed SizeLimitEVPEvent
 // (5MB), the current buffer is flushed first.
 func TestEvalMetricsSizeBasedFlushing(t *testing.T) {
 	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
@@ -2586,7 +3043,7 @@ func TestEvalMetricsSizeBasedFlushing(t *testing.T) {
 			SpanID:           fmt.Sprintf("span-%d", i),
 			TraceID:          fmt.Sprintf("trace-%d", i),
 			Label:            "accuracy",
-			CategoricalValue: ptrFromVal(largeValue),
+			CategoricalValue: new(largeValue),
 			MLApp:            mlApp,
 		})
 		require.NoError(t, err)
@@ -2627,7 +3084,7 @@ func TestEvalMetricsSizeFlushAccountsForEnvelope(t *testing.T) {
 			SpanID:           fmt.Sprintf("span-%d", i),
 			TraceID:          fmt.Sprintf("trace-%d", i),
 			Label:            "accuracy",
-			CategoricalValue: ptrFromVal(value),
+			CategoricalValue: new(value),
 			MLApp:            mlApp,
 		})
 		require.NoError(t, err)
@@ -2729,6 +3186,40 @@ func TestFlushSync(t *testing.T) {
 			t.Fatal("FlushSync hung after Stop")
 		}
 	})
+}
+
+func TestSpanLinkJSONTags(t *testing.T) {
+	b, err := json.Marshal(llmobs.SpanLink{TraceID: 111, SpanID: 222})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"span_id":222}`, string(b))
+
+	b, err = json.Marshal(llmobs.SpanLink{
+		TraceID: 111, TraceIDHigh: 333, SpanID: 222,
+		Attributes: map[string]string{"a": "b"}, Tracestate: "ts", Flags: 1,
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"trace_id_high":333,"span_id":222,"attributes":{"a":"b"},"tracestate":"ts","flags":1}`, string(b))
+}
+
+func TestSpanLinkWire(t *testing.T) {
+	_, coll, ll := testTracer(t)
+
+	span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "llm-links", llmobs.StartSpanConfig{})
+	span.AddLink(llmobs.SpanLink{TraceID: 111, SpanID: 222})
+	span.AddLink(llmobs.SpanLink{TraceID: 333, TraceIDHigh: 444, SpanID: 555, Attributes: map[string]string{"a": "b"}})
+	span.Finish(llmobs.FinishSpanConfig{})
+	tracer.Flush()
+
+	l := coll.RequireSpan(t, "llm-links")
+	require.Len(t, l.SpanLinks, 2)
+
+	b, err := json.Marshal(l.SpanLinks[0])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":"111","span_id":"222"}`, string(b))
+
+	b, err = json.Marshal(l.SpanLinks[1])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":"333","trace_id_high":444,"span_id":"555","attributes":{"a":"b"}}`, string(b))
 }
 
 func TestResolveAgentlessEnabled(t *testing.T) {

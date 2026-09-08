@@ -2343,6 +2343,11 @@ func TestCanComputeStats(t *testing.T) {
 		assert.False(t, c.canComputeStats())
 		assert.False(t, c.canDropP0s())
 	})
+
+	// The full decision matrix for the 7.77/7.78 v1.0 stats workaround lives in
+	// trace_protocol_selection_test.go (TestV1StatsWorkaroundForcesStatsAndP0Dropping),
+	// including the "agent doesn't advertise v1.0" case that would otherwise be
+	// duplicated here.
 }
 
 // Regression: agentless flag set without CI Visibility enabled must not disable the agent.

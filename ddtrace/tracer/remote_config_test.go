@@ -1301,8 +1301,8 @@ func TestMergeHandlesAllLibConfigFields(t *testing.T) {
 	}
 
 	typ := reflect.TypeFor[libConfig]()
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i).Name
+	for field := range typ.Fields() {
+		field := field.Name
 		if !handled[field] {
 			t.Errorf("libConfig field %q is not handled in mergeConfigsByPriority (or at least not acknowledged in this test)", field)
 		}
