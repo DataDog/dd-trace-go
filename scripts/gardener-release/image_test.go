@@ -7,6 +7,7 @@ package gardenerrelease
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -444,6 +445,77 @@ func TestImagePromotionWrongDigestAndReadFailuresFailClosed(t *testing.T) {
 			t.Fatalf("error=%q promotes=%d", ErrorCode(err), api.promotes)
 		}
 	})
+}
+
+func TestDockerBuildxManifestUsesObservedLowercaseOCISelectors(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "buildx-manifest-lowercase.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var generic map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"digest", "annotations", "schemaVersion", "mediaType", "manifests"} {
+		if _, ok := generic[key]; !ok {
+			t.Fatalf("observed manifest missing lowercase key %q", key)
+		}
+	}
+	if _, ok := generic["Digest"]; ok {
+		t.Fatal("fixture unexpectedly contains uppercase Digest")
+	}
+	if _, ok := generic["Annotations"]; ok {
+		t.Fatal("fixture unexpectedly contains uppercase Annotations")
+	}
+	var manifest struct {
+		Digest      string            `json:"digest"`
+		Annotations map[string]string `json:"annotations"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Digest != "sha256:3e4e0ee0e4e463c32c380570a54596a2bf9a7d9a55bebcc01520ddfbf36f8801" {
+		t.Fatalf("digest=%q", manifest.Digest)
+	}
+	wantAnnotations := map[string]string{
+		"org.opencontainers.image.version":            "v2.10.1",
+		"org.opencontainers.image.revision":           "cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c",
+		"io.datadog.dd-trace-go.module-tag-object":    "2222222222222222222222222222222222222222",
+		"io.datadog.dd-trace-go.repository":           RepositoryFullName,
+		"io.datadog.dd-trace-go.workflow-path":        ImageWorkflowPath,
+		"io.datadog.dd-trace-go.workflow-run-id":      "33368426164",
+		"io.datadog.dd-trace-go.workflow-run-attempt": "1",
+	}
+	for key, want := range wantAnnotations {
+		if got := manifest.Annotations[key]; got != want {
+			t.Fatalf("annotation %q=%q, want %q", key, got, want)
+		}
+	}
+
+	workflowRaw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "docker-build-and-push.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(workflowRaw)
+	for _, forbidden := range []string{".Manifest.Digest", "'.Digest", "'.Annotations"} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("workflow retains uppercase Buildx selector %q", forbidden)
+		}
+	}
+	for _, selector := range []string{
+		"'.digest'", "'.digest // empty'",
+		`'.annotations["org.opencontainers.image.version"]'`,
+		`'.annotations["org.opencontainers.image.revision"]'`,
+		`'.annotations["io.datadog.dd-trace-go.module-tag-object"]'`,
+		`'.annotations["io.datadog.dd-trace-go.repository"]'`,
+		`'.annotations["io.datadog.dd-trace-go.workflow-path"]'`,
+		`'.annotations["io.datadog.dd-trace-go.workflow-run-id"]'`,
+		`'.annotations["io.datadog.dd-trace-go.workflow-run-attempt"]'`,
+	} {
+		if !strings.Contains(workflow, selector) {
+			t.Fatalf("workflow missing lowercase Buildx selector %q", selector)
+		}
+	}
 }
 
 func TestDockerWorkflowsSeparateVersionBuildAndGuardedLatest(t *testing.T) {

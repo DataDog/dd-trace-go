@@ -260,7 +260,7 @@ jobs:
             )
           fi
           docker buildx imagetools create "${TAG_FLAGS[@]}" "${ANNOTATIONS[@]}" "${SOURCES[@]}"
-          digest=$(docker buildx imagetools inspect "$IMAGE:$PRIMARY_TAG" --format '{{json .Manifest.Digest}}' | jq -er .)
+          digest=$(docker buildx imagetools inspect "$IMAGE:$PRIMARY_TAG" --format '{{json .Manifest}}' | jq -er '.digest')
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
@@ -392,14 +392,14 @@ jobs:
             '.id == $run_id and .repository.full_name == $repo and .path == ".github/workflows/docker-images-release.yml" and .event == "push" and .head_branch == $branch and .head_sha == $sha and .run_attempt == 1 and .status == "in_progress" and .conclusion == null' /tmp/run-recheck.json
 
           CANDIDATE=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}')
-          test "$(jq -r '.Digest' <<<"$CANDIDATE")" = "$VERSION_DIGEST"
-          test "$(jq -r '.Annotations["org.opencontainers.image.version"]' <<<"$CANDIDATE")" = "$VERSION"
-          test "$(jq -r '.Annotations["org.opencontainers.image.revision"]' <<<"$CANDIDATE")" = "$COMMIT_SHA"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.module-tag-object"]' <<<"$CANDIDATE")" = "$MODULE_TAG_OBJECT"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.repository"]' <<<"$CANDIDATE")" = "$REPOSITORY"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-path"]' <<<"$CANDIDATE")" = .github/workflows/docker-images-release.yml
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-id"]' <<<"$CANDIDATE")" = "$RUN_ID"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-attempt"]' <<<"$CANDIDATE")" = "$RUN_ATTEMPT"
+          test "$(jq -r '.digest' <<<"$CANDIDATE")" = "$VERSION_DIGEST"
+          test "$(jq -r '.annotations["org.opencontainers.image.version"]' <<<"$CANDIDATE")" = "$VERSION"
+          test "$(jq -r '.annotations["org.opencontainers.image.revision"]' <<<"$CANDIDATE")" = "$COMMIT_SHA"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.module-tag-object"]' <<<"$CANDIDATE")" = "$MODULE_TAG_OBJECT"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.repository"]' <<<"$CANDIDATE")" = "$REPOSITORY"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-path"]' <<<"$CANDIDATE")" = .github/workflows/docker-images-release.yml
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-id"]' <<<"$CANDIDATE")" = "$RUN_ID"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-attempt"]' <<<"$CANDIDATE")" = "$RUN_ATTEMPT"
           echo "module_tag_object=$MODULE_TAG_OBJECT" >> "$GITHUB_OUTPUT"
 
       - name: Promote exact digest or reconcile response loss
@@ -424,14 +424,14 @@ jobs:
           test "$HIGHEST" = "$VERSION"
           current=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' 2>/dev/null || true)
           if [ -n "$current" ]; then
-            current_digest=$(jq -r '.Digest // empty' <<<"$current")
-            current_version=$(jq -r '.Annotations["org.opencontainers.image.version"] // empty' <<<"$current")
-            current_commit=$(jq -r '.Annotations["org.opencontainers.image.revision"] // empty' <<<"$current")
-            current_tag_object=$(jq -r '.Annotations["io.datadog.dd-trace-go.module-tag-object"] // empty' <<<"$current")
-            current_repository=$(jq -r '.Annotations["io.datadog.dd-trace-go.repository"] // empty' <<<"$current")
-            current_workflow=$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-path"] // empty' <<<"$current")
-            current_run_id=$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-id"] // empty' <<<"$current")
-            current_run_attempt=$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-attempt"] // empty' <<<"$current")
+            current_digest=$(jq -r '.digest // empty' <<<"$current")
+            current_version=$(jq -r '.annotations["org.opencontainers.image.version"] // empty' <<<"$current")
+            current_commit=$(jq -r '.annotations["org.opencontainers.image.revision"] // empty' <<<"$current")
+            current_tag_object=$(jq -r '.annotations["io.datadog.dd-trace-go.module-tag-object"] // empty' <<<"$current")
+            current_repository=$(jq -r '.annotations["io.datadog.dd-trace-go.repository"] // empty' <<<"$current")
+            current_workflow=$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-path"] // empty' <<<"$current")
+            current_run_id=$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-id"] // empty' <<<"$current")
+            current_run_attempt=$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-attempt"] // empty' <<<"$current")
             [[ "$current_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
             [[ "$current_version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
             [[ "$current_commit" =~ ^[0-9a-f]{40}$ ]]
@@ -504,11 +504,11 @@ jobs:
           fi
           docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$VERSION_DIGEST" || true
           post=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}')
-          test "$(jq -r '.Digest' <<<"$post")" = "$VERSION_DIGEST"
-          test "$(jq -r '.Annotations["org.opencontainers.image.version"]' <<<"$post")" = "$VERSION"
-          test "$(jq -r '.Annotations["org.opencontainers.image.revision"]' <<<"$post")" = "$COMMIT_SHA"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.module-tag-object"]' <<<"$post")" = "$MODULE_TAG_OBJECT"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.repository"]' <<<"$post")" = "$REPOSITORY"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-path"]' <<<"$post")" = "$WORKFLOW_PATH"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-id"]' <<<"$post")" = "$RUN_ID"
-          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-attempt"]' <<<"$post")" = "$RUN_ATTEMPT"
+          test "$(jq -r '.digest' <<<"$post")" = "$VERSION_DIGEST"
+          test "$(jq -r '.annotations["org.opencontainers.image.version"]' <<<"$post")" = "$VERSION"
+          test "$(jq -r '.annotations["org.opencontainers.image.revision"]' <<<"$post")" = "$COMMIT_SHA"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.module-tag-object"]' <<<"$post")" = "$MODULE_TAG_OBJECT"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.repository"]' <<<"$post")" = "$REPOSITORY"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-path"]' <<<"$post")" = "$WORKFLOW_PATH"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-id"]' <<<"$post")" = "$RUN_ID"
+          test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-attempt"]' <<<"$post")" = "$RUN_ATTEMPT"
