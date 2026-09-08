@@ -115,6 +115,9 @@ func Generate(ctx context.Context, runner CommandRunner, input GenerateInput) (G
 	if _, err := g.run("checkout", "--quiet", "-B", branch, input.SourceSHA); err != nil {
 		return GenerationOutput{}, wrapReleaseError(ErrorClassGenerationFailed, "generation_checkout_failed", err)
 	}
+	if err := validateLocalReplacements(input.WorkDir, input.ExcludedDirs); err != nil {
+		return GenerationOutput{}, err
+	}
 
 	// Fixed, unsigned, non-secret committer identity. commit.gpgsign and
 	// tag.gpgsign are explicitly disabled per-invocation (not merely left

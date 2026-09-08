@@ -14,6 +14,9 @@ on:
 
 env:
   GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+  # Release branches contain versions that are not published yet. Keep every
+  # matrix discovery, tidy, and test command on module-local replacements.
+  GOWORK: off
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
   # Users may build our library with GOTOOLCHAIN=local. If they do, and our
   # go.mod file specifies a newer Go version than their local toolchain, their

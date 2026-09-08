@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - release-v*
+      - dev-v*
       - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
@@ -59,3 +60,25 @@ jobs:
       go-version: ${{ matrix.go-version }}
       runs-on: ${{ matrix.runs-on }}
     secrets: inherit
+
+  # Stable pre-tag gate consumed by Gardener. `always()` makes skipped or
+  # cancelled dependencies visible; the explicit result checks then fail
+  # closed rather than allowing a skipped aggregate to hide missing tests.
+  release-tests-complete:
+    if: ${{ always() }}
+    needs:
+      - unit-integration-tests
+      - warm-repo-cache
+      - multios-unit-tests
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require every release test group to succeed
+        env:
+          UNIT_INTEGRATION_RESULT: ${{ needs.unit-integration-tests.result }}
+          WARM_REPO_CACHE_RESULT: ${{ needs.warm-repo-cache.result }}
+          MULTIOS_UNIT_RESULT: ${{ needs.multios-unit-tests.result }}
+        run: |
+          test "${UNIT_INTEGRATION_RESULT}" = success
+          test "${WARM_REPO_CACHE_RESULT}" = success
+          test "${MULTIOS_UNIT_RESULT}" = success

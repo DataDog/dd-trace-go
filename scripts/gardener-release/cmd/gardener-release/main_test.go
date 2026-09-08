@@ -20,7 +20,7 @@ func (f cliFS) ReadFile(name string) ([]byte, error) {
 }
 
 func TestInspectRequestCommandPrintsSanitizedEvidence(t *testing.T) {
-	policy := []byte(`{"schema_version":"1","repository_id":"123","repository_full_name":"DataDog/dd-trace-go","state_branch":"gardener-release-state","release_concurrency_group":"gardener-release-production-v1","issue_mapping":{"456":"v2.11"},"limits":{"api_max_pages":200,"api_page_size":100,"api_response_bytes":16777216,"read_retries":3,"polling_deadline_seconds":1800}}`)
+	policy := []byte(`{"schema_version":"1","repository_id":"123","repository_full_name":"DataDog/dd-trace-go","state_branch":"gardener-release-state","release_concurrency_group":"gardener-release-production-v1","issue_mapping":{"456":"v2.11"},"limits":{"api_max_pages":200,"api_page_size":100,"api_response_bytes":16777216,"read_retries":3,"polling_deadline_seconds":1800},"test_policy":{"workflow_id":"","workflow_path":".github/workflows/main-branch-tests.yml","workflow_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","event":"push","required_jobs":["release-tests-complete"],"deadline_seconds":1800}}`)
 	context := `{"repository_id":"123","repository_full_name":"DataDog/dd-trace-go","issue_number":"456","original_comment_id":"789","acknowledgement_comment_id":"790","body_snapshot":"/gardener release:promote v2.11","policy_revision":"` + gardenerrelease.PolicyRevision(policy) + `"}`
 	input := []byte(`{"contract_version":"1","command":"release:promote","version":"v2.11.0","context":"` + strings.ReplaceAll(context, `"`, `\"`) + `"}`)
 	files := cliFS{"input.json": input, "policy.json": policy}

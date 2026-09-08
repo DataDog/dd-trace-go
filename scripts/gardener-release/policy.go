@@ -35,6 +35,7 @@ type Policy struct {
 	ReleaseConcurrencyGroup string
 	IssueMapping            map[string]string
 	Limits                  PolicyLimits
+	Test                    TestPolicy
 	Revision                string
 }
 
@@ -86,6 +87,7 @@ func DecodePolicy(raw []byte) (Policy, error) {
 		"release_concurrency_group": true,
 		"issue_mapping":             true,
 		"limits":                    true,
+		"test_policy":               true,
 	}
 	for key := range fields {
 		if !allowed[key] {
@@ -128,6 +130,10 @@ func DecodePolicy(raw []byte) (Policy, error) {
 		return Policy{}, err
 	}
 	policy.Limits, err = decodePolicyLimits(fields["limits"])
+	if err != nil {
+		return Policy{}, err
+	}
+	policy.Test, err = decodeTestPolicy(fields["test_policy"])
 	if err != nil {
 		return Policy{}, err
 	}
@@ -220,6 +226,51 @@ func decodeIssueMapping(raw json.RawMessage) (map[string]string, error) {
 		mapping[issue] = line
 	}
 	return mapping, nil
+}
+
+func decodeTestPolicy(raw json.RawMessage) (TestPolicy, error) {
+	if len(raw) == 0 {
+		return TestPolicy{}, typedContractError("missing_policy_key")
+	}
+	fields, err := decodeStrictObject(raw, 16*1024, typedContractError("invalid_policy_json"), typedContractError("trailing_policy_json"), typedContractError("duplicate_policy_key"))
+	if err != nil {
+		if err == errStrictJSONNotObject {
+			return TestPolicy{}, typedContractError("wrong_policy_type")
+		}
+		return TestPolicy{}, err
+	}
+	allowed := map[string]bool{
+		"workflow_id": true, "workflow_path": true, "workflow_sha256": true,
+		"event": true, "required_jobs": true, "deadline_seconds": true,
+	}
+	for key := range fields {
+		if !allowed[key] {
+			return TestPolicy{}, typedContractError("unknown_policy_key")
+		}
+	}
+	policy := TestPolicy{}
+	for key, target := range map[string]*string{
+		"workflow_id": &policy.WorkflowID, "workflow_path": &policy.WorkflowPath,
+		"workflow_sha256": &policy.WorkflowSHA256, "event": &policy.Event,
+	} {
+		if err := stringPolicyField(fields, key, target); err != nil {
+			return TestPolicy{}, err
+		}
+	}
+	jobsRaw, ok := fields["required_jobs"]
+	if !ok || len(jobsRaw) == 0 || jobsRaw[0] != '[' {
+		return TestPolicy{}, typedContractError("wrong_policy_type")
+	}
+	if err := json.Unmarshal(jobsRaw, &policy.RequiredJobs); err != nil {
+		return TestPolicy{}, typedContractError("wrong_policy_type")
+	}
+	if policy.DeadlineSeconds, err = intPolicyField(fields, "deadline_seconds"); err != nil {
+		return TestPolicy{}, err
+	}
+	if err := validateTestPolicy(policy); err != nil {
+		return TestPolicy{}, typedContractError("policy_drift")
+	}
+	return policy, nil
 }
 
 func decodePolicyLimits(raw json.RawMessage) (PolicyLimits, error) {
