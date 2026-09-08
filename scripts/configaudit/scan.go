@@ -138,33 +138,28 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 	return out, nil
 }
 
-// hasNolintConfigaudit reports whether text is a nolint comment that names
-// configaudit as one of its linters (e.g. "//nolint:configaudit" or
-// "// nolint:foo,configaudit").
-func hasNolintConfigaudit(text string) bool {
-	text = strings.TrimSpace(strings.TrimLeft(text, "/"))
-	if !strings.HasPrefix(text, "nolint:") {
-		return false
-	}
-	for _, seg := range strings.Split(strings.TrimPrefix(text, "nolint:"), ",") {
-		// A linter name ends at the first whitespace; anything after (reason
-		// text, em dashes, etc.) is not part of the name.
-		fields := strings.Fields(strings.TrimSpace(seg))
-		if len(fields) > 0 && fields[0] == "configaudit" {
-			return true
-		}
-	}
-	return false
+// configAuditIgnore is a standalone directive, not a //nolint: entry:
+// configaudit is this repo's own scanner, not a golangci-lint linter, so
+// naming it in a //nolint: comment makes golangci-lint's nolint filter warn
+// about an unknown linter on every run.
+const configAuditIgnore = "configaudit:ignore"
+
+// hasIgnoreDirective reports whether text is a comment carrying
+// //configaudit:ignore, with or without a trailing reason
+// (e.g. "//configaudit:ignore — intentional direct read").
+func hasIgnoreDirective(text string) bool {
+	fields := strings.Fields(strings.TrimLeft(text, "/"))
+	return len(fields) > 0 && fields[0] == configAuditIgnore
 }
 
 // suppressedLines returns the set of 1-based line numbers in file that carry
-// a //nolint:configaudit annotation. Calls on those lines are intentionally
+// a //configaudit:ignore directive. Calls on those lines are intentionally
 // not migrated and are excluded from the audit output.
 func suppressedLines(file *ast.File, pkg *packages.Package) map[int]bool {
 	out := map[int]bool{}
 	for _, cg := range file.Comments {
 		for _, c := range cg.List {
-			if hasNolintConfigaudit(c.Text) {
+			if hasIgnoreDirective(c.Text) {
 				out[pkg.Fset.Position(c.Pos()).Line] = true
 			}
 		}

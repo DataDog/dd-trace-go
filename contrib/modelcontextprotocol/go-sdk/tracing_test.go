@@ -224,8 +224,12 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	err = json.Unmarshal([]byte(outputStr), &outputData)
 	require.NoError(t, err)
 
+	// go-sdk >= v1.7.0 appends a serialized-JSON TextContent fallback when a tool's
+	// structured output is not a JSON object (SEP-2106), so the block count is
+	// upstream-dependent. The handler's own block stays at index 0 because the SDK
+	// appends rather than prepends.
 	content := outputData["content"].([]any)
-	require.Len(t, content, 1)
+	require.NotEmpty(t, content)
 	contentItem := content[0].(map[string]any)
 	assert.Equal(t, "text", contentItem["type"])
 

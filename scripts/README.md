@@ -169,7 +169,9 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 
 ### publish_build_metrics.sh
 
-Publishes build metrics to Datadog CI Visibility using `datadog-ci`. Attaches measures (`go.build.duration_seconds.0`, `go.build.duration_seconds.1`, ..., `go.build.binary_size_bytes`) and tags (`build.toolchain`, `build.sample`, `build.cache`, `go.version`, `orchestrion.version`) to the current CI job span. Each element of `build_duration_samples` is published as an individually-indexed measure.
+Publishes build metrics to Datadog CI Visibility using `datadog-ci`. Attaches measures (`go.build.duration_seconds`, `go.build.duration_seconds.0`, `go.build.duration_seconds.1`, ..., `go.build.binary_size_bytes`, and, in standard mode with dependency attribution, `go.build.dependency_size_bytes.<dep>`, `go.build.top_dependency_size_bytes.0`, `go.build.top_dependency_size_bytes.1`, ...) and tags (`build.toolchain`, `build.sample`, `build.cache`, `go.version`, `orchestrion.version`, and, in standard mode, `build.top_dependency_name.0`, `build.top_dependency_name.1`, ...) to the current CI job span.
+
+Each attributed dependency is published as a measure named after it (`go.build.dependency_size_bytes.<dep>`) for querying one dependency's size trend over time. It's also published by rank — `go.build.top_dependency_size_bytes.<i>` paired with a `build.top_dependency_name.<i>` tag holding that rank's dependency name, where index `0` is the single largest dependency in that build.
 
 ```bash
 # Set environment and publish

@@ -19,6 +19,12 @@ var spanPool = sync.Pool{
 }
 
 func acquireSpan(poolEnabled bool) *Span {
+	// maybeTestAcquireSpan is a no-op (returns nil, inlined away) outside the
+	// deadlock build; under -tags deadlock it lets the lock-ordering test inject
+	// specific *Span instances. See span_pool_testhook*.go.
+	if s := maybeTestAcquireSpan(); s != nil {
+		return s
+	}
 	if poolEnabled {
 		return spanPool.Get().(*Span)
 	}

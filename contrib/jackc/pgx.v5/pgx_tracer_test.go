@@ -75,25 +75,25 @@ func TestMain(m *testing.M) {
 func TestConnect(t *testing.T) {
 	testCases := []struct {
 		name           string
-		newConnCreator func(t *testing.T, prev *pgxMockTracer) createConnFn
+		newConnCreator func() createConnFn
 	}{
 		{
 			name: "pool",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newPoolCreator(nil, opts...)
 			},
 		},
 		{
 			name: "conn",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, nil, opts...)
 			},
 		},
 		{
 			name: "conn_with_options",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, &pgx.ParseConfigOptions{}, opts...)
 			},
@@ -104,8 +104,7 @@ func TestConnect(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			opts := append(tracingAllDisabled(), WithTraceConnect(true))
-			runAllOperations(t, newPoolCreator(nil, opts...))
+			runAllOperations(t, tc.newConnCreator())
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 2)
@@ -126,36 +125,56 @@ func TestConnect(t *testing.T) {
 }
 
 func TestQuery(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	// A pool and a standalone connection snapshot the connection metadata from different
+	// configs, so the tags asserted by assertCommonTags are only covered for whichever
+	// path runs here.
+	testCases := []struct {
+		name       string
+		createConn func(opts ...Option) createConnFn
+	}{
+		{
+			name:       "pool",
+			createConn: func(opts ...Option) createConnFn { return newPoolCreator(nil, opts...) },
+		},
+		{
+			name:       "conn",
+			createConn: func(opts ...Option) createConnFn { return newConnCreator(nil, nil, opts...) },
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	opts := append(tracingAllDisabled(), WithTraceQuery(true))
-	runAllOperations(t, newPoolCreator(nil, opts...))
+			opts := append(tracingAllDisabled(), WithTraceQuery(true))
+			runAllOperations(t, tc.createConn(opts...))
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 3)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 3)
 
-	ps := spans[2]
-	assert.Equal(t, "parent", ps.OperationName())
-	assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
+			ps := spans[2]
+			assert.Equal(t, "parent", ps.OperationName())
+			assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
 
-	s := spans[0]
-	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.query", s.OperationName())
-	assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
-	assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
-	assert.Equal(t, ps.SpanID(), s.ParentID())
+			s := spans[0]
+			assertCommonTags(t, s)
+			assert.Equal(t, "pgx.query", s.OperationName())
+			assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag("db.operation"))
+			assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
+			assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
+			assert.Equal(t, ps.SpanID(), s.ParentID())
 
-	s = spans[1]
-	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.query", s.OperationName())
-	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
-	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
-	assert.Equal(t, ps.SpanID(), s.ParentID())
+			s = spans[1]
+			assertCommonTags(t, s)
+			assert.Equal(t, "pgx.query", s.OperationName())
+			assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag("db.operation"))
+			assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
+			assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
+			assert.Equal(t, ps.SpanID(), s.ParentID())
+		})
+	}
 }
 
 func TestIgnoreError(t *testing.T) {
@@ -463,6 +482,132 @@ func TestWrapTracer(t *testing.T) {
 			assert.Len(t, prevTracer.called, tc.wantHooks, "some hook(s) on the previous tracer were not called")
 		})
 	}
+}
+
+func TestNewConnInfo(t *testing.T) {
+	t.Run("nil", func(t *testing.T) {
+		assert.Equal(t, connInfo{}, newConnInfo(nil))
+	})
+	t.Run("populated", func(t *testing.T) {
+		cfg, err := pgx.ParseConfig(postgresDSN)
+		require.NoError(t, err)
+
+		assert.Equal(t, connInfo{host: "127.0.0.1", port: 5432, db: "postgres", user: "postgres"}, newConnInfo(cfg))
+	})
+}
+
+func TestConnInfoFor(t *testing.T) {
+	cached := connInfo{host: "cached", port: 1, db: "cached", user: "cached"}
+
+	t.Run("static pool uses the cache", func(t *testing.T) {
+		tr := &pgxTracer{connInfo: cached}
+		// A nil conn would panic if the per-connection branch were taken.
+		assert.Same(t, &tr.connInfo, tr.connInfoFor(nil))
+	})
+	t.Run("dynamic pool tolerates a nil conn", func(t *testing.T) {
+		tr := &pgxTracer{connInfo: cached, perConnInfo: true}
+		assert.Same(t, &tr.connInfo, tr.connInfoFor(nil))
+	})
+}
+
+func TestPoolPerConnInfo(t *testing.T) {
+	for name, tc := range map[string]struct {
+		beforeConnect func(context.Context, *pgx.ConnConfig) error
+		want          bool
+	}{
+		"without BeforeConnect": {beforeConnect: nil, want: false},
+		"with BeforeConnect":    {beforeConnect: func(context.Context, *pgx.ConnConfig) error { return nil }, want: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := pgxpool.ParseConfig(postgresDSN)
+			require.NoError(t, err)
+			cfg.BeforeConnect = tc.beforeConnect
+
+			pool, err := NewPoolWithConfig(context.Background(), cfg, tracingAllDisabled()...)
+			require.NoError(t, err)
+			t.Cleanup(pool.Close)
+
+			tr, ok := cfg.ConnConfig.Tracer.(*pgxTracer)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, tr.perConnInfo)
+		})
+	}
+}
+
+// A pool's BeforeConnect hook receives a copy of the base config and may rewrite the
+// connection metadata, so connection-scoped spans must report what the connection was
+// actually established with rather than the pool's base config.
+func TestPoolBeforeConnectTags(t *testing.T) {
+	t.Run("connect span reports the rewritten database", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		cfg, err := pgxpool.ParseConfig(postgresDSN)
+		require.NoError(t, err)
+		cfg.BeforeConnect = func(_ context.Context, connConfig *pgx.ConnConfig) error {
+			connConfig.Database = "rewritten_by_before_connect"
+			return nil
+		}
+
+		opts := append(tracingAllDisabled(), WithTraceConnect(true), WithTraceAcquire(true))
+		pool, err := NewPoolWithConfig(context.Background(), cfg, opts...)
+		require.NoError(t, err)
+		t.Cleanup(pool.Close)
+
+		// The rewritten database does not exist, so the connection fails. The spans are
+		// still emitted, and they are what this test asserts on.
+		_, err = pool.Acquire(context.Background())
+		require.Error(t, err)
+
+		connect := findSpan(t, mt.FinishedSpans(), "pgx.connect")
+		assert.Equal(t, "rewritten_by_before_connect", connect.Tag(ext.DBName))
+
+		// Acquire is scoped to the pool, not to a single connection, so it keeps
+		// reporting the pool's base config as it did before.
+		acquire := findSpan(t, mt.FinishedSpans(), "pgx.pool.acquire")
+		assert.Equal(t, "postgres", acquire.Tag(ext.DBName))
+	})
+
+	t.Run("query span reports the rewritten database", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		cfg, err := pgxpool.ParseConfig(postgresDSN)
+		require.NoError(t, err)
+		// template1 always exists and accepts connections, so the rewrite diverges from
+		// the pool's base config while still yielding a usable connection.
+		cfg.BeforeConnect = func(_ context.Context, connConfig *pgx.ConnConfig) error {
+			connConfig.Database = "template1"
+			return nil
+		}
+
+		opts := append(tracingAllDisabled(), WithTraceQuery(true))
+		pool, err := NewPoolWithConfig(context.Background(), cfg, opts...)
+		require.NoError(t, err)
+		t.Cleanup(pool.Close)
+
+		var db string
+		require.NoError(t, pool.QueryRow(context.Background(), `SELECT current_database()`).Scan(&db))
+		require.Equal(t, "template1", db)
+
+		query := findSpan(t, mt.FinishedSpans(), "pgx.query")
+		assert.Equal(t, "template1", query.Tag(ext.DBName))
+		// Fields the hook left alone still match the base config.
+		assert.Equal(t, "127.0.0.1", query.Tag(ext.NetworkDestinationName))
+		assert.Equal(t, float64(5432), query.Tag(ext.NetworkDestinationPort))
+		assert.Equal(t, "postgres", query.Tag(ext.DBUser))
+	})
+}
+
+func findSpan(t *testing.T, spans []*mocktracer.Span, operationName string) *mocktracer.Span {
+	t.Helper()
+	for _, s := range spans {
+		if s.OperationName() == operationName {
+			return s
+		}
+	}
+	t.Fatalf("no %q span found in %d spans", operationName, len(spans))
+	return nil
 }
 
 func tracingAllDisabled() []Option {

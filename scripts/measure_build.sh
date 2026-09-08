@@ -17,7 +17,10 @@ set -euo pipefail
 #   -h, --help            Show this help message
 #
 # Output JSON includes all build_duration_samples (one per repeat) and a single
-# binary_size_bytes taken from the last build.
+# binary_size_bytes taken from the last build. In standard mode, if `gsa`
+# (go-size-analyzer) is on PATH, the JSON also includes dependency_sizes: the
+# top 10 vendor (third-party) packages contributing to that binary's size,
+# attributing size to specific dependencies instead of just the binary total.
 #
 # Examples:
 #   scripts/measure_build.sh --sample net_http --mode standard
@@ -180,6 +183,30 @@ for i in $(seq 1 "$REPEATS"); do
 done
 message "Durations: ${durations[*]}, size: $size bytes"
 
+# Dependency size attribution (standard mode only — orchestrion mode builds the
+# same source, so re-running the analysis there would just duplicate this data)
+DEPENDENCY_SIZES="[]"
+if [[ "$MODE" == "standard" ]] && command -v gsa &> /dev/null; then
+  message "Attributing binary size to dependencies with gsa..."
+  bin_path="$OUT_DIR/$SAMPLE-$MODE.test"
+  gsa_json="$OUT_DIR/gsa.json"
+  if gsa "$bin_path" -f json --compact --no-disasm -o "$gsa_json"; then
+    DEPENDENCY_SIZES=$(jq '[
+      .packages
+      | to_entries
+      | map(select(.value.type == "vendor"))
+      | sort_by(-.value.size)
+      | .[0:10]
+      | .[]
+      | { name: .key, metric_key: (.key | ascii_downcase | gsub("[^a-z0-9_]+"; "_")), size_bytes: .value.size }
+    ]' "$gsa_json")
+  else
+    message "  gsa analysis failed; continuing without dependency_sizes"
+  fi
+else
+  message "Skipping dependency attribution (gsa not found or mode is orchestrion)"
+fi
+
 # Build JSON output — durations as array, size as single value
 message "Generating JSON output..."
 DURATION_ARRAY=$(printf '%s\n' "${durations[@]}" | jq -R 'tonumber' | jq -s '.')
@@ -188,8 +215,9 @@ JSON=$(jq -n \
   --arg mode "$MODE" \
   --argjson durations "$DURATION_ARRAY" \
   --argjson size "$size" \
+  --argjson dependency_sizes "$DEPENDENCY_SIZES" \
   --arg go_version "$GO_VERSION" \
-  '{ sample: $sample, mode: $mode, metrics: { build_duration_samples: $durations, binary_size_bytes: $size }, go_version: $go_version }')
+  '{ sample: $sample, mode: $mode, metrics: { build_duration_samples: $durations, binary_size_bytes: $size, dependency_sizes: $dependency_sizes }, go_version: $go_version }')
 
 # Add orchestrion version if in orchestrion mode
 if [[ "$MODE" == "orchestrion" ]]; then

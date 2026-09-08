@@ -63,6 +63,71 @@ func TestScopedExecutionNotTraced(t *testing.T) {
 		}
 		cleanup() // must not panic
 	})
+
+	t.Run("cleanup closes its own scope, not the top of the stack", func(t *testing.T) {
+		t.Cleanup(orchestrion.MockGLS())
+
+		// The tracer hands this cleanup to Span.taskEnd, so it runs whenever
+		// that span finishes — at no fixed position relative to the pushes
+		// around it. Here a later scope is opened on top before it runs.
+		ctx := WithExecutionTraced(context.Background()) // pushes true
+		_, cleanup := ScopedExecutionNotTraced(ctx)      // pushes false
+		_ = WithExecutionTraced(context.Background())    // pushes true above it
+
+		cleanup()
+
+		// A pop that matched position would take the top true and strand the
+		// false, leaving the stack claiming "not traced" for everything that
+		// follows. Closing by identity removes the false specifically.
+		//
+		// The marker pushed above it stays: it is an independent scope holding
+		// its own PopExecutionTraced, so removing it here would not cancel that
+		// exit, and the exit would then land on an unrelated entry. The subtest
+		// below runs that exit and pins the consequence.
+		if got := orchestrion.GLSStackDepth(); got != 2 {
+			t.Fatalf("GLS depth after cleanup = %d, want 2 (only the false override is gone)", got)
+		}
+		// This is the assertion that separates identity from position: a
+		// positional pop also leaves depth 2, but by taking the true above and
+		// stranding the false, so the stack would read "not traced" here.
+		if got := IsExecutionTraced(orchestrion.WrapContext(nil)); got != true {
+			t.Fatalf("IsExecutionTraced after cleanup = %v, want true (the false override was removed, "+
+				"not the marker above it)", got)
+		}
+	})
+
+	t.Run("a swept scope's positional pop must not remove an unrelated marker", func(t *testing.T) {
+		t.Cleanup(orchestrion.MockGLS())
+
+		// Same stack as the subtest above, but this one runs the pop that the
+		// inner WithExecutionTraced still owns. Two exit mechanisms share
+		// executionTracedKey: ScopedExecutionNotTraced closes by token, while
+		// WithExecutionTraced is paired with PopExecutionTraced, which removes
+		// whatever is on top. Sweeping entries above a closing scope therefore
+		// destroys a marker whose owner has not run its pop yet, and that pop
+		// then lands on something it never pushed.
+		//
+		// contrib/database/sql/tx.go is the real caller: startTraceTask pushes
+		// with WithExecutionTraced and defers PopExecutionTraced, so a span
+		// whose taskEnd fires mid-transaction produces exactly this order.
+		outer := WithExecutionTraced(context.Background()) // marker A, owned by nobody here
+		_, cleanup := ScopedExecutionNotTraced(outer)      // scope B, closes by token
+		_ = WithExecutionTraced(context.Background())      // marker C, owns a positional pop
+
+		cleanup() // closes B; C sits above it
+
+		// C is gone either way. The question is what its pop does next: it must
+		// not reach past its own scope and take A.
+		PopExecutionTraced()
+
+		if got := orchestrion.GLSStackDepth(); got != 1 {
+			t.Errorf("GLS depth after the swept scope's pop = %d, want 1 (marker A must survive)", got)
+		}
+		if got := IsExecutionTraced(orchestrion.WrapContext(nil)); got != true {
+			t.Errorf("IsExecutionTraced = %v, want true (A is still the active marker; a false here means "+
+				"runtime-trace tasks get created or skipped against a marker that was never popped)", got)
+		}
+	})
 }
 
 func TestWithExecutionTracedGLSCleanup(t *testing.T) {

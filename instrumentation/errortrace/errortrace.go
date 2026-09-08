@@ -44,8 +44,7 @@ func WrapN(err error, skip uint) *TracerError {
 	if err == nil {
 		return nil
 	}
-	var e *TracerError
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*TracerError](err); ok {
 		return e
 	}
 
@@ -56,9 +55,7 @@ func WrapN(err error, skip uint) *TracerError {
 		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Submit(dur)
 	}()
 
-	// Use SkipAndCaptureUnfiltered to capture all frames including internal DD frames.
-	// +4 to account for: runtime.Callers, iterator, SkipAndCaptureUnfiltered, and this WrapN function
-	stack := stacktrace.CaptureRaw(int(skip) + 2)
+	stack := stacktrace.CaptureRaw(int(skip))
 
 	tracerErr := &TracerError{
 		rawStack: stack,

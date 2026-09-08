@@ -8,12 +8,39 @@ package gotesting
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 // T is a type alias for testing.T to provide additional methods for CI visibility.
 type T testing.T
+
+type singleEvaluationMessage struct {
+	once      sync.Once
+	format    string
+	args      []any
+	println   bool
+	value     string
+	formatted bool
+}
+
+func (m *singleEvaluationMessage) String() string {
+	m.once.Do(func() {
+		if m.println {
+			m.value = strings.TrimSuffix(fmt.Sprintln(m.args...), "\n")
+		} else {
+			m.value = fmt.Sprintf(m.format, m.args...)
+		}
+		m.formatted = true
+	})
+	return m.value
+}
+
+func (m *singleEvaluationMessage) captured() (string, bool) {
+	return m.value, m.formatted
+}
 
 // GetTest is a helper to return *gotesting.T from *testing.T.
 // Internally, it is just a (*gotesting.T)(t) cast.
@@ -56,27 +83,77 @@ func (ddt *T) FailNow() {
 }
 
 // Error is equivalent to Log followed by Fail.
-func (ddt *T) Error(args ...any) { ddt.getTWithError("Error", fmt.Sprint(args...)).Error(args...) }
+func (ddt *T) Error(args ...any) {
+	t := (*testing.T)(ddt)
+	t.Helper()
+	message := &singleEvaluationMessage{args: args, println: true}
+	t.Error(message)
+	if value, ok := message.captured(); ok {
+		instrumentSetErrorInfo(t, "Error", value, 1)
+	}
+}
 
 // Errorf is equivalent to Logf followed by Fail.
 func (ddt *T) Errorf(format string, args ...any) {
-	ddt.getTWithError("Errorf", fmt.Sprintf(format, args...)).Errorf(format, args...)
+	t := (*testing.T)(ddt)
+	t.Helper()
+	message := &singleEvaluationMessage{format: format, args: args}
+	t.Errorf("%s", message)
+	if value, ok := message.captured(); ok {
+		instrumentSetErrorInfo(t, "Errorf", value, 1)
+	}
 }
 
 // Fatal is equivalent to Log followed by FailNow.
-func (ddt *T) Fatal(args ...any) { ddt.getTWithError("Fatal", fmt.Sprint(args...)).Fatal(args...) }
+func (ddt *T) Fatal(args ...any) {
+	t := (*testing.T)(ddt)
+	t.Helper()
+	message := &singleEvaluationMessage{args: args, println: true}
+	defer func() {
+		if value, ok := message.captured(); ok && t.Failed() && testingTFinished(t) {
+			instrumentSetErrorInfo(t, "Fatal", value, 1)
+		}
+	}()
+	t.Fatal(message)
+}
 
 // Fatalf is equivalent to Logf followed by FailNow.
 func (ddt *T) Fatalf(format string, args ...any) {
-	ddt.getTWithError("Fatalf", fmt.Sprintf(format, args...)).Fatalf(format, args...)
+	t := (*testing.T)(ddt)
+	t.Helper()
+	message := &singleEvaluationMessage{format: format, args: args}
+	defer func() {
+		if value, ok := message.captured(); ok && t.Failed() && testingTFinished(t) {
+			instrumentSetErrorInfo(t, "Fatalf", value, 1)
+		}
+	}()
+	t.Fatalf("%s", message)
 }
 
 // Skip is equivalent to Log followed by SkipNow.
-func (ddt *T) Skip(args ...any) { ddt.getTWithSkip(fmt.Sprint(args...)).Skip(args...) }
+func (ddt *T) Skip(args ...any) {
+	t := (*testing.T)(ddt)
+	t.Helper()
+	message := &singleEvaluationMessage{args: args, println: true}
+	defer func() {
+		if value, ok := message.captured(); ok && t.Skipped() && testingTFinished(t) {
+			instrumentCloseAndSkip(t, value)
+		}
+	}()
+	t.Skip(message)
+}
 
 // Skipf is equivalent to Logf followed by SkipNow.
 func (ddt *T) Skipf(format string, args ...any) {
-	ddt.getTWithSkip(fmt.Sprintf(format, args...)).Skipf(format, args...)
+	t := (*testing.T)(ddt)
+	t.Helper()
+	message := &singleEvaluationMessage{format: format, args: args}
+	defer func() {
+		if value, ok := message.captured(); ok && t.Skipped() && testingTFinished(t) {
+			instrumentCloseAndSkip(t, value)
+		}
+	}()
+	t.Skipf("%s", message)
 }
 
 // SkipNow marks the test as having been skipped and stops its execution
@@ -120,8 +197,6 @@ func (ddt *T) getTWithError(errType string, errMessage string) *testing.T {
 	return t
 }
 
-func (ddt *T) getTWithSkip(skipReason string) *testing.T {
-	t := (*testing.T)(ddt)
-	instrumentCloseAndSkip(t, skipReason)
-	return t
+func testingTFinished(t *testing.T) bool {
+	return shouldCaptureTerminalMessage(getTestPrivateFields(t))
 }

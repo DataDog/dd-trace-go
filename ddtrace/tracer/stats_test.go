@@ -548,9 +548,14 @@ func TestShouldObfuscate(t *testing.T) {
 			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 			tracerObfuscationVersion = params.tracerVersion
-			assert.Equal(t, params.expectedShouldObfuscate, c.shouldObfuscate())
+			assert.Equal(t, params.expectedShouldObfuscate, c.sender.shouldObfuscate())
 		})
 	}
+}
+
+func TestOTLPStatsSenderPeerTags(t *testing.T) {
+	s := &otlpStatsSender{}
+	assert.Equal(t, []string{"db.hostname"}, s.peerTags([]string{"db.hostname"}))
 }
 
 func TestObfuscation(t *testing.T) {

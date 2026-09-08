@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v7"
 	"github.com/stretchr/testify/assert"
@@ -313,6 +314,76 @@ func TestWithServiceOption(t *testing.T) {
 
 	assert.Equal(t, "custom", cfg.serviceName)
 	assert.Equal(t, instrumentation.ServiceSourceWithServiceOption, cfg.serviceSource)
+}
+
+func TestWrapClientContext(t *testing.T) {
+	t.Run("inherits the span in ctx", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+		WrapClientContext[*as.Client](nil, ctx).startSpan("Put").Finish()
+		parent.Finish()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+		validateAerospikeSpan(t, spans[0], "Put")
+		assert.Equal(t, spans[1].TraceID(), spans[0].TraceID(),
+			"aerospike span should be part of the parent trace")
+	})
+
+	t.Run("nil ctx falls back to background", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		WrapClientContext[*as.Client](nil, nil).startSpan("Get").Finish()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		validateAerospikeSpan(t, spans[0], "Get")
+	})
+
+	t.Run("defers config resolution to span time", func(t *testing.T) {
+		c := WrapClientContext[*as.Client](nil, context.Background())
+		assert.Nil(t, c.cfg,
+			"config must not be resolved at wrap time, so later tracer configuration is picked up")
+	})
+
+	t.Run("uses the default service name", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		WrapClientContext[*as.Client](nil, context.Background()).startSpan("Put").Finish()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "aerospike", spans[0].Tag(ext.ServiceName))
+	})
+}
+
+// nilableCtx is a concrete type implementing context.Context whose methods
+// dereference the receiver. Orchestrion's ArgumentThatImplements fallback can
+// select a parameter of such a type, and a typed-nil one becomes a non-nil
+// context.Context interface at the call site.
+type nilableCtx struct {
+	values map[any]any
+}
+
+func (c *nilableCtx) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *nilableCtx) Done() <-chan struct{}       { return nil }
+func (c *nilableCtx) Err() error                  { return nil }
+func (c *nilableCtx) Value(key any) any           { return c.values[key] }
+
+func TestWrapClientContextTypedNil(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var ctx *nilableCtx // typed nil: the interface value is not nil
+	WrapClientContext[*as.Client](nil, ctx).startSpan("Put").Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	validateAerospikeSpan(t, spans[0], "Put")
 }
 
 func TestStartSpanTags(t *testing.T) {

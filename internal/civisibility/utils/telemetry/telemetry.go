@@ -52,6 +52,7 @@ var (
 	IsNewEventType               TestingEventType = []string{"is_new:true"}
 	IsRetryEventType             TestingEventType = []string{"is_retry:true"}
 	EfdAbortSlowEventType        TestingEventType = []string{"early_flake_detection_abort_reason:slow"}
+	EfdAbortFaultyEventType      TestingEventType = []string{"early_flake_detection_abort_reason:faulty"}
 	IsBenchmarkEventType         TestingEventType = []string{"is_benchmark"}
 	IsAttemptToFixEventType      TestingEventType = []string{"is_attempt_to_fix:true"}
 	IsQuarantinedEventType       TestingEventType = []string{"is_quarantined:true"}

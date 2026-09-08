@@ -40,6 +40,7 @@ type Feature struct {
 	reportRulesTags sync.Once
 
 	telemetryMetrics waf.HandleMetrics
+	stackTrace       config.StackTraceConfig
 
 	// Determine if we can use [internal.MetaStructValue] to delegate the WAF events serialization to the trace writer
 	// or if we have to use the [SerializableTag] method to serialize the events
@@ -83,6 +84,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		limiter:             limiter.NewTokenTicker(cfg.TraceRateLimit, cfg.TraceRateLimit),
 		supportedAddrs:      cfg.SupportedAddresses,
 		telemetryMetrics:    telemetryMetrics,
+		stackTrace:          cfg.StackTrace,
 		metaStructAvailable: cfg.MetaStructAvailable,
 		rulesVersion:        rulesVersion,
 	}
@@ -121,14 +123,19 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 }
 
 func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
+	op.SetStackTraceConfig(f.stackTrace)
+
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
 		log.Debug("appsec: blocking event detected")
 		op.SetTag(blockedRequestTag, true)
 		op.SetRequestBlocked()
 	})
 
-	// Register the stacktrace if one is requested by a WAF action
+	// Register the stacktrace if one is requested by a WAF action.
 	dyngo.OnData(op, func(action *actions.StackTraceAction) {
+		if f.stackTrace.Disabled || action.Event == nil {
+			return
+		}
 		log.Debug("appsec: registering stack trace for security purposes")
 		op.AddStackTraces(action.Event)
 	})
@@ -168,7 +175,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	op.SetSerializableTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {
-		op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(stacks...))
+		stacktrace.AddToSpan(op, stacks...)
 	}
 }
 

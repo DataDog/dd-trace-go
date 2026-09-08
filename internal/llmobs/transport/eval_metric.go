@@ -6,9 +6,20 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
+)
+
+// EvalMetricType identifies an evaluation metric value type.
+type EvalMetricType string
+
+const (
+	EvalMetricTypeCategorical EvalMetricType = "categorical"
+	EvalMetricTypeScore       EvalMetricType = "score"
+	EvalMetricTypeBoolean     EvalMetricType = "boolean"
+	EvalMetricTypeJSON        EvalMetricType = "json"
 )
 
 // EvaluationJoinOn represents how to join evaluation metrics to spans.
@@ -38,15 +49,19 @@ type EvaluationTagJoin struct {
 
 // LLMObsMetric represents an evaluation metric for LLMObs spans.
 type LLMObsMetric struct {
-	JoinOn           EvaluationJoinOn `json:"join_on"`
-	MetricType       string           `json:"metric_type,omitempty"`
-	Label            string           `json:"label,omitempty"`
-	CategoricalValue *string          `json:"categorical_value,omitempty"`
-	ScoreValue       *float64         `json:"score_value,omitempty"`
-	BooleanValue     *bool            `json:"boolean_value,omitempty"`
-	MLApp            string           `json:"ml_app,omitempty"`
-	TimestampMS      int64            `json:"timestamp_ms,omitempty"`
-	Tags             []string         `json:"tags,omitempty"`
+	JoinOn             EvaluationJoinOn `json:"join_on"`
+	MetricType         EvalMetricType   `json:"metric_type,omitempty"`
+	Label              string           `json:"label,omitempty"`
+	CategoricalValue   *string          `json:"categorical_value,omitempty"`
+	ScoreValue         *float64         `json:"score_value,omitempty"`
+	BooleanValue       *bool            `json:"boolean_value,omitempty"`
+	JSONValue          map[string]any   `json:"json_value,omitempty"`
+	MLApp              string           `json:"ml_app,omitempty"`
+	TimestampMS        int64            `json:"timestamp_ms,omitempty"`
+	Tags               []string         `json:"tags,omitempty"`
+	Assessment         string           `json:"assessment,omitempty"`
+	Reasoning          string           `json:"reasoning,omitempty"`
+	EvalMetricMetadata map[string]any   `json:"eval_metric_metadata,omitempty"`
 }
 
 type PushMetricsRequest struct {
@@ -62,16 +77,9 @@ type PushMetricsRequestDataAttributes struct {
 	Metrics []*LLMObsMetric `json:"metrics"`
 }
 
-func (c *Transport) PushEvalMetrics(
-	ctx context.Context,
-	metrics []*LLMObsMetric,
-) error {
-	if len(metrics) == 0 {
-		return nil
-	}
-	path := endpointEvalMetric
-	method := http.MethodPost
-	body := &PushMetricsRequest{
+// NewPushMetricsRequest builds an evaluation metric envelope.
+func NewPushMetricsRequest(metrics []*LLMObsMetric) *PushMetricsRequest {
+	return &PushMetricsRequest{
 		Data: PushMetricsRequestData{
 			Type: "evaluation_metric",
 			Attributes: PushMetricsRequestDataAttributes{
@@ -79,13 +87,50 @@ func (c *Transport) PushEvalMetrics(
 			},
 		},
 	}
+}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
+func (c *Transport) PushEvalMetrics(
+	ctx context.Context,
+	metrics []*LLMObsMetric,
+) error {
+	_, err := c.PushEvalMetricsWithResult(ctx, metrics)
+	return err
+}
+
+// PushEvalMetricsWithResult sends evaluation metrics and returns request details.
+func (c *Transport) PushEvalMetricsWithResult(
+	ctx context.Context,
+	metrics []*LLMObsMetric,
+) (RequestResult, error) {
+	if len(metrics) == 0 {
+		return RequestResult{}, nil
+	}
+	body, err := encodeJSON(NewPushMetricsRequest(metrics))
 	if err != nil {
-		return err
+		return RequestResult{}, fmt.Errorf("failed to json encode body: %w", err)
+	}
+	return c.PushEvalMetricsBodyWithResult(ctx, body.Bytes())
+}
+
+// PushEvalMetricsBodyWithResult sends an encoded evaluation metric request.
+func (c *Transport) PushEvalMetricsBodyWithResult(ctx context.Context, body []byte) (RequestResult, error) {
+	if len(body) == 0 {
+		return RequestResult{}, nil
+	}
+	result, err := c.request(
+		ctx,
+		http.MethodPost,
+		endpointEvalMetric,
+		subdomainEvalMetric,
+		bytes.NewReader(body),
+		"application/json",
+		defaultLimits,
+	)
+	if err != nil {
+		return summarizeRequest(result), err
 	}
 	if result.statusCode != http.StatusOK && result.statusCode != http.StatusAccepted {
-		return fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+		return summarizeRequest(result), fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
-	return nil
+	return summarizeRequest(result), nil
 }

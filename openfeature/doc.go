@@ -109,6 +109,9 @@
 // Numeric comparisons:
 //   - LT, LTE, GT, GTE: Compare numeric attributes
 //
+// Semantic version comparisons:
+//   - SEMVER_EQ, SEMVER_NEQ, SEMVER_LT, SEMVER_LTE, SEMVER_GT, SEMVER_GTE: Compare semantic version strings
+//
 // String matching:
 //   - MATCHES, NOT_MATCHES: Regex pattern matching
 //

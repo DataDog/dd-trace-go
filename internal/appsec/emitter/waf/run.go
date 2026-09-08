@@ -60,7 +60,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
-	blocking := actions.SendActionEvents(eventReceiver, result.Actions)
+	blocking := actions.SendActionEvents(eventReceiver, result.Actions, op.actionConfig())
 	op.AbsorbDerivatives(result.Derivatives)
 
 	// Set the trace to ManualKeep if the WAF instructed us to keep it.

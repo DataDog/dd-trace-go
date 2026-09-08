@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -207,7 +208,7 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 					"coverage_report_upload_enabled": true,
 					"flaky_test_retries_enabled":     true,
 					"impacted_tests_enabled":         true,
-					"known_tests_enabled":            false,
+					"known_tests_enabled":            true,
 					"tests_skipping":                 false,
 					"test_management": map[string]any{
 						"enabled":                true,
@@ -215,6 +216,12 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 					},
 					"early_flake_detection": map[string]any{
 						"enabled": true,
+						"slow_test_retries": map[string]any{
+							"5s":  10,
+							"10s": 5,
+							"30s": 1,
+							"5m":  0,
+						},
 					},
 				},
 			},
@@ -229,6 +236,8 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
 	t.Setenv("DD_GIT_BRANCH", "refs/heads/main")
 	t.Setenv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, "false")
+	t.Setenv(constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable, "false")
+	t.Setenv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, "2")
 	t.Setenv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, "false")
 	t.Setenv(constants.CIVisibilityImpactedTestsDetectionEnabled, "false")
 	t.Setenv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, "false")
@@ -251,13 +260,85 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 	}
 
 	assert.False(t, ciVisibilitySettings.FlakyTestRetriesEnabled)
+	assert.True(t, ciVisibilitySettings.KnownTestsEnabled)
 	assert.False(t, ciVisibilitySettings.CoverageReportUploadEnabled)
 	assert.False(t, ciVisibilitySettings.ImpactedTestsEnabled)
 	assert.False(t, ciVisibilitySettings.TestManagement.Enabled)
 	assert.False(t, ciVisibilitySettings.EarlyFlakeDetection.Enabled)
+	assert.Equal(t, 2, ciVisibilitySettings.EarlyFlakeDetection.SlowTestRetries.FiveS)
+	assert.Equal(t, 2, ciVisibilitySettings.EarlyFlakeDetection.SlowTestRetries.TenS)
+	assert.Equal(t, 1, ciVisibilitySettings.EarlyFlakeDetection.SlowTestRetries.ThirtyS)
+	assert.Equal(t, 0, ciVisibilitySettings.EarlyFlakeDetection.SlowTestRetries.FiveM)
 	assert.Equal(t, 7, ciVisibilitySettings.TestManagement.AttemptToFixRetries)
 	assert.False(t, ciVisibilitySettings.SubtestFeaturesEnabled)
 	assert.Len(t, closeActions, 1)
+}
+
+func TestCapEarlyFlakeDetectionRetries(t *testing.T) {
+	tests := []struct {
+		name       string
+		retries    int
+		maxRetries int
+		want       int
+	}{
+		{name: "unset", retries: 10, maxRetries: -1, want: 10},
+		{name: "negative", retries: 10, maxRetries: -2, want: 10},
+		{name: "lower cap", retries: 10, maxRetries: 3, want: 3},
+		{name: "equal cap", retries: 3, maxRetries: 3, want: 3},
+		{name: "higher cap", retries: 2, maxRetries: 3, want: 2},
+		{name: "zero", retries: 10, maxRetries: 0, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, capEarlyFlakeDetectionRetries(tt.retries, tt.maxRetries))
+		})
+	}
+}
+
+func TestApplyEarlyFlakeDetectionEnabledEnvironmentOverride(t *testing.T) {
+	key := constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable
+	previous, previouslySet := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+	t.Cleanup(func() {
+		if previouslySet {
+			_ = os.Setenv(key, previous)
+			return
+		}
+		_ = os.Unsetenv(key)
+	})
+
+	tests := []struct {
+		name              string
+		remoteEnabled     bool
+		knownTestsEnabled bool
+		override          string
+		overrideSet       bool
+		want              bool
+	}{
+		{name: "unset preserves disabled remote setting", knownTestsEnabled: true, want: false},
+		{name: "unset preserves enabled remote setting", remoteEnabled: true, knownTestsEnabled: true, want: true},
+		{name: "true enables disabled remote setting", knownTestsEnabled: true, override: "true", overrideSet: true, want: true},
+		{name: "false disables enabled remote setting", remoteEnabled: true, knownTestsEnabled: true, override: "false", overrideSet: true, want: false},
+		{name: "invalid preserves remote setting", remoteEnabled: true, knownTestsEnabled: true, override: "invalid", overrideSet: true, want: true},
+		{name: "known tests remains a kill switch", remoteEnabled: true, override: "true", overrideSet: true, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.overrideSet {
+				t.Setenv(key, tt.override)
+			}
+			settings := civisibilitynet.SettingsResponseData{KnownTestsEnabled: tt.knownTestsEnabled}
+			settings.EarlyFlakeDetection.Enabled = tt.remoteEnabled
+
+			applyEarlyFlakeDetectionEnabledEnvironmentOverride(&settings)
+
+			assert.Equal(t, tt.want, settings.EarlyFlakeDetection.Enabled)
+		})
+	}
 }
 
 func writeSettingsManifestCache(t *testing.T, requireGit bool, impactedTestsEnabled bool, testsSkipping bool) string {

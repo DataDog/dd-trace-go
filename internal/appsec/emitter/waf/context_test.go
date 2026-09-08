@@ -11,10 +11,47 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	appsectrace "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
+
+func TestContextOperationActionConfig(t *testing.T) {
+	op := new(ContextOperation)
+	op.SetStackTraceConfig(config.StackTraceConfig{Disabled: true, MaxDepth: 17})
+
+	if got, want := op.actionConfig(), (actions.Config{StackTraceDisabled: true, StackTraceDepth: 17}); got != want {
+		t.Fatalf("actionConfig() = %#v, want %#v", got, want)
+	}
+}
+
+func TestSendActionEventsStackTraceConfig(t *testing.T) {
+	op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+	var received []*actions.StackTraceAction
+	dyngo.OnData(op, func(action *actions.StackTraceAction) {
+		received = append(received, action)
+	})
+	actionData := map[string]any{
+		"generate_stack": map[string]any{"stack_id": "stack-id"},
+	}
+
+	op.SetStackTraceConfig(config.StackTraceConfig{Disabled: true})
+	actions.SendActionEvents(op, actionData, op.actionConfig())
+	if len(received) != 0 {
+		t.Fatalf("received %d stack-trace actions while disabled, want 0", len(received))
+	}
+
+	op.SetStackTraceConfig(config.StackTraceConfig{MaxDepth: 1})
+	actions.SendActionEvents(op, actionData, op.actionConfig())
+	if len(received) != 1 {
+		t.Fatalf("received %d stack-trace actions while enabled, want 1", len(received))
+	}
+	if depth := len(received[0].Event.Frames); depth != 1 {
+		t.Fatalf("captured stack depth = %d, want 1", depth)
+	}
+}
 
 func TestContextOperationFinishClearsServiceEntryGLS(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLS())

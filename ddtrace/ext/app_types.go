@@ -80,6 +80,10 @@ const (
 	// SpanTypeLLM marks a span as an LLM operation.
 	SpanTypeLLM = "llm"
 
+	// SpanTypeWorker marks a span as a worker/management operation, such as a
+	// Pub/Sub admin (topic, subscription, snapshot, schema management) request.
+	SpanTypeWorker = "worker"
+
 	// SpanTypeAerospike marks a span as an Aerospike operation.
 	SpanTypeAerospike = "aerospike"
 )

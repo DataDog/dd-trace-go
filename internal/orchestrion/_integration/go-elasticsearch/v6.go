@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 	"github.com/elastic/go-elasticsearch/v6"
 	"github.com/elastic/go-elasticsearch/v6/esapi"
 	"github.com/stretchr/testify/require"
@@ -31,8 +32,7 @@ func (tc *TestCaseV6) Setup(ctx context.Context, t *testing.T) {
 	} else if runtime.GOOS == "darwin" && runtime.GOARCH != "amd64" {
 		t.Skip("Skipping test as the official elasticsearch v6 docker image cannot run under rosetta")
 	}
-	// Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
-	tc.base.Setup(ctx, t, "docker.elastic.co/elasticsearch/elasticsearch:6.8.23", func(addr string, _ []byte) (esClient, error) {
+	tc.base.Setup(ctx, t, "elasticsearch6", containers.Image("elasticsearch6"), func(addr string, _ []byte) (esClient, error) {
 		return elasticsearch.NewClient(elasticsearch.Config{
 			Addresses: []string{addr},
 		})

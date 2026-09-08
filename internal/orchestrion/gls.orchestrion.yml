@@ -56,8 +56,8 @@ aspects:
   #
   # Note: the cross-goroutine-finish half of orchestrion#782 is not applicable
   # here — all AppSec dyngo operations are registered and finished on the same
-  # goroutine. Accordingly, `operation` carries no reclaimable flag and
-  # contextStack.Push never drains dyngo entries.
+  # goroutine. Accordingly, `operation` carries no liveness cell, so Push never
+  # drains dyngo entries and Peek never skips one.
 
   # Give the operation a popper field (operation is unexported, like runtime.g).
   - id: dyngo operation GLS field
@@ -91,7 +91,7 @@ aspects:
               // context is GLS-aware (matching in-source CtxWithValue), pushes
               // the op, and captures the first-wins popper onto __dd_glsPop.
               __dd_o := {{ $op }}.unwrap()
-              orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop)
+              orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop, nil)
             }
 
   # FromContext: wrap ctx so the read also consults the GLS.
@@ -119,8 +119,8 @@ aspects:
             {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
 
   # FinishOperation: run the popper once on finish (deferred). dyngo has no
-  # reclaim flag (it relies on the goroutine-scoped popper only), so the
-  # reclaimable argument is nil.
+  # liveness cell (it relies on the goroutine-scoped popper only), so the done
+  # argument is nil.
   - id: dyngo FinishOperation GLS deactivate
     tracer-internal: true
     join-point:

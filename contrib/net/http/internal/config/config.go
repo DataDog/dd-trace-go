@@ -53,6 +53,10 @@ type Config struct {
 	CommonConfig
 	FinishOpts []tracer.FinishOption
 	HeaderTags instrumentation.HeaderTags
+	// Mux, if set, is used as the underlying *http.ServeMux instead of
+	// allocating a new one, so the traced ServeMux can wrap a mux that
+	// was already configured elsewhere.
+	Mux *http.ServeMux
 }
 
 func (c *Config) ApplyOpts(opts ...Option) {

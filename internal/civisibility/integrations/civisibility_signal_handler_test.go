@@ -77,6 +77,73 @@ func TestCIVisibilitySignalHandlerSignalPathShutsDownWithoutSelfWait(t *testing.
 	require.Equal(t, civisibility.StateExited, civisibility.GetState())
 }
 
+func TestConcurrentSignalExitWaitsForPreCloseOwner(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+
+	preCloseEntered := make(chan struct{})
+	releasePreClose := make(chan struct{})
+	closeActionRan := make(chan struct{}, 1)
+	require.True(t, TryPushCiVisibilityPreCloseAction(func() {
+		close(preCloseEntered)
+		<-releasePreClose
+	}))
+	PushCiVisibilityCloseAction(func() {
+		closeActionRan <- struct{}{}
+	})
+	civisibility.SetState(civisibility.StateInitialized)
+
+	normalDone := make(chan struct{})
+	go func() {
+		ExitCiVisibility()
+		close(normalDone)
+	}()
+	<-preCloseEntered
+
+	shutdownWaitEntered := make(chan struct{})
+	originalWaitForShutdown := waitForCIVisibilityShutdown
+	waitForCIVisibilityShutdown = func(done <-chan struct{}) {
+		close(shutdownWaitEntered)
+		originalWaitForShutdown(done)
+	}
+	t.Cleanup(func() { waitForCIVisibilityShutdown = originalWaitForShutdown })
+	signalExitCodes := make(chan int, 1)
+	go func() {
+		exitCiVisibility(false)
+		signalExitCodes <- 1
+	}()
+	select {
+	case <-shutdownWaitEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("signal shutdown caller did not reach the owner wait")
+	}
+
+	select {
+	case code := <-signalExitCodes:
+		t.Fatalf("signal exit ran before the pre-close owner completed: %d", code)
+	default:
+	}
+	select {
+	case <-closeActionRan:
+		t.Fatal("regular close action ran before the pre-close barrier completed")
+	default:
+	}
+
+	close(releasePreClose)
+	require.Equal(t, 1, waitForSignalHandlerExitCode(t, signalExitCodes))
+	select {
+	case <-normalDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("normal shutdown did not complete")
+	}
+	select {
+	case <-closeActionRan:
+	case <-time.After(2 * time.Second):
+		t.Fatal("regular close action did not run")
+	}
+	require.Equal(t, civisibility.StateExited, civisibility.GetState())
+}
+
 func TestCIVisibilitySignalHandlerDoesNotExitAfterNormalShutdownStarts(t *testing.T) {
 	resetCIVisibilityBootstrapStateForTesting()
 	disableAdditionalFeaturesForBootstrapTest()
@@ -102,6 +169,47 @@ func TestCIVisibilitySignalHandlerDoesNotExitAfterNormalShutdownStarts(t *testin
 	assertNoSignalHandlerExitCode(t, exitCodes)
 	stopCIVisibilitySignalHandler()
 	require.Nil(t, currentCIVisibilitySignalHandlerForTesting())
+}
+
+func TestCIVisibilitySignalHandlerDoesNotExitWhenNormalShutdownStartsDuringSignalShutdown(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	disableAdditionalFeaturesForBootstrapTest()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+
+	exitCodes := make(chan int, 1)
+	originalExitFunc := ciVisibilitySignalExitFunc
+	ciVisibilitySignalExitFunc = func(code int) {
+		exitCodes <- code
+	}
+	t.Cleanup(func() {
+		ciVisibilitySignalExitFunc = originalExitFunc
+	})
+
+	InitializeCIVisibilityMock()
+	handler := currentCIVisibilitySignalHandlerForTesting()
+	require.NotNil(t, handler)
+
+	preCloseEntered := make(chan struct{})
+	releasePreClose := make(chan struct{})
+	require.True(t, TryPushCiVisibilityPreCloseAction(func() {
+		close(preCloseEntered)
+		<-releasePreClose
+	}))
+
+	handler.signals <- syscall.SIGTERM
+	select {
+	case <-preCloseEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("signal shutdown did not reach the pre-close barrier")
+	}
+
+	markCIVisibilitySignalHandlerStopping()
+	close(releasePreClose)
+	assertSignalHandlerDone(t, handler)
+	assertNoSignalHandlerExitCode(t, exitCodes)
+	stopCIVisibilitySignalHandler()
+	require.Nil(t, currentCIVisibilitySignalHandlerForTesting())
+	require.Equal(t, civisibility.StateExited, civisibility.GetState())
 }
 
 // currentCIVisibilitySignalHandlerForTesting returns the active handler under

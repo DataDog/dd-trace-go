@@ -63,8 +63,16 @@ var (
 
 	// closeActions holds CI visibility close actions.
 	closeActions []ciVisibilityCloseAction
+	// preCloseActions holds barriers that must finish before regular close actions run.
+	preCloseActions []ciVisibilityCloseAction
+	// ciVisibilityShutdownDone closes after the current shutdown owner finishes.
+	ciVisibilityShutdownDone chan struct{}
+	// waitForCIVisibilityShutdown blocks shutdown callers that do not own the
+	// Initialized -> Exiting transition. It is a variable for deterministic tests.
+	waitForCIVisibilityShutdown = func(done <-chan struct{}) { <-done }
 
-	// closeActionsMutex synchronizes access to closeActions.
+	// closeActionsMutex synchronizes access to closeActions, preCloseActions, and
+	// ciVisibilityShutdownDone.
 	closeActionsMutex sync.Mutex
 
 	// mTracer contains the mock tracer instance for testing purposes
@@ -81,6 +89,9 @@ func EnsureCiVisibilityInitialization() {
 
 // InitializeCIVisibilityMock initialize the mocktracer for CI Visibility usage
 func InitializeCIVisibilityMock() mocktracer.Tracer {
+	if IsProcessRetryChild() {
+		return &processRetryNoopMockTracer{}
+	}
 	internalCiVisibilityInitialization(func([]tracer.StartOption) {
 		// Set the library to test mode
 		civisibility.SetTestMode()
@@ -92,6 +103,9 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 
 // internalCiVisibilityInitialization runs the one-time CI Visibility bootstrap and wires the selected tracer initializer into it.
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
+	if IsProcessRetryChild() {
+		return
+	}
 	ciVisibilityInitializationOnce.Do(func() {
 		civisibility.SetState(civisibility.StateInitializing)
 		defer civisibility.SetState(civisibility.StateInitialized)
@@ -163,6 +177,9 @@ func (handler *ciVisibilitySignalHandler) run() {
 			return
 		}
 		exitCiVisibility(false)
+		if handler.stopping.Load() {
+			return
+		}
 		ciVisibilitySignalExitFunc(1)
 	case <-handler.stop:
 		return
@@ -258,8 +275,24 @@ func PushCiVisibilityCloseAction(action ciVisibilityCloseAction) {
 	closeActions = append([]ciVisibilityCloseAction{action}, closeActions...)
 }
 
+// TryPushCiVisibilityPreCloseAction adds a barrier that runs before regular
+// close actions, without holding closeActionsMutex while the barrier executes.
+func TryPushCiVisibilityPreCloseAction(action ciVisibilityCloseAction) bool {
+	closeActionsMutex.Lock()
+	defer closeActionsMutex.Unlock()
+	state := civisibility.GetState()
+	if state == civisibility.StateExiting || state == civisibility.StateExited {
+		return false
+	}
+	preCloseActions = append([]ciVisibilityCloseAction{action}, preCloseActions...)
+	return true
+}
+
 // ExitCiVisibility executes all registered close actions and stops the tracer.
 func ExitCiVisibility() {
+	if IsProcessRetryChild() {
+		return
+	}
 	markCIVisibilitySignalHandlerStopping()
 	exitCiVisibility(true)
 }
@@ -267,24 +300,48 @@ func ExitCiVisibility() {
 // exitCiVisibility executes CI Visibility shutdown and optionally stops the
 // signal handler. Signal-triggered shutdown skips that wait to avoid self-deadlock.
 func exitCiVisibility(stopSignalHandler bool) {
+	closeActionsMutex.Lock()
 	if civisibility.GetState() != civisibility.StateInitialized {
+		done := ciVisibilityShutdownDone
+		closeActionsMutex.Unlock()
 		log.Debug("civisibility: already closed or not initialized")
+		if done != nil {
+			waitForCIVisibilityShutdown(done)
+		}
 		if stopSignalHandler {
 			stopCIVisibilitySignalHandler()
 		}
 		return
 	}
-
 	civisibility.SetState(civisibility.StateExiting)
+
+	done := make(chan struct{})
+	ciVisibilityShutdownDone = done
+	barriers := append([]ciVisibilityCloseAction(nil), preCloseActions...)
+	preCloseActions = nil
+	closeActionsMutex.Unlock()
 	if stopSignalHandler {
 		defer stopCIVisibilitySignalHandler()
 	}
-	defer civisibility.SetState(civisibility.StateExited)
+	defer func() {
+		closeActionsMutex.Lock()
+		civisibility.SetState(civisibility.StateExited)
+		if ciVisibilityShutdownDone == done {
+			close(done)
+			ciVisibilityShutdownDone = nil
+		}
+		closeActionsMutex.Unlock()
+	}()
 	log.Debug("civisibility: exiting")
+	for _, barrier := range barriers {
+		barrier()
+	}
+
 	closeActionsMutex.Lock()
 	defer closeActionsMutex.Unlock()
 	defer func() {
 		closeActions = []ciVisibilityCloseAction{}
+		preCloseActions = []ciVisibilityCloseAction{}
 		log.Debug("civisibility: flushing and stopping the logger")
 		logs.Stop()
 		log.Debug("civisibility: flushing and stopping tracer")

@@ -158,6 +158,8 @@ type Config struct {
 	TraceRateLimit int64
 	// APISec configuration
 	APISec APISecConfig
+	// StackTrace is the AppSec stack trace configuration.
+	StackTrace StackTraceConfig
 	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
 	RC *remoteconfig.ClientConfig
 	// RASP determines whether RASP features are enabled or not.
@@ -223,6 +225,7 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		WAFTimeout:          WAFTimeoutFromEnv(),
 		TraceRateLimit:      RateLimitFromEnv(),
 		APISec:              NewAPISecConfig(c.APISecOptions...),
+		StackTrace:          NewStackTraceConfig(),
 		RASP:                RASPEnabled(),
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
