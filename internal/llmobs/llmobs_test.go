@@ -1919,7 +1919,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:           "test-span-id",
 				TraceID:          "test-trace-id",
 				Label:            "accuracy",
-				CategoricalValue: ptrFromVal("correct"),
+				CategoricalValue: new("correct"),
 				MLApp:            "test-app",
 				TimestampMS:      1234567890,
 				Tags:             []string{"env:test"},
@@ -1934,7 +1934,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:       "categorical",
 					Label:            "accuracy",
-					CategoricalValue: ptrFromVal("correct"),
+					CategoricalValue: new("correct"),
 					MLApp:            "test-app",
 					TimestampMS:      1234567890,
 					Tags:             []string{"env:test", "ddtrace.version:" + version.Tag},
@@ -1947,7 +1947,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:     "test-span-id",
 				TraceID:    "test-trace-id",
 				Label:      "rating",
-				ScoreValue: ptrFromVal(0.85),
+				ScoreValue: new(0.85),
 				MLApp:      "test-app",
 				Timestamp:  time.UnixMilli(1234567890),
 			},
@@ -1961,7 +1961,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:  "score",
 					Label:       "rating",
-					ScoreValue:  ptrFromVal(0.85),
+					ScoreValue:  new(0.85),
 					MLApp:       "test-app",
 					TimestampMS: 1234567890,
 					Tags:        []string{"ddtrace.version:" + version.Tag},
@@ -1974,7 +1974,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:       "test-span-id",
 				TraceID:      "test-trace-id",
 				Label:        "is_valid",
-				BooleanValue: ptrFromVal(true),
+				BooleanValue: new(true),
 				MLApp:        "test-app",
 				TimestampMS:  1234567890,
 			},
@@ -1988,7 +1988,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:   "boolean",
 					Label:        "is_valid",
-					BooleanValue: ptrFromVal(true),
+					BooleanValue: new(true),
 					MLApp:        "test-app",
 					TimestampMS:  1234567890,
 					Tags:         []string{"ddtrace.version:" + version.Tag},
@@ -2001,7 +2001,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				TagKey:           "session_id",
 				TagValue:         "session-123",
 				Label:            "quality",
-				CategoricalValue: ptrFromVal("high"),
+				CategoricalValue: new("high"),
 				MLApp:            "test-app",
 				TimestampMS:      1234567890,
 			},
@@ -2015,7 +2015,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:       "categorical",
 					Label:            "quality",
-					CategoricalValue: ptrFromVal("high"),
+					CategoricalValue: new("high"),
 					MLApp:            "test-app",
 					TimestampMS:      1234567890,
 					Tags:             []string{"ddtrace.version:" + version.Tag},
@@ -2026,7 +2026,7 @@ func TestSubmitEvaluation(t *testing.T) {
 			name: "missing-join-info",
 			config: llmobs.EvaluationConfig{
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
+				CategoricalValue: new("value"),
 			},
 			wantError: "must provide either span/trace IDs or tag key/value for joining",
 		},
@@ -2038,7 +2038,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				TagKey:           "session_id",
 				TagValue:         "session-123",
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
+				CategoricalValue: new("value"),
 			},
 			wantError: "provide either span/trace IDs or tag key/value, not both",
 		},
@@ -2047,7 +2047,7 @@ func TestSubmitEvaluation(t *testing.T) {
 			config: llmobs.EvaluationConfig{
 				SpanID:           "test-span-id",
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
+				CategoricalValue: new("value"),
 			},
 			wantError: "both span and trace IDs are required for span-based joining",
 		},
@@ -2056,7 +2056,7 @@ func TestSubmitEvaluation(t *testing.T) {
 			config: llmobs.EvaluationConfig{
 				TagKey:           "session_id",
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
+				CategoricalValue: new("value"),
 			},
 			wantError: "both tag key and value are required for tag-based joining",
 		},
@@ -2067,7 +2067,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				TagKey:           "session_id",
 				TagValue:         "session-123",
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
+				CategoricalValue: new("value"),
 			},
 			wantError: "both span and trace IDs are required for span-based joining",
 		},
@@ -2078,7 +2078,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				TraceID:          "test-trace-id",
 				TagKey:           "session_id",
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
+				CategoricalValue: new("value"),
 			},
 			wantError: "both tag key and value are required for tag-based joining",
 		},
@@ -2097,8 +2097,8 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:           "test-span-id",
 				TraceID:          "test-trace-id",
 				Label:            "test",
-				CategoricalValue: ptrFromVal("value"),
-				ScoreValue:       ptrFromVal(0.5),
+				CategoricalValue: new("value"),
+				ScoreValue:       new(0.5),
 			},
 			wantError: "exactly one metric value (categorical, score, or boolean) must be provided",
 		},
@@ -2108,7 +2108,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:           "test-span-id",
 				TraceID:          "test-trace-id",
 				Label:            "accuracy",
-				CategoricalValue: ptrFromVal("correct"),
+				CategoricalValue: new("correct"),
 				MLApp:            "test-app",
 				TimestampMS:      1234567890,
 				Tags:             []string{"env:test", "team:ml"},
@@ -2123,7 +2123,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:       "categorical",
 					Label:            "accuracy",
-					CategoricalValue: ptrFromVal("correct"),
+					CategoricalValue: new("correct"),
 					MLApp:            "test-app",
 					TimestampMS:      1234567890,
 					Tags:             []string{"env:test", "team:ml", "ddtrace.version:" + version.Tag},
@@ -2136,7 +2136,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:      "test-span-id",
 				TraceID:     "test-trace-id",
 				Label:       "rating",
-				ScoreValue:  ptrFromVal(0.95),
+				ScoreValue:  new(0.95),
 				MLApp:       "test-app",
 				TimestampMS: 1234567890,
 				Tags:        []string{"env:prod", "ddtrace.version:custom-version"},
@@ -2151,7 +2151,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:  "score",
 					Label:       "rating",
-					ScoreValue:  ptrFromVal(0.95),
+					ScoreValue:  new(0.95),
 					MLApp:       "test-app",
 					TimestampMS: 1234567890,
 					Tags:        []string{"env:prod", "ddtrace.version:" + version.Tag},
@@ -2164,7 +2164,7 @@ func TestSubmitEvaluation(t *testing.T) {
 				SpanID:       "test-span-id",
 				TraceID:      "test-trace-id",
 				Label:        "correctness",
-				BooleanValue: ptrFromVal(true),
+				BooleanValue: new(true),
 				MLApp:        "test-app",
 				TimestampMS:  1234567890,
 				Tags:         nil,
@@ -2179,7 +2179,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					},
 					MetricType:   "boolean",
 					Label:        "correctness",
-					BooleanValue: ptrFromVal(true),
+					BooleanValue: new(true),
 					MLApp:        "test-app",
 					TimestampMS:  1234567890,
 					Tags:         []string{"ddtrace.version:" + version.Tag},
@@ -2215,7 +2215,7 @@ func TestSubmitEvaluationDefaultsTimestamp(t *testing.T) {
 		SpanID:     "test-span-id",
 		TraceID:    "test-trace-id",
 		Label:      "timestamp-default",
-		ScoreValue: ptrFromVal(1.0),
+		ScoreValue: new(1.0),
 	})
 	require.NoError(t, err)
 	after := time.Now().UnixMilli()
@@ -2846,8 +2846,9 @@ func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	return rt.base.RoundTrip(req)
 }
 
+//go:fix inline
 func ptrFromVal[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 func TestDDAttributes(t *testing.T) {
@@ -3042,7 +3043,7 @@ func TestEvalMetricsSizeBasedFlushing(t *testing.T) {
 			SpanID:           fmt.Sprintf("span-%d", i),
 			TraceID:          fmt.Sprintf("trace-%d", i),
 			Label:            "accuracy",
-			CategoricalValue: ptrFromVal(largeValue),
+			CategoricalValue: new(largeValue),
 			MLApp:            mlApp,
 		})
 		require.NoError(t, err)
@@ -3083,7 +3084,7 @@ func TestEvalMetricsSizeFlushAccountsForEnvelope(t *testing.T) {
 			SpanID:           fmt.Sprintf("span-%d", i),
 			TraceID:          fmt.Sprintf("trace-%d", i),
 			Label:            "accuracy",
-			CategoricalValue: ptrFromVal(value),
+			CategoricalValue: new(value),
 			MLApp:            mlApp,
 		})
 		require.NoError(t, err)
