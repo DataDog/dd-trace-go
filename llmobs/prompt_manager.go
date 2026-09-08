@@ -122,7 +122,7 @@ var globalPromptManager = func() *promptManager {
 			cacheDir:         cfg.LLMObsPromptsCacheDir(),
 			timeout:          cfg.LLMObsPromptsTimeout(),
 		}
-		if cfg.ExperimentalFlaggingProviderEnabled() {
+		if enabled, _ := cfg.ExperimentalFlaggingProviderEnabled(); enabled {
 			if internalffe.NewEvaluator == nil {
 				promptEvaluatorMissingWarning.Do(func() {
 					log.Warn("LLMObs prompt feature flag evaluation is enabled but unavailable; import github.com/DataDog/dd-trace-go/v2/openfeature to enable A/B exposure reporting")
