@@ -133,6 +133,7 @@ const (
 	EventTestsPassed          EventKind = "tests_passed"
 	EventTagPublished         EventKind = "tag_published"
 	EventPreparePRRecorded    EventKind = "prepare_pr_recorded"
+	EventImageObserved        EventKind = "image_observed"
 )
 
 // Event is one immutable, append-only record on an operation. Sequence

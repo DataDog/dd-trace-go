@@ -20,7 +20,7 @@ on:
         required: true
         type: string
       tags:
-        description: 'Space-separated list of tags to apply to the image (e.g., "latest v2.0.0")'
+        description: 'Space-separated immutable image tags'
         required: true
         type: string
       push:
@@ -38,22 +38,55 @@ on:
         required: false
         type: string
         default: ''
+      promote_latest:
+        description: 'Enter the serialized, provenance-checked latest promotion'
+        required: false
+        type: boolean
+        default: false
+      module_tag_prefix:
+        description: 'Reviewed module tag prefix for latest promotion'
+        required: false
+        type: string
+        default: ''
+    outputs:
+      digest:
+        description: 'Immutable multi-platform manifest digest'
+        value: ${{ jobs.publish-images.outputs.digest }}
 
-permissions:
-  contents: read
-  packages: write
+permissions: {}
 
 jobs:
+  validate-inputs:
+    permissions: {}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject mutable or malformed build tags
+        env:
+          INPUT_TAGS: ${{ inputs.tags }}
+        run: |
+          count=0
+          for tag in $INPUT_TAGS; do
+            [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]
+            test "$tag" != latest
+            count=$((count + 1))
+          done
+          test "$count" -gt 0
+
   build-images:
+    needs: [validate-inputs]
+    permissions:
+      contents: read
+      packages: write
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     strategy:
       matrix:
         platform: ${{ fromJSON(inputs.platforms) }}
     steps:
       - name: Prepare
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+          echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,9 +99,9 @@ jobs:
 
       - name: Login to Docker
         shell: bash
-        # GitHub Packages only supports PATs and GITHUB_TOKEN for authentication.
-        # https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry
-        run: docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login -u publisher --password-stdin ghcr.io
 
       - name: Docker meta
         id: meta
@@ -88,18 +121,19 @@ jobs:
           build-args: |
             DD_VERSION=${{ inputs.version }}
             COMMIT_SHA=${{ inputs.commit_sha }}
-          # This builds a Docker image and uploads it using a unique fingerprint, without a name
           outputs: type=image,name=${{ inputs.image }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Generate tags
         if: inputs.push == false
         id: tags
+        env:
+          INPUT_TAGS: ${{ inputs.tags }}
+          IMAGE: ${{ inputs.image }}
         run: |
           TAGS=""
-          # shellcheck disable=SC2086
-          for tag in ${{ inputs.tags }}; do
+          for tag in $INPUT_TAGS; do
             if [ -n "$tag" ]; then
-              TAGS="$TAGS,${{ inputs.image }}:$tag"
+              TAGS="$TAGS,$IMAGE:$tag"
             fi
           done
           echo "list=${TAGS:1}" >> "$GITHUB_OUTPUT"
@@ -122,10 +156,11 @@ jobs:
 
       - name: Export digest
         if: inputs.push == true
+        env:
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
+          touch "/tmp/digests/${BUILD_DIGEST#sha256:}"
 
       - name: Upload digest
         if: inputs.push == true
@@ -147,9 +182,22 @@ jobs:
 
   publish-images:
     if: inputs.push == true
+    permissions:
+      actions: read
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     needs: [build-images]
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
     steps:
+      - name: Checkout immutable source tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha }}
+
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -162,18 +210,305 @@ jobs:
 
       - name: Login to Docker
         shell: bash
-        run: docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login -u publisher --password-stdin ghcr.io
 
-      - name: Create manifest list and push
-        working-directory: /tmp/digests
+      - name: Create immutable manifest list and push
+        id: publish
+        env:
+          IMAGE: ${{ inputs.image }}
+          INPUT_TAGS: ${{ inputs.tags }}
+          VERSION: ${{ inputs.version }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          MODULE_TAG_PREFIX: ${{ inputs.module_tag_prefix }}
+          PROMOTE_LATEST: ${{ inputs.promote_latest }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_PATH: .github/workflows/docker-images-release.yml
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          TAG_FLAGS=""
-          # shellcheck disable=SC2086
-          for tag in ${{ inputs.tags }}; do
+          TAG_FLAGS=()
+          PRIMARY_TAG=""
+          for tag in $INPUT_TAGS; do
             if [ -n "$tag" ]; then
-              TAG_FLAGS="$TAG_FLAGS -t ${{ inputs.image }}:$tag"
+              TAG_FLAGS+=(--tag "$IMAGE:$tag")
+              if [ -z "$PRIMARY_TAG" ]; then PRIMARY_TAG="$tag"; fi
             fi
           done
-          # shellcheck disable=SC2046,SC2086
-          docker buildx imagetools create $TAG_FLAGS \
-            $(printf '${{ inputs.image }}@sha256:%s ' *)
+          SOURCES=()
+          for digest_path in /tmp/digests/*; do
+            digest=${digest_path##*/}
+            [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+            SOURCES+=("$IMAGE@sha256:$digest")
+          done
+          ANNOTATIONS=(
+            --annotation "index:org.opencontainers.image.version=$VERSION"
+            --annotation "index:org.opencontainers.image.revision=$COMMIT_SHA"
+          )
+          if [ "$PROMOTE_LATEST" = true ]; then
+            MODULE_REF="refs/tags/$MODULE_TAG_PREFIX$VERSION"
+            test "$(git cat-file -t "$MODULE_REF")" = tag
+            MODULE_TAG_OBJECT=$(git rev-parse "$MODULE_REF")
+            test "$(git rev-parse "$MODULE_REF^{}")" = "$COMMIT_SHA"
+            ANNOTATIONS+=(
+              --annotation "index:io.datadog.dd-trace-go.module-tag-object=$MODULE_TAG_OBJECT"
+              --annotation "index:io.datadog.dd-trace-go.repository=$REPOSITORY"
+              --annotation "index:io.datadog.dd-trace-go.workflow-path=$WORKFLOW_PATH"
+              --annotation "index:io.datadog.dd-trace-go.workflow-run-id=$RUN_ID"
+              --annotation "index:io.datadog.dd-trace-go.workflow-run-attempt=$RUN_ATTEMPT"
+            )
+          fi
+          docker buildx imagetools create "${TAG_FLAGS[@]}" "${ANNOTATIONS[@]}" "${SOURCES[@]}"
+          digest=$(docker buildx imagetools inspect "$IMAGE:$PRIMARY_TAG" --format '{{json .Manifest.Digest}}' | jq -er .)
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+  promote-latest:
+    if: inputs.push == true && inputs.promote_latest == true
+    needs: [publish-images]
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    concurrency:
+      group: gardener-image-latest-production-v1
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Login to Docker
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login -u publisher --password-stdin ghcr.io
+
+      - name: Revalidate source, run, version and immutable image provenance
+        id: guard
+        env:
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ inputs.image }}
+          VERSION: ${{ inputs.version }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          MODULE_TAG_PREFIX: ${{ inputs.module_tag_prefix }}
+          VERSION_DIGEST: ${{ needs.publish-images.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY" = DataDog/dd-trace-go
+          test "$EVENT_NAME" = push
+          test "$RUN_ATTEMPT" = 1
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          MODULE_REF="refs/tags/$MODULE_TAG_PREFIX$VERSION"
+          test "$REF" = "$MODULE_REF"
+          case "$MODULE_TAG_PREFIX|$IMAGE" in
+            'contrib/azure/apim-callout/|ghcr.io/datadog/dd-trace-go/apim-callout'|\
+            'contrib/envoyproxy/go-control-plane/|ghcr.io/datadog/dd-trace-go/service-extensions-callout'|\
+            'contrib/k8s.io/gateway-api/|ghcr.io/datadog/dd-trace-go/request-mirror'|\
+            'contrib/haproxy/stream-processing-offload/|ghcr.io/datadog/dd-trace-go/haproxy-spoa') ;;
+            *) exit 1 ;;
+          esac
+          git fetch --force --tags origin
+          test "$(git cat-file -t "$MODULE_REF")" = tag
+          MODULE_TAG_OBJECT=$(git rev-parse "$MODULE_REF")
+          test "$(git rev-parse "$MODULE_REF^{}")" = "$COMMIT_SHA"
+          ROOT_REF="refs/tags/$VERSION"
+          test "$(git cat-file -t "$ROOT_REF")" = tag
+          test "$(git rev-parse "$ROOT_REF^{}")" = "$COMMIT_SHA"
+          HIGHEST=$(git tag --list 'v*' | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -1)
+          test "$HIGHEST" = "$VERSION"
+          curl --fail --silent --show-error --max-time 60 --max-filesize 16777216 \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$API_URL/repos/$REPOSITORY/actions/runs/$RUN_ID" > /tmp/run.json
+          jq -e --arg repo "$REPOSITORY" --arg event "$EVENT_NAME" --arg branch "$REF_NAME" --arg sha "$COMMIT_SHA" --argjson run_id "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" \
+            '.id == $run_id and .repository.full_name == $repo and .path == ".github/workflows/docker-images-release.yml" and .event == $event and .head_branch == $branch and .head_sha == $sha and .run_attempt == $attempt and .status == "in_progress" and .conclusion == null' /tmp/run.json
+
+          # GitHub's Actions API reports an exact tag push in head_branch as
+          # the tag name without refs/tags/. Enumerate every page for that
+          # exact module tag; same-SHA tags for the other three packages must
+          # never participate in this canonical-run decision.
+          : > /tmp/eligible-image-runs
+          PAGE=1
+          while [ "$PAGE" -le 200 ]; do
+            curl --fail --silent --show-error --max-time 60 --max-filesize 16777216 --get \
+              -H "Authorization: Bearer $API_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              --data-urlencode "event=push" \
+              --data-urlencode "branch=$REF_NAME" \
+              --data-urlencode 'per_page=100' \
+              --data-urlencode "page=$PAGE" \
+              "$API_URL/repos/$REPOSITORY/actions/workflows/docker-images-release.yml/runs" > /tmp/runs-page.json
+            jq -e '.workflow_runs | type == "array"' /tmp/runs-page.json >/dev/null
+            PAGE_COUNT=$(jq -er '.workflow_runs | length' /tmp/runs-page.json)
+            jq -r --arg repo "$REPOSITORY" --arg branch "$REF_NAME" --arg sha "$COMMIT_SHA" '
+              .workflow_runs[]
+              | select(.repository.full_name == $repo and .path == ".github/workflows/docker-images-release.yml" and .event == "push" and .head_branch == $branch and .head_sha == $sha)
+              | if ((.run_attempt | type) != "number") then error("malformed image run attempt")
+                elif .run_attempt != 1 then empty
+                elif ((.id | type) != "number") then error("malformed image run id")
+                elif .status == "completed" and .conclusion == "success" then (.id | tostring)
+                elif .status == "completed" and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "action_required" or .conclusion == "startup_failure" or .conclusion == "stale" or .conclusion == "skipped" or .conclusion == "neutral") then empty
+                elif (.status == "queued" or .status == "in_progress") and .conclusion == null then (.id | tostring)
+                else error("malformed image run state")
+                end
+            ' /tmp/runs-page.json >> /tmp/eligible-image-runs
+            if [ "$PAGE_COUNT" -lt 100 ]; then
+              break
+            fi
+            test "$PAGE" -lt 200
+            PAGE=$((PAGE + 1))
+          done
+          test "$PAGE_COUNT" -lt 100
+          test -s /tmp/eligible-image-runs
+          test "$(grep -Fxc "$RUN_ID" /tmp/eligible-image-runs)" = 1
+          test "$(wc -l < /tmp/eligible-image-runs | tr -d ' ')" = "$(sort -u /tmp/eligible-image-runs | wc -l | tr -d ' ')"
+          CANONICAL_RUN_ID=$(sort -n /tmp/eligible-image-runs | head -1)
+          test "$CANONICAL_RUN_ID" = "$RUN_ID"
+
+          # Re-read the current run after complete enumeration. A rerun,
+          # cancellation, or replacement between reads fails closed.
+          curl --fail --silent --show-error --max-time 60 --max-filesize 16777216 \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$API_URL/repos/$REPOSITORY/actions/runs/$RUN_ID" > /tmp/run-recheck.json
+          jq -e --arg repo "$REPOSITORY" --arg branch "$REF_NAME" --arg sha "$COMMIT_SHA" --argjson run_id "$RUN_ID" \
+            '.id == $run_id and .repository.full_name == $repo and .path == ".github/workflows/docker-images-release.yml" and .event == "push" and .head_branch == $branch and .head_sha == $sha and .run_attempt == 1 and .status == "in_progress" and .conclusion == null' /tmp/run-recheck.json
+
+          CANDIDATE=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}')
+          test "$(jq -r '.Digest' <<<"$CANDIDATE")" = "$VERSION_DIGEST"
+          test "$(jq -r '.Annotations["org.opencontainers.image.version"]' <<<"$CANDIDATE")" = "$VERSION"
+          test "$(jq -r '.Annotations["org.opencontainers.image.revision"]' <<<"$CANDIDATE")" = "$COMMIT_SHA"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.module-tag-object"]' <<<"$CANDIDATE")" = "$MODULE_TAG_OBJECT"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.repository"]' <<<"$CANDIDATE")" = "$REPOSITORY"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-path"]' <<<"$CANDIDATE")" = .github/workflows/docker-images-release.yml
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-id"]' <<<"$CANDIDATE")" = "$RUN_ID"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-attempt"]' <<<"$CANDIDATE")" = "$RUN_ATTEMPT"
+          echo "module_tag_object=$MODULE_TAG_OBJECT" >> "$GITHUB_OUTPUT"
+
+      - name: Promote exact digest or reconcile response loss
+        env:
+          IMAGE: ${{ inputs.image }}
+          VERSION: ${{ inputs.version }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          VERSION_DIGEST: ${{ needs.publish-images.outputs.digest }}
+          MODULE_TAG_OBJECT: ${{ steps.guard.outputs.module_tag_object }}
+          MODULE_TAG_PREFIX: ${{ inputs.module_tag_prefix }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_PATH: .github/workflows/docker-images-release.yml
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          API_URL: ${{ github.api_url }}
+          API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          git fetch --force --tags origin
+          HIGHEST=$(git tag --list 'v*' | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -1)
+          test "$HIGHEST" = "$VERSION"
+          current=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' 2>/dev/null || true)
+          if [ -n "$current" ]; then
+            current_digest=$(jq -r '.Digest // empty' <<<"$current")
+            current_version=$(jq -r '.Annotations["org.opencontainers.image.version"] // empty' <<<"$current")
+            current_commit=$(jq -r '.Annotations["org.opencontainers.image.revision"] // empty' <<<"$current")
+            current_tag_object=$(jq -r '.Annotations["io.datadog.dd-trace-go.module-tag-object"] // empty' <<<"$current")
+            current_repository=$(jq -r '.Annotations["io.datadog.dd-trace-go.repository"] // empty' <<<"$current")
+            current_workflow=$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-path"] // empty' <<<"$current")
+            current_run_id=$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-id"] // empty' <<<"$current")
+            current_run_attempt=$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-attempt"] // empty' <<<"$current")
+            [[ "$current_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "$current_version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+            [[ "$current_commit" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$current_tag_object" =~ ^[0-9a-f]{40}$ ]]
+            test "$current_commit" != "$current_tag_object"
+            test "$current_repository" = DataDog/dd-trace-go
+            test "$current_workflow" = .github/workflows/docker-images-release.yml
+            [[ "$current_run_id" =~ ^[1-9][0-9]*$ ]]
+            test "$current_run_attempt" = 1
+
+            CURRENT_MODULE_TAG="$MODULE_TAG_PREFIX$current_version"
+            CURRENT_MODULE_REF="refs/tags/$CURRENT_MODULE_TAG"
+            test "$(git cat-file -t "$CURRENT_MODULE_REF")" = tag
+            test "$(git rev-parse "$CURRENT_MODULE_REF")" = "$current_tag_object"
+            test "$(git rev-parse "$CURRENT_MODULE_REF^{}")" = "$current_commit"
+            CURRENT_ROOT_REF="refs/tags/$current_version"
+            test "$(git cat-file -t "$CURRENT_ROOT_REF")" = tag
+            test "$(git rev-parse "$CURRENT_ROOT_REF^{}")" = "$current_commit"
+
+            curl --fail --silent --show-error --max-time 60 --max-filesize 16777216 \
+              -H "Authorization: Bearer $API_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "$API_URL/repos/$REPOSITORY/actions/runs/$current_run_id" > /tmp/latest-run.json
+            jq -e --arg repo "$REPOSITORY" --arg branch "$CURRENT_MODULE_TAG" --arg sha "$current_commit" --argjson run_id "$current_run_id" \
+              '.id == $run_id and .repository.full_name == $repo and .path == ".github/workflows/docker-images-release.yml" and .event == "push" and .head_branch == $branch and .head_sha == $sha and .run_attempt == 1 and .status == "completed" and .conclusion == "success"' /tmp/latest-run.json
+
+            : > /tmp/latest-eligible-runs
+            LATEST_PAGE=1
+            while [ "$LATEST_PAGE" -le 200 ]; do
+              curl --fail --silent --show-error --max-time 60 --max-filesize 16777216 --get \
+                -H "Authorization: Bearer $API_TOKEN" \
+                -H 'Accept: application/vnd.github+json' \
+                --data-urlencode "event=push" \
+                --data-urlencode "branch=$CURRENT_MODULE_TAG" \
+                --data-urlencode 'per_page=100' \
+                --data-urlencode "page=$LATEST_PAGE" \
+                "$API_URL/repos/$REPOSITORY/actions/workflows/docker-images-release.yml/runs" > /tmp/latest-runs-page.json
+              jq -e '.workflow_runs | type == "array"' /tmp/latest-runs-page.json >/dev/null
+              LATEST_PAGE_COUNT=$(jq -er '.workflow_runs | length' /tmp/latest-runs-page.json)
+              jq -r --arg repo "$REPOSITORY" --arg branch "$CURRENT_MODULE_TAG" --arg sha "$current_commit" '
+                .workflow_runs[]
+                | select(.repository.full_name == $repo and .path == ".github/workflows/docker-images-release.yml" and .event == "push" and .head_branch == $branch and .head_sha == $sha)
+                | if ((.run_attempt | type) != "number") then error("malformed historical image run attempt")
+                  elif .run_attempt != 1 then empty
+                  elif ((.id | type) != "number") then error("malformed historical image run id")
+                  elif .status == "completed" and .conclusion == "success" then (.id | tostring)
+                  elif .status == "completed" and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "action_required" or .conclusion == "startup_failure" or .conclusion == "stale" or .conclusion == "skipped" or .conclusion == "neutral") then empty
+                  elif (.status == "queued" or .status == "in_progress") and .conclusion == null then (.id | tostring)
+                  else error("malformed historical image run state")
+                  end
+              ' /tmp/latest-runs-page.json >> /tmp/latest-eligible-runs
+              if [ "$LATEST_PAGE_COUNT" -lt 100 ]; then
+                break
+              fi
+              test "$LATEST_PAGE" -lt 200
+              LATEST_PAGE=$((LATEST_PAGE + 1))
+            done
+            test "$LATEST_PAGE_COUNT" -lt 100
+            test -s /tmp/latest-eligible-runs
+            test "$(grep -Fxc "$current_run_id" /tmp/latest-eligible-runs)" = 1
+            test "$(wc -l < /tmp/latest-eligible-runs | tr -d ' ')" = "$(sort -u /tmp/latest-eligible-runs | wc -l | tr -d ' ')"
+            test "$(sort -n /tmp/latest-eligible-runs | head -1)" = "$current_run_id"
+
+            if [ "$current_digest" = "$VERSION_DIGEST" ] && [ "$current_version" = "$VERSION" ] && [ "$current_commit" = "$COMMIT_SHA" ] && [ "$current_tag_object" = "$MODULE_TAG_OBJECT" ] && [ "$current_repository" = "$REPOSITORY" ] && [ "$current_workflow" = "$WORKFLOW_PATH" ] && [ "$current_run_id" = "$RUN_ID" ] && [ "$current_run_attempt" = "$RUN_ATTEMPT" ]; then
+              exit 0
+            fi
+            newest=$(printf '%s\n%s\n' "$current_version" "$VERSION" | sort -V | tail -1)
+            test "$newest" = "$VERSION"
+            test "$current_version" != "$VERSION"
+          fi
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$VERSION_DIGEST" || true
+          post=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}')
+          test "$(jq -r '.Digest' <<<"$post")" = "$VERSION_DIGEST"
+          test "$(jq -r '.Annotations["org.opencontainers.image.version"]' <<<"$post")" = "$VERSION"
+          test "$(jq -r '.Annotations["org.opencontainers.image.revision"]' <<<"$post")" = "$COMMIT_SHA"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.module-tag-object"]' <<<"$post")" = "$MODULE_TAG_OBJECT"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.repository"]' <<<"$post")" = "$REPOSITORY"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-path"]' <<<"$post")" = "$WORKFLOW_PATH"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-id"]' <<<"$post")" = "$RUN_ID"
+          test "$(jq -r '.Annotations["io.datadog.dd-trace-go.workflow-run-attempt"]' <<<"$post")" = "$RUN_ATTEMPT"
