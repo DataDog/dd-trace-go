@@ -269,17 +269,28 @@ func TestMainBranchWorkflowStableGateAndWorkspaceIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	main := string(mainRaw)
-	for _, required := range []string{"- release-v*", "- dev-v*", "release-tests-complete:", "if: ${{ always() }}", "- unit-integration-tests", "- warm-repo-cache", "- multios-unit-tests", `test "${UNIT_INTEGRATION_RESULT}" = success`, `test "${WARM_REPO_CACHE_RESULT}" = success`, `test "${MULTIOS_UNIT_RESULT}" = success`} {
+	for _, required := range []string{"- release-v*", "- dev-v*", "permissions: {}", "warm-repo-cache:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read", "key: gitdb-${{ github.repository_id }}-${{ github.sha }}", "release-tests-complete:", "if: ${{ always() }}", "- unit-integration-tests", "- warm-repo-cache", "- multios-unit-tests", `test "${UNIT_INTEGRATION_RESULT}" = success`, `test "${WARM_REPO_CACHE_RESULT}" = success`, `test "${MULTIOS_UNIT_RESULT}" = success`} {
 		if !strings.Contains(main, required) {
 			t.Fatalf("main workflow missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"secrets: inherit", "pull-requests: write"} {
+		if strings.Contains(main, forbidden) {
+			t.Fatalf("main workflow contains %q", forbidden)
 		}
 	}
 	unitRaw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "unit-integration-tests.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(unitRaw), "  GOWORK: off") {
-		t.Fatal("reusable tests do not force GOWORK=off")
+	unit := string(unitRaw)
+	for _, required := range []string{"  GOWORK: off", "MATRIX_CHUNK: ${{ matrix.chunk }}", `./scripts/ci_test_contrib.sh default "${MATRIX_CHUNK}"`} {
+		if !strings.Contains(unit, required) {
+			t.Fatalf("reusable tests missing %q", required)
+		}
+	}
+	if strings.Contains(unit, "./scripts/ci_test_contrib.sh default ${{") {
+		t.Fatal("matrix expression is interpolated directly into the contrib-test shell command")
 	}
 	contribRaw, err := os.ReadFile(filepath.Join("..", "ci_test_contrib.sh"))
 	if err != nil {

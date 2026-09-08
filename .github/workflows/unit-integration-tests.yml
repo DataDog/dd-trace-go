@@ -106,9 +106,10 @@ jobs:
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
           BUILD_TAGS: ${{ inputs.build_tags }}
+          MATRIX_CHUNK: ${{ matrix.chunk }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
+          ./scripts/ci_test_contrib.sh default "${MATRIX_CHUNK}"
 
       - name: Get Datadog credentials
         id: dd-sts
