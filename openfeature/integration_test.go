@@ -24,8 +24,12 @@ import (
 // TestEndToEnd_BooleanFlag tests the complete flow from configuration to flag evaluation
 // using the actual OpenFeature SDK client.
 func TestEndToEnd_BooleanFlag(t *testing.T) {
-	// Create provider and configuration
-	provider := newDatadogProvider(ProviderConfig{})
+	// Create provider and configuration. ExposureFlushInterval is set far
+	// beyond this test's runtime: this test only asserts on the writer's
+	// buffer, which append populates synchronously, but SetProviderAndWait
+	// below starts the background flush ticker, which could otherwise drain
+	// a correctly recorded event out of the buffer before a subtest reads it.
+	provider := newDatadogProvider(ProviderConfig{ExposureFlushInterval: time.Hour})
 	config := createE2EBooleanConfig()
 	provider.updateConfiguration(&config)
 
@@ -303,7 +307,11 @@ func TestEndToEnd_IntegerFlag(t *testing.T) {
 
 // TestEndToEnd_FloatFlag tests float flag evaluation.
 func TestEndToEnd_FloatFlag(t *testing.T) {
-	provider := newDatadogProvider(ProviderConfig{})
+	// ExposureFlushInterval is set far beyond this test's runtime for the same
+	// reason as TestEndToEnd_BooleanFlag: this test only asserts on the
+	// writer's buffer, and the background flush ticker could otherwise drain
+	// it first.
+	provider := newDatadogProvider(ProviderConfig{ExposureFlushInterval: time.Hour})
 	config := createE2EFloatConfig()
 	provider.updateConfiguration(config)
 
@@ -332,8 +340,9 @@ func TestEndToEnd_FloatFlag(t *testing.T) {
 		t.Errorf("expected 0.15, got %f", value)
 	}
 
-	// Verify exposure event was recorded
-	time.Sleep(10 * time.Millisecond)
+	// Verify exposure event was recorded. append is synchronous, and the
+	// background flush ticker cannot fire within this test's runtime (see
+	// the ExposureFlushInterval comment above), so no sleep is needed here.
 	exposures := getExposureBuffer(writer)
 	if len(exposures) <= initialBufferSize {
 		t.Error("expected exposure event to be recorded")
@@ -1602,7 +1611,8 @@ func TestEndToEnd_ExposureFlushInterval(t *testing.T) {
 	}
 }
 
-// TestEndToEnd_ExposureDoLogFalse tests that exposure events are NOT sent when doLog is false.
+// TestEndToEnd_ExposureDoLogFalse tests that exposure events are NOT sent
+// when doLog is false.
 func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 	var receivedCount int
 	var mu sync.Mutex
@@ -1615,16 +1625,25 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}
 	}))
-	defer server.Close()
+	// The explicit flush below must reach this server, so close it only
+	// after the provider (registered via t.Cleanup below) has stopped:
+	// t.Cleanup runs in LIFO order, so registering this Close first runs it
+	// last.
+	t.Cleanup(server.Close)
 
 	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
 	t.Setenv("DD_SERVICE", "dolog-test")
 
+	// A background flush ticker would race the buffer assertions below, so
+	// this test flushes explicitly instead of waiting on ExposureFlushInterval.
 	provider := newDatadogProvider(ProviderConfig{
-		ExposureFlushInterval: 50 * time.Millisecond,
+		ExposureFlushInterval: time.Hour,
 	})
 
-	// Create config with doLog=false
+	// no-log-flag has DoLog=false: evaluating it must never buffer an event.
+	// logged-flag has the default DoLog (true) and is the positive control:
+	// without it, a regression that stopped buffering for every flag would
+	// pass this test for the wrong reason.
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -1652,6 +1671,26 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 					},
 				},
 			},
+			"logged-flag": {
+				Key:           "logged-flag",
+				Enabled:       true,
+				VariationType: valueTypeBoolean,
+				Variations: map[string]*variant{
+					"on": {Key: "on", Value: true},
+				},
+				Allocations: []*allocation{
+					{
+						Key:   "logged-allocation",
+						Rules: []*rule{},
+						Splits: []*split{
+							{
+								Shards:       []*shard{},
+								VariationKey: "on",
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 	provider.updateConfiguration(config)
@@ -1664,8 +1703,6 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 		provider.Shutdown()
 	})
 
-	time.Sleep(20 * time.Millisecond)
-
 	client := of.NewClient("test-app-dolog")
 	ctx := context.Background()
 
@@ -1675,7 +1712,9 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 	writer.buffer = make([]exposureEvent, 0)
 	writer.mu.Unlock()
 
-	// Evaluate flag multiple times
+	// Evaluate the doLog=false flag multiple times and assert absence at the
+	// synchronous enqueue seam, rather than through a finite sleep-based
+	// observation window that a delayed flush worker could pass vacuously.
 	for i := range 5 {
 		evalCtx := of.NewEvaluationContext(fmt.Sprintf("user-%d", i), map[string]any{})
 		_, err := client.BooleanValue(ctx, "no-log-flag", false, evalCtx)
@@ -1683,17 +1722,34 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	}
+	if buf := getExposureBuffer(writer); len(buf) != 0 {
+		t.Errorf("expected no buffered events for doLog=false, got %d", len(buf))
+	}
 
-	// Wait for potential flush
-	time.Sleep(150 * time.Millisecond)
+	// Positive control: the default-DoLog flag must still buffer and flush,
+	// establishing that the transport and hook path work at all.
+	evalCtx := of.NewEvaluationContext("control-user", map[string]any{})
+	_, err = client.BooleanValue(ctx, "logged-flag", false, evalCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if buf := getExposureBuffer(writer); len(buf) != 1 {
+		t.Fatalf("expected exactly 1 buffered event for the positive control, got %d", len(buf))
+	}
+
+	writer.flush()
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return receivedCount > 0
+	}, 5*time.Second, time.Millisecond, "expected the positive control's flush to reach the agent")
 
 	mu.Lock()
 	count := receivedCount
 	mu.Unlock()
-
-	// Should NOT have received any payloads
-	if count > 0 {
-		t.Errorf("expected NO exposure events with doLog=false, but received %d payloads", count)
+	if count != 1 {
+		t.Errorf("expected exactly 1 payload (the positive control only), got %d", count)
 	}
 }
 
@@ -1825,29 +1881,33 @@ func TestEndToEnd_ExposureContextAttributes(t *testing.T) {
 	}
 }
 
-// TestEndToEnd_ExposureAgentSide tests that the payload is good
+// TestEndToEnd_ExposureAgentSide tests that the payload structure the writer
+// sends is well formed, using a server that responds 200 (the assertions
+// exercise the payload the client actually sent, not the agent's handling of
+// an error response).
 func TestEndToEnd_ExposureAgentSide(t *testing.T) {
-	// Create a server that always returns errors
+	// Send each decoded payload (or decode error) to the test goroutine over a
+	// channel, rather than asserting inside the handler goroutine: require's
+	// FailNow only stops the calling goroutine via runtime.Goexit, so a
+	// failure there would not reliably fail the test, and the test could
+	// return before the handler even runs.
+	payloads := make(chan exposurePayload, 1)
+	decodeErrs := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 
-		var expPayload exposurePayload
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&expPayload))
-
-		// Verify that the payload has the expected structure
-		require.NotEmpty(t, expPayload.Exposures)
-		for _, exp := range expPayload.Exposures {
-			require.NotEmpty(t, exp.Flag.Key)
-			require.NotEmpty(t, exp.Subject.ID)
-			require.NotEmpty(t, exp.Variant.Key)
-			require.NotZero(t, exp.Timestamp)
+		var payload exposurePayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			decodeErrs <- err
+			return
 		}
-
-		require.NotEmpty(t, expPayload.Context.Version)
-		require.NotEmpty(t, expPayload.Context.Service)
-		require.NotEmpty(t, expPayload.Context.Env)
+		payloads <- payload
 	}))
-	defer server.Close()
+	// The provider's own shutdown flush must reach this server, so close it
+	// only after the provider (registered via t.Cleanup below) has stopped:
+	// t.Cleanup runs in LIFO order, so registering this Close first runs it
+	// last.
+	t.Cleanup(server.Close)
 
 	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
 	t.Setenv("DD_SERVICE", "error-test")
@@ -1889,11 +1949,31 @@ func TestEndToEnd_ExposureAgentSide(t *testing.T) {
 		t.Error("expected feature to be enabled despite agent failure")
 	}
 
-	// Events should still be buffered locally
-	_ = getExposureBuffer(writer)
+	// Wait for the handler to receive and decode a payload, rather than
+	// sleeping a fixed interval and never checking whether it did: the flush
+	// is asynchronous, so a loaded CI runner can take longer than any
+	// interval short enough to keep the test fast.
+	var payload exposurePayload
+	select {
+	case payload = <-payloads:
+	case err := <-decodeErrs:
+		t.Fatalf("failed to decode exposure payload: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for an exposure payload")
+	}
 
-	// After flush attempt, buffer should be cleared (even though send failed)
-	time.Sleep(150 * time.Millisecond)
+	// Verify that the payload has the expected structure.
+	require.NotEmpty(t, payload.Exposures)
+	for _, exp := range payload.Exposures {
+		require.NotEmpty(t, exp.Flag.Key)
+		require.NotEmpty(t, exp.Subject.ID)
+		require.NotEmpty(t, exp.Variant.Key)
+		require.NotZero(t, exp.Timestamp)
+	}
+
+	require.NotEmpty(t, payload.Context.Version)
+	require.NotEmpty(t, payload.Context.Service)
+	require.NotEmpty(t, payload.Context.Env)
 }
 
 // TestEndToEnd_AllThreeFixes tests a complex scenario that exercises all three fixes together.
@@ -2048,6 +2128,12 @@ func TestEndToEnd_ExposureSerialID(t *testing.T) {
 		}
 	}`))
 	require.Equal(t, rc.ApplyStateAcknowledged, status.State)
+
+	// The SDK has no API to unregister a named provider; it retains this
+	// registration, and the background exposure/flag-evaluation writers
+	// SetNamedProviderAndWait starts, for the rest of the test process unless
+	// stopped directly.
+	t.Cleanup(provider.Shutdown)
 
 	domain := "exposure-serial-id-test-app"
 	require.NoError(t, of.SetNamedProviderAndWait(domain, provider))
