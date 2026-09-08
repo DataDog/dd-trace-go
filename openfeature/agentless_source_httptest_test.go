@@ -109,6 +109,10 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 	case "server_error":
 		w.WriteHeader(http.StatusInternalServerError)
+	case "not_found":
+		// A non-retryable status that is neither 401 nor 403, so it reaches the
+		// "unexpected status" branch rather than the authentication one.
+		w.WriteHeader(http.StatusNotFound)
 	case "throttled":
 		w.Header().Set("Retry-After", "2")
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -480,6 +484,15 @@ func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
 	})
 	src.start()
 
+	// Wait for the poll to actually reach the backend before asserting no
+	// Authorization header arrived — start() only schedules the poll goroutine
+	// and returns immediately, so lastAuthPresent would otherwise be read on
+	// its zero value and pass trivially.
+	require.Eventually(t, func() bool {
+		requests, _, _, _ := backend.status()
+		return requests >= 1
+	}, 2*time.Second, time.Millisecond)
+
 	_, _, _, lastAuthPresent := backend.status()
 	assert.False(t, lastAuthPresent)
 }
@@ -549,6 +562,30 @@ func TestAgentlessSource_WarningDedupe(t *testing.T) {
 	}, 2*time.Second, time.Millisecond)
 
 	assert.Equal(t, 1, logger.countContaining("authentication"))
+}
+
+// TestAgentlessSource_WarningDedupeIsPerCause pins that warnOnce dedupes per
+// failure cause, not per broad area. A transient 500 must not spend the warn
+// slot of the 404 that follows it: the 404 stops polling, so its warning is
+// the only outward sign that the configuration has frozen at last-known-good.
+func TestAgentlessSource_WarningDedupeIsPerCause(t *testing.T) {
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("server_error", "not_found")
+
+	logger, undo := newCapturingLogger()
+	defer undo()
+
+	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+	src.start()
+
+	// Wait on the second warning itself, not on the request count: the backend
+	// counts a request before the client has processed its response, so
+	// asserting on the count would race the log write.
+	require.Eventually(t, func() bool {
+		return logger.countContaining("unexpected status 404") == 1
+	}, 2*time.Second, time.Millisecond)
+
+	assert.Equal(t, 1, logger.countContaining("retryable status 500"))
 }
 
 func TestAgentlessSource_NoLogContainsTheEndpoint(t *testing.T) {

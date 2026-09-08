@@ -79,6 +79,24 @@ func TestResolveSource(t *testing.T) {
 			},
 			wantSource: SourceAgentless,
 		},
+		// Rules 2 and 4 both fire when source and enabled are set together, so the
+		// two cases below pin their order. Without them, moving rule 4 ahead of rule 2
+		// breaks no test while silently starting billed polling for "offline" and
+		// switching "remote_config" off the Agent onto direct HTTPS.
+		"explicit source takes precedence over explicit enabled": {
+			in: sourceInputs{
+				sourceSet: true, source: "offline",
+				enabledSet: true, enabled: true,
+			},
+			wantSource: SourceDisabled,
+		},
+		"explicit source keeps remote_config over explicit enabled": {
+			in: sourceInputs{
+				sourceSet: true, source: "remote_config",
+				enabledSet: true, enabled: true,
+			},
+			wantSource: SourceRemoteConfig,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			source, legacyDecided := resolveSource(tt.in)
