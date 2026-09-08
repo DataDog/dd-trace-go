@@ -126,6 +126,31 @@ func TestScenario(t *testing.T) {
 			})
 		}
 	})
+
+	// crashtracker deliberately crashes the app on /crash rather than
+	// serving a load pattern, so it cannot reuse wc.HitEndpoints (which
+	// asserts every request succeeds) or process.Stop (which asserts a
+	// clean SIGINT exit): there is nothing left to gracefully stop once the
+	// process has already crashed.
+	t.Run("crashtracker", func(t *testing.T) {
+		t.Run("panic", func(t *testing.T) {
+			lc := newLaunchConfig(t)
+			process := lc.Launch(t)
+
+			// The handler panics in a goroutine after writing its own
+			// response, so this request races the crash: it can complete
+			// normally or fail with a connection reset depending on which
+			// side of that race wins. Both outcomes mean the crash was
+			// triggered, so only the process's own exit status below is
+			// asserted on, not this request's result.
+			resp, err := http.Get("http://" + process.HostPort + "/crash")
+			if err == nil {
+				resp.Body.Close()
+			}
+
+			require.Error(t, <-process.wait, "expected the app to exit non-zero after crashing")
+		})
+	})
 }
 
 func newWorkloadConfig(t *testing.T) (wc workloadConfig) {
