@@ -1734,14 +1734,15 @@ func TestReportEffectiveStatsComputation(t *testing.T) {
 	assert.Equal(t, []bool{false, true}, reports)
 }
 
-func TestExperimentalFlaggingProviderEnabledExplicit(t *testing.T) {
+func TestExperimentalFlaggingProviderEnabled(t *testing.T) {
 	t.Run("unset", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
 		cfg := Get()
-		assert.False(t, cfg.ExperimentalFlaggingProviderEnabled())
-		assert.False(t, cfg.ExperimentalFlaggingProviderEnabledExplicit())
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.False(t, enabled)
+		assert.False(t, explicit)
 	})
 
 	t.Run("explicitly set", func(t *testing.T) {
@@ -1750,8 +1751,9 @@ func TestExperimentalFlaggingProviderEnabledExplicit(t *testing.T) {
 
 		t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", "true")
 		cfg := Get()
-		assert.True(t, cfg.ExperimentalFlaggingProviderEnabled())
-		assert.True(t, cfg.ExperimentalFlaggingProviderEnabledExplicit())
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.True(t, enabled)
+		assert.True(t, explicit)
 	})
 }
 
@@ -1820,6 +1822,21 @@ func TestFeatureFlagsConfigurationSource(t *testing.T) {
 		cfg := Get()
 		source, explicit := cfg.FeatureFlagsConfigurationSource()
 		assert.Equal(t, "remote_config", source)
+		assert.True(t, explicit)
+	})
+
+	t.Run("blank but set is still explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// A whitespace-only value is explicit here on purpose: deciding what a
+		// blank source means belongs to openfeature.resolveSource, which falls
+		// through to the later precedence rules. Coercing it to non-explicit at
+		// this layer would hide the distinction from that decision.
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "   ")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "   ", source)
 		assert.True(t, explicit)
 	})
 }
