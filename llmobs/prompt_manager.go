@@ -169,9 +169,6 @@ func evaluatePromptFeatureFlag(ctx context.Context, key, targetingKey string, at
 }
 
 func (manager *promptManager) get(ctx context.Context, promptID string, options getPromptConfig) (*ManagedPrompt, error) {
-	if manager.apiKey == "" {
-		return nil, ErrPromptAuth
-	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -321,6 +318,9 @@ func (manager *promptManager) fetchAndCache(ctx context.Context, request promptR
 }
 
 func (manager *promptManager) fetchHTTP(ctx context.Context, request promptRequest) (*ManagedPrompt, *promptFetchError) {
+	if manager.apiKey == "" {
+		return nil, &promptFetchError{reason: ErrPromptAuth.Error(), cause: ErrPromptAuth}
+	}
 	if request.source() == PromptSourceResolve && manager.appKey == "" {
 		return nil, &promptFetchError{reason: "an application key is required to resolve prompts for an environment"}
 	}

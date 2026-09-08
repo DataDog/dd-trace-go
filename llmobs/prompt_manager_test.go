@@ -267,7 +267,7 @@ func TestGlobalPromptManagerFollowsLatestConfig(t *testing.T) {
 	}
 }
 
-func TestPromptFeatureFlagAndTargeting(t *testing.T) {
+func TestPromptFeatureFlagWithoutCredentialsAndTargeting(t *testing.T) {
 	serverCalls := atomic.Int32{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		serverCalls.Add(1)
@@ -282,6 +282,7 @@ func TestPromptFeatureFlagAndTargeting(t *testing.T) {
 		seen <- targetingKey
 		return map[string]any{"prompt_id": "greeting", "version": targetingKey, "template": "hello " + targetingKey}, nil
 	})
+	manager.apiKey, manager.appKey = "", ""
 	attributes := map[string]any{"tier": "gold", "targetingKey": "attribute"}
 	for _, key := range []string{"alice", "bob"} {
 		prompt, err := manager.get(context.Background(), "greeting", getPromptConfig{targetingKey: key, attributes: attributes})
@@ -408,12 +409,16 @@ func TestPromptFallbackAuthAndErrors(t *testing.T) {
 	if !errors.Is(err, fallbackErr) {
 		t.Fatalf("fallback error %v", err)
 	}
-	manager.apiKey = ""
+	manager.apiKey, manager.appKey, manager.env = "", "", "staging"
 	manager.evaluate = func(context.Context, string, string, map[string]any) (any, error) {
-		t.Fatal("provider called before auth")
-		return nil, nil
+		return nil, errors.New("not ready")
 	}
-	_, err = manager.get(context.Background(), "missing", getPromptConfig{fallback: &PromptFallback{Template: PromptTemplate{Text: "x"}}})
+	before := calls.Load()
+	prompt, err = manager.get(context.Background(), "missing", getPromptConfig{fallback: &PromptFallback{Template: PromptTemplate{Text: "x"}}})
+	if err != nil || prompt.Source() != PromptSourceFallback || calls.Load() != before {
+		t.Fatalf("missing API key fallback: prompt=%#v err=%v", prompt, err)
+	}
+	_, err = manager.get(context.Background(), "missing", getPromptConfig{})
 	if !errors.Is(err, ErrPromptAuth) {
 		t.Fatalf("auth error %v", err)
 	}
@@ -421,7 +426,7 @@ func TestPromptFallbackAuthAndErrors(t *testing.T) {
 	manager.evaluate = func(context.Context, string, string, map[string]any) (any, error) {
 		return nil, errors.New("not ready")
 	}
-	before := calls.Load()
+	before = calls.Load()
 	prompt, err = manager.get(context.Background(), "missing", getPromptConfig{fallback: &PromptFallback{Template: PromptTemplate{Text: "x"}}})
 	if err != nil || prompt.Source() != PromptSourceFallback || calls.Load() != before {
 		t.Fatalf("missing app key made HTTP request: %v", err)

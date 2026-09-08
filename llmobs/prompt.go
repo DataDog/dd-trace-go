@@ -14,7 +14,7 @@ import (
 	"slices"
 )
 
-// ErrPromptAuth is returned when DD_API_KEY is not configured.
+// ErrPromptAuth is returned when HTTP retrieval requires DD_API_KEY and none is configured.
 var ErrPromptAuth = errors.New("llmobs: DD_API_KEY is required for prompt operations")
 
 // PromptMessage is one message in a managed chat prompt.
