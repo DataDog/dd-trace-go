@@ -959,6 +959,11 @@ func (t *tracer) pushChunk(trace *chunk) {
 // +checklocksignore — Initialization time, span not yet shared.
 func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
+	// A caller passing N options is our best cheap signal for how many
+	// Tag-family options it might include; Tag uses this to size Tags on
+	// its first write instead of starting unsized and rehashing once the
+	// tag count grows past a small map's initial capacity.
+	opts.tagsHint = len(options)
 	for _, fn := range options {
 		if fn == nil {
 			continue
