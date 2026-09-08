@@ -422,6 +422,13 @@
         "default": null
       }
     ],
+    "DD_CRASHTRACKING_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CUSTOM_PARENT_ID": [
       {
         "implementation": "A",
