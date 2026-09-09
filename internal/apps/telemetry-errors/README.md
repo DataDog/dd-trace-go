@@ -66,11 +66,17 @@ around it — the run simply survives long enough for a normal flush tick to fir
 - **`level == ERROR` and `count >= 1`**
 - **`stack_points_at_call_site`** — the topmost non-telemetry-package frame is the declaring function,
   not telemetry client plumbing
-- **`no_replay_frames`** — the stack trace contains no frames from the global-client replay path. A
-  report made before `telemetry.StartApp` is queued and only reported once the client swaps in; its
-  stack trace is then captured at *replay* time, pointing at telemetry internals instead of the actual
-  bug (dd-trace-go#5250 documents the ordering issue that causes this). A trigger that fails this check
-  needs to move later in the tracer's startup, not just be re-run.
+- **`no_replay_frames`** — the stack trace contains no frames from the global-client replay path.
+  `ReportError`/`ReportPanic` capture the stack trace eagerly at the call site
+  (`WithCaptureStacktraceNow`), before the report is ever queued, so a report made before
+  `telemetry.StartApp` still points at the real call site once replayed
+  (`TestReportError_QueuedBeforeClientExists_StackPointsAtCallSite` verifies this) — this check exists
+  to catch a regression in that guarantee, not to flag reporting before `StartApp` as inherently wrong.
+  The actual risk with reporting before `StartApp` is the 512-entry global recorder ring buffer: an
+  early burst can evict earlier queued reports before they are ever transmitted, with only a
+  debug-level log (off by default) as a signal (dd-trace-go#5250 discusses this ordering risk). A
+  trigger that fails this check has a real stack-capture regression to investigate, not just an
+  ordering issue to work around by moving later in startup.
 - **`customer_frames_redacted`** — the harness app's own `main.*` frames read `REDACTED` in the stack
   trace, confirming that the redaction step that scrubs customer code before it ever leaves the process
   is actually working for this call site
@@ -368,7 +374,7 @@ cat > no-memfd-seccomp.json <<'EOF'
 }
 EOF
 
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /tmp/telemetry-errors-linux ./telemetry-errors
+CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -o /tmp/telemetry-errors-linux ./telemetry-errors
 
 docker run --rm --network host --security-opt seccomp=./no-memfd-seccomp.json \
   -e DD_TRACE_AGENT_URL=http://localhost:18126 \

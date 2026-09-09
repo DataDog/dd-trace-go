@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,6 +51,26 @@ type wireBody struct {
 
 type wireLogsPayload struct {
 	Logs []wireLogMessage `json:"logs"`
+}
+
+// syncBuffer is a mutex-guarded bytes.Buffer, safe to use as an exec.Cmd's
+// Stderr (written by an os/exec-internal copying goroutine for as long as
+// the process is alive) while also being read from another goroutine.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // TestSeccompMemfdBlocked_ReportsWellFormedErrors drives the harness binary
@@ -126,13 +147,28 @@ func TestSeccompMemfdBlocked_ReportsWellFormedErrors(t *testing.T) {
 		"--entrypoint", "/telemetry-errors-linux",
 		"alpine:latest", "-http", "127.0.0.1:8080",
 	)
-	var stderr bytes.Buffer
-	run.Stderr = &stderr
+	// run.Stderr is written by os/exec's internal copying goroutine for as
+	// long as the container process is alive; bytes.Buffer isn't safe for
+	// concurrent read/write, so nothing may read stderr.String() until that
+	// goroutine has stopped. Guard the buffer so a safety-net Cleanup (in
+	// case the test exits early, e.g. via t.Fatal before the synchronous
+	// stop below runs) can never race the primary read either.
+	stderr := &syncBuffer{}
+	run.Stderr = stderr
 	require.NoError(t, run.Start(), "starting container")
-	t.Cleanup(func() {
+	stopped := false
+	stopAndWait := func() {
+		if stopped {
+			return
+		}
+		stopped = true
 		_ = exec.Command(dockerPath, "stop", containerName).Run()
 		_ = run.Wait()
-	})
+	}
+	// Safety net only: if the test exits before the synchronous stopAndWait
+	// call below runs (e.g. a t.Fatal in the wait loop), this still reclaims
+	// the container. stopAndWait's stopped guard makes calling it twice safe.
+	t.Cleanup(stopAndWait)
 
 	// storeConfig fires unconditionally at tracer startup, and the flush
 	// ticker (sped up via DD_TELEMETRY_HEARTBEAT_INTERVAL) drains it shortly
@@ -148,6 +184,13 @@ func TestSeccompMemfdBlocked_ReportsWellFormedErrors(t *testing.T) {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+
+	// The harness binary runs as a long-lived HTTP server, so it never exits
+	// on its own: stop the container and wait for the process synchronously
+	// here, before reading stderr below, rather than leaving that to the
+	// deferred Cleanup above (which would race the exec-internal goroutine
+	// still copying the child's stderr into the buffer).
+	stopAndWait()
 
 	// The memfd site is expected to fail locally (seccomp blocks
 	// memfd_create) but not report to Error Tracking, so payload files may

@@ -79,7 +79,7 @@ A `statsd`/telemetry **count** is the right tool when you want to know *how ofte
 
 **Picking a helper.** Use `LogAndReportError`/`LogAndReportPanic` only when the site already matches `log.Error("<constant>: %s", err.Error())` exactly — the rewrite is then output-identical, including `internal/log`'s dedup key. Otherwise leave the existing `log.Error` call as-is and add a bare `ReportError`/`ReportPanic` next to it.
 
-Only the **first** error type seen per `(message, level, tags)` per flush window is transmitted, and only the error's *type* is ever sent — never its message. For an error wrapped with `fmt.Errorf("...: %w", err)` this often reads as `*errors.errorString`, so the message and stack trace carry the real signal; pick a message specific enough to stand on its own.
+Only the **first** error type seen per `(message, level, tags)` per flush window is transmitted, and only the error's *type* is ever sent — never its message. `errorType` reports the *outer* error's concrete type as-is (stripping only a pointer indirection, never unwrapping), so an error wrapped with `fmt.Errorf("...: %w", err)` reads as `fmt.wrapError` regardless of what `err` actually was, not the wrapped error's own type; so the message and stack trace carry the real signal; pick a message specific enough to stand on its own.
 
 ### Telemetry Errors
 
