@@ -80,7 +80,7 @@ func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptr
 		Attributes:        convertSpanAttributes(s, defaultServiceName, otelSemantics),
 		Events:            convertEvents(s),
 		Links:             convertSpanLinks(s.spanLinks),
-		Status:            convertSpanStatus(s, otelSemantics),
+		Status:            convertSpanStatus(s),
 		TraceState:        convertTraceState(s.context, p),
 	}
 	// Mirror the W3C sampled trace-flag we set on wire injection: kept spans
@@ -92,15 +92,8 @@ func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptr
 }
 
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
-func convertSpanStatus(s *Span, otelSemantics bool) *otlptrace.Status {
+func convertSpanStatus(s *Span) *otlptrace.Status {
 	message, _ := s.meta.Get(ext.ErrorMsg)
-	if otelSemantics {
-		statusCode, hasStatusCode := s.meta.Get(ext.HTTPResponseStatusCode)
-		errorType, _ := s.meta.Get(ext.ErrorType)
-		if hasStatusCode && errorType == statusCode {
-			message = ""
-		}
-	}
 	status := &otlptrace.Status{
 		Code:    otlptrace.Status_STATUS_CODE_UNSET,
 		Message: message,
