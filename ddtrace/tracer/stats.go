@@ -68,6 +68,8 @@ type concentrator struct {
 	statsdClient internal.StatsdClient // statsd client for sending metrics.
 
 	// otelSemantics is captured at construction to avoid reading locked config for every span.
+	// This assumes OTel semantic mode remains fixed for the concentrator's lifetime. If the mode
+	// becomes dynamically configurable, the concentrator must be recreated or this value updated.
 	otelSemantics bool
 
 	// sender determines where flushed stats go (the Datadog Agent or an OTLP
