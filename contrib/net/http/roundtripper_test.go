@@ -675,6 +675,15 @@ func TestRoundTripperHonorsRequestOptionsWithOTelSemantics(t *testing.T) {
 		assert.Equal(t, float64(9443), span.Tag(ext.ServerPort))
 	})
 
+	t.Run("malformed authority is omitted", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "https://origin.example/path", nil)
+		req.Host = "bad::authority"
+
+		span, _ := roundTripSpan(t, &emptyRoundTripper{}, req)
+		assert.NotContains(t, span.Tags(), ext.ServerAddress)
+		assert.NotContains(t, span.Tags(), ext.ServerPort)
+	})
+
 	t.Run("recognized QUERY method remains unchanged", func(t *testing.T) {
 		span, _ := roundTripSpan(t, &emptyRoundTripper{}, httptest.NewRequest("QUERY", "http://example.com/users/123", nil))
 		assert.Equal(t, "QUERY", span.Tag("http.request.method"))

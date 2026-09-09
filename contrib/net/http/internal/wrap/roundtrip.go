@@ -158,9 +158,11 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 			opts = append(opts, tracer.Tag(ext.HTTPRequestMethodOriginal, originalMethod))
 		}
 		address, port := instrumentationhttptrace.ServerAddressPortFromClientRequest(req)
-		opts = append(opts, tracer.Tag(ext.ServerAddress, address))
-		if port != -1 {
-			opts = append(opts, tracer.Tag(ext.ServerPort, port))
+		if address != "" {
+			opts = append(opts, tracer.Tag(ext.ServerAddress, address))
+			if port != -1 {
+				opts = append(opts, tracer.Tag(ext.ServerPort, port))
+			}
 		}
 	} else {
 		opts = append(opts,
