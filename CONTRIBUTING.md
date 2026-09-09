@@ -133,6 +133,33 @@ make test/contrib
 make test/appsec
 ```
 
+### Setting Up Dagger
+
+For a more precise way of running CI locally, all testing pipelines also support using [Dagger](https://dagger.io). Dagger builds a container from a definition in the repository and runs commands inside it. The same container runs on a laptop and on a GitHub Actions runner, so a Dagger check produces the same result in both places.
+
+Install the Dagger CLI into the repository's `bin` directory:
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR="$(pwd)/bin" sh
+```
+
+Before running a Dagger command, start Docker Desktop or an equivalent container runtime. Dagger's engine runs as a container, and it fails to start when no container runtime is available.
+
+Confirm the installation:
+
+```shell
+./bin/dagger version
+```
+
+Run Dagger commands from the repository root. The `--source` flag resolves relative to the current directory, so running from a different directory fails to find the Dockerfiles under [.dagger/base](./.dagger/base).
+
+Verify the module against both supported Go versions:
+
+```shell
+./bin/dagger call -m .dagger go-version --source=. --go-version=1.26
+./bin/dagger call -m .dagger go-version --source=. --go-version=1.27
+```
+
 ### CODEOWNERS patterns
 
 [CODEOWNERS](./CODEOWNERS) is read by two consumers that do not implement the same matching rules: GitHub, which follows gitignore semantics, and CI Visibility, which uses the simpler matcher in [internal/civisibility/utils](./internal/civisibility/utils/codeowners.go) to attribute test results to teams. A pattern the two interpret differently assigns the right reviewers while silently mis-attributing test ownership.

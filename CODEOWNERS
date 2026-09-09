@@ -13,6 +13,7 @@
 
 # shared modules and repository tooling
 /.claude/                       @DataDog/dd-trace-go-guild
+/.dagger/                       @DataDog/dd-trace-go-guild
 /.llm-validation/               @DataDog/dd-trace-go-guild
 /_docs/                         @DataDog/dd-trace-go-guild
 /_eval/                         @DataDog/dd-trace-go-guild
