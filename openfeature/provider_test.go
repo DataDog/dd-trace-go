@@ -702,9 +702,13 @@ func TestInitWithContext_LateConfigurationStillBecomesReady(t *testing.T) {
 		t.Error("a configuration arriving after Init's deadline must still be stored")
 	}
 
-	event := drainEvent(t, provider.EventChannel())
-	if event.EventType != openfeature.ProviderReady {
-		t.Errorf("the late configuration must promote the provider to ready, got %v", event.EventType)
+	// The SDK already emitted its own ProviderReady when Init returned nil on
+	// the deadline, so this transition is recorded but not re-emitted.
+	provider.mu.RLock()
+	ready := provider.ready
+	provider.mu.RUnlock()
+	if !ready {
+		t.Error("the late configuration must promote the provider to ready")
 	}
 
 	// The periodic writers must be started by that late configuration too,

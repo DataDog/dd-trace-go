@@ -106,6 +106,9 @@ type DatadogProvider struct {
 	// rather than ProviderStale. Used to re-emit ProviderReady on every
 	// not-ready-to-ready transition, not just the first one. // +checklocks:mu
 	ready bool
+	// firstReadyDelegated records that the first ready transition was left to
+	// the SDK, which emits its own ProviderReady from Init. // +checklocks:mu
+	firstReadyDelegated bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.

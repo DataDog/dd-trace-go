@@ -14,22 +14,14 @@ var _ openfeature.EventHandler = (*DatadogProvider)(nil)
 // eventChannelBufferSize is the buffer size of the provider's event channel.
 const eventChannelBufferSize = 8
 
-// EventChannel implements openfeature.EventHandler. It must return the same
-// stored channel on every call: the SDK's listener goroutine calls this on
-// every loop iteration, so returning a fresh channel each time would
-// silently drop the subscription.
+// EventChannel implements openfeature.EventHandler. The SDK's listener calls it
+// every loop iteration, so a fresh channel would drop the subscription.
 func (p *DatadogProvider) EventChannel() <-chan openfeature.Event {
 	return p.eventCh
 }
 
-// emitFirstOrChangeEvent emits ProviderReady on every transition from
-// not-ready to ready — the first configuration this provider ever applies,
-// and every later recovery after a ProviderStale period — and
-// ProviderConfigChange for a later non-nil configuration while already
-// ready. A nil config (RC delivering an empty configuration set, or a poll
-// that never received one) emits ProviderStale instead: evaluations return
-// PROVIDER_NOT_READY, but without this the OpenFeature status would remain
-// ReadyState. Called under p.mu from updateConfiguration.
+// emitFirstOrChangeEvent maps a configuration update to a lifecycle event.
+// Called under p.mu from updateConfiguration.
 func (p *DatadogProvider) emitFirstOrChangeEvent(config *universalFlagsConfiguration) {
 	switch {
 	case config == nil:
@@ -39,6 +31,12 @@ func (p *DatadogProvider) emitFirstOrChangeEvent(config *universalFlagsConfigura
 		}})
 	case !p.ready:
 		p.ready = true
+		if !p.firstReadyDelegated {
+			// The SDK emits its own ProviderReady when Init returns, so
+			// emitting the first transition here fires handlers twice.
+			p.firstReadyDelegated = true
+			return
+		}
 		p.emitEvent(openfeature.Event{EventType: openfeature.ProviderReady, ProviderEventDetails: openfeature.ProviderEventDetails{
 			Message: "configuration received",
 		}})
@@ -49,17 +47,8 @@ func (p *DatadogProvider) emitFirstOrChangeEvent(config *universalFlagsConfigura
 	}
 }
 
-// emitEvent sends event without blocking the caller (a poll or RC callback
-// goroutine). ProviderReady and ProviderStale must not be silently dropped:
-// unlike ProviderConfigChange, they change the SDK's tracked readiness
-// status, so losing one on a full buffer would leave listeners on the wrong
-// status indefinitely (e.g. a dropped ProviderStale leaves the SDK reporting
-// ready while evaluations return PROVIDER_NOT_READY). For either, the oldest
-// queued event is drained to make room before retrying once.
-// ProviderConfigChange carries no flag-specific payload and doesn't affect
-// status, so dropping it on a full buffer is correct coalescing, not a lost
-// update — and it must never evict a still-unread ProviderReady/ProviderStale
-// to make room for itself.
+// emitEvent sends event without blocking the caller. ProviderConfigChange is
+// dropped on a full buffer; the newest ready/stale transition always survives.
 func (p *DatadogProvider) emitEvent(event openfeature.Event) {
 	select {
 	case p.eventCh <- event:
@@ -71,6 +60,8 @@ func (p *DatadogProvider) emitEvent(event openfeature.Event) {
 		return
 	}
 
+	// Losing a readiness change would leave the SDK reporting the wrong status
+	// indefinitely, so evict the oldest queued event to make room for this one.
 	select {
 	case <-p.eventCh:
 	default:
