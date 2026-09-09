@@ -9,6 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -107,6 +112,106 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 // go.mod. runtime.Caller pins this to this file's own known location, so it
 // stays correct if the package ever moves a level deeper or shallower, or if
 // a runner starts the test binary from a different working directory.
+// TestCrashtrackerIsFirstMainStatement inspects orchestrion's own woven
+// source rather than runtime behavior. TestCrashtrackerMainInjection proves a
+// report eventually arrives, which passes whether the injected call lands
+// before or after the victim's own original statements -- it does not prove
+// the aspect's stated "first statement of main()" guarantee. This builds the
+// victim with -work, locates the transformed main.go orchestrion actually
+// compiles, parses it, and asserts the very first statement in main()'s body
+// is the injected crashtracker.Start() call.
+func TestCrashtrackerIsFirstMainStatement(t *testing.T) {
+	if !built.WithOrchestrion {
+		t.Skip("requires an orchestrion-built test binary; run via orchestrion go test")
+	}
+	moduleRoot := integrationModuleRoot(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := orchestrionCommand(ctx, "go", "build", "-a", "-work", "-o", filepath.Join(t.TempDir(), "victim-order"), victimImportPath)
+	cmd.Dir = moduleRoot
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatal("build victim with -work: timeout")
+	}
+	if err != nil {
+		t.Fatalf("build victim with -work: %v\n%s", err, out)
+	}
+
+	workDir := parseWorkDir(t, out)
+	defer os.RemoveAll(workDir)
+
+	wovenPath := findWovenVictimMain(t, workDir)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, wovenPath, nil, 0)
+	if err != nil {
+		t.Fatalf("parse woven source %s: %v", wovenPath, err)
+	}
+
+	var mainFunc *ast.FuncDecl
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "main" {
+			mainFunc = fn
+			break
+		}
+	}
+	if mainFunc == nil {
+		t.Fatalf("no func main() found in woven source %s", wovenPath)
+	}
+	if len(mainFunc.Body.List) == 0 {
+		t.Fatal("woven main()'s body is empty")
+	}
+
+	first := mainFunc.Body.List[0]
+	var buf strings.Builder
+	if err := format.Node(&buf, fset, first); err != nil {
+		t.Fatalf("format main()'s first statement: %v", err)
+	}
+	src := buf.String()
+	if !strings.Contains(src, "crashtracker") || !strings.Contains(src, "Start") {
+		t.Fatalf("main()'s first statement is not crashtracker.Start(); got:\n%s", src)
+	}
+}
+
+// parseWorkDir extracts the temporary work directory path go build reports
+// via -work (a line of the form "WORK=<path>" on its own).
+func parseWorkDir(t *testing.T, buildOutput []byte) string {
+	t.Helper()
+	for _, line := range strings.Split(string(buildOutput), "\n") {
+		if dir, ok := strings.CutPrefix(strings.TrimSpace(line), "WORK="); ok {
+			return dir
+		}
+	}
+	t.Fatalf("no WORK= line in build output:\n%s", buildOutput)
+	return ""
+}
+
+// findWovenVictimMain locates the transformed main.go orchestrion actually
+// hands to the compiler for the victim package, under workDir. The exact
+// "bNNN" directory name is assigned per build and not meaningful here.
+func findWovenVictimMain(t *testing.T, workDir string) string {
+	t.Helper()
+	want := filepath.Join("orchestrion", "src", "main", "main.go")
+	var found string
+	err := filepath.WalkDir(workDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, want) {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("search %s for woven main.go: %v", workDir, err)
+	}
+	if found == "" {
+		t.Fatalf("no woven main.go (%s) found under %s -- orchestrion may not have modified the victim package", want, workDir)
+	}
+	return found
+}
+
 func integrationModuleRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

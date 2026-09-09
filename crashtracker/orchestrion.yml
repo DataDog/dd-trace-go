@@ -20,6 +20,21 @@ meta:
     The call site also matches crashtracker/doc.go, which says to call Start
     as early as possible in main.
 
+    The tracer and profiler also each prepend a `defer ...Stop()` into main(),
+    and neither sets an explicit order, so without one here the three
+    prepended blocks sorted and applied in declaration order alone --
+    observed to place crashtracker's call third in the generated code, after
+    both defer statements. prepend-statements always inserts at the front of
+    whatever the block already contains, so the advice applied LAST ends up
+    FIRST in the generated code; crashtracker's default-order block was
+    simply applied before the other two. A defer doesn't run anything before
+    crashtracker.Start(), but the ordering was otherwise unpinned: a future
+    default-order advice that runs real code, not just a defer, could apply
+    even later and still land ahead of it. The explicit high order below
+    (matching instrumentation/errortrace/orchestrion.yml's own order: 100)
+    guarantees this block applies last, and therefore lands first in the
+    generated code, regardless of what else targets this join point.
+
     Note: crashes that occur during init() functions (before main() is reached)
     are not captured because SetCrashOutput is wired inside crashtracker.Start().
 
@@ -35,6 +50,15 @@ aspects:
               - signature: {}
     advice:
       - prepend-statements:
+          # prepend-statements always inserts at the front of whatever is
+          # already in the block, so the advice applied LAST ends up FIRST in
+          # the generated code -- and advice is applied in ascending
+          # (namespace, order, declaration-index) order (see the description
+          # above). A higher order therefore sorts and applies later, landing
+          # this block ahead of any default-order (0) advice targeting the
+          # same join point. Matches instrumentation/errortrace/orchestrion.yml's
+          # order: 100 for the same reason.
+          order: 100
           imports:
             crashtracker: github.com/DataDog/dd-trace-go/v2/crashtracker
             log: log
