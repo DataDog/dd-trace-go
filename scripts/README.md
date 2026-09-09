@@ -53,6 +53,8 @@ Targets:
   test/integration     Run integration tests
   test-deadlock        Run tests with deadlock detection
   test-debug-deadlock  Run tests with debug and deadlock detection
+  ci/runner/build      Build the containerized CI runner image (GO_VERSION=1.26|1.27, default 1.27)
+  ci/cache/clean       Remove the CI runner's Go module and build cache volumes
   ci/run               Reproduce a CI job end to end (JOB=core|contrib, CHUNK=n)
   ci/services          Start CI's service containers (all, or SERVICES="a b")
   ci/services/pull     Re-pull CI's images at CI's platform (repairs wrong-arch cache)

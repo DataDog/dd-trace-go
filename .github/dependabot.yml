@@ -44,6 +44,8 @@ updates:
       - "/contrib/haproxy/stream-processing-offload/cmd/spoa"
       - "/contrib/k8s.io/gateway-api/cmd/request-mirror"
       - "/internal/apps"
+      - "/scripts/ci-runner/go1.26"
+      - "/scripts/ci-runner/go1.27"
     schedule:
       interval: "weekly"
       day: "monday"

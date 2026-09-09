@@ -134,7 +134,13 @@ make test/appsec
 
 ### Reproducing CI locally
 
-`make ci/run` runs one CI job end to end. The target starts CI's service containers, runs CI's entrypoint with CI's environment, then stops the containers.
+`make ci/run` runs one CI job end to end. The target starts CI's service containers, runs CI's entrypoint inside a container pinned to CI's Go version and Debian base, then stops the containers.
+
+The container runs as a non-root user, like CI's runner. A test that asserts real permission enforcement then behaves the same locally as it does on CI.
+
+`scripts/ci_runner_run.sh` copies your working tree into the container, and copies it back out again, instead of using a bind mount. The copy reflects whatever is on disk at run time, including uncommitted changes.
+
+The copy excludes `.git`, so a commit made while a long run is in progress cannot be overwritten when results come back.
 
 ```shell
 # Reproduce the test-core job
@@ -148,6 +154,9 @@ make ci/run JOB=contrib CHUNK=6
 # Build tags work the same way as the workflow's `build_tags` input
 make ci/run JOB=contrib CHUNK=6 BUILD_TAGS=deadlock
 
+# Test against the other Go version in CI's matrix (default: 1.27)
+make ci/run JOB=core GO_VERSION=1.26
+
 # Run the steps one at a time
 make ci/services                  # or SERVICES="mysql postgres redis" for a subset
 make ci/core                      # or: make ci/contrib CHUNK=6
@@ -156,15 +165,11 @@ make ci/services/down
 
 `make ci/services` binds the same host ports that CI uses, which include 3306, 5432, 6379, and 9126. If a local service already holds one of those ports, compose fails to bind.
 
-**`ci/core` requires bash 4 or later.** `scripts/ci_test_core.sh`, `scripts/test.sh`, and `scripts/cross_build.sh` use `mapfile`, a bash 4 builtin. macOS ships bash 3.2, so these scripts fail with `mapfile: command not found`. The default `PATH` puts `/bin` before Homebrew's prefix, so an installed bash 5 stays shadowed:
+`make ci/core` and `make ci/contrib` build the runner image on first use, through `make ci/runner/build`. They also cache Go's module and build data in named Docker volumes across runs. Remove those volumes with `make ci/cache/clean`.
 
-```shell
-brew install bash
-export PATH="$(brew --prefix)/bin:$PATH"   # must come before /bin
-bash --version                             # expect 5.x
-```
+The runner container forces `--platform linux/amd64` by default, matching CI's architecture. On Apple Silicon, this architecture runs under emulation. Emulation can multiply the wall-clock time of the `-race` detector CI's tests use. Override `CI_RUNNER_PLATFORM`, for example `make ci/run JOB=core CI_RUNNER_PLATFORM=linux/arm64`, for faster, less faithful local iteration.
 
-`make ci/contrib` does not need bash 4. No script on the contrib path uses a bash 4 feature.
+Running `scripts/ci_test_core.sh` directly, outside the container, still needs bash 4 or later. macOS ships bash 3.2. `make ci/core` and `make ci/run` do not have this requirement, because the container ships bash 5.
 
 To check the job graph, matrix expressions, or step logic before pushing, use [`act`](https://github.com/nektos/act) instead:
 

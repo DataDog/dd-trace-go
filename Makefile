@@ -123,6 +123,8 @@ BUILD_TAGS ?=
 CHUNK ?= 1
 JOB ?= core
 SERVICES ?=
+GO_VERSION ?= 1.27
+CI_RUNNER_PLATFORM ?= linux/amd64
 
 # CI's test-core job starts only the datadog-agent service
 # (`docker compose up -d datadog-agent`). Test-contrib starts the full stack.
@@ -142,19 +144,33 @@ ifeq ($(shell uname -s)-$(shell uname -m),Darwin-arm64)
 CI_PLATFORM := DOCKER_DEFAULT_PLATFORM=linux/amd64
 endif
 CI_COMPOSE := $(CI_PLATFORM) COMPOSE_FILE=.github/testservices/docker-compose.yaml COMPOSE_PROJECT_NAME=dd-trace-go-ci
-CI_ENV := $(CI_COMPOSE) INTEGRATION=true GOTOOLCHAIN=local GODEBUG=x509negativeserial=1 \
-	TEST_RESULTS=$(CI_TEST_RESULTS) BUILD_TAGS=$(BUILD_TAGS)
 REQUIRE_JQ = command -v jq > /dev/null || { echo "jq is required (brew install jq)" >&2; exit 1; }
-# scripts/ci_test_core.sh (like scripts/test.sh) uses `mapfile`, a bash 4
-# builtin. macOS ships bash 3.2. On macOS, `env bash` fails with a bare
-# "mapfile: command not found".
-REQUIRE_BASH4 = bash -c 'type mapfile' > /dev/null 2>&1 || { \
-	echo "this needs bash >= 4; found $$(bash --version | head -1)" >&2; \
-	echo "on macOS: brew install bash, then put its prefix ahead of /bin in PATH" >&2; \
-	exit 1; }
+
+# make ci/core and make ci/contrib run inside this image, so the Go toolchain and OS
+# match CI's linux/amd64 runner, not whatever this host has. scripts/ci_runner_run.sh
+# copies the working tree into the container and back out again. It also runs the test
+# command as a non-root user, matching CI's runner. See scripts/ci_runner_run.sh for why.
+CI_RUNNER_IMAGE := dd-trace-go-ci-runner:go$(GO_VERSION)
+CI_RUNNER_GOMODCACHE := dd-trace-go-ci-runner-gomodcache
+CI_RUNNER_GOCACHE := dd-trace-go-ci-runner-gocache
+CI_RUNNER_RUN = CI_RUNNER_PLATFORM=$(CI_RUNNER_PLATFORM) CI_RUNNER_GOMODCACHE=$(CI_RUNNER_GOMODCACHE) \
+	CI_RUNNER_GOCACHE=$(CI_RUNNER_GOCACHE) CI_TEST_RESULTS=$(CI_TEST_RESULTS) BUILD_TAGS=$(BUILD_TAGS) \
+	./scripts/ci_runner_run.sh
+
+.PHONY: ci/runner/build
+ci/runner/build: ## Build the containerized CI runner image (GO_VERSION=1.26|1.27, default 1.27)
+	@case "$(GO_VERSION)" in \
+	  1.26 | 1.27) ;; \
+	  *) echo "GO_VERSION must be '1.26' or '1.27' (got '$(GO_VERSION)')" >&2; exit 1 ;; \
+	esac
+	docker build --platform $(CI_RUNNER_PLATFORM) -t $(CI_RUNNER_IMAGE) -f scripts/ci-runner/go$(GO_VERSION)/Dockerfile .
+
+.PHONY: ci/cache/clean
+ci/cache/clean: ## Remove the CI runner's Go module and build cache volumes
+	docker volume rm -f $(CI_RUNNER_GOMODCACHE) $(CI_RUNNER_GOCACHE)
 
 .PHONY: ci/run
-ci/run: tools-install ## Reproduce a CI job end to end (JOB=core|contrib, CHUNK=n)
+ci/run: ## Reproduce a CI job end to end (JOB=core|contrib, CHUNK=n)
 	@case "$(JOB)" in \
 	  core) echo "==> reproducing the test-core job" ;; \
 	  contrib) echo "==> reproducing test-contrib, chunk $(CHUNK)" ;; \
@@ -186,10 +202,9 @@ ci/services/down: ## Stop CI's service containers
 	$(CI_COMPOSE) docker compose down
 
 .PHONY: ci/core
-ci/core: tools-install ## Run CI's test-core entrypoint alone (services must be up)
-	@$(REQUIRE_BASH4)
+ci/core: ci/runner/build ## Run CI's test-core entrypoint alone (services must be up)
 	@mkdir -p $(CI_TEST_RESULTS)
-	$(BIN_PATH) $(CI_ENV) DD_APPSEC_WAF_TIMEOUT=1h ./scripts/ci_test_core.sh
+	$(CI_RUNNER_RUN) -e DD_APPSEC_WAF_TIMEOUT=1h -- $(CI_RUNNER_IMAGE) ./scripts/ci_test_core.sh
 
 .PHONY: ci/contrib/chunks
 ci/contrib/chunks: ## List the contrib chunks CI splits test-contrib into
@@ -197,12 +212,12 @@ ci/contrib/chunks: ## List the contrib chunks CI splits test-contrib into
 	@go run ./scripts/ci_contrib_matrix.go | jq -r 'to_entries[] | "CHUNK=\(.key + 1)\t\(.value)"'
 
 .PHONY: ci/contrib
-ci/contrib: tools-install ## Run one test-contrib chunk alone (services must be up)
+ci/contrib: ci/runner/build ## Run one test-contrib chunk alone (services must be up)
 	@mkdir -p $(CI_TEST_RESULTS)
 	@$(REQUIRE_JQ)
 	@chunk=$$(go run ./scripts/ci_contrib_matrix.go | jq -er ".[$$(($(CHUNK) - 1))]") || \
 		{ echo "no chunk $(CHUNK); run 'make ci/contrib/chunks' for the valid range" >&2; exit 1; }; \
-	$(BIN_PATH) $(CI_ENV) DD_APPSEC_WAF_TIMEOUT=1m ./scripts/ci_test_contrib.sh default "$$chunk"
+	$(CI_RUNNER_RUN) -e DD_APPSEC_WAF_TIMEOUT=1m -- $(CI_RUNNER_IMAGE) ./scripts/ci_test_contrib.sh default "$$chunk"
 
 # act targets. These test the last pushed commit, not local changes.
 ACT_STATIC_CHECKS_JOBS := copyright check-github-actions check-modules check-docs check-format check-supported-config checklocks cross-compile
