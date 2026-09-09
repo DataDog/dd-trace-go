@@ -838,8 +838,9 @@ func TestInvalidSpanAttributeSchemaFallsBackWithoutSharedWarning(t *testing.T) {
 
 func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
 	const (
-		schemaOverrideLog = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0"
-		peerOverrideLog   = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false"
+		protocolOverrideLog = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_AGENT_PROTOCOL_VERSION's OTLP opt-out"
+		schemaOverrideLog   = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0"
+		peerOverrideLog     = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false"
 	)
 
 	t.Run("forces OTLP export", func(t *testing.T) {
@@ -861,12 +862,15 @@ func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
 	t.Run("wins over Datadog trace protocol", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
 		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
 
 		cfg := Get()
 		assert.True(t, cfg.OTLPExportMode())
 		assert.Equal(t, TraceProtocolV04, cfg.RequestedTraceProtocol())
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: protocolOverrideLog})
 	})
 
 	t.Run("calculates conflicting schema and peer service defaults", func(t *testing.T) {
@@ -919,6 +923,7 @@ func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
 		cfg := Get()
 		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
 		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: protocolOverrideLog})
 		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
 		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
 	})

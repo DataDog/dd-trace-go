@@ -198,6 +198,9 @@ type Config struct {
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
 	// Only meaningful when otlpExportMode is false.
 	traceProtocol float64
+	// traceProtocolOverridesOTLP reports whether DD_TRACE_AGENT_PROTOCOL_VERSION
+	// explicitly disabled OTLP export during configuration loading.
+	traceProtocolOverridesOTLP bool
 	// effectiveTraceProtocolBits is the last value reported via
 	// ReportEffectiveTraceProtocol, stored as float64 bits so repeated reports
 	// of the same value can be deduplicated without inflating config-telemetry
@@ -444,6 +447,7 @@ func loadConfig() *Config {
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
 	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
 		cfg.otlpExportMode = false
+		cfg.traceProtocolOverridesOTLP = true
 	}
 	otlpTracesEndpoint := p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, otlpTracesEndpoint)
@@ -1656,7 +1660,7 @@ func (c *Config) applyOTelSemanticsOverrides() {
 	if !c.otelSemanticsEnabled {
 		return
 	}
-	if !c.otlpExportMode {
+	if c.traceProtocolOverridesOTLP && !c.otlpExportMode {
 		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_AGENT_PROTOCOL_VERSION's OTLP opt-out")
 	}
 	c.otlpExportMode = true
