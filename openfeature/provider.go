@@ -64,13 +64,14 @@ type DatadogProvider struct {
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
 
-	// configChangeCh is closed and replaced under mu whenever configuration or
-	// shutdownCalled changes, to wake any goroutine parked in
-	// waitForConfigurationUpdate. Using a closed channel rather than a
-	// sync.Cond avoids a lost-wakeup race: closing is a permanent state
-	// transition, so a waiter can never miss it regardless of exactly when it
-	// starts waiting relative to the close. // +checklocks:mu
-	configChangeCh chan struct{}
+	// configChange is closed and replaced with a fresh channel each time
+	// updateConfiguration runs, so a waiter that reads it while p.mu is held
+	// observes either the current channel (not yet closed, so it can select
+	// on it) or the update it was waiting for (configuration already set).
+	// This channel-per-generation approach, rather than sync.Cond, keeps the
+	// wait naturally selectable against ctx.Done() without a helper goroutine
+	// that can race the wait it is meant to interrupt.
+	configChange chan struct{}
 
 	hooks []openfeature.Hook
 
@@ -198,8 +199,8 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
 		source:                source,
+		configChange:          make(chan struct{}),
 	}
-	p.configChangeCh = make(chan struct{})
 
 	return p
 }
@@ -257,8 +258,16 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 		return
 	}
 	p.configuration = config
-	close(p.configChangeCh)
-	p.configChangeCh = make(chan struct{})
+	// Wake every waiter blocked on the current generation, then start a fresh
+	// one for the next update: a closed channel cannot be reused as a signal.
+	// configChange is nil on a DatadogProvider built as a bare struct literal
+	// (several tests do this to exercise evaluate directly), which never
+	// waits on it through InitWithContext; guard the close so that remains
+	// safe rather than requiring every such test to also initialize it.
+	if p.configChange != nil {
+		close(p.configChange)
+	}
+	p.configChange = make(chan struct{})
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
@@ -282,20 +291,22 @@ func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) 
 	return p.InitWithContext(ctx, evaluationContext)
 }
 
-// waitForConfigurationUpdate waits for a configuration/shutdown change or
-// context cancellation. Assumes mu is held on entry; unlocks it while
-// waiting and reacquires it before returning, on every path — including an
-// already-canceled ctx, unlike a sync.Cond-based wait which would need to
-// special-case that to avoid relocking an already-held mutex.
+// waitForConfigurationUpdate waits for a configuration update or context
+// cancellation. The caller must hold p.mu on entry. p.mu is released while
+// waiting and reacquired before this returns, whether or not it returns an
+// error.
 func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error {
-	ch := p.configChangeCh
+	// Read the current generation while still holding p.mu, so this can never
+	// wait on a channel that a concurrent updateConfiguration already closed
+	// and replaced.
+	generation := p.configChange
 	p.mu.Unlock()
 	defer p.mu.Lock()
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-ch:
+	case <-generation:
 		return nil
 	}
 }
@@ -375,8 +386,12 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	source := p.source
 	agentless := p.agentless
 	p.configuration = nil
-	close(p.configChangeCh)
-	p.configChangeCh = make(chan struct{})
+	// Wake any Init parked on the current generation so it observes
+	// shutdownCalled instead of waiting out its timeout.
+	if p.configChange != nil {
+		close(p.configChange)
+	}
+	p.configChange = make(chan struct{})
 	p.mu.Unlock()
 
 	done := make(chan error, 1)

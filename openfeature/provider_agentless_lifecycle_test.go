@@ -42,7 +42,7 @@ func TestTryRegisterAgentless_AfterShutdownRegistersNothing(t *testing.T) {
 	defer p.mu.RUnlock()
 	assert.Nil(t, p.agentless)
 
-	requests, _, _ := backend.status()
+	requests, _, _, _ := backend.status()
 	assert.Equal(t, 0, requests, "a poller must never be registered, let alone started, after shutdown")
 }
 
@@ -64,7 +64,7 @@ func TestStartWithAgentless_ShutdownMidPoll(t *testing.T) {
 	// down — otherwise this could pass trivially without exercising a
 	// shutdown-mid-poll race at all.
 	require.Eventually(t, func() bool {
-		requests, _, _ := backend.status()
+		requests, _, _, _ := backend.status()
 		return requests >= 1
 	}, 2*time.Second, time.Millisecond)
 
