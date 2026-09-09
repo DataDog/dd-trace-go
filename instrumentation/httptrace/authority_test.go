@@ -86,7 +86,7 @@ func TestServerAddressPortFromClientRequest(t *testing.T) {
 		{name: "IPv6 implicit port", target: "http://[2000::1]/path", wantAddress: "2000::1", wantPort: 80},
 		{name: "Host authority", target: "http://1.2.3.4:8080/path", host: "example.com:9090", wantAddress: "example.com", wantPort: 9090},
 		{name: "zero port", target: "http://example.com:0/path", wantAddress: "example.com", wantPort: 0},
-		{name: "malformed Host authority", target: "http://example.com/path", host: "bad::authority", wantAddress: "bad::authority", wantPort: -1},
+		{name: "malformed Host authority", target: "http://example.com/path", host: "bad::authority", wantAddress: "", wantPort: -1},
 		{name: "invalid Host authority port", target: "http://example.com/path", host: "example.com:invalid", wantAddress: "example.com", wantPort: -1},
 		{name: "out-of-range port", target: "http://example.com:65536/path", wantAddress: "example.com", wantPort: -1},
 	}
