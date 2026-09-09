@@ -35,9 +35,15 @@ type testAgent struct {
 	spans      []*Span
 	requests   []string
 	firstBytes []byte
+	headers    []http.Header
 	// infoBody, when set via SetInfo, overrides the default /info response —
 	// allowing a test to change what the agent advertises between polls.
 	infoBody atomic.Pointer[string]
+	// rejectV1, when set via RejectV1Traces, makes handleTracesV1 respond 404
+	// instead of accepting the payload — simulating a backend that advertises
+	// v1 support via /info but doesn't actually accept it on send (e.g. one
+	// backend of a load-balanced fleet that hasn't upgraded yet).
+	rejectV1 atomic.Bool
 }
 
 // startTestAgent creates and starts a mock agent. It is closed automatically
@@ -102,12 +108,23 @@ func (a *testAgent) RequestFirstBytes() []byte {
 	return cp
 }
 
+// RequestHeaders returns a snapshot copy of each recorded request's headers,
+// in the same order as Requests().
+func (a *testAgent) RequestHeaders() []http.Header {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cp := make([]http.Header, len(a.headers))
+	copy(cp, a.headers)
+	return cp
+}
+
 // Reset clears all received spans and request records.
 func (a *testAgent) Reset() {
 	a.mu.Lock()
 	a.spans = a.spans[:0]
 	a.requests = a.requests[:0]
 	a.firstBytes = a.firstBytes[:0]
+	a.headers = a.headers[:0]
 	a.mu.Unlock()
 }
 
@@ -120,7 +137,13 @@ func (a *testAgent) SetInfo(body string) {
 	a.infoBody.Store(&body)
 }
 
-func (a *testAgent) recordRequest(path string, spans []*Span, firstByte byte) {
+// RejectV1Traces toggles whether /v1.0/traces responds 404 instead of
+// accepting the payload.
+func (a *testAgent) RejectV1Traces(reject bool) {
+	a.rejectV1.Store(reject)
+}
+
+func (a *testAgent) recordRequest(path string, spans []*Span, firstByte byte, header http.Header) {
 	if len(spans) == 0 {
 		return
 	}
@@ -128,6 +151,7 @@ func (a *testAgent) recordRequest(path string, spans []*Span, firstByte byte) {
 	a.requests = append(a.requests, path)
 	a.spans = append(a.spans, spans...)
 	a.firstBytes = append(a.firstBytes, firstByte)
+	a.headers = append(a.headers, header.Clone())
 	a.mu.Unlock()
 }
 
@@ -168,12 +192,16 @@ func (a *testAgent) handleTracesV04(w http.ResponseWriter, r *http.Request) {
 			spans = append(spans, s)
 		}
 	}
-	a.recordRequest(r.URL.Path, spans, firstByte)
+	a.recordRequest(r.URL.Path, spans, firstByte, r.Header)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"rate_by_service":{}}`))
 }
 
 func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
+	if a.rejectV1.Load() {
+		http.NotFound(w, r)
+		return
+	}
 	br := bufio.NewReader(r.Body)
 	var firstByte byte
 	if b, err := br.Peek(1); err == nil && len(b) > 0 {
@@ -205,7 +233,7 @@ func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
 			spans = append(spans, s)
 		}
 	}
-	a.recordRequest(r.URL.Path, spans, firstByte)
+	a.recordRequest(r.URL.Path, spans, firstByte, r.Header)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"rate_by_service":{}}`))
 }

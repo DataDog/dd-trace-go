@@ -162,5 +162,10 @@ func relativePathFromPackageName(name string) string {
 	if !found {
 		return ""
 	}
-	return "/" + after
+	// A package name is always a directory, never a file, and CODEOWNERS
+	// directory rules are matched by prefix against a trailing slash. Without
+	// it, a rule for a package's own root directory (e.g. "/profiler/") never
+	// matches this value, silently orphaning every test directly in that
+	// directory once there is no catch-all owner to fall back on.
+	return "/" + after + "/"
 }
