@@ -108,10 +108,6 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 	}
 }
 
-// integrationModuleRoot returns the directory containing this package's
-// go.mod. runtime.Caller pins this to this file's own known location, so it
-// stays correct if the package ever moves a level deeper or shallower, or if
-// a runner starts the test binary from a different working directory.
 // TestCrashtrackerIsFirstMainStatement inspects orchestrion's own woven
 // source rather than runtime behavior. TestCrashtrackerMainInjection proves a
 // report eventually arrives, which passes whether the injected call lands
@@ -126,7 +122,15 @@ func TestCrashtrackerIsFirstMainStatement(t *testing.T) {
 	}
 	moduleRoot := integrationModuleRoot(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// -a forces toolexec to run even if a cached compiled artifact already
+	// satisfies the build, which would otherwise skip weaving and leave
+	// nothing under -work's directory to inspect. That forced full rebuild is
+	// genuinely slow, and this package's other tests build and run
+	// concurrently with ~20 sibling integration packages under -shuffle=on,
+	// so 5 minutes (versus the 2 minutes buildVictim uses for its own,
+	// cache-eligible builds) leaves real headroom on a loaded CI runner --
+	// this test previously timed out on Windows at 2 minutes.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cmd := orchestrionCommand(ctx, "go", "build", "-a", "-work", "-o", filepath.Join(t.TempDir(), "victim-order"), victimImportPath)
 	cmd.Dir = moduleRoot
@@ -212,6 +216,10 @@ func findWovenVictimMain(t *testing.T, workDir string) string {
 	return found
 }
 
+// integrationModuleRoot returns the directory containing this package's
+// go.mod. runtime.Caller pins this to this file's own known location, so it
+// stays correct if the package ever moves a level deeper or shallower, or if
+// a runner starts the test binary from a different working directory.
 func integrationModuleRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
