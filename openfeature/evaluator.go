@@ -8,7 +8,6 @@ package openfeature
 import (
 	"crypto/md5"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -150,7 +149,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 }
 
 // evaluateConfiguredFlag evaluates a flag from a parsed configuration. Invalid
-// SemVer comparands return PARSE_ERROR. Missing flags return FLAG_NOT_FOUND.
+// flags return PARSE_ERROR. Missing flags return FLAG_NOT_FOUND.
 func evaluateConfiguredFlag(
 	config *universalFlagsConfiguration,
 	flagKey string,
@@ -163,14 +162,11 @@ func evaluateConfiguredFlag(
 		return evaluateFlag(flag, defaultValue, context, now)
 	}
 	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
-		if errors.Is(configErr, errInvalidSemverComparand) {
-			return evaluationResult{
-				Value:  defaultValue,
-				Reason: of.ErrorReason,
-				Error:  fmt.Errorf("%w: invalid configuration for flag %q: %w", errParseError, flagKey, configErr),
-			}
+		return evaluationResult{
+			Value:  defaultValue,
+			Reason: of.ErrorReason,
+			Error:  fmt.Errorf("%w: invalid configuration for flag %q: %w", errParseError, flagKey, configErr),
 		}
-		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
 	return evaluationResult{
 		Value:  defaultValue,
