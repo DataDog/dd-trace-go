@@ -1219,6 +1219,9 @@ func TestProcessRetryResultErrorValidation(t *testing.T) {
 	}
 	base := processRetryNotRunResult(cfg, "invalid_child_config")
 	require.NoError(t, validateProcessRetryResult(base, cfg))
+	parallelControl := base
+	parallelControl.ResultError = "parallel_control_failed"
+	require.NoError(t, validateProcessRetryResult(parallelControl, cfg))
 
 	unknown := base
 	unknown.ResultError = "unknown_reason"
@@ -1567,7 +1570,7 @@ func TestProcessRetryNoopTestContextAndSessionChain(t *testing.T) {
 		Attempt:     1,
 		RetryReason: constants.AutoTestRetriesRetryReason,
 	}
-	ciTest := newProcessRetryNoopTest(t, cfg, time.Now(), nil, nil, retryAttemptRaceErrors())
+	ciTest := newProcessRetryNoopTest(t, cfg, nil, time.Now(), nil, nil, retryAttemptRaceErrors())
 
 	require.Equal(t, context.Background(), ciTest.Context())
 	require.Equal(t, "TestSelected", ciTest.Name())
@@ -3063,6 +3066,7 @@ func TestRunProcessRetryAttemptStopsActiveChildOnShutdown(t *testing.T) {
 			false,
 			captureProcessRetryLaunchBaselineForTesting(),
 			shutdown,
+			nil,
 		)
 	}()
 	<-started
@@ -6166,8 +6170,14 @@ func TestProcessRetryControlAdmissionParallelAndTerminalCommit(t *testing.T) {
 	require.False(t, childExited)
 	require.NoError(t, waitErr)
 
+	var parallelBridges atomic.Int32
+	parent.parallelBridge = func() error {
+		parallelBridges.Add(1)
+		return nil
+	}
 	serveErrors := parent.serveParent()
 	require.NoError(t, child.childRootParallelBridge())
+	require.EqualValues(t, 1, parallelBridges.Load())
 	start := time.Now()
 	finish := start.Add(time.Millisecond)
 	require.NoError(t, writeProcessRetryResultAtomically(cfg.ResultPath, processRetryResult{

@@ -2649,6 +2649,34 @@ func BenchmarkStartSpan(b *testing.B) {
 	}
 }
 
+// BenchmarkStartSpanManyTags exercises setting several individual Tag
+// options in one StartSpan call (component, span.kind, db.system, host,
+// port, resource.name, ...) instead of a single WithStartSpanConfig/WithTags
+// call. This is the common shape for contribs and third-party integrations
+// using the plain Tag/ServiceName/ResourceName option API, and it crosses
+// Go's small-map (8-bucket) growth threshold, making it a baseline for
+// evaluating future changes to how spanStart/Tag size the per-span tag map.
+func BenchmarkStartSpanManyTags(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+	assert.Nil(b, err)
+	defer stop()
+
+	b.ResetTimer()
+	for b.Loop() {
+		tracer.StartSpan("valkey.command",
+			Tag("component", "valkey-io/valkey-go"),
+			Tag("span.kind", "client"),
+			Tag("db.system", "valkey"),
+			Tag("out.host", "127.0.0.1"),
+			Tag("out.port", "6379"),
+			Tag("out.db", "0"),
+			Tag("resource.name", "GET"),
+			Tag("db.user", "default"),
+			Tag("valkey.raw_command", "GET foo"),
+		)
+	}
+}
+
 func BenchmarkStartSpanConcurrent(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	assert.NoError(b, err)
@@ -2694,7 +2722,18 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	af := tracer.config.agent.load()
 	af.Stats = true
 	af.DropP0s = true
-	tracer.config.agent.store(af)
+	// Only force v0.4 when the caller did not pick an agent: at the default
+	// address a developer machine may have a real v1-capable Agent listening,
+	// which would flip the protocol under tests that assert on it. A caller that
+	// points the tracer at a specific agent (a mock, a UDS, a real one) is opting
+	// into that agent's advertised capabilities, so leave those alone —
+	// otherwise benchmarks that stand up a /v1.0/traces mock would silently
+	// measure the v0.4 encoder instead.
+	if u := tracer.config.internalConfig.AgentURL(); u == nil || u.String() == defaultURL {
+		af = pinTestTracerToV04(tracer, af)
+	} else {
+		tracer.config.agent.store(af)
+	}
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		tracer.reportHealthMetrics()
@@ -2724,6 +2763,44 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		// clear any service name that was set: we want the state to be the same as startup
 		globalconfig.SetServiceName("")
 	}, nil
+}
+
+// pinTestTracerToV04 forces tr onto the v0.4 trace protocol, in both config and the
+// writer's already-built payload. Only startTestTracer calls this, and only when the
+// caller did not pick an explicit agent (see there for why).
+//
+// newTracer may have already built the writer's initial payload using whatever
+// protocol was in effect at construction time — v1, if the default address happens to
+// have a real, v1-capable Agent listening (a developer's local Agent). Overriding
+// config alone does not retroactively change an already-built payload: only an
+// empty-payload flush re-reads the effective protocol (see agentTraceWriter.flush), so
+// trigger one here rather than leaving the first real trace to encode for whatever
+// protocol construction happened to pick.
+//
+// Pin the requested protocol too, not just the protocol state:
+// advanceTraceProtocolState(protoV04) is always safe here since v0.4 is the terminal,
+// "no more upgrades" state in the lattice (see trace_protocol_state.go) — but the
+// requested protocol is what refreshAgentFeatures's next poll re-derives the effective
+// protocol from, so it must also read v0.4 or a later poll observing v1 would resolve
+// straight back to v1.
+func pinTestTracerToV04(tr *tracer, af agentFeatures) agentFeatures {
+	tr.config.advanceTraceProtocolState(protoV04)
+	tr.config.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCode)
+	tr.config.agent.store(af)
+	tr.traceWriter.flush()
+	return af
+}
+
+// setTraceProtocolStateForTest forces cfg's trace-protocol state directly,
+// bypassing advanceTraceProtocolState's monotonicity. Production code must
+// never do this — test setup routinely needs an arbitrary precondition that
+// the monotone lattice's own transition rules cannot produce, such as
+// simulating a developer machine that already resolved to v1, or forcing v1
+// despite a test HTTP client that 404s everything (including /info) at
+// startup, which the lattice would otherwise treat as conclusive and
+// terminal.
+func setTraceProtocolStateForTest(cfg *config, s traceProtocolState) {
+	cfg.protocolState.Store(int32(s))
 }
 
 // testPrioritySampler extracts the *prioritySampler from a test tracer.

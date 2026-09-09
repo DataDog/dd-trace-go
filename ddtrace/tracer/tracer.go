@@ -33,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
@@ -306,11 +307,13 @@ func Start(opts ...StartOption) error {
 	// client is appropriately configured.
 	t.startAppSec()
 
-	if t.config.llmobs.Enabled {
-		if err := llmobs.Start(t.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+	if t.config.internalConfig.LLMObsEnabled() {
+		cfg, resolveErr := buildLLMObsConfig(t.config)
+		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}, resolveErr); err != nil {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
 	}
+
 	if t.config.internalConfig.LogStartup() {
 		logStartup(t)
 	}
@@ -326,6 +329,49 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// buildLLMObsConfig assembles the llmobsconfig.Config used to start LLMObs,
+// resolving agentless mode against the agent's advertised features. Callers
+// must only invoke this when c.internalConfig.LLMObsEnabled() is true.
+func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
+	af := c.agent.load()
+	var resolvedAgentless bool
+	if c.llmobsTestBaseURL != "" {
+		// TestBaseURL bypasses agent/agentless selection and validation entirely.
+		resolvedAgentless = false
+	} else {
+		var err error
+		resolvedAgentless, err = llmobs.ResolveAgentlessEnabled(
+			c.internalConfig.LLMObsAgentlessEnabled(),
+			af.evpProxyV2,
+		)
+		if err != nil {
+			return llmobsconfig.Config{}, err
+		}
+	}
+	cfg := llmobsconfig.Config{
+		Enabled:          true,
+		MLApp:            c.internalConfig.LLMObsMLApp(),
+		AgentlessEnabled: resolvedAgentless,
+		ProjectName:      c.internalConfig.LLMObsProjectName(),
+		TracerConfig: llmobsconfig.TracerConfig{
+			DDTags:     c.internalConfig.GlobalTags(),
+			Env:        c.internalConfig.Env(),
+			Service:    c.internalConfig.ServiceName(),
+			Version:    c.internalConfig.Version(),
+			AgentURL:   c.internalConfig.AgentURL(),
+			APIKey:     c.internalConfig.APIKey(),
+			APPKey:     c.internalConfig.AppKey(),
+			HTTPClient: c.httpClient,
+			Site:       c.internalConfig.Site(),
+		},
+		TestBaseURL: c.llmobsTestBaseURL,
+	}
+	if c.llmobsHTTPClient != nil {
+		cfg.TracerConfig.HTTPClient = c.llmobsHTTPClient
+	}
+	return cfg, nil
 }
 
 // startAppSec builds the remote-config client config and AppSec start options,
@@ -642,8 +688,25 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 
 // refreshAgentFeatures fetches a fresh snapshot from /info and atomically
 // updates the dynamic agent capabilities. Static fields that are baked into
-// components at startup (transport URL, statsd address, obfuscator config, etc.)
-// are preserved from the current snapshot so a poll can never change them.
+// components at startup (statsd address, obfuscator config, etc.) are
+// preserved from the current snapshot so a poll can never change them.
+//
+// The trace-protocol decision is NOT part of that snapshot: it lives in
+// config.protocolState (see trace_protocol_state.go), a monotone lattice that
+// only ever moves protoUnknown -> protoV1 -> protoV04 (terminal). A poll's
+// evidence here and a rejected v1 send's evidence (see
+// (*agentTraceWriter).downgradeAfterRejectedSend) both feed the same state
+// through advanceTraceProtocolState, so however the poll goroutine and a send
+// goroutine interleave, they converge on the same result — there is no
+// streak or hysteresis to reason about.
+//
+// This also means re-upgrading to v1 after a downgrade requires a process
+// restart, not just a healthy poll. A poll-count-based hysteresis was tried
+// and rejected: /info polls and trace sends are independent requests that a
+// load-balanced fleet can route to different backends, so no number of
+// consecutive positive polls proves anything about where the next send
+// lands. Sticking to v0.4 is the fail-safe direction, since it is
+// universally accepted; see doc.go for the resulting trade-off.
 func (t *tracer) refreshAgentFeatures() {
 	ctx, cancel := gocontext.WithCancel(gocontext.Background())
 	defer cancel()
@@ -656,32 +719,58 @@ func (t *tracer) refreshAgentFeatures() {
 		}
 	}()
 	newFeatures, err := fetchAgentFeatures(ctx, t.config.internalConfig.AgentURL(), t.config.httpClient)
-	if err != nil {
-		if !errors.Is(err, errAgentFeaturesNotSupported) {
-			log.Debug("agent info poll failed: %s", err.Error())
-		}
-		return // keep last-known-good
+	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
+		log.Debug("agent info poll failed: %s", err.Error())
+		// Keep last-known-good; a network or decode error is never evidence that
+		// v1 became unavailable.
+		return
 	}
-	// Atomically graft the startup-frozen static fields from the current
-	// snapshot onto the fresh dynamic snapshot. update() handles the CAS
-	// loop in case a concurrent store races this write. fn must be a pure
-	// transform — work on a local copy f so retries start fresh.
-	t.config.agent.update(func(current agentFeatures) agentFeatures {
-		// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
-		// must be overwritten from current or cloned below to avoid shared mutable
-		// backing storage across CAS retries.
-		f := newFeatures
-		f.v1ProtocolAvailable = current.v1ProtocolAvailable
-		f.StatsdPort = current.StatsdPort
-		f.evpProxyV2 = current.evpProxyV2
-		f.metaStructAvailable = current.metaStructAvailable
-		f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
-		f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
-		f.defaultEnv = current.defaultEnv
-		f.reachable = current.reachable
-		f.hasTelemetryProxy = current.hasTelemetryProxy
-		return f
-	})
+	if err != nil {
+		// errAgentFeaturesNotSupported means the agent returned 404 on /info,
+		// i.e. it doesn't support /info at all. Unlike a generic fetch error,
+		// this IS evidence v1 is unavailable: /v1.0/traces support postdates
+		// /info support, so an agent without /info cannot serve v1 either.
+		// Leave every other dynamic field at its last-known-good value — we
+		// have no fresh snapshot to refresh them from.
+		t.config.advanceTraceProtocolState(protoV04)
+	} else {
+		if newFeatures.v1TracesAdvertised {
+			t.config.advanceTraceProtocolState(protoV1)
+		} else {
+			t.config.advanceTraceProtocolState(protoV04)
+		}
+		// Atomically graft the startup-frozen static fields from the current
+		// snapshot onto the fresh dynamic snapshot. update() handles the CAS
+		// loop in case a concurrent store races this write. fn must be a pure
+		// transform — work on a local copy f so retries start fresh.
+		t.config.agent.update(func(current agentFeatures) agentFeatures {
+			// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
+			// must be overwritten from current or cloned below to avoid shared mutable
+			// backing storage across CAS retries.
+			f := newFeatures
+			f.StatsdPort = current.StatsdPort
+			f.evpProxyV2 = current.evpProxyV2
+			f.metaStructAvailable = current.metaStructAvailable
+			f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
+			f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
+			f.defaultEnv = current.defaultEnv
+			f.reachable = current.reachable
+			f.hasTelemetryProxy = current.hasTelemetryProxy
+			return f
+		})
+	}
+	proto := t.config.effectiveTraceProtocol()
+	if t.config.internalConfig.ReportEffectiveTraceProtocol(proto) {
+		protoStr := internalconfig.TraceProtocolVersionString(proto)
+		log.Info("trace protocol changed to %s", protoStr)
+		t.statsd.Incr("datadog.tracer.trace_protocol_changed", []string{"to:" + protoStr}, 1)
+	}
+	// Outside the agent.update() graft above, whose transform must stay pure.
+	// The agent version is not grafted, so an agent upgraded or rolled back
+	// under a running tracer can engage or lift the v1.0 stats override here;
+	// surface that transition rather than letting it change behaviour
+	// silently.
+	t.config.surfaceStatsOverride(t.config.agent.load())
 }
 
 // pollAgentInfo polls the agent /info endpoint at the given interval until the
@@ -1228,9 +1317,13 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 
 func (t *tracer) TracerConf() TracerConf {
 	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
+	// canDropP0s is a pure alias of canComputeStats (see its doc comment);
+	// compute once so both fields, and both agent.load() calls the two
+	// methods would otherwise make, collapse into one.
+	canComputeStats := t.config.canComputeStats()
 	return TracerConf{
-		CanComputeStats:        t.config.canComputeStats(),
-		CanDropP0s:             t.config.canDropP0s(),
+		CanComputeStats:        canComputeStats,
+		CanDropP0s:             canComputeStats,
 		DebugAbandonedSpans:    t.config.internalConfig.DebugAbandonedSpans(),
 		Disabled:               !t.config.internalConfig.TracingEnabled(),
 		PartialFlush:           pfEnabled,

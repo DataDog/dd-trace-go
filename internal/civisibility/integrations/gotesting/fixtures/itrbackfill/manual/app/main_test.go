@@ -6,6 +6,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -38,6 +39,7 @@ func TestMain(m *testing.M) {
 	expectSkipped := true
 	expectSkippingEnabled := "true"
 	expectPositiveCoverage := true
+	expectCoverageMergeFailure := scenario == "manual-process-coverage-merge-failure"
 	coverage := map[string][]byte{
 		manualLibPath: filebitmap.FromActiveRange(1, 64).ToArray(),
 	}
@@ -55,6 +57,9 @@ func TestMain(m *testing.M) {
 		expectPositiveCoverage = true
 		expectCoverageRequests = true
 	}
+	if expectCoverageMergeFailure {
+		expectCoverageReportRequests = false
+	}
 	server := mockci.Start(settings, tests, coverage)
 	defer server.Close()
 
@@ -70,7 +75,10 @@ func TestMain(m *testing.M) {
 		panic("unexpected ITR tests skipping enabled tag")
 	}
 	coverageValue, hasCoverage := server.SessionCoverage(constants.CodeCoveragePercentageOfTotalLines)
-	if !hasCoverage || (expectPositiveCoverage && coverageValue <= 0) {
+	if expectCoverageMergeFailure && hasCoverage {
+		panic("unexpected session coverage after process coverage merge failure")
+	}
+	if !expectCoverageMergeFailure && (!hasCoverage || (expectPositiveCoverage && coverageValue <= 0)) {
 		panic("unexpected session coverage")
 	}
 	if !expectCoverageRequests && server.CoverageRequests() > 0 {
@@ -112,6 +120,12 @@ func TestMain(m *testing.M) {
 	}
 	if server.EventTypeCount(constants.SpanTypeTestSuite) != 1 {
 		panic("expected exactly one test suite event")
+	}
+	if expectCoverageMergeFailure && exitCode != 1 {
+		panic("expected process coverage merge failure exit code")
+	}
+	if expectCoverageMergeFailure {
+		fmt.Println("process coverage merge failure publication suppressed")
 	}
 	os.Exit(exitCode)
 }

@@ -126,6 +126,9 @@ type commonPrivateFields struct {
 	barrier    *chan bool      // Barrier for parallel tests.
 	signal     *chan bool      // Signal channel for test completion.
 	sub        *[]*testing.T   // Queue of subtests to be run in parallel.
+
+	lastRaceErrors  *atomic.Int64 // Race baseline reset by testing.T.Parallel after it resumes.
+	raceErrorLogged *atomic.Bool  // Whether testing already reported a race for this test.
 }
 
 // AddLevel increase or decrease the testing.common.level field value, used by
@@ -273,6 +276,8 @@ func getTestPrivateFieldsFast(t *testing.T, layout *testingInternalsLayout) *com
 		signal:     fieldPtr[chan bool](commonBase, layout.common.signal),
 		sub:        fieldPtr[[]*testing.T](commonBase, layout.common.sub),
 	}
+	fields.lastRaceErrors = fieldPtr[atomic.Int64](commonBase, layout.common.lastRaceErrors)
+	fields.raceErrorLogged = fieldPtr[atomic.Bool](commonBase, layout.common.raceErrorLogged)
 	runtime.KeepAlive(t)
 	return fields
 }
@@ -318,6 +323,12 @@ func getTestPrivateFieldsReflect(t *testing.T) *commonPrivateFields {
 	}
 	if ptr, err := getFieldPointerFrom(t, "sub"); err == nil {
 		testFields.sub = (*[]*testing.T)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "lastRaceErrors"); err == nil && ptr != nil {
+		testFields.lastRaceErrors = (*atomic.Int64)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "raceErrorLogged"); err == nil && ptr != nil {
+		testFields.raceErrorLogged = (*atomic.Bool)(ptr)
 	}
 
 	return testFields

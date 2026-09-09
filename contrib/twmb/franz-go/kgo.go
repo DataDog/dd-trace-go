@@ -63,6 +63,9 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 	for _, span := range h.activeSpans {
 		span.Finish()
 	}
+	// clear zeroes out the backing array so finished spans aren't kept alive
+	// by stale pointers past the truncated length (see issue #5192).
+	clear(h.activeSpans)
 	h.activeSpans = h.activeSpans[:0]
 	h.activeSpansMu.Unlock()
 }

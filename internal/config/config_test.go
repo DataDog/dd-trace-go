@@ -284,9 +284,8 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 	// Get all methods on *Config
 	configType := reflect.TypeFor[*Config]()
 
-	for i := 0; i < configType.NumMethod(); i++ {
+	for method := range configType.Methods() {
 		// Capture method
-		method := configType.Method(i)
 		methodName := method.Name
 
 		// Skip if not a Set method
@@ -394,6 +393,11 @@ func getTestValueForType(t reflect.Type) any {
 	}
 	if t == reflect.TypeFor[*url.URL]() {
 		return &url.URL{Scheme: "http", Host: "test-agent:8126"}
+	}
+	// Optional tri-state bools (e.g. SetLLMObsAgentlessEnabled).
+	if t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Bool {
+		b := true
+		return &b
 	}
 
 	// Then check by kind
@@ -1645,4 +1649,260 @@ func TestSamplingRulesEnvPrecedenceOverCode(t *testing.T) {
 
 		assert.Equal(t, otherRules, cfg.TraceSamplingRules())
 	})
+}
+
+func TestLLMObsEnvVars(t *testing.T) {
+	t.Run("defaults when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		assert.False(t, cfg.LLMObsEnabled())
+		assert.Empty(t, cfg.LLMObsMLApp())
+		assert.Empty(t, cfg.LLMObsProjectName())
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("loads from env vars", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_LLMOBS_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_ML_APP", "my-app")
+		t.Setenv("DD_LLMOBS_PROJECT_NAME", "my-project")
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "false")
+
+		cfg := Get()
+		assert.True(t, cfg.LLMObsEnabled())
+		assert.Equal(t, "my-app", cfg.LLMObsMLApp())
+		assert.Equal(t, "my-project", cfg.LLMObsProjectName())
+		require.NotNil(t, cfg.LLMObsAgentlessEnabled())
+		assert.False(t, *cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unset stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Regression guard for the p.IsSet check in loadConfig: unset must stay
+		// nil (tri-state), not collapse to GetBool's zero-value false.
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unparseable value stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (nil), not silently coerced into an explicit false. Before the
+		// fix, IsSet only checked the string was non-empty, so GetBool's
+		// parse-error fallback to its default (false) was mistaken for an
+		// explicit false.
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "garbage")
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+}
+
+func TestReportEffectiveStatsComputation(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+	before := cfg.StatsComputationEnabled()
+
+	// The first report must fire even though false is the zero value — this
+	// is exactly what the tri-state (vs. a plain atomic.Bool) buys.
+	assert.True(t, cfg.ReportEffectiveStatsComputation(false))
+	assert.False(t, cfg.ReportEffectiveStatsComputation(false), "repeating the same value must not re-report")
+	assert.True(t, cfg.ReportEffectiveStatsComputation(true), "a changed value must report")
+	assert.False(t, cfg.ReportEffectiveStatsComputation(true), "repeating the new value must not re-report")
+
+	// StatsComputationEnabled itself must be untouched by any of this.
+	assert.Equal(t, before, cfg.StatsComputationEnabled())
+
+	var reports []bool
+	for _, c := range rec.Configuration {
+		if c.Name == "DD_TRACE_STATS_COMPUTATION_ENABLED" && c.Origin == telemetry.OriginCalculated {
+			reports = append(reports, c.Value.(bool))
+		}
+	}
+	assert.Equal(t, []bool{false, true}, reports)
+}
+
+func TestExperimentalFlaggingProviderEnabled(t *testing.T) {
+	t.Run("unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.False(t, enabled)
+		assert.False(t, explicit)
+	})
+
+	t.Run("explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", "true")
+		cfg := Get()
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.True(t, enabled)
+		assert.True(t, explicit)
+	})
+}
+
+func TestFeatureFlagsEnabled(t *testing.T) {
+	t.Run("unset stays not-explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.False(t, explicit)
+		assert.False(t, enabled)
+	})
+
+	t.Run("explicit true", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "true")
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.True(t, explicit)
+		assert.True(t, enabled)
+	})
+
+	t.Run("explicit false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "false")
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.True(t, explicit)
+		assert.False(t, enabled)
+	})
+
+	t.Run("unparseable value stays not-explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (not explicit), not silently coerced into an explicit false.
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "garbage")
+		cfg := Get()
+		_, explicit := cfg.FeatureFlagsEnabled()
+		assert.False(t, explicit)
+	})
+}
+
+func TestFeatureFlagsConfigurationSource(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "agentless", source)
+		assert.False(t, explicit)
+	})
+
+	t.Run("explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "remote_config", source)
+		assert.True(t, explicit)
+	})
+
+	t.Run("blank but set is still explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// A whitespace-only value is explicit here on purpose: deciding what a
+		// blank source means belongs to openfeature.resolveSource, which falls
+		// through to the later precedence rules. Coercing it to non-explicit at
+		// this layer would hide the distinction from that decision.
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "   ")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "   ", source)
+		assert.True(t, explicit)
+	})
+}
+
+func TestFeatureFlagsAgentlessBaseURL(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", "https://example.com")
+	cfg := Get()
+	assert.Equal(t, "https://example.com", cfg.FeatureFlagsAgentlessBaseURL())
+}
+
+func TestFeatureFlagsAgentlessPollInterval(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 30 * time.Second},
+		{"0", 30 * time.Second},
+		{"-1", 30 * time.Second},
+		{"3601", 30 * time.Second},
+		{"abc", 30 * time.Second},
+		{"3600", 3600 * time.Second},
+		{"60", 60 * time.Second},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FeatureFlagsAgentlessPollInterval())
+		})
+	}
+}
+
+func TestFeatureFlagsAgentlessRequestTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 5 * time.Second},
+		{"0", 5 * time.Second},
+		{"-5", 5 * time.Second},
+		{"x", 5 * time.Second},
+		{"10", 10 * time.Second},
+		{"300", 300 * time.Second},
+		{"301", 5 * time.Second},
+		// Regression guard: without an upper bound, this value overflows int64
+		// once converted to a time.Duration and multiplied by time.Second,
+		// wrapping to a negative duration that would disable the HTTP client's
+		// timeout enforcement entirely.
+		{"9223372037", 5 * time.Second},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FeatureFlagsAgentlessRequestTimeout())
+		})
+	}
 }

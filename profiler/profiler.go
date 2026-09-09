@@ -8,6 +8,7 @@ package profiler
 import (
 	"errors"
 	"fmt"
+	"go/version"
 	"io"
 	"maps"
 	"math/rand"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -68,6 +70,8 @@ func init() {
 // If DD_PROFILING_ENABLED=false is set in the process environment, it will
 // prevent the profiler from starting.
 func Start(opts ...Option) error {
+	internalconfig.RecordProductStart(internalconfig.ProductProfiler)
+
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -154,14 +158,18 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		cfg.traceConfig.Enabled = false
 	}
 
-	// Unconditionally enable goroutine leak profiling if it's available.
-	if goroutineLeakProfileAvailable() {
-		cfg.addProfileType(goroutineLeakProfile)
+	if _, ok := cfg.types[GoroutineLeakProfile]; ok && version.Compare(runtime.Version(), "go1.27") < 0 && !goroutineLeakExperiment() {
+		log.Warn("goroutine leak profile requires Go 1.27 or later, or GOEXPERIMENT=goroutineleakprofile")
+		delete(cfg.types, GoroutineLeakProfile)
 	}
+	if goroutineLeakExperiment() {
+		cfg.addProfileType(GoroutineLeakProfile)
+	}
+
 	// Agentless upload is disabled by default as of v1.30.0, but
 	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
-		if !isAPIKeyValid(cfg.apiKey) {
+		if !internal.IsAPIKeyValid(cfg.apiKey) {
 			return nil, errAgentlessUploadRequiresAPIKey
 		}
 		// Always warn people against using this mode for now. All customers should
@@ -264,7 +272,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	return &p, nil
 }
 
-var goroutineLeakProfileAvailable = sync.OnceValue(func() bool {
+var goroutineLeakExperiment = sync.OnceValue(func() bool {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return false
@@ -455,7 +463,7 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 		GoroutineProfile,
 		MetricsProfile,
 		executionTrace,
-		goroutineLeakProfile,
+		GoroutineLeakProfile,
 	}
 	enabled := []ProfileType{}
 	for _, t := range order {
