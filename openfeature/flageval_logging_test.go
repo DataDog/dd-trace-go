@@ -12,8 +12,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,17 +59,10 @@ func TestDefaultEvalCapSizing(t *testing.T) {
 
 // TestFlattenAndPruneContextEquivalence verifies the merged single-pass
 // flattenAndPruneContext must produce a pruned result byte-for-byte identical to the prior
-// two-step flattenContext + pruneContext pipeline across nested, oversized, and >256-field
-// inputs (and the determinism + 256/256 limits are preserved).
+// two-step flattenContext + pruneContext pipeline across nested and oversized inputs that
+// stay within the caps. Inputs that exceed a cap intentionally diverge (omitted entirely)
+// and are covered in TestFlattenAndPruneContextBoundedTraversal.
 func TestFlattenAndPruneContextEquivalence(t *testing.T) {
-	bigFields := func() map[string]any {
-		m := make(map[string]any, 400)
-		for i := range 400 {
-			m[fmt.Sprintf("key%04d", i)] = fmt.Sprintf("value%04d", i)
-		}
-		return m
-	}
-
 	cases := []struct {
 		name  string
 		input map[string]any
@@ -84,10 +79,10 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 			name:  "oversized string value is skipped",
 			input: map[string]any{"short": "ok", "long": strings.Repeat("x", maxFieldLength+10)},
 		},
-		{
-			name:  "more than 256 fields truncated to 256",
-			input: bigFields(),
-		},
+		// NOTE: the over-cap case (>256 top-level fields) is covered separately in
+		// TestFlattenAndPruneContextBoundedTraversal. flattenAndPruneContext intentionally
+		// diverges from the old flattenContext+pruneContext pipeline there: it omits the
+		// entire context (O(1)) instead of sorting every key and trimming to 256 (O(K log K)).
 		{
 			name:  "nested oversized string among many fields",
 			input: map[string]any{"u": map[string]any{"bio": strings.Repeat("y", maxFieldLength+1), "id": 7}},
@@ -106,7 +101,7 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Reference pipeline (the two former steps) vs the merged single-pass procedure.
 			want := pruneContext(flattenContext(tc.input))
-			got := flattenAndPruneContext(tc.input)
+			got, _ := flattenAndPruneContext(tc.input)
 
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("merged flatten+prune differs from flattenContext+pruneContext:\n got=%v\nwant=%v", got, want)
@@ -118,9 +113,11 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 			}
 
 			// Determinism: repeated calls yield an identical canonical key.
-			first := canonicalContextKey(flattenAndPruneContext(tc.input))
+			firstAttrs, _ := flattenAndPruneContext(tc.input)
+			first := canonicalContextKey(firstAttrs)
 			for range 25 {
-				if k := canonicalContextKey(flattenAndPruneContext(tc.input)); k != first {
+				attrs, _ := flattenAndPruneContext(tc.input)
+				if k := canonicalContextKey(attrs); k != first {
 					t.Fatalf("merged flatten+prune nondeterministic: canonical keys differ across calls")
 				}
 			}
@@ -969,7 +966,9 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 		t.Run("distinct buckets via add(): "+tc.name, func(t *testing.T) {
 			agg := setupTestAggregator(t)
 			nowMs := time.Now().UnixMilli()
-			d := evalDetails{flagKey: "f", variant: "on"}
+			// Consent on: the context is a bucket dimension only when it survives
+			// serialization. See TestConsentOffDropsContextFromBucketKey for the other half.
+			d := evalDetails{flagKey: "f", variant: "on", observeFullEvaluationData: true}
 			agg.add(d, tc.mapA, nowMs)
 			agg.add(d, tc.mapB, nowMs)
 
@@ -992,7 +991,7 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 	t.Run("re-adding identical multi-field context increments same bucket", func(t *testing.T) {
 		agg := setupTestAggregator(t)
 		nowMs := time.Now().UnixMilli()
-		d := evalDetails{flagKey: "f", variant: "on"}
+		d := evalDetails{flagKey: "f", variant: "on", observeFullEvaluationData: true}
 		ctx := map[string]any{"a": "x\ny", "b": 7, "c=d": true}
 		agg.add(d, ctx, nowMs)
 		agg.add(d, map[string]any{"b": 7, "a": "x\ny", "c=d": true}, nowMs) // same logical context, different insertion order
@@ -1065,7 +1064,7 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	// Do NOT start the worker. stop() must still be safe (ticker==nil path) and mark stopped.
 	w.stop()
 
-	before := w.dropped.Load()
+	before := w.closedDrop.Load()
 
 	// Build a minimal hook context + details to drive record().
 	hookCtx := of.NewHookContext(
@@ -1093,9 +1092,138 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	if got := len(w.events); got != 0 {
 		t.Errorf("record() after stop() enqueued %d event(s); expected 0 (no-op into never-drained channel)", got)
 	}
-	if got := w.dropped.Load(); got != before+1 {
-		t.Errorf("record() after stop() must count the event as dropped: dropped=%d, expected=%d", got, before+1)
+	if got := w.closedDrop.Load(); got != before+1 {
+		t.Errorf("record() after stop() must count the event as a closed drop: closedDrop=%d, expected=%d", got, before+1)
 	}
+}
+
+// TestBuildFlagEvalPayloads covers the size-bounded payload splitter (the Go mirror of
+// Java's FlagEvaluationPayloads.buildPayloads): small flushes produce one payload, a flush
+// over payloadSizeLimitBytes is split into multiple payloads, a single oversized event is
+// degraded (targeting_key + context dropped) to fit, and an event too large even when degraded
+// is dropped and counted.
+func TestBuildFlagEvalPayloads(t *testing.T) {
+	w := newFlagEvalLoggingWriter(ProviderConfig{})
+
+	t.Run("small flush yields one payload", func(t *testing.T) {
+		events := []flagEvalLoggingEvent{
+			{Flag: flagEvalFlag{Key: "f1"}, EvaluationCount: 1},
+			{Flag: flagEvalFlag{Key: "f2"}, EvaluationCount: 1},
+		}
+		payloads, dropped, degraded, err := w.buildFlagEvalPayloads(events)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payloads) != 1 {
+			t.Fatalf("got %d payloads, want 1", len(payloads))
+		}
+		if dropped != 0 || degraded != 0 {
+			t.Errorf("dropped=%d degraded=%d, want 0/0", dropped, degraded)
+		}
+		// The single payload must be a valid envelope with both events.
+		var p flagEvalLoggingPayload
+		if err := json.Unmarshal(payloads[0], &p); err != nil {
+			t.Fatalf("payload is not valid JSON: %v", err)
+		}
+		if len(p.FlagEvaluations) != 2 {
+			t.Errorf("payload has %d events, want 2", len(p.FlagEvaluations))
+		}
+	})
+
+	t.Run("oversized flush splits into multiple payloads", func(t *testing.T) {
+		// Build enough events that their combined encoding exceeds payloadSizeLimitBytes.
+		big := strings.Repeat("x", 64*1024) // 64 KiB context value each
+		events := make([]flagEvalLoggingEvent, 0, 256)
+		// ~256 events × 64 KiB ≈ 16 MiB > 5 MiB limit → must split.
+		for i := range 256 {
+			events = append(events, flagEvalLoggingEvent{
+				Flag:            flagEvalFlag{Key: fmt.Sprintf("f%d", i)},
+				EvaluationCount: 1,
+				TargetingKey:    fmt.Sprintf("user-%d", i),
+				Context:         &flagEvalEventContext{Evaluation: map[string]any{"blob": big}},
+			})
+		}
+		payloads, dropped, degraded, err := w.buildFlagEvalPayloads(events)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payloads) < 2 {
+			t.Fatalf("got %d payloads, want >=2 (flush must split)", len(payloads))
+		}
+		if dropped != 0 || degraded != 0 {
+			t.Errorf("dropped=%d degraded=%d, want 0/0 for split-only", dropped, degraded)
+		}
+		// Every payload must be under the limit and be a valid envelope.
+		totalEvents := 0
+		for i, body := range payloads {
+			if len(body) > payloadSizeLimitBytes {
+				t.Errorf("payload %d is %d bytes, exceeds limit %d", i, len(body), payloadSizeLimitBytes)
+			}
+			var p flagEvalLoggingPayload
+			if err := json.Unmarshal(body, &p); err != nil {
+				t.Errorf("payload %d is not valid JSON: %v", i, err)
+			}
+			totalEvents += len(p.FlagEvaluations)
+		}
+		if totalEvents != len(events) {
+			t.Errorf("payloads hold %d events, want %d (all retained across splits)", totalEvents, len(events))
+		}
+	})
+
+	t.Run("single oversized event is degraded to fit", func(t *testing.T) {
+		// One event whose full form (with context) exceeds the limit but whose degraded form
+		// (no targeting_key + context) fits. Must be retained as degraded, not dropped.
+		big := strings.Repeat("y", payloadSizeLimitBytes) // ~5 MiB context value
+		events := []flagEvalLoggingEvent{{
+			Flag:            flagEvalFlag{Key: "big-flag"},
+			EvaluationCount: 7,
+			TargetingKey:    "user-oversized",
+			Context:         &flagEvalEventContext{Evaluation: map[string]any{"blob": big}},
+		}}
+		payloads, dropped, degraded, err := w.buildFlagEvalPayloads(events)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payloads) != 1 {
+			t.Fatalf("got %d payloads, want 1 (degraded event fits)", len(payloads))
+		}
+		if degraded != 7 {
+			t.Errorf("degraded=%d, want 7 (the event's evaluation_count)", degraded)
+		}
+		if dropped != 0 {
+			t.Errorf("dropped=%d, want 0 (degraded event fits)", dropped)
+		}
+		var p flagEvalLoggingPayload
+		if err := json.Unmarshal(payloads[0], &p); err != nil {
+			t.Fatalf("payload is not valid JSON: %v", err)
+		}
+		if len(p.FlagEvaluations) != 1 || p.FlagEvaluations[0].TargetingKey != "" || p.FlagEvaluations[0].Context != nil {
+			t.Errorf("degraded event must have no targeting_key/context, got %+v", p.FlagEvaluations)
+		}
+	})
+
+	t.Run("event too large even degraded is dropped", func(t *testing.T) {
+		// Even the degraded form (flag key alone) can't fit if the flag key itself exceeds the
+		// limit. Use a flag key larger than payloadSizeLimitBytes so no form fits.
+		hugeKey := strings.Repeat("k", payloadSizeLimitBytes+1)
+		events := []flagEvalLoggingEvent{{
+			Flag:            flagEvalFlag{Key: hugeKey},
+			EvaluationCount: 3,
+		}}
+		payloads, dropped, degraded, err := w.buildFlagEvalPayloads(events)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(payloads) != 0 {
+			t.Fatalf("got %d payloads, want 0 (event can't fit even degraded)", len(payloads))
+		}
+		if dropped != 3 {
+			t.Errorf("dropped=%d, want 3 (the event's evaluation_count)", dropped)
+		}
+		if degraded != 0 {
+			t.Errorf("degraded=%d, want 0 (degraded form also too large)", degraded)
+		}
+	})
 }
 
 func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
@@ -1170,6 +1298,399 @@ func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
 	}
 }
 
+// TestFlattenAndPruneContextReportsTruncationReasons covers the reasons slice returned by
+// flattenAndPruneContext. Each reason must be reported at most once per call, and only when
+// the matching cap actually fired.
+func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
+	overlongValue := strings.Repeat("v", maxFieldLength+1)
+	overlongKey := strings.Repeat("k", maxKeyLength+1)
+
+	// Field-cap alone: many small fields, no oversized keys or values.
+	t.Run("fields cap alone", func(t *testing.T) {
+		attrs := map[string]any{}
+		for i := range maxContextFields + 5 {
+			attrs[fmt.Sprintf("field-%04d", i)] = "small"
+		}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxContextFields) || slices.Contains(reasons, truncReasonMaxValueLength) || slices.Contains(reasons, truncReasonMaxKeyLength) {
+			t.Errorf("expected only max_context_fields, got %v", reasons)
+		}
+	})
+
+	// Value-cap alone: one oversized string value, everything else small and in-cap.
+	t.Run("value cap alone", func(t *testing.T) {
+		attrs := map[string]any{"role": "admin", "big": overlongValue}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxValueLength) || slices.Contains(reasons, truncReasonMaxKeyLength) || slices.Contains(reasons, truncReasonMaxContextFields) {
+			t.Errorf("expected only max_value_length, got %v", reasons)
+		}
+	})
+
+	// Value-cap on an oversized []byte: the byte slice is dropped WITHOUT copying it (the
+	// length is checked before the string(v) conversion), and the value-length reason fires.
+	t.Run("value cap on oversized []byte", func(t *testing.T) {
+		attrs := map[string]any{"role": "admin", "blob": make([]byte, maxFieldLength+1)}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxValueLength) {
+			t.Errorf("expected max_value_length, got %v", reasons)
+		}
+		if _, ok := got["blob"]; ok {
+			t.Error("expected oversized []byte to be dropped")
+		}
+		if got["role"] != "admin" {
+			t.Errorf("expected role retained, got %v", got["role"])
+		}
+	})
+
+	// In-bounds []byte is retained as a string.
+	t.Run("in-bounds []byte retained as string", func(t *testing.T) {
+		attrs := map[string]any{"role": []byte("admin")}
+		got, reasons := flattenAndPruneContext(attrs)
+		if reasons != nil {
+			t.Errorf("expected nil reasons, got %v", reasons)
+		}
+		if s, ok := got["role"].(string); !ok || s != "admin" {
+			t.Errorf("expected role retained as string \"admin\", got %v", got["role"])
+		}
+	})
+
+	// Key-cap alone: one over-long key, everything else small.
+	t.Run("key cap alone", func(t *testing.T) {
+		attrs := map[string]any{"role": "admin", overlongKey: "small"}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxKeyLength) || slices.Contains(reasons, truncReasonMaxContextFields) || slices.Contains(reasons, truncReasonMaxValueLength) {
+			t.Errorf("expected only max_key_length, got %v", reasons)
+		}
+	})
+
+	// Value and key caps together, no field-cap. Sorting: "aaaa..."(overlong key) < "big" < "role"
+	// so the overlong-key entry is visited before the fields cap could fire.
+	t.Run("value and key caps together", func(t *testing.T) {
+		attrs := map[string]any{
+			"aaaa" + overlongKey: "small",       // sorts first, hits key cap
+			"big":                overlongValue, // sorts middle, hits value cap
+			"role":               "admin",       // sorts last, kept
+		}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxKeyLength) || !slices.Contains(reasons, truncReasonMaxValueLength) {
+			t.Errorf("expected max_key_length AND max_value_length, got %v", reasons)
+		}
+	})
+
+	// No caps fire → nil reasons.
+	t.Run("nothing to truncate", func(t *testing.T) {
+		attrs := map[string]any{"role": "admin"}
+		_, reasons := flattenAndPruneContext(attrs)
+		if reasons != nil {
+			t.Errorf("expected nil reasons, got %v", reasons)
+		}
+	})
+
+	// List-element cap: a single list with more than maxListElements scalar elements. Only the
+	// list cap fires; depth/structure/field caps do not (the kept elements stay under the field cap).
+	t.Run("list elements cap", func(t *testing.T) {
+		elems := make([]any, maxListElements+5)
+		for i := range elems {
+			elems[i] = fmt.Sprintf("e%d", i)
+		}
+		attrs := map[string]any{"tags": elems}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxListElements) {
+			t.Errorf("expected max_list_elements, got %v", reasons)
+		}
+		// Exactly maxListElements list entries are retained.
+		count := 0
+		for k := range got {
+			if strings.HasPrefix(k, "tags.") {
+				count++
+			}
+		}
+		if count != maxListElements {
+			t.Errorf("retained %d list elements, want %d", count, maxListElements)
+		}
+	})
+
+	// Structure-property cap: a single structure with more than maxStructureProperties properties
+	// is omitted entirely (not sorted or walked) so the evaluation-thread cost stays bounded by
+	// the cap. The reason fires and zero properties are retained.
+	t.Run("structure properties cap", func(t *testing.T) {
+		nested := make(map[string]any, maxStructureProperties+5)
+		for i := range maxStructureProperties + 5 {
+			nested[fmt.Sprintf("p%04d", i)] = i
+		}
+		attrs := map[string]any{"obj": nested}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxStructureProperties) {
+			t.Errorf("expected max_structure_properties, got %v", reasons)
+		}
+		count := 0
+		for k := range got {
+			if strings.HasPrefix(k, "obj.") {
+				count++
+			}
+		}
+		if count != 0 {
+			t.Errorf("retained %d structure properties, want 0 (omitted entirely)", count)
+		}
+	})
+
+	// Snapshot-depth cap: a chain of nested maps deeper than maxSnapshotDepth, each with a
+	// scalar sibling so shallower scalars are retained while the depth-4 container is truncated.
+	t.Run("snapshot depth cap", func(t *testing.T) {
+		var node any = map[string]any{"val": "bottom"}
+		for i := range maxSnapshotDepth + 2 {
+			node = map[string]any{"val": fmt.Sprintf("L%d", i), "n": node}
+		}
+		attrs := map[string]any{"root": node}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxSnapshotDepth) {
+			t.Errorf("expected max_snapshot_depth, got %v", reasons)
+		}
+		// Deepest retained scalar is root.n.n.n.val (4 dots); the container at depth 4 is truncated.
+		maxDepth := 0
+		for k := range got {
+			if d := strings.Count(k, "."); d > maxDepth {
+				maxDepth = d
+			}
+		}
+		if maxDepth != maxSnapshotDepth {
+			t.Errorf("deepest retained key has %d dots, want %d (maxSnapshotDepth)", maxDepth, maxSnapshotDepth)
+		}
+	})
+
+	// Cycle cap: a map that contains itself as a descendant. The walker must terminate and
+	// report the cycle reason rather than infinite-looping.
+	t.Run("cycle", func(t *testing.T) {
+		cyclic := map[string]any{"name": "x"}
+		cyclic["self"] = cyclic // self-reference
+		attrs := map[string]any{"ctx": cyclic}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonCycle) {
+			t.Errorf("expected cycle reason, got %v", reasons)
+		}
+		// The non-cyclic sibling is retained; the cycle is truncated.
+		if got["ctx.name"] != "x" {
+			t.Errorf("expected ctx.name retained, got %v", got)
+		}
+	})
+}
+
+// TestFlattenAndPruneContextBoundedTraversal verifies the inline-bounding contract that mirrors
+// Java's DDEvaluator.copyPrunedContext: the walker's retained output (and therefore its hot-path
+// cost) is bounded by the caps regardless of how large or pathological the caller's input is.
+// Each case constructs an adversarial input and asserts the retained set is capped, the matching
+// reason fires, and the call terminates (no infinite recursion / stack overflow).
+func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
+	t.Run("deep chain is truncated at maxSnapshotDepth", func(t *testing.T) {
+		var node any = map[string]any{"val": "bottom"}
+		for i := range 100 { // far deeper than maxSnapshotDepth
+			node = map[string]any{"val": fmt.Sprintf("L%d", i), "n": node}
+		}
+		attrs := map[string]any{"root": node}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxSnapshotDepth) {
+			t.Fatalf("expected max_snapshot_depth, got %v", reasons)
+		}
+		maxDepth := 0
+		for k := range got {
+			if d := strings.Count(k, "."); d > maxDepth {
+				maxDepth = d
+			}
+		}
+		if maxDepth != maxSnapshotDepth {
+			t.Errorf("deepest retained key has %d dots, want %d", maxDepth, maxSnapshotDepth)
+		}
+	})
+
+	t.Run("huge list retains at most maxListElements", func(t *testing.T) {
+		elems := make([]any, 10_000)
+		for i := range elems {
+			elems[i] = i
+		}
+		attrs := map[string]any{"tags": elems}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxListElements) {
+			t.Fatalf("expected max_list_elements, got %v", reasons)
+		}
+		count := 0
+		for k := range got {
+			if strings.HasPrefix(k, "tags.") {
+				count++
+			}
+		}
+		if count != maxListElements {
+			t.Errorf("retained %d list elements, want %d", count, maxListElements)
+		}
+	})
+
+	t.Run("huge structure is omitted entirely", func(t *testing.T) {
+		nested := make(map[string]any, 10_000)
+		for i := range 10_000 {
+			nested[fmt.Sprintf("p%05d", i)] = i
+		}
+		attrs := map[string]any{"obj": nested}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxStructureProperties) {
+			t.Fatalf("expected max_structure_properties, got %v", reasons)
+		}
+		count := 0
+		for k := range got {
+			if strings.HasPrefix(k, "obj.") {
+				count++
+			}
+		}
+		// The structure is omitted entirely (not sorted or walked) so the evaluation-thread
+		// cost is O(1) rather than O(K log K) in the supplied width.
+		if count != 0 {
+			t.Errorf("retained %d structure properties, want 0 (omitted entirely)", count)
+		}
+	})
+
+	t.Run("over-cap top-level context is omitted entirely", func(t *testing.T) {
+		attrs := make(map[string]any, 5_000)
+		for i := range 5_000 {
+			attrs[fmt.Sprintf("k%05d", i)] = fmt.Sprintf("v%d", i)
+		}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonMaxContextFields) {
+			t.Fatalf("expected max_context_fields, got %v", reasons)
+		}
+		// The top-level map exceeds the field cap, so the entire context is omitted (O(1))
+		// rather than sorting 5 000 keys and trimming to 256 (O(K log K)).
+		if len(got) != 0 {
+			t.Errorf("retained %d fields, want 0 (omitted entirely)", len(got))
+		}
+	})
+
+	t.Run("cyclic structure terminates", func(t *testing.T) {
+		cyclic := map[string]any{"name": "x"}
+		cyclic["self"] = cyclic
+		attrs := map[string]any{"ctx": cyclic}
+		got, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonCycle) {
+			t.Fatalf("expected cycle reason, got %v", reasons)
+		}
+		if got["ctx.name"] != "x" {
+			t.Errorf("expected ctx.name retained, got %v", got)
+		}
+	})
+
+	t.Run("mutual cycle terminates", func(t *testing.T) {
+		a := map[string]any{"id": 1}
+		b := map[string]any{"id": 2}
+		a["b"] = b
+		b["a"] = a // a -> b -> a cycle
+		attrs := map[string]any{"root": a}
+		_, reasons := flattenAndPruneContext(attrs)
+		if !slices.Contains(reasons, truncReasonCycle) {
+			t.Errorf("expected cycle reason, got %v", reasons)
+		}
+	})
+}
+
+// TestRecordBumpsContextTruncatedTelemetry covers the record → contextTruncatedByReason path:
+// a caller passing a context that trips a cap must bump the matching counter, and consent-off
+// must skip the copy entirely (so the counter stays at zero even for the same caller shape).
+func TestRecordBumpsContextTruncatedTelemetry(t *testing.T) {
+	attrs := map[string]any{}
+	for i := range maxContextFields + 3 {
+		attrs[fmt.Sprintf("field-%04d", i)] = "small"
+	}
+	hookCtx := of.NewHookContext(
+		"tel-flag",
+		of.Boolean,
+		false,
+		of.NewClientMetadata(""),
+		of.Metadata{Name: "test-provider"},
+		of.NewEvaluationContext("user-1", attrs),
+	)
+	details := func(consent bool) of.InterfaceEvaluationDetails {
+		return of.InterfaceEvaluationDetails{
+			Value: true,
+			EvaluationDetails: of.EvaluationDetails{
+				FlagKey:  "tel-flag",
+				FlagType: of.Boolean,
+				ResolutionDetail: of.ResolutionDetail{
+					Variant: "on",
+					Reason:  of.TargetingMatchReason,
+					FlagMetadata: of.FlagMetadata{
+						metadataObserveFullEvaluationDataKey: consent,
+					},
+				},
+			},
+		}
+	}
+
+	loadCounter := func(w *flagEvalLoggingWriter, reason string) int64 {
+		v, ok := w.contextTruncatedByReason.Load(reason)
+		if !ok {
+			return 0
+		}
+		return v.(*atomic.Int64).Load()
+	}
+
+	t.Run("consent-on bumps max_context_fields once", func(t *testing.T) {
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.record(hookCtx, details(true))
+		if got := loadCounter(w, truncReasonMaxContextFields); got != 1 {
+			t.Errorf("consent-on: expected max_context_fields=1, got %d", got)
+		}
+	})
+
+	t.Run("consent-off skips copy entirely — no truncation reasons bump", func(t *testing.T) {
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.record(hookCtx, details(false))
+		if got := loadCounter(w, truncReasonMaxContextFields); got != 0 {
+			t.Errorf("consent-off: max_context_fields should be 0 (no copy work), got %d", got)
+		}
+	})
+}
+
+// TestPreEnqueueBoundingReleasesCallerContext proves the context is snapshotted onto the queued
+// evalEvent by the time record() returns — mutating the caller's map after record() must not
+// affect the aggregated bucket. Under a worker-side copy this would fail: the queue would hold
+// a live reference and observe the mutation on the next flush.
+func TestPreEnqueueBoundingReleasesCallerContext(t *testing.T) {
+	w := newFlagEvalLoggingWriter(ProviderConfig{})
+	attrs := map[string]any{"role": "admin"}
+	hookCtx := of.NewHookContext(
+		"pre-flag",
+		of.Boolean,
+		false,
+		of.NewClientMetadata(""),
+		of.Metadata{Name: "test-provider"},
+		of.NewEvaluationContext("user-1", attrs),
+	)
+	details := of.InterfaceEvaluationDetails{
+		Value: true,
+		EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  "pre-flag",
+			FlagType: of.Boolean,
+			ResolutionDetail: of.ResolutionDetail{
+				Variant:      "on",
+				Reason:       of.TargetingMatchReason,
+				FlagMetadata: of.FlagMetadata{metadataObserveFullEvaluationDataKey: true},
+			},
+		},
+	}
+	w.record(hookCtx, details)
+
+	// Mutation happens AFTER record() returned. If the queue held a live reference the worker
+	// would observe "role=poisoned"; because the copy was taken pre-enqueue, the snapshot is
+	// stable.
+	attrs["role"] = "poisoned"
+
+	w.aggregate(<-w.events)
+	if len(w.aggregator.full) != 1 {
+		t.Fatalf("expected one aggregated entry, got %d", len(w.aggregator.full))
+	}
+	for _, entry := range w.aggregator.full {
+		if got := entry.contextAttrs["role"]; got != "admin" {
+			t.Errorf("expected snapshotted role=admin, got %v — the caller's mutation leaked into the aggregated bucket", got)
+		}
+	}
+}
+
 func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
 	w := newFlagEvalLoggingWriter(ProviderConfig{})
 	attrs := make(map[string]any, maxContextFields+50)
@@ -1193,6 +1714,8 @@ func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
 			ResolutionDetail: of.ResolutionDetail{
 				Variant: "on",
 				Reason:  of.TargetingMatchReason,
+				// Consent on: pruning is only reachable when the context is captured at all.
+				FlagMetadata: of.FlagMetadata{metadataObserveFullEvaluationDataKey: true},
 			},
 		},
 	}
@@ -1208,8 +1731,11 @@ func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
 		t.Fatalf("expected one aggregated entry, got %d", len(w.aggregator.full))
 	}
 	for _, entry := range w.aggregator.full {
-		if got := len(entry.contextAttrs); got != maxContextFields {
-			t.Fatalf("aggregated context should be pruned to %d fields, got %d", maxContextFields, got)
+		// The top-level map (307 fields) exceeds maxContextFields, so the entire context is
+		// omitted on the evaluation thread (O(1) len() check) rather than sorted and trimmed
+		// to 256. The aggregated bucket therefore carries no context attributes.
+		if got := len(entry.contextAttrs); got != 0 {
+			t.Fatalf("aggregated context should be omitted entirely (over-cap top-level), got %d fields", got)
 		}
 		if _, ok := entry.contextAttrs["zzz-oversized"]; ok {
 			t.Fatal("aggregated context should not contain oversized string values")
@@ -1217,8 +1743,9 @@ func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
 	}
 }
 
-// TestExtractEvalDetailsPrefersErrorMessage verifies ErrorMessage is preferred when present;
-// ErrorCode is the fallback only when ErrorMessage is empty.
+// TestExtractEvalDetailsPrefersErrorMessage verifies ErrorMessage is preferred when present
+// under consent-on; under consent-off ErrorMessage is dropped and ErrorCode is substituted so
+// the wire never carries raw evaluation-context values echoed back through error strings.
 func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 	mkHookCtx := func() of.HookContext {
 		return of.NewHookContext(
@@ -1231,14 +1758,22 @@ func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 		)
 	}
 
+	consentOn := func(d of.InterfaceEvaluationDetails) of.InterfaceEvaluationDetails {
+		if d.FlagMetadata == nil {
+			d.FlagMetadata = of.FlagMetadata{}
+		}
+		d.FlagMetadata[metadataObserveFullEvaluationDataKey] = true
+		return d
+	}
+
 	tests := []struct {
 		name             string
 		details          of.InterfaceEvaluationDetails
 		wantErrorMessage string
 	}{
 		{
-			name: "ErrorMessage present is preferred over ErrorCode",
-			details: of.InterfaceEvaluationDetails{
+			name: "consent-on: ErrorMessage preferred over ErrorCode",
+			details: consentOn(of.InterfaceEvaluationDetails{
 				EvaluationDetails: of.EvaluationDetails{
 					ResolutionDetail: of.ResolutionDetail{
 						Reason:       of.ErrorReason,
@@ -1246,27 +1781,52 @@ func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 						ErrorMessage: "boom",
 					},
 				},
-			},
+			}),
 			wantErrorMessage: "boom",
 		},
 		{
-			name: "empty ErrorMessage falls back to ErrorCode",
-			details: of.InterfaceEvaluationDetails{
+			name: "consent-on: empty ErrorMessage falls back to ErrorCode",
+			details: consentOn(of.InterfaceEvaluationDetails{
 				EvaluationDetails: of.EvaluationDetails{
 					ResolutionDetail: of.ResolutionDetail{
 						Reason:    of.ErrorReason,
 						ErrorCode: of.TypeMismatchCode,
 					},
 				},
+			}),
+			wantErrorMessage: string(of.TypeMismatchCode),
+		},
+		{
+			name: "consent-on: both empty yields empty errorMessage",
+			details: consentOn(of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason: of.TargetingMatchReason,
+					},
+				},
+			}),
+			wantErrorMessage: "",
+		},
+		{
+			name: "consent-off: raw ErrorMessage is dropped, ErrorCode substituted",
+			details: of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason:       of.ErrorReason,
+						ErrorCode:    of.TypeMismatchCode,
+						ErrorMessage: `variant type mismatch: "jane.doe@datadoghq.com"`,
+					},
+				},
 			},
 			wantErrorMessage: string(of.TypeMismatchCode),
 		},
 		{
-			name: "both empty yields empty errorMessage",
+			name: "consent-off: raw ErrorMessage with no ErrorCode is dropped entirely",
 			details: of.InterfaceEvaluationDetails{
 				EvaluationDetails: of.EvaluationDetails{
 					ResolutionDetail: of.ResolutionDetail{
-						Reason: of.TargetingMatchReason,
+						Reason:       of.ErrorReason,
+						ErrorMessage: `For input string: "jane.doe@datadoghq.com"`,
 					},
 				},
 			},
@@ -1278,6 +1838,80 @@ func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := extractEvalDetails(mkHookCtx(), tc.details).errorMessage; got != tc.wantErrorMessage {
 				t.Errorf("errorMessage = %q, want %q", got, tc.wantErrorMessage)
+			}
+		})
+	}
+}
+
+// TestErrorMessageNeverCarriesRawContextUnderConsentOff is the wire-level negative test the
+// cross-SDK contract requires: given an evaluation whose ErrorMessage embeds a PII-shaped raw
+// value (as our own evaluator and third-party providers both can produce), the serialized
+// flagevaluation payload must not contain that raw value anywhere under consent-off, even
+// though the same raw string would ride through untouched on the consent-on path.
+func TestErrorMessageNeverCarriesRawContextUnderConsentOff(t *testing.T) {
+	const rawPII = "jane.doe@datadoghq.com"
+	const errMsgWithPII = `For input string: "` + rawPII + `"`
+
+	mkHookCtx := func() of.HookContext {
+		return of.NewHookContext(
+			"payment_flag",
+			of.String,
+			"default",
+			of.NewClientMetadata(""),
+			of.Metadata{Name: "test-provider"},
+			of.NewEvaluationContext(rawPII, nil),
+		)
+	}
+
+	newWriterUnderTest := func() *flagEvalLoggingWriter {
+		w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, nil)
+		w.aggregator.globalCap = 100
+		w.aggregator.perFlagCap = 10
+		w.aggregator.degradedCap = 10
+		return w
+	}
+
+	for _, tc := range []struct {
+		name    string
+		consent bool
+	}{
+		{"consent-off drops raw ErrorMessage", false},
+		{"consent-on preserves raw ErrorMessage (control)", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			details := of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason:       of.ErrorReason,
+						ErrorCode:    of.TypeMismatchCode,
+						ErrorMessage: errMsgWithPII,
+						FlagMetadata: of.FlagMetadata{
+							metadataObserveFullEvaluationDataKey: tc.consent,
+						},
+					},
+				},
+			}
+			w := newWriterUnderTest()
+			w.record(mkHookCtx(), details)
+			if len(w.events) != 1 {
+				t.Fatalf("expected one queued event, got %d", len(w.events))
+			}
+			w.aggregate(<-w.events)
+
+			events := w.buildFlushEvents(time.Now().UnixMilli())
+			if len(events) != 1 {
+				t.Fatalf("expected one flush event, got %d", len(events))
+			}
+			payload, err := json.Marshal(events[0])
+			if err != nil {
+				t.Fatalf("marshal payload: %v", err)
+			}
+			gotContainsPII := strings.Contains(string(payload), rawPII)
+			if tc.consent && !gotContainsPII {
+				t.Errorf("consent-on control failed: payload should still contain raw ErrorMessage. payload=%s", payload)
+			}
+			if !tc.consent && gotContainsPII {
+				t.Errorf("consent-off leaked raw PII in payload: %s", payload)
 			}
 		})
 	}

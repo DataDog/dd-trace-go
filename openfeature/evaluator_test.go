@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -175,7 +176,7 @@ func TestEvaluateSemverCondition(t *testing.T) {
 		{name: "greater than or equal ignores build metadata", operator: operatorSemverGTE, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
 		{name: "different build metadata has equal precedence", operator: operatorSemverEQ, attribute: "1.0.0+linux", comparand: "1.0.0+darwin", want: true},
 		{name: "invalid attribute", operator: operatorSemverNEQ, attribute: "not-a-version", comparand: "1.0.0"},
-		{name: "short attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0"},
+		{name: "two-part attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0", want: true},
 		{name: "prefixed attribute", operator: operatorSemverGTE, attribute: "v1.2.3", comparand: "1.0.0"},
 		{name: "overflowing attribute", operator: operatorSemverGTE, attribute: "18446744073709551616.0.0", comparand: "1.0.0"},
 		{name: "non-string attribute", operator: operatorSemverEQ, attribute: 1.2, comparand: "1.2.0"},
@@ -341,6 +342,13 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.updateConfiguration(&cfg)
+	if err := of.SetProviderAndWait(provider); err != nil {
+		t.Fatalf("set provider: %v", err)
+	}
+	client := of.NewClient("fixture-test")
+
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -361,8 +369,9 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				TargetingKey *string        `json:"targetingKey"`
 				Attributes   map[string]any `json:"attributes"`
 				Result       struct {
-					Value  any    `json:"value"`
-					Reason string `json:"reason"`
+					Value     any    `json:"value"`
+					Reason    string `json:"reason"`
+					ErrorCode string `json:"errorCode"`
 				} `json:"result"`
 			}
 			if err := json.Unmarshal(data, &cases); err != nil {
@@ -387,6 +396,19 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 					}
 					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
 						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+					if tc.Result.ErrorCode != "" {
+						evaluationContext := of.NewEvaluationContext("", tc.Attributes)
+						if tc.TargetingKey != nil {
+							evaluationContext = of.NewEvaluationContext(*tc.TargetingKey, tc.Attributes)
+						}
+						details, err := client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue, evaluationContext)
+						if err == nil {
+							t.Error("expected SDK evaluation error, got nil")
+						}
+						if details.ErrorCode != of.ErrorCode(tc.Result.ErrorCode) {
+							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
+						}
 					}
 				})
 			}

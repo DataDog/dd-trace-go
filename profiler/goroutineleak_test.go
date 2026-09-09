@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"go/version"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -15,33 +16,65 @@ import (
 	"testing"
 )
 
+var go127OrNewer = version.Compare(runtime.Version(), "go1.27") >= 0
+
 func TestGoroutineLeakProfile(t *testing.T) {
-	if !strings.HasPrefix(runtime.Version(), "go1.26.") {
-		// This is experimental in Go 1.26. We'll need to revisit this
-		// code when Go 1.27 is released.
-		t.Skipf("goroutineleakprofile requires Go 1.26, got %s", runtime.Version())
+	if version.Compare(runtime.Version(), "go1.26") < 0 {
+		t.Skipf("goroutineleakprofile requires Go 1.26 or later")
 	}
 
 	t.Run("with_experiment", func(t *testing.T) {
-		meta := runGoroutineLeakProgram(t, true)
+		if go127OrNewer {
+			t.Skip("goroutineleakprofile is no longer an experiment")
+		}
+		meta, _ := runGoroutineLeakProgram(t, true, false)
 		if _, ok := meta.attachments["goroutineleak.pprof"]; !ok {
 			t.Errorf("expected goroutineleak.pprof attachment, got: %v", meta.event.Attachments)
 		}
 	})
 
-	t.Run("without_experiment", func(t *testing.T) {
-		meta := runGoroutineLeakProgram(t, false)
+	t.Run("with_experiment_and_explicit_profile", func(t *testing.T) {
+		if go127OrNewer {
+			t.Skip("goroutineleakprofile is no longer an experiment")
+		}
+		meta, _ := runGoroutineLeakProgram(t, true, true)
+		if _, ok := meta.attachments["goroutineleak.pprof"]; !ok {
+			t.Errorf("expected goroutineleak.pprof attachment, got: %v", meta.event.Attachments)
+		}
+	})
+
+	t.Run("explicit_without_experiment", func(t *testing.T) {
+		meta, output := runGoroutineLeakProgram(t, false, true)
+		if go127OrNewer {
+			if _, ok := meta.attachments["goroutineleak.pprof"]; !ok {
+				t.Errorf("expected goroutineleak.pprof attachment, got: %v", meta.event.Attachments)
+			}
+		} else {
+			const want = "goroutine leak profile requires Go 1.27 or later, or GOEXPERIMENT=goroutineleakprofile"
+			if !strings.Contains(output, want) {
+				t.Errorf("unexpected profiler.Start error: %s", output)
+			}
+		}
+	})
+
+	t.Run("off", func(t *testing.T) {
+		meta, _ := runGoroutineLeakProgram(t, false, false)
 		if _, ok := meta.attachments["goroutineleak.pprof"]; ok {
 			t.Errorf("unexpected goroutineleak.pprof attachment without GOEXPERIMENT")
 		}
 	})
 }
 
-func runGoroutineLeakProgram(t *testing.T, withExperiment bool) profileMeta {
+func runGoroutineLeakProgram(t *testing.T, withExperiment, explicit bool) (profileMeta, string) {
 	t.Helper()
 	dir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(goroutineLeakSource), 0644); err != nil {
+	profileType := ""
+	if explicit {
+		profileType = "profiler.GoroutineLeakProfile"
+	}
+	source := strings.Replace(goroutineLeakSource, "PROFILE_TYPE", profileType, 1)
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(source), 0644); err != nil {
 		t.Fatalf("writing test source: %s", err)
 	}
 
@@ -79,6 +112,17 @@ func runGoroutineLeakProgram(t *testing.T, withExperiment bool) profileMeta {
 		t.Fatalf("%s: %s", build.String(), out)
 	}
 
+	if explicit && !withExperiment && version.Compare(runtime.Version(), "go1.27") < 0 {
+		// We expect this configuration (explicitly enabled but built
+		// for Go 1.26 and with no GOEXPERIMENT) to exit without
+		// producing any profiles. The profile type is ignored, so the
+		// test program needs to exit explicitly after Start returns.
+		cmd := exec.Command(binPath)
+		cmd.Env = []string{"GOROUTINE_LEAK_TEST_EXIT=1"}
+		output, _ := cmd.CombinedOutput()
+		return profileMeta{}, string(output)
+	}
+
 	backend := &fakeBackend{profiles: make(chan profileMeta, 1)}
 	srv := httptest.NewServer(backend)
 	t.Cleanup(srv.Close)
@@ -97,12 +141,14 @@ func runGoroutineLeakProgram(t *testing.T, withExperiment bool) profileMeta {
 	if p.err != nil {
 		t.Fatalf("profile upload error: %s", p.err)
 	}
-	return p
+	return p, ""
 }
 
 const goroutineLeakSource = `package main
 
 import (
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/profiler"
@@ -110,13 +156,18 @@ import (
 
 func main() {
 	err := profiler.Start(
-		profiler.WithProfileTypes(), // only leak profile matters; auto-enabled if available
+		profiler.WithProfileTypes(PROFILE_TYPE), // only leak profile matters
 		profiler.WithPeriod(10*time.Millisecond),
 	)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 	defer profiler.Stop()
+
+	if os.Getenv("GOROUTINE_LEAK_TEST_EXIT") != "" {
+		return
+	}
 
 	// Run until killed. This has the side effect of leaking a goroutine in
 	// case we care about checking for a non-empty profile.
