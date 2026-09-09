@@ -5,16 +5,15 @@
 
 package otelprocesscontext
 
-//go:generate ./proto/generate.sh
-
 import (
 	"fmt"
 
+	processcontextv1 "go.opentelemetry.io/proto/otlp/processcontext/v1development"
 	"google.golang.org/protobuf/proto"
 )
 
 // PublishProcessContext marshals pc and publishes it to the process context mapping.
-func PublishProcessContext(pc *ProcessContext) error {
+func PublishProcessContext(pc *processcontextv1.ProcessContext) error {
 	b, err := proto.Marshal(pc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal process context: %w", err)

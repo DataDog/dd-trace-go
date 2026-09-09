@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	processcontextv1 "go.opentelemetry.io/proto/otlp/processcontext/v1development"
 	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -244,7 +245,7 @@ func TestCreateOtelProcessContextMappingBothFail(t *testing.T) {
 func TestPublishOtelProcessContext(t *testing.T) {
 	restoreOtelProcessContextMapping(t)
 
-	pc := &ProcessContext{
+	pc := &processcontextv1.ProcessContext{
 		Resource: &resourcev1.Resource{
 			Attributes: []*commonv1.KeyValue{
 				{Key: "deployment.environment.name", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "production"}}},
@@ -258,7 +259,7 @@ func TestPublishOtelProcessContext(t *testing.T) {
 				{Key: "container.id", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "1234567890"}}},
 			},
 		},
-		ExtraAttributes: []*commonv1.KeyValue{
+		Attributes: []*commonv1.KeyValue{
 			{Key: "datadog.process_tags", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "tag1=value1,tag2=value2"}}},
 		},
 	}
@@ -266,7 +267,7 @@ func TestPublishOtelProcessContext(t *testing.T) {
 
 	ctx, err := readProcessLevelContext()
 	require.NoError(t, err)
-	var pc2 = &ProcessContext{}
+	var pc2 = &processcontextv1.ProcessContext{}
 	require.NoError(t, proto.Unmarshal(ctx, pc2))
 
 	require.EqualExportedValues(t, pc, pc2)

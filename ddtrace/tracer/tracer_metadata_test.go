@@ -36,7 +36,7 @@ func TestToProcessContextFieldMapping(t *testing.T) {
 	}
 
 	extraAttrs := make(map[string]string)
-	for _, kv := range pc.GetExtraAttributes() {
+	for _, kv := range pc.GetAttributes() {
 		extraAttrs[kv.GetKey()] = kv.GetValue().GetStringValue()
 	}
 
@@ -79,7 +79,7 @@ func TestToProcessContextCoversAllMetadataStringFields(t *testing.T) {
 	for _, kv := range pc.GetResource().GetAttributes() {
 		got[kv.GetValue().GetStringValue()] = true
 	}
-	for _, kv := range pc.GetExtraAttributes() {
+	for _, kv := range pc.GetAttributes() {
 		got[kv.GetValue().GetStringValue()] = true
 	}
 
