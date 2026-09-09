@@ -71,6 +71,8 @@ type DatadogProvider struct {
 	// This channel-per-generation approach, rather than sync.Cond, keeps the
 	// wait naturally selectable against ctx.Done() without a helper goroutine
 	// that can race the wait it is meant to interrupt.
+	// Nil on a provider built as a bare struct literal, which tests do; both
+	// close sites guard for it.
 	configChange chan struct{}
 
 	hooks []openfeature.Hook
@@ -89,7 +91,7 @@ type DatadogProvider struct {
 
 	// source is fixed at construction. // +checklocks:mu
 	source internalffe.Source
-	// agentless is non-nil only once startWithAgentless has registered it. // +checklocks:mu
+	// agentless stays nil unless tryRegisterAgentless registered a poller. // +checklocks:mu
 	agentless *agentlessSource
 	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
 	shutdownCalled bool
