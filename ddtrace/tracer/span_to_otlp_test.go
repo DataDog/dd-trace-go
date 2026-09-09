@@ -107,7 +107,6 @@ func TestConvertSpanExportsHTTPStatusErrorsWithoutStatusDescription(t *testing.T
 	s.meta.Set("http.request.method", "POST")
 	s.meta.Set("http.response.status_code", "500")
 	s.meta.Set(ext.ErrorType, "500")
-	s.meta.Set(ext.ErrorMsg, "500: Internal Server Error")
 
 	otlp := convertSpan(s, "svc", true)
 	require.NotNil(t, otlp)
@@ -121,6 +120,19 @@ func TestConvertSpanExportsHTTPStatusErrorsWithoutStatusDescription(t *testing.T
 	assert.Equal(t, int64(500), attrs["http.response.status_code"])
 	assert.Equal(t, "500", attrs[ext.ErrorType])
 	assert.NotContains(t, attrs, ext.ErrorMsg)
+}
+
+func TestConvertSpanPreservesIndependentHTTPErrorStatusDescription(t *testing.T) {
+	s := newSpan("http.request", "svc", "POST", 100, 200, 0)
+	s.error = 1
+	s.meta.Set(ext.HTTPResponseStatusCode, "500")
+	s.meta.Set(ext.ErrorType, "500")
+	s.meta.Set(ext.ErrorMsg, "upstream rejected request")
+
+	otlp := convertSpan(s, "svc", true)
+	require.NotNil(t, otlp)
+	assert.Equal(t, otlptrace.Status_STATUS_CODE_ERROR, otlp.Status.Code)
+	assert.Equal(t, "upstream rejected request", otlp.Status.Message)
 }
 
 func TestConvertSpanPreservesStatusDescriptionForTransportErrors(t *testing.T) {
@@ -225,7 +237,7 @@ func TestConvertSpanStatus(t *testing.T) {
 	t.Run("unset", func(t *testing.T) {
 		s := newBasicSpan("op")
 		s.error = 0
-		st := convertSpanStatus(s, false)
+		st := convertSpanStatus(s)
 		require.NotNil(t, st)
 		assert.Equal(t, otlptrace.Status_STATUS_CODE_UNSET, st.Code)
 	})
@@ -234,7 +246,7 @@ func TestConvertSpanStatus(t *testing.T) {
 		s := newBasicSpan("op")
 		s.error = 1
 		s.meta = tinternal.NewSpanMetaFromMap(map[string]string{ext.ErrorMsg: "err msg"})
-		st := convertSpanStatus(s, false)
+		st := convertSpanStatus(s)
 		require.NotNil(t, st)
 		assert.Equal(t, otlptrace.Status_STATUS_CODE_ERROR, st.Code)
 		assert.Equal(t, "err msg", st.Message)
