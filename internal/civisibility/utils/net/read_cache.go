@@ -35,7 +35,7 @@ const (
 	readCacheEndpointVersion = 1
 	// readCacheEndpointSkippableTestsVersion is bumped independently because skippable-tests
 	// cache entries include backend coverage metadata and safety state.
-	readCacheEndpointSkippableTestsVersion = 2
+	readCacheEndpointSkippableTestsVersion = 3
 
 	// readCacheScopeLocal scopes unidentified local runs by parent process.
 	readCacheScopeLocal = "local"
