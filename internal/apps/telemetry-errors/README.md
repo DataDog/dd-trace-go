@@ -264,7 +264,8 @@ with no HTTP call needed. See "Running this app" below for exact commands:
 |---|---|---|
 | Fault-injecting reverse proxy in front of a real agent, returning malformed JSON for the remote-config poll endpoint | `updateState` "could not parse the json response body" (`internal/remoteconfig/remoteconfig.go`) | `fault-injectable` — confirmed working end-to-end (tiers 0/1/2). Tier 0 for this site is now also enforced automatically in CI — see `internal/remoteconfig/errortracking_test.go`. |
 | Linux container with a custom seccomp profile blocking the `memfd_create` syscall, run with `--network host` (see "Known gaps") | `storeConfig`'s **first** site, "failed to store the configuration" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only (both `storeConfig` sites are no-ops on macOS/Windows), but **not reported**: `memfd_create` failing under seccomp/kernel-capability/resource-limit restrictions is a customer-environment condition, not an actionable SDK defect, and reporting it would create fleet-wide false positives for hardened deployments (e.g. gVisor, locked-down seccomp profiles). `storeConfig` only logs this locally now. CI still asserts the negative (no telemetry report) and the local log line — see `internal/apps/telemetry-errors/seccomp_e2e_test.go`. |
-| Same container as above — both `storeConfig` sites fire from one run, since the second site's own internal fallback also fails under Docker Desktop's Linux VM kernel | `storeConfig`'s **second** site, "failed to publish the OTEL process context" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only — confirmed generated at tier 0, **not yet observed landing** at tier 2; see "Known gaps". The same CI test above checks for this message too, but only best-effort (non-blocking) — the runner's own kernel determines whether it fires at all. |
+| Same container as above — both `storeConfig` sites fire from one run, since the second site's own internal fallback also fails under Docker Desktop's Linux VM kernel | `storeConfig`'s **second** site, "failed to publish the OTEL process context" (`ddtrace/tracer/tracer.go`) | `fault-injectable`, Linux-only — **confirmed landing at tier 2, but not reliably**: 2 of 5 separate runs with clean tier-1 acceptance landed at tier 2, 3 consecutive `network_mode: host` retries did not, root cause not established; see "Known gaps". This site stays reported (unlike the memfd site above) because `PublishProcessContext` has a genuine dd-trace-go defect path (`ErrPayloadTooLarge` on a payload-size increase across a `Stop()`/`Start()` restart in the same process), not just environment-hardening conditions. The same CI test above checks for this message too, but only best-effort (non-blocking) — the runner's own kernel determines whether it fires at all. |
+| A reverse proxy that hijacks the connection and closes it mid-body after a 200 OK with a lying `Content-Length` | `updateState` "could not read the response body" (`internal/remoteconfig/remoteconfig.go`) | `fault-injectable` — confirmed working end-to-end at tiers 0/1, and confirmed **not reported** (tier 2 correctly empty): the response headers already arrived, so a failure reading the body is a mid-transfer network condition (connection reset, truncated encoding), not evidence of a dd-trace-go defect — same category as an unreachable agent. Reverted from reporting to local-log-only (`log.Debug`, matching the sibling `c.HTTP.Do(req)` failure site's level) after this was flagged in review; see `internal/remoteconfig/errortracking_readbody_test.go` for the automated tier-0 coverage. |
 
 Not practically triggerable from outside the process, given what each depends on:
 
@@ -272,7 +273,6 @@ Not practically triggerable from outside the process, given what each depends on
 |---|---|
 | `remoteconfig.go` `newUpdateRequest` erroring | Only fails on an already-corrupted internal repository state, not reachable via a crafted network response |
 | `remoteconfig.go` `http.NewRequest` erroring | Only fails on a malformed agent URL, which tracer startup validates before this point is ever reached |
-| `remoteconfig.go` "could not read the response body" | Needs a raw truncated-connection response (200 announced, then abrupt close mid-body) — plausible but not yet implemented here |
 
 ## Known gaps
 
@@ -291,19 +291,34 @@ Not practically triggerable from outside the process, given what each depends on
   for at least one other language's telemetry error feed, grouping was coarse enough that a large volume
   of structurally different errors collapsed into a single grouped issue. Whether this affects Go's feed
   specifically was not established from this app alone.
-- **Resolved — container-originated telemetry needs `network_mode: host`, not bridge networking with
-  published ports.** Sending from a container over bridge networking (`-p hostport:containerport`, or a
-  custom bridge network with container-name resolution) reproducibly failed to land at tier 2 — 2xx,
-  non-zero bytes flushed, no error anywhere, yet never searchable — while native-process telemetry
-  through the identical agent landed reliably every time. Enabling the agent's own debug logging pinned
-  the mechanism precisely: a bridge-networked connection triggers an internal origin-resolution attempt
-  (the agent tries to resolve the sender's identity via its cgroup, through an internal call to its own
-  tag-resolution component) that fails outright for a throwaway container the agent has no way to
-  recognize; this attempt is never made at all for a same-network-namespace connection. Confirmed the
-  fix directly: re-running the exact same trigger with the sending container on `network_mode: host`
-  (matching the topology this repo's own `docker-compose.yml` already uses) made the resolution attempt
-  disappear entirely, and the payload landed within seconds. **Use `network_mode: host` for any
-  container-based trigger** — it is both the fix and the existing convention, not a new requirement.
+- **Partially resolved — `network_mode: host` fixes the *bridge-networking* failure mode, but
+  container-originated telemetry can still intermittently fail to land even with it.** Sending from a
+  container over bridge networking (`-p hostport:containerport`, or a custom bridge network with
+  container-name resolution) reproducibly failed to land at tier 2 — 2xx, non-zero bytes flushed, no
+  error anywhere, yet never searchable — while native-process telemetry through the identical agent
+  landed reliably every time. Enabling the agent's own debug logging pinned the mechanism precisely: a
+  bridge-networked connection triggers an internal origin-resolution attempt (the agent tries to resolve
+  the sender's identity via its cgroup, through an internal call to its own tag-resolution component)
+  that fails outright for a throwaway container the agent has no way to recognize; this attempt is never
+  made at all for a same-network-namespace connection. Switching the sending container to
+  `network_mode: host` (matching the topology this repo's own `docker-compose.yml` already uses) made
+  that specific resolution attempt disappear entirely, and the payload landed within seconds — confirmed
+  directly by re-running the exact same trigger both ways.
+  **However, this does not make container-originated telemetry as reliable as native-process telemetry.**
+  Across 5 separate `--network host` / `PublishProcessContext` runs in one later session (all with
+  identical tier-1 acceptance — clean flushes, zero transport errors, correct `agent_url` every time),
+  only 2 landed at tier 2 (one `network_mode: host` run, one bridge-networked run via
+  `host.docker.internal`); 3 consecutive `network_mode: host` retries with fresh runtime IDs did not
+  land, confirmed by direct `instrumented_service`-scoped queries (not just an unscoped full-text check,
+  which can self-match on this tool's own query-audit log — see "Do not assert..." above) run well after
+  any plausible indexing lag. The agent's own `/telemetry/proxy` endpoint does not log per-request
+  activity at any verbosity tried, so "no log line at the agent" is not evidence either way — the agent's
+  debug logs showed no origin-resolution cascade (ruling out the bridge-networking mechanism above as the
+  cause here) but also no record of the request being received or dropped. Root cause not established.
+  **Practical takeaway: `network_mode: host` remains necessary or a container-based trigger will never
+  land (the bridge-networking failure mode is real and confirmed), but it is not sufficient — verify
+  tier 2 for the specific message you care about after every container-based run, don't assume one past
+  successful run means the mechanism is reliable.**
 
 **Not a gap, but the pitfall that cost the most time building this process:** local-agent interception
 (see "Do not rely on 'no local agent' being true" under Tier 1). It presents identically to a genuine
