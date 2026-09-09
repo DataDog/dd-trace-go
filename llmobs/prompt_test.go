@@ -51,6 +51,22 @@ func TestPromptTextAndChat(t *testing.T) {
 	}
 }
 
+func TestPromptFormatBalancedPlaceholders(t *testing.T) {
+	prompt, err := newManagedPrompt("balanced", "1", PromptSourceRegistry, PromptTemplate{
+		Text: `{{double}} {single} | {{double} | {single}} | {{{double}}} | JSON: {"age": {age}}`,
+	}, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := prompt.Format(map[string]any{"double": "two", "single": "one", "age": 42})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `two one | {{double} | {single}} | {{{double}}} | JSON: {"age": {age}}`; rendered.Text != want {
+		t.Fatalf("rendered %q, want %q", rendered.Text, want)
+	}
+}
+
 func TestPromptEmptyChatAndVersionUUIDFallback(t *testing.T) {
 	prompt, err := parsePrompt([]byte(`{"prompt_id":"empty","version":1,"ID":"version-id"}`), PromptSourceRegistry)
 	if err != nil {

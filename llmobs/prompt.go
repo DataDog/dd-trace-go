@@ -12,6 +12,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 // ErrPromptAuth is returned when HTTP retrieval requires DD_API_KEY and none is configured.
@@ -69,18 +70,34 @@ func (p *ManagedPrompt) Source() PromptSource { return p.source }
 // Template returns an unrendered copy of the prompt template.
 func (p *ManagedPrompt) Template() PromptTemplate { return copyPromptTemplate(p.template) }
 
-var promptVariablePattern = regexp.MustCompile(`\{\{?\s*(\w+)\s*\}\}?`)
+var promptVariablePattern = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}`)
 
 // Format renders supplied variables and leaves missing placeholders unchanged.
 func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error) {
 	render := func(s string) string {
-		return promptVariablePattern.ReplaceAllStringFunc(s, func(match string) string {
-			name := promptVariablePattern.FindStringSubmatch(match)[1]
-			if value, ok := variables[name]; ok {
-				return fmt.Sprint(value)
+		var rendered strings.Builder
+		last := 0
+		for _, match := range promptVariablePattern.FindAllStringSubmatchIndex(s, -1) {
+			if match[0] > 0 && s[match[0]-1] == '{' || match[1] < len(s) && s[match[1]] == '}' {
+				continue
 			}
-			return match
-		})
+			start, end := match[2], match[3]
+			if start == -1 {
+				start, end = match[4], match[5]
+			}
+			value, ok := variables[s[start:end]]
+			if !ok {
+				continue
+			}
+			rendered.WriteString(s[last:match[0]])
+			rendered.WriteString(fmt.Sprint(value))
+			last = match[1]
+		}
+		if last == 0 {
+			return s
+		}
+		rendered.WriteString(s[last:])
+		return rendered.String()
 	}
 	if p.template.Messages == nil {
 		return PromptTemplate{Text: render(p.template.Text)}, nil
