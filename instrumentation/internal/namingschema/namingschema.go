@@ -50,7 +50,7 @@ func LoadFromConfig(cfg *internalconfig.Config) {
 }
 
 func ReloadConfig() {
-	LoadFromConfig(internalconfig.CreateNew())
+	LoadFromConfig(internalconfig.Get())
 	globalconfig.SetServiceName(env.Get("DD_SERVICE"))
 }
 
