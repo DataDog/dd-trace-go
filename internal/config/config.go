@@ -1656,6 +1656,9 @@ func (c *Config) applyOTelSemanticsOverrides() {
 	if !c.otelSemanticsEnabled {
 		return
 	}
+	if !c.otlpExportMode {
+		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_AGENT_PROTOCOL_VERSION's OTLP opt-out")
+	}
 	c.otlpExportMode = true
 	configtelemetry.Report("OTEL_TRACES_EXPORTER", "otlp", telemetry.OriginCalculated)
 	if c.spanAttributeSchemaVersion != 0 {
