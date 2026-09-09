@@ -3985,9 +3985,9 @@ func TestConcurrentInjectTraceIDHex(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog")
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 
-	// Disable AppSec so locally started spans keep a cold hex cache; with it
-	// enabled, newSpanContext finalizes the cache and the "cold cache" subtest
-	// below could no longer exercise the non-caching HexEncoded read path.
+	// Disable AppSec because it precomputes the trace ID hex cache when a span is
+	// created. Otherwise the "cold cache" case below would not test concurrent
+	// Inject's read-only fallback for an empty cache.
 	tracer, _, _, stop, err := startTestTracer(t, WithAppSecEnabled(false))
 	require.NoError(t, err)
 	defer stop()

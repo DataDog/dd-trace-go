@@ -3482,10 +3482,10 @@ func TestSetResourceNameDoesNotLeakEndpointLabel(t *testing.T) {
 	require.False(t, ok, "endpoint profiling is disabled, so no endpoint label may be added")
 }
 
-// publishingSampler hands every sampled span to a channel, emulating a custom
-// Sampler that publishes the span to another goroutine. tracer.StartSpan calls
-// Sample before it applies the pprof labels, so anything the label path writes
-// to the SpanContext afterwards races with readers of the published span.
+// publishingSampler emulates a custom Sampler that publishes each span to
+// another goroutine. StartSpan must apply the pprof labels before invoking
+// Sample; once Sample returns, any further write to the span races with that
+// reader.
 type publishingSampler struct {
 	t       *testing.T
 	readers sync.WaitGroup
@@ -3495,6 +3495,17 @@ type publishingSampler struct {
 // goroutine. StartSpan invokes it after the span context is built, so the
 // reader it starts overlaps with the remainder of StartSpan.
 func (s *publishingSampler) Sample(span *Span) bool {
+	// The pprof labels must already be applied here. StartSpan calls
+	// applyPPROFLabels before the sampler precisely so that a custom Sampler
+	// cannot observe (or publish) a span whose labels are still missing. This
+	// fails if those two calls are ever reordered.
+	if ctx := span.pprofCtxActive; ctx == nil {
+		s.t.Error("pprof labels were not applied before sampling")
+	} else if got, ok := pprof.Label(ctx, traceprof.TraceID); !ok {
+		s.t.Error(`"trace id" pprof label was not applied before sampling`)
+	} else if want := span.context.traceID.HexEncoded(); got != want {
+		s.t.Errorf(`"trace id" pprof label = %q, want %q`, got, want)
+	}
 	// The hex cache must already be finalized here: everything after this point
 	// runs concurrently with the reader below, so a later write would race.
 	if got := span.context.traceID.hexEncoded; len(got) != 32 {
@@ -3510,10 +3521,12 @@ func (s *publishingSampler) Sample(span *Span) bool {
 	return true
 }
 
-// TestApplyPPROFLabelsTraceIDNoCacheWriteAfterPublish verifies that the AppSec
-// "trace id" label needs no write once the span is published. Under -race, a
-// write would collide with the concurrent TraceID() reads started from Sample.
-func TestApplyPPROFLabelsTraceIDNoCacheWriteAfterPublish(t *testing.T) {
+// TestApplyPPROFLabelsBeforeSampleAndNoCacheWriteAfterPublish verifies two
+// things about the AppSec "trace id" label: that StartSpan applies it before it
+// hands the span to the sampler, and that it needs no further write once the
+// span is published. Under -race, such a write would collide with the
+// concurrent TraceID() reads started from Sample.
+func TestApplyPPROFLabelsBeforeSampleAndNoCacheWriteAfterPublish(t *testing.T) {
 	sampler := &publishingSampler{t: t}
 	require.NoError(t, Start(
 		WithAppSecEnabled(true),

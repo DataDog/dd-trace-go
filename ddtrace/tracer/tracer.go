@@ -1158,8 +1158,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // +checklocksignore — Initialization time, called from StartSpan before the span
 // is handed to the sampler, so it is not yet shared with other goroutines.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
-	// "trace id" is AppSec-only. Profiling features retain their own labels
-	// without adding trace correlation cardinality.
+	// The "trace id" pprof label is AppSec-only. Profiling features retain their
+	// own labels without adding trace correlation cardinality.
 	appsecCorrelation := appsec.Enabled()
 	if !snap.ProfilerHotspotsEnabled && !snap.ProfilerEndpoints && !appsecCorrelation {
 		// No feature needs pprof labels; nothing to restore when the span finishes.
