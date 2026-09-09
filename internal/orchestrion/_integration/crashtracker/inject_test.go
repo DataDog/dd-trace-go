@@ -177,7 +177,7 @@ func TestCrashtrackerIsFirstMainStatement(t *testing.T) {
 // via -work (a line of the form "WORK=<path>" on its own).
 func parseWorkDir(t *testing.T, buildOutput []byte) string {
 	t.Helper()
-	for _, line := range strings.Split(string(buildOutput), "\n") {
+	for line := range strings.SplitSeq(string(buildOutput), "\n") {
 		if dir, ok := strings.CutPrefix(strings.TrimSpace(line), "WORK="); ok {
 			return dir
 		}
