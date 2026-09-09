@@ -110,6 +110,9 @@ const (
 	ComponentConsumer
 )
 
+// componentNames holds the legacy per-component service and operation name builders for the
+// naming-schema feature (DD_TRACE_SPAN_ATTRIBUTE_SCHEMA). New integrations should not use these; see
+// the naming field on PackageInfo.
 type componentNames struct {
 	useDDServiceV0     bool
 	buildServiceNameV0 func(opCtx OperationContext) string
@@ -124,6 +127,9 @@ type PackageInfo struct {
 	IsStdLib      bool
 	EnvVarPrefix  string
 
+	// naming is the legacy naming-schema table (DD_TRACE_SPAN_ATTRIBUTE_SCHEMA). New integrations
+	// should leave it unset: ServiceName then returns the global DD_SERVICE, and operation names
+	// should be hardcoded string literals. See contrib/INTEGRATIONS.md.
 	naming map[Component]componentNames
 }
 
