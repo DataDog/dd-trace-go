@@ -40,7 +40,8 @@ type parsedHTTPAuthority struct {
 //
 // Port is inferred from HTTP schemes ("80" or "443") when absent from the effective
 // authority (https://github.com/open-telemetry/semantic-conventions/blob/v1.44.0/docs/non-normative/http-migration.md?plain=1#L79);
-// explicit but invalid ports or non-HTTP schemes return port -1.
+// explicit but invalid ports or non-HTTP schemes return port -1. Malformed
+// authorities return an empty address and port -1.
 func ServerAddressPortFromClientRequest(req *http.Request) (address string, port int) {
 	authority := req.Host
 	if authority == "" {
@@ -48,7 +49,7 @@ func ServerAddressPortFromClientRequest(req *http.Request) (address string, port
 	}
 	parsed := parseHTTPAuthority(authority)
 	if !parsed.valid {
-		return authority, -1
+		return "", -1
 	}
 	if parsed.portState == authorityPortAbsent {
 		return parsed.address, defaultPort(req.URL.Scheme)
