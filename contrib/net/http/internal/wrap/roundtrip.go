@@ -243,9 +243,11 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 			}
 			if cfg.IsStatusError(resp.StatusCode) {
 				span.SetTag("http.errors", resp.Status)
-				span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
 				if cfg.OTelSemanticsEnabled {
+					span.SetTag(ext.Error, true)
 					span.SetTag(ext.ErrorType, statusCode)
+				} else {
+					span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
 				}
 			}
 		}

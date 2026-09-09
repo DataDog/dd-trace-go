@@ -750,7 +750,7 @@ func TestRoundTripperRecordsSemanticResponseStatusAndError(t *testing.T) {
 			if tt.wantError {
 				assert.Equal(t, statusCode, span.Tag(ext.ErrorType))
 				assert.Equal(t, resp.Status, span.Tag("http.errors"))
-				assert.Equal(t, fmt.Sprintf("%d: %s", tt.status, http.StatusText(tt.status)), span.Tag(ext.ErrorMsg))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			} else {
 				assert.Nil(t, span.Tag(ext.ErrorType))
 				assert.Nil(t, span.Tag(ext.ErrorMsg))
