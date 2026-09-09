@@ -437,6 +437,16 @@ func storeConfig(c *config) {
 
 	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
 	if err != nil {
+		// Unlike the memfd site above, this stays reported: PublishProcessContext's
+		// error path is not exclusively an environment-hardening condition.
+		// otelcontextmapping_linux.go's updateOtelProcessContextMapping can return
+		// ErrPayloadTooLarge on a second-or-later Start() in the same process (e.g.
+		// Stop() then Start() with a longer ServiceName/Env/Version/ContainerID) if
+		// the new payload outgrows the mapping sized on the first call — a genuine
+		// dd-trace-go sizing bug across restarts within one process, not seccomp or
+		// kernel-capability denial. proto.Marshal failing in PublishProcessContext
+		// itself would likewise be our own defect. Silencing this site would also
+		// hide those, so it's kept distinct from the memfd sibling deliberately.
 		telemetrylog.LogAndReportError("failed to publish the OTEL process context", err)
 	}
 }

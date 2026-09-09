@@ -376,7 +376,17 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		telemetrylog.LogAndReportError("remoteconfig: http request error: could not read the response body", err)
+		// Not reported to Error Tracking: the response headers already arrived
+		// with a 200 OK, so this failure means the body transfer itself broke
+		// mid-stream (connection reset, truncated chunked encoding, a proxy or
+		// client timeout) - a transport/network condition indistinguishable in
+		// kind from the c.HTTP.Do(req) failure a few lines above (already
+		// local-log-only), not a defect in how dd-trace-go built the request.
+		// Contrast with the json.Unmarshal failure just below: that response body
+		// DID fully arrive, so a parse failure there is evidence of an actual
+		// protocol mismatch between this client and the agent - our defect, or at
+		// least actionable, unlike a mid-transfer network failure.
+		log.Debug("remoteconfig: http request error: could not read the response body: %s", err.Error())
 		return
 	}
 
