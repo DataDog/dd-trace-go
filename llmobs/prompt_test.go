@@ -6,12 +6,13 @@
 package llmobs
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
 
 func TestPromptTextAndChat(t *testing.T) {
-	text, err := parsePrompt([]byte(`{"prompt_id":"greeting","user_version":"v1","template":"Hello {name}; {{ missing }}","prompt_uuid":"p","prompt_version_uuid":"v"}`), PromptSourceRegistry)
+	text, err := parsePrompt([]byte(`{"prompt_id":"greeting","user_version":"v1","template":"Hello {name}; {{ missing }}","config":{"model":{"temperature":0.2},"unknown":[1,true]},"prompt_uuid":"p","prompt_version_uuid":"v"}`), PromptSourceRegistry)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,6 +26,12 @@ func TestPromptTextAndChat(t *testing.T) {
 	annotation := text.Annotation(map[string]any{"name": 42})
 	if annotation.Template != "Hello {name}; {{ missing }}" || annotation.Variables["name"] != "42" || annotation.PromptUUID != "p" || annotation.PromptVersionUUID != "v" {
 		t.Fatalf("annotation %#v", annotation)
+	}
+	config := text.Config()
+	config["model"].(map[string]any)["temperature"] = 1
+	config["unknown"].([]any)[0] = 2
+	if got := text.Config(); got["model"].(map[string]any)["temperature"] != json.Number("0.2") || got["unknown"].([]any)[0] != json.Number("1") {
+		t.Fatalf("config mutated: %#v", got)
 	}
 
 	chat, err := parsePrompt(map[string]any{"prompt_id": "chat", "version": 2, "template": []any{map[string]any{"role": "", "content": "Hi {{ name }}"}}}, PromptSourceFeatureFlag)
@@ -46,7 +53,7 @@ func TestPromptTextAndChat(t *testing.T) {
 	if chat.Version() != "2" || chat.Source() != PromptSourceFeatureFlag || chat.ID() != "chat" {
 		t.Fatalf("metadata: %#v", chat)
 	}
-	if _, err := newManagedPrompt("bad", "1", PromptSourceFallback, PromptTemplate{Text: "x", Messages: []PromptMessage{}}, "", ""); err == nil {
+	if _, err := newManagedPrompt("bad", "1", PromptSourceFallback, PromptTemplate{Text: "x", Messages: []PromptMessage{}}, nil, "", ""); err == nil {
 		t.Fatal("expected ambiguous template error")
 	}
 }
@@ -54,7 +61,7 @@ func TestPromptTextAndChat(t *testing.T) {
 func TestPromptFormatBalancedPlaceholders(t *testing.T) {
 	prompt, err := newManagedPrompt("balanced", "1", PromptSourceRegistry, PromptTemplate{
 		Text: `{{double}} {single} | {{double} | {single}} | {{{double}}} | JSON: {"age": {age}}`,
-	}, "", "")
+	}, nil, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +81,9 @@ func TestPromptEmptyChatAndVersionUUIDFallback(t *testing.T) {
 	}
 	if prompt.Template().Messages == nil || len(prompt.Template().Messages) != 0 {
 		t.Fatalf("expected non-nil empty chat: %#v", prompt.Template())
+	}
+	if prompt.Config() == nil || len(prompt.Config()) != 0 {
+		t.Fatalf("legacy config %#v", prompt.Config())
 	}
 	if prompt.Annotation(nil).PromptVersionUUID != "version-id" {
 		t.Fatal("missing version UUID fallback")
@@ -101,6 +111,9 @@ func TestPromptRejectsMalformedResponses(t *testing.T) {
 		`{"prompt_id":"p","version":0}`,
 		`{"prompt_id":"p","version":1,"template":42}`,
 		`{"prompt_id":"p","version":1,"template":"text","chat_template":[]}`,
+		`{"prompt_id":"p","version":1,"template":"text","config":null}`,
+		`{"prompt_id":"p","version":1,"template":"text","config":[]}`,
+		`{"prompt_id":"p","version":1,"template":"text","config":"bad"}`,
 		`{"prompt_id":"p","version":1,"template":"text"} trailing`,
 	} {
 		if _, err := parsePrompt([]byte(raw), PromptSourceRegistry); err == nil {
