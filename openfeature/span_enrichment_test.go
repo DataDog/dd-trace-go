@@ -46,7 +46,7 @@ func TestBuildEvaluation(t *testing.T) {
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "experiment-flag",
-				SerialID: uint32Ptr(42),
+				SerialID: new(uint32(42)),
 				Subject:  "user-123",
 			},
 		},
@@ -68,7 +68,7 @@ func TestBuildEvaluation(t *testing.T) {
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "no-log-flag",
-				SerialID: uint32Ptr(101),
+				SerialID: new(uint32(101)),
 			},
 		},
 		{
@@ -88,7 +88,7 @@ func TestBuildEvaluation(t *testing.T) {
 			},
 			expected: &i.FeatureFlagEvaluation{
 				FlagKey:  "missing-do-log-flag",
-				SerialID: uint32Ptr(7),
+				SerialID: new(uint32(7)),
 			},
 		},
 		{
@@ -192,6 +192,10 @@ func TestSpanEnrichment_Integration(t *testing.T) {
 	defer mt.Stop()
 
 	provider := newDatadogProvider(ProviderConfig{})
+	// The SDK has no API to unregister a named provider; without this, its
+	// background exposure/flag-evaluation writers keep running for the rest
+	// of the test process.
+	t.Cleanup(provider.Shutdown)
 	status := processConfigUpdate(provider, "datadog/2/ASM_FEATURES/test/config", []byte(`{
 		"createdAt":"2026-01-01T00:00:00Z",
 		"format":"SERVER",
@@ -299,6 +303,10 @@ func TestSpanEnrichment_Integration(t *testing.T) {
 func setupEnrichmentProvider(t *testing.T, domain string) *of.Client {
 	t.Helper()
 	provider := newDatadogProvider(ProviderConfig{})
+	// The SDK has no API to unregister a named provider; without this, its
+	// background exposure/flag-evaluation writers keep running for the rest
+	// of the test process.
+	t.Cleanup(provider.Shutdown)
 	status := processConfigUpdate(provider, "datadog/2/ASM_FEATURES/test/config", []byte(`{
 		"createdAt":"2026-01-01T00:00:00Z",
 		"format":"SERVER",
@@ -369,5 +377,3 @@ func TestSpanEnrichment_AfterRootFinished(t *testing.T) {
 		assert.NotContains(t, k, "ffe_")
 	}
 }
-
-func uint32Ptr(v uint32) *uint32 { return &v }

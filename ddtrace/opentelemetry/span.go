@@ -100,8 +100,17 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
+		// Set unconditionally: this feeds the OTLP status message (see convertSpanStatus)
+		// even under semantics, where error.msg is otherwise suppressed as a raw attribute.
 		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
-		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+		if s.otelSemanticsEnabled {
+			// Mark the span as errored directly. WithError would overwrite already
+			// populated attributes, such as error.type. Applies to all export formats:
+			// APM spans keep error=1 and error.message, without error.handling_stack.
+			s.DD.SetTag(ext.Error, true)
+		} else {
+			opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+		}
 	}
 	if len(s.finishOpts) != 0 {
 		opts = append(opts, s.finishOpts...)

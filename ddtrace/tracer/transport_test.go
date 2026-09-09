@@ -99,7 +99,9 @@ func TestTracesAgentIntegration(t *testing.T) {
 		assert.NoError(err)
 		body, err := transport.send(p)
 		assert.NoError(err)
-		defer body.Close()
+		_, _ = io.Copy(io.Discard, body)
+		body.Close()
+		transport.client.CloseIdleConnections()
 	}
 }
 
@@ -881,6 +883,7 @@ func TestConcurrentTraceFlushOverUDS(t *testing.T) {
 				errs[i] = sendErr
 				return
 			}
+			io.Copy(io.Discard, body) //nolint:errcheck
 			body.Close()
 		})
 	}
