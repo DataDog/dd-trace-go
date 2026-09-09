@@ -301,7 +301,20 @@ func (p *Processor) time() time.Time {
 	return time.Now()
 }
 
-func NewProcessor(statsd internal.StatsdClient, env, service, version string, agentURL *url.URL, httpClient *http.Client) *Processor {
+// ProcessorOption configures optional, rarely-changed Processor behavior.
+type ProcessorOption func(*Processor)
+
+// WithQueueSize overrides the number of slots in the processor's input ring
+// buffer. Sizes <= 0 are ignored and the default is kept.
+func WithQueueSize(size int) ProcessorOption {
+	return func(p *Processor) {
+		if size > 0 {
+			p.in = newFastQueue(size)
+		}
+	}
+}
+
+func NewProcessor(statsd internal.StatsdClient, env, service, version string, agentURL *url.URL, httpClient *http.Client, opts ...ProcessorOption) *Processor {
 	if service == "" {
 		service = defaultServiceName
 	}
@@ -309,7 +322,7 @@ func NewProcessor(statsd internal.StatsdClient, env, service, version string, ag
 		tsTypeCurrentBuckets: make(map[bucketKey]bucket),
 		tsTypeOriginBuckets:  make(map[bucketKey]bucket),
 		hashCache:            newHashCache(),
-		in:                   newFastQueue(),
+		in:                   newFastQueue(defaultQueueSize),
 		stopped:              1,
 		statsd:               statsd,
 		env:                  env,
@@ -318,6 +331,9 @@ func NewProcessor(statsd internal.StatsdClient, env, service, version string, ag
 		transport:            newHTTPTransport(agentURL, httpClient),
 		timeSource:           time.Now,
 		checkpoints:          newCheckpointRegistry(),
+	}
+	for _, opt := range opts {
+		opt(p)
 	}
 	return p
 }
@@ -554,7 +570,10 @@ func (p *Processor) reportStats() {
 		p.statsd.Count("datadog.datastreams.processor.flushed_payloads", p.stats.flushedPayloads.Swap(0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flushed_buckets", p.stats.flushedBuckets.Swap(0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flush_errors", p.stats.flushErrors.Swap(0), nil, 1)
-		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", p.stats.dropped.Swap(0), nil, 1)
+		if d := p.stats.dropped.Swap(0); d > 0 {
+			p.statsd.Count("datadog.datastreams.processor.dropped_payloads", d, nil, 1)
+			log.Warn("datastreams: dropped %d payloads this period — processor input queue is full, consider increasing the queue size or reducing throughput", d)
+		}
 		if dt := p.stats.droppedTransactions.Swap(0); dt > 0 {
 			p.statsd.Count("datadog.datastreams.processor.dropped_transactions", dt, nil, 1)
 			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt)
