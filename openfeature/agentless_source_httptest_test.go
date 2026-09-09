@@ -28,6 +28,11 @@ import (
 // system-tests' utils/mocked_backend/ffe.py UFC_ETAG.
 const fakeUFCBackendETag = `"ufc-v1"`
 
+// fakeUFCBackendMalformedETag is the ETag a "malformed_with_etag" response
+// carries. It must differ from fakeUFCBackendETag so a test can assert that
+// the source's held ETag did not advance to it.
+const fakeUFCBackendMalformedETag = `"ufc-malformed"`
+
 const fakeUFCValidBody = `{
 	"data": {
 		"id": "1",
@@ -47,16 +52,12 @@ const fakeUFCValidBody = `{
 type fakeUFCBackend struct {
 	server *httptest.Server
 
-	mu            sync.Mutex
-	responses     []string // next response id; the last one repeats
-	requestsTotal int
-	inFlight      int
-	maxInFlight   int
-	// ifNoneMatch holds the If-None-Match header of every request in order.
-	// Kept per request rather than last-write-wins: a test that waits for the
-	// nth request and then reads "the last header" races the (n+1)th poll,
-	// which can land in between and overwrite it.
-	ifNoneMatch     []string
+	mu              sync.Mutex
+	responses       []string // next response id; the last one repeats
+	requestsTotal   int
+	inFlight        int
+	maxInFlight     int
+	lastIfNoneMatch string
 	lastAuthPresent bool
 }
 
@@ -74,35 +75,10 @@ func (b *fakeUFCBackend) setResponses(ids ...string) {
 	b.responses = ids
 }
 
-func (b *fakeUFCBackend) status() (requestsTotal, maxInFlight int, lastAuthPresent bool) {
+func (b *fakeUFCBackend) status() (requestsTotal, maxInFlight int, lastIfNoneMatch string, lastAuthPresent bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.requestsTotal, b.maxInFlight, b.lastAuthPresent
-}
-
-// ifNoneMatchAt returns the If-None-Match header of the nth request, 1-based,
-// and reports whether that request has arrived yet.
-func (b *fakeUFCBackend) ifNoneMatchAt(n int) (string, bool) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if n < 1 || n > len(b.ifNoneMatch) {
-		return "", false
-	}
-	return b.ifNoneMatch[n-1], true
-}
-
-// waitForIfNoneMatch waits for the nth request to arrive and returns the
-// If-None-Match header it carried. The history is append-only, so the value at
-// n stays put no matter how many further polls land.
-func waitForIfNoneMatch(t *testing.T, backend *fakeUFCBackend, n int) string {
-	t.Helper()
-	require.Eventually(t, func() bool {
-		_, ok := backend.ifNoneMatchAt(n)
-		return ok
-	}, 2*time.Second, time.Millisecond, "request %d never arrived", n)
-
-	header, _ := backend.ifNoneMatchAt(n)
-	return header
+	return b.requestsTotal, b.maxInFlight, b.lastIfNoneMatch, b.lastAuthPresent
 }
 
 func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +88,7 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 	if b.inFlight > b.maxInFlight {
 		b.maxInFlight = b.inFlight
 	}
-	b.ifNoneMatch = append(b.ifNoneMatch, r.Header.Get("If-None-Match"))
+	b.lastIfNoneMatch = r.Header.Get("If-None-Match")
 	b.lastAuthPresent = r.Header.Get("DD-API-KEY") != ""
 	response := b.responses[0]
 	if len(b.responses) > 1 {
@@ -131,6 +107,14 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	case "malformed":
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"flags": [`))
+	case "malformed_with_etag":
+		// Carries its own distinct ETag so a test can tell "the held ETag did
+		// not advance to this response's ETag" apart from "there was no ETag to
+		// advance to".
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", fakeUFCBackendMalformedETag)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"flags": [`))
 	case "not_modified":
@@ -173,9 +157,12 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// newTestAgentlessSource builds a source pointed at backend's origin, with
-// retries sped up (no real waiting) unless the test needs otherwise.
-func newTestAgentlessSource(t *testing.T, backend *fakeUFCBackend, pollInterval time.Duration, apply func(*universalFlagsConfiguration)) *agentlessSource {
+// newAgentlessSourceOnly builds a source pointed at backend's origin, with
+// retries sped up (no real waiting), but never calls start(). Stop on a
+// source whose run loop never started would otherwise wait out its full
+// context timeout in cleanup, since doneCh would never close: this leaves
+// lifecycle to the caller instead, for tests that drive pollOnce directly.
+func newAgentlessSourceOnly(t *testing.T, backend *fakeUFCBackend, pollInterval time.Duration, apply func(*universalFlagsConfiguration)) *agentlessSource {
 	t.Helper()
 	src, err := newAgentlessSource(internalffe.Settings{
 		AgentlessBaseURL: backend.server.URL,
@@ -184,6 +171,15 @@ func newTestAgentlessSource(t *testing.T, backend *fakeUFCBackend, pollInterval 
 	}, apply)
 	require.NoError(t, err)
 	src.retryDelay = func(int) time.Duration { return 0 }
+	return src
+}
+
+// newTestAgentlessSource builds a source pointed at backend's origin, with
+// retries sped up (no real waiting) unless the test needs otherwise, and
+// starts its poll loop.
+func newTestAgentlessSource(t *testing.T, backend *fakeUFCBackend, pollInterval time.Duration, apply func(*universalFlagsConfiguration)) *agentlessSource {
+	t.Helper()
+	src := newAgentlessSourceOnly(t, backend, pollInterval, apply)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -204,54 +200,101 @@ func TestAgentlessSource_StartDoesNotBlock(t *testing.T) {
 	assert.Less(t, elapsed, 50*time.Millisecond, "start must not block on the first poll")
 
 	require.Eventually(t, func() bool {
-		requests, _, _ := backend.status()
+		requests, _, _, _ := backend.status()
 		return requests >= 1
 	}, 2*time.Second, time.Millisecond, "the first poll must still happen, just asynchronously")
 }
 
+// TestAgentlessSource_ETagNotAdvancedOnParseFailure drives pollOnce directly,
+// rather than start()+Eventually on a request count: the previous version
+// waited for requestsTotal >= 3, then read the backend's single shared
+// lastIfNoneMatch field, which a fourth request (the loop's next tick) could
+// overwrite before the assertion ran, and a request count alone cannot
+// distinguish a request that arrived from one whose response was already
+// processed. Calling pollOnce synchronously removes both races: each call
+// only returns once its request has both arrived and been fully handled, and
+// each backend.status() snapshot is read for the specific request that
+// produced it, not for whatever request happens to be latest.
 func TestAgentlessSource_ETagNotAdvancedOnParseFailure(t *testing.T) {
 	backend := newFakeUFCBackend(t)
-	backend.setResponses("valid", "malformed", "not_modified")
+	// The malformed response carries its own distinct ETag: this test's
+	// contract is that a malformed body never advances the held ETag to a new
+	// value, and a malformed response with no ETag at all could not tell that
+	// apart from correctly not advancing.
+	backend.setResponses("valid", "malformed_with_etag", "not_modified")
 
 	var mu sync.Mutex
 	var applied []*universalFlagsConfiguration
-	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(c *universalFlagsConfiguration) {
+	src := newAgentlessSourceOnly(t, backend, time.Hour, func(c *universalFlagsConfiguration) {
 		mu.Lock()
 		defer mu.Unlock()
 		applied = append(applied, c)
 	})
 
-	src.start()
+	outer, _ := src.pollOnce() // valid: applies configuration and stores the ETag
+	require.Equal(t, pollOutcomeSuccess, outer)
+	assert.Equal(t, fakeUFCBackendETag, src.currentETag())
 
-	// The third request (after the malformed second response) must still
-	// carry the ETag from the first, valid response: a malformed payload
-	// must never be acknowledged as received.
-	assert.Equal(t, fakeUFCBackendETag, waitForIfNoneMatch(t, backend, 3))
+	outer, _ = src.pollOnce() // malformed_with_etag: must not advance the ETag
+	require.Equal(t, pollOutcomeStop, outer)
+	assert.Equal(t, fakeUFCBackendETag, src.currentETag(), "a malformed payload must never be acknowledged as received")
+
+	_, _, lastIfNoneMatch, _ := backend.status()
+	assert.Equal(t, fakeUFCBackendETag, lastIfNoneMatch, "the third request must still carry the ETag from the first, valid response")
+
+	outer, _ = src.pollOnce() // not_modified: confirms the server still recognizes that ETag
+	require.Equal(t, pollOutcomeSuccess, outer)
 
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, applied, 1, "only the first, valid poll should have applied a configuration")
 }
 
+// TestAgentlessSource_ETagAnd304 drives pollOnce directly instead of
+// start()+Eventually: waiting for requestsTotal >= 1 only proves a request
+// arrived, not that its response was processed, and a second request (the
+// loop's next tick) could overwrite the backend's shared lastIfNoneMatch
+// field before either assertion ran.
 func TestAgentlessSource_ETagAnd304(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("valid", "not_modified")
 
-	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(*universalFlagsConfiguration) {})
-	src.start()
+	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
-	assert.Empty(t, waitForIfNoneMatch(t, backend, 1), "the first request must not carry an ETag")
-	assert.Equal(t, fakeUFCBackendETag, waitForIfNoneMatch(t, backend, 2))
+	outer, _ := src.pollOnce()
+	require.Equal(t, pollOutcomeSuccess, outer)
+	_, _, lastIfNoneMatch, _ := backend.status()
+	assert.Empty(t, lastIfNoneMatch, "the first request must not carry an ETag")
+
+	outer, _ = src.pollOnce()
+	require.Equal(t, pollOutcomeSuccess, outer)
+	_, _, lastIfNoneMatch, _ = backend.status()
+	assert.Equal(t, fakeUFCBackendETag, lastIfNoneMatch, "the second request must carry the ETag stored from the first")
 }
 
+// TestAgentlessSource_BlankETagClears drives pollOnce directly instead of
+// start()+Eventually on a request count, for the same reason as the two
+// tests above: requestsTotal >= 3 only proves the third request arrived, and
+// a fourth request could overwrite the shared lastIfNoneMatch field before
+// the assertion ran.
 func TestAgentlessSource_BlankETagClears(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("valid", "valid_no_etag", "valid")
 
-	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(*universalFlagsConfiguration) {})
-	src.start()
+	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
-	assert.Empty(t, waitForIfNoneMatch(t, backend, 3), "a blank ETag response must clear the held ETag")
+	outer, _ := src.pollOnce() // valid: stores the ETag
+	require.Equal(t, pollOutcomeSuccess, outer)
+	assert.Equal(t, fakeUFCBackendETag, src.currentETag())
+
+	outer, _ = src.pollOnce() // valid_no_etag: must clear the held ETag
+	require.Equal(t, pollOutcomeSuccess, outer)
+	assert.Empty(t, src.currentETag(), "a blank ETag response must clear the held ETag")
+
+	outer, _ = src.pollOnce() // valid: confirms the cleared ETag reached the request
+	require.Equal(t, pollOutcomeSuccess, outer)
+	_, _, lastIfNoneMatch, _ := backend.status()
+	assert.Empty(t, lastIfNoneMatch, "the third request must not carry an ETag, since the second response cleared it")
 }
 
 func TestAgentlessSource_RetryWithinPoll(t *testing.T) {
@@ -274,7 +317,7 @@ func TestAgentlessSource_RetryWithinPoll(t *testing.T) {
 		return applied == 1
 	}, 2*time.Second, time.Millisecond)
 
-	requests, _, _ := backend.status()
+	requests, _, _, _ := backend.status()
 	assert.Equal(t, 3, requests, "exactly 3 requests within the first poll")
 	mu.Lock()
 	defer mu.Unlock()
@@ -296,11 +339,11 @@ func TestAgentlessSource_RetriesExhausted(t *testing.T) {
 	src.start()
 
 	require.Eventually(t, func() bool {
-		requests, _, _ := backend.status()
+		requests, _, _, _ := backend.status()
 		return requests >= 3
 	}, 2*time.Second, time.Millisecond)
 
-	requests, _, _ := backend.status()
+	requests, _, _, _ := backend.status()
 	assert.Equal(t, 3, requests)
 	mu.Lock()
 	defer mu.Unlock()
@@ -311,7 +354,11 @@ func TestAgentlessSource_PollOnceReturnsRetryAfter(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("throttled")
 
-	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+	// This source's run loop never starts, so it must use newAgentlessSourceOnly,
+	// not newTestAgentlessSource: the latter's cleanup calls Stop, which would
+	// wait out its full context timeout for a doneCh that a never-started run
+	// loop can never close.
+	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	outcome, retryAfter := src.pollOnce()
 	assert.Equal(t, pollOutcomeRetryable, outcome)
 	assert.Equal(t, 2*time.Second, retryAfter)
@@ -354,11 +401,11 @@ func TestAgentlessSource_NonRetryableStopsImmediately(t *testing.T) {
 	src.start()
 
 	require.Eventually(t, func() bool {
-		requests, _, _ := backend.status()
+		requests, _, _, _ := backend.status()
 		return requests >= 1
 	}, 2*time.Second, time.Millisecond)
 
-	requests, _, _ := backend.status()
+	requests, _, _, _ := backend.status()
 	assert.Equal(t, 1, requests, "an auth failure must not be retried")
 }
 
@@ -382,7 +429,7 @@ func TestAgentlessSource_LastKnownGood(t *testing.T) {
 			src.start()
 
 			require.Eventually(t, func() bool {
-				requests, _, _ := backend.status()
+				requests, _, _, _ := backend.status()
 				return requests >= 2
 			}, 2*time.Second, time.Millisecond)
 
@@ -401,11 +448,11 @@ func TestAgentlessSource_NoOverlap(t *testing.T) {
 	src.start()
 
 	require.Eventually(t, func() bool {
-		requests, _, _ := backend.status()
+		requests, _, _, _ := backend.status()
 		return requests >= 3
 	}, 5*time.Second, time.Millisecond)
 
-	_, maxInFlight, _ := backend.status()
+	_, maxInFlight, _, _ := backend.status()
 	assert.Equal(t, 1, maxInFlight, "no two polls may be in flight at once")
 }
 
@@ -494,11 +541,11 @@ func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
 	// and returns immediately, so lastAuthPresent would otherwise be read on
 	// its zero value and pass trivially.
 	require.Eventually(t, func() bool {
-		requests, _, _ := backend.status()
+		requests, _, _, _ := backend.status()
 		return requests >= 1
 	}, 2*time.Second, time.Millisecond)
 
-	_, _, lastAuthPresent := backend.status()
+	_, _, _, lastAuthPresent := backend.status()
 	assert.False(t, lastAuthPresent)
 }
 
@@ -562,7 +609,7 @@ func TestAgentlessSource_WarningDedupe(t *testing.T) {
 	src.start()
 
 	require.Eventually(t, func() bool {
-		requests, _, _ := backend.status()
+		requests, _, _, _ := backend.status()
 		return requests >= 5
 	}, 2*time.Second, time.Millisecond)
 
