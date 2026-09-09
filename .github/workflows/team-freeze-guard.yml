@@ -1,0 +1,42 @@
+# How to configure:
+#
+# When no team is frozen, set `frozen-teams` to an empty string:
+# frozen-teams: ""
+#
+# When one or more teams are frozen, add them one per line with the @DataDog prefix:
+#
+# frozen-teams: |
+#   @DataDog/team-a
+#   @DataDog/team-b
+
+name: Team freeze guard
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  team-freeze-guard:
+    name: Team freeze guard
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: DataDog/team-freeze-guard@29e92069c40f38088e636f27df70d10c24e647b6  # v0.0.2
+        with:
+          bypass-labels: |
+            ci
+            ci-infrastructure
+            flaky-test
+            dev/testing
+            github_actions
+          frozen-teams: ""
