@@ -552,7 +552,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient,
-			datastreams.WithQueueSize(c.internalConfig.DataStreamsQueueSize()))
+			datastreams.WithQueueSize(c.internalConfig.DataStreamsIntakeBufferSize()))
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {

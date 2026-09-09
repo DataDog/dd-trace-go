@@ -49,9 +49,9 @@ const (
 	defaultStatsPeerTagsCardinalityLimit = 512
 	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
 	defaultStatsOriginCardinalityLimit = 20
-	// defaultDataStreamsQueueSize is the default number of slots in the Data
+	// defaultDataStreamsIntakeBufferSize is the default number of slots in the Data
 	// Streams Monitoring processor's input ring buffer.
-	defaultDataStreamsQueueSize = 10000
+	defaultDataStreamsIntakeBufferSize = 10000
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a
