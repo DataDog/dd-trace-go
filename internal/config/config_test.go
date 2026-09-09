@@ -534,6 +534,58 @@ func TestStatsAdditionalTagsCardinalityLimit(t *testing.T) {
 	}
 }
 
+func TestDataStreamsQueueSize(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		envValue string
+		want     int
+		wantWarn bool
+	}{
+		{name: "default", want: defaultDataStreamsQueueSize},
+		{name: "valid", envValue: "42", want: 42},
+		{name: "zero", envValue: "0", want: defaultDataStreamsQueueSize, wantWarn: true},
+		{name: "negative", envValue: "-1", want: defaultDataStreamsQueueSize, wantWarn: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tc.envValue != "" {
+				t.Setenv("DD_DATA_STREAMS_QUEUE_SIZE", tc.envValue)
+			}
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+			assert.Equal(t, tc.want, cfg.DataStreamsQueueSize())
+			logs := strings.Join(tp.Logs(), "\n")
+			if tc.wantWarn {
+				assert.Contains(t, logs, "ignoring DD_DATA_STREAMS_QUEUE_SIZE: non-positive value")
+				return
+			}
+			assert.Empty(t, logs)
+		})
+	}
+}
+
+func TestSetDataStreamsQueueSize(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+	cfg.SetDataStreamsQueueSize(500, telemetry.OriginCode)
+	assert.Equal(t, 500, cfg.DataStreamsQueueSize())
+
+	cfg.SetDataStreamsQueueSize(0, telemetry.OriginCode)
+	assert.Equal(t, 500, cfg.DataStreamsQueueSize())
+	assert.Contains(t, strings.Join(tp.Logs(), "\n"), "ignoring DD_DATA_STREAMS_QUEUE_SIZE: non-positive value")
+}
+
 func TestSetFeatureFlagsReportsFullList(t *testing.T) {
 	resetGlobalState()
 	defer resetGlobalState()

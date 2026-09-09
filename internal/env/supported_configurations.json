@@ -450,6 +450,13 @@
         "default": "false"
       }
     ],
+    "DD_DATA_STREAMS_QUEUE_SIZE": [
+      {
+        "implementation": "A",
+        "type": "FIX_ME",
+        "default": "FIX_ME"
+      }
+    ],
     "DD_DBM_PROPAGATION_MODE": [
       {
         "implementation": "A",
