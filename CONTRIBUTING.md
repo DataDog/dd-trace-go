@@ -67,11 +67,11 @@ Our CI pipeline includes several automated checks:
 - **Core Tests**: Tests the main library functionality, including that specific Error Tracking call
   sites (remote-config update-state JSON-parse errors in internal/remoteconfig, and the OTel-process-
   context site in internal/apps/telemetry-errors) produce well-formed telemetry payloads, and that
-  sites which deliberately do *not* report (decision-maker parsing in ddtrace/tracer, and storeConfig's
-  memfd site in internal/apps/telemetry-errors, both externally-triggerable/customer-environment
-  conditions rather than SDK defects) still log locally without reporting — see
-  internal/apps/telemetry-errors/README.md for the full dogfooding process these regression tests
-  automate tier 0 of.
+  sites which deliberately do *not* report (decision-maker parsing in ddtrace/tracer, verified by
+  `TestParseDecisionMaker_MalformedValue_LogsLocallyWithoutReporting`; and storeConfig's memfd site in
+  internal/apps/telemetry-errors, both externally-triggerable/customer-environment conditions rather
+  than SDK defects) still log locally without reporting — see internal/apps/telemetry-errors/README.md
+  for the full dogfooding process these regression tests automate tier 0 of.
 - **Integration Tests**: Tests against real services using Docker
 - **Contrib Tests**: Tests all third-party integrations
 - **Race Detection**: Tests with Go race detector enabled

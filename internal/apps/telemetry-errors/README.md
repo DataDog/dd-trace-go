@@ -206,7 +206,7 @@ Some things about a landed report are a matter of engineering judgment, not a bo
 - Is the message distinct enough to stand alone? Only the **first** error type seen for a given
   `(message, level, tags)` combination per flush window is ever transmitted — attrs are not part of the
   dedup key. A message generic enough to be produced by two different bugs will silently hide the second.
-- Is the reported error type actually informative, or a generic wrapper type (e.g. `*errors.errorString`
+- Is the reported error type actually informative, or a generic wrapper type (e.g. `fmt.wrapError`
   from an `fmt.Errorf("...: %w", err)` wrap) that tells a maintainer nothing beyond "something failed
   here"? If the type is generic, the message and stack trace need to carry the real signal.
 - Does the product-side stack trace, as rendered, actually point a maintainer at the code — or did
@@ -323,11 +323,16 @@ something a trigger you just ran broke.
 
 ## Running this app
 
-This is a manual-only harness — deliberately not wired into
-[`/.github/workflows/test-apps.cue`](../../../.github/workflows/test-apps.cue), so it never runs in CI
-and nothing here can flake a build. See [`internal/apps/README.md`](../README.md) for the general
-test-apps conventions (env vars, CI cost model, how to add an app). Run it directly with `go run` as
-shown above, or through the shared harness:
+Most of this app is still a manual-only harness — deliberately not wired into
+[`/.github/workflows/test-apps.cue`](../../../.github/workflows/test-apps.cue), so the docker-compose-based
+scenario runner used for the triggers below never runs in CI and can't flake a build that way. One
+exception: `TestSeccompMemfdBlocked_ReportsWellFormedErrors` (`seccomp_e2e_test.go`) *is* wired into CI via
+the `test-telemetry-errors-e2e` job in
+[`.github/workflows/unit-integration-tests.yml`](../../../.github/workflows/unit-integration-tests.yml),
+runs with no `continue-on-error`, and its hard assertions (the memfd site) can fail a build on regression
+— see "These checks are now also automated in CI" above. See [`internal/apps/README.md`](../README.md) for
+the general test-apps conventions (env vars, CI cost model, how to add an app). Run the other triggers
+directly with `go run` as shown above, or through the shared harness:
 
 ```sh
 export DD_API_KEY=<API KEY>
