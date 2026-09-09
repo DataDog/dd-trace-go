@@ -72,7 +72,7 @@ func (p *ManagedPrompt) Template() PromptTemplate { return copyPromptTemplate(p.
 var promptVariablePattern = regexp.MustCompile(`\{\{?\s*(\w+)\s*\}\}?`)
 
 // Format renders supplied variables and leaves missing placeholders unchanged.
-func (p *ManagedPrompt) Format(variables map[string]any) PromptTemplate {
+func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error) {
 	render := func(s string) string {
 		return promptVariablePattern.ReplaceAllStringFunc(s, func(match string) string {
 			name := promptVariablePattern.FindStringSubmatch(match)[1]
@@ -83,13 +83,13 @@ func (p *ManagedPrompt) Format(variables map[string]any) PromptTemplate {
 		})
 	}
 	if p.template.Messages == nil {
-		return PromptTemplate{Text: render(p.template.Text)}
+		return PromptTemplate{Text: render(p.template.Text)}, nil
 	}
 	messages := make([]PromptMessage, len(p.template.Messages))
 	for i, message := range p.template.Messages {
 		messages[i] = PromptMessage{Role: message.Role, Content: render(message.Content)}
 	}
-	return PromptTemplate{Messages: messages}
+	return PromptTemplate{Messages: messages}, nil
 }
 
 // Annotation converts the managed prompt to the existing explicit span annotation shape.

@@ -22,7 +22,10 @@ func ExampleGetPrompt() {
 		return
 	}
 	variables := map[string]any{"name": "Ada"}
-	rendered := prompt.Format(variables)
+	rendered, err := prompt.Format(variables)
+	if err != nil {
+		return
+	}
 	span, _ := llmobs.StartLLMSpan(ctx, "request")
 	defer span.Finish()
 	span.Annotate(llmobs.WithAnnotatedPrompt(prompt.Annotation(variables)))

@@ -413,8 +413,12 @@ func TestPromptFallbackAuthAndErrors(t *testing.T) {
 		invoked.Add(1)
 		return PromptFallback{Template: PromptTemplate{Text: "local {name}"}, Version: "local-v1"}, nil
 	}})
-	if err != nil || prompt.Source() != PromptSourceFallback || prompt.Version() != "local-v1" || prompt.Format(map[string]any{"name": "Ada"}).Text != "local Ada" || invoked.Load() != 1 {
-		t.Fatalf("prompt=%#v err=%v", prompt, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, formatErr := prompt.Format(map[string]any{"name": "Ada"})
+	if formatErr != nil || prompt.Source() != PromptSourceFallback || prompt.Version() != "local-v1" || rendered.Text != "local Ada" || invoked.Load() != 1 {
+		t.Fatalf("prompt=%#v format err=%v", prompt, formatErr)
 	}
 	_, err = manager.get(context.Background(), "missing", getPromptConfig{})
 	if err == nil || !strings.Contains(err.Error(), "no fallback was provided") || !strings.Contains(err.Error(), "boom") {

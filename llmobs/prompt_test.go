@@ -15,7 +15,11 @@ func TestPromptTextAndChat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := text.Format(map[string]any{"name": 42}).Text; got != "Hello 42; {{ missing }}" {
+	renderedText, err := text.Format(map[string]any{"name": 42})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := renderedText.Text; got != "Hello 42; {{ missing }}" {
 		t.Fatalf("rendered %q", got)
 	}
 	annotation := text.Annotation(map[string]any{"name": 42})
@@ -32,7 +36,10 @@ func TestPromptTextAndChat(t *testing.T) {
 	if got := chat.Template().Messages[0].Content; got != "Hi {{ name }}" {
 		t.Fatalf("cached prompt mutated: %q", got)
 	}
-	rendered := chat.Format(map[string]any{"name": "Ada"})
+	rendered, err := chat.Format(map[string]any{"name": "Ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(rendered.Messages, []PromptMessage{{Role: "", Content: "Hi Ada"}}) {
 		t.Fatalf("rendered %#v", rendered)
 	}
