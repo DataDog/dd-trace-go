@@ -86,7 +86,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.4"
+          go-version: "1.27"
           cache: false
 
       - name: Cache Go modules
@@ -115,7 +115,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
-        go-version: [ "1.26.4", "1.25" ]
+        go-version: [ "1.27", "1.26" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -253,7 +253,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.4"
+          go-version: "1.27"
           cache: false # we manage the caching ourselves
 
       - run: go env -w GOMODCACHE="${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}"
@@ -315,7 +315,7 @@ jobs:
       - go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.26.4", "1.25" ]
+        go-version: [ "1.27", "1.26" ]
         distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 

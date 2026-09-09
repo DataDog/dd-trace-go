@@ -22,6 +22,12 @@ type PropagatedLLMSpan struct {
 	SpanID string
 	// SessionID is the session ID.
 	SessionID string
+	// ParentAgentName is the name of the nearest agent ancestor, propagated across
+	// process boundaries. Empty when the upstream hop sent an id-only attribution.
+	ParentAgentName string
+	// ParentAgentSpanID is the span ID of the nearest agent ancestor, propagated
+	// across process boundaries. Empty when there is no agent ancestor.
+	ParentAgentSpanID string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.
@@ -49,4 +55,28 @@ func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
 
 func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
 	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
+}
+
+// AgentNameWireSafe reports whether name can safely be written as a propagating-tag value.
+//
+//   - reject any byte outside the printable ASCII range [0x20, 0x7E]
+//   - reject comma (x-datadog-tags entry delimiter)
+//   - reject semicolon and tilde (W3C tracestate characters that composeTracestate sanitizes
+//     to "_", which would corrupt the attribution name seen by the downstream service)
+//
+// Note: dd-trace-js does not reject semicolons or tildes — it relies on the x-datadog-tags
+// encoder alone. Go applies the stricter rule because names may also travel via W3C tracestate.
+//
+// The length check is delegated to callers.
+func AgentNameWireSafe(name string) bool {
+	for i := 0; i < len(name); i++ {
+		b := name[i]
+		if b < 0x20 || b > 0x7E {
+			return false
+		}
+		if b == ',' || b == ';' || b == '~' {
+			return false
+		}
+	}
+	return true
 }
