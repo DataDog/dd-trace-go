@@ -122,7 +122,7 @@ func (l *Listener) canSendMetrics() bool {
 }
 
 // HandlerStarted adds metrics service to the context
-func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) context.Context {
+func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage) {
 	if !l.canSendMetrics() {
 		logger.Error(fmt.Errorf("datadog api key isn't set, won't be able to send metrics"))
 	}
@@ -143,7 +143,7 @@ func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) cont
 
 	l.submitEnhancedMetrics("invocations", ctx)
 
-	return ctx
+	return ctx, msg
 }
 
 // HandlerFinished implemented as part of the wrapper.HandlerListener interface
