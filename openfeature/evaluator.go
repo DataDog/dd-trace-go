@@ -8,7 +8,6 @@ package openfeature
 import (
 	"crypto/md5"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -37,12 +36,20 @@ type evaluationResult struct {
 }
 
 const (
-	metadataAllocationKey = "dd.allocation.key"
-	metadataDoLogKey      = "dd.doLog"
-	metadataSerialIDKey   = "dd.serialId"
+	metadataAllocationKey    = "dd.allocation.key"
+	metadataDoLogKey         = "__dd_do_log"
+	metadataSplitSerialIDKey = "__dd_split_serial_id"
 	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
-	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time.
-	metadataEvalTimeKey = "dd.eval.timestamp_ms"
+	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time. The
+	// __dd_ prefix marks it as internal-only (never serialized to the wire); matches Java's
+	// DDEvaluator.METADATA_EVAL_TIMESTAMP_MS.
+	metadataEvalTimeKey = "__dd_eval_timestamp_ms"
+	// metadataObserveFullEvaluationDataKey carries the environment's consent snapshot, stamped
+	// in DatadogProvider.evaluate. Travels with the evaluation so a later Remote Config update
+	// cannot retroactively change the policy at flush time. Unprefixed snake_case — this is the
+	// cross-SDK contract key (confirmed in the PII RFC and the Java pilot); every SDK stamps and
+	// reads consent under this exact key so the same identifier appears across SDK sources.
+	metadataObserveFullEvaluationDataKey = "observe_full_evaluation_data"
 )
 
 // evaluateFlag evaluates a feature flag with the given context. The caller supplies the
@@ -92,8 +99,8 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 				}
 			}
 
-			// Build metadata for exposure tracking
-			metadata := make(map[string]any, 3)
+			// Three keys set here plus two stamped by DatadogProvider.evaluate.
+			metadata := make(map[string]any, 5)
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)
@@ -104,7 +111,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 			metadata[metadataDoLogKey] = doLog
 
 			if split.SerialID != nil {
-				metadata[metadataSerialIDKey] = *split.SerialID
+				metadata[metadataSplitSerialIDKey] = *split.SerialID
 			}
 
 			// Determine reason:
@@ -142,7 +149,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 }
 
 // evaluateConfiguredFlag evaluates a flag from a parsed configuration. Invalid
-// SemVer comparands return PARSE_ERROR. Missing flags return FLAG_NOT_FOUND.
+// flags return PARSE_ERROR. Missing flags return FLAG_NOT_FOUND.
 func evaluateConfiguredFlag(
 	config *universalFlagsConfiguration,
 	flagKey string,
@@ -155,14 +162,11 @@ func evaluateConfiguredFlag(
 		return evaluateFlag(flag, defaultValue, context, now)
 	}
 	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
-		if errors.Is(configErr, errInvalidSemverComparand) {
-			return evaluationResult{
-				Value:  defaultValue,
-				Reason: of.ErrorReason,
-				Error:  fmt.Errorf("%w: invalid configuration for flag %q: %w", errParseError, flagKey, configErr),
-			}
+		return evaluationResult{
+			Value:  defaultValue,
+			Reason: of.ErrorReason,
+			Error:  fmt.Errorf("%w: invalid configuration for flag %q: %w", errParseError, flagKey, configErr),
 		}
-		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
 	return evaluationResult{
 		Value:  defaultValue,

@@ -6,10 +6,12 @@
 package openfeature
 
 import (
+	"bytes"
 	"cmp"
 	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"sync"
@@ -19,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -32,9 +35,37 @@ const (
 	// flagEvalLoggingEndpoint is the EVP proxy endpoint for flag evaluation events.
 	flagEvalLoggingEndpoint = "/evp_proxy/v2/api/v2/flagevaluation"
 
-	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH.
+	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH
+	// and align with the cross-SDK RFC (see Java DDEvaluator.copyPrunedContext caps).
 	maxContextFields = 256
 	maxFieldLength   = 256
+	// maxKeyLength bounds the length of a flattened key. Deep nested keys (e.g. many-level
+	// dot-notation paths) can outgrow the value cap on the key side; this cap keeps them off
+	// the wire and out of the aggregation key.
+	maxKeyLength = 256
+	// maxListElements bounds the number of elements walked per list during copyPrunedContext.
+	// Bounds the fan-out of a single wide list at capture time so one caller cannot inflate the
+	// hot path with a huge but shallow structure. Aligned with the cross-SDK RFC.
+	maxListElements = 256
+	// maxStructureProperties bounds the number of properties walked per structure during
+	// copyPrunedContext. Same intent as maxListElements for structures.
+	maxStructureProperties = 256
+	// maxSnapshotDepth bounds the nesting depth captured on the hot path. Recursion runs on the
+	// caller's evaluation thread over a caller-owned tree, so an arbitrarily deep list/structure
+	// would overflow that thread's stack (a StackOverflow is not caught by the guards that keep
+	// telemetry from breaking an evaluation). Aligned with the cross-SDK RFC (4).
+	maxSnapshotDepth = 4
+
+	// Context truncation reason labels — surface via telemetry so operators can tell which cap
+	// pressured the context. Matches Java's DDEvaluator reason labels, ordered by bit position
+	// (see truncReasonNames).
+	truncReasonMaxContextFields       = "max_context_fields"
+	truncReasonMaxKeyLength           = "max_key_length"
+	truncReasonMaxValueLength         = "max_value_length"
+	truncReasonMaxListElements        = "max_list_elements"
+	truncReasonMaxStructureProperties = "max_structure_properties"
+	truncReasonMaxSnapshotDepth       = "max_snapshot_depth"
+	truncReasonCycle                  = "cycle"
 
 	// Aggregation cap sizing inputs.
 	evalScaleTargetFlags               = 2_500
@@ -67,6 +98,26 @@ const (
 	// Finally hook and the background aggregation worker. On overflow the hook drops the
 	// event and increments a counter rather than blocking the evaluation.
 	defaultEvalEventBufferSize = 4096
+
+	// payloadSizeLimitBytes bounds the encoded body size of one EVP flagevaluation POST.
+	// Matches the Agent's EVP proxy intake limit (Java EvpProxy.PAYLOAD_SIZE_LIMIT_BYTES =
+	// 5 MiB). A flush that exceeds this is split into multiple payloads; an event that won't
+	// fit even as a degraded row is dropped and counted.
+	payloadSizeLimitBytes = 5 * 1024 * 1024
+
+	// Telemetry metric names + reason tags — mirror Java's FlagEvaluationWriterImpl so Go's
+	// counters are queryable alongside Java's. Emitted via internal/telemetry.Count under
+	// NamespaceGeneral.
+	metricFlagEvalDropped          = "flagevaluation.rows.dropped"
+	metricFlagEvalDegraded         = "flagevaluation.rows.degraded"
+	metricFlagEvalSplits           = "flagevaluation.payload.splits"
+	metricFlagEvalContextTruncated = "flagevaluation.context.truncated"
+	dropReasonQueueOverflow        = "queue_overflow"
+	dropReasonClosed               = "closed"
+	dropReasonDegradedCap          = "degraded_cap"
+	dropReasonPayloadLimit         = "payload_limit"
+	degradedReasonCardinality      = "cardinality_cap"
+	degradedReasonPayloadLimit     = "payload_limit"
 )
 
 // evaluationAggregationKey identifies one full-tier aggregation bucket. Every field is an
@@ -94,12 +145,20 @@ type evaluationAggregationKey struct {
 	errorMessage   string
 	targetingKey   string
 	contextKey     string // exact canonical encoding of the pruned context; comparable, not a digest
+	// observeFullEvaluationData keeps consent-on and consent-off traffic in separate buckets.
+	// When false, contextKey is always empty (enforced in add) — the key must only carry
+	// dimensions that survive serialization, or one context field would inflate cardinality
+	// and burn perFlagCap on the privacy-protected path.
+	observeFullEvaluationData bool
 }
 
 // evaluationDegradedKey is the key for the degraded aggregation map in the
 // full → degraded → drop path. It drops targeting key, context, and other full-only fields,
 // keeping only schema-visible fields emitted by the degraded payload. When a NEW degraded
 // bucket would exceed degradedCap, the count is dropped and counted.
+//
+// Consent is intentionally not a dimension: the degraded payload emits neither targeting_key
+// nor context, so consent-differing rows would be byte-identical on the wire.
 type evaluationDegradedKey struct {
 	flagKey        string
 	variant        string
@@ -118,6 +177,10 @@ type evaluationEntry struct {
 	targetingKey string
 	contextAttrs map[string]any
 	errorMessage string
+	// observeFullEvaluationData drives serialization: raw targeting_key + context, or hashed
+	// key with no context. Duplicates the key field on purpose — add AND-folds it, so any
+	// drift from the key still forces the whole bucket to the privacy-protected path.
+	observeFullEvaluationData bool
 }
 
 // observe records one more evaluation against an existing bucket: it bumps the count and
@@ -162,6 +225,10 @@ type flagEvalLoggingAggregator struct {
 	// dropped and that degradedCap should be raised. It is distinct from flagEvalLoggingWriter.dropped
 	// (which counts async-queue backpressure drops).
 	droppedDegradedOverflow int64
+	// degradedRows counts evaluations routed INTO the degraded tier because a full-tier cap
+	// (per-flag or global) was full. Surfaced as flagevaluation.rows.degraded reason:cardinality_cap.
+	// Atomic so flush() can drain it lock-free alongside the other counters.
+	degradedRows atomic.Int64
 }
 
 // flagEvalLoggingEvent matches flagevaluation.json — required fields always present;
@@ -238,19 +305,33 @@ type flagEvalLoggingWriter struct {
 
 	// Asynchronous hand-off: the Finally hook enqueues a bounded snapshot here; a single
 	// background worker (started in start()) drains it and performs aggregate/flush off the
-	// evaluation hot path. events is bounded; on overflow the hook drops
-	// the event and bumps dropped — best-effort telemetry that never blocks the request.
+	// evaluation hot path. events is bounded; on overflow the hook drops the event and bumps
+	// a counter — best-effort telemetry that never blocks the request.
 	events     chan evalEvent
-	dropped    atomic.Int64
 	workerDone chan struct{}
 	enqueueMu  sync.RWMutex
+
+	// Telemetry counters. Split so operators can tell why we lost data:
+	//  - preQueueOverflow: capacity check saw the queue full BEFORE any copy work.
+	//  - enqueueDropped:   racy loss at the send site (queue filled between check and send).
+	//  - closedDrop:       enqueue attempted after stop() (post-shutdown residue).
+	//  - contextTruncatedByReason: per-cap counter incremented once per truncated event with the
+	//    specific reason (max_context_fields, max_value_length, max_key_length, ...). A single
+	//    event may bump multiple reasons; each is at most one bump per event.
+	preQueueOverflow         atomic.Int64
+	enqueueDropped           atomic.Int64
+	closedDrop               atomic.Int64
+	contextTruncatedByReason sync.Map // map[string]*atomic.Int64
 }
 
-// evalEvent is the bounded snapshot the Finally hook hands to the worker.
+// evalEvent is the bounded snapshot the Finally hook hands to the worker. The context has
+// already been flattened, pruned, and copied on the evaluation thread, so what sits in the
+// queue is already-bounded (256 fields × 256 chars) — the queue's memory footprint is
+// bounded by cap(events) × pruned context size, not by cap(events) × caller context size.
 type evalEvent struct {
-	d                 evalDetails
-	evaluationContext of.EvaluationContext
-	evaluationTimeMs  int64
+	d                evalDetails
+	contextAttrs     map[string]any
+	evaluationTimeMs int64
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
@@ -263,6 +344,9 @@ type evalDetails struct {
 	errorMessage   string
 	runtimeDefault bool
 	evalTimeMs     int64
+	// observeFullEvaluationData is the consent the evaluator stamped onto this evaluation's
+	// metadata. Read only from there — never from live configuration.
+	observeFullEvaluationData bool
 }
 
 // newFlagEvalLoggingWriter creates a new flag evaluation writer.
@@ -358,11 +442,74 @@ func (w *flagEvalLoggingWriter) stop() {
 
 // flush drains the aggregator, assembles per-tier events, and sends them to the agent.
 func (w *flagEvalLoggingWriter) flush() {
-	// Surface best-effort backpressure drops (queue full) as an observable signal.
-	if d := w.dropped.Swap(0); d > 0 {
-		log.Debug("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
+	// Drain the backpressure counters and surface them as telemetry metrics + best-effort debug
+	// logs. Each counter maps to a Java metric (FlagEvaluationWriterImpl) so Go's counts are
+	// queryable alongside Java's. Metrics are emitted under NamespaceGeneral with a "reason:"
+	// tag matching Java's countMetric(reason) convention.
+	if d := w.preQueueOverflow.Swap(0); d > 0 {
+		countMetric(metricFlagEvalDropped, d, dropReasonQueueOverflow)
+		log.Debug("openfeature: flag evaluation queue full at hook time — dropped %d evaluation(s) before copy (best-effort telemetry)", d)
+	}
+	if d := w.enqueueDropped.Swap(0); d > 0 {
+		countMetric(metricFlagEvalDropped, d, dropReasonQueueOverflow)
+		log.Debug("openfeature: flag evaluation queue full at send — dropped %d evaluation(s) after copy (best-effort telemetry)", d)
+	}
+	if d := w.closedDrop.Swap(0); d > 0 {
+		countMetric(metricFlagEvalDropped, d, dropReasonClosed)
+		log.Debug("openfeature: flag evaluation writer closed — dropped %d evaluation(s) after stop (best-effort telemetry)", d)
+	}
+	w.contextTruncatedByReason.Range(func(k, v any) bool {
+		if c := v.(*atomic.Int64).Swap(0); c > 0 {
+			countMetric(metricFlagEvalContextTruncated, c, k.(string))
+			log.Debug("openfeature: flag evaluation context truncated by %s on %d evaluation(s) (best-effort telemetry)", k, c)
+		}
+		return true
+	})
+
+	events := w.buildFlushEvents(time.Now().UnixMilli())
+	if len(events) == 0 {
+		return
 	}
 
+	// Cardinality-cap degradation: count evaluations routed into the degraded tier by the
+	// aggregator (per-flag/global cap pressure), distinct from payload-limit degradation
+	// applied at encode time below.
+	if d := w.aggregator.swapDegradedRows(); d > 0 {
+		countMetric(metricFlagEvalDegraded, d, degradedReasonCardinality)
+	}
+
+	payloads, droppedPayloadLimit, degradedPayloadLimit, err := w.buildFlagEvalPayloads(events)
+	if err != nil {
+		log.Error("openfeature: failed to encode flag evaluation payload: %v", err.Error())
+		return
+	}
+	if degradedPayloadLimit > 0 {
+		countMetric(metricFlagEvalDegraded, degradedPayloadLimit, degradedReasonPayloadLimit)
+		log.Warn("openfeature: flag evaluation payload too large — degraded %d evaluation(s) to fit (best-effort telemetry)", degradedPayloadLimit)
+	}
+	if droppedPayloadLimit > 0 {
+		countMetric(metricFlagEvalDropped, droppedPayloadLimit, dropReasonPayloadLimit)
+		log.Warn("openfeature: flag evaluation payload too large — dropped %d evaluation(s) (best-effort telemetry)", droppedPayloadLimit)
+	}
+	if len(payloads) > 1 {
+		countMetric(metricFlagEvalSplits, int64(len(payloads)-1), "")
+	}
+
+	sent := 0
+	for _, body := range payloads {
+		if err := w.evp.postRaw(flagEvalLoggingEndpoint, "flag evaluation", body); err != nil {
+			log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
+			return
+		}
+		sent++
+	}
+	log.Debug("openfeature: successfully sent %d flag evaluation event(s) in %d payload(s)", len(events), sent)
+}
+
+// buildFlushEvents drains both tiers and renders them as wire events stamped with flushTimeMs.
+// Split from flush so the full-fidelity vs privacy-protected serialization can be tested
+// without the transport.
+func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLoggingEvent {
 	w.aggregator.mu.Lock()
 
 	// Under lock: drain both maps.
@@ -379,7 +526,7 @@ func (w *flagEvalLoggingWriter) flush() {
 		if degradedOverflow > 0 {
 			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
 		}
-		return
+		return nil
 	}
 
 	// Reset maps.
@@ -395,7 +542,6 @@ func (w *flagEvalLoggingWriter) flush() {
 		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
 	}
 
-	flushTimeMs := time.Now().UnixMilli()
 	var events []flagEvalLoggingEvent
 
 	// Full tier: required fields + variant + allocation + targeting_key + context + error.
@@ -403,7 +549,17 @@ func (w *flagEvalLoggingWriter) flush() {
 	for key, e := range full {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
-		ev.TargetingKey = e.targetingKey
+		// Consent-on emits raw targeting_key + context; consent-off emits the hashed key and
+		// omits context (absent, not empty). Consent is read from the bucket snapshot, never
+		// from live configuration.
+		if e.observeFullEvaluationData {
+			ev.TargetingKey = e.targetingKey
+			if len(e.contextAttrs) > 0 {
+				ev.Context = &flagEvalEventContext{Evaluation: e.contextAttrs}
+			}
+		} else {
+			ev.TargetingKey = hashTargetingKey(e.targetingKey)
+		}
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
 		}
@@ -412,9 +568,6 @@ func (w *flagEvalLoggingWriter) flush() {
 		}
 		if e.errorMessage != "" {
 			ev.Error = &flagEvalError{Message: e.errorMessage}
-		}
-		if len(e.contextAttrs) > 0 {
-			ev.Context = &flagEvalEventContext{Evaluation: e.contextAttrs}
 		}
 		events = append(events, ev)
 	}
@@ -436,20 +589,7 @@ func (w *flagEvalLoggingWriter) flush() {
 		events = append(events, ev)
 	}
 
-	if len(events) == 0 {
-		return
-	}
-
-	payload := flagEvalLoggingPayload{
-		Context:         w.ddContext,
-		FlagEvaluations: events,
-	}
-
-	if err := w.sendToAgent(payload); err != nil {
-		log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
-	} else {
-		log.Debug("openfeature: successfully sent %d flag evaluation events", len(events))
-	}
+	return events
 }
 
 // baseFlagEvalLoggingEvent builds a flagEvalLoggingEvent with ONLY the five required schema
@@ -466,24 +606,37 @@ func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs in
 	}
 }
 
-// record runs on the evaluation hot path (the Finally hook). It does only cheap scalar
-// extraction plus an immutable context handoff, then a non-blocking enqueue — no aggregation
-// or context flattening happens here; the background worker does that. If the queue is full
-// the event is dropped and counted (best-effort), never blocking the evaluation. Called from
-// the Finally hook after every evaluation.
+// record runs on the evaluation hot path (the Finally hook). Under consent-on it copies the
+// caller's context INTO a bounded snapshot before enqueueing, so the async queue holds only
+// already-bounded contexts. The copy is a single-pass bounded walk (copyPrunedContext, the
+// Go mirror of Java's DDEvaluator.copyPrunedContext): every retained-size dimension — field
+// count (256), key length (256), string value length (256), list width (256), structure
+// width (256), nesting depth (4), and cycles — is capped INLINE, so the work the evaluation
+// thread performs is proportional to what is KEPT, never to what the caller supplied. Under
+// consent-off the context is neither serialized nor keyed, so the copy is skipped entirely
+// and the hot path is scalar-only.
+//
+// The pre-enqueue placement is deliberate: deferring the copy to the worker goroutine would
+// let an unbounded caller context inflate the queue and heap footprint before the drop-on-
+// full check ever fires. Non-blocking on enqueue; failure paths bump split counters so an
+// undersized cap surfaces as pre-queue overflow rather than getting hidden in a race counter.
 func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
 	w.enqueueMu.RLock()
 	defer w.enqueueMu.RUnlock()
 
 	// Post-stop no-op: after stop() the worker no longer drains w.events, so enqueuing would
 	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
-	// lock would add hot-path contention) and count the event as dropped so it stays observable.
+	// lock would add hot-path contention) and count the event as a closed drop (distinct from
+	// queue-overflow) so shutdown loss stays observable with its own reason tag.
 	if w.stopped.Load() {
-		w.dropped.Add(1)
+		w.closedDrop.Add(1)
 		return
 	}
 	if len(w.events) == cap(w.events) {
-		w.dropped.Add(1)
+		// Queue full at hook time — O(1) drop, no copy work. This is the hot signal for an
+		// undersized cap. Counted separately from the racy send-site loss below so the two
+		// causes stay distinguishable.
+		w.preQueueOverflow.Add(1)
 		return
 	}
 	d := extractEvalDetails(hookContext, details)
@@ -492,118 +645,350 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 		evaluationTimeMs = time.Now().UnixMilli()
 	}
 	ev := evalEvent{
-		d:                 d,
-		evaluationContext: hookContext.EvaluationContext(),
-		evaluationTimeMs:  evaluationTimeMs,
+		d:                d,
+		evaluationTimeMs: evaluationTimeMs,
+	}
+	if d.observeFullEvaluationData {
+		// Bound the context ON THE EVALUATION THREAD, before the async queue. The worker
+		// then only ever sees the pruned snapshot, and the caller's context reference is
+		// released as soon as record() returns.
+		attrs, truncReasons := flattenAndPruneContext(hookContext.EvaluationContext().Attributes())
+		ev.contextAttrs = attrs
+		for _, reason := range truncReasons {
+			w.incContextTruncated(reason)
+		}
 	}
 	select {
 	case w.events <- ev:
 	default:
-		w.dropped.Add(1)
+		w.enqueueDropped.Add(1)
 	}
 }
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
+// The caller's context has already been pruned on the evaluation thread (or omitted under
+// consent-off), so nothing else needs to happen to bound the queue's memory footprint here.
 func (w *flagEvalLoggingWriter) aggregate(ev evalEvent) {
-	contextAttrs := flattenAndPruneContext(ev.evaluationContext.Attributes())
-	w.aggregator.add(ev.d, contextAttrs, ev.evaluationTimeMs)
+	w.aggregator.add(ev.d, ev.contextAttrs, ev.evaluationTimeMs)
 }
 
-// flattenAndPruneContext produces the pruned context map for EVP aggregation in a single
-// traversal of the flattened keyspace. It merges the
-// two former steps — flattenContext (flatten.go) + pruneContext — into one pass with the SAME
-// pruned output:
+// incContextTruncated bumps the per-reason context-truncated counter. Reasons are the small
+// set of truncReason* constants; each event may bump multiple reasons but each is bumped at
+// most once per event.
+func (w *flagEvalLoggingWriter) incContextTruncated(reason string) {
+	c, ok := w.contextTruncatedByReason.Load(reason)
+	if !ok {
+		c, _ = w.contextTruncatedByReason.LoadOrStore(reason, new(atomic.Int64))
+	}
+	c.(*atomic.Int64).Add(1)
+}
+
+// flattenAndPruneContext produces the pruned, flattened context map for EVP aggregation in a
+// single bounded traversal. It is the Go mirror of Java's DDEvaluator.copyPrunedContext: every
+// retained-size dimension is capped INLINE so the work the evaluation thread performs is
+// proportional to what is KEPT, never to what the caller supplied. The exposure track's
+// flattenContext (flatten.go) is untouched and remains unbounded for its own contract.
 //
-//  1. Flatten nested objects into a single-level dot-notation map (reusing flattenRecursive, so
-//     the flatten semantics stay identical to the exposure path which still calls
-//     flattenContext directly — that caller is unchanged).
-//  2. Apply the deterministic prune: sort the flattened keys, then keep the first
-//     maxContextFields that are not oversized strings (>maxFieldLength).
+// Caps enforced during traversal (all aligned to the cross-SDK RFC, matching Java):
+//   - maxContextFields (256):       at most 256 retained fields total
+//   - maxKeyLength (256):           a key longer than 256 chars is skipped
+//   - maxFieldLength (256):         a string value longer than 256 chars is skipped
+//   - maxListElements (256):        at most 256 elements walked per list
+//   - maxStructureProperties (256): at most 256 properties walked per structure
+//   - maxSnapshotDepth (4):         containers nested deeper than 4 are truncated
+//   - cycle detection:              identity-based; a container reachable from its own descendant
+//     is truncated, preventing infinite recursion over a caller-built cyclic structure (which
+//     the unbounded flattenRecursive used by the exposure path would infinite-loop on).
 //
-// Allocation win: when the flattened context already fits the limits (the common case — fewer
-// than maxContextFields fields and no oversized string), the flattened map is returned DIRECTLY,
-// so the separate pruned-output map that the old flatten→prune pipeline always allocated is
-// elided. The pruned map is allocated only when trimming actually changes the result. Output is
-// byte-for-byte identical to the previous flattenContext+pruneContext pipeline: same surviving
-// keys, same 256/256 limits, same deterministic ordering of the cut.
-func flattenAndPruneContext(attrs map[string]any) map[string]any {
+// The second return value is the SET of truncation reasons that fired, so the caller can bump
+// telemetry counters (context-truncated by reason). Reasons are unique and in a stable order;
+// callers should treat it as at most one bump per (event, reason).
+//
+// Key format matches the existing exposure flatten path (dot notation: "a.b.c" for nested maps,
+// "tags.0" for list indices) so wire output is unchanged for in-bounds inputs.
+//
+// Determinism: top-level keys and each structure's property keys are sorted before walking, so
+// the kept subset is stable across calls (Go map iteration is randomized) and logically-
+// identical contexts always prune to the same canonicalContextKey. A depth-first traversal over
+// per-level sorted keys produces the same global ordering as sorting the fully-flattened key
+// set, so this is byte-for-byte identical to the former flattenContext+pruneContext pipeline for
+// every input that stays within the new depth/list/structure caps.
+//
+// Bounding map width: a map (top-level or nested) whose key count exceeds the corresponding
+// cap is OMITTED ENTIRELY rather than collected, sorted, and trimmed. This keeps the
+// evaluation-thread cost proportional to the KEPT set (≤ maxContextFields / ≤
+// maxStructureProperties, each ≤256), never to the supplied map width: the over-cap case is a
+// single O(1) len() check. The trade-off is a cliff at the cap — a 257-property structure is
+// dropped wholesale where a 256-property structure is kept in full — but real contexts stay
+// well under the caps and the truncation reason is recorded for telemetry. This matches the
+// reviewer's recommendation and avoids the O(K log K) sort-then-trim that made the prior
+// implementation proportional to the caller's input.
+func flattenAndPruneContext(attrs map[string]any) (map[string]any, []string) {
 	if len(attrs) == 0 {
-		return nil
+		return nil, nil
 	}
-	if contextFitsWithoutFlattening(attrs) {
-		return attrs
+	// Omit the entire context when the top-level map itself exceeds the field cap, so the
+	// evaluation-thread cost is bounded by the cap rather than by the supplied width. Sorting
+	// every key only to keep the first ≤256 would be O(K log K) in K.
+	if len(attrs) > maxContextFields {
+		return nil, []string{truncReasonMaxContextFields}
 	}
-
-	flat := make(map[string]any, len(attrs))
-	flattenRecursive("", attrs, flat)
-	if len(flat) == 0 {
-		return nil
-	}
-
-	// Determine whether any pruning is actually required: an over-cap field count or any
-	// oversized string value. If neither, the flattened map already IS the pruned result —
-	// return it directly and skip allocating a second map.
-	needsPrune := len(flat) > maxContextFields
-	if !needsPrune {
-		for _, v := range flat {
-			if s, ok := v.(string); ok && len(s) > maxFieldLength {
-				needsPrune = true
-				break
-			}
-		}
-	}
-	if !needsPrune {
-		return flat
-	}
-
-	// Deterministic prune: sort keys, then keep the first maxContextFields non-oversized values.
-	// Sorting BEFORE the oversized-string skip and the field cap makes the kept subset stable
-	// across calls (Go map iteration is randomized), so logically-identical contexts always
-	// prune to the same subset and the same canonicalContextKey.
-	keys := make([]string, 0, len(flat))
-	for k := range flat {
+	// Sort top-level keys so the field-count cap keeps a deterministic subset. Without this,
+	// Go's randomized map iteration would keep a different 256-field subset each call and
+	// fragment aggregation buckets. The sort is bounded to ≤ maxContextFields keys by the
+	// check above.
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	out := make(map[string]any, min(len(flat), maxContextFields))
-	count := 0
+	out := make(map[string]any, len(attrs))
+	seen := make(map[uintptr]struct{})
+	var mask truncReasonMask
 	for _, k := range keys {
-		if count >= maxContextFields {
+		if len(out) >= maxContextFields {
+			mask.add(bitMaxContextFields)
 			break
 		}
-		v := flat[k]
-		if s, ok := v.(string); ok && len(s) > maxFieldLength {
-			// Skip oversized string values (matches worker.ts pruneFields behavior).
-			continue
-		}
-		out[k] = v
-		count++
+		copyPrunedValue(out, k, attrs[k], seen, 0, &mask)
 	}
+	reasons := mask.reasons()
 	if len(out) == 0 {
-		return nil
+		return nil, reasons
 	}
-	return out
+	return out, reasons
 }
 
-func contextFitsWithoutFlattening(attrs map[string]any) bool {
-	if len(attrs) > maxContextFields {
-		return false
+// copyPrunedValue writes one (key, value) entry into out, bounding depth, list/structure width,
+// key/value length, and total field count inline. It recurses into containers (maps and slices)
+// with depth+1 and identity-based cycle detection via seen. mask records which caps fired.
+// Runs on the evaluation thread.
+func copyPrunedValue(out map[string]any, key string, val any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) {
+	if len(out) >= maxContextFields {
+		mask.add(bitMaxContextFields)
+		return
 	}
-	for _, v := range attrs {
-		switch x := v.(type) {
-		case string:
-			if len(x) > maxFieldLength {
-				return false
-			}
-		case int, int8, int16, int32, int64,
-			uint, uint8, uint16, uint32, uint64,
-			float32, float64, bool:
-		default:
-			return false
+	if len(key) > maxKeyLength {
+		mask.add(bitMaxKeyLength)
+		return
+	}
+	if val == nil {
+		out[key] = nil
+		return
+	}
+	switch v := val.(type) {
+	case string:
+		if len(v) > maxFieldLength {
+			mask.add(bitMaxValueLength)
+			return
+		}
+		out[key] = v
+	case bool:
+		out[key] = v
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		out[key] = v
+	case []byte:
+		// Check the (O(1)) slice length BEFORE the string(v) conversion, which would copy the
+		// entire byte slice. An oversized []byte value is dropped without allocating a copy.
+		if len(v) > maxFieldLength {
+			mask.add(bitMaxValueLength)
+			return
+		}
+		out[key] = string(v)
+	case fmt.Stringer:
+		s := v.String()
+		if len(s) > maxFieldLength {
+			mask.add(bitMaxValueLength)
+			return
+		}
+		out[key] = s
+	case map[string]any:
+		copyPrunedMap(out, key, v, seen, depth, mask)
+	case []any:
+		copyPrunedList(out, key, v, seen, depth, mask)
+	default:
+		if !copyPrunedReflect(out, key, val, seen, depth, mask) {
+			log.Debug("openfeature: skipping unsupported attribute type for key %q: %T", key, val)
 		}
 	}
-	return true
+}
+
+// copyPrunedMap walks a map[string]any structure, bounding depth, structure-property width, and
+// total field count inline. A structure wider than maxStructureProperties is omitted entirely
+// (not sorted or walked) so the evaluation-thread cost stays bounded by the cap; the sort that
+// remains only ever runs over ≤ maxStructureProperties keys.
+func copyPrunedMap(out map[string]any, key string, m map[string]any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) {
+	if depth >= maxSnapshotDepth {
+		mask.add(bitMaxSnapshotDepth)
+		return
+	}
+	p := reflect.ValueOf(m).Pointer()
+	if _, ok := seen[p]; ok {
+		mask.add(bitCycle)
+		return
+	}
+	seen[p] = struct{}{}
+	defer delete(seen, p)
+
+	// Omit structures wider than the property cap rather than collecting and sorting every key,
+	// keeping the evaluation-thread cost proportional to the kept set, not the supplied width.
+	if len(m) > maxStructureProperties {
+		mask.add(bitMaxStructureProperties)
+		return
+	}
+
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if len(out) >= maxContextFields {
+			mask.add(bitMaxContextFields)
+			break
+		}
+		copyPrunedValue(out, key+"."+k, m[k], seen, depth+1, mask)
+	}
+}
+
+// copyPrunedList walks an []any list, bounding depth, list-element width, and total field count
+// inline. List indices are already ordered, so no sort is needed.
+func copyPrunedList(out map[string]any, key string, l []any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) {
+	if depth >= maxSnapshotDepth {
+		mask.add(bitMaxSnapshotDepth)
+		return
+	}
+	p := reflect.ValueOf(l).Pointer()
+	if _, ok := seen[p]; ok {
+		mask.add(bitCycle)
+		return
+	}
+	seen[p] = struct{}{}
+	defer delete(seen, p)
+
+	limit := len(l)
+	if limit > maxListElements {
+		mask.add(bitMaxListElements)
+		limit = maxListElements
+	}
+	for i := 0; i < limit; i++ {
+		if len(out) >= maxContextFields {
+			mask.add(bitMaxContextFields)
+			break
+		}
+		copyPrunedValue(out, key+"."+strconv.Itoa(i), l[i], seen, depth+1, mask)
+	}
+}
+
+// copyPrunedReflect handles the remaining container types (typed maps/slices beyond map[string]any
+// and []any) via reflect so the bounded walker covers the same input space as the exposure track's
+// flattenRecursive without enumerating every concrete type. Returns true if val was a recognized
+// container (handled), false otherwise (caller logs and skips).
+func copyPrunedReflect(out map[string]any, key string, val any, seen map[uintptr]struct{}, depth int, mask *truncReasonMask) bool {
+	rv := reflect.ValueOf(val)
+	switch rv.Kind() {
+	case reflect.Map:
+		if depth >= maxSnapshotDepth {
+			mask.add(bitMaxSnapshotDepth)
+			return true
+		}
+		p := rv.Pointer()
+		if _, ok := seen[p]; ok {
+			mask.add(bitCycle)
+			return true
+		}
+		seen[p] = struct{}{}
+		defer delete(seen, p)
+		// Omit structures wider than the property cap rather than sorting every key, keeping
+		// evaluation-thread work proportional to the kept set.
+		if rv.Len() > maxStructureProperties {
+			mask.add(bitMaxStructureProperties)
+			return true
+		}
+		keys := make([]string, 0, rv.Len())
+		for _, k := range rv.MapKeys() {
+			keys = append(keys, k.String())
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if len(out) >= maxContextFields {
+				mask.add(bitMaxContextFields)
+				break
+			}
+			copyPrunedValue(out, key+"."+k, rv.MapIndex(reflect.ValueOf(k)).Interface(), seen, depth+1, mask)
+		}
+		return true
+	case reflect.Slice, reflect.Array:
+		if depth >= maxSnapshotDepth {
+			mask.add(bitMaxSnapshotDepth)
+			return true
+		}
+		p := rv.Pointer()
+		if _, ok := seen[p]; ok {
+			mask.add(bitCycle)
+			return true
+		}
+		seen[p] = struct{}{}
+		defer delete(seen, p)
+		limit := rv.Len()
+		if limit > maxListElements {
+			mask.add(bitMaxListElements)
+			limit = maxListElements
+		}
+		for i := 0; i < limit; i++ {
+			if len(out) >= maxContextFields {
+				mask.add(bitMaxContextFields)
+				break
+			}
+			copyPrunedValue(out, key+"."+strconv.Itoa(i), rv.Index(i).Interface(), seen, depth+1, mask)
+		}
+		return true
+	}
+	return false
+}
+
+// truncReasonMask is a bitset of the truncation reasons that fired during one copyPrunedContext
+// walk. Each cap sets its bit at most once per walk; reasons() expands the set into a stable-order
+// slice, returning nil when no bit is set so callers can skip the telemetry path with one check.
+type truncReasonMask uint8
+
+const (
+	bitMaxContextFields       truncReasonMask = 1 << iota // 1 << 0
+	bitMaxKeyLength                                       // 1 << 1
+	bitMaxValueLength                                     // 1 << 2
+	bitMaxListElements                                    // 1 << 3
+	bitMaxStructureProperties                             // 1 << 4
+	bitMaxSnapshotDepth                                   // 1 << 5
+	bitCycle                                              // 1 << 6
+)
+
+func (m *truncReasonMask) add(b truncReasonMask) { *m |= b }
+
+// truncReasonNames maps each bit position to its reason label. Order matches the bit constants
+// above and Java's DDEvaluator.REASON_NAMES.
+var truncReasonNames = [...]string{
+	truncReasonMaxContextFields,
+	truncReasonMaxKeyLength,
+	truncReasonMaxValueLength,
+	truncReasonMaxListElements,
+	truncReasonMaxStructureProperties,
+	truncReasonMaxSnapshotDepth,
+	truncReasonCycle,
+}
+
+// reasons expands the mask into a sorted slice of reason labels. Returns nil when no bit is set.
+func (m truncReasonMask) reasons() []string {
+	if m == 0 {
+		return nil
+	}
+	var r []string
+	for i := range truncReasonNames {
+		if m&(1<<i) != 0 {
+			r = append(r, truncReasonNames[i])
+		}
+	}
+	return r
 }
 
 // drainAndFlush processes any buffered events and performs a final flush. Called by the
@@ -620,10 +1005,141 @@ func (w *flagEvalLoggingWriter) drainAndFlush() {
 	}
 }
 
-// sendToAgent sends the flag evaluation payload to the Datadog Agent via EVP proxy.
-// Reuses evpSubdomainHeader / evpSubdomainValue constants from exposure.go.
-func (w *flagEvalLoggingWriter) sendToAgent(payload flagEvalLoggingPayload) error {
-	return w.evp.post(flagEvalLoggingEndpoint, "flag evaluation", payload)
+// countMetric emits a flagevaluation telemetry count under NamespaceGeneral, mirroring Java's
+// FlagEvaluationWriterImpl.countMetric. A non-empty reason is forwarded as a "reason:<value>" tag
+// so Go's counters join with Java's across SDKs. No-op when value <= 0 (callers gate on > 0, but
+// this keeps the helper safe for any future caller).
+func countMetric(name string, value int64, reason string) {
+	if value <= 0 {
+		return
+	}
+	var tags []string
+	if reason != "" {
+		tags = []string{"reason:" + reason}
+	}
+	telemetry.Count(telemetry.NamespaceGeneral, name, tags).Submit(float64(value))
+}
+
+// buildFlagEvalPayloads encodes the flush's wire events into one or more size-bounded JSON
+// payloads, each a complete {"context":...,"flagEvaluations":[...]} envelope no larger than
+// payloadSizeLimitBytes. It mirrors Java's FlagEvaluationPayloads.buildPayloads:
+//
+//  1. Split: when the next encoded event would exceed the limit, close the current payload and
+//     start a new one. The splits metric counts (payloads - 1).
+//  2. Degraded fallback: if a single event is too large to fit even in an empty payload, retry
+//     it as a degraded event (drop targeting_key + context — the bulky fields). Counted as
+//     rows.degraded reason:payload_limit.
+//  3. Drop: if the degraded event still doesn't fit, drop it. Counted as rows.dropped
+//     reason:payload_limit.
+//
+// The returned slices are the encoded payload bodies ready for postRaw. droppedPayloadLimit and
+// degradedPayloadLimit carry the evaluation_count totals for the two payload-limit tiers so the
+// caller can emit the matching metrics.
+func (w *flagEvalLoggingWriter) buildFlagEvalPayloads(events []flagEvalLoggingEvent) (payloads [][]byte, droppedPayloadLimit, degradedPayloadLimit int64, err error) {
+	// Encode the envelope prefix (context object + array opener) once; every payload shares it.
+	prefix, perr := w.evp.marshalJSON(struct {
+		Context         flagEvalDDContext      `json:"context"`
+		FlagEvaluations []flagEvalLoggingEvent `json:"flagEvaluations"`
+	}{Context: w.ddContext, FlagEvaluations: nil})
+	if perr != nil {
+		return nil, 0, 0, perr
+	}
+	// prefix is `{"context":{...},"flagEvaluations":null}\n`; rebuild as the opener
+	// `{"context":{...},"flagEvaluations":[` and precompute the closer `]}`.
+	opener, closer := envelopeFraming(prefix)
+
+	// suffixLen is the bytes needed to close the envelope: `]}` plus jsoniter's trailing newline.
+	suffixLen := len(closer) + 1
+
+	var current []byte
+	startPayload := func() {
+		current = append(current[:0], opener...)
+	}
+	closePayload := func() {
+		current = append(current, closer...)
+		current = append(current, '\n')
+		payloads = append(payloads, current)
+		current = nil
+	}
+	startPayload()
+
+	for _, ev := range events {
+		eventBytes, eerr := w.evp.marshalJSON(ev)
+		if eerr != nil {
+			return nil, 0, 0, eerr
+		}
+
+		// Needs a leading comma if this isn't the first event in the current payload.
+		sep := 0
+		if len(current) > len(opener) {
+			sep = 1
+		}
+		fits := len(current)+sep+len(eventBytes)+suffixLen <= payloadSizeLimitBytes
+
+		if !fits && len(current) > len(opener) {
+			// Close the current payload and start a fresh one for this event.
+			closePayload()
+			startPayload()
+			sep = 0
+			fits = len(current)+len(eventBytes)+suffixLen <= payloadSizeLimitBytes
+		}
+
+		if fits {
+			if sep == 1 {
+				current = append(current, ',')
+			}
+			current = append(current, eventBytes...)
+			continue
+		}
+
+		// Single event too large for an empty payload: retry as degraded (drop targeting_key +
+		// context, the bulky fields). This is the encode-time payload-limit degradation path.
+		degraded := ev
+		degraded.TargetingKey = ""
+		degraded.Context = nil
+		eventBytes, eerr = w.evp.marshalJSON(degraded)
+		if eerr != nil {
+			return nil, 0, 0, eerr
+		}
+		if len(current) > len(opener) {
+			// Close current and start fresh before the degraded retry.
+			closePayload()
+			startPayload()
+		}
+		if len(current)+len(eventBytes)+suffixLen <= payloadSizeLimitBytes {
+			current = append(current, eventBytes...)
+			degradedPayloadLimit += ev.EvaluationCount
+			continue
+		}
+
+		// Even the degraded event doesn't fit: drop it and count the lost evaluations.
+		droppedPayloadLimit += ev.EvaluationCount
+	}
+
+	// Flush the final payload if it has any events.
+	if len(current) > len(opener) {
+		closePayload()
+	}
+	return payloads, droppedPayloadLimit, degradedPayloadLimit, nil
+}
+
+// envelopeFraming rewrites a jsoniter-encoded `{"context":{...},"flagEvaluations":null}`
+// envelope into the opener `{"context":{...},"flagEvaluations":[` and returns it alongside the
+// closer `]}`. The opener is reused as the prefix of every split payload; the closer terminates
+// each one. jsoniter appends a trailing newline to the encoded envelope, which is stripped here
+// and re-added by closePayload.
+func envelopeFraming(envelope []byte) (opener, closer []byte) {
+	const needle = `"flagEvaluations":null`
+	before, _, found := bytes.Cut(envelope, []byte(needle))
+	if !found {
+		// Should not happen with the struct above; fall back to a safe minimal envelope.
+		opener = []byte(`{"context":{},"flagEvaluations":[`)
+		closer = []byte(`]}`)
+		return opener, closer
+	}
+	opener = append(before, []byte(`"flagEvaluations":[`)...)
+	closer = []byte(`]}`)
+	return opener, closer
 }
 
 // add records one evaluation observation into the appropriate aggregation tier.
@@ -639,22 +1155,32 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Enforce the consent-off invariant for every caller: no context on the wire → no context
+	// in the key (see evaluationAggregationKey).
+	if !d.observeFullEvaluationData {
+		contextAttrs = nil
+	}
+
 	// Build the full key from schema-visible dimensions including the canonical context encoding.
 	// No hash, so distinct contexts get distinct buckets.
 	fullKey := evaluationAggregationKey{
-		flagKey:        d.flagKey,
-		variant:        d.variant,
-		allocationKey:  d.allocationKey,
-		runtimeDefault: d.runtimeDefault,
-		errorMessage:   d.errorMessage,
-		targetingKey:   d.targetingKey,
-		contextKey:     canonicalContextKey(contextAttrs),
+		flagKey:                   d.flagKey,
+		variant:                   d.variant,
+		allocationKey:             d.allocationKey,
+		runtimeDefault:            d.runtimeDefault,
+		errorMessage:              d.errorMessage,
+		targetingKey:              d.targetingKey,
+		contextKey:                canonicalContextKey(contextAttrs),
+		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
 
 	// Fast path: this exact full-tier bucket already exists → increment its count. Because
 	// contextKey is the full canonical encoding (not a digest), this fast path is hit only by a
 	// genuinely identical pruned context — never by an aliasing collision.
 	if e, ok := a.full[fullKey]; ok {
+		// Defense in depth: AND-fold so if consent ever leaves the key, one consent-off
+		// observation still forces the whole bucket to the privacy-protected path.
+		e.observeFullEvaluationData = e.observeFullEvaluationData && d.observeFullEvaluationData
 		e.observe(evaluationTimeMs)
 		return
 	}
@@ -684,13 +1210,14 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 
 	// New full-tier entry.
 	a.full[fullKey] = &evaluationEntry{
-		count:           1,
-		firstEvaluation: evaluationTimeMs,
-		lastEvaluation:  evaluationTimeMs,
-		runtimeDefault:  d.runtimeDefault,
-		targetingKey:    d.targetingKey,
-		contextAttrs:    contextAttrs,
-		errorMessage:    d.errorMessage,
+		count:                     1,
+		firstEvaluation:           evaluationTimeMs,
+		lastEvaluation:            evaluationTimeMs,
+		runtimeDefault:            d.runtimeDefault,
+		targetingKey:              d.targetingKey,
+		contextAttrs:              contextAttrs,
+		errorMessage:              d.errorMessage,
+		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
 	a.globalCount++
 }
@@ -710,6 +1237,11 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeM
 		errorMessage:   d.errorMessage,
 	}
 
+	// Count every evaluation routed into the degraded tier (cardinality-cap pressure) so the
+	// flagevaluation.rows.degraded reason:cardinality_cap metric reflects the volume degraded
+	// for cardinality reasons (distinct from payload-limit degradation applied at encode time).
+	a.degradedRows.Add(1)
+
 	if e, ok := a.degraded[degKey]; ok {
 		e.observe(evaluationTimeMs)
 		return
@@ -727,6 +1259,12 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeM
 	e.runtimeDefault = d.runtimeDefault
 	e.errorMessage = d.errorMessage
 	a.degraded[degKey] = e
+}
+
+// swapDegradedRows atomically drains the cardinality-cap degraded-rows counter, returning the
+// count and resetting it to zero. Called by flush() alongside the other telemetry counters.
+func (a *flagEvalLoggingAggregator) swapDegradedRows() int64 {
+	return a.degradedRows.Swap(0)
 }
 
 // context value type discriminators for the canonical key encoding. Each distinct Go type
@@ -870,20 +1408,35 @@ func pruneContext(raw map[string]any) map[string]any {
 // flageval_metrics.go (that file is left untouched to preserve the OTel path).
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
-	// Prefer OpenFeature's human-readable ErrorMessage; fall back to the ErrorCode string only
-	// when ErrorMessage is empty (some providers populate just the code).
+	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
+	// Fail closed: a missing or non-bool consent stamp yields false, so an evaluation that
+	// never passed through the evaluator cannot emit raw PII.
+	observeFullEvaluationData, _ := details.FlagMetadata[metadataObserveFullEvaluationDataKey].(bool)
+	// error.message can carry raw evaluation-context values verbatim: our own evaluator wraps
+	// user-supplied attributes in error strings (variant/type mismatches, regex/version parse
+	// errors), and third-party providers can do the same. Under consent-off we drop the raw
+	// text and substitute ErrorCode so operators keep a stable, non-PII signal. Redacted here
+	// so the raw string never enters the aggregation key or the async writer queue — both live
+	// beyond the evaluation call and would leak PII if we deferred redaction to emit time.
 	errMsg := details.ErrorMessage
-	if errMsg == "" && details.ErrorCode != "" {
+	if !observeFullEvaluationData {
+		if details.ErrorCode != "" {
+			errMsg = string(details.ErrorCode)
+		} else {
+			errMsg = ""
+		}
+	} else if errMsg == "" && details.ErrorCode != "" {
+		// Consent-on fallback preserved: some providers populate only ErrorCode.
 		errMsg = string(details.ErrorCode)
 	}
-	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
 	return evalDetails{
-		flagKey:        hookContext.FlagKey(),
-		variant:        details.Variant,
-		allocationKey:  allocationKey,
-		targetingKey:   hookContext.EvaluationContext().TargetingKey(),
-		errorMessage:   errMsg,
-		runtimeDefault: isRuntimeDefault(details),
-		evalTimeMs:     evalTimeMs,
+		flagKey:                   hookContext.FlagKey(),
+		variant:                   details.Variant,
+		allocationKey:             allocationKey,
+		targetingKey:              hookContext.EvaluationContext().TargetingKey(),
+		errorMessage:              errMsg,
+		runtimeDefault:            isRuntimeDefault(details),
+		evalTimeMs:                evalTimeMs,
+		observeFullEvaluationData: observeFullEvaluationData,
 	}
 }
