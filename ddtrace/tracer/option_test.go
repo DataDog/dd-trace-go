@@ -1961,31 +1961,31 @@ func TestWithStatsComputation(t *testing.T) {
 	})
 }
 
-func TestWithDataStreamsQueueSize(t *testing.T) {
+func TestWithDataStreamsIntakeBufferSize(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(10000, c.internalConfig.DataStreamsQueueSize())
+		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
 	})
 	t.Run("set-via-option", func(t *testing.T) {
 		assert := assert.New(t)
-		c, err := newTestConfig(WithDataStreamsQueueSize(500))
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(500))
 		assert.NoError(err)
-		assert.Equal(500, c.internalConfig.DataStreamsQueueSize())
+		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
 	})
 	t.Run("set-via-env", func(t *testing.T) {
 		assert := assert.New(t)
-		t.Setenv("DD_DATA_STREAMS_QUEUE_SIZE", "500")
+		t.Setenv("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", "500")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(500, c.internalConfig.DataStreamsQueueSize())
+		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
 	})
 	t.Run("non-positive-ignored", func(t *testing.T) {
 		assert := assert.New(t)
-		c, err := newTestConfig(WithDataStreamsQueueSize(0))
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(0))
 		assert.NoError(err)
-		assert.Equal(10000, c.internalConfig.DataStreamsQueueSize())
+		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
 	})
 }
 

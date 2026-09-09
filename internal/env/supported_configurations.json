@@ -450,11 +450,11 @@
         "default": "false"
       }
     ],
-    "DD_DATA_STREAMS_QUEUE_SIZE": [
+    "DD_DATA_STREAMS_INTAKE_BUFFER_SIZE": [
       {
         "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
+        "type": "int",
+        "default": "10000"
       }
     ],
     "DD_DBM_PROPAGATION_MODE": [
