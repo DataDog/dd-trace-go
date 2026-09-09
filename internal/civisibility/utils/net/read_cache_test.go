@@ -852,13 +852,13 @@ func TestReadCacheGetSkippableTestsIgnoresPreviousCacheVersion(t *testing.T) {
 		MissingLineCodeCoverage bool               `json:"_missing_line_code_coverage"`
 	}
 	type legacyCachedSkippableTests struct {
-		CorrelationID      string                                               `json:"correlation_id"`
-		Skippables         map[string]map[string][]legacySkippableAttributes     `json:"skippables"`
-		Coverage           map[string]string                                    `json:"coverage,omitempty"`
-		CoveragePresent    bool                                                 `json:"coverage_present"`
-		CoverageSafe       bool                                                 `json:"coverage_backfill_safe"`
-		CoverageReason     string                                               `json:"coverage_backfill_reason"`
-		ResponseTestsCount int                                                  `json:"response_tests_count"`
+		CorrelationID      string                                            `json:"correlation_id"`
+		Skippables         map[string]map[string][]legacySkippableAttributes `json:"skippables"`
+		Coverage           map[string]string                                 `json:"coverage,omitempty"`
+		CoveragePresent    bool                                              `json:"coverage_present"`
+		CoverageSafe       bool                                              `json:"coverage_backfill_safe"`
+		CoverageReason     string                                            `json:"coverage_backfill_reason"`
+		ResponseTestsCount int                                               `json:"response_tests_count"`
 	}
 
 	legacyValue := legacyCachedSkippableTests{
