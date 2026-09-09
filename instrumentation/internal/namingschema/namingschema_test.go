@@ -14,7 +14,11 @@ import (
 )
 
 func TestReloadConfigSynchronizesNamingSchemaWithEffectiveConfig(t *testing.T) {
-	t.Cleanup(ReloadConfig)
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() {
+		ReloadConfig()
+		internalconfig.SetUseFreshConfig(false)
+	})
 	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
 	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "false")
 
