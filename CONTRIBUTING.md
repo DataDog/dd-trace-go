@@ -58,6 +58,7 @@ Our CI pipeline includes several automated checks:
 - **Generate Check**: Ensures generated code is up-to-date
 - **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
+- **Error-logging Lint**: Runs `make lint/errlog`, three `go vet`-compatible analyzers: `constantlogmsg` (rejects non-constant message arguments on `log.Error`, `log.Warn`, and the `telemetrylog.ReportError`/`ReportPanic`/`LogAndReportError`/`LogAndReportPanic` helpers — non-constant messages break dedup and, for the telemetry-reporting functions, risk leaking PII to Error Tracking), `telemetrysafety` (requires `slog.Any`/`slog.String` values passed to telemetry log calls to be PII-safe), and `logformatverbs` (flags unsafe `%v`/`%+v`/`%#v` usage). Run locally with `make lint/errlog`.
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
 - **Cross-Compile Check**: Runs `scripts/cross_build.sh` to cross-compile the library for every [first class Go port](https://go.dev/wiki/PortingPolicy) (including 32-bit `linux/386`, `windows/386`, `linux/arm`), catching architecture-specific compile regressions. Run locally with `./scripts/cross_build.sh`. Packages that import `go-libddwaf` are skipped until it builds on 32-bit (see DataDog/go-libddwaf#227); they stay covered on 64-bit by the test matrix.
 
@@ -251,6 +252,17 @@ The script provides:
 - Early failure detection with clear error messages
 - Automatic Docker service management for integration tests
 - Support for Apple Silicon (M1/M2) Macs
+
+#### Crashtracker
+
+Run focused crashtracker tests with:
+
+```shell
+go test -race -count=1 ./crashtracker
+```
+
+The end-to-end tests intentionally crash helper processes and validate the
+report received by a local intake stub.
 
 ## Style Guidelines
 

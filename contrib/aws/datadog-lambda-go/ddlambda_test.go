@@ -13,6 +13,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/payload"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/trace"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -200,4 +203,20 @@ func TestCalculateFipsMode(t *testing.T) {
 // Helper function to create bool pointers
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// TestInitializeListeners_payloadRunsAfterTrace verifies the payload strip listener is
+// registered after the trace listener. Trace context extraction reads _datadog from the
+// raw payload, so if payload stripping ran first, trace propagation would break.
+func TestInitializeListeners_payloadRunsAfterTrace(t *testing.T) {
+	t.Setenv(DatadogTraceEnabledEnvVar, "false") // avoid starting a real tracer in this test
+
+	listeners := initializeListeners(&Config{})
+	assert.Len(t, listeners, 3)
+
+	_, firstIsTrace := listeners[0].(*trace.Listener)
+	assert.True(t, firstIsTrace, "trace listener must be registered first")
+
+	_, lastIsPayload := listeners[len(listeners)-1].(*payload.Listener)
+	assert.True(t, lastIsPayload, "payload listener must be registered last")
 }

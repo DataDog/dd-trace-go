@@ -422,6 +422,13 @@
         "default": null
       }
     ],
+    "DD_CRASHTRACKING_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CUSTOM_PARENT_ID": [
       {
         "implementation": "A",
@@ -715,6 +722,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_LAMBDA_STRIP_INJECTED_CONTEXT": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "false"
       }
     ],
     "DD_LLMOBS_AGENTLESS_ENABLED": [
