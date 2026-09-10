@@ -162,7 +162,7 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 			if spanKind == ext.SpanKindServer {
 				tags[ext.HTTPUserAgent] = req.UserAgent()
 				appsechttpsec.SetSecurityTestingHeaderTags(tags, req.Header)
-				dynamicOpts = append(dynamicOpts, httptrace.ClientIPTagsFromRequest(req))
+				httptrace.SetClientIPTagsFromRequest(tags, req)
 				if req.Host != "" {
 					tags["http.host"] = req.Host
 				}

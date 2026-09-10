@@ -348,18 +348,15 @@ func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderT
 	}
 }
 
-// ClientIPTagsFromRequest adds the standard HTTP client and network client IP
-// tags when client IP collection is enabled.
-func ClientIPTagsFromRequest(req *http.Request) tracer.StartSpanOption {
-	var tags map[string]string
-	if cfg.traceClientIP {
-		_, clientIP := clientip.Resolve(req.Header, true, req.RemoteAddr)
-		tags = clientip.TagsFor(req.RemoteAddr, clientIP)
+// SetClientIPTagsFromRequest adds the standard HTTP client and network client
+// IP tags to tags when client IP collection is enabled.
+func SetClientIPTagsFromRequest(tags map[string]any, req *http.Request) {
+	if !cfg.traceClientIP {
+		return
 	}
-	return func(cfg *tracer.StartSpanConfig) {
-		for key, value := range tags {
-			tracer.Tag(key, value)(cfg)
-		}
+	_, clientIP := clientip.Resolve(req.Header, true, req.RemoteAddr)
+	for key, value := range clientip.TagsFor(req.RemoteAddr, clientIP) {
+		tags[key] = value
 	}
 }
 
@@ -372,8 +369,11 @@ func BaggageTags(items map[string]string) tracer.StartSpanOption {
 		}
 	}
 	return func(cfg *tracer.StartSpanConfig) {
+		if cfg.Tags == nil {
+			cfg.Tags = make(map[string]any, len(tags))
+		}
 		for key, value := range tags {
-			tracer.Tag(key, value)(cfg)
+			cfg.Tags[key] = value
 		}
 	}
 }

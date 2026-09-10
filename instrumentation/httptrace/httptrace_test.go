@@ -415,10 +415,7 @@ func TestTraceClientIPFlag(t *testing.T) {
 	}
 }
 
-func TestClientIPTagsFromRequest(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
+func TestSetClientIPTagsFromRequest(t *testing.T) {
 	oldConfig := cfg
 	defer func() { cfg = oldConfig }()
 	t.Setenv(envTraceClientIPEnabled, "true")
@@ -427,13 +424,12 @@ func TestClientIPTagsFromRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/somePath", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("X-Forwarded-For", "203.0.113.10")
-	span := tracer.StartSpan("http.request", ClientIPTagsFromRequest(req))
-	span.Finish()
+	tags := map[string]any{"existing": "value"}
+	SetClientIPTagsFromRequest(tags, req)
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	assert.Equal(t, "203.0.113.10", spans[0].Tag(ext.HTTPClientIP))
-	assert.Equal(t, "10.0.0.1", spans[0].Tag(ext.NetworkClientIP))
+	assert.Equal(t, "value", tags["existing"])
+	assert.Equal(t, "203.0.113.10", tags[ext.HTTPClientIP])
+	assert.Equal(t, "10.0.0.1", tags[ext.NetworkClientIP])
 }
 
 func TestBaggageTags(t *testing.T) {
