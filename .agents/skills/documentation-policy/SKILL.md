@@ -10,7 +10,7 @@ metadata:
 
 This AGENTS.md should be short. Only update this file if a new AGENTS.md file is added, so it must be added to the list with its purpose.
 
-The developer should update [CONTRIBUTING.md](./CONTRIBUTING.md) with new, significant features. A feature may be considered significant when:
+Document changes in the nearest existing doc: the package's [Go doc comment](https://go.dev/doc/comment) or `doc.go` for API/behavior, the closest `README.md` (e.g. [`contrib/README.md`](contrib/README.md)) for an area, or [`FAQ.md`](FAQ.md)/[`MIGRATING.md`](MIGRATING.md) for user-facing notes. Reserve [`CONTRIBUTING.md`](CONTRIBUTING.md) for repo-wide contributor
 
 1. It introduces a new method of interacting with and/or customizing the tracer (ie new scripts for generating files, options for configuration sources, etc)
 2. A new internal functionality is introduced that can replace a common, built-in Go library
