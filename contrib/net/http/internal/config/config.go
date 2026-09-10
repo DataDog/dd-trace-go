@@ -134,7 +134,8 @@ func NormalizeClientRequestMethod(req *http.Request) (attribute, spanName, origi
 	return httptrace.NormalizeHTTPMethod(method)
 }
 
-// ClientErrorCheck determines which HTTP client response statuses are treated as errors:
+// ClientErrorCheck determines which HTTP client response statuses are treated
+// as errors based on configuration:
 //   - Use DD_TRACE_HTTP_CLIENT_ERROR_STATUSES when configured.
 //   - Otherwise, under OpenTelemetry semantics, 4xx, 5xx, and out-of-range status codes are errors.
 //   - Otherwise, 4xx are errors.
