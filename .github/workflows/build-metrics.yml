@@ -43,12 +43,68 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
 permissions:
   id-token: write
   contents: read
 
 jobs:
+  # Primes the Go module cache once, so the 106 build-metrics jobs below restore it instead of
+  # each re-downloading the workspace dependency set from proxy.golang.org. Before this job
+  # existed, those cold downloads were the repo's single largest source of module-proxy traffic
+  # and the dominant cause of this workflow's failures (HTTP/2 stream resets from
+  # proxy.golang.org / sum.golang.org part-way through `go mod download`).
+  #
+  # `measure_build.sh` runs inside internal/orchestrion/_integration, which is a `go.work` member
+  # and the workflow does not set GOWORK=off — so resolution spans the whole workspace and the
+  # cache key has to cover every go.sum plus go.work.sum, not just the sample's module.
+  go-mod-caching:
+    name: Prepare Go modules cache
+    runs-on: ubuntu-latest
+    outputs:
+      key: ${{ steps.cfg.outputs.key }}
+      path: ${{ steps.cfg.outputs.path }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Compute cache configuration
+        id: cfg
+        run: |
+          echo "key=go-pkg-mod-build-metrics-${{ hashFiles('**/go.sum', 'go.work.sum') }}" >> "$GITHUB_OUTPUT"
+          echo "path=go_pkg_mod_cache" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false # we manage the module cache ourselves
+          check-latest: true
+
+      - name: Cache Go modules
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cfg.outputs.path }}
+          key: ${{ steps.cfg.outputs.key }}
+          lookup-only: true
+
+      - name: Download Go modules
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
+        run: |
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption go mod download -x
+
   build-metrics:
+    needs:
+      - go-mod-caching
     strategy:
       fail-fast: false
       matrix:
@@ -116,11 +172,24 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
+          restore-keys: go-pkg-mod-build-metrics-
+          # A cache-service miss must not fail the job: falling back to a cold fetch is slower and
+          # proxy-dependent, but still correct.
+          fail-on-cache-miss: false
+
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
-          cache: false  # Cold build cache for accurate measurements
+          # We manage the module cache ourselves (restored above). This does NOT weaken the cold
+          # build-cache guarantee the measurements rely on: measure_build.sh runs `go clean -cache`
+          # inside do_build, before every timed build.
+          cache: false
           check-latest: true
 
       - name: Install go-size-analyzer
@@ -133,6 +202,8 @@ jobs:
 
       - name: Measure build
         id: measure
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: ./scripts/measure_build.sh --sample ${{ matrix.sample }} --mode ${{ matrix.mode }} --output "$RUNNER_TEMP/metrics.json"
 
       - name: Upload metrics artifact
