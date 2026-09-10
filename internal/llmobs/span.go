@@ -89,16 +89,14 @@ type promptPayload struct {
 
 func (p promptPayload) MarshalJSON() ([]byte, error) {
 	type alias promptPayload
-	data, err := json.Marshal(alias(p))
-	if err != nil || p.managedChatTemplate == nil {
-		return data, err
+	chatTemplate := p.managedChatTemplate
+	if chatTemplate == nil && len(p.ChatTemplate) > 0 {
+		chatTemplate = p.ChatTemplate
 	}
-	var fields map[string]any
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, err
-	}
-	fields["chat_template"] = p.managedChatTemplate
-	return json.Marshal(fields)
+	return json.Marshal(struct {
+		*alias
+		ChatTemplate any `json:"chat_template,omitempty"`
+	}{alias: (*alias)(&p), ChatTemplate: chatTemplate})
 }
 
 // ToolDefinition represents a tool definition for LLM spans.
