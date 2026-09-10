@@ -38,7 +38,12 @@
 # fall through on ',', any error falls through on '|'). cmd/go performs no retries of its own
 # (golang/go#28194), so this is the only retry layer there is.
 # Network retries back off exponentially with jitter: a large matrix retrying in lockstep would
-# re-create the load spike that triggered the reset.
+# re-create the load spike that triggered the reset. The pattern is deliberately not host-scoped
+# everywhere: a bare status code or reset can land on a log line separate from the URL, and a false
+# match here only costs one extra retry (bounded by RETRY_MAX_ATTEMPTS), not a wrongly-skipped cache
+# wipe. Note that a failed module download can also surface later as a compile error
+# (e.g. `undefined: echo`) rather than a network error, so a download failure that reaches max
+# attempts may still present that way downstream.
 #
 # Usage:
 #   source go-retry.sh
@@ -47,7 +52,7 @@
 corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
 archive_corruption_re='zip: checksum error|not the start of an archive file'
 # Transient module-proxy/network failures. Ordered roughly by observed frequency in this repo.
-network_re='stream error.*(INTERNAL_ERROR|PROTOCOL_ERROR|REFUSED_STREAM)|(proxy|sum)\.golang\.org[^[:space:]]*: [45][0-9][0-9]|(proxy|sum)\.golang\.org.*(i/o timeout|TLS handshake|connection reset|unexpected EOF|no such host|server misbehaving)|google\.com/sorry|dial tcp.*(i/o timeout|connection refused|connection reset)|(Get|reading) "?https://(proxy|sum)\.golang\.org'
+network_re='stream error.*(INTERNAL_ERROR|PROTOCOL_ERROR|REFUSED_STREAM)|(proxy|sum)\.golang\.org[^[:space:]]*: [45][0-9][0-9]|(proxy|sum)\.golang\.org.*(i/o timeout|TLS handshake|connection reset|unexpected EOF|no such host|server misbehaving)|google\.com/sorry|dial tcp.*(i/o timeout|connection refused|connection reset)|(Get|reading) "?https://(proxy|sum)\.golang\.org|INTERNAL_ERROR|502 Bad Gateway|500 Internal Server Error|429 Too Many Requests|connection reset by peer'
 
 : "${GO_RETRY_MAX_MODCACHE_WIPES:=2}"
 : "${GO_RETRY_NETWORK_BACKOFF_BASE:=5}"
