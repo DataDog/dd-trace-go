@@ -13,6 +13,25 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # Make transient module-proxy failures survivable for every step that follows in the job.
+    #
+    # The separator is load-bearing. Go's default is `https://proxy.golang.org,direct`, and with a
+    # comma the go command falls through to the next entry ONLY on 404/410 — a 5xx, a timeout, a
+    # TLS error or a dropped HTTP/2 stream is fatal and `direct` is never tried
+    # (cmd/go/internal/modfetch/proxy.go: fallBackOnError is set only for `|`). With a pipe it
+    # falls through on any error. cmd/go has no retry of its own (golang/go#28194), so this and
+    # apps/go-retry.sh are the only two lines of defence.
+    #
+    # Written to GITHUB_ENV rather than the action's `env:` because a composite action's env does
+    # not reach the calling job's later steps. Set only when unset, so a workflow or step that
+    # deliberately pins GOPROXY (e.g. GOPROXY=direct for a single command) still wins.
+    - name: Configure GOPROXY fallback
+      shell: bash
+      run: |
+        if [[ -z "${GOPROXY:-}" ]]; then
+          echo 'GOPROXY=https://proxy.golang.org|direct' >> "$GITHUB_ENV"
+        fi
+
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version: ${{ inputs.go-version }}
