@@ -148,10 +148,10 @@ func ClientErrorCheck(otelSemantics bool) func(int) bool {
 		// See:
 		// https://github.com/open-telemetry/semantic-conventions/blob/7f3c3bfc300cc090871692219af6a2495aa67915/docs/http/http-spans.md?plain=1#L82-L105
 		return func(statusCode int) bool {
-			return statusCode < http.StatusContinue /* 100 */ || statusCode >= http.StatusBadRequest /* 400 */
+			return statusCode < http.StatusContinue || statusCode >= http.StatusBadRequest
 		}
 	}
 	return func(statusCode int) bool {
-		return statusCode >= http.StatusBadRequest /* 400 */ && statusCode < http.StatusInternalServerError /* 500 */
+		return statusCode >= http.StatusBadRequest && statusCode < http.StatusInternalServerError
 	}
 }
