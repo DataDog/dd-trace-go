@@ -34,9 +34,3 @@ tracer.StartSpanFromContext(ctx, "op.name",
 Every `tracer.Tag(k, v)` call (and `ServiceName`, `ResourceName`, `SpanType`, …) allocates a new closure. Tags that never change between calls (`component`, `span.kind`, a configured service name) belong in a `tracer.NewStartSpanConfig(...)` built once at construction and applied with `tracer.WithStartSpanConfig(cfg)`. Two or more dynamic tags on one call site go in one `tracer.WithTags(tags)` map, not one `Tag()` each.
 
 Do not flag a single dynamic `Tag()` on an otherwise-correct call site.
-
-## How to add the next rule
-
-1. Write the pattern here in the same shape: what it looks like, why it matters, the concrete fix.
-2. Add a case in `.llm-validation/suites/dd-apm-sdk-review.yaml` that would fail if this paragraph disappeared.
-3. That is the whole contribution.
