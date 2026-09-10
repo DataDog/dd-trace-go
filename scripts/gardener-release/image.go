@@ -16,6 +16,7 @@ import (
 
 const (
 	ImageWorkflowPath           = ".github/workflows/docker-images-release.yml"
+	ImageChildWorkflowPath      = ".github/workflows/docker-build-and-push.yml"
 	ImageLatestConcurrencyGroup = "gardener-image-latest-production-v1"
 )
 
@@ -106,6 +107,8 @@ type ImagePromotionEvidence struct {
 	Outcome              ImageOutcome `json:"outcome"`
 	RepositoryFullName   string       `json:"repository_full_name"`
 	WorkflowPath         string       `json:"workflow_path"`
+	WorkflowSHA256       string       `json:"workflow_sha256"`
+	ChildWorkflowSHA256  string       `json:"child_workflow_sha256"`
 	RunID                string       `json:"run_id"`
 	RunAttempt           int          `json:"run_attempt"`
 	Event                string       `json:"event"`
@@ -495,6 +498,9 @@ func RecordImageOutcome(record Record, evidence ImagePromotionEvidence) (Record,
 		}
 		if existing == evidence {
 			return record, nil
+		}
+		if imageEvidenceConflicts(existing, evidence) {
+			return Record{}, newReleaseError(ErrorClassStateConflict, "image_evidence_conflict")
 		}
 	}
 	body, err := json.Marshal(evidence)

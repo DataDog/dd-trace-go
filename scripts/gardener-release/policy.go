@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -36,6 +37,9 @@ type Policy struct {
 	IssueMapping            map[string]string
 	Limits                  PolicyLimits
 	Test                    TestPolicy
+	Image                   ImageObservationPolicy
+	Signing                 SSHSigningPolicy
+	FeedbackIdentity        FeedbackIdentity
 	Revision                string
 }
 
@@ -53,6 +57,8 @@ type OriginalComment struct {
 	IssueNumber        string
 	CommentID          string
 	Body               string
+	AuthorID           string
+	AuthorLogin        string
 	AuthorAssociation  string
 }
 
@@ -69,6 +75,8 @@ type ValidatedRequest struct {
 	AcknowledgementCommentID string `json:"acknowledgement_comment_id"`
 	PolicyRevision           string `json:"policy_revision"`
 	Marker                   string `json:"marker"`
+	ValidatedActorID         string `json:"validated_actor_id"`
+	ValidatedActorLogin      string `json:"validated_actor_login"`
 }
 
 func DecodePolicy(raw []byte) (Policy, error) {
@@ -88,6 +96,9 @@ func DecodePolicy(raw []byte) (Policy, error) {
 		"issue_mapping":             true,
 		"limits":                    true,
 		"test_policy":               true,
+		"image_policy":              true,
+		"ssh_signing_policy":        true,
+		"gardener_identity":         true,
 	}
 	for key := range fields {
 		if !allowed[key] {
@@ -137,6 +148,18 @@ func DecodePolicy(raw []byte) (Policy, error) {
 	if err != nil {
 		return Policy{}, err
 	}
+	policy.Image, err = decodeImageObservationPolicy(fields["image_policy"])
+	if err != nil {
+		return Policy{}, err
+	}
+	policy.Signing, err = decodeSSHSigningPolicy(fields["ssh_signing_policy"])
+	if err != nil {
+		return Policy{}, err
+	}
+	policy.FeedbackIdentity, err = decodeFeedbackIdentity(fields["gardener_identity"])
+	if err != nil {
+		return Policy{}, err
+	}
 	policy.Revision = PolicyRevision(raw)
 	return policy, nil
 }
@@ -162,7 +185,7 @@ func ValidateRequestAgainstPolicy(request DispatchRequest, policy Policy, source
 	if source.Body != request.Context.BodySnapshot {
 		return ValidatedRequest{}, typedRequestError("source_mismatch")
 	}
-	if !authorizedAssociation(source.AuthorAssociation) {
+	if !authorizedAssociation(source.AuthorAssociation) || !validID(source.AuthorID) || source.AuthorLogin == "" || strings.TrimSpace(source.AuthorLogin) != source.AuthorLogin {
 		return ValidatedRequest{}, typedRequestError("unauthorized_actor")
 	}
 	releaseLine, ok := policy.IssueMapping[request.Context.IssueNumber]
@@ -185,6 +208,8 @@ func ValidateRequestAgainstPolicy(request DispatchRequest, policy Policy, source
 		AcknowledgementCommentID: request.Context.AcknowledgementCommentID,
 		PolicyRevision:           request.Context.PolicyRevision,
 		Marker:                   request.Marker,
+		ValidatedActorID:         source.AuthorID,
+		ValidatedActorLogin:      source.AuthorLogin,
 	}, nil
 }
 
@@ -228,6 +253,57 @@ func decodeIssueMapping(raw json.RawMessage) (map[string]string, error) {
 	return mapping, nil
 }
 
+func decodeSSHSigningPolicy(raw json.RawMessage) (SSHSigningPolicy, error) {
+	if len(raw) == 0 {
+		return SSHSigningPolicy{}, typedContractError("missing_policy_key")
+	}
+	fields, err := decodeStrictObject(raw, 16*1024, typedContractError("invalid_policy_json"), typedContractError("trailing_policy_json"), typedContractError("duplicate_policy_key"))
+	if err != nil {
+		return SSHSigningPolicy{}, typedContractError("wrong_policy_type")
+	}
+	for key := range fields {
+		if key != "principal" && key != "public_key" && key != "fingerprint" {
+			return SSHSigningPolicy{}, typedContractError("unknown_policy_key")
+		}
+	}
+	policy := SSHSigningPolicy{}
+	for key, target := range map[string]*string{"principal": &policy.Principal, "public_key": &policy.PublicKey, "fingerprint": &policy.Fingerprint} {
+		if err := stringPolicyField(fields, key, target); err != nil {
+			return SSHSigningPolicy{}, err
+		}
+	}
+	if err := ValidateSSHSigningPolicy(policy); err != nil {
+		return SSHSigningPolicy{}, err
+	}
+	return policy, nil
+}
+
+func decodeFeedbackIdentity(raw json.RawMessage) (FeedbackIdentity, error) {
+	if len(raw) == 0 {
+		return FeedbackIdentity{}, typedContractError("missing_policy_key")
+	}
+	fields, err := decodeStrictObject(raw, 4096, typedContractError("invalid_policy_json"), typedContractError("trailing_policy_json"), typedContractError("duplicate_policy_key"))
+	if err != nil {
+		return FeedbackIdentity{}, typedContractError("wrong_policy_type")
+	}
+	for key := range fields {
+		if key != "author_id" && key != "author_login" {
+			return FeedbackIdentity{}, typedContractError("unknown_policy_key")
+		}
+	}
+	identity := FeedbackIdentity{}
+	if err := stringPolicyField(fields, "author_id", &identity.GardenerAuthorID); err != nil {
+		return FeedbackIdentity{}, err
+	}
+	if err := stringPolicyField(fields, "author_login", &identity.GardenerAuthorLogin); err != nil {
+		return FeedbackIdentity{}, err
+	}
+	if !validID(identity.GardenerAuthorID) || identity.GardenerAuthorLogin == "" || strings.TrimSpace(identity.GardenerAuthorLogin) != identity.GardenerAuthorLogin || looksPlaceholder(identity.GardenerAuthorLogin) {
+		return FeedbackIdentity{}, typedContractError("invalid_gardener_identity")
+	}
+	return identity, nil
+}
+
 func decodeTestPolicy(raw json.RawMessage) (TestPolicy, error) {
 	if len(raw) == 0 {
 		return TestPolicy{}, typedContractError("missing_policy_key")
@@ -269,6 +345,31 @@ func decodeTestPolicy(raw json.RawMessage) (TestPolicy, error) {
 	}
 	if err := validateTestPolicy(policy); err != nil {
 		return TestPolicy{}, typedContractError("policy_drift")
+	}
+	return policy, nil
+}
+
+func decodeImageObservationPolicy(raw json.RawMessage) (ImageObservationPolicy, error) {
+	if len(raw) == 0 {
+		return ImageObservationPolicy{}, typedContractError("missing_policy_key")
+	}
+	fields, err := decodeStrictObject(raw, 4096, typedContractError("invalid_policy_json"), typedContractError("trailing_policy_json"), typedContractError("duplicate_policy_key"))
+	if err != nil {
+		return ImageObservationPolicy{}, typedContractError("wrong_policy_type")
+	}
+	for key := range fields {
+		if key != "workflow_id" && key != "workflow_path" && key != "workflow_sha256" && key != "child_workflow_sha256" {
+			return ImageObservationPolicy{}, typedContractError("unknown_policy_key")
+		}
+	}
+	policy := ImageObservationPolicy{}
+	for key, target := range map[string]*string{"workflow_id": &policy.WorkflowID, "workflow_path": &policy.WorkflowPath, "workflow_sha256": &policy.WorkflowSHA256, "child_workflow_sha256": &policy.ChildWorkflowSHA256} {
+		if err := stringPolicyField(fields, key, target); err != nil {
+			return ImageObservationPolicy{}, err
+		}
+	}
+	if !validID(policy.WorkflowID) || policy.WorkflowPath != ImageWorkflowPath || !lowerHexDigest(policy.WorkflowSHA256) || !lowerHexDigest(policy.ChildWorkflowSHA256) {
+		return ImageObservationPolicy{}, typedContractError("policy_drift")
 	}
 	return policy, nil
 }

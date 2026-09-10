@@ -52,6 +52,15 @@ on:
       digest:
         description: 'Immutable multi-platform manifest digest'
         value: ${{ jobs.publish-images.outputs.digest }}
+      promotion_outcome:
+        description: 'Guarded latest result for the canonical release run'
+        value: ${{ jobs.promote-latest.outputs.outcome }}
+      module_tag_object:
+        description: 'Verified annotated module tag object'
+        value: ${{ jobs.promote-latest.outputs.module_tag_object }}
+      root_tag_object:
+        description: 'Verified annotated root tag object'
+        value: ${{ jobs.promote-latest.outputs.root_tag_object }}
 
 permissions: {}
 
@@ -267,6 +276,10 @@ jobs:
   promote-latest:
     if: inputs.push == true && inputs.promote_latest == true
     needs: [publish-images]
+    outputs:
+      outcome: ${{ steps.promote.outputs.outcome }}
+      module_tag_object: ${{ steps.guard.outputs.module_tag_object }}
+      root_tag_object: ${{ steps.guard.outputs.root_tag_object }}
     permissions:
       actions: read
       contents: read
@@ -330,6 +343,7 @@ jobs:
           test "$(git rev-parse "$MODULE_REF^{}")" = "$COMMIT_SHA"
           ROOT_REF="refs/tags/$VERSION"
           test "$(git cat-file -t "$ROOT_REF")" = tag
+          ROOT_TAG_OBJECT=$(git rev-parse "$ROOT_REF")
           test "$(git rev-parse "$ROOT_REF^{}")" = "$COMMIT_SHA"
           HIGHEST=$(git tag --list 'v*' | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -1)
           test "$HIGHEST" = "$VERSION"
@@ -401,8 +415,10 @@ jobs:
           test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-id"]' <<<"$CANDIDATE")" = "$RUN_ID"
           test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-attempt"]' <<<"$CANDIDATE")" = "$RUN_ATTEMPT"
           echo "module_tag_object=$MODULE_TAG_OBJECT" >> "$GITHUB_OUTPUT"
+          echo "root_tag_object=$ROOT_TAG_OBJECT" >> "$GITHUB_OUTPUT"
 
       - name: Promote exact digest or reconcile response loss
+        id: promote
         env:
           IMAGE: ${{ inputs.image }}
           VERSION: ${{ inputs.version }}
@@ -496,6 +512,7 @@ jobs:
             test "$(sort -n /tmp/latest-eligible-runs | head -1)" = "$current_run_id"
 
             if [ "$current_digest" = "$VERSION_DIGEST" ] && [ "$current_version" = "$VERSION" ] && [ "$current_commit" = "$COMMIT_SHA" ] && [ "$current_tag_object" = "$MODULE_TAG_OBJECT" ] && [ "$current_repository" = "$REPOSITORY" ] && [ "$current_workflow" = "$WORKFLOW_PATH" ] && [ "$current_run_id" = "$RUN_ID" ] && [ "$current_run_attempt" = "$RUN_ATTEMPT" ]; then
+              echo 'outcome=reconciled' >> "$GITHUB_OUTPUT"
               exit 0
             fi
             newest=$(printf '%s\n%s\n' "$current_version" "$VERSION" | sort -V | tail -1)
@@ -512,3 +529,4 @@ jobs:
           test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-path"]' <<<"$post")" = "$WORKFLOW_PATH"
           test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-id"]' <<<"$post")" = "$RUN_ID"
           test "$(jq -r '.annotations["io.datadog.dd-trace-go.workflow-run-attempt"]' <<<"$post")" = "$RUN_ATTEMPT"
+          echo 'outcome=promoted' >> "$GITHUB_OUTPUT"

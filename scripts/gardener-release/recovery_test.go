@@ -8,9 +8,11 @@ package gardenerrelease
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -19,23 +21,44 @@ import (
 // realistic Record can progress through PhaseReserved -> PhaseSigned in
 // these tests. It reuses baseReservation()'s other fields for
 // consistency with state_test.go/state_git_test.go's fixtures.
-func reservationForSigned(resolvedVersion string) Reservation {
+func reservationForSigned(generationVersion, sourceSHA string) Reservation {
 	reservation := baseReservation()
-	reservation.ResolvedVersion = resolvedVersion
-	reservation.ReleaseLine = "v2.9"
+	version, err := ParseReleaseVersion(generationVersion)
+	if err != nil {
+		panic(err)
+	}
+	reservation.GenerationVersion = generationVersion
+	switch version.Prerelease {
+	case prereleaseDev:
+		reservation.Command = "release:prepare"
+		reservation.RequestedVersion = "auto"
+		reservation.BodySnapshot = "/gardener release:prepare"
+		reservation.ReleaseLine = fmt.Sprintf("v%d.%d", version.Major, version.Minor-1)
+		reservation.ResolvedVersion = releaseVersion{Major: version.Major, Minor: version.Minor - 1, Patch: 0}.String()
+		reservation.DevelopmentVersion = generationVersion
+		reservation.SourceRefs = []SourceRef{{Ref: "refs/heads/main", SHA: sourceSHA}}
+		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/" + releaseBranchName(version.Major, version.Minor-1), DesiredSHA: "pending"}, {Ref: "refs/heads/" + devBranchName(version.Major, version.Minor), DesiredSHA: "pending"}}
+	case prereleaseRC:
+		reservation.ResolvedVersion = generationVersion
+		reservation.ReleaseLine = "v2.9"
+		reservation.SourceRefs = []SourceRef{{Ref: "refs/heads/release-v2.9.x", SHA: sourceSHA}}
+		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", ExpectedOldSHA: sourceSHA, DesiredSHA: "pending"}}
+	default:
+		reservation.Command = "release:release"
+		reservation.ResolvedVersion = generationVersion
+		reservation.ReleaseLine = "v2.9"
+		reservation.SourceRefs = []SourceRef{{Ref: "refs/heads/release-v2.9.x", SHA: sourceSHA}}
+		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", ExpectedOldSHA: sourceSHA, DesiredSHA: "pending"}}
+	}
+	reservation.RequestSHA256 = RequestSHA256(Context{RepositoryID: reservation.RepositoryID, RepositoryFullName: reservation.RepositoryFullName, IssueNumber: reservation.IssueNumber, OriginalCommentID: reservation.OriginalCommentID, AcknowledgementCommentID: reservation.AcknowledgementCommentID, BodySnapshot: reservation.BodySnapshot, PolicyRevision: reservation.PolicyRevision}, reservation.Command, reservation.RequestedVersion)
 	return reservation
 }
 
-// signedRecordEvidence is a minimal, bounded evidence payload for the
-// EventPhaseAdvanced event AdvanceToSigned appends; state.go's Event
-// type accepts arbitrary json.RawMessage evidence, and this step records
-// just enough to be useful without duplicating the full SignedOutput
-// (which already lives on Record.SignedOutput itself).
+// signedRecordEvidence is the strict, bounded EventPhaseAdvanced payload
+// required for the signed transition.
 func signedRecordEvidence(t *testing.T, signed SignedOutput) json.RawMessage {
 	t.Helper()
-	data, err := json.Marshal(struct {
-		ReleaseSHA string `json:"release_sha"`
-	}{ReleaseSHA: signed.ReleaseSHA})
+	data, err := json.Marshal(signedPhaseEvidence{Phase: PhaseSigned, ReleaseSHA: signed.ReleaseSHA, GenerationArtifactSHA256: strings.Repeat("a", 64), WorkflowRunID: "1", WorkflowRunAttempt: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +90,7 @@ func TestSignedPhaseStateRoundTripAndBundleRecoveryTogether(t *testing.T) {
 	}
 	signed := signResult.SignedOutput
 	signed.Bundle = bundle
+	signed.Bundle.Path = "requests/123/789/recovery.bundle"
 
 	stateRemote := newBareFixtureRemote(t)
 	seedStateBranch(t, stateRemote, StateBranch, map[string]string{".keep": "state branch root\n"})
@@ -77,15 +101,12 @@ func TestSignedPhaseStateRoundTripAndBundleRecoveryTogether(t *testing.T) {
 	store := newFixtureStore(t, stateRemote, stateSigner)
 	ctx := context.Background()
 
-	reservation := reservationForSigned("v2.9.0-dev") // resolved version matches the fixture's requested version
+	reservation := reservationForSigned("v2.9.0-dev", signed.SourceSHA)
 	loaded, err := store.LoadState(ctx, reservation.RequestKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reserveDecision, err := ReserveOperation(nil, reservation, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	reserveDecision := sealedReservationDecision(t, reservation, signed.SignerFingerprint)
 	reservedHead, err := store.PersistReservation(ctx, reserveDecision, loaded.RemoteHead)
 	if err != nil {
 		t.Fatalf("persist reservation: %v", err)
@@ -99,6 +120,7 @@ func TestSignedPhaseStateRoundTripAndBundleRecoveryTogether(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	signed = *signedRecord.SignedOutput
 	if alreadySigned {
 		t.Fatal("unexpected already-signed result on first transition")
 	}
@@ -139,7 +161,7 @@ func TestSignedPhaseStateRoundTripAndBundleRecoveryTogether(t *testing.T) {
 		FreshWorkDir:       freshWorkDir,
 		SourceRemotePath:   sourceRemotePath,
 		SourceSHA:          output.SourceSHA,
-		BundlePath:         reloaded.Record.SignedOutput.Bundle.Path,
+		BundlePath:         bundlePath,
 		ExpectedBundle:     reloaded.Record.SignedOutput.Bundle,
 		ExpectedReleaseSHA: reloaded.Record.SignedOutput.ReleaseSHA,
 		ExpectedTreeSHA:    reloaded.Record.SignedOutput.TreeSHA,
@@ -162,7 +184,7 @@ func TestAdvanceToSignedRejectsResigningAnAlreadySignedOperation(t *testing.T) {
 	signed := signResult.SignedOutput
 	signed.Bundle = Bundle{Path: "requests/123/789/recovery.bundle", SHA256: "abc", SizeBytes: 10, PrerequisiteSHAs: []string{signed.SourceSHA}}
 
-	reservation := reservationForSigned("v2.9.0-dev")
+	reservation := reservationForSigned("v2.9.0-dev", signed.SourceSHA)
 	record := Record{Reservation: reservation, Phase: PhaseReserved}
 	firstRecord, alreadySigned, err := AdvanceToSigned(record, signed, signedRecordEvidence(t, signed))
 	if err != nil {
@@ -197,7 +219,7 @@ func TestAdvanceToSignedRejectsDifferentSignedOutputOnExistingSignedRecord(t *te
 	_, _, signResult, _ := bundleFixture(t, "dev-v2.9.x", "v2.9.0-dev")
 	signed := signResult.SignedOutput
 
-	reservation := reservationForSigned("v2.9.0-dev")
+	reservation := reservationForSigned("v2.9.0-dev", signed.SourceSHA)
 	record := Record{Reservation: reservation, Phase: PhaseReserved}
 	firstRecord, _, err := AdvanceToSigned(record, signed, signedRecordEvidence(t, signed))
 	if err != nil {
@@ -219,7 +241,7 @@ func TestAdvanceToSignedRejectsDifferentSignedOutputOnExistingSignedRecord(t *te
 func TestAdvanceToSignedRejectsRegressingFromLaterPhase(t *testing.T) {
 	_, _, signResult, _ := bundleFixture(t, "dev-v2.9.x", "v2.9.0-dev")
 	signed := signResult.SignedOutput
-	reservation := reservationForSigned("v2.9.0-dev")
+	reservation := reservationForSigned("v2.9.0-dev", signed.SourceSHA)
 	record := Record{Reservation: reservation, Phase: PhaseBranchesPublished, SignedOutput: &signed}
 	if _, _, err := AdvanceToSigned(record, signed, signedRecordEvidence(t, signed)); ErrorCode(err) != "phase_regression" {
 		t.Fatalf("error = %q, want phase_regression", ErrorCode(err))
@@ -265,15 +287,12 @@ func TestFailureBeforeDurableStatePushDoesNotPersistSignedPhase(t *testing.T) {
 	store := newFixtureStore(t, stateRemote, stateSigner)
 	ctx := context.Background()
 
-	reservation := reservationForSigned("v2.9.0-dev")
+	reservation := reservationForSigned("v2.9.0-dev", output.SourceSHA)
 	loaded, err := store.LoadState(ctx, reservation.RequestKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reserveDecision, err := ReserveOperation(nil, reservation, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	reserveDecision := sealedReservationDecision(t, reservation)
 	if _, err := store.PersistReservation(ctx, reserveDecision, loaded.RemoteHead); err != nil {
 		t.Fatalf("persist reservation: %v", err)
 	}
@@ -297,10 +316,12 @@ func TestFailureBeforeDurableStatePushDoesNotPersistSignedPhase(t *testing.T) {
 	// between attempts if wall-clock time advanced; tree/parent are
 	// identical either way.
 	retryResult, err := SignCommit(ctx, ExecRunner{}, nil, ephemeralTestSigner(t), SignInput{
-		Output:   output,
-		Manifest: manifest,
-		Reader:   reader.Read,
-		WorkDir:  reader.Dir,
+		Output:          output,
+		Manifest:        manifest,
+		Reader:          reader.Read,
+		WorkDir:         reader.Dir,
+		ToolDigest:      strings.Repeat("a", 64),
+		ValidatorDigest: strings.Repeat("b", 64),
 	})
 	if err != nil {
 		t.Fatalf("retry SignCommit: %v", err)
@@ -341,6 +362,7 @@ func TestFailureAfterDurableStatePushRecoversByteIdenticalSignedOutput(t *testin
 	}
 	signed := signResult.SignedOutput
 	signed.Bundle = bundle
+	signed.Bundle.Path = "requests/123/789/recovery.bundle"
 	_ = sourceRemotePath
 
 	stateRemote := newBareFixtureRemote(t)
@@ -352,15 +374,12 @@ func TestFailureAfterDurableStatePushRecoversByteIdenticalSignedOutput(t *testin
 	firstRunnerStore := newFixtureStore(t, stateRemote, stateSigner)
 	ctx := context.Background()
 
-	reservation := reservationForSigned("v2.9.0-dev")
+	reservation := reservationForSigned("v2.9.0-dev", signed.SourceSHA)
 	loaded, err := firstRunnerStore.LoadState(ctx, reservation.RequestKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reserveDecision, err := ReserveOperation(nil, reservation, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	reserveDecision := sealedReservationDecision(t, reservation, signed.SignerFingerprint)
 	reservedHead, err := firstRunnerStore.PersistReservation(ctx, reserveDecision, loaded.RemoteHead)
 	if err != nil {
 		t.Fatal(err)
@@ -373,6 +392,7 @@ func TestFailureAfterDurableStatePushRecoversByteIdenticalSignedOutput(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	signed = *signedRecord.SignedOutput
 	if _, err := firstRunnerStore.PersistReservation(ctx, ReservationDecision{Reserved: true, Record: signedRecord}, reservedHead); err != nil {
 		t.Fatalf("persist signed record: %v", err)
 	}

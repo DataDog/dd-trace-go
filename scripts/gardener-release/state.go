@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
+	"time"
 )
 
 // OperationPhase is §13.5's phase progression. It only ever advances
@@ -20,6 +22,8 @@ import (
 type OperationPhase string
 
 const (
+	StateSchemaVersion = "2"
+
 	PhaseReserved          OperationPhase = "reserved"
 	PhaseSigned            OperationPhase = "signed"
 	PhaseBranchesPublished OperationPhase = "branches_published"
@@ -78,6 +82,8 @@ type Reservation struct {
 	ValidatedActorLogin      string         `json:"validated_actor_login"`
 	PolicyRevision           string         `json:"policy_revision"`
 	ResolvedVersion          string         `json:"resolved_version"`
+	DevelopmentVersion       string         `json:"development_version,omitempty"`
+	GenerationVersion        string         `json:"generation_version"`
 	ReleaseLine              string         `json:"release_line"`
 	SourceRefs               []SourceRef    `json:"source_refs"`
 	BranchIntents            []BranchIntent `json:"branch_intents"`
@@ -88,17 +94,18 @@ type Reservation struct {
 // `signed` phase transition. state.go stores this shape but does not
 // produce it: B08 constructs the real values from a validated generation.
 type SignedOutput struct {
-	UnsignedSHA       string   `json:"unsigned_sha"`
-	SourceSHA         string   `json:"source_sha"`
-	TreeSHA           string   `json:"tree_sha"`
-	ReleaseSHA        string   `json:"release_sha"`
-	ToolDigest        string   `json:"tool_digest"`
-	ValidatorDigest   string   `json:"validator_digest"`
-	CommitParentSHA   string   `json:"commit_parent_sha"`
-	SignerFingerprint string   `json:"signer_fingerprint"`
-	ChangedPaths      []string `json:"changed_paths"`
-	Tags              []TagRef `json:"tags"`
-	Bundle            Bundle   `json:"bundle"`
+	UnsignedSHA        string         `json:"unsigned_sha"`
+	SourceSHA          string         `json:"source_sha"`
+	TreeSHA            string         `json:"tree_sha"`
+	ReleaseSHA         string         `json:"release_sha"`
+	ToolDigest         string         `json:"tool_digest"`
+	ValidatorDigest    string         `json:"validator_digest"`
+	CommitParentSHA    string         `json:"commit_parent_sha"`
+	SignerFingerprint  string         `json:"signer_fingerprint"`
+	ChangedPaths       []string       `json:"changed_paths"`
+	PublicationIntents []BranchIntent `json:"publication_intents"`
+	Tags               []TagRef       `json:"tags"`
+	Bundle             Bundle         `json:"bundle"`
 }
 
 // TagRef is one recorded release tag, required to be annotated and to peel
@@ -134,6 +141,8 @@ const (
 	EventTagPublished         EventKind = "tag_published"
 	EventPreparePRRecorded    EventKind = "prepare_pr_recorded"
 	EventImageObserved        EventKind = "image_observed"
+	EventOutcomeRecorded      EventKind = "outcome_recorded"
+	EventSigningIntent        EventKind = "signing_intent"
 )
 
 // Event is one immutable, append-only record on an operation. Sequence
@@ -153,12 +162,12 @@ type Event struct {
 // reservation, the current phase, and every event applied so far in order.
 // SignedOutput is populated once phase reaches PhaseSigned or later.
 type Record struct {
-	Reservation  Reservation
-	Phase        OperationPhase
-	WorkflowSHA  string
-	ToolSHA      string
-	SignedOutput *SignedOutput
-	Events       []Event
+	Reservation  Reservation    `json:"reservation"`
+	Phase        OperationPhase `json:"phase"`
+	WorkflowSHA  string         `json:"workflow_sha"`
+	ToolSHA      string         `json:"tool_sha"`
+	SignedOutput *SignedOutput  `json:"signed_output,omitempty"`
+	Events       []Event        `json:"events"`
 }
 
 // computeEventDigest deterministically hashes one event's chain-relevant
@@ -289,7 +298,119 @@ func VerifyEventChain(requestKey string, events []Event) error {
 		if recomputed != want {
 			return newReleaseError(ErrorClassStateConflict, "event_digest_mismatch")
 		}
+		if err := validateTypedEventEvidence(event); err != nil {
+			return err
+		}
 		previousDigest = want
+	}
+	return nil
+}
+
+type reservedEventEvidence struct {
+	ResolvedVersion string `json:"resolved_version"`
+	ReleaseLine     string `json:"release_line"`
+}
+
+type signedPhaseEvidence struct {
+	Phase                    OperationPhase `json:"phase"`
+	ReleaseSHA               string         `json:"release_sha"`
+	GenerationArtifactSHA256 string         `json:"generation_artifact_sha256"`
+	WorkflowRunID            string         `json:"workflow_run_id"`
+	WorkflowRunAttempt       int            `json:"workflow_run_attempt"`
+}
+
+type phaseEventEvidence struct {
+	Phase                    OperationPhase `json:"phase"`
+	ReleaseSHA               string         `json:"release_sha,omitempty"`
+	GenerationArtifactSHA256 string         `json:"generation_artifact_sha256,omitempty"`
+	WorkflowRunID            string         `json:"workflow_run_id,omitempty"`
+	WorkflowRunAttempt       int            `json:"workflow_run_attempt,omitempty"`
+}
+
+type refEventEvidence struct {
+	Ref            string `json:"ref"`
+	ExpectedOldSHA string `json:"expected_old_sha,omitempty"`
+	ObjectSHA      string `json:"object_sha"`
+	Disposition    string `json:"disposition"`
+}
+
+type testEventEvidence struct {
+	Evidence VerifiedTestEvidence `json:"evidence"`
+	Detail   testGateEvidence     `json:"detail"`
+}
+
+type preparePREventEvidence struct {
+	SchemaVersion string `json:"schema_version"`
+	Repository    string `json:"repository"`
+	Command       string `json:"command"`
+	Number        string `json:"number"`
+	URL           string `json:"url"`
+	Head          string `json:"head"`
+	SHA           string `json:"sha"`
+	Base          string `json:"base"`
+	Marker        string `json:"marker"`
+	Disposition   string `json:"disposition"`
+}
+
+func validateRecordEventEvidence(record Record) error {
+	return validateLoadedRecord(record)
+}
+
+func validateTypedEventEvidence(event Event) error {
+	invalid := func() error { return newReleaseError(ErrorClassStateConflict, "invalid_event_evidence") }
+	switch event.Kind {
+	case EventReserved:
+		var evidence reservedEventEvidence
+		if decodeStrictStateJSON(event.Evidence, &evidence) != nil || evidence.ResolvedVersion == "" || evidence.ReleaseLine == "" {
+			return invalid()
+		}
+	case EventSigningIntent:
+		var evidence GitSigningIntent
+		if decodeStrictStateJSON(event.Evidence, &evidence) != nil || evidence.Timestamp <= 0 || evidence.Message == "" || evidence.Principal == "" || evidence.Fingerprint == "" {
+			return invalid()
+		}
+	case EventPhaseAdvanced:
+		var evidence phaseEventEvidence
+		if decodeStrictStateJSON(event.Evidence, &evidence) != nil || !KnownPhase(evidence.Phase) || evidence.Phase == PhaseReserved {
+			return invalid()
+		}
+		if evidence.Phase == PhaseSigned {
+			if !ValidGitObjectID(evidence.ReleaseSHA) || !lowerHexDigest(evidence.GenerationArtifactSHA256) || !validID(evidence.WorkflowRunID) || evidence.WorkflowRunAttempt <= 0 {
+				return invalid()
+			}
+		} else if evidence.ReleaseSHA != "" || evidence.GenerationArtifactSHA256 != "" || evidence.WorkflowRunID != "" || evidence.WorkflowRunAttempt != 0 {
+			return invalid()
+		}
+	case EventBranchPublished, EventTagPublished:
+		var evidence refEventEvidence
+		if decodeStrictStateJSON(event.Evidence, &evidence) != nil || !ValidGitObjectID(evidence.ObjectSHA) || evidence.Disposition != "published" && evidence.Disposition != "reconciled" {
+			return invalid()
+		}
+		if event.Kind == EventBranchPublished && (!validBranchRef(evidence.Ref) || evidence.ExpectedOldSHA != "" && !ValidGitObjectID(evidence.ExpectedOldSHA)) || event.Kind == EventTagPublished && (!validFullTagRef(evidence.Ref) || evidence.ExpectedOldSHA != "") {
+			return invalid()
+		}
+	case EventTestsPassed:
+		var evidence testEventEvidence
+		if decodeStrictStateJSON(event.Evidence, &evidence) != nil || evidence.Evidence.SchemaVersion != "1" || !ValidGitObjectID(evidence.Evidence.ReleaseSHA) || !lowerHexDigest(evidence.Evidence.EvidenceSHA256) || evidence.Detail.SchemaVersion != "1" || evidence.Detail.Repository != RepositoryFullName || len(evidence.Detail.Runs) == 0 {
+			return invalid()
+		}
+	case EventPreparePRRecorded:
+		var evidence preparePREventEvidence
+		if decodeStrictStateJSON(event.Evidence, &evidence) != nil || evidence.SchemaVersion != "1" || evidence.Repository != RepositoryFullName || evidence.Command != "release:prepare" || !validID(evidence.Number) || evidence.URL != "https://github.com/DataDog/dd-trace-go/pull/"+evidence.Number || !validBranchName(evidence.Head) || !ValidGitObjectID(evidence.SHA) || evidence.Base != "main" || !strings.HasPrefix(evidence.Marker, "<!-- gardener:release:prepare-pr:v1:") || evidence.Disposition != "created" && evidence.Disposition != "reconciled" {
+			return invalid()
+		}
+	case EventImageObserved:
+		var evidence ImagePromotionEvidence
+		if decodeStrictStateJSON(event.Evidence, &evidence) != nil || validateImagePromotionEvidence(evidence) != nil {
+			return invalid()
+		}
+	case EventOutcomeRecorded:
+		var evidence OperationOutcome
+		if decodeStrictStateJSON(event.Evidence, &evidence) != nil || evidence.SchemaVersion != "1" {
+			return invalid()
+		}
+	default:
+		return invalid()
 	}
 	return nil
 }
@@ -328,10 +449,16 @@ func immutableReservationDiff(existing, incoming Reservation) string {
 		return "policy_revision"
 	case existing.ResolvedVersion != incoming.ResolvedVersion:
 		return "resolved_version"
+	case existing.DevelopmentVersion != incoming.DevelopmentVersion:
+		return "development_version"
+	case existing.GenerationVersion != incoming.GenerationVersion:
+		return "generation_version"
 	case existing.ReleaseLine != incoming.ReleaseLine:
 		return "release_line"
 	case !equalSourceRefs(existing.SourceRefs, incoming.SourceRefs):
 		return "source_refs"
+	case !equalBranchIntents(existing.BranchIntents, incoming.BranchIntents):
+		return "branch_intents"
 	}
 	// AcknowledgementCommentID is deliberately excluded: §5.6 permits a
 	// verified, authentic duplicate acknowledgement to reconcile without
@@ -345,6 +472,18 @@ func immutableReservationDiff(existing, incoming Reservation) string {
 // ref/SHA pairs in the same order. source_refs is part of §13.5's
 // immutable reservation: once persisted, a retry or resume must not
 // silently swap in a different source commit for the same request key.
+func equalBranchIntents(a, b []BranchIntent) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func equalSourceRefs(a, b []SourceRef) bool {
 	if len(a) != len(b) {
 		return false
@@ -388,6 +527,9 @@ func ReserveOperation(existing *Record, incoming Reservation, incompleteSameLine
 		// existing record as success rather than reserving again.
 		return ReservationDecision{Reserved: true, Record: *existing}, nil
 	}
+	if err := validateNewReservation(incoming); err != nil {
+		return ReservationDecision{}, err
+	}
 	for _, other := range incompleteSameLine {
 		if other.Reservation.RequestKey == incoming.RequestKey {
 			continue
@@ -408,6 +550,104 @@ func ReserveOperation(existing *Record, incoming Reservation, incompleteSameLine
 	}
 	record.Events = events
 	return ReservationDecision{Reserved: true, Record: record}, nil
+}
+
+func validateNewReservation(reservation Reservation) error {
+	invalid := func() error { return newReleaseError(ErrorClassContractMismatch, "invalid_reservation") }
+	if reservation.SchemaVersion != StateSchemaVersion || !validRecordRepositoryBinding(reservation) ||
+		!validID(reservation.IssueNumber) || !validID(reservation.AcknowledgementCommentID) ||
+		!validID(reservation.ValidatedActorID) || reservation.ValidatedActorLogin == "" ||
+		strings.TrimSpace(reservation.ValidatedActorLogin) != reservation.ValidatedActorLogin || validateASCII(reservation.ValidatedActorLogin) != nil ||
+		!lowerHexDigest(reservation.RequestSHA256) || !lowerHexDigest(reservation.PolicyRevision) ||
+		len(reservation.BodySnapshot) == 0 || len([]byte(reservation.BodySnapshot)) > MaxBodyBytes || len(reservation.SourceRefs) != 1 {
+		return invalid()
+	}
+	createdAt, err := time.Parse(time.RFC3339, reservation.CreatedAt)
+	if err != nil || createdAt.Location() != time.UTC || createdAt.Format(time.RFC3339) != reservation.CreatedAt {
+		return invalid()
+	}
+	parsed, err := ParseCommandBody(reservation.BodySnapshot, RequestIDs{RepositoryID: reservation.RepositoryID, RepositoryFullName: reservation.RepositoryFullName, IssueNumber: reservation.IssueNumber, OriginalCommentID: reservation.OriginalCommentID})
+	if err != nil || parsed.Command != reservation.Command || parsed.NormalizedVersion != reservation.RequestedVersion || parsed.RequestKey != reservation.RequestKey {
+		return invalid()
+	}
+	requestContext := Context{RepositoryID: reservation.RepositoryID, RepositoryFullName: reservation.RepositoryFullName, IssueNumber: reservation.IssueNumber, OriginalCommentID: reservation.OriginalCommentID, AcknowledgementCommentID: reservation.AcknowledgementCommentID, BodySnapshot: reservation.BodySnapshot, PolicyRevision: reservation.PolicyRevision}
+	if reservation.RequestSHA256 != RequestSHA256(requestContext, reservation.Command, reservation.RequestedVersion) {
+		return invalid()
+	}
+	line, err := parseReleaseLine(reservation.ReleaseLine)
+	if err != nil {
+		return invalid()
+	}
+	resolved, err := ParseReleaseVersion(reservation.ResolvedVersion)
+	if err != nil || resolved.Major != line.Major || resolved.Minor != line.Minor {
+		return invalid()
+	}
+	source := reservation.SourceRefs[0]
+	if source.Ref != "refs/heads/main" && !validBranchRef(source.Ref) || !ValidGitObjectID(source.SHA) {
+		return invalid()
+	}
+	for _, intent := range reservation.BranchIntents {
+		if !validBranchRef(intent.Ref) || intent.DesiredSHA != "pending" {
+			return invalid()
+		}
+	}
+	switch reservation.Command {
+	case "release:prepare":
+		development, parseErr := ParseReleaseVersion(reservation.DevelopmentVersion)
+		if resolved.Prerelease != prereleaseNone || resolved.Patch != 0 || parseErr != nil || development.Prerelease != prereleaseDev || development.Major != line.Major || development.Minor != line.Minor+1 || development.Patch != 0 ||
+			reservation.GenerationVersion != reservation.DevelopmentVersion || source.Ref != "refs/heads/main" || len(reservation.BranchIntents) != 2 ||
+			reservation.BranchIntents[0] != (BranchIntent{Ref: "refs/heads/" + releaseBranchName(line.Major, line.Minor), DesiredSHA: "pending"}) ||
+			reservation.BranchIntents[1] != (BranchIntent{Ref: "refs/heads/" + devBranchName(line.Major, line.Minor+1), DesiredSHA: "pending"}) {
+			return invalid()
+		}
+	case "release:promote":
+		if resolved.Prerelease != prereleaseRC || reservation.DevelopmentVersion != "" || reservation.GenerationVersion != reservation.ResolvedVersion || source.Ref != "refs/heads/"+releaseBranchName(line.Major, line.Minor) || len(reservation.BranchIntents) != 1 || reservation.BranchIntents[0] != (BranchIntent{Ref: source.Ref, ExpectedOldSHA: source.SHA, DesiredSHA: "pending"}) {
+			return invalid()
+		}
+	case "release:release":
+		if resolved.Prerelease != prereleaseNone || reservation.DevelopmentVersion != "" || reservation.GenerationVersion != reservation.ResolvedVersion || source.Ref != "refs/heads/"+releaseBranchName(line.Major, line.Minor) || len(reservation.BranchIntents) != 1 || reservation.BranchIntents[0] != (BranchIntent{Ref: source.Ref, ExpectedOldSHA: source.SHA, DesiredSHA: "pending"}) {
+			return invalid()
+		}
+	default:
+		return invalid()
+	}
+	return nil
+}
+
+// GitSigningIntent fixes every retry-sensitive, non-secret commit-signing
+// input before the protected job creates an object.
+type GitSigningIntent struct {
+	Timestamp   int64  `json:"timestamp"`
+	Message     string `json:"message"`
+	Principal   string `json:"principal"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// RecordGitSigningIntent appends or reconciles the durable intent while the
+// operation is reserved. A retry must reuse the exact recorded values.
+func RecordGitSigningIntent(record Record, intent GitSigningIntent) (Record, error) {
+	if record.Phase != PhaseReserved || intent.Timestamp <= 0 || intent.Message != "release: "+record.Reservation.GenerationVersion || intent.Principal == "" || intent.Fingerprint == "" {
+		return Record{}, newReleaseError(ErrorClassStateConflict, "invalid_signing_intent")
+	}
+	for _, event := range record.Events {
+		if event.Kind != EventSigningIntent {
+			continue
+		}
+		var existing GitSigningIntent
+		if json.Unmarshal(event.Evidence, &existing) != nil || existing != intent {
+			return Record{}, newReleaseError(ErrorClassStateConflict, "signing_intent_conflict")
+		}
+		return record, nil
+	}
+	evidence, err := json.Marshal(intent)
+	if err != nil {
+		return Record{}, wrapReleaseError(ErrorClassStateConflict, "event_marshal_failed", err)
+	}
+	record.Events, err = AppendEvent(record.Events, record.Reservation.RequestKey, EventSigningIntent, evidence)
+	if err != nil {
+		return Record{}, err
+	}
+	return record, nil
 }
 
 // AcknowledgementCandidate is an already-verified acknowledgement, fetched
@@ -461,6 +701,9 @@ func AdvancePhase(current, next OperationPhase) (OperationPhase, error) {
 	}
 	if nextRank <= currentRank {
 		return "", newReleaseError(ErrorClassStateConflict, "phase_regression")
+	}
+	if nextRank != currentRank+1 {
+		return "", newReleaseError(ErrorClassStateConflict, "phase_transition_invalid")
 	}
 	return next, nil
 }

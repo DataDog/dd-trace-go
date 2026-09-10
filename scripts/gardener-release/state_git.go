@@ -6,9 +6,14 @@
 package gardenerrelease
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
@@ -40,15 +45,17 @@ type stateRecordDocument struct {
 // store, mirroring how a provisioning error is distinct from "empty of
 // this request key."
 type GitStateStore struct {
-	runner     CommandRunner
-	remotePath string
-	branch     string
-	workDir    string
-	signer     Signer
-	verifier   Verifier
-	trustedKey []byte
-	clock      Clock
-	committer  CommitIdentity
+	runner                CommandRunner
+	remotePath            string
+	branch                string
+	workDir               string
+	signer                Signer
+	verifier              Verifier
+	trustedKey            []byte
+	clock                 Clock
+	committer             CommitIdentity
+	gitSigning            *ProtectedSSHSigningKey
+	requireSignedMaterial bool
 }
 
 // CommitIdentity is the fixed, non-secret identity used for state-branch
@@ -65,19 +72,38 @@ type CommitIdentity struct {
 // store creates a fresh Git repository there and never imports another
 // job's `.git` directory, matching §13.6.
 func NewGitStateStore(runner CommandRunner, remotePath, branch, workDir string, signer Signer, verifier Verifier, trustedKey []byte, committer CommitIdentity, clock Clock) *GitStateStore {
+	return newGitStateStore(runner, remotePath, branch, workDir, signer, verifier, trustedKey, committer, clock, nil)
+}
+
+// NewProtectedGitStateStore is the production constructor. It refuses to
+// create state commits without the protected SSH Git-signing capability.
+func NewProtectedGitStateStore(runner CommandRunner, workDir string, signer Signer, verifier Verifier, trustedKey []byte, committer CommitIdentity, clock Clock, gitSigning *ProtectedSSHSigningKey) (*GitStateStore, error) {
+	if gitSigning == nil {
+		return nil, newReleaseError(ErrorClassEvidenceIncomplete, "ssh_signing_key_unavailable")
+	}
+	if signer == nil || verifier == nil || len(trustedKey) == 0 {
+		return nil, newReleaseError(ErrorClassEvidenceIncomplete, "state_signer_unavailable")
+	}
+	return newGitStateStore(runner, CanonicalGitHubRemote, StateBranch, workDir, signer, verifier, trustedKey, committer, clock, gitSigning), nil
+}
+
+func newGitStateStore(runner CommandRunner, remotePath, branch, workDir string, signer Signer, verifier Verifier, trustedKey []byte, committer CommitIdentity, clock Clock, gitSigning *ProtectedSSHSigningKey) *GitStateStore {
 	if clock == nil {
 		clock = RealClock{}
 	}
+	_, publicSSHVerifier := verifier.(*sshPublicVerifier)
 	return &GitStateStore{
-		runner:     runner,
-		remotePath: remotePath,
-		branch:     branch,
-		workDir:    workDir,
-		signer:     signer,
-		verifier:   verifier,
-		trustedKey: trustedKey,
-		clock:      clock,
-		committer:  committer,
+		runner:                runner,
+		remotePath:            remotePath,
+		branch:                branch,
+		workDir:               workDir,
+		signer:                signer,
+		verifier:              verifier,
+		trustedKey:            trustedKey,
+		clock:                 clock,
+		committer:             committer,
+		gitSigning:            gitSigning,
+		requireSignedMaterial: gitSigning != nil || publicSSHVerifier,
 	}
 }
 
@@ -160,21 +186,20 @@ func (s *GitStateStore) fetchBranchHead(ctx context.Context) (string, error) {
 	return head, nil
 }
 
-// readTreeFile reads one path's blob content at the given commit, or
-// returns found=false if the path does not exist in that tree.
+// readTreeFile reads one exact path's blob content at the given commit. A
+// successful ls-tree with no output is the only evidence accepted as absence;
+// command/read failure is never collapsed into a missing record.
 func (s *GitStateStore) readTreeFile(ctx context.Context, commitSHA, relPath string) ([]byte, bool, error) {
-	_, existsErr := s.runner.Run(ctx, Command{
-		Path: "git",
-		Args: []string{"cat-file", "-e", commitSHA + ":" + relPath},
-		Env:  gitStateEnv(),
-		Dir:  s.workDir,
-	})
-	if existsErr != nil {
-		// git cat-file -e exits non-zero when the path is absent from the
-		// tree. That is expected and not itself evidence-incomplete; only a
-		// failure on the following read (which requires existence to have
-		// already been proven) is reported as an error.
+	listed, err := s.run(ctx, "ls-tree", "--name-only", commitSHA, "--", relPath)
+	if err != nil {
+		return nil, false, err
+	}
+	trimmed := strings.TrimSpace(listed.Stdout)
+	if trimmed == "" {
 		return nil, false, nil
+	}
+	if trimmed != relPath {
+		return nil, false, newReleaseError(ErrorClassStateConflict, "ambiguous_state_path")
 	}
 	out, err := s.run(ctx, "show", commitSHA+":"+relPath)
 	if err != nil {
@@ -183,20 +208,11 @@ func (s *GitStateStore) readTreeFile(ctx context.Context, commitSHA, relPath str
 	return []byte(out.Stdout), true, nil
 }
 
-// listTreePaths lists every blob path under dirPath at the given commit,
-// or returns an empty slice if dirPath does not exist.
+// listTreePaths lists every blob path under dirPath at the given commit. Git
+// ls-tree succeeds with empty output for an absent directory, preserving the
+// distinction between proven absence and failed evidence collection.
 func (s *GitStateStore) listTreePaths(ctx context.Context, commitSHA, dirPath string) ([]string, error) {
-	if _, err := s.runner.Run(ctx, Command{
-		Path: "git",
-		Args: []string{"cat-file", "-e", commitSHA + ":" + dirPath},
-		Env:  gitStateEnv(),
-		Dir:  s.workDir,
-	}); err != nil {
-		// Absent directory in the tree: same not-an-error rationale as
-		// readTreeFile's existence probe.
-		return nil, nil
-	}
-	result, err := s.run(ctx, "ls-tree", "-r", "--name-only", commitSHA, dirPath)
+	result, err := s.run(ctx, "ls-tree", "-r", "--name-only", commitSHA, "--", dirPath)
 	if err != nil {
 		return nil, err
 	}
@@ -204,13 +220,24 @@ func (s *GitStateStore) listTreePaths(ctx context.Context, commitSHA, dirPath st
 	if trimmed == "" {
 		return nil, nil
 	}
-	return strings.Split(trimmed, "\n"), nil
+	paths := strings.Split(trimmed, "\n")
+	for _, path := range paths {
+		if path != dirPath && !strings.HasPrefix(path, dirPath+"/") {
+			return nil, newReleaseError(ErrorClassStateConflict, "ambiguous_state_path")
+		}
+	}
+	return paths, nil
 }
 
 // loadRecordAt loads and verifies one request key's record from the tree
 // at commitSHA. It returns found=false only when reservation.json is
 // absent; any structural or signature failure is an error.
 func (s *GitStateStore) loadRecordAt(ctx context.Context, commitSHA, requestKey string) (Record, bool, error) {
+	if s.gitSigning != nil {
+		if err := VerifySSHGitSignature(ctx, s.runner, s.workDir, commitSHA, false, s.gitSigning); err != nil {
+			return Record{}, false, err
+		}
+	}
 	parts := strings.SplitN(requestKey, ":", 2)
 	if len(parts) != 2 {
 		return Record{}, false, newReleaseError(ErrorClassContractMismatch, "invalid_request_key")
@@ -224,10 +251,17 @@ func (s *GitStateStore) loadRecordAt(ctx context.Context, commitSHA, requestKey 
 		return Record{}, false, err
 	}
 	if !found {
+		requestPaths, err := s.listTreePaths(ctx, commitSHA, paths.Base)
+		if err != nil {
+			return Record{}, false, err
+		}
+		if len(requestPaths) != 0 {
+			return Record{}, false, newReleaseError(ErrorClassStateConflict, "ambiguous_request_state")
+		}
 		return Record{}, false, nil
 	}
 	var envelope SignedEnvelope
-	if err := json.Unmarshal(raw, &envelope); err != nil {
+	if err := decodeStrictStateJSON(raw, &envelope); err != nil {
 		return Record{}, false, newReleaseError(ErrorClassStateConflict, "invalid_state_record")
 	}
 	data, err := Open(s.verifier, envelope, s.trustedKey)
@@ -235,11 +269,35 @@ func (s *GitStateStore) loadRecordAt(ctx context.Context, commitSHA, requestKey 
 		return Record{}, false, err
 	}
 	var doc stateRecordDocument
-	if err := json.Unmarshal(data, &doc); err != nil {
+	if err := decodeStrictStateJSON(data, &doc); err != nil {
 		return Record{}, false, newReleaseError(ErrorClassStateConflict, "invalid_state_record")
 	}
 	if !KnownPhase(doc.Phase) {
 		return Record{}, false, newReleaseError(ErrorClassStateConflict, "unknown_operation_phase")
+	}
+	if doc.Reservation.SchemaVersion != StateSchemaVersion {
+		return Record{}, false, newReleaseError(ErrorClassStateConflict, "unsupported_state_schema")
+	}
+	if s.requireSignedMaterial && phaseAtLeast(doc.Phase, PhaseSigned) {
+		if doc.SignedOutput == nil {
+			return Record{}, false, newReleaseError(ErrorClassStateConflict, "signed_record_missing")
+		}
+		signedRaw, found, err := s.readTreeFile(ctx, commitSHA, paths.Signed)
+		if err != nil || !found {
+			return Record{}, false, newReleaseError(ErrorClassStateConflict, "signed_record_missing")
+		}
+		signedOutput, err := validateSignedStateDocument(signedRaw, doc.SignedOutput, s.verifier, s.trustedKey)
+		if err != nil {
+			return Record{}, false, err
+		}
+		bundleRaw, found, err := s.readTreeFile(ctx, commitSHA, paths.RecoveryBundle)
+		if err != nil || !found || int64(len(bundleRaw)) != signedOutput.Bundle.SizeBytes {
+			return Record{}, false, newReleaseError(ErrorClassStateConflict, "bundle_size_mismatch")
+		}
+		sum := sha256.Sum256(bundleRaw)
+		if hex.EncodeToString(sum[:]) != signedOutput.Bundle.SHA256 {
+			return Record{}, false, newReleaseError(ErrorClassStateConflict, "bundle_digest_mismatch")
+		}
 	}
 	eventPaths, err := s.listTreePaths(ctx, commitSHA, paths.EventsDir)
 	if err != nil {
@@ -256,7 +314,7 @@ func (s *GitStateStore) loadRecordAt(ctx context.Context, commitSHA, requestKey 
 			return Record{}, false, newReleaseError(ErrorClassStateConflict, "missing_event_file")
 		}
 		var eventEnvelope SignedEnvelope
-		if err := json.Unmarshal(eventRaw, &eventEnvelope); err != nil {
+		if err := decodeStrictStateJSON(eventRaw, &eventEnvelope); err != nil {
 			return Record{}, false, newReleaseError(ErrorClassStateConflict, "invalid_state_record")
 		}
 		eventData, err := Open(s.verifier, eventEnvelope, s.trustedKey)
@@ -264,10 +322,29 @@ func (s *GitStateStore) loadRecordAt(ctx context.Context, commitSHA, requestKey 
 			return Record{}, false, err
 		}
 		var event Event
-		if err := json.Unmarshal(eventData, &event); err != nil {
+		if err := decodeStrictStateJSON(eventData, &event); err != nil {
 			return Record{}, false, newReleaseError(ErrorClassStateConflict, "invalid_state_record")
 		}
+		if eventPath != paths.EventPath(event.Sequence) {
+			return Record{}, false, newReleaseError(ErrorClassStateConflict, "invalid_event_path")
+		}
 		events = append(events, event)
+	}
+	requestPaths, err := s.listTreePaths(ctx, commitSHA, paths.Base)
+	if err != nil {
+		return Record{}, false, err
+	}
+	allowedPaths := map[string]bool{paths.Reservation: true}
+	for _, event := range events {
+		allowedPaths[paths.EventPath(event.Sequence)] = true
+	}
+	if phaseAtLeast(doc.Phase, PhaseSigned) {
+		allowedPaths[paths.Signed], allowedPaths[paths.RecoveryBundle] = true, true
+	}
+	for _, path := range requestPaths {
+		if !allowedPaths[path] {
+			return Record{}, false, newReleaseError(ErrorClassStateConflict, "unexpected_state_path")
+		}
 	}
 	if err := VerifyEventChain(requestKey, events); err != nil {
 		return Record{}, false, err
@@ -275,14 +352,56 @@ func (s *GitStateStore) loadRecordAt(ctx context.Context, commitSHA, requestKey 
 	if doc.Reservation.RequestKey != requestKey {
 		return Record{}, false, newReleaseError(ErrorClassStateConflict, "request_key_mismatch")
 	}
-	return Record{
+	record := Record{
 		Reservation:  doc.Reservation,
 		Phase:        doc.Phase,
 		WorkflowSHA:  doc.WorkflowSHA,
 		ToolSHA:      doc.ToolSHA,
 		SignedOutput: doc.SignedOutput,
 		Events:       events,
-	}, true, nil
+	}
+	if err := validateRecordEventEvidence(record); err != nil {
+		return Record{}, false, err
+	}
+	return record, true, nil
+}
+
+func validateSignedStateDocument(raw []byte, expected *SignedOutput, verifier Verifier, trustedKey []byte) (SignedOutput, error) {
+	if err := validateJSONNoDuplicateKeys(raw, MaxJobArtifactBytes); err != nil {
+		return SignedOutput{}, newReleaseError(ErrorClassStateConflict, "invalid_signed_record")
+	}
+	var document struct {
+		SchemaVersion string         `json:"schema_version"`
+		SignedOutput  SignedOutput   `json:"signed_output"`
+		Attestation   SignedEnvelope `json:"attestation"`
+	}
+	if expected == nil || decodeStrictStateJSON(raw, &document) != nil || document.SchemaVersion != StateSchemaVersion || signedOutputDiff(expected, &document.SignedOutput) != "" || !lowerHexDigest(document.SignedOutput.ToolDigest) || !lowerHexDigest(document.SignedOutput.ValidatorDigest) {
+		return SignedOutput{}, newReleaseError(ErrorClassStateConflict, "invalid_signed_record")
+	}
+	if err := VerifyAttestation(verifier, document.SignedOutput, document.Attestation, trustedKey); err != nil {
+		return SignedOutput{}, err
+	}
+	return document.SignedOutput, nil
+}
+
+func decodeStrictStateJSON(raw []byte, target any) error {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || len(raw) > MaxJobArtifactBytes {
+		return newReleaseError(ErrorClassStateConflict, "invalid_state_record")
+	}
+	if err := validateJSONNoDuplicateKeys(raw, MaxJobArtifactBytes); err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return newReleaseError(ErrorClassStateConflict, "invalid_state_record")
+	}
+	return nil
 }
 
 func (s *GitStateStore) LoadState(ctx context.Context, requestKey string) (LoadResult, error) {
@@ -347,6 +466,91 @@ func (s *GitStateStore) IncompleteOperationsOnLine(ctx context.Context, releaseL
 // refspec names expectedParent as the old value, so a concurrently
 // advanced branch is rejected rather than overwritten (S02).
 func (s *GitStateStore) PersistReservation(ctx context.Context, decision ReservationDecision, expectedParent string) (string, error) {
+	return s.persistRecord(ctx, decision, expectedParent, nil)
+}
+
+// SignedStateMaterial contains the authenticated durable inputs needed to
+// reconstruct a publication capability in a fresh repository.
+type SignedStateMaterial struct {
+	Attestation SignedEnvelope
+	Bundle      []byte
+}
+
+// LoadSignedStateMaterial reads signed.json and recovery.bundle from an exact
+// already-loaded state head. loadRecordAt has already verified their binding;
+// this method repeats strict structure and byte-integrity checks before return.
+func (s *GitStateStore) LoadSignedStateMaterial(ctx context.Context, requestKey, stateHead string) (SignedStateMaterial, error) {
+	if !ValidGitObjectID(stateHead) {
+		return SignedStateMaterial{}, newReleaseError(ErrorClassStateConflict, "invalid_state_head")
+	}
+	loaded, found, err := s.loadRecordAt(ctx, stateHead, requestKey)
+	if err != nil || !found || loaded.SignedOutput == nil || !phaseAtLeast(loaded.Phase, PhaseSigned) {
+		return SignedStateMaterial{}, newReleaseError(ErrorClassStateConflict, "signed_record_missing")
+	}
+	parts := strings.SplitN(requestKey, ":", 2)
+	paths, err := StatePaths(parts[0], parts[1])
+	if err != nil {
+		return SignedStateMaterial{}, err
+	}
+	signedRaw, found, err := s.readTreeFile(ctx, stateHead, paths.Signed)
+	if err != nil || !found {
+		return SignedStateMaterial{}, newReleaseError(ErrorClassStateConflict, "signed_record_missing")
+	}
+	var document struct {
+		SchemaVersion string         `json:"schema_version"`
+		SignedOutput  SignedOutput   `json:"signed_output"`
+		Attestation   SignedEnvelope `json:"attestation"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(signedRaw)))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&document) != nil || document.SchemaVersion != StateSchemaVersion || signedOutputDiff(loaded.SignedOutput, &document.SignedOutput) != "" {
+		return SignedStateMaterial{}, newReleaseError(ErrorClassStateConflict, "invalid_signed_record")
+	}
+	bundle, found, err := s.readTreeFile(ctx, stateHead, paths.RecoveryBundle)
+	if err != nil || !found || int64(len(bundle)) != document.SignedOutput.Bundle.SizeBytes {
+		return SignedStateMaterial{}, newReleaseError(ErrorClassStateConflict, "bundle_size_mismatch")
+	}
+	sum := sha256.Sum256(bundle)
+	if hex.EncodeToString(sum[:]) != document.SignedOutput.Bundle.SHA256 {
+		return SignedStateMaterial{}, newReleaseError(ErrorClassStateConflict, "bundle_digest_mismatch")
+	}
+	return SignedStateMaterial{Attestation: document.Attestation, Bundle: bundle}, nil
+}
+
+// PersistSignedRecord stores signed.json and recovery.bundle in the same
+// protected state commit as the signed phase transition.
+func (s *GitStateStore) PersistSignedRecord(ctx context.Context, decision ReservationDecision, expectedParent string, attestation SignedEnvelope, bundleData []byte) (string, error) {
+	if s.gitSigning == nil || decision.Record.Phase != PhaseSigned || decision.Record.SignedOutput == nil {
+		return "", newReleaseError(ErrorClassStateConflict, "protected_signed_state_required")
+	}
+	paths, err := StatePaths(decision.Record.Reservation.RepositoryID, decision.Record.Reservation.OriginalCommentID)
+	if err != nil {
+		return "", err
+	}
+	signed := *decision.Record.SignedOutput
+	if signed.Bundle.Path != paths.RecoveryBundle || int64(len(bundleData)) != signed.Bundle.SizeBytes {
+		return "", newReleaseError(ErrorClassStateConflict, "bundle_size_mismatch")
+	}
+	sum := sha256.Sum256(bundleData)
+	if hex.EncodeToString(sum[:]) != signed.Bundle.SHA256 {
+		return "", newReleaseError(ErrorClassStateConflict, "bundle_digest_mismatch")
+	}
+	if err := VerifyAttestation(s.verifier, signed, attestation, s.trustedKey); err != nil {
+		return "", err
+	}
+	signedDocument, err := json.Marshal(struct {
+		SchemaVersion string         `json:"schema_version"`
+		SignedOutput  SignedOutput   `json:"signed_output"`
+		Attestation   SignedEnvelope `json:"attestation"`
+	}{SchemaVersion: StateSchemaVersion, SignedOutput: signed, Attestation: attestation})
+	if err != nil {
+		return "", wrapReleaseError(ErrorClassStateConflict, "state_marshal_failed", err)
+	}
+	extra := map[string][]byte{paths.Signed: signedDocument, paths.RecoveryBundle: append([]byte(nil), bundleData...)}
+	return s.persistRecord(ctx, decision, expectedParent, extra)
+}
+
+func (s *GitStateStore) persistRecord(ctx context.Context, decision ReservationDecision, expectedParent string, extraWrites map[string][]byte) (string, error) {
 	if s.signer == nil {
 		return "", newReleaseError(ErrorClassEvidenceIncomplete, "signer_unavailable")
 	}
@@ -404,6 +608,9 @@ func (s *GitStateStore) PersistReservation(ctx context.Context, decision Reserva
 	}
 
 	writes := map[string][]byte{paths.Reservation: reservationBlob}
+	for path, data := range extraWrites {
+		writes[path] = data
+	}
 	for _, event := range decision.Record.Events {
 		eventBytes, err := json.Marshal(event)
 		if err != nil {
@@ -538,7 +745,13 @@ func (s *GitStateStore) hashObject(ctx context.Context, content []byte) (string,
 
 func (s *GitStateStore) commitTree(ctx context.Context, treeSHA, parentSHA, message string) (string, error) {
 	authorDate := s.clock.Now().Unix()
-	command, err := BuildCommitTreeCommand("git", gitStateEnv(), s.workDir, treeSHA, parentSHA, message, s.committer.Name, s.committer.Email, authorDate)
+	var command Command
+	var err error
+	if s.gitSigning != nil {
+		command, err = BuildSignedCommitTreeCommand("git", gitStateEnv(), s.workDir, treeSHA, parentSHA, message, s.committer.Name, s.committer.Email, authorDate, s.gitSigning)
+	} else {
+		command, err = BuildCommitTreeCommand("git", gitStateEnv(), s.workDir, treeSHA, parentSHA, message, s.committer.Name, s.committer.Email, authorDate)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -546,23 +759,37 @@ func (s *GitStateStore) commitTree(ctx context.Context, treeSHA, parentSHA, mess
 	if err != nil {
 		return "", wrapReleaseError(ErrorClassEvidenceIncomplete, "git_commit_failed", err)
 	}
-	return strings.TrimSpace(result.Stdout), nil
+	commitSHA := strings.TrimSpace(result.Stdout)
+	if !ValidGitObjectID(commitSHA) {
+		return "", newReleaseError(ErrorClassStateConflict, "state_commit_malformed")
+	}
+	if s.gitSigning != nil {
+		if err := VerifySSHGitSignature(ctx, s.runner, s.workDir, commitSHA, false, s.gitSigning); err != nil {
+			return "", err
+		}
+	}
+	return commitSHA, nil
 }
 
-// pushFastForward pushes commitSHA to s.branch on the remote, using
-// --force-with-lease with expectedParent as the exact expected old value.
-// An empty expectedParent means the branch must not already have this
-// request key's content; GitStateStore only uses that case when the
-// caller already fetched a head and is layering onto its tree, so an
-// empty expectedParent here still names the true current head captured by
-// PersistReservation's caller through LoadResult.RemoteHead. The push is
-// never `--force`, never a mirror/tags/all push, and never touches a ref
-// other than the fixed state branch.
+// pushFastForward updates only the state branch with a normal fast-forward
+// push. A competing writer makes the push non-fast-forward. A post-read
+// reconciles an accepted push whose response was lost.
 func (s *GitStateStore) pushFastForward(ctx context.Context, commitSHA, expectedParent string) error {
-	lease := fmt.Sprintf("--force-with-lease=refs/heads/%s:%s", s.branch, expectedParent)
-	refspec := commitSHA + ":refs/heads/" + s.branch
-	if _, err := s.run(ctx, "push", lease, s.remotePath, refspec); err != nil {
+	if !ValidGitObjectID(expectedParent) {
 		return newReleaseError(ErrorClassStateConflict, "state_conflict")
 	}
-	return nil
+	refspec := commitSHA + ":refs/heads/" + s.branch
+	pushResult, pushErr := s.run(ctx, "push", "--no-follow-tags", s.remotePath, refspec)
+	_ = pushResult
+	result, readErr := s.run(ctx, "ls-remote", "--exit-code", s.remotePath, "refs/heads/"+s.branch)
+	if readErr == nil {
+		fields := strings.Fields(result.Stdout)
+		if len(fields) >= 1 && fields[0] == commitSHA {
+			return nil
+		}
+	}
+	if pushErr != nil {
+		return newReleaseError(ErrorClassStateConflict, "state_conflict")
+	}
+	return newReleaseError(ErrorClassPublicationPartial, "state_push_unconfirmed")
 }

@@ -216,7 +216,7 @@ func resolvePromote(input VersionResolutionInput, line releaseVersion) (VersionR
 	if input.RemoteRefs.hasTag(base.String()) {
 		return VersionResolution{}, typedStateError("existing_ga")
 	}
-	if input.RemoteRefs.incompleteVersion(base.String()) {
+	if input.RemoteRefs.incompleteRelease(base) {
 		return VersionResolution{}, typedStateError("incomplete_tags")
 	}
 	resolved := nextRCVersion(base, minRC, input.RemoteRefs)
@@ -258,7 +258,7 @@ func resolveRelease(input VersionResolutionInput, line releaseVersion) (VersionR
 	if input.RemoteRefs.hasHigherGA(base) {
 		return VersionResolution{}, typedRequestError("ga_below_highest")
 	}
-	if input.RemoteRefs.incompleteVersion(base.String()) {
+	if input.RemoteRefs.incompleteRelease(base) {
 		return VersionResolution{}, typedStateError("incomplete_tags")
 	}
 	return VersionResolution{
@@ -441,9 +441,10 @@ func (refs RemoteRefs) hasHigherGA(base releaseVersion) bool {
 	return false
 }
 
-func (refs RemoteRefs) incompleteVersion(version string) bool {
-	for _, incomplete := range refs.IncompleteTagVersions {
-		if incomplete == version {
+func (refs RemoteRefs) incompleteRelease(base releaseVersion) bool {
+	for _, raw := range refs.IncompleteTagVersions {
+		incomplete, err := ParseReleaseVersion(raw)
+		if err == nil && incomplete.Major == base.Major && incomplete.Minor == base.Minor && incomplete.Patch == base.Patch {
 			return true
 		}
 	}

@@ -52,7 +52,7 @@ func VerifyPublication(ctx context.Context, runner CommandRunner, input Publicat
 	if err := VerifyEventChain(record.Reservation.RequestKey, record.Events); err != nil {
 		return VerifiedPublication{}, err
 	}
-	if record.Reservation.SchemaVersion != "1" || record.Reservation.RequestKey == "" {
+	if record.Reservation.SchemaVersion != StateSchemaVersion || record.Reservation.RequestKey == "" {
 		return VerifiedPublication{}, newReleaseError(ErrorClassStateConflict, "invalid_state_record")
 	}
 	signed := *record.SignedOutput
@@ -80,8 +80,11 @@ func validateSignedOutputForPublication(reservation Reservation, signed SignedOu
 	if signed.SourceSHA != signed.CommitParentSHA || signed.SourceSHA == signed.ReleaseSHA || signed.UnsignedSHA == signed.ReleaseSHA || signed.Bundle.SHA256 == "" || signed.Bundle.SizeBytes <= 0 {
 		return newReleaseError(ErrorClassStateConflict, "invalid_signed_output")
 	}
-	if reservation.ResolvedVersion == "" || len(signed.Tags) == 0 || attestationResolvedVersion(signed) != reservation.ResolvedVersion {
+	if reservation.GenerationVersion == "" || len(signed.Tags) == 0 || attestationResolvedVersion(signed) != reservation.GenerationVersion {
 		return newReleaseError(ErrorClassStateConflict, "invalid_signed_output")
+	}
+	if err := validateResolvedPublicationIntents(reservation, signed); err != nil {
+		return err
 	}
 	for _, tag := range signed.Tags {
 		if !validTagRef(tag) || tag.PeeledCommitSHA != signed.ReleaseSHA {
@@ -191,9 +194,9 @@ const (
 // persists it through GitStateStore.PersistReservation using the state head it
 // loaded before invoking publication.
 type PublicationResult struct {
-	Record         Record
-	PublishedRefs  []string
-	ReconciledRefs []string
+	Record         Record   `json:"record"`
+	PublishedRefs  []string `json:"published_refs"`
+	ReconciledRefs []string `json:"reconciled_refs"`
 }
 
 // PublishBranches reconciles branch intents in recorded order. Prepare
@@ -213,7 +216,7 @@ func PublishBranches(ctx context.Context, runner CommandRunner, verified Verifie
 		return PublicationResult{}, err
 	}
 	result := PublicationResult{Record: record}
-	for _, intent := range record.Reservation.BranchIntents {
+	for _, intent := range record.SignedOutput.PublicationIntents {
 		state, err := classifyBranchRef(ctx, runner, verified.workDir, remotePath, intent)
 		if err != nil {
 			return result, err
@@ -265,13 +268,54 @@ func PublishBranches(ctx context.Context, runner CommandRunner, verified Verifie
 }
 
 func validateBranchIntents(record Record) error {
-	line, err := parseReleaseLine(record.Reservation.ReleaseLine)
+	if record.SignedOutput == nil {
+		return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
+	}
+	return validateResolvedPublicationIntents(record.Reservation, *record.SignedOutput)
+}
+
+func withResolvedPublicationIntents(reservation Reservation, signed SignedOutput) (SignedOutput, error) {
+	if len(signed.PublicationIntents) == 0 {
+		intents := append([]BranchIntent(nil), reservation.BranchIntents...)
+		for i := range intents {
+			switch reservation.Command {
+			case "release:prepare":
+				if i == 0 {
+					intents[i].DesiredSHA = signed.SourceSHA
+				} else {
+					intents[i].DesiredSHA = signed.ReleaseSHA
+				}
+			case "release:promote", "release:release":
+				intents[i].DesiredSHA = signed.ReleaseSHA
+			}
+		}
+		signed.PublicationIntents = intents
+	}
+	if err := validateResolvedPublicationIntents(reservation, signed); err != nil {
+		return SignedOutput{}, err
+	}
+	return signed, nil
+}
+
+func validateResolvedPublicationIntents(reservation Reservation, signed SignedOutput) error {
+	line, err := parseReleaseLine(reservation.ReleaseLine)
 	if err != nil {
 		return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
 	}
-	intents := record.Reservation.BranchIntents
-	signed := record.SignedOutput
-	switch record.Reservation.Command {
+	pending := reservation.BranchIntents
+	intents := signed.PublicationIntents
+	if len(pending) != len(intents) {
+		return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
+	}
+	for i := range pending {
+		if pending[i].Ref != intents[i].Ref || pending[i].ExpectedOldSHA != intents[i].ExpectedOldSHA || pending[i].DesiredSHA != "pending" {
+			return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
+		}
+	}
+	if reservation.SchemaVersion != StateSchemaVersion || reservation.GenerationVersion == "" {
+		return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
+	}
+	switch reservation.Command {
 	case "release:prepare":
 		if len(intents) != 2 {
 			return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
@@ -280,13 +324,16 @@ func validateBranchIntents(record Record) error {
 			{Ref: "refs/heads/" + releaseBranchName(line.Major, line.Minor), DesiredSHA: signed.SourceSHA},
 			{Ref: "refs/heads/" + devBranchName(line.Major, line.Minor+1), DesiredSHA: signed.ReleaseSHA},
 		}
+		if reservation.DevelopmentVersion == "" || reservation.GenerationVersion != reservation.DevelopmentVersion {
+			return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
+		}
 		for i := range intents {
 			if intents[i].Ref != want[i].Ref || intents[i].ExpectedOldSHA != "" || intents[i].DesiredSHA != want[i].DesiredSHA {
 				return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
 			}
 		}
 	case "release:promote", "release:release":
-		if len(intents) != 1 || intents[0].Ref != "refs/heads/"+releaseBranchName(line.Major, line.Minor) || !ValidGitObjectID(intents[0].ExpectedOldSHA) || intents[0].DesiredSHA != signed.ReleaseSHA {
+		if reservation.DevelopmentVersion != "" || reservation.GenerationVersion != reservation.ResolvedVersion || len(intents) != 1 || intents[0].Ref != "refs/heads/"+releaseBranchName(line.Major, line.Minor) || !ValidGitObjectID(intents[0].ExpectedOldSHA) || intents[0].DesiredSHA != signed.ReleaseSHA {
 			return newReleaseError(ErrorClassStateConflict, "invalid_branch_intent")
 		}
 	default:
@@ -494,6 +541,9 @@ func readRemoteRef(ctx context.Context, runner CommandRunner, workDir, remotePat
 }
 
 func validatePublicationRemote(remotePath string) error {
+	if remotePath == CanonicalGitHubRemote {
+		return nil
+	}
 	if remotePath == "" || !filepath.IsAbs(remotePath) || strings.Contains(remotePath, "://") {
 		return newReleaseError(ErrorClassContractMismatch, "invalid_publication_remote")
 	}
@@ -514,11 +564,16 @@ func appendRefEvent(record *Record, kind EventKind, ref, objectSHA, disposition 
 	if hasRefEvent(record.Events, kind, ref, objectSHA) {
 		return nil
 	}
-	evidence, err := json.Marshal(struct {
-		Ref         string `json:"ref"`
-		ObjectSHA   string `json:"object_sha"`
-		Disposition string `json:"disposition"`
-	}{Ref: ref, ObjectSHA: objectSHA, Disposition: disposition})
+	evidenceValue := refEventEvidence{Ref: ref, ObjectSHA: objectSHA, Disposition: disposition}
+	if kind == EventBranchPublished && record.SignedOutput != nil {
+		for _, intent := range record.SignedOutput.PublicationIntents {
+			if intent.Ref == ref && intent.DesiredSHA == objectSHA {
+				evidenceValue.ExpectedOldSHA = intent.ExpectedOldSHA
+				break
+			}
+		}
+	}
+	evidence, err := json.Marshal(evidenceValue)
 	if err != nil {
 		return wrapReleaseError(ErrorClassStateConflict, "event_marshal_failed", err)
 	}

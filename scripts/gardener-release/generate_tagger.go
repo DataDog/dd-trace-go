@@ -198,12 +198,30 @@ const taggerPlanManifestRelPath = ".gardener-release-plan.json"
 // silently empty PermittedOutputFiles or ExpectedTags would make
 // validate.go's allowlist checks vacuously permissive.
 func PlanManifestFromTaggerOutput(raw map[string]any) (PlanManifest, error) {
+	allowed := map[string]bool{"schema_version": true, "source_sha": true, "branch": true, "requested_version": true, "root_module": true, "modules": true, "permitted_output_files": true, "expected_tags": true}
+	if len(raw) != len(allowed) {
+		return PlanManifest{}, typedGenerationError("tagger_manifest_unknown_field")
+	}
+	for key := range raw {
+		if !allowed[key] {
+			return PlanManifest{}, typedGenerationError("tagger_manifest_unknown_field")
+		}
+	}
+	if schema, ok := raw["schema_version"].(string); !ok || schema != "1" {
+		return PlanManifest{}, typedGenerationError("tagger_manifest_schema_mismatch")
+	}
+	if branch, ok := raw["branch"].(string); !ok || !validBranchName(branch) {
+		return PlanManifest{}, typedGenerationError("tagger_manifest_branch_mismatch")
+	}
 	sourceSHA, ok := raw["source_sha"].(string)
-	if !ok || sourceSHA == "" {
+	if !ok || !ValidGitObjectID(sourceSHA) {
 		return PlanManifest{}, typedGenerationError("tagger_manifest_missing_source_sha")
 	}
 	requestedVersion, ok := raw["requested_version"].(string)
 	if !ok || requestedVersion == "" {
+		return PlanManifest{}, typedGenerationError("tagger_manifest_missing_version")
+	}
+	if _, err := ParseReleaseVersion(requestedVersion); err != nil {
 		return PlanManifest{}, typedGenerationError("tagger_manifest_missing_version")
 	}
 	rootModulePath, ok := raw["root_module"].(string)
@@ -215,17 +233,24 @@ func PlanManifestFromTaggerOutput(raw map[string]any) (PlanManifest, error) {
 		return PlanManifest{}, typedGenerationError("tagger_manifest_missing_modules")
 	}
 	modules := make([]PlanManifestModule, 0, len(modulesRaw))
+	seenModules := make(map[string]bool, len(modulesRaw))
 	for _, entryRaw := range modulesRaw {
 		entry, ok := entryRaw.(map[string]any)
-		if !ok {
+		if !ok || len(entry) != 3 {
 			return PlanManifest{}, typedGenerationError("tagger_manifest_malformed_module")
+		}
+		for key := range entry {
+			if key != "path" && key != "dir" && key != "tagged" {
+				return PlanManifest{}, typedGenerationError("tagger_manifest_malformed_module")
+			}
 		}
 		path, _ := entry["path"].(string)
 		dir, _ := entry["dir"].(string)
-		tagged, _ := entry["tagged"].(bool)
-		if path == "" {
+		tagged, taggedOK := entry["tagged"].(bool)
+		if path == "" || dir == "" || !taggedOK || seenModules[path] {
 			return PlanManifest{}, typedGenerationError("tagger_manifest_malformed_module")
 		}
+		seenModules[path] = true
 		modules = append(modules, PlanManifestModule{Path: path, Dir: dir, Tagged: tagged})
 	}
 	permitted, err := stringSliceField(raw, "permitted_output_files")
@@ -246,17 +271,23 @@ func PlanManifestFromTaggerOutput(raw map[string]any) (PlanManifest, error) {
 	}, nil
 }
 
+func validBranchName(branch string) bool {
+	return branch == "main" || branchRefPattern.MatchString("refs/heads/"+branch)
+}
+
 func stringSliceField(raw map[string]any, key string) ([]string, error) {
 	valuesRaw, ok := raw[key].([]any)
 	if !ok || len(valuesRaw) == 0 {
 		return nil, typedGenerationErrorf("tagger_manifest_missing_field", "field=%s", key)
 	}
 	values := make([]string, 0, len(valuesRaw))
+	seen := make(map[string]bool, len(valuesRaw))
 	for _, v := range valuesRaw {
 		s, ok := v.(string)
-		if !ok || s == "" {
+		if !ok || s == "" || seen[s] {
 			return nil, typedGenerationErrorf("tagger_manifest_malformed_field", "field=%s", key)
 		}
+		seen[s] = true
 		values = append(values, s)
 	}
 	return values, nil

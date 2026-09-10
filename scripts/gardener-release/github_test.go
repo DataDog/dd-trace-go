@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -98,9 +99,9 @@ func TestListIssueCommentsPaginatesWithinEndpointFamily(t *testing.T) {
 		switch r.URL.Query().Get("page") {
 		case "1":
 			w.Header().Set("Link", `</repos/DataDog/dd-trace-go/issues/456/comments?per_page=100&page=2>; rel="next"`)
-			_, _ = w.Write([]byte(`[{"id":1,"body":"first","author_association":"MEMBER","user":{"login":"a"}}]`))
+			_, _ = w.Write([]byte(`[{"id":1,"body":"first","author_association":"MEMBER","user":{"id":11,"login":"a"}}]`))
 		case "2":
-			_, _ = w.Write([]byte(`[{"id":"2","body":"second","author_association":"OWNER","user":{"login":"b"}}]`))
+			_, _ = w.Write([]byte(`[{"id":"2","body":"second","author_association":"OWNER","user":{"id":"12","login":"b"}}]`))
 		default:
 			t.Fatalf("unexpected page %q", r.URL.Query().Get("page"))
 		}
@@ -138,7 +139,7 @@ func TestListIssueCommentsFailsClosedAtPageCap(t *testing.T) {
 
 func TestListIssueCommentsBoundsResponseSize(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`[{"id":1,"body":"too large","author_association":"MEMBER","user":{"login":"a"}}]`))
+		_, _ = w.Write([]byte(`[{"id":1,"body":"too large","author_association":"MEMBER","user":{"id":11,"login":"a"}}]`))
 	}))
 	defer server.Close()
 	client, err := newTestGitHubClient(server.URL, server.Client(), &fakeClock{now: time.Unix(100, 0)})
@@ -176,6 +177,47 @@ func TestListIssueCommentsRetriesRateLimitWithinBounds(t *testing.T) {
 	}
 	if len(comments) != 0 || attempts != 2 || len(clock.sleeps) == 0 {
 		t.Fatalf("comments=%#v attempts=%d sleeps=%v", comments, attempts, clock.sleeps)
+	}
+}
+
+func TestGetIssueCommentDerivesIssueBindingFromAPI(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":789,"issue_url":"` + server.URL + `/repos/DataDog/dd-trace-go/issues/456","body":"request","author_association":"MEMBER","user":{"id":12,"login":"owner"}}`))
+	}))
+	defer server.Close()
+	client, err := newTestGitHubClient(server.URL, server.Client(), &fakeClock{now: time.Unix(100, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := client.GetIssueComment(context.Background(), "457", "789"); ErrorCode(err) != "comment_issue_mismatch" {
+		t.Fatalf("error = %q, want comment_issue_mismatch", ErrorCode(err))
+	}
+}
+
+func TestIssueMutationHasIndependentDeadline(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	client, err := newTestGitHubClient(server.URL, server.Client(), &fakeClock{now: time.Unix(100, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.readDeadline = 20 * time.Millisecond
+	started := time.Now()
+	if err := client.UpdateIssueComment(context.Background(), "789", "bounded"); err == nil {
+		t.Fatal("stalled mutation unexpectedly succeeded")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("mutation deadline took %s", elapsed)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("mutation requests = %d, want one", requests.Load())
 	}
 }
 

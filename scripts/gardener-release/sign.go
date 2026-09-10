@@ -43,29 +43,22 @@ type SignInput struct {
 	// Output.CommitSHA (the checkout Generate produced). SignCommit reads
 	// and writes Git objects here; it never checks out a working tree.
 	WorkDir string
+	// ToolDigest and ValidatorDigest bind the exact trusted executables to
+	// the detached attestation before any signed object enters durable state.
+	ToolDigest      string
+	ValidatorDigest string
+	// SigningIntent is required by the production SSH path and must already
+	// be present in the signed durable state event chain.
+	SigningIntent *GitSigningIntent
 }
 
 // SignedCommitResult is SignCommit's success output: everything needed to
 // populate state.go's SignedOutput, plus the intermediate values a
 // recovery bundle build needs.
-//
-// SignedCommitResult.SignedOutput.ToolDigest and .ValidatorDigest are
-// deliberately left unset ($13.5 requires both, but as fields of the
-// eventual persisted record, not necessarily as outputs this function
-// alone can produce). SignCommit only has a WorkDir and the already-built
-// TaggerBinaryPath a caller passed to Generate; it has no artifact-fetch
-// context of its own. Per $13.6, validating "the source run ID, attempt,
-// artifact name, byte digest, and declared schema" of a downloaded
-// generation artifact is the calling protected job's responsibility, not
-// this wrapper function's -- the same layering state.go already uses for
-// Record.WorkflowSHA/Record.ToolSHA, which are also populated by the
-// caller, not derived here. The caller (eventually B12's workflow
-// assembly) must set ToolDigest/ValidatorDigest on the returned
-// SignedOutput before persisting the `signed` record through
-// AdvanceToSigned/PersistReservation; leaving them empty is a caller
-// contract, not evidence that they are optional.
 type SignedCommitResult struct {
 	SignedOutput SignedOutput
+	// Attestation is persisted with the signed output on the state branch.
+	Attestation SignedEnvelope
 	// SignerPublicKey is the raw public key bytes used, so a caller that
 	// wants to persist or log it separately from the fingerprint can (the
 	// fingerprint alone is a one-way digest; state.go's SignedOutput only
@@ -88,6 +81,23 @@ type SignedCommitResult struct {
 // calls against input.WorkDir, a local checkout the caller already
 // produced with Generate.
 func SignCommit(ctx context.Context, runner CommandRunner, clock Clock, signer Signer, input SignInput) (SignedCommitResult, error) {
+	return signCommit(ctx, runner, clock, signer, input, nil)
+}
+
+// SignCommitWithSSH is the only production signing entry point. In addition
+// to the supplemental detached attestation, it requires and verifies Git SSH
+// signatures on the release commit and every annotated tag.
+func SignCommitWithSSH(ctx context.Context, runner CommandRunner, clock Clock, signer Signer, input SignInput, gitSigning *ProtectedSSHSigningKey) (SignedCommitResult, error) {
+	if gitSigning == nil {
+		return SignedCommitResult{}, newReleaseError(ErrorClassEvidenceIncomplete, "ssh_signing_key_unavailable")
+	}
+	return signCommit(ctx, runner, clock, signer, input, gitSigning)
+}
+
+func signCommit(ctx context.Context, runner CommandRunner, clock Clock, signer Signer, input SignInput, gitSigning *ProtectedSSHSigningKey) (SignedCommitResult, error) {
+	if !lowerHexDigest(input.ToolDigest) || !lowerHexDigest(input.ValidatorDigest) {
+		return SignedCommitResult{}, newReleaseError(ErrorClassContractMismatch, "invalid_signing_provenance")
+	}
 	validated, err := ValidateGeneration(ctx, input.Reader, input.Output, input.Manifest)
 	if err != nil {
 		return SignedCommitResult{}, err
@@ -105,7 +115,18 @@ func SignCommit(ctx context.Context, runner CommandRunner, clock Clock, signer S
 
 	message := "release: " + validated.ResolvedVersion
 	authorDate := clock.Now().Unix()
-	command, err := BuildCommitTreeCommand("git", gitStateEnv(), input.WorkDir, validated.TreeSHA, parentSHA, message, signingCommitterName, signingCommitterEmail, authorDate)
+	if gitSigning != nil {
+		if input.SigningIntent == nil || input.SigningIntent.Message != message || input.SigningIntent.Principal != gitSigning.policy.Principal || input.SigningIntent.Fingerprint != gitSigning.policy.Fingerprint || input.SigningIntent.Timestamp <= 0 {
+			return SignedCommitResult{}, newReleaseError(ErrorClassStateConflict, "signing_intent_required")
+		}
+		authorDate = input.SigningIntent.Timestamp
+	}
+	var command Command
+	if gitSigning != nil {
+		command, err = BuildSignedCommitTreeCommand("git", gitStateEnv(), input.WorkDir, validated.TreeSHA, parentSHA, message, signingCommitterName, signingCommitterEmail, authorDate, gitSigning)
+	} else {
+		command, err = BuildCommitTreeCommand("git", gitStateEnv(), input.WorkDir, validated.TreeSHA, parentSHA, message, signingCommitterName, signingCommitterEmail, authorDate)
+	}
 	if err != nil {
 		return SignedCommitResult{}, err
 	}
@@ -124,20 +145,36 @@ func SignCommit(ctx context.Context, runner CommandRunner, clock Clock, signer S
 	if err := verifySignedCommit(ctx, runner, input.WorkDir, signedSHA, validated.TreeSHA, parentSHA, message, signingCommitterName, signingCommitterEmail); err != nil {
 		return SignedCommitResult{}, err
 	}
+	if gitSigning != nil {
+		if err := VerifySSHGitSignature(ctx, runner, input.WorkDir, signedSHA, false, gitSigning); err != nil {
+			return SignedCommitResult{}, err
+		}
+	}
 
-	tags, err := recreateExpectedTags(ctx, runner, input.WorkDir, validated.ExpectedTags, signedSHA)
+	tags, err := recreateExpectedTagsInternal(ctx, runner, input.WorkDir, validated.ExpectedTags, signedSHA, gitSigning)
 	if err != nil {
 		return SignedCommitResult{}, err
 	}
 
-	fingerprint, publicKey, err := signAttestation(signer, signedAttestation{
+	attestation := signedAttestation{
 		UnsignedSHA:     input.Output.CommitSHA,
 		SourceSHA:       validated.SourceSHA,
 		TreeSHA:         validated.TreeSHA,
 		ReleaseSHA:      signedSHA,
 		ResolvedVersion: validated.ResolvedVersion,
+		ToolDigest:      input.ToolDigest,
+		ValidatorDigest: input.ValidatorDigest,
 		Tags:            tagRefNames(tags),
-	})
+	}
+	fingerprint, publicKey, err := signAttestation(signer, attestation)
+	if err != nil {
+		return SignedCommitResult{}, err
+	}
+	attestationData, err := json.Marshal(attestation)
+	if err != nil {
+		return SignedCommitResult{}, wrapReleaseError(ErrorClassGenerationFailed, "attestation_marshal_failed", err)
+	}
+	attestationEnvelope, err := Seal(signer, attestationData)
 	if err != nil {
 		return SignedCommitResult{}, err
 	}
@@ -148,12 +185,15 @@ func SignCommit(ctx context.Context, runner CommandRunner, clock Clock, signer S
 			SourceSHA:         validated.SourceSHA,
 			TreeSHA:           validated.TreeSHA,
 			ReleaseSHA:        signedSHA,
+			ToolDigest:        input.ToolDigest,
+			ValidatorDigest:   input.ValidatorDigest,
 			CommitParentSHA:   parentSHA,
 			SignerFingerprint: fingerprint,
 			ChangedPaths:      changedPathsOf(input.Output),
 			Tags:              tags,
 		},
 		SignerPublicKey: publicKey,
+		Attestation:     attestationEnvelope,
 	}, nil
 }
 
@@ -246,6 +286,10 @@ func verifySignedCommit(ctx context.Context, runner CommandRunner, workDir, comm
 // the peeled commit below, not by trusting that a delete-then-recreate
 // pair never raced with anything else in this single-writer checkout.
 func recreateExpectedTags(ctx context.Context, runner CommandRunner, workDir string, expectedTags []string, signedSHA string) ([]TagRef, error) {
+	return recreateExpectedTagsInternal(ctx, runner, workDir, expectedTags, signedSHA, nil)
+}
+
+func recreateExpectedTagsInternal(ctx context.Context, runner CommandRunner, workDir string, expectedTags []string, signedSHA string, gitSigning *ProtectedSSHSigningKey) ([]TagRef, error) {
 	seen := map[string]bool{}
 	tags := make([]TagRef, 0, len(expectedTags))
 	for _, name := range expectedTags {
@@ -273,12 +317,18 @@ func recreateExpectedTags(ctx context.Context, runner CommandRunner, workDir str
 			"GIT_AUTHOR_NAME="+signingCommitterName, "GIT_AUTHOR_EMAIL="+signingCommitterEmail,
 			"GIT_COMMITTER_NAME="+signingCommitterName, "GIT_COMMITTER_EMAIL="+signingCommitterEmail,
 		)
-		if _, err := runner.Run(ctx, Command{
-			Path: "git",
-			Args: []string{"-c", "protocol.file.allow=never", "-c", "core.hooksPath=/dev/null", "-c", "tag.gpgsign=false", "tag", "-a", "-m", name, name, signedSHA},
-			Env:  env,
-			Dir:  workDir,
-		}); err != nil {
+		args := []string{"-c", "protocol.file.allow=never", "-c", "core.hooksPath=/dev/null"}
+		if gitSigning != nil {
+			signingArgs, err := gitSigning.gitSigningArgs()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, signingArgs...)
+			args = append(args, "tag", "-s", "-m", name, name, signedSHA)
+		} else {
+			args = append(args, "-c", "tag.gpgsign=false", "tag", "-a", "-m", name, name, signedSHA)
+		}
+		if _, err := runner.Run(ctx, Command{Path: "git", Args: args, Env: env, Dir: workDir}); err != nil {
 			return nil, wrapReleaseError(ErrorClassGenerationFailed, "tag_creation_failed", err)
 		}
 
@@ -314,6 +364,11 @@ func recreateExpectedTags(ctx context.Context, runner CommandRunner, workDir str
 			// tag, per §13.5's "Reject lightweight tags."
 			return nil, newReleaseError(ErrorClassGenerationFailed, "tag_not_annotated")
 		}
+		if gitSigning != nil {
+			if err := VerifySSHGitSignature(ctx, runner, workDir, tagObjectSHA, true, gitSigning); err != nil {
+				return nil, err
+			}
+		}
 
 		tags = append(tags, TagRef{
 			Name:            name,
@@ -343,6 +398,8 @@ type signedAttestation struct {
 	TreeSHA         string   `json:"tree_sha"`
 	ReleaseSHA      string   `json:"release_sha"`
 	ResolvedVersion string   `json:"resolved_version"`
+	ToolDigest      string   `json:"tool_digest"`
+	ValidatorDigest string   `json:"validator_digest"`
 	Tags            []string `json:"tags"`
 }
 
@@ -386,6 +443,8 @@ func VerifyAttestation(verifier Verifier, signed SignedOutput, envelope SignedEn
 		TreeSHA:         signed.TreeSHA,
 		ReleaseSHA:      signed.ReleaseSHA,
 		ResolvedVersion: attestationResolvedVersion(signed),
+		ToolDigest:      signed.ToolDigest,
+		ValidatorDigest: signed.ValidatorDigest,
 		Tags:            tagRefNames(signed.Tags),
 	}
 	data, err := json.Marshal(attestation)
@@ -440,12 +499,18 @@ func signedOutputDiff(existing, incoming *SignedOutput) string {
 		return "tree_sha"
 	case existing.ReleaseSHA != incoming.ReleaseSHA:
 		return "release_sha"
+	case existing.ToolDigest != incoming.ToolDigest:
+		return "tool_digest"
+	case existing.ValidatorDigest != incoming.ValidatorDigest:
+		return "validator_digest"
 	case existing.CommitParentSHA != incoming.CommitParentSHA:
 		return "commit_parent_sha"
 	case existing.SignerFingerprint != incoming.SignerFingerprint:
 		return "signer_fingerprint"
 	case !equalStringSlices(existing.ChangedPaths, incoming.ChangedPaths):
 		return "changed_paths"
+	case !equalBranchIntents(existing.PublicationIntents, incoming.PublicationIntents):
+		return "publication_intents"
 	case !equalTagRefs(existing.Tags, incoming.Tags):
 		return "tags"
 	case !equalBundle(existing.Bundle, incoming.Bundle):
@@ -485,6 +550,14 @@ func equalBundle(a, b Bundle) bool {
 // SignedOutput, AdvanceToSigned returns the existing record unchanged and
 // the caller must not construct a new signed commit at all.
 func AdvanceToSigned(existing Record, signed SignedOutput, evidence json.RawMessage) (Record, bool, error) {
+	if !lowerHexDigest(signed.ToolDigest) || !lowerHexDigest(signed.ValidatorDigest) {
+		return Record{}, false, newReleaseError(ErrorClassStateConflict, "signed_tool_digest_invalid")
+	}
+	resolved, err := withResolvedPublicationIntents(existing.Reservation, signed)
+	if err != nil {
+		return Record{}, false, err
+	}
+	signed = resolved
 	if existing.Phase == PhaseSigned {
 		if diff := signedOutputDiff(existing.SignedOutput, &signed); diff != "" {
 			return Record{}, false, newReleaseError(ErrorClassStateConflict, "signed_output_changed")

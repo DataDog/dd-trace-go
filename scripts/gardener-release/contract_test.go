@@ -166,7 +166,7 @@ func TestDecodeContextRejectsInvalidUTF8(t *testing.T) {
 	}
 }
 
-func TestWorkflowSkeletonDeclaresOnlyContractInputs(t *testing.T) {
+func TestWorkflowDeclaresOnlyContractInputs(t *testing.T) {
 	contractData, err := os.ReadFile(filepath.Join("..", "..", "_docs", "dd-trace-go-release-contract.yml"))
 	if err != nil {
 		t.Fatal(err)
@@ -180,14 +180,9 @@ func TestWorkflowSkeletonDeclaresOnlyContractInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{"permissions: {}", "contract_version:", "command:", "version:", "context:", "type: string"} {
+	for _, want := range []string{"permissions: {}", "contract_version:", "command:", "version:", "context:", "type: string", "group: gardener-release-production-v1", "cancel-in-progress: false"} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("workflow skeleton missing %q", want)
-		}
-	}
-	for _, forbidden := range []string{"actions/checkout", "dd-octo-sts", "secrets.", "github-script", "git push", "gh api"} {
-		if strings.Contains(text, forbidden) {
-			t.Fatalf("workflow skeleton contains side-effecting token %q", forbidden)
+			t.Fatalf("workflow missing %q", want)
 		}
 	}
 	inputs := []string{}

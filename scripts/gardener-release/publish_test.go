@@ -52,6 +52,7 @@ func (f b09Fixture) record(command string, phase OperationPhase) Record {
 	reservation.Command = command
 	reservation.ReleaseLine = "v2.9"
 	reservation.ResolvedVersion = "v2.9.0"
+	reservation.GenerationVersion = "v2.9.0"
 	signed := SignedOutput{
 		UnsignedSHA:       f.unsignedSHA,
 		SourceSHA:         f.sourceSHA,
@@ -63,12 +64,18 @@ func (f b09Fixture) record(command string, phase OperationPhase) Record {
 	}
 	switch command {
 	case "release:prepare":
+		reservation.DevelopmentVersion = "v2.9.0"
 		reservation.BranchIntents = []BranchIntent{
+			{Ref: "refs/heads/release-v2.9.x", DesiredSHA: "pending"},
+			{Ref: "refs/heads/dev-v2.10.x", DesiredSHA: "pending"},
+		}
+		signed.PublicationIntents = []BranchIntent{
 			{Ref: "refs/heads/release-v2.9.x", DesiredSHA: f.sourceSHA},
 			{Ref: "refs/heads/dev-v2.10.x", DesiredSHA: f.releaseSHA},
 		}
 	case "release:promote", "release:release":
-		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", ExpectedOldSHA: f.sourceSHA, DesiredSHA: f.releaseSHA}}
+		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", ExpectedOldSHA: f.sourceSHA, DesiredSHA: "pending"}}
+		signed.PublicationIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", ExpectedOldSHA: f.sourceSHA, DesiredSHA: f.releaseSHA}}
 	}
 	return Record{Reservation: reservation, Phase: phase, SignedOutput: &signed}
 }
@@ -102,10 +109,13 @@ func TestVerifyPublicationRequiresRemoteSignedRecordAndVerifiedBundle(t *testing
 	ctx := context.Background()
 	fixture := newB09Fixture(t)
 	signer := ephemeralTestSigner(t)
-	signed := fixture.record("release:promote", PhaseSigned).SignedOutput
+	signed := fixture.record("release:release", PhaseSigned).SignedOutput
+	signed.ToolDigest = strings.Repeat("a", 64)
+	signed.ValidatorDigest = strings.Repeat("b", 64)
+	signed.ChangedPaths = []string{"README.md"}
 	fingerprint, _, err := signAttestation(signer, signedAttestation{
 		UnsignedSHA: signed.UnsignedSHA, SourceSHA: signed.SourceSHA, TreeSHA: signed.TreeSHA,
-		ReleaseSHA: signed.ReleaseSHA, ResolvedVersion: "v2.9.0", Tags: tagRefNames(signed.Tags),
+		ReleaseSHA: signed.ReleaseSHA, ResolvedVersion: "v2.9.0", ToolDigest: signed.ToolDigest, ValidatorDigest: signed.ValidatorDigest, Tags: tagRefNames(signed.Tags),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -120,19 +130,16 @@ func TestVerifyPublicationRequiresRemoteSignedRecordAndVerifiedBundle(t *testing
 		t.Fatal(err)
 	}
 	signed.Bundle = bundle
-	record := fixture.record("release:promote", PhaseSigned)
-	record.SignedOutput = signed
-	decision, err := ReserveOperation(nil, record.Reservation, nil)
+	signed.Bundle.Path = "requests/123/789/recovery.bundle"
+	record := fixture.record("release:release", PhaseReserved)
+	record.Reservation.BodySnapshot = "/gardener release:release"
+	record.Reservation.SourceRefs = []SourceRef{{Ref: "refs/heads/release-v2.9.x", SHA: fixture.sourceSHA}}
+	record.Reservation.RequestSHA256 = RequestSHA256(Context{RepositoryID: record.Reservation.RepositoryID, RepositoryFullName: record.Reservation.RepositoryFullName, IssueNumber: record.Reservation.IssueNumber, OriginalCommentID: record.Reservation.OriginalCommentID, AcknowledgementCommentID: record.Reservation.AcknowledgementCommentID, BodySnapshot: record.Reservation.BodySnapshot, PolicyRevision: record.Reservation.PolicyRevision}, record.Reservation.Command, record.Reservation.RequestedVersion)
+	decision := sealedReservationDecision(t, record.Reservation, signed.SignerFingerprint)
+	decision.Record, _, err = AdvanceToSigned(decision.Record, *signed, signedRecordEvidence(t, *signed))
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision.Record.Phase = PhaseSigned
-	decision.Record.SignedOutput = signed
-	events, err := AppendEvent(decision.Record.Events, record.Reservation.RequestKey, EventPhaseAdvanced, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decision.Record.Events = events
 
 	stateRemote := newBareFixtureRemote(t)
 	seedStateBranch(t, stateRemote, StateBranch, map[string]string{".keep": "state\n"})
@@ -141,6 +148,9 @@ func TestVerifyPublicationRequiresRemoteSignedRecordAndVerifiedBundle(t *testing
 	loaded, err := store.LoadState(ctx, record.Reservation.RequestKey)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := validateRecordEventEvidence(decision.Record); err != nil {
+		t.Fatalf("fixture record evidence: %v", err)
 	}
 	if _, err := store.PersistReservation(ctx, decision, loaded.RemoteHead); err != nil {
 		t.Fatal(err)
@@ -411,7 +421,12 @@ func TestPublishTagsP05ResumeAfterOriginalCloneRemoved(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	record := Record{Reservation: reservationForSigned("v2.9.0-dev"), Phase: PhaseTestsPassed, SignedOutput: &signResult.SignedOutput}
+	reservation := reservationForSigned("v2.9.0-dev", signResult.SignedOutput.SourceSHA)
+	signed, err := withResolvedPublicationIntents(reservation, signResult.SignedOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := Record{Reservation: reservation, Phase: PhaseTestsPassed, SignedOutput: &signed}
 	record.SignedOutput.Bundle = bundle
 	remote := newBareFixtureRemote(t)
 	result, err := PublishTags(context.Background(), ExecRunner{}, VerifiedPublication{record: record, workDir: recovered}, remote, testEvidence(signResult.SignedOutput.ReleaseSHA))

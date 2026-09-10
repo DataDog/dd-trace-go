@@ -7,14 +7,14 @@ package gardenerrelease
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
 func baseReservation() Reservation {
-	return Reservation{
-		SchemaVersion:            "1",
+	reservation := Reservation{
+		SchemaVersion:            StateSchemaVersion,
 		RequestKey:               "123:789",
-		RequestSHA256:            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		RepositoryID:             "123",
 		RepositoryFullName:       RepositoryFullName,
 		IssueNumber:              "456",
@@ -27,9 +27,14 @@ func baseReservation() Reservation {
 		ValidatedActorLogin:      "octo-releaser",
 		PolicyRevision:           "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
 		ResolvedVersion:          "v2.11.0-rc.1",
+		GenerationVersion:        "v2.11.0-rc.1",
 		ReleaseLine:              "v2.11",
+		SourceRefs:               []SourceRef{{Ref: "refs/heads/release-v2.11.x", SHA: strings.Repeat("a", 40)}},
+		BranchIntents:            []BranchIntent{{Ref: "refs/heads/release-v2.11.x", ExpectedOldSHA: strings.Repeat("a", 40), DesiredSHA: "pending"}},
 		CreatedAt:                "2026-01-01T00:00:00Z",
 	}
+	reservation.RequestSHA256 = RequestSHA256(Context{RepositoryID: reservation.RepositoryID, RepositoryFullName: reservation.RepositoryFullName, IssueNumber: reservation.IssueNumber, OriginalCommentID: reservation.OriginalCommentID, AcknowledgementCommentID: reservation.AcknowledgementCommentID, BodySnapshot: reservation.BodySnapshot, PolicyRevision: reservation.PolicyRevision}, reservation.Command, reservation.RequestedVersion)
+	return reservation
 }
 
 func TestStatePathsBuildsOnlyFromValidatedDecimalIDs(t *testing.T) {
@@ -64,11 +69,11 @@ func TestStatePathsRejectsUnsafeIDs(t *testing.T) {
 }
 
 func TestAppendEventAndVerifyEventChain(t *testing.T) {
-	events, err := AppendEvent(nil, "123:789", EventReserved, json.RawMessage(`{"a":1}`))
+	events, err := AppendEvent(nil, "123:789", EventReserved, json.RawMessage(`{"resolved_version":"v2.9.0","release_line":"v2.9"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err = AppendEvent(events, "123:789", EventPhaseAdvanced, json.RawMessage(`{"phase":"signed"}`))
+	events, err = AppendEvent(events, "123:789", EventPhaseAdvanced, json.RawMessage(`{"phase":"branches_published"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,11 +92,11 @@ func TestAppendEventAndVerifyEventChain(t *testing.T) {
 }
 
 func TestVerifyEventChainDetectsReorderTamperAndWrongKey(t *testing.T) {
-	events, err := AppendEvent(nil, "123:789", EventReserved, json.RawMessage(`{}`))
+	events, err := AppendEvent(nil, "123:789", EventReserved, json.RawMessage(`{"resolved_version":"v2.9.0","release_line":"v2.9"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err = AppendEvent(events, "123:789", EventPhaseAdvanced, json.RawMessage(`{}`))
+	events, err = AppendEvent(events, "123:789", EventPhaseAdvanced, json.RawMessage(`{"phase":"branches_published"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,6 +135,24 @@ func TestVerifyEventChainDetectsReorderTamperAndWrongKey(t *testing.T) {
 // TestReserveOperationS03RejectsDifferentBodyHash covers §15 S03: the same
 // request ID with a different body hash is a conflict, and the caller must
 // be told to preserve the old record rather than overwrite it.
+func TestRecordGitSigningIntentIsDurableAndImmutable(t *testing.T) {
+	record := Record{Reservation: baseReservation(), Phase: PhaseReserved}
+	intent := GitSigningIntent{Timestamp: 1700000000, Message: "release: " + record.Reservation.ResolvedVersion, Principal: "gardener-release", Fingerprint: "SHA256:fixture"}
+	updated, err := RecordGitSigningIntent(record, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retried, err := RecordGitSigningIntent(updated, intent)
+	if err != nil || len(retried.Events) != len(updated.Events) {
+		t.Fatalf("retry err=%v events=%d/%d", err, len(retried.Events), len(updated.Events))
+	}
+	changed := intent
+	changed.Timestamp++
+	if _, err := RecordGitSigningIntent(updated, changed); ErrorCode(err) != "signing_intent_conflict" {
+		t.Fatalf("error = %q", ErrorCode(err))
+	}
+}
+
 func TestReserveOperationS03RejectsDifferentBodyHash(t *testing.T) {
 	existing := Record{Reservation: baseReservation(), Phase: PhaseReserved}
 	incoming := baseReservation()
@@ -203,6 +226,7 @@ func TestReserveOperationV04BlocksIncompleteOperationOnSameReleaseLine(t *testin
 	incoming := baseReservation()
 	incoming.RequestKey = "123:111"
 	incoming.OriginalCommentID = "111"
+	incoming.RequestSHA256 = RequestSHA256(Context{RepositoryID: incoming.RepositoryID, RepositoryFullName: incoming.RepositoryFullName, IssueNumber: incoming.IssueNumber, OriginalCommentID: incoming.OriginalCommentID, AcknowledgementCommentID: incoming.AcknowledgementCommentID, BodySnapshot: incoming.BodySnapshot, PolicyRevision: incoming.PolicyRevision}, incoming.Command, incoming.RequestedVersion)
 	_, err := ReserveOperation(nil, incoming, incompleteSameLine)
 	if ErrorCode(err) != "incomplete_operation_on_release_line" || ClassOf(err) != ErrorClassStateConflict {
 		t.Fatalf("error = %q/%q, want state_conflict incomplete_operation_on_release_line", ClassOf(err), ErrorCode(err))
@@ -220,12 +244,48 @@ func TestReserveOperationAllowsNewRequestWhenSameLineListIsEmpty(t *testing.T) {
 	incoming := baseReservation()
 	incoming.RequestKey = "123:111"
 	incoming.OriginalCommentID = "111"
+	incoming.RequestSHA256 = RequestSHA256(Context{RepositoryID: incoming.RepositoryID, RepositoryFullName: incoming.RepositoryFullName, IssueNumber: incoming.IssueNumber, OriginalCommentID: incoming.OriginalCommentID, AcknowledgementCommentID: incoming.AcknowledgementCommentID, BodySnapshot: incoming.BodySnapshot, PolicyRevision: incoming.PolicyRevision}, incoming.Command, incoming.RequestedVersion)
 	decision, err := ReserveOperation(nil, incoming, []Record{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !decision.Reserved {
 		t.Fatalf("unexpected decision: %#v", decision)
+	}
+}
+
+func TestStateAndEventEvidenceRejectNestedNullUnknownAndWrongTypes(t *testing.T) {
+	var target struct {
+		Outer struct {
+			Value string `json:"value"`
+		} `json:"outer"`
+	}
+	if err := decodeStrictStateJSON([]byte(`{"outer":{"value":null}}`), &target); err == nil {
+		t.Fatal("nested null state value accepted")
+	}
+	for _, evidence := range []json.RawMessage{
+		json.RawMessage(`{"resolved_version":"v2.9.0","release_line":"v2.9","extra":true}`),
+		json.RawMessage(`{"resolved_version":9,"release_line":"v2.9"}`),
+		json.RawMessage(`{"resolved_version":"v2.9.0","release_line":null}`),
+	} {
+		events, err := AppendEvent(nil, "123:789", EventReserved, evidence)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyEventChain("123:789", events); ErrorCode(err) != "invalid_event_evidence" {
+			t.Fatalf("evidence %s error = %q", evidence, ErrorCode(err))
+		}
+	}
+}
+
+func TestRecordEvidenceMustMatchReservation(t *testing.T) {
+	decision, err := ReserveOperation(nil, baseReservation(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision.Record.Reservation.ResolvedVersion = "v2.9.1-dev"
+	if err := validateRecordEventEvidence(decision.Record); ErrorCode(err) != "invalid_loaded_record" {
+		t.Fatalf("error = %q, want invalid_loaded_record", ErrorCode(err))
 	}
 }
 

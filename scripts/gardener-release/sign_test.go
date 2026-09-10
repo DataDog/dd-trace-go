@@ -26,10 +26,12 @@ func signWithFixture(t *testing.T, branch, version string, signer Signer) (Gener
 		t.Fatal(err)
 	}
 	result, err := SignCommit(context.Background(), ExecRunner{}, nil, signer, SignInput{
-		Output:   output,
-		Manifest: manifest,
-		Reader:   reader.Read,
-		WorkDir:  reader.Dir,
+		Output:          output,
+		Manifest:        manifest,
+		Reader:          reader.Read,
+		WorkDir:         reader.Dir,
+		ToolDigest:      strings.Repeat("a", 64),
+		ValidatorDigest: strings.Repeat("b", 64),
 	})
 	if err != nil {
 		t.Fatalf("SignCommit: %v", err)
@@ -107,10 +109,12 @@ func TestSignCommitRejectsHostileArtifactWithoutCallerRevalidation(t *testing.T)
 	hostileOutput.Changes = diffTreeChanges(t, reader.Dir, output.SourceSHA, hostileCommit)
 
 	_, err = SignCommit(context.Background(), ExecRunner{}, nil, ephemeralTestSigner(t), SignInput{
-		Output:   hostileOutput,
-		Manifest: manifest,
-		Reader:   reader.Read,
-		WorkDir:  reader.Dir,
+		Output:          hostileOutput,
+		Manifest:        manifest,
+		Reader:          reader.Read,
+		WorkDir:         reader.Dir,
+		ToolDigest:      strings.Repeat("a", 64),
+		ValidatorDigest: strings.Repeat("b", 64),
 	})
 	if ErrorCode(err) != "unauthorized_path_changed" || ClassOf(err) != ErrorClassGenerationFailed {
 		t.Fatalf("error = %q/%q, want generation_failed unauthorized_path_changed (SignCommit must re-validate internally)", ClassOf(err), ErrorCode(err))
@@ -157,6 +161,8 @@ func TestVerifyAttestationRejectsSwappedSigningKey(t *testing.T) {
 		TreeSHA:         result.SignedOutput.TreeSHA,
 		ReleaseSHA:      result.SignedOutput.ReleaseSHA,
 		ResolvedVersion: attestationResolvedVersion(result.SignedOutput),
+		ToolDigest:      result.SignedOutput.ToolDigest,
+		ValidatorDigest: result.SignedOutput.ValidatorDigest,
 		Tags:            tagRefNames(result.SignedOutput.Tags),
 	}
 	data, err := json.Marshal(attestation)
@@ -182,6 +188,51 @@ func TestVerifyAttestationRejectsSwappedSigningKey(t *testing.T) {
 // wholesale: a SignedOutput field changed after signing (without
 // re-sealing) is caught even though the envelope's own signature would
 // still verify against its own (now-mismatched) data.
+func TestSignedStateValidationRejectsProvenanceDigestTamper(t *testing.T) {
+	signer := ephemeralTestSigner(t)
+	_, _, _, result := signWithFixture(t, "dev-v2.9.x", "v2.9.0-dev", signer)
+	base := result.SignedOutput
+	base.PublicationIntents = []BranchIntent{}
+	base.Bundle.PrerequisiteSHAs = []string{base.SourceSHA}
+	for name, mutate := range map[string]func(*SignedOutput){
+		"tool":      func(s *SignedOutput) { s.ToolDigest = strings.Repeat("c", 64) },
+		"validator": func(s *SignedOutput) { s.ValidatorDigest = strings.Repeat("d", 64) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			tampered := base
+			mutate(&tampered)
+			raw, err := json.Marshal(struct {
+				SchemaVersion string         `json:"schema_version"`
+				SignedOutput  SignedOutput   `json:"signed_output"`
+				Attestation   SignedEnvelope `json:"attestation"`
+			}{SchemaVersion: StateSchemaVersion, SignedOutput: tampered, Attestation: result.Attestation})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := validateSignedStateDocument(raw, &tampered, Ed25519Verifier{}, signer.PublicKey()); ErrorCode(err) != "attestation_data_mismatch" {
+				t.Fatalf("error = %q, want attestation_data_mismatch", ErrorCode(err))
+			}
+		})
+	}
+}
+
+func TestVerifyAttestationRejectsProvenanceDigestTamper(t *testing.T) {
+	signer := ephemeralTestSigner(t)
+	_, _, _, result := signWithFixture(t, "dev-v2.9.x", "v2.9.0-dev", signer)
+	for name, mutate := range map[string]func(*SignedOutput){
+		"tool":      func(s *SignedOutput) { s.ToolDigest = strings.Repeat("c", 64) },
+		"validator": func(s *SignedOutput) { s.ValidatorDigest = strings.Repeat("d", 64) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			tampered := result.SignedOutput
+			mutate(&tampered)
+			if err := VerifyAttestation(Ed25519Verifier{}, tampered, result.Attestation, signer.PublicKey()); ErrorCode(err) != "attestation_data_mismatch" {
+				t.Fatalf("error = %q, want attestation_data_mismatch", ErrorCode(err))
+			}
+		})
+	}
+}
+
 func TestVerifyAttestationRejectsTamperedRecord(t *testing.T) {
 	signer := ephemeralTestSigner(t)
 	_, _, _, result := signWithFixture(t, "dev-v2.9.x", "v2.9.0-dev", signer)
@@ -191,6 +242,8 @@ func TestVerifyAttestationRejectsTamperedRecord(t *testing.T) {
 		TreeSHA:         result.SignedOutput.TreeSHA,
 		ReleaseSHA:      result.SignedOutput.ReleaseSHA,
 		ResolvedVersion: attestationResolvedVersion(result.SignedOutput),
+		ToolDigest:      result.SignedOutput.ToolDigest,
+		ValidatorDigest: result.SignedOutput.ValidatorDigest,
 		Tags:            tagRefNames(result.SignedOutput.Tags),
 	}
 	data, err := json.Marshal(attestation)
@@ -236,6 +289,8 @@ func TestSignedOutputDiffDetectsEveryFieldIndependently(t *testing.T) {
 		SourceSHA:         strings.Repeat("b", 40),
 		TreeSHA:           strings.Repeat("c", 40),
 		ReleaseSHA:        strings.Repeat("d", 40),
+		ToolDigest:        strings.Repeat("2", 64),
+		ValidatorDigest:   strings.Repeat("3", 64),
 		CommitParentSHA:   strings.Repeat("b", 40),
 		SignerFingerprint: strings.Repeat("e", 64),
 		ChangedPaths:      []string{"go.mod", "internal/version/version.go"},
@@ -251,6 +306,8 @@ func TestSignedOutputDiffDetectsEveryFieldIndependently(t *testing.T) {
 		{"source_sha", func(s *SignedOutput) { s.SourceSHA = strings.Repeat("9", 40) }, "source_sha"},
 		{"tree_sha", func(s *SignedOutput) { s.TreeSHA = strings.Repeat("9", 40) }, "tree_sha"},
 		{"release_sha", func(s *SignedOutput) { s.ReleaseSHA = strings.Repeat("9", 40) }, "release_sha"},
+		{"tool_digest", func(s *SignedOutput) { s.ToolDigest = strings.Repeat("9", 64) }, "tool_digest"},
+		{"validator_digest", func(s *SignedOutput) { s.ValidatorDigest = strings.Repeat("9", 64) }, "validator_digest"},
 		{"commit_parent_sha", func(s *SignedOutput) { s.CommitParentSHA = strings.Repeat("9", 40) }, "commit_parent_sha"},
 		{"signer_fingerprint", func(s *SignedOutput) { s.SignerFingerprint = strings.Repeat("9", 64) }, "signer_fingerprint"},
 		{"changed_paths", func(s *SignedOutput) { s.ChangedPaths = []string{"other.go"} }, "changed_paths"},

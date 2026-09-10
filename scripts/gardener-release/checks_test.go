@@ -22,6 +22,7 @@ type fakeChecksAPI struct {
 	current       map[string]WorkflowRun
 	refs          map[string]string
 	workflow      []byte
+	workflows     map[string][]byte
 	runsNext      bool
 	jobsNext      bool
 	err           error
@@ -59,9 +60,12 @@ func (f *fakeChecksAPI) GetWorkflowRun(_ context.Context, id string) (WorkflowRu
 	}
 	return run, nil
 }
-func (f *fakeChecksAPI) ReadWorkflowFile(_ context.Context, _, _ string) ([]byte, error) {
+func (f *fakeChecksAPI) ReadWorkflowFile(_ context.Context, path, _ string) ([]byte, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.workflows != nil {
+		return append([]byte(nil), f.workflows[path]...), nil
 	}
 	return append([]byte(nil), f.workflow...), nil
 }
@@ -72,7 +76,7 @@ func (f *fakeChecksAPI) ReadBranchRef(_ context.Context, ref string) (string, bo
 
 func checksPolicy() TestPolicy {
 	digest := sha256.Sum256([]byte("approved workflow"))
-	return TestPolicy{WorkflowPath: MainBranchTestWorkflowPath, WorkflowSHA256: stringHex(digest[:]), Event: "push", RequiredJobs: []string{"release-tests-complete"}, DeadlineSeconds: 1800}
+	return TestPolicy{WorkflowID: "20", WorkflowPath: MainBranchTestWorkflowPath, WorkflowSHA256: stringHex(digest[:]), Event: "push", RequiredJobs: []string{"release-tests-complete"}, DeadlineSeconds: 1800}
 }
 
 func checksRecord(command string) Record {
@@ -82,11 +86,15 @@ func checksRecord(command string) Record {
 	reservation.Command = command
 	reservation.ReleaseLine = "v2.9"
 	reservation.ResolvedVersion = "v2.9.0"
+	reservation.GenerationVersion = "v2.9.0"
 	signed := &SignedOutput{SourceSHA: source, ReleaseSHA: release}
 	if command == "release:prepare" {
-		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", DesiredSHA: source}, {Ref: "refs/heads/dev-v2.10.x", DesiredSHA: release}}
+		reservation.DevelopmentVersion = "v2.9.0"
+		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", DesiredSHA: "pending"}, {Ref: "refs/heads/dev-v2.10.x", DesiredSHA: "pending"}}
+		signed.PublicationIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", DesiredSHA: source}, {Ref: "refs/heads/dev-v2.10.x", DesiredSHA: release}}
 	} else {
-		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", ExpectedOldSHA: source, DesiredSHA: release}}
+		reservation.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", ExpectedOldSHA: source, DesiredSHA: "pending"}}
+		signed.PublicationIntents = []BranchIntent{{Ref: "refs/heads/release-v2.9.x", ExpectedOldSHA: source, DesiredSHA: release}}
 	}
 	return Record{Reservation: reservation, Phase: PhaseBranchesPublished, SignedOutput: signed}
 }
@@ -96,7 +104,7 @@ func successfulChecksAPI(record Record, policy TestPolicy) *fakeChecksAPI {
 	api := &fakeChecksAPI{jobs: map[string][]WorkflowJob{}, current: map[string]WorkflowRun{}, refs: map[string]string{}, workflow: []byte("approved workflow")}
 	for i, target := range targets {
 		id := string(rune('1' + i))
-		run := WorkflowRun{ID: id, RepositoryFullName: RepositoryFullName, WorkflowPath: policy.WorkflowPath, Event: "push", HeadBranch: target.Branch, HeadSHA: target.SHA, Attempt: 1, Status: "completed", Conclusion: "success"}
+		run := WorkflowRun{ID: id, RepositoryFullName: RepositoryFullName, WorkflowID: policy.WorkflowID, WorkflowPath: policy.WorkflowPath, Event: "push", HeadBranch: target.Branch, HeadSHA: target.SHA, Attempt: 1, Status: "completed", Conclusion: "success"}
 		api.runs = append(api.runs, run)
 		api.current[id] = run
 		api.jobs[id] = []WorkflowJob{{ID: string(rune('7' + i)), Name: "release-tests-complete", Attempt: 1, Status: "completed", Conclusion: "success"}}
@@ -387,7 +395,7 @@ func (f *fakePreparePRAPI) ListPullRequestFilesPage(_ context.Context, number st
 func (f *fakePreparePRAPI) CreatePullRequest(_ context.Context, input CreatePreparePullRequest) error {
 	f.created++
 	number := "42"
-	f.prs = append(f.prs, PreparePullRequest{Number: number, RepositoryFullName: RepositoryFullName, HeadRef: input.HeadRef, HeadSHA: strings.Repeat("2", 40), BaseRef: input.BaseRef, State: "open", Body: input.Body})
+	f.prs = append(f.prs, PreparePullRequest{Number: number, RepositoryFullName: RepositoryFullName, URL: "https://github.com/DataDog/dd-trace-go/pull/" + number, HeadRef: input.HeadRef, HeadSHA: strings.Repeat("2", 40), BaseRef: input.BaseRef, State: "open", Body: input.Body})
 	if f.files == nil {
 		f.files = map[string][]string{}
 	}
@@ -434,7 +442,7 @@ func TestPreparePRD01WrongBaseOrHeadConflictsWithoutDuplicate(t *testing.T) {
 		func(pr *PreparePullRequest) { pr.Body = "wrong marker" },
 	} {
 		record := preparePRRecord()
-		pr := PreparePullRequest{Number: "8", RepositoryFullName: RepositoryFullName, HeadRef: "dev-v2.10.x", HeadSHA: record.SignedOutput.ReleaseSHA, BaseRef: "main", State: "open", Body: preparePRMarker(record.Reservation.RequestKey)}
+		pr := PreparePullRequest{Number: "8", RepositoryFullName: RepositoryFullName, URL: "https://github.com/DataDog/dd-trace-go/pull/8", HeadRef: "dev-v2.10.x", HeadSHA: record.SignedOutput.ReleaseSHA, BaseRef: "main", State: "open", Body: preparePRMarker(record.Reservation.RequestKey)}
 		mutate(&pr)
 		api := &fakePreparePRAPI{prs: []PreparePullRequest{pr}, files: map[string][]string{"8": record.SignedOutput.ChangedPaths}}
 		if _, err := EnsurePreparePR(context.Background(), api, record); ErrorCode(err) != "prepare_pr_conflict" || api.created != 0 {
@@ -445,7 +453,7 @@ func TestPreparePRD01WrongBaseOrHeadConflictsWithoutDuplicate(t *testing.T) {
 
 func TestPreparePRChangedPathsAndPaginationFailClosed(t *testing.T) {
 	record := preparePRRecord()
-	pr := PreparePullRequest{Number: "8", RepositoryFullName: RepositoryFullName, HeadRef: "dev-v2.10.x", HeadSHA: record.SignedOutput.ReleaseSHA, BaseRef: "main", State: "open", Body: preparePRMarker(record.Reservation.RequestKey)}
+	pr := PreparePullRequest{Number: "8", RepositoryFullName: RepositoryFullName, URL: "https://github.com/DataDog/dd-trace-go/pull/8", HeadRef: "dev-v2.10.x", HeadSHA: record.SignedOutput.ReleaseSHA, BaseRef: "main", State: "open", Body: preparePRMarker(record.Reservation.RequestKey)}
 	api := &fakePreparePRAPI{prs: []PreparePullRequest{pr}, files: map[string][]string{"8": {"unrelated.go"}}}
 	if _, err := EnsurePreparePR(context.Background(), api, record); ErrorCode(err) != "prepare_pr_changed_paths" {
 		t.Fatalf("error=%q", ErrorCode(err))

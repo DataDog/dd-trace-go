@@ -6,6 +6,7 @@
 package gardenerrelease
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const issueCommentsPathPrefix = "/repos/DataDog/dd-trace-go/issues/"
@@ -33,7 +35,9 @@ type GitHubClient struct {
 
 type IssueComment struct {
 	ID                string
+	IssueURL          string
 	Body              string
+	AuthorID          string
 	AuthorLogin       string
 	AuthorAssociation string
 }
@@ -191,6 +195,9 @@ func (c *GitHubClient) getOnce(ctx context.Context, endpoint *url.URL, expectedP
 	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
 		return nil, nil, true, newReleaseError(ErrorClassEvidenceIncomplete, "retryable_status")
 	}
+	if response.StatusCode == http.StatusNotFound {
+		return nil, nil, false, newReleaseError(ErrorClassEvidenceIncomplete, "not_found")
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, nil, false, newReleaseError(ErrorClassEvidenceIncomplete, "unexpected_status")
 	}
@@ -258,7 +265,8 @@ func decodeIssueComments(raw []byte) ([]IssueComment, error) {
 		Body              string          `json:"body"`
 		AuthorAssociation string          `json:"author_association"`
 		User              struct {
-			Login string `json:"login"`
+			ID    json.RawMessage `json:"id"`
+			Login string          `json:"login"`
 		} `json:"user"`
 	}
 	if err := json.Unmarshal(raw, &values); err != nil {
@@ -270,7 +278,11 @@ func decodeIssueComments(raw []byte) ([]IssueComment, error) {
 		if err != nil {
 			return nil, err
 		}
-		comments = append(comments, IssueComment{ID: id, Body: value.Body, AuthorLogin: value.User.Login, AuthorAssociation: value.AuthorAssociation})
+		authorID, err := decodeGitHubID(value.User.ID)
+		if err != nil {
+			return nil, err
+		}
+		comments = append(comments, IssueComment{ID: id, Body: value.Body, AuthorID: authorID, AuthorLogin: value.User.Login, AuthorAssociation: value.AuthorAssociation})
 	}
 	return comments, nil
 }
@@ -289,6 +301,123 @@ func decodeGitHubID(raw json.RawMessage) (string, error) {
 		return s, nil
 	}
 	return "", typedRequestError("unsafe_id")
+}
+
+// GetIssueComment implements the read half of FeedbackAPI against the fixed
+// DataDog/dd-trace-go endpoint. The response issue_url supplies the issue
+// binding; the dispatch value never becomes API evidence.
+func (c *GitHubClient) GetIssueComment(ctx context.Context, issueNumber, commentID string) (BoundIssueComment, bool, error) {
+	if !validID(issueNumber) || !validID(commentID) {
+		return BoundIssueComment{}, false, typedRequestError("unsafe_id")
+	}
+	path := "/repos/DataDog/dd-trace-go/issues/comments/" + commentID
+	body, _, err := c.getBounded(ctx, c.urlForPath(path, nil), path)
+	if err != nil {
+		if ErrorCode(err) == "not_found" {
+			return BoundIssueComment{}, false, nil
+		}
+		return BoundIssueComment{}, false, err
+	}
+	comment, err := decodeSingleIssueComment(body)
+	if err != nil {
+		return BoundIssueComment{}, false, err
+	}
+	boundIssue, err := c.issueNumberFromURL(comment.IssueURL)
+	if err != nil || boundIssue != issueNumber {
+		return BoundIssueComment{}, false, newReleaseError(ErrorClassRequestRejected, "comment_issue_mismatch")
+	}
+	return BoundIssueComment{RepositoryFullName: RepositoryFullName, IssueNumber: boundIssue, CommentID: comment.ID, Body: comment.Body, AuthorID: comment.AuthorID, AuthorLogin: comment.AuthorLogin, AuthorAssociation: comment.AuthorAssociation}, true, nil
+}
+
+// UpdateIssueComment performs one bounded mutation attempt. It never retries a
+// write; PublishFeedback reconciles by reading the exact comment afterwards.
+func (c *GitHubClient) UpdateIssueComment(ctx context.Context, commentID, body string) error {
+	ctx, cancel := c.boundedOperationContext(ctx)
+	defer cancel()
+	if !validID(commentID) || len(body) == 0 || len([]byte(body)) > MaxContextBytes || !utf8.ValidString(body) {
+		return typedRequestError("invalid_feedback_body")
+	}
+	path := "/repos/DataDog/dd-trace-go/issues/comments/" + commentID
+	payload, err := json.Marshal(struct {
+		Body string `json:"body"`
+	}{Body: body})
+	if err != nil {
+		return wrapReleaseError(ErrorClassFeedbackFailed, "feedback_encode_failed", err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.urlForPath(path, nil).String(), bytes.NewReader(payload))
+	if err != nil {
+		return wrapReleaseError(ErrorClassFeedbackFailed, "feedback_request_build_failed", err)
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return wrapReleaseError(ErrorClassFeedbackFailed, "feedback_transport_error", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return newReleaseError(ErrorClassFeedbackFailed, "feedback_unexpected_status")
+	}
+	written, err := io.Copy(io.Discard, io.LimitReader(response.Body, c.maxBytes+1))
+	if err != nil {
+		return wrapReleaseError(ErrorClassFeedbackFailed, "feedback_response_read_failed", err)
+	}
+	if written > c.maxBytes {
+		return newReleaseError(ErrorClassFeedbackFailed, "feedback_response_too_large")
+	}
+	return nil
+}
+
+func (c *GitHubClient) boundedOperationContext(parent context.Context) (context.Context, context.CancelFunc) {
+	deadline := c.readDeadline
+	if deadline <= 0 || deadline > time.Minute {
+		deadline = time.Minute
+	}
+	return context.WithTimeout(parent, deadline)
+}
+
+func decodeSingleIssueComment(raw []byte) (IssueComment, error) {
+	var value struct {
+		ID                json.RawMessage `json:"id"`
+		IssueURL          string          `json:"issue_url"`
+		Body              string          `json:"body"`
+		AuthorAssociation string          `json:"author_association"`
+		User              struct {
+			ID    json.RawMessage `json:"id"`
+			Login string          `json:"login"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return IssueComment{}, typedContractError("invalid_api_json")
+	}
+	id, err := decodeGitHubID(value.ID)
+	if err != nil {
+		return IssueComment{}, err
+	}
+	authorID, err := decodeGitHubID(value.User.ID)
+	if err != nil {
+		return IssueComment{}, err
+	}
+	return IssueComment{ID: id, IssueURL: value.IssueURL, Body: value.Body, AuthorID: authorID, AuthorLogin: value.User.Login, AuthorAssociation: value.AuthorAssociation}, nil
+}
+
+func (c *GitHubClient) issueNumberFromURL(raw string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != c.baseURL.Scheme || parsed.Host != c.baseURL.Host || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", newReleaseError(ErrorClassEvidenceIncomplete, "comment_issue_url_invalid")
+	}
+	const prefix = "/repos/DataDog/dd-trace-go/issues/"
+	if !strings.HasPrefix(parsed.Path, prefix) {
+		return "", newReleaseError(ErrorClassEvidenceIncomplete, "comment_issue_url_invalid")
+	}
+	issue := strings.TrimPrefix(parsed.Path, prefix)
+	if strings.Contains(issue, "/") || !validID(issue) {
+		return "", newReleaseError(ErrorClassEvidenceIncomplete, "comment_issue_url_invalid")
+	}
+	return issue, nil
 }
 
 func rateLimitDelay(now time.Time, reset string) time.Duration {

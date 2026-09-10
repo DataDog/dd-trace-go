@@ -19,8 +19,8 @@ import (
 const MainBranchTestWorkflowPath = ".github/workflows/main-branch-tests.yml"
 
 // TestPolicy fixes the Actions evidence accepted by the pre-tag gate. WorkflowID
-// is optional until administrators record GitHub's numeric ID; path plus the
-// target-revision content digest remain mandatory and immutable.
+// is mandatory production policy; path plus the target-revision content
+// digest are independently bound at the target SHA.
 type TestPolicy struct {
 	WorkflowID      string
 	WorkflowPath    string
@@ -69,12 +69,22 @@ type testTarget struct {
 	SHA    string
 }
 
+type verifiedJobEvidence struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Attempt    int    `json:"attempt"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+}
+
 type verifiedRunEvidence struct {
-	TargetBranch string   `json:"target_branch"`
-	TargetSHA    string   `json:"target_sha"`
-	RunID        string   `json:"run_id"`
-	Attempt      int      `json:"attempt"`
-	JobIDs       []string `json:"job_ids"`
+	TargetBranch string                `json:"target_branch"`
+	TargetSHA    string                `json:"target_sha"`
+	RunID        string                `json:"run_id"`
+	Attempt      int                   `json:"attempt"`
+	Status       string                `json:"status"`
+	Conclusion   string                `json:"conclusion"`
+	Jobs         []verifiedJobEvidence `json:"jobs"`
 }
 
 type testGateEvidence struct {
@@ -85,6 +95,7 @@ type testGateEvidence struct {
 	WorkflowSHA   string                `json:"workflow_sha256"`
 	Event         string                `json:"event"`
 	ReleaseSHA    string                `json:"release_sha"`
+	RequiredJobs  []string              `json:"required_jobs"`
 	Runs          []verifiedRunEvidence `json:"runs"`
 }
 
@@ -113,10 +124,12 @@ func VerifyRequiredTests(ctx context.Context, api ChecksAPI, policy TestPolicy, 
 	if err != nil {
 		return TestGateResult{}, err
 	}
+	requiredJobs := append([]string(nil), policy.RequiredJobs...)
+	sort.Strings(requiredJobs)
 	evidence := testGateEvidence{
 		SchemaVersion: "1", Repository: RepositoryFullName, WorkflowPath: policy.WorkflowPath,
 		WorkflowID: policy.WorkflowID, WorkflowSHA: policy.WorkflowSHA256, Event: policy.Event,
-		ReleaseSHA: record.SignedOutput.ReleaseSHA,
+		ReleaseSHA: record.SignedOutput.ReleaseSHA, RequiredJobs: requiredJobs,
 	}
 	matchedRuns := make([]WorkflowRun, 0, len(targets))
 	for _, target := range targets {
@@ -124,12 +137,12 @@ func VerifyRequiredTests(ctx context.Context, api ChecksAPI, policy TestPolicy, 
 		if err != nil {
 			return TestGateResult{}, err
 		}
-		jobIDs := make([]string, 0, len(jobs))
+		jobEvidence := make([]verifiedJobEvidence, 0, len(jobs))
 		for _, job := range jobs {
-			jobIDs = append(jobIDs, job.ID)
+			jobEvidence = append(jobEvidence, verifiedJobEvidence{ID: job.ID, Name: job.Name, Attempt: job.Attempt, Status: job.Status, Conclusion: job.Conclusion})
 		}
-		sort.Strings(jobIDs)
-		evidence.Runs = append(evidence.Runs, verifiedRunEvidence{TargetBranch: target.Branch, TargetSHA: target.SHA, RunID: run.ID, Attempt: run.Attempt, JobIDs: jobIDs})
+		sort.Slice(jobEvidence, func(i, j int) bool { return jobEvidence[i].Name < jobEvidence[j].Name })
+		evidence.Runs = append(evidence.Runs, verifiedRunEvidence{TargetBranch: target.Branch, TargetSHA: target.SHA, RunID: run.ID, Attempt: run.Attempt, Status: run.Status, Conclusion: run.Conclusion, Jobs: jobEvidence})
 		matchedRuns = append(matchedRuns, run)
 	}
 	// Re-read each run after collecting all jobs. A rerun, cancellation, or
@@ -195,6 +208,22 @@ func RevalidateRequiredTests(ctx context.Context, api ChecksAPI, policy TestPoli
 	return nil
 }
 
+// LatestStoredTestEvidence returns the most recent verified test event.
+func LatestStoredTestEvidence(events []Event) (VerifiedTestEvidence, bool) {
+	for index := len(events) - 1; index >= 0; index-- {
+		if events[index].Kind != EventTestsPassed {
+			continue
+		}
+		var body struct {
+			Evidence VerifiedTestEvidence `json:"evidence"`
+		}
+		if json.Unmarshal(events[index].Evidence, &body) == nil && body.Evidence.SchemaVersion != "" {
+			return body.Evidence, true
+		}
+	}
+	return VerifiedTestEvidence{}, false
+}
+
 func hasStoredTestEvidence(events []Event, stored VerifiedTestEvidence) bool {
 	for _, event := range events {
 		if event.Kind != EventTestsPassed {
@@ -214,7 +243,7 @@ func validateTestPolicy(policy TestPolicy) error {
 	if policy.WorkflowPath != MainBranchTestWorkflowPath || !lowerHexDigest(policy.WorkflowSHA256) || policy.Event != "push" || policy.DeadlineSeconds <= 0 || policy.DeadlineSeconds > MaxPollingDeadlineSeconds || len(policy.RequiredJobs) == 0 || len(policy.RequiredJobs) > 100 {
 		return newReleaseError(ErrorClassContractMismatch, "invalid_test_policy")
 	}
-	if policy.WorkflowID != "" && !validID(policy.WorkflowID) {
+	if !validID(policy.WorkflowID) {
 		return newReleaseError(ErrorClassContractMismatch, "invalid_test_policy")
 	}
 	seen := map[string]bool{}
@@ -228,7 +257,7 @@ func validateTestPolicy(policy TestPolicy) error {
 }
 
 func requiredTestTargets(record Record) ([]testTarget, error) {
-	intents := record.Reservation.BranchIntents
+	intents := record.SignedOutput.PublicationIntents
 	branch := func(ref string) (string, bool) {
 		if !strings.HasPrefix(ref, "refs/heads/") {
 			return "", false
@@ -345,6 +374,7 @@ func sameSuccessfulRun(current, prior WorkflowRun) bool {
 type PreparePullRequest struct {
 	Number             string
 	RepositoryFullName string
+	URL                string
 	HeadRef            string
 	HeadSHA            string
 	BaseRef            string
@@ -374,13 +404,13 @@ type PreparePRResult struct {
 // EnsurePreparePR creates or reconciles the prepare-only development PR after
 // tags. It never merges and has no Git/push boundary.
 func EnsurePreparePR(ctx context.Context, api PreparePRAPI, record Record) (PreparePRResult, error) {
-	if api == nil || !validRecordRepositoryBinding(record.Reservation) || record.Reservation.Command != "release:prepare" || !phaseAtLeast(record.Phase, PhaseTagsPublished) || record.SignedOutput == nil || len(record.Reservation.BranchIntents) != 2 {
+	if api == nil || !validRecordRepositoryBinding(record.Reservation) || record.Reservation.Command != "release:prepare" || !phaseAtLeast(record.Phase, PhaseTagsPublished) || record.SignedOutput == nil || len(record.SignedOutput.PublicationIntents) != 2 {
 		return PreparePRResult{}, newReleaseError(ErrorClassStateConflict, "prepare_pr_not_applicable")
 	}
 	if err := validateBranchIntents(record); err != nil {
 		return PreparePRResult{}, err
 	}
-	dev := record.Reservation.BranchIntents[1]
+	dev := record.SignedOutput.PublicationIntents[1]
 	if !strings.HasPrefix(dev.Ref, "refs/heads/dev-v") || dev.DesiredSHA != record.SignedOutput.ReleaseSHA {
 		return PreparePRResult{}, newReleaseError(ErrorClassStateConflict, "invalid_prepare_pr_target")
 	}
@@ -398,7 +428,7 @@ func EnsurePreparePR(ctx context.Context, api PreparePRAPI, record Record) (Prep
 			if !candidate {
 				continue
 			}
-			if pr.RepositoryFullName != RepositoryFullName || pr.HeadRef != head || pr.HeadSHA != dev.DesiredSHA || pr.BaseRef != "main" || pr.State != "open" || !strings.Contains(pr.Body, marker) {
+			if pr.RepositoryFullName != RepositoryFullName || pr.URL != "https://github.com/DataDog/dd-trace-go/pull/"+pr.Number || pr.HeadRef != head || pr.HeadSHA != dev.DesiredSHA || pr.BaseRef != "main" || pr.State != "open" || !strings.Contains(pr.Body, marker) {
 				return nil, newReleaseError(ErrorClassStateConflict, "prepare_pr_conflict")
 			}
 			files, err := listAllPreparePRFiles(ctx, api, pr.Number)
@@ -439,12 +469,11 @@ func EnsurePreparePR(ctx context.Context, api PreparePRAPI, record Record) (Prep
 	}
 	updated := record
 	if !hasPreparePREvent(updated.Events, pr.Number) {
-		body, _ := json.Marshal(struct {
-			Number string `json:"number"`
-			Head   string `json:"head"`
-			SHA    string `json:"sha"`
-			Base   string `json:"base"`
-		}{Number: pr.Number, Head: head, SHA: dev.DesiredSHA, Base: "main"})
+		disposition := "reconciled"
+		if !reconciled {
+			disposition = "created"
+		}
+		body, _ := json.Marshal(preparePREventEvidence{SchemaVersion: "1", Repository: RepositoryFullName, Command: record.Reservation.Command, Number: pr.Number, URL: pr.URL, Head: head, SHA: dev.DesiredSHA, Base: "main", Marker: marker, Disposition: disposition})
 		updated.Events, err = AppendEvent(updated.Events, updated.Reservation.RequestKey, EventPreparePRRecorded, body)
 		if err != nil {
 			return PreparePRResult{}, err

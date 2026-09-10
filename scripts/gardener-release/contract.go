@@ -73,13 +73,13 @@ type ParsedCommand struct {
 }
 
 type Context struct {
-	RepositoryID             string
-	RepositoryFullName       string
-	IssueNumber              string
-	OriginalCommentID        string
-	AcknowledgementCommentID string
-	BodySnapshot             string
-	PolicyRevision           string
+	RepositoryID             string `json:"repository_id"`
+	RepositoryFullName       string `json:"repository_full_name"`
+	IssueNumber              string `json:"issue_number"`
+	OriginalCommentID        string `json:"original_comment_id"`
+	AcknowledgementCommentID string `json:"acknowledgement_comment_id"`
+	BodySnapshot             string `json:"body_snapshot"`
+	PolicyRevision           string `json:"policy_revision"`
 }
 
 type DispatchRequest struct {

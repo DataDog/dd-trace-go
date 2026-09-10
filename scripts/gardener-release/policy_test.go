@@ -11,7 +11,7 @@ import (
 )
 
 func validPolicyJSON() []byte {
-	return []byte(`{"schema_version":"1","repository_id":"123","repository_full_name":"DataDog/dd-trace-go","state_branch":"gardener-release-state","release_concurrency_group":"gardener-release-production-v1","issue_mapping":{"456":"v2.11"},"limits":{"api_max_pages":200,"api_page_size":100,"api_response_bytes":16777216,"read_retries":3,"polling_deadline_seconds":1800},"test_policy":{"workflow_id":"","workflow_path":".github/workflows/main-branch-tests.yml","workflow_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","event":"push","required_jobs":["release-tests-complete"],"deadline_seconds":1800}}`)
+	return []byte(`{"schema_version":"1","repository_id":"123","repository_full_name":"DataDog/dd-trace-go","state_branch":"gardener-release-state","release_concurrency_group":"gardener-release-production-v1","issue_mapping":{"456":"v2.11"},"limits":{"api_max_pages":200,"api_page_size":100,"api_response_bytes":16777216,"read_retries":3,"polling_deadline_seconds":1800},"test_policy":{"workflow_id":"20","workflow_path":".github/workflows/main-branch-tests.yml","workflow_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","event":"push","required_jobs":["release-tests-complete"],"deadline_seconds":1800},"image_policy":{"workflow_id":"30","workflow_path":".github/workflows/docker-images-release.yml","workflow_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","child_workflow_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"ssh_signing_policy":{"principal":"gardener-release-fixture","public_key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMRxzv8rrcMLUlupjDqA/vVikQaxPjT60BRzOn948Pqf","fingerprint":"SHA256:uUWkEC8QiBrOvQdplgmRQxHii6n4kosoK4KccmL1OME"},"gardener_identity":{"author_id":"2001","author_login":"gardener-fixture"}}`)
 }
 
 func validDispatchJSON(policyRaw []byte) []byte {
@@ -76,7 +76,7 @@ func TestDecodePolicyStrictFailures(t *testing.T) {
 		{name: "unsafe id", raw: []byte(strings.Replace(validPolicy, `"repository_id":"123"`, `"repository_id":"0123"`, 1)), code: "unsafe_id"},
 		{name: "drifted repository", raw: []byte(strings.Replace(validPolicy, RepositoryFullName, "example.com/private", 1)), code: "invalid_repository"},
 		{name: "limit exceeded", raw: []byte(strings.Replace(validPolicy, `"read_retries":3`, `"read_retries":4`, 1)), code: "policy_limit_exceeded"},
-		{name: "missing test policy", raw: []byte(strings.Replace(validPolicy, `,"test_policy":{"workflow_id":"","workflow_path":".github/workflows/main-branch-tests.yml","workflow_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","event":"push","required_jobs":["release-tests-complete"],"deadline_seconds":1800}`, ``, 1)), code: "missing_policy_key"},
+		{name: "missing test policy", raw: []byte(strings.Replace(validPolicy, `,"test_policy":{"workflow_id":"20","workflow_path":".github/workflows/main-branch-tests.yml","workflow_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","event":"push","required_jobs":["release-tests-complete"],"deadline_seconds":1800}`, ``, 1)), code: "missing_policy_key"},
 		{name: "null required jobs", raw: []byte(strings.Replace(validPolicy, `"required_jobs":["release-tests-complete"]`, `"required_jobs":null`, 1)), code: "wrong_policy_type"},
 		{name: "unknown test policy key", raw: []byte(strings.Replace(validPolicy, `"event":"push"`, `"bypass":true,"event":"push"`, 1)), code: "unknown_policy_key"},
 		{name: "wrong test workflow", raw: []byte(strings.Replace(validPolicy, `.github/workflows/main-branch-tests.yml`, `.github/workflows/other.yml`, 1)), code: "policy_drift"},
@@ -108,6 +108,8 @@ func TestValidateRequestAgainstPolicyRechecksFetchedSource(t *testing.T) {
 		IssueNumber:        "456",
 		CommentID:          "789",
 		Body:               "/gardener release:promote v2.11",
+		AuthorID:           "42",
+		AuthorLogin:        "release-maintainer",
 		AuthorAssociation:  "MEMBER",
 	}
 	validated, err := ValidateRequestAgainstPolicy(request, policy, source)

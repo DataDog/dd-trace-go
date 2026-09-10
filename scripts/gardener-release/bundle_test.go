@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -42,10 +43,12 @@ func bundleFixture(t *testing.T, branch, version string) (sourceRemotePath strin
 	}
 	reader := GitBlobReader{Runner: ExecRunner{}, Dir: workDir}
 	signResult, err := SignCommit(context.Background(), ExecRunner{}, nil, ephemeralTestSigner(t), SignInput{
-		Output:   genOutput,
-		Manifest: manifest,
-		Reader:   reader.Read,
-		WorkDir:  workDir,
+		Output:          genOutput,
+		Manifest:        manifest,
+		Reader:          reader.Read,
+		WorkDir:         workDir,
+		ToolDigest:      strings.Repeat("a", 64),
+		ValidatorDigest: strings.Repeat("b", 64),
 	})
 	if err != nil {
 		t.Fatalf("SignCommit: %v", err)
@@ -417,6 +420,8 @@ func mustMarshalAttestationForTest(t *testing.T, signed SignedOutput) []byte {
 		TreeSHA:         signed.TreeSHA,
 		ReleaseSHA:      signed.ReleaseSHA,
 		ResolvedVersion: attestationResolvedVersion(signed),
+		ToolDigest:      signed.ToolDigest,
+		ValidatorDigest: signed.ValidatorDigest,
 		Tags:            tagRefNames(signed.Tags),
 	}
 	data, err := json.Marshal(attestation)

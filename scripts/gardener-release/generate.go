@@ -60,15 +60,12 @@ type GenerateInput struct {
 	// SourceSHA onto before invoking the tagger. Generate is a
 	// single-branch/single-version primitive: it never derives this from
 	// a command or decides between a release/development branch itself.
-	// A full prepare operation (cut a new release branch from a dev
-	// source, then separately advance the dev branch to its next
-	// development version) is two independent Generate calls with two
-	// independent SourceSHA/TargetBranch/ResolvedVersion triples, each
-	// producing its own unsigned commit; sequencing those calls is the
-	// orchestration layer's job (B08/B09), using version.go's
-	// VersionResolution.ReleaseBranch/DevelopmentBranch to name each call's
-	// TargetBranch. Reuse releaseBranchName/devBranchName (version.go) to
-	// compute this value; Generate does not recompute it.
+	// Prepare invokes Generate once for the next-development commit. The
+	// release branch is a direct cut at the recorded source SHA, so it does
+	// not need a generated or signed commit. Promote and release invoke
+	// Generate once for the recorded release branch and resolved version.
+	// The orchestration layer derives the branch and generation version;
+	// Generate never recomputes either value.
 	TargetBranch    string
 	ResolvedVersion string
 	UntaggedModules []string

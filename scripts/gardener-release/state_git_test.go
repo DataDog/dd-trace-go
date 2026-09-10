@@ -7,7 +7,11 @@ package gardenerrelease
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,6 +85,90 @@ func newFixtureStore(t *testing.T, remotePath string, signer Signer) *GitStateSt
 	return store
 }
 
+func advanceFixtureRecordToPhase(t *testing.T, decision ReservationDecision, signed SignedOutput, phase OperationPhase) Record {
+	t.Helper()
+	decision.Record = bindFixtureSigningIntent(t, decision.Record, signed.SignerFingerprint)
+	record, _, err := AdvanceToSigned(decision.Record, signed, signedRecordEvidence(t, signed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if phase == PhaseSigned {
+		return record
+	}
+	for _, intent := range record.SignedOutput.PublicationIntents {
+		if err := appendRefEvent(&record, EventBranchPublished, intent.Ref, intent.DesiredSHA, "published"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := advancePublicationPhase(&record, PhaseBranchesPublished); err != nil {
+		t.Fatal(err)
+	}
+	if phase == PhaseBranchesPublished {
+		return record
+	}
+	targets, err := requiredTestTargets(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail := testGateEvidence{SchemaVersion: "1", Repository: RepositoryFullName, WorkflowPath: MainBranchTestWorkflowPath, WorkflowID: "20", WorkflowSHA: strings.Repeat("e", 64), Event: "push", ReleaseSHA: record.SignedOutput.ReleaseSHA, RequiredJobs: []string{"required"}}
+	for index, target := range targets {
+		detail.Runs = append(detail.Runs, verifiedRunEvidence{TargetBranch: target.Branch, TargetSHA: target.SHA, RunID: fmt.Sprintf("%d", index+1), Attempt: 1, Status: "completed", Conclusion: "success", Jobs: []verifiedJobEvidence{{ID: fmt.Sprintf("%d", index+101), Name: "required", Attempt: 1, Status: "completed", Conclusion: "success"}}})
+	}
+	canonical, err := canonicalJSON(detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(canonical)
+	verified := VerifiedTestEvidence{SchemaVersion: "1", ReleaseSHA: record.SignedOutput.ReleaseSHA, EvidenceSHA256: hex.EncodeToString(digest[:])}
+	body, err := json.Marshal(testEventEvidence{Evidence: verified, Detail: detail})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Events, err = AppendEvent(record.Events, record.Reservation.RequestKey, EventTestsPassed, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := advancePublicationPhase(&record, PhaseTestsPassed); err != nil {
+		t.Fatal(err)
+	}
+	if phase == PhaseTestsPassed {
+		return record
+	}
+	for _, tag := range record.SignedOutput.Tags {
+		if err := appendRefEvent(&record, EventTagPublished, tag.Ref, tag.TagObjectSHA, "published"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := advancePublicationPhase(&record, PhaseTagsPublished); err != nil {
+		t.Fatal(err)
+	}
+	if phase == PhaseTagsPublished {
+		return record
+	}
+	outcome := OperationOutcome{SchemaVersion: "1", Publication: PublicationOutcome{Status: WorkSucceeded, ReleaseSHA: record.SignedOutput.ReleaseSHA}, PreparePR: PreparePROutcome{Status: WorkNotApplicable}, Images: WorkNotApplicable, ImageEvidence: []ImagePromotionEvidence{}}
+	if record.Reservation.Command == "release:prepare" {
+		dev := record.SignedOutput.PublicationIntents[1]
+		pr := preparePREventEvidence{SchemaVersion: "1", Repository: RepositoryFullName, Command: "release:prepare", Number: "42", URL: "https://github.com/DataDog/dd-trace-go/pull/42", Head: strings.TrimPrefix(dev.Ref, "refs/heads/"), SHA: dev.DesiredSHA, Base: "main", Marker: preparePRMarker(record.Reservation.RequestKey), Disposition: "reconciled"}
+		body, marshalErr := json.Marshal(pr)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		record.Events, err = AppendEvent(record.Events, record.Reservation.RequestKey, EventPreparePRRecorded, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outcome.PreparePR = PreparePROutcome{Status: WorkSucceeded, Number: "42"}
+	}
+	record, err = RecordOperationOutcome(record, outcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if phase != PhaseComplete || record.Phase != PhaseComplete {
+		t.Fatalf("unsupported fixture phase %q", phase)
+	}
+	return record
+}
+
 func publicKeyOf(t *testing.T, signer Signer) []byte {
 	t.Helper()
 	if signer == nil {
@@ -96,13 +184,76 @@ func publicKeyOf(t *testing.T, signer Signer) []byte {
 	return key
 }
 
-func sealedReservationDecision(t *testing.T, reservation Reservation) ReservationDecision {
+func sealedReservationDecision(t *testing.T, reservation Reservation, signerFingerprint ...string) ReservationDecision {
 	t.Helper()
+	reservation.RequestSHA256 = RequestSHA256(Context{RepositoryID: reservation.RepositoryID, RepositoryFullName: reservation.RepositoryFullName, IssueNumber: reservation.IssueNumber, OriginalCommentID: reservation.OriginalCommentID, AcknowledgementCommentID: reservation.AcknowledgementCommentID, BodySnapshot: reservation.BodySnapshot, PolicyRevision: reservation.PolicyRevision}, reservation.Command, reservation.RequestedVersion)
 	decision, err := ReserveOperation(nil, reservation, nil)
 	if err != nil {
 		t.Fatalf("ReserveOperation: %v", err)
 	}
+	decision.Record.WorkflowSHA = strings.Repeat("c", 40)
+	decision.Record.ToolSHA = strings.Repeat("d", 40)
+	fingerprint := strings.Repeat("0", 64)
+	if len(signerFingerprint) > 1 {
+		t.Fatal("multiple fixture signer fingerprints")
+	}
+	if len(signerFingerprint) == 1 {
+		fingerprint = signerFingerprint[0]
+	}
+	decision.Record, err = RecordGitSigningIntent(decision.Record, GitSigningIntent{Timestamp: 1767225600, Message: "release: " + reservation.GenerationVersion, Principal: "gardener-release@example.com", Fingerprint: fixtureOpenSSHFingerprint(t, fingerprint)})
+	if err != nil {
+		t.Fatalf("RecordGitSigningIntent: %v", err)
+	}
 	return decision
+}
+
+func fixtureOpenSSHFingerprint(t *testing.T, fingerprint string) string {
+	t.Helper()
+	digest, err := hex.DecodeString(fingerprint)
+	if err != nil || len(digest) != sha256.Size {
+		t.Fatalf("invalid fixture fingerprint %q", fingerprint)
+	}
+	return "SHA256:" + base64.RawStdEncoding.EncodeToString(digest)
+}
+
+func bindFixtureSigningIntent(t *testing.T, record Record, signerFingerprint string) Record {
+	t.Helper()
+	found := false
+	for index := range record.Events {
+		if record.Events[index].Kind != EventSigningIntent {
+			continue
+		}
+		if found {
+			t.Fatal("duplicate fixture signing intent")
+		}
+		var intent GitSigningIntent
+		if err := json.Unmarshal(record.Events[index].Evidence, &intent); err != nil {
+			t.Fatal(err)
+		}
+		intent.Fingerprint = fixtureOpenSSHFingerprint(t, signerFingerprint)
+		body, err := json.Marshal(intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record.Events[index].Evidence = body
+		found = true
+	}
+	if !found {
+		t.Fatal("missing fixture signing intent")
+	}
+	previous := ""
+	for index := range record.Events {
+		record.Events[index].Sequence = index + 1
+		record.Events[index].PreviousDigest = previous
+		record.Events[index].Digest = ""
+		digest, err := computeEventDigest(record.Events[index])
+		if err != nil {
+			t.Fatal(err)
+		}
+		record.Events[index].Digest = digest
+		previous = digest
+	}
+	return record
 }
 
 // TestGitStateStoreS01MissingStateBranchFailsClosed covers §15 S01: a
@@ -127,6 +278,50 @@ func TestGitStateStoreS01MissingStateBranchFailsClosed(t *testing.T) {
 	if _, err := store.PersistReservation(context.Background(), decision, ""); err == nil {
 		t.Fatal("PersistReservation succeeded against a missing state branch")
 	}
+}
+
+func TestGitStateStoreNoRecordRequiresCompleteUnambiguousReadW06(t *testing.T) {
+	t.Run("orphan request paths conflict", func(t *testing.T) {
+		remote := newBareFixtureRemote(t)
+		signer, err := NewEphemeralSigner()
+		if err != nil {
+			t.Fatal(err)
+		}
+		seedStateBranch(t, remote, StateBranch, map[string]string{"requests/123/789/events/000001.json": "orphan\n"})
+		store := newFixtureStore(t, remote, signer)
+		if _, err := store.LoadState(context.Background(), "123:789"); ErrorCode(err) != "ambiguous_request_state" {
+			t.Fatalf("error = %q, want ambiguous_request_state", ErrorCode(err))
+		}
+	})
+
+	t.Run("malformed reservation conflicts", func(t *testing.T) {
+		remote := newBareFixtureRemote(t)
+		signer, err := NewEphemeralSigner()
+		if err != nil {
+			t.Fatal(err)
+		}
+		seedStateBranch(t, remote, StateBranch, map[string]string{"requests/123/789/reservation.json": "not-json\n"})
+		store := newFixtureStore(t, remote, signer)
+		if _, err := store.LoadState(context.Background(), "123:789"); ErrorCode(err) != "invalid_state_record" {
+			t.Fatalf("error = %q, want invalid_state_record", ErrorCode(err))
+		}
+	})
+
+	t.Run("remote read failure is not absence", func(t *testing.T) {
+		remote := newBareFixtureRemote(t)
+		signer, err := NewEphemeralSigner()
+		if err != nil {
+			t.Fatal(err)
+		}
+		seedStateBranch(t, remote, StateBranch, map[string]string{".keep": "state branch root\n"})
+		store := newFixtureStore(t, remote, signer)
+		if err := os.RemoveAll(remote); err != nil {
+			t.Fatal(err)
+		}
+		if loaded, err := store.LoadState(context.Background(), "123:789"); err == nil || loaded.Found {
+			t.Fatalf("read failure returned found=%t error=%v", loaded.Found, err)
+		}
+	})
 }
 
 // TestGitStateStoreReserveLoadRoundTrip proves the basic reserve -> persist
@@ -175,7 +370,7 @@ func TestGitStateStoreReserveLoadRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(reloaded.Record.Reservation, decision.Record.Reservation) {
 		t.Fatalf("reservation = %#v, want %#v", reloaded.Record.Reservation, decision.Record.Reservation)
 	}
-	if reloaded.Record.Phase != PhaseReserved || len(reloaded.Record.Events) != 1 {
+	if reloaded.Record.Phase != PhaseReserved || len(reloaded.Record.Events) != 2 || reloaded.Record.Events[1].Kind != EventSigningIntent {
 		t.Fatalf("unexpected reloaded record: %#v", reloaded.Record)
 	}
 	if reloaded.RemoteHead != newHead {
@@ -311,6 +506,51 @@ func TestGitStateStoreS02ConcurrentGoroutinesOneReservationWins(t *testing.T) {
 	}
 }
 
+func TestGitStateStoreConcurrentExactRedispatchReservesOnceW06(t *testing.T) {
+	remote := newBareFixtureRemote(t)
+	signer, err := NewEphemeralSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedStateBranch(t, remote, StateBranch, map[string]string{".keep": "state branch root\n"})
+	storeA := newFixtureStore(t, remote, signer)
+	storeB := newFixtureStore(t, remote, signer)
+	ctx := context.Background()
+	loadedA, err := storeA.LoadState(ctx, "123:789")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadedB, err := storeB.LoadState(ctx, "123:789")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := sealedReservationDecision(t, baseReservation())
+	start := make(chan struct{})
+	heads := make(chan string, 2)
+	errors := make(chan error, 2)
+	persist := func(store *GitStateStore, head string) {
+		<-start
+		result, persistErr := store.PersistReservation(ctx, decision, head)
+		heads <- result
+		errors <- persistErr
+	}
+	go persist(storeA, loadedA.RemoteHead)
+	go persist(storeB, loadedB.RemoteHead)
+	close(start)
+	headA, headB := <-heads, <-heads
+	errA, errB := <-errors, <-errors
+	if errA != nil || errB != nil {
+		t.Fatalf("exact redispatch errors: %v, %v", errA, errB)
+	}
+	if headA == "" || headA != headB {
+		t.Fatalf("exact redispatch heads = %q, %q", headA, headB)
+	}
+	loaded, err := storeA.LoadState(ctx, "123:789")
+	if err != nil || !loaded.Found || !reflect.DeepEqual(loaded.Record.Reservation, decision.Record.Reservation) {
+		t.Fatalf("final reservation = %#v, %v", loaded, err)
+	}
+}
+
 // TestGitStateStoreS04IdempotentReservationOnRetry covers §15 S04: a
 // record write succeeds but the caller's response is lost (e.g. the
 // process crashes right after the push). A retry that reloads state and
@@ -377,17 +617,24 @@ func TestGitStateStoreS06And07ReloadYieldsIdenticalDecisionAfterRunnerLoss(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	reservation := baseReservation()
-	decision := sealedReservationDecision(t, reservation)
-	// Advance to "signed" to model a runner that had already produced a
-	// signed record before disappearing (S06), and to "branches_published"
-	// to model progress between the two prepare branch pushes (S07).
-	decision.Record.Phase = PhaseSigned
-	events, err := AppendEvent(decision.Record.Events, reservation.RequestKey, EventPhaseAdvanced, nil)
+	_, output, signResult, generatingWorkDir := bundleFixture(t, "dev-v2.9.x", "v2.9.0-dev")
+	bundlePath := filepath.Join(t.TempDir(), "recovery.bundle")
+	bundle, err := BuildRecoveryBundle(ctx, ExecRunner{}, BuildRecoveryBundleInput{WorkDir: generatingWorkDir, SourceSHA: output.SourceSHA, ReleaseSHA: signResult.SignedOutput.ReleaseSHA, Tags: signResult.SignedOutput.Tags, OutputPath: bundlePath})
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision.Record.Events = events
+	signed := signResult.SignedOutput
+	signed.Bundle = bundle
+	signed.Bundle.Path = "requests/123/789/recovery.bundle"
+	reservation := reservationForSigned("v2.9.0-dev", signed.SourceSHA)
+	decision := sealedReservationDecision(t, reservation, signed.SignerFingerprint)
+	// Persist a reachable signed state, including its SignedOutput and typed
+	// phase evidence, before simulating runner loss.
+	signedRecord, alreadySigned, err := AdvanceToSigned(decision.Record, signed, signedRecordEvidence(t, signed))
+	if err != nil || alreadySigned {
+		t.Fatalf("advance signed: already=%t err=%v", alreadySigned, err)
+	}
+	decision.Record = signedRecord
 	if _, err := firstRunnerStore.PersistReservation(ctx, decision, loaded.RemoteHead); err != nil {
 		t.Fatal(err)
 	}
@@ -431,32 +678,48 @@ func TestGitStateStoreIncompleteOperationsOnLineFiltersByPhaseAndLine(t *testing
 	store := newFixtureStore(t, remote, signer)
 	ctx := context.Background()
 
-	persist := func(reservation Reservation, phase OperationPhase) {
+	_, output, signResult, generatingWorkDir := bundleFixture(t, "release-v2.9.x", "v2.9.0-rc.1")
+	bundlePath := filepath.Join(t.TempDir(), "recovery.bundle")
+	bundle, err := BuildRecoveryBundle(ctx, ExecRunner{}, BuildRecoveryBundleInput{WorkDir: generatingWorkDir, SourceSHA: output.SourceSHA, ReleaseSHA: signResult.SignedOutput.ReleaseSHA, Tags: signResult.SignedOutput.Tags, OutputPath: bundlePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	persist := func(commentID string, phase OperationPhase) {
+		reservation := reservationForSigned("v2.9.0-rc.1", signResult.SignedOutput.SourceSHA)
+		reservation.RequestKey, reservation.OriginalCommentID = "123:"+commentID, commentID
 		loaded, err := store.LoadState(ctx, reservation.RequestKey)
 		if err != nil {
 			t.Fatal(err)
 		}
 		decision := sealedReservationDecision(t, reservation)
-		decision.Record.Phase = phase
+		signed := signResult.SignedOutput
+		signed.Bundle = bundle
+		signed.Bundle.Path = "requests/123/" + commentID + "/recovery.bundle"
+		decision.Record = advanceFixtureRecordToPhase(t, decision, signed, phase)
 		if _, err := store.PersistReservation(ctx, decision, loaded.RemoteHead); err != nil {
 			t.Fatalf("persist %s: %v", reservation.RequestKey, err)
 		}
 	}
 
-	incomplete := baseReservation()
-	incomplete.RequestKey, incomplete.OriginalCommentID = "123:111", "111"
-	persist(incomplete, PhaseBranchesPublished)
-
-	complete := baseReservation()
-	complete.RequestKey, complete.OriginalCommentID = "123:222", "222"
-	persist(complete, PhaseComplete)
+	persist("111", PhaseBranchesPublished)
+	persist("222", PhaseComplete)
 
 	otherLine := baseReservation()
 	otherLine.RequestKey, otherLine.OriginalCommentID = "123:333", "333"
 	otherLine.ReleaseLine = "v3.0"
-	persist(otherLine, PhaseReserved)
+	otherLine.ResolvedVersion = "v3.0.0-rc.1"
+	otherLine.GenerationVersion = otherLine.ResolvedVersion
+	otherLine.SourceRefs = []SourceRef{{Ref: "refs/heads/release-v3.0.x", SHA: strings.Repeat("b", 40)}}
+	otherLine.BranchIntents = []BranchIntent{{Ref: "refs/heads/release-v3.0.x", ExpectedOldSHA: strings.Repeat("b", 40), DesiredSHA: "pending"}}
+	loaded, err := store.LoadState(ctx, otherLine.RequestKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PersistReservation(ctx, sealedReservationDecision(t, otherLine), loaded.RemoteHead); err != nil {
+		t.Fatal(err)
+	}
 
-	records, err := store.IncompleteOperationsOnLine(ctx, "v2.11")
+	records, err := store.IncompleteOperationsOnLine(ctx, "v2.9")
 	if err != nil {
 		t.Fatal(err)
 	}

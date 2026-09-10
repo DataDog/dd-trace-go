@@ -280,12 +280,8 @@ func TestRecordImageOutcomeValidatesDeduplicatesAndPreservesChain(t *testing.T) 
 	}
 	cancelled := evidence
 	cancelled.BuildConclusion = "cancelled"
-	third, err := RecordImageOutcome(second, cancelled)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(third.Events) != 2 || VerifyEventChain(record.Reservation.RequestKey, third.Events) != nil || third.Events[0].Digest != first.Events[0].Digest {
-		t.Fatalf("events=%#v", third.Events)
+	if _, err := RecordImageOutcome(second, cancelled); ErrorCode(err) != "image_evidence_conflict" {
+		t.Fatalf("terminal image evidence changed: %v", err)
 	}
 
 	for name, mutate := range map[string]func(*ImagePromotionEvidence){
