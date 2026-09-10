@@ -4,6 +4,8 @@ Read only by the orchestrator (Step 0 of `SKILL.md`), not by individual reviewer
 
 ## Related skills in this repo
 
-There is no other review skill here yet. Claude commands live under `.claude/commands/` (`checklocks`). Cite a command as the standard for its own check; do not invoke this skill from it, and do not invoke it from this skill.
+The other skills in this repo author specific things; this one is the general multi-perspective push gate. Cite them as authoritative for their own area, do not invoke them, and note they must not invoke this skill either:
 
-When you add a skill that authors or reviews a specific area, list it here so the orchestrator can cite it.
+- `documentation-policy` — where a significant feature, `make` option, CI workflow, or scoped `AGENTS.md` must be documented (`CONTRIBUTING.md`, package docs, nearest README). Defer for "did they update the docs?" questions.
+
+Claude commands live under `.claude/commands/` (`checklocks`). Cite a command as the standard for its own check; do not invoke this skill from it.

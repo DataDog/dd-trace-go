@@ -3,6 +3,10 @@ version: "0.1"
 
 # One file on purpose: the platform CLI errors if suites/ has more than one YAML.
 # Two starter cases — one per override. Copy either block to add the next one.
+#
+# These are written as traps, not as obvious bugs: a generic reviewer without
+# the override should miss or mis-classify them. That is what makes the
+# pairwise comparison informative on a first-landing PR (baseline = no skill).
 cases:
   - id: go-perf-startspanconfig-first
     files:
@@ -16,6 +20,7 @@ cases:
       change to review.
 
       ```go
+      // Cache the static tags once, then overlay the per-request resource.
       var cachedBase = tracer.NewStartSpanConfig(
           tracer.Tag("component", "net/http"),
       )
@@ -23,20 +28,18 @@ cases:
       func handle(ctx context.Context, name string) {
           span, _ := tracer.StartSpanFromContext(ctx, "http.request",
               tracer.WithStartSpanConfig(cachedBase),
-              tracer.Tag(ext.ResourceName, name),
+              tracer.ResourceName(name),
           )
           defer span.Finish()
       }
       ```
     expected_criteria:
-      - "Flags that `WithStartSpanConfig(cachedBase)` is the first tag-setting option, so the next `Tag()` call mutates the shared cached base in place."
-      - "Explains the concrete consequence — later requests inherit the previous request's `ext.ResourceName` — silent cross-request tag corruption, not a style nit."
-      - "Recommends putting a `Tag` / `WithTags` call *before* `WithStartSpanConfig(cachedBase)`, matching contrib/AGENTS.md."
-      - "Classifies the finding as P0 (or BLOCK)."
+      - "Flags that `WithStartSpanConfig(cachedBase)` is the first tag-setting option, so `ResourceName(name)` (a `Tag` wrapper) mutates the shared `cachedBase` Tags map in place."
+      - "Names the concrete failure — a later `handle` call inherits the previous request's resource name."
+      - "Recommends a `Tag` / `WithTags` / `ResourceName` call *before* `WithStartSpanConfig(cachedBase)`, not after."
     bad_signals:
-      - "Treats the option order as a style / readability nit."
-      - "Approves the snippet or says the cached config is used correctly."
-      - "Suggests only 'add a comment' or 'make cachedBase a function' without fixing the aliasing order."
+      - "Approves the snippet or calls this option order the recommended / correct contrib pattern."
+      - "Treats the leading comment as accurate and does not mention in-place mutation of `cachedBase`."
 
   - id: go-security-secret-into-tag
     files:
@@ -46,25 +49,22 @@ cases:
     input: |
       Apply this repo's security-review criteria (reviewers/security.md, its
       .agents/dd-apm-sdk-review-overrides/reviewers/security.md override, and _common.md) to the
-      following code. No git checkout available — this snippet is the entire change to
-      review. `cfg.DSN` is a full connection string with an embedded username and
-      password, e.g. `amqp://user:password@host:5672`.
+      following contrib connect path. No git checkout available — this snippet is the entire
+      change to review. `cfg.BrokerURL` is the AMQP URL the client dials
+      (`amqp://user:password@host:5672/vhost`).
 
       ```go
       func startClient(cfg Config) {
           span := tracer.StartSpan("amqp.connect")
-          span.SetTag("peer.hostname", cfg.Host)
-          span.SetTag("dsn", cfg.DSN)
-          log.Printf("connecting to %s", cfg.DSN)
+          // OpenTelemetry peer tag so dashboards group by destination.
+          span.SetTag("peer.hostname", cfg.BrokerURL)
           defer span.Finish()
       }
       ```
     expected_criteria:
-      - "Flags `span.SetTag(\"dsn\", cfg.DSN)` as writing a credential-bearing DSN into a span tag."
-      - "Also flags `log.Printf(\"connecting to %s\", cfg.DSN)` as the same secret leak through logs, not a separate style issue."
-      - "Classifies this as a security finding (P0), not a conventions nit — the secret becomes customer-visible."
-      - "Recommends tagging host/port/scheme only, or a redacted DSN — not 'log it at debug instead'."
+      - "Flags `span.SetTag(\"peer.hostname\", cfg.BrokerURL)` as writing a credential-bearing URL into a span tag, even though the key looks like a hostname field."
+      - "Says the password becomes customer-visible in Datadog, not merely a naming / OpenTelemetry-convention nit."
+      - "Recommends tagging host / port / scheme only, or a redacted URL — not keeping the raw `BrokerURL` under a different key."
     bad_signals:
-      - "Approves the DSN tag or the log line."
-      - "Treats this as a style / naming nit."
-      - "Suggests only moving the value to debug logs."
+      - "Approves `peer.hostname` because the tag name is a standard peer / hostname / OpenTelemetry field."
+      - "Only asks to rename the tag (e.g. to `peer.url` or `amqp.url`) while still storing `cfg.BrokerURL`."

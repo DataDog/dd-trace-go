@@ -15,6 +15,8 @@ Never write any of the following into a span tag, a metric, or a log line:
 
 `span.SetTag("dsn", cfg.DSN)` and `log.Printf("connecting to %s", cfg.DSN)` are the same finding: the secret leaves the process and becomes customer-visible. Treat it as **P0**.
 
-Safe alternatives: tag the host / port / scheme only, or a redacted DSN (`amqp://***@host:5672`). Do not log the raw value "at debug, it's fine" — debug logs ship.
+A host-shaped tag key does not make a credential-bearing URL safe. `span.SetTag("peer.hostname", cfg.BrokerURL)` where `BrokerURL` is `amqp://user:password@host` is the same P0 — the tag name looks like OpenTelemetry peer metadata, the value still ships the password.
+
+Safe alternatives: tag the host / port / scheme only, or a redacted DSN (`amqp://***@host:5672`). Do not log the raw value "at debug, it's fine" — debug logs ship. Do not "fix" it by renaming the tag (`peer.url`, `amqp.url`) while still storing the raw URL.
 
 Look for this around contrib connect / authenticate / client-init paths (`contrib/**`) and anything that reads `internal/env` or a connection config struct.
