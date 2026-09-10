@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -36,6 +37,10 @@ const (
 	apiKeyHeader        = "DD-API-KEY"
 
 	defaultEVPRouteRecoveryCooldown = 30 * time.Second
+
+	// Winsock reports connection refusal as WSAECONNREFUSED rather than
+	// syscall.ECONNREFUSED, whose Windows value belongs to Go's synthetic range.
+	windowsWSAECONNREFUSED syscall.Errno = 10061
 )
 
 var errNoEVPRoute = errors.New("no compatible EVP route is available")
@@ -65,12 +70,13 @@ type evpClient struct {
 	apiKey       string
 	jsonConfig   jsoniter.API
 
-	routeMu   sync.Mutex
-	routeMode evpRouteMode
-	localBase string
-	recoverAt time.Time
-	now       func() time.Time
-	cooldown  time.Duration
+	routeMu         sync.Mutex
+	routeMode       evpRouteMode
+	localBase       string
+	recoverAt       time.Time
+	now             func() time.Time
+	cooldown        time.Duration
+	fixedLocalRoute bool
 }
 
 // newEVPClient returns the historical Agent-only transport.
@@ -78,6 +84,7 @@ func newEVPClient() *evpClient {
 	c := newEVPClientBase()
 	c.routeMode = evpRouteLocal
 	c.localBase = evpProxyV2Path
+	c.fixedLocalRoute = true
 	return c
 }
 
@@ -88,6 +95,10 @@ func newAgentlessEVPClient(settings internalffe.Settings) *evpClient {
 	c.apiKey = settings.APIKey
 	if c.apiKey != "" {
 		c.directURL = buildDirectEVPURL(settings.Site)
+		if c.directURL == nil {
+			log.Warn("openfeature: direct EVP intake is disabled because DD_SITE is invalid")
+			return c
+		}
 		c.directClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
 		c.directClient.CheckRedirect = refuseEVPRedirect
 	}
@@ -117,17 +128,8 @@ func refuseEVPRedirect(*http.Request, []*http.Request) error {
 }
 
 func buildDirectEVPURL(site string) *url.URL {
-	site = strings.TrimSpace(site)
-	if site == "" {
-		site = agentlessDefaultSite
-	}
-	for i := 0; i < len(site); i++ {
-		if site[i] > 0x7f {
-			return nil
-		}
-	}
-	site = strings.ToLower(site)
-	if site == "" || containsWhitespace(site) || strings.ContainsAny(site, "/\\?#@:") {
+	site, ok := normalizeAgentlessSite(site)
+	if !ok {
 		return nil
 	}
 
@@ -277,6 +279,7 @@ func (c *evpClient) resolveRoute() (evpRouteMode, string) {
 		return c.routeMode, ""
 	}
 
+	// Keep discovery under routeMu so concurrent writers share one /info request and route decision.
 	if localBase := c.discoverLocalRoute(); localBase != "" {
 		c.routeMode = evpRouteLocal
 		c.localBase = localBase
@@ -347,6 +350,9 @@ func (c *evpClient) canUseDirect() bool {
 func (c *evpClient) leaveLocalRoute() bool {
 	c.routeMu.Lock()
 	defer c.routeMu.Unlock()
+	if c.fixedLocalRoute {
+		return false
+	}
 	c.localBase = ""
 	if c.canUseDirect() {
 		c.routeMode = evpRouteDirect
@@ -358,7 +364,9 @@ func (c *evpClient) leaveLocalRoute() bool {
 }
 
 func isDefinitivePreSendError(err error) bool {
-	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ENOENT) {
+	if errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, windowsWSAECONNREFUSED) ||
+		errors.Is(err, fs.ErrNotExist) {
 		return true
 	}
 	var dnsErr *net.DNSError

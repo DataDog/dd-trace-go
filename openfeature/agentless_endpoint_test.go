@@ -36,6 +36,7 @@ func TestBuildManagedAgentlessEndpoint(t *testing.T) {
 			apiKey:  "key",
 			wantURL: "https://ufc-server.ff-cdn.datadoghq.eu/api/v2/feature-flagging/config/rules-based/server",
 		},
+		"surrounding whitespace": {site: " DATADOGHQ.EU\t", apiKey: "key", wantURL: "https://ufc-server.ff-cdn.datadoghq.eu/api/v2/feature-flagging/config/rules-based/server"},
 		"subdomain site": {
 			site:    "us3.datadoghq.com",
 			apiKey:  "key",
@@ -72,6 +73,8 @@ func TestBuildManagedAgentlessEndpoint(t *testing.T) {
 			apiKey:  "key",
 			wantErr: errAgentlessInvalidSite,
 		},
+		"site with backslash":                  {site: `datadoghq.com\attacker`, apiKey: "key", wantErr: errAgentlessInvalidSite},
+		"site with non-ASCII before lowercase": {site: "K.com", apiKey: "key", wantErr: errAgentlessInvalidSite},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ep, err := buildManagedAgentlessEndpoint(tt.site, tt.env, tt.apiKey)

@@ -54,6 +54,9 @@ func TestBuildDirectEVPURL(t *testing.T) {
 		"unicode before lowercase": {
 			site: "K.com",
 		},
+		"backslash": {
+			site: `datadoghq.com\attacker`,
+		},
 		"query": {
 			site: "datadoghq.com?next=example.com",
 		},
@@ -72,6 +75,23 @@ func TestBuildDirectEVPURL(t *testing.T) {
 				t.Fatalf("buildDirectEVPURL(%q) = %v, want %q", tt.site, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewAgentlessEVPClientWarnsOnInvalidSite(t *testing.T) {
+	logger, undo := newCapturingLogger()
+	defer undo()
+
+	const apiKey = "must-not-be-logged"
+	c := newAgentlessEVPClient(internalffe.Settings{APIKey: apiKey, Site: "K.com"})
+	if c.directURL != nil || c.directClient != nil {
+		t.Fatal("invalid site configured a direct EVP client")
+	}
+	if got := logger.countContaining("DD_SITE is invalid"); got != 1 {
+		t.Fatalf("invalid-site warnings = %d, want 1", got)
+	}
+	if got := logger.countContaining(apiKey); got != 0 {
+		t.Fatal("invalid-site warning leaked the API key")
 	}
 }
 
@@ -405,6 +425,7 @@ func TestAgentlessEVPDoesNotReplayWrittenRequest(t *testing.T) {
 func TestDefinitivePreSendErrors(t *testing.T) {
 	for _, err := range []error{
 		syscall.ECONNREFUSED,
+		&url.Error{Err: windowsWSAECONNREFUSED},
 		syscall.ENOENT,
 		&url.Error{Err: &net.DNSError{Err: "not found", Name: "missing.invalid", IsNotFound: true}},
 		&url.Error{Err: &net.DNSError{Err: "temporary", Name: "retry.invalid", IsTemporary: true}},
@@ -521,6 +542,42 @@ func TestAgentOnlyEVPClientKeepsV2Route(t *testing.T) {
 	}
 	if got := gotHeaders.Get(apiKeyHeader); got != "" {
 		t.Fatalf("Agent-only request leaked API key %q", got)
+	}
+}
+
+func TestAgentOnlyEVPClientKeepsV2RouteAfterFailure(t *testing.T) {
+	for name, transportErr := range map[string]error{
+		"rejected route":  nil,
+		"transport error": syscall.ECONNREFUSED,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var calls int
+			c := newEVPClient()
+			c.agentURL = &url.URL{Scheme: "http", Host: "agent.invalid"}
+			c.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path != evpProxyV2Path+exposureEndpoint {
+					t.Fatalf("request path = %q, want fixed v2 route", r.URL.Path)
+				}
+				calls++
+				if calls == 1 {
+					if transportErr != nil {
+						return nil, transportErr
+					}
+					return response(http.StatusNotFound, ""), nil
+				}
+				return response(http.StatusAccepted, ""), nil
+			})}
+
+			if err := c.postRaw(exposureEndpoint, "exposure", nil); err == nil {
+				t.Fatal("first post returned nil, want failure")
+			}
+			if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+				t.Fatalf("second fixed-v2 post failed: %v", err)
+			}
+			if calls != 2 {
+				t.Fatalf("Agent calls = %d, want 2", calls)
+			}
+		})
 	}
 }
 
