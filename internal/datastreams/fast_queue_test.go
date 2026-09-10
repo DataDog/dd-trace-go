@@ -39,17 +39,3 @@ func TestFastQueueDefaultsWhenSizeNotPositive(t *testing.T) {
 		assert.Equal(t, int64(defaultQueueSize), q.size)
 	}
 }
-
-func TestFastQueueRejectsWhenFull(t *testing.T) {
-	q := newFastQueue(2)
-	assert.False(t, q.push(&processorInput{point: statsPoint{hash: 1}}))
-	assert.False(t, q.push(&processorInput{point: statsPoint{hash: 2}}))
-	// queue is now full; the unread items must not be overwritten.
-	assert.True(t, q.push(&processorInput{point: statsPoint{hash: 3}}))
-	assert.Equal(t, uint64(1), q.pop().point.hash)
-	assert.Equal(t, uint64(2), q.pop().point.hash)
-	assert.Nil(t, q.pop())
-	// a slot freed up by the pop is available again.
-	assert.False(t, q.push(&processorInput{point: statsPoint{hash: 4}}))
-	assert.Equal(t, uint64(4), q.pop().point.hash)
-}

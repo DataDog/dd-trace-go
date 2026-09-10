@@ -16,9 +16,8 @@ const defaultQueueSize = 10000
 
 // there are many writers, there is only 1 reader.
 // each value will be read at most once.
-// reader will stop if it catches up with writer.
-// once the queue is full, push rejects new items rather than overwriting
-// unread ones; the caller is told via the dropped return value.
+// reader will stop if it catches up with writer
+// if reader is too slow, there is no guarantee in which order values will be dropped.
 type fastQueue struct {
 	elements []atomic.Pointer[processorInput]
 	size     int64
@@ -39,18 +38,12 @@ func newFastQueue(size int) *fastQueue {
 }
 
 func (q *fastQueue) push(p *processorInput) (dropped bool) {
-	for {
-		writePos := q.writePos.Load()
-		readPos := q.readPos.Load()
-		if writePos-readPos >= q.size {
-			return true
-		}
-		if q.writePos.CompareAndSwap(writePos, writePos+1) {
-			p.queuePos = writePos
-			q.elements[writePos%q.size].Store(p)
-			return false
-		}
-	}
+	nextPos := q.writePos.Add(1)
+	// l is the length of the queue after the element has been added, and before the next element has been read.
+	l := nextPos - q.readPos.Load()
+	p.queuePos = nextPos - 1
+	q.elements[(nextPos-1)%q.size].Store(p)
+	return l > q.size
 }
 
 func (q *fastQueue) pop() *processorInput {
