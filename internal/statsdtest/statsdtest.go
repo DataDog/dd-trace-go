@@ -64,6 +64,10 @@ func (t TestStatsdCall) IntVal() int64 {
 	return t.intVal
 }
 
+func (t TestStatsdCall) TimeVal() time.Duration {
+	return t.timeVal
+}
+
 func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
@@ -194,7 +198,7 @@ func (tg *TestStatsdClient) TimingCalls() []TestStatsdCall {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 	c := make([]TestStatsdCall, len(tg.timingCalls))
-	copy(c, tg.countCalls)
+	copy(c, tg.timingCalls)
 	return c
 }
 
