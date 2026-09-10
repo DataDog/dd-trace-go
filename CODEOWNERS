@@ -12,6 +12,8 @@
 # Note: Later matches take precedence
 
 # shared modules and repository tooling
+/.agents/                       @DataDog/dd-trace-go-guild
+/.backpassrc.json               @DataDog/dd-trace-go-guild
 /.claude/                       @DataDog/dd-trace-go-guild
 /.llm-validation/               @DataDog/dd-trace-go-guild
 /_docs/                         @DataDog/dd-trace-go-guild
