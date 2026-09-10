@@ -103,7 +103,7 @@ type RoundTripperConfig struct {
 	ErrCheck             func(err error) bool
 	QueryString          bool // reports whether the query string is included in the URL tag for http client spans
 	ClientTimings        bool // reports whether httptrace.ClientTrace should be enabled for detailed timing
-	OTelSemanticsEnabled bool
+	OTelSemanticsEnabled bool // selects OpenTelemetry rather than Datadog semantic conventions for client spans
 }
 
 func (c *RoundTripperConfig) ApplyOpts(opts ...RoundTripperOption) {
