@@ -305,7 +305,7 @@
     ],
     "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "boolean",
         "default": null
       }
