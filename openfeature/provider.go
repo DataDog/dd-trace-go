@@ -322,6 +322,7 @@ func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) 
 // cancellation. The caller must hold p.mu on entry. p.mu is released while
 // waiting and reacquired before this returns, whether or not it returns an
 // error.
+// +checklocks:p.mu
 func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error {
 	// Read the current generation while still holding p.mu, so this can never
 	// wait on a channel that a concurrent updateConfiguration already closed

@@ -46,7 +46,7 @@
     "DD_APIM_CALLOUT_TLS": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "false"
       }
     ],
@@ -729,6 +729,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_LAMBDA_STRIP_INJECTED_CONTEXT": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_LLMOBS_AGENTLESS_ENABLED": [

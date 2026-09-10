@@ -28,6 +28,14 @@ type loggerKey struct {
 	tags    string
 	message string
 	level   LogLevel
+
+	// captureStackNow is true for entries whose stack was captured synchronously at
+	// the call site (WithCaptureStacktraceNow), i.e. ReportError/ReportPanic reports.
+	// It keeps such reports out of the dedup bucket of plain, stackless log
+	// entries with the same message, level, and tags — otherwise a report
+	// would merge into the plain entry and silently lose both its stack trace
+	// and its error/panic attributes.
+	captureStackNow bool
 }
 
 type loggerValue struct {
@@ -35,7 +43,12 @@ type loggerValue struct {
 	record Record
 
 	captureStacktrace bool
-	rawStack          stacktrace.RawStackTrace
+	// stacktraceCaptured is true if rawStack was already populated eagerly
+	// (WithCaptureStacktraceNow), so add() must not re-capture it — a re-capture at
+	// this point could run on a queued-and-replayed call's stack, not the
+	// original caller's.
+	stacktraceCaptured bool
+	rawStack           stacktrace.RawStackTrace
 }
 
 type formatter struct {
@@ -118,7 +131,10 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 	for _, opt := range opts {
 		opt(nil, candidate)
 	}
-	if candidate.captureStacktrace {
+	if candidate.captureStacktrace && len(candidate.rawStack.PCs) == 0 {
+		// A pre-captured stack (see withRawStacktrace, WithCaptureStacktraceNow)
+		// is already the right one — it was captured at the call site,
+		// precisely to avoid capturing this replay goroutine's stack instead.
 		candidate.rawStack = stacktrace.CaptureRaw(telemetryStackSkip)
 	}
 
