@@ -56,7 +56,7 @@ func defaultRoundTripperConfig() *config.RoundTripperConfig {
 
 					return func(req *http.Request) string { return fmt.Sprintf("%s %s", req.Method, req.URL.Path) }
 				}(),
-				IsStatusError: config.ClientErrorCheck(otelSemantics),
+				IsStatusError: config.ClientStatusErrorCheck(otelSemantics),
 				ServiceName:   config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
 			},
 			Propagation:          true,
