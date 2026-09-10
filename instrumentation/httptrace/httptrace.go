@@ -70,13 +70,6 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
-	// we cannot track the configuration in newConfig because it's called during init() and the telemetry client
-	// is not initialized yet
-	reportTelemetryConfigOnce.Do(func() {
-		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
-		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
-	})
-
 	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 	if extractErr == nil && parentCtx != nil {
 		items := make(map[string]string)
@@ -140,6 +133,14 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 // nested HTTP instrumentation from creating a duplicate inferred span. The
 // caller is responsible for finishing a non-nil span.
 func StartInferredSpanFromRequest(ctx context.Context, r *http.Request) (*tracer.Span, context.Context) {
+	// This cannot be tracked in newConfig because it runs during init, before
+	// the telemetry client is initialized. Keep it in this shared entry point
+	// so integrations that create inferred spans directly also report it.
+	reportTelemetryConfigOnce.Do(func() {
+		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
+		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
+	})
+
 	if !cfg.inferredProxyServicesEnabled {
 		return nil, ctx
 	}
@@ -327,25 +328,18 @@ func filterQueryStringByAllowlist(rawQuery string, allowlist map[string]struct{}
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
 func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderTags) tracer.StartSpanOption {
-	var tags []struct {
-		key string
-		val string
+	return func(cfg *tracer.StartSpanConfig) {
+		SetHeaderTagsFromRequest(cfg.Tags, req, headerTags)
 	}
+}
 
+// SetHeaderTagsFromRequest adds configured HTTP request header tags to tags.
+func SetHeaderTagsFromRequest(tags map[string]any, req *http.Request, headerTags instrumentation.HeaderTags) {
 	headerTags.Iter(func(header, tag string) {
-		if vs, ok := req.Header[header]; ok {
-			tags = append(tags, struct {
-				key string
-				val string
-			}{tag, strings.TrimSpace(strings.Join(vs, ","))})
+		if values, ok := req.Header[header]; ok {
+			tags[tag] = strings.TrimSpace(strings.Join(values, ","))
 		}
 	})
-
-	return func(cfg *tracer.StartSpanConfig) {
-		for _, t := range tags {
-			cfg.Tags[t.key] = t.val
-		}
-	}
 }
 
 // SetClientIPTagsFromRequest adds the standard HTTP client and network client

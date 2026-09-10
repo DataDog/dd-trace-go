@@ -148,7 +148,6 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 		tags[ext.RPCMethod] = method
 	}
 
-	var dynamicOpts []tracer.StartSpanOption
 	if tr.Kind() == transport.KindHTTP {
 		if httpTr, ok := tr.(kratoshttp.Transporter); ok && httpTr.Request() != nil {
 			req := httpTr.Request()
@@ -161,7 +160,7 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 			tags[ext.SpanType] = spanType
 			tags[ext.HTTPMethod] = req.Method
 			tags[ext.HTTPURL] = httpURL
-			dynamicOpts = append(dynamicOpts, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
+			httptrace.SetHeaderTagsFromRequest(tags, req, cfg.headerTags)
 			if spanKind == ext.SpanKindServer {
 				tags[ext.HTTPUserAgent] = req.UserAgent()
 				appsechttpsec.SetSecurityTestingHeaderTags(tags, req.Header)
@@ -194,9 +193,8 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 		}
 	}
 
-	spanOpts := make([]tracer.StartSpanOption, 0, 2+len(dynamicOpts))
+	spanOpts := make([]tracer.StartSpanOption, 0, 2)
 	spanOpts = append(spanOpts, tracer.WithTags(tags))
-	spanOpts = append(spanOpts, dynamicOpts...)
 	spanOpts = append(spanOpts, tracer.WithStartSpanConfig(cfg.spanConfig))
 	if cfg.serviceNameOption != nil {
 		spanOpts = append(spanOpts, cfg.serviceNameOption)
