@@ -167,24 +167,35 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	}
 	go func() {
 		spans := make(map[uint64]*tracer.Span)
+		var pendingMsg *sarama.ProducerMessage
+		var pendingSpan *tracer.Span
 		defer close(wrapped.input)
 		defer close(wrapped.successes)
 		defer close(wrapped.errors)
 		for {
+			var input <-chan *sarama.ProducerMessage
+			var output chan<- *sarama.ProducerMessage
+			if pendingMsg == nil {
+				input = wrapped.input
+			} else {
+				output = p.Input()
+			}
 			select {
-			case msg := <-wrapped.input:
+			case msg := <-input:
 				span := startProducerSpan(cfg, spanCfg, saramaConfig.Version, msg)
 				setProduceCheckpoint(cfg.dataStreamsEnabled, cfg.ClusterID(), msg, saramaConfig.Version)
-				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
 					spanID := span.Context().SpanID()
 					spans[spanID] = span
-				} else {
-					// if returning successes isn't enabled, we just finish the
-					// span right away because there's no way to know when it will
-					// be done
-					span.Finish()
 				}
+				pendingMsg = msg
+				pendingSpan = span
+			case output <- pendingMsg:
+				if !saramaConfig.Producer.Return.Successes {
+					pendingSpan.Finish()
+				}
+				pendingMsg = nil
+				pendingSpan = nil
 			case msg, ok := <-p.Successes():
 				if !ok {
 					// producer was closed, so exit

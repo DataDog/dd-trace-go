@@ -254,6 +254,78 @@ func TestWrapAsyncProducer(t *testing.T) {
 	})
 }
 
+func TestWrapAsyncProducerDrainsSuccessesWhileInputIsBlocked(t *testing.T) {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	cfg.Producer.Return.Successes = true
+	raw := &blockedAsyncProducer{
+		input:     make(chan *sarama.ProducerMessage),
+		successes: make(chan *sarama.ProducerMessage),
+		errors:    make(chan *sarama.ProducerError),
+	}
+	producer := WrapAsyncProducer(cfg, raw)
+
+	blocked := &sarama.ProducerMessage{Topic: "blocked"}
+	producer.Input() <- blocked
+
+	completed := &sarama.ProducerMessage{Topic: "completed"}
+	go func() {
+		raw.successes <- completed
+	}()
+
+	select {
+	case msg := <-producer.Successes():
+		require.Same(t, completed, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not drain the underlying success")
+	}
+
+	select {
+	case msg := <-raw.input:
+		require.Same(t, blocked, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not forward the pending input")
+	}
+
+	go func() {
+		raw.successes <- blocked
+	}()
+
+	select {
+	case msg := <-producer.Successes():
+		require.Same(t, blocked, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not return the pending input success")
+	}
+
+	close(raw.successes)
+	select {
+	case _, ok := <-producer.Successes():
+		require.False(t, ok)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not shut down after the underlying producer closed")
+	}
+}
+
+type blockedAsyncProducer struct {
+	sarama.AsyncProducer
+	input     chan *sarama.ProducerMessage
+	successes chan *sarama.ProducerMessage
+	errors    chan *sarama.ProducerError
+}
+
+func (p *blockedAsyncProducer) Input() chan<- *sarama.ProducerMessage {
+	return p.input
+}
+
+func (p *blockedAsyncProducer) Successes() <-chan *sarama.ProducerMessage {
+	return p.successes
+}
+
+func (p *blockedAsyncProducer) Errors() <-chan *sarama.ProducerError {
+	return p.errors
+}
+
 func TestSyncProducerWithClusterID(t *testing.T) {
 	cfg := newIntegrationTestConfig(t)
 	topic := topicName(t)
