@@ -727,7 +727,7 @@
     "DD_LAMBDA_STRIP_INJECTED_CONTEXT": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "false"
       }
     ],
