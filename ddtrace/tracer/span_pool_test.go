@@ -1013,7 +1013,12 @@ func TestSpanPoolEndToEndConcurrentCorrectness(t *testing.T) {
 	const spansPerGoroutine = 50 // 500 total, well within payloadQueueSize
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent, WithSpanPool(true))
+	// The send loop drops a payload after one failed attempt when send retries
+	// are unset (the default). A transient loopback failure on a loaded CI
+	// runner, such as windows-latest, then fails the exact-count assertion
+	// below with a shortfall equal to one payload. Retry sends so this test
+	// measures span delivery, not transport luck.
+	tr := newTracerTest(t, agent, WithSpanPool(true), WithSendRetries(3))
 
 	var wg sync.WaitGroup
 	for g := range numGoroutines {
