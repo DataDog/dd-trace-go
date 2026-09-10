@@ -129,6 +129,12 @@ func runMonitor(cfg *config) {
 		// failed — without this, the failure is invisible. Routed through the
 		// shared logger (see spawnMonitor) rather than a raw os.Stderr write.
 		log.Warn("crashtracker: upload failed: %v", err.Error())
+	} else {
+		// Logged at Warn, matching the failure case above: this package sets no
+		// log level, so Warn is what actually reaches stderr at the default
+		// threshold. Without a positive marker, nothing distinguishes "upload
+		// succeeded" from "upload was never attempted" in captured output.
+		log.Warn("crashtracker: upload succeeded")
 	}
 	os.Exit(0)
 }
