@@ -215,15 +215,9 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	ctx = pprof.WithLabels(ctx, toLabelSet(CustomLabels))
 	pprof.SetGoroutineLabels(ctx)
 
-	localRootSpan, ok := tracer.SpanFromContext(ctx)
-	// We run our handler in a reqSpan so we can test that we still include the
-	// correct "local root span id" in the profiler labels.
+	// Run the handler in a request span to establish the parent for its work.
 	reqSpan, reqSpanCtx := tracer.StartSpanFromContext(ctx, DirectEndpoint)
 	defer reqSpan.Finish()
-	if !ok {
-		// when app type is Direct, reqSpan is our local root span
-		localRootSpan = reqSpan
-	}
 
 	// fakeSQLQuery pretends to execute an APM instrumented SQL query. This tests
 	// that the parent goroutine labels are correctly restored when it finishes.
@@ -258,8 +252,7 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	orphanSpan.Finish()
 
 	return &pb.WorkRes{
-		LocalRootSpanId: fmt.Sprintf("%d", localRootSpan.Context().SpanID()),
-		SpanId:          fmt.Sprintf("%d", cpuSpan.Context().SpanID()),
+		SpanId: fmt.Sprintf("%d", cpuSpan.Context().SpanID()),
 	}, nil
 }
 
