@@ -7,6 +7,7 @@ package traceprof
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,7 +31,7 @@ func TestEndpointCounter(t *testing.T) {
 	t.Run("no limit", func(t *testing.T) {
 		ec := NewEndpointCounter(-1)
 		for i := range 100 {
-			ec.Inc(fmt.Sprint(i))
+			ec.Inc(strconv.Itoa(i))
 		}
 		require.Equal(t, 100, len(ec.GetAndReset()))
 	})

@@ -103,7 +103,7 @@ func TestTestManagementTestsApiRequestFailToUnmarshal(t *testing.T) {
 	// The server returns a malformed JSON to trigger an unmarshal error.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
-		_, _ = w.Write([]byte(`{"invalid": "json"`)) // JSON malformado
+		_, _ = w.Write([]byte(`{"invalid": "json"`)) // Malformed JSON.
 	}))
 	defer server.Close()
 
@@ -142,7 +142,7 @@ func TestTestManagementTestsApiRequestFailToGet(t *testing.T) {
 	assert.NotNil(t, err)
 
 	// We expect the error to contain the string defined in the message.
-	assert.Contains(t, err.Error(), "sending known tests request")
+	assert.Contains(t, err.Error(), "sending test management tests request")
 }
 
 func TestTestManagementTestsApiRequestFromManifestCache(t *testing.T) {

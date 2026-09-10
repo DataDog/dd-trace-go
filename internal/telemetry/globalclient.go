@@ -9,7 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -25,7 +25,11 @@ var (
 	globalClientRecorder = internal.NewRecorder[Client]()
 
 	// metricsHandleSwappablePointers contains all the swappableMetricHandle, used to replay actions done before the actual MetricHandle is set
-	metricsHandleSwappablePointers = xsync.NewMapOf[metricKey, *swappableMetricHandle](xsync.WithPresize(knownmetrics.Size()))
+	metricsHandleSwappablePointers = xsync.NewMap[metricKey, *swappableMetricHandle](xsync.WithPresize(knownmetrics.Size()))
+
+	// startAppFlushWg tracks the goroutine launched by StartApp so StopApp can
+	// wait for it to finish before proceeding with the shutdown flush.
+	startAppFlushWg sync.WaitGroup
 )
 
 // GlobalClient returns the global telemetry client.
@@ -44,13 +48,26 @@ func StartApp(client Client) {
 		return
 	}
 
-	if GlobalClient() != nil || SwapClient(client) != nil {
+	if GlobalClient() != nil {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
 	client.AppStart()
-	go client.Flush()
+	// Increment the WaitGroup before SwapClient makes the client visible so
+	// StopApp cannot observe a zero counter and return before the flush goroutine runs.
+	startAppFlushWg.Add(1)
+	if SwapClient(client) != nil {
+		// A concurrent StartApp call already set the client; undo the Add.
+		startAppFlushWg.Done()
+		log.Debug("telemetry: StartApp called multiple times, ignoring")
+		return
+	}
+
+	go func() {
+		defer startAppFlushWg.Done()
+		client.Flush()
+	}()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -99,6 +116,7 @@ func MockClient(client Client) func() {
 func StopApp() {
 	if client := globalClient.Swap(nil); client != nil && *client != nil {
 		(*client).AppStop()
+		startAppFlushWg.Wait()
 		(*client).Flush()
 		(*client).Close()
 	}
@@ -260,7 +278,7 @@ func globalClientNewMetric(namespace Namespace, kind transport.MetricType, name 
 	}
 
 	key := newMetricKey(namespace, kind, name, tags)
-	hotPtr, _ := metricsHandleSwappablePointers.LoadOrCompute(key, func() *swappableMetricHandle {
+	hotPtr, _ := metricsHandleSwappablePointers.LoadOrCompute(key, func() (*swappableMetricHandle, bool) {
 		maker := func(client Client) MetricHandle {
 			switch kind {
 			case transport.CountMetric:
@@ -282,7 +300,7 @@ func globalClientNewMetric(namespace Namespace, kind transport.MetricType, name 
 		globalClientCall(func(client Client) {
 			wrapper.swap(maker(client))
 		})
-		return wrapper
+		return wrapper, false
 	})
 	return hotPtr
 }

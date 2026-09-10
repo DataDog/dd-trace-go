@@ -21,6 +21,18 @@ func EndpointPayloadRequestsMs(endpointType EndpointType, value float64) {
 	})).Submit(value)
 }
 
+// CoverageUploadRequestBytes records the request body size for code coverage report upload.
+func CoverageUploadRequestBytes(requestCompressed RequestCompressedType, value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "coverage_upload.request_bytes", removeEmptyStrings([]string{
+		string(requestCompressed),
+	})).Submit(value)
+}
+
+// CoverageUploadRequestMs records the time it takes to upload a code coverage report in ms.
+func CoverageUploadRequestMs(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "coverage_upload.request_ms", nil).Submit(value)
+}
+
 // EndpointPayloadEventsCount records the number of events in the payload sent to the endpoint by CI Visibility.
 func EndpointPayloadEventsCount(endpointType EndpointType, value float64) {
 	telemetry.Distribution(telemetry.NamespaceCIVisibility, "endpoint_payload.events_count", removeEmptyStrings([]string{

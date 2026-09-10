@@ -1,0 +1,11 @@
+issuer: https://gitlab.ddbuild.io
+
+# Used by the FPD origin-tracking validate job (config-inversion).
+# Allows the dd-trace-go GitLab CI to read GitHub PRs + contents for diff
+# computation against the merge-base. See:
+# https://datadoghq.atlassian.net/browse/APMAPI-1939
+subject_pattern: "project_path:DataDog/apm-reliability/dd-trace-go:ref_type:(branch|tag):ref:.*"
+
+permissions:
+  pull_requests: read
+  contents: read

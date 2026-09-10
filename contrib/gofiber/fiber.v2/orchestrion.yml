@@ -9,6 +9,15 @@ meta:
   description: An Express inspired web framework built on Fasthttp, the fastest HTTP engine for Go.
 
 aspects:
+  # Wrap fiber.New so every App receives the Fiber tracing middleware, and mark
+  # the underlying fasthttp.Server as already instrumented at construction time.
+  #
+  # Setting DD_Instrumented here (rather than hooking a single listen method)
+  # prevents FastHTTP double-instrumentation on every startup path: Listen,
+  # Listener, ListenTLS, ListenTLSWithCertificate, ListenMutualTLS and their
+  # prefork variants all ultimately call app.Server().Serve(ln), and the FastHTTP
+  # Serve aspect skips wrapping when DD_Instrumented is set. The result is a
+  # single Fiber server span per request instead of a duplicate fasthttp span.
   - id: New
     join-point:
       function-call: github.com/gofiber/fiber/v2.New
@@ -21,19 +30,6 @@ aspects:
             func() *fiber.App {
               app := {{ . }}
               app.Use(fibertrace.Middleware())
+              app.Server().DD_Instrumented = true
               return app
             }()
-  # Prevent FastHTTP double-instrumentation by marking the underlying server
-  # as already instrumented before Fiber starts listening. This ensures that
-  # when Fiber's internal call to fasthttp.Server.Serve() happens, the
-  # DD_Instrumented flag is already set and the FastHTTP aspect will skip.
-  - id: Listen
-    join-point:
-      function-body:
-        function:
-          - receiver: '*github.com/gofiber/fiber/v2.App'
-          - name: Listen
-    advice:
-      - prepend-statements:
-          template: |
-            {{ .Function.Receiver }}.Server().DD_Instrumented = true

@@ -6,22 +6,12 @@
 package openfeature
 
 import (
-	"bytes"
 	"cmp"
 	"container/list"
-	"context"
-	"fmt"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/url"
 	"os"
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -58,6 +48,7 @@ type exposureEvent struct {
 	Flag       exposureFlag       `json:"flag"`
 	Variant    exposureVariant    `json:"variant"`
 	Subject    exposureSubject    `json:"subject"`
+	SerialID   *uint32            `json:"serial_id,omitempty"`
 }
 
 // exposureAllocation represents allocation information in an exposure event
@@ -105,6 +96,8 @@ type exposureCacheKey struct {
 type exposureCacheValue struct {
 	allocationKey string
 	variant       string
+	serialID      uint32
+	hasSerialID   bool
 }
 
 // exposureCacheEntry stores the key and value for an LRU cache entry
@@ -136,10 +129,10 @@ func (c *exposureLRUCache) add(key exposureCacheKey, value exposureCacheValue) b
 		entry := elem.Value.(*exposureCacheEntry)
 		c.order.MoveToFront(elem)
 		if entry.value == value {
-			// Same allocation and variant - this is a duplicate
+			// Same allocation, variant and serial ID - this is a duplicate
 			return false
 		}
-		// Allocation or variant changed - update entry
+		// Allocation, variant or serial ID changed - update entry
 		entry.value = value
 		return true
 	}
@@ -176,36 +169,27 @@ type exposureWriter struct {
 	buffer        []exposureEvent   // Buffer for exposure events
 	cache         *exposureLRUCache // LRU deduplication cache
 	flushInterval time.Duration
-	httpClient    *http.Client
-	agentURL      *url.URL
+	evp           *evpClient
 	context       exposureContext
 	ticker        *time.Ticker
 	stopChan      chan struct{}
 	stopped       bool
-	jsonConfig    jsoniter.API
 }
 
 // newExposureWriter creates a new exposure writer with the given configuration
 func newExposureWriter(config ProviderConfig) *exposureWriter {
-	agentURL := internal.AgentURLFromEnv()
-	var httpClient *http.Client
-	if agentURL.Scheme == "unix" {
-		httpClient = internal.UDSClient(agentURL.Path, defaultHTTPTimeout)
-		agentURL = internal.UnixDataSocketURL(agentURL.Path)
-	} else {
-		httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
-	}
+	return newExposureWriterWithEVP(config, newEVPClient())
+}
 
+func newExposureWriterWithEVP(config ProviderConfig, evp *evpClient) *exposureWriter {
 	executable, _ := os.Executable()
 
 	return &exposureWriter{
 		buffer:        make([]exposureEvent, 0, 1<<8), // Initial capacity of 256
 		cache:         newExposureLRUCache(defaultExposureCacheCapacity),
 		flushInterval: cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
-		httpClient:    httpClient,
-		agentURL:      agentURL,
+		evp:           evp,
 		stopChan:      make(chan struct{}),
-		jsonConfig:    jsoniter.Config{}.Froze(),
 		context: exposureContext{
 			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
 			Version: env.Get("DD_VERSION"),
@@ -220,14 +204,7 @@ func (w *exposureWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("openfeature: exposure writer recovered panic: %s", r)
-				var errAttr slog.Attr
-				if err, ok := r.(error); ok {
-					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
-				} else {
-					errAttr = slog.Any("panic", r)
-				}
-				telemetrylog.Error("openfeature: exposure writer recovered panic", errAttr)
+				telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r)
 			}
 			w.stop()
 		}()
@@ -260,6 +237,10 @@ func (w *exposureWriter) append(event exposureEvent) {
 	cacheValue := exposureCacheValue{
 		allocationKey: event.Allocation.Key,
 		variant:       event.Variant.Key,
+	}
+	if event.SerialID != nil {
+		cacheValue.serialID = *event.SerialID
+		cacheValue.hasSerialID = true
 	}
 
 	// Check deduplication cache - returns true if this is a new or changed entry
@@ -298,44 +279,7 @@ func (w *exposureWriter) flush() {
 
 // sendToAgent sends the exposure payload to the Datadog Agent via EVP proxy
 func (w *exposureWriter) sendToAgent(payload exposurePayload) error {
-	// Serialize payload
-	var bytesBuffer bytes.Buffer
-	encoder := w.jsonConfig.NewEncoder(&bytesBuffer)
-	if err := encoder.Encode(payload); err != nil {
-		return fmt.Errorf("failed to encode exposure payload: %w", err)
-	}
-
-	// Build request URL
-	u := *w.agentURL
-	u.Path = exposureEndpoint
-	requestURL := u.String()
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(context.Background(), "POST", requestURL, &bytesBuffer)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(evpSubdomainHeader, evpSubdomainValue)
-
-	log.Debug("openfeature: sending exposure events to %s", requestURL)
-
-	// Send request
-	resp, err := w.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
-		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
+	return w.evp.post(exposureEndpoint, "exposure", payload)
 }
 
 // stop stops the exposure writer and flushes any remaining events

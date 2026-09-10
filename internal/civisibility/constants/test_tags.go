@@ -85,6 +85,9 @@ const (
 	// TestRetryReason indicates the reason for retrying the test
 	TestRetryReason = "test.retry_reason"
 
+	// TestRetryExecutionMode indicates how a retry attempt was executed.
+	TestRetryExecutionMode = "test.retry.execution_mode"
+
 	// TestEarlyFlakeDetectionRetryAborted indicates a retry abort reason by the early flake detection feature
 	TestEarlyFlakeDetectionRetryAborted = "test.early_flake.abort_reason"
 

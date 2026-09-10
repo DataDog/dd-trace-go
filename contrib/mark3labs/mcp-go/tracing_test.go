@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestToolHandlerMiddleware(t *testing.T) {
@@ -43,7 +43,6 @@ func TestAddServerHooks(t *testing.T) {
 
 func TestIntegrationSessionInitialize(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
 		WithMCPServerTracing(nil))
@@ -69,10 +68,8 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	assert.Equal(t, float64(1), resp["id"])
 	assert.NotNil(t, resp["result"])
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
-	require.Len(t, spans, 1)
-
-	taskSpan := spans[0]
+	tracer.Flush()
+	taskSpan := tt.RequireSpan(t, "mcp.initialize")
 	assert.Equal(t, "mcp.initialize", taskSpan.Name)
 	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
 
@@ -104,7 +101,6 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 // Test tool spans are recorded on a successful tool call
 func TestIntegrationToolCallSuccess(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	hooks := &server.Hooks{}
 	appendTracingHooks(hooks)
@@ -159,24 +155,16 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	assert.Equal(t, "2.0", resp["jsonrpc"])
 	assert.NotNil(t, resp["result"])
 
-	spans := tt.WaitForLLMObsSpans(t, 2)
-	require.Len(t, spans, 2)
-
-	var initSpan, toolSpan *testtracer.LLMObsSpan
-	for i := range spans {
-		if spans[i].Name == "mcp.initialize" {
-			initSpan = &spans[i]
-		} else if spans[i].Name == "calculator" {
-			toolSpan = &spans[i]
-		}
-	}
-
-	require.NotNil(t, initSpan, "initialize span not found")
-	require.NotNil(t, toolSpan, "tool span not found")
+	tracer.Flush()
+	initSpan := tt.RequireSpan(t, "mcp.initialize")
+	toolSpan := tt.RequireSpan(t, "calculator")
 
 	expectedTag := "mcp_session_id:test-session-123"
 	assert.Contains(t, initSpan.Tags, expectedTag)
 	assert.Contains(t, toolSpan.Tags, expectedTag)
+
+	// Tool span carries the session ID natively so LLMObs groups it under the session.
+	assert.Equal(t, sessionID, toolSpan.SessionID)
 
 	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
 	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
@@ -214,7 +202,6 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 // Test recording of tool spans on a failed tool call
 func TestIntegrationToolCallError(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
 		WithMCPServerTracing(&TracingConfig{}))
@@ -247,10 +234,8 @@ func TestIntegrationToolCallError(t *testing.T) {
 	assert.Equal(t, "2.0", resp["jsonrpc"])
 	assert.NotNil(t, resp["error"])
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
-	require.Len(t, spans, 1)
-
-	toolSpan := spans[0]
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "error_tool")
 	assert.Equal(t, "error_tool", toolSpan.Name)
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 
@@ -266,7 +251,6 @@ func TestIntegrationToolCallError(t *testing.T) {
 
 func TestIntegrationToolCallStructuredError(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
 		WithMCPServerTracing(&TracingConfig{}))
@@ -316,10 +300,8 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	// The response should contain result (not error), but the result IsError is true
 	assert.NotNil(t, resp["result"])
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
-	require.Len(t, spans, 1)
-
-	toolSpan := spans[0]
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "validation_tool")
 	assert.Equal(t, "validation_tool", toolSpan.Name)
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 
@@ -344,9 +326,73 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	assert.Contains(t, outputStr, "Validation failed")
 }
 
+func TestRedactToolOutput(t *testing.T) {
+	tt := testTracer(t)
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		WithMCPServerTracing(&TracingConfig{RedactToolOutput: true}))
+
+	calcTool := mcp.NewTool("calculator", mcp.WithDescription("A simple calculator"))
+	srv.AddTool(calcTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText(`{"result":42,"secret":"hunter2"}`), nil
+	})
+
+	ctx := context.Background()
+	session := &mockSession{id: "redact-session"}
+	session.Initialize()
+	ctx = srv.WithContext(ctx, session)
+
+	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"calculator","arguments":{}}}`))
+
+	tracer.Flush()
+	spans := tt.Spans()
+	require.Len(t, spans, 1)
+
+	toolSpan := spans[0]
+	outputMeta, ok := toolSpan.Meta["output"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "[REDACTED]", outputMeta["value"])
+	// Sensitive content from the actual result must not leak.
+	outputJSON, err := json.Marshal(outputMeta)
+	require.NoError(t, err)
+	assert.NotContains(t, string(outputJSON), "hunter2")
+	assert.NotContains(t, string(outputJSON), "42")
+}
+
+func TestRedactToolOutputStillReportsIsError(t *testing.T) {
+	tt := testTracer(t)
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		WithMCPServerTracing(&TracingConfig{RedactToolOutput: true}))
+
+	failTool := mcp.NewTool("failing", mcp.WithDescription("A failing tool"))
+	srv.AddTool(failTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultError("permission denied: secret-detail"), nil
+	})
+
+	ctx := context.Background()
+	session := &mockSession{id: "redact-err"}
+	session.Initialize()
+	ctx = srv.WithContext(ctx, session)
+
+	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"failing","arguments":{}}}`))
+
+	tracer.Flush()
+	spans := tt.Spans()
+	require.Len(t, spans, 1)
+
+	toolSpan := spans[0]
+	assert.Contains(t, toolSpan.Meta, "error.message")
+	outputMeta, ok := toolSpan.Meta["output"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "[REDACTED]", outputMeta["value"])
+	outputJSON, err := json.Marshal(outputMeta)
+	require.NoError(t, err)
+	assert.NotContains(t, string(outputJSON), "secret-detail")
+}
+
 func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	customHookCalled := false
 	customHooks := &server.Hooks{}
@@ -365,10 +411,8 @@ func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
 
 	assert.True(t, customHookCalled, "custom hook should have been called")
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
-	require.Len(t, spans, 1)
-
-	taskSpan := spans[0]
+	tracer.Flush()
+	taskSpan := tt.RequireSpan(t, "mcp.initialize")
 	assert.Equal(t, "mcp.initialize", taskSpan.Name)
 	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
 }

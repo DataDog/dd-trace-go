@@ -25,14 +25,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -48,6 +51,39 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	return func(c *config) {
 		c.tickChan = ch
 	}
+}
+
+type agentInfoJSONRoundTripper struct {
+	body string
+}
+
+func (r *agentInfoJSONRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(r.body)),
+	}, nil
+}
+
+func TestFetchAgentFeaturesTraceFilters(t *testing.T) {
+	roundTripper := &agentInfoJSONRoundTripper{body: `{
+		"endpoints":["/v0.6/stats"],
+		"client_drop_p0s":true,
+		"filter_tags":{"require":["required:value"],"reject":["blocked"]},
+		"filter_tags_regex":{"require":["required:value.*"],"reject":["blocked"]},
+		"ignore_resources":["health.*"]
+	}`}
+	agentURL, err := url.Parse("http://agent:8126")
+	require.NoError(t, err)
+
+	features, err := fetchAgentFeatures(context.Background(), agentURL, &http.Client{Transport: roundTripper})
+	require.NoError(t, err)
+	require.NotNil(t, features.traceFilters)
+	assert.Equal(t, []tagKV{{key: "required", val: "value"}}, features.traceFilters.requireKV)
+	assert.Equal(t, []string{"blocked"}, features.traceFilters.rejectKeys)
+	require.Len(t, features.traceFilters.requireRegex, 1)
+	require.Len(t, features.traceFilters.rejectRegex, 1)
+	require.Len(t, features.traceFilters.ignoreResources, 1)
 }
 
 // withAgentRemoteConfig creates a mock agent server that reports remote config support.
@@ -77,7 +113,7 @@ func testStatsd(t *testing.T, cfg *config, addr string) {
 	client, err := newStatsdClient(cfg)
 	require.NoError(t, err)
 	defer client.Close()
-	require.Equal(t, addr, cfg.dogstatsdAddr)
+	require.Equal(t, addr, cfg.internalConfig.DogstatsdAddr())
 	_, err = net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 
@@ -101,7 +137,7 @@ func TestStatsdUDPConnect(t *testing.T) {
 	client, err := newStatsdClient(cfg)
 	require.NoError(t, err)
 	defer client.Close()
-	require.Equal(t, addr, cfg.dogstatsdAddr)
+	require.Equal(t, addr, cfg.internalConfig.DogstatsdAddr())
 	udpaddr, err := net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 	conn, err := net.ListenUDP("udp", udpaddr)
@@ -149,8 +185,8 @@ func TestAutoDetectStatsd(t *testing.T) {
 		}
 		addr := filepath.Join(dir, "dsd.socket")
 
-		defer func(old string) { defaultSocketDSD = old }(defaultSocketDSD)
-		defaultSocketDSD = addr
+		defer func(old string) { internalconfig.DefaultSocketDSDPath = old }(internalconfig.DefaultSocketDSDPath)
+		internalconfig.DefaultSocketDSDPath = addr
 
 		uaddr, err := net.ResolveUnixAddr("unixgram", addr)
 		if err != nil {
@@ -168,7 +204,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
-		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
+		require.Equal(t, cfg.internalConfig.DogstatsdAddr(), "unix://"+addr)
 		// Ensure globalconfig also gets the auto-detected UDS address
 		require.Equal(t, "unix://"+addr, globalconfig.DogstatsdAddr())
 		statsd.Count("name", 1, []string{"tag"}, 1)
@@ -215,6 +251,59 @@ func TestAutoDetectStatsd(t *testing.T) {
 			assert.NoError(t, err)
 			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8999"))
 		})
+	})
+}
+
+func TestWithStatsdClient(t *testing.T) {
+	// Create a real *statsd.ClientDirect — it satisfies both statsd.ClientInterface
+	// and internal.StatsdClient, which is the contract WithStatsdClient documents.
+	client, err := statsd.NewDirect("localhost:8125", statsd.WithMaxMessagesPerPayload(40))
+	require.NoError(t, err)
+	defer client.Close()
+
+	cfg, err := newTestConfig(WithStatsdClient(client))
+	require.NoError(t, err)
+
+	// The injected client should be used directly instead of creating a new one.
+	got, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, client, got, "WithStatsdClient: tracer should use the provided client")
+}
+
+func TestInternalMetricsDisabled(t *testing.T) {
+	isNoop := func(c internal.StatsdClient) bool {
+		_, ok := c.(*statsd.NoOpClientDirect)
+		return ok
+	}
+
+	t.Run("default non-Lambda: real client", func(t *testing.T) {
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without
+		// DNS/TCP, so no idle keep-alive connection is left for goleak to catch.
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real by default, got %T", tr.statsd)
+	})
+
+	t.Run("Lambda without explicit config: no-op client", func(t *testing.T) {
+		// In Lambda the core config layer defaults internal metrics to off so the
+		// tracer emits no statsd traffic by default.
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.True(t, isNoop(tr.statsd), "statsd should be a no-op in Lambda by default, got %T", tr.statsd)
+	})
+
+	t.Run("Lambda with explicit opt-in: real client", func(t *testing.T) {
+		// If the user explicitly enables internal metrics in Lambda, the real
+		// client is used and their setting is reported with origin env_var.
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
+		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "true")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real when user opts in, got %T", tr.statsd)
 	})
 }
 
@@ -334,7 +423,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 56, len(cfg.integrations))
+		assert.Equal(t, 59, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -407,7 +496,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(float64(1), c.sampler.Rate())
 		assert.Regexp(`tracer\.test(\.exe)?`, c.internalConfig.ServiceName())
 		assert.Equal(&url.URL{Scheme: "http", Host: "localhost:8126"}, c.internalConfig.RawAgentURL())
-		assert.Equal("localhost:8125", c.dogstatsdAddr)
+		assert.Equal("localhost:8125", c.internalConfig.DogstatsdAddr())
 		assert.Nil(nil, c.httpClient)
 		x := *c.httpClient
 		y := *internal.DefaultHTTPClient(defaultHTTPTimeout, false)
@@ -531,7 +620,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -541,7 +630,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -551,7 +640,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -561,8 +650,30 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-url", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_URL", "10.1.0.12:4002")
+			tracer, err := newTracer(opts...)
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-url overrides host+port", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_URL", "10.1.0.12:4002")
+			t.Setenv("DD_DOGSTATSD_HOST", "ignored")
+			t.Setenv("DD_DOGSTATSD_PORT", "9999")
+			tracer, err := newTracer(opts...)
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-port: agent not available", func(t *testing.T) {
@@ -572,7 +683,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 			fail = false
 		})
@@ -585,7 +696,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
@@ -598,33 +709,33 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 			fail = false
 		})
 
 		t.Run("option", func(t *testing.T) {
-			o := make([]StartOption, len(opts))
-			copy(o, opts)
+			o := make([]StartOption, 0, len(opts)+1)
+			o = append(o, opts...)
 			o = append(o, WithDogstatsdAddr("10.1.0.12:4002"))
 			tracer, err := newTracer(o...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("option: agent not available", func(t *testing.T) {
-			o := make([]StartOption, len(opts))
-			copy(o, opts)
+			o := make([]StartOption, 0, len(opts)+1)
+			o = append(o, opts...)
 			fail = true
 			o = append(o, WithDogstatsdAddr("10.1.0.12:4002"))
 			tracer, err := newTracer(o...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 			fail = false
 		})
@@ -644,7 +755,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal("unix://"+addr, c.dogstatsdAddr)
+			assert.Equal("unix://"+addr, c.internalConfig.DogstatsdAddr())
 			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
 		})
 	})
@@ -752,8 +863,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.True(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginDefault)
+			val, origin := c.internalConfig.TracingEnabledConfig().Baseline()
+			assert.True(t, val)
+			assert.Equal(t, telemetry.OriginDefault, origin)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -762,8 +874,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.False(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginEnvVar)
+			val, origin := c.internalConfig.TracingEnabledConfig().Baseline()
+			assert.False(t, val)
+			assert.Equal(t, telemetry.OriginEnvVar, origin)
 		})
 	})
 
@@ -781,8 +894,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.Rate())
 		assert.Equal(&url.URL{Scheme: "http", Host: "127.0.0.1:58126"}, c.internalConfig.RawAgentURL())
-		assert.NotNil(c.globalTags.get())
-		assert.Equal("v", c.globalTags.get()["k"])
+		assert.NotNil(c.internalConfig.GlobalTags())
+		assert.Equal("v", c.internalConfig.GlobalTags()["k"])
 		assert.Equal("testEnv", c.internalConfig.Env())
 		assert.True(c.internalConfig.Debug())
 	})
@@ -793,7 +906,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithAgentTimeout(2))
 		assert.NoError(err)
-		globalTags := c.globalTags.get()
+		globalTags := c.internalConfig.GlobalTags()
 		assert.Equal("test", globalTags["env"])
 		assert.Equal("aVal", globalTags["aKey"])
 		assert.Equal("bVal", globalTags["bKey"])
@@ -966,7 +1079,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("trace-retries", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.Equal(t, 0, c.sendRetries)
+		assert.Equal(t, 0, c.internalConfig.SendRetries())
 		assert.Equal(t, time.Millisecond, c.internalConfig.RetryInterval())
 	})
 }
@@ -975,7 +1088,7 @@ func TestTraceRetry(t *testing.T) {
 	t.Run("sendRetries", func(t *testing.T) {
 		c, err := newTestConfig(WithSendRetries(10))
 		assert.NoError(t, err)
-		assert.Equal(t, 10, c.sendRetries)
+		assert.Equal(t, 10, c.internalConfig.SendRetries())
 	})
 	t.Run("retryInterval", func(t *testing.T) {
 		c, err := newTestConfig(WithRetryInterval(10))
@@ -1020,149 +1133,6 @@ func TestDefaultHTTPClient(t *testing.T) {
 		assert.False(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(internal.DefaultDialer(30*time.Second).DialContext))
 
 	})
-}
-
-func TestResolveDogstatsdAddr(t *testing.T) {
-	socketFile, err := os.CreateTemp("", "dsd.socket")
-	require.NoError(t, err)
-	require.NoError(t, socketFile.Close())
-	t.Cleanup(func() { os.RemoveAll(socketFile.Name()) })
-	socketPath := socketFile.Name()
-
-	tests := []struct {
-		name       string
-		configAddr string
-		af         agentFeatures
-		env        map[string]string
-		socketPath string
-		expected   string
-	}{
-		{
-			name:     "defaults",
-			expected: "localhost:8125",
-		},
-		{
-			name:     "host-env",
-			env:      map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1", "DD_AGENT_HOST": "222.222.2.2"},
-			expected: "111.111.1.1:8125",
-		},
-		{
-			name:     "port-env",
-			env:      map[string]string{"DD_DOGSTATSD_PORT": "8111"},
-			expected: "localhost:8111",
-		},
-		{
-			name:     "port-env+agent-host-env",
-			env:      map[string]string{"DD_DOGSTATSD_PORT": "8111", "DD_AGENT_HOST": "222.222.2.2"},
-			expected: "222.222.2.2:8111",
-		},
-		{
-			name:     "host-env+port-env",
-			env:      map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1", "DD_DOGSTATSD_PORT": "8888", "DD_AGENT_HOST": "222.222.2.2"},
-			expected: "111.111.1.1:8888",
-		},
-		{
-			name:       "host-env+socket",
-			env:        map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1"},
-			socketPath: socketPath,
-			expected:   "111.111.1.1:8125",
-		},
-		{
-			name:       "port-env+socket",
-			env:        map[string]string{"DD_DOGSTATSD_PORT": "8111"},
-			socketPath: socketPath,
-			expected:   "localhost:8111",
-		},
-		{
-			name:       "socket",
-			socketPath: socketPath,
-			expected:   "unix://" + socketPath,
-		},
-		// DD_AGENT_HOST alone should not trigger the env var path;
-		// it falls through to auto-discovery.
-		{
-			name:       "agent-host-env-only+socket",
-			env:        map[string]string{"DD_AGENT_HOST": "222.222.2.2"},
-			socketPath: socketPath,
-			expected:   "unix://" + socketPath,
-		},
-		{
-			name:     "agent-host-env-only",
-			env:      map[string]string{"DD_AGENT_HOST": "222.222.2.2"},
-			expected: "222.222.2.2:8125",
-		},
-		{
-			name:     "agent-host-env-only+agent-port",
-			env:      map[string]string{"DD_AGENT_HOST": "222.222.2.2"},
-			af:       agentFeatures{StatsdPort: 9876},
-			expected: "222.222.2.2:9876",
-		},
-		// configAddr (priority 1) wins over everything.
-		{
-			name:       "config-addr",
-			configAddr: "custom:9999",
-			expected:   "custom:9999",
-		},
-		{
-			name:       "config-addr+env",
-			configAddr: "custom:9999",
-			env:        map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1", "DD_DOGSTATSD_PORT": "8111"},
-			expected:   "custom:9999",
-		},
-		{
-			name:       "config-addr+socket",
-			configAddr: "custom:9999",
-			socketPath: socketPath,
-			expected:   "custom:9999",
-		},
-		{
-			name:       "config-addr+agent-port",
-			configAddr: "custom:9999",
-			af:         agentFeatures{StatsdPort: 9876},
-			expected:   "custom:9999",
-		},
-		// Agent-reported port used as fallback when env host is set but no env port.
-		{
-			name:     "host-env+agent-port",
-			env:      map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1"},
-			af:       agentFeatures{StatsdPort: 9876},
-			expected: "111.111.1.1:9876",
-		},
-		// Env port wins over agent-reported port.
-		{
-			name:     "host-env+port-env+agent-port",
-			env:      map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1", "DD_DOGSTATSD_PORT": "8111"},
-			af:       agentFeatures{StatsdPort: 9876},
-			expected: "111.111.1.1:8111",
-		},
-		// Auto-discovery: agent-reported port when no env and no socket.
-		{
-			name:     "agent-port",
-			af:       agentFeatures{StatsdPort: 9876},
-			expected: "localhost:9876",
-		},
-		// Auto-discovery: socket wins over agent-reported port.
-		{
-			name:       "socket+agent-port",
-			af:         agentFeatures{StatsdPort: 9876},
-			socketPath: socketPath,
-			expected:   "unix://" + socketPath,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Clear all relevant env vars so that each subtest is isolated
-			// from the host environment and other subtests.
-			for _, key := range []string{"DD_DOGSTATSD_HOST", "DD_DOGSTATSD_PORT", "DD_AGENT_HOST"} {
-				t.Setenv(key, "")
-			}
-			for k, v := range tt.env {
-				t.Setenv(k, v)
-			}
-			assert.Equal(t, tt.expected, resolveDogstatsdAddr(tt.configAddr, tt.af, tt.socketPath))
-		})
-	}
 }
 
 func TestServiceName(t *testing.T) {
@@ -1287,6 +1257,81 @@ func TestServiceName(t *testing.T) {
 	})
 }
 
+func TestServiceNameProcessTag(t *testing.T) {
+	setup := func(t *testing.T) {
+		t.Helper()
+		internalconfig.SetUseFreshConfig(true)
+		t.Cleanup(func() {
+			internalconfig.SetUseFreshConfig(false)
+			processtags.Reload()
+		})
+		processtags.Reload()
+	}
+
+	t.Run("no DD_SERVICE defaults to binary name and sets svc.auto", func(t *testing.T) {
+		setup(t)
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig()
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.auto:"+filepath.Base(os.Args[0]))
+		assert.NotContains(t, tags.String(), "svc.user")
+	})
+
+	t.Run("DD_SERVICE set produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		t.Setenv("DD_SERVICE", "my-service")
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig()
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("WithService produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig(WithService("my-service"))
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("WithGlobalTag service produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig(WithGlobalTag("service", "my-service"))
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("OTEL_SERVICE_NAME produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		t.Setenv("OTEL_SERVICE_NAME", "my-service")
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig()
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("DD_TAGS service produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		t.Setenv("DD_TAGS", "service:my-service")
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig()
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+}
+
 func TestStartWithLink(t *testing.T) {
 	assert := assert.New(t)
 
@@ -1309,7 +1354,7 @@ func TestOtelResourceAtttributes(t *testing.T) {
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		globalTags := c.globalTags.get()
+		globalTags := c.internalConfig.GlobalTags()
 		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
 		assert.Len(globalTags, 11)
 	})
@@ -1402,7 +1447,7 @@ func TestTagSeparators(t *testing.T) {
 			t.Setenv("DD_TAGS", tag.in)
 			c, err := newTestConfig()
 			assert.NoError(err)
-			globalTags := c.globalTags.get()
+			globalTags := c.internalConfig.GlobalTags()
 			for key, expected := range tag.out {
 				got, ok := globalTags[key]
 				assert.True(ok, "tag not found")
@@ -1563,27 +1608,74 @@ func TestEnvConfig(t *testing.T) {
 }
 
 func TestStatsTags(t *testing.T) {
-	assert := assert.New(t)
-	c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
-	assert.NoError(err)
-	defer globalconfig.SetServiceName("")
-	c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
-	tags := statsTags(c)
+	setupProcessTags := func(t *testing.T, enabled string) {
+		t.Helper()
+		t.Cleanup(processtags.Reload)
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", enabled)
+		processtags.Reload()
+	}
 
-	assert.Contains(tags, "service:serviceName")
-	assert.Contains(tags, "env:envName")
-	assert.Contains(tags, "host:hostName")
-	assert.Contains(tags, "tracer_version:"+version.Tag)
+	t.Run("process tags are shared with contrib stats tags", func(t *testing.T) {
+		assert := assert.New(t)
+		setupProcessTags(t, "true")
+		t.Cleanup(func() {
+			globalconfig.SetServiceName("")
+			globalconfig.SetStatsTags(nil)
+		})
+		c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
+		assert.NoError(err)
+		c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
+		tags := statsTags(c)
 
-	st := globalconfig.StatsTags()
-	// all of the tracer tags except `service` and `version` should be on `st`
-	assert.Len(st, len(tags)-2)
-	assert.Contains(st, "env:envName")
-	assert.Contains(st, "host:hostName")
-	assert.Contains(st, "lang:go")
-	assert.Contains(st, "lang_version:"+runtime.Version())
-	assert.NotContains(st, "tracer_version:"+version.Tag)
-	assert.NotContains(st, "service:serviceName")
+		assert.Contains(tags, "service:serviceName")
+		assert.Contains(tags, "env:envName")
+		assert.Contains(tags, "host:hostName")
+		assert.Contains(tags, ext.RuntimeID+":"+globalconfig.RuntimeID())
+		processTags := processtags.GlobalTags().Slice()
+		require.NotEmpty(t, processTags)
+		for _, tag := range processTags {
+			assert.Contains(tags, tag)
+		}
+		assert.Contains(tags, "tracer_version:"+version.Tag)
+
+		st := globalconfig.StatsTags()
+		assert.Len(st, len(tags)-2)
+		assert.Contains(st, "env:envName")
+		assert.Contains(st, "host:hostName")
+		assert.Contains(st, "lang:go")
+		assert.Contains(st, "lang_version:"+runtime.Version())
+		assert.Contains(st, ext.RuntimeID+":"+globalconfig.RuntimeID())
+		for _, tag := range processTags {
+			assert.Contains(st, tag)
+		}
+		assert.NotContains(st, "tracer_version:"+version.Tag)
+		assert.NotContains(st, "service:serviceName")
+	})
+
+	t.Run("process tags collection disabled", func(t *testing.T) {
+		assert := assert.New(t)
+		setupProcessTags(t, "false")
+		t.Cleanup(func() {
+			globalconfig.SetServiceName("")
+			globalconfig.SetStatsTags(nil)
+		})
+		c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
+		assert.NoError(err)
+		c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
+		tags := statsTags(c)
+
+		assert.Nil(processtags.GlobalTags())
+		assert.Contains(tags, "service:serviceName")
+		assert.Contains(tags, "tracer_version:"+version.Tag)
+		st := globalconfig.StatsTags()
+		assert.Len(st, len(tags)-2)
+		for _, tag := range append(tags, st...) {
+			assert.Falsef(strings.HasPrefix(tag, "entrypoint."), "unexpected process tag %q", tag)
+			assert.Falsef(strings.HasPrefix(tag, "svc."), "unexpected process tag %q", tag)
+		}
+		assert.NotContains(st, "tracer_version:"+version.Tag)
+		assert.NotContains(st, "service:serviceName")
+	})
 }
 
 func TestGlobalTag(t *testing.T) {
@@ -1624,15 +1716,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.False(c.enabled.current)
-	})
-
-	t.Run("otel-env", func(t *testing.T) {
-		assert := assert.New(t)
-		t.Setenv("OTEL_TRACES_EXPORTER", "none")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
 	t.Run("dd-env", func(t *testing.T) {
@@ -1640,21 +1724,15 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
-	t.Run("override-chain", func(t *testing.T) {
+	t.Run("option-overrides-env", func(t *testing.T) {
 		assert := assert.New(t)
-		// dd env overrides otel env
-		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		t.Setenv("DD_TRACE_ENABLED", "true")
-		c, err := newTestConfig()
+		c, err := newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.True(c.enabled.current)
-		// tracer option overrides dd env
-		c, err = newTestConfig(WithTraceEnabled(false))
-		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 }
 
@@ -1755,20 +1833,6 @@ func TestWithHeaderTags(t *testing.T) {
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
-func TestHostnameDisabled(t *testing.T) {
-	t.Run("Default", func(t *testing.T) {
-		c, err := newTestConfig()
-		assert.NoError(t, err)
-		assert.False(t, c.enableHostnameDetection)
-	})
-	t.Run("EnableViaEnv", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT", "v1.66")
-		c, err := newTestConfig()
-		assert.NoError(t, err)
-		assert.True(t, c.enableHostnameDetection)
-	})
-}
-
 func TestPartialFlushing(t *testing.T) {
 	partialFlushMinSpansDefault := 1000
 	t.Run("None", func(t *testing.T) {
@@ -1862,10 +1926,24 @@ func TestWithStatsComputation(t *testing.T) {
 		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("disabled-via-option", func(t *testing.T) {
+		// Regression pin for the CSS<->trace-protocol decoupling: disabling
+		// client-side stats must not change the wire protocol. Previously this
+		// subtest asserted a v0.4 downgrade, but that assertion was
+		// environment-ambiguous — plain newTestConfig makes a real /info
+		// request, so it passed in CI (no local agent, v1 unavailable anyway)
+		// for a reason unrelated to CSS, and would have failed on a dev machine
+		// with a v1-capable agent running locally. Pin it against a stub that
+		// unambiguously advertises v1 instead.
 		assert := assert.New(t)
-		c, err := newTestConfig(WithStatsComputation(false))
+		url := mockAgentEndpoint(t, "/v1.0/traces")
+		c, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+			WithStatsComputation(false),
+		)
 		assert.NoError(err)
 		assert.False(c.internalConfig.StatsComputationEnabled())
+		assert.False(c.canComputeStats(), "sanity check: CSS must actually be off")
+		assert.Equal(traceProtocolV1, c.effectiveTraceProtocol(), "disabling CSS must not downgrade the trace protocol")
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)
@@ -1880,6 +1958,140 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
 		assert.True(c.internalConfig.StatsComputationEnabled())
+	})
+}
+
+func TestWithStatsAdditionalTags(t *testing.T) {
+	t.Run("default-empty", func(t *testing.T) {
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Empty(t, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("set-via-option", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		c, err := newTestConfig(WithStatsAdditionalTags([]string{"region", "tenant_id"}))
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("set-via-env", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "region,tenant_id")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("env-with-spaces", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", " region , tenant_id ")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("env-empty", func(t *testing.T) {
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Empty(t, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("option-overrides-env", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "region")
+		c, err := newTestConfig(WithStatsAdditionalTags([]string{"tenant_id"}))
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+}
+
+func TestWithStatsCardinalityLimitOptions(t *testing.T) {
+	t.Run("WithStatsCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 2048, c.internalConfig.StatsWholeKeyCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsCardinalityLimit(999))
+			assert.NoError(t, err)
+			assert.Equal(t, 999, c.internalConfig.StatsWholeKeyCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_CARDINALITY_LIMIT", "888")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 888, c.internalConfig.StatsWholeKeyCardinalityLimit())
+		})
+	})
+	t.Run("WithStatsResourceCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 1024, c.internalConfig.StatsResourceCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsResourceCardinalityLimit(500))
+			assert.NoError(t, err)
+			assert.Equal(t, 500, c.internalConfig.StatsResourceCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", "400")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 400, c.internalConfig.StatsResourceCardinalityLimit())
+		})
+	})
+	t.Run("WithStatsHTTPEndpointCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 512, c.internalConfig.StatsHTTPEndpointCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsHTTPEndpointCardinalityLimit(200))
+			assert.NoError(t, err)
+			assert.Equal(t, 200, c.internalConfig.StatsHTTPEndpointCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", "150")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 150, c.internalConfig.StatsHTTPEndpointCardinalityLimit())
+		})
+	})
+	t.Run("WithStatsPeerTagsCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 512, c.internalConfig.StatsPeerTagsCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsPeerTagsCardinalityLimit(300))
+			assert.NoError(t, err)
+			assert.Equal(t, 300, c.internalConfig.StatsPeerTagsCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", "250")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 250, c.internalConfig.StatsPeerTagsCardinalityLimit())
+		})
+	})
+	t.Run("WithStatsOriginCardinalityLimit", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 20, c.internalConfig.StatsOriginCardinalityLimit())
+		})
+		t.Run("set-via-option", func(t *testing.T) {
+			c, err := newTestConfig(WithStatsOriginCardinalityLimit(50))
+			assert.NoError(t, err)
+			assert.Equal(t, 50, c.internalConfig.StatsOriginCardinalityLimit())
+		})
+		t.Run("set-via-env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", "30")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, 30, c.internalConfig.StatsOriginCardinalityLimit())
+		})
 	})
 }
 
@@ -1922,6 +2134,199 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.Equal(spanID, s.spanID)
 	assert.Equal(ext.SpanTypeWeb, s.spanType)
 	assert.Equal(tm.UnixNano(), s.start)
+}
+
+func TestWithTags(t *testing.T) {
+	t.Run("sets_tags", func(t *testing.T) {
+		var assert = assert.New(t)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		s := tracer.StartSpan("test", WithTags(map[string]any{
+			"key1": "value1",
+			"key2": "value2",
+		}))
+		defer s.Finish()
+		v, _ := s.meta.Get("key1")
+		assert.Equal("value1", v)
+		v, _ = s.meta.Get("key2")
+		assert.Equal("value2", v)
+	})
+
+	t.Run("merges_with_existing_tags", func(t *testing.T) {
+		var assert = assert.New(t)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		s := tracer.StartSpan("test",
+			Tag("key1", "from_tag"),
+			WithTags(map[string]any{
+				"key1": "from_with_tags",
+				"key2": "value2",
+			}),
+		)
+		defer s.Finish()
+		v, _ := s.meta.Get("key1")
+		assert.Equal("from_with_tags", v)
+		v, _ = s.meta.Get("key2")
+		assert.Equal("value2", v)
+	})
+
+	t.Run("does_not_mutate_base_config", func(t *testing.T) {
+		var assert = assert.New(t)
+		base := NewStartSpanConfig(
+			Tag("static1", "s1"),
+			Tag("static2", "s2"),
+		)
+
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		s := tracer.StartSpan("test",
+			WithTags(map[string]any{"dynamic": "d1"}),
+			WithStartSpanConfig(base),
+		)
+		defer s.Finish()
+		v, _ := s.meta.Get("dynamic")
+		assert.Equal("d1", v)
+		v, _ = s.meta.Get("static1")
+		assert.Equal("s1", v)
+		v, _ = s.meta.Get("static2")
+		assert.Equal("s2", v)
+
+		// base.Tags must remain untouched by the per-call dynamic tag.
+		assert.Len(base.Tags, 2)
+		_, ok := base.Tags["dynamic"]
+		assert.False(ok)
+	})
+
+	t.Run("does_not_mutate_input_map", func(t *testing.T) {
+		var assert = assert.New(t)
+		base := NewStartSpanConfig(
+			Tag("static1", "s1"),
+		)
+
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		dynamic := map[string]any{"dynamic": "d1"}
+		s := tracer.StartSpan("test",
+			WithTags(dynamic),
+			WithStartSpanConfig(base),
+			Tag("extra", "e1"),
+		)
+		defer s.Finish()
+
+		// The map passed to WithTags must remain untouched by later
+		// options (WithStartSpanConfig, Tag) in the same option list, so
+		// callers can safely reuse it across spans.
+		assert.Len(dynamic, 1)
+		_, ok := dynamic["static1"]
+		assert.False(ok)
+		_, ok = dynamic["extra"]
+		assert.False(ok)
+	})
+
+	t.Run("snapshots_input_at_call_time", func(t *testing.T) {
+		var assert = assert.New(t)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		tags := map[string]any{"key": "original"}
+		opt := WithTags(tags)
+		tags["key"] = "mutated-after-call"
+
+		s := tracer.StartSpan("test", opt)
+		defer s.Finish()
+
+		v, _ := s.meta.Get("key")
+		assert.Equal("original", v)
+	})
+
+	t.Run("cached_option_does_not_leak_across_spans", func(t *testing.T) {
+		var assert = assert.New(t)
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		// A single WithTags call, cached and reused across spans, as
+		// documented as safe in CONTRIBUTING.md.
+		opt := WithTags(map[string]any{"component": "client"})
+
+		s1 := tracer.StartSpan("test", opt, Tag("request", "id1"))
+		s1.Finish()
+
+		s2 := tracer.StartSpan("test", opt)
+		defer s2.Finish()
+
+		// The per-span Tag call on s1 must not leak into s2 through a
+		// map shared by the cached opt.
+		v, _ := s2.meta.Get("component")
+		assert.Equal("client", v)
+		_, ok := s2.meta.Get("request")
+		assert.False(ok)
+	})
+
+	t.Run("empty_tags_still_prevents_base_aliasing", func(t *testing.T) {
+		var assert = assert.New(t)
+		base := NewStartSpanConfig(Tag("static1", "s1"))
+
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(err)
+
+		s := tracer.StartSpan("test",
+			WithTags(map[string]any{}),
+			WithStartSpanConfig(base),
+			Tag("extra", "e1"),
+		)
+		defer s.Finish()
+
+		// base.Tags must remain untouched even when the preceding WithTags call
+		// carried an empty map — it must still force a non-nil, distinct Tags
+		// map before WithStartSpanConfig runs.
+		assert.Len(base.Tags, 1)
+		_, ok := base.Tags["extra"]
+		assert.False(ok)
+	})
+}
+
+// TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst documents a real
+// footgun rather than desired behavior: WithStartSpanConfig only copies its
+// Tags into the live config when the live config already has a non-nil Tags
+// map; otherwise it aliases the base config's map directly (see
+// WithStartSpanConfig). If WithStartSpanConfig(base) runs before any
+// Tag/WithTags call, the live config's Tags *is* base.Tags, and a later
+// Tag/WithTags call mutates the shared, cached base in place. This is why
+// CONTRIBUTING.md requires Tag/WithTags to precede WithStartSpanConfig(base)
+// in the option list, never the reverse, whenever base is reused across
+// calls.
+func TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst(t *testing.T) {
+	assert := assert.New(t)
+	base := NewStartSpanConfig(Tag("static1", "s1"))
+
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	// Wrong order: WithStartSpanConfig(base) first, dynamic Tag second.
+	s := tracer.StartSpan("test",
+		WithStartSpanConfig(base),
+		Tag("dynamic", "d1"),
+	)
+	s.Finish()
+
+	// The per-call dynamic tag leaked into the cached base config, which
+	// would corrupt every future span built from it.
+	assert.Len(base.Tags, 2)
+	v, ok := base.Tags["dynamic"]
+	assert.True(ok, "base.Tags was mutated by a later Tag call because WithStartSpanConfig ran first and aliased it")
+	assert.Equal("d1", v)
 }
 
 func TestNewFinishConfig(t *testing.T) {
@@ -2002,6 +2407,144 @@ func BenchmarkConfig(b *testing.B) {
 			)
 		}
 	})
+}
+
+// BenchmarkTagsVsWithTags mimics real contrib call sites that mix a handful
+// of tags cached once per client/hook (Component, SpanKind, DBSystem,
+// TargetHost, TargetPort) with a batch of dynamic, per-call tags built fresh
+// on every span. The dynamic-tag counts below are taken directly from
+// production contrib code, not made up:
+//
+//   - n=1: rueidis/valkey's startSpan in the default configuration (just
+//     ResourceName). contrib/redis/rueidis/rueidis.go,
+//     contrib/valkey-io/valkey-go/valkey.go.
+//   - n=2: the same call sites with the opt-in raw-command tag enabled.
+//   - n=4: franz-go/segmentio-kafka-go/sarama's consumer spans (ResourceName,
+//     partition, offset, destination name). contrib/twmb/franz-go/kgo.go,
+//     contrib/segmentio/kafka-go/internal/tracing/tracing.go.
+//   - n=6: mongo-driver's Started handler with query capture enabled
+//     (ResourceName, DBInstance, PeerHostname, NetworkDestinationName,
+//     PeerPort, plus the captured query).
+//     contrib/go.mongodb.org/mongo-driver/mongo/mongo.go.
+//
+// Each scenario goes through a real tracer.StartSpan call, like contribs do
+// through tracer.StartSpanFromContext, so option values escape to the heap
+// the same way they do in production instead of being optimized away by
+// inlining. "NewStartSpanConfig_per_call_misuse" is not a recommended
+// pattern - NewStartSpanConfig exists to build a config once and reuse it,
+// per its own doc comment - it's included to measure the cost of using it
+// as a per-call substitute for WithTags instead.
+func BenchmarkTagsVsWithTags(b *testing.B) {
+	dynamicKeys := []string{
+		ext.ResourceName,
+		ext.RedisRawCommand,
+		ext.MessagingKafkaPartition,
+		"offset",
+		ext.MessagingDestinationName,
+		ext.DBInstance,
+	}
+	staticBase := NewStartSpanConfig(
+		Tag(ext.Component, "some-component"),
+		Tag(ext.SpanKind, ext.SpanKindClient),
+		Tag(ext.DBSystem, "some-db"),
+		Tag(ext.TargetHost, "localhost"),
+		Tag(ext.TargetPort, "1234"),
+	)
+
+	for _, n := range []int{1, 2, 4, 6} {
+		keys := dynamicKeys[:n]
+
+		// Baseline: no caching at all, every tag (static and dynamic) goes
+		// through its own Tag() call every span. This is what the 12
+		// migrated contribs looked like before this PR.
+		b.Run(fmt.Sprintf("n=%d/Tag_per_call_no_caching", n), func(b *testing.B) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				opts := make([]StartSpanOption, 0, 5+n)
+				opts = append(opts,
+					Tag(ext.Component, "some-component"),
+					Tag(ext.SpanKind, ext.SpanKindClient),
+					Tag(ext.DBSystem, "some-db"),
+					Tag(ext.TargetHost, "localhost"),
+					Tag(ext.TargetPort, "1234"),
+				)
+				for _, k := range keys {
+					opts = append(opts, Tag(k, "some-value"))
+				}
+				s := tracer.StartSpan("test", opts...)
+				s.Finish()
+			}
+		})
+
+		// Isolates WithTags' own marginal effect: the static base is
+		// already cached in both this scenario and the next one, so the
+		// only difference is how the n dynamic tags are set.
+		b.Run(fmt.Sprintf("n=%d/Tag_per_call_with_cached_base", n), func(b *testing.B) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				opts := make([]StartSpanOption, 0, n+1)
+				for _, k := range keys {
+					opts = append(opts, Tag(k, "some-value"))
+				}
+				opts = append(opts, WithStartSpanConfig(staticBase))
+				s := tracer.StartSpan("test", opts...)
+				s.Finish()
+			}
+		})
+
+		b.Run(fmt.Sprintf("n=%d/WithTags_and_static_base", n), func(b *testing.B) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				tags := make(map[string]any, n)
+				for _, k := range keys {
+					tags[k] = "some-value"
+				}
+				s := tracer.StartSpan("test",
+					WithTags(tags),
+					WithStartSpanConfig(staticBase),
+				)
+				s.Finish()
+			}
+		})
+
+		b.Run(fmt.Sprintf("n=%d/NewStartSpanConfig_per_call_misuse", n), func(b *testing.B) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				opts := make([]StartSpanOption, 0, n)
+				for _, k := range keys {
+					opts = append(opts, Tag(k, "some-value"))
+				}
+				// Order matters here for correctness, not just cost: the
+				// freshly built per-call config must be merged in before
+				// staticBase, or WithStartSpanConfig would alias
+				// staticBase.Tags onto the live config and the next line
+				// would corrupt the shared, reused base. See
+				// TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst.
+				dynamic := NewStartSpanConfig(opts...)
+				s := tracer.StartSpan("test",
+					WithStartSpanConfig(dynamic),
+					WithStartSpanConfig(staticBase),
+				)
+				s.Finish()
+			}
+		})
+	}
 }
 
 func BenchmarkStartSpanConfig(b *testing.B) {
@@ -2131,4 +2674,18 @@ func TestCanComputeStats(t *testing.T) {
 		assert.False(t, c.canComputeStats())
 		assert.False(t, c.canDropP0s())
 	})
+
+	// The full decision matrix for the 7.77/7.78 v1.0 stats workaround lives in
+	// trace_protocol_selection_test.go (TestV1StatsWorkaroundForcesStatsAndP0Dropping),
+	// including the "agent doesn't advertise v1.0" case that would otherwise be
+	// duplicated here.
+}
+
+// Regression: agentless flag set without CI Visibility enabled must not disable the agent.
+func TestAgentEnabledWithAgentlessEnvOnly(t *testing.T) {
+	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
+	c, err := newTestConfig()
+	require.NoError(t, err)
+	assert.True(t, c.agentEnabled(), "agent must remain enabled when CI Visibility is off")
+	assert.False(t, c.internalConfig.CIVisibilityAgentlessActive(), "agentless mode must not be active without CI Visibility")
 }

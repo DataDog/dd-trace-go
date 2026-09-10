@@ -32,7 +32,8 @@ type (
 
 	// ciTestCoverageFile represents the coverage data for a single file.
 	ciTestCoverageFile struct {
-		FileName string `msg:"filename"` // name of the file
+		FileName string `msg:"filename"`         // name of the file
+		Bitmap   []byte `msg:"bitmap,omitempty"` // line coverage bitmap in Go FileBitmap byte order
 	}
 )
 
@@ -58,10 +59,13 @@ func newCiTestCoverageData(tCove *testCoverage) *ciTestCoverageData {
 }
 
 // newCiTestCoverageFiles creates a new instance of ciTestCoverageFile array.
-func newCiTestCoverageFiles(files []string) []*ciTestCoverageFile {
+func newCiTestCoverageFiles(files []coveredFile) []*ciTestCoverageFile {
 	ciFiles := make([]*ciTestCoverageFile, 0, len(files))
 	for _, file := range files {
-		ciFiles = append(ciFiles, &ciTestCoverageFile{FileName: file})
+		ciFiles = append(ciFiles, &ciTestCoverageFile{
+			FileName: file.name,
+			Bitmap:   append([]byte(nil), file.bitmap...),
+		})
 	}
 	return ciFiles
 }

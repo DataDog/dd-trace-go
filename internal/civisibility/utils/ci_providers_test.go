@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ func setEnvs(t *testing.T, env map[string]any) {
 			t.Setenv(key, strValue)
 		}
 		if intValue, ok := value.(int); ok {
-			t.Setenv(key, fmt.Sprintf("%d", intValue))
+			t.Setenv(key, strconv.Itoa(intValue))
 		}
 		if boolValue, ok := value.(bool); ok {
 			if boolValue {
@@ -34,7 +35,7 @@ func setEnvs(t *testing.T, env map[string]any) {
 			}
 		}
 		if floatValue, ok := value.(float64); ok {
-			t.Setenv(key, fmt.Sprintf("%d", int(floatValue)))
+			t.Setenv(key, strconv.Itoa(int(floatValue)))
 		}
 	}
 }
@@ -94,7 +95,7 @@ func TestTags(t *testing.T) {
 			}
 
 			for i, line := range examples {
-				name := fmt.Sprintf("%d", i)
+				name := strconv.Itoa(i)
 				env := line[0]
 				tags := line[1]
 

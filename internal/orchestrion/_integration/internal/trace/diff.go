@@ -118,7 +118,7 @@ func (tr *Trace) matches(other *Trace, diff treeprint.Tree) (matches bool) {
 		}
 		nodeName := fmt.Sprintf("At index %d", idx)
 		if len(other.Children) == 0 {
-			child.into(childrenNode.AddMetaBranch(markerRemoved, fmt.Sprintf("%s (no children to match from)", nodeName)))
+			child.into(childrenNode.AddMetaBranch(markerRemoved, nodeName+" (no children to match from)"))
 			matches = false
 			continue
 		}

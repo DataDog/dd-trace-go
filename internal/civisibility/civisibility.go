@@ -39,3 +39,9 @@ func SetTestMode() {
 func IsTestMode() bool {
 	return isTestMode.Load()
 }
+
+// ResetForTesting resets process-global CI Visibility state used by tests.
+func ResetForTesting() {
+	SetState(StateUninitialized)
+	isTestMode.Store(false)
+}

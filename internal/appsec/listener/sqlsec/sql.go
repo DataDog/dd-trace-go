@@ -33,11 +33,15 @@ func NewSQLSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feat
 }
 
 func (*Feature) OnStart(op *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) {
-	dyngo.EmitData(op, waf.RunEvent{
-		Operation: op,
-		RunAddressData: addresses.NewAddressesBuilder().
-			WithDBStatement(args.Query).
-			WithDBType(args.Driver).
-			Build(),
-	})
+	ctxOp, ok := waf.ContextOperationFromParents(op)
+	if !ok {
+		return
+	}
+
+	subOp := ctxOp.NewSubcontextOp()
+	defer subOp.Close()
+	subOp.Run(op, addresses.NewAddressesBuilder().
+		WithDBStatement(args.Query).
+		WithDBType(args.Driver).
+		Build())
 }

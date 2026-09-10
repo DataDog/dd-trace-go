@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -102,6 +103,14 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 		}
 	}
 	telemetry.Count(telemetry.NamespaceAppSec, "api_security.request."+metric, []string{"framework:" + op.Framework()}).Submit(1)
+
+	// Only emit for 2xx: redirects (3xx) and errors (4xx/5xx) legitimately have
+	// no route in routing-capable frameworks (e.g. gin trailing-slash redirects,
+	// 404 no-match).  A framework that genuinely lacks routing will still trigger
+	// this metric for its successful responses.
+	if feature.APISec.Enabled && op.Route() == "" && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + op.Framework()}).Submit(1)
+	}
 }
 
 // shouldExtractShema checks that API Security is enabled and that sampling rate
@@ -132,15 +141,14 @@ func (*HeaderExtractionFeature) OnResponse(op *httpsec.HandlerOperation, resp ht
 }
 
 func extractRequestHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
-	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
+	op.SetStringTags(clientip.TagsFor(args.RemoteAddr, args.ClientIP))
 
-	op.SetStringTags(tags)
 	headers := headersRemoveCookies(args.Headers)
 	headers["host"] = []string{args.Host}
 
 	setRequestHeadersTags(op, headers)
 
-	return headers, ip
+	return headers, args.ClientIP
 }
 
 func extractResponseHeaders(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) map[string][]string {

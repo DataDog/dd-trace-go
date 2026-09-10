@@ -27,8 +27,8 @@ func AddTracing(server *mcp.Server, opts ...Option) {
 	middlewares := []mcp.Middleware{tracingMiddleware}
 
 	// Intent capture is added after tracing so that the intent can be annotated on the existing span.
-	if cfg.intentCaptureEnabled {
-		middlewares = append(middlewares, intentCaptureReceivingMiddleware)
+	if cfg.intentCapturePredicate != nil {
+		middlewares = append(middlewares, intentCaptureReceivingMiddlewareFor(cfg.intentCapturePredicate))
 	}
 
 	server.AddReceivingMiddleware(middlewares...)

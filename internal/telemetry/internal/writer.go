@@ -110,7 +110,7 @@ type WriterConfig struct {
 
 func NewWriter(config WriterConfig) (Writer, error) {
 	if len(config.Endpoints) == 0 && !bazel.IsPayloadFilesModeEnabled() {
-		return nil, fmt.Errorf("telemetry/writer: no endpoints provided")
+		return nil, errors.New("telemetry/writer: no endpoints provided")
 	}
 
 	if config.HTTPClient == nil {

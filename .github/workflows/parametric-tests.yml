@@ -28,6 +28,9 @@ on:
   schedule:
     - cron:  '00 04 * * 2-6'
 
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
 permissions:
   contents: read
 
@@ -40,20 +43,20 @@ jobs:
       TEST_LIBRARY: golang
     steps:
       - name: Checkout system tests
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "oldstable"
 

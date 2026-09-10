@@ -432,3 +432,50 @@ func startIntegrationTestServer(t *testing.T, opts ...Option) (example.Haberdash
 		assert.NoError(t, l.Close())
 	}
 }
+
+func TestWrapServerSecurityTestingHeaders(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer l.Close()
+
+	readyCh := make(chan struct{})
+	nl := &notifyListener{Listener: l, ch: readyCh}
+
+	server := WrapServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	errCh := make(chan error)
+	go func() {
+		err := http.Serve(nl, server)
+		if err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+	select {
+	case <-readyCh:
+		break
+	case err := <-errCh:
+		assert.FailNow(t, "server not started", err)
+	}
+
+	req, err := http.NewRequest("GET", "http://"+nl.Addr().String()+"/test", nil)
+	require.NoError(t, err)
+	req.Header.Set("x-datadog-endpoint-scan", "true")
+	req.Header.Set("x-datadog-security-test", "test-value")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	span := spans[0]
+	assert.Equal(t, "true", span.Tag(ext.HTTPRequestHeaders+".x-datadog-endpoint-scan"))
+	assert.Equal(t, "test-value", span.Tag(ext.HTTPRequestHeaders+".x-datadog-security-test"))
+}

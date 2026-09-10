@@ -75,6 +75,17 @@ lint/misc: tools-install ## Run miscellaneous linting checks (copyright, Makefil
 lint/action: tools-install ## Lint GitHub Actions workflows
 	$(BIN_PATH) ./scripts/lint.sh --action
 
+.PHONY: lint/errlog
+lint/errlog: ## Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
+	# Clear a possibly-stale GOROOT: the runner image's preinstalled GOROOT can point at an
+	# older Go patch than the one setup-go puts on PATH, so the compiler and go tool versions
+	# mismatch. Version-agnostic: checks nothing, pins nothing.
+	env -u GOROOT go run ./internal/telemetry/log/analyzer/cmd ./...
+	# The root module's ./... pass above cannot cross Go workspace module
+	# boundaries, so it silently skips every module in go.work that isn't
+	# the root one (e.g. tools/v2fix, internal/orchestrion/_integration).
+	env -u GOROOT go run ./scripts/lint_errlog_workspaces.go
+
 .PHONY: format
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all
@@ -155,3 +166,7 @@ ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all
 .PHONY: upgrade/orchestrion
 upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
 	$(BIN_PATH) ORCHESTRION_VERSION=$(ORCHESTRION_VERSION) ORCHESTRION_DIRS="$(ORCHESTRION_DIRS)" ./scripts/upgrade_orchestrion.sh
+
+.PHONY: config-audit
+config-audit: ## Report which DD_* configs are migrated to internal/config
+	@cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table

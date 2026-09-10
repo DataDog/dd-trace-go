@@ -5,6 +5,10 @@
 # Copyright 2025 Datadog, Inc.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "${SCRIPT_DIR}/../.github/workflows/apps/go-retry.sh"
+
 # apidiff.sh — compare the public API of Go packages between a base git ref
 # and the current working tree using golang.org/x/exp/cmd/apidiff.
 #
@@ -117,7 +121,10 @@ git -C "${REPO_ROOT}" worktree add --detach --quiet "${WORKTREE_DIR}" "${BASE_RE
 # Download module dependencies in the base worktree so apidiff can type-check
 (
   cd "${WORKTREE_DIR}"
-  GOWORK=off go mod download -x 2> /dev/null || go mod download
+  download_base_deps() {
+    GOWORK=off go mod download -x 2> /dev/null || go mod download
+  }
+  retry_on_corruption download_base_deps
 )
 
 # Compare each package

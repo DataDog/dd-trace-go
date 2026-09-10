@@ -3,5 +3,18 @@
     "allow": [
       "mcp__ide__getDiagnostics"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"MANDATORY: Before writing or editing ANY code in this repository, you must explicitly call the Read tool on each of these files: (1) AGENTS.md, (2) CONTRIBUTING.md, (3) README.md. For changes to specific packages, also read the relevant subdirectory AGENTS.md: ddtrace/tracer/AGENTS.md for tracer changes, contrib/AGENTS.md for contrib/integration changes, internal/AGENTS.md for internal changes, orchestrion/AGENTS.md for orchestrion changes, profiler/AGENTS.md for profiler changes. Do NOT skip this step or assume the content from your initial context is sufficient — call Read explicitly.\"}}'",
+            "statusMessage": "Loading project guidelines..."
+          }
+        ]
+      }
+    ]
   }
 }

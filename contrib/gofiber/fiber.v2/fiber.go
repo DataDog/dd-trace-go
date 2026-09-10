@@ -11,10 +11,12 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -43,7 +45,9 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
 			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
-			tracer.Tag(ext.HTTPMethod, c.Method()),
+			// c.Method() aliases fasthttp's connection buffer (zero-copy); clone it so the
+			// tag remains valid after fasthttp reuses the buffer for a later request.
+			tracer.Tag(ext.HTTPMethod, strings.Clone(c.Method())),
 			tracer.Tag(ext.HTTPURL, string(c.Request().URI().PathOriginal())),
 			tracer.Measured(),
 		}
@@ -53,11 +57,15 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		// Create a http.Header object so that a parent trace can be extracted. Fiber uses a non-standard header carrier
 		h := http.Header{}
 		for k, headers := range c.GetReqHeaders() {
+			// GetReqHeaders returns keys and values that alias fasthttp's connection buffer
+			// (zero-copy); clone them since h may be used to populate span tags, and the
+			// buffer can be reused by fasthttp for a later request before spans are flushed.
+			k = strings.Clone(k)
 			for _, v := range headers {
 				// GetReqHeaders returns a list of headers associated with the given key.
 				// http.Header.Add supports appending multiple values, so the previous
 				// value will not be overwritten.
-				h.Add(k, v)
+				h.Add(k, strings.Clone(v))
 			}
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
@@ -67,6 +75,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			}
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
+		opts = appsechttpsec.AppendSecurityTestingHeaderTags(opts, h)
 		opts = append(opts, cfg.spanOpts...)
 		opts = append(opts,
 			tracer.Tag(ext.Component, componentName),

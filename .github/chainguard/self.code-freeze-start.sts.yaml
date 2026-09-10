@@ -1,0 +1,14 @@
+issuer: https://token.actions.githubusercontent.com
+
+subject_pattern: "repo:DataDog/dd-trace-go:ref:refs/heads/.*"
+
+claim_pattern:
+  event_name: (workflow_dispatch|milestone)
+  repository: DataDog/dd-trace-go
+  job_workflow_ref: DataDog/dd-trace-go/\.github/workflows/code_freeze_start\.yml@refs/heads/.+
+
+permissions:
+  contents: read
+  pull_requests: read
+  statuses: write
+  issues: read

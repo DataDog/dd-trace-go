@@ -284,6 +284,8 @@ func WithCustomTag(key string, value interface{}) OptionFn {
 // WithDBMPropagation enables injection of tags as sql comments on traced queries.
 // This includes dynamic values like span id, trace id and the sampled flag which can make queries
 // unique for some cache implementations. Use DBMPropagationModeService if this is a concern.
+// DBMPropagationModeDynamicService also injects ddsh, a steady hash derived from process and
+// container tags, enabling service-level correlation in DBM without exposing trace ids.
 //
 // Note that enabling sql comment propagation results in potentially confidential data (service names)
 // being stored in the databases which can then be accessed by other 3rd parties that have been granted

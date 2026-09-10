@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"unicode"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -20,6 +21,19 @@ const OtelTagsDelimeter = "="
 
 // DDTagsDelimiter is the separator between key-val pairs for DD env vars
 const DDTagsDelimiter = ":"
+
+// IsAPIKeyValid reports whether key has the expected Datadog API key shape.
+func IsAPIKeyValid(key string) bool {
+	if len(key) != 32 {
+		return false
+	}
+	for _, c := range key {
+		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
+			return false
+		}
+	}
+	return true
+}
 
 // LockMap uses an RWMutex to synchronize map access to allow for concurrent access.
 // This should not be used for cases with heavy write load and performance concerns.
@@ -79,11 +93,11 @@ func (l *LockMap) Get(k string) string {
 // Implementation and related tests were taken/inspired by felixge/countermap
 // https://github.com/felixge/countermap/pull/2
 type XSyncMapCounterMap struct {
-	counts *xsync.MapOf[string, *xsync.Counter]
+	counts *xsync.Map[string, *xsync.Counter]
 }
 
 func NewXSyncMapCounterMap() *XSyncMapCounterMap {
-	return &XSyncMapCounterMap{counts: xsync.NewMapOf[string, *xsync.Counter]()}
+	return &XSyncMapCounterMap{counts: xsync.NewMap[string, *xsync.Counter]()}
 }
 
 func (cm *XSyncMapCounterMap) Inc(key string) {
@@ -96,12 +110,13 @@ func (cm *XSyncMapCounterMap) Inc(key string) {
 
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
 	ret := map[string]int64{}
-	cm.counts.Range(func(key string, _ *xsync.Counter) bool {
-		v, ok := cm.counts.LoadAndDelete(key)
-		if ok {
-			ret[key] = v.Value()
-		}
-		return true
+	// DeleteMatching drains the store as it iterates: each counter's value is
+	// snapshotted into the result and then deleted (delete=true, stop=false).
+	// A concurrent-resize re-visit is idempotent here (re-assigning ret[key]
+	// with the same counter), so at-most-once visitation is not required.
+	cm.counts.DeleteMatching(func(key string, value *xsync.Counter) (bool, bool) {
+		ret[key] = value.Value()
+		return true, false
 	})
 	return ret
 }

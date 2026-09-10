@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 
@@ -31,6 +32,7 @@ const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
 func traceIDFrom64Bits(i uint64) traceID {
 	t := traceID{}
 	t.SetLower(i)
+	t.cacheHex()
 	return t
 }
 
@@ -38,6 +40,7 @@ func traceIDFrom128Bits(u, l uint64) traceID {
 	t := traceID{}
 	t.SetLower(l)
 	t.SetUpper(u)
+	t.cacheHex()
 	return t
 }
 
@@ -186,8 +189,8 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("TestTextMapExtractTracestatePropagation-%s", tc.name), func(t *testing.T) {
-			t.Setenv(headerPropagationStyle, tc.propagationStyle)
+		t.Run("TestTextMapExtractTracestatePropagation-"+tc.name, func(t *testing.T) {
+			t.Setenv(envPropagationStyle, tc.propagationStyle)
 			if tc.onlyExtractFirst {
 				t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
 			}
@@ -225,8 +228,60 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 	}
 }
 
+// On the dual-header path (Datadog and W3C headers, same trace ID) the Datadog
+// context wins extraction, so the inbound ot= sampling decision parsed onto the
+// throwaway W3C context must be carried over. Otherwise re-composition strips it
+// and the OTel threshold is lost across the hop.
+func TestTextMapExtractDualHeaderPreservesOtel(t *testing.T) {
+	t.Setenv(envPropagationStyle, "datadog,tracecontext")
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	assert.NoError(err)
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		traceparentHeader:     "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:      "dd=s:1;p:2222222222222222,ot=rv:ef284ace7a91e1;th:e6666666666668,othervendor=t61rcWkgMzE",
+	})
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+	assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
+
+	// Inject into a fresh carrier and confirm the inbound ot= survives the hop.
+	out := TextMapCarrier(map[string]string{})
+	assert.NoError(tracer.Inject(sctx, out))
+	assert.Contains(out[tracestateHeader], "ot=rv:ef284ace7a91e1;th:e6666666666668")
+	assert.Contains(out[tracestateHeader], "othervendor=t61rcWkgMzE")
+}
+
+// OTel defines only rv/th in the `ot=` member today but reserves room for more
+// sub-keys. An inherited unknown sub-key must be forwarded verbatim rather than
+// dropped, so DD stays transparent to future additions.
+func TestTextMapForwardsUnknownOtelSubkeys(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	assert.NoError(err)
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1;p:2222222222222222,ot=rv:ef284ace7a91e1;th:e6666666666668;foo:bar",
+	})
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+
+	out := TextMapCarrier(map[string]string{})
+	assert.NoError(tracer.Inject(sctx, out))
+	assert.Contains(out[tracestateHeader], "ot=rv:ef284ace7a91e1;th:e6666666666668;foo:bar")
+}
+
 func TestTextMapPropagatorErrors(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 	assert := assert.New(t)
 
@@ -299,8 +354,8 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 }
 
 func TestTextMapPropagatorOrigin(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	src := TextMapCarrier(map[string]string{
 		originHeader:          "synthetics",
 		DefaultTraceIDHeader:  "1",
@@ -326,8 +381,8 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 }
 
 func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	src := TextMapCarrier(map[string]string{
 		DefaultPriorityHeader: "1",
 		DefaultTraceIDHeader:  "1",
@@ -341,10 +396,8 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	assert.Nil(t, err)
 	child := tracer.StartSpan("test", ChildOf(ctx))
 	childSpanID := child.Context().spanID
-	assert.Equal(t, map[string]string{
-		"hello":    "world=",
-		"_dd.p.dm": "934086a6-4",
-	}, ctx.trace.propagatingTags)
+	assert.Equal(t, "world=", ctx.trace.propagatingTag("hello"))
+	assert.Equal(t, "934086a6-4", ctx.trace.propagatingTag("_dd.p.dm"))
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
@@ -356,8 +409,8 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 }
 
 func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	src := TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
@@ -370,10 +423,8 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.Nil(t, err)
 	child := tracer.StartSpan("test", ChildOf(ctx))
 	childSpanID := child.Context().spanID
-	assert.Equal(t, map[string]string{
-		"hello":    "world",
-		"_dd.p.dm": "-1",
-	}, ctx.trace.propagatingTags)
+	assert.Equal(t, "world", ctx.trace.propagatingTag("hello"))
+	assert.Equal(t, "-1", ctx.trace.propagatingTag("_dd.p.dm"))
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
@@ -385,7 +436,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 }
 
 func TestExtractOriginSynthetics(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
 	src := TextMapCarrier(map[string]string{
 		originHeader:          "synthetics",
 		DefaultTraceIDHeader:  "3",
@@ -404,7 +455,7 @@ func TestExtractOriginSynthetics(t *testing.T) {
 }
 
 func Test257CharacterDDTracestateLengh(t *testing.T) {
-	t.Setenv(headerPropagationStyle, "tracecontext")
+	t.Setenv(envPropagationStyle, "tracecontext")
 
 	tracer, err := newTracer()
 	require.NoError(t, err)
@@ -416,9 +467,9 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	ctx.origin = "rum"
 	ctx.traceID = traceIDFrom64Bits(1)
 	ctx.spanID = 2
-	ctx.trace.propagatingTags = map[string]string{
+	ctx.trace.replacePropagatingTags(map[string]string{
 		"tracestate": "valid_vendor=a:1",
-	}
+	})
 	// need to create a tracestate where the dd portion will be 257 chars long
 	// we currently have:
 	// 3 chars ->  dd=
@@ -434,18 +485,99 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	longKey := strings.Repeat("a", 234) // 234 is correct num for 257
 	shortKey := "a"
 
-	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", shortKey)] = "0"
-	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", longKey)] = "0"
+	ctx.trace.setPropagatingTag("_dd.p."+shortKey, "0")
+	ctx.trace.setPropagatingTag("_dd.p."+longKey, "0")
 
 	headers := TextMapCarrier(map[string]string{})
 	err = tracer.Inject(ctx, headers)
 	assert.Nil(err)
 	assert.Contains(headers[tracestateHeader], "valid_vendor=a:1")
 	// iterating through propagatingTags map doesn't guarantee order in tracestate header
-	ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+	ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 	assert.Contains(ddTag, "s:2")
 	assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
-	assert.LessOrEqual(len(ddTag), 256) // one of the propagated tags will not be propagated
+	assert.LessOrEqual(len(ddTag), tracestateDDMaxSize) // one of the propagated tags will not be propagated
+}
+
+func TestExtractTracestateDropsOversizedDD(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Build a dd= entry that exceeds tracestateDDMaxSize.
+	ddEntry := "dd=s:1;o:rum;p:0000000000000001;t.foo:" + strings.Repeat("a", tracestateDDMaxSize)
+	require.Greater(t, len(ddEntry), tracestateDDMaxSize)
+	rawTracestate := ddEntry + ",vendor1=v1,vendor2=v2"
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  rawTracestate,
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	// Oversized dd entry must not appear in the stored propagating tag.
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.Contains(t, stored, "vendor2=v2")
+	// dd entry was not parsed, so its origin/reparentID were not extracted.
+	assert.Empty(t, sctx.origin)
+	assert.Empty(t, sctx.reparentID)
+	// And no _dd.p.foo propagating tag was created from t.foo.
+	assert.False(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
+}
+
+func TestExtractTracestateKeepsDDAtBoundary(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// dd= entry exactly at the limit should be kept and parsed.
+	prefix := "dd=s:1;t.foo:"
+	ddEntry := prefix + strings.Repeat("a", tracestateDDMaxSize-len(prefix))
+	require.Equal(t, tracestateDDMaxSize, len(ddEntry))
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  ddEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.Contains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.True(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
+}
+
+func TestExtractTracestateDropsOversizedDDWithWhitespace(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Same as the basic oversized-dd case but with leading OWS on the dd entry.
+	// W3C list-member parsing allows surrounding whitespace, so the prefix and
+	// length check must trim each entry before evaluating it.
+	ddEntry := " dd=s:1;o:rum;p:0000000000000001;t.foo:" + strings.Repeat("a", tracestateDDMaxSize)
+	rawTracestate := "vendor1=v1," + ddEntry + ",vendor2=v2"
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  rawTracestate,
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.Contains(t, stored, "vendor2=v2")
+	assert.Empty(t, sctx.origin)
+	assert.False(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
 }
 
 func TestTextMapPropagator(t *testing.T) {
@@ -494,7 +626,7 @@ func TestTextMapPropagator(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run("Inject-"+tc.name, func(t *testing.T) {
-			t.Setenv(headerPropagationStyleInject, tc.injectStyle)
+			t.Setenv(envPropagationStyleInject, tc.injectStyle)
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -519,7 +651,7 @@ func TestTextMapPropagator(t *testing.T) {
 			assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
 			assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
 			if tc.xDatadogTagsHeader != "" {
-				tc.xDatadogTagsHeader += fmt.Sprintf(",_dd.p.tid=%s", child.Context().TraceID()[:16])
+				tc.xDatadogTagsHeader += ",_dd.p.tid=" + child.Context().TraceID()[:16]
 			}
 			assertTraceTags(t, tc.xDatadogTagsHeader, dst["x-datadog-tags"])
 			if strings.Contains(tc.injectStyle, "tracecontext") {
@@ -531,7 +663,7 @@ func TestTextMapPropagator(t *testing.T) {
 		})
 	}
 	t.Run("Extract-InvalidTraceTagsHeader", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
+		t.Setenv(envPropagationStyleExtract, "datadog")
 		src := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1",
 			DefaultParentIDHeader: "1",
@@ -546,7 +678,7 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("Extract-TooManyTags", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
+		t.Setenv(envPropagationStyleExtract, "datadog")
 		src := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1",
 			DefaultParentIDHeader: "1",
@@ -563,13 +695,13 @@ func TestTextMapPropagator(t *testing.T) {
 	t.Run("InjectExtract", func(t *testing.T) {
 		old := traceID128BitEnabled.Swap(true)
 		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		t.Setenv(headerPropagationStyleInject, "datadog")
+		t.Setenv(envPropagationStyleExtract, "datadog")
+		t.Setenv(envPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{
 			BaggagePrefix:    "bg-",
 			TraceHeader:      "tid",
 			ParentHeader:     "pid",
-			MaxTagsHeaderLen: defaultMaxTagsHeaderLen,
+			MaxTagsHeaderLen: internalconfig.DefaultMaxTagsHeaderLen,
 		})
 		tracer, err := newTracer(WithPropagator(propagator))
 		defer tracer.Stop()
@@ -593,6 +725,48 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 }
 
+func TestExtractTraceTagsHeaderUsesMaxTagsHeaderLen(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	const customMax = 200
+	propagator := NewPropagator(&PropagatorConfig{
+		MaxTagsHeaderLen: customMax,
+	})
+
+	// Header is longer than the configured cap but shorter than the previous
+	// hardcoded 512 cap, to confirm extract now honors the configured maxLen.
+	tags := "_dd.p.k=" + strings.Repeat("a", customMax)
+	require.Greater(t, len(tags), customMax)
+	require.Less(t, len(tags), 512)
+
+	src := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		traceTagsHeader:       tags,
+	})
+	ctx, err := propagator.Extract(src)
+	require.NoError(t, err)
+	assert.Equal(t, "extract_max_size", ctx.trace.tags["_dd.propagation_error"])
+}
+
+func TestExtractTraceTagsHeaderDisabled(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	propagator := NewPropagator(&PropagatorConfig{
+		MaxTagsHeaderLen: 0, // disable, mirroring inject
+	})
+
+	src := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		traceTagsHeader:       "_dd.p.k=v",
+	})
+	ctx, err := propagator.Extract(src)
+	require.NoError(t, err)
+	// Disabled extract: no propagating tags, no error tag.
+	_, hasErr := ctx.trace.tags["_dd.propagation_error"]
+	assert.False(t, hasErr)
+	assert.Zero(t, ctx.trace.propagatingTagsLen())
+}
+
 func TestEnvVars(t *testing.T) {
 	var testEnvs []map[string]string
 
@@ -603,10 +777,10 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("b3/b3multi inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleInject: "b3"},
-			{headerPropagationStyle: "b3"},
+			{envPropagationStyleInject: "b3"},
+			{envPropagationStyle: "b3"},
 			{otelHeaderPropagationStyle: "b3multi"},
-			{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+			{envPropagationStyleInject: "b3multi", envPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -673,10 +847,10 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("b3/b3multi extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleExtract: "b3"},
-			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{envPropagationStyleExtract: "b3"},
+			{envPropagationStyle: "b3,none" /* none should have no affect */},
 			{otelHeaderPropagationStyle: "b3multi"},
-			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+			{envPropagationStyleExtract: "b3multi", envPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -737,10 +911,10 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("b3/b3multi extract invalid", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleExtract: "b3"},
-			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{envPropagationStyleExtract: "b3"},
+			{envPropagationStyle: "b3,none" /* none should have no affect */},
 			{otelHeaderPropagationStyle: "b3multi"},
-			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+			{envPropagationStyleExtract: "b3multi", envPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -771,8 +945,8 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("b3 single header extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleExtract: "B3 single header"},
-			{headerPropagationStyle: "B3 single header,none" /* none should have no affect */},
+			{envPropagationStyleExtract: "B3 single header"},
+			{envPropagationStyle: "B3 single header,none" /* none should have no affect */},
 			{otelHeaderPropagationStyle: "b3"},
 		}
 		for _, testEnv := range testEnvs {
@@ -835,7 +1009,7 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("b3 single header inject", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "b3 single header")
+		t.Setenv(envPropagationStyleInject, "b3 single header")
 		var tests = []struct {
 			in  []uint64 // contains [<trace_id_lower_bits>, <span_id>, <sampling_decision>]
 			out string
@@ -869,10 +1043,10 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("datadog inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleInject: "datadog"},
-			{headerPropagationStyle: "datadog"},
+			{envPropagationStyleInject: "datadog"},
+			{envPropagationStyle: "datadog"},
 			{otelHeaderPropagationStyle: "datadog"},
-			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "none" /* none should have no affect */},
+			{envPropagationStyleInject: "datadog", envPropagationStyle: "none" /* none should have no affect */},
 		}
 
 		for _, testEnv := range testEnvs {
@@ -928,9 +1102,9 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("datadog/b3 extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleExtract: "Datadog,b3"},
-			{headerPropagationStyle: "Datadog,b3"},
-			{headerPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
+			{envPropagationStyleExtract: "Datadog,b3"},
+			{envPropagationStyle: "Datadog,b3"},
+			{envPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
 			{otelHeaderPropagationStyle: "Datadog,b3multi"},
 		}
 		for _, testEnv := range testEnvs {
@@ -1002,9 +1176,9 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("datadog inject/extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleInject: "datadog", headerPropagationStyleExtract: "datadog"},
-			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
-			{headerPropagationStyle: "datadog"},
+			{envPropagationStyleInject: "datadog", envPropagationStyleExtract: "datadog"},
+			{envPropagationStyleInject: "datadog", envPropagationStyle: "datadog"},
+			{envPropagationStyle: "datadog"},
 			{otelHeaderPropagationStyle: "datadog"},
 		}
 		for _, testEnv := range testEnvs {
@@ -1068,10 +1242,10 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("w3c extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleExtract: "traceContext"},
-			{headerPropagationStyle: "traceContext"},
+			{envPropagationStyleExtract: "traceContext"},
+			{envPropagationStyle: "traceContext"},
 			{otelHeaderPropagationStyle: "traceContext"},
-			{headerPropagationStyleExtract: "traceContext", headerPropagationStyle: "none" /* none should have no affect */},
+			{envPropagationStyleExtract: "traceContext", envPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1263,7 +1437,13 @@ func TestEnvVars(t *testing.T) {
 					assert.True(ok)
 					assert.Equal(int(tc.out[1]), p)
 
-					assert.Equal(tc.propagatingTags, ctx.trace.propagatingTags)
+					if tc.propagatingTags != nil {
+						var got map[string]string
+						if snap := ctx.trace.propagatingTags.Load(); snap != nil {
+							got = snap.(map[string]string)
+						}
+						assert.Equal(tc.propagatingTags, got)
+					}
 				})
 			}
 		}
@@ -1316,8 +1496,8 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("w3c extract / w3c,datadog inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleExtract: "traceContext"},
-			{headerPropagationStyle: "traceContext"},
+			{envPropagationStyleExtract: "traceContext"},
+			{envPropagationStyle: "traceContext"},
 			{otelHeaderPropagationStyle: "traceContext"},
 		}
 		for _, testEnv := range testEnvs {
@@ -1379,7 +1559,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Nil(err)
 					checkSameElements(assert, tc.outHeaders[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outHeaders[tracestateHeader], headers[tracestateHeader])
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					assert.LessOrEqual(len(ddTag), 256)
 				})
 			}
@@ -1388,10 +1568,10 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("w3c inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
-			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
-			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyle: "datadog,tracecontext"},
-			{headerPropagationStyle: "datadog,tracecontext"},
+			{envPropagationStyleInject: "tracecontext", envPropagationStyleExtract: "tracecontext"},
+			{envPropagationStyleInject: "datadog,tracecontext", envPropagationStyleExtract: "datadog,tracecontext"},
+			{envPropagationStyleInject: "datadog,tracecontext", envPropagationStyle: "datadog,tracecontext"},
+			{envPropagationStyle: "datadog,tracecontext"},
 			{otelHeaderPropagationStyle: "datadog,traceContext"},
 		}
 		for _, testEnv := range testEnvs {
@@ -1564,7 +1744,7 @@ func TestEnvVars(t *testing.T) {
 					ctx.origin = tc.origin
 					ctx.traceID = tc.tid
 					ctx.spanID = tc.sid
-					ctx.trace.propagatingTags = tc.propagatingTags
+					ctx.trace.replacePropagatingTags(tc.propagatingTags)
 					ctx.reparentID = "0123456789abcdef"
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -1578,7 +1758,7 @@ func TestEnvVars(t *testing.T) {
 						tc.out[tracestateHeader] = strings.TrimSuffix(tc.out[tracestateHeader], ",othervendor=t61rcWkgMzE")
 					}
 					checkSameElements(assert, tc.out[tracestateHeader], headers[tracestateHeader])
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					// -3 as we don't count dd= as part of the "value" length limit
 					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
@@ -1594,12 +1774,12 @@ func TestEnvVars(t *testing.T) {
 					ctx.origin = "old_tracestate"
 					ctx.traceID = traceIDFrom64Bits(1229782938247303442)
 					ctx.spanID = 2459565876494606882
-					ctx.trace.propagatingTags = map[string]string{
+					ctx.trace.replacePropagatingTags(map[string]string{
 						"tracestate": "valid_vendor=a:1",
-					}
+					})
 					// dd part of the tracestate must not exceed 256 characters
 					for i := range 32 {
-						ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.a%v", i)] = "i"
+						ctx.trace.setPropagatingTag(fmt.Sprintf("_dd.p.a%v", i), "i")
 					}
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -1608,7 +1788,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal("00-00000000000000001111111111111112-2222222222222222-01", headers[traceparentHeader])
 					assert.Contains(headers[tracestateHeader], "valid_vendor=a:1")
 					// iterating through propagatingTags map doesn't guarantee order in tracestate header
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					assert.Contains(ddTag, "s:2")
 					assert.Contains(ddTag, "s:2")
 					assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
@@ -1619,8 +1799,8 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("datadog extract / w3c,datadog inject", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "datadog,tracecontext")
-		t.Setenv(headerPropagationStyleExtract, "datadog")
+		t.Setenv(envPropagationStyleInject, "datadog,tracecontext")
+		t.Setenv(envPropagationStyleExtract, "datadog")
 		var tests = []struct {
 			outHeaders TextMapCarrier
 			inHeaders  TextMapCarrier
@@ -1672,7 +1852,7 @@ func TestEnvVars(t *testing.T) {
 				v, _ := root.meta.Get("_dd.parent_id")
 				assert.Empty(v, "extraction happened from DD headers, so _dd.parent_id mustn't be set")
 
-				ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+				ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 				// -3 as we don't count dd= as part of the "value" length limit
 				assert.LessOrEqual(len(ddTag)-3, 256)
 			})
@@ -1681,8 +1861,8 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("w3c inject/extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
-			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
+			{envPropagationStyleInject: "tracecontext", envPropagationStyleExtract: "tracecontext"},
+			{envPropagationStyleInject: "datadog,tracecontext", envPropagationStyleExtract: "datadog,tracecontext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1746,7 +1926,7 @@ func TestEnvVars(t *testing.T) {
 
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					assert.LessOrEqual(len(ddTag), 256)
 				})
 			}
@@ -1755,8 +1935,8 @@ func TestEnvVars(t *testing.T) {
 
 	t.Run("w3c extract,update span with UserID, inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
-			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
+			{envPropagationStyleInject: "tracecontext", envPropagationStyleExtract: "tracecontext"},
+			{envPropagationStyleInject: "datadog,tracecontext", envPropagationStyleExtract: "datadog,tracecontext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1826,13 +2006,13 @@ func TestEnvVars(t *testing.T) {
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
 					assert.Equal(tc.tid.value, sctx.traceID.value)
-					assert.Equal(tc.out[0], sctx.span.parentID)
+					assert.Equal(tc.out[0], s.parentID)
 					assert.Equal(tc.out[1], sctx.spanID)
 
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					// The tracestate should be recomposed because updated=true
 					assert.Contains(headers[tracestateHeader], "dd=")
-					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					ddTag, _, _ := strings.Cut(headers[tracestateHeader], ",")
 					// -3 as we don't count dd= as part of the "value" length limit
 					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
@@ -1841,9 +2021,9 @@ func TestEnvVars(t *testing.T) {
 	})
 	t.Run("datadog extract precedence", func(t *testing.T) {
 		testEnvs = []map[string]string{
-			{headerPropagationStyleExtract: "datadog,tracecontext"},
-			{headerPropagationStyleExtract: "datadog,b3"},
-			{headerPropagationStyleExtract: "datadog,b3multi"},
+			{envPropagationStyleExtract: "datadog,tracecontext"},
+			{envPropagationStyleExtract: "datadog,b3"},
+			{envPropagationStyleExtract: "datadog,b3multi"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1909,7 +2089,7 @@ func checkSameElements(assert *assert.Assertions, want, got string) {
 }
 
 func TestTraceContextPrecedence(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog,b3,tracecontext")
+	t.Setenv(envPropagationStyleExtract, "datadog,b3,tracecontext")
 	tracer, err := newTracer()
 	assert.NoError(t, err)
 	defer tracer.Stop()
@@ -1976,7 +2156,7 @@ func TestSpanLinks(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				if tt.envVal != "" {
-					t.Setenv(headerPropagationStyleExtract, tt.envVal)
+					t.Setenv(envPropagationStyleExtract, tt.envVal)
 				}
 				tracer, err := newTracer(WithHTTPClient(c))
 				assert.NoError(t, err)
@@ -2016,6 +2196,361 @@ func TestSpanLinks(t *testing.T) {
 	})
 }
 
+func TestPropagationBehaviorExtract(t *testing.T) {
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(404)
+	}))
+	defer s.Close()
+
+	// Carrier with DD and W3C headers sharing the same trace ID and span ID.
+	sameIDCarrier := TextMapCarrier{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		DefaultPriorityHeader: "1",
+		traceparentHeader:     "00-00000000000000000000000000000001-0000000000000001-01",
+		tracestateHeader:      "dd=s:1",
+		"baggage":             "key=val",
+	}
+
+	// Carrier with DD and W3C headers carrying different trace IDs.
+	diffIDCarrier := TextMapCarrier{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		DefaultPriorityHeader: "1",
+		traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-01",
+		tracestateHeader:      "dd=s:1",
+		"baggage":             "key=val",
+	}
+
+	t.Run("continue/same-trace-id", func(t *testing.T) {
+		// Default behavior: trace is continued from the incoming Datadog context.
+		// Same trace ID across propagators means no conflicting span link is created.
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		span := tr.StartSpan("test", ChildOf(sctx))
+		defer span.Finish()
+
+		assert.Equal(t, uint64(1), span.traceID)
+		assert.Empty(t, sctx.spanLinks)
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("continue/unique-trace-ids", func(t *testing.T) {
+		// Default behavior: trace is continued from the incoming Datadog context (first propagator).
+		// W3C context has a different trace ID, so a terminated_context span link is created for it.
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		span := tr.StartSpan("test", ChildOf(sctx))
+		defer span.Finish()
+
+		assert.Equal(t, uint64(1), span.traceID)
+		require.Len(t, sctx.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    2,
+			SpanID:     2,
+			Tracestate: "dd=s:1",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"},
+		}, sctx.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("continue/extract-first/same-trace-id", func(t *testing.T) {
+		// Default behavior + extract-first: extraction stops after Datadog (the first
+		// configured extractor), so W3C never runs. Baggage is still propagated: it is
+		// extracted independently of the trace-context extractor loop.
+		t.Setenv(envPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		span := tr.StartSpan("test", ChildOf(sctx))
+		defer span.Finish()
+
+		assert.Equal(t, uint64(1), span.traceID)
+		assert.Empty(t, sctx.spanLinks)
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("continue/extract-first/unique-trace-ids", func(t *testing.T) {
+		// Default behavior + extract-first, with unique trace IDs: unlike
+		// continue/unique-trace-ids, no terminated_context span link is created here,
+		// because extraction stops after Datadog and the conflicting W3C context is
+		// never seen. Baggage is still propagated.
+		t.Setenv(envPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		span := tr.StartSpan("test", ChildOf(sctx))
+		defer span.Finish()
+
+		assert.Equal(t, uint64(1), span.traceID)
+		assert.Empty(t, sctx.spanLinks)
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("restart/same-trace-id", func(t *testing.T) {
+		// restart mode: a new local trace context is created regardless of the incoming
+		// trace ID. The incoming context is referenced via a span link with
+		// reason=propagation_behavior_extract. Baggage is propagated.
+		//
+		// Tracestate is enriched by the Datadog propagator with the p: sub-key (parent
+		// span ID). Flags=1 because sampling priority > 0.
+		t.Setenv(envPropagationBehaviorExtract, "restart")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		// WithSpanLinks is required here: ChildOf does not transfer span links from the context.
+		// StartSpanFromPropagatedContext handles this automatically; plain StartSpan does not.
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		require.Len(t, span.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    1,
+			SpanID:     1,
+			Tracestate: "dd=s:1;p:0000000000000001",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
+		}, span.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("restart/unique-trace-ids", func(t *testing.T) {
+		// restart mode with unique trace IDs: a new trace is started, span link points to
+		// the Datadog context (first propagator). The W3C conflicting context is not
+		// included because restart applies before conflicting-trace span links are generated.
+		//
+		// Tracestate is empty: the W3C traceparent has a different trace ID, so
+		// propagateTracestate is never called and no p: sub-key is added to propagating tags.
+		t.Setenv(envPropagationBehaviorExtract, "restart")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		// WithSpanLinks is required here: ChildOf does not transfer span links from the context.
+		// StartSpanFromPropagatedContext handles this automatically; plain StartSpan does not.
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		require.Len(t, span.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    1,
+			SpanID:     1,
+			Tracestate: "",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
+		}, span.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("restart/extract-first/same-trace-id", func(t *testing.T) {
+		// restart + extract_first with same trace ID: extraction stops after Datadog,
+		// so the W3C propagator never runs. One span link to the Datadog context. Baggage propagated.
+		//
+		// Tracestate is empty: the W3C propagator (which would add the p: sub-key via
+		// propagateTracestate) never runs because onlyExtractFirst stops the loop early.
+		// Flags=1 because sampling priority > 0.
+		t.Setenv(envPropagationBehaviorExtract, "restart")
+		t.Setenv(envPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		// WithSpanLinks is required here: ChildOf does not transfer span links from the context.
+		// StartSpanFromPropagatedContext handles this automatically; plain StartSpan does not.
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		require.Len(t, span.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    1,
+			SpanID:     1,
+			Tracestate: "",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
+		}, span.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("restart/extract-first/unique-trace-ids", func(t *testing.T) {
+		// restart + extract_first with unique trace IDs: extraction stops after Datadog,
+		// so the W3C conflicting context is never seen. One span link to the Datadog context.
+		// Baggage is still propagated: it is extracted independently of the trace-context
+		// extractor loop.
+		//
+		// Tracestate is empty because the Datadog propagator does not carry W3C tracestate.
+		// Flags=1 because sampling priority > 0.
+		t.Setenv(envPropagationBehaviorExtract, "restart")
+		t.Setenv(envPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		// WithSpanLinks is required here: ChildOf does not transfer span links from the context.
+		// StartSpanFromPropagatedContext handles this automatically; plain StartSpan does not.
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		require.Len(t, span.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    1,
+			SpanID:     1,
+			Tracestate: "",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
+		}, span.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
+	})
+
+	t.Run("restart/extract-first/ot-baggage", func(t *testing.T) {
+		// restart + extract-first with legacy OpenTracing "ot-baggage-*" items and no
+		// "baggage" header: the restart branch used to replace incomingCtx.baggage with
+		// a fresh extraction instead of using it, silently dropping ot-baggage-* items
+		// that only the Datadog propagator populates.
+		t.Setenv(envPropagationBehaviorExtract, "restart")
+		t.Setenv(envPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		otBaggageCarrier := TextMapCarrier{
+			DefaultTraceIDHeader:  "1",
+			DefaultParentIDHeader: "1",
+			DefaultPriorityHeader: "1",
+			"ot-baggage-foo":      "bar",
+		}
+
+		sctx, err := tr.Extract(otBaggageCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		assert.Equal(t, map[string]string{"foo": "bar"}, sctx.baggage)
+	})
+
+	t.Run("ignore/same-trace-id", func(t *testing.T) {
+		// ignore mode: the entire incoming trace context is discarded. Returns nil, nil —
+		// no error, no context — so callers produce a fresh root span with no parent,
+		// no span links, and no baggage.
+		t.Setenv(envPropagationBehaviorExtract, "ignore")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.Nil(t, sctx)
+
+		span := tr.StartSpan("test")
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		assert.Empty(t, span.spanLinks)
+	})
+
+	t.Run("ignore/unique-trace-ids", func(t *testing.T) {
+		// ignore mode with unique trace IDs: same result as same-trace-id.
+		// All incoming context is discarded regardless of what headers are present.
+		t.Setenv(envPropagationBehaviorExtract, "ignore")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.Nil(t, sctx)
+
+		span := tr.StartSpan("test")
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		assert.Empty(t, span.spanLinks)
+	})
+
+	t.Run("restart/w3c-only", func(t *testing.T) {
+		// restart mode where only W3C headers are present: the Datadog propagator
+		// is configured first but finds nothing, so W3C is the propagator that
+		// produces the incoming context. The span link's context_headers must
+		// reflect that — not the first configured propagator.
+		t.Setenv(envPropagationBehaviorExtract, "restart")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		w3cOnlyCarrier := TextMapCarrier{
+			traceparentHeader: "00-00000000000000000000000000000003-0000000000000003-01",
+			tracestateHeader:  "dd=s:1",
+		}
+
+		sctx, err := tr.Extract(w3cOnlyCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		require.Len(t, span.spanLinks, 1)
+		assert.Equal(t, "tracecontext", span.spanLinks[0].Attributes["context_headers"])
+		assert.Equal(t, uint64(3), span.spanLinks[0].SpanID)
+	})
+}
+
+func TestPropagationBehaviorExtractDefault(t *testing.T) {
+	// Regression test: the config source's default must be "continue" itself,
+	// not rely on NewPropagator's fallback switch to paper over an empty value.
+	cfg, err := newTestConfig()
+	require.NoError(t, err)
+	assert.Equal(t, propagationBehaviorExtractContinue, cfg.internalConfig.PropagationBehaviorExtract())
+}
+
 func TestW3CExtractsBaggage(t *testing.T) {
 	tracer, err := newTracer()
 	defer tracer.Stop()
@@ -2040,7 +2575,7 @@ func TestW3CExtractsBaggage(t *testing.T) {
 
 func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "none")
+		t.Setenv(envPropagationStyleInject, "none")
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -2059,7 +2594,7 @@ func TestNonePropagator(t *testing.T) {
 	})
 
 	t.Run("inject/none,b3", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "none,b3")
+		t.Setenv(envPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
 		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithLogger(tp), WithEnv("test"))
@@ -2086,7 +2621,7 @@ func TestNonePropagator(t *testing.T) {
 	})
 
 	t.Run("extract/none", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "none")
+		t.Setenv(envPropagationStyleExtract, "none")
 		assert := assert.New(t)
 		tracer, err := newTracer()
 		defer tracer.Stop()
@@ -2104,7 +2639,7 @@ func TestNonePropagator(t *testing.T) {
 
 	t.Run("inject,extract/none", func(t *testing.T) {
 		t.Run("", func(t *testing.T) {
-			t.Setenv(headerPropagationStyle, "NoNe")
+			t.Setenv(envPropagationStyle, "NoNe")
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -2146,8 +2681,8 @@ func TestNonePropagator(t *testing.T) {
 			assert.Equal(err, ErrSpanContextNotFound)
 		})
 		t.Run("", func(t *testing.T) {
-			t.Setenv(headerPropagationStyleExtract, "NoNe")
-			t.Setenv(headerPropagationStyleInject, "NoNe")
+			t.Setenv(envPropagationStyleExtract, "NoNe")
+			t.Setenv(envPropagationStyleInject, "NoNe")
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -2241,10 +2776,20 @@ func TestExtractNoHeaders(t *testing.T) {
 			extractEnv:   "datadog,tracecontext",
 			extractFirst: true,
 		},
+		{
+			name:         "baggage only",
+			extractEnv:   "baggage",
+			extractFirst: false,
+		},
+		{
+			name:         "baggage only - extractFirst",
+			extractEnv:   "baggage",
+			extractFirst: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(headerPropagationStyleExtract, tt.extractEnv)
+			t.Setenv(envPropagationStyleExtract, tt.extractEnv)
 			if tt.extractFirst {
 				t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
 			}
@@ -2259,14 +2804,14 @@ func TestExtractNoHeaders(t *testing.T) {
 }
 
 func BenchmarkInjectDatadog(b *testing.B) {
-	b.Setenv(headerPropagationStyleInject, "datadog")
+	b.Setenv(envPropagationStyleInject, "datadog")
 	tracer, err := newTracer()
 	defer tracer.Stop()
 	assert.NoError(b, err)
 	root := tracer.StartSpan("test")
 	defer root.Finish()
 	for i := range 20 {
-		setPropagatingTag(root.Context(), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
+		setPropagatingTag(root.Context(), strconv.Itoa(i), strconv.Itoa(i))
 	}
 	dst := map[string]string{}
 	b.ResetTimer()
@@ -2276,7 +2821,7 @@ func BenchmarkInjectDatadog(b *testing.B) {
 }
 
 func BenchmarkInjectW3C(b *testing.B) {
-	b.Setenv(headerPropagationStyleInject, "tracecontext")
+	b.Setenv(envPropagationStyleInject, "tracecontext")
 	tracer, err := newTracer()
 	defer tracer.Stop()
 	assert.NoError(b, err)
@@ -2303,7 +2848,7 @@ func BenchmarkInjectW3C(b *testing.B) {
 }
 
 func BenchmarkExtractDatadog(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "datadog")
+	b.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 	carrier := TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1123123132131312313123123",
@@ -2319,7 +2864,7 @@ func BenchmarkExtractDatadog(b *testing.B) {
 }
 
 func BenchmarkExtractW3C(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
 	propagator := NewPropagator(nil)
 	carrier := TextMapCarrier(map[string]string{
 		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
@@ -2327,6 +2872,119 @@ func BenchmarkExtractW3C(b *testing.B) {
 	})
 	b.ResetTimer()
 	log.SetLevel(log.LevelError)
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
+// BenchmarkExtractW3CUppercase mirrors BenchmarkExtractW3C but with an
+// uppercase-hex traceparent, the only shape that exercises the allocation
+// path removed from parseTraceparent (see TestParseTraceparentCaseInsensitive).
+func BenchmarkExtractW3CUppercase(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01",
+		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+	})
+	b.ResetTimer()
+	log.SetLevel(log.LevelError)
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
+// edgeRequestHeaders returns a realistic set of headers seen on an inbound
+// edge request, used by the baggage benchmarks below so the cost of scanning
+// past non-matching keys is represented, not just the cost of matching one.
+func edgeRequestHeaders() map[string]string {
+	return map[string]string{
+		"accept":          "application/json",
+		"accept-encoding": "gzip",
+		"user-agent":      "Go-http-client/1.1",
+		"host":            "api.example.com",
+		"x-forwarded-for": "10.0.0.1",
+		"x-request-id":    "5f2c1e2a-6b3d-4c8e-9b0a-1234567890ab",
+		"content-type":    "application/json",
+		"authorization":   "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+		"traceparent":     "00-00000000000000001111111111111111-2222222222222222-01",
+	}
+}
+
+// baggageHeaderValue includes a "+"/"%" escape so url.QueryUnescape actually
+// does work, instead of returning its input unchanged as it would for an
+// all-clean value.
+const baggageHeaderValue = "userId=amelie,session.id=789,serverNode=DF+28,region=us1"
+
+func BenchmarkExtractBaggage(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "baggage")
+
+	b.Run("TextMapCarrier", func(b *testing.B) {
+		propagator := NewPropagator(nil)
+		headers := edgeRequestHeaders()
+		headers["baggage"] = baggageHeaderValue
+		carrier := TextMapCarrier(headers)
+		b.ResetTimer()
+		for b.Loop() {
+			propagator.Extract(carrier)
+		}
+	})
+
+	b.Run("HTTPHeadersCarrier", func(b *testing.B) {
+		propagator := NewPropagator(nil)
+		h := http.Header{}
+		for k, v := range edgeRequestHeaders() {
+			h.Set(k, v)
+		}
+		h.Set("baggage", baggageHeaderValue)
+		carrier := HTTPHeadersCarrier(h)
+		b.ResetTimer()
+		for b.Loop() {
+			propagator.Extract(carrier)
+		}
+	})
+}
+
+// BenchmarkExtractDatadogNoHeaders exercises the common edge-request case of
+// no upstream Datadog trace headers at all, where extraction fails with
+// ErrSpanContextNotFound. See CACHE/alloc backlog item #3: propagator.extractTextMap
+// used to unconditionally heap-allocate a *SpanContext here even though the
+// result is immediately discarded.
+func BenchmarkExtractDatadogNoHeaders(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "datadog")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{})
+	b.ResetTimer()
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
+// BenchmarkExtractW3CNoHeaders is the W3C tracecontext analogue of
+// BenchmarkExtractDatadogNoHeaders above.
+func BenchmarkExtractW3CNoHeaders(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{})
+	b.ResetTimer()
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
+// BenchmarkExtractBaggageNoHeaders exercises the common edge-request case of
+// no "baggage" header at all. propagatorBaggage.extractTextMap now returns
+// (nil, nil) in that case instead of an allocated empty *SpanContext -- safe
+// because propagatorBaggage is unexported and both of its callers in
+// chainedPropagator already nil-check the result (extractBaggage and
+// extractIncomingSpanContext). Combined with the carrier-specific fast path
+// in lookupBaggageHeader that avoids the ForeachKey closure entirely, this
+// benchmark is 0 allocs/op.
+func BenchmarkExtractBaggageNoHeaders(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "baggage")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{})
+	b.ResetTimer()
 	for b.Loop() {
 		propagator.Extract(carrier)
 	}
@@ -2352,10 +3010,15 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 		if _, ok := sendCtx.trace.tags[keyPropagationError]; ok {
 			t.Skipf("Skipping invalid tags")
 		}
-		unmarshalPropagatingTags(recvCtx, marshal)
-		marshaled := sendCtx.trace.propagatingTags
-		unmarshaled := recvCtx.trace.propagatingTags
-		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+		unmarshalPropagatingTags(recvCtx, marshal, pConfig.MaxTagsHeaderLen)
+		var marshaled, unmarshaled map[string]string
+		if snap := sendCtx.trace.propagatingTags.Load(); snap != nil {
+			marshaled = snap.(map[string]string)
+		}
+		if snap := recvCtx.trace.propagatingTags.Load(); snap != nil {
+			unmarshaled = snap.(map[string]string)
+		}
+		if !reflect.DeepEqual(marshaled, unmarshaled) {
 			t.Fatalf("Inconsistent marshaling/unmarshaling: (%q) is different from (%q)", marshaled, unmarshaled)
 		}
 	})
@@ -2383,12 +3046,11 @@ func FuzzComposeTracestate(f *testing.F) {
 		recvCtx := new(SpanContext)
 		recvCtx.trace = newTrace()
 
-		sm := &stringMutator{}
 		tags := map[string]string{key1: val1, key2: val2, key3: val3}
 		totalLen := 0
 		for key, val := range tags {
-			k := "_dd.p." + sm.Mutate(keyDisallowedFn, key)
-			v := sm.Mutate(valueDisallowedFn, val)
+			k := "_dd.p." + sanitizeTagKey(key)
+			v := sanitizeTagValue(val)
 			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}
@@ -2407,16 +3069,44 @@ func FuzzComposeTracestate(f *testing.F) {
 		traceState := composeTracestate(sendCtx, priority, oldState)
 		parseTracestate(recvCtx, traceState)
 		setPropagatingTag(sendCtx, tracestateHeader, traceState)
-		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+		var sendPTags, recvPTags map[string]string
+		if snap := sendCtx.trace.propagatingTags.Load(); snap != nil {
+			sendPTags = snap.(map[string]string)
+		}
+		if snap := recvCtx.trace.propagatingTags.Load(); snap != nil {
+			recvPTags = snap.(map[string]string)
+		}
+		if !reflect.DeepEqual(sendPTags, recvPTags) {
 			t.Fatalf(`Inconsistent composing/parsing:
 			pre compose: (%q)
 			is different from
 			parsed: (%q)
-			for tracestate of: (%s)`, sendCtx.trace.propagatingTags,
-				recvCtx.trace.propagatingTags,
-				traceState)
+			for tracestate of: (%s)`, sendPTags, recvPTags, traceState)
 		}
 	})
+}
+
+func TestParseTraceparentCaseInsensitive(t *testing.T) {
+	lower := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	upper := "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01"
+
+	lowerCtx := new(SpanContext)
+	lowerCtx.trace = newTrace()
+	assert.NoError(t, parseTraceparent(lowerCtx, lower))
+
+	upperCtx := new(SpanContext)
+	upperCtx.trace = newTrace()
+	assert.NoError(t, parseTraceparent(upperCtx, upper))
+
+	assert.Equal(t, lowerCtx.traceID.value, upperCtx.traceID.value)
+	assert.Equal(t, lowerCtx.spanID, upperCtx.spanID)
+	lowerPriority, ok := lowerCtx.SamplingPriority()
+	assert.True(t, ok)
+	upperPriority, ok := upperCtx.SamplingPriority()
+	assert.True(t, ok)
+	assert.Equal(t, lowerPriority, upperPriority)
+	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", lowerCtx.TraceID())
+	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", upperCtx.TraceID())
 }
 
 func FuzzParseTraceparent(f *testing.F) {
@@ -2550,6 +3240,28 @@ func TestMalformedTID(t *testing.T) {
 	})
 }
 
+// Inbound tracestate members may carry optional whitespace (OWS) after the
+// commas per the W3C spec. composeTracestate must strip the DD-managed dd= and
+// ot= members regardless of that whitespace, otherwise it re-emits them and
+// produces duplicate list-members (invalid tracestate).
+func TestComposeTracestateDropsManagedMembersWithOWS(t *testing.T) {
+	ctx := new(SpanContext)
+	ctx.trace = newTrace()
+	ctx.traceID = traceIDFrom64Bits(1)
+	ctx.spanID = 1
+	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+	ctx.trace.setOtelUpstream(0x1234567890abcd, true, 0, false, "")
+
+	// OWS after each comma, with the managed members not first in the list.
+	oldState := "vendorA=x, ot=rv:aabbccddeeff00, dd=s:9, vendorB=y"
+	got := composeTracestate(ctx, 1, oldState)
+
+	assert.Equal(t, 1, strings.Count(got, "dd="), "exactly one dd= member: %q", got)
+	assert.Equal(t, 1, strings.Count(got, "ot="), "exactly one ot= member: %q", got)
+	assert.Contains(t, got, "vendorA=x")
+	assert.Contains(t, got, "vendorB=y")
+}
+
 func BenchmarkComposeTracestate(b *testing.B) {
 	ctx := new(SpanContext)
 	ctx.trace = newTrace()
@@ -2564,8 +3276,7 @@ func BenchmarkComposeTracestate(b *testing.B) {
 	}
 }
 
-func TestStringMutator(t *testing.T) {
-	sm := &stringMutator{}
+func TestSanitizeOrigin(t *testing.T) {
 	rx := regexp.MustCompile(`,|~|;|[^\x21-\x7E]+`)
 	tc := []struct {
 		name  string
@@ -2591,26 +3302,25 @@ func TestStringMutator(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			expected := rx.ReplaceAllString(tt.input, "_")
-			actual := sm.Mutate(originDisallowedFn, tt.input)
+			actual := sanitizeOrigin(tt.input)
 			assert.Equal(t, expected, actual)
 		})
 	}
 	t.Run("raw string", func(t *testing.T) {
 		expected := "a_b_c____d_~"
-		actual := sm.Mutate(originDisallowedFn, "a,b;c~~~~d;=")
+		actual := sanitizeOrigin("a,b;c~~~~d;=")
 		assert.Equal(t, expected, actual)
 	})
 }
 
-func FuzzStringMutator(f *testing.F) {
+func FuzzSanitizeOrigin(f *testing.F) {
 	rx := regexp.MustCompile(`,|~|;|[^\x21-\x7E]+`)
 	f.Add("a,b;c~~~~d;")
 	f.Add("a,b👍👍👍;c~d👍;")
 	f.Add("=")
 	f.Fuzz(func(t *testing.T, input string) {
-		sm := &stringMutator{}
 		expected := strings.ReplaceAll(rx.ReplaceAllString(input, "_"), "=", "~")
-		actual := sm.Mutate(originDisallowedFn, input)
+		actual := sanitizeOrigin(input)
 		if expected != actual {
 			t.Fatalf("expected: %s, actual: %s", expected, actual)
 		}
@@ -2892,18 +3602,240 @@ func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
 	})
 }
 
-func TestExtractOnlyBaggage(t *testing.T) {
-	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage")
-	headers := TextMapCarrier(map[string]string{
-		"baggage": "foo=bar,baz=qux",
-	})
-
+func TestExtractBaggagePropagatorMaxItems(t *testing.T) {
 	tracer, err := newTracer()
 	assert.NoError(t, err)
 	defer tracer.Stop()
 
+	var b strings.Builder
+	for i := range baggageMaxItems + 5 {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		iStr := strconv.Itoa(i)
+		b.WriteString("key" + iStr + "=val" + iStr)
+	}
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, baggageMaxItems)
+	for i := range baggageMaxItems {
+		iStr := strconv.Itoa(i)
+		assert.Equal(t, "val"+iStr, got["key"+iStr])
+	}
+	for i := baggageMaxItems; i < baggageMaxItems+5; i++ {
+		iStr := strconv.Itoa(i)
+		_, present := got["key"+iStr]
+		assert.False(t, present, "key%s should not be present", iStr)
+	}
+}
+
+func TestExtractBaggagePropagatorMaxBytes(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	// 12 items, each "keyN=" + 1000 'a's = 1005 wire bytes. Including comma
+	// separators, the first 8 fit under baggageMaxBytes (8192); the 9th would
+	// push the running total to 9053 > 8192, so items 8..11 are dropped.
+	const itemValLen = 1000
+	const numItems = 12
+	const expectedKept = 8
+	val := strings.Repeat("a", itemValLen)
+
+	var b strings.Builder
+	for i := range numItems {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString("key" + strconv.Itoa(i) + "=" + val)
+	}
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, expectedKept)
+	for i := range expectedKept {
+		assert.Equal(t, val, got["key"+strconv.Itoa(i)])
+	}
+	for i := expectedKept; i < numItems; i++ {
+		_, present := got["key"+strconv.Itoa(i)]
+		assert.False(t, present, "key%d should not be present", i)
+	}
+}
+
+func TestExtractBaggagePropagatorMalformedPastLimit(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	// baggageMaxItems valid entries followed by a malformed entry. Because
+	// the malformed entry sits past the items limit it is never inspected,
+	// so the valid prefix is kept (regression check on the single-pass design).
+	var b strings.Builder
+	for i := range baggageMaxItems {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		iStr := strconv.Itoa(i)
+		b.WriteString("key" + iStr + "=val" + iStr)
+	}
+	b.WriteString(",malformed_no_equals_sign")
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, baggageMaxItems)
+	for i := range baggageMaxItems {
+		iStr := strconv.Itoa(i)
+		assert.Equal(t, "val"+iStr, got["key"+iStr])
+	}
+}
+
+// TestExtractOnlyBaggage runs with extractFirst=true too, and with both a
+// baggage-only propagation style and the default style (datadog,tracecontext,
+// baggage): it pins that a baggage-only carrier produces the exact same
+// baggage-only context whether or not DD_TRACE_PROPAGATION_EXTRACT_FIRST is
+// set. The default-style case is the one that matters: with extract-first, the
+// datadog extractor runs first, fails with ErrSpanContextNotFound (no trace
+// headers present), and that used to short-circuit straight to an error
+// instead of falling through to the baggage-only context built from
+// pendingBaggage.
+func TestExtractOnlyBaggage(t *testing.T) {
+	for _, style := range []string{"baggage", ""} { // "" leaves DD_TRACE_PROPAGATION_STYLE unset, so the default style applies
+		styleName := style
+		if styleName == "" {
+			styleName = "default"
+		}
+		for _, extractFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("style=%s/extractFirst=%v", styleName, extractFirst), func(t *testing.T) {
+				if style != "" {
+					t.Setenv("DD_TRACE_PROPAGATION_STYLE", style)
+				}
+				if extractFirst {
+					t.Setenv(envPropagationExtractFirst, "true")
+				}
+				headers := TextMapCarrier(map[string]string{
+					"baggage": "foo=bar,baz=qux",
+				})
+
+				tracer, err := newTracer()
+				assert.NoError(t, err)
+				defer tracer.Stop()
+
+				ctx, err := tracer.Extract(headers)
+				require.NoError(t, err)
+				require.NotNil(t, ctx)
+
+				got := make(map[string]string)
+				ctx.ForeachBaggageItem(func(k, v string) bool {
+					got[k] = v
+					return true
+				})
+				assert.Len(t, got, 2)
+				assert.Equal(t, "bar", got["foo"])
+				assert.Equal(t, "qux", got["baz"])
+			})
+		}
+	}
+}
+
+// TestExtractBaggageFirstThenDatadog verifies that when both baggage and trace headers are present,
+// the trace context (trace ID, parent ID, etc.) is extracted from trace headers, and the baggage items are properly inherited,
+// specifically when baggage has a higher precedence than trace headers in the propagation style.
+//
+// Runs with extractFirst=true too: it pins that extractIncomingSpanContext extracts baggage
+// unconditionally, independent of extractor order or of onlyExtractFirst short-circuiting the
+// trace-context loop after the baggage propagator (first in this style list).
+func TestExtractBaggageFirstThenDatadog(t *testing.T) {
+	for _, extractFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("extractFirst=%v", extractFirst), func(t *testing.T) {
+			t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
+			if extractFirst {
+				t.Setenv(envPropagationExtractFirst, "true")
+			}
+
+			// Set up headers with both baggage and Datadog trace context
+			headers := TextMapCarrier(map[string]string{
+				"baggage":             "item=xyz",
+				DefaultTraceIDHeader:  "12345",
+				DefaultParentIDHeader: "67890",
+				DefaultPriorityHeader: "1",
+			})
+
+			tracer, err := newTracer()
+			assert.NoError(t, err)
+			defer tracer.Stop()
+
+			ctx, err := tracer.Extract(headers)
+			assert.NoError(t, err)
+
+			// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
+			expectedTraceID := traceIDFrom64Bits(12345)
+			assert.Equal(t, expectedTraceID.value, ctx.traceID.value)
+			assert.Equal(t, uint64(67890), ctx.spanID)
+
+			got := make(map[string]string)
+			ctx.ForeachBaggageItem(func(k, v string) bool {
+				got[k] = v
+				return true
+			})
+			assert.Len(t, got, 1)
+			assert.Equal(t, "xyz", got["item"])
+		})
+	}
+}
+
+// TestExtractBaggageMergesWithOTBaggagePrefix pins the merge branch in
+// extractIncomingSpanContext: when the Datadog extractor has already
+// populated ctx.baggage from a legacy "ot-baggage-<key>" header, the W3C
+// "baggage" header's items must be merged into that map, not silently
+// discarded or used to replace it wholesale.
+func TestExtractBaggageMergesWithOTBaggagePrefix(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:                  "12345",
+		DefaultParentIDHeader:                 "67890",
+		DefaultBaggageHeaderPrefix + "legacy": "old",
+		"baggage":                             "item=xyz",
+	})
+
 	ctx, err := tracer.Extract(headers)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	got := make(map[string]string)
 	ctx.ForeachBaggageItem(func(k, v string) bool {
@@ -2911,43 +3843,53 @@ func TestExtractOnlyBaggage(t *testing.T) {
 		return true
 	})
 	assert.Len(t, got, 2)
-	assert.Equal(t, "bar", got["foo"])
-	assert.Equal(t, "qux", got["baz"])
+	assert.Equal(t, "old", got["legacy"])
+	assert.Equal(t, "xyz", got["item"])
 }
 
-// TestExtractBaggageFirstThenDatadog verifies that when both baggage and trace headers are present,
-// the trace context (trace ID, parent ID, etc.) is extracted from trace headers, and the baggage items are properly inherited,
-// specifically when baggage has a higher precedence than trace headers in the propagation style.
-func TestExtractBaggageFirstThenDatadog(t *testing.T) {
-	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
+// TestExtractFirstContinuesPastFailedExtractor is a regression test: with the
+// default datadog,tracecontext,baggage order and
+// DD_TRACE_PROPAGATION_EXTRACT_FIRST=true, a request that carries a valid W3C
+// traceparent and a baggage header but no x-datadog-* headers must still
+// extract the W3C trace context (with baggage merged in), not a baggage-only
+// context. onlyExtractFirst must only stop the loop after a successful
+// extraction, never after a failed one -- the Datadog extractor's
+// ErrSpanContextNotFound must not prevent the tracecontext extractor from
+// running.
+func TestExtractFirstContinuesPastFailedExtractor(t *testing.T) {
+	for _, extractFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("extractFirst=%v", extractFirst), func(t *testing.T) {
+			if extractFirst {
+				t.Setenv(envPropagationExtractFirst, "true")
+			}
+			// Default style: datadog,tracecontext,baggage. No x-datadog-* headers.
+			headers := TextMapCarrier(map[string]string{
+				traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+				"baggage":         "item=xyz",
+			})
 
-	// Set up headers with both baggage and Datadog trace context
-	headers := TextMapCarrier(map[string]string{
-		"baggage":             "item=xyz",
-		DefaultTraceIDHeader:  "12345",
-		DefaultParentIDHeader: "67890",
-		DefaultPriorityHeader: "1",
-	})
+			tracer, err := newTracer()
+			assert.NoError(t, err)
+			defer tracer.Stop()
 
-	tracer, err := newTracer()
-	assert.NoError(t, err)
-	defer tracer.Stop()
+			ctx, err := tracer.Extract(headers)
+			require.NoError(t, err)
+			require.NotNil(t, ctx)
 
-	ctx, err := tracer.Extract(headers)
-	assert.NoError(t, err)
+			// Must be the real W3C-derived trace context, not a baggage-only stand-in.
+			assert.False(t, ctx.baggageOnly)
+			assert.Equal(t, "12345678901234567890123456789012", ctx.TraceID())
+			assert.Equal(t, uint64(0x1234567890123456), ctx.SpanID())
 
-	// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
-	expectedTraceID := traceIDFrom64Bits(12345)
-	assert.Equal(t, expectedTraceID.value, ctx.traceID.value)
-	assert.Equal(t, uint64(67890), ctx.spanID)
-
-	got := make(map[string]string)
-	ctx.ForeachBaggageItem(func(k, v string) bool {
-		got[k] = v
-		return true
-	})
-	assert.Len(t, got, 1)
-	assert.Equal(t, "xyz", got["item"])
+			got := make(map[string]string)
+			ctx.ForeachBaggageItem(func(k, v string) bool {
+				got[k] = v
+				return true
+			})
+			assert.Len(t, got, 1)
+			assert.Equal(t, "xyz", got["item"])
+		})
+	}
 }
 
 // TestSpanContextDebugLoggingSecurity verifies that debug logging of span context
@@ -3016,4 +3958,87 @@ func TestSpanContextDebugLoggingSecurity(t *testing.T) {
 
 	// This test ensures that the SafeDebugString() method is used instead of %#v
 	// to prevent sensitive baggage data from being exposed in debug logs.
+}
+
+// TestConcurrentInjectTraceIDHex reproduces the data race on
+// traceID.hexEncoded reported in v2.8.0-rc.2. (*traceID).HexEncoded uses an
+// unsynchronized check-then-act lazy cache, so concurrent Inject callers on
+// the same SpanContext (e.g. Sarama/Kafka producer fan-out) can torn-read the
+// {ptr,len} string header and panic in isValidPropagatableTag with
+// "invalid memory address or nil pointer dereference".
+//
+// It covers both hex-cache states a shared SpanContext can be in when injected
+// concurrently:
+//
+//   - cold cache: a locally started span. newSpanContext leaves hexEncoded empty
+//     unless AppSec is enabled, so every UpperHex() takes the non-caching
+//     fallback. AppSec must be off here, otherwise the cache is finalized at
+//     construction and this subtest would no longer exercise that path.
+//   - hot cache: an extracted context. extractTextMap finalizes the traceID via
+//     cacheHex, so UpperHex() returns the cached string.
+//
+// Run with -race to catch the write/read race directly:
+//
+//	go test -race -run TestConcurrentInjectTraceIDHex -count=5 ./ddtrace/tracer/
+func TestConcurrentInjectTraceIDHex(t *testing.T) {
+	t.Setenv(envPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+
+	// Disable AppSec because it precomputes the trace ID hex cache when a span is
+	// created. Otherwise the "cold cache" case below would not test concurrent
+	// Inject's read-only fallback for an empty cache.
+	tracer, _, _, stop, err := startTestTracer(t, WithAppSecEnabled(false))
+	require.NoError(t, err)
+	defer stop()
+
+	// fanOutInject runs many concurrent Inject calls on the same SpanContext.
+	// Under -race this surfaces any write performed on the HexEncoded read path.
+	fanOutInject := func(t *testing.T, spanCtx *SpanContext) {
+		const goroutines = 64
+		const iterations = 200
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+		for range goroutines {
+			go func() {
+				defer wg.Done()
+				for range iterations {
+					if err := tracer.Inject(spanCtx, TextMapCarrier(map[string]string{})); err != nil {
+						t.Errorf("Inject failed: %v", err)
+						return
+					}
+				}
+			}()
+		}
+		wg.Wait()
+	}
+
+	t.Run("cold cache (local span)", func(t *testing.T) {
+		span := tracer.StartSpan("op")
+		defer span.Finish()
+		spanCtx := span.Context()
+
+		require.True(t, spanCtx.traceID.HasUpper(), "test requires a 128-bit traceID so injectTextMap calls UpperHex()")
+		require.Empty(t, spanCtx.traceID.hexEncoded, "local span is expected to have a cold hex cache")
+
+		fanOutInject(t, spanCtx)
+	})
+
+	t.Run("hot cache (extracted context)", func(t *testing.T) {
+		// Round-trip through Inject/Extract so the context is built by
+		// extractTextMap, which finalizes the traceID via cacheHex.
+		headers := TextMapCarrier(map[string]string{})
+		src := tracer.StartSpan("op")
+		defer src.Finish()
+		require.NoError(t, tracer.Inject(src.Context(), headers))
+
+		extracted, err := tracer.Extract(headers)
+		require.NoError(t, err)
+		spanCtx := extracted
+
+		require.True(t, spanCtx.traceID.HasUpper(), "test requires a 128-bit traceID so injectTextMap calls UpperHex()")
+		require.NotEmpty(t, spanCtx.traceID.hexEncoded, "extracted context is expected to have a hot hex cache")
+
+		fanOutInject(t, spanCtx)
+	})
 }

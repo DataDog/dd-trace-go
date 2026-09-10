@@ -54,10 +54,13 @@ Our CI pipeline includes several automated checks:
 #### Static Checks Workflow
 
 - **Copyright Check**: Verifies all files have proper copyright headers
+- **CODEOWNERS Check**: Runs `scripts/check_codeowners.go` to verify every tracked file has an owner in [CODEOWNERS](./CODEOWNERS), and that GitHub and CI Visibility resolve that owner identically. The repository has no catch-all `*` entry, so a new top-level directory or root-level file is unowned until an entry is added. See [CODEOWNERS patterns](#codeowners-patterns) for the accepted syntax. Run locally with `make lint/misc`.
 - **Generate Check**: Ensures generated code is up-to-date
 - **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
+- **Error-logging Lint**: Runs `make lint/errlog`, three `go vet`-compatible analyzers: `constantlogmsg` (rejects non-constant message arguments on `log.Error`, `log.Warn`, and the `telemetrylog.ReportError`/`ReportPanic`/`LogAndReportError`/`LogAndReportPanic` helpers — non-constant messages break dedup and, for the telemetry-reporting functions, risk leaking PII to Error Tracking), `telemetrysafety` (requires `slog.Any`/`slog.String` values passed to telemetry log calls to be PII-safe), and `logformatverbs` (flags unsafe `%v`/`%+v`/`%#v` usage). Run locally with `make lint/errlog`.
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
+- **Cross-Compile Check**: Runs `scripts/cross_build.sh` to cross-compile the library for every [first class Go port](https://go.dev/wiki/PortingPolicy) (including 32-bit `linux/386`, `windows/386`, `linux/arm`), catching architecture-specific compile regressions. Run locally with `./scripts/cross_build.sh`. Packages that import `go-libddwaf` are skipped until it builds on 32-bit (see DataDog/go-libddwaf#227); they stay covered on 64-bit by the test matrix.
 
 #### Unit and Integration Tests
 
@@ -69,6 +72,15 @@ Our CI pipeline includes several automated checks:
 #### Generate Workflow
 
 - **Code Generation**: Ensures all generated code is current and consistent
+
+#### Config Audit Workflow
+
+- **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
+
+#### Customer Simulation Platform (CuSim)
+
+- **CuSim Deployment**: Scheduled GitLab `deploy_to_reliability_env` (from the one-pipeline template) runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.
+
 
 ### CI Troubleshooting
 
@@ -121,6 +133,20 @@ make test/contrib
 make test/appsec
 ```
 
+### CODEOWNERS patterns
+
+[CODEOWNERS](./CODEOWNERS) is read by two consumers that do not implement the same matching rules: GitHub, which follows gitignore semantics, and CI Visibility, which uses the simpler matcher in [internal/civisibility/utils](./internal/civisibility/utils/codeowners.go) to attribute test results to teams. A pattern the two interpret differently assigns the right reviewers while silently mis-attributing test ownership.
+
+To keep them in agreement, entries are restricted to the subset on which both behave identically:
+
+| Pattern | Meaning |
+| --- | --- |
+| `/path/to/dir/` | Anchored at the repository root, applies to everything beneath the directory. The trailing slash is required. |
+| `/path/to/file.go` | Anchored at the repository root, matches exactly one file. |
+| `*suffix` | Matches any path ending in `suffix`, at any depth. Only one leading `*` is supported, and the suffix may not contain `/`. |
+
+Later entries take precedence over earlier ones. There is no catch-all `*` entry: every path is owned explicitly, so **a new top-level directory or root-level file needs a new entry**. `make lint/misc` fails otherwise.
+
 ## Getting a PR Reviewed
 
 We try to review new PRs within a week of them being opened. If more than two weeks have passed with no reply, please feel free to comment on the PR to bubble it up.
@@ -168,14 +194,17 @@ make format/shell
 Analyzes lock usage patterns to detect potential deadlocks and race conditions.
 
 ```shell
+# Install the managed checklocks binary
+make tools-install
+
 # Run checklocks on the default target (./ddtrace/tracer)
 ./scripts/checklocks.sh
 
 # Run checklocks on a specific directory
 ./scripts/checklocks.sh ./path/to/target
 
-# Run checklocks and ignore errors
-./scripts/checklocks.sh --ignore-errors
+# Run checklocks and ignore known issues
+./scripts/checklocks.sh --ignore-known-issues
 ```
 
 ### Module Management Scripts
@@ -224,10 +253,25 @@ The script provides:
 - Automatic Docker service management for integration tests
 - Support for Apple Silicon (M1/M2) Macs
 
+#### Crashtracker
+
+Run focused crashtracker tests with:
+
+```shell
+go test -race -count=1 ./crashtracker
+```
+
+The end-to-end tests intentionally crash helper processes and validate the
+report received by a local intake stub.
+
 ## Style Guidelines
 
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
 It will help tremendously in avoiding comments and speeding up the PR process.
+
+### Comments
+
+Add comments only for non-obvious intent, trade-offs, or constraints the code can't carry. Don't narrate what the diff already shows.
 
 ### Local Development
 
@@ -270,6 +314,15 @@ docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-l
 
 ## Code quality
 
+### Favor using internal implementations over external
+
+When possible, prioritize creating or using internal implementations for repetitive work instead of importing a new dependency. The tracer already supports replacements for common Go packages. For example:
+
+1. Logging: [internal/log](./internal/log) instead of `fmt`.
+2. Locking: [internal/locking](./internal/locking) instead of `sync.mutex`.
+3. OS: [internal/env](./internal/env) instead of `os.Getenv`. This is also available at [instrumentation/env](./instrumentation/env/) for those packages that cannot import internal modules.
+4. Errors: [instrumentation/errortrace](./instrumentation/errortrace/) instead of `errors`.
+
 ### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
 [fmt.Sprintf](https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor [string builders](https://pkg.go.dev/strings#Builder), or simple string concatenation, `a + "b" + c` over `fmt.Sprintf` when possible, especially in hot paths.
@@ -286,6 +339,10 @@ When working with environment variables, direct use of `os.Getenv` and `os.Looku
 Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal configuration registry for tracking and documentation purposes.
 
 Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-validation.yml) to track when they were introduced.
+
+#### Code coverage report flags
+
+`DD_CODE_COVERAGE_FLAGS` attaches a comma-separated list of flags to uploaded code coverage reports. Whitespace around each flag is trimmed, empty entries are discarded, and order and duplicate flags are preserved. A maximum of 32 normalized flags is accepted; if the value contains more, the report is uploaded without flags and a warning is logged.
 
 #### Adding new environment variables using configinverter
 
@@ -347,10 +404,11 @@ Then start by updating the main `go.mod` file, e.g. by running a `go get` comman
 go get <import-path>@<new-version>
 ```
 
-Then run the following command to update all `go.mod` and `go.sum` files in the repository:
+Then run the following commands to update all `go.mod` and `go.sum` files in the repository:
 
 ```
 make fix-modules
+make generate
 ```
 
 This is neccessary because dd-trace-go is a multi-module repository.
@@ -361,8 +419,22 @@ Some benchmarks will run on any new PR commits, the results will be commented in
 
 #### Adding a new benchmark
 
-To add additional benchmarks that should run for every PR, go to `.gitlab-ci.yml`.
-Add the name of your benchmark to the `BENCHMARK_TARGETS` variable using pipe character separators.
+To add a benchmark that runs on every PR, edit [`.gitlab/benchmarks/micro/gitlab-ci.yml`](./.gitlab/benchmarks/micro/gitlab-ci.yml)
+and append your top-level benchmark function name (e.g. `BenchmarkMyThing`) to the `BENCHMARKS` variable of one of the
+`microbenchmarks-N` groups, using the pipe character (`|`) as the separator.
+
+A few things to keep in mind:
+
+- The value is a top-level benchmark function name (`func BenchmarkMyThing(b *testing.B)`), not a sub-benchmark. It is
+  matched with `go test -bench ^BenchmarkMyThing$`, so all of its `b.Run` sub-benchmarks run and are reported individually.
+- The benchmark must live in a package that isn't excluded by the runner (it skips `orchestrion`, `civisibility`,
+  `scripts`, and `tools`).
+- Keep at most `44 / CPUS_PER_BENCHMARK` entries per group (the groups run in parallel across the job's CPUs). Add your
+  entry to the smallest group, or create a new `microbenchmarks-N` group if they are full.
+- Only `microbenchmarks-1` and `microbenchmarks-2` feed the `pr-performance-gates` job, so a benchmark placed in another
+  group is measured and tracked but does not gate the PR.
+- A benchmark that is new relative to `main` has no baseline, so the runner skips its comparison on the introducing PR and
+  starts gating it from the next PR onward.
 
 ### Goroutine Leaks
 

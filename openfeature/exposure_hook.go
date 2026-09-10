@@ -15,12 +15,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-const (
-	// Metadata keys for exposure tracking
-	metadataAllocationKey = "dd.allocation.key"
-	metadataDoLogKey      = "dd.doLog"
-)
-
 // exposureHook implements the OpenFeature Hook interface to track feature flag exposures.
 // It captures evaluation details and sends them to the exposure writer for reporting
 // to Datadog's event platform intake.
@@ -65,6 +59,8 @@ func (h *exposureHook) After(
 		return nil
 	}
 
+	serialID := h.getSerialID(flagEvaluationDetails.FlagMetadata)
+
 	// Get targeting key (subject ID) from evaluation context
 	evalContext := hookContext.EvaluationContext()
 	targetingKey := evalContext.TargetingKey()
@@ -97,6 +93,7 @@ func (h *exposureHook) After(
 			Type:       "",           // Type is optional
 			Attributes: subjectAttrs, // Flattened, primitive-only attributes
 		},
+		SerialID: serialID,
 	}
 
 	// Send to writer for buffering and eventual flushing
@@ -129,6 +126,26 @@ func (h *exposureHook) shouldLog(metadata of.FlagMetadata) bool {
 	}
 
 	return doLogBool
+}
+
+// getSerialID extracts the split serial ID from flag metadata
+func (h *exposureHook) getSerialID(metadata of.FlagMetadata) *uint32 {
+	if metadata == nil {
+		return nil
+	}
+
+	raw, ok := metadata[metadataSplitSerialIDKey]
+	if !ok {
+		return nil
+	}
+
+	serialID, ok := raw.(uint32)
+	if !ok {
+		log.Debug("openfeature: serial id metadata is not a uint32")
+		return nil
+	}
+
+	return &serialID
 }
 
 // getAllocationKey extracts the allocation key from flag metadata

@@ -1,9 +1,10 @@
-go 1.25.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.26.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
 
 use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
+	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
 	./contrib/azure/apim-callout
@@ -30,6 +31,7 @@ use (
 	./contrib/go-redis/redis.v8
 	./contrib/go.mongodb.org/mongo-driver
 	./contrib/go.mongodb.org/mongo-driver.v2
+	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
 	./contrib/gomodule/redigo
@@ -49,6 +51,7 @@ use (
 	./contrib/k8s.io/client-go
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
+	./contrib/labstack/echo.v5
 	./contrib/log/slog
 	./contrib/mark3labs/mcp-go
 	./contrib/miekg/dns
@@ -62,6 +65,7 @@ use (
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
+	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
@@ -77,7 +81,9 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
+	./scripts/autoreleasetagger
 	./scripts/fixmodules
+	./scripts/gencontribdoc
 	./tools/v2fix
 	./tools/v2fix/_stage
 )

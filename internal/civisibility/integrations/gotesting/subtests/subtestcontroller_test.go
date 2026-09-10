@@ -8,12 +8,15 @@ package subtests
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"testing"
@@ -33,6 +36,11 @@ const (
 	suiteUnderTest    = "fixtures_test.go"
 	parentTestName    = "TestSubtestManagement"
 	parallelToggleEnv = "SUBTEST_MATRIX_PARALLEL"
+
+	// scenarioInitFailureExitCode is returned by runMatrixScenario when CI Visibility features
+	// were not initialised (e.g. a transient settings fetch failure).  main_test.go uses this
+	// sentinel to retry the subprocess rather than failing the whole suite immediately.
+	scenarioInitFailureExitCode = 3
 )
 
 var (
@@ -43,6 +51,9 @@ var (
 		parentQuarantinedScenario(),
 		parentQuarantinedAttemptFixScenario(),
 		parentAttemptFixScenario(),
+		parentAttemptFixSubExplicitFalseScenario(),
+		parentQuarantinedAttemptFixSubExplicitFalseScenario(),
+		parentDisabledAttemptFixSubExplicitFalseScenario(),
 		subAttemptFixOnlyScenario(),
 		subAttemptFixCustomRetriesScenario(),
 		subAttemptFixParallelScenario(),
@@ -206,13 +217,14 @@ func baselineScenario() *matrixScenario {
 	}
 }
 
-// subAttemptFixOnlyScenario verifies that only the child subtest orchestrates attempt-to-fix retries
-// while the parent remains neutral.
+// subAttemptFixOnlyScenario verifies the direct-single capability fallback for
+// an independently selected manual subtest while the parent remains neutral.
 func subAttemptFixOnlyScenario() *matrixScenario {
 	return &matrixScenario{
 		name: "sub_attempt_to_fix_only",
 		configure: func(ctx *scenarioContext) {
-			// Initialise the suite and make the retry budget available to the subtest.
+			// A configured retry budget must not make the selected manual closure use
+			// an approximate synthetic ancestry.
 			ctx.ensureSuite()
 			ctx.attemptToFixRetries = 3
 			ctx.setSubDirective("SubAttemptFix", directive{attemptToFix: true})
@@ -240,25 +252,21 @@ func subAttemptFixOnlyScenario() *matrixScenario {
 
 			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
 			subSpans := spansByResource(testSpans, subResource)
-			requireSpanCount(subSpans, 3, "sub attempt-to-fix-only span count")
-			sort.Slice(subSpans, func(i, j int) bool {
-				// Order spans chronologically so comments and assertions match the retry lifecycle.
-				return subSpans[i].StartTime().Before(subSpans[j].StartTime())
-			})
+			requireSpanCount(subSpans, 1, "sub attempt-to-fix-only span count")
 			for idx, span := range subSpans {
 				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("sub attempt-to-fix-only tag span %d", idx))
 			}
 			lastSpan := subSpans[len(subSpans)-1]
-			assertTagEquals(lastSpan, constants.TestAttemptToFixPassed, "true", "sub attempt-to-fix-only success")
+			assertTagNotTrue(lastSpan, constants.TestAttemptToFixPassed, "sub attempt-to-fix-only success ownership")
 			assertTagEquals(lastSpan, constants.TestStatus, constants.TestStatusPass, "sub attempt-to-fix-only final status")
-			assertTagCount(subSpans, constants.TestIsRetry, "true", 2, "sub attempt-to-fix-only retry tag count")
-			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "sub attempt-to-fix-only retry reason count")
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "sub attempt-to-fix-only retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "sub attempt-to-fix-only retry reason count")
 		},
 	}
 }
 
-// subAttemptFixCustomRetriesScenario demonstrates that a child can request a larger retry
-// budget without involving the parent, ensuring the additional attempts are tagged correctly.
+// subAttemptFixCustomRetriesScenario proves that a larger configured budget does
+// not bypass the direct-single selected-subtest capability boundary.
 func subAttemptFixCustomRetriesScenario() *matrixScenario {
 	return &matrixScenario{
 		name: "sub_attempt_to_fix_custom_retries",
@@ -278,26 +286,22 @@ func subAttemptFixCustomRetriesScenario() *matrixScenario {
 
 			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
 			subSpans := spansByResource(testSpans, subResource)
-			requireSpanCount(subSpans, 5, "sub attempt-to-fix custom child span count")
-			sort.Slice(subSpans, func(i, j int) bool {
-				// Sort to make reasoning about retries deterministic.
-				return subSpans[i].StartTime().Before(subSpans[j].StartTime())
-			})
+			requireSpanCount(subSpans, 1, "sub attempt-to-fix custom child span count")
 			for idx, span := range subSpans {
 				// Each retry should still carry the attempt-to-fix tag for visibility.
 				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("sub attempt-to-fix custom tag span %d", idx))
 			}
 			subFinal := subSpans[len(subSpans)-1]
-			assertTagEquals(subFinal, constants.TestAttemptToFixPassed, "true", "sub attempt-to-fix custom success")
+			assertTagNotTrue(subFinal, constants.TestAttemptToFixPassed, "sub attempt-to-fix custom success ownership")
 			assertTagEquals(subFinal, constants.TestStatus, constants.TestStatusPass, "sub attempt-to-fix custom final status")
-			assertTagCount(subSpans, constants.TestIsRetry, "true", 4, "sub attempt-to-fix custom retry tag count")
-			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 4, "sub attempt-to-fix custom retry reason count")
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "sub attempt-to-fix custom retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "sub attempt-to-fix custom retry reason count")
 		},
 	}
 }
 
-// subAttemptFixParallelScenario asserts that parallel subtests inherit attempt-to-fix behaviour
-// without conflicting with the sequential sibling.
+// subAttemptFixParallelScenario asserts that selected manual subtests preserve
+// native Parallel behavior while using the direct-single capability fallback.
 func subAttemptFixParallelScenario() *matrixScenario {
 	return &matrixScenario{
 		name: "sub_attempt_to_fix_parallel",
@@ -321,20 +325,16 @@ func subAttemptFixParallelScenario() *matrixScenario {
 				// Focus validations on a single subtest resource at a time.
 				resource := fmt.Sprintf("%s/%s", parentResource, child)
 				childSpans := spansByResource(testSpans, resource)
-				requireSpanCount(childSpans, 3, fmt.Sprintf("%s attempt-to-fix parallel span count", child))
-				sort.Slice(childSpans, func(i, j int) bool {
-					// Sort to match retry order regardless of goroutine scheduling.
-					return childSpans[i].StartTime().Before(childSpans[j].StartTime())
-				})
+				requireSpanCount(childSpans, 1, child+" attempt-to-fix parallel span count")
 				for idx, span := range childSpans {
 					// Confirm each execution is correctly tagged as part of the attempt-to-fix flow.
 					assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("%s attempt-to-fix parallel tag span %d", child, idx))
 				}
 				final := childSpans[len(childSpans)-1]
-				assertTagEquals(final, constants.TestAttemptToFixPassed, "true", fmt.Sprintf("%s attempt-to-fix parallel success", child))
-				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, fmt.Sprintf("%s attempt-to-fix parallel status", child))
-				assertTagCount(childSpans, constants.TestIsRetry, "true", 2, fmt.Sprintf("%s attempt-to-fix parallel retry tag count", child))
-				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, fmt.Sprintf("%s attempt-to-fix parallel retry reason count", child))
+				assertTagNotTrue(final, constants.TestAttemptToFixPassed, child+" attempt-to-fix parallel success ownership")
+				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, child+" attempt-to-fix parallel status")
+				assertTagCount(childSpans, constants.TestIsRetry, "true", 0, child+" attempt-to-fix parallel retry tag count")
+				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, child+" attempt-to-fix parallel retry reason count")
 			}
 
 			checkParallelChild("SubAttemptFix")
@@ -510,6 +510,122 @@ func parentAttemptFixScenario() *matrixScenario {
 	}
 }
 
+// parentAttemptFixSubExplicitFalseScenario verifies that an exact all-false subtest entry can
+// clear inherited attempt-to-fix metadata without forcing a child retry wrapper.
+func parentAttemptFixSubExplicitFalseScenario() *matrixScenario {
+	return &matrixScenario{
+		name: "parent_attempt_to_fix_sub_explicit_false",
+		configure: func(ctx *scenarioContext) {
+			ctx.ensureSuite()
+			ctx.attemptToFixRetries = 3
+			ctx.setParentDirective(directive{attemptToFix: true})
+			ctx.setSubDirective("SubAttemptFix", directive{})
+		},
+		validate: func(spans []*mocktracer.Span) {
+			testSpans := filterTestSpans(spans)
+
+			parentResource := fmt.Sprintf("%s.%s", suiteUnderTest, parentTestName)
+			parentSpans := spansByResource(testSpans, parentResource)
+			requireSpanCount(parentSpans, 3, "parent attempt-to-fix explicit-false parent span count")
+			for idx, span := range parentSpans {
+				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("parent explicit-false attempt tag span %d", idx))
+			}
+			assertTagCount(parentSpans, constants.TestIsRetry, "true", 2, "parent explicit-false retry tag count")
+			assertTagCount(parentSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "parent explicit-false retry reason count")
+
+			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
+			subSpans := spansByResource(testSpans, subResource)
+			requireSpanCount(subSpans, 3, "parent attempt-to-fix explicit-false child span count")
+			for idx, span := range subSpans {
+				assertTagNotTrue(span, constants.TestIsAttempToFix, fmt.Sprintf("explicit-false child attempt tag span %d", idx))
+				assertTagEquals(span, constants.TestStatus, constants.TestStatusPass, fmt.Sprintf("explicit-false child status span %d", idx))
+				assertTagEquals(span, constants.TestFinalStatus, constants.TestStatusPass, fmt.Sprintf("explicit-false child final status span %d", idx))
+			}
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "explicit-false child retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "explicit-false child retry reason count")
+		},
+	}
+}
+
+// parentQuarantinedAttemptFixSubExplicitFalseScenario keeps the current asymmetric
+// inheritance contract: exact all-false child metadata clears inherited attempt-to-fix
+// retry control, while quarantine still propagates from the parent.
+func parentQuarantinedAttemptFixSubExplicitFalseScenario() *matrixScenario {
+	return &matrixScenario{
+		name: "parent_quarantined_attempt_to_fix_sub_explicit_false",
+		configure: func(ctx *scenarioContext) {
+			ctx.ensureSuite()
+			ctx.attemptToFixRetries = 3
+			ctx.setParentDirective(directive{quarantined: true, attemptToFix: true})
+			ctx.setSubDirective("SubAttemptFix", directive{})
+		},
+		validate: func(spans []*mocktracer.Span) {
+			testSpans := filterTestSpans(spans)
+
+			parentResource := fmt.Sprintf("%s.%s", suiteUnderTest, parentTestName)
+			parentSpans := spansByResource(testSpans, parentResource)
+			requireSpanCount(parentSpans, 3, "parent quarantined attempt-to-fix explicit-false parent span count")
+			for idx, span := range parentSpans {
+				assertTagEquals(span, constants.TestIsQuarantined, "true", fmt.Sprintf("parent quarantined explicit-false quarantine tag span %d", idx))
+				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("parent quarantined explicit-false attempt tag span %d", idx))
+			}
+			assertTagCount(parentSpans, constants.TestIsRetry, "true", 2, "parent quarantined explicit-false retry tag count")
+			assertTagCount(parentSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "parent quarantined explicit-false retry reason count")
+
+			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
+			subSpans := spansByResource(testSpans, subResource)
+			requireSpanCount(subSpans, 3, "parent quarantined attempt-to-fix explicit-false child span count")
+			for idx, span := range subSpans {
+				assertTagEquals(span, constants.TestIsQuarantined, "true", fmt.Sprintf("explicit-false quarantined child quarantine tag span %d", idx))
+				assertTagNotTrue(span, constants.TestIsAttempToFix, fmt.Sprintf("explicit-false quarantined child attempt tag span %d", idx))
+				assertTagEquals(span, constants.TestFinalStatus, constants.TestStatusSkip, fmt.Sprintf("explicit-false quarantined child final status span %d", idx))
+			}
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "explicit-false quarantined child retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "explicit-false quarantined child retry reason count")
+		},
+	}
+}
+
+// parentDisabledAttemptFixSubExplicitFalseScenario mirrors the combined inherited
+// disabled plus attempt-to-fix case. The child exact-false directive clears inherited
+// attempt-to-fix retry control, but disabled still propagates and skips the child.
+func parentDisabledAttemptFixSubExplicitFalseScenario() *matrixScenario {
+	return &matrixScenario{
+		name: "parent_disabled_attempt_to_fix_sub_explicit_false",
+		configure: func(ctx *scenarioContext) {
+			ctx.ensureSuite()
+			ctx.attemptToFixRetries = 3
+			ctx.setParentDirective(directive{disabled: true, attemptToFix: true})
+			ctx.setSubDirective("SubAttemptFix", directive{})
+		},
+		validate: func(spans []*mocktracer.Span) {
+			testSpans := filterTestSpans(spans)
+
+			parentResource := fmt.Sprintf("%s.%s", suiteUnderTest, parentTestName)
+			parentSpans := spansByResource(testSpans, parentResource)
+			requireSpanCount(parentSpans, 3, "parent disabled attempt-to-fix explicit-false parent span count")
+			for idx, span := range parentSpans {
+				assertTagEquals(span, constants.TestIsDisabled, "true", fmt.Sprintf("parent disabled explicit-false disabled tag span %d", idx))
+				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("parent disabled explicit-false attempt tag span %d", idx))
+			}
+			assertTagCount(parentSpans, constants.TestIsRetry, "true", 2, "parent disabled explicit-false retry tag count")
+			assertTagCount(parentSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "parent disabled explicit-false retry reason count")
+
+			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
+			subSpans := spansByResource(testSpans, subResource)
+			requireSpanCount(subSpans, 3, "parent disabled attempt-to-fix explicit-false child span count")
+			for idx, span := range subSpans {
+				assertTagEquals(span, constants.TestIsDisabled, "true", fmt.Sprintf("explicit-false disabled child disabled tag span %d", idx))
+				assertTagNotTrue(span, constants.TestIsAttempToFix, fmt.Sprintf("explicit-false disabled child attempt tag span %d", idx))
+				assertTagEquals(span, constants.TestFinalStatus, constants.TestStatusSkip, fmt.Sprintf("explicit-false disabled child final status span %d", idx))
+			}
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "explicit-false disabled child retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "explicit-false disabled child retry reason count")
+			assertTagCount(subSpans, constants.TestSkipReason, constants.TestDisabledSkipReason, 3, "explicit-false disabled child skip reason count")
+		},
+	}
+}
+
 // parentAndSubAttemptFixScenario makes sure that when both parent and child request
 // attempt-to-fix behaviour the parent retains ownership of success tagging.
 func parentAndSubAttemptFixScenario() *matrixScenario {
@@ -614,7 +730,7 @@ func assertTagCount(spans []*mocktracer.Span, key string, value string, expected
 // assertTagEquals verifies that a span tag matches the desired value and fails fast otherwise.
 func assertTagEquals(span *mocktracer.Span, key string, want string, label string) {
 	if span == nil {
-		panic(fmt.Sprintf("%s: span is nil", label))
+		panic(label + ": span is nil")
 	}
 	if value, _ := span.Tag(key).(string); value != want {
 		panic(fmt.Sprintf("%s: expected tag %s=%q, got %q", label, key, want, value))
@@ -663,8 +779,8 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 		envSnapshots = append(envSnapshots, setEnv(key, value))
 	}
 	defer func() {
-		for i := len(envSnapshots) - 1; i >= 0; i-- {
-			envSnapshots[i].restore()
+		for _, s := range slices.Backward(envSnapshots) {
+			s.restore()
 		}
 	}()
 
@@ -684,27 +800,158 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 
 	tracer := integrations.InitializeCIVisibilityMock()
 
+	// Verify that CI Visibility initialised correctly and the management directives for
+	// this scenario were fetched before tests run.  Returning scenarioInitFailureExitCode
+	// lets the parent process retry the subprocess on transient network failures; returning
+	// a distinct non-zero code for genuine mismatches prevents masking real bugs as retries.
+	if initErr := verifyScenarioInit(scenario, ctx); initErr != nil {
+		fmt.Printf("subtest matrix: scenario %s init check failed: %v\n", scenario, initErr)
+		return scenarioInitFailureExitCode
+	}
+
 	exitCode := gotesting.RunM(m)
 	// When the run fails, dump span resources for easier diagnosis.
 	if exitCode != 0 {
 		finished := tracer.FinishedSpans()
-		debugMatrixf("scenario %s exit code %d with %d spans", scenario, exitCode, len(finished))
-		for i, span := range finished {
-			// Skip nil entries yet keep the loop for consistent indices.
-			if span == nil {
-				continue
-			}
-			// Provide per-span resource names to speed up debugging.
-			if resource, ok := span.Tag(ext.ResourceName).(string); ok {
-				debugMatrixf("  span[%d] resource=%s status=%v", i, resource, span.Tag(constants.TestStatus))
-			}
-		}
+		dumpScenarioSpans(scenario, fmt.Sprintf("exit code %d", exitCode), finished)
 		return exitCode
 	}
 
-	sc.validate(tracer.FinishedSpans())
+	if validateErr := validateScenarioSpans(sc, tracer.FinishedSpans()); validateErr != nil {
+		fmt.Printf("subtest matrix: scenario %s validation panic: %v\n", scenario, validateErr)
+		dumpScenarioSpans(scenario, "validation panic", tracer.FinishedSpans())
+		dumpScenarioMgmtState(scenario)
+		return 2
+	}
 
 	return 0
+}
+
+// verifyScenarioInit checks that the CI Visibility settings were loaded and that the test
+// management data returned by the backend matches what the scenario configured.  Any
+// discrepancy is reported so the caller can abort before running fixtures.
+func verifyScenarioInit(scenario string, ctx *scenarioContext) error {
+	settings := integrations.GetSettings()
+	if settings == nil {
+		return errors.New("GetSettings returned nil")
+	}
+	if !settings.TestManagement.Enabled {
+		return errors.New("TestManagement.Enabled=false after init (settings fetch may have failed)")
+	}
+
+	// Only validate management data when the scenario actually configures directives.
+	if ctx.data == nil || len(ctx.data.Modules) == 0 {
+		return nil
+	}
+
+	loaded := integrations.GetTestManagementTestsData()
+	if loaded == nil || len(loaded.Modules) == 0 {
+		return fmt.Errorf("test management data is empty after init; scenario %q directives were not loaded", scenario)
+	}
+
+	// Walk the expected directives and confirm each one is present in the loaded data.
+	for modName, expMod := range ctx.data.Modules {
+		gotMod, ok := loaded.Modules[modName]
+		if !ok {
+			return fmt.Errorf("module %q missing from loaded test management data", modName)
+		}
+		for suiteName, expSuite := range expMod.Suites {
+			gotSuite, ok := gotMod.Suites[suiteName]
+			if !ok {
+				return fmt.Errorf("suite %q missing from loaded test management data", suiteName)
+			}
+			for testName := range expSuite.Tests {
+				if _, ok := gotSuite.Tests[testName]; !ok {
+					return fmt.Errorf("test %q missing from loaded test management data for suite %q", testName, suiteName)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// dumpScenarioMgmtState prints the current test-management data visible to the process so
+// validation failures can be distinguished from init failures in CI logs.
+func dumpScenarioMgmtState(scenario string) {
+	settings := integrations.GetSettings()
+	if settings != nil {
+		fmt.Printf("subtest matrix: scenario %s management.enabled=%v retries=%d\n",
+			scenario, settings.TestManagement.Enabled, settings.TestManagement.AttemptToFixRetries)
+	}
+	loaded := integrations.GetTestManagementTestsData()
+	if loaded == nil || len(loaded.Modules) == 0 {
+		fmt.Printf("subtest matrix: scenario %s management data: <empty>\n", scenario)
+		return
+	}
+	for modName, mod := range loaded.Modules {
+		for suiteName, suite := range mod.Suites {
+			for testName, props := range suite.Tests {
+				fmt.Printf("subtest matrix: scenario %s mgmt module=%q suite=%q test=%q disabled=%v quarantined=%v attempt_to_fix=%v\n",
+					scenario, modName, suiteName, testName,
+					props.Properties.Disabled, props.Properties.Quarantined, props.Properties.AttemptToFix)
+			}
+		}
+	}
+}
+
+func validateScenarioSpans(sc *matrixScenario, spans []*mocktracer.Span) (panicValue any) {
+	defer func() {
+		panicValue = recover()
+	}()
+	sc.validate(spans)
+	return nil
+}
+
+func dumpScenarioSpans(scenario, reason string, spans []*mocktracer.Span) {
+	fmt.Printf("subtest matrix: scenario %s %s with %d finished spans\n", scenario, reason, len(spans))
+	fmt.Printf("subtest matrix: covermode=%q test.count=%q env.%s=%q\n",
+		testing.CoverMode(),
+		testCountFlagValue(),
+		constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable,
+		os.Getenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable),
+	)
+	counts := make(map[string]int)
+	for _, span := range spans {
+		if span == nil {
+			continue
+		}
+		resource, _ := span.Tag(ext.ResourceName).(string)
+		counts[resource]++
+	}
+	resources := make([]string, 0, len(counts))
+	for resource := range counts {
+		resources = append(resources, resource)
+	}
+	sort.Strings(resources)
+	for _, resource := range resources {
+		fmt.Printf("subtest matrix: resource-count resource=%q count=%d\n", resource, counts[resource])
+	}
+	for idx, span := range spans {
+		if span == nil {
+			fmt.Printf("subtest matrix: span[%d] nil\n", idx)
+			continue
+		}
+		fmt.Printf("subtest matrix: span[%d] resource=%q status=%v final_status=%v attempt_to_fix=%v retry=%v retry_reason=%v attempt_to_fix_passed=%v disabled=%v quarantined=%v skip_reason=%v\n",
+			idx,
+			span.Tag(ext.ResourceName),
+			span.Tag(constants.TestStatus),
+			span.Tag(constants.TestFinalStatus),
+			span.Tag(constants.TestIsAttempToFix),
+			span.Tag(constants.TestIsRetry),
+			span.Tag(constants.TestRetryReason),
+			span.Tag(constants.TestAttemptToFixPassed),
+			span.Tag(constants.TestIsDisabled),
+			span.Tag(constants.TestIsQuarantined),
+			span.Tag(constants.TestSkipReason),
+		)
+	}
+}
+
+func testCountFlagValue() string {
+	if count := flag.Lookup("test.count"); count != nil {
+		return count.Value.String()
+	}
+	return ""
 }
 
 // debugMatrixf emits scenario-scoped diagnostics using the package logger.
@@ -813,11 +1060,16 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 			w.Write([]byte(`{"data":{"attributes":{"tests":{}}}}`))
 		case "/api/v2/git/repository/search_commits":
 			// Stub git search commits used during CI Visibility bootstrap.
+			// Content-Type must be set so the client can unmarshal the response;
+			// omitting it causes an "unsupported format 'unknown'" error in the background
+			// git-metadata upload goroutine that pollutes logs and can delay init.
 			debugMatrixf("subtest server: search-commits request")
 			defer r.Body.Close()
 			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{}`))
+			w.Write([]byte(`{"data":[]}`))
+
 		case "/api/v2/git/repository/packfile":
 			// Accept packfile uploads even though the sandbox blocks writes.
 			debugMatrixf("subtest server: packfile request")
@@ -854,8 +1106,8 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 	}
 
 	cleanup := func() {
-		for i := len(snapshots) - 1; i >= 0; i-- {
-			snapshots[i].restore()
+		for _, s := range slices.Backward(snapshots) {
+			s.restore()
 		}
 		server.Close()
 	}

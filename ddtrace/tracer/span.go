@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//msgp:ignore inheritedData
+//msgp:ignore spanSnapshot
 //go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 //go:generate go run ../../scripts/msgp_span_meta_omitempty.go -file span_msgp.go
 //go:generate go run ../../scripts/msgp_checklocks_ignore.go -type Span -file span_msgp.go
@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"math"
 	"reflect"
@@ -28,16 +29,19 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	iof "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
@@ -159,6 +163,8 @@ type Span struct {
 	spanLinks []SpanLink `msg:"span_links,omitempty"` // links to other spans
 	// +checklocks:mu
 	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
+	// +checklocks:mu
+	statSpan *tracerStatSpan `msg:"-"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -182,6 +188,47 @@ type Span struct {
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
+func (s *Span) clear() {
+	// Serialize after finish()'s deferred s.mu.Unlock(). The span may still
+	// be inside finish() when the worker receives the chunk, because the
+	// channel send happens before the deferred unlock. Acquiring the lock
+	// here guarantees finish() has fully completed before we zero the struct.
+	s.mu.Lock()
+	// s.context is intentionally not nilled: Context() may still be called
+	// after Finish(), and spanStart will reassign it on reuse.
+	// clear() is called after traceWriter.add() encodes the span, so in-place
+	// map clearing is safe — no concurrent encoder holds a reference.
+	// TODO: we should cap large maps here.
+	s.meta.Reset()
+	clear(s.metrics)
+	clear(s.metaStruct)
+	s.name = ""
+	s.service = ""
+	s.resource = ""
+	s.spanType = ""
+	s.start = 0
+	s.duration = 0
+	s.spanID = 0
+	s.traceID = 0
+	s.parentID = 0
+	s.error = 0
+	s.spanLinks = nil
+	s.spanEvents = nil
+	s.statSpan = nil
+	s.goExecTraced = false
+	s.noDebugStack = false
+	s.finished = false
+	s.integration = ""
+	s.supportsEvents = false
+	s.pprofCtxActive = nil
+	s.pprofCtxRestore = nil
+	s.taskEnd = nil
+	// Always keep this unlock as the last line. If we ever introduce
+	// code above that could panic, we should move it as deferred call
+	// under s.mu.Lock().
+	s.mu.Unlock()
+}
+
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
@@ -189,21 +236,35 @@ func (s *Span) Context() *SpanContext {
 	if s == nil {
 		return nil
 	}
+	// Lock-free read: s.context is a single pointer word, only reassigned
+	// during construction in spanStart. Taking s.mu.RLock() here would
+	// self-deadlock when called transitively from Span.finish() via
+	// mocktracer.FinishSpan inside s.context.finish().
 	return s.context
 }
 
-type inheritedData struct {
+type spanSnapshot struct {
+	env           string
+	version       string
 	service       string
 	serviceSource string
+	peerService   string
 	pprofCtx      context.Context
 }
 
-func (s *Span) inheritedData() inheritedData {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return inheritedData{
+// +checklocksignore — Initialization time.
+func (s *Span) spanSnapshot() spanSnapshot {
+	var (
+		env, _         = s.meta.Env()
+		version, _     = s.meta.Version()
+		peerService, _ = s.meta.Get(ext.PeerService)
+	)
+	return spanSnapshot{
+		env:           env,
+		version:       version,
 		service:       s.service,
 		serviceSource: s.serviceSource,
+		peerService:   peerService,
 		pprofCtx:      s.pprofCtxActive,
 	}
 }
@@ -239,7 +300,7 @@ func (s *Span) getAndRemoveMeta(key string) string {
 // It sets the applied rate metric, evaluates Knuth rate-based sampling,
 // applies rate limiting, and sets the appropriate sampling priority.
 // Returns false if span is already finished, true otherwise.
-func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.SamplerName, limiter *rateLimiter, now time.Time) bool {
+func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.SamplerName, limiter *samplingrules.RateLimiter, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -250,19 +311,35 @@ func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.Sampler
 	s.setMetricLocked(keyRulesSamplerAppliedRate, rate)
 	delete(s.metrics, keySamplingPriorityRate)
 	s.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	trace := s.context.trace
 	if !sampledByRate(s.traceID, rate) {
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
 	if limiter == nil {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 		return true
 	}
-	sampled, limiterRate := limiter.allowOne(now)
+	sampled, limiterRate := limiter.AllowOne(now)
 	if sampled {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		if trace != nil {
+			trace.setOtelProbability(s.traceID, rate)
+		}
 	} else {
+		// The Knuth rate would have kept this trace; the limiter is what dropped
+		// it. That is a non-probability outcome, so erase any threshold rather
+		// than encode the configured rate.
 		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		if trace != nil {
+			trace.clearOtelProbability()
+		}
 	}
 	s.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
 	return true
@@ -374,6 +451,27 @@ func (s *Span) SetTag(key string, value any) {
 	s.setTagLocked(key, value)
 }
 
+// SetMetaStruct adds a tag with the given key and value to the `meta_struct`
+// field of the span if the agent supports it and returns true. If the
+// `meta_struct` feature is not supported by the agent or the receiver is nil,
+// nothing is stored in the span and false is returned.
+func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
+	if s == nil {
+		return false
+	}
+
+	tracer, hasTracer := getGlobalTracer().(*tracer)
+	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
+		return false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.setMetaStructLocked(key, value)
+	return true
+}
+
 // setTags sets multiple tags on the span during initialization. It acquires
 // the span lock internally and returns early without locking if tags is empty.
 func (s *Span) setTags(tags map[string]any) {
@@ -421,6 +519,9 @@ func (s *Span) setTagLocked(key string, value any) {
 		if so, ok := value.(sharedinternal.ServiceOverride); ok {
 			s.service = so.Name
 			s.serviceSource = so.Source
+			if s.context != nil {
+				s.context.setSpanSnapshotService(so.Name, so.Source)
+			}
 			return
 		}
 	}
@@ -429,15 +530,22 @@ func (s *Span) setTagLocked(key string, value any) {
 		return
 	}
 	if v, ok := value.(string); ok {
-		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) && hasEndpointLabel(s.pprofCtxActive) {
 			// If the user overrides the resource name for the span,
 			// update the endpoint label for the runtime profilers.
+			//
+			// Only spans that already carry an endpoint label are updated:
+			// AppSec also populates pprofCtxActive, and endpoint labels must
+			// stay tied to endpoint profiling.
 			//
 			// We don't change s.pprofCtxRestore since that should
 			// stay as the original parent span context regardless
 			// of what we change at a lower level.
 			s.pprofCtxActive = pprof.WithLabels(s.pprofCtxActive, pprof.Labels(traceprof.TraceEndpoint, v))
 			pprof.SetGoroutineLabels(s.pprofCtxActive)
+			if s.context != nil {
+				s.context.setSpanSnapshotPPROFCtx(s.pprofCtxActive)
+			}
 		}
 		s.setMetaLocked(key, v)
 		return
@@ -510,22 +618,22 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
-func (s *Span) setProcessTags(pTags string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.setMetaLocked(keyProcessTags, pTags)
-}
-
 // root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
-	if s == nil || s.context == nil {
+	if s == nil {
 		return nil
 	}
-	if s.context.trace == nil {
+	// Lock-free read for the same reason as Context(): avoids self-deadlock
+	// when called transitively from Span.finish() via mocktracer.FinishSpan.
+	ctx := s.context
+	if ctx == nil {
 		return nil
 	}
-	return s.context.trace.root
+	if ctx.trace == nil {
+		return nil
+	}
+	return ctx.trace.root
 }
 
 // SetUser associates user information to the current trace which the
@@ -579,7 +687,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 		keyUserSessionID: cfg.SessionID,
 	}
 	for k, v := range cfg.Metadata {
-		usrData[fmt.Sprintf("usr.%s", k)] = v
+		usrData["usr."+k] = v
 	}
 	for k, v := range usrData {
 		if v != "" {
@@ -653,7 +761,7 @@ func (s *Span) setErrorFlagLocked(yes bool) {
 }
 
 // setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
-// s.mu must be held for writing.
+// This method assumes the span lock is already held.
 // +checklocks:s.mu
 func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	assert.RWMutexLocked(&s.mu)
@@ -703,11 +811,9 @@ func takeStacktrace(depth uint, skip uint) string {
 		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
 	}()
 
-	// This is necessary for span error stacktraces where we want complete visibility.
-	// Skip +4: The old implementation used runtime.Callers(2+skip, ...) which skipped runtime.Callers
-	// and takeStacktrace. The internal/stacktrace package auto-filters its own frames, but we still
-	// need to account for: runtime.Callers(1) + takeStacktrace(1) + setTagError(1) + additional frame(1)
-	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+4)
+	// Keep Datadog frames in span error stack traces, but omit this wrapper on top
+	// of the stacktrace package's own machinery.
+	stack := stacktrace.SkipAndCaptureWithInternalFrames(int(depth), int(skip)+1)
 	return stacktrace.Format(stack)
 }
 
@@ -724,6 +830,9 @@ func (s *Span) setMeta(key, v string) {
 func (s *Span) setMetaLocked(key, v string) {
 	assert.RWMutexLocked(&s.mu)
 	s.setMetaInit(key, v)
+	if s.context != nil {
+		s.context.setSpanSnapshotMeta(key, v)
+	}
 }
 
 // setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
@@ -736,6 +845,9 @@ func (s *Span) setMetaInit(key, v string) {
 	case ext.ServiceName:
 		s.service = v
 		s.serviceSource = serviceSourceManual
+		if s.context != nil {
+			s.context.setSpanSnapshotService(v, serviceSourceManual)
+		}
 	case ext.ResourceName:
 		s.resource = v
 	case ext.SpanType:
@@ -751,6 +863,21 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 	assert.RWMutexLocked(&s.mu)
 	if s.metaStruct == nil {
 		s.metaStruct = make(metaStructMap, 1)
+	}
+	if key == stacktrace.SpanKey {
+		if current, ok := s.metaStruct[key]; ok {
+			merged, err := stacktrace.MergeSpanValues(current, v)
+			if err != nil {
+				telemetrylog.Warn(
+					"failed to merge stack-trace span values",
+					slog.Any("error", telemetrylog.NewSafeError(err)),
+					slog.String("current_type", fmt.Sprintf("%T", current)),
+					slog.String("next_type", fmt.Sprintf("%T", v)),
+				)
+				return
+			}
+			v = merged
+		}
 	}
 	s.metaStruct[key] = v
 }
@@ -811,10 +938,16 @@ func (s *Span) setMetricLocked(key string, v float64) {
 		s.metrics = make(map[string]float64, 1)
 	}
 	s.meta.Delete(key)
+	if s.context != nil {
+		s.context.setSpanSnapshotMeta(key, "")
+	}
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
+			// Force the keep: an AppSec attack-detection keep must retain the
+			// trace even when the sampling decision was inherited and locked
+			// from an upstream drop, mirroring the manual-keep path above.
+			s.forceSetSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
 	case "_sampling_priority_v1shim":
 		// We have this for backward compatibility with the v1 shim.
@@ -881,6 +1014,47 @@ func (s *Span) serializeSpanEvents() {
 	s.meta.Set("events", string(b))
 }
 
+// recordFFEEvaluation records a feature flag evaluation for FFE span enrichment.
+// Used by github.com/DataDog/dd-trace-go/v2/openfeature via go:linkname.
+//
+// Feature flag evaluations are collected while a request is in progress and
+// copied onto the root span as tags when the span finishes. The temporary
+// storage lives in internal/openfeature, but access to it must be coordinated
+// with the span lifecycle here.
+//
+// The OpenFeature hook reaches this function instead of writing to the store
+// directly because it cannot safely inspect or synchronize with Span.finished.
+// Holding s.mu serializes recording an evaluation with Finish draining the
+// stored evaluations. The s.finished check prevents recording evaluations after
+// the span has already finished; Finish drains the stored evaluations exactly
+// once while holding the same lock.
+func recordFFEEvaluation(s *Span, eval *iof.FeatureFlagEvaluation) {
+	if s == nil || eval == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.finished {
+		return
+	}
+	iof.AddSpanEnrichment(s, eval)
+}
+
+// serializeFFEEvaluations writes the accumulated OpenFeature evaluation tags onto
+// the span and removes the pending FFE span enrichment from the temporary store.
+// +checklocks:s.mu
+func (s *Span) serializeFFEEvaluations() {
+	assert.RWMutexLocked(&s.mu)
+	enrichment := iof.DrainSpanEnrichment(s)
+	if enrichment == nil {
+		return
+	}
+	for tag, value := range enrichment.GetSpanTags() {
+		s.meta.Set(tag, value)
+	}
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...FinishOption) {
@@ -939,7 +1113,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	s.finish(t)
-	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
 }
 
 // SetOperationName sets or changes the operation name.
@@ -985,6 +1158,7 @@ func (s *Span) finish(finishTime int64) {
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()
+	s.serializeFFEEvaluations()
 	s.enrichServiceSource()
 
 	if s.duration == 0 {
@@ -1000,7 +1174,7 @@ func (s *Span) finish(finishTime int64) {
 	keep := true
 	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
-		if !tracer.config.enabled.get() {
+		if !tracer.config.internalConfig.TracingEnabled() {
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -1025,12 +1199,7 @@ func (s *Span) finish(finishTime int64) {
 	// Call context.finish() which handles trace-level bookkeeping and may modify
 	// this span (to set trace-level tags).
 	// Lock ordering is span.mu -> trace.mu.
-	s.context.finish()
-
-	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
-	if hasTracer {
-		tracer.submit(s)
-	}
+	s.context.finish(s)
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
@@ -1107,17 +1276,17 @@ func (s *Span) String() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	lines := []string{
-		fmt.Sprintf("Name: %s", s.name),
-		fmt.Sprintf("Service: %s", s.service),
-		fmt.Sprintf("Resource: %s", s.resource),
+		"Name: " + s.name,
+		"Service: " + s.service,
+		"Resource: " + s.resource,
 		fmt.Sprintf("TraceID: %d", s.traceID),
-		fmt.Sprintf("TraceID128: %s", s.context.TraceID()),
+		"TraceID128: " + s.context.TraceID(),
 		fmt.Sprintf("SpanID: %d", s.spanID),
 		fmt.Sprintf("ParentID: %d", s.parentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.start)),
 		fmt.Sprintf("Duration: %s", time.Duration(s.duration)),
 		fmt.Sprintf("Error: %d", s.error),
-		fmt.Sprintf("Type: %s", s.spanType),
+		"Type: " + s.spanType,
 		"Tags:",
 	}
 	for k, v := range s.meta.All() {
@@ -1133,7 +1302,8 @@ func (s *Span) String() string {
 // +checklocksignore — Reads only immutable fields (spanID, traceID, parentID) set during init.
 func (s *Span) Format(f fmt.State, c rune) {
 	if s == nil {
-		fmt.Fprintf(f, "<nil>")
+		fmt.Fprint(f, "<nil>")
+		return
 	}
 	switch c {
 	case 's':
@@ -1146,12 +1316,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := env.Get("DD_ENV"); env != "" {
+			} else if env := env.Get("DD_ENV"); env != "" { //configaudit:ignore — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := env.Get("DD_VERSION"); v != "" {
+			} else if v := env.Get("DD_VERSION"); v != "" { //configaudit:ignore — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
@@ -1159,7 +1329,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true) && s.context.traceID.HasUpper() {
 			traceID = s.context.TraceID()
 		} else {
-			traceID = fmt.Sprintf("%d", s.traceID)
+			traceID = strconv.FormatUint(s.traceID, 10)
 		}
 		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
 		fmt.Fprintf(f, `dd.span_id="%d" `, s.spanID)
@@ -1210,6 +1380,53 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
+	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
+	// span has no session; otherwise a predecessor's value lingers and propagates downstream.
+	if sessionID := llmSpan.SessionID(); sessionID != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, sessionID)
+	} else {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
+	}
+	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
+}
+
+// setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's
+// propagating tag set. Tags are trace-scoped so they are always explicitly set or unset,
+// preventing stale values from a sibling from leaking to downstream services.
+func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name string) {
+	if parentAgentSpanID == "" {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentSpanID)
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+	} else {
+		// Span ID is always propagated; id-only attribution is still useful to the backend.
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentSpanID, parentAgentSpanID)
+		if name == "" || !illmobs.AgentNameWireSafe(name) {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+			return
+		}
+		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
+		used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
+		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+			used += 27
+			tsUsed += 23
+		}
+		var nameXTagsLen int
+		if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentAgentName); prior != "" {
+			nameXTagsLen = used - len(prior) + len(name)
+			tsUsed -= len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(prior) + 4
+		} else {
+			nameXTagsLen = used + len(keyPropagatedLLMObsParentAgentName) + len(name) + 2
+		}
+		nameTracestateLen := len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(name) + 4
+		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
+			tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
+			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
+		} else {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+			log.Debug("LLMObs: parent agent name dropped from propagation — x-datadog-tags budget exceeded (name=%q)", name)
+		}
+	}
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
@@ -1277,6 +1494,13 @@ const (
 	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
+	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
+	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
+	// keyPropagatedLLMObsParentAgentSpanID contains the propagated parent-agent span ID.
+	// The wire key uses the abbreviated form "pagent" per the cross-SDK propagation protocol.
+	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"
+	// keyPropagatedLLMObsParentAgentName contains the propagated parent-agent name.
+	keyPropagatedLLMObsParentAgentName = "_dd.p.llmobs_pagent_name"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

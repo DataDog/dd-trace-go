@@ -13,7 +13,7 @@ import (
 	"mime"
 	"strings"
 
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"

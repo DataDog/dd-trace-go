@@ -33,7 +33,13 @@ var (
 
 const (
 	// ffeProductEnvVar is the environment variable to enable the experimental flagging provider
-	ffeProductEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
+	ffeProductEnvVar     = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
+	spanEnrichmentEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED"
+	// flagEvalCountsEnabledEnvVar is the operator killswitch for the EVP flagevaluation emission path.
+	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
+	// while leaving the OTel feature_flag.evaluations path unaffected.
+	// Mirrors the internal.BoolEnv convention used by ffeProductEnvVar.
+	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
 	// Default timeout for provider initialization
 	defaultInitTimeout = 30 * time.Second
 	// Default timeout for provider shutdown
@@ -45,6 +51,10 @@ type ProviderConfig struct {
 	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
+
+	// FlagEvaluationFlushInterval is the interval for flushing EVP flag evaluation events.
+	// Default: 10 seconds. Leave zero to use the default.
+	FlagEvaluationFlushInterval time.Duration
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
@@ -54,14 +64,28 @@ type DatadogProvider struct {
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
 
-	configChange sync.Cond
+	// configChange is closed and replaced with a fresh channel each time
+	// updateConfiguration runs, so a waiter that reads it while p.mu is held
+	// observes either the current channel (not yet closed, so it can select
+	// on it) or the update it was waiting for (configuration already set).
+	// This channel-per-generation approach, rather than sync.Cond, keeps the
+	// wait naturally selectable against ctx.Done() without a helper goroutine
+	// that can race the wait it is meant to interrupt.
+	configChange chan struct{}
+
+	hooks []openfeature.Hook
 
 	// Exposure tracking
 	exposureWriter *exposureWriter
-	exposureHook   *exposureHook
 
 	// Flag evaluation metrics hook (OTel counter via Finally hook)
-	flagEvalHook *flagEvalHook
+	flagEvalMetricsHook *flagEvalMetricsHook
+
+	// Flag evaluation EVP writer + hook (new Path B — EVP flagevaluation track).
+	// Both fields are nil when DD_FLAGGING_EVALUATION_COUNTS_ENABLED=false (killswitch).
+	// Named distinctly from flagEvalHook (OTel) to avoid collisions.
+	flagEvalLoggingWriter *flagEvalLoggingWriter
+	flagEvalLoggingHook   *flagEvalLoggingHook
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -83,27 +107,66 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 }
 
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {
+	evp := newEVPClient()
+
 	// Create exposure writer
-	writer := newExposureWriter(config)
+	writer := newExposureWriterWithEVP(config, evp)
 
 	// Create exposure hook
-	hook := newExposureHook(writer)
+	exposureLoggingHook := newExposureHook(writer)
 
 	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
 	metrics, err := newFlagEvalMetrics()
 	if err != nil {
 		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error())
 	}
+	evalMetricsHook := newFlagEvalMetricsHook(metrics)
+
+	// Conditionally construct the EVP flagevaluation writer + hook.
+	// Gated by DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true).
+	// When false, both fields are left nil and the EVP path is disabled.
+	// The OTel hook (flagEvalHook above) is registered unconditionally.
+	var evalWriter *flagEvalLoggingWriter
+	var evalLoggingHook *flagEvalLoggingHook
+	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
+		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
+		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
+	}
+
+	var spanEnrichmentHook *spanEnrichmentHook
+	if internal.BoolEnv(spanEnrichmentEnvVar, false) {
+		spanEnrichmentHook = newSpanEnrichmentHook()
+		log.Debug("openfeature: span enrichment is enabled")
+	} else {
+		log.Debug("openfeature: span enrichment is disabled")
+	}
+
+	hooks := make([]openfeature.Hook, 0, 4)
+	if exposureLoggingHook != nil {
+		hooks = append(hooks, exposureLoggingHook)
+	}
+	if evalMetricsHook != nil {
+		hooks = append(hooks, evalMetricsHook)
+	}
+	if evalLoggingHook != nil {
+		hooks = append(hooks, evalLoggingHook)
+	}
+	if spanEnrichmentHook != nil {
+		hooks = append(hooks, spanEnrichmentHook)
+	}
 
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
-		exposureWriter: writer,
-		exposureHook:   hook,
-		flagEvalHook:   newFlagEvalHook(metrics),
+		hooks:                 hooks,
+		exposureWriter:        writer,
+		flagEvalMetricsHook:   evalMetricsHook,
+		flagEvalLoggingWriter: evalWriter,
+		flagEvalLoggingHook:   evalLoggingHook,
+		configChange:          make(chan struct{}),
 	}
-	p.configChange.L = &p.mu
+
 	return p
 }
 
@@ -113,7 +176,16 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.configuration = config
-	p.configChange.Broadcast()
+	// Wake every waiter blocked on the current generation, then start a fresh
+	// one for the next update: a closed channel cannot be reused as a signal.
+	// configChange is nil on a DatadogProvider built as a bare struct literal
+	// (several tests do this to exercise evaluate directly), which never
+	// waits on it through InitWithContext; guard the close so that remains
+	// safe rather than requiring every such test to also initialize it.
+	if p.configChange != nil {
+		close(p.configChange)
+	}
+	p.configChange = make(chan struct{})
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
@@ -137,36 +209,23 @@ func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) 
 	return p.InitWithContext(ctx, evaluationContext)
 }
 
-// waitForConfigurationUpdate waits for a configuration update or context cancellation.
-// Assumes mutex is locked on entry, temporarily unlocks during wait, relocks on exit.
+// waitForConfigurationUpdate waits for a configuration update or context
+// cancellation. The caller must hold p.mu on entry. p.mu is released while
+// waiting and reacquired before this returns, whether or not it returns an
+// error.
 func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error {
-	defer p.mu.Lock() // Always relock when function exits
-
-	// Check if context was cancelled before waiting
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	// Create channel to signal condition variable completion
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		p.configChange.Wait()
-	}()
-
-	// Temporarily unlock to allow configuration update and context handling
+	// Read the current generation while still holding p.mu, so this can never
+	// wait on a channel that a concurrent updateConfiguration already closed
+	// and replaced.
+	generation := p.configChange
 	p.mu.Unlock()
+	defer p.mu.Lock()
 
-	// Wait for either context cancellation or configuration update
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil // Configuration updated, defer will relock
+	case <-generation:
+		return nil
 	}
 }
 
@@ -183,8 +242,12 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 		}
 	}
 
-	// Start periodic flushing
+	// Start periodic flushing for exposure writer.
 	p.exposureWriter.start()
+	// Start periodic flushing for EVP flag evaluation writer (nil when killswitch disabled).
+	if p.flagEvalLoggingWriter != nil {
+		p.flagEvalLoggingWriter.start()
+	}
 	return nil
 }
 
@@ -215,9 +278,13 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			p.exposureWriter.flush()
 			p.exposureWriter.stop()
 		}
+		// Stop the EVP flag evaluation writer (nil when killswitch disabled).
+		if p.flagEvalLoggingWriter != nil {
+			p.flagEvalLoggingWriter.stop()
+		}
 		// Shut down flag evaluation metrics
-		if p.flagEvalHook != nil && p.flagEvalHook.metrics != nil {
-			_ = p.flagEvalHook.metrics.shutdown(ctx)
+		if p.flagEvalMetricsHook != nil && p.flagEvalMetricsHook.metrics != nil {
+			_ = p.flagEvalMetricsHook.metrics.shutdown(ctx)
 		}
 		done <- err
 	}()
@@ -408,17 +475,10 @@ func (p *DatadogProvider) ObjectEvaluation(
 	}
 }
 
-// Hooks returns the hooks for this provider.
-// This includes the exposure tracking hook and the flag evaluation metrics hook.
+// Hooks returns the provider's hooks, built once during Init.
+// Returns p.hooks directly to avoid per-evaluation allocations.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
-	var hooks []openfeature.Hook
-	if p.exposureHook != nil {
-		hooks = append(hooks, p.exposureHook)
-	}
-	if p.flagEvalHook != nil {
-		hooks = append(hooks, p.flagEvalHook)
-	}
-	return hooks
+	return p.hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.
@@ -428,9 +488,21 @@ func (p *DatadogProvider) evaluate(
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
 ) (res evaluationResult) {
+	// Capture the evaluation time once, at evaluation entry. It is used for allocation
+	// time-window checks and EVP first/last evaluation bounds.
+	evalNow := time.Now()
 	log.Debug("openfeature: evaluating flag %q", flagKey)
+
+	// Consent for this evaluation, stamped onto res.Metadata by the defer below. Stays false
+	// on paths with no configuration (cancelled context, provider not ready) — an evaluation
+	// with no environment behind it withholds consent.
+	var observeFullEvaluationData bool
 	defer func() {
-		log.Debug("openfeature: evaluated flag %q: value=%v, reason=%s, error=%v", flagKey, res.Value, res.Reason, res.Error)
+		if res.Metadata == nil {
+			res.Metadata = make(map[string]any, 2)
+		}
+		res.Metadata[metadataEvalTimeKey] = evalNow.UnixMilli()
+		res.Metadata[metadataObserveFullEvaluationDataKey] = observeFullEvaluationData
 	}()
 
 	// Check if context was cancelled before starting evaluation
@@ -455,18 +527,12 @@ func (p *DatadogProvider) evaluate(
 		}
 	}
 
-	// Find the flag
-	flag, exists := config.Flags[flagKey]
-	if !exists {
-		return evaluationResult{
-			Value:  defaultValue,
-			Reason: openfeature.ErrorReason,
-			Error:  fmt.Errorf("%w: %q", errFlagNotFound, flagKey),
-		}
-	}
+	// Snapshot consent before evaluating, so a Remote Config swap of p.configuration mid-eval
+	// cannot change the value stamped on the result.
+	observeFullEvaluationData = config.ObserveFullEvaluationData
 
-	// Evaluate the flag (pass context for potential future use in evaluateFlag)
-	return evaluateFlag(flag, defaultValue, flatCtx)
+	// Evaluate the flag, sharing the eval-time captured at entry.
+	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow)
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.

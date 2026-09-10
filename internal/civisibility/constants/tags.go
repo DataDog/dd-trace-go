@@ -60,6 +60,9 @@ const (
 	// LibraryCapabilitiesAutoTestRetries is a tag used to indicate the auto test retries capability of the library.
 	LibraryCapabilitiesAutoTestRetries = "_dd.library_capabilities.auto_test_retries"
 
+	// LibraryCapabilitiesCoverageReportUpload is a tag used to indicate the code coverage report upload capability of the library.
+	LibraryCapabilitiesCoverageReportUpload = "_dd.library_capabilities.coverage_report_upload"
+
 	// LibraryCapabilitiesTestManagementQuarantine is a tag used to indicate the quarantine capability of the library.
 	LibraryCapabilitiesTestManagementQuarantine = "_dd.library_capabilities.test_management.quarantine"
 

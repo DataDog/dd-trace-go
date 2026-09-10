@@ -62,6 +62,7 @@ will complain about it.
 package fastdelta
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -139,7 +140,7 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 		// already been written to out, but we return an error to
 		// indicate that the profile shouldn't be used.
 		dc.poisoned = false
-		return fmt.Errorf("delta profiler recovering from bad state, skipping this profile")
+		return errors.New("delta profiler recovering from bad state, skipping this profile")
 	}
 	return nil
 }

@@ -22,8 +22,34 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
 )
 
-// Processor is a state machine that handles incoming HTTP request and response is a streaming manner
-// made for proxy external processing streaming protocols like Envoy's External Processing or HAProxy's SPOP
+// Processor is a state machine that handles incoming HTTP request and response in a streaming manner,
+// made for proxy external-processing protocols like Envoy's External Processing or HAProxy's SPOP.
+//
+// Valid state transitions (RequestState.State):
+//
+//	0 (initial)
+//	  → RequestHeaders    OnRequestHeaders called
+//
+//	RequestHeaders
+//	  → RequestBody       request has a body (EOS=false, supported Content-Type)
+//	  → ResponseHeaders   EOS or body not supported (skip body phase)
+//
+//	RequestBody           one or more OnRequestBody calls until EOS
+//	  → ResponseHeaders   EOS received (body fully consumed)
+//
+//	ResponseHeaders
+//	  → ResponseBody      response has a body (EOS=false, supported Content-Type)
+//	  → Finished          EOS or body not supported (stream ends here)
+//
+//	ResponseBody          one or more OnResponseBody calls
+//	  → Finished          EOS received (body fully consumed), or the analysis finished
+//	                      early and the gateway does not require the remaining body
+//	                      messages to be acknowledged
+//
+//	Any ongoing state
+//	  → Blocked           dyngo blocking callback fired inside Close/afterHandle
+//
+//	Finished / Blocked    terminal — no further transitions
 type Processor struct {
 	ProcessorConfig
 	instr *instrumentation.Instrumentation
@@ -84,8 +110,12 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 
 	reqState, blocked := newRequestState(
 		httpRequest,
+		pseudoRequest.ClientIP,
 		int(mp.computedBodyParsingSizeLimit.Load()),
 		mp.Framework,
+		// Resolved per request rather than cached: the gateway is identified from the request
+		// headers, so a single processor can serve several kinds of gateway.
+		ackBodyMessagesUntilEndOfStream(ctx, req),
 		req.SpanOptions(ctx)...,
 	)
 
@@ -134,7 +164,7 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 	defer reqState.Mu.Unlock()
 
 	if !reqState.State.Ongoing() {
-		return errors.New("received request body too early")
+		return fmt.Errorf("received request body in unexpected state: %v", reqState.State)
 	}
 
 	mp.instr.Logger().Debug("message_processor: received request body: %v - EOS: %v\n", len(req.GetBody()), req.GetEndOfStream())
@@ -147,9 +177,13 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 	}
 
 	blocked := processBody(reqState.Context, reqState.requestBuffer, req.GetBody(), req.GetEndOfStream(), appsec.MonitorParsedHTTPBody, "request")
+	if reqState.requestBuffer.analyzed {
+		// The WAF analysis is synchronous, so the retained prefix is no longer needed.
+		reqState.requestBuffer.buffer = nil
+	}
 	if blocked != nil && !mp.BlockingUnavailable {
 		mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
-		actionOpts := reqState.BlockAction()
+		actionOpts := reqState.blockActionLocked()
 		if err := mp.BlockMessageFunc(reqState.Context, actionOpts); err != nil {
 			return fmt.Errorf("error creating block message: %w", err)
 		}
@@ -170,8 +204,6 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 	if !reqState.State.Request() {
 		return fmt.Errorf("received response headers too early: %v", reqState.State)
 	}
-
-	reqState.State = MessageTypeResponseHeaders
 
 	pseudoResponse, err := res.ExtractResponse()
 	if err != nil {
@@ -197,15 +229,16 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 
 	// Run the waf on the response headers only when we are sure to not receive a response body
 	if res.GetEndOfStream() || !mp.isBodySupported(reqState.wrappedResponseWriter.Header().Get("Content-Type")) {
-		reqState.Close()
+		_ = reqState.closeLocked()
 		if !mp.BlockingUnavailable && reqState.State == MessageTypeBlocked {
-			if err := mp.BlockMessageFunc(reqState.Context, reqState.BlockAction()); err != nil {
+			if err := mp.BlockMessageFunc(reqState.Context, reqState.blockActionLocked()); err != nil {
 				return fmt.Errorf("error creating block message: %w", err)
 			}
 			return io.EOF
 		}
 
 		mp.instr.Logger().Debug("message_processor: finishing request with status code: %v\n", reqState.fakeResponseWriter.status)
+		// No body message is in flight, so the ext_proc stream can close after response headers.
 		return io.EOF
 	}
 
@@ -231,29 +264,78 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 	if mp.computedBodyParsingSizeLimit.Load() <= 0 || reqState.State != MessageTypeResponseBody {
 		mp.instr.Logger().Error("message_processor: the body parsing has been wrongly configured. " +
 			"Please refer to the official documentation for guidance on the proper settings or contact support.")
-		return io.EOF
+		reqState.finalizeResponse()
+		return mp.acknowledgeResponseBody(reqState, resp.GetEndOfStream())
 	}
 
 	blocked := processBody(reqState.Context, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody, "response")
 	if reqState.responseBuffer.analyzed {
-		reqState.Close() // Call Close to ensure the response headers are analyzed
+		// The WAF analysis is synchronous, so the retained prefix is no longer needed.
+		reqState.responseBuffer.buffer = nil
+		reqState.finalizeResponse()
 
 		if (reqState.State == MessageTypeBlocked || blocked != nil) && !mp.BlockingUnavailable {
 			mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
-			if err := mp.BlockMessageFunc(reqState.Context, reqState.BlockAction()); err != nil {
+			if err := mp.BlockMessageFunc(reqState.Context, reqState.blockActionLocked()); err != nil {
 				return fmt.Errorf("error creating block message: %w", err)
 			}
+			return io.EOF
 		}
-		return io.EOF
+
+		return mp.acknowledgeResponseBody(reqState, resp.GetEndOfStream())
 	}
 
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody})
 }
 
+// ackBodyMessagesUntilEndOfStream reports whether the stream must stay open to
+// acknowledge body messages the analysis no longer needs.
+//
+// Acknowledging everything is the default because it is what every gateway got before
+// this policy existed, and because it is the safe direction: it costs a round trip per
+// remaining chunk, whereas closing early on a gateway that does not tolerate it causes
+// timeouts. A [RequestHeaders] from a contrib module older than this core will not
+// implement [bodyAcknowledgementPolicy], and must keep the behaviour it was written
+// against.
+func ackBodyMessagesUntilEndOfStream(ctx context.Context, req RequestHeaders) bool {
+	policy, ok := req.(bodyAcknowledgementPolicy)
+	if !ok {
+		return true
+	}
+
+	return policy.AckBodyMessagesUntilEndOfStream(ctx)
+}
+
+// acknowledgeResponseBody acknowledges a response body message that needs no further
+// analysis and reports whether the processing stream is now finished, returning io.EOF
+// when it is. The caller must hold reqState.Mu and must have finalized the response
+// beforehand.
+//
+// The acknowledgement is unconditional because the gateway is owed exactly one response
+// per message it sent while the stream is open. Whether the stream may then close
+// immediately or has to stay open for the rest of the body is gateway-specific, hence
+// [RequestHeaders.AckBodyMessagesUntilEndOfStream].
+func (mp *Processor) acknowledgeResponseBody(reqState *RequestState, endOfStream bool) error {
+	lastMessage := endOfStream || !reqState.ackBodyMessagesUntilEndOfStream
+	if lastMessage {
+		_ = reqState.closeLocked()
+	}
+
+	if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody}); err != nil {
+		return fmt.Errorf("error creating continue response for response body: %w", err)
+	}
+
+	if lastMessage {
+		return io.EOF
+	}
+
+	return nil
+}
+
 // OnRequestTrailers handles incoming request trailers
 func (mp *Processor) OnRequestTrailers(reqState *RequestState) error {
 	if reqState == nil {
-		return fmt.Errorf("received a request trailer without a valid request state")
+		return errors.New("received a request trailer without a valid request state")
 	}
 	mp.instr.Logger().Debug("message_processor: received request trailers, ignoring")
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeRequestTrailers})
@@ -262,7 +344,7 @@ func (mp *Processor) OnRequestTrailers(reqState *RequestState) error {
 // OnResponseTrailers handles incoming response trailers
 func (mp *Processor) OnResponseTrailers(reqState *RequestState) error {
 	if reqState == nil {
-		return fmt.Errorf("received a response trailer without a valid request state")
+		return errors.New("received a response trailer without a valid request state")
 	}
 	mp.instr.Logger().Debug("message_processor: received response trailers, ignoring")
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseTrailers})

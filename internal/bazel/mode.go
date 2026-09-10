@@ -70,7 +70,7 @@ var (
 	// currentMode caches the resolved Bazel mode for the current process.
 	currentMode Mode
 	// payloadFileCount keeps payload filenames unique within a process and orders telemetry files deterministically.
-	payloadFileCount uint64
+	payloadFileCount atomic.Uint64
 )
 
 // CurrentMode returns the resolved process-wide Bazel mode.
@@ -149,7 +149,7 @@ func WritePayloadFile(kind PayloadKind, jsonPayload []byte) error {
 		return fmt.Errorf("creating payload output dir: %w", err)
 	}
 
-	seq := atomic.AddUint64(&payloadFileCount, 1)
+	seq := payloadFileCount.Add(1)
 	fileName := payloadFileName(kind, seq)
 	filePath := filepath.Join(outDir, fileName)
 	absoluteFilePath := absolutePathForLog(filePath)
@@ -388,5 +388,5 @@ func ResetForTesting() {
 	defer modeMu.Unlock()
 	modeOnce = sync.Once{}
 	currentMode = Mode{}
-	atomic.StoreUint64(&payloadFileCount, 0)
+	payloadFileCount.Store(0)
 }

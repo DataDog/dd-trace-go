@@ -8,14 +8,13 @@ package appsec
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
 	"strings"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -137,7 +136,10 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				if data, err := json.Marshal(errs); err == nil {
 					errMsg = string(data)
 				} else {
-					telemetrylog.Error("appsec: remote config: failed to marshal error details", slog.Any("error", telemetrylog.NewSafeError(err)))
+					telemetrylog.With(
+						telemetry.WithTags([]string{"log_type:rc::asm::exception"}),
+						telemetry.WithStacktrace(),
+					).Error("appsec: remote config: failed to marshal error details", slog.Any("error", telemetrylog.NewSafeError(err)))
 				}
 			}
 
@@ -151,7 +153,10 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	if len(a.cfg.WAFManager.ConfigPaths(`^(?:datadog/\d+|employee)/ASM_DD/.+`)) == 0 {
 		log.Debug("appsec: remote config: no ASM_DD config loaded; restoring default config if available")
 		if err := a.cfg.WAFManager.RestoreDefaultConfig(); err != nil {
-			telemetrylog.Error("appsec: RC could not restore default config", slog.Any("error", telemetrylog.NewSafeError(err)))
+			telemetrylog.With(
+				telemetry.WithTags([]string{"log_type:rc::asm::exception"}),
+				telemetry.WithStacktrace(),
+			).Error("appsec: RC could not restore default config", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 	}
 
@@ -282,14 +287,14 @@ func (a *appsec) stopRC() {
 
 func (a *appsec) registerRCProduct(p string) error {
 	if a.cfg.RC == nil {
-		return fmt.Errorf("no valid remote configuration client")
+		return errors.New("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterProduct(p)
 }
 
 func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
 	if a.cfg.RC == nil {
-		return fmt.Errorf("no valid remote configuration client")
+		return errors.New("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterCapability(c)
 }
@@ -384,6 +389,9 @@ func (a *appsec) enableRASP() {
 	if orchestrion.Enabled() {
 		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPLFI); err != nil {
 			log.Debug("appsec: remote config: couldn't register RASP LFI: %s", err.Error())
+		}
+		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPCommandInjection); err != nil {
+			log.Debug("appsec: remote config: couldn't register RASP CMDi: %s", err.Error())
 		}
 	}
 }

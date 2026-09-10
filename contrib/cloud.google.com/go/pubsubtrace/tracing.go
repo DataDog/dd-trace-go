@@ -14,6 +14,7 @@ package pubsubtrace
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,11 +60,16 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ResourceName(topic.String()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag("message_size", len(msg.Data)),
-		tracer.Tag("ordering_key", msg.OrderingKey),
+		tracer.Tag(ext.PubsubMessageSize, len(msg.Data)),
+		tracer.Tag(ext.PubsubOrderingKey, msg.OrderingKey),
 		tracer.Tag(ext.Component, tr.component),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+		tracer.Tag(ext.MessagingOperationName, "send"),
+		tracer.Tag(ext.MessagingDestinationName, topic.String()),
+	}
+	if projectID := projectIDFromResourceName(topic.String()); projectID != "" {
+		spanOpts = append(spanOpts, tracer.Tag(ext.GCPProjectID, projectID))
 	}
 	if cfg.serviceName != "" {
 		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
@@ -82,12 +88,13 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
 		tr.instr.Logger().Debug("contrib/cloud.google.com/go/pubsubtrace: failed injecting tracing attributes: %s", err.Error())
 	}
-	span.SetTag("num_attributes", len(msg.Attributes))
+	span.SetTag(ext.PubsubNumAttributes, len(msg.Attributes))
 
 	var once sync.Once
 	closeSpan := func(serverID string, err error) {
 		once.Do(func() {
-			span.SetTag("server_id", serverID)
+			span.SetTag(ext.PubsubServerID, serverID)
+			span.SetTag(ext.MessagingMessageID, serverID)
 			span.Finish(tracer.WithError(err))
 		})
 	}
@@ -105,15 +112,54 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		opts := []tracer.StartSpanOption{
 			tracer.ResourceName(s.String()),
 			tracer.SpanType(ext.SpanTypeMessageConsumer),
-			tracer.Tag("message_size", len(msg.Data)),
-			tracer.Tag("num_attributes", len(msg.Attributes)),
-			tracer.Tag("ordering_key", msg.OrderingKey),
-			tracer.Tag("message_id", msg.ID),
-			tracer.Tag("publish_time", msg.PublishTime.String()),
+			tracer.Tag(ext.PubsubMessageSize, len(msg.Data)),
+			tracer.Tag(ext.PubsubNumAttributes, len(msg.Attributes)),
+			tracer.Tag(ext.PubsubOrderingKey, msg.OrderingKey),
+			tracer.Tag(ext.PubsubMessageID, msg.ID),
+			tracer.Tag(ext.MessagingMessageID, msg.ID),
+			tracer.Tag(ext.PubsubPublishTime, msg.PublishTime.String()),
 			tracer.Tag(ext.Component, tr.component),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
-			tracer.ChildOf(parentSpanCtx),
+			tracer.Tag(ext.MessagingOperationName, "receive"),
+			tracer.Tag(ext.MessagingDestinationName, s.String()),
+		}
+		var baggage map[string]string
+		if cfg.propagationAsSpanLinks && parentSpanCtx != nil {
+			var links []tracer.SpanLink
+
+			// Distinguish a normal extracted context from an stub formed in the case of DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart,
+			// which zeroes trace/span IDs and stores the producer link in SpanLinks.
+			if parentSpanCtx.TraceIDLower() != 0 || parentSpanCtx.TraceIDUpper() != 0 || parentSpanCtx.SpanID() != 0 {
+				// Link to the producer without reparenting the consumer trace.
+				links = []tracer.SpanLink{{
+					TraceID:     parentSpanCtx.TraceIDLower(),
+					TraceIDHigh: parentSpanCtx.TraceIDUpper(),
+					SpanID:      parentSpanCtx.SpanID(),
+				}}
+			} else {
+				// extract=restart zeroes IDs; reuse links already on the stub context.
+				links = parentSpanCtx.SpanLinks()
+			}
+			if len(links) > 0 {
+				opts = append(opts, tracer.WithSpanLinks(links))
+			}
+
+			// copy any baggage into the new span without reparenting
+			baggage = make(map[string]string)
+			parentSpanCtx.ForeachBaggageItem(func(k, v string) bool {
+				baggage[k] = v
+				return true
+			})
+		} else {
+			opts = append(opts, tracer.ChildOf(parentSpanCtx))
+			// If there are span links as a result of context extraction, add them as a StartSpanOption
+			if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
+				opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
+			}
+		}
+		if projectID := projectIDFromResourceName(s.String()); projectID != "" {
+			opts = append(opts, tracer.Tag(ext.GCPProjectID, projectID))
 		}
 		if cfg.serviceName != "" {
 			opts = append(opts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
@@ -121,14 +167,68 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		if cfg.measured {
 			opts = append(opts, tracer.Measured())
 		}
-		// If there are span links as a result of context extraction, add them as a StartSpanOption
-		if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
-			opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
-		}
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
+		for k, v := range baggage {
+			span.SetBaggageItem(k, v)
+		}
 		if msg.DeliveryAttempt != nil {
-			span.SetTag("delivery_attempt", *msg.DeliveryAttempt)
+			span.SetTag(ext.PubsubDeliveryAttempt, *msg.DeliveryAttempt)
 		}
 		return ctx, func() { span.Finish() }
 	}
+}
+
+// TraceAdmin returns a function that starts a span for a Pub/Sub admin operation
+// (e.g. CreateTopic, ListSubscriptions, DeleteSchema).
+// Version-specific unary client interceptors in the pubsub.v1 and pubsub.v2
+// contrib modules call the returned function after mapping the request to a
+// resource path.
+func (tr *Tracer) TraceAdmin(opts ...Option) func(ctx context.Context, method, resourcePath string) (context.Context, func(err error)) {
+	cfg := tr.defaultConfig()
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+	return func(ctx context.Context, method, resourcePath string) (context.Context, func(err error)) {
+		resource := method
+		if resourcePath != "" {
+			resource = method + " " + resourcePath
+		}
+		spanOpts := []tracer.StartSpanOption{
+			tracer.ResourceName(resource),
+			tracer.SpanType(ext.SpanTypeWorker),
+			tracer.Tag(ext.Component, tr.component),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+			tracer.Tag("pubsub.method", method),
+			tracer.Measured(),
+		}
+		if projectID := projectIDFromResourceName(resourcePath); projectID != "" {
+			spanOpts = append(spanOpts, tracer.Tag(ext.GCPProjectID, projectID))
+		}
+		if cfg.serviceName != "" {
+			spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
+		}
+
+		span, ctx := tracer.StartSpanFromContext(ctx, cfg.requestSpanName, spanOpts...)
+
+		var once sync.Once
+		finish := func(err error) {
+			once.Do(func() {
+				span.Finish(tracer.WithError(err))
+			})
+		}
+		return ctx, finish
+	}
+}
+
+// extracts the GCP project ID from a Pubsub resource name starting with
+// "projects/{project}. e.g. schemas, snapshots, topics and subscriptions
+func projectIDFromResourceName(name string) string {
+	const prefix = "projects/"
+	if !strings.HasPrefix(name, prefix) {
+		return ""
+	}
+	rest := name[len(prefix):]
+	project, _, _ := strings.Cut(rest, "/")
+	return project
 }

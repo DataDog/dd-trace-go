@@ -15,7 +15,9 @@ import (
 // If a span is found in the `fctx`, it will be used as the parent of the resulting span.
 // The resulting span is then set on the given `fctx`.
 // This function is similar to tracer.StartSpanFromContext, but it modifies the given fasthttp context directly.
-// If the ChildOf option is passed, it will only be used as the parent if there is no span found in `fctx`.
+// If the ChildOf option is passed, it takes precedence over the span found in `fctx`: a span reaches
+// `fctx` through SetUserValue rather than through tracer.ContextWithSpan, so it is an ambient scope
+// rather than a parent the caller named, and an explicit ChildOf outranks it.
 func StartSpanFromContext(fctx *fasthttp.RequestCtx, operationName string, opts ...tracer.StartSpanOption) *tracer.Span {
 	s, _ := tracer.StartSpanFromContext(fctx, operationName, opts...)
 	fctx.SetUserValue(instr.ActiveSpanKey(), s)

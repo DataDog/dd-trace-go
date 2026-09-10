@@ -7,7 +7,6 @@ package echo
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -33,9 +32,11 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.Echo.GET("/ping", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"message": "pong"})
 	})
-	tc.addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
+	ln := net.FreeListener(t)
+	tc.addr = ln.Addr().String()
+	tc.Echo.Listener = ln
 
-	go func() { assert.ErrorIs(t, tc.Echo.Start(tc.addr), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Echo.Start(""), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

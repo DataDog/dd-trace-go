@@ -225,7 +225,7 @@ func NewLogsExportTelemetry(protocol, encoding string) *LogsExportTelemetry {
 	}
 
 	return &LogsExportTelemetry{
-		logRecordsHandle: telemetry.Count(telemetry.NamespaceGeneral, "otel.log_records", tags),
+		logRecordsHandle: telemetry.Count(telemetry.NamespaceTracers, "otel.log_records", tags),
 	}
 }
 

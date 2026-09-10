@@ -76,6 +76,7 @@ Targets:
   lint/shell           Run shell script linting checks
   lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
   lint/action          Lint GitHub Actions workflows
+  lint/errlog          Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
   format               Format code
   format/go            Format Go code
   format/shell         install shfmt
@@ -93,6 +94,7 @@ Targets:
   apidiff/incompatible Show only breaking (incompatible) API changes for ddtrace/tracer
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
+  config-audit         Report which DD_* configs are migrated to internal/config
 ```
 
 **Direct Script Usage**:

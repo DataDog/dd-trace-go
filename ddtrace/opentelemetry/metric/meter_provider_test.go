@@ -12,13 +12,16 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
 // TestMeterProviderInstruments verifies that various OTel instrument types
 // can be created and used without errors.
 func TestMeterProviderInstruments(t *testing.T) {
-	t.Setenv(envDDMetricsOtelEnabled, "true")
+	setMetricsExportEnv(t)
 	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -59,7 +62,7 @@ func TestMeterProviderInstruments(t *testing.T) {
 
 // TestForceFlush verifies that ForceFlush can be called without panicking.
 func TestForceFlush(t *testing.T) {
-	t.Setenv(envDDMetricsOtelEnabled, "true")
+	setMetricsExportEnv(t)
 	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 	require.NoError(t, err)
 	defer Shutdown(context.Background(), mp)
@@ -68,73 +71,46 @@ func TestForceFlush(t *testing.T) {
 	_ = ForceFlush(context.Background(), mp)
 }
 
-// TestMetricsDisabledByDefault verifies that when DD_METRICS_OTEL_ENABLED is not set,
-// the MeterProvider returns a no-op provider that doesn't export metrics.
-func TestMetricsDisabledByDefault(t *testing.T) {
-	mp, err := NewMeterProvider()
+func setMetricsExportEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+}
+
+func TestInstallGlobalWithMetricsExport(t *testing.T) {
+	setMetricsExportEnv(t)
+	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
+	defer otel.SetMeterProvider(noop.NewMeterProvider())
+
+	require.NoError(t, installGlobal())
+	_, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
+	assert.True(t, ok)
+}
+
+// TestNewMeterProviderAlwaysReturnsSDKProvider verifies that NewMeterProvider always
+// returns a real SDK provider regardless of env vars — enablement checks are the
+// caller's responsibility (e.g. tracer.Start).
+func TestNewMeterProviderAlwaysReturnsSDKProvider(t *testing.T) {
+	setMetricsExportEnv(t)
+	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 	require.NoError(t, err)
 	require.NotNil(t, mp)
-	assert.True(t, isNoop(mp), "MeterProvider should be no-op when DD_METRICS_OTEL_ENABLED is not set")
-
-	// Shutdown should not fail for no-op provider
+	assert.False(t, isNoop(mp), "NewMeterProvider should always return a real SDK provider")
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	err = Shutdown(ctx, mp)
-	assert.NoError(t, err)
+	_ = Shutdown(ctx, mp) // best-effort; OTLP endpoint may not be available
 }
 
-// TestMetricsDisabledExplicitly verifies that metrics are disabled when:
-// - DD_METRICS_OTEL_ENABLED=false
-// - DD_METRICS_OTEL_ENABLED=0
-// - OTEL_METRICS_EXPORTER=none
-func TestMetricsDisabledExplicitly(t *testing.T) {
-	t.Run("DD_METRICS_OTEL_ENABLED=false", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "false")
-		mp, err := NewMeterProvider()
-		require.NoError(t, err)
-		assert.True(t, isNoop(mp), "MeterProvider should be no-op when DD_METRICS_OTEL_ENABLED=false")
-	})
-
-	t.Run("DD_METRICS_OTEL_ENABLED=0", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "0")
-		mp, err := NewMeterProvider()
-		require.NoError(t, err)
-		assert.True(t, isNoop(mp), "MeterProvider should be no-op when DD_METRICS_OTEL_ENABLED=0")
-	})
-
-	t.Run("OTEL_METRICS_EXPORTER=none", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "true")
-		t.Setenv(envOtelMetricsExporter, "none")
-		mp, err := NewMeterProvider()
-		require.NoError(t, err)
-		assert.True(t, isNoop(mp), "MeterProvider should be no-op when OTEL_METRICS_EXPORTER=none")
-	})
-}
-
-// TestMetricsEnabled verifies that metrics are enabled when DD_METRICS_OTEL_ENABLED
-// is set to "true" or "1", returning a functional (non-noop) MeterProvider.
+// TestMetricsEnabled verifies that metrics are enabled when all required env vars are set.
 func TestMetricsEnabled(t *testing.T) {
-	t.Run("DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "true")
-		mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
-		require.NoError(t, err)
-		assert.False(t, isNoop(mp), "MeterProvider should not be no-op when DD_METRICS_OTEL_ENABLED=true")
+	setMetricsExportEnv(t)
+	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
+	require.NoError(t, err)
+	assert.False(t, isNoop(mp), "MeterProvider should not be no-op when metrics export is enabled")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer cancel()
-		defer Shutdown(ctx, mp)
-	})
-
-	t.Run("DD_METRICS_OTEL_ENABLED=1", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "1")
-		mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
-		require.NoError(t, err)
-		assert.False(t, isNoop(mp), "MeterProvider should not be no-op when DD_METRICS_OTEL_ENABLED=1")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer cancel()
-		defer Shutdown(ctx, mp)
-	})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	defer Shutdown(ctx, mp)
 }
 
 // TestMeterProviderExporterProtocols verifies that the MeterProvider can be created
@@ -144,7 +120,7 @@ func TestMeterProviderExporterProtocols(t *testing.T) {
 
 	for _, protocol := range protocols {
 		t.Run(protocol, func(t *testing.T) {
-			t.Setenv(envDDMetricsOtelEnabled, "true")
+			setMetricsExportEnv(t)
 			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", protocol)
 
 			mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
@@ -162,19 +138,4 @@ func TestMeterProviderExporterProtocols(t *testing.T) {
 			counter.Add(ctx, 1)
 		})
 	}
-}
-
-// TestNoopMeterProviderCanRecordMetrics verifies that recording metrics
-// on a no-op provider doesn't crash.
-func TestNoopMeterProviderCanRecordMetrics(t *testing.T) {
-	mp, err := NewMeterProvider() // Default: disabled
-	require.NoError(t, err)
-	assert.True(t, isNoop(mp))
-
-	meter := mp.Meter("test-meter")
-	counter, err := meter.Int64Counter("test.counter")
-	require.NoError(t, err)
-	counter.Add(context.Background(), 1) // Should not crash
-
-	assert.NoError(t, Shutdown(context.Background(), mp))
 }

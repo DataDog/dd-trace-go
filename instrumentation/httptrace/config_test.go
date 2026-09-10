@@ -13,8 +13,8 @@ import (
 
 func TestConfig(t *testing.T) {
 	defaultCfg := config{
-		queryString:       true,
-		queryStringRegexp: defaultQueryStringRegexp,
+		queryString:          true,
+		useDefaultObfuscator: true,
 	}
 	for _, tc := range []struct {
 		name string
@@ -31,13 +31,16 @@ func TestConfig(t *testing.T) {
 				envQueryStringDisabled: "invalid",
 				EnvQueryStringRegexp:   "+",
 			},
-			cfg: defaultCfg,
+			cfg: config{
+				queryString:       true,
+				queryStringRegexp: defaultQueryStringRegexp,
+			},
 		},
 		{
 			name: "disable-query",
 			env:  map[string]string{envQueryStringDisabled: "true"},
 			cfg: config{
-				queryStringRegexp: defaultQueryStringRegexp,
+				useDefaultObfuscator: true,
 			},
 		},
 		{
@@ -54,6 +57,7 @@ func TestConfig(t *testing.T) {
 			}
 			c := newConfig()
 			require.Equal(t, tc.cfg.queryStringRegexp, c.queryStringRegexp)
+			require.Equal(t, tc.cfg.useDefaultObfuscator, c.useDefaultObfuscator)
 			require.Equal(t, tc.cfg.queryString, c.queryString)
 		})
 	}

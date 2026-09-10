@@ -5,46 +5,70 @@ on:
     - cron: '00 06 * * 1'  # Mondays at 6 AM UTC
   workflow_dispatch:
 
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   govulncheck-fix:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version: stable
+          go-version: "1.27"
           cache-dependency-path: '**/go.sum'
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: |
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Scan and fix vulnerabilities
         id: fix
         run: ./.github/workflows/apps/govulncheck-fix.sh
-      - name: Configure git
+      - name: Notify Slack
         if: steps.fix.outputs.has_fixes == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          gh auth setup-git
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "dependency_list": "${{ steps.fix.outputs.dependency_list }}",
+              "text": "Found Vulnerabilities",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":x: Found Vulnerabilities"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow:*\n${{ github.workflow }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Dependencies to upgrade:*\n${{ steps.fix.outputs.dependency_list }}"
+                    }
+                  ]
+                }
+              ]
+            }
         env:
-          GH_TOKEN: ${{ github.token }}
-      - name: Create Pull Request
-        if: steps.fix.outputs.has_fixes == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          branch="automation/govulncheck-fix/${{ github.run_id }}"
-          git checkout -b "${branch}"
-          git add -- '**/go.mod' '**/go.sum'
-          git commit -F /tmp/govulncheck-fix-commit.txt
-          git push origin "${branch}"
-          gh pr create \
-            --title "fix(deps): update dependencies with reachable vulnerabilities" \
-            --body-file /tmp/govulncheck-fix-body.md \
-            --head="${branch}"
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_GOVULNCHECK_WEBHOOK_URL }}

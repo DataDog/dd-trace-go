@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -64,12 +66,12 @@ func newLowCardinalitySpanList(n int) spanList {
 	for i := range n {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].start = fixedTime
-		list[i].service = "high-cardinality-string-value"
+		list[i].service = "low-cardinality-string-value"
 		list[i].resource = "resource." + itoa[i%5+1]
-		list[i].SetTag("tag.1", "high-cardinality-string-value")
-		list[i].SetTag("tag.2", "high-cardinality-string-value")
-		list[i].SetTag("tag.3", "high-cardinality-string-value")
-		list[i].SetTag("tag.4", "high-cardinality-string-value")
+		list[i].SetTag("tag.1", "low-cardinality-string-value")
+		list[i].SetTag("tag.2", "low-cardinality-string-value")
+		list[i].SetTag("tag.3", "low-cardinality-string-value")
+		list[i].SetTag("tag.4", "low-cardinality-string-value")
 	}
 	return list
 }
@@ -132,9 +134,17 @@ func TestPayloadV04Decode(t *testing.T) {
 			var got spanLists
 			err := msgp.Decode(p, &got)
 			assert.NoError(err)
-			assertProcessTags(t, got)
+			assert.Len(got, n)
 		})
 	}
+}
+
+// Helper to get the expected trace ID for a span before it can be GC'd
+func expectedTraceID(s *Span) (out [16]byte) {
+	ctx := s.Context()
+	binary.BigEndian.PutUint64(out[:8], ctx.traceID.Upper())
+	binary.BigEndian.PutUint64(out[8:], ctx.traceID.Lower())
+	return
 }
 
 // TestPayloadV1Decode ensures that whatever we push into a v1 payload can
@@ -188,8 +198,13 @@ func TestPayloadV1Decode(t *testing.T) {
 				p      = newPayloadV1()
 			)
 
+			var first spanList
 			for i := range n {
-				_, _ = p.push(newDetailedSpanList(i%5 + 1))
+				sl := newDetailedSpanList(i%5 + 1)
+				_, _ = p.push(sl)
+				if i == 0 {
+					first = sl
+				}
 			}
 			encoded, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -206,8 +221,10 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(p.attributes, got.attributes)
 			assert.Equal(got.attributes[keyProcessTags].value, processtags.GlobalTags().String())
 			assert.Greater(len(got.chunks), 0)
-			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
-			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
+
+			tid := expectedTraceID(first[0])
+			assert.Equal(tid[:], got.chunks[0].traceID)
+			assert.Equal(first[0].spanID, got.chunks[0].spans[0].spanID)
 			assert.Equal(got.chunks[0].attributes["service"].value, "golden")
 			assert.Equal(uint32(1), got.chunks[0].samplingMechanism)
 		})
@@ -221,7 +238,8 @@ func TestPayloadV1Decode(t *testing.T) {
 
 			s := newBasicSpan("span.list")
 			s.context.trace.replacePropagatingTags(map[string]string{"keyDecisionMaker": ""})
-			p.push([]*Span{s})
+			sl := spanList{s}
+			p.push(sl)
 			encoded, err := io.ReadAll(p)
 			assert.NoError(err)
 
@@ -234,8 +252,10 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.NoError(err)
 			assert.Empty(o)
 			assert.Greater(len(got.chunks), 0)
-			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
-			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
+
+			tid := expectedTraceID(sl[0])
+			assert.Equal(tid[:], got.chunks[0].traceID)
+			assert.Equal(sl[0].spanID, got.chunks[0].spans[0].spanID)
 		})
 
 		t.Run("with priority", func(t *testing.T) {
@@ -556,17 +576,21 @@ func TestPayloadV1IncrementalChunkEncoding(t *testing.T) {
 	}
 }
 
+// assertProcessTags verifies that the first span of every decoded chunk carries
+// _dd.tags.process (including the entrypoint.name tag), and that no other span
+// within any chunk does.
 func assertProcessTags(t *testing.T, payload spanLists) {
-	assert := assert.New(t)
+	t.Helper()
 	for i, spanList := range payload {
 		for j, span := range spanList {
 			processTags, ok := span.meta.Get(keyProcessTags)
-			if i+j == 0 {
-				assert.True(ok, "process tags should be present on the first span of each chunk only")
-				assert.Contains(processTags, "entrypoint.name", "process tags should have entrypoint.name")
-				break
+			if j == 0 {
+				assert.True(t, ok, "chunk %d: first span must carry _dd.tags.process", i)
+				assert.Contains(t, processTags, "entrypoint.name",
+					"chunk %d: process tags must include entrypoint.name", i)
+			} else {
+				require.False(t, ok, "chunk %d span %d must not carry _dd.tags.process", i, j)
 			}
-			require.False(t, ok, "process tags should be present on the first span of each chunk only (chunk: %d span: %d)", i, j)
 		}
 	}
 }
@@ -644,19 +668,115 @@ func TestPayloadV1SerializationFailure(t *testing.T) {
 	})
 }
 
+func TestPayloadV1PromotedFields(t *testing.T) {
+	t.Run("missing span_kind and component", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		assert.False(t, sp.meta.Has(ext.Component))
+		assert.False(t, sp.meta.Has(ext.SpanKind))
+	})
+
+	t.Run("with span_kind", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+		s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		v, ok := sp.meta.Get(ext.SpanKind)
+		assert.True(t, ok)
+		assert.Equal(t, ext.SpanKindInternal, v)
+		// Verify it is not double-encoded: the flat map must contain it exactly once.
+		count := 0
+		for k := range sp.meta.Map(false) {
+			if k == ext.SpanKind {
+				count++
+			}
+		}
+		assert.Equal(t, 1, count)
+	})
+
+	t.Run("with component", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+		s.meta.Set(ext.Component, "test-component")
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		v, ok := sp.meta.Get(ext.Component)
+		assert.True(t, ok)
+		assert.Equal(t, "test-component", v)
+		// Verify it is not double-encoded: the flat map must contain it exactly once.
+		count := 0
+		for k := range sp.meta.Map(false) {
+			if k == ext.Component {
+				count++
+			}
+		}
+		assert.Equal(t, 1, count)
+	})
+
+}
+
 func BenchmarkPayloadThroughput(b *testing.B) {
-	b.Run("10K", benchmarkPayloadThroughput(1))
-	b.Run("100K", benchmarkPayloadThroughput(10))
-	b.Run("1MB", benchmarkPayloadThroughput(100))
+	b.Run("10K/v0.4", benchmarkPayloadThroughput(1, traceProtocolV04))
+	b.Run("100K/v0.4", benchmarkPayloadThroughput(10, traceProtocolV04))
+	b.Run("1MB/v0.4", benchmarkPayloadThroughput(100, traceProtocolV04))
+	b.Run("10K/v1.0", benchmarkPayloadThroughput(1, traceProtocolV1))
+	b.Run("100K/v1.0", benchmarkPayloadThroughput(10, traceProtocolV1))
+	b.Run("1MB/v1.0", benchmarkPayloadThroughput(100, traceProtocolV1))
 }
 
 // benchmarkPayloadThroughput benchmarks the throughput of the payload by subsequently
 // pushing a trace containing count spans of approximately 10KB in size each, until the
 // payload is filled.
-func benchmarkPayloadThroughput(count int) func(*testing.B) {
+func benchmarkPayloadThroughput(count int, p float64) func(*testing.B) {
 	return func(b *testing.B) {
-		p := newPayloadV04()
+		p := newPayload(p)
 		s := newBasicSpan("X")
+		spanCount := 0
 		s.meta.Set("key", strings.Repeat("X", 10*1024))
 		trace := make(spanList, count)
 		for i := range count {
@@ -664,117 +784,137 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		}
 		b.ReportAllocs()
 		b.ResetTimer()
-		reset := func() {
-			p.header = make([]byte, 8)
-			p.off = 8
-			atomic.StoreUint32(&p.count, 0)
-			p.buf.Reset()
-		}
 		for b.Loop() {
-			reset()
+			p.clear()
 			for p.stats().size < payloadMaxLimit {
 				_, _ = p.push(trace)
+				spanCount += count
 			}
 		}
+		b.ReportMetric(float64(spanCount)/float64(b.N), "spans/op")
 	}
 }
 
 // TestPayloadConcurrentAccess tests that payload operations are safe for concurrent use
 func TestPayloadConcurrentAccess(t *testing.T) {
-	p := newPayload(traceProtocolV04)
-
-	// Create some test spans
-	spans := make(spanList, 10)
-	for i := range 10 {
-		spans[i] = newBasicSpan("test-span")
+	tt := []struct {
+		name    string
+		payload payload
+	}{
+		{name: "v0.4", payload: newPayload(traceProtocolV04)},
+		{name: "v1.0", payload: newPayload(traceProtocolV1)},
 	}
 
-	var wg sync.WaitGroup
-
-	// Start multiple goroutines that perform concurrent operations
-	for range 10 {
-		wg.Go(func() {
-
-			// Push some spans
-			for range 5 {
-				_, _ = p.push(spans)
+	for _, tt := range tt {
+		t.Run(tt.name, func(t *testing.T) {
+			p := tt.payload
+			// Create some test spans
+			spans := make(spanList, 10)
+			for i := range 10 {
+				spans[i] = newBasicSpan("test-span")
 			}
 
-			// Read size and item count concurrently
+			var wg sync.WaitGroup
+
+			// Start multiple goroutines that perform concurrent operations
 			for range 10 {
-				stats := p.stats()
-				_ = stats.size
-				_ = stats.itemCount
+				wg.Go(func() {
+
+					// Push some spans
+					for range 5 {
+						_, _ = p.push(spans)
+					}
+
+					// Read size and item count concurrently
+					for range 10 {
+						stats := p.stats()
+						_ = stats.size
+						_ = stats.itemCount
+					}
+				})
+			}
+
+			// Also perform operations from the main goroutine
+			wg.Go(func() {
+				for range 20 {
+					_ = p.stats().size
+				}
+			})
+
+			wg.Wait()
+
+			// Verify the payload is in a consistent state
+			if p.stats().itemCount == 0 {
+				t.Error("Expected payload to have items after concurrent operations")
+			}
+
+			if p.stats().size <= 0 {
+				t.Error("Expected payload size to be positive after concurrent operations")
 			}
 		})
-	}
 
-	// Also perform operations from the main goroutine
-	wg.Go(func() {
-		for range 20 {
-			_ = p.stats().size
-		}
-	})
-
-	wg.Wait()
-
-	// Verify the payload is in a consistent state
-	if p.stats().itemCount == 0 {
-		t.Error("Expected payload to have items after concurrent operations")
-	}
-
-	if p.stats().size <= 0 {
-		t.Error("Expected payload size to be positive after concurrent operations")
 	}
 }
 
 // TestPayloadConcurrentReadWrite tests concurrent read and write operations
 func TestPayloadConcurrentReadWrite(t *testing.T) {
-	p := newPayload(traceProtocolV04)
-
-	// Add some initial data
-	span := newBasicSpan("test")
-	spans := spanList{span}
-	_, _ = p.push(spans)
-
-	var wg sync.WaitGroup
-
-	// Concurrent writers
-	for range 5 {
-		wg.Go(func() {
-			for range 10 {
-				_, _ = p.push(spans)
-			}
-		})
+	tt := []struct {
+		name    string
+		payload payload
+	}{
+		{name: "v0.4", payload: newPayload(traceProtocolV04)},
+		{name: "v1.0", payload: newPayload(traceProtocolV1)},
 	}
 
-	// Concurrent readers
-	for range 5 {
-		wg.Go(func() {
-			buf := make([]byte, 1024)
-			for range 10 {
-				p.reset()
-				_, _ = p.Read(buf)
+	for _, tt := range tt {
+		t.Run(tt.name, func(t *testing.T) {
+			p := tt.payload
+
+			// Add some initial data
+			span := newBasicSpan("test")
+			spans := spanList{span}
+			_, _ = p.push(spans)
+
+			var wg sync.WaitGroup
+
+			// Concurrent writers
+			for range 5 {
+				wg.Go(func() {
+					for range 10 {
+						_, _ = p.push(spans)
+					}
+				})
+			}
+
+			// Concurrent readers
+			for range 5 {
+				wg.Go(func() {
+					buf := make([]byte, 1024)
+					for range 10 {
+						p.reset()
+						_, _ = p.Read(buf)
+					}
+				})
+			}
+
+			// Concurrent size/count checkers
+			for range 3 {
+				wg.Go(func() {
+					for range 20 {
+						stats := p.stats()
+						_ = stats.size
+						_ = stats.itemCount
+					}
+				})
+			}
+
+			wg.Wait()
+
+			// Verify final state
+			if p.stats().itemCount == 0 {
+				t.Error("Expected payload to have items")
 			}
 		})
-	}
-
-	// Concurrent size/count checkers
-	for range 3 {
-		wg.Go(func() {
-			for range 20 {
-				stats := p.stats()
-				_ = stats.size
-				_ = stats.itemCount
-			}
-		})
-	}
-
-	wg.Wait()
-
-	// Verify final state
-	if p.stats().itemCount == 0 {
-		t.Error("Expected payload to have items")
 	}
 }
 
@@ -793,7 +933,7 @@ func BenchmarkPayloadPush(b *testing.B) {
 	}
 
 	for _, size := range sizes {
-		b.Run(size.name, func(b *testing.B) {
+		b.Run(size.name+"/v0.4", func(b *testing.B) {
 			spans := make(spanList, size.numSpans)
 			for i := 0; i < size.numSpans; i++ {
 				span := newBasicSpan("benchmark-span")
@@ -806,6 +946,23 @@ func BenchmarkPayloadPush(b *testing.B) {
 
 			for b.Loop() {
 				p := newPayloadV04()
+				_, _ = p.push(spans)
+			}
+		})
+
+		b.Run(size.name+"/v1.0", func(b *testing.B) {
+			spans := make(spanList, size.numSpans)
+			for i := 0; i < size.numSpans; i++ {
+				span := newBasicSpan("benchmark-span")
+				span.meta.Set("data", strings.Repeat("x", size.spanSize*1024))
+				spans[i] = span
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				p := newPayloadV1()
 				_, _ = p.push(spans)
 			}
 		})
@@ -825,8 +982,29 @@ func BenchmarkPayloadStats(b *testing.B) {
 	}
 
 	for _, test := range tests {
-		b.Run(test.name, func(b *testing.B) {
+		b.Run(test.name+"/v0.4", func(b *testing.B) {
 			p := newPayload(traceProtocolV04)
+
+			for i := 0; i < test.numTraces; i++ {
+				spans := make(spanList, test.spansPer)
+				for j := 0; j < test.spansPer; j++ {
+					spans[j] = newBasicSpan("test-span")
+				}
+				_, _ = p.push(spans)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				stats := p.stats()
+				_ = stats.size
+				_ = stats.itemCount
+			}
+		})
+
+		b.Run(test.name+"/v1.0", func(b *testing.B) {
+			p := newPayload(traceProtocolV1)
 
 			for i := 0; i < test.numTraces; i++ {
 				spans := make(spanList, test.spansPer)
@@ -852,10 +1030,9 @@ func BenchmarkPayloadConcurrentAccess(b *testing.B) {
 	concurrencyLevels := []int{1, 2, 4, 8}
 
 	for _, concurrency := range concurrencyLevels {
-		b.Run(fmt.Sprintf("concurrency_%d", concurrency), func(b *testing.B) {
+		b.Run(fmt.Sprintf("concurrency_%d/v0.4", concurrency), func(b *testing.B) {
 			p := newPayload(traceProtocolV04)
-			span := newBasicSpan("concurrent-test")
-			spans := spanList{span}
+			spans := newDetailedSpanList(10)
 
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -876,6 +1053,35 @@ func BenchmarkPayloadConcurrentAccess(b *testing.B) {
 				}
 
 				wg.Wait()
+				io.ReadAll(p)
+				p.clear()
+			}
+		})
+
+		b.Run(fmt.Sprintf("concurrency_%d/v1.0", concurrency), func(b *testing.B) {
+			p := newPayload(traceProtocolV1)
+			spans := newDetailedSpanList(10)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				var wg sync.WaitGroup
+
+				for range concurrency {
+					wg.Go(func() {
+						_, _ = p.push(spans)
+					})
+				}
+
+				for range concurrency {
+					wg.Go(func() {
+						_ = p.stats()
+					})
+				}
+
+				wg.Wait()
+				io.ReadAll(p)
 				p.clear()
 			}
 		})
@@ -946,6 +1152,35 @@ func BenchmarkPayloadVersions(b *testing.B) {
 			for b.Loop() {
 				p := newPayloadV1()
 				_, _ = p.push(metaStructSpans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("spankind_%dspans/v0.4", n), func(b *testing.B) {
+			newSpans := newSpanList(n)
+			for _, s := range newSpans {
+				s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(newSpans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("spankind_%dspans/v1.0", n), func(b *testing.B) {
+			newSpans := newSpanList(n)
+			for _, s := range newSpans {
+				s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := getPayloadV1()
+				_, _ = p.push(newSpans)
+				putPayloadV1(p)
 			}
 		})
 	}
@@ -1059,7 +1294,7 @@ func BenchmarkPayloads(b *testing.B) {
 		})
 	})
 
-	b.Run("v1", func(b *testing.B) {
+	b.Run("v1.0", func(b *testing.B) {
 		b.Run("push/10spans", func(b *testing.B) {
 			p := newPayloadV1()
 			sl := newSpanList(10)
@@ -1167,4 +1402,68 @@ func BenchmarkPayloads(b *testing.B) {
 	})
 
 	// ... Add more payload versions here...
+}
+
+func TestPayloadV1Handoff(t *testing.T) {
+	// handoff must trigger a pool return exactly once regardless of ordering.
+	// wouldRelease mirrors handoff's Or+compare logic without the putPayloadV1
+	// side-effect, since putPayloadV1 isn't mockable.
+	wouldRelease := func(p *payloadV1, ownBit uint32) bool {
+		counterpart := (pv1StateFlushDone | pv1StateBodyClosed) &^ ownBit
+		return p.poolState.Or(ownBit) == counterpart
+	}
+
+	fresh := func() *payloadV1 {
+		// getPayloadV1 calls clear() which resets poolState to 0.
+		return getPayloadV1()
+	}
+
+	t.Run("flush first then close", func(t *testing.T) {
+		p := fresh()
+		assert.False(t, wouldRelease(p, pv1StateFlushDone), "flush alone must not release")
+		assert.True(t, wouldRelease(p, pv1StateBodyClosed), "close after flush must release")
+		putPayloadV1(p)
+	})
+
+	t.Run("close first then flush", func(t *testing.T) {
+		p := fresh()
+		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "close alone must not release")
+		assert.True(t, wouldRelease(p, pv1StateFlushDone), "flush after close must release")
+		putPayloadV1(p)
+	})
+
+	t.Run("repeated close idempotent", func(t *testing.T) {
+		p := fresh()
+		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "first close — flush not done")
+		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "second close — bit already set, no-op")
+		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "third close — still no-op")
+		// Flush must still release correctly after repeated closes.
+		assert.True(t, wouldRelease(p, pv1StateFlushDone), "flush after repeated closes must release")
+		putPayloadV1(p)
+	})
+
+	t.Run("concurrent flush and close", func(t *testing.T) {
+		const iterations = 10000
+		for range iterations {
+			p := fresh()
+			var wg sync.WaitGroup
+			var released atomic.Int32
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				if wouldRelease(p, pv1StateFlushDone) {
+					released.Add(1)
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				if wouldRelease(p, pv1StateBodyClosed) {
+					released.Add(1)
+				}
+			}()
+			wg.Wait()
+			assert.Equal(t, int32(1), released.Load(), "exactly one release per iteration")
+			putPayloadV1(p)
+		}
+	})
 }

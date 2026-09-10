@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Get GitHub token (DataDog/dd-trace-go)
         id: generate-token
-        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
         with:
           scope: DataDog/dd-trace-go
           policy: self.github.needs-triage.issues
@@ -104,7 +104,7 @@ jobs:
 
     steps:
       - name: Notify about ${{ matrix.number }}
-        uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           webhook: ${{ secrets.NEEDS_TRIAGE_SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook

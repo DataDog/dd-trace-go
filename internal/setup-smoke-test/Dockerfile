@@ -17,7 +17,7 @@
 #      select one by default, but also allows to provide a --build-arg option
 #      too instead of relying on the --target option. This way, the CI matrix
 #      can systematically use --build-arg for all of the parameters.
-ARG go="1.25" # golang docker image parameter in `golang:{go}-{buildenv}`
+ARG go="1.26" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="trixie" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_with_cgo="0" # 0 or 1
 ARG build_with_vendoring="" # y or empty
@@ -49,7 +49,7 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
   alpine) apk update && apk add git;; \
   *) apt update && apt install -y git ;; \
   esac; \
-  go get -u github.com/DataDog/go-libddwaf/v4@${go_libddwaf_ref}; \
+  go get -u github.com/DataDog/go-libddwaf/v5@${go_libddwaf_ref}; \
   fi
 
 RUN go mod tidy
@@ -95,7 +95,9 @@ CMD ["/usr/local/bin/smoke-test"]
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM amazonlinux:2 AS al2
+# Digest pinned to AL2 (glibc 2.26) — do NOT let Dependabot update this to AL2023.
+# See .github/dependabot.yml ignore rule for amazonlinux.
+FROM amazonlinux:2@sha256:2582ac21e3f770177b45f8c9eb9e43b3a3034e2d2021c2a4ec97e2715f9c93b2 AS al2
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
 CMD ["/usr/local/bin/smoke-test"]
 
@@ -103,7 +105,7 @@ CMD ["/usr/local/bin/smoke-test"]
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM amazonlinux:2023 AS al2023
+FROM amazonlinux:2023.11.20260526.0 AS al2023
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
 CMD ["/usr/local/bin/smoke-test"]
 

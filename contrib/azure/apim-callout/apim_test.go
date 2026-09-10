@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -250,21 +251,27 @@ func TestMethodNotAllowed(t *testing.T) {
 
 func TestDecodeRawBase64Body(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   json.RawMessage
-		want    []byte
-		wantErr bool
+		name           string
+		input          json.RawMessage
+		maxDecodedSize int
+		want           []byte
+		wantErr        bool
 	}{
-		{"nil", nil, nil, false},
-		{"null", json.RawMessage("null"), nil, false},
-		{"empty-string", json.RawMessage(`""`), nil, false},
-		{"valid", json.RawMessage(`"aGVsbG8="`), []byte("hello"), false},
-		{"invalid", json.RawMessage(`"not-valid-base64!!!"`), nil, true},
+		{"nil", nil, 0, nil, false},
+		{"null", json.RawMessage("null"), 0, nil, false},
+		{"empty-string", json.RawMessage(`""`), 0, nil, false},
+		{"valid", json.RawMessage(`"aGVsbG8="`), 0, []byte("hello"), false},
+		{"invalid", json.RawMessage(`"not-valid-base64!!!"`), 0, nil, true},
+		{"valid-within-limit", json.RawMessage(`"aGVsbG8="`), 100, []byte("hello"), false},
+		{"valid-at-exact-limit", json.RawMessage(`"aGVsbG8="`), 5, []byte("hello"), false},
+		// Oversized is not an error: decoder returns a base64-group-bounded prefix
+		// ("hel"); the body buffer enforces the exact limit + truncation flag.
+		{"oversized-bounded-prefix", json.RawMessage(`"aGVsbG8="`), 2, []byte("hel"), false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := decodeRawBase64Body(tt.input)
+			got, err := decodeRawBase64Body(tt.input, tt.maxDecodedSize)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -273,6 +280,37 @@ func TestDecodeRawBase64Body(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOversizedInlineBodyStillAnalyzed(t *testing.T) {
+	bodyLimit := 16
+	h := NewHandler(AppsecAPIMConfig{
+		Context:              t.Context(),
+		BodyParsingSizeLimit: &bodyLimit,
+	})
+
+	tracer.Start()
+	t.Cleanup(tracer.Stop)
+
+	largePayload := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte("A"), 64))
+	rr := doPost(t, h, calloutMessage{
+		Addresses: marshalAddresses(t, addressesRequestHeaders{
+			Method:    "POST",
+			Scheme:    "https",
+			Authority: "datadoghq.com",
+			Path:      "/api/data",
+			Headers: map[string][]string{
+				"User-Agent":   {"Mozilla/5.0"},
+				"Content-Type": {"application/json"},
+			},
+			Body: rawBody(largePayload),
+		}),
+	})
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	result := decodeResult(t, rr)
+	assert.Nil(t, result.Block, "benign oversized inline body should not be blocked")
+	assert.NotEmpty(t, result.RequestID, "request should still be processed")
 }
 
 // AppSec tests -- these use DD_APPSEC_RULES to test WAF detection and blocking.
@@ -524,6 +562,38 @@ func TestAppSecBodyParsing(t *testing.T) {
 		require.Len(t, finished, 1)
 		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "crs-933-130-block": 1})
 
+		span := finished[0]
+		assert.Equal(t, "true", span.Tag("appsec.event"))
+		assert.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("blocking-event-on-oversized-inline-request-body", func(t *testing.T) {
+		h, mt := setup(t)
+
+		// Regression guard: malicious token first, then padding that pushes the
+		// decoded body past the 256-byte limit. The oversized body must still be
+		// truncated-and-analyzed (not skipped fail-open) so the prefix is blocked.
+		malicious := `{ "name": "$globals", "padding": "` + strings.Repeat("A", 4096) + `" }`
+		require.Greater(t, len(malicious), 256)
+		reqBody := base64.StdEncoding.EncodeToString([]byte(malicious))
+		rr := doPost(t, h, calloutMessage{
+			Addresses: marshalAddresses(t, addressesRequestHeaders{
+				Method:    "GET",
+				Scheme:    "https",
+				Authority: "datadoghq.com",
+				Path:      "/",
+				Headers:   map[string][]string{"User-Agent": {"Chromium"}, "Content-Type": {"application/json"}},
+				Body:      rawBody(reqBody),
+			}),
+		})
+
+		require.Equal(t, http.StatusOK, rr.Code)
+		result := decodeResult(t, rr)
+		require.NotNil(t, result.Block, "oversized inline body with a malicious prefix must still be blocked")
+		assert.Equal(t, 403, result.Block.Status)
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
 		span := finished[0]
 		assert.Equal(t, "true", span.Tag("appsec.event"))
 		assert.Equal(t, "true", span.Tag("appsec.blocked"))

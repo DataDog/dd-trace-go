@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -32,7 +33,7 @@ func (ts TraceSource) String() string {
 func ParseTraceSource(hexStr string) (TraceSource, error) {
 	// Ensure at least 2 chars, allowing up to 8 for forward compatibility (32-bit)
 	if len(hexStr) < 2 || len(hexStr) > 8 {
-		return 0, fmt.Errorf("invalid length for TraceSource mask, expected 2 to 8 characters")
+		return 0, errors.New("invalid length for TraceSource mask, expected 2 to 8 characters")
 	}
 
 	// Parse the full mask as a 32-bit unsigned integer

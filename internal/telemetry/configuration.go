@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
@@ -62,6 +63,13 @@ func idOrEmpty(id string) string {
 }
 
 func (c *configuration) Add(kv Configuration) {
+	// Configurations marked sensitive are not reported in configuration telemetry.
+	// They are dropped here so every reporting path (RegisterAppConfig,
+	// RegisterAppConfigs, and configtelemetry.Report*) is covered by a single check.
+	if env.IsSensitive(kv.Name) {
+		return
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

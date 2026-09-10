@@ -64,7 +64,7 @@ func getTestifyTestFromReflectValue(tValue reflect.Value) *TestifyTest {
 
 		// let's find the TestifyTest struct for the current test
 		for _, test := range tests {
-			mName := fmt.Sprintf("/%s", test.methodName)
+			mName := "/" + test.methodName
 			if strings.HasSuffix(tName, mName) {
 				return &test
 			}
@@ -111,8 +111,7 @@ func registerTestifySuite(t *testing.T, suite any) {
 	}
 
 	// iterate over the methods of the suite to find the Test methods
-	for i := 0; i < methodFinder.NumMethod(); i++ {
-		method := methodFinder.Method(i)
+	for method := range methodFinder.Methods() {
 
 		// get the name for the method
 		methodName := method.Name

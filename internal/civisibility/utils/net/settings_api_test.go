@@ -26,10 +26,12 @@ func TestSettingsApiRequest(t *testing.T) {
 	expectedResponse.Data.Type = settingsRequestType
 	expectedResponse.Data.Attributes.FlakyTestRetriesEnabled = true
 	expectedResponse.Data.Attributes.CodeCoverage = true
+	expectedResponse.Data.Attributes.CoverageReportUploadEnabled = true
 	expectedResponse.Data.Attributes.TestsSkipping = true
 	expectedResponse.Data.Attributes.ItrEnabled = true
 	expectedResponse.Data.Attributes.RequireGit = true
-	expectedResponse.Data.Attributes.EarlyFlakeDetection.FaultySessionThreshold = 30
+	faultySessionThreshold := 30
+	expectedResponse.Data.Attributes.EarlyFlakeDetection.FaultySessionThreshold = &faultySessionThreshold
 	expectedResponse.Data.Attributes.EarlyFlakeDetection.Enabled = true
 	expectedResponse.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 25
 	expectedResponse.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.TenS = 20
@@ -74,6 +76,35 @@ func TestSettingsApiRequest(t *testing.T) {
 	settings, err := cInterface.GetSettings()
 	assert.Nil(t, err)
 	assert.Equal(t, expectedResponse.Data.Attributes, *settings)
+}
+
+func TestSettingsFaultySessionThresholdPresence(t *testing.T) {
+	tests := []struct {
+		name      string
+		payload   string
+		want      int
+		wantValue bool
+	}{
+		{name: "absent", payload: `{}`},
+		{name: "null", payload: `{"early_flake_detection":{"faulty_session_threshold":null}}`},
+		{name: "zero", payload: `{"early_flake_detection":{"faulty_session_threshold":0}}`, wantValue: true},
+		{name: "positive", payload: `{"early_flake_detection":{"faulty_session_threshold":30}}`, want: 30, wantValue: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var settings SettingsResponseData
+			assert.NoError(t, json.Unmarshal([]byte(tt.payload), &settings))
+			threshold := settings.EarlyFlakeDetection.FaultySessionThreshold
+			if !tt.wantValue {
+				assert.Nil(t, threshold)
+				return
+			}
+			if assert.NotNil(t, threshold) {
+				assert.Equal(t, tt.want, *threshold)
+			}
+		})
+	}
 }
 
 func TestSettingsApiRequestFailToUnmarshal(t *testing.T) {
@@ -128,6 +159,7 @@ func TestSettingsApiRequestFromManifestCache(t *testing.T) {
 	expectedResponse := settingsResponse{}
 	expectedResponse.Data.Attributes.FlakyTestRetriesEnabled = true
 	expectedResponse.Data.Attributes.CodeCoverage = true
+	expectedResponse.Data.Attributes.CoverageReportUploadEnabled = true
 	expectedResponse.Data.Attributes.TestsSkipping = true
 	expectedResponse.Data.Attributes.ItrEnabled = true
 	expectedResponse.Data.Attributes.KnownTestsEnabled = true
@@ -169,7 +201,7 @@ func TestSettingsApiRequestFromManifestCache(t *testing.T) {
 	assert.Equal(t, 0, hits)
 	assert.True(t, containsLogLine(recordLogger.Logs(), "reading .testoptimization/cache/http/settings.json"))
 	assert.True(t, containsLogLine(recordLogger.Logs(), "loaded settings from .testoptimization/cache/http/settings.json"))
-	assert.True(t, containsLogLine(recordLogger.Logs(), "enabled features [code_coverage:true itr:true tests_skipping:true known_tests:true impacted_tests:true early_flake_detection:false flaky_test_retries:true test_management:true require_git:false attempt_to_fix_retries:0]"))
+	assert.True(t, containsLogLine(recordLogger.Logs(), "enabled features [code_coverage:true coverage_report_upload:true itr:true tests_skipping:true known_tests:true impacted_tests:true early_flake_detection:false flaky_test_retries:true test_management:true require_git:false attempt_to_fix_retries:0]"))
 }
 
 func TestSettingsApiRequestFromManifestCacheMissingFile(t *testing.T) {

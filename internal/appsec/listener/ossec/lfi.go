@@ -44,10 +44,14 @@ func (*Feature) OnStart(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {
 		})
 	})
 
-	dyngo.EmitData(op, waf.RunEvent{
-		Operation: op,
-		RunAddressData: addresses.NewAddressesBuilder().
-			WithFilePath(args.Path).
-			Build(),
-	})
+	ctxOp, ok := waf.ContextOperationFromParents(op)
+	if !ok {
+		return
+	}
+
+	subOp := ctxOp.NewSubcontextOp()
+	defer subOp.Close()
+	subOp.Run(op, addresses.NewAddressesBuilder().
+		WithFilePath(args.Path).
+		Build())
 }

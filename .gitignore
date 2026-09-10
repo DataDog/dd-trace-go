@@ -28,6 +28,7 @@ static-analysis.datadog.yml
 coverage-*.txt
 
 # Editors and Agents
+/.codex/
 /.cursor
 /.vscode
 /.claude/*

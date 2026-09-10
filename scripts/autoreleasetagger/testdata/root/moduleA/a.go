@@ -6,7 +6,7 @@
 package moduleA
 
 import (
-	"example.com/root"
+	"example.com/root/v2"
 )
 
 var version = root.Version

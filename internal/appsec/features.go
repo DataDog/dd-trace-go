@@ -30,6 +30,7 @@ var features = []listener.NewFeature{
 	usersec.NewUserSecFeature,
 	sqlsec.NewSQLSecFeature,
 	ossec.NewOSSecFeature,
+	ossec.NewExecSecFeature,
 	httpsec.NewSSRFProtectionFeature,
 }
 

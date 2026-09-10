@@ -15,6 +15,54 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
+func TestAgenticOnboarding(t *testing.T) {
+	name := telemetry.EnvToTelemetryName(EnvAgenticOnboarding)
+	for _, tc := range []struct {
+		name           string
+		envVarVal      string
+		set            bool
+		expectedValue  string
+		expectedOrigin telemetry.Origin
+	}{
+		{
+			name:           "set-true",
+			envVarVal:      "true",
+			set:            true,
+			expectedValue:  "true",
+			expectedOrigin: telemetry.OriginEnvVar,
+		},
+		{
+			name:           "set-arbitrary",
+			envVarVal:      "false",
+			set:            true,
+			expectedValue:  "false",
+			expectedOrigin: telemetry.OriginEnvVar,
+		},
+		{
+			name:           "unset",
+			expectedValue:  "",
+			expectedOrigin: telemetry.OriginDefault,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(EnvAgenticOnboarding, tc.envVarVal)
+			}
+
+			expected := []telemetry.Configuration{{Name: name, Value: tc.expectedValue, Origin: tc.expectedOrigin}}
+			telemetryClient := new(telemetrytest.MockClient)
+			telemetryClient.On("RegisterAppConfigs", expected).Return()
+			defer telemetry.MockClient(telemetryClient)()
+
+			registerAgenticOnboardingTelemetry()
+
+			// Always emitted, even when unset (RFC-1113).
+			telemetryClient.AssertCalled(t, "RegisterAppConfigs", expected)
+			telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 1)
+		})
+	}
+}
+
 func TestSCAEnabled(t *testing.T) {
 	for _, tc := range []struct {
 		name              string

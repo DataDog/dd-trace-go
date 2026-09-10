@@ -178,6 +178,36 @@ func main() {
 				replacesSet[rep.Old.Path] = rep
 			}
 		}
+		// Transitively add local replace directives from locally-replaced modules.
+		// Replace directives in dependencies don't propagate to the parent, so we
+		// must add them explicitly. This is needed for transitive test dependencies
+		// (e.g. instrumentation/testutils/grpc/v2 required by contrib/google.golang.org/grpc/v2).
+		queue := make([]string, 0, len(replacesSet))
+		for k := range replacesSet {
+			queue = append(queue, k)
+		}
+		for len(queue) > 0 {
+			dep := queue[0]
+			queue = queue[1:]
+			depMod, ok := allModules[dep]
+			if !ok {
+				continue
+			}
+			for _, transReq := range depMod.Require {
+				if _, isLocal := allModules[transReq.Path]; !isLocal {
+					continue
+				}
+				if _, already := replacesSet[transReq.Path]; already {
+					continue
+				}
+				if transReq.Path == mod.Module.Path {
+					continue
+				}
+				rep := getLocalReplace(allModules, modPath, transReq.Path)
+				replacesSet[rep.Old.Path] = rep
+				queue = append(queue, transReq.Path)
+			}
+		}
 		var replaces []Replace
 		for _, r := range replacesSet {
 			replaces = append(replaces, r)

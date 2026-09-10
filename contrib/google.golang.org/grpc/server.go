@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"context"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -51,7 +52,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 		defer func() {
 			withMetadataTags(ss.ctx, ss.cfg, span)
 			withRequestTags(ss.cfg, m, span)
-			finishWithError(span, err, ss.cfg)
+			finishWithError(span, err, ss.method, ss.cfg)
 		}()
 	}
 	err = ss.ServerStream.RecvMsg(m)
@@ -70,7 +71,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, componentName)
-		defer func() { finishWithError(span, err, ss.cfg) }()
+		defer func() { finishWithError(span, err, ss.method, ss.cfg) }()
 	}
 	err = ss.ServerStream.SendMsg(m)
 	return err
@@ -108,7 +109,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 			case info.IsClientStream:
 				span.SetTag(tagMethodKind, methodKindClientStream)
 			}
-			defer func() { finishWithError(span, err, cfg) }()
+			defer func() { finishWithError(span, err, info.FullMethod, cfg) }()
 			if instr.AppSecEnabled() {
 				handler = appsecStreamHandlerMiddleware(info.FullMethod, span, handler)
 			}
@@ -155,7 +156,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			handler = appsecUnaryHandlerMiddleware(info.FullMethod, span, handler)
 		}
 		resp, err := handler(ctx, req)
-		finishWithError(span, err, cfg)
+		finishWithError(span, err, info.FullMethod, cfg)
 		return resp, err
 	}
 }
@@ -164,9 +165,16 @@ func withMetadataTags(ctx context.Context, cfg *config, span *tracer.Span) {
 	if cfg.withMetadataTags {
 		md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 		for k, v := range md {
-			if _, ok := cfg.ignoredMetadata[k]; !ok {
-				span.SetTag(tagMetadataPrefix+k, v)
+			if _, ok := cfg.ignoredMetadata[k]; ok {
+				continue
 			}
+
+			// gRPC binary metadata keys end in "-bin"; their values are
+			// arbitrary bytes and must not be stored as string span tags.
+			if strings.HasSuffix(k, "-bin") {
+				continue
+			}
+			span.SetTag(tagMetadataPrefix+k, v)
 		}
 	}
 }

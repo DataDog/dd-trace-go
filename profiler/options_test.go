@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -20,32 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testAPIKey is an example API key for validation purposes
 const testAPIKey = "12345678901234567890123456789012"
 
 func TestOptions(t *testing.T) {
-	t.Run("APIKeyChecks", func(t *testing.T) {
-		var apikeytests = []struct {
-			in  string
-			out bool
-		}{
-			{"", false}, // Fail, empty string
-			{"1234567890123456789012345678901", false},   // Fail, too short
-			{"123456789012345678901234567890123", false}, // Fail, too long
-			{"12345678901234567890123456789012", true},   // Pass, numeric only
-			{"abcdefabcdabcdefabcdefabcdefabcd", true},   // Pass, alpha only
-			{"abcdefabcdabcdef7890abcdef789012", true},   // Pass, alphanumeric
-			{"abcdefabcdabcdef7890Abcdef789012", false},  // Fail, contains an uppercase
-			{"abcdefabcdabcdef7890@bcdef789012", false},  // Fail, contains an ASCII symbol
-			{"abcdefabcdabcdef7890ábcdef789012", false},  // Fail, lowercase extended ASCII
-			{"abcdefabcdabcdef7890ábcdef78901", false},   // Fail, lowercase extended ASCII, conservative
-		}
-
-		for i, tt := range apikeytests {
-			assert.Equal(t, tt.out, isAPIKeyValid(tt.in), strconv.Itoa(i)+" : "+tt.in)
-		}
-	})
-
 	t.Run("WithAgentAddr", func(t *testing.T) {
 		var cfg config
 		WithAgentAddr("test:123")(&cfg)
@@ -87,6 +63,21 @@ func TestOptions(t *testing.T) {
 		WithAgentAddr("test:1234")(cfg)
 		expectedURL := "http://test:1234/profiling/v1/input"
 		assert.Equal(t, expectedURL, cfg.agentURL)
+	})
+
+	t.Run("WithUDS", func(t *testing.T) {
+		var cfg config
+		WithUDS("/var/run/datadog/agent.sock")(&cfg)
+		// Slashes are encoded as underscores; path is appended after the host.
+		assert.Equal(t, "http://UDS__var_run_datadog_agent.sock/profiling/v1/input", cfg.agentURL)
+		assert.NotNil(t, cfg.httpClient)
+	})
+
+	t.Run("WithUDS/colons", func(t *testing.T) {
+		var cfg config
+		WithUDS("localhost:8126")(&cfg)
+		assert.Equal(t, "http://UDS_localhost_8126/profiling/v1/input", cfg.agentURL)
+		assert.NotNil(t, cfg.httpClient)
 	})
 
 	t.Run("WithUploadTimeout", func(t *testing.T) {
@@ -395,32 +386,18 @@ func TestAddProfileType(t *testing.T) {
 }
 
 func TestWith_outputDir(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	dir := t.TempDir()
 
 	// Use env to enable this like a user would.
-	t.Setenv("DD_PROFILING_OUTPUT_DIR", tmpDir)
+	t.Setenv("DD_PROFILING_OUTPUT_DIR", dir)
 
-	p, err := unstartedProfiler()
-	require.NoError(t, err)
-	bat := batch{
-		end: time.Now(),
-		profiles: []*profile{
-			{name: "foo.pprof", data: []byte("foo")},
-			{name: "bar.pprof", data: []byte("bar")},
-		},
-	}
-	require.NoError(t, p.outputDir(bat))
-	files, err := filepath.Glob(filepath.Join(tmpDir, "*", "*.pprof"))
-	require.NoError(t, err)
+	startTestProfiler(t, 1,
+		WithProfileTypes(HeapProfile),
+		WithPeriod(10*time.Millisecond),
+	).ReceiveProfile(t)
 
-	fileData := map[string]string{}
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		require.NoError(t, err)
-		fileData[filepath.Base(file)] = string(data)
-	}
-	want := map[string]string{"foo.pprof": "foo", "bar.pprof": "bar"}
-	require.Equal(t, want, fileData)
+	// At least one subdirectory with .pprof files should have been written.
+	files, err := filepath.Glob(filepath.Join(dir, "*", "delta-heap.pprof"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
 }

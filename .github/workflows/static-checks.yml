@@ -23,6 +23,7 @@ on:
         type: string
 
 env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
   # Users may build our library with GOTOOLCHAIN=local. If they do, and our
   # go.mod file specifies a newer Go version than their local toolchain, their
   # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
@@ -30,7 +31,7 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
-  GOLANGCI_LINT_VERSION: v2.9.0 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
+  GOLANGCI_LINT_VERSION: v2.12.2 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
 
 permissions:
   contents: read
@@ -38,11 +39,32 @@ permissions:
   checks: write
 
 jobs:
-  copyright:
+  # Populate the shared tools cache once, before the jobs below need it. When every
+  # job races to install tools and save the same cache key on a miss, only one wins
+  # the cache reservation and a failing job never saves at all (actions/cache skips
+  # the post step), so the cache can stay permanently cold. Mirrors the
+  # warm-repo-cache pattern in pull-request.yml.
+  warm-tools-cache:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version || 'stable' }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+  copyright:
+    needs: [warm-tools-cache]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -61,10 +83,11 @@ jobs:
           make lint/misc
 
   check-github-actions:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -80,10 +103,11 @@ jobs:
           make lint/action
 
   check-modules:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -101,10 +125,11 @@ jobs:
         run: git diff --exit-code
 
   check-docs:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -122,10 +147,11 @@ jobs:
         run: git diff --exit-code
 
   check-format:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -143,11 +169,17 @@ jobs:
         run: git diff --exit-code
 
   lint:
+    needs: [warm-tools-cache]
     runs-on:
       group: "APM Larger Runners"
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -173,21 +205,54 @@ jobs:
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
 
-      - name: shellcheck
-        uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          go-version: ${{ inputs.go-version || 'stable' }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+      - name: constantlogmsg analyzer (make lint/errlog)
+        run: make lint/errlog
+
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.static-checks-shellcheck
+
+      - name: shellcheck
+        uses: reviewdog/action-shellcheck@0722bbdb0d47f04c1b53b8734d2422ac63a45ec6 # v1.32.1
+        with:
+          github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review
-          fail_level: error
+          fail_level: warning
           path: ./scripts
           pattern: "**/*.sh"
           filter_mode: nofilter
 
-  checklocks:
+  check-supported-config:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ inputs.go-version || 'stable' }}
+          cache: false
+      - name: Verify supported_configurations.json and generated code are in sync
+        run: go run ./scripts/configinverter/main.go check
+
+  checklocks:
+    needs: [warm-tools-cache]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -201,3 +266,18 @@ jobs:
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/checklocks.sh
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ inputs.go-version || 'stable' }}
+          cache: false
+      - name: Cross-compile all first-class Go ports
+        run: ./scripts/cross_build.sh

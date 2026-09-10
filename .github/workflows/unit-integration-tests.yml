@@ -13,6 +13,7 @@ on:
         default: ""
 
 env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
   # Users may build our library with GOTOOLCHAIN=local. If they do, and our
   # go.mod file specifies a newer Go version than their local toolchain, their
@@ -34,17 +35,18 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+          submodules: recursive
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
           cache: false
@@ -61,173 +63,28 @@ jobs:
       group: "APM Larger Runners"
     env:
       INTEGRATION: true
+      COMPOSE_FILE: .github/testservices/docker-compose.yaml
+      COMPOSE_PROJECT_NAME: dd-trace-go-ci
     strategy:
       fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
-    services:
-      datadog-agent:
-        image: registry.datadoghq.com/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-          DD_TEST_AGENT_HOST: "localhost"
-          DD_TEST_AGENT_PORT: 9126
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-      testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/9126'"
-        ports:
-          - 9126:9126
-        env:
-          LOG_LEVEL: DEBUG
-          TRACE_LANGUAGE: golang
-          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
-          PORT: 9126
-          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-          DD_POOL_TRACE_CHECK_FAILURES: true
-          DD_DISABLE_ERROR_RESPONSES: true
-      cassandra:
-        image: cassandra:3.11
-        env:
-          JVM_OPTS: "-Xms750m -Xmx750m"
-          CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
-          CASSANDRA_DC: "dd-trace-go-test-datacenter"
-          CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
-        ports:
-          - 9042:9042
-      mysql:
-        image: cimg/mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: admin
-          MYSQL_PASSWORD: test
-          MYSQL_USER: test
-          MYSQL_DATABASE: test
-        ports:
-          - 3306:3306
-      postgres:
-        image: cimg/postgres:16.4
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-      mssql:
-        image: mcr.microsoft.com/mssql/server:2019-latest
-        env:
-          SA_PASSWORD: myPassw0rd
-          ACCEPT_EULA: Y
-        ports:
-          - 1433:1433
-      consul:
-        image: consul:1.6.0
-        ports:
-          - 8500:8500
-      redis:
-        image: redis:3.2
-        ports:
-          - 6379:6379
-      valkey:
-        image: valkey/valkey:8
-        env:
-          VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
-        ports:
-          - 6380:6380
-      elasticsearch2:
-        image: elasticsearch:2
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9200:9200
-      elasticsearch5:
-        image: elasticsearch:5
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9201:9200
-      elasticsearch6:
-        image: elasticsearch:6.8.13
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9202:9200
-      elasticsearch7:
-        image: elasticsearch:7.14.1
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-          discovery.type: single-node
-        ports:
-          - 9203:9200
-      elasticsearch8:
-        image: elasticsearch:8.6.2
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-          discovery.type: single-node
-          xpack.security.enabled: false
-        ports:
-          - 9204:9200
-      mongo3:
-        image: mongo:3
-        ports:
-          - 27018:27017
-      mongo:
-        image: mongo:8
-        ports:
-          - 27017:27017
-      memcached:
-        image: memcached:1.5.9
-        ports:
-          - 11211:11211
-      kafka:
-        image: confluentinc/confluent-local:7.5.0
-        env:
-          KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
-          KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
-          KAFKA_REST_BOOTSTRAP_SERVERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092"
-          KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9094"
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
-          KAFKA_INTER_BROKER_LISTENER_NAME: "BROKER"
-          KAFKA_BROKER_ID: "1"
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-          KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
-          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
-          KAFKA_NODE_ID: "1"
-          KAFKA_PROCESS_ROLES: "broker,controller"
-          KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-        ports:
-          - 9092:9092
-          - 9093:9093
-        options: >-
-          --name "kafka"
-      localstack:
-        image: localstack/localstack:4.14.0
-        ports:
-          - 4566:4566
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
+
+      - name: Start CI service containers
+        run: docker compose up -d
 
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -235,6 +92,12 @@ jobs:
           go-version: ${{ inputs.go-version }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
+
+      # Containers were started (non-blocking) before Go setup above, so most of
+      # the wait time already overlapped with it; this just waits out whatever's left.
+      - name: Wait for CI service containers
+        run: docker compose up -d --wait --wait-timeout 120
+
       - name: Test Contrib
         if: always()
         env:
@@ -247,7 +110,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
 
@@ -260,22 +123,22 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
+      - name: Merge contrib coverage files
         if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" -print0 \
+            | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
 
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
-        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage-contrib-merged.txt
           format: go-coverprofile
-          flags: contrib
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
@@ -285,7 +148,7 @@ jobs:
       - name: Get Datadog APM Test Agent Logs
         if: always()
         shell: bash
-        run: docker logs ${{ job.services.testagent.id }}
+        run: docker compose logs testagent
 
       - name: Get Datadog APM Test Agent Trace Check Summary Results
         if: always()
@@ -309,12 +172,16 @@ jobs:
       - name: Upload Trace Check Results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trace-check-results-${{ strategy.job-index }}
           path: /tmp/trace-check-results/
           retention-days: 1
           if-no-files-found: ignore
+
+      - name: Stop CI service containers
+        if: always()
+        run: docker compose down
 
   test-contrib:
     needs:
@@ -380,42 +247,39 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-       INTEGRATION: true
-    services:
-      datadog-agent:
-        image: registry.datadoghq.com/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
+      INTEGRATION: true
+      COMPOSE_FILE: .github/testservices/docker-compose.yaml
+      COMPOSE_PROJECT_NAME: dd-trace-go-ci
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: always()
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
+
+      - name: Start CI service containers
+        run: docker compose up -d datadog-agent
+
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
+
+      # Containers were started (non-blocking) before Go setup above, so most of
+      # the wait time already overlapped with it; this just waits out whatever's left.
+      - name: Wait for CI service containers
+        run: docker compose up -d --wait --wait-timeout 120 datadog-agent
+
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
@@ -429,7 +293,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
 
@@ -442,24 +306,20 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
-
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
-        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
           format: go-coverprofile
-          flags: core
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()
         uses: ./.github/actions/supported_configurations_validation
+
+      - name: Stop CI service containers
+        if: always()
+        run: docker compose down

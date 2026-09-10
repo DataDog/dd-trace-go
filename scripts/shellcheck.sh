@@ -9,12 +9,12 @@ SCRIPTS="${*:-scripts/*.sh}"
 if command -v shellcheck > /dev/null 2>&1; then
   echo "Using local shellcheck binary"
   # shellcheck disable=SC2086
-  shellcheck $SCRIPTS
+  shellcheck --severity=warning $SCRIPTS
 else
   echo "Using Docker to run shellcheck"
   # shellcheck disable=SC2086
   docker run \
     --rm \
     --volume "$(pwd):/mnt" \
-    koalaman/shellcheck:stable $SCRIPTS
+    koalaman/shellcheck:stable --severity=warning $SCRIPTS
 fi

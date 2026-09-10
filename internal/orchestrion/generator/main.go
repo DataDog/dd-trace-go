@@ -30,6 +30,7 @@ import (
 	"strings"
 	"text/template"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -162,6 +163,14 @@ func generateRootConfig(rootDir string, orchestrionLatestVersion string) (map[st
 		return nil, err
 	}
 
+	// Replace directives in dependencies don't propagate to the parent module,
+	// so we must include transitive local deps (e.g. testutils/grpc required by
+	// contrib/google.golang.org/grpc) or go mod tidy will try to download the
+	// unreleased version tag and fail.
+	if err := expandTransitiveLocalModules(rootDir, modules); err != nil {
+		return nil, fmt.Errorf("expanding transitive local modules: %w", err)
+	}
+
 	replaces, err := makeRelative(modules, pkgDir)
 	if err != nil {
 		return nil, err
@@ -207,6 +216,77 @@ func getLanguageLevel(dir string) (string, error) {
 	}
 
 	return res.Go, nil
+}
+
+// expandTransitiveLocalModules adds local-module replace directives for
+// transitive dependencies that are not yet in modules. Replace directives are
+// not inherited by parent modules, so every local module that is transitively
+// required must appear in orchestrion/all's replace block, otherwise
+// go mod tidy tries to download the (unreleased) version tag from the proxy.
+func expandTransitiveLocalModules(rootDir string, modules map[string]string) error {
+	// Build a complete map of all local modules: module-path → absolute dir.
+	allLocal := make(map[string]string)
+	if err := filepath.WalkDir(rootDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if name := entry.Name(); strings.HasPrefix(name, ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() != "go.mod" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		f, err := modfile.ParseLax(path, data, nil)
+		if err != nil {
+			return err
+		}
+		if f.Module != nil {
+			allLocal[f.Module.Mod.Path] = filepath.Dir(path)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// BFS-expand modules via their go.mod requires.
+	queue := make([]string, 0, len(modules))
+	for k := range modules {
+		queue = append(queue, k)
+	}
+	for len(queue) > 0 {
+		modPath := queue[0]
+		queue = queue[1:]
+		modDir, ok := allLocal[modPath]
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(modDir, "go.mod"))
+		if err != nil {
+			continue
+		}
+		f, err := modfile.ParseLax(filepath.Join(modDir, "go.mod"), data, nil)
+		if err != nil {
+			continue
+		}
+		for _, req := range f.Require {
+			if _, isLocal := allLocal[req.Mod.Path]; !isLocal {
+				continue
+			}
+			if _, already := modules[req.Mod.Path]; already {
+				continue
+			}
+			modules[req.Mod.Path] = allLocal[req.Mod.Path]
+			queue = append(queue, req.Mod.Path)
+		}
+	}
+	return nil
 }
 
 func makeRelative(modules map[string]string, toDir string) ([][2]string, error) {

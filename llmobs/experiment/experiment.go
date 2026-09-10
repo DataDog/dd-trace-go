@@ -10,8 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
@@ -28,6 +31,13 @@ environment variable, using the global tracer.WithLLMObsProjectName option, or e
 	errRequiresAppKey = errors.New(`an app key must be provided for the experiment in agentless mode configured via the DD_APP_KEY environment variable`)
 )
 
+const (
+	experimentStatusRunning     = "running"
+	experimentStatusCompleted   = "completed"
+	experimentStatusFailed      = "failed"
+	experimentStatusInterrupted = "interrupted"
+)
+
 // Experiment represents a DataDog LLM Observability experiment.
 type Experiment struct {
 	Name string
@@ -41,8 +51,9 @@ type Experiment struct {
 	tagsSlice         []string
 
 	// these are set after the experiment is run
-	id      string
-	runName string
+	id        string
+	runName   string
+	projectID string
 }
 
 // Task represents the task to run for an Experiment.
@@ -82,7 +93,38 @@ func NewTask(name string, fn TaskFunc) Task {
 }
 
 // EvaluatorFunc is the type for Evaluator functions.
+//
+// The returned value may be a bare result (bool / numeric / string for
+// boolean / score / categorical metric types respectively) or an
+// *EvaluatorResult to additionally populate reasoning, assessment,
+// metadata, or per-evaluation tags. See EvaluatorResult.
 type EvaluatorFunc func(ctx context.Context, rec dataset.Record, output any) (any, error)
+
+// EvaluatorResult is the richer return shape for an Evaluator. Returning
+// *EvaluatorResult from an EvaluatorFunc populates the documented
+// LLM Observability evaluation fields beyond the primary value; returning
+// a bare value is equivalent to setting only EvaluatorResult.Value.
+//
+// Parity with the Python SDK's EvaluatorResult on LLMObs experiments.
+type EvaluatorResult struct {
+	// Value is the primary evaluation result. Same shape as the bare
+	// EvaluatorFunc return: numeric types become score metrics, bool
+	// becomes a boolean metric, anything else (string, etc.) becomes
+	// categorical.
+	Value any
+	// Reasoning is a free-form explanation for the evaluation result
+	// (e.g. an LLM judge's reasoning paragraph). Empty means unset.
+	Reasoning string
+	// Assessment is an optional categorical assessment. Conventional
+	// values are "pass" and "fail"; empty means unset.
+	Assessment string
+	// Metadata is arbitrary structured metadata about this specific
+	// evaluation. Surfaces as `eval_metric_metadata` on the wire.
+	Metadata map[string]any
+	// Tags are per-evaluation tags applied in addition to experiment-
+	// level tags. Empty means unset.
+	Tags map[string]string
+}
 
 type namedEvaluator struct {
 	name string
@@ -137,33 +179,78 @@ func NewSummaryEvaluator(name string, fn SummaryEvaluatorFunc) SummaryEvaluator 
 	}
 }
 
-// ExperimentResult represents the complete results of an experiment run.
-type ExperimentResult struct {
-	ExperimentName     string
-	DatasetName        string
+// RunInfo contains metadata for a single experiment run iteration.
+type RunInfo struct {
+	ID        string // UUID uniquely identifying this run
+	Iteration int    // 1-indexed iteration number
+}
+
+// RunResult contains the results for a single run iteration.
+type RunResult struct {
+	Run                RunInfo
 	Results            []*RecordResult
+	SummaryEvaluations []*Evaluation
+}
+
+// ExperimentResult represents the complete results of an experiment execution.
+// For multi-run experiments (WithRuns > 1), Runs contains one entry per iteration.
+type ExperimentResult struct {
+	// ExperimentName is the name of the experiment as provided to New.
+	ExperimentName string
+	// DatasetName is the name of the dataset the experiment ran against.
+	DatasetName string
+	// Runs holds the results for each run iteration, in order. For a single-run
+	// experiment this slice has exactly one element.
+	Runs []*RunResult
+	// Results is kept for single-run backward compatibility and points to Runs[0].Results.
+	//
+	// Deprecated: Use Runs[0].Results instead.
+	Results []*RecordResult
+	// SummaryEvaluations is kept for single-run backward compatibility and points to Runs[0].SummaryEvaluations.
+	//
+	// Deprecated: Use Runs[0].SummaryEvaluations instead.
 	SummaryEvaluations []*Evaluation
 }
 
 // RecordResult represents an experiment result for a single record.
 type RecordResult struct {
-	Record      *dataset.Record // The dataset record containing input, expected output, and metadata
-	Output      any             // The task output for this record
-	Evaluations []*Evaluation   // Evaluation results for this record
+	// Record is the dataset record containing input, expected output, and metadata.
+	Record *dataset.Record
+	// Output is the task output for this record.
+	Output any
+	// Evaluations holds the evaluation results for this record.
+	Evaluations []*Evaluation
 
-	// Experiment execution metadata
-	RecordIndex int       // Index of the record in the dataset
-	SpanID      string    // Span ID for tracing
-	TraceID     string    // Trace ID for tracing
-	Timestamp   time.Time // When the task was executed
-	Error       error     // Any error that occurred during task execution
+	// RecordIndex is the index of the record in the dataset.
+	RecordIndex int
+	// SpanID is the span ID for tracing.
+	SpanID string
+	// TraceID is the trace ID for tracing.
+	TraceID string
+	// Timestamp is when the task was executed.
+	Timestamp time.Time
+	// Error is any error that occurred during task execution.
+	Error error
 }
 
 // Evaluation represents the output of an evaluator.
+//
+// Reasoning, Assessment, Metadata, and Tags are populated when the
+// evaluator returned an *EvaluatorResult; they are the zero value when
+// the evaluator returned a bare result.
 type Evaluation struct {
 	Name  string
 	Value any
 	Error error
+
+	// Reasoning is a free-form explanation for the evaluation result.
+	Reasoning string
+	// Assessment is an optional categorical assessment ("pass" / "fail" / "").
+	Assessment string
+	// Metadata is arbitrary per-evaluation metadata.
+	Metadata map[string]any
+	// Tags are per-evaluation tags applied in addition to experiment-level tags.
+	Tags map[string]string
 }
 
 // New creates a new Experiment.
@@ -180,7 +267,7 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, op
 	if cfg.projectName == "" {
 		return nil, errRequiresProjectName
 	}
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 
@@ -208,7 +295,8 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, op
 
 // Run executes the experiment, running the task and evaluators on each record in the dataset,
 // then running summary evaluators on the aggregated results.
-func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (*ExperimentResult, error) {
+// When configured with WithRuns(n), the full experiment loop is executed n times.
+func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (result *ExperimentResult, retErr error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
@@ -223,46 +311,141 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (*ExperimentRes
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
+	e.projectID = proj.ID
 
-	// 2) Create the experiment
-	expResp, err := ll.Transport.CreateExperiment(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description)
+	// 2) Create the experiment, telling the backend how many runs to expect
+	expResp, err := ll.Transport.CreateExperiment(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description, e.cfg.runs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create experiment: %w", err)
 	}
 	e.id = expResp.ID
 	e.runName = expResp.Name
 
-	pushEventsTags := make([]string, len(e.tagsSlice))
-	copy(pushEventsTags, e.tagsSlice)
-	pushEventsTags = append(pushEventsTags, fmt.Sprintf("%s:%s", "experiment_id", e.id))
+	// 3) Notify the backend that the experiment is now executing.
+	e.updateStatus(ctx, ll, experimentStatusRunning, "")
 
-	// 3) Run the experiment task for each record in the dataset
-	results, err := e.runTask(ctx, ll, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to run experiment task: %w", err)
-	}
-	if err := e.runEvaluators(ctx, results, cfg); err != nil {
-		return nil, fmt.Errorf("failed to run experiment evaluators: %w", err)
+	result = &ExperimentResult{
+		ExperimentName: e.Name,
+		DatasetName:    e.dataset.Name(),
+		Runs:           make([]*RunResult, 0, e.cfg.runs),
 	}
 
-	// 4) Run summary evaluators
-	summaryEvals, err := e.runSummaryEvaluators(ctx, results, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to run summary evaluators: %w", err)
+	// Ensure we send the final status in all cases.
+	defer func() {
+		if retErr != nil {
+			if ctx.Err() != nil {
+				e.updateStatus(context.Background(), ll, experimentStatusInterrupted, "")
+			} else {
+				e.updateStatus(ctx, ll, experimentStatusFailed, retErr.Error())
+			}
+			return
+		}
+		if summary := buildErrorSummary(result.Runs); summary != "" {
+			e.updateStatus(ctx, ll, experimentStatusFailed, summary)
+		} else {
+			e.updateStatus(ctx, ll, experimentStatusCompleted, "")
+		}
+	}()
+
+	for i := range e.cfg.runs {
+		run := RunInfo{
+			ID:        uuid.New().String(),
+			Iteration: i + 1,
+		}
+		// Build metric-level tags (per-metric Tags field)
+		metricTags := e.buildRunTags(run, false)
+		// Build request-level tags (outer tags on PushExperimentEvents)
+		pushTags := e.buildRunTags(run, true)
+
+		// 4) Run the experiment task for each record in the dataset
+		results, err := e.runTask(ctx, ll, cfg, run)
+		if err != nil {
+			return nil, fmt.Errorf("run %d: failed to run experiment task: %w", run.Iteration, err)
+		}
+		if err := e.runEvaluators(ctx, results, cfg); err != nil {
+			return nil, fmt.Errorf("run %d: failed to run experiment evaluators: %w", run.Iteration, err)
+		}
+
+		// 5) Run summary evaluators
+		summaryEvals, err := e.runSummaryEvaluators(ctx, results, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("run %d: failed to run summary evaluators: %w", run.Iteration, err)
+		}
+
+		// 6) Generate and publish metrics from the results
+		metrics := e.generateMetrics(results, summaryEvals, metricTags)
+		if err := ll.Transport.PushExperimentEvents(ctx, e.id, metrics, pushTags); err != nil {
+			return nil, fmt.Errorf("run %d: failed to push experiment events: %w", run.Iteration, err)
+		}
+
+		result.Runs = append(result.Runs, &RunResult{
+			Run:                run,
+			Results:            results,
+			SummaryEvaluations: summaryEvals,
+		})
 	}
 
-	// 5) Generate and publish metrics from the results
-	metrics := e.generateMetrics(results, summaryEvals)
-	if err := ll.Transport.PushExperimentEvents(ctx, e.id, metrics, pushEventsTags); err != nil {
-		return nil, fmt.Errorf("failed to push experiment events: %w", err)
+	// Populate legacy fields from the first run for single-run backward compatibility.
+	if len(result.Runs) > 0 {
+		result.Results = result.Runs[0].Results
+		result.SummaryEvaluations = result.Runs[0].SummaryEvaluations
 	}
 
-	return &ExperimentResult{
-		ExperimentName:     e.Name,
-		DatasetName:        e.dataset.Name(),
-		Results:            results,
-		SummaryEvaluations: summaryEvals,
-	}, nil
+	return
+}
+
+// updateStatus sends a status update to the backend. Failures are logged at debug
+// level and never surfaced to the caller — a status update failure is non-fatal.
+func (e *Experiment) updateStatus(ctx context.Context, ll *illmobs.LLMObs, status, errSummary string) {
+	if e.id == "" {
+		return
+	}
+	if err := ll.Transport.UpdateExperimentStatus(ctx, e.id, status, errSummary); err != nil {
+		log.Debug("llmobs: failed to update experiment %s status to %q: %v", e.id, status, err.Error())
+	}
+}
+
+// buildErrorSummary returns a semicolon-separated string of all task and evaluator
+// errors found across all run results. An empty string means no errors occurred.
+func buildErrorSummary(runs []*RunResult) string {
+	var parts []string
+	for _, run := range runs {
+		for _, res := range run.Results {
+			if res == nil {
+				continue
+			}
+			if res.Error != nil {
+				parts = append(parts, res.Error.Error())
+			}
+			for _, ev := range res.Evaluations {
+				if ev.Error != nil {
+					parts = append(parts, fmt.Sprintf("%s: %s", ev.Name, ev.Error.Error()))
+				}
+			}
+		}
+		for _, ev := range run.SummaryEvaluations {
+			if ev.Error != nil {
+				parts = append(parts, fmt.Sprintf("%s: %s", ev.Name, ev.Error.Error()))
+			}
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
+// buildRunTags returns the tag slice for a given run, optionally including experiment_id.
+// includeExperimentID should be true for the outer PushExperimentEvents tags, false for
+// the per-metric Tags field (which carries the experiment ID in its own struct field).
+func (e *Experiment) buildRunTags(run RunInfo, includeExperimentID bool) []string {
+	tags := make([]string, 0, len(e.tagsSlice)+3)
+	tags = append(tags, e.tagsSlice...)
+	tags = append(tags,
+		"run_id:"+run.ID,
+		fmt.Sprintf("run_iteration:%d", run.Iteration),
+	)
+	if includeExperimentID {
+		tags = append(tags, "experiment_id:"+e.id)
+	}
+	return tags
 }
 
 func (e *Experiment) URL() string {
@@ -270,7 +453,7 @@ func (e *Experiment) URL() string {
 	return fmt.Sprintf("%s/llm/experiments/%s", illmobs.PublicResourceBaseURL(), e.id)
 }
 
-func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *runCfg) ([]*RecordResult, error) {
+func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *runCfg, run RunInfo) ([]*RecordResult, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	if cfg.maxConcurrency > 0 {
 		eg.SetLimit(cfg.maxConcurrency)
@@ -287,7 +470,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 			break
 		}
 		eg.Go(func() error {
-			res := e.runTaskForRecord(ctx, llmobs, i, rec)
+			res := e.runTaskForRecord(ctx, llmobs, i, rec, run)
 			if res.Error != nil {
 				retErr := fmt.Errorf("failed to process record %d: %w", i, res.Error)
 				if cfg.abortOnError {
@@ -309,12 +492,17 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 	return results, nil
 }
 
-func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMObs, recIdx int, rec dataset.Record) *RecordResult {
+func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMObs, recIdx int, rec dataset.Record, run RunInfo) *RecordResult {
 	var (
 		err error
 	)
 
-	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, illmobs.StartSpanConfig{})
+	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), illmobs.ExperimentInfo{
+		ID:           e.id,
+		RunID:        run.ID,
+		RunIteration: run.Iteration,
+		ProjectID:    e.projectID,
+	}, illmobs.StartSpanConfig{})
 	defer func() { span.Finish(illmobs.FinishSpanConfig{Error: err}) }()
 
 	tags := make(map[string]string)
@@ -322,6 +510,11 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 	tags["dataset_id"] = e.dataset.ID()
 	tags["dataset_record_id"] = rec.ID()
 	tags["experiment_id"] = e.id
+	tags["run_id"] = run.ID
+	tags["run_iteration"] = strconv.Itoa(run.Iteration)
+	if e.projectID != "" {
+		tags["project_id"] = e.projectID
+	}
 
 	out, err := e.task.Run(ctx, rec, e.cfg.experimentCfg)
 	if err != nil {
@@ -368,17 +561,31 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult,
 						log.Warn("llmobs: %s", retErr)
 					}
 				}
-				evs = append(evs, &Evaluation{
-					Name:  ev.Name(),
-					Value: val,
-					Error: err,
-				})
+				evs = append(evs, newEvaluation(ev.Name(), val, err))
 			}
 			res.Evaluations = evs
 			return nil
 		})
 	}
 	return eg.Wait()
+}
+
+// newEvaluation unwraps an EvaluatorFunc return into an *Evaluation.
+// When the function returned a *EvaluatorResult, its fields populate
+// the matching Evaluation fields; otherwise the bare value becomes
+// Evaluation.Value and the other fields remain unset.
+func newEvaluation(name string, val any, err error) *Evaluation {
+	ev := &Evaluation{Name: name, Error: err}
+	if r, ok := val.(*EvaluatorResult); ok && r != nil {
+		ev.Value = r.Value
+		ev.Reasoning = r.Reasoning
+		ev.Assessment = r.Assessment
+		ev.Metadata = r.Metadata
+		ev.Tags = r.Tags
+		return ev
+	}
+	ev.Value = val
+	return ev
 }
 
 func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*RecordResult, cfg *runCfg) ([]*Evaluation, error) {
@@ -400,17 +607,13 @@ func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*Record
 				log.Warn("llmobs: %s", retErr)
 			}
 		}
-		summaryEvals = append(summaryEvals, &Evaluation{
-			Name:  sumEv.Name(),
-			Value: val,
-			Error: err,
-		})
+		summaryEvals = append(summaryEvals, newEvaluation(sumEv.Name(), val, err))
 	}
 
 	return summaryEvals, nil
 }
 
-func (e *Experiment) generateMetrics(results []*RecordResult, summaryEvals []*Evaluation) []transport.ExperimentEvalMetricEvent {
+func (e *Experiment) generateMetrics(results []*RecordResult, summaryEvals []*Evaluation, runTags []string) []transport.ExperimentEvalMetricEvent {
 	metrics := make([]transport.ExperimentEvalMetricEvent, 0, len(results)+len(summaryEvals))
 
 	// Track latest timestamp for summary evaluations
@@ -422,95 +625,125 @@ func (e *Experiment) generateMetrics(results []*RecordResult, summaryEvals []*Ev
 			latestTimestamp = res.Timestamp
 		}
 		for _, ev := range res.Evaluations {
-			metrics = append(metrics, e.generateMetricFromEvaluation(res, ev, "custom"))
+			metrics = append(metrics, e.generateMetricFromEvaluation(res, ev, "custom", runTags))
 		}
 	}
 
-	// Generate metrics from summary evaluations
-	// Summary evaluations don't have associated spans, so we use empty span/trace IDs and latest timestamp
+	// Generate metrics from summary evaluations.
+	// Summary evaluations don't have associated spans, so we use empty span/trace IDs and latest timestamp.
 	for _, sumEv := range summaryEvals {
-		metrics = append(metrics, e.generateMetricFromSummaryEvaluation(sumEv, latestTimestamp))
+		metrics = append(metrics, e.generateMetricFromSummaryEvaluation(sumEv, latestTimestamp, runTags))
 	}
 	return metrics
 }
 
-func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluation, source string) transport.ExperimentEvalMetricEvent {
+func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluation, source string, runTags []string) transport.ExperimentEvalMetricEvent {
 	var (
 		catVal   *string
 		scoreVal *float64
 		boolVal  *bool
 	)
 
-	metricType := "categorical"
+	metricType := transport.EvalMetricTypeCategorical
 	switch t := ev.Value.(type) {
 	case bool:
-		metricType = "boolean"
-		boolVal = transport.AnyPtr(t)
+		metricType = transport.EvalMetricTypeBoolean
+		boolVal = new(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
-		metricType = "score"
-		scoreVal = transport.AnyPtr(asFloat64(t))
+		metricType = transport.EvalMetricTypeScore
+		scoreVal = new(asFloat64(t))
 
 	default:
-		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
+		catVal = new(fmt.Sprintf("%v", t))
 	}
 
 	return transport.ExperimentEvalMetricEvent{
-		MetricSource:     source,
-		SpanID:           res.SpanID,
-		TraceID:          res.TraceID,
-		TimestampMS:      res.Timestamp.UnixMilli(),
-		MetricType:       metricType,
-		Label:            ev.Name,
-		CategoricalValue: catVal,
-		ScoreValue:       scoreVal,
-		BooleanValue:     boolVal,
-		Error:            transport.NewErrorMessage(ev.Error),
-		Tags:             e.tagsSlice,
-		ExperimentID:     e.id,
+		MetricSource:       source,
+		SpanID:             res.SpanID,
+		TraceID:            res.TraceID,
+		TimestampMS:        res.Timestamp.UnixMilli(),
+		MetricType:         metricType,
+		Label:              ev.Name,
+		CategoricalValue:   catVal,
+		ScoreValue:         scoreVal,
+		BooleanValue:       boolVal,
+		Error:              transport.NewErrorMessage(ev.Error),
+		Tags:               evalMetricTags(runTags, ev.Tags),
+		ExperimentID:       e.id,
+		Reasoning:          ev.Reasoning,
+		Assessment:         ev.Assessment,
+		EvalMetricMetadata: ev.Metadata,
 	}
 }
 
-func (e *Experiment) generateMetricFromSummaryEvaluation(ev *Evaluation, timestamp time.Time) transport.ExperimentEvalMetricEvent {
+func (e *Experiment) generateMetricFromSummaryEvaluation(ev *Evaluation, timestamp time.Time, runTags []string) transport.ExperimentEvalMetricEvent {
 	var (
 		catVal   *string
 		scoreVal *float64
 		boolVal  *bool
 	)
 
-	metricType := "categorical"
+	metricType := transport.EvalMetricTypeCategorical
 	switch t := ev.Value.(type) {
 	case bool:
-		metricType = "boolean"
-		boolVal = transport.AnyPtr(t)
+		metricType = transport.EvalMetricTypeBoolean
+		boolVal = new(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
-		metricType = "score"
-		scoreVal = transport.AnyPtr(asFloat64(t))
+		metricType = transport.EvalMetricTypeScore
+		scoreVal = new(asFloat64(t))
 
 	default:
-		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
+		catVal = new(fmt.Sprintf("%v", t))
 	}
 
-	// Summary evaluations don't have span/trace IDs, but use the latest timestamp from per-record evaluations
+	// Summary evaluations don't have span/trace IDs, but use the latest timestamp from per-record evaluations.
 	return transport.ExperimentEvalMetricEvent{
-		MetricSource:     "summary",
-		SpanID:           "",
-		TraceID:          "",
-		TimestampMS:      timestamp.UnixMilli(),
-		MetricType:       metricType,
-		Label:            ev.Name,
-		CategoricalValue: catVal,
-		ScoreValue:       scoreVal,
-		BooleanValue:     boolVal,
-		Error:            transport.NewErrorMessage(ev.Error),
-		Tags:             e.tagsSlice,
-		ExperimentID:     e.id,
+		MetricSource:       "summary",
+		SpanID:             "",
+		TraceID:            "",
+		TimestampMS:        timestamp.UnixMilli(),
+		MetricType:         metricType,
+		Label:              ev.Name,
+		CategoricalValue:   catVal,
+		ScoreValue:         scoreVal,
+		BooleanValue:       boolVal,
+		Error:              transport.NewErrorMessage(ev.Error),
+		Tags:               evalMetricTags(runTags, ev.Tags),
+		ExperimentID:       e.id,
+		Reasoning:          ev.Reasoning,
+		Assessment:         ev.Assessment,
+		EvalMetricMetadata: ev.Metadata,
 	}
+}
+
+// evalMetricTags selects the tag list shipped on a single eval metric.
+//
+// When the evaluator did not set per-evaluation tags (the legacy shape,
+// or an EvaluatorResult with empty Tags), the metric carries the
+// experiment-level runTags exactly as before — preserving backwards-
+// compatible correlation by experiment_id / run_id / dataset_id.
+//
+// When the evaluator did set per-evaluation tags, those tags replace
+// the runTags on the metric. This matches the Python SDK, where
+// experiment-level identifiers live on the experiment span (not on each
+// eval metric) and the metric carries only what the evaluator chose to
+// attach. Backend correlation still works via the experiment_id field
+// on ExperimentEvalMetricEvent and via the span's own tag set.
+func evalMetricTags(runTags []string, evalTags map[string]string) []string {
+	if len(evalTags) == 0 {
+		return runTags
+	}
+	out := make([]string, 0, len(evalTags))
+	for k, v := range evalTags {
+		out = append(out, k+":"+v)
+	}
+	return out
 }
 
 func asFloat64(x any) float64 {

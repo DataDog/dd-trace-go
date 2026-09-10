@@ -6,9 +6,10 @@
 package constants
 
 const (
-	// CIVisibilityEnabledEnvironmentVariable indicates if CI Visibility mode is enabled.
-	// This environment variable should be set to "1" or "true" to enable CI Visibility mode, which activates tracing and other
-	// features related to CI Visibility in the Datadog platform.
+	// CIVisibilityEnabledEnvironmentVariable controls whether CI Visibility mode is enabled.
+	// It accepts normal boolean values parsed by strconv.ParseBool. It also accepts
+	// "parent", which enables CI Visibility for the current process and rewrites the
+	// variable after bootstrap so child processes inherit disabled CI Visibility.
 	CIVisibilityEnabledEnvironmentVariable = "DD_CIVISIBILITY_ENABLED"
 
 	// CIVisibilityAgentlessEnabledEnvironmentVariable indicates if CI Visibility agentless mode is enabled.
@@ -32,11 +33,55 @@ const (
 	// This environment variable should be set to "0" or "false" to disable the flaky retry feature.
 	CIVisibilityFlakyRetryEnabledEnvironmentVariable = "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED"
 
+	// CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable overrides the remote EFD setting when explicitly set.
+	// Enabling EFD still requires known tests to be enabled by the backend.
+	CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable = "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED"
+
+	// CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable caps the number of EFD retries per test without increasing the backend setting.
+	// A negative value preserves the retry counts configured by the backend.
+	CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable = "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES"
+
+	// CIVisibilityGitUploadEnabledEnvironmentVariable kill-switch that allows explicitly disabling CI Visibility repository upload.
+	// This environment variable should be set to "0" or "false" to skip uploading git metadata while keeping CI Visibility enabled.
+	CIVisibilityGitUploadEnabledEnvironmentVariable = "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED"
+
+	// CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable kill-switch that allows explicitly disabling code coverage report upload.
+	// This environment variable should be set to "0" or "false" to skip uploading code coverage reports while keeping CI Visibility enabled.
+	CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable = "DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED"
+
+	// CodeCoverageFlagsEnvironmentVariable contains flags attached to uploaded code coverage reports.
+	CodeCoverageFlagsEnvironmentVariable = "DD_CODE_COVERAGE_FLAGS"
+
 	// CIVisibilityFlakyRetryCountEnvironmentVariable indicates the maximum number of retry attempts for a single test case.
 	CIVisibilityFlakyRetryCountEnvironmentVariable = "DD_CIVISIBILITY_FLAKY_RETRY_COUNT"
 
 	// CIVisibilityTotalFlakyRetryCountEnvironmentVariable indicates the maximum number of retry attempts for the entire session.
 	CIVisibilityTotalFlakyRetryCountEnvironmentVariable = "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT"
+
+	// CIVisibilityRetryExecutionModeEnvironmentVariable selects how retry attempts are executed.
+	// Supported values are "in_process" and "process". The default is "in_process".
+	CIVisibilityRetryExecutionModeEnvironmentVariable = "DD_CIVISIBILITY_RETRY_EXECUTION_MODE"
+
+	// CIVisibilityRetryProcessTimeoutEnvironmentVariable optionally bounds each process retry child attempt.
+	CIVisibilityRetryProcessTimeoutEnvironmentVariable = "DD_CIVISIBILITY_RETRY_PROCESS_TIMEOUT"
+
+	// CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable optionally caps concurrent process retry children.
+	CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable = "DD_CIVISIBILITY_RETRY_PROCESS_MAX_CONCURRENCY"
+
+	// CIVisibilityInternalRetryProcessChild marks a re-executed test binary as a process-retry child.
+	CIVisibilityInternalRetryProcessChild = "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_CHILD"
+
+	// CIVisibilityInternalRetryProcessResultPath carries the child result JSON path.
+	CIVisibilityInternalRetryProcessResultPath = "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_RESULT_PATH"
+
+	// CIVisibilityInternalRetryProcessTestName carries the selected top-level test name for a child retry.
+	CIVisibilityInternalRetryProcessTestName = "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_TEST_NAME"
+
+	// CIVisibilityInternalRetryProcessAttempt carries the retry attempt index for a child retry.
+	CIVisibilityInternalRetryProcessAttempt = "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_ATTEMPT"
+
+	// CIVisibilityInternalRetryProcessReason carries the retry reason for a child retry.
+	CIVisibilityInternalRetryProcessReason = "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_REASON"
 
 	// CIVisibilityTestManagementEnabledEnvironmentVariable indicates if the test management feature is enabled.
 	CIVisibilityTestManagementEnabledEnvironmentVariable = "DD_TEST_MANAGEMENT_ENABLED"

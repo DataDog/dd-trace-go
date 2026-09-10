@@ -109,7 +109,7 @@ func setErrExtensions(result map[string]any, extensions map[string]any, whitelis
 		if !ok {
 			continue
 		}
-		key := fmt.Sprintf("extensions.%s", errExt)
+		key := "extensions." + errExt
 		mapVal, err := errExtensionMapValue(val)
 		if err != nil {
 			log.Debug("failed to set error extension as span event attribute %q: %v", errExt, err.Error())

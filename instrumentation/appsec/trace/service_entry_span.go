@@ -26,6 +26,9 @@ type (
 	// ServiceEntrySpanArgs is the arguments for a ServiceEntrySpanOperation
 	ServiceEntrySpanArgs struct{}
 
+	// ServiceEntrySpanRes is the result of a ServiceEntrySpanOperation.
+	ServiceEntrySpanRes struct{}
+
 	// ServiceEntrySpanTag is a key value pair event that is used to tag a service entry span
 	ServiceEntrySpanTag struct {
 		Key   string
@@ -47,6 +50,8 @@ type (
 )
 
 func (ServiceEntrySpanArgs) IsArgOf(*ServiceEntrySpanOperation) {}
+
+func (ServiceEntrySpanRes) IsResultOf(*ServiceEntrySpanOperation) {}
 
 // SetTag adds the key/value pair to the tags to add to the service entry span
 func (op *ServiceEntrySpanOperation) SetTag(key string, value any) {
@@ -141,6 +146,8 @@ func StartServiceEntrySpanOperation(ctx context.Context, span TagSetter) (*Servi
 }
 
 func (op *ServiceEntrySpanOperation) Finish() {
+	defer dyngo.FinishOperation(op, ServiceEntrySpanRes{})
+
 	span := op.tagSetter
 	if _, ok := span.(NoopTagSetter); ok { // If the span is a NoopTagSetter or is nil, we don't need to set any tags
 		return

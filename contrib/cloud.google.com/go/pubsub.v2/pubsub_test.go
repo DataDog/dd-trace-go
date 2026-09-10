@@ -72,17 +72,20 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(spans[1].SpanID(), spans[0].ParentID())
 	assert.Equal(uint64(42), spans[0].TraceID())
 	assert.Subset(filterTags(spans[0].Tags()), map[string]any{
-		"message_size":      float64(5),
-		"num_attributes":    float64(5),
-		"ordering_key":      "xxx",
-		ext.ResourceName:    "projects/project/topics/topic",
-		ext.SpanType:        ext.SpanTypeMessageProducer,
-		"server_id":         srvID,
-		ext.ServiceName:     "",
-		ext.Component:       "cloud.google.com/go/pubsub.v2",
-		ext.SpanKind:        ext.SpanKindProducer,
-		ext.MessagingSystem: "googlepubsub",
-		ext.SpanName:        "pubsub.publish",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(5),
+		ext.PubsubOrderingKey:      "xxx",
+		ext.ResourceName:           "projects/project/topics/topic",
+		ext.SpanType:               ext.SpanTypeMessageProducer,
+		ext.PubsubServerID:         srvID,
+		ext.ServiceName:            "",
+		ext.Component:              "cloud.google.com/go/pubsub.v2",
+		ext.SpanKind:               ext.SpanKindProducer,
+		ext.MessagingSystem:        "googlepubsub",
+		ext.MessagingOperationName: "send",
+		ext.MessagingMessageID:     srvID,
+		ext.GCPProjectID:           "project",
+		ext.SpanName:               "pubsub.publish",
 	}, spans[0].Tags())
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
 
@@ -90,18 +93,21 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(uint64(42), spans[2].TraceID())
 	assert.Equal(spanID, spans[2].SpanID())
 	assert.Subset(filterTags(spans[2].Tags()), map[string]any{
-		"message_size":      float64(5),
-		"num_attributes":    float64(5),
-		"ordering_key":      "xxx",
-		ext.ResourceName:    "projects/project/subscriptions/subscription",
-		ext.SpanType:        ext.SpanTypeMessageConsumer,
-		"message_id":        msgID,
-		"publish_time":      pubTime,
-		ext.Component:       "cloud.google.com/go/pubsub.v2",
-		ext.SpanKind:        ext.SpanKindConsumer,
-		ext.MessagingSystem: "googlepubsub",
-		ext.ServiceName:     "",
-		ext.SpanName:        "pubsub.receive",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(5),
+		ext.PubsubOrderingKey:      "xxx",
+		ext.ResourceName:           "projects/project/subscriptions/subscription",
+		ext.SpanType:               ext.SpanTypeMessageConsumer,
+		ext.PubsubMessageID:        msgID,
+		ext.PubsubPublishTime:      pubTime,
+		ext.Component:              "cloud.google.com/go/pubsub.v2",
+		ext.SpanKind:               ext.SpanKindConsumer,
+		ext.MessagingSystem:        "googlepubsub",
+		ext.MessagingOperationName: "receive",
+		ext.MessagingMessageID:     msgID,
+		ext.GCPProjectID:           "project",
+		ext.ServiceName:            "",
+		ext.SpanName:               "pubsub.receive",
 	}, spans[2].Tags())
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[2].Integration())
 }
@@ -169,17 +175,20 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(spans[0].TraceID(), spans[0].SpanID())
 	assert.Equal(traceID, spans[0].Context().TraceID())
 	assert.Subset(filterTags(spans[0].Tags()), map[string]any{
-		"message_size":      float64(5),
-		"num_attributes":    float64(5),
-		"ordering_key":      "xxx",
-		ext.ResourceName:    "projects/project/topics/topic",
-		ext.SpanType:        ext.SpanTypeMessageProducer,
-		"server_id":         srvID,
-		ext.Component:       "cloud.google.com/go/pubsub.v2",
-		ext.SpanKind:        ext.SpanKindProducer,
-		ext.MessagingSystem: "googlepubsub",
-		ext.ServiceName:     "",
-		ext.SpanName:        "pubsub.publish",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(5),
+		ext.PubsubOrderingKey:      "xxx",
+		ext.ResourceName:           "projects/project/topics/topic",
+		ext.SpanType:               ext.SpanTypeMessageProducer,
+		ext.PubsubServerID:         srvID,
+		ext.Component:              "cloud.google.com/go/pubsub.v2",
+		ext.SpanKind:               ext.SpanKindProducer,
+		ext.MessagingSystem:        "googlepubsub",
+		ext.MessagingOperationName: "send",
+		ext.MessagingMessageID:     srvID,
+		ext.GCPProjectID:           "project",
+		ext.ServiceName:            "",
+		ext.SpanName:               "pubsub.publish",
 	}, spans[0].Tags())
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
 
@@ -187,18 +196,21 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(traceID, spans[1].Context().TraceID())
 	assert.Equal(spanID, spans[1].SpanID())
 	assert.Subset(filterTags(spans[1].Tags()), map[string]any{
-		"message_size":      float64(5),
-		"num_attributes":    float64(5),
-		"ordering_key":      "xxx",
-		ext.ResourceName:    "projects/project/subscriptions/subscription",
-		ext.SpanType:        ext.SpanTypeMessageConsumer,
-		"message_id":        msgID,
-		"publish_time":      pubTime,
-		ext.Component:       "cloud.google.com/go/pubsub.v2",
-		ext.SpanKind:        ext.SpanKindConsumer,
-		ext.MessagingSystem: "googlepubsub",
-		ext.ServiceName:     "",
-		ext.SpanName:        "pubsub.receive",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(5),
+		ext.PubsubOrderingKey:      "xxx",
+		ext.ResourceName:           "projects/project/subscriptions/subscription",
+		ext.SpanType:               ext.SpanTypeMessageConsumer,
+		ext.PubsubMessageID:        msgID,
+		ext.PubsubPublishTime:      pubTime,
+		ext.Component:              "cloud.google.com/go/pubsub.v2",
+		ext.SpanKind:               ext.SpanKindConsumer,
+		ext.MessagingSystem:        "googlepubsub",
+		ext.MessagingOperationName: "receive",
+		ext.MessagingMessageID:     msgID,
+		ext.GCPProjectID:           "project",
+		ext.ServiceName:            "",
+		ext.SpanName:               "pubsub.receive",
 	}, spans[1].Tags())
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[1].Integration())
 }
@@ -243,20 +255,150 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 	assert.Equal(traceID, spans[0].Context().TraceID())
 	assert.Equal(spanID, spans[0].SpanID())
 	assert.Subset(filterTags(spans[0].Tags()), map[string]any{
-		"message_size":      float64(5),
-		"num_attributes":    float64(0), // no attributes, since no publish middleware sent them
-		"ordering_key":      "xxx",
-		ext.ResourceName:    "projects/project/subscriptions/subscription",
-		ext.SpanType:        ext.SpanTypeMessageConsumer,
-		"message_id":        msgID,
-		"publish_time":      pubTime,
-		ext.Component:       "cloud.google.com/go/pubsub.v2",
-		ext.SpanKind:        ext.SpanKindConsumer,
-		ext.MessagingSystem: "googlepubsub",
-		ext.ServiceName:     "",
-		ext.SpanName:        "pubsub.receive",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(0), // no attributes, since no publish middleware sent them
+		ext.PubsubOrderingKey:      "xxx",
+		ext.ResourceName:           "projects/project/subscriptions/subscription",
+		ext.SpanType:               ext.SpanTypeMessageConsumer,
+		ext.PubsubMessageID:        msgID,
+		ext.PubsubPublishTime:      pubTime,
+		ext.Component:              "cloud.google.com/go/pubsub.v2",
+		ext.SpanKind:               ext.SpanKindConsumer,
+		ext.MessagingSystem:        "googlepubsub",
+		ext.MessagingOperationName: "receive",
+		ext.MessagingMessageID:     msgID,
+		ext.GCPProjectID:           "project",
+		ext.ServiceName:            "",
+		ext.SpanName:               "pubsub.receive",
 	}, spans[0].Tags())
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
+}
+
+func TestPropagationAsSpanLinksOption(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel, mt, pub, sub := setup(t)
+
+	// Publisher
+	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test")
+	_, err := Publish(pctx, pub, &pubsub.Message{Data: []byte("hello")}).Get(pctx)
+	assert.NoError(err)
+	span.Finish()
+
+	// Subscriber with WithPropagationAsSpanLinks option
+	var called bool
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(called, "callback called twice")
+		msg.Ack()
+		called = true
+		cancel()
+	}, WithPropagationAsSpanLinks()))
+	assert.True(called, "callback not called")
+	assert.NoError(err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3, "wrong number of spans")
+
+	publishSpan := spans[0]
+	assert.Equal("pubsub.publish", publishSpan.OperationName())
+
+	receiveSpan := spans[2]
+	assert.Equal("pubsub.receive", receiveSpan.OperationName())
+
+	// Receive span must NOT share the producer trace — traces stay separate.
+	assert.NotEqual(publishSpan.TraceID(), receiveSpan.TraceID(), "receive span should start a new trace")
+	assert.Equal(uint64(0), receiveSpan.ParentID(), "receive span should have no parent")
+
+	// The pubsub.publish span must appear as a span link on the receive span.
+	links := receiveSpan.Links()
+	require.Len(t, links, 1, "expected exactly one span link")
+	assert.Equal(publishSpan.SpanID(), links[0].SpanID, "span link should point to publish span")
+}
+
+func TestPropagationAsSpanLinksEnvVar(t *testing.T) {
+	t.Setenv("DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS", "true")
+
+	assert := assert.New(t)
+	ctx, cancel, mt, pub, sub := setup(t)
+
+	// Publisher
+	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test")
+	_, err := Publish(pctx, pub, &pubsub.Message{Data: []byte("hello")}).Get(pctx)
+	assert.NoError(err)
+	span.Finish()
+
+	// Subscriber — no explicit option, env var drives behavior.
+	var called bool
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(called, "callback called twice")
+		msg.Ack()
+		called = true
+		cancel()
+	}))
+	assert.True(called, "callback not called")
+	assert.NoError(err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3, "wrong number of spans")
+
+	publishSpan := spans[0]
+	receiveSpan := spans[2]
+	assert.Equal("pubsub.receive", receiveSpan.OperationName())
+	assert.NotEqual(publishSpan.TraceID(), receiveSpan.TraceID(), "receive span should start a new trace")
+	assert.Equal(uint64(0), receiveSpan.ParentID(), "receive span should have no parent")
+
+	links := receiveSpan.Links()
+	require.Len(t, links, 1, "expected exactly one span link")
+	assert.Equal(publishSpan.SpanID(), links[0].SpanID, "span link should point to publish span")
+}
+
+func TestPropagationAsSpanLinksWithRestartBehaviorAndBaggage(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "restart")
+
+	assert := assert.New(t)
+	ctx, cancel, mt, pub, sub := setup(t)
+
+	// Publisher
+	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test")
+	span.SetBaggageItem("user.id", "123")
+	_, err := Publish(pctx, pub, &pubsub.Message{Data: []byte("hello")}).Get(pctx)
+	assert.NoError(err)
+	span.Finish()
+
+	// Subscriber with WithPropagationAsSpanLinks option, combined with the
+	// global DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart tracer setting.
+	var called bool
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(called, "callback called twice")
+		msg.Ack()
+		called = true
+		cancel()
+	}, WithPropagationAsSpanLinks()))
+	assert.True(called, "callback not called")
+	assert.NoError(err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3, "wrong number of spans")
+
+	publishSpan := spans[0]
+	receiveSpan := spans[2]
+	assert.Equal("pubsub.receive", receiveSpan.OperationName())
+	assert.NotEqual(publishSpan.TraceID(), receiveSpan.TraceID(), "receive span should start a new trace")
+	assert.Equal(uint64(0), receiveSpan.ParentID(), "receive span should have no parent")
+
+	// Exactly one valid (non-zero) span link back to the producer — no
+	// duplicate or zero-valued link derived from the restart-mode stub.
+	links := receiveSpan.Links()
+	require.Len(t, links, 1, "expected exactly one span link")
+	assert.NotZero(links[0].TraceID, "span link must carry the producer's real trace ID")
+	assert.Equal(publishSpan.SpanID(), links[0].SpanID, "span link should point to publish span")
+
+	// Baggage must still propagate even though the trace was restarted.
+	baggage := make(map[string]string)
+	receiveSpan.Context().ForeachBaggageItem(func(k, v string) bool {
+		baggage[k] = v
+		return true
+	})
+	assert.Equal("123", baggage["user.id"], "baggage should propagate to the receive span")
 }
 
 func filterTags(m map[string]any) map[string]any {

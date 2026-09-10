@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strconv"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/fastdelta"
@@ -53,10 +54,11 @@ const (
 	// shouldn't just be added to WithProfileTypes
 	executionTrace
 
-	// goroutineLeakProfile is the Go 1.26 experimental goroutine leak
-	// profile, which contains tracebacks of goroutines permanently blocked
-	// in synchronization
-	goroutineLeakProfile
+	// GoroutineLeakProfile reports tracebacks of goroutines permanently
+	// blocked in synchronization. It requires Go 1.27 or later, or Go 1.26,
+	// in which case the program must be built with
+	// GOEXPERIMENT=goroutineleakprofile
+	GoroutineLeakProfile
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -114,9 +116,31 @@ var profileTypes = map[ProfileType]profileType{
 			p.pendingProfiles.Wait()
 			pprof.StopCPUProfile()
 
+			stripLabels := appsecEnabled()
 			c := p.compressors[CPUProfile]
+			if stripLabels {
+				if p.stripCPUCompressor == nil {
+					_, outputCompression := compressionStrategy(CPUProfile, false, p.cfg.compressionConfig)
+					var err error
+					p.stripCPUCompressor, err = p.compressionBuilder.Build(noCompression, outputCompression)
+					if err != nil {
+						return nil, err
+					}
+					// Drop the old compressor, which we won't use again.
+					// This is safe because we arrange for CPU profiling to stop
+					// after all other profilers, meaning we won't race with any
+					// other access to p.compressors
+					delete(p.compressors, CPUProfile)
+				}
+				c = p.stripCPUCompressor
+			}
 			c.Reset(&buf)
-			_, writeErr := outBuf.WriteTo(c)
+			var writeErr error
+			if stripLabels {
+				writeErr = stripPPROFLabels(outBuf.Bytes(), c)
+			} else {
+				_, writeErr = outBuf.WriteTo(c)
+			}
 			closeErr := c.Close()
 			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
@@ -200,10 +224,10 @@ var profileTypes = map[ProfileType]profileType{
 			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
 	},
-	goroutineLeakProfile: {
+	GoroutineLeakProfile: {
 		Name:     "goroutine-leak",
 		Filename: "goroutineleak.pprof",
-		Collect:  collectGenericProfile("goroutineleak", goroutineLeakProfile),
+		Collect:  collectGenericProfile("goroutineleak", GoroutineLeakProfile),
 	},
 }
 
@@ -216,7 +240,7 @@ var profileTypes = map[ProfileType]profileType{
 // situation.
 func traceLogCPUProfileRate(cpuProfileRate int) {
 	if cpuProfileRate != 0 {
-		trace.Log(context.Background(), "cpuProfileRate", fmt.Sprintf("%d", cpuProfileRate))
+		trace.Log(context.Background(), "cpuProfileRate", strconv.Itoa(cpuProfileRate))
 	}
 }
 
@@ -279,7 +303,7 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 
 		start := time.Now()
 		delta, err := dp.Delta(buf.Bytes())
-		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
+		tags := append(p.cfg.tags.Slice(), "profile_type:"+name)
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
 			return nil, fmt.Errorf("delta profile error: %s", err.Error())
@@ -333,6 +357,8 @@ func (t *ProfileType) UnmarshalText(text []byte) error {
 		*t = MutexProfile
 	case "goroutine":
 		*t = GoroutineProfile
+	case "goroutineleak":
+		*t = GoroutineLeakProfile
 	default:
 		return fmt.Errorf("unknown profile type: %s", text)
 	}

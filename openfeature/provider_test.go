@@ -255,8 +255,47 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	hooks := provider.Hooks()
-	if len(hooks) != 2 {
-		t.Errorf("expected 2 hooks (exposure + flag eval metrics), got %d", len(hooks))
+	// 3 hooks: exposure hook + OTel flag eval metrics hook + EVP flagevaluation hook.
+	// The EVP hook is enabled by default (DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true).
+	if len(hooks) != 3 {
+		t.Errorf("expected 3 hooks (exposure + flag eval metrics + EVP flagevaluation), got %d", len(hooks))
+	}
+}
+
+// TestEvaluateStampsEvalTimeMetadata verifies the provider stamps evaluation-entry
+// time into FlagMetadata on every path so EVP first/last bounds use eval-time.
+func TestEvaluateStampsEvalTimeMetadata(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.updateConfiguration(createTestConfig())
+	ctx := context.Background()
+
+	cases := []struct {
+		name    string
+		flagKey string
+		flatCtx openfeature.FlattenedContext
+	}{
+		{"matched allocation", "bool-flag", openfeature.FlattenedContext{"targetingKey": "user-123", "country": "US"}},
+		{"default (no match)", "bool-flag", openfeature.FlattenedContext{"targetingKey": "user-123", "country": "CA"}},
+		{"disabled flag", "disabled-flag", openfeature.FlattenedContext{"targetingKey": "user-123"}},
+		{"flag not found", "nonexistent-flag", openfeature.FlattenedContext{"targetingKey": "user-123"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := time.Now().UnixMilli()
+			result := provider.BooleanEvaluation(ctx, tc.flagKey, false, tc.flatCtx)
+			after := time.Now().UnixMilli()
+
+			got, ok := result.FlagMetadata[metadataEvalTimeKey].(int64)
+			if !ok {
+				t.Fatalf("FlagMetadata[%q] missing or wrong type on %q path; metadata=%v",
+					metadataEvalTimeKey, tc.name, result.FlagMetadata)
+			}
+			if got < before || got > after {
+				t.Fatalf("FlagMetadata[%q] = %d, want within [%d,%d] on %q path",
+					metadataEvalTimeKey, got, before, after, tc.name)
+			}
+		})
 	}
 }
 
@@ -595,6 +634,102 @@ func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 	}
 
 	t.Logf("Successfully got timeout error as expected: %v", err)
+}
+
+// runWithDeadline runs fn in a goroutine and fails the test if fn does not
+// return within timeout, rather than hanging the test process forever. This
+// guards the two regression tests below against a reintroduced deadlock in
+// waitForConfigurationUpdate: a plain call could hang indefinitely instead of
+// failing.
+func runWithDeadline(t *testing.T, timeout time.Duration, fn func() error) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		t.Fatalf("function did not return within %s; likely deadlocked", timeout)
+		return nil // unreachable: t.Fatalf stops this goroutine via runtime.Goexit
+	}
+}
+
+// TestInitWithContext_AlreadyCancelled pins a regression: InitWithContext
+// must return promptly with ctx.Err() when ctx is already cancelled before
+// the call, rather than deadlocking. The prior waitForConfigurationUpdate
+// unlocked p.mu unconditionally on return via defer, including on the
+// already-cancelled path where it had never unlocked p.mu at all, so the
+// deferred lock call would try to lock a mutex this same goroutine already
+// held.
+func TestInitWithContext_AlreadyCancelled(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled before InitWithContext ever sees it
+
+	err := runWithDeadline(t, 2*time.Second, func() error {
+		return provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+}
+
+// TestInitWithContext_CancelledDuringWait pins the same contract as
+// TestInitWithContext_AlreadyCancelled, but for cancellation arriving while
+// InitWithContext is already blocked waiting for configuration, rather than
+// before the call.
+func TestInitWithContext_CancelledDuringWait(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let InitWithContext reach its wait
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("InitWithContext did not return after cancellation; likely deadlocked")
+	}
+}
+
+// TestInitWithContext_ConfigurationArrivesDuringWait pins that a real
+// configuration update still wakes a blocked InitWithContext, guarding
+// against a fix that stops missing cancellation but breaks the success path
+// instead (for example, by waiting on a channel nothing ever closes).
+func TestInitWithContext_ConfigurationArrivesDuringWait(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let InitWithContext reach its wait
+	provider.updateConfiguration(createTestConfig())
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Errorf("expected no error, got: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("InitWithContext did not return after configuration update; likely deadlocked")
+	}
 }
 
 func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {

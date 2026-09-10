@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/pprof/profile"
@@ -27,7 +28,7 @@ type Protobuf struct {
 func (p Protobuf) Convert(protobuf *profile.Profile, text io.Writer) error {
 	w := bufio.NewWriter(text)
 	if p.SampleTypes {
-		var sampleTypes []string
+		sampleTypes := make([]string, 0, len(protobuf.SampleType))
 		for _, sampleType := range protobuf.SampleType {
 			sampleTypes = append(sampleTypes, sampleType.Type+"/"+sampleType.Unit)
 		}
@@ -64,7 +65,7 @@ func (p Protobuf) Convert(protobuf *profile.Profile, text io.Writer) error {
 		}
 		var values []string
 		for _, val := range sample.Value {
-			values = append(values, fmt.Sprintf("%d", val))
+			values = append(values, strconv.FormatInt(val, 10))
 			if !p.SampleTypes {
 				break
 			}

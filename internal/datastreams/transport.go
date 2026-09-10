@@ -42,7 +42,7 @@ func newHTTPTransport(agentURL *url.URL, client *http.Client) *httpTransport {
 	if entityID := internal.ContainerID(); entityID != "" {
 		defaultHeaders["Datadog-Entity-ID"] = entityID
 	}
-	url := fmt.Sprintf("%s/v0.1/pipeline_stats", agentURL.String())
+	url := agentURL.String() + "/v0.1/pipeline_stats"
 	return &httpTransport{
 		url:     url,
 		client:  client,

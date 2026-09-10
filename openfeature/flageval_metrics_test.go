@@ -314,7 +314,7 @@ func TestIntegrationEvaluate(t *testing.T) {
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
-		provider.flagEvalHook.metrics = m
+		provider.flagEvalMetricsHook.metrics = m
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -364,7 +364,7 @@ func TestIntegrationEvaluate(t *testing.T) {
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
-		provider.flagEvalHook.metrics = m
+		provider.flagEvalMetricsHook.metrics = m
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -411,7 +411,7 @@ func TestIntegrationEvaluate(t *testing.T) {
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
-		provider.flagEvalHook.metrics = m
+		provider.flagEvalMetricsHook.metrics = m
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

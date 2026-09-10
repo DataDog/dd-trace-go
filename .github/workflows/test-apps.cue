@@ -50,10 +50,12 @@ import "encoding/json"
     {
         name: "prod",
         site: "datadoghq.com",
+        policy: "dd-trace-go",
     },
     {
         name: "staging",
         site: "datad0g.com",
+        policy: "dd-trace-go-staging",
     },
 ]
 
@@ -109,6 +111,9 @@ on: {
 }
 
 env: {
+  // Fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410,
+  // which is all a comma-separated GOPROXY falls through on.
+  GOPROXY: "https://proxy.golang.org|direct",
   DD_ENV: "github",
   DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs['arg: tags'] }}",
 }
@@ -132,7 +137,7 @@ jobs: {
                 steps: [
                     {
                         name: "Checkout Code",
-                        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd", // v6.0.2
+                        uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", // v7.0.1
                         with: {
                         "persist-credentials": false,
                         ref:                   "${{ inputs.ref || github.ref }}",
@@ -141,9 +146,9 @@ jobs: {
                     {
                         name: "Get Datadog credentials",
                         id: "dd-sts",
-                        uses: "DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75",
+                        uses: "DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2",
                         with: {
-                            policy: "dd-trace-go",
+                            policy: "\(env.policy)",
                         },
                     },
                     {
@@ -156,7 +161,7 @@ jobs: {
                     },
                     {
                         name: "Setup Go"
-                        uses: "actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417", // v6.3.0
+                        uses: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e", // v7.0.0
                         with: {
                             "go-version": "stable",
                             "check-latest": true,

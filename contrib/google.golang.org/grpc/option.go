@@ -57,6 +57,7 @@ type config struct {
 	serviceSource       string
 	spanName            string
 	nonErrorCodes       map[codes.Code]bool
+	errCheck            func(method string, err error) bool
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
@@ -80,6 +81,13 @@ func defaults(cfg *config) {
 		"x-datadog-trace-id":          {},
 		"x-datadog-parent-id":         {},
 		"x-datadog-sampling-priority": {},
+		// Credential-bearing headers
+		"authorization":       {},
+		"proxy-authorization": {},
+		"cookie":              {},
+		"set-cookie":          {},
+		"x-api-key":           {},
+		"x-auth-token":        {},
 	}
 }
 
@@ -143,6 +151,16 @@ func NonErrorCodes(cs ...codes.Code) OptionFn {
 		for _, c := range cs {
 			cfg.nonErrorCodes[c] = true
 		}
+	}
+}
+
+// WithErrorCheck sets a function fn which determines whether the passed error should be
+// marked as an error. fn is called with the gRPC full method name and the error whenever
+// an RPC finishes with a non-nil error. If fn returns false, the error is not recorded on
+// the span.
+func WithErrorCheck(fn func(method string, err error) (isError bool)) OptionFn {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }
 
