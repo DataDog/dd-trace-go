@@ -477,7 +477,10 @@ func TestErrorAndOptions(t *testing.T) {
 	}
 	_, err = Client(
 		WithService("kratos-client-test"),
-		WithSpanOptions(tracer.Tag("custom.tag", "custom-value")),
+		WithSpanOptions(
+			tracer.Tag("custom.tag", "custom-value"),
+			tracer.ResourceName("custom-resource"),
+		),
 		NoDebugStack(),
 	)(next)(ctx, nil)
 	require.ErrorIs(t, err, wantErr)
@@ -486,6 +489,7 @@ func TestErrorAndOptions(t *testing.T) {
 	assert.Equal(t, "kratos-client-test", span.Tag(ext.ServiceName))
 	assert.Equal(t, instrumentation.ServiceSourceWithServiceOption, span.Tag(ext.KeyServiceSource))
 	assert.Equal(t, "custom-value", span.Tag("custom.tag"))
+	assert.Equal(t, "custom-resource", span.Tag(ext.ResourceName))
 	assert.Equal(t, float64(http.StatusBadRequest), span.Tag("kratos.status_code"))
 	assert.Equal(t, "INVALID_REQUEST", span.Tag("kratos.error_reason"))
 	assert.Equal(t, "400", span.Tag(ext.HTTPCode))
@@ -594,11 +598,14 @@ func TestHTTPConfiguredErrorStatuses(t *testing.T) {
 		envValue   string
 		statusCode int
 		opts       []Option
+		wantError  bool
 	}{
-		{name: "server_custom_404", spanKind: ext.SpanKindServer, envName: envServerErrorStatuses, envValue: "400-499", statusCode: http.StatusNotFound},
-		{name: "server_option_404", spanKind: ext.SpanKindServer, envName: envServerErrorStatuses, envValue: "", statusCode: http.StatusNotFound, opts: []Option{WithStatusCheck(func(int) bool { return true })}},
+		{name: "server_custom_404", spanKind: ext.SpanKindServer, envName: envServerErrorStatuses, envValue: "400-499", statusCode: http.StatusNotFound, wantError: true},
+		{name: "server_option_404", spanKind: ext.SpanKindServer, envName: envServerErrorStatuses, envValue: "", statusCode: http.StatusNotFound, opts: []Option{WithStatusCheck(func(int) bool { return true })}, wantError: true},
+		{name: "server_nil_option_404", spanKind: ext.SpanKindServer, envName: envServerErrorStatuses, envValue: "", statusCode: http.StatusNotFound, opts: []Option{WithStatusCheck(nil)}},
 		{name: "client_default_503", spanKind: ext.SpanKindClient, envName: envClientErrorStatuses, envValue: "", statusCode: http.StatusServiceUnavailable},
-		{name: "client_custom_503", spanKind: ext.SpanKindClient, envName: envClientErrorStatuses, envValue: "500-599", statusCode: http.StatusServiceUnavailable},
+		{name: "client_custom_503", spanKind: ext.SpanKindClient, envName: envClientErrorStatuses, envValue: "500-599", statusCode: http.StatusServiceUnavailable, wantError: true},
+		{name: "client_nil_option_503", spanKind: ext.SpanKindClient, envName: envClientErrorStatuses, envValue: "", statusCode: http.StatusServiceUnavailable, opts: []Option{WithStatusCheck(nil)}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -624,10 +631,10 @@ func TestHTTPConfiguredErrorStatuses(t *testing.T) {
 
 			span := findSpan(t, mt, "http.request", tc.spanKind)
 			assert.Equal(t, strconv.Itoa(tc.statusCode), span.Tag(ext.HTTPCode))
-			if tc.name == "client_default_503" {
-				assert.Nil(t, span.Tag(ext.ErrorMsg))
-			} else {
+			if tc.wantError {
 				assert.Equal(t, wantErr.Error(), span.Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			}
 		})
 	}

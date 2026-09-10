@@ -46,6 +46,7 @@ func Server(opts ...Option) middleware.Middleware {
 	cfg := new(config)
 	serverDefaults(cfg)
 	applyOptions(cfg, opts)
+	prepareSpanConfig(cfg, ext.SpanKindServer)
 
 	return func(handler middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (reply any, err error) {
@@ -107,6 +108,7 @@ func Client(opts ...Option) middleware.Middleware {
 	cfg := new(config)
 	clientDefaults(cfg)
 	applyOptions(cfg, opts)
+	prepareSpanConfig(cfg, ext.SpanKindClient)
 
 	return func(handler middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (reply any, err error) {
@@ -131,29 +133,19 @@ func Client(opts ...Option) middleware.Middleware {
 }
 
 func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []tracer.StartSpanOption {
-	spanOpts := make([]tracer.StartSpanOption, 0, 12+len(cfg.spanOpts))
-	spanOpts = append(spanOpts,
-		instrumentation.ServiceNameWithSource(cfg.serviceName.String(), cfg.serviceSource),
-		tracer.ResourceName(resourceName(tr)),
-		tracer.Tag(ext.Component, component),
-		tracer.Tag(ext.SpanKind, spanKind),
-		tracer.Tag(ext.RPCSystem, tr.Kind().String()),
-	)
-	if !math.IsNaN(cfg.analyticsRate) {
-		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-	}
-	if spanKind == ext.SpanKindServer {
-		spanOpts = append(spanOpts, tracer.Measured())
-	}
+	tags := make(map[string]any, 12)
+	tags[ext.ResourceName] = resourceName(tr)
+	tags[ext.RPCSystem] = tr.Kind().String()
 
 	service, method := splitOperation(tr.Operation())
 	if service != "" {
-		spanOpts = append(spanOpts, tracer.Tag(ext.RPCService, service))
+		tags[ext.RPCService] = service
 	}
 	if method != "" {
-		spanOpts = append(spanOpts, tracer.Tag(ext.RPCMethod, method))
+		tags[ext.RPCMethod] = method
 	}
 
+	var dynamicOpts []tracer.StartSpanOption
 	if tr.Kind() == transport.KindHTTP {
 		if httpTr, ok := tr.(kratoshttp.Transporter); ok && httpTr.Request() != nil {
 			req := httpTr.Request()
@@ -163,50 +155,79 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 				spanType = ext.SpanTypeWeb
 				httpURL = httptrace.URLFromRequest(req, cfg.queryString)
 			}
-			spanOpts = append(spanOpts,
-				tracer.SpanType(spanType),
-				tracer.Tag(ext.HTTPMethod, req.Method),
-				tracer.Tag(ext.HTTPURL, httpURL),
-				httptrace.HeaderTagsFromRequest(req, cfg.headerTags),
-			)
+			tags[ext.SpanType] = spanType
+			tags[ext.HTTPMethod] = req.Method
+			tags[ext.HTTPURL] = httpURL
+			dynamicOpts = append(dynamicOpts, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
 			if spanKind == ext.SpanKindServer {
-				spanOpts = append(spanOpts,
-					httptrace.ClientIPTagsFromRequest(req),
-					tracer.Tag(ext.HTTPUserAgent, req.UserAgent()),
-				)
-				spanOpts = appsechttpsec.AppendSecurityTestingHeaderTags(spanOpts, req.Header)
+				tags[ext.HTTPUserAgent] = req.UserAgent()
+				appsechttpsec.SetSecurityTestingHeaderTags(tags, req.Header)
+				dynamicOpts = append(dynamicOpts, httptrace.ClientIPTagsFromRequest(req))
 				if req.Host != "" {
-					spanOpts = append(spanOpts, tracer.Tag("http.host", req.Host))
+					tags["http.host"] = req.Host
 				}
 			} else {
-				spanOpts = append(spanOpts, tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()))
+				tags[ext.NetworkDestinationName] = req.URL.Hostname()
 				if port, err := strconv.Atoi(req.URL.Port()); err == nil {
-					spanOpts = append(spanOpts, tracer.Tag(ext.NetworkDestinationPort, port))
+					tags[ext.NetworkDestinationPort] = port
 				}
 			}
 			if route := httpTr.PathTemplate(); route != "" {
-				spanOpts = append(spanOpts, tracer.Tag(ext.HTTPRoute, route))
+				tags[ext.HTTPRoute] = route
 			}
 		}
 	} else if tr.Kind() == transport.KindGRPC {
-		spanOpts = append(spanOpts,
-			tracer.SpanType(ext.AppTypeRPC),
-			tracer.Tag(ext.GRPCFullMethod, tr.Operation()),
-		)
+		tags[ext.SpanType] = ext.AppTypeRPC
+		tags[ext.GRPCFullMethod] = tr.Operation()
 		if spanKind == ext.SpanKindClient {
 			host, port := endpointHostPort(tr.Endpoint())
 			if host != "" {
-				spanOpts = append(spanOpts,
-					tracer.Tag(ext.PeerHostname, host),
-					tracer.Tag(ext.TargetHost, host),
-				)
+				tags[ext.PeerHostname] = host
+				tags[ext.TargetHost] = host
 			}
 			if port != "" {
-				spanOpts = append(spanOpts, tracer.Tag(ext.TargetPort, port))
+				tags[ext.TargetPort] = port
 			}
 		}
 	}
+
+	spanOpts := make([]tracer.StartSpanOption, 0, 3+len(dynamicOpts)+len(cfg.spanOpts))
+	spanOpts = append(spanOpts, tracer.WithTags(tags))
+	spanOpts = append(spanOpts, dynamicOpts...)
+	spanOpts = append(spanOpts, tracer.WithStartSpanConfig(cfg.spanConfig))
+	if cfg.serviceNameOption != nil {
+		spanOpts = append(spanOpts, cfg.serviceNameOption)
+	}
 	return append(spanOpts, cfg.spanOpts...)
+}
+
+func prepareSpanConfig(cfg *config, spanKind string) {
+	staticOpts := []tracer.StartSpanOption{
+		tracer.Tag(ext.Component, component),
+		tracer.Tag(ext.SpanKind, spanKind),
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		staticOpts = append(staticOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	if spanKind == ext.SpanKindServer {
+		staticOpts = append(staticOpts, tracer.Measured())
+	}
+	if cfg.serviceNameStatic {
+		staticOpts = append(staticOpts, instrumentation.ServiceNameWithSource(cfg.serviceName.String(), cfg.serviceSource))
+	} else {
+		// The default service can be configured when the tracer starts, after
+		// applications have constructed their middleware. Cache the option but
+		// keep resolving the value lazily until the tracer is initialized.
+		serviceName := cfg.serviceName
+		serviceSource := cfg.serviceSource
+		cfg.serviceNameOption = func(spanCfg *tracer.StartSpanConfig) {
+			spanCfg.Tags[ext.KeyServiceSource] = instrumentation.ServiceOverride{
+				Name:   serviceName.String(),
+				Source: serviceSource,
+			}
+		}
+	}
+	cfg.spanConfig = tracer.NewStartSpanConfig(staticOpts...)
 }
 
 func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind string, cfg *config) {

@@ -24,14 +24,17 @@ const (
 )
 
 type config struct {
-	serviceName   *cachedServiceName
-	serviceSource string
-	noDebugStack  bool
-	spanOpts      []tracer.StartSpanOption
-	headerTags    instrumentation.HeaderTags
-	analyticsRate float64
-	queryString   bool
-	isStatusError func(int) bool
+	serviceName       *cachedServiceName
+	serviceSource     string
+	noDebugStack      bool
+	spanOpts          []tracer.StartSpanOption
+	spanConfig        *tracer.StartSpanConfig
+	serviceNameOption tracer.StartSpanOption
+	serviceNameStatic bool
+	headerTags        instrumentation.HeaderTags
+	analyticsRate     float64
+	queryString       bool
+	isStatusError     func(int) bool
 }
 
 type cachedServiceName struct {
@@ -110,6 +113,7 @@ func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = newCachedServiceName(func() string { return name })
 		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
+		cfg.serviceNameStatic = true
 	}
 }
 
@@ -145,7 +149,9 @@ func WithAnalyticsRate(rate float64) Option {
 // WithStatusCheck sets the function used to determine whether an HTTP status code is an error.
 func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
-		cfg.isStatusError = fn
+		if fn != nil {
+			cfg.isStatusError = fn
+		}
 	}
 }
 
