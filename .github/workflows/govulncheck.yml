@@ -25,6 +25,7 @@ on:
       - 'instrumentation/**'
       - 'internal/**'
       - 'orchestrion/**'
+      - 'otelc/**'
       - 'scripts/**'
   schedule:
     - cron: '00 00 * * *'
