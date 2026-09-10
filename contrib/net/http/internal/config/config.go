@@ -139,15 +139,14 @@ func NormalizeClientRequestMethod(req *http.Request) (attribute, spanName, origi
 //   - Use DD_TRACE_HTTP_CLIENT_ERROR_STATUSES when configured.
 //   - Otherwise, under OpenTelemetry semantics, 4xx, 5xx, and out-of-range status codes are errors.
 //   - Otherwise, 4xx are errors.
-//
-// See:
-// https://github.com/open-telemetry/semantic-conventions/blob/7f3c3bfc300cc090871692219af6a2495aa67915/docs/http/http-spans.md?plain=1#L82-L105
 func ClientErrorCheck(otelSemantics bool) func(int) bool {
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(EnvClientErrorStatuses)); fn != nil {
 		return fn
 	}
 
 	if otelSemantics {
+		// See:
+		// https://github.com/open-telemetry/semantic-conventions/blob/7f3c3bfc300cc090871692219af6a2495aa67915/docs/http/http-spans.md?plain=1#L82-L105
 		return func(statusCode int) bool {
 			return statusCode < http.StatusContinue /* 100 */ || statusCode >= http.StatusBadRequest /* 400 */
 		}
