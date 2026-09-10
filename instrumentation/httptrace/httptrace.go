@@ -216,10 +216,11 @@ func URLFromClientRequest(r *http.Request, queryString bool) string {
 	return urlFromRequest(r, queryString, true, r.Host)
 }
 
-// URLFullFromClientRequest returns the URL for the OpenTelemetry url.full client span attribute.
-// Unlike URLFromClientRequest, it prefers Request.URL.Host and falls back to Request.Host.
-// It reports a sanitized URL as close as possible to the provided Request.URL and replaces
-// URL userinfo with REDACTED:REDACTED.
+// URLFullFromClientRequest returns the OpenTelemetry url.full, identifying which URL
+// the client asked for, the Request.URL, falling back to Request.Host.
+// In contrast, [ServerAddressPortFromClientRequest] returns the resolved
+// destination authority, which can differ (e.g virtual host, reverse proxy).
+// The URL userinfo is replaced with REDACTED:REDACTED.
 func URLFullFromClientRequest(r *http.Request, queryString bool) string {
 	authority := r.URL.Host
 	if authority == "" {
