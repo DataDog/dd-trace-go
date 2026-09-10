@@ -26,7 +26,8 @@ func TestBuildManagedAgentlessEndpoint(t *testing.T) {
 			apiKey:  "key",
 			wantURL: "https://ufc-server.ff-cdn.datadoghq.com/api/v2/feature-flagging/config/rules-based/server",
 		},
-		"unset site": {
+		"blank site": {
+			site:    "  ",
 			apiKey:  "key",
 			wantURL: "https://ufc-server.ff-cdn.datadoghq.com/api/v2/feature-flagging/config/rules-based/server",
 		},
@@ -68,26 +69,6 @@ func TestBuildManagedAgentlessEndpoint(t *testing.T) {
 		},
 		"site with whitespace": {
 			site:    "datadog hq.com",
-			apiKey:  "key",
-			wantErr: errAgentlessInvalidSite,
-		},
-		"site with leading whitespace": {
-			site:    " datadoghq.com",
-			apiKey:  "key",
-			wantErr: errAgentlessInvalidSite,
-		},
-		"site with trailing whitespace": {
-			site:    "datadoghq.com\t",
-			apiKey:  "key",
-			wantErr: errAgentlessInvalidSite,
-		},
-		"site with unicode character that lowercases to ASCII": {
-			site:    "K.com",
-			apiKey:  "key",
-			wantErr: errAgentlessInvalidSite,
-		},
-		"site with dotted I that lowercases to ASCII": {
-			site:    "İ.com",
 			apiKey:  "key",
 			wantErr: errAgentlessInvalidSite,
 		},

@@ -15,7 +15,7 @@ const (
 	// agentlessConfigPath is the canonical path of the managed Agentless
 	// configuration endpoint.
 	agentlessConfigPath = "/api/v2/feature-flagging/config/rules-based/server"
-	// agentlessHostPrefix is prepended to the validated, lowercased site to
+	// agentlessHostPrefix is prepended to the (lowercased, trimmed) site to
 	// build the managed endpoint's host.
 	agentlessHostPrefix = "ufc-server.ff-cdn."
 	// agentlessDefaultSite is used when no site is configured.
@@ -58,8 +58,11 @@ func buildManagedAgentlessEndpoint(site, env, apiKey string) (agentlessEndpoint,
 		return agentlessEndpoint{}, errAgentlessNoAPIKey
 	}
 
-	s, ok := normalizeAgentlessSite(site)
-	if !ok {
+	s := strings.ToLower(strings.TrimSpace(site))
+	if s == "" {
+		s = agentlessDefaultSite
+	}
+	if containsWhitespace(s) || strings.ContainsAny(s, "/?#@:") || strings.Contains(s, "://") {
 		return agentlessEndpoint{}, errAgentlessInvalidSite
 	}
 
@@ -73,68 +76,6 @@ func buildManagedAgentlessEndpoint(site, env, apiKey string) (agentlessEndpoint,
 	}
 
 	return agentlessEndpoint{url: u.String(), managed: true}, nil
-}
-
-// normalizeAgentlessSite applies the one site contract shared by managed
-// configuration polling and direct EVP intake. An unset site selects the
-// documented default; a configured site is never trimmed because doing so
-// could silently redirect credential-bearing requests to a different host.
-func normalizeAgentlessSite(site string) (string, bool) {
-	if site == "" {
-		return agentlessDefaultSite, true
-	}
-	if site != strings.TrimSpace(site) {
-		return "", false
-	}
-	// Reject non-ASCII input before case folding. Some Unicode characters,
-	// such as the Kelvin sign, lowercase to ASCII and could otherwise change
-	// the credential-bearing destination host.
-	for i := 0; i < len(site); i++ {
-		if site[i] > 0x7f {
-			return "", false
-		}
-	}
-
-	site = strings.ToLower(site)
-	if !isValidAgentlessSite(site) {
-		return "", false
-	}
-	return site, true
-}
-
-func isValidAgentlessSite(site string) bool {
-	if site == "" || len(site) > 230 {
-		return false
-	}
-
-	labelLength := 0
-	previousWasHyphen := false
-	for i := 0; i < len(site); i++ {
-		character := site[i]
-		if character == '.' {
-			if labelLength == 0 || previousWasHyphen {
-				return false
-			}
-			labelLength = 0
-			previousWasHyphen = false
-			continue
-		}
-
-		if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') {
-			labelLength++
-			previousWasHyphen = false
-		} else if character == '-' && labelLength > 0 {
-			labelLength++
-			previousWasHyphen = true
-		} else {
-			return false
-		}
-		if labelLength > 63 {
-			return false
-		}
-	}
-
-	return labelLength > 0 && !previousWasHyphen
 }
 
 func buildCustomAgentlessEndpoint(baseURL string) (agentlessEndpoint, error) {

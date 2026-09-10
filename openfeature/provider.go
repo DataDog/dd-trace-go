@@ -15,9 +15,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
 
 var _ openfeature.FeatureProvider = (*DatadogProvider)(nil)
@@ -34,10 +32,13 @@ var (
 )
 
 const (
+	// ffeProductEnvVar is the environment variable to enable the experimental flagging provider
+	ffeProductEnvVar     = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
 	spanEnrichmentEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED"
 	// flagEvalCountsEnabledEnvVar is the operator killswitch for the EVP flagevaluation emission path.
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
+	// Mirrors the internal.BoolEnv convention used by ffeProductEnvVar.
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
 	// Default timeout for provider initialization
 	defaultInitTimeout = 30 * time.Second
@@ -47,7 +48,7 @@ const (
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
-	// ExposureFlushInterval is the interval at which exposure events are flushed through EVP.
+	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
 
@@ -57,8 +58,7 @@ type ProviderConfig struct {
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
-// using configuration received from Datadog, either via Remote Config or
-// Agentless polling depending on the resolved delivery source.
+// using configuration received from Datadog Remote Config.
 type DatadogProvider struct {
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
@@ -86,65 +86,28 @@ type DatadogProvider struct {
 	// Named distinctly from flagEvalHook (OTel) to avoid collisions.
 	flagEvalLoggingWriter *flagEvalLoggingWriter
 	flagEvalLoggingHook   *flagEvalLoggingHook
-
-	// source is fixed at construction. // +checklocks:mu
-	source internalffe.Source
-	// agentless is non-nil only once startWithAgentless has registered it. // +checklocks:mu
-	agentless *agentlessSource
-	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
-	shutdownCalled bool
-	// deliveryErr is set when no delivery source could start; permanent for the process. // +checklocks:mu
-	deliveryErr error
-	// writersStarted makes Init idempotent. // +checklocks:mu
-	writersStarted bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
-// Depending on DD_FEATURE_FLAGS_CONFIGURATION_SOURCE (default: agentless), it either polls
-// Datadog directly over HTTPS or subscribes to Remote Config updates, and automatically updates
-// the provider's configuration when new flag configurations are received.
+// It subscribes to Remote Config updates and automatically updates the provider's configuration
+// when new flag configurations are received.
 //
 // The provider will be ready to use immediately, but flag evaluations will return errors
-// until the first configuration is received.
+// until the first configuration is received from Remote Config.
 //
-// Returns an error if the remote_config source is selected and activating Remote Config
-// delivery fails: starting or subscribing with the default RC client (when no tracer-owned
-// subscription exists), a conflicting existing FFE_FLAGS subscription, or callback
-// attachment. If the default client is the one at fault, please call tracer.Start before
-// creating the provider.
+// Returns an error if the default configuration of the Remote Config client is NOT working
+// In this case, please call tracer.Start before creating the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
-	settings := internalffe.ResolveSettings(internalconfig.Get())
-	if settings.LegacyKeyDecided {
-		warnLegacyFlaggingProviderOnce()
-	}
-
-	switch settings.Source {
-	case internalffe.SourceRemoteConfig:
-		return startWithRemoteConfig(config)
-	case internalffe.SourceAgentless:
-		return startWithAgentless(config, settings)
-	default:
+	if !internal.BoolEnv(ffeProductEnvVar, false) {
+		log.Error("openfeature: experimental flagging provider is not enabled, please set %s=true to enable it", ffeProductEnvVar)
 		return &openfeature.NoopProvider{}, nil
 	}
+
+	return startWithRemoteConfig(config)
 }
 
-var warnLegacyFlaggingProviderOnce = sync.OnceFunc(func() {
-	log.Warn("openfeature: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED is deprecated; use DD_FEATURE_FLAGS_CONFIGURATION_SOURCE instead")
-})
-
-// newDatadogProvider builds a provider defaulting to the Remote Config
-// source. It exists so the ~60 existing tests exercising evaluation, hooks,
-// and metrics — none of which care about the delivery source — don't need to
-// be touched; production code paths call newDatadogProviderWithSource.
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {
-	return newDatadogProviderWithSource(config, internalffe.SourceRemoteConfig, internalffe.Settings{})
-}
-
-func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Source, settings internalffe.Settings) *DatadogProvider {
 	evp := newEVPClient()
-	if source == internalffe.SourceAgentless {
-		evp = newAgentlessEVPClient(settings)
-	}
 
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
@@ -194,7 +157,7 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
-			Name: "Datadog Provider",
+			Name: "Datadog Remote Config Provider",
 		},
 		hooks:                 hooks,
 		exposureWriter:        writer,
@@ -202,64 +165,16 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
 		configChange:          make(chan struct{}),
-		source:                source,
 	}
 
 	return p
 }
 
-// startWithAgentless registers an Agentless configuration source as the
-// provider's delivery source. Registering the source happens under the same
-// lock as the shutdownCalled check, so a poller can never be registered after
-// Shutdown — that would otherwise leak a billable poller for the process
-// lifetime. src.start() runs outside the lock since it launches the poll loop
-// in the background and returns immediately.
-func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*DatadogProvider, error) {
-	p := newDatadogProviderWithSource(config, internalffe.SourceAgentless, settings)
-
-	src, err := newAgentlessSource(settings, p.updateConfiguration)
-	if err != nil {
-		// err never contains the configured endpoint or credentials.
-		log.Error("openfeature: failed to start agentless configuration source: %v", err.Error())
-		p.mu.Lock()
-		p.deliveryErr = err
-		p.mu.Unlock()
-		return p, nil
-	}
-
-	if !p.tryRegisterAgentless(src) {
-		return p, nil
-	}
-
-	src.start()
-	return p, nil
-}
-
-// tryRegisterAgentless registers src as the provider's active delivery
-// source unless Shutdown has already run, in which case it registers
-// nothing so a poller can never outlive Shutdown. Returns whether it
-// registered src.
-func (p *DatadogProvider) tryRegisterAgentless(src *agentlessSource) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.shutdownCalled {
-		return false
-	}
-	p.agentless = src
-	return true
-}
-
-// updateConfiguration updates the provider's flag configuration. This is
-// called by the Remote Config callback or the Agentless poller when a new
-// configuration is received.
+// updateConfiguration updates the provider's flag configuration.
+// This is called by the Remote Config callback when new configuration is received.
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.shutdownCalled {
-		// A poll or RC callback already in flight must not resurrect
-		// configuration after Shutdown.
-		return
-	}
 	p.configuration = config
 	// Wake every waiter blocked on the current generation, then start a fresh
 	// one for the next update: a closed channel cannot be reused as a signal.
@@ -321,41 +236,17 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.deliveryErr != nil {
-		// Permanent: no delivery source could be started, so waiting out the
-		// timeout would only delay startup for configuration that can never arrive.
-		// Safe to surface: newAgentlessSource's errors never contain the
-		// configured endpoint or credentials.
-		return &openfeature.ProviderInitError{
-			ErrorCode: openfeature.ProviderNotReadyCode,
-			Message:   "no feature-flag delivery source could be started: " + p.deliveryErr.Error(),
-		}
-	}
-
 	for p.configuration == nil {
-		if p.shutdownCalled {
-			// Shutdown ran while Init was waiting: configuration will never
-			// arrive. Return an error rather than nil — nil would tell the
-			// OpenFeature SDK initialization succeeded and move it to
-			// ReadyState, even though the provider just tore itself down.
-			return &openfeature.ProviderInitError{
-				ErrorCode: openfeature.ProviderFatalCode,
-				Message:   "provider was shut down before configuration arrived",
-			}
-		}
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
 			return err
 		}
 	}
 
-	if !p.writersStarted {
-		// Start periodic flushing for exposure writer.
-		p.exposureWriter.start()
-		// Start periodic flushing for EVP flag evaluation writer (nil when killswitch disabled).
-		if p.flagEvalLoggingWriter != nil {
-			p.flagEvalLoggingWriter.start()
-		}
-		p.writersStarted = true
+	// Start periodic flushing for exposure writer.
+	p.exposureWriter.start()
+	// Start periodic flushing for EVP flag evaluation writer (nil when killswitch disabled).
+	if p.flagEvalLoggingWriter != nil {
+		p.flagEvalLoggingWriter.start()
 	}
 	return nil
 }
@@ -372,47 +263,16 @@ func (p *DatadogProvider) Shutdown() {
 // This method respects context cancellation and timeouts, allowing users
 // to control how long the shutdown process should take.
 func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
-	// Claim shutdown and copy out the components to tear down while still
-	// holding the lock, then close the current change channel so a parked Init
-	// wakes up instead of waiting out its timeout. The teardown itself must run
-	// without the lock held: agentless.Stop joins the poll goroutine, which itself calls
-	// updateConfiguration and takes p.mu, so holding the lock across it
-	// would deadlock.
-	p.mu.Lock()
-	if p.shutdownCalled {
-		// Teardown below is idempotent today; returning early keeps that from
-		// depending on every future step guarding itself.
-		p.mu.Unlock()
-		return nil
-	}
-	p.shutdownCalled = true
-	source := p.source
-	agentless := p.agentless
-	p.configuration = nil
-	if p.configChange != nil {
-		close(p.configChange)
-	}
-	p.configChange = make(chan struct{})
-	p.mu.Unlock()
-
+	// Create a channel to signal completion
 	done := make(chan error, 1)
+
 	go func() {
-		var err error
-		// An agentless provider never registered an RC capability, so it
-		// must not unregister one.
-		if source == internalffe.SourceRemoteConfig {
-			err = stopRemoteConfig()
-		}
-		if agentless != nil {
-			if stopErr := agentless.Stop(ctx); stopErr != nil {
-				// The outer select can still report success on this path, so
-				// without this a truncated teardown would be invisible.
-				log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error())
-			}
-		}
+		// Perform the shutdown operations
+		err := stopRemoteConfig()
 
 		p.mu.Lock()
 		defer p.mu.Unlock()
+		p.configuration = nil
 		// Stop the exposure writer
 		if p.exposureWriter != nil {
 			p.exposureWriter.flush()
