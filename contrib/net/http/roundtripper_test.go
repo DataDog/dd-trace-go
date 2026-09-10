@@ -784,6 +784,7 @@ func TestRoundTripperOmitsResponseStatusForTransportErrors(t *testing.T) {
 	require.Len(t, spans, 1)
 	assert.NotContains(t, spans[0].Tags(), ext.HTTPResponseStatusCode)
 	assert.NotContains(t, spans[0].Tags(), ext.HTTPCode)
+	assert.Equal(t, "*http.roundTripperTestError", spans[0].Tag(ext.ErrorType))
 }
 
 func TestResourceNamer(t *testing.T) {
