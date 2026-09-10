@@ -63,32 +63,38 @@ func Server(opts ...Option) middleware.Middleware {
 				}
 			}
 
-			spanOpts := startSpanOptions(cfg, tr, ext.SpanKindServer)
+			tags := startSpanTags(cfg, tr, ext.SpanKindServer)
+			var parentCtx *tracer.SpanContext
 			if header := tr.RequestHeader(); header != nil {
 				if spanctx, extractErr := tracer.Extract(headerCarrier{Header: header}); extractErr == nil {
+					parentCtx = spanctx
 					if spanctx != nil {
-						items := make(map[string]string)
+						var items map[string]string
 						spanctx.ForeachBaggageItem(func(key, value string) bool {
+							if items == nil {
+								items = make(map[string]string)
+							}
 							items[key] = value
 							return true
 						})
-						ctx = baggage.SetAll(ctx, items)
-						if tr.Kind() == transport.KindHTTP {
-							spanOpts = append(spanOpts, httptrace.BaggageTags(items))
-						}
-						if inferredSpan == nil {
-							if links := spanctx.SpanLinks(); links != nil {
-								spanOpts = append(spanOpts, tracer.WithSpanLinks(links))
+						if len(items) > 0 {
+							ctx = baggage.SetAll(ctx, items)
+							if tr.Kind() == transport.KindHTTP {
+								httptrace.SetBaggageTags(tags, items)
 							}
 						}
 					}
-					if inferredSpan == nil {
-						spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
-					}
 				}
 			}
+
+			spanOpts := startSpanOptions(cfg, tags)
 			if inferredSpan != nil {
 				spanOpts = append(spanOpts, tracer.ChildOf(inferredSpan.Context()))
+			} else if parentCtx != nil {
+				if links := parentCtx.SpanLinks(); links != nil {
+					spanOpts = append(spanOpts, tracer.WithSpanLinks(links))
+				}
+				spanOpts = append(spanOpts, tracer.ChildOf(parentCtx))
 			}
 			spanOpts = append(spanOpts, cfg.spanOpts...)
 
@@ -119,7 +125,8 @@ func Client(opts ...Option) middleware.Middleware {
 				return handler(ctx, req)
 			}
 
-			spanOpts := append(startSpanOptions(cfg, tr, ext.SpanKindClient), cfg.spanOpts...)
+			spanOpts := startSpanOptions(cfg, startSpanTags(cfg, tr, ext.SpanKindClient))
+			spanOpts = append(spanOpts, cfg.spanOpts...)
 			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentClient), spanOpts...)
 			defer func() { finishSpan(span, tr, err, ext.SpanKindClient, cfg) }()
 			for key, value := range baggage.All(ctx) {
@@ -135,7 +142,7 @@ func Client(opts ...Option) middleware.Middleware {
 	}
 }
 
-func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []tracer.StartSpanOption {
+func startSpanTags(cfg *config, tr transport.Transporter, spanKind string) map[string]any {
 	tags := make(map[string]any, 12)
 	tags[ext.ResourceName] = resourceName(tr)
 	tags[ext.RPCSystem] = tr.Kind().String()
@@ -193,7 +200,11 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 		}
 	}
 
-	spanOpts := make([]tracer.StartSpanOption, 0, 2)
+	return tags
+}
+
+func startSpanOptions(cfg *config, tags map[string]any) []tracer.StartSpanOption {
+	spanOpts := make([]tracer.StartSpanOption, 0, 3)
 	spanOpts = append(spanOpts, tracer.WithTags(tags))
 	spanOpts = append(spanOpts, tracer.WithStartSpanConfig(cfg.spanConfig))
 	if cfg.serviceNameOption != nil {

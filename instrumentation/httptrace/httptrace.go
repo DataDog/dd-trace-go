@@ -10,6 +10,7 @@ package httptrace
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -356,18 +357,21 @@ func SetClientIPTagsFromRequest(tags map[string]any, req *http.Request) {
 
 // BaggageTags adds configured baggage items as span tags.
 func BaggageTags(items map[string]string) tracer.StartSpanOption {
-	tags := make(map[string]string)
+	tags := make(map[string]any, len(items))
+	SetBaggageTags(tags, items)
+	return func(spanCfg *tracer.StartSpanConfig) {
+		if spanCfg.Tags == nil {
+			spanCfg.Tags = make(map[string]any, len(tags))
+		}
+		maps.Copy(spanCfg.Tags, tags)
+	}
+}
+
+// SetBaggageTags adds configured baggage items to tags.
+func SetBaggageTags(tags map[string]any, items map[string]string) {
 	for key, value := range items {
 		if cfg.tagBaggageKey(key) {
 			tags["baggage."+key] = value
-		}
-	}
-	return func(cfg *tracer.StartSpanConfig) {
-		if cfg.Tags == nil {
-			cfg.Tags = make(map[string]any, len(tags))
-		}
-		for key, value := range tags {
-			cfg.Tags[key] = value
 		}
 	}
 }

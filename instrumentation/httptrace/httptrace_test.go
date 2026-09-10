@@ -491,6 +491,19 @@ func TestBaggageTags(t *testing.T) {
 	assert.NotContains(t, spans[0].Tags(), "baggage.ignored")
 }
 
+func TestSetBaggageTags(t *testing.T) {
+	tags := map[string]any{"existing": "value"}
+	SetBaggageTags(tags, map[string]string{
+		"user.id": "1234",
+		"ignored": "value",
+	})
+
+	assert.Equal(t, map[string]any{
+		"existing":        "value",
+		"baggage.user.id": "1234",
+	}, tags)
+}
+
 func TestURLTag(t *testing.T) {
 	type URLTestCase struct {
 		name, expectedURL, host, port, path, query, fragment string
