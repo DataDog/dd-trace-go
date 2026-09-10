@@ -10,6 +10,7 @@ package kratos // import "github.com/DataDog/dd-trace-go/contrib/go-kratos/krato
 import (
 	"context"
 	"errors"
+	"io"
 	"math"
 	"net"
 	"net/url"
@@ -89,6 +90,7 @@ func Server(opts ...Option) middleware.Middleware {
 			if inferredSpan != nil {
 				spanOpts = append(spanOpts, tracer.ChildOf(inferredSpan.Context()))
 			}
+			spanOpts = append(spanOpts, cfg.spanOpts...)
 
 			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentServer), spanOpts...)
 			defer func() {
@@ -117,7 +119,8 @@ func Client(opts ...Option) middleware.Middleware {
 				return handler(ctx, req)
 			}
 
-			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentClient), startSpanOptions(cfg, tr, ext.SpanKindClient)...)
+			spanOpts := append(startSpanOptions(cfg, tr, ext.SpanKindClient), cfg.spanOpts...)
+			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentClient), spanOpts...)
 			defer func() { finishSpan(span, tr, err, ext.SpanKindClient, cfg) }()
 			for key, value := range baggage.All(ctx) {
 				span.SetBaggageItem(key, value)
@@ -191,14 +194,14 @@ func startSpanOptions(cfg *config, tr transport.Transporter, spanKind string) []
 		}
 	}
 
-	spanOpts := make([]tracer.StartSpanOption, 0, 3+len(dynamicOpts)+len(cfg.spanOpts))
+	spanOpts := make([]tracer.StartSpanOption, 0, 2+len(dynamicOpts))
 	spanOpts = append(spanOpts, tracer.WithTags(tags))
 	spanOpts = append(spanOpts, dynamicOpts...)
 	spanOpts = append(spanOpts, tracer.WithStartSpanConfig(cfg.spanConfig))
 	if cfg.serviceNameOption != nil {
 		spanOpts = append(spanOpts, cfg.serviceNameOption)
 	}
-	return append(spanOpts, cfg.spanOpts...)
+	return spanOpts
 }
 
 func prepareSpanConfig(cfg *config, spanKind string) {
@@ -232,6 +235,9 @@ func prepareSpanConfig(cfg *config, spanKind string) {
 
 func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind string, cfg *config) {
 	if tr.Kind() == transport.KindGRPC {
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
 		code := status.Code(err)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			code = status.FromContextError(err).Code()

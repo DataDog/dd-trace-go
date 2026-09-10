@@ -8,6 +8,7 @@ package kratos
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -287,6 +288,34 @@ func TestServerPropagatesExtractedBaggage(t *testing.T) {
 	assert.Equal(t, "1234", span.Tag("baggage.user.id"))
 }
 
+func TestServerSpanOptionOverridesBaggageTag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	header := testHeader{}
+	header.Set("baggage", "user.id=untrusted")
+	req, err := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	require.NoError(t, err)
+	tr := &testTransport{
+		kind:      transport.KindHTTP,
+		operation: "/example.v1.Service/Test",
+		header:    header,
+		request:   req,
+	}
+	ctx := transport.NewServerContext(context.Background(), tr)
+
+	_, err = Server(WithSpanOptions(tracer.Tag("baggage.user.id", "redacted")))(func(ctx context.Context, _ any) (any, error) {
+		value, ok := baggage.Get(ctx, "user.id")
+		require.True(t, ok)
+		assert.Equal(t, "untrusted", value)
+		return nil, nil
+	})(ctx, nil)
+	require.NoError(t, err)
+
+	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	assert.Equal(t, "redacted", span.Tag("baggage.user.id"))
+}
+
 func TestHTTPTransportEndToEnd(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -518,6 +547,43 @@ func TestGRPCError(t *testing.T) {
 	assert.Equal(t, "NotFound", span.Tag("grpc.code"))
 	assert.Equal(t, float64(http.StatusNotFound), span.Tag("kratos.status_code"))
 	assert.Nil(t, span.Tag(ext.HTTPCode))
+}
+
+func TestGRPCEOFIsNotSpanError(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		spanKind      string
+		operationName string
+	}{
+		{name: "server", spanKind: ext.SpanKindServer, operationName: "grpc.server"},
+		{name: "client", spanKind: ext.SpanKindClient, operationName: "grpc.client"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			tr := &testTransport{
+				kind:      transport.KindGRPC,
+				operation: "/example.v1.Service/Find",
+				header:    testHeader{},
+			}
+			ctx := context.Background()
+			mw := Client()
+			if tc.spanKind == ext.SpanKindServer {
+				ctx = transport.NewServerContext(ctx, tr)
+				mw = Server()
+			} else {
+				ctx = transport.NewClientContext(ctx, tr)
+			}
+
+			_, err := mw(func(context.Context, any) (any, error) { return nil, io.EOF })(ctx, nil)
+			require.ErrorIs(t, err, io.EOF)
+
+			span := findSpan(t, mt, tc.operationName, tc.spanKind)
+			assert.Equal(t, codes.OK.String(), span.Tag("grpc.code"))
+			assert.Nil(t, span.Tag(ext.ErrorMsg))
+		})
+	}
 }
 
 func TestGRPCCanceledIsNotSpanError(t *testing.T) {
