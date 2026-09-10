@@ -23,6 +23,7 @@ on:
         type: string
 
 env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
   # Users may build our library with GOTOOLCHAIN=local. If they do, and our
   # go.mod file specifies a newer Go version than their local toolchain, their
   # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
@@ -177,6 +178,16 @@ jobs:
           reporter: github-pr-review
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
+
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version || 'stable' }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+      - name: constantlogmsg analyzer (make lint/errlog)
+        run: make lint/errlog
 
       - name: Get GitHub Token via dd-octo-sts
         id: generate-token
