@@ -367,12 +367,10 @@ func TestAgentlessEVPSerializesInitialDiscovery(t *testing.T) {
 	const callers = 12
 	var wg sync.WaitGroup
 	errs := make(chan error, callers)
-	for i := 0; i < callers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range callers {
+		wg.Go(func() {
 			errs <- c.postRaw(exposureEndpoint, "exposure", nil)
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
