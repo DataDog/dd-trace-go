@@ -6,14 +6,18 @@
 package openfeature
 
 import (
+	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -34,6 +38,15 @@ func TestBuildDirectEVPURL(t *testing.T) {
 		},
 		"leading whitespace": {
 			site: " datadoghq.com",
+			want: "https://event-platform-intake.datadoghq.com",
+		},
+		"trailing whitespace": {
+			site: "datadoghq.com\t",
+			want: "https://event-platform-intake.datadoghq.com",
+		},
+		"whitespace only uses default": {
+			site: " \t",
+			want: "https://event-platform-intake.datadoghq.com",
 		},
 		"scheme": {
 			site: "https://datadoghq.com",
@@ -307,6 +320,103 @@ func TestAgentlessEVPTransportFailureChangesOnlyFutureRouting(t *testing.T) {
 	}
 	if got := directPosts.Load(); got != 1 {
 		t.Fatalf("direct posts = %d, want 1", got)
+	}
+}
+
+func TestAgentlessEVPDefinitivePreSendFailureReplaysDirect(t *testing.T) {
+	agentURL, err := url.Parse("http://agent.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/info" {
+			return response(http.StatusOK, `{"endpoints":["/evp_proxy/v2"]}`), nil
+		}
+		return nil, syscall.ECONNREFUSED
+	})}
+
+	var directPosts atomic.Int32
+	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		directPosts.Add(1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer direct.Close()
+	directURL, err := url.Parse(direct.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c := newEVPClientBase()
+	c.agentURL = agentURL
+	c.httpClient = agentClient
+	c.directURL = directURL
+	c.directClient = direct.Client()
+	c.apiKey = "api-key"
+
+	if err := c.postRaw(exposureEndpoint, "exposure", []byte(`{"batch":1}`)); err != nil {
+		t.Fatalf("post after definitive pre-send failure: %v", err)
+	}
+	if got := directPosts.Load(); got != 1 {
+		t.Fatalf("direct posts = %d, want 1", got)
+	}
+}
+
+func TestAgentlessEVPDoesNotReplayWrittenRequest(t *testing.T) {
+	agentURL, err := url.Parse("http://agent.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/info" {
+			return response(http.StatusOK, `{"endpoints":["/evp_proxy/v2"]}`), nil
+		}
+		if trace := httptrace.ContextClientTrace(r.Context()); trace != nil && trace.WroteRequest != nil {
+			trace.WroteRequest(httptrace.WroteRequestInfo{})
+		}
+		return nil, syscall.ECONNREFUSED
+	})}
+
+	var directPosts atomic.Int32
+	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		directPosts.Add(1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer direct.Close()
+	directURL, err := url.Parse(direct.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c := newEVPClientBase()
+	c.agentURL = agentURL
+	c.httpClient = agentClient
+	c.directURL = directURL
+	c.directClient = direct.Client()
+	c.apiKey = "api-key"
+
+	if err := c.postRaw(exposureEndpoint, "exposure", []byte(`{"batch":1}`)); err == nil {
+		t.Fatal("written local request unexpectedly succeeded")
+	}
+	if got := directPosts.Load(); got != 0 {
+		t.Fatalf("written request was replayed direct %d times", got)
+	}
+}
+
+func TestDefinitivePreSendErrors(t *testing.T) {
+	for _, err := range []error{
+		syscall.ECONNREFUSED,
+		syscall.ENOENT,
+		&url.Error{Err: &net.DNSError{Err: "not found", Name: "missing.invalid", IsNotFound: true}},
+		&url.Error{Err: &net.DNSError{Err: "temporary", Name: "retry.invalid", IsTemporary: true}},
+	} {
+		if !isDefinitivePreSendError(err) {
+			t.Errorf("error %v was not classified as definitive", err)
+		}
+	}
+	for _, err := range []error{syscall.ECONNRESET, syscall.EPIPE, context.DeadlineExceeded, errors.New("unknown")} {
+		if isDefinitivePreSendError(err) {
+			t.Errorf("error %v was classified as definitive", err)
+		}
 	}
 }
 

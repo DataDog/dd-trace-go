@@ -11,10 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -113,11 +117,9 @@ func refuseEVPRedirect(*http.Request, []*http.Request) error {
 }
 
 func buildDirectEVPURL(site string) *url.URL {
+	site = strings.TrimSpace(site)
 	if site == "" {
 		site = agentlessDefaultSite
-	}
-	if site != strings.TrimSpace(site) {
-		return nil
 	}
 	for i := 0; i < len(site); i++ {
 		if site[i] > 0x7f {
@@ -169,32 +171,40 @@ func (c *evpClient) postRaw(endpoint, eventName string, body []byte) error {
 	mode, localBase := c.resolveRoute()
 	switch mode {
 	case evpRouteLocal:
-		err := c.send(c.httpClient, c.agentURL, localBase, endpoint, eventName, body, false)
-		if err == nil {
+		result := c.send(c.httpClient, c.agentURL, localBase, endpoint, eventName, body, false)
+		if result.err == nil {
 			return nil
 		}
 
 		var statusErr *evpHTTPStatusError
-		if errors.As(err, &statusErr) {
+		if errors.As(result.err, &statusErr) {
 			if statusErr.statusCode != http.StatusNotFound &&
 				statusErr.statusCode != http.StatusMethodNotAllowed {
-				return err
+				return result.err
 			}
 			if c.leaveLocalRoute() {
 				return c.sendDirect(endpoint, eventName, body)
 			}
-			return err
+			return result.err
 		}
 
-		// An ambiguous transport error may have happened after the Agent received
-		// the body, so change only future routing and do not replay this batch.
-		c.leaveLocalRoute()
-		return err
+		// Every transport error changes future routing. Replay the current batch
+		// only when the request was never written and connection establishment
+		// definitively failed; ambiguous failures may have reached the Agent.
+		if c.leaveLocalRoute() && !result.wroteRequest && isDefinitivePreSendError(result.err) {
+			return c.sendDirect(endpoint, eventName, body)
+		}
+		return result.err
 	case evpRouteDirect:
 		return c.sendDirect(endpoint, eventName, body)
 	default:
 		return errNoEVPRoute
 	}
+}
+
+type evpSendResult struct {
+	err          error
+	wroteRequest bool
 }
 
 func (c *evpClient) send(
@@ -205,17 +215,24 @@ func (c *evpClient) send(
 	eventName string,
 	body []byte,
 	direct bool,
-) error {
+) evpSendResult {
 	if client == nil || baseURL == nil {
-		return errNoEVPRoute
+		return evpSendResult{err: errNoEVPRoute}
 	}
 
 	u := *baseURL
 	u.Path = joinEVPPath(basePath, endpoint)
 	requestURL := u.String()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, requestURL, bytes.NewReader(body))
+	var wroteRequest atomic.Bool
+	trace := &httptrace.ClientTrace{
+		WroteRequest: func(httptrace.WroteRequestInfo) {
+			wroteRequest.Store(true)
+		},
+	}
+	requestCtx := httptrace.WithClientTrace(context.Background(), trace)
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, requestURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return evpSendResult{err: fmt.Errorf("failed to create request: %w", err)}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if direct {
@@ -228,18 +245,24 @@ func (c *evpClient) send(
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return evpSendResult{
+			err:          fmt.Errorf("request failed: %w", err),
+			wroteRequest: wroteRequest.Load(),
+		}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &evpHTTPStatusError{statusCode: resp.StatusCode}
+		return evpSendResult{
+			err:          &evpHTTPStatusError{statusCode: resp.StatusCode},
+			wroteRequest: wroteRequest.Load(),
+		}
 	}
-	return nil
+	return evpSendResult{wroteRequest: wroteRequest.Load()}
 }
 
 func (c *evpClient) sendDirect(endpoint, eventName string, body []byte) error {
-	return c.send(c.directClient, c.directURL, "", endpoint, eventName, body, true)
+	return c.send(c.directClient, c.directURL, "", endpoint, eventName, body, true).err
 }
 
 func (c *evpClient) resolveRoute() (evpRouteMode, string) {
@@ -332,6 +355,14 @@ func (c *evpClient) leaveLocalRoute() bool {
 	c.routeMode = evpRouteDisabled
 	c.recoverAt = c.now().Add(c.cooldown)
 	return false
+}
+
+func isDefinitivePreSendError(err error) bool {
+	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ENOENT) {
+		return true
+	}
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr) && (dnsErr.IsNotFound || dnsErr.IsTemporary)
 }
 
 // marshalJSON encodes a value with the EVP client's jsoniter config. Used by the flagevaluation
