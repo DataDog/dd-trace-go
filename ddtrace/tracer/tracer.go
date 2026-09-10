@@ -1276,7 +1276,14 @@ func (t *tracer) Stop() {
 		t.logFile.Close()
 	}
 	if t.telemetry != nil {
-		t.telemetry.Close()
+		if telemetry.GlobalClient() != t.telemetry {
+			// StartApp ignored this client because another product already owns
+			// the global one. Close the leftover so its ticker does not leak.
+			t.telemetry.Close()
+		}
+		// api.go: tracer.Stop should StopApp so pending logs and metrics flush.
+		telemetry.StopApp()
+		t.telemetry = nil
 	}
 	t.config.httpClient.CloseIdleConnections()
 }

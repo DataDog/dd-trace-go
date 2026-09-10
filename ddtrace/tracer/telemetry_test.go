@@ -232,3 +232,14 @@ func TestRepeatStartRecordsEnvDiffOnActiveClient(t *testing.T) {
 	require.True(t, ok, "expected config.repeat_start_env_diff to be recorded on the active telemetry client")
 	assert.Equal(t, float64(1), handle.Get())
 }
+
+func TestTracerStopFlushesTelemetry(t *testing.T) {
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
+
+	Start()
+	defer globalconfig.SetServiceName("")
+	Stop()
+
+	assert.True(t, telemetryClient.Stopped)
+}
