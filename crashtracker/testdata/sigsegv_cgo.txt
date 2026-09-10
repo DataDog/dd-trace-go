@@ -1,0 +1,24 @@
+SIGSEGV: segmentation violation
+PC=0x104d6a11c m=0 sigcode=2 addr=0x0
+signal arrived during cgo execution
+
+goroutine 1 gp=0x3a5696e381e0 m=0 mp=0x104e3a400 [syscall]:
+runtime.cgocall(0x104d6a114, 0x3a5696ebaf08)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/cgocall.go:167 +0x44 fp=0x3a5696ebaed0 sp=0x3a5696ebae90 pc=0x104d4a824
+main._Cfunc_fault_in_c()
+	_cgo_gotypes.go:46 +0x2c fp=0x3a5696ebaf00 sp=0x3a5696ebaed0 pc=0x104d6a03c
+main.main()
+	/tmp/crashdemo/main.go:24 +0x44 fp=0x3a5696ebaf30 sp=0x3a5696ebaf00 pc=0x104d6a0a4
+runtime.main()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:290 +0x2b4 fp=0x3a5696ebafd0 sp=0x3a5696ebaf30 pc=0x104d1cfe4
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0x3a5696ebafd0 sp=0x3a5696ebafd0 pc=0x104d52054
+
+goroutine 2 gp=0x3a5696e38d20 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:462 +0xbc fp=0x3a5696eacf90 sp=0x3a5696eacf70 pc=0x104d4c2ac
+runtime.forcegchelper()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:375 +0xb4 fp=0x3a5696eacfd0 sp=0x3a5696eacf90 pc=0x104d1d304
+created by runtime.init.7 in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:363 +0x24
+exit status 2
