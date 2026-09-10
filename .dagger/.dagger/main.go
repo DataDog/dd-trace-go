@@ -289,3 +289,204 @@ func (m *Ci) TestContrib(ctx context.Context, source *dagger.Directory, goVersio
 	c = c.WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
 	return c.Directory(resultsDir), nil
 }
+
+// withSource mounts source and sets the environment common to every static
+// check, matching the "env:" block static-checks.yml and generate.yml set.
+func withSource(c *dagger.Container, source *dagger.Directory) *dagger.Container {
+	source = source.WithoutDirectory("bin").WithoutDirectory("tmp")
+	return c.
+		WithMountedDirectory("/workspace", source, dagger.ContainerWithMountedDirectoryOpts{Owner: "dd-trace-go"}).
+		WithWorkdir("/workspace").
+		WithEnvVariable("GOTOOLCHAIN", "local")
+}
+
+// checkBase returns the pinned base container for goVersion with source
+// mounted, the starting point for every static check below.
+func (m *Ci) checkBase(source *dagger.Directory, goVersion, platform string) (*dagger.Container, error) {
+	base, err := m.Base(source, goVersion, platform)
+	if err != nil {
+		return nil, err
+	}
+	return withSource(base, source), nil
+}
+
+// "copyright" job of static-checks.yml
+func (m *Ci) Copyright(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.WithExec([]string{"./scripts/lint.sh", "--misc"}).Stdout(ctx)
+}
+
+// "check-github-actions" job of static-checks.yml
+func (m *Ci) LintAction(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.WithExec([]string{"./scripts/lint.sh", "--action"}).Stdout(ctx)
+}
+
+// "check-modules" job of static-checks.yml
+func (m *Ci) CheckModules(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.
+		WithExec([]string{"./scripts/fix_modules.sh"}).
+		WithExec([]string{"git", "diff", "--exit-code"}).
+		Stdout(ctx)
+}
+
+// "check-format" job of static-checks.yml
+func (m *Ci) CheckFormat(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.
+		WithExec([]string{"./scripts/format.sh", "--all"}).
+		WithExec([]string{"git", "diff", "--exit-code"}).
+		Stdout(ctx)
+}
+
+// "check-docs" job of static-checks.yml
+func (m *Ci) CheckDocs(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	script := "mkdir -p tmp\n" +
+		"make help --no-print-directory > tmp/make-help.txt 2>&1 || true\n" +
+		"./scripts/test.sh --help > tmp/test-help.txt 2>&1 || true\n" +
+		"embedmd -w README.md scripts/README.md\n"
+	return c.
+		WithExec([]string{"sh", "-c", script}).
+		WithExec([]string{"git", "diff", "--exit-code"}).
+		Stdout(ctx)
+}
+
+// "lint" job of static-checks.yml
+func (m *Ci) LintGo(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	script := "golangci-lint run --timeout 10m ./...\n" +
+		"(cd internal/orchestrion/_integration && golangci-lint run --timeout 10m --disable=gocritic ./...)\n" +
+		"env -u GOROOT go run ./internal/telemetry/log/analyzer/cmd ./...\n" +
+		"env -u GOROOT go run ./scripts/lint_errlog_workspaces.go\n"
+	return c.WithExec([]string{"sh", "-c", script}).Stdout(ctx)
+}
+
+// "check-supported-config" job of static-checks.yml
+func (m *Ci) CheckSupportedConfig(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.WithExec([]string{"go", "run", "./scripts/configinverter/main.go", "check"}).Stdout(ctx)
+}
+
+// "checklocks" job of static-checks.yml
+func (m *Ci) Checklocks(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.WithExec([]string{"./scripts/checklocks.sh"}).Stdout(ctx)
+}
+
+// "cross-compile" job of static-checks.yml
+func (m *Ci) CrossCompile(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.WithExec([]string{"./scripts/cross_build.sh"}).Stdout(ctx)
+}
+
+// generate.yml
+func (m *Ci) Generate(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.
+		WithExec([]string{"./scripts/generate.sh"}).
+		WithExec([]string{"git", "diff", "--exit-code"}).
+		Stdout(ctx)
+}
+
+// apidiff-check.yml
+func (m *Ci) ApiDiff(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	baseRef string,
+	// +optional
+	incompatibleOnly bool,
+	// +optional
+	exitCode bool,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	args := []string{"./scripts/apidiff.sh"}
+	if baseRef != "" {
+		args = append(args, "--base-ref", baseRef)
+	}
+	if incompatibleOnly {
+		args = append(args, "--incompatible-only")
+	}
+	if exitCode {
+		args = append(args, "--exit-code")
+	}
+	args = append(args, "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer")
+	return c.WithExec(args).Stdout(ctx)
+}
+
+// config-audit.yml
+func (m *Ci) ConfigAudit(ctx context.Context, source *dagger.Directory, goVersion string,
+	// +optional
+	platform string,
+) (string, error) {
+	c, err := m.checkBase(source, goVersion, platform)
+	if err != nil {
+		return "", err
+	}
+	return c.WithExec([]string{"sh", "-c", "cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table"}).Stdout(ctx)
+}
