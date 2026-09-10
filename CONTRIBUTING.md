@@ -332,6 +332,10 @@ Sample PR: <https://github.com/DataDog/dd-trace-go/pull/3365>
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
+#### Go Kratos v3
+
+The [Go Kratos v3 integration](contrib/go-kratos/kratos.v3/) provides `Server` and `Client` middleware for HTTP and unary gRPC transports. Applications add these functions to the corresponding Kratos middleware list and customize tracing with package `Option` values, including service names, analytics rates, HTTP status and header handling, stack collection, and additional span options. When maintaining this integration, apply transport and extracted-context metadata before caller-supplied span options so explicit caller overrides keep precedence.
+
 ### Working with environment variables
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
