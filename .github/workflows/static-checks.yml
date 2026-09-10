@@ -23,6 +23,7 @@ on:
         type: string
 
 env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
   # Users may build our library with GOTOOLCHAIN=local. If they do, and our
   # go.mod file specifies a newer Go version than their local toolchain, their
   # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
@@ -38,7 +39,28 @@ permissions:
   checks: write
 
 jobs:
+  # Populate the shared tools cache once, before the jobs below need it. When every
+  # job races to install tools and save the same cache key on a miss, only one wins
+  # the cache reservation and a failing job never saves at all (actions/cache skips
+  # the post step), so the cache can stay permanently cold. Mirrors the
+  # warm-repo-cache pattern in pull-request.yml.
+  warm-tools-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version || 'stable' }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
   copyright:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -61,6 +83,7 @@ jobs:
           make lint/misc
 
   check-github-actions:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -80,6 +103,7 @@ jobs:
           make lint/action
 
   check-modules:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -101,6 +125,7 @@ jobs:
         run: git diff --exit-code
 
   check-docs:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -122,6 +147,7 @@ jobs:
         run: git diff --exit-code
 
   check-format:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -143,6 +169,7 @@ jobs:
         run: git diff --exit-code
 
   lint:
+    needs: [warm-tools-cache]
     runs-on:
       group: "APM Larger Runners"
     permissions:
@@ -221,6 +248,7 @@ jobs:
         run: go run ./scripts/configinverter/main.go check
 
   checklocks:
+    needs: [warm-tools-cache]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

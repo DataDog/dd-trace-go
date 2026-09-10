@@ -27,14 +27,20 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 const (
+	headerEVPOrigin        = "DD-EVP-ORIGIN"
+	evpOrigin              = "dd-trace-go"
+	headerEVPOriginVersion = "DD-EVP-ORIGIN-VERSION"
+
 	evpProxyV4Path = "/evp_proxy/v4"
 	evpProxyV2Path = "/evp_proxy/v2"
 
-	directEVPHostPrefix = "event-platform-intake."
-	apiKeyHeader        = "DD-API-KEY"
+	directEVPHostPrefix      = "event-platform-intake."
+	apiKeyHeader             = "DD-API-KEY"
+	maxEVPResponseDrainBytes = 4 << 10
 
 	defaultEVPRouteRecoveryCooldown = 30 * time.Second
 
@@ -237,6 +243,8 @@ func (c *evpClient) send(
 		return evpSendResult{err: fmt.Errorf("failed to create request: %w", err)}
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerEVPOrigin, evpOrigin)
+	req.Header.Set(headerEVPOriginVersion, version.Tag)
 	if direct {
 		req.Header.Set(apiKeyHeader, c.apiKey)
 	} else {
@@ -252,7 +260,10 @@ func (c *evpClient) send(
 			wroteRequest: wroteRequest.Load(),
 		}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxEVPResponseDrainBytes))
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return evpSendResult{

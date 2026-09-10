@@ -1,11 +1,12 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2025 Datadog, Inc.
+// Copyright 2026 Datadog, Inc.
 
 package openfeature
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 func TestBuildDirectEVPURL(t *testing.T) {
@@ -155,6 +157,7 @@ func TestAgentlessEVPRouteSelectionAndCredentials(t *testing.T) {
 				if got := directHeader.Get(evpSubdomainHeader); got != "" {
 					t.Fatalf("direct request leaked local routing header %q", got)
 				}
+				assertEVPIdentityHeaders(t, directHeader)
 				if localPath != "" {
 					t.Fatalf("unexpected local event request to %q", localPath)
 				}
@@ -170,6 +173,7 @@ func TestAgentlessEVPRouteSelectionAndCredentials(t *testing.T) {
 			if got := localHeader.Get(apiKeyHeader); got != "" {
 				t.Fatalf("local request leaked API key %q", got)
 			}
+			assertEVPIdentityHeaders(t, localHeader)
 			if directPath != "" {
 				t.Fatalf("unexpected direct event request to %q", directPath)
 			}
@@ -291,6 +295,40 @@ func TestAgentlessEVPDoesNotReplayAmbiguousResponses(t *testing.T) {
 				t.Fatalf("direct calls = %d, want 0", got)
 			}
 		})
+	}
+}
+
+func TestEVPClientDrainsErrorResponseBodyForConnectionReuse(t *testing.T) {
+	var newConnections atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, strings.Repeat("x", 1024))
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			newConnections.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+
+	agentURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newEVPClient()
+	c.agentURL = agentURL
+	c.httpClient = server.Client()
+
+	for range 2 {
+		err := c.postRaw(exposureEndpoint, "exposure", nil)
+		var statusErr *evpHTTPStatusError
+		if !errors.As(err, &statusErr) || statusErr.statusCode != http.StatusInternalServerError {
+			t.Fatalf("post error = %v, want status %d", err, http.StatusInternalServerError)
+		}
+	}
+	if got := newConnections.Load(); got != 1 {
+		t.Fatalf("new connections = %d, want 1", got)
 	}
 }
 
@@ -519,29 +557,48 @@ func TestAgentlessEVPSerializesInitialDiscovery(t *testing.T) {
 }
 
 func TestAgentOnlyEVPClientKeepsV2Route(t *testing.T) {
+	var gotMethod string
 	var gotPath string
 	var gotHeaders http.Header
+	var gotBody []byte
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
 		gotPath = r.URL.Path
 		gotHeaders = r.Header.Clone()
+		var err error
+		gotBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+		}
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer agent.Close()
 	t.Setenv("DD_TRACE_AGENT_URL", agent.URL)
 
+	body := []byte(`{"context":{"service":"test-service"},"flagEvaluations":[]}`)
 	c := newEVPClient()
-	if err := c.postRaw(flagEvalLoggingEndpoint, "flag evaluation", nil); err != nil {
+	if err := c.postRaw(flagEvalLoggingEndpoint, "flag evaluation", body); err != nil {
 		t.Fatal(err)
 	}
 	wantPath := evpProxyV2Path + flagEvalLoggingEndpoint
 	if gotPath != wantPath {
 		t.Fatalf("path = %q, want %q", gotPath, wantPath)
 	}
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %q, want %q", gotMethod, http.MethodPost)
+	}
+	if got := gotHeaders.Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
 	if got := gotHeaders.Get(evpSubdomainHeader); got != evpSubdomainValue {
 		t.Fatalf("local routing header = %q, want %q", got, evpSubdomainValue)
 	}
 	if got := gotHeaders.Get(apiKeyHeader); got != "" {
 		t.Fatalf("Agent-only request leaked API key %q", got)
+	}
+	assertEVPIdentityHeaders(t, gotHeaders)
+	if !bytes.Equal(gotBody, body) {
+		t.Fatalf("body = %q, want %q", gotBody, body)
 	}
 }
 
@@ -618,5 +675,15 @@ func response(status int, body string) *http.Response {
 		StatusCode: status,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func assertEVPIdentityHeaders(t *testing.T, headers http.Header) {
+	t.Helper()
+	if got := headers.Get(headerEVPOrigin); got != evpOrigin {
+		t.Errorf("%s = %q, want %q", headerEVPOrigin, got, evpOrigin)
+	}
+	if got := headers.Get(headerEVPOriginVersion); got != version.Tag {
+		t.Errorf("%s = %q, want %q", headerEVPOriginVersion, got, version.Tag)
 	}
 }
