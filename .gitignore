@@ -34,3 +34,9 @@ coverage-*.txt
 /.claude/*
 !/.claude/commands/
 !/.claude/settings.json
+!/.claude/skills/
+
+# LLM Validation local/CI artifacts
+.llm-validation/results.json
+.llm-validation/report.md
+.llm-validation/details.json

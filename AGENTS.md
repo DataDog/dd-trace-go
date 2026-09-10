@@ -28,3 +28,9 @@ The developer should update [CONTRIBUTING.md](./CONTRIBUTING.md) with new, signi
 The developer should also update [README.md](./README.md) with new options to the `make` command and other important commands that are essential for testing or building the tracer.
 
 If these updates are not made, tell the developer to make changes or provide suggestions if requested.
+
+## Review before pushing
+
+Before pushing code, run the [dd-apm-sdk-review](./.agents/skills/dd-apm-sdk-review/) skill on your unpushed changes. Repo-specific rules live in [`.agents/dd-apm-sdk-review-overrides/`](./.agents/dd-apm-sdk-review-overrides/) — add yours there and cover them with a case in [`.llm-validation/`](./.llm-validation/). See [`.llm-validation/README.md`](./.llm-validation/README.md) for the two-step contribution.
+
+If any `P0` finding is reported, fix it or get explicit authorization and record the unresolved finding verbatim in the PR description. Security findings are never pasted into a PR — route them privately.

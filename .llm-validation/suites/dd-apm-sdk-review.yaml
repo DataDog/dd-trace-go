@@ -1,0 +1,70 @@
+name: dd-apm-sdk-review
+version: "0.1"
+
+# One file on purpose: the platform CLI errors if suites/ has more than one YAML.
+# Two starter cases — one per override. Copy either block to add the next one.
+cases:
+  - id: go-perf-startspanconfig-first
+    files:
+      - .agents/skills/dd-apm-sdk-review/reviewers/performance.md
+      - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
+      - .agents/dd-apm-sdk-review-overrides/reviewers/performance.md
+    input: |
+      Apply this repo's performance-review criteria (reviewers/performance.md, its
+      .agents/dd-apm-sdk-review-overrides/reviewers/performance.md override, and _common.md) to the
+      following contrib wrapper. No git checkout available — this snippet is the entire
+      change to review.
+
+      ```go
+      var cachedBase = tracer.NewStartSpanConfig(
+          tracer.Tag("component", "net/http"),
+      )
+
+      func handle(ctx context.Context, name string) {
+          span, _ := tracer.StartSpanFromContext(ctx, "http.request",
+              tracer.WithStartSpanConfig(cachedBase),
+              tracer.Tag(ext.ResourceName, name),
+          )
+          defer span.Finish()
+      }
+      ```
+    expected_criteria:
+      - "Flags that `WithStartSpanConfig(cachedBase)` is the first tag-setting option, so the next `Tag()` call mutates the shared cached base in place."
+      - "Explains the concrete consequence — later requests inherit the previous request's `ext.ResourceName` — silent cross-request tag corruption, not a style nit."
+      - "Recommends putting a `Tag` / `WithTags` call *before* `WithStartSpanConfig(cachedBase)`, matching contrib/AGENTS.md."
+      - "Classifies the finding as P0 (or BLOCK)."
+    bad_signals:
+      - "Treats the option order as a style / readability nit."
+      - "Approves the snippet or says the cached config is used correctly."
+      - "Suggests only 'add a comment' or 'make cachedBase a function' without fixing the aliasing order."
+
+  - id: go-security-secret-into-tag
+    files:
+      - .agents/skills/dd-apm-sdk-review/reviewers/security.md
+      - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
+      - .agents/dd-apm-sdk-review-overrides/reviewers/security.md
+    input: |
+      Apply this repo's security-review criteria (reviewers/security.md, its
+      .agents/dd-apm-sdk-review-overrides/reviewers/security.md override, and _common.md) to the
+      following code. No git checkout available — this snippet is the entire change to
+      review. `cfg.DSN` is a full connection string with an embedded username and
+      password, e.g. `amqp://user:password@host:5672`.
+
+      ```go
+      func startClient(cfg Config) {
+          span := tracer.StartSpan("amqp.connect")
+          span.SetTag("peer.hostname", cfg.Host)
+          span.SetTag("dsn", cfg.DSN)
+          log.Printf("connecting to %s", cfg.DSN)
+          defer span.Finish()
+      }
+      ```
+    expected_criteria:
+      - "Flags `span.SetTag(\"dsn\", cfg.DSN)` as writing a credential-bearing DSN into a span tag."
+      - "Also flags `log.Printf(\"connecting to %s\", cfg.DSN)` as the same secret leak through logs, not a separate style issue."
+      - "Classifies this as a security finding (P0), not a conventions nit — the secret becomes customer-visible."
+      - "Recommends tagging host/port/scheme only, or a redacted DSN — not 'log it at debug instead'."
+    bad_signals:
+      - "Approves the DSN tag or the log line."
+      - "Treats this as a style / naming nit."
+      - "Suggests only moving the value to debug logs."
