@@ -146,7 +146,7 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		AnalyticsRate: instr.GlobalAnalyticsRate(),
 		ResourceNamer: defaultResourceNamer,
 		IgnoreRequest: func(_ *http.Request) bool { return false },
-		IsStatusError: internal.ClientErrorCheck(otelSemantics),
+		IsStatusError: internal.ClientStatusErrorCheck(otelSemantics),
 	}
 
 	rtConfig := internal.RoundTripperConfig{

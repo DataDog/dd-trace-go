@@ -34,7 +34,7 @@ func TestNormalizeClientRequestMethod(t *testing.T) {
 	}
 }
 
-func TestClientErrorCheckUsesModeSpecificDefaultsAndCustomRanges(t *testing.T) {
+func TestClientStatusErrorCheckUsesModeSpecificDefaultsAndCustomRanges(t *testing.T) {
 	tests := []struct {
 		name         string
 		otel         bool
@@ -74,7 +74,7 @@ func TestClientErrorCheckUsesModeSpecificDefaultsAndCustomRanges(t *testing.T) {
 			if tt.config != "" {
 				t.Setenv(EnvClientErrorStatuses, tt.config)
 			}
-			check := ClientErrorCheck(tt.otel)
+			check := ClientStatusErrorCheck(tt.otel)
 			for _, status := range tt.errorCodes {
 				assert.True(t, check(status), "status %d", status)
 			}
