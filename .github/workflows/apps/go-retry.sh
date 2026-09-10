@@ -28,14 +28,29 @@
 # full, network-bound re-download. Archive-signature wipes are uncounted, since they're proven
 # on-disk corruption rather than a defensive guess.
 #
+# A second, independent signature class covers *network* failures talking to the Go module proxy
+# (proxy.golang.org / sum.golang.org). These are transient and must be handled differently from
+# corruption: the module cache is deliberately left alone, because refetching it is exactly what
+# failed. Wiping it would multiply the traffic that caused the failure in the first place.
+# The dominant observed shape is an HTTP/2 stream reset ("stream error: stream ID N;
+# INTERNAL_ERROR"), which is neither a 5xx nor a 404/410 -- so a status-code-only pattern misses it,
+# and a comma-separated GOPROXY offers no fallback for it either (see go help goproxy: only 404/410
+# fall through on ',', any error falls through on '|'). cmd/go performs no retries of its own
+# (golang/go#28194), so this is the only retry layer there is.
+# Network retries back off exponentially with jitter: a large matrix retrying in lockstep would
+# re-create the load spike that triggered the reset.
+#
 # Usage:
 #   source go-retry.sh
 #   retry_on_corruption <cmd> [args...]                  # output streams to the caller as-is
 #   retry_on_corruption_to_file <outfile> <cmd> [args...] # <cmd>'s stdout is captured to <outfile>
 corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
 archive_corruption_re='zip: checksum error|not the start of an archive file'
+# Transient module-proxy/network failures. Ordered roughly by observed frequency in this repo.
+network_re='stream error.*(INTERNAL_ERROR|PROTOCOL_ERROR|REFUSED_STREAM)|(proxy|sum)\.golang\.org[^[:space:]]*: [45][0-9][0-9]|(proxy|sum)\.golang\.org.*(i/o timeout|TLS handshake|connection reset|unexpected EOF|no such host|server misbehaving)|google\.com/sorry|dial tcp.*(i/o timeout|connection refused|connection reset)|(Get|reading) "?https://(proxy|sum)\.golang\.org'
 
 : "${GO_RETRY_MAX_MODCACHE_WIPES:=2}"
+: "${GO_RETRY_NETWORK_BACKOFF_BASE:=5}"
 _go_retry_modcache_wipes="${_go_retry_modcache_wipes:-0}"
 _go_retry_active="${_go_retry_active:-0}"
 
@@ -57,6 +72,37 @@ _clean_caches_on_retry() {
   fi
 }
 
+# _go_retry_handle_failure <log> <attempt> <max>
+# Decides whether the just-failed attempt is worth retrying and, if so, performs the remediation
+# appropriate to *why* it failed. Returns 0 to retry, 1 to give up. Shared by both entry points so
+# the two can't drift apart.
+#
+# Corruption is checked first: a log carrying both signatures has proven on-disk damage, and that
+# needs the cache wipe regardless of whatever network noise accompanied it.
+_go_retry_handle_failure() {
+  local log="$1" attempt="$2" max="$3"
+
+  if grep -qE "$corruption_re" "$log"; then
+    [ "$attempt" -ge "$max" ] && return 1
+    echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
+    _clean_caches_on_retry "$log"
+    return 0
+  fi
+
+  if grep -qE "$network_re" "$log"; then
+    [ "$attempt" -ge "$max" ] && return 1
+    # GOPROXY_FAILURE is a stable token: CI dashboards count these to size module-proxy flakiness.
+    echo "::warning::GOPROXY_FAILURE transient module-proxy/network failure (attempt ${attempt}/${max}); backing off and retrying"
+    # Exponential backoff with jitter, and no cache clearing: the fetch is what failed, so the
+    # bytes already on disk are the one thing worth keeping.
+    local delay=$((GO_RETRY_NETWORK_BACKOFF_BASE * (1 << (attempt - 1))))
+    sleep "$((delay + RANDOM % (delay + 1)))"
+    return 0
+  fi
+
+  return 1
+}
+
 retry_on_corruption() {
   if [ "$_go_retry_active" = "1" ]; then
     "$@"
@@ -69,11 +115,9 @@ retry_on_corruption() {
   # captured for signature matching, then echoed back so nothing is lost from the logs.
   until "$@" 2>"$log"; do
     cat "$log" >&2
-    if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
+    if ! _go_retry_handle_failure "$log" "$attempt" "$max"; then
       rm -f "$log"; _go_retry_active=0; return 1
     fi
-    echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
-    _clean_caches_on_retry "$log"
     attempt=$((attempt + 1))
   done
   cat "$log" >&2
@@ -95,11 +139,9 @@ retry_on_corruption_to_file() {
   # every attempt, so a failed first attempt never leaves partial output for a retry to append to.
   until "$@" >"$outfile" 2>"$log"; do
     cat "$log" >&2
-    if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
+    if ! _go_retry_handle_failure "$log" "$attempt" "$max"; then
       rm -f "$log"; _go_retry_active=0; return 1
     fi
-    echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
-    _clean_caches_on_retry "$log"
     attempt=$((attempt + 1))
   done
   cat "$log" >&2
