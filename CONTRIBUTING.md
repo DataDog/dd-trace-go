@@ -160,6 +160,24 @@ Verify the module against both supported Go versions:
 ./bin/dagger call -m .dagger go-version --source=. --go-version=1.27
 ```
 
+Run the core test suite:
+
+```shell
+make dagger/test-core
+```
+
+Run the contrib test suite:
+
+```shell
+make dagger/test-contrib
+```
+
+Add `CONTRIBS="./contrib/net/http"` to `make dagger/test-contrib` to test one integration. Scoping to one integration still binds every service in the contrib test stack, so a laptop can run out of memory under emulation even for one small package (TODO).
+
+Both targets default to `linux/amd64`, matching GitHub-hosted runners. On an Apple Silicon laptop, the default runs under emulation. 
+
+Results and logs land in `tmp/dagger-test-core` and `tmp/dagger-test-contrib`. Each directory holds JUnit XML per package, `script.log` with the full test output, `coverage*.txt` files, and `exit-code` with the suite's real exit status.
+
 ### CODEOWNERS patterns
 
 [CODEOWNERS](./CODEOWNERS) is read by two consumers that do not implement the same matching rules: GitHub, which follows gitignore semantics, and CI Visibility, which uses the simpler matcher in [internal/civisibility/utils](./internal/civisibility/utils/codeowners.go) to attribute test results to teams. A pattern the two interpret differently assigns the right reviewers while silently mis-attributing test ownership.

@@ -1,6 +1,6 @@
 module dagger/ci
 
-go 1.26.7
+go 1.26.1
 
 require (
 	github.com/Khan/genqlient v0.8.1
@@ -10,6 +10,8 @@ require (
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 )
+
+require gopkg.in/yaml.v3 v3.0.1
 
 require (
 	github.com/99designs/gqlgen v0.17.89 // indirect
