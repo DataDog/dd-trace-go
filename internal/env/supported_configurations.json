@@ -307,7 +307,7 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "true"
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
