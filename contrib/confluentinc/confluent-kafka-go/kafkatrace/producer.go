@@ -48,25 +48,42 @@ func WrapProduceEventsChannel[E any, TE Event](tr *Tracer, in chan E, translateF
 	return out
 }
 
-func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
+// newProducerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every message produced through a Tracer with the
+// given config, so per-message calls don't need to rebuild them.
+func newProducerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 	opts := []tracer.StartSpanOption{
 		instrumentation.ServiceNameWithSource(tr.producerServiceName, tr.serviceSource),
-		tracer.ResourceName("Produce Topic " + msg.GetTopicPartition().GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, ComponentName(tr.ckgoVersion)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingKafkaPartition, msg.GetTopicPartition().GetPartition()),
-		tracer.Tag(ext.MessagingDestinationName, msg.GetTopicPartition().GetTopic()),
 	}
 	if tr.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.bootstrapServers))
 	}
-	if tr.ClusterID() != "" {
-		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
-	}
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
+}
+
+func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
+	// Partition, topic, and the Kafka cluster ID (fetched asynchronously in
+	// the background after the Tracer is created, see startClusterIDFetch in
+	// the calling kafka package) are genuinely per-message/mutable, so they
+	// stay dynamic instead of moving into the static producerSpanCfg base.
+	tags := map[string]any{
+		ext.ResourceName:             "Produce Topic " + msg.GetTopicPartition().GetTopic(),
+		ext.MessagingKafkaPartition:  msg.GetTopicPartition().GetPartition(),
+		ext.MessagingDestinationName: msg.GetTopicPartition().GetTopic(),
+	}
+	if tr.ClusterID() != "" {
+		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
+	}
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(tr.producerSpanCfg),
 	}
 	// if there's a span context in the headers, use that as the parent
 	carrier := NewMessageCarrier(msg)
