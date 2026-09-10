@@ -62,6 +62,7 @@ name: Test Apps
         default: trigger:manual
         description: Extra DD_TAGS
 env:
+  GOPROXY: https://proxy.golang.org|direct
   DD_ENV: github
   DD_TAGS: 'github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs[''arg: tags''] }}'
 permissions:

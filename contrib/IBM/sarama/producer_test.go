@@ -305,3 +305,29 @@ func TestSyncProducerWithClusterID(t *testing.T) {
 
 	assert.NoError(t, wrapped.Close())
 }
+
+// TestStartProducerSpanCustomTagPrecedence is a regression test for a Codex
+// review finding on PR #5007: WithProducerCustomTag lets a caller override a
+// tag also set by the cached spanCfg base (e.g. component, span.kind).
+// Custom tags must win on key collision, matching pre-migration behavior
+// where custom-tag options were appended last in the option list. Uses
+// startProducerSpan directly, no live broker needed.
+func TestStartProducerSpanCustomTagPrecedence(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	cfg := new(config)
+	defaults(cfg)
+	cfg.producerCustomTags[ext.Component] = func(*sarama.ProducerMessage) any {
+		return "custom-component"
+	}
+	spanCfg := newProducerSpanConfig(cfg)
+	msg := &sarama.ProducerMessage{Topic: "test-topic"}
+
+	span := startProducerSpan(cfg, spanCfg, sarama.MinVersion, msg)
+	span.Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "custom-component", spans[0].Tag(ext.Component))
+}
