@@ -3,10 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package ext contains a set of Datadog-specific constants. Most of them are used
-// for setting span metadata.
+// Package ext contains constants used for setting span metadata.
 package ext
 
+// Datadog span tag keys.
 const (
 	// TargetHost sets the target host address.
 	// Legacy: Kept for backwards compatibility. Use NetworkDestinationName for hostname
@@ -32,9 +32,6 @@ const (
 	// NetworkDestinationPort is the remote port number of the outbound connection.
 	NetworkDestinationPort = "network.destination.port"
 
-	// NetworkPeerPort is the peer port number observed at the transport layer.
-	NetworkPeerPort = "network.peer.port"
-
 	// SQLType sets the sql type tag.
 	SQLType = "sql"
 
@@ -47,43 +44,8 @@ const (
 	// HTTPCode sets the HTTP status code as a tag.
 	HTTPCode = "http.status_code"
 
-	// HTTPRoute is the route value of the HTTP request.
-	HTTPRoute = "http.route"
-
 	// HTTPURL sets the HTTP URL for a span.
 	HTTPURL = "http.url"
-
-	// HTTPRequestMethod is the case-sensitive known method name. Unknown methods use "_OTHER";
-	// HTTPRequestMethodOriginal preserves their original value.
-	HTTPRequestMethod = "http.request.method"
-
-	// HTTPRequestMethodOriginal is the method as received when it differs from HTTPRequestMethod.
-	HTTPRequestMethodOriginal = "http.request.method_original"
-
-	// HTTPResponseStatusCode is the numeric status code returned by the server.
-	HTTPResponseStatusCode = "http.response.status_code"
-
-	// HTTPRequestBodySize is the size of the request body in bytes.
-	HTTPRequestBodySize = "http.request.body.size"
-
-	// HTTPResponseBodySize is the size of the response body in bytes.
-	HTTPResponseBodySize = "http.response.body.size"
-
-	// URLFull is an absolute URL when one can be reconstructed.
-	// It must omit user credentials and should redact sensitive query values.
-	URLFull = "url.full"
-
-	// ServerAddress is the logical destination domain, IP address, or Unix socket name. Domain names
-	// must not be obtained through reverse DNS.
-	// Behind a proxy, it represents the backend address when known.
-	ServerAddress = "server.address"
-
-	// ServerPort is the logical destination port, represented as an integer.
-	// Behind a proxy, it represents the backend port when known.
-	ServerPort = "server.port"
-
-	// ClientPort is the client port number.
-	ClientPort = "client.port"
 
 	// HTTPUserAgent is the user agent header value of the HTTP request.
 	HTTPUserAgent = "http.useragent"
@@ -187,9 +149,6 @@ const (
 	// MapSpanEvents is used by Span.AsMap to store the spanEvents value.
 	MapSpanEvents = "_ddtrace.span_events"
 
-	// CloudResourceID is the cloud provider resource identifier.
-	CloudResourceID = "cloud.resource_id"
-
 	// KeyServiceSource is the span meta key for tracking the origin of a
 	// service name override (_dd.svc_src).
 	KeyServiceSource = "_dd.svc_src"
@@ -203,4 +162,49 @@ const (
 
 	// DSMTransactionCheckpoint is the span tag key for a Data Streams transaction checkpoint name.
 	DSMTransactionCheckpoint = "dsm.transaction.checkpoint"
+)
+
+// OpenTelemetry semantic convention attribute keys.
+const (
+	// CloudResourceID is the cloud provider-specific native identifier of the monitored cloud resource.
+	CloudResourceID = "cloud.resource_id"
+
+	// NetworkPeerPort is the peer port number observed at the transport layer.
+	NetworkPeerPort = "network.peer.port"
+
+	// HTTPRequestMethod is the case-sensitive known method name. Unknown methods use "_OTHER";
+	// HTTPRequestMethodOriginal preserves their original value.
+	HTTPRequestMethod = "http.request.method"
+
+	// HTTPRequestMethodOriginal is the method as received when it differs from HTTPRequestMethod.
+	HTTPRequestMethodOriginal = "http.request.method_original"
+
+	// HTTPResponseStatusCode is the numeric status code returned by the server.
+	HTTPResponseStatusCode = "http.response.status_code"
+
+	// HTTPRequestBodySize is the size of the request body in bytes.
+	HTTPRequestBodySize = "http.request.body.size"
+
+	// HTTPResponseBodySize is the size of the response body in bytes.
+	HTTPResponseBodySize = "http.response.body.size"
+
+	// HTTPRoute is the low-cardinality matched route template for an HTTP server request.
+	// It must be omitted when the framework cannot provide a route template; a raw URI path is not a substitute.
+	HTTPRoute = "http.route"
+
+	// URLFull is an absolute URL when one can be reconstructed.
+	// It must omit user credentials and should redact sensitive query values.
+	URLFull = "url.full"
+
+	// ServerAddress is the logical destination domain, IP address, or Unix socket name. Domain names
+	// must not be obtained through reverse DNS.
+	// Behind a proxy, it represents the backend address when known.
+	ServerAddress = "server.address"
+
+	// ServerPort is the logical destination port, represented as an integer.
+	// Behind a proxy, it represents the backend port when known.
+	ServerPort = "server.port"
+
+	// ClientPort is the client port number.
+	ClientPort = "client.port"
 )
