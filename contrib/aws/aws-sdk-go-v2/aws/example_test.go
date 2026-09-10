@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	awstrace "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws"
+	awstraceconfig "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws/awsconfig"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -36,7 +37,7 @@ func Example() {
 // directly accessible (e.g. when the AWS config is loaded by other code, such as an SDK helper or an AWS-provided
 // config loader).
 func ExampleWithDataDogTracer() {
-	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), awstrace.WithDataDogTracer())
+	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), awstraceconfig.WithDataDogTracer())
 	if err != nil {
 		log.Fatal(err.Error())
 	}
