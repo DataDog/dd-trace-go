@@ -8,7 +8,6 @@ package openfeature
 import (
 	"cmp"
 	"container/list"
-	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -49,6 +48,7 @@ type exposureEvent struct {
 	Flag       exposureFlag       `json:"flag"`
 	Variant    exposureVariant    `json:"variant"`
 	Subject    exposureSubject    `json:"subject"`
+	SerialID   *uint32            `json:"serial_id,omitempty"`
 }
 
 // exposureAllocation represents allocation information in an exposure event
@@ -96,6 +96,8 @@ type exposureCacheKey struct {
 type exposureCacheValue struct {
 	allocationKey string
 	variant       string
+	serialID      uint32
+	hasSerialID   bool
 }
 
 // exposureCacheEntry stores the key and value for an LRU cache entry
@@ -127,10 +129,10 @@ func (c *exposureLRUCache) add(key exposureCacheKey, value exposureCacheValue) b
 		entry := elem.Value.(*exposureCacheEntry)
 		c.order.MoveToFront(elem)
 		if entry.value == value {
-			// Same allocation and variant - this is a duplicate
+			// Same allocation, variant and serial ID - this is a duplicate
 			return false
 		}
-		// Allocation or variant changed - update entry
+		// Allocation, variant or serial ID changed - update entry
 		entry.value = value
 		return true
 	}
@@ -202,14 +204,7 @@ func (w *exposureWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("openfeature: exposure writer recovered panic: %s", r)
-				var errAttr slog.Attr
-				if err, ok := r.(error); ok {
-					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
-				} else {
-					errAttr = slog.Any("panic", r)
-				}
-				telemetrylog.Error("openfeature: exposure writer recovered panic", errAttr)
+				telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r)
 			}
 			w.stop()
 		}()
@@ -242,6 +237,10 @@ func (w *exposureWriter) append(event exposureEvent) {
 	cacheValue := exposureCacheValue{
 		allocationKey: event.Allocation.Key,
 		variant:       event.Variant.Key,
+	}
+	if event.SerialID != nil {
+		cacheValue.serialID = *event.SerialID
+		cacheValue.hasSerialID = true
 	}
 
 	// Check deduplication cache - returns true if this is a new or changed entry

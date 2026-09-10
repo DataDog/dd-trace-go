@@ -16,10 +16,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
@@ -48,18 +50,19 @@ var (
 )
 
 type processRetryControlConfig struct {
-	Version                int    `json:"version"`
-	Transport              string `json:"transport"`
-	TestName               string `json:"test_name"`
-	Attempt                int    `json:"attempt"`
-	RetryReason            string `json:"retry_reason"`
-	MRunEpoch              uint64 `json:"m_run_epoch,omitempty"`
-	InvocationOrdinal      uint64 `json:"invocation_ordinal,omitempty"`
-	ReadEndpoint           uint64 `json:"read_endpoint"`
-	WriteEndpoint          uint64 `json:"write_endpoint"`
-	ParentDeadlineUnixNano int64  `json:"parent_deadline_unix_nano"`
-	ParentDeadlineOK       bool   `json:"parent_deadline_ok"`
-	ObservedGOMAXPROCS     int    `json:"observed_gomaxprocs"`
+	Version                int                        `json:"version"`
+	Transport              string                     `json:"transport"`
+	TestName               string                     `json:"test_name"`
+	Attempt                int                        `json:"attempt"`
+	RetryReason            string                     `json:"retry_reason"`
+	MRunEpoch              uint64                     `json:"m_run_epoch,omitempty"`
+	InvocationOrdinal      uint64                     `json:"invocation_ordinal,omitempty"`
+	ReadEndpoint           uint64                     `json:"read_endpoint"`
+	WriteEndpoint          uint64                     `json:"write_endpoint"`
+	ParentDeadlineUnixNano int64                      `json:"parent_deadline_unix_nano"`
+	ParentDeadlineOK       bool                       `json:"parent_deadline_ok"`
+	ObservedGOMAXPROCS     int                        `json:"observed_gomaxprocs"`
+	Subtree                *processRetrySubtreeConfig `json:"subtree,omitempty"`
 }
 
 type processRetryControlFrame struct {
@@ -97,6 +100,8 @@ type processRetryControl struct {
 	terminal  processRetryControlledTerminalState
 	serveDone chan struct{}
 	wire      processRetryControlConfig
+
+	parallelBridge func() error
 }
 
 type processRetryControlledTerminalState struct {
@@ -131,6 +136,7 @@ func newParentProcessRetryControl(cmd *exec.Cmd, cfg processRetryChildConfig) (*
 	transport.config.ParentDeadlineUnixNano = cfg.ParentDeadlineUnixNano
 	transport.config.ParentDeadlineOK = cfg.ParentDeadlineOK
 	transport.config.ObservedGOMAXPROCS = cfg.ObservedGOMAXPROCS
+	transport.config.Subtree = cfg.Subtree
 	if transport.config.ObservedGOMAXPROCS < 1 {
 		transport.config.ObservedGOMAXPROCS = processRetryCurrentCPU()
 	}
@@ -383,6 +389,12 @@ func (c *processRetryControl) serveParent() <-chan error {
 			}
 			switch frame.Kind {
 			case processRetryControlParallelRequest:
+				if c.parallelBridge != nil {
+					if err := c.parallelBridge(); err != nil {
+						errorsCh <- err
+						return
+					}
+				}
 				if err := c.Send(processRetryControlParallelResume, ""); err != nil {
 					errorsCh <- err
 					return
@@ -566,6 +578,7 @@ func writeProcessRetryControlConfig(path string, cfg processRetryControlConfig) 
 		RetryReason:       cfg.RetryReason,
 		MRunEpoch:         cfg.MRunEpoch,
 		InvocationOrdinal: cfg.InvocationOrdinal,
+		Subtree:           cfg.Subtree,
 	}); err != nil {
 		return err
 	}
@@ -573,7 +586,7 @@ func writeProcessRetryControlConfig(path string, cfg processRetryControlConfig) 
 	if err != nil {
 		return err
 	}
-	if len(payload) > processRetryResultMaxBytes {
+	if len(payload) > processRetryWireMaxBytes(cfg.Subtree != nil) {
 		return errProcessRetryControlTooLarge
 	}
 	return os.WriteFile(path, payload, 0o600)
@@ -588,11 +601,12 @@ func readProcessRetryControlConfig(path string, expected processRetryChildConfig
 		return processRetryControlConfig{}, err
 	}
 	defer file.Close()
-	payload, err := io.ReadAll(io.LimitReader(file, processRetryResultMaxBytes+1))
+	limit := processRetryWireMaxBytes(expected.RetryReason == processRetrySubtreeReason || expected.RetryReason == constants.AttemptToFixRetryReason)
+	payload, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
 	if err != nil {
 		return processRetryControlConfig{}, err
 	}
-	if len(payload) > processRetryResultMaxBytes {
+	if len(payload) > limit {
 		return processRetryControlConfig{}, errProcessRetryControlTooLarge
 	}
 	var cfg processRetryControlConfig
@@ -625,6 +639,16 @@ func validateProcessRetryControlConfig(cfg processRetryControlConfig, expected p
 		return errProcessRetryControlInvalid
 	}
 	if cfg.ObservedGOMAXPROCS < 1 || (!cfg.ParentDeadlineOK && cfg.ParentDeadlineUnixNano != 0) {
+		return errProcessRetryControlInvalid
+	}
+	if cfg.Subtree == nil && cfg.RetryReason == processRetrySubtreeReason ||
+		cfg.Subtree != nil && cfg.RetryReason != processRetrySubtreeReason && cfg.RetryReason != constants.AttemptToFixRetryReason {
+		return errProcessRetryControlInvalid
+	}
+	if err := validateProcessRetrySubtreeConfig(cfg.Subtree, cfg.TestName); err != nil {
+		return errors.Join(errProcessRetryControlInvalid, err)
+	}
+	if expected.Subtree != nil && !reflect.DeepEqual(cfg.Subtree, expected.Subtree) {
 		return errProcessRetryControlInvalid
 	}
 	switch cfg.Transport {

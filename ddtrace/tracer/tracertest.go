@@ -195,8 +195,9 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 	// background goroutines and process-global side effects that break the
 	// inspectable tracer's synctest/no-network guarantees.
 	tracer.startAppSec()
-	if tracer.config.llmobs.Enabled {
-		if err := llmobs.Start(tracer.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+	if tracer.config.internalConfig.LLMObsEnabled() {
+		cfg, resolveErr := buildLLMObsConfig(tracer.config)
+		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}, resolveErr); err != nil {
 			return nil, fmt.Errorf("failed to start llmobs: %w", err)
 		}
 		tb.Cleanup(llmobs.Stop)

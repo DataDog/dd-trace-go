@@ -8,6 +8,7 @@ package tracer
 import (
 	"maps"
 	"strconv"
+	"strings"
 	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -199,6 +200,28 @@ func (t *trace) replacePropagatingTags(tags map[string]string) {
 
 func (t *trace) propagatingTagsLen() int {
 	return len(t.loadPropagatingTags())
+}
+
+// propagatingTagsByteLens returns the byte lengths of the propagating tags in
+// both the x-datadog-tags header and the tracestate dd= entry in a single pass.
+// xTagsLen uses "k1=v1,k2=v2,..." format (excluding tracestate/traceparent keys).
+// tracestateLen counts only _dd.p.* tags as (stripped-key + value + 4) bytes,
+// matching composeTracestate (";t." prefix + ":" separator = 4 bytes); the fixed
+// dd= header is not included.
+func (t *trace) propagatingTagsByteLens() (xTagsLen, tracestateLen int) {
+	for k, v := range t.loadPropagatingTags() {
+		if k == tracestateHeader || k == traceparentHeader {
+			continue
+		}
+		if xTagsLen > 0 {
+			xTagsLen++ // comma separator
+		}
+		xTagsLen += len(k) + 1 + len(v)
+		if strings.HasPrefix(k, "_dd.p.") {
+			tracestateLen += len(k) - len("_dd.p.") + len(v) + 4
+		}
+	}
+	return
 }
 
 // parseDecisionMaker parses the decision maker string (e.g. "-4") into

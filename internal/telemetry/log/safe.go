@@ -39,21 +39,30 @@ func (e SafeError) LogValue() slog.Value {
 	)
 }
 
-// errorType extracts the error type without exposing the error message
-func errorType(err error) string {
-	if err == nil {
+// errorType extracts a value's type without exposing its content. Despite the
+// name, v need not implement error — ReportPanic reuses it for non-error
+// recovered panic values, which carry the same "type is safe, content is not"
+// disclosure rule as errors.
+func errorType(v any) string {
+	if v == nil {
 		return nilErrorType
 	}
 
-	errType := reflect.TypeOf(err)
-	if errType.Kind() == reflect.Pointer {
-		errType = errType.Elem()
+	t := reflect.TypeOf(v)
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
 	}
 
-	if errType.PkgPath() != "" {
-		return errType.PkgPath() + "." + errType.Name()
+	if t.Name() == "" {
+		// Unnamed types (anonymous structs, slices, maps, channels, funcs)
+		// have no Name()/PkgPath(); String() still describes the type
+		// (e.g. "[]string", "struct { X int }") without exposing values.
+		return t.String()
 	}
-	return errType.Name()
+	if t.PkgPath() != "" {
+		return t.PkgPath() + "." + t.Name()
+	}
+	return t.Name()
 }
 
 // SafeSlice provides secure logging for slice/array types

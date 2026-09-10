@@ -162,8 +162,7 @@ func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err
 		telemetry.GitCommand(commandType)
 		defer func() {
 			telemetry.GitCommandMs(commandType, float64(time.Since(startTime).Milliseconds()))
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
+			if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 				switch exitErr.ExitCode() {
 				case -1:
 					telemetry.GitCommandErrors(commandType, telemetry.ECMinus1CommandExitCode)
@@ -229,8 +228,7 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 		telemetry.GitCommand(commandType)
 		defer func() {
 			telemetry.GitCommandMs(commandType, float64(time.Since(startTime).Milliseconds()))
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
+			if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 				switch exitErr.ExitCode() {
 				case -1:
 					telemetry.GitCommandErrors(commandType, telemetry.ECMinus1CommandExitCode)
