@@ -57,6 +57,9 @@ gls_runtime_field:
 gls_runtime_accessors:
   target: runtime
   do:
+    # add_file copies the file named by file: from the package named by path:
+    # into the target package. Here it copies gls_accessors.go out of
+    # ddtrace/tracer and into runtime.
     - add_file:
         file: gls_accessors.go
         path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
@@ -176,11 +179,13 @@ span_gls_clear:
 # orchestrion. Everything after main begins is identical.
 #
 # Injecting a `func init()` instead would need add_file, which has no selectors:
-# it applies to the whole target package, which under `otelc go test` includes the
-# generated test-main. That both fails the build (otelc emits an empty `package`
-# clause there) and would start a second tracer underneath the integration
-# harness. `where: file: {is_test: false}` is not honored for add_file either, so
-# there is no way to scope the rule to non-test builds. Revisit once otelc can.
+# a `where` block on an add_file rule parses but is silently ignored, so there
+# is no way to scope the rule to non-test builds
+# (open-telemetry/opentelemetry-go-compile-instrumentation#1347). It also applies
+# to the whole target package, which under `otelc go test` includes the
+# generated test-main, where otelc emits an empty `package` clause and fails the
+# build (open-telemetry/opentelemetry-go-compile-instrumentation#1348). Revisit
+# once both are fixed upstream.
 #
 # `target: main` plus `where.func` does not match a test-main compile unit, so the
 # rule below never fires under `otelc go test`.
