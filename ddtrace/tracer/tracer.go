@@ -42,6 +42,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -425,12 +426,28 @@ func storeConfig(c *config) {
 	data, _ := metadata.MarshalMsg(nil)
 	_, err := globalinternal.CreateMemfd(name, data)
 	if err != nil {
+		// Not reported to Error Tracking: on Linux, memfd_create can fail
+		// because the runtime environment denies it (or sealing) via seccomp,
+		// kernel capabilities, or resource limits. That's a customer-environment
+		// condition, not an actionable SDK defect, and reporting it would create
+		// fleet-wide false positives for hardened deployments (e.g. gVisor,
+		// locked-down seccomp profiles).
 		log.Error("failed to store the configuration: %s", err.Error())
 	}
 
 	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
 	if err != nil {
-		log.Error("failed to publish the OTEL process context: %s", err.Error())
+		// Unlike the memfd site above, this stays reported: PublishProcessContext's
+		// error path is not exclusively an environment-hardening condition.
+		// otelcontextmapping_linux.go's updateOtelProcessContextMapping can return
+		// ErrPayloadTooLarge on a second-or-later Start() in the same process (e.g.
+		// Stop() then Start() with a longer ServiceName/Env/Version/ContainerID) if
+		// the new payload outgrows the mapping sized on the first call — a genuine
+		// dd-trace-go sizing bug across restarts within one process, not seccomp or
+		// kernel-capability denial. proto.Marshal failing in PublishProcessContext
+		// itself would likewise be our own defect. Silencing this site would also
+		// hide those, so it's kept distinct from the memfd sibling deliberately.
+		telemetrylog.LogAndReportError("failed to publish the OTEL process context", err)
 	}
 }
 
