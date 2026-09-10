@@ -4,18 +4,22 @@
 // Copyright 2025 Datadog, Inc.
 
 // Package openfeature provides an OpenFeature-compatible feature flag provider
-// that integrates with Datadog Remote Config for server-side feature flag evaluation.
+// for server-side feature flag evaluation, backed by configuration delivered
+// from Datadog.
 //
 // # Overview
 //
 // This package implements the OpenFeature Provider interface, allowing applications
-// to evaluate feature flags using configurations delivered dynamically through
-// Datadog's Remote Config system. The provider supports all standard OpenFeature
-// flag types: boolean, string, integer, float, and JSON objects.
+// to evaluate feature flags using configurations delivered dynamically from Datadog.
+// Configuration reaches the provider one of two ways: Agentless, polling a Datadog
+// endpoint directly over HTTPS (the default), or through the Agent's Remote Config.
+// Both feed the same evaluator; only delivery differs. See "# Configuration Source"
+// below. The provider supports all standard OpenFeature flag types: boolean, string,
+// integer, float, and JSON objects.
 //
 // # Key Features
 //
-//   - Dynamic flag configuration via Datadog Remote Config
+//   - Dynamic flag configuration via Agentless polling or Datadog Remote Config
 //   - Support for all OpenFeature flag types (boolean, string, integer, float, JSON)
 //   - Advanced targeting with attribute-based conditions
 //   - Traffic sharding for gradual rollouts and A/B testing
@@ -40,7 +44,7 @@
 //		}
 //		defer provider.Shutdown()
 //
-//	 // This can take up to 30 seconds (Datadog Remote Config default timeout) as it waits for initialization
+//	 // This can take up to 30 seconds (the default provider initialization timeout) as it waits for initialization
 //		err = of.SetProviderAndWait(provider)
 //		if err != nil {
 //		    log.Fatal(err)
@@ -186,14 +190,27 @@
 // while configuration updates are in progress. Configuration updates use a
 // read-write mutex to ensure consistency.
 //
-// # Remote Config Integration
+// # Configuration Source
 //
-// The provider automatically subscribes to Datadog Remote Config updates using
-// the FFE_FLAGS product (capability 46). When new configurations are received,
-// they are validated and applied atomically.
+// DD_FEATURE_FLAGS_CONFIGURATION_SOURCE selects how configuration is delivered:
 //
-// Configuration updates are acknowledged back to Remote Config with appropriate
-// status codes (acknowledged for success, error for validation failures).
+//   - "agentless" (default): the provider polls a Datadog endpoint directly over
+//     HTTPS on an interval. No Agent dependency. Requires DD_API_KEY unless a
+//     custom endpoint is configured; DD_SITE optionally selects the managed
+//     endpoint's host and has no effect without DD_API_KEY. See
+//     "# Environment Variables" below.
+//   - "remote_config": the provider subscribes to Datadog Remote Config updates
+//     using the FFE_FLAGS product (capability 46), via the Agent. Configuration
+//     updates are acknowledged back to Remote Config with appropriate status
+//     codes (acknowledged for success, error for validation failures).
+//
+// Both sources feed the same validation and evaluation logic; only how
+// configuration arrives differs. Requesting configuration is billable. For the
+// agentless source, nothing is sent to Datadog until NewDatadogProvider is
+// called — creating the provider is the point at which billing begins. For
+// the remote_config source, this guarantee does not hold if tracer.Start runs
+// first: the tracer eagerly subscribes to the FFE_FLAGS Remote Config product
+// and may fetch and buffer configuration before NewDatadogProvider is called.
 //
 // # Configuration
 //
@@ -213,12 +230,9 @@
 //
 // # Environment Variables
 //
-// The provider requires the following environment variable to be set:
-//
-//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED: Must be set to "true" to enable
-//     the OpenFeature provider. This is a safety flag to ensure the feature is
-//     intentionally activated. If not set or set to false, NewDatadogProvider()
-//     will return a NoopProvider instead of the actual Datadog provider.
+//   - DD_FEATURE_FLAGS_ENABLED: Stable kill switch, default "true". Set to "false"
+//     to disable the provider entirely: NewDatadogProvider() returns a NoopProvider
+//     instead of the actual Datadog provider, regardless of any other setting below.
 //     Important: When using the NoopProvider, all flag evaluations will silently
 //     return the default values you specify, with no errors. This allows your
 //     application to run without feature flags being active. The NoopProvider
@@ -226,34 +240,66 @@
 //     (https://github.com/open-feature/go-sdk/tree/main/openfeature/multi)
 //     to implement local overrides during development or testing.
 //
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE: "agentless" (default), "remote_config",
+//     or "offline" (explicitly disables configuration delivery). See
+//     "# Configuration Source" above. An unrecognized non-blank value also disables
+//     the provider (fails closed, to avoid silently starting billed polling on a typo).
+//
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL: Optional override of
+//     the Agentless endpoint. Leave unset to use the managed, Datadog-hosted endpoint
+//     derived from DD_SITE (requires DD_API_KEY). Set only to point at a custom
+//     collector; a custom endpoint never receives DD_API_KEY.
+//
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS: Agentless
+//     poll interval in seconds, default 30, valid range (0, 3600]. An out-of-range or
+//     unparseable value falls back to the default rather than being clamped.
+//
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: Per-request
+//     timeout in seconds for Agentless polls, default 5, valid range (0, 300]. An
+//     out-of-range or unparseable value falls back to the default rather than being
+//     clamped.
+//
+//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED: Deprecated. Kept only to grandfather
+//     existing adopters onto DD_FEATURE_FLAGS_CONFIGURATION_SOURCE=remote_config:
+//     if DD_FEATURE_FLAGS_CONFIGURATION_SOURCE is not explicitly set and this legacy
+//     variable is "true", the provider uses Remote Config as before. Prefer setting
+//     DD_FEATURE_FLAGS_CONFIGURATION_SOURCE explicitly instead.
+//
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED: When set to
 //     "true", enables span enrichment — feature flag evaluation details are
-//     recorded as tags on the active trace's root span. Requires
-//     DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED to also be set to "true".
-//     Default: false. Note: the added span tags may affect APM billing.
+//     recorded as tags on the active trace's root span. Default: false. Note:
+//     the added span tags may affect APM billing.
 //
-// Example:
+// Example (Agentless, the default):
 //
-//	export DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED=true
+//	export DD_API_KEY=<your API key>
 //	export DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED=true
 //
 // Standard Datadog environment variables also apply:
 //
-//   - DD_AGENT_HOST: Datadog agent host (default: localhost)
-//   - DD_TRACE_AGENT_PORT: Datadog agent port (default: 8126)
+//   - DD_API_KEY: Required for the default, managed Agentless endpoint.
+//   - DD_SITE: Datadog site (default: datadoghq.com). Determines the managed
+//     Agentless endpoint's host.
+//   - DD_AGENT_HOST: Datadog agent host (default: localhost). Only relevant to
+//     the remote_config source.
+//   - DD_TRACE_AGENT_PORT: Datadog agent port (default: 8126). Only relevant to
+//     the remote_config source.
 //   - DD_SERVICE: Service name for tagging
 //   - DD_ENV: Environment name (e.g., production, staging)
 //   - DD_VERSION: Application version
 //
 // # Prerequisites
 //
-// Before creating the provider, ensure that:
-//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED environment variable is set to "true"
-//   - The Datadog tracer is started (tracer.Start()) OR
-//   - Remote Config client is properly configured
-//
-// If the default Remote Config setup fails, the provider creation will return
-// an error asking you to call tracer.Start first.
+// Calling tracer.Start() before creating the provider is recommended but not
+// required. It matters for two things: the DD_TAGS "env:" fallback (used by
+// the Agentless endpoint's dd_env query parameter) is only applied during
+// tracer.Start, and for the remote_config source, if the tracer has already
+// subscribed to Remote Config, the provider attaches to that existing
+// subscription instead of starting its own client. If tracer.Start has not
+// run, the remote_config source falls back to starting its own default
+// Remote Config client — this does not require the tracer and does not error,
+// though it means the application runs its own Remote Config client separate
+// from the tracer's, if the tracer is started later.
 //
 // # Exposure Events and Deduplication
 //
@@ -402,14 +448,14 @@
 // The InMemoryProvider also supports context-based evaluation using ContextEvaluator
 // for more complex test scenarios where the returned value depends on user attributes.
 //
-// For integration testing with real Datadog Remote Config, set the
-// DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED environment variable and ensure
-// the Datadog agent is running in your test environment
+// For integration testing with real Remote Config delivery, set
+// DD_FEATURE_FLAGS_CONFIGURATION_SOURCE=remote_config and ensure the Datadog
+// agent is running in your test environment.
 //
 // # Limitations
 //
 //   - Configuration updates replace the entire flag set (no incremental updates)
-//   - Provider shutdown doesn't fully unsubscribe from Remote Config yet
+//   - Provider shutdown doesn't fully unsubscribe from Remote Config yet (remote_config source only)
 //   - Multi-config tracking (multiple Remote Config paths) not yet supported
 //
 // # Additional Resources
