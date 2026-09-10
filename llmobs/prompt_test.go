@@ -6,7 +6,6 @@
 package llmobs
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -30,7 +29,7 @@ func TestPromptTextAndChat(t *testing.T) {
 	config := text.Config()
 	config["model"].(map[string]any)["temperature"] = 1
 	config["unknown"].([]any)[0] = 2
-	if got := text.Config(); got["model"].(map[string]any)["temperature"] != json.Number("0.2") || got["unknown"].([]any)[0] != json.Number("1") {
+	if got := text.Config(); got["model"].(map[string]any)["temperature"] != 0.2 || got["unknown"].([]any)[0] != float64(1) {
 		t.Fatalf("config mutated: %#v", got)
 	}
 

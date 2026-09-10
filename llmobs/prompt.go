@@ -6,7 +6,6 @@
 package llmobs
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -218,10 +217,8 @@ func normalizePromptConfig(config map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("llmobs: prompt config must contain JSON values: %w", err)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	decoder.UseNumber()
 	var copy map[string]any
-	if err := decoder.Decode(&copy); err != nil {
+	if err := json.Unmarshal(encoded, &copy); err != nil {
 		return nil, fmt.Errorf("llmobs: prompt config must be a JSON object: %w", err)
 	}
 	return copy, nil
