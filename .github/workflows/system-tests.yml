@@ -105,6 +105,11 @@ jobs:
           path: 'binaries/dd-trace-go'
 
       - name: Build and save weblog image
+        env:
+          # build.sh retries on failure but defaults to a single attempt, so any
+          # transient module-proxy hiccup during the in-image go mod download fails
+          # the whole aggregated System Tests check.
+          SYSTEM_TEST_BUILD_ATTEMPTS: "3"
         run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }} --save-to-binaries
 
       - name: Upload weblog image artifact
@@ -324,6 +329,8 @@ jobs:
 
       - name: Build weblog
         if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' && matrix.weblog-variant != 'apim' }}
+        env:
+          SYSTEM_TEST_BUILD_ATTEMPTS: "3"
         run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }}
 
       - name: Download ${{ matrix.weblog-variant }} artifacts
