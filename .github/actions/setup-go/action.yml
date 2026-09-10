@@ -33,17 +33,36 @@ runs:
         fi
 
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      id: setup-go
       with:
         go-version: ${{ inputs.go-version }}
         cache: true
         check-latest: true
+
+    # Callers that run a tool exporting its own GOROOT into $GITHUB_ENV before this
+    # action (e.g. reviewdog/action-golangci-lint installs a different Go release)
+    # leave a stale GOROOT behind that overrides the toolchain selected above. Re-align
+    # GOROOT with the toolchain actions/setup-go just selected so the `go` binary on
+    # PATH and its tool directory always come from the same tree.
+    - name: Align GOROOT with the selected toolchain
+      shell: bash
+      run: |
+        unset GOROOT
+        echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
 
     - name: Cache tools
       id: cache-tools
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.tools-bin }}
-        key: ${{ runner.os }}-go-${{ inputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin}}-${{ hashFiles('**/go.mod', '**/go.sum') }}
+        # Key on the resolved toolchain version, not the literal input: `stable`
+        # silently changes meaning when a new Go release ships, and a cache built
+        # against the old release would then feed stale binaries to the new one.
+        key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin}}-${{ hashFiles('**/go.mod', '**/go.sum') }}
+        # Keep near-misses usable when the base branch moves go.mod/go.sum, which
+        # otherwise invalidates the key for every open PR at once.
+        restore-keys: |
+          ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin }}-
 
     - name: Install development tools
       if: steps.cache-tools.outputs.cache-hit != 'true'
