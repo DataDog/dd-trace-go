@@ -340,7 +340,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingEnableLiveDebugging,
 	)
 
-	if legacyFlaggingEnabled, _ := t.config.internalConfig.ExperimentalFlaggingProviderEnabled(); legacyFlaggingEnabled {
+	if internalffe.RemoteConfigSourceSelected(t.config.internalConfig) {
 		if err := internalffe.SubscribeRC(); err != nil {
 			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
 		}
