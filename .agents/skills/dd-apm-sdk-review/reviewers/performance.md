@@ -6,7 +6,7 @@ Your question: **what does this cost, and does it cost it on a hot path?**
 
 A tracer shares the customer's process, heap, and latency budget. Overhead is a form of incorrect behavior — a non-directly-observable side effect that can rise to directly observable customer harm: missed SLAs, OOM kills, container restarts, cold-start churn.
 
-This file is language-agnostic: the principles, severity model, and hotness rubric below hold for every tracer regardless of runtime. This repo's actual hot-path file list, runtime-specific cost model (JIT/GC/event-loop mechanics), and benchmark tooling live in `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md` — read it before you start; it tells you *where* the paths named abstractly below actually are in this codebase.
+This file is language-agnostic: the principles, severity model, and hotness rubric below hold for every tracer regardless of runtime. This repo's actual hot-path file list, runtime-specific cost model (JIT/GC/event-loop mechanics), and benchmark tooling live in `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md` if it exists — read it before you start when it does; it tells you *where* the paths named abstractly below actually are in this codebase. If that override is absent, use this file alone and do not invent repo-specific hot paths.
 
 ## Two forces in tension
 
@@ -45,7 +45,7 @@ CPU overhead alone is the lowest priority — it's a cost issue, not a correctne
 - **SEV-3** → **P2**.
 - A straddle (**SEV-1/2**, **SEV-2/3**) is not itself a severity — resolve it to one side using `_common.md`'s bar (stated failure mode + impact) before reporting, and report the resulting P-level, not the straddle notation.
 
-## Universal checks (language-agnostic — the runtime-specific mechanism for each is in `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md`)
+## Universal checks (language-agnostic — the runtime-specific mechanism for each is in `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md` when that file exists)
 
 Each check below carries a stable slug in backticks. Cite checks by slug, never by list position — the numbering is display order only and may be reordered; a slug never changes once assigned.
 
@@ -66,7 +66,7 @@ Each check below carries a stable slug in backticks. Cite checks by slug, never 
   - Confidence: flag-as-measure (deferability is contextual — verify the move would actually help).
   - Severity: SEV-1/2.
   - Fix: defer to background/writer thread or task, lazy-compute, batch.
-5. `polymorphic-dispatch` — **Polymorphic/indirect dispatch on a hot path** — a hot call site that defeats the runtime's inlining/optimization (real for JIT and JIT-like runtimes; less relevant for pure interpreters or AOT-compiled code — check `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md`).
+5. `polymorphic-dispatch` — **Polymorphic/indirect dispatch on a hot path** — a hot call site that defeats the runtime's inlining/optimization (real for JIT and JIT-like runtimes; less relevant for pure interpreters or AOT-compiled code — check `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md` if it exists).
   - Confidence: flag-as-measure.
   - Severity: SEV-2/3.
   - Fix: keep hot call sites monomorphic/stable; specialize.
@@ -89,13 +89,13 @@ Each check below carries a stable slug in backticks. Cite checks by slug, never 
 
 ## Evidence
 
-If a benchmark exists for the changed path (see `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md` for this repo's benchmark tooling), say whether it was run and what it showed. If the change plausibly regresses a hot path and no benchmark result is available, say so as a P1/SEV-2 ("unmeasured change on a hot path") — do not invent numbers, and do not report an unmeasured suspicion as top-severity unless the cost is obvious from the code (e.g. an allocation in a per-span loop).
+If a benchmark exists for the changed path (see `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md` if it exists for this repo's benchmark tooling), say whether it was run and what it showed. If the change plausibly regresses a hot path and no benchmark result is available, say so as a P1/SEV-2 ("unmeasured change on a hot path") — do not invent numbers, and do not report an unmeasured suspicion as top-severity unless the cost is obvious from the code (e.g. an allocation in a per-span loop).
 
 ## Do not
 
 - Do not micro-optimize genuinely cold paths, tests, build scripts, or tooling. Startup/require/import-time work is not cold: it runs once per process, and that once is a customer-visible cost for serverless and short-lived processes.
 - Do not propose optimizations that reduce clarity for immeasurable gain.
-- Do not speculate about runtime/compiler behavior without evidence from this repo's own benchmarks, comments, or `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md`.
+- Do not speculate about runtime/compiler behavior without evidence from this repo's own benchmarks, comments, or `.agents/dd-apm-sdk-review-overrides/reviewers/performance.md` (when that file exists).
 - Do not flag a cache *keyed by* high-cardinality data's mere existence — flag it only when it lacks a bound (check #3).
 
 If nothing survives the confidence bar, say so plainly — "No high-confidence hot-path findings; here's what I checked and cleared." A clean review is a valid, valuable result, not a failure to find something.
