@@ -1,0 +1,48 @@
+# LLM Validation Platform — dd-trace-go config
+#
+# Starter suite for the dd-apm-sdk-review skill. One template case on purpose:
+# cheap enough to re-run while you add the next rule.
+#
+# DataDog/dd-trace-go#4965 (draft) already adds AGENTS.md cases. The platform
+# allows only one YAML under suites/ — fold those cases into
+# suites/dd-apm-sdk-review.yaml when that PR lands, and add the AGENTS.md paths
+# to instruction_files below.
+model: claude-sonnet-5
+runs: 2
+
+instruction_files:
+  - contrib/AGENTS.md
+  - .agents/skills/dd-apm-sdk-review/SKILL.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/coherence.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/correctness.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/security.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/design.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/performance.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/maintainability.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/conventions.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/cross-sdk.md
+  - .agents/skills/dd-apm-sdk-review/reviewers/report-template.md
+  - .agents/skills/dd-apm-sdk-review/review-without-harness.md
+  - .agents/dd-apm-sdk-review-overrides/repo-context.md
+  - .agents/dd-apm-sdk-review-overrides/reviewers/performance.md
+  - .agents/dd-apm-sdk-review-overrides/reviewers/security.md
+
+default_level: gate
+presets:
+  gate: # The starter case. Add yours here when you want CI to run it.
+    cases:
+      - go-perf-startspanconfig-first
+    runs: 2
+  minimum: # Cheapest smoke — the same starter case.
+    cases:
+      - go-perf-startspanconfig-first
+    runs: 2
+  full: # Every case in suites/.
+    runs: 2
+
+policy:
+  noise_threshold: 1.0
+  pairwise_win_floor: 0.45
+  blocking_fail_floor: 0.45
+  blocking_fail_ci_upper: 0.55
