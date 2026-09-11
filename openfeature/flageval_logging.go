@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"cmp"
 	"fmt"
-	"log/slog"
 	"os"
 	"reflect"
 	"sort"
@@ -32,8 +31,8 @@ const (
 	// Dedicated 10 s timer; separate from exposureWriter's 1 s interval.
 	defaultFlagEvalFlushInterval = 10 * time.Second
 
-	// flagEvalLoggingEndpoint is the EVP proxy endpoint for flag evaluation events.
-	flagEvalLoggingEndpoint = "/evp_proxy/v2/api/v2/flagevaluation"
+	// flagEvalLoggingEndpoint is the direct EVP intake path for flag evaluation events.
+	flagEvalLoggingEndpoint = "/api/v2/flagevaluation"
 
 	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH
 	// and align with the cross-SDK RFC (see Java DDEvaluator.copyPrunedContext caps).
@@ -388,14 +387,7 @@ func (w *flagEvalLoggingWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("openfeature: flag evaluation writer recovered panic: %s", r)
-				var errAttr slog.Attr
-				if err, ok := r.(error); ok {
-					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
-				} else {
-					errAttr = slog.Any("panic", r)
-				}
-				telemetrylog.Error("openfeature: flag evaluation writer recovered panic", errAttr)
+				telemetrylog.LogAndReportPanic("openfeature: flag evaluation writer recovered panic", r)
 			}
 			// Always signal completion so stop() unblocks, even on panic.
 			close(w.workerDone)

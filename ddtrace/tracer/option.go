@@ -212,6 +212,7 @@ type StartOption func(*config)
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
+	internalconfig.RecordProductStart(internalconfig.ProductTracer)
 	c.internalConfig = internalconfig.CreateNew()
 
 	c.sampler = NewAllSampler()
@@ -1249,9 +1250,9 @@ func WithLogStartup(enabled bool) StartOption {
 }
 
 // WithProfilerCodeHotspots enables the code hotspots integration between the
-// tracer and profiler. This is done by automatically attaching pprof labels
-// called "span id" and "local root span id" when new spans are created. You
-// should not use these label names in your own code when this is enabled. The
+// tracer and profiler. This is done by automatically attaching a pprof label
+// called "span id" when new spans are created. You should not use this label
+// name in your own code when this is enabled. The
 // enabled value defaults to the value of the
 // DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or true.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
@@ -1379,9 +1380,7 @@ func WithStatsOriginCardinalityLimit(limit int) StartOption {
 	}
 }
 
-// WithDynamicInstrumentationEnabled enables or disables dynamic
-// instrumentation, allowing the tracer to place probes for the Live Debugger
-// and Dynamic Instrumentation products.
+// WithDynamicInstrumentationEnabled enables or explicitly disables dynamic instrumentation. (Default is false).
 func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetDynamicInstrumentationEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
@@ -1395,6 +1394,39 @@ func Tag(k string, v any) StartSpanOption {
 			cfg.Tags = map[string]any{}
 		}
 		cfg.Tags[k] = v
+	}
+}
+
+// WithTags sets the given key/value pairs as tags on the started Span in a
+// single call. It clones tags at the moment WithTags is called: mutating
+// the map afterward does not change what gets applied, and the same map may
+// be safely reused (or mutated) by the caller once WithTags returns. It is
+// equivalent to calling Tag for every entry of tags, but avoids allocating
+// one closure per tag, which matters when a caller needs to set several
+// tags per span on a hot path (e.g. per-request contrib tags).
+//
+// When used together with WithStartSpanConfig, place WithTags (and any Tag
+// call) before WithStartSpanConfig in the option list: WithStartSpanConfig
+// aliases the base config's Tags map when no per-call tags have been set
+// yet, so a tag write after it would mutate the shared base config's map.
+func WithTags(tags map[string]any) StartSpanOption {
+	// Snapshot immediately, never nil even for a nil/empty input, so a
+	// later WithStartSpanConfig(base) in the same option list always sees a
+	// non-nil, distinct Tags map and merges into it (copy) instead of
+	// aliasing base's map — see
+	// TestWithStartSpanConfigAliasesCachedBaseWhenCalledFirst.
+	snapshot := make(map[string]any, len(tags))
+	maps.Copy(snapshot, tags)
+	return func(cfg *StartSpanConfig) {
+		if cfg.Tags == nil {
+			// Copy out of snapshot rather than aliasing it: the returned
+			// option is meant to be cached and applied to many spans, and
+			// cfg.Tags = snapshot would hand every span whose cfg.Tags
+			// started nil the same map, so a later Tag() on one span
+			// would leak into the others.
+			cfg.Tags = make(map[string]any, len(snapshot))
+		}
+		maps.Copy(cfg.Tags, snapshot)
 	}
 }
 

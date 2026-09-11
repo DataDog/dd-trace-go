@@ -58,12 +58,20 @@ Our CI pipeline includes several automated checks:
 - **Generate Check**: Ensures generated code is up-to-date
 - **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
+- **Error-logging Lint**: Runs `make lint/errlog`, three `go vet`-compatible analyzers: `constantlogmsg` (rejects non-constant message arguments on `log.Error`, `log.Warn`, and the `telemetrylog.ReportError`/`ReportPanic`/`LogAndReportError`/`LogAndReportPanic` helpers — non-constant messages break dedup and, for the telemetry-reporting functions, risk leaking PII to Error Tracking), `telemetrysafety` (requires `slog.Any`/`slog.String` values passed to telemetry log calls to be PII-safe), and `logformatverbs` (flags unsafe `%v`/`%+v`/`%#v` usage). Run locally with `make lint/errlog`. Before adding a new `ReportError`/`ReportPanic` call site, read "When to report, and when not to" in [`internal/README.md`](./internal/README.md#telemetry) — the short version: our defect (not the caller's environment or externally-controlled input), swallowed, not per-span, and firing on the tracer's own startup/poll path rather than a customer request. `internal/telemetry/log/report_backend_test.go` and `internal/telemetry/telemetrytest.NewCapturingClient` decode the real wire payload offline, so a unit test can already assert the message, error type, stack trace, and dedup count for a new call site. Before merging one, still dogfood it against a real org with [`internal/apps/telemetry-errors`](./internal/apps/telemetry-errors/README.md) — that's for what a unit test genuinely can't verify: whether the production telemetry intake accepts the payload (tier 1) and whether the report actually lands and is searchable in the product (tier 2).
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
 - **Cross-Compile Check**: Runs `scripts/cross_build.sh` to cross-compile the library for every [first class Go port](https://go.dev/wiki/PortingPolicy) (including 32-bit `linux/386`, `windows/386`, `linux/arm`), catching architecture-specific compile regressions. Run locally with `./scripts/cross_build.sh`. Packages that import `go-libddwaf` are skipped until it builds on 32-bit (see DataDog/go-libddwaf#227); they stay covered on 64-bit by the test matrix.
 
 #### Unit and Integration Tests
 
-- **Core Tests**: Tests the main library functionality
+- **Core Tests**: Tests the main library functionality, including that specific Error Tracking call
+  sites (remote-config update-state JSON-parse errors in internal/remoteconfig, and the OTel-process-
+  context site in internal/apps/telemetry-errors) produce well-formed telemetry payloads, and that
+  sites which deliberately do *not* report (decision-maker parsing in ddtrace/tracer, verified by
+  `TestParseDecisionMaker_MalformedValue_LogsLocallyWithoutReporting`; and storeConfig's memfd site in
+  internal/apps/telemetry-errors, both externally-triggerable/customer-environment conditions rather
+  than SDK defects) still log locally without reporting — see internal/apps/telemetry-errors/README.md
+  for the full dogfooding process these regression tests automate tier 0 of.
 - **Integration Tests**: Tests against real services using Docker
 - **Contrib Tests**: Tests all third-party integrations
 - **Race Detection**: Tests with Go race detector enabled
@@ -78,7 +86,7 @@ Our CI pipeline includes several automated checks:
 
 #### Customer Simulation Platform (CuSim)
 
-- **CuSim Deployment**: Scheduled GitLab `deploy_to_cusim` runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.
+- **CuSim Deployment**: Scheduled GitLab `deploy_to_reliability_env` (from the one-pipeline template) runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.
 
 
 ### CI Troubleshooting
@@ -251,6 +259,17 @@ The script provides:
 - Early failure detection with clear error messages
 - Automatic Docker service management for integration tests
 - Support for Apple Silicon (M1/M2) Macs
+
+#### Crashtracker
+
+Run focused crashtracker tests with:
+
+```shell
+go test -race -count=1 ./crashtracker
+```
+
+The end-to-end tests intentionally crash helper processes and validate the
+report received by a local intake stub.
 
 ## Style Guidelines
 

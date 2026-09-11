@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -106,6 +107,41 @@ func validateRateLimit(rate float64) bool {
 func validateAgentTimeout(timeout int) bool {
 	if timeout < 0 {
 		log.Warn("ignoring DD_TRACE_AGENT_TIMEOUT: negative value %d", timeout)
+		return false
+	}
+	return true
+}
+
+// validateFeatureFlagsAgentlessPollInterval rejects rather than clamps: clamping would
+// silently move a misconfigured billed-polling interval to a valid one.
+func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
+	if seconds <= 0 || seconds > 3600 {
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS: value %d out of range (0, 3600]", seconds)
+		return false
+	}
+	return true
+}
+
+// validateFeatureFlagsAgentlessRequestTimeout caps the upper bound because a larger value
+// overflows int64 as a nanosecond duration, and http.Client reads a negative Timeout as
+// "no timeout".
+func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
+	if seconds <= 0 || seconds > 300 {
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: value %d out of range (0, 300]", seconds)
+		return false
+	}
+	return true
+}
+
+// maxFlaggingProviderInitTimeoutMs is the largest value that still converts to a
+// time.Duration without overflowing int64 into a negative duration.
+const maxFlaggingProviderInitTimeoutMs = math.MaxInt64 / int64(time.Millisecond)
+
+// validateFlaggingProviderInitTimeout rejects an overflow-prone value so the caller falls
+// back to the default rather than Init receiving an already-expired context.
+func validateFlaggingProviderInitTimeout(ms int) bool {
+	if ms <= 0 || int64(ms) > maxFlaggingProviderInitTimeoutMs {
+		log.Warn("ignoring DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: value %d out of range (0, %d]", ms, maxFlaggingProviderInitTimeoutMs)
 		return false
 	}
 	return true

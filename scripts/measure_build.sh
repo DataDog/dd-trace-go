@@ -121,14 +121,20 @@ message "  Output dir: $OUT_DIR"
 
 cd "$INTEGRATION_DIR" || die "Failed to cd to $INTEGRATION_DIR"
 
+# Retry helper for the two untimed, network-bound steps below. Both talk to the module proxy and
+# the checksum database, and neither is retried by the go command itself (golang/go#28194), so a
+# single dropped HTTP/2 stream part-way through would otherwise fail the whole measurement.
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "$REPO_ROOT/.github/workflows/apps/go-retry.sh"
+
 # Warm module cache (untimed)
 message "Warming module download cache..."
-go mod download || die "go mod download failed"
+retry_on_corruption go mod download || die "go mod download failed"
 
 # For orchestrion mode, ensure the binary is installed (untimed)
 if [[ "$MODE" == "orchestrion" ]]; then
   message "Installing orchestrion binary..."
-  go install "github.com/DataDog/orchestrion" || die "Failed to install orchestrion"
+  retry_on_corruption go install "github.com/DataDog/orchestrion" || die "Failed to install orchestrion"
   ORCHESTRION_VERSION="$(go list -m -f '{{.Version}}' github.com/DataDog/orchestrion)"
   message "  Orchestrion version: $ORCHESTRION_VERSION"
 fi

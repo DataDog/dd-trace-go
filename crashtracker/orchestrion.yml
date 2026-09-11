@@ -1,0 +1,68 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2016-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/v2/crashtracker
+  description: |-
+    Starts the Datadog crashtracker as the first statement of main(), so the
+    monitor process is established before any goroutine can crash. The injected
+    start uses DD_* environment configuration; a later programmatic Start call
+    in main is a no-op because crashtracker keeps the first successful start.
+
+    Ordering with respect to the tracer and profiler: the tracer and profiler
+    aspects use inject-declarations to emit func init() calls, which run before
+    main() starts. This aspect uses prepend-statements inside main(), so
+    crashtracker.Start() always runs after the tracer starts, and
+    resolveService reads the tracer-attributed service name from globalconfig.
+    The call site also matches crashtracker/doc.go, which says to call Start
+    as early as possible in main.
+
+    The tracer and profiler also each prepend a `defer ...Stop()` into main(),
+    and neither sets an explicit order, so without one here the three
+    prepended blocks sorted and applied in declaration order alone --
+    observed to place crashtracker's call third in the generated code, after
+    both defer statements. prepend-statements always inserts at the front of
+    whatever the block already contains, so the advice applied LAST ends up
+    FIRST in the generated code; crashtracker's default-order block was
+    simply applied before the other two. A defer doesn't run anything before
+    crashtracker.Start(), but the ordering was otherwise unpinned: a future
+    default-order advice that runs real code, not just a defer, could apply
+    even later and still land ahead of it. The explicit high order below
+    (matching instrumentation/errortrace/orchestrion.yml's own order: 100)
+    guarantees this block applies last, and therefore lands first in the
+    generated code, regardless of what else targets this join point.
+
+    Note: crashes that occur during init() functions (before main() is reached)
+    are not captured because SetCrashOutput is wired inside crashtracker.Start().
+
+aspects:
+  - id: func main()
+    join-point:
+      all-of:
+        - package-name: main
+        - test-main: false
+        - function-body:
+            function:
+              - name: main
+              - signature: {}
+    advice:
+      - prepend-statements:
+          # prepend-statements always inserts at the front of whatever is
+          # already in the block, so the advice applied LAST ends up FIRST in
+          # the generated code -- and advice is applied in ascending
+          # (namespace, order, declaration-index) order (see the description
+          # above). A higher order therefore sorts and applies later, landing
+          # this block ahead of any default-order (0) advice targeting the
+          # same join point. Matches instrumentation/errortrace/orchestrion.yml's
+          # order: 100 for the same reason.
+          order: 100
+          imports:
+            crashtracker: github.com/DataDog/dd-trace-go/v2/crashtracker
+            log: log
+          template: |-
+            if err := crashtracker.Start(); err != nil {
+              log.Printf("failed to start crashtracker: %s", err.Error())
+            }

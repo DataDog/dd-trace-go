@@ -46,7 +46,7 @@
     "DD_APIM_CALLOUT_TLS": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "false"
       }
     ],
@@ -422,6 +422,13 @@
         "default": null
       }
     ],
+    "DD_CRASHTRACKING_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CUSTOM_PARENT_ID": [
       {
         "implementation": "A",
@@ -492,6 +499,13 @@
         "default": "false"
       }
     ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS": [
+      {
+        "implementation": "B",
+        "type": "int",
+        "default": "10000"
+      }
+    ],
     "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED": [
       {
         "implementation": "A",
@@ -511,6 +525,42 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "agentless"
+      }
+    ],
+    "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null,
+        "sensitive": true
+      }
+    ],
+    "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "30"
+      }
+    ],
+    "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "5"
+      }
+    ],
+    "DD_FEATURE_FLAGS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
@@ -679,6 +729,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_LAMBDA_STRIP_INJECTED_CONTEXT": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_LLMOBS_AGENTLESS_ENABLED": [

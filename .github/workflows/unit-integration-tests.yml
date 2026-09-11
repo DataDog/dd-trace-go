@@ -13,6 +13,7 @@ on:
         default: ""
 
 env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
   # Users may build our library with GOTOOLCHAIN=local. If they do, and our
   # go.mod file specifies a newer Go version than their local toolchain, their
@@ -322,3 +323,39 @@ jobs:
       - name: Stop CI service containers
         if: always()
         run: docker compose down
+
+  # Automates internal/apps/telemetry-errors/README.md's memfd/OTel-process-context
+  # recipe: runs the harness in a Docker container whose seccomp profile blocks
+  # memfd_create, forcing storeConfig's two error sites (ddtrace/tracer/tracer.go)
+  # and asserting on the resulting payload-file dump - no real agent or backend
+  # needed. The memfd site's assertions are hard (require/assert) and must fail
+  # the job on regression; only the OTel process-context assertion inside the
+  # test itself is best-effort (t.Log, not a failure) because its own dependency
+  # on the runner's kernel supporting the mmap/prctl fallback isn't fully
+  # understood yet (see the harness README's "Known gaps"). No job-level
+  # continue-on-error here, so the deterministic memfd assertion can actually
+  # fail CI.
+  test-telemetry-errors-e2e:
+    runs-on:
+      group: "APM Larger Runners"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          clean: false
+          submodules: recursive
+
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+      - name: Test telemetry-errors seccomp E2E
+        working-directory: internal/apps
+        env:
+          INTEGRATION: true
+        run: go test ./telemetry-errors/... -run TestSeccompMemfdBlocked -v
