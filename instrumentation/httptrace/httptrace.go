@@ -322,6 +322,9 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool, authority 
 	return url
 }
 
+// queryStringFromRequest returns "" when queryString is false or the request has no query.
+// Otherwise, it applies the client or server allowlist. Without an allowlist, the built-in
+// obfuscator applies unless DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP overrides it.
 func queryStringFromRequest(r *http.Request, queryString, isClient bool) string {
 	if !queryString || r.URL == nil {
 		return ""
