@@ -103,18 +103,15 @@ func assertOTLPBoolAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key strin
 	require.Fail(t, "missing OTLP bool attribute", key)
 }
 
-func assertOTLPIntAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key string, want int64) {
+func extractOTLPAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key string) *otlpcommon.KeyValue {
 	t.Helper()
 	for _, kv := range kvs {
-		if kv.Key != key {
-			continue
+		if kv.Key == key {
+			return kv
 		}
-		value, ok := kv.Value.Value.(*otlpcommon.AnyValue_IntValue)
-		require.True(t, ok, "%s must use an OTLP integer value", key)
-		assert.Equal(t, want, value.IntValue)
-		return
 	}
-	require.Fail(t, "missing OTLP integer attribute", key)
+	require.FailNow(t, "missing OTLP attribute", key)
+	return nil
 }
 
 // ---- sketchToHistogram ----
