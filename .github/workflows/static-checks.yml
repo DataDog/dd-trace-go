@@ -202,7 +202,7 @@ jobs:
         with:
           cache: false
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
-          go_version: ${{ inputs.go-version || 'stable' }}
+          go_version: ${{ inputs.go-version }}
           golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
           fail_level: error
           reporter: github-pr-review
@@ -213,7 +213,7 @@ jobs:
         with:
           cache: false
           golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
-          go_version: ${{ inputs.go-version || 'stable' }}
+          go_version: ${{ inputs.go-version }}
           golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
           fail_level: error
           reporter: github-pr-review
