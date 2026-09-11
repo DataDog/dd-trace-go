@@ -1250,9 +1250,9 @@ func WithLogStartup(enabled bool) StartOption {
 }
 
 // WithProfilerCodeHotspots enables the code hotspots integration between the
-// tracer and profiler. This is done by automatically attaching pprof labels
-// called "span id" and "local root span id" when new spans are created. You
-// should not use these label names in your own code when this is enabled. The
+// tracer and profiler. This is done by automatically attaching a pprof label
+// called "span id" when new spans are created. You should not use this label
+// name in your own code when this is enabled. The
 // enabled value defaults to the value of the
 // DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or true.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
@@ -1380,9 +1380,7 @@ func WithStatsOriginCardinalityLimit(limit int) StartOption {
 	}
 }
 
-// WithDynamicInstrumentationEnabled enables or disables dynamic
-// instrumentation, allowing the tracer to place probes for the Live Debugger
-// and Dynamic Instrumentation products.
+// WithDynamicInstrumentationEnabled enables or explicitly disables dynamic instrumentation. (Default is false).
 func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetDynamicInstrumentationEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
