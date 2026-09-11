@@ -1,0 +1,149 @@
+name: Changed Components
+description: >-
+  Classify the pull request's changed files into CI gates using
+  .github/ci-components.yml. Fails open: every gate is enabled on any error, on
+  an empty change set, and for every event other than pull_request.
+
+outputs:
+  run-all:
+    description: "true when the change set could not be bounded and everything must run"
+    value: ${{ steps.classify.outputs.run-all }}
+  changed-files:
+    description: "Path to the newline-delimited changed-file list, for reuse in the same job"
+    value: ${{ steps.diff.outputs.file }}
+  static-any:
+    description: "true when any static-* gate is enabled"
+    value: ${{ steps.classify.outputs.static-any }}
+  contrib-modules:
+    description: >-
+      Space-separated contrib/instrumentation module directories whose tests are
+      needed, the token ALL for every module, or empty for none.
+    value: ${{ steps.classify.outputs.contrib-modules }}
+  pull-request-tests:
+    description: "Unit, integration and multi-OS tests"
+    value: ${{ steps.classify.outputs.pull-request-tests }}
+  system-tests:
+    description: "DataDog/system-tests weblog scenarios"
+    value: ${{ steps.classify.outputs.system-tests }}
+  orchestrion:
+    description: "Orchestrion integration tests"
+    value: ${{ steps.classify.outputs.orchestrion }}
+  parametric-tests:
+    description: "APM parametric tests"
+    value: ${{ steps.classify.outputs.parametric-tests }}
+  codeql:
+    description: "CodeQL analysis"
+    value: ${{ steps.classify.outputs.codeql }}
+  generate:
+    description: "Generated-file freshness"
+    value: ${{ steps.classify.outputs.generate }}
+  static-actions:
+    description: "actionlint"
+    value: ${{ steps.classify.outputs.static-actions }}
+  static-copyright:
+    description: "Copyright headers and CODEOWNERS"
+    value: ${{ steps.classify.outputs.static-copyright }}
+  static-modules:
+    description: "Go module consistency"
+    value: ${{ steps.classify.outputs.static-modules }}
+  static-docs:
+    description: "embedmd documentation blocks"
+    value: ${{ steps.classify.outputs.static-docs }}
+  static-format:
+    description: "gofmt and shfmt"
+    value: ${{ steps.classify.outputs.static-format }}
+  static-lint:
+    description: "golangci-lint and shellcheck"
+    value: ${{ steps.classify.outputs.static-lint }}
+  static-supported-config:
+    description: "supported_configurations.json consistency"
+    value: ${{ steps.classify.outputs.static-supported-config }}
+  static-checklocks:
+    description: "checklocks lock analysis"
+    value: ${{ steps.classify.outputs.static-checklocks }}
+  static-cross-compile:
+    description: "cross-compilation for first class ports"
+    value: ${{ steps.classify.outputs.static-cross-compile }}
+
+runs:
+  using: composite
+  steps:
+    - name: Collect changed files
+      id: diff
+      shell: bash
+      run: |
+        set -uo pipefail
+        out="${RUNNER_TEMP}/ciselect-changed.txt"
+        : > "${out}"
+        echo "file=${out}" >> "${GITHUB_OUTPUT}"
+
+        if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+          echo "::notice::Event is ${GITHUB_EVENT_NAME}, not pull_request; every gate stays enabled."
+          exit 0
+        fi
+
+        # actions/checkout leaves HEAD at the ephemeral merge commit for a
+        # pull_request event, so HEAD^1 is the base tip and HEAD^1..HEAD is
+        # exactly the PR diff -- no extra fetch, no base-branch guessing.
+        #
+        # When the PR is unmergeable GitHub checks out the head SHA instead,
+        # which has one parent. Leaving the list empty then makes ciselect
+        # escalate to the full suite, which is what we want.
+        parents="$(git rev-list --parents -n 1 HEAD | wc -w | tr -d ' ')"
+        if [[ "${parents}" != "3" ]]; then
+          echo "::warning::HEAD has $((parents - 1)) parent(s), expected a 2-parent merge commit; every gate stays enabled."
+          exit 0
+        fi
+
+        if ! git diff --name-only --no-renames -z HEAD^1 HEAD | tr '\0' '\n' > "${out}"; then
+          echo "::warning::git diff failed; every gate stays enabled."
+          : > "${out}"
+          exit 0
+        fi
+        echo "Changed files:"
+        sed 's/^/  /' "${out}"
+
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: stable
+        cache: false
+
+    - name: Classify
+      id: classify
+      shell: bash
+      env:
+        CHANGED: ${{ steps.diff.outputs.file }}
+      run: |
+        set -uo pipefail
+        if go run ./scripts/ciselect -changed-files "${CHANGED}" -github-output > "${RUNNER_TEMP}/gates.txt"; then
+          cat "${RUNNER_TEMP}/gates.txt" >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ciselect -changed-files "${CHANGED}" -explain >> "${GITHUB_STEP_SUMMARY}" || true
+          mods="$(go run ./scripts/ciselect -changed-files "${CHANGED}" -contrib-modules | tr '\n' ' ')"
+          echo "contrib-modules=${mods}" >> "${GITHUB_OUTPUT}"
+        else
+          echo "::warning::ciselect failed; every gate stays enabled."
+          # Keep this list in sync with `gates:` in .github/ci-components.yml.
+          # scripts/ciselect/action_test.go fails if it drifts.
+          for gate in \
+            codeql \
+            generate \
+            orchestrion \
+            parametric-tests \
+            pull-request-tests \
+            static-actions \
+            static-checklocks \
+            static-copyright \
+            static-cross-compile \
+            static-docs \
+            static-format \
+            static-lint \
+            static-modules \
+            static-supported-config \
+            system-tests; do
+            echo "${gate}=true" >> "${GITHUB_OUTPUT}"
+          done
+          echo "run-all=true" >> "${GITHUB_OUTPUT}"
+          echo "static-any=true" >> "${GITHUB_OUTPUT}"
+          echo "contrib-modules=ALL" >> "${GITHUB_OUTPUT}"
+        fi

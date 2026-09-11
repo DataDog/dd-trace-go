@@ -39,10 +39,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      orchestrion: ${{ steps.detect.outputs.orchestrion }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   generate:
     name: Verify generated files are up-to-date
+    needs:
+      - changes
     # Don't run in workflow_call or workflow_dispatch
-    if: github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == ''
+    if: >-
+      (github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == '')
+      && (github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -64,6 +86,9 @@ jobs:
 
   go-versions-matrix:
     name: Go Versions Matrix
+    needs:
+      - changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true'
     runs-on: ubuntu-latest
     outputs:
       json: ${{ steps.matrix.outputs.json }}
@@ -88,6 +113,9 @@ jobs:
 
   service-containers:
     name: Service containers
+    needs:
+      - changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true'
     runs-on: ubuntu-latest
     outputs:
       services_json: ${{ steps.set-services.outputs.services_json }}
@@ -113,8 +141,10 @@ jobs:
       # ESPECIALLY on Windows.
       GOWORK: 'off'
     needs:
+      - changes
       - go-versions-matrix
       - service-containers
+    if: github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -341,14 +371,24 @@ jobs:
   integration-test-done:
     name: Orchestrion Integration Tests
     needs:
+      - changes
       - generate
       - integration-test
     runs-on: ubuntu-latest
-    if: success() || failure()
+    if: '!cancelled()'
     steps:
-      - name: Success
-        if: needs.integration-test.result == 'success' && needs.generate.result == 'success'
-        run: echo "Success!"
+      # Failure is an allowlist, not `!= 'success'`: a gated-off dependency
+      # reports 'skipped', which must not read as a failure. `changes` is
+      # checked explicitly -- if the classifier dies, everything downstream is
+      # 'skipped' and this gate would otherwise go green without running a test.
       - name: Failure
-        if: needs.integration-test.result != 'success' || needs.generate.result != 'success'
+        if: >-
+          needs.changes.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.generate.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.integration-test.result)
         run: echo "Failure!" && exit 1
+      - name: Skipped
+        if: needs.integration-test.result == 'skipped'
+        run: echo "No changed path requires orchestrion tests (see .github/ci-components.yml)."
+      - name: Success
+        run: echo "Success!"

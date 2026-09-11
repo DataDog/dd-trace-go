@@ -14,7 +14,7 @@ name: Build Metrics
 #   vendor package, published as go.build.dependency_size_bytes.<dependency>, so a size
 #   regression can be traced to which dependency grew instead of just the binary total
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
-# - Runs on: Pull requests (when this file, scripts/*, orchestrion.yml, or any go.mod changes) and pushes to main
+# - Runs on: Pull requests (when this file, scripts/*, an aspect orchestrion.yml, or any go.mod changes) and pushes to main
 # - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
 #
 # Dashboard: View trends in Datadog CI Visibility (filter @git.branch:main, split by build.toolchain)
@@ -27,6 +27,10 @@ on:
       - scripts/measure_build.sh
       - scripts/publish_build_metrics.sh
       - '**/orchestrion.yml'
+      # '**/orchestrion.yml' also matches .github/workflows/orchestrion.yml, so
+      # editing that workflow fired this 107-job matrix for nothing. Later
+      # patterns win, so exclude it. Aspect files still match.
+      - '!.github/workflows/orchestrion.yml'
       - '**/go.mod'
   push:
     branches:
@@ -36,6 +40,10 @@ on:
       - scripts/measure_build.sh
       - scripts/publish_build_metrics.sh
       - '**/orchestrion.yml'
+      # '**/orchestrion.yml' also matches .github/workflows/orchestrion.yml, so
+      # editing that workflow fired this 107-job matrix for nothing. Later
+      # patterns win, so exclude it. Aspect files still match.
+      - '!.github/workflows/orchestrion.yml'
       - '**/go.mod'
   workflow_dispatch:
 

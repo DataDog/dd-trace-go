@@ -11,6 +11,15 @@ on:
         required: false
         type: string
         default: ""
+      contrib-modules:
+        description: >-
+          Space-separated contrib/instrumentation module directories to test, or
+          the token ALL. Computed by the caller's `changes` job. Defaults to ALL
+          so callers that do not narrow (main-branch-tests, dynamic-checks) keep
+          testing every module.
+        required: false
+        type: string
+        default: "ALL"
 
 env:
   GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
@@ -33,6 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      has-contribs: ${{ steps.matrix.outputs.has-contribs }}
     steps:
       - name: Restore repo cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -53,12 +63,26 @@ jobs:
 
       - name: Compute Matrix
         id: matrix
+        env:
+          CONTRIB_MODULES: ${{ inputs.contrib-modules }}
         run: |-
-          echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
+          set -euo pipefail
+          # One module per line; ALL (or an unset value) means every module.
+          printf '%s' "${CONTRIB_MODULES:-ALL}" | tr ' ' '\n' > "${RUNNER_TEMP}/contrib-select.txt"
+          matrix="$(go run ./scripts/ci_contrib_matrix.go -select "${RUNNER_TEMP}/contrib-select.txt")"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          # An empty matrix would still schedule nothing useful while making the
+          # downstream job look mysteriously absent; gate it explicitly instead.
+          if [[ "${matrix}" == "[]" ]]; then
+            echo "has-contribs=false" >> "${GITHUB_OUTPUT}"
+            echo "No changed module requires contrib tests." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "has-contribs=true" >> "${GITHUB_OUTPUT}"
+          fi
 
   test-contrib-matrix:
     needs: set-up
+    if: needs.set-up.outputs.has-contribs == 'true'
     runs-on:
       group: "APM Larger Runners"
     env:
@@ -185,13 +209,15 @@ jobs:
 
   test-contrib:
     needs:
+      - set-up
       - test-contrib-matrix
     runs-on:
       group: "APM Larger Runners"
-    if: success() || failure()
+    if: '!cancelled()'
     continue-on-error: true
     steps:
       - name: Download Trace Check Results
+        if: needs.test-contrib-matrix.result != 'skipped'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: /tmp/trace-check-results
@@ -199,7 +225,7 @@ jobs:
           merge-multiple: true
 
       - name: Aggregate Trace Check Results
-        if: always()
+        if: needs.test-contrib-matrix.result != 'skipped'
         shell: bash
         run: |
           echo "=== Aggregated APM Test Agent Trace Check Results ==="
@@ -236,12 +262,13 @@ jobs:
           fi
           echo " - All APM Test Agent Check Traces returned successful!"
 
-      - name: Success
-        if: needs.test-contrib-matrix.result == 'success'
-        run: echo "Success!"
+      # Allowlist the failing results: 'skipped' means no changed module needs a
+      # contrib test, which is a pass, not a failure.
       - name: Failure
-        if: needs.test-contrib-matrix.result != 'success'
+        if: contains(fromJSON('["failure", "cancelled"]'), needs.test-contrib-matrix.result)
         run: echo "Failure!" && exit 1
+      - name: Success
+        run: echo "Success!"
 
   test-core:
     runs-on:

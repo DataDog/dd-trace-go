@@ -11,10 +11,21 @@ on:
       - reopened
     paths:
       - ".github/workflows/dynamic-checks.yml"
+      # It calls unit-integration-tests.yml twice, so an edit there changes what
+      # this workflow actually runs.
+      - ".github/workflows/unit-integration-tests.yml"
       - "internal/locking/**"
+      # GLS is the other half of what the deadlock detector exercises.
+      - "internal/orchestrion/gls*.go"
       - "ddtrace/tracer/**"
       - "scripts/ci_test_*.sh"
-      - "**/go.mod"
+      # Root module only. "**/go.mod" matched every Dependabot contrib bump and
+      # fired two full unit-integration-tests runs (debug + deadlock build
+      # tags), each with a 6-chunk contrib matrix -- measured at 85 job-minutes.
+      # A contrib dependency bump cannot change root-module locking behaviour.
+      - "go.mod"
+      - "go.sum"
+      - "go.work"
   push:
     branches:
       - mq-working-branch-**

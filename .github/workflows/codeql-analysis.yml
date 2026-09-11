@@ -13,8 +13,28 @@ on:
       - mq-working-branch-**
   pull_request:
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      codeql: ${{ steps.detect.outputs.codeql }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   analyze:
     name: Analyze
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.codeql == 'true'
     runs-on: ubuntu-latest
     permissions:
       actions: read

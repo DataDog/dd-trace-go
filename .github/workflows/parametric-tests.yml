@@ -35,8 +35,30 @@ permissions:
   contents: read
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      parametric-tests: ${{ steps.detect.outputs.parametric-tests }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   parametric-tests:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    needs: [changes]
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.parametric-tests == 'true'))
     runs-on:
       group: "APM Larger Runners"
     env:
