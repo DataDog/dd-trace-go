@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/config v1.32.33
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.37
