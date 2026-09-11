@@ -208,6 +208,37 @@ func TestEnsureSettingsInitializationGitUploadDisabledDoesNotStartUploadOrRetryS
 	assert.Len(t, closeActions, 0)
 }
 
+func TestEnsureSettingsInitializationFlakyRetryEnvironmentOverrideEnablesRetries(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
+	t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
+	t.Setenv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "2")
+	t.Setenv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, "5")
+
+	newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
+		return &mockCIVisibilityClient{
+			getSettings: func() (*civisibilitynet.SettingsResponseData, error) {
+				return &civisibilitynet.SettingsResponseData{FlakyTestRetriesEnabled: false}, nil
+			},
+		}
+	}
+	uploadRepositoryChangesFunc = func() (int64, error) {
+		t.Fatal("repository upload should not start when git upload is disabled")
+		return 0, nil
+	}
+
+	ensureSettingsInitialization("service")
+	ensureAdditionalFeaturesInitialization("service")
+
+	assert.True(t, ciVisibilitySettings.FlakyTestRetriesEnabled)
+	assert.Equal(t, FlakyRetriesSetting{
+		RetryCount:               2,
+		TotalRetryCount:          5,
+		RemainingTotalRetryCount: 5,
+	}, ciVisibilityFlakyRetriesSettings)
+}
+
 func TestEnsureSettingsInitializationGitUploadDisabledSettingsErrorDoesNotRegisterCloseAction(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
