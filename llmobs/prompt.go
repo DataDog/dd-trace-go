@@ -300,7 +300,9 @@ func promptMessageMap(message PromptMessage) map[string]any {
 		delete(fields, "content")
 	} else {
 		fields["role"] = message.Role
-		fields["content"] = message.Content
+		if _, ok := fields["content"]; !ok {
+			fields["content"] = message.Content
+		}
 	}
 	return fields
 }
@@ -314,6 +316,11 @@ func runtimePromptMessages(value any) ([]PromptMessage, error) {
 	for i, message := range messages {
 		if message.Type != "" {
 			return nil, errors.New("runtime messages cannot contain placeholders")
+		}
+		if content, ok := message.AdditionalFields["content"]; ok && content != nil {
+			if _, ok := content.(string); !ok {
+				return nil, errors.New("runtime message content must be a string or null")
+			}
 		}
 		copies[i] = copyPromptMessage(message)
 	}

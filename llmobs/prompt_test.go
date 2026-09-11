@@ -66,10 +66,29 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	history := []PromptMessage{{
-		Role: "assistant", Content: "{{ opaque }}",
-		AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"},
-	}}
+	history := []PromptMessage{
+		{
+			Role: "assistant", Content: "{{ opaque }}",
+			AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"},
+		},
+		{
+			Role: "assistant",
+			AdditionalFields: map[string]any{
+				"content": nil,
+				"tool_calls": []any{
+					map[string]any{"name": "lookup", "arguments": map[string]any{"id": 1}, "tool_id": "call-1"},
+				},
+			},
+		},
+		{
+			Role: "tool",
+			AdditionalFields: map[string]any{
+				"tool_results": []any{
+					map[string]any{"name": "lookup", "result": "found", "tool_id": "call-1"},
+				},
+			},
+		},
+	}
 	rendered, err := prompt.Format(map[string]any{
 		"plan": "pro", "question": "Why?", "history": history, "empty": []PromptMessage{},
 	})
@@ -79,8 +98,12 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	want := []PromptMessage{
 		{Role: "system", Content: "Plan: pro"},
 		{Role: "assistant", Content: "{{ opaque }}", AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"}},
+		history[1],
+		history[2],
 		{Role: "user", Content: "Why?"},
 		{Role: "assistant", Content: "{{ opaque }}", AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"}},
+		history[1],
+		history[2],
 	}
 	if !reflect.DeepEqual(rendered.Messages, want) {
 		t.Fatalf("rendered %#v, want %#v", rendered.Messages, want)
@@ -98,7 +121,14 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	if _, err := prompt.Format(map[string]any{"empty": []PromptMessage{}}); err == nil {
 		t.Fatal("expected missing history error")
 	}
-	for _, malformed := range []any{"history", []any{}, []PromptMessage{{Type: "placeholder", Name: "nested"}}} {
+	for _, malformed := range []any{
+		"history",
+		[]any{},
+		[]PromptMessage{{Type: "placeholder", Name: "nested"}},
+		[]PromptMessage{{Role: "assistant", AdditionalFields: map[string]any{
+			"content": []any{map[string]any{"type": "image"}}, "tool_calls": []any{map[string]any{}},
+		}}},
+	} {
 		if _, err := prompt.Format(map[string]any{"history": malformed, "empty": []PromptMessage{}}); err == nil {
 			t.Fatalf("accepted malformed history %#v", malformed)
 		}
@@ -106,6 +136,10 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	encoded, err := json.Marshal(rendered.Messages[1])
 	if err != nil || string(encoded) != `{"content":"{{ opaque }}","role":"assistant","tool_call_id":"call-1","type":"reasoning"}` {
 		t.Fatalf("encoded message %s, err %v", encoded, err)
+	}
+	encoded, err = json.Marshal(rendered.Messages[2])
+	if err != nil || string(encoded) != `{"content":null,"role":"assistant","tool_calls":[{"arguments":{"id":1},"name":"lookup","tool_id":"call-1"}]}` {
+		t.Fatalf("encoded tool-call message %s, err %v", encoded, err)
 	}
 	cached, err := json.Marshal(prompt.Template())
 	if err != nil {
