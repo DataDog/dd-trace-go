@@ -37,6 +37,7 @@ cases:
       - "Flags that `WithStartSpanConfig(cachedBase)` is the first tag-setting option, so `ResourceName(name)` (a `Tag` wrapper) mutates the shared `cachedBase` Tags map in place."
       - "Names the concrete failures — pollution of `cachedBase`, inheritance by a later caller that does not reset `resource.name`, and unsafe concurrent map mutation."
       - "Recommends a `Tag` / `WithTags` / `ResourceName` call *before* `WithStartSpanConfig(cachedBase)`, not after."
+      - "Classifies the finding as P0 / BLOCK, not P1 or P2."
     bad_signals:
       - "Approves the snippet or calls this option order the recommended / correct contrib pattern."
       - "Treats the leading comment as accurate and does not mention in-place mutation of `cachedBase`."
