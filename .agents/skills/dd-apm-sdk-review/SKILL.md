@@ -19,7 +19,7 @@ If this skill is invoked twice in a row on the same set of changes **and the pri
 
 ## Step 0 — Load repo context
 
-Read `../../dd-apm-sdk-review-overrides/repo-context.md` (fixed path, relative to this skill's own folder — resolves to `<repo-root>/.agents/dd-apm-sdk-review-overrides/repo-context.md`) before anything else. It names the other skills that exist in this repo and how they relate to this one — used later for the "Related skills" section of your final report. It is not handed to individual reviewers: none of them need it, since a lens without an override is language-agnostic by design, and a lens with an override gets whatever repo-specific facts it needs from that override file directly.
+If `.agents/dd-apm-sdk-review-overrides/repo-context.md` exists, read it before anything else (fixed path, relative to this skill's own folder — resolves to `<repo-root>/.agents/dd-apm-sdk-review-overrides/repo-context.md`). It names the other skills that exist in this repo and how they relate to this one — used later for the "Related skills" section of your final report. It is not handed to individual reviewers: none of them need it, since a lens without an override is language-agnostic by design, and a lens with an override gets whatever repo-specific facts it needs from that override file directly. If that file does not exist, skip it and continue.
 
 This skill's own folder (`.agents/skills/dd-apm-sdk-review/`) is a **verbatim copy of the shared core** — never edit it in this repo; changes belong upstream. Everything specific to this repo lives instead in `<repo-root>/.agents/dd-apm-sdk-review-overrides/`, a separate folder this repo owns and edits freely (a sibling of `.agents/skills/`, not nested inside this skill's own folder).
 
@@ -50,7 +50,23 @@ protect you (the orchestrator) after you have ingested this output.
 #    from baseRefName either: on a cross-repo PR, `origin` is the contributor's fork,
 #    not the base repository, so that name can resolve to a stale fork branch or nothing.
 #    baseRefOid is the base repository's actual commit and has no such ambiguity.
-PR_JSON=$(gh pr view --json baseRefOid,baseRefName,title,labels 2>/dev/null)
+#    Pin --repo to a DataDog remote (upstream, then origin) so a fork checkout
+#    cannot resolve the wrong GitHub repository. Do not hardcode a tracer name.
+GH_REPO=""
+for remote in upstream origin; do
+  url=$(git remote get-url "$remote" 2>/dev/null) || continue
+  case "$url" in
+    *github.com[:/]DataDog/*)
+      GH_REPO=$(printf '%s\n' "$url" | sed -E 's#.*github.com[:/](DataDog/[^/.]+).*#\1#')
+      break
+      ;;
+  esac
+done
+if [ -n "$GH_REPO" ]; then
+  PR_JSON=$(gh pr view --repo "$GH_REPO" --json baseRefOid,baseRefName,title,labels 2>/dev/null)
+else
+  PR_JSON=$(gh pr view --json baseRefOid,baseRefName,title,labels 2>/dev/null)
+fi
 TARGET=$(echo "$PR_JSON" | jq -r '.baseRefOid' 2>/dev/null)
 BASE_REF_NAME=$(echo "$PR_JSON" | jq -r '.baseRefName' 2>/dev/null)
 if [ -z "$TARGET" ] || [ "$TARGET" = "null" ]; then
@@ -257,4 +273,4 @@ Only when even a degraded pass is impossible — context overflow, timeout, the 
 
 ## Related skills in this repo
 
-See `.agents/dd-apm-sdk-review-overrides/repo-context.md` for the other skills that exist in this specific repo and how this review relates to them. That list is repo-specific and does not belong in the shared core.
+If `.agents/dd-apm-sdk-review-overrides/repo-context.md` exists, see it for the other skills that exist in this specific repo and how this review relates to them. That list is repo-specific and does not belong in the shared core. If the file does not exist, omit the Related skills section.

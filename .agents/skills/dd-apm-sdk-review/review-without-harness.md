@@ -21,8 +21,8 @@ review spec — the checks and the P0/P1/P2 bar only:
 - `.agents/skills/dd-apm-sdk-review/reviewers/cross-sdk.md`
 - the matching file under `.agents/dd-apm-sdk-review-overrides/reviewers/`
   when it exists (additive; read both)
-- `.agents/dd-apm-sdk-review-overrides/repo-context.md` (cite related
-  skills; do not invoke them)
+- `.agents/dd-apm-sdk-review-overrides/repo-context.md` when it exists
+  (cite related skills; do not invoke them)
 
 Do not load `SKILL.md` or `reviewers/report-template.md`. Ignore
 harness-only rules in the files you do load: do not emit `READY TO PUSH` /
@@ -30,6 +30,6 @@ harness-only rules in the files you do load: do not emit `READY TO PUSH` /
 to GitHub" does not apply to you — post findings as review comments. Skip a
 lens that cannot apply to this diff rather than inventing a finding.
 
-If this change set is only agent-instruction files (`.agents/`, `AGENTS.md`,
-`CLAUDE.md`), review that prose for broken paths and contradictions. Do not
-apply the product lenses to the instruction text.
+If this change set is only agent-instruction files (`.agents/`, `.claude/`,
+`.cursor/`, `AGENTS.md`, `CLAUDE.md`), review that prose for broken paths
+and contradictions. Do not apply the product lenses to the instruction text.
