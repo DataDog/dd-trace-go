@@ -17,6 +17,9 @@ import "encoding/json"
     {
         name: "memory-leak/goroutine-heap"
     },
+    {
+        name: "crashtracker/panic",
+    },
 ]
 
 #args: {
