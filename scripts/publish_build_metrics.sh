@@ -61,12 +61,19 @@ mapfile -t DEP_NAMES < <(jq -r '.metrics.dependency_sizes[]?.name' "$METRICS_FIL
 mapfile -t DEP_KEYS < <(jq -r '.metrics.dependency_sizes[]?.metric_key' "$METRICS_FILE")
 mapfile -t DEP_SIZES < <(jq -r '.metrics.dependency_sizes[]?.size_bytes' "$METRICS_FILE")
 
+# Total dependency bloat: the summed size and the count of every vendor
+# package. When gsa does not run, in orchestrion mode or after a failed 
+# analysis, the value is 0.
+DEPENDENCY_TOTAL_SIZE_BYTES=$(jq -r '.metrics.dependency_total_size_bytes // 0' "$METRICS_FILE")
+DEPENDENCY_COUNT=$(jq -r '.metrics.dependency_count // 0' "$METRICS_FILE")
+
 message "Parsed metrics:"
 message "  Sample: $SAMPLE"
 message "  Mode: $MODE"
 message "  Durations: ${DURATIONS[*]}s"
 message "  Size: $SIZE bytes"
 message "  Dependencies attributed: ${#DEP_KEYS[@]}"
+message "  Total dependencies: $DEPENDENCY_COUNT, total size: $DEPENDENCY_TOTAL_SIZE_BYTES bytes"
 message "  Go version: $GO_VERSION"
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
   message "  Orchestrion version: $ORCHESTRION_VERSION"
@@ -92,6 +99,11 @@ for i in "${!DEP_KEYS[@]}"; do
   # Publish dependency size bytes by rank (0 = single largest dependency in this build)
   MEASURE_ARGS+=(--measures "go.build.top_dependency_size_bytes.${i}:${DEP_SIZES[$i]}")
 done
+
+if [[ "$DEPENDENCY_COUNT" -gt 0 ]]; then
+  MEASURE_ARGS+=(--measures "go.build.dependency_total_size_bytes:${DEPENDENCY_TOTAL_SIZE_BYTES}")
+  MEASURE_ARGS+=(--measures "go.build.dependency_count:${DEPENDENCY_COUNT}")
+fi
 
 DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
   "${MEASURE_ARGS[@]}" ||
