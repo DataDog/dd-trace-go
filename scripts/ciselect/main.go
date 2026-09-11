@@ -89,6 +89,9 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
+		if len(mods) == 0 {
+			mods = []string{selectNone}
+		}
 		for _, m := range mods {
 			fmt.Fprintln(stdout, m)
 		}

@@ -15,8 +15,13 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-// selectAll is the sentinel the contrib matrix reads as "no narrowing".
-const selectAll = "ALL"
+// Sentinels the contrib matrix reads. Both are needed: an empty list has to be
+// distinguishable from an absent one, or a shell default like ${VAR:-ALL}
+// silently turns "test nothing" into "test everything".
+const (
+	selectAll  = "ALL"
+	selectNone = "NONE"
+)
 
 // repoModule maps a module path to its directory, relative to the repository
 // root and slash-separated.
