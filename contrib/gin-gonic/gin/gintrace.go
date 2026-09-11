@@ -93,3 +93,5 @@ func HTML(c *gin.Context, code int, name string, obj interface{}) {
 	}()
 	c.HTML(code, name, obj)
 }
+
+// ci-canary: no-op comment to exercise change detection. Do not merge.
