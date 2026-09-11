@@ -187,6 +187,7 @@ jobs:
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
+          cache: false
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
           golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
@@ -197,6 +198,7 @@ jobs:
       - name: golangci-lint (internal/orchestrion/_integration)
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
+          cache: false
           golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
           golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
@@ -209,6 +211,7 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
+          cache: "false"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
