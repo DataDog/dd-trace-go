@@ -22,7 +22,11 @@ import (
 var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
-	provider := newDatadogProviderWithSource(config, internalffe.SourceRemoteConfig)
+	provider := newDatadogProviderWithSourceAndEVP(
+		config,
+		internalffe.SourceRemoteConfig,
+		newEVPClient(),
+	)
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
