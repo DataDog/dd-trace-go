@@ -1,0 +1,343 @@
+# Which CI work a change actually requires.
+#
+# `scripts/ciselect` reads this file, matches every changed path against
+# `components` in order (first match wins), and unions the resulting gates. The
+# `.github/actions/changed-components` composite action turns those gates into
+# job outputs that workflows consume via `if:`.
+#
+# THE ONE RULE THAT MATTERS: a path matching no component enables *every* gate.
+# This table is an allowlist of provably-skippable paths, not a denylist of
+# expensive ones. `scripts/ciselect/coverage_test.go` (run by `make lint/misc`)
+# fails if any tracked path, or any top-level entry, is not classified here --
+# so a new directory is a lint failure, never a silent loss of coverage.
+#
+# ROLLBACK: to restore full CI for a component without touching any workflow,
+# set its `gates:` to `[ "@everything" ]`.
+#
+# Reverse-dependency claims in `dependent-modules` are verified nightly against
+# `go list -deps` by scripts/ciselect/depgraph_test.go (build tag `depgraph`).
+
+version: 1
+
+# Every gate a workflow can be conditioned on. `action_test.go` asserts this
+# list matches the fail-open list in the composite action.
+gates:
+  - pull-request-tests
+  - system-tests
+  - orchestrion
+  - parametric-tests
+  - codeql
+  - generate
+  - static-actions
+  - static-copyright
+  - static-modules
+  - static-docs
+  - static-format
+  - static-lint
+  - static-supported-config
+  - static-checklocks
+  - static-cross-compile
+
+groups:
+  # Checks driven by Go source anywhere in the repo.
+  go-hygiene:
+    - generate
+    - codeql
+    - static-copyright
+    - static-modules
+    - static-format
+    - static-lint
+    - static-supported-config
+    - static-checklocks
+    - static-cross-compile
+  everything:
+    - "@go-hygiene"
+    - pull-request-tests
+    - system-tests
+    - orchestrion
+    - parametric-tests
+    - static-actions
+    - static-docs
+
+# Which gate each workflow owns. Editing a workflow file enables its own gate
+# (plus static-actions) and nothing else; ciselect additionally walks
+# `uses: ./.github/workflows/<file>` edges so editing a reusable workflow
+# reaches its callers. A workflow absent from this map is unknown and
+# escalates to every gate.
+workflow-gates:
+  pull-request.yml: [ pull-request-tests ]
+  unit-integration-tests.yml: [ pull-request-tests ]
+  multios-unit-tests.yml: [ pull-request-tests ]
+  main-branch-tests.yml: [ pull-request-tests ]
+  system-tests.yml: [ system-tests ]
+  orchestrion.yml: [ orchestrion ]
+  parametric-tests.yml: [ parametric-tests ]
+  codeql-analysis.yml: [ codeql ]
+  generate.yml: [ generate ]
+  static-checks.yml:
+    - static-copyright
+    - static-modules
+    - static-docs
+    - static-format
+    - static-lint
+    - static-supported-config
+    - static-checklocks
+    - static-cross-compile
+  # Workflows with their own native `paths:` filter, or that are not gated at
+  # all. Editing them needs only actionlint; GitHub decides the rest.
+  all-green.yml: []
+  apidiff-check.yml: []
+  appsec.yml: []
+  build-metrics.yml: []
+  code_freeze_check.yml: []
+  code_freeze_end.yml: []
+  code_freeze_start.yml: []
+  config-audit.yml: []
+  docker-build-and-push.yml: []
+  docker-images-release.yml: []
+  dynamic-checks.yml: []
+  ecosystems-label-issue.yml: []
+  ecosystems-label-pr.yml: []
+  gotip-testing.yml: []
+  govulncheck-fix.yml: []
+  govulncheck.yml: []
+  lambda-integration-tests.yml: []
+  needs-triage.yml: []
+  outdated-integrations.yml: []
+  pull-request-title-validation.yml: []
+  smoke-tests.yml: []
+  stale.yml: []
+  sync-cue-actions.yml: []
+  team-freeze-guard.yml: []
+  test-apps-schedule.yml: []
+  test-apps.yml: []
+  update-supported-versions-doc.yml: []
+
+# Workflows allowed to filter with a native `on.pull_request.paths:` block
+# instead of a ciselect gate. `workflows_test.go` asserts nothing else uses one,
+# that every glob in them still matches a tracked file, and that each lists its
+# own filename.
+native-path-filters:
+  - apidiff-check.yml
+  - appsec.yml
+  - build-metrics.yml
+  - config-audit.yml
+  - dynamic-checks.yml
+  - ecosystems-label-pr.yml
+  - govulncheck.yml
+  - sync-cue-actions.yml
+
+# Ordered. First match wins, so narrow entries precede broad ones.
+components:
+  # ---------------------------------------------------------------- universal
+  # Inputs to the build graph itself. Any change here invalidates every
+  # assumption the rest of this table makes.
+  - id: universal
+    why: Build graph, toolchain, CI plumbing, and this table.
+    paths:
+      - go.work
+      - go.work.sum
+      - go.mod
+      - go.sum
+      - gosum.go
+      - Makefile
+      - .golangci.yml
+      - .gitattributes        # supported_configurations.json LF comparison depends on it
+      - .gitmodules
+      - .orchestrion-version
+      - docker-compose.yaml
+      - _tools/**
+      - .github/actions/**
+      - .github/testservices/**
+      - .github/workflows/apps/**
+      - .github/actionlint.yaml
+      - .github/chainguard/**
+      - .github/ci-components.yml
+      - scripts/ciselect/**
+      - scripts/ci_*.sh
+      - scripts/generate.sh
+      - scripts/install_tools.sh
+      - scripts/lint.sh
+      - scripts/format.sh
+      - scripts/test.sh
+    gates: [ "@everything" ]
+
+  # ----------------------------------------------- not inputs to any Go build
+  # These precede every code component: no file here can change what the Go
+  # toolchain compiles, so claiming them first keeps a doc edit inside a code
+  # directory (contrib/README.md) from dragging in that directory's test suite.
+  # ------------------------------------------------------- CI config and docs
+  - id: workflows
+    paths: [ .github/workflows/*.yml ]
+    self-reference: true
+    gates: [ static-actions ]
+
+  - id: workflow-codegen
+    why: >-
+      test-apps.cue is the source of truth for the generated test-apps.yml;
+      .github/workflows/Makefile does the generation. Neither is a *.yml, so
+      neither is covered by the self-reference component above.
+    paths:
+      - .github/workflows/Makefile
+      - .github/workflows/test-apps.cue
+    gates: [ static-actions ]
+
+  - id: github-meta
+    paths:
+      - .github/ISSUE_TEMPLATE/**
+      - .github/DISCUSSION_TEMPLATE/**
+      - .github/pull_request_template.md
+      - .github/dependabot.yml
+      - .github/release.yml
+    gates: []
+
+  - id: docs
+    why: README.md and scripts/README.md carry embedmd blocks that `make docs`
+      regenerates, so they feed static-docs.
+    paths:
+      - README.md
+      - CONTRIBUTING.md
+      - AGENTS.md
+      - CLAUDE.md
+      - FAQ.md
+      - MIGRATING.md
+      - SECURITY.md
+      - "**/*.md"
+      - LICENSE
+      - LICENSE-APACHE
+      - LICENSE-BSD3
+      - LICENSE-3rdparty.csv
+      - NOTICE
+    gates: [ static-docs ]
+
+  - id: codeowners
+    why: scripts/check_codeowners.go runs in make lint/misc, alongside copyright.
+    paths: [ CODEOWNERS ]
+    gates: [ static-copyright ]
+
+  - id: gitlab
+    why: Separate pipeline. .gitlab/ is its own Go module, not imported here.
+    paths:
+      - .gitlab/**
+      - .gitlab-ci.yml
+    gates: []
+
+  - id: repo-meta
+    paths:
+      - .gitignore
+      - .checkmake
+      - .pre-commit-config.yaml
+      - .backpassrc.json
+      - .claude/**
+      - .agents/**
+      - latests.txt
+      - repository.datadog.yml
+      - static-analysis.datadog.yml
+      - code-coverage.datadog.yml
+      - v2/.canary
+    gates: []
+
+  # ------------------------------------------------------- narrow, before core
+  # These live under directories the `core` entry claims, so they must come
+  # first. Each is still a root-module package, hence @go-hygiene throughout.
+  - id: supported-configurations
+    why: Generated config registry; drives its own static check and the audit.
+    paths: [ internal/env/supported_configurations.json ]
+    gates: [ static-supported-config ]
+
+  - id: orchestrion-aspects
+    why: >-
+      Aspect definitions consumed only by orchestrion's weaver, plus the
+      generated aggregate. They do not change what `go test` compiles.
+      NOTE the basename is matched exactly: internal/orchestrion/gls.orchestrion.yml
+      does NOT match, and correctly falls through to `core`.
+    paths:
+      - "**/orchestrion.yml"
+      - "**/orchestrion.tool.go"
+    gates: [ "@go-hygiene", orchestrion ]
+
+  - id: orchestrion-suite
+    why: >-
+      The orchestrion integration module and its CI generators. Distinct from
+      internal/orchestrion/*.go (context.go, gls.go, orchestrion.go), which is
+      imported by 78 workspace modules and is therefore matched by `core`.
+    paths:
+      - internal/orchestrion/_integration/**
+      - internal/orchestrion/generator/**
+      - internal/orchestrion/matrix/**
+    gates: [ "@go-hygiene", orchestrion ]
+
+  - id: orchestrion-public
+    why: Top-level orchestrion/ and orchestrion/all; no contrib imports them.
+    paths: [ orchestrion/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene", orchestrion, pull-request-tests ]
+
+  # --------------------------------------------------- leaf root-module packages
+  # No contrib imports these. `dependent-modules` is the measured set of
+  # workspace modules that do; depgraph_test.go re-derives it nightly.
+  - id: openfeature
+    paths:
+      - openfeature/**
+      - openfeature/ffe-system-test-data   # git submodule; matched as a bare gitlink
+    dependent-modules: []
+    gates: [ "@go-hygiene", pull-request-tests ]
+
+  - id: crashtracker
+    paths: [ crashtracker/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene", pull-request-tests, orchestrion ]
+
+  - id: civisibility
+    why: Public wrapper. internal/civisibility is core and matched by `core`.
+    paths: [ civisibility/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene", pull-request-tests ]
+
+  - id: profiler
+    why: profiler/orchestrion.yml is an injected aspect, so orchestrion runs.
+    paths: [ profiler/** ]
+    dependent-modules: [ internal/apps, internal/setup-smoke-test ]
+    gates: [ "@go-hygiene", pull-request-tests, orchestrion ]
+
+  - id: llmobs
+    paths: [ llmobs/** ]
+    dependent-modules: [ contrib/mark3labs/mcp-go, contrib/modelcontextprotocol/go-sdk ]
+    gates: [ "@go-hygiene", pull-request-tests ]
+
+  # -------------------------------------------------------------------- core
+  # Reachable from ~90-100 packages in every contrib module. Measured fan-out:
+  # ddtrace/tracer -> 77 modules, internal/log -> 79, datastreams/options -> 77,
+  # appsec (public) -> 77. contrib/os/ has no go.mod: it is root-module code.
+  - id: core
+    paths:
+      - ddtrace/**
+      - internal/**
+      - instrumentation/**
+      - appsec/**
+      - datastreams/**
+      - contrib/os/**
+    gates: [ "@everything" ]
+
+  # ----------------------------------------------------------------- contrib
+  # Module-scoped: ci_contrib_matrix.go narrows the test matrix to the changed
+  # modules and their intra-repo reverse dependencies.
+  - id: contrib
+    paths: [ contrib/** ]
+    module-scoped: true
+    gates:
+      - "@go-hygiene"
+      - pull-request-tests
+      - orchestrion
+      - system-tests
+    # system-tests: weblog variants are built from contrib/net/http, gin, echo,
+    # chi and the graphql contribs. The mapping lives in DataDog/system-tests
+    # and cannot be verified from here, so all contribs keep the gate.
+
+  # ------------------------------------------------------------------- tools
+  - id: release-tooling
+    why: Not imported by shipped code; own tests run under test-core.
+    paths:
+      - scripts/**
+      - tools/**
+    gates: [ "@go-hygiene", pull-request-tests ]
