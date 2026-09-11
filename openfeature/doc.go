@@ -271,9 +271,11 @@
 //     the added span tags may affect APM billing.
 //
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
-//     milliseconds for Init to wait for the first configuration before returning,
-//     used only by Init (not InitWithContext, which takes its deadline from the
-//     caller's context). Default 10000. An out-of-range (<= 0, or large enough to
+//     milliseconds to wait for the first configuration before returning. Used by
+//     Init, and by InitWithContext when the caller's context carries no deadline
+//     (a context with its own deadline keeps it). This covers the OpenFeature
+//     SDK's SetProviderAndWait, which calls InitWithContext with a background
+//     context. Default 10000. An out-of-range (<= 0, or large enough to
 //     overflow when converted to a time.Duration) or unparseable value falls back
 //     to the default rather than being clamped.
 //

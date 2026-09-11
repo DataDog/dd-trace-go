@@ -209,8 +209,10 @@ func TestInitWithContext_UndeadlinedContextHonorsInitTimeout(t *testing.T) {
 	// Timing out with delivery still running stays a non-error: configuration
 	// arriving later promotes the provider to ready.
 	assert.NoError(t, err)
-	assert.Less(t, time.Since(start), 5*time.Second,
-		"an undeadlined context must still be bounded by the configured init timeout")
+	// A small multiple of the configured 200ms, so a hard-coded longer timeout
+	// (the 10s default included) still fails this.
+	assert.Less(t, time.Since(start), 2*time.Second,
+		"an undeadlined context must be bounded by the configured init timeout, not a fixed one")
 }
 
 // TestSetProviderAndWait_DoesNotHangWithoutConfiguration exercises the same
@@ -219,6 +221,9 @@ func TestSetProviderAndWait_DoesNotHangWithoutConfiguration(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
 	t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", "200")
+
+	openfeature.Shutdown() // drop providers and handlers left by other tests
+	t.Cleanup(openfeature.Shutdown)
 
 	p := newDatadogProvider(ProviderConfig{})
 
