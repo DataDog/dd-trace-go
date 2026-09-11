@@ -38,6 +38,8 @@ updates:
   # Docker — updates base image digests (sha256 pins) to latest verified digests.
   - package-ecosystem: "docker"
     directories:
+      - "/.dagger/base/go1.26"
+      - "/.dagger/base/go1.27"
       - "/.gitlab/benchmarks/micro/container"
       - "/contrib/azure/apim-callout/cmd/apim-callout"
       - "/contrib/envoyproxy/go-control-plane/cmd/serviceextensions"

@@ -62,6 +62,8 @@ Targets:
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
   config-audit         Report which DD_* configs are migrated to internal/config
+  dagger/test-core     Run the core test suite through Dagger
+  dagger/test-contrib  Run the contrib test suite through Dagger 
 ```
 
 ### Direct Execution
