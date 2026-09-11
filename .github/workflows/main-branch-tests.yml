@@ -59,3 +59,24 @@ jobs:
       go-version: ${{ matrix.go-version }}
       runs-on: ${{ matrix.runs-on }}
     secrets: inherit
+  # Re-derives the reverse-dependency facts recorded in .github/ci-components.yml
+  # against `go list -deps`. Those facts decide which tests a change to a leaf
+  # package can skip, and they go stale the moment someone adds an import. Too
+  # slow for the pull request path (it runs `go list` in every workspace module),
+  # so it is verified here instead.
+  ci-components-depgraph:
+    name: Verify ci-components dependency facts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Verify dependent-modules
+        run: go test -tags depgraph -run TestDependentModulesAreAccurate ./scripts/ciselect/
