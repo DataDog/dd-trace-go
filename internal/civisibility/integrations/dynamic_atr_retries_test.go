@@ -8,9 +8,10 @@ package integrations
 import (
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 )
 
 func TestParseDynamicATREnabled(t *testing.T) {

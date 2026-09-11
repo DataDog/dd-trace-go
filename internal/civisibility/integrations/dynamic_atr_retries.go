@@ -6,12 +6,13 @@
 package integrations
 
 import (
-	"os"
 	"strconv"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -41,24 +42,15 @@ func GetDynamicATRCustomBuckets() *[dynamicATRBucketCount]int {
 
 // parseDynamicATREnabled reads DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED once.
 func parseDynamicATREnabled() bool {
-	raw := os.Getenv(constants.CIVisibilityDynamicATREnabledEnvironmentVariable)
-	if raw == "" {
-		return false
-	}
-	enabled, err := strconv.ParseBool(raw)
-	if err != nil {
-		log.Warn("civisibility: invalid %s value %q; defaulting to false", constants.CIVisibilityDynamicATREnabledEnvironmentVariable, raw)
-		return false
-	}
-	return enabled
+	return internal.BoolEnv(constants.CIVisibilityDynamicATREnabledEnvironmentVariable, false)
 }
 
 // parseDynamicATRBuckets reads DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS once.
 // Returns nil when unset, empty, or invalid (with a warning log), signalling
 // that the EFD retry settings from the backend should be used instead.
 func parseDynamicATRBuckets() *[dynamicATRBucketCount]int {
-	raw := os.Getenv(constants.CIVisibilityDynamicATRBucketsEnvironmentVariable)
-	if raw == "" {
+	raw, ok := internalenv.Lookup(constants.CIVisibilityDynamicATRBucketsEnvironmentVariable)
+	if !ok || raw == "" {
 		return nil
 	}
 
