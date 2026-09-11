@@ -32,7 +32,8 @@ type ServeConfig struct {
 	Resource string
 	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
 	QueryParams bool
-	// Route is the request matched route if any, if empty, a quantization algorithm will create one using the request URL.
+	// Route is the low-cardinality route path template selected for the request, if available.
+	// A non-empty Route is recorded as http.route. Route must not contain the raw request path.
 	Route string
 	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
