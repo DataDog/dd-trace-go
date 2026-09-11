@@ -43,11 +43,7 @@ var (
 func TestBenchmarkChangesCoverEveryBenchmark(t *testing.T) {
 	_, _, root := testTable(t)
 
-	body, err := os.ReadFile(filepath.Join(root, microBenchPath))
-	if err != nil {
-		t.Fatalf("read %s: %v", microBenchPath, err)
-	}
-	src := string(body)
+	src := readText(t, root, microBenchPath)
 
 	names := benchmarkNames(src)
 	if len(names) == 0 {

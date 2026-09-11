@@ -75,6 +75,16 @@ func TestClassify(t *testing.T) {
 			notWant: []string{"system-tests", "parametric-tests"},
 		},
 		{
+			// The '**/orchestrion.yml' pattern in the orchestrion-aspects
+			// component also matches this path. It must lose to the earlier
+			// `workflows` component, or editing the workflow would look like
+			// editing an aspect file. build-metrics.yml had exactly this bug.
+			name:    "the orchestrion workflow is a workflow, not an aspect file",
+			files:   []string{".github/workflows/orchestrion.yml"},
+			want:    []string{"orchestrion", "static-actions"},
+			notWant: []string{"generate", "pull-request-tests", "system-tests"},
+		},
+		{
 			name:    "a submodule pointer bump is a bare gitlink path",
 			files:   []string{"openfeature/ffe-system-test-data"},
 			want:    []string{"pull-request-tests"},
