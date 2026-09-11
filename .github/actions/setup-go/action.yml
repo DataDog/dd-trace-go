@@ -4,6 +4,10 @@ inputs:
   go-version:
     required: true
     description: Go version to setup.
+  cache:
+    required: false
+    default: "true"
+    description: Whether to restore and save Go build and module caches.
   tools-bin:
     required: true
     description: Directory to installs tools to.
@@ -36,7 +40,7 @@ runs:
       id: setup-go
       with:
         go-version: ${{ inputs.go-version }}
-        cache: true
+        cache: ${{ inputs.cache }}
         check-latest: true
 
     # Callers that run a tool exporting its own GOROOT into $GITHUB_ENV before this
