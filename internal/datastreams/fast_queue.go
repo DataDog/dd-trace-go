@@ -10,22 +10,31 @@ import (
 	"time"
 )
 
-const (
-	queueSize = 10000
-)
+// defaultQueueSize is the number of slots in the fastQueue ring buffer used
+// when no explicit size is configured.
+const defaultQueueSize = 10000
 
 // there are many writers, there is only 1 reader.
 // each value will be read at most once.
 // reader will stop if it catches up with writer
 // if reader is too slow, there is no guarantee in which order values will be dropped.
 type fastQueue struct {
-	elements [queueSize]atomic.Pointer[processorInput]
+	elements []atomic.Pointer[processorInput]
+	size     int64
 	writePos atomic.Int64
 	readPos  atomic.Int64
 }
 
-func newFastQueue() *fastQueue {
-	return &fastQueue{}
+// newFastQueue creates a fastQueue with room for size elements. A
+// non-positive size falls back to defaultQueueSize.
+func newFastQueue(size int) *fastQueue {
+	if size <= 0 {
+		size = defaultQueueSize
+	}
+	return &fastQueue{
+		elements: make([]atomic.Pointer[processorInput], size),
+		size:     int64(size),
+	}
 }
 
 func (q *fastQueue) push(p *processorInput) (dropped bool) {
@@ -33,8 +42,8 @@ func (q *fastQueue) push(p *processorInput) (dropped bool) {
 	// l is the length of the queue after the element has been added, and before the next element has been read.
 	l := nextPos - q.readPos.Load()
 	p.queuePos = nextPos - 1
-	q.elements[(nextPos-1)%queueSize].Store(p)
-	return l > queueSize
+	q.elements[(nextPos-1)%q.size].Store(p)
+	return l > q.size
 }
 
 func (q *fastQueue) pop() *processorInput {
@@ -43,7 +52,7 @@ func (q *fastQueue) pop() *processorInput {
 	if writePos <= readPos {
 		return nil
 	}
-	loaded := q.elements[readPos%queueSize].Load()
+	loaded := q.elements[readPos%q.size].Load()
 	if loaded == nil || loaded.queuePos < readPos {
 		// the write started, but hasn't finished yet, the element we read
 		// is the one from the previous cycle.

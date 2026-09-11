@@ -1325,6 +1325,18 @@ func WithStatsComputation(enabled bool) StartOption {
 	}
 }
 
+// WithDataStreamsIntakeBufferSize sets the number of slots in the Data Streams
+// Monitoring processor's input ring buffer. Once full, new checkpoints,
+// Kafka offsets, and tracked transactions overwrite the oldest unread ones,
+// so raising this value trades memory for tolerance to bursts or a slow
+// agent. This can also be configured by setting
+// DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. Non-positive values are ignored.
+func WithDataStreamsIntakeBufferSize(size int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetDataStreamsIntakeBufferSize(size, internalconfig.OriginCode)
+	}
+}
+
 // WithStatsAdditionalTags configures additional tag keys to extract from spans
 // and use as extra aggregation dimensions for client-side stats. For example,
 // setting tags to []string{"region", "tenant_id"} will cause stats to be

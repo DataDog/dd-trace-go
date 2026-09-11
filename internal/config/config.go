@@ -155,6 +155,10 @@ type Config struct {
 	// Configured via DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT.
 	statsOriginCardinalityLimit  int
 	dataStreamsMonitoringEnabled bool
+	// dataStreamsIntakeBufferSize is the number of slots in the Data Streams
+	// Monitoring processor's input ring buffer.
+	// Configured via DD_DATA_STREAMS_INTAKE_BUFFER_SIZE.
+	dataStreamsIntakeBufferSize int
 	// dynamicInstrumentationEnabled controls whether the target application can
 	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
 	// explicitly set to false (as opposed to starting as false by default), then
@@ -421,6 +425,11 @@ func loadConfig() *Config {
 		cfg.statsOriginCardinalityLimit = defaultStatsOriginCardinalityLimit
 	}
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
+	cfg.dataStreamsIntakeBufferSize = p.GetInt("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", defaultDataStreamsIntakeBufferSize)
+	if cfg.dataStreamsIntakeBufferSize <= 0 {
+		log.Warn("ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE: non-positive value %d, using default %d", cfg.dataStreamsIntakeBufferSize, defaultDataStreamsIntakeBufferSize)
+		cfg.dataStreamsIntakeBufferSize = defaultDataStreamsIntakeBufferSize
+	}
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
@@ -827,6 +836,26 @@ func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.
 	}
 	c.dataStreamsMonitoringEnabled = enabled
 	configtelemetry.Report("DD_DATA_STREAMS_ENABLED", enabled, origin)
+}
+
+func (c *Config) DataStreamsIntakeBufferSize() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dataStreamsIntakeBufferSize
+}
+
+func (c *Config) SetDataStreamsIntakeBufferSize(size int, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if size <= 0 {
+		log.Warn("ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE: non-positive value %d", size)
+		return
+	}
+	if c.checkProductConflict("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", origin, size, product...) {
+		return
+	}
+	c.dataStreamsIntakeBufferSize = size
+	configtelemetry.Report("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", size, origin)
 }
 
 func (c *Config) LogStartup() bool {
