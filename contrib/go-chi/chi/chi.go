@@ -26,6 +26,7 @@ var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageChi)
+	httptrace.RegisterRoutingHandlerType[*chi.Mux]()
 }
 
 // Middleware returns middleware that will trace incoming requests.
