@@ -1,0 +1,44 @@
+name: dd-apm-sdk-review
+version: "0.1"
+
+# One file on purpose: the platform CLI errors if suites/ has more than one YAML.
+# One starter case — a template. Copy this block to add the next one.
+#
+# These are written as traps, not as obvious bugs: a generic reviewer without
+# the override should miss or mis-classify them. That is what makes the
+# pairwise comparison informative on a first-landing PR (baseline = no skill).
+cases:
+  - id: go-perf-startspanconfig-first
+    files:
+      - .agents/skills/dd-apm-sdk-review/reviewers/performance.md
+      - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
+      - .agents/dd-apm-sdk-review-overrides/reviewers/performance.md
+    input: |
+      Apply this repo's performance-review criteria (reviewers/performance.md, its
+      .agents/dd-apm-sdk-review-overrides/reviewers/performance.md override, and _common.md) to the
+      following contrib wrapper. No git checkout available — this snippet is the entire
+      change to review.
+
+      ```go
+      // Cache the static tags once, then overlay the per-request resource.
+      var cachedBase = tracer.NewStartSpanConfig(
+          tracer.Tag("component", "net/http"),
+      )
+
+      func handle(ctx context.Context, name string) {
+          span, _ := tracer.StartSpanFromContext(ctx, "http.request",
+              tracer.WithStartSpanConfig(cachedBase),
+              tracer.ResourceName(name),
+          )
+          defer span.Finish()
+      }
+      ```
+    expected_criteria:
+      - "Flags that `WithStartSpanConfig(cachedBase)` is the first tag-setting option, so `ResourceName(name)` (a `Tag` wrapper) mutates the shared `cachedBase` Tags map in place."
+      - "Names the concrete failures — pollution of `cachedBase`, inheritance by a later caller that does not reset `resource.name`, and unsafe concurrent map mutation."
+      - "Recommends a `Tag` / `WithTags` / `ResourceName` call *before* `WithStartSpanConfig(cachedBase)`, not after."
+      - "Classifies the finding as P0 / BLOCK, not P1 or P2."
+    bad_signals:
+      - "Approves the snippet or calls this option order the recommended / correct contrib pattern."
+      - "Treats the leading comment as accurate and does not mention in-place mutation of `cachedBase`."
+      - "Claims a later sequential `handle` call inherits the previous request's resource name."
