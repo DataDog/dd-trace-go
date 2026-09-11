@@ -454,6 +454,55 @@ func TestExtractOriginSynthetics(t *testing.T) {
 	assert.Equal(t, ctx.origin, "synthetics")
 }
 
+// TestExtractTraceTagsWithoutIdentity verifies that x-datadog-tags arriving
+// without trace-id/parent-id still reaches a genuine fresh root span.
+func TestExtractTraceTagsWithoutIdentity(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	// keyTraceID128 must be dropped: no lower-bit identity to attach it to.
+	src := TextMapCarrier(map[string]string{
+		traceTagsHeader: keyPropagatedLLMObsParentID + "=1234," + keyPropagatedLLMObsTraceID + "=5678," + keyTraceID128 + "=1234567890abcdef",
+	})
+
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+	assert.True(t, ctx.baggageOnly)
+	assert.Equal(t, "1234", ctx.trace.propagatingTag(keyPropagatedLLMObsParentID))
+	assert.Equal(t, "5678", ctx.trace.propagatingTag(keyPropagatedLLMObsTraceID))
+	assert.Empty(t, ctx.trace.propagatingTag(keyTraceID128))
+
+	root := tracer.StartSpan("web.request", ChildOf(ctx))
+	defer root.Finish()
+
+	// Genuine root, not an orphan child.
+	assert.Equal(t, uint64(0), root.parentID)
+	assert.NotZero(t, root.Context().TraceIDLower())
+
+	// Tags reached the new root, so lineage resolves.
+	assert.Equal(t, "1234", root.Context().trace.propagatingTag(keyPropagatedLLMObsParentID))
+	assert.Equal(t, "5678", root.Context().trace.propagatingTag(keyPropagatedLLMObsTraceID))
+}
+
+// TestExtractNoIdentityNoPropagatingTags verifies a missing identity with no
+// tags to rescue is still a hard extraction failure.
+func TestExtractNoIdentityNoPropagatingTags(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	src := TextMapCarrier(map[string]string{
+		DefaultPriorityHeader: "1",
+	})
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	assert.Equal(t, ErrSpanContextNotFound, err)
+	assert.Nil(t, ctx)
+}
+
 func Test257CharacterDDTracestateLengh(t *testing.T) {
 	t.Setenv(envPropagationStyle, "tracecontext")
 

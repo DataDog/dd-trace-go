@@ -835,16 +835,27 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			s.tr.unsetPropagatingTag(keyTraceID128)
 		}
 	}
+	var ctx *SpanContext
 	if s.traceID.Empty() || (s.spanID == 0 && s.origin != "synthetics") {
-		return nil, ErrSpanContextNotFound
-	}
-	s.traceID.cacheHex()
-	ctx := &SpanContext{
-		traceID: s.traceID,
-		spanID:  s.spanID,
-		origin:  s.origin, // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-		trace:   s.tr,
-		updated: s.updated,
+		// Special case if absent x-datadog-trace-id/parent-id but
+		// x-datadog-tags present - allow propagating as carrier-only context
+		if s.tr == nil {
+			return nil, ErrSpanContextNotFound
+		}
+		s.tr.unsetPropagatingTag(keyTraceID128) // unnecessary in carrier only ctx
+		if len(s.tr.loadPropagatingTags()) == 0 {
+			return nil, ErrSpanContextNotFound
+		}
+		ctx = &SpanContext{baggageOnly: true, trace: s.tr}
+	} else {
+		s.traceID.cacheHex()
+		ctx = &SpanContext{
+			traceID: s.traceID,
+			spanID:  s.spanID,
+			origin:  s.origin, // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			trace:   s.tr,
+			updated: s.updated,
+		}
 	}
 	if len(s.baggage) > 0 {
 		ctx.baggage = s.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
