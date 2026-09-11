@@ -7,11 +7,11 @@ one you learn from review. Do not treat it as exhaustive.
 
 The source of truth for the pattern below is [`contrib/AGENTS.md` § "Span Tag Performance in Contribs"](../../../contrib/AGENTS.md). Apply that section as written; do not paraphrase it into a weaker rule.
 
-## `WithStartSpanConfig` must not be the first tag-setting option
+## `WithStartSpanConfig` must not precede a later tag write
 
-`WithStartSpanConfig`'s tag merge *aliases* the cached base's `Tags` map onto the live span config when that config does not have a tags map yet. If `WithStartSpanConfig(cachedBase)` is the first tag-setting option, the next `Tag` / `WithTags` call mutates the shared cached base in place. A later caller that reuses `cachedBase` without resetting that key inherits the last dynamic tags, and concurrent starts race on the same map. Sequential calls that always rewrite the same key still pollute `cachedBase`; they do not "inherit" the previous value because they overwrite it before the span is created.
+`WithStartSpanConfig`'s tag merge *aliases* the cached base's `Tags` map onto the live span config when that config does not have a tags map yet. If `WithStartSpanConfig(cachedBase)` is the first tag-setting option **and a later `Tag` / `WithTags` / `ResourceName` write follows**, that write mutates the shared cached base in place. A later caller that reuses `cachedBase` without resetting that key inherits the last dynamic tags, and concurrent starts race on the same map. Sequential calls that always rewrite the same key still pollute `cachedBase`; they do not "inherit" the previous value because they overwrite it before the span is created.
 
-This is a silent cross-request data leak, not a style nit. Treat it as **P0**.
+That follow-on write is a silent cross-request data leak, not a style nit. Treat it as **P0**. A call that only applies `WithStartSpanConfig(cachedBase)` (no later tag write) aliases the map but does not mutate it — do not report a P0 for that.
 
 ```go
 // Wrong — cachedBase is aliased, then mutated by Tag().

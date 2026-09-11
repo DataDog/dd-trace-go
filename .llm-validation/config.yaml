@@ -11,6 +11,7 @@ model: claude-sonnet-5
 runs: 2
 
 instruction_files:
+  - contrib/AGENTS.md
   - .agents/skills/dd-apm-sdk-review/SKILL.md
   - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
   - .agents/skills/dd-apm-sdk-review/reviewers/coherence.md

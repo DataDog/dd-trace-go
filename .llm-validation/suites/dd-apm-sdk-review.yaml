@@ -10,14 +10,15 @@ version: "0.1"
 cases:
   - id: go-perf-startspanconfig-first
     files:
+      - contrib/AGENTS.md
       - .agents/skills/dd-apm-sdk-review/reviewers/performance.md
       - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
       - .agents/dd-apm-sdk-review-overrides/reviewers/performance.md
     input: |
       Apply this repo's performance-review criteria (reviewers/performance.md, its
-      .agents/dd-apm-sdk-review-overrides/reviewers/performance.md override, and _common.md) to the
-      following contrib wrapper. No git checkout available — this snippet is the entire
-      change to review.
+      .agents/dd-apm-sdk-review-overrides/reviewers/performance.md override, _common.md, and
+      contrib/AGENTS.md § "Span Tag Performance in Contribs") to the following contrib
+      wrapper. No git checkout available — this snippet is the entire change to review.
 
       ```go
       // Cache the static tags once, then overlay the per-request resource.

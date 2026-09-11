@@ -14,10 +14,12 @@ Overrides are owned by this repo. The shared core is not — never edit `.agents
 
 1. Create or extend a file under [`.agents/dd-apm-sdk-review-overrides/reviewers/`](../.agents/dd-apm-sdk-review-overrides/reviewers/).
    Copy the shape of `performance.md` or `security.md`: one pattern, why it matters, the fix.
-2. Add a case in [`suites/dd-apm-sdk-review.yaml`](./suites/dd-apm-sdk-review.yaml). Copy the starter case.
+2. Add the new override path to `instruction_files` in [`config.yaml`](./config.yaml) so CI
+   watches it. If the case needs another source-of-truth file (e.g. `contrib/AGENTS.md`), list that too.
+3. Add a case in [`suites/dd-apm-sdk-review.yaml`](./suites/dd-apm-sdk-review.yaml). Copy the starter case.
    A good case is a 10-line snippet plus 2–3 `expected_criteria` that would fail if the rule disappeared.
-3. List the new case id under `presets.gate.cases` in [`config.yaml`](./config.yaml) if you want CI to run it.
-4. Open a PR. That is it.
+4. List the new case id under `presets.gate.cases` in [`config.yaml`](./config.yaml) if you want CI to run it.
+5. Open a PR. That is it.
 
 The starter case in this folder is the example. Keep new ones that short.
 
