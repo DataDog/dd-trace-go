@@ -234,6 +234,16 @@ func TestRepeatStartRecordsEnvDiffOnActiveClient(t *testing.T) {
 }
 
 func TestTracerStopFlushesTelemetry(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	Stop()
+
+	assert.Nil(t, telemetry.GlobalClient())
+}
+
+func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
 	telemetryClient := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(telemetryClient)()
 
@@ -241,5 +251,8 @@ func TestTracerStopFlushesTelemetry(t *testing.T) {
 	defer globalconfig.SetServiceName("")
 	Stop()
 
-	assert.True(t, telemetryClient.Stopped)
+	// Profiler or another product already owns the global client. Stop must
+	// not call StopApp on it.
+	assert.False(t, telemetryClient.Stopped)
+	assert.Equal(t, telemetry.Client(telemetryClient), telemetry.GlobalClient())
 }
