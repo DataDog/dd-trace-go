@@ -12,7 +12,27 @@ permissions:
   contents: read
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      pull-request-tests: ${{ steps.detect.outputs.pull-request-tests }}
+      contrib-modules: ${{ steps.detect.outputs.contrib-modules }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   warm-repo-cache:
+    # Unconditional: the cache key is shared with other workflows, which would
+    # otherwise pay for a cold checkout whenever this workflow's tests are gated off.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,7 +48,9 @@ jobs:
   unit-integration-tests:
     name: PR Unit and Integration Tests
     needs:
+      - changes
       - warm-repo-cache
+    if: needs.changes.outputs.pull-request-tests == 'true'
     strategy:
       matrix:
         go-version: [ "1.26", "1.27" ]
@@ -36,10 +58,13 @@ jobs:
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
       go-version: ${{ matrix.go-version }}
+      contrib-modules: ${{ needs.changes.outputs.contrib-modules }}
     secrets: inherit
   multios-unit-tests:
     needs:
+      - changes
       - warm-repo-cache
+    if: needs.changes.outputs.pull-request-tests == 'true'
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
@@ -57,14 +82,24 @@ jobs:
       matrix:
         name: [ "test-contrib", "test-core" ]
     needs:
+      - changes
       - unit-integration-tests
       - multios-unit-tests
     runs-on: ubuntu-latest
-    if: success() || failure()
+    if: '!cancelled()'
     steps:
-      - name: Success
-        if: needs.unit-integration-tests.result == 'success' && needs.multios-unit-tests.result == 'success'
-        run: echo "Success!"
+      # Failure is an allowlist, not `!= 'success'`: a gated-off dependency
+      # reports 'skipped', which must not read as a failure. `changes` itself is
+      # checked explicitly -- if the classifier dies, everything downstream is
+      # 'skipped' and this gate would otherwise go green without running a test.
       - name: Failure
-        if: needs.unit-integration-tests.result != 'success' || needs.multios-unit-tests.result != 'success'
+        if: >-
+          needs.changes.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.unit-integration-tests.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.multios-unit-tests.result)
         run: echo "Failure!" && exit 1
+      - name: Skipped
+        if: needs.unit-integration-tests.result == 'skipped'
+        run: echo "No changed path requires unit or integration tests (see .github/ci-components.yml)."
+      - name: Success
+        run: echo "Success!"
