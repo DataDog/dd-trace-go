@@ -24,10 +24,7 @@ import (
 // both spellings rather than depending on which rule the decoder follows.
 func parseWorkflow(t *testing.T, path string) (map[string]any, map[string]any) {
 	t.Helper()
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
+	body := []byte(readText(t, filepath.Dir(path), filepath.Base(path)))
 	var doc map[string]any
 	if err := yaml.Unmarshal(body, &doc); err != nil {
 		t.Fatalf("parse %s: %v", path, err)
@@ -158,6 +155,10 @@ func TestNativePathFilterGlobsAreLive(t *testing.T) {
 		globs, _ := pr["paths"].([]any)
 		for _, g := range globs {
 			glob, _ := g.(string)
+			// A leading '!' excludes; later patterns win. The exclusion still
+			// has to name something real, or it is dead weight hiding the fact
+			// that the pattern it was meant to narrow is now unbounded.
+			glob = strings.TrimPrefix(glob, "!")
 			p, err := parseGitHubGlob(glob)
 			if err != nil {
 				t.Errorf("%s: paths entry %q: %v", f, glob, err)
@@ -203,11 +204,7 @@ func TestGatedWorkflowsHaveAChangesJob(t *testing.T) {
 
 	for _, f := range files {
 		path := filepath.Join(root, workflowDir, f)
-		body, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read %s: %v", f, err)
-		}
-		usesChanges := strings.Contains(string(body), "needs.changes.")
+		usesChanges := strings.Contains(readText(t, root, workflowDir+"/"+f), "needs.changes.")
 		doc, _ := parseWorkflow(t, path)
 		jobs, _ := doc["jobs"].(map[string]any)
 

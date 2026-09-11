@@ -6,8 +6,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"testing"
@@ -26,13 +24,10 @@ var (
 func TestActionFallbackListMatchesGates(t *testing.T) {
 	tab, _, root := testTable(t)
 
-	body, err := os.ReadFile(filepath.Join(root, actionPath))
-	if err != nil {
-		t.Fatalf("read %s: %v", actionPath, err)
-	}
+	body := readText(t, root, actionPath)
 
 	var got []string
-	for _, m := range fallbackGate.FindAllStringSubmatch(string(body), -1) {
+	for _, m := range fallbackGate.FindAllStringSubmatch(body, -1) {
 		if m[1] != "" {
 			got = append(got, m[1])
 		} else {
@@ -53,12 +48,9 @@ func TestActionFallbackListMatchesGates(t *testing.T) {
 func TestActionDeclaresAnOutputPerGate(t *testing.T) {
 	tab, _, root := testTable(t)
 
-	body, err := os.ReadFile(filepath.Join(root, actionPath))
-	if err != nil {
-		t.Fatalf("read %s: %v", actionPath, err)
-	}
+	body := readText(t, root, actionPath)
 	declared := map[string]bool{}
-	for _, m := range actionOutput.FindAllStringSubmatch(string(body), -1) {
+	for _, m := range actionOutput.FindAllStringSubmatch(body, -1) {
 		declared[m[1]] = true
 	}
 	for _, gate := range tab.Gates {
