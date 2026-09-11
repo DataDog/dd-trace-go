@@ -31,10 +31,10 @@ func (p *DatadogProvider) emitFirstOrChangeEvent(config *universalFlagsConfigura
 		}})
 	case !p.ready:
 		p.ready = true
-		if !p.firstReadyDelegated {
+		if !p.initialReadyHandoffComplete {
 			// The SDK emits its own ProviderReady when Init returns, so
 			// emitting the first transition here fires handlers twice.
-			p.firstReadyDelegated = true
+			p.initialReadyHandoffComplete = true
 			return
 		}
 		p.emitEvent(openfeature.Event{EventType: openfeature.ProviderReady, ProviderEventDetails: openfeature.ProviderEventDetails{

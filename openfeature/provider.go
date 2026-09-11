@@ -106,9 +106,11 @@ type DatadogProvider struct {
 	// rather than ProviderStale. Used to re-emit ProviderReady on every
 	// not-ready-to-ready transition, not just the first one. // +checklocks:mu
 	ready bool
-	// firstReadyDelegated records that the first ready transition was left to
-	// the SDK, which emits its own ProviderReady from Init. // +checklocks:mu
-	firstReadyDelegated bool
+	// initialReadyHandoffComplete records that Init's one-time synthetic event
+	// outcome is known. If configuration arrives before Init returns, the first
+	// ready event is left to the SDK. If Init returns an error first, a later
+	// configuration must emit ProviderReady itself. // +checklocks:mu
+	initialReadyHandoffComplete bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -388,20 +390,22 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				// The caller explicitly asked to stop waiting, unlike a deadline
-				// which we deliberately tolerate below: report this as a real
-				// failure rather than telling the SDK initialization succeeded.
+				// which may come from the configured fallback below.
+				p.initialReadyHandoffComplete = true
 				return &openfeature.ProviderInitError{
 					ErrorCode: openfeature.ProviderNotReadyCode,
 					Message:   "initialization was canceled before configuration arrived",
 				}
 			}
-			// Timed out with delivery still running. This is not an error: Go's
-			// ErrorState does not block evaluation, and configuration arriving
-			// later promotes the provider to ReadyState (updateConfiguration
-			// also starts the writers below at that point, so nothing is lost
-			// by giving up here).
+			// Delivery remains active after a timeout. Mark the initial SDK
+			// handoff complete so a later configuration emits ProviderReady and
+			// recovers the SDK from this not-ready initialization result.
+			p.initialReadyHandoffComplete = true
 			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives")
-			return nil
+			return &openfeature.ProviderInitError{
+				ErrorCode: openfeature.ProviderNotReadyCode,
+				Message:   "initialization timed out before configuration arrived",
+			}
 		}
 	}
 

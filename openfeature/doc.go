@@ -275,9 +275,11 @@
 //     Init, and by InitWithContext when the caller's context carries no deadline
 //     (a context with its own deadline keeps it). This covers the OpenFeature
 //     SDK's SetProviderAndWait, which calls InitWithContext with a background
-//     context. Default 10000. An out-of-range (<= 0, or large enough to
-//     overflow when converted to a time.Duration) or unparseable value falls back
-//     to the default rather than being clamped.
+//     context. Expiration returns a PROVIDER_NOT_READY initialization error;
+//     delivery continues and a later configuration transitions the provider to
+//     ready. Default 10000. An out-of-range (<= 0, or large enough to overflow
+//     when converted to a time.Duration) or unparseable value falls back to the
+//     default rather than being clamped.
 //
 // Example (Agentless, the default):
 //

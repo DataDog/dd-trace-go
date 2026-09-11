@@ -612,6 +612,9 @@ func TestConcurrentEvaluations(t *testing.T) {
 }
 
 func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
+	openfeature.Shutdown()
+	t.Cleanup(openfeature.Shutdown)
+
 	// Create a provider that doesn't have configuration loaded
 	// This will cause InitWithContext to wait for configuration
 	provider := newDatadogProvider(ProviderConfig{})
@@ -620,12 +623,12 @@ func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	// A timeout while a delivery source is still running (no deliveryErr) is
-	// deliberately not an error: Go's ErrorState doesn't block evaluation, and
-	// configuration arriving later promotes the provider. See InitWithContext.
 	err := openfeature.SetProviderWithContextAndWait(ctx, provider)
-	if err != nil {
-		t.Errorf("expected nil (init timeout is transient, not an error), got: %v", err)
+	if err == nil {
+		t.Fatal("expected initialization timeout to report the provider as not ready")
+	}
+	if state := openfeature.NewDefaultClient().State(); state == openfeature.ReadyState {
+		t.Error("provider must not be READY before receiving configuration")
 	}
 }
 
@@ -683,13 +686,14 @@ func TestInitWithContext_ShutdownDuringWaitReturnsPromptly(t *testing.T) {
 func TestInitWithContext_LateConfigurationStillBecomesReady(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
 
-	// Init gives up on its deadline while delivery is still running. That is
-	// deliberately not an error, so the provider must still pick up a
-	// configuration that arrives afterwards.
+	// Init gives up on its deadline while delivery is still running. It reports
+	// not ready, but the provider must still pick up a later configuration.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if err := provider.InitWithContext(ctx, openfeature.EvaluationContext{}); err != nil {
-		t.Fatalf("a deadline with delivery still running must not be reported as an error, got: %v", err)
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) || initErr.ErrorCode != openfeature.ProviderNotReadyCode {
+		t.Fatalf("expected a ProviderInitError with ProviderNotReadyCode, got: %v", err)
 	}
 	if provider.getConfiguration() != nil {
 		t.Fatal("no configuration should be stored yet")
@@ -702,8 +706,11 @@ func TestInitWithContext_LateConfigurationStillBecomesReady(t *testing.T) {
 		t.Error("a configuration arriving after Init's deadline must still be stored")
 	}
 
-	// The SDK already emitted its own ProviderReady when Init returned nil on
-	// the deadline, so this transition is recorded but not re-emitted.
+	event := drainEvent(t, provider.EventChannel())
+	if event.EventType != openfeature.ProviderReady {
+		t.Errorf("expected ProviderReady for the late configuration, got %v", event.EventType)
+	}
+
 	provider.mu.RLock()
 	ready := provider.ready
 	provider.mu.RUnlock()
