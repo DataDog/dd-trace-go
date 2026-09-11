@@ -82,6 +82,38 @@ func TestStartWithAgentless_ShutdownMidPoll(t *testing.T) {
 	assert.Less(t, elapsed, 3*time.Second, "Shutdown must not wait out the full request timeout")
 }
 
+func TestStartWithAgentless_ConfiguresAgentlessEVP(t *testing.T) {
+	t.Setenv(flagEvalCountsEnabledEnvVar, "true")
+
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("valid")
+
+	settings := internalffe.Settings{
+		AgentlessBaseURL: backend.server.URL,
+		APIKey:           "api-key",
+		Site:             "datadoghq.eu",
+		PollInterval:     time.Hour,
+		RequestTimeout:   2 * time.Second,
+	}
+	p, err := startWithAgentless(ProviderConfig{}, settings)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, p.ShutdownWithContext(ctx))
+	})
+
+	require.NotNil(t, p.exposureWriter)
+	require.NotNil(t, p.flagEvalLoggingWriter)
+	require.Same(t, p.exposureWriter.evp, p.flagEvalLoggingWriter.evp)
+
+	evp := p.exposureWriter.evp
+	assert.Equal(t, settings.APIKey, evp.apiKey)
+	require.NotNil(t, evp.directURL)
+	assert.Equal(t, "https://event-platform-intake.datadoghq.eu", evp.directURL.String())
+	assert.False(t, evp.fixedLocalRoute)
+}
+
 func TestInitWithContext_DeliveryErrFailsFast(t *testing.T) {
 	p := newDatadogProviderWithSource(ProviderConfig{}, internalffe.SourceAgentless)
 	p.mu.Lock()

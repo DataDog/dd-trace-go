@@ -153,8 +153,14 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 }
 
 func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Source) *DatadogProvider {
-	evp := newEVPClient()
+	return newDatadogProviderWithSourceAndEVP(config, source, newEVPClient())
+}
 
+func newDatadogProviderWithSourceAndEVP(
+	config ProviderConfig,
+	source internalffe.Source,
+	evp *evpClient,
+) *DatadogProvider {
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
 
@@ -225,7 +231,11 @@ func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Sour
 // lifetime. src.start() runs outside the lock since it launches the poll loop
 // in the background and returns immediately.
 func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*DatadogProvider, error) {
-	p := newDatadogProviderWithSource(config, internalffe.SourceAgentless)
+	p := newDatadogProviderWithSourceAndEVP(
+		config,
+		internalffe.SourceAgentless,
+		newAgentlessEVPClient(settings),
+	)
 
 	src, err := newAgentlessSource(settings, p.updateConfiguration)
 	if err != nil {
