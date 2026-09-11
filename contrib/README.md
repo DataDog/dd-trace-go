@@ -7,6 +7,10 @@ them to be used as they normally would with tracing activated out of the box.
 
 All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
 
+### Semantic conventions
+
+Integrations can emit either Datadog or OpenTelemetry semantic conventions, configured by `DD_TRACE_OTEL_SEMANTICS_ENABLED`, with Datadog semantics being the default. New integrations should support and test both when applicable.
+
 ### Usage
 
 First, find the library which you'd like to integrate with. The naming convention for the integration packages has two things to take into consideration:
