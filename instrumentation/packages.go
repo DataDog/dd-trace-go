@@ -44,6 +44,7 @@ const (
 	PackageGoRedisV8            Package = "go-redis/redis.v8"
 	PackageGoCQL                Package = "gocql/gocql"
 	PackageGoFiberV2            Package = "gofiber/fiber.v2"
+	PackageGoKratosV3           Package = "go-kratos/kratos.v3"
 	PackageRedigo               Package = "gomodule/redigo"
 	PackageGoogleAPI            Package = "google.golang.org/api"
 	PackageGRPC                 Package = "google.golang.org/grpc"
@@ -504,6 +505,24 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("fiber"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGoKratosV3: {
+		TracedPackage: "github.com/go-kratos/kratos/v3",
+		EnvVarPrefix:  "KRATOS",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kratos"),
+				buildOpNameV0:      operationNameByRPCSystem("http.request", "grpc.server", "kratos.server.request"),
+				buildOpNameV1:      operationNameByRPCSystem("http.server.request", "grpc.server.request", "kratos.server.request"),
+			},
+			ComponentClient: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kratos.client"),
+				buildOpNameV0:      operationNameByRPCSystem("http.request", "grpc.client", "kratos.client.request"),
+				buildOpNameV1:      operationNameByRPCSystem("http.client.request", "grpc.client.request", "kratos.client.request"),
 			},
 		},
 	},
@@ -997,6 +1016,19 @@ var packages = map[Package]PackageInfo{
 func staticName(name string) func(OperationContext) string {
 	return func(_ OperationContext) string {
 		return name
+	}
+}
+
+func operationNameByRPCSystem(httpName, grpcName, fallback string) func(OperationContext) string {
+	return func(opCtx OperationContext) string {
+		switch opCtx[ext.RPCSystem] {
+		case "http":
+			return httpName
+		case ext.RPCSystemGRPC:
+			return grpcName
+		default:
+			return fallback
+		}
 	}
 }
 
