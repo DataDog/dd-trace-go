@@ -145,18 +145,10 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 	}
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
-	if otelSemanticsEnabled {
-		return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
-			finishRequestSpan(span, status, errorFn, true, opts...)
-			if inferredProxySpan != nil {
-				finishRequestSpan(inferredProxySpan, status, errorFn, true, opts...)
-			}
-		}
-	}
 	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
-		finishRequestSpan(span, status, errorFn, false, opts...)
+		finishRequestSpan(span, status, errorFn, otelSemanticsEnabled, opts...)
 		if inferredProxySpan != nil {
-			finishRequestSpan(inferredProxySpan, status, errorFn, false, opts...)
+			finishRequestSpan(inferredProxySpan, status, errorFn, otelSemanticsEnabled, opts...)
 		}
 	}
 }
