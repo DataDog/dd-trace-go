@@ -44,10 +44,12 @@
 //		}
 //		defer provider.Shutdown()
 //
-//	 // This can take up to 30 seconds (the default provider initialization timeout) as it waits for initialization
-//		err = of.SetProviderAndWait(provider)
-//		if err != nil {
-//		    log.Fatal(err)
+//		// Blocks while waiting for the first configuration, bounded by
+//		// DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS (default 10s).
+//		// On expiry it returns a recoverable PROVIDER_NOT_READY error: delivery keeps
+//		// running and a later configuration transitions the provider to ready.
+//		if err = of.SetProviderAndWait(provider); err != nil {
+//		    log.Printf("feature flags are not ready yet: %v", err)
 //		}
 //
 //		// Create a client and evaluate flags
