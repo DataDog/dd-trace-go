@@ -30,6 +30,10 @@ It also holds `supported_configurations*`, which maintains which environment var
 
 `go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY`
 
+### Export Transport
+
+Provides protocol-neutral retry execution and bounded response diagnostics for export transports. Routing, authentication, encoding, and response interpretation remain in the protocol-specific transports.
+
 ### Client IP
 
 Owns the shared HTTP client-IP resolution policy used by tracing and AppSec.
