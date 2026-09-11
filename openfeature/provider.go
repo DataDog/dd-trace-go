@@ -743,3 +743,5 @@ func toResolutionError(err error) openfeature.ResolutionError {
 		return openfeature.NewGeneralResolutionError(errMsg)
 	}
 }
+
+// ci-canary: no-op comment to exercise change detection. Do not merge.
