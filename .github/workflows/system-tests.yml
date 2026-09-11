@@ -34,7 +34,28 @@ permissions:
   packages: write
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      system-tests: ${{ steps.detect.outputs.system-tests }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   warm-repo-cache:
+    needs:
+      - changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.system-tests == 'true'
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
@@ -55,9 +76,13 @@ jobs:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
   build-weblog-images:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     runs-on: ubuntu-latest
     needs:
+      - changes
       - warm-repo-cache
     strategy:
       fail-fast: false
@@ -120,11 +145,15 @@ jobs:
           retention-days: 1
 
   system-tests:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     # Note: Not using large runners because the jobs spawned by this pipeline
     # don't seem to get a noticable speedup from using larger runners.
     runs-on: ubuntu-latest
     needs:
+      - changes
       - warm-repo-cache
       - build-weblog-images
       - build-service-extensions-callout
@@ -378,7 +407,12 @@ jobs:
   # Pushing an image tagged with "dev" only on commit to main,
   # otherwise build and use the image from the artifact.
   build-service-extensions-callout:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    needs:
+      - changes
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/service-extensions-callout
@@ -393,7 +427,12 @@ jobs:
   # Pushing an image tagged with "dev" only on commit to main,
   # otherwise build and use the image from the artifact.
   build-haproxy:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    needs:
+      - changes
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/haproxy-spoa
@@ -408,7 +447,12 @@ jobs:
   # Pushing an image tagged with "dev" only on commit to main,
   # otherwise build and use the image from the artifact.
   build-apim-callout:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    needs:
+      - changes
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/apim-callout
@@ -436,21 +480,27 @@ jobs:
   system-tests-done:
     name: System Tests
     needs:
+      - changes
       - build-weblog-images
       - system-tests
       - tracer-release
     runs-on: ubuntu-latest
     if: '!cancelled()'
     steps:
-      - name: Success
-        if: |
-          needs.build-weblog-images.result == 'success'
-          && needs.system-tests.result == 'success'
-          && (needs.tracer-release.result == 'success' || needs.tracer-release.result == 'skipped')
-        run: echo "Success!"
+      # Failure is an allowlist, not `!= 'success'`: a gated-off dependency
+      # reports 'skipped', which must not read as a failure. That also subsumes
+      # the tracer-release special case, which only runs on a schedule.
+      # `changes` is checked explicitly -- if the classifier dies, everything
+      # downstream is 'skipped' and this gate would otherwise go green.
       - name: Failure
-        if: |
-          needs.build-weblog-images.result != 'success'
-          || needs.system-tests.result != 'success'
-          || (needs.tracer-release.result != 'success' && needs.tracer-release.result != 'skipped')
+        if: >-
+          needs.changes.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-weblog-images.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.system-tests.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.tracer-release.result)
         run: echo "Failure!" && exit 1
+      - name: Skipped
+        if: needs.system-tests.result == 'skipped'
+        run: echo "No changed path requires system tests (see .github/ci-components.yml)."
+      - name: Success
+        run: echo "Success!"
