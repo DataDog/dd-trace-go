@@ -39,9 +39,5 @@ jobs:
             flaky-test
             dev/testing
             github_actions
-          frozen-teams: |
-            @DataDog/ci-app-libraries
-            @DataDog/lang-platform-go
-            @DataDog/apm-go
-            @DataDog/asm-go
+          frozen-teams: ""
           frozen-message: "incident-60559"
