@@ -10,6 +10,12 @@ APM, such as [App and API Protection (AAP)](https://docs.datadoghq.com/security/
 
 These integrations are supported by our [APM product](https://www.datadoghq.com/apm/).
 
+### Semantic conventions
+
+Integrations can emit either Datadog or OpenTelemetry semantic conventions, configured by
+`DD_TRACE_OTEL_SEMANTICS_ENABLED`, with Datadog semantics being the default. New integrations should
+support and test both when applicable.
+
 ### Using an integration
 
 Each integration is a nested Go module, imported with the schema
