@@ -1271,12 +1271,22 @@ func (t *tracer) Stop() {
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
+	// Flush telemetry before closing the log file so StopApp diagnostics still land.
+	if t.telemetry != nil {
+		client := t.telemetry
+		t.telemetry = nil
+		if telemetry.GlobalClient() == client {
+			// We own the global client; StopApp flushes pending logs and metrics.
+			telemetry.StopApp()
+		} else {
+			// StartApp ignored this client because another product already owns
+			// the global one. Close the leftover so its ticker does not leak.
+			client.Close()
+		}
+	}
 	// Close log file last to account for any logs from the above calls
 	if t.logFile != nil {
 		t.logFile.Close()
-	}
-	if t.telemetry != nil {
-		t.telemetry.Close()
 	}
 	t.config.httpClient.CloseIdleConnections()
 }

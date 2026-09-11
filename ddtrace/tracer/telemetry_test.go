@@ -232,3 +232,27 @@ func TestRepeatStartRecordsEnvDiffOnActiveClient(t *testing.T) {
 	require.True(t, ok, "expected config.repeat_start_env_diff to be recorded on the active telemetry client")
 	assert.Equal(t, float64(1), handle.Get())
 }
+
+func TestTracerStopFlushesTelemetry(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	Stop()
+
+	assert.Nil(t, telemetry.GlobalClient())
+}
+
+func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
+
+	Start()
+	defer globalconfig.SetServiceName("")
+	Stop()
+
+	// Profiler or another product already owns the global client. Stop must
+	// not call StopApp on it.
+	assert.False(t, telemetryClient.Stopped)
+	assert.Equal(t, telemetry.Client(telemetryClient), telemetry.GlobalClient())
+}
