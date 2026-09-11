@@ -69,4 +69,4 @@ jobs:
       - name: Check for changes
         run: git diff --exit-code
 
-// ci-canary: no-op comment to exercise change detection. Do not merge.
+# ci-canary: no-op comment to exercise change detection. Do not merge.
