@@ -1,0 +1,10 @@
+{
+  "ref": "refs/heads/main",
+  "repository": {
+    "name": "dd-trace-go",
+    "full_name": "DataDog/dd-trace-go",
+    "owner": {
+      "login": "DataDog"
+    }
+  }
+}

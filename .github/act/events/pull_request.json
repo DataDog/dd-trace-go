@@ -1,0 +1,22 @@
+{
+  "action": "synchronize",
+  "pull_request": {
+    "number": 1,
+    "base": {
+      "ref": "main",
+      "sha": "0000000000000000000000000000000000000000"
+    },
+    "head": {
+      "ref": "act/local-run",
+      "sha": "1111111111111111111111111111111111111111"
+    },
+    "labels": []
+  },
+  "repository": {
+    "name": "dd-trace-go",
+    "full_name": "DataDog/dd-trace-go",
+    "owner": {
+      "login": "DataDog"
+    }
+  }
+}

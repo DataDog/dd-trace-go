@@ -140,6 +140,106 @@ make test/contrib
 make test/appsec
 ```
 
+### Reproducing CI locally
+
+`make ci/run` runs one CI job end to end. The target starts CI's service containers, runs CI's entrypoint inside a container pinned to CI's Go version and Debian base, then stops the containers.
+
+The container runs as a non-root user, like CI's runner. A test that asserts real permission enforcement then behaves the same locally as it does on CI.
+
+`scripts/ci_runner_run.sh` copies your working tree into the container, and copies it back out again, instead of using a bind mount. The copy reflects whatever is on disk at run time, including uncommitted changes.
+
+The copy excludes `.git`, so a commit made while a long run is in progress cannot be overwritten when results come back.
+
+```shell
+# Reproduce the test-core job
+make ci/run JOB=core
+
+# Reproduce one test-contrib chunk. CI splits contrib across 6 parallel jobs.
+# Print the split to find the chunk that holds your module, then run that chunk.
+make ci/contrib/chunks | grep gorilla/mux     # -> CHUNK=6
+make ci/run JOB=contrib CHUNK=6
+
+# Build tags work the same way as the workflow's `build_tags` input
+make ci/run JOB=contrib CHUNK=6 BUILD_TAGS=deadlock
+
+# Test against the other Go version in CI's matrix (default: 1.27)
+make ci/run JOB=core GO_VERSION=1.26
+
+# Run the steps one at a time
+make ci/services                  # or SERVICES="mysql postgres redis" for a subset
+make ci/core                      # or: make ci/contrib CHUNK=6
+make ci/services/down
+```
+
+`make ci/services` binds the same host ports that CI uses, which include 3306, 5432, 6379, and 9126. If a local service already holds one of those ports, compose fails to bind.
+
+`make ci/core` and `make ci/contrib` build the runner image on first use, through `make ci/runner/build`. They also cache Go's module and build data in named Docker volumes across runs. Remove those volumes with `make ci/cache/clean`.
+
+The runner container forces `--platform linux/amd64` by default, matching CI's architecture. On Apple Silicon, this architecture runs under emulation. Emulation can multiply the wall-clock time of the `-race` detector CI's tests use. Override `CI_RUNNER_PLATFORM`, for example `make ci/run JOB=core CI_RUNNER_PLATFORM=linux/arm64`, for faster, less faithful local iteration.
+
+Running `scripts/ci_test_core.sh` directly, outside the container, still needs bash 4 or later. macOS ships bash 3.2. `make ci/core` and `make ci/run` do not have this requirement, because the container ships bash 5.
+
+To check the job graph, matrix expressions, or step logic before pushing, use [`act`](https://github.com/nektos/act) instead:
+
+```shell
+# Install act
+brew install act
+
+# Runs the generate.yml job: no services or credentials needed, start here
+make act/generate
+
+# static-checks.yml's jobs, minus the reviewdog-wrapped `lint` job (run `make lint/go` for that)
+make act/static-checks
+
+# unit-integration-tests.yml
+make act/core-tests
+make act/contrib-tests CHUNK=3   # find the chunk with `make ci/contrib/chunks`
+
+# List every job act can see
+make act/list
+```
+
+**By default, none of these test your uncommitted code.** Every checkout step in this repo's workflows pins an explicit `ref:`. That pin makes act's checkout fetch the last commit you *pushed* over the network, and it ignores your working tree. Use these targets to validate a workflow-YAML edit's mechanics. Use `make lint`, `make test`, or `make ci/run` to validate a code change instead. See [.github/act/README.md](./.github/act/README.md) for which workflows are runnable at all, and for the manual "push a scratch branch" recipe for the rare case where you need the real job graph exercised against your actual code.
+
+#### On Apple Silicon
+
+On arm64 macOS, the `ci/*` targets set `DOCKER_DEFAULT_PLATFORM=linux/amd64`. `scripts/test.sh` sets
+the same variable for the root service containers.
+
+Two reasons make the setting necessary. First, five of CI's images publish no arm64 manifest:
+`elasticsearch:2`, `elasticsearch:5`, `elasticsearch:6.8.13`, `cimg/mysql:8.0`, and
+`mssql/server:2019-latest`. Second, the other images do publish arm64 variants, and an arm64 variant
+does not reproduce CI, because CI runs amd64.
+
+The platform setting cannot fix two known failures:
+
+- **`elasticsearch6` does not start.** The container exits 78 with `system call filters failed to
+  install`, because the seccomp bootstrap check fails under emulation. Contrib tests that need
+  Elasticsearch 6 cannot run locally.
+- **`cassandra` exits 137.** The kernel OOM-killer stops the container. CI's service containers
+  require more memory than a default Docker Desktop VM provides: five Elasticsearch JVMs at 750 MB of
+  heap each, plus Cassandra and MSSQL.
+
+Raise the memory that Docker Desktop grants the VM. As an alternative, start a subset with
+`make ci/services SERVICES="…"`, then run your module directly.
+
+If `make ci/services` reports `does not provide the specified platform`, an earlier pull cached the
+image for the wrong architecture. `docker compose up` does not replace a cached image. To repair the
+local image store, run `make ci/services/pull`.
+
+#### Why the two compose files pin different versions
+
+docker-compose.yaml and .github/testservices/docker-compose.yaml diverge on purpose. Do not converge them.
+
+The root file serves local development, so it tracks current upstream versions and Dependabot can update its tags. The CI file holds old versions to cover compatibility matrices. These services must stay pinned: `cassandra`, `redis`, `consul`, `elasticsearch*`, `memcached`, `mysql`, and `postgres`. These pins keep coverage of versions that current images no longer represent. The `ignore` rules in [.github/dependabot.yml](./.github/dependabot.yml) enforce those pins and limit the CI file to digest-only refreshes.
+
+### Reproducing the cross-repository test suites
+
+Three workflows pass control to a harness in another repository, so this repository has no make target for them. Each harness already runs locally. Clone the harness and run it directly.
+
+- **System tests** ([system-tests.yml](./.github/workflows/system-tests.yml)) and **parametric tests** ([parametric-tests.yml](./.github/workflows/parametric-tests.yml)) both check out [DataDog/system-tests](https://github.com/DataDog/system-tests) and call its `./build.sh` and `./run.sh`. To reproduce a failure, clone system-tests and put your dd-trace-go checkout into `binaries/dd-trace-go`. For parametric tests, run `TEST_LIBRARY=golang ./run.sh PARAMETRIC`. For system tests, run `./build.sh golang -i weblog -w <weblog-variant>`, then run `./run.sh <SCENARIO>`. Take the variant and the scenario from the name of the failing job. The system-tests repository documents its own prerequisites.
+- **Lambda integration tests** ([lambda-integration-tests.yml](./.github/workflows/lambda-integration-tests.yml)) runs `contrib/aws/datadog-lambda-go/test/integration_tests/run_integration_tests.sh`. The script deploys to a Datadog-owned AWS sandbox through OIDC role chaining. You must have credentials for the AWS sandbox account.
+
 ### CODEOWNERS patterns
 
 [CODEOWNERS](./CODEOWNERS) is read by two consumers that do not implement the same matching rules: GitHub, which follows gitignore semantics, and CI Visibility, which uses the simpler matcher in [internal/civisibility/utils](./internal/civisibility/utils/codeowners.go) to attribute test results to teams. A pattern the two interpret differently assigns the right reviewers while silently mis-attributing test ownership.

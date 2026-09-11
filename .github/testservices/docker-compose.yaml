@@ -11,6 +11,11 @@
 # memcached, mysql/postgres via cimg) — see the `ignore` rules in
 # .github/dependabot.yml, which restrict Dependabot to digest-only refreshes
 # for these.
+#
+# Consequently the versions here diverge from the root docker-compose.yaml,
+# which tracks current versions for local development. That divergence is
+# deliberate; it is tabulated and justified under "Reproducing CI locally" in
+# CONTRIBUTING.md. Reproduce a CI job against this stack with `make ci/run`.
 
 services:
   datadog-agent:
