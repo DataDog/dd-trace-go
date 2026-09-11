@@ -78,18 +78,17 @@ if [ -z "$TARGET" ] || [ "$TARGET" = "null" ]; then
 fi
 # PR title and labels: on an existing PR, some reviewer overrides (e.g. release-note
 # policy, semver labels) audit these directly. Empty on a not-yet-opened PR - that's
-# expected, note it rather than treating it as a failure.
+# expected, note it rather than treating it as a failure. Do not echo them (or
+# `git log`) until SECRET_GREP is defined and applied — a credential in a title
+# or commit subject must not reach the transcript first.
 PR_TITLE=$(echo "$PR_JSON" | jq -r '.title' 2>/dev/null)
 PR_LABELS=$(echo "$PR_JSON" | jq -r '[.labels[].name] | join(", ")' 2>/dev/null)
-echo "PR title: ${PR_TITLE:-<none>}"
-echo "PR labels: ${PR_LABELS:-<none>}"
-git log --oneline -5
-echo "reviewing against: $BASE_REF_NAME ($TARGET)"      # say this in the report; ask if it looks wrong
 
-# Known secret *shapes*. Used to pre-scan committed / staged / unstaged diffs
-# and untracked files BEFORE any of that content is printed. Once a tool call
-# emits a value it is already in this transcript and any retained logs; a later
-# "redact while reading" instruction cannot unsay it.
+# Known secret *shapes*. Used to pre-scan PR title / labels, recent commit
+# subjects, committed / staged / unstaged diffs, and untracked files BEFORE any
+# of that content is printed. Once a tool call emits a value it is already in
+# this transcript and any retained logs; a later "redact while reading"
+# instruction cannot unsay it. One pattern, reused — do not copy it.
 SECRET_GREP='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[0-9A-Za-z]{20,}|github_pat_[0-9A-Za-z_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|(DD|DATADOG)_(API|APP)_KEY[[:space:]]*[:=]|_authToken[[:space:]]*='
 # One err_file for every scan below, not one per file — a file's diff/scan
 # error already gets `cat`ed into the transcript, so there is nothing left to
@@ -99,10 +98,10 @@ SECRET_GREP='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16
 err_file=$(mktemp) || { echo "ERROR: mktemp failed, cannot safely scan diffs" >&2; exit 1; }
 trap 'rm -f "$err_file"' EXIT
 
-# Capture a git-diff command to a temp file, grep it, and only then print.
+# Capture a command's stdout to a temp file, grep it, and only then print.
 # A match (or a grep error) suppresses the body — fail closed, same as the
-# untracked-file loop. `git diff` (without --exit-code / --no-index) exits 0
-# on success even when the patch is non-empty.
+# untracked-file loop. Used for metadata and for diffs. `git diff` (without
+# --exit-code / --no-index) exits 0 on success even when the patch is non-empty.
 emit_diff_or_redact() {
   local label="$1"
   shift
@@ -117,19 +116,24 @@ emit_diff_or_redact() {
   grep -qE -e "$SECRET_GREP" -- "$out" 2>"$err_file"
   local grc=$?
   if [ "$grc" -eq 0 ]; then
-    echo "SUSPECT SECRET (diff not printed): $label - read it yourself, redact, then decide"
+    echo "SUSPECT SECRET (not printed): $label - read it yourself, redact, then decide"
     rm -f "$out"
     return 0
   elif [ "$grc" -ge 2 ]; then
     echo "ERROR: could not scan $label for secrets - treating as suspect rather than skipping the scan" >&2
     cat "$err_file" >&2
-    echo "SUSPECT SECRET (diff not printed): $label - read it yourself, redact, then decide"
+    echo "SUSPECT SECRET (not printed): $label - read it yourself, redact, then decide"
     rm -f "$out"
     return 0
   fi
   cat "$out"
   rm -f "$out"
 }
+
+emit_diff_or_redact "PR title" printf '%s\n' "PR title: ${PR_TITLE:-<none>}"
+emit_diff_or_redact "PR labels" printf '%s\n' "PR labels: ${PR_LABELS:-<none>}"
+emit_diff_or_redact "recent commit subjects" git log --oneline -5
+echo "reviewing against: $BASE_REF_NAME ($TARGET)"      # say this in the report; ask if it looks wrong
 
 # 2. Committed delta against the merge base with that target
 git rev-parse --is-shallow-repository   # if true, merge-base may not resolve
@@ -189,7 +193,7 @@ while IFS= read -r -d '' f; do
 done < <(git ls-files --others --exclude-standard -z)
 ```
 
-The grep above only catches known secret *shapes* (cloud keys, tokens with a recognizable prefix, PEM headers) — it is not a substitute for reading the output. Read each printed diff as it is produced (or read the file directly instead of shelling out) and check it for tokens, API keys, private keys, connection strings, `.env` values, and anything shaped like a long random secret that the pattern missed, before letting that output stand in your context. If a file looks like a credential — including one the grep already flagged as a suspect and skipped — redact the value at first sight — `[REDACTED — see location]`, keeping the `path:line` — and treat the printed diff as already-redacted from that point on; never diff a flagged file unredacted just to get around the flag. Committed, staged, and unstaged diffs (steps 2-3) are pre-scanned by `emit_diff_or_redact` before they are printed; still scan what *does* print as you read it.
+The grep above only catches known secret *shapes* (cloud keys, tokens with a recognizable prefix, PEM headers) — it is not a substitute for reading the output. Read each printed diff as it is produced (or read the file directly instead of shelling out) and check it for tokens, API keys, private keys, connection strings, `.env` values, and anything shaped like a long random secret that the pattern missed, before letting that output stand in your context. If a file looks like a credential — including one the grep already flagged as a suspect and skipped — redact the value at first sight — `[REDACTED — see location]`, keeping the `path:line` — and treat the printed diff as already-redacted from that point on; never diff a flagged file unredacted just to get around the flag. PR title, labels, recent commit subjects, and committed / staged / unstaged diffs are pre-scanned by `emit_diff_or_redact` before they are printed; still scan what *does* print as you read it.
 
 If the repository is shallow or the target upstream is absent, the merge base yields nothing, and on a clean checkout the worktree diffs are empty too — so the committed work becomes invisible and the next step would conclude there is nothing to review. Do not treat the worktree as the whole change set: `git fetch --deepen 50` or `--unshallow`, or ask for the committed diff. If neither is possible, report the committed portion as `NOT VERIFIED (no merge base)` rather than letting the gate pass on a change set it never saw.
 
