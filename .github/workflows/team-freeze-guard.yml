@@ -40,6 +40,8 @@ jobs:
             dev/testing
             github_actions
           frozen-teams: |
-            @DataDog/lang-platform-go
             @DataDog/ci-app-libraries
+            @DataDog/lang-platform-go
+            @DataDog/apm-go
+            @DataDog/asm-go
           frozen-message: "incident-60559"

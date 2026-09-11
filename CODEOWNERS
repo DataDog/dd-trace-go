@@ -159,7 +159,7 @@
 /contrib/database/sql/              @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 
 # language platform
-/.github/workflows/team-freeze-guard.yml    @DataDog/lang-platform-go
+/.github/workflows/team-freeze-guard.yml    @DataDog/apm-go
 
 # dependency-file review
 *go.mod                         @DataDog/apm-go
