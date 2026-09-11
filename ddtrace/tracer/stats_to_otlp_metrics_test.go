@@ -103,6 +103,17 @@ func assertOTLPBoolAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key strin
 	require.Fail(t, "missing OTLP bool attribute", key)
 }
 
+func extractOTLPAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key string) *otlpcommon.KeyValue {
+	t.Helper()
+	for _, kv := range kvs {
+		if kv.Key == key {
+			return kv
+		}
+	}
+	require.FailNow(t, "missing OTLP attribute", key)
+	return nil
+}
+
 // ---- sketchToHistogram ----
 
 func TestSketchToHistogramEmpty(t *testing.T) {

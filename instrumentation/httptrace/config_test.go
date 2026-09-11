@@ -9,7 +9,29 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
+
+func TestConfigOTelSemantics(t *testing.T) {
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "")
+	internalconfig.CreateNew()
+	require.False(t, newConfig().otelSemanticsEnabled)
+
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+	internalconfig.CreateNew()
+	c := newConfig()
+	require.True(t, c.otelSemanticsEnabled)
+	require.Contains(t, c.String(), "otelSemanticsEnabled: true")
+
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "false")
+	internalconfig.CreateNew()
+	require.True(t, c.otelSemanticsEnabled, "configuration must capture the effective mode")
+	c = newConfig()
+	require.False(t, c.otelSemanticsEnabled)
+	require.Contains(t, c.String(), "otelSemanticsEnabled: false")
+}
 
 func TestConfig(t *testing.T) {
 	defaultCfg := config{
