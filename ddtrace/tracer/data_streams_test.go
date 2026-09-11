@@ -7,8 +7,12 @@ package tracer
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -66,4 +70,34 @@ func TestTrackDataStreamsTransactionIsNoop(t *testing.T) {
 		_, ok = s.meta.Get(dsmTransactionCheckpointTag)
 		assert.False(t, ok, "transaction tracking was removed; %s must not be set", dsmTransactionCheckpointTag)
 	})
+}
+
+// TestTrackDataStreamsTransactionWarnsOnce verifies that the deprecated no-ops
+// announce themselves, so a caller who keeps calling them finds out rather than
+// silently losing data, and that they warn only once per process.
+func TestTrackDataStreamsTransactionWarnsOnce(t *testing.T) {
+	// Reset the package-level guards so this test does not depend on whether
+	// another test in this package called the deprecated functions first.
+	warnTrackTransactionOnce = sync.Once{}
+	warnTrackTransactionAtOnce = sync.Once{}
+
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	tp := new(log.RecordLogger)
+	Start(withNoopStats(), WithLogger(tp))
+	defer Stop()
+	tp.Reset()
+
+	fixedTime := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
+	for range 3 {
+		TrackDataStreamsTransaction(context.Background(), "tx-1", "ingested")
+		TrackDataStreamsTransactionAt(context.Background(), "tx-1", "ingested", fixedTime)
+	}
+
+	logs := strings.Join(tp.Logs(), "\n")
+	assert.Equal(t, 1, strings.Count(logs, "TrackDataStreamsTransaction is a no-op"),
+		"expected exactly one warning for TrackDataStreamsTransaction, got logs:\n%s", logs)
+	assert.Equal(t, 1, strings.Count(logs, "TrackDataStreamsTransactionAt is a no-op"),
+		"expected exactly one warning for TrackDataStreamsTransactionAt, got logs:\n%s", logs)
+	assert.Contains(t, logs, "transaction tracking has been removed")
 }

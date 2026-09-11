@@ -7,10 +7,12 @@ package tracer
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	idatastreams "github.com/DataDog/dd-trace-go/v2/internal/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // dataStreamsContainer is an object that contains a data streams processor.
@@ -83,20 +85,37 @@ func TrackKafkaHighWatermarkOffset(cluster string, topic string, partition int32
 	}
 }
 
-// TrackDataStreamsTransaction is a no-op.
+var (
+	warnTrackTransactionOnce   sync.Once
+	warnTrackTransactionAtOnce sync.Once
+)
+
+// warnTransactionTrackingRemoved logs a single warning naming the deprecated
+// function that was called. Removing the feature silently would leave callers
+// believing they still had transaction tracking, with the only symptom being
+// absent data in the Datadog UI, so the no-op announces itself once per process.
+func warnTransactionTrackingRemoved(once *sync.Once, fn string) {
+	once.Do(func() {
+		log.Warn("datastreams: %s is a no-op and records nothing: Data Streams Monitoring transaction tracking has been removed. Remove the call; it will be deleted in v3.", fn)
+	})
+}
+
+// TrackDataStreamsTransaction is a no-op that logs a warning on first use.
 //
 // Deprecated: Data Streams Monitoring transaction tracking has been removed.
 // This function no longer records a transaction checkpoint and no longer tags
 // the active span. It is retained only so existing callers keep compiling, and
 // will be deleted in v3. Remove calls to it.
 func TrackDataStreamsTransaction(_ context.Context, _, _ string) {
+	warnTransactionTrackingRemoved(&warnTrackTransactionOnce, "TrackDataStreamsTransaction")
 }
 
-// TrackDataStreamsTransactionAt is a no-op.
+// TrackDataStreamsTransactionAt is a no-op that logs a warning on first use.
 //
 // Deprecated: Data Streams Monitoring transaction tracking has been removed.
 // This function no longer records a transaction checkpoint and no longer tags
 // the active span. It is retained only so existing callers keep compiling, and
 // will be deleted in v3. Remove calls to it.
 func TrackDataStreamsTransactionAt(_ context.Context, _, _ string, _ time.Time) {
+	warnTransactionTrackingRemoved(&warnTrackTransactionAtOnce, "TrackDataStreamsTransactionAt")
 }
