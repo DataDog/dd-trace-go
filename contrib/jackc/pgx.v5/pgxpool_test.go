@@ -93,6 +93,48 @@ func TestPoolWithPoolStats(t *testing.T) {
 	}
 }
 
+// ConnectionUseTime is measured on release rather than polled, so it lands synchronously
+// once the caller is done with the connection.
+func TestPoolConnectionUseTime(t *testing.T) {
+	t.Run("enabled with pool stats", func(t *testing.T) {
+		ctx := context.Background()
+		statsd := testutils.NewMockStatsdClient()
+		pool, err := NewPool(ctx, postgresDSN, withStatsdClient(statsd), WithPoolStats(), WithPoolName("test-pool"))
+		require.NoError(t, err)
+		defer pool.Close()
+
+		var x int
+		require.NoError(t, pool.QueryRow(ctx, `select 1`).Scan(&x))
+
+		// Reading from TimingCalls also pins that use time is submitted as a timing rather
+		// than a gauge, since only Timing lands there.
+		var found int
+		for _, call := range statsd.TimingCalls() {
+			if call.Name() != ConnectionUseTime {
+				continue
+			}
+			found++
+			assert.Contains(t, call.Tags(), "pool_name:test-pool")
+			assert.Positive(t, call.TimeVal())
+			assert.Less(t, call.TimeVal(), time.Minute, "use time should span one query, not the zero time")
+		}
+		require.Positive(t, found, "expected a %s timing after the connection was released", ConnectionUseTime)
+	})
+
+	t.Run("disabled without pool stats", func(t *testing.T) {
+		ctx := context.Background()
+		statsd := testutils.NewMockStatsdClient()
+		pool, err := NewPool(ctx, postgresDSN, withStatsdClient(statsd))
+		require.NoError(t, err)
+		defer pool.Close()
+
+		var x int
+		require.NoError(t, pool.QueryRow(ctx, `select 1`).Scan(&x))
+
+		assert.Empty(t, statsd.GetCallsByName(ConnectionUseTime))
+	})
+}
+
 func withStatsdClient(s instrumentation.StatsdClient) Option {
 	return func(c *config) {
 		c.statsdClient = s
