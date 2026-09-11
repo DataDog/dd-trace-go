@@ -6,6 +6,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -163,5 +164,62 @@ func TestReverseDepsExcludesRootEdge(t *testing.T) {
 	if dependents := rev["."]; len(dependents) != 0 {
 		t.Errorf("reverseDeps()[%q] has %d dependents, want 0: the root-module edge must be "+
 			"excluded or every seed expands to the full matrix", ".", len(dependents))
+	}
+}
+
+// TestContribModulesCLIAlwaysEmitsASentinel is a regression test.
+//
+// The -contrib-modules output is consumed by a shell that defaults an unset
+// value to ALL. Emitting nothing for "no module needs testing" made that
+// indistinguishable from "no selection was provided", so the matrix quietly
+// ran all ~72 modules for a change that needed none. Every verdict must print
+// at least one line.
+func TestContribModulesCLIAlwaysEmitsASentinel(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		want  string
+	}{
+		{"no contrib module needed", []string{"openfeature/provider.go"}, selectNone},
+		{"docs need nothing", []string{"README.md"}, selectNone},
+		{"core needs everything", []string{"ddtrace/tracer/tracer.go"}, selectAll},
+		{"unclassified needs everything", []string{"zz-brand-new/thing.go"}, selectAll},
+		{"empty change set needs everything", nil, selectAll},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out strings.Builder
+			in := strings.NewReader(strings.Join(tt.files, "\n"))
+			if err := run([]string{"-contrib-modules"}, in, &out); err != nil {
+				t.Fatalf("run(-contrib-modules) = %v", err)
+			}
+			got := strings.Fields(out.String())
+			if len(got) == 0 {
+				t.Fatalf("run(-contrib-modules) printed nothing for %v; the consumer reads "+
+					"an empty value as 'unset' and falls back to the full matrix", tt.files)
+			}
+			if got[0] != tt.want {
+				t.Errorf("run(-contrib-modules) for %v = %q, want %q", tt.files, got[0], tt.want)
+			}
+		})
+	}
+}
+
+// TestContribModulesNarrowedOutputHasNoSentinel keeps the two shapes disjoint:
+// a narrowed list must not also carry ALL or NONE.
+func TestContribModulesNarrowedOutputHasNoSentinel(t *testing.T) {
+	var out strings.Builder
+	in := strings.NewReader("contrib/gin-gonic/gin/gintrace.go")
+	if err := run([]string{"-contrib-modules"}, in, &out); err != nil {
+		t.Fatalf("run(-contrib-modules) = %v", err)
+	}
+	got := strings.Fields(out.String())
+	if len(got) == 0 {
+		t.Fatal("run(-contrib-modules) printed nothing for a contrib change")
+	}
+	for _, m := range got {
+		if m == selectAll || m == selectNone {
+			t.Errorf("narrowed output %v contains the sentinel %q", got, m)
+		}
 	}
 }

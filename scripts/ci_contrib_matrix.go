@@ -34,6 +34,7 @@ import (
 const (
 	maxRunners = 6
 	selectAll  = "ALL"
+	selectNone = "NONE"
 )
 
 func main() {
@@ -133,6 +134,9 @@ func readSelection(path string) (map[string]bool, error) {
 		case line == "":
 		case line == selectAll:
 			return nil, nil
+		case line == selectNone:
+			// Non-nil and empty: test no contrib module. Distinct from nil,
+			// which means "no selection was made, so test everything".
 		default:
 			selected[line] = true
 		}
